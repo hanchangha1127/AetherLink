@@ -127,6 +127,25 @@ final class PairedRuntimeRouteRefreshTests: XCTestCase {
         XCTAssertEqual(storedPairRoute.relayNonce, "nonce-generation-8")
         XCTAssertEqual(storedPairRoute.relaySecret, fixture.endpointSecret)
 
+        let configurationRequest = model.requestConfigureDevelopmentRelayForUserInterface(
+            host: fixture.host,
+            port: fixture.port,
+            relaySecret: fixture.endpointSecret,
+            attemptAllocation: true
+        )
+        guard case .started(let configurationRequestID) = configurationRequest else {
+            return XCTFail("Expected asynchronous relay configuration to start")
+        }
+        let didCompleteConfigurationRequest = await waitForRelayConfigurationCompletion(
+            on: model,
+            requestID: configurationRequestID
+        )
+        XCTAssertTrue(didCompleteConfigurationRequest)
+        XCTAssertEqual(
+            model.relayConfigurationRequestCompletion?.requestID,
+            configurationRequestID
+        )
+
         await model.activateRuntimeRouteRefresh(refreshed)
         XCTAssertEqual(relayClient.stopCount, 1)
         XCTAssertEqual(pairedRelayClient.startedConfigurations.count, 1)
@@ -140,6 +159,7 @@ final class PairedRuntimeRouteRefreshTests: XCTestCase {
             fixture.routeToken
         )
         XCTAssertNil(fixture.savedTicketGeneration)
+        XCTAssertNil(model.relayConfigurationRequestState)
     }
 
     @MainActor
@@ -585,6 +605,20 @@ final class PairedRuntimeRouteRefreshTests: XCTestCase {
     }
 }
 
+@MainActor
+private func waitForRelayConfigurationCompletion(
+    on model: CompanionAppModel,
+    requestID: UUID
+) async -> Bool {
+    for _ in 0..<1_000 {
+        if model.relayConfigurationRequestCompletion?.requestID == requestID {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: 1_000_000)
+    }
+    return false
+}
+
 private struct PairedRouteFixture {
     let defaults: UserDefaults
     let secretStore: InMemoryRelaySecretStore
@@ -794,8 +828,10 @@ private final class SuspendedPairedRelayAllocator: RelayServiceRouteAllocating, 
         allocationToken: String?,
         runtimeIdentity: RelayRuntimeIdentity,
         identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        cancellation: RelayRouteAllocationCancellation
     ) throws -> RelayServiceRouteAllocation {
+        try cancellation.throwIfCancelledOrExpired()
         throw RelayServiceRouteAllocationError.pairedRenewalUnavailable
     }
 
@@ -842,8 +878,10 @@ private final class SequencedSuspendedPairedRelayAllocator: RelayServiceRouteAll
         allocationToken: String?,
         runtimeIdentity: RelayRuntimeIdentity,
         identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        cancellation: RelayRouteAllocationCancellation
     ) throws -> RelayServiceRouteAllocation {
+        try cancellation.throwIfCancelledOrExpired()
         throw RelayServiceRouteAllocationError.pairedRenewalUnavailable
     }
 
@@ -898,8 +936,10 @@ private final class PerPairAdvancingRelayAllocator: RelayServiceRouteAllocating,
         allocationToken: String?,
         runtimeIdentity: RelayRuntimeIdentity,
         identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        cancellation: RelayRouteAllocationCancellation
     ) throws -> RelayServiceRouteAllocation {
+        try cancellation.throwIfCancelledOrExpired()
         throw RelayServiceRouteAllocationError.pairedRenewalUnavailable
     }
 
@@ -978,8 +1018,10 @@ private final class RecordingPairedRelayAllocator: RelayServiceRouteAllocating, 
         allocationToken: String?,
         runtimeIdentity: RelayRuntimeIdentity,
         identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        cancellation: RelayRouteAllocationCancellation
     ) throws -> RelayServiceRouteAllocation {
+        try cancellation.throwIfCancelledOrExpired()
         lock.withLock {
             storedRuntimeOnlyCallCount += 1
         }

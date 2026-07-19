@@ -5,10 +5,16 @@ import SwiftUI
 struct PairingView: View {
     @ObservedObject var model: CompanionAppModel
     let layoutObserver: PairingTaskLayoutObserver?
+    let qrImageRenderer: (String) -> NSImage?
 
-    init(model: CompanionAppModel, layoutObserver: PairingTaskLayoutObserver? = nil) {
+    init(
+        model: CompanionAppModel,
+        layoutObserver: PairingTaskLayoutObserver? = nil,
+        qrImageRenderer: @escaping (String) -> NSImage? = pairingQRCodeImage
+    ) {
         self.model = model
         self.layoutObserver = layoutObserver
+        self.qrImageRenderer = qrImageRenderer
     }
 
     var body: some View {
@@ -29,6 +35,9 @@ struct PairingView: View {
                                 Date(timeIntervalSince1970: TimeInterval($0) / 1000)
                             },
                             routeNotice: pairingRouteNotice,
+                            canGenerateNewQR: canGeneratePairingQR,
+                            isPreparingConnectionDetails: model.isRemoteRoutePreparationInFlight,
+                            qrImageRenderer: qrImageRenderer,
                             onGenerateNewQR: generatePairingQR
                         )
                         .id(session.id)
@@ -60,8 +69,22 @@ struct PairingView: View {
                             .buttonStyle(.borderedProminent)
                             .disabled(!canGeneratePairingQR)
                             .help(pairingQRGenerationHelpText)
-                            .accessibilityValue(Text(pairingQRGenerationActionAccessibilityValue(isAvailable: canGeneratePairingQR)))
-                            .accessibilityHint(Text(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR)))
+                            .accessibilityValue(
+                                Text(
+                                    pairingQRGenerationActionAccessibilityValue(
+                                        isAvailable: canGeneratePairingQR,
+                                        isPreparing: model.isRemoteRoutePreparationInFlight
+                                    )
+                                )
+                            )
+                            .accessibilityHint(
+                                Text(
+                                    pairingQRGenerationActionAccessibilityHint(
+                                        isAvailable: canGeneratePairingQR,
+                                        isPreparing: model.isRemoteRoutePreparationInFlight
+                                    )
+                                )
+                            )
 
                             PairingRouteSetupNotice(routeNotice: pairingRouteNotice)
                         }
@@ -90,6 +113,13 @@ struct PairingView: View {
     }
 
     private var pairingRouteNotice: PairingRouteNotice {
+        if model.isRemoteRoutePreparationInFlight {
+            return PairingRouteNotice(
+                text: NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: ""),
+                systemImage: "hourglass",
+                tone: .neutral
+            )
+        }
         if let issue = model.remoteRoutePreparationIssue {
             return PairingRouteNotice(
                 text: remoteRoutePreparationIssueText(issue),
@@ -107,9 +137,9 @@ struct PairingView: View {
                 )
             }
             return PairingRouteNotice(
-                text: NSLocalizedString("Pairing QR is waiting for connection details.", comment: ""),
-                systemImage: "network",
-                tone: .neutral
+                text: NSLocalizedString("Set up Connection Recovery before generating a pairing QR.", comment: ""),
+                systemImage: "exclamationmark.triangle",
+                tone: .warning
             )
         }
 
@@ -158,36 +188,32 @@ struct PairingView: View {
     }
 
     private var emptyPairingQRDescription: String {
+        if model.isRemoteRoutePreparationInFlight {
+            return NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: "")
+        }
         if let issue = model.remoteRoutePreparationIssue {
             return remoteRoutePreparationIssueText(issue)
         }
         if model.canPrepareRemoteRelayRouteAutomatically {
             return NSLocalizedString("Generate a pairing QR. AetherLink prepares connection details automatically and shows the QR when ready.", comment: "")
         }
-        return NSLocalizedString("Pairing from another network needs connection details inside the pairing QR.", comment: "")
+        return NSLocalizedString("Set up Connection Recovery before generating a pairing QR.", comment: "")
     }
 
     private var canGeneratePairingQR: Bool {
-        pairingQRGenerationAvailable(
-            canPrepareAutomatically: model.canPrepareRemoteRelayRouteAutomatically,
-            isRouteEligibleForQRCode: model.isDevelopmentRelayRouteEligibleForQRCode
-        )
+        model.canRequestRemotePairingForUserInterface
     }
 
     private var pairingQRGenerationHelpText: String {
-        pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR)
+        pairingQRGenerationActionAccessibilityHint(
+            isAvailable: canGeneratePairingQR,
+            isPreparing: model.isRemoteRoutePreparationInFlight
+        )
     }
 
     private func generatePairingQR() {
-        model.beginPairing(routePolicy: .remoteRequired)
+        model.requestRemotePairingForUserInterface()
     }
-}
-
-func pairingQRGenerationAvailable(
-    canPrepareAutomatically: Bool,
-    isRouteEligibleForQRCode: Bool
-) -> Bool {
-    canPrepareAutomatically || isRouteEligibleForQRCode
 }
 
 final class PairingQRCodeImageCache: ObservableObject {
@@ -264,61 +290,116 @@ private struct ActivePairingCard: View {
     let expiresAt: Date
     let remoteRouteExpiresAt: Date?
     let routeNotice: PairingRouteNotice
+    let canGenerateNewQR: Bool
+    let isPreparingConnectionDetails: Bool
     let onGenerateNewQR: () -> Void
     @State private var sessionStartedAt = Date()
-    @StateObject private var qrImageCache = PairingQRCodeImageCache()
+    @StateObject private var qrImageCache: PairingQRCodeImageCache
+
+    init(
+        qrPayload: String,
+        expiresAt: Date,
+        remoteRouteExpiresAt: Date?,
+        routeNotice: PairingRouteNotice,
+        canGenerateNewQR: Bool,
+        isPreparingConnectionDetails: Bool,
+        qrImageRenderer: @escaping (String) -> NSImage?,
+        onGenerateNewQR: @escaping () -> Void
+    ) {
+        self.qrPayload = qrPayload
+        self.expiresAt = expiresAt
+        self.remoteRouteExpiresAt = remoteRouteExpiresAt
+        self.routeNotice = routeNotice
+        self.canGenerateNewQR = canGenerateNewQR
+        self.isPreparingConnectionDetails = isPreparingConnectionDetails
+        self.onGenerateNewQR = onGenerateNewQR
+        _qrImageCache = StateObject(
+            wrappedValue: PairingQRCodeImageCache(renderer: qrImageRenderer)
+        )
+    }
 
     var body: some View {
         TimelineView(.periodic(from: Date(), by: 1)) { timeline in
             let isExpired = expiresAt <= timeline.date
+            let qrImage = qrImageCache.image(for: qrPayload)
+            let isQRCodeAvailable = qrImage != nil
 
             ViewThatFits(in: .horizontal) {
-                regularContent(at: timeline.date, isExpired: isExpired)
-                compactContent(at: timeline.date, isExpired: isExpired)
-                stackedContent(at: timeline.date, isExpired: isExpired)
+                regularContent(
+                    at: timeline.date,
+                    isExpired: isExpired,
+                    qrImage: qrImage,
+                    isQRCodeAvailable: isQRCodeAvailable
+                )
+                compactContent(
+                    at: timeline.date,
+                    isExpired: isExpired,
+                    qrImage: qrImage,
+                    isQRCodeAvailable: isQRCodeAvailable
+                )
+                stackedContent(
+                    at: timeline.date,
+                    isExpired: isExpired,
+                    qrImage: qrImage,
+                    isQRCodeAvailable: isQRCodeAvailable
+                )
             }
             .animation(.easeInOut(duration: 0.2), value: isExpired)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func regularContent(at date: Date, isExpired: Bool) -> some View {
+    private func regularContent(
+        at date: Date,
+        isExpired: Bool,
+        qrImage: NSImage?,
+        isQRCodeAvailable: Bool
+    ) -> some View {
         HStack(alignment: .center, spacing: 22) {
-            qrCode(dimension: 252, isExpired: isExpired)
-            instructions(at: date, compact: false)
+            qrCode(image: qrImage, dimension: 252, isExpired: isExpired)
+            instructions(at: date, compact: false, isQRCodeAvailable: isQRCodeAvailable)
         }
     }
 
-    private func compactContent(at date: Date, isExpired: Bool) -> some View {
+    private func compactContent(
+        at date: Date,
+        isExpired: Bool,
+        qrImage: NSImage?,
+        isQRCodeAvailable: Bool
+    ) -> some View {
         HStack(alignment: .top, spacing: 16) {
-            qrCode(dimension: 184, isExpired: isExpired)
-            instructions(at: date, compact: true)
+            qrCode(image: qrImage, dimension: 184, isExpired: isExpired)
+            instructions(at: date, compact: true, isQRCodeAvailable: isQRCodeAvailable)
                 .frame(minWidth: 180, maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
         }
     }
 
-    private func stackedContent(at date: Date, isExpired: Bool) -> some View {
+    private func stackedContent(
+        at date: Date,
+        isExpired: Bool,
+        qrImage: NSImage?,
+        isQRCodeAvailable: Bool
+    ) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            qrCode(dimension: 220, isExpired: isExpired)
-            instructions(at: date, compact: true)
+            qrCode(image: qrImage, dimension: 220, isExpired: isExpired)
+            instructions(at: date, compact: true, isQRCodeAvailable: isQRCodeAvailable)
         }
     }
 
-    private func qrCode(dimension: CGFloat, isExpired: Bool) -> some View {
-        let qrImage = qrImageCache.image(for: qrPayload)
-        let isAvailable = qrImage != nil
-        return QRCodeView(image: qrImage)
+    private func qrCode(image: NSImage?, dimension: CGFloat, isExpired: Bool) -> some View {
+        let isAvailable = image != nil
+        return QRCodeView(image: image)
             .frame(width: dimension, height: dimension)
             .padding(dimension < 220 ? 10 : 14)
             .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
-            .opacity(isExpired ? 0.28 : 1)
+            .opacity(isExpired && isAvailable ? 0.28 : 1)
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(.black.opacity(0.12), lineWidth: 1)
             }
             .overlay {
-                if isExpired {
+                if isExpired && isAvailable {
                     Label(
                         NSLocalizedString("Pairing QR expired. Generate a new QR.", comment: ""),
                         systemImage: "exclamationmark.triangle.fill"
@@ -338,39 +419,51 @@ private struct ActivePairingCard: View {
             .accessibilityAddTraits(.isImage)
             .accessibilityLabel(Text(pairingQRCodeAccessibilityLabel()))
             .accessibilityValue(Text(pairingQRCodeAccessibilityValue(isExpired: isExpired, isAvailable: isAvailable)))
-            .accessibilityHint(Text(pairingQRCodeAccessibilityHint(remoteRouteExpiresAt: remoteRouteExpiresAt)))
+            .accessibilityHint(
+                Text(
+                    pairingQRCodeAccessibilityHint(
+                        remoteRouteExpiresAt: remoteRouteExpiresAt,
+                        isAvailable: isAvailable
+                    )
+                )
+            )
     }
 
-    private func instructions(at date: Date, compact: Bool) -> some View {
+    private func instructions(at date: Date, compact: Bool, isQRCodeAvailable: Bool) -> some View {
         VStack(alignment: .leading, spacing: compact ? 10 : 14) {
-            Label(NSLocalizedString("Scan this QR from AetherLink.", comment: ""), systemImage: "qrcode.viewfinder")
-                .font(.title3.weight(.semibold))
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityAddTraits(.isHeader)
+            Label(
+                pairingQRCodeInstructionTitle(isAvailable: isQRCodeAvailable),
+                systemImage: isQRCodeAvailable ? "qrcode.viewfinder" : "exclamationmark.triangle"
+            )
+            .font(.title3.weight(.semibold))
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
 
-            if !compact {
-                Text(NSLocalizedString("This QR verifies AetherLink Runtime and includes connection details for pairing or refresh.", comment: ""))
+            if !compact || !isQRCodeAvailable {
+                Text(pairingQRCodeInstructionDetail(isAvailable: isQRCodeAvailable))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            VStack(alignment: .leading, spacing: 7) {
-                PairingRouteNoticeLabel(routeNotice: routeNotice)
-                if let remoteRouteExpiresAt {
-                    Label(remoteRouteExpirationText(remoteRouteExpiresAt), systemImage: "timer")
-                        .foregroundStyle(routeNotice.tone.color)
+            if isQRCodeAvailable {
+                VStack(alignment: .leading, spacing: 7) {
+                    PairingRouteNoticeLabel(routeNotice: routeNotice)
+                    if let remoteRouteExpiresAt {
+                        Label(remoteRouteExpirationText(remoteRouteExpiresAt), systemImage: "timer")
+                            .foregroundStyle(routeNotice.tone.color)
+                    }
+                    Label(expirationText(at: date), systemImage: expirationSystemImage(at: date))
+                        .foregroundStyle(expiresAt <= date ? .orange : .secondary)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(Text(pairingQRExpirationAccessibilityLabel()))
+                        .accessibilityValue(Text(expirationText(at: date)))
+                    expirationProgress(at: date)
+                        .accessibilityHidden(true)
                 }
-                Label(expirationText(at: date), systemImage: expirationSystemImage(at: date))
-                    .foregroundStyle(expiresAt <= date ? .orange : .secondary)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(Text(pairingQRExpirationAccessibilityLabel()))
-                    .accessibilityValue(Text(expirationText(at: date)))
-                expirationProgress(at: date)
-                    .accessibilityHidden(true)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .font(.callout)
-            .fixedSize(horizontal: false, vertical: true)
 
             Button {
                 onGenerateNewQR()
@@ -378,13 +471,33 @@ private struct ActivePairingCard: View {
                 Label(NSLocalizedString("Generate New QR", comment: ""), systemImage: "arrow.triangle.2.circlepath")
             }
             .buttonStyle(.bordered)
+            .disabled(!canGenerateNewQR)
             .reportPairingTaskFrame(.renewalAction)
             .accessibilityIdentifier("pairing-renew-action")
-            .help(activePairingQRRenewalActionAccessibilityHint())
-            .accessibilityValue(Text(pairingQRGenerationActionAccessibilityValue(isAvailable: true)))
-            .accessibilityHint(Text(activePairingQRRenewalActionAccessibilityHint()))
+            .help(
+                activePairingQRRenewalActionAccessibilityHint(
+                    isAvailable: canGenerateNewQR,
+                    isPreparing: isPreparingConnectionDetails
+                )
+            )
+            .accessibilityValue(
+                Text(
+                    pairingQRGenerationActionAccessibilityValue(
+                        isAvailable: canGenerateNewQR,
+                        isPreparing: isPreparingConnectionDetails
+                    )
+                )
+            )
+            .accessibilityHint(
+                Text(
+                    activePairingQRRenewalActionAccessibilityHint(
+                        isAvailable: canGenerateNewQR,
+                        isPreparing: isPreparingConnectionDetails
+                    )
+                )
+            )
 
-            if !compact {
+            if !compact && isQRCodeAvailable {
                 Label(NSLocalizedString("Keep AetherLink Runtime open until pairing completes.", comment: ""), systemImage: "display")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -466,7 +579,7 @@ private struct PairingRouteNoticeLabel: View {
     }
 }
 
-private struct QRCodeView: View {
+struct QRCodeView: View {
     let image: NSImage?
 
     var body: some View {
@@ -476,11 +589,18 @@ private struct QRCodeView: View {
                 .resizable()
                 .scaledToFit()
         } else {
-            Image(systemName: "qrcode")
-                .resizable()
-                .scaledToFit()
-                .foregroundStyle(.secondary)
-                .accessibilityLabel(Text(NSLocalizedString("Pairing QR code unavailable", comment: "")))
+            VStack(spacing: 8) {
+                Image(systemName: "qrcode")
+                    .font(.system(size: 44, weight: .regular))
+                Text(NSLocalizedString("Pairing QR code unavailable", comment: ""))
+                    .font(.caption.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.8)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(12)
+            .foregroundStyle(Color.black.opacity(0.68))
         }
     }
 }
@@ -520,15 +640,36 @@ func pairingQRCodeAccessibilityValue(isExpired: Bool, isAvailable: Bool = true) 
     return NSLocalizedString("Scan this QR from AetherLink.", comment: "")
 }
 
+func pairingQRCodeInstructionTitle(isAvailable: Bool) -> String {
+    if !isAvailable {
+        return NSLocalizedString("Pairing QR code unavailable", comment: "")
+    }
+    return NSLocalizedString("Scan this QR from AetherLink.", comment: "")
+}
+
+func pairingQRCodeInstructionDetail(isAvailable: Bool) -> String {
+    if !isAvailable {
+        return NSLocalizedString(
+            "The pairing QR could not be rendered. Wait a moment or generate a new QR to try again.",
+            comment: ""
+        )
+    }
+    return NSLocalizedString(
+        "This QR verifies AetherLink Runtime and includes connection details for pairing or refresh.",
+        comment: ""
+    )
+}
+
 func pairingRouteNoticeAccessibilityLabel() -> String {
     NSLocalizedString("Pairing QR status", comment: "")
 }
 
-func pairingQRCodeAccessibilityHint(remoteRouteExpiresAt: Date? = nil) -> String {
-    let baseHint = NSLocalizedString(
-        "This QR verifies AetherLink Runtime and includes connection details for pairing or refresh.",
-        comment: ""
-    )
+func pairingQRCodeAccessibilityHint(
+    remoteRouteExpiresAt: Date? = nil,
+    isAvailable: Bool = true
+) -> String {
+    let baseHint = pairingQRCodeInstructionDetail(isAvailable: isAvailable)
+    guard isAvailable else { return baseHint }
     guard let remoteRouteExpiresAt else { return baseHint }
     return [baseHint, pairingQRRemoteRouteExpirationText(remoteRouteExpiresAt)].joined(separator: " ")
 }

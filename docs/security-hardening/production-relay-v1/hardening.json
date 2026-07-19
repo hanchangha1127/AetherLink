@@ -5,7 +5,7 @@
   "sourceEvidence": {
     "kind": "source_tree_collection",
     "label": "AetherLink development-relay source snapshot supporting a production security design review",
-    "collectionSha256": "ca0f77f0ae8781e8492d7cca909a69651a8348e130240f1d491687da37774586",
+    "collectionSha256": "2146845a87bebff78ac5d709a36234fd611fa9be1a43750f1fd046d72c4131ad",
     "artifactCount": 17,
     "targetRevision": "abd638482ea01d2b5f4d38eb78be04f734814c71",
     "sourceDrift": "present"
@@ -25,7 +25,7 @@
   },
   "assessment": {
     "outcome": "opportunities_identified",
-    "summary": "The development relay now has tactical source-aware allocation controls, source peer quotas, bounded waiting, and post-proof authenticated identity fairness, while authenticated signed allocation leases and monotonic pair-epoch recovery with immediate deny-only revocation remain selection-gated production hardening opportunities."
+    "summary": "The development relay now has tactical source-aware allocation controls, strict duplicate-key parsing, finite bounded TTL and control-line handling, fresh lease revalidation, Android DNS scope and transport bounds, source peer quotas, bounded waiting, and post-proof authenticated identity fairness, while authenticated signed allocation leases and monotonic pair-epoch recovery with immediate deny-only revocation remain selection-gated production hardening opportunities."
   },
   "constraints": {
     "profile": "balanced",
@@ -54,7 +54,7 @@
           "sourceKind": "source",
           "evidenceId": "E001",
           "path": "apps/macos/CompanionCore/Sources/RemoteRelayAllocationClient.swift",
-          "claim": "Allocation uses a TCP socket and accepts a shape-validated response with no service signature."
+          "claim": "Allocation uses a plain TCP socket; control-line reads are byte-bounded and responses are shape-validated, but the service response has no service signature."
         },
         {
           "claimType": "observed",
@@ -68,7 +68,7 @@
           "sourceKind": "source",
           "evidenceId": "E003",
           "path": "apps/macos/Protocol/Sources/RelayIdentityAuthorization.swift",
-          "claim": "Endpoint signatures prevent unauthorized allocation ownership but do not authenticate the service or conceal bearer allocation credentials."
+          "claim": "Decoded runtime identities re-enter their validating initializer, and endpoint signatures prevent unauthorized allocation ownership, but neither control authenticates the service or conceals bearer allocation credentials."
         },
         {
           "claimType": "observed",
@@ -441,7 +441,7 @@
           "sourceKind": "source",
           "evidenceId": "E007",
           "path": "apps/macos/RelayServerCore/Sources/RelayAllocation.swift",
-          "claim": "The allocation registry enforces generation CAS and consumed-bootstrap tombstones without a pair epoch or revocation counter."
+          "claim": "The allocation registry rejects duplicate keys in allocation and persisted-store JSON, bounds TTL to a finite positive maximum of 86400 seconds with checked epoch conversion, exposes coordinated fresh binding revalidation, and enforces generation CAS plus consumed-bootstrap tombstones, but it has no pair epoch or revocation counter."
         },
         {
           "claimType": "observed",

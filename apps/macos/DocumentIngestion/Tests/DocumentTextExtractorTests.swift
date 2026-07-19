@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 @testable import DocumentIngestion
 
@@ -358,6 +359,159 @@ final class DocumentTextExtractorTests: XCTestCase {
         }
     }
 
+    func testStopsArchiveFanoutAtAggregateTextLimitBeforeReadingLaterEntries() throws {
+        let fileURL = try makeArchive(
+            extension: "epub",
+            entries: [
+                "OEBPS/1.txt": "12345678",
+                "OEBPS/2.txt": "abcdefgh",
+                "OEBPS/3.txt": String(repeating: "z", count: 100),
+            ]
+        )
+        let extractor = DocumentTextExtractor(
+            resourcePolicy: DocumentIngestionResourcePolicy(
+                maxArchiveEntryBytes: 64,
+                maxExtractedTextCharacters: 12
+            )
+        )
+
+        XCTAssertThrowsError(try extractor.extractText(from: fileURL)) { error in
+            XCTAssertEqual(
+                error as? DocumentIngestionError,
+                .resourceLimitExceeded(resource: "extracted text", limit: 12, actual: 17)
+            )
+        }
+    }
+
+    func testRejectsCombiningMarkPlainTextByAggregateUTF8ByteLimit() throws {
+        let combiningText = "a" + String(repeating: "\u{0301}", count: 8)
+        XCTAssertEqual(combiningText.count, 1)
+        XCTAssertEqual(combiningText.utf8.count, 17)
+        let fileURL = try writeText(combiningText, extension: "txt")
+        let extractor = DocumentTextExtractor(
+            resourcePolicy: DocumentIngestionResourcePolicy(
+                maxExtractedTextCharacters: 1,
+                maxExtractedTextUTF8Bytes: 8
+            )
+        )
+
+        XCTAssertThrowsError(try extractor.extractText(from: fileURL)) { error in
+            XCTAssertEqual(
+                error as? DocumentIngestionError,
+                .resourceLimitExceeded(
+                    resource: "extracted text UTF-8 bytes",
+                    limit: 8,
+                    actual: 17
+                )
+            )
+        }
+    }
+
+    func testRejectsCombiningMarkArchiveTextByAggregateUTF8ByteLimit() throws {
+        let combiningText = "a" + String(repeating: "\u{0301}", count: 8)
+        XCTAssertEqual(combiningText.count, 1)
+        XCTAssertEqual(combiningText.utf8.count, 17)
+        let fileURL = try makeArchive(
+            extension: "epub",
+            entries: ["OEBPS/combining.txt": combiningText]
+        )
+        let extractor = DocumentTextExtractor(
+            resourcePolicy: DocumentIngestionResourcePolicy(
+                maxExtractedTextCharacters: 1,
+                maxExtractedTextUTF8Bytes: 8
+            )
+        )
+
+        XCTAssertThrowsError(try extractor.extractText(from: fileURL)) { error in
+            XCTAssertEqual(
+                error as? DocumentIngestionError,
+                .resourceLimitExceeded(
+                    resource: "extracted text UTF-8 bytes",
+                    limit: 8,
+                    actual: 17
+                )
+            )
+        }
+    }
+
+    func testBoundedProcessDrainsLargeStandardErrorWhileReadingOutput() throws {
+        let script = """
+        import sys
+        sys.stderr.buffer.write(b"x" * (2 * 1024 * 1024))
+        sys.stderr.flush()
+        sys.stdout.buffer.write(b"done")
+        """
+
+        let result = try runBoundedDocumentProcess(
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["python3", "-c", script],
+            outputResource: "test process output",
+            outputLimit: 16,
+            timeout: 5
+        )
+
+        XCTAssertEqual(result.terminationStatus, 0)
+        XCTAssertEqual(String(decoding: result.standardOutput, as: UTF8.self), "done")
+    }
+
+    func testBoundedProcessKillsAndReapsAChildThatIgnoresTermination() throws {
+        let script = """
+        import signal
+        import time
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        time.sleep(60)
+        """
+        let startedAt = Date()
+
+        XCTAssertThrowsError(
+            try runBoundedDocumentProcess(
+                executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+                arguments: ["python3", "-c", script],
+                outputResource: "test process timeout",
+                outputLimit: 16,
+                timeout: 0.05
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? DocumentProcessError,
+                .timedOut("test process timeout")
+            )
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(startedAt), 3)
+    }
+
+    func testBoundedProcessesShareOneCumulativeMonotonicDeadline() throws {
+        let clock = MonotonicTimeBox(1_000)
+        let deadline = try DocumentProcessDeadline(
+            timeout: 1,
+            nowNanoseconds: { clock.get() }
+        )
+        let first = try runBoundedDocumentProcess(
+            executableURL: URL(fileURLWithPath: "/usr/bin/true"),
+            arguments: [],
+            outputResource: "first process",
+            outputLimit: 16,
+            deadline: deadline
+        )
+        XCTAssertEqual(first.terminationStatus, 0)
+
+        clock.set(1_000_001_000)
+        XCTAssertThrowsError(
+            try runBoundedDocumentProcess(
+                executableURL: URL(fileURLWithPath: "/usr/bin/true"),
+                arguments: [],
+                outputResource: "second process",
+                outputLimit: 16,
+                deadline: deadline
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? DocumentProcessError,
+                .timedOut("second process")
+            )
+        }
+    }
+
     func testIgnoresPathShapedArchiveEntriesBeforeExtraction() throws {
         let oversizedName = "OEBPS/" +
             String(repeating: "a", count: documentIngestionArchiveEntryNameCharacterLimitCeiling) +
@@ -410,7 +564,8 @@ final class DocumentTextExtractorTests: XCTestCase {
                 maxArchiveEntries: documentIngestionResourcePolicyMaxArchiveEntriesCeiling,
                 maxArchiveEntryBytes: documentIngestionResourcePolicyMaxArchiveEntryBytesCeiling,
                 maxConverterOutputBytes: documentIngestionResourcePolicyMaxConverterOutputBytesCeiling,
-                maxExtractedTextCharacters: documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling
+                maxExtractedTextCharacters: documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling,
+                maxExtractedTextUTF8Bytes: documentIngestionResourcePolicyMaxExtractedTextUTF8BytesCeiling
             )
         )
 
@@ -464,6 +619,14 @@ final class DocumentTextExtractorTests: XCTestCase {
                 ),
                 .invalidResourcePolicy(
                     "maxExtractedTextCharacters must be less than or equal to \(documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling)"
+                )
+            ),
+            (
+                DocumentIngestionResourcePolicy(
+                    maxExtractedTextUTF8Bytes: documentIngestionResourcePolicyMaxExtractedTextUTF8BytesCeiling + 1
+                ),
+                .invalidResourcePolicy(
+                    "maxExtractedTextUTF8Bytes must be less than or equal to \(documentIngestionResourcePolicyMaxExtractedTextUTF8BytesCeiling)"
                 )
             ),
             (
@@ -521,6 +684,10 @@ final class DocumentTextExtractorTests: XCTestCase {
             (
                 DocumentIngestionResourcePolicy(maxExtractedTextCharacters: 0),
                 .invalidResourcePolicy("maxExtractedTextCharacters must be greater than zero")
+            ),
+            (
+                DocumentIngestionResourcePolicy(maxExtractedTextUTF8Bytes: 0),
+                .invalidResourcePolicy("maxExtractedTextUTF8Bytes must be greater than zero")
             )
         ]
 
@@ -531,6 +698,108 @@ final class DocumentTextExtractorTests: XCTestCase {
                 XCTAssertEqual(error as? DocumentIngestionError, expectedError)
             }
         }
+    }
+
+    func testPrivateSnapshotAcceptsExactInputLimitAndRejectsLimitPlusOne() throws {
+        let exactURL = try writeData(Data("12345678".utf8), extension: "txt")
+        let oversizedURL = try writeData(Data("123456789".utf8), extension: "txt")
+        let extractor = DocumentTextExtractor(
+            resourcePolicy: DocumentIngestionResourcePolicy(maxInputBytes: 8)
+        )
+
+        XCTAssertEqual(try extractor.extractText(from: exactURL).text, "12345678")
+        XCTAssertThrowsError(try extractor.extractText(from: oversizedURL)) { error in
+            XCTAssertEqual(
+                error as? DocumentIngestionError,
+                .resourceLimitExceeded(resource: "input file", limit: 8, actual: 9)
+            )
+        }
+    }
+
+    func testPrivateSnapshotRejectsFileGrowthBeyondLimitAfterDescriptorValidation() throws {
+        let fileURL = try writeData(Data("1234".utf8), extension: "txt")
+        let extractor = DocumentTextExtractor(
+            resourcePolicy: DocumentIngestionResourcePolicy(maxInputBytes: 4),
+            snapshotHooks: DocumentInputSnapshotHooks(
+                didOpenSourceDescriptor: { sourceURL in
+                    let handle = try FileHandle(forWritingTo: sourceURL)
+                    defer { try? handle.close() }
+                    try handle.seekToEnd()
+                    try handle.write(contentsOf: Data("5".utf8))
+                }
+            )
+        )
+
+        XCTAssertThrowsError(try extractor.extractText(from: fileURL)) { error in
+            XCTAssertEqual(
+                error as? DocumentIngestionError,
+                .resourceLimitExceeded(resource: "input file", limit: 4, actual: 5)
+            )
+        }
+    }
+
+    func testPrivateSnapshotRejectsFIFOWithoutBlocking() throws {
+        let fifoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("txt")
+        XCTAssertEqual(Darwin.mkfifo(fifoURL.path, 0o600), 0)
+        defer { Darwin.unlink(fifoURL.path) }
+        let startedAt = Date()
+
+        XCTAssertThrowsError(try DocumentTextExtractor().extractText(from: fifoURL)) { error in
+            XCTAssertEqual(error as? DocumentInputValidationError, .unsafeInputFile(fifoURL.path))
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(startedAt), 1)
+    }
+
+    func testPrivateSnapshotRejectsSymbolicLinkInput() throws {
+        let targetURL = try writeText("private target", extension: "txt")
+        let linkURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("txt")
+        try FileManager.default.createSymbolicLink(at: linkURL, withDestinationURL: targetURL)
+        defer { try? FileManager.default.removeItem(at: linkURL) }
+
+        XCTAssertThrowsError(try DocumentTextExtractor().extractText(from: linkURL)) { error in
+            XCTAssertEqual(error as? DocumentInputValidationError, .unsafeInputFile(linkURL.path))
+        }
+    }
+
+    func testArchiveHelpersReadValidatedSnapshotAfterSourcePathReplacement() throws {
+        let originalArchive = try makeArchive(
+            extension: "docx",
+            entries: [
+                "word/document.xml": "<document><body>ORIGINAL SNAPSHOT</body></document>"
+            ]
+        )
+        let replacementArchive = try makeArchive(
+            extension: "docx",
+            entries: [
+                "word/document.xml": "<document><body>REPLACEMENT PATH</body></document>"
+            ]
+        )
+        let sourceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("docx")
+        try FileManager.default.copyItem(at: originalArchive, to: sourceURL)
+        defer { try? FileManager.default.removeItem(at: sourceURL) }
+        let displacedURL = sourceURL.deletingPathExtension()
+            .appendingPathExtension("opened.docx")
+        defer { try? FileManager.default.removeItem(at: displacedURL) }
+        let replacementData = try Data(contentsOf: replacementArchive)
+        let extractor = DocumentTextExtractor(
+            snapshotHooks: DocumentInputSnapshotHooks(
+                didOpenSourceDescriptor: { openedURL in
+                    try FileManager.default.moveItem(at: openedURL, to: displacedURL)
+                    try replacementData.write(to: openedURL)
+                }
+            )
+        )
+
+        let document = try extractor.extractText(from: sourceURL)
+
+        XCTAssertTrue(document.text.contains("ORIGINAL SNAPSHOT"))
+        XCTAssertFalse(document.text.contains("REPLACEMENT PATH"))
     }
 
     private func writeText(_ text: String, extension pathExtension: String) throws -> URL {
@@ -620,5 +889,26 @@ final class DocumentTextExtractorTests: XCTestCase {
         process.waitUntilExit()
         XCTAssertEqual(process.terminationStatus, 0)
         return archiveURL
+    }
+}
+
+private final class MonotonicTimeBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: UInt64
+
+    init(_ value: UInt64) {
+        self.value = value
+    }
+
+    func set(_ value: UInt64) {
+        lock.lock()
+        self.value = value
+        lock.unlock()
+    }
+
+    func get() -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
     }
 }

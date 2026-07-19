@@ -16,6 +16,22 @@ public struct RuntimeChatDeletedSessionPruneResult: Equatable, Sendable {
     }
 }
 
+struct SQLiteRuntimeChatEventStoreAppendInstrumentation: Sendable {
+    var didDecodeStoredEvent: @Sendable () -> Void
+    var didRunFullHistoryRepair: @Sendable () -> Void
+    var didInsertSearchDocument: @Sendable () -> Void
+
+    init(
+        didDecodeStoredEvent: @escaping @Sendable () -> Void = {},
+        didRunFullHistoryRepair: @escaping @Sendable () -> Void = {},
+        didInsertSearchDocument: @escaping @Sendable () -> Void = {}
+    ) {
+        self.didDecodeStoredEvent = didDecodeStoredEvent
+        self.didRunFullHistoryRepair = didRunFullHistoryRepair
+        self.didInsertSearchDocument = didInsertSearchDocument
+    }
+}
+
 public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecked Sendable {
     private let databaseURL: URL
     private let legacyJSONLFileURL: URL?
@@ -24,6 +40,7 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
     private let semanticEmbeddingRowLimitPerOwnerModel: Int
     private let legacyJSONLCompactionWillReplace: (() -> Void)?
     private let calibrationReportStoreLimits: RuntimeChatCompactionCalibrationStoreLimits
+    private let appendInstrumentation: SQLiteRuntimeChatEventStoreAppendInstrumentation?
     private let lock = NSLock()
 
     public convenience init(
@@ -35,7 +52,8 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
             databaseURL: databaseURL,
             legacyJSONLFileURL: legacyJSONLFileURL,
             semanticEmbeddingRowLimitPerOwnerModel: semanticEmbeddingRowLimitPerOwnerModel,
-            legacyJSONLCompactionWillReplace: nil
+            legacyJSONLCompactionWillReplace: nil,
+            appendInstrumentation: nil
         )
     }
 
@@ -48,7 +66,8 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
             databaseURL: databaseURL,
             legacyJSONLFileURL: legacyJSONLFileURL,
             semanticEmbeddingRowLimitPerOwnerModel: 10_000,
-            legacyJSONLCompactionWillReplace: legacyJSONLCompactionWillReplace
+            legacyJSONLCompactionWillReplace: legacyJSONLCompactionWillReplace,
+            appendInstrumentation: nil
         )
     }
 
@@ -61,7 +80,21 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
             legacyJSONLFileURL: nil,
             semanticEmbeddingRowLimitPerOwnerModel: 10_000,
             legacyJSONLCompactionWillReplace: nil,
-            calibrationReportStoreLimits: calibrationReportStoreLimits
+            calibrationReportStoreLimits: calibrationReportStoreLimits,
+            appendInstrumentation: nil
+        )
+    }
+
+    convenience init(
+        databaseURL: URL,
+        appendInstrumentation: SQLiteRuntimeChatEventStoreAppendInstrumentation
+    ) {
+        self.init(
+            databaseURL: databaseURL,
+            legacyJSONLFileURL: nil,
+            semanticEmbeddingRowLimitPerOwnerModel: 10_000,
+            legacyJSONLCompactionWillReplace: nil,
+            appendInstrumentation: appendInstrumentation
         )
     }
 
@@ -70,13 +103,15 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         legacyJSONLFileURL: URL?,
         semanticEmbeddingRowLimitPerOwnerModel: Int,
         legacyJSONLCompactionWillReplace: (() -> Void)?,
-        calibrationReportStoreLimits: RuntimeChatCompactionCalibrationStoreLimits = .production
+        calibrationReportStoreLimits: RuntimeChatCompactionCalibrationStoreLimits = .production,
+        appendInstrumentation: SQLiteRuntimeChatEventStoreAppendInstrumentation?
     ) {
         self.databaseURL = databaseURL
         self.legacyJSONLFileURL = legacyJSONLFileURL
         self.semanticEmbeddingRowLimitPerOwnerModel = max(1, semanticEmbeddingRowLimitPerOwnerModel)
         self.legacyJSONLCompactionWillReplace = legacyJSONLCompactionWillReplace
         self.calibrationReportStoreLimits = calibrationReportStoreLimits
+        self.appendInstrumentation = appendInstrumentation
         self.encoder = JSONEncoder()
         self.encoder.dateEncodingStrategy = .iso8601
         self.encoder.outputFormatting = [.sortedKeys]
@@ -170,26 +205,31 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
 
         return try lock.withLock {
             try withDatabase { database in
+                try ensureIncrementalAppendStateUnlocked(database)
                 let scopedOwnerDeviceID = ownerDeviceID.sqliteNormalizedOwnerDeviceID
-                let candidateIDs = try ftsCandidateSessionIDsUnlocked(
+                let candidateIDs = try searchCandidateSessionIDsUnlocked(
                     database,
                     ownerDeviceID: scopedOwnerDeviceID,
                     query: searchQuery
                 )
                 guard !candidateIDs.isEmpty else { return [] }
 
-                let ownerEvents = try readEventsUnlocked(database, matchingOwnerDeviceID: scopedOwnerDeviceID)
-                let candidateIDSet = Set(candidateIDs)
+                let candidateEvents = try readEventsUnlocked(
+                    database,
+                    matchingOwnerDeviceID: scopedOwnerDeviceID,
+                    sessionIDs: candidateIDs
+                )
+                let eventsBySessionID = Dictionary(grouping: candidateEvents, by: \RuntimeChatStoredEvent.sessionID)
                 let candidates = try JSONLRuntimeChatEventStore.sessions(
-                    from: ownerEvents,
+                    from: candidateEvents,
                     limit: Int.max,
                     includeArchived: includeArchived
                 )
-                .filter { candidateIDSet.contains($0.sessionID) }
                 var matches: [(session: RuntimeChatStoredSession, match: RuntimeChatSessionSearchMatch)] = []
                 for session in candidates {
+                    let sessionEvents = eventsBySessionID[session.sessionID] ?? []
                     let messages = JSONLRuntimeChatEventStore.messages(
-                        from: ownerEvents,
+                        from: sessionEvents,
                         sessionID: session.sessionID,
                         limit: Int.max
                     )
@@ -499,9 +539,18 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         guard limit > 0 else { return [] }
         return try lock.withLock {
             try withDatabase { database in
-                JSONLRuntimeChatEventStore.messages(
-                    from: try readEventsUnlocked(database),
-                    sessionID: sessionID,
+                let events = try readEventsUnlocked(database)
+                let keys = JSONLRuntimeChatEventStore.sessionProjectionKeys(
+                    from: events,
+                    sessionID: sessionID
+                )
+                guard keys.count <= 1 else {
+                    throw RuntimeChatHostWideProjectionError.ambiguousSessionID(sessionID)
+                }
+                guard let key = keys.first else { return [] }
+                return JSONLRuntimeChatEventStore.messages(
+                    from: events,
+                    key: key,
                     limit: limit
                 )
             }
@@ -653,28 +702,29 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
     private func appendUnlocked(_ event: RuntimeChatStoredEvent, database: OpaquePointer) throws {
         let sanitized = event.sanitizedForStorage()
         try JSONLRuntimeChatEventStore.validateStoredEvent(sanitized, line: 0)
-        if sanitized.compactionResolution != nil {
-            let existingEvents = try readEventsUnlocked(database)
-            try JSONLRuntimeChatEventStore.validateCompactionResolutionBindings(
-                existingEvents.enumerated().map { (line: $0.offset + 1, event: $0.element) }
-                    + [(line: 0, event: sanitized)]
-            )
-        }
+        try repairIncrementalAppendStateIfNeededUnlocked(database)
+        try validateCompactionResolutionAppendUnlocked(sanitized, database: database)
         if try eventExistsUnlocked(database, eventID: sanitized.id) {
             throw SQLiteRuntimeChatEventStoreError("Runtime chat SQLite event already exists: \(sanitized.id)")
         }
-        try insertEventUnlocked(sanitized, database: database, skipExisting: false)
-        let validatedEvents = try readEventsUnlocked(database)
-        try refreshSearchIndexUnlocked(
+        guard let sequence = try insertEventUnlocked(
+            sanitized,
+            database: database,
+            skipExisting: false
+        ) else {
+            throw SQLiteRuntimeChatEventStoreError("Runtime chat SQLite event was not inserted: \(sanitized.id)")
+        }
+        try insertIncrementalSearchDocumentUnlocked(
             database,
-            affectedKeys: [RuntimeChatFTSSessionKey(event: sanitized)],
-            validatedEvents: validatedEvents
+            sequence: sequence,
+            event: sanitized
         )
         try deleteSemanticEmbeddingsUnlocked(
             database,
             ownerDeviceID: sanitized.ownerDeviceID.sqliteNormalizedOwnerDeviceID,
             sessionID: sanitized.sessionID
         )
+        try markIncrementalAppendStateValidatedUnlocked(database)
     }
 
     private func appendBatchUnlocked(
@@ -685,26 +735,88 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         let sanitizedEvents = events.map { $0.sanitizedForStorage() }
         for event in sanitizedEvents {
             try JSONLRuntimeChatEventStore.validateStoredEvent(event, line: 0)
+        }
+        try repairIncrementalAppendStateIfNeededUnlocked(database)
+        for event in sanitizedEvents {
+            try validateCompactionResolutionAppendUnlocked(event, database: database)
             if try eventExistsUnlocked(database, eventID: event.id) {
                 throw SQLiteRuntimeChatEventStoreError(
                     "Runtime chat SQLite event already exists: \(event.id)"
                 )
             }
-            try insertEventUnlocked(event, database: database, skipExisting: false)
-        }
-        let validatedEvents = try readEventsUnlocked(database)
-        try refreshSearchIndexUnlocked(
-            database,
-            affectedKeys: Set(sanitizedEvents.map(RuntimeChatFTSSessionKey.init(event:))),
-            validatedEvents: validatedEvents
-        )
-        for event in sanitizedEvents {
+            guard let sequence = try insertEventUnlocked(
+                event,
+                database: database,
+                skipExisting: false
+            ) else {
+                throw SQLiteRuntimeChatEventStoreError(
+                    "Runtime chat SQLite event was not inserted: \(event.id)"
+                )
+            }
+            try insertIncrementalSearchDocumentUnlocked(
+                database,
+                sequence: sequence,
+                event: event
+            )
             try deleteSemanticEmbeddingsUnlocked(
                 database,
                 ownerDeviceID: event.ownerDeviceID.sqliteNormalizedOwnerDeviceID,
                 sessionID: event.sessionID
             )
         }
+        try markIncrementalAppendStateValidatedUnlocked(database)
+    }
+
+    private func validateCompactionResolutionAppendUnlocked(
+        _ event: RuntimeChatStoredEvent,
+        database: OpaquePointer
+    ) throws {
+        guard event.compactionResolution != nil else { return }
+        let key = RuntimeChatCompactionResolutionBindingKey(event: event)
+        guard try !compactionTerminalBindingExistsUnlocked(database, key: key) else {
+            throw RuntimeChatEventStoreError.corruptEventLog(
+                line: 0,
+                reason: "chat compaction binding has duplicate terminal resolution"
+            )
+        }
+
+        var validationEvents: [(line: Int, event: RuntimeChatStoredEvent)] = []
+        if let request = try latestRequestBindingUnlocked(
+            database,
+            key: key,
+            beforeSequence: Int64.max
+        ) {
+            validationEvents.append((line: Int(request.sequence), event: request.event))
+        }
+        validationEvents.append((line: 0, event: event))
+        try JSONLRuntimeChatEventStore.validateCompactionResolutionBindings(validationEvents)
+    }
+
+    private func compactionTerminalBindingExistsUnlocked(
+        _ database: OpaquePointer,
+        key: RuntimeChatCompactionResolutionBindingKey
+    ) throws -> Bool {
+        let statement = try Self.prepare(
+            database,
+            """
+            SELECT 1
+            FROM runtime_chat_events
+            WHERE kind IN ('done', 'cancelled', 'error')
+              AND COALESCE(NULLIF(TRIM(owner_device_id), ''), '') = ?
+              AND session_id = ?
+              AND request_id = ?
+              AND json_type(event_json, '$.compaction_resolution') IS NOT NULL
+            LIMIT 1
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        try Self.bindText(key.ownerDeviceID ?? "", to: statement, at: 1)
+        try Self.bindText(key.sessionID, to: statement, at: 2)
+        try Self.bindText(key.requestID, to: statement, at: 3)
+        let result = sqlite3_step(statement)
+        if result == SQLITE_ROW { return true }
+        if result == SQLITE_DONE { return false }
+        throw Self.failure(database, "Could not check runtime chat compaction terminal binding.")
     }
 
     @discardableResult
@@ -712,20 +824,20 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         _ event: RuntimeChatStoredEvent,
         database: OpaquePointer,
         skipExisting: Bool
-    ) throws -> Bool {
+    ) throws -> Int64? {
         let ownerDeviceID = event.ownerDeviceID.sqliteNormalizedOwnerDeviceID
         if try retentionTombstoneExistsUnlocked(
             database,
             ownerDeviceID: ownerDeviceID,
             sessionID: event.sessionID
         ) {
-            if skipExisting { return false }
+            if skipExisting { return nil }
             throw SQLiteRuntimeChatEventStoreError(
                 "Runtime chat SQLite session was pruned by retention: \(event.sessionID)"
             )
         }
         if skipExisting, try eventExistsUnlocked(database, eventID: event.id) {
-            return false
+            return nil
         }
         let data = try encoder.encode(event)
         guard let eventJSON = String(data: data, encoding: .utf8) else {
@@ -757,7 +869,7 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         try Self.bindText(event.model, to: statement, at: 7)
         try Self.bindText(eventJSON, to: statement, at: 8)
         try Self.stepDone(statement, database: database)
-        return true
+        return sqlite3_last_insert_rowid(database)
     }
 
     private func readEventsUnlocked(_ database: OpaquePointer) throws -> [RuntimeChatStoredEvent] {
@@ -851,6 +963,7 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
             }
             let data = Data(String(cString: text).utf8)
             do {
+                appendInstrumentation?.didDecodeStoredEvent()
                 let decoded = try decoder.decode(RuntimeChatStoredEvent.self, from: data)
                 let event = JSONLRuntimeChatEventStore.projectingLegacyTitleForReplay(decoded)
                 try JSONLRuntimeChatEventStore.validateStoredEvent(event, line: line)
@@ -1133,6 +1246,7 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
             )
         }
         do {
+            appendInstrumentation?.didDecodeStoredEvent()
             let decoded = try decoder.decode(
                 RuntimeChatStoredEvent.self,
                 from: Data(String(cString: text).utf8)
@@ -1150,97 +1264,168 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         }
     }
 
-    private func rebuildSearchIndexUnlocked(_ database: OpaquePointer) throws {
+    private func ensureIncrementalAppendStateUnlocked(_ database: OpaquePointer) throws {
+        let state = try incrementalAppendStateUnlocked(database)
+        guard !state.isCurrent(searchProjectionVersion: Self.incrementalSearchProjectionVersion) else { return }
+
+        try Self.execute(database, "BEGIN IMMEDIATE")
+        do {
+            try repairIncrementalAppendStateIfNeededUnlocked(database)
+            try Self.execute(database, "COMMIT")
+        } catch {
+            try? Self.execute(database, "ROLLBACK")
+            throw error
+        }
+    }
+
+    private func repairIncrementalAppendStateIfNeededUnlocked(_ database: OpaquePointer) throws {
+        let state = try incrementalAppendStateUnlocked(database)
+        guard !state.isCurrent(searchProjectionVersion: Self.incrementalSearchProjectionVersion) else { return }
+
+        appendInstrumentation?.didRunFullHistoryRepair()
+        let indexedEvents = try readIndexedEventsForIncrementalRepairUnlocked(database)
         try Self.execute(database, "DELETE FROM runtime_chat_session_fts")
-        let events = try readEventsUnlocked(database)
-        let eventsByKey = searchEventsByKey(events)
-        for key in Self.sortedSearchKeys(eventsByKey.keys) {
-            try insertSearchRowUnlocked(
+        try Self.execute(database, "DELETE FROM runtime_chat_event_fts_v2")
+        for indexedEvent in indexedEvents {
+            try insertIncrementalSearchDocumentUnlocked(
                 database,
-                key: key,
-                events: eventsByKey[key] ?? []
+                sequence: indexedEvent.sequence,
+                event: indexedEvent.event
             )
         }
+        try markIncrementalAppendStateValidatedUnlocked(database)
     }
 
-    private func refreshSearchIndexUnlocked(
-        _ database: OpaquePointer,
-        affectedKeys: Set<RuntimeChatFTSSessionKey>,
-        validatedEvents: [RuntimeChatStoredEvent]
-    ) throws {
-        guard !affectedKeys.isEmpty else { return }
-        let eventsByKey = searchEventsByKey(validatedEvents, including: affectedKeys)
-        for key in Self.sortedSearchKeys(affectedKeys) {
-            try deleteSearchRowUnlocked(
-                database,
-                ownerDeviceID: key.ownerDeviceID,
-                sessionID: key.sessionID
-            )
-            try insertSearchRowUnlocked(
-                database,
-                key: key,
-                events: eventsByKey[key] ?? []
-            )
-        }
-    }
-
-    private func searchEventsByKey(
-        _ events: [RuntimeChatStoredEvent],
-        including includedKeys: Set<RuntimeChatFTSSessionKey>? = nil
-    ) -> [RuntimeChatFTSSessionKey: [RuntimeChatStoredEvent]] {
-        var eventsByKey: [RuntimeChatFTSSessionKey: [RuntimeChatStoredEvent]] = [:]
-        for event in events {
-            let key = RuntimeChatFTSSessionKey(event: event)
-            guard includedKeys?.contains(key) ?? true else { continue }
-            eventsByKey[key, default: []].append(event)
-        }
-        return eventsByKey
-    }
-
-    private static func sortedSearchKeys<S: Sequence>(
-        _ keys: S
-    ) -> [RuntimeChatFTSSessionKey] where S.Element == RuntimeChatFTSSessionKey {
-        keys.sorted { lhs, rhs in
-            let lhsOwner = lhs.ownerDeviceID ?? ""
-            let rhsOwner = rhs.ownerDeviceID ?? ""
-            if lhsOwner != rhsOwner { return lhsOwner < rhsOwner }
-            return lhs.sessionID < rhs.sessionID
-        }
-    }
-
-    private func insertSearchRowUnlocked(
-        _ database: OpaquePointer,
-        key: RuntimeChatFTSSessionKey,
-        events: [RuntimeChatStoredEvent]
-    ) throws {
-        guard let session = try JSONLRuntimeChatEventStore.sessions(
-            from: events,
-            limit: 1,
-            includeArchived: true
-        ).first else { return }
-        let messages = JSONLRuntimeChatEventStore.messages(
-            from: events,
-            sessionID: key.sessionID,
-            limit: Int.max
-        )
-        try insertSearchRowUnlocked(
-            database,
-            ownerDeviceID: key.ownerDeviceID,
-            session: session,
-            messages: messages
-        )
-    }
-
-    private func insertSearchRowUnlocked(
-        _ database: OpaquePointer,
-        ownerDeviceID: String?,
-        session: RuntimeChatStoredSession,
-        messages: [RuntimeChatStoredMessage]
-    ) throws {
+    private func incrementalAppendStateUnlocked(
+        _ database: OpaquePointer
+    ) throws -> RuntimeChatIncrementalAppendState {
         let statement = try Self.prepare(
             database,
             """
-            INSERT INTO runtime_chat_session_fts(
+            SELECT mutation_revision, validated_revision, search_projection_version
+            FROM runtime_chat_append_state
+            WHERE singleton = 1
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW else {
+            throw SQLiteRuntimeChatEventStoreError("Runtime chat incremental append state is missing.")
+        }
+        return RuntimeChatIncrementalAppendState(
+            mutationRevision: sqlite3_column_int64(statement, 0),
+            validatedRevision: sqlite3_column_int64(statement, 1),
+            searchProjectionVersion: Int(sqlite3_column_int64(statement, 2))
+        )
+    }
+
+    private func markIncrementalAppendStateValidatedUnlocked(_ database: OpaquePointer) throws {
+        let statement = try Self.prepare(
+            database,
+            """
+            UPDATE runtime_chat_append_state
+            SET validated_revision = mutation_revision,
+                search_projection_version = ?
+            WHERE singleton = 1
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        try Self.bindInt(Self.incrementalSearchProjectionVersion, to: statement, at: 1)
+        try Self.stepDone(statement, database: database)
+        guard sqlite3_changes(database) == 1 else {
+            throw SQLiteRuntimeChatEventStoreError("Could not validate runtime chat incremental append state.")
+        }
+    }
+
+    private func readIndexedEventsForIncrementalRepairUnlocked(
+        _ database: OpaquePointer
+    ) throws -> [(sequence: Int64, event: RuntimeChatStoredEvent)] {
+        let statement = try Self.prepare(
+            database,
+            "SELECT sequence, event_json FROM runtime_chat_events ORDER BY sequence ASC"
+        )
+        defer { sqlite3_finalize(statement) }
+        var events: [(sequence: Int64, event: RuntimeChatStoredEvent)] = []
+        while true {
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { break }
+            guard result == SQLITE_ROW else {
+                throw Self.failure(database, "Could not repair runtime chat append state.")
+            }
+            let sequence = sqlite3_column_int64(statement, 0)
+            events.append((
+                sequence: sequence,
+                event: try decodeStoredEvent(
+                    from: statement,
+                    column: 1,
+                    line: Int(sequence)
+                )
+            ))
+        }
+        try JSONLRuntimeChatEventStore.validateCompactionResolutionBindings(
+            events.map { (line: Int($0.sequence), event: $0.event) }
+        )
+        return events
+    }
+
+    private func insertIncrementalSearchDocumentUnlocked(
+        _ database: OpaquePointer,
+        sequence: Int64,
+        event: RuntimeChatStoredEvent
+    ) throws {
+        let requestMessages: [RuntimeChatStoredMessage]
+        if event.kind == .request {
+            requestMessages = JSONLRuntimeChatEventStore.messages(
+                from: [event],
+                key: RuntimeChatSessionProjectionKey(event: event),
+                limit: Int.max
+            )
+        } else {
+            requestMessages = []
+        }
+        let title = [event.title, "New chat"]
+            .compactMap { $0?.runtimeSearchSnippetText }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        let status: String
+        switch event.kind {
+        case .archived:
+            status = "archived"
+        case .deleted:
+            status = "deleted"
+        default:
+            status = "active"
+        }
+        let metadata = [
+            event.kind.rawValue,
+            event.finishReason,
+            event.error?.code,
+        ]
+        .compactMap { $0?.runtimeSearchSnippetText }
+        .filter { !$0.isEmpty }
+        .joined(separator: " ")
+        let transcript = (
+            requestMessages.map(\.content)
+                + [event.delta].compactMap { $0 }
+        )
+        .map(\.runtimeSearchSnippetText)
+        .filter { !$0.isEmpty }
+        .joined(separator: " ")
+        let reasoning = event.reasoningDelta?.runtimeSearchSnippetText ?? ""
+        let attachment = requestMessages
+            .flatMap(\.attachments)
+            .flatMap { attachment in
+                [attachment.name, attachment.mimeType, attachment.text]
+            }
+            .compactMap { $0?.runtimeSearchSnippetText }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
+        let statement = try Self.prepare(
+            database,
+            """
+            INSERT INTO runtime_chat_event_fts_v2(
+                rowid,
+                event_id,
                 owner_key,
                 session_id,
                 title,
@@ -1251,78 +1436,139 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
                 transcript,
                 reasoning,
                 attachment
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
         )
         defer { sqlite3_finalize(statement) }
-        let metadata = [
-            session.lastEvent,
-            session.lastFinishReason,
-            session.lastErrorCode
-        ]
-        .compactMap { $0?.runtimeSearchSnippetText }
-        .joined(separator: " ")
-        let transcript = messages
-            .map(\.content.runtimeSearchSnippetText)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-        let reasoning = messages
-            .compactMap(\.reasoning?.runtimeSearchSnippetText)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-        let attachment = messages
-            .flatMap(\.attachments)
-            .flatMap { attachment in
-                [
-                    attachment.name?.runtimeSearchSnippetText,
-                    attachment.mimeType.runtimeSearchSnippetText,
-                    attachment.text?.runtimeSearchSnippetText
-                ]
-            }
-            .compactMap { $0 }
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-
-        try Self.bindText(Self.ownerKey(ownerDeviceID), to: statement, at: 1)
-        try Self.bindText(session.sessionID, to: statement, at: 2)
-        try Self.bindText(session.title.runtimeSearchSnippetText, to: statement, at: 3)
-        try Self.bindText(session.sessionID.runtimeSearchSnippetText, to: statement, at: 4)
-        try Self.bindText(session.model.runtimeSearchSnippetText, to: statement, at: 5)
-        try Self.bindText(session.status.runtimeSearchSnippetText, to: statement, at: 6)
-        try Self.bindText(metadata, to: statement, at: 7)
-        try Self.bindText(transcript, to: statement, at: 8)
-        try Self.bindText(reasoning, to: statement, at: 9)
-        try Self.bindText(attachment, to: statement, at: 10)
+        guard sqlite3_bind_int64(statement, 1, sequence) == SQLITE_OK else {
+            throw Self.failure(database, "Could not bind runtime chat search sequence.")
+        }
+        try Self.bindText(event.id, to: statement, at: 2)
+        try Self.bindText(Self.ownerKey(event.ownerDeviceID.sqliteNormalizedOwnerDeviceID), to: statement, at: 3)
+        try Self.bindText(event.sessionID, to: statement, at: 4)
+        try Self.bindText(title.normalizedRuntimeSearchText, to: statement, at: 5)
+        try Self.bindText(
+            event.sessionID.runtimeSearchSnippetText.normalizedRuntimeSearchText,
+            to: statement,
+            at: 6
+        )
+        try Self.bindText(
+            event.model.runtimeSearchSnippetText.normalizedRuntimeSearchText,
+            to: statement,
+            at: 7
+        )
+        try Self.bindText(status.normalizedRuntimeSearchText, to: statement, at: 8)
+        try Self.bindText(metadata.normalizedRuntimeSearchText, to: statement, at: 9)
+        try Self.bindText(transcript.normalizedRuntimeSearchText, to: statement, at: 10)
+        try Self.bindText(reasoning.normalizedRuntimeSearchText, to: statement, at: 11)
+        try Self.bindText(attachment.normalizedRuntimeSearchText, to: statement, at: 12)
         try Self.stepDone(statement, database: database)
+        appendInstrumentation?.didInsertSearchDocument()
     }
 
-    private func ftsCandidateSessionIDsUnlocked(
+    private func searchCandidateSessionIDsUnlocked(
         _ database: OpaquePointer,
         ownerDeviceID: String?,
         query: RuntimeChatSessionSearchQuery
     ) throws -> [String] {
+        // A streamed answer can contain a match that crosses event boundaries. Those
+        // sessions are conservative candidates; the exact in-memory projection below
+        // removes stale or unrelated matches.
+        let streamBoundarySessionIDs = try streamBoundarySessionIDsUnlocked(
+            database,
+            ownerDeviceID: ownerDeviceID
+        )
+        var matchingSessionIDs: Set<String>?
+        for term in query.terms {
+            var termSessionIDs = try substringSessionIDsUnlocked(
+                database,
+                ownerDeviceID: ownerDeviceID,
+                term: term
+            )
+            termSessionIDs.formUnion(streamBoundarySessionIDs)
+            if let existing = matchingSessionIDs {
+                matchingSessionIDs = existing.intersection(termSessionIDs)
+            } else {
+                matchingSessionIDs = termSessionIDs
+            }
+            if matchingSessionIDs?.isEmpty == true { return [] }
+        }
+        return (matchingSessionIDs ?? []).sorted()
+    }
+
+    private func substringSessionIDsUnlocked(
+        _ database: OpaquePointer,
+        ownerDeviceID: String?,
+        term: String
+    ) throws -> Set<String> {
         let statement = try Self.prepare(
             database,
             """
-            SELECT session_id
-            FROM runtime_chat_session_fts
+            SELECT DISTINCT session_id
+            FROM runtime_chat_event_fts_v2
             WHERE owner_key = ?
-              AND runtime_chat_session_fts MATCH ?
+              AND (
+                    instr(title, ?) > 0
+                 OR instr(indexed_session_id, ?) > 0
+                 OR instr(model, ?) > 0
+                 OR instr(status, ?) > 0
+                 OR instr(metadata, ?) > 0
+                 OR instr(transcript, ?) > 0
+                 OR instr(reasoning, ?) > 0
+                 OR instr(attachment, ?) > 0
+              )
             """
         )
         defer { sqlite3_finalize(statement) }
         try Self.bindText(Self.ownerKey(ownerDeviceID), to: statement, at: 1)
-        try Self.bindText(Self.ftsMatchQuery(for: query), to: statement, at: 2)
+        for bindIndex in 2...9 {
+            try Self.bindText(term, to: statement, at: Int32(bindIndex))
+        }
 
-        var sessionIDs: [String] = []
+        var sessionIDs = Set<String>()
         while true {
             let result = sqlite3_step(statement)
             if result == SQLITE_DONE { break }
             guard result == SQLITE_ROW else {
-                throw Self.failure(database, "Could not read runtime chat FTS candidates.")
+                throw Self.failure(database, "Could not read runtime chat substring candidates.")
             }
             if let text = sqlite3_column_text(statement, 0) {
-                sessionIDs.append(String(cString: text))
+                sessionIDs.insert(String(cString: text))
+            }
+        }
+        return sessionIDs
+    }
+
+    private func streamBoundarySessionIDsUnlocked(
+        _ database: OpaquePointer,
+        ownerDeviceID: String?
+    ) throws -> Set<String> {
+        let statement = try Self.prepare(
+            database,
+            """
+            SELECT session_id
+            FROM runtime_chat_events
+            WHERE COALESCE(NULLIF(TRIM(owner_device_id), ''), '') = ?
+              AND (
+                    json_type(event_json, '$.delta') = 'text'
+                 OR json_type(event_json, '$.reasoning_delta') = 'text'
+              )
+            GROUP BY session_id, request_id
+            HAVING COUNT(*) > 1
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        try Self.bindText(Self.ownerKey(ownerDeviceID), to: statement, at: 1)
+
+        var sessionIDs = Set<String>()
+        while true {
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { break }
+            guard result == SQLITE_ROW else {
+                throw Self.failure(database, "Could not read runtime chat stream-boundary candidates.")
+            }
+            if let text = sqlite3_column_text(statement, 0) {
+                sessionIDs.insert(String(cString: text))
             }
         }
         return sessionIDs
@@ -1489,6 +1735,33 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         try Self.stepDone(statement, database: database)
     }
 
+    private func deleteIncrementalSearchDocumentsUnlocked(
+        _ database: OpaquePointer,
+        ownerDeviceID: String?,
+        sessionID: String
+    ) throws {
+        let ownerPredicate = ownerDeviceID == nil ? "owner_device_id IS NULL" : "owner_device_id = ?"
+        let statement = try Self.prepare(
+            database,
+            """
+            DELETE FROM runtime_chat_event_fts_v2
+            WHERE rowid IN (
+                SELECT sequence
+                FROM runtime_chat_events
+                WHERE \(ownerPredicate) AND session_id = ?
+            )
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        var bindIndex: Int32 = 1
+        if let ownerDeviceID {
+            try Self.bindText(ownerDeviceID, to: statement, at: bindIndex)
+            bindIndex += 1
+        }
+        try Self.bindText(sessionID, to: statement, at: bindIndex)
+        try Self.stepDone(statement, database: database)
+    }
+
     private func enforceSemanticEmbeddingRowLimitUnlocked(
         _ scope: RuntimeChatSemanticEmbeddingScope,
         database: OpaquePointer
@@ -1520,6 +1793,8 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         deletedBefore cutoff: Date,
         limit: Int
     ) throws -> RuntimeChatDeletedSessionPruneResult {
+        let appendStateWasCurrent = try incrementalAppendStateUnlocked(database)
+            .isCurrent(searchProjectionVersion: Self.incrementalSearchProjectionVersion)
         let candidates = try retentionCandidatesUnlocked(
             database,
             scope: scope,
@@ -1535,6 +1810,11 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
                 ownerDeviceID: candidate.key.ownerDeviceID,
                 sessionID: candidate.key.sessionID,
                 deletedAt: candidate.deletedAt
+            )
+            try deleteIncrementalSearchDocumentsUnlocked(
+                database,
+                ownerDeviceID: candidate.key.ownerDeviceID,
+                sessionID: candidate.key.sessionID
             )
             prunedEventCount += try deleteEventsUnlocked(
                 database,
@@ -1552,6 +1832,9 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
                 sessionID: candidate.key.sessionID
             )
             prunedSessionIDs.append(candidate.key.sessionID)
+        }
+        if appendStateWasCurrent, !candidates.isEmpty {
+            try markIncrementalAppendStateValidatedUnlocked(database)
         }
         return RuntimeChatDeletedSessionPruneResult(
             prunedSessionIDs: prunedSessionIDs,
@@ -1584,8 +1867,8 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
                     kind,
                     timestamp,
                     ROW_NUMBER() OVER (
-                        PARTITION BY owner_device_id, session_id
-                        ORDER BY timestamp DESC, sequence DESC
+                        PARTITION BY COALESCE(NULLIF(TRIM(owner_device_id), ''), ''), session_id
+                        ORDER BY sequence DESC
                     ) AS lifecycle_rank
                 FROM runtime_chat_events
                 WHERE kind IN (?, ?, ?)
@@ -1749,6 +2032,11 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
 
     private static func ensureSchema(_ database: OpaquePointer) throws {
         try execute(database, "PRAGMA foreign_keys = ON")
+        let incrementalSearchTableExisted = try schemaObjectExists(
+            database,
+            type: "table",
+            name: incrementalSearchTableName
+        )
         try execute(
             database,
             """
@@ -1763,6 +2051,28 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
                 model TEXT NOT NULL,
                 event_json TEXT NOT NULL
             )
+            """
+        )
+        try execute(
+            database,
+            """
+            CREATE TABLE IF NOT EXISTS runtime_chat_append_state(
+                singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                mutation_revision INTEGER NOT NULL,
+                validated_revision INTEGER NOT NULL,
+                search_projection_version INTEGER NOT NULL
+            )
+            """
+        )
+        try execute(
+            database,
+            """
+            INSERT OR IGNORE INTO runtime_chat_append_state(
+                singleton,
+                mutation_revision,
+                validated_revision,
+                search_projection_version
+            ) VALUES (1, 0, -1, 0)
             """
         )
         try execute(
@@ -1813,6 +2123,10 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         )
         try execute(
             database,
+            "CREATE INDEX IF NOT EXISTS idx_runtime_chat_events_event_id ON runtime_chat_events(event_id)"
+        )
+        try execute(
+            database,
             "CREATE INDEX IF NOT EXISTS idx_runtime_chat_events_timestamp ON runtime_chat_events(timestamp)"
         )
         try execute(
@@ -1843,6 +2157,18 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         try execute(
             database,
             """
+            CREATE INDEX IF NOT EXISTS idx_runtime_chat_events_retention_lifecycle_sequence_v2
+            ON runtime_chat_events(
+                COALESCE(NULLIF(TRIM(owner_device_id), ''), ''),
+                session_id,
+                sequence DESC
+            )
+            WHERE kind IN ('archived', 'restored', 'deleted')
+            """
+        )
+        try execute(
+            database,
+            """
             CREATE INDEX IF NOT EXISTS idx_runtime_chat_semantic_embeddings_owner_model_lru
             ON runtime_chat_semantic_embeddings(
                 owner_key,
@@ -1867,6 +2193,67 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
                 attachment,
                 tokenize = 'unicode61 remove_diacritics 2'
             )
+            """
+        )
+        try execute(
+            database,
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS runtime_chat_event_fts_v2 USING fts5(
+                event_id UNINDEXED,
+                owner_key UNINDEXED,
+                session_id UNINDEXED,
+                title,
+                indexed_session_id,
+                model,
+                status,
+                metadata,
+                transcript,
+                reasoning,
+                attachment,
+                tokenize = 'unicode61 remove_diacritics 2'
+            )
+            """
+        )
+        if !incrementalSearchTableExisted {
+            try execute(
+                database,
+                "UPDATE runtime_chat_append_state SET search_projection_version = 0 WHERE singleton = 1"
+            )
+        }
+        try execute(
+            database,
+            """
+            CREATE TRIGGER IF NOT EXISTS runtime_chat_events_append_state_insert_v2
+            AFTER INSERT ON runtime_chat_events
+            BEGIN
+                UPDATE runtime_chat_append_state
+                SET mutation_revision = mutation_revision + 1
+                WHERE singleton = 1;
+            END
+            """
+        )
+        try execute(
+            database,
+            """
+            CREATE TRIGGER IF NOT EXISTS runtime_chat_events_append_state_update_v2
+            AFTER UPDATE ON runtime_chat_events
+            BEGIN
+                UPDATE runtime_chat_append_state
+                SET mutation_revision = mutation_revision + 1
+                WHERE singleton = 1;
+            END
+            """
+        )
+        try execute(
+            database,
+            """
+            CREATE TRIGGER IF NOT EXISTS runtime_chat_events_append_state_delete_v2
+            AFTER DELETE ON runtime_chat_events
+            BEGIN
+                UPDATE runtime_chat_append_state
+                SET mutation_revision = mutation_revision + 1
+                WHERE singleton = 1;
+            END
             """
         )
     }
@@ -1907,15 +2294,14 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
 
         let snapshot = try legacyJSONLSnapshot(from: legacyJSONLFileURL)
         if importedSignature != snapshot.signature {
-            var importedAnyEvent = false
             for record in snapshot.records {
                 let sanitized = record.event.sanitizedForStorage()
                 try JSONLRuntimeChatEventStore.validateStoredEvent(sanitized, line: record.line)
-                let inserted = try insertEventUnlocked(sanitized, database: database, skipExisting: true)
-                importedAnyEvent = importedAnyEvent || inserted
-            }
-            if importedAnyEvent {
-                try rebuildSearchIndexUnlocked(database)
+                _ = try insertEventUnlocked(
+                    sanitized,
+                    database: database,
+                    skipExisting: true
+                )
             }
             try Self.setMetadataValue(database, key: Self.legacyImportMetadataKey, value: snapshot.signature)
         }
@@ -2156,6 +2542,24 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         try stepDone(statement, database: database)
     }
 
+    private static func schemaObjectExists(
+        _ database: OpaquePointer,
+        type: String,
+        name: String
+    ) throws -> Bool {
+        let statement = try prepare(
+            database,
+            "SELECT 1 FROM sqlite_master WHERE type = ? AND name = ? LIMIT 1"
+        )
+        defer { sqlite3_finalize(statement) }
+        try bindText(type, to: statement, at: 1)
+        try bindText(name, to: statement, at: 2)
+        let result = sqlite3_step(statement)
+        if result == SQLITE_ROW { return true }
+        if result == SQLITE_DONE { return false }
+        throw failure(database, "Could not inspect runtime chat SQLite schema.")
+    }
+
     private static func execute(_ database: OpaquePointer, _ sql: String) throws {
         var error: UnsafeMutablePointer<CChar>?
         if sqlite3_exec(database, sql, nil, nil, &error) != SQLITE_OK {
@@ -2305,22 +2709,27 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         return embedding
     }
 
-    private static func ftsMatchQuery(for query: RuntimeChatSessionSearchQuery) -> String {
-        query.terms
-            .map { term in
-                "\"\(term.replacingOccurrences(of: "\"", with: "\"\""))\""
-            }
-            .joined(separator: " AND ")
-    }
-
     private static let legacyImportMetadataKey = "legacy_jsonl_imported"
     private static let legacyCompactionMetadataKey = "legacy_jsonl_retention_compacted"
+    private static let incrementalSearchTableName = "runtime_chat_event_fts_v2"
+    private static let incrementalSearchProjectionVersion = 2
     private static let semanticEmbeddingDimensionLimit = 65_536
 }
 
 private enum RuntimeChatRetentionScope {
     case owner(String?)
     case allOwners
+}
+
+private struct RuntimeChatIncrementalAppendState {
+    var mutationRevision: Int64
+    var validatedRevision: Int64
+    var searchProjectionVersion: Int
+
+    func isCurrent(searchProjectionVersion currentVersion: Int) -> Bool {
+        mutationRevision == validatedRevision
+            && searchProjectionVersion == currentVersion
+    }
 }
 
 private enum RuntimeChatLegacyCompactionTiming: Equatable {
@@ -2331,15 +2740,10 @@ private enum RuntimeChatLegacyCompactionTiming: Equatable {
 private struct RuntimeChatRetentionSessionKey: Hashable {
     var ownerDeviceID: String?
     var sessionID: String
-}
 
-private struct RuntimeChatFTSSessionKey: Hashable {
-    var ownerDeviceID: String?
-    var sessionID: String
-
-    init(event: RuntimeChatStoredEvent) {
-        ownerDeviceID = event.ownerDeviceID.sqliteNormalizedOwnerDeviceID
-        sessionID = event.sessionID
+    init(ownerDeviceID: String?, sessionID: String) {
+        self.ownerDeviceID = ownerDeviceID.sqliteNormalizedOwnerDeviceID
+        self.sessionID = sessionID
     }
 }
 

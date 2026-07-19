@@ -11234,11 +11234,13 @@ func main() throws {
             "--host",
             relayEndpoint.host,
             "--port",
-            String(relayEndpoint.port)
+            String(relayEndpoint.port),
+            "--ephemeral-allocations",
+            "--exit-when-parent-pid",
+            String(getpid()),
         ]
         if bootstrapRelayEndpoint != nil {
             process.arguments?.append("--require-allocation")
-            process.arguments?.append("--ephemeral-allocations")
         }
         let output = RelayProcessOutput()
         let pipe = Pipe()

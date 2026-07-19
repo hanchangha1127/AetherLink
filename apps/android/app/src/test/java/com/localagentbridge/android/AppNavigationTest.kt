@@ -906,6 +906,17 @@ class AppNavigationTest {
     }
 
     @Test
+    fun consumedLaunchPayloadStaysConsumedAcrossRecreationButNewDeliveryIsReusable() {
+        val pairingUri = "aetherlink://pair?pairing_code=123456"
+        val sharedDraft = SharedChatDraft(text = "Summarize this")
+
+        assertNull(restoredLaunchPayload(pairingUri, wasConsumed = true))
+        assertNull(restoredLaunchPayload(sharedDraft, wasConsumed = true))
+        assertEquals(pairingUri, restoredLaunchPayload(pairingUri, wasConsumed = false))
+        assertEquals(sharedDraft, restoredLaunchPayload(sharedDraft, wasConsumed = false))
+    }
+
+    @Test
     fun sharedChatDraftComposerTextAppendsWithoutDroppingExistingDraft() {
         assertEquals(
             "Summarize this",

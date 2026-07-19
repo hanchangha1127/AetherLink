@@ -156,7 +156,7 @@
 "Source excerpt %@: %@" = "参照抜粋 %@: %@";
 "Source excerpt unavailable" = "参照抜粋なし";
 "%d more source excerpts hidden" = "さらに %d 件の参照抜粋を非表示";
-"Memory source. %@. %@. %@." = "メモリの参照元。%@。%@。%@。";
+"Memory source. %@. %@." = "メモリの参照元。%@。%@。";
 "1 active chat" = "アクティブなチャット 1 件";
 "%d active chats" = "アクティブなチャット %d 件";
 "1 archived chat" = "アーカイブ済みチャット 1 件";
@@ -307,6 +307,7 @@
 "Generate New QR" = "新しい QR を生成";
 "Pairing QR code" = "ペアリング QR コード";
 "Pairing QR code unavailable" = "ペアリング QR コードを利用できません";
+"The pairing QR could not be rendered. Wait a moment or generate a new QR to try again." = "ペアリング QR を表示できませんでした。しばらく待つか、新しい QR を生成して再試行してください。";
 "Pairing QR time remaining" = "ペアリング QR の残り時間";
 "Scan this QR from AetherLink." = "AetherLink でこの QR をスキャンしてください。";
 "After pairing, manage or remove trusted devices in Trusted Devices." = "ペアリング後は、信頼済みデバイスで信頼済みデバイスを管理または削除できます。";
@@ -357,6 +358,7 @@
 "%@. Status %@. %@" = "%@。ステータス %@。%@";
 "Connection health" = "接続状態";
 "Connection preparation" = "接続準備";
+"Connection preparation in progress" = "接続準備中";
 "Connection diagnostics" = "接続診断";
 "Provider endpoint redacted." = "プロバイダーのアドレスは非表示です。";
 "Sensitive technical detail redacted." = "機密性の高い技術詳細は非表示にされました。";
@@ -596,6 +598,9 @@
 "The document source audit was exported." = "ドキュメントソースの監査を書き出しました。";
 "Document source operation in progress" = "ドキュメントソースの操作を実行中";
 "Approved sources" = "承認済みソース";
+"Approved source" = "承認済みソース";
+"1 approved source" = "承認済みソース 1 件";
+"%@ approved sources" = "承認済みソース %@ 件";
 "No recent access audit events." = "最近のアクセス監査イベントはありません。";
 "Document sources could not be read. Check Activity." = "ドキュメントソースを読み込めませんでした。アクティビティを確認してください。";
 "Review which document sources trusted devices can access." = "信頼済みデバイスがアクセスできるドキュメントソースを確認します。";
@@ -662,3 +667,7 @@
 "%@ %@ is being unloaded by AetherLink Runtime." = "AetherLink Runtime が %@ %@ をアンロードしています。";
 "Could not confirm %@ %@ was unloaded. It may still be resident." = "%@ %@ がアンロードされたことを確認できません。まだ常駐している可能性があります。";
 "Wait for the current idle unload policy update to finish." = "現在のアイドルアンロードポリシーの更新が完了するまでお待ちください。";
+"Set up Connection Recovery before generating a pairing QR." = "ペアリング QR を生成する前に接続の復旧を設定してください。";
+"Connection preparation available" = "接続準備が可能";
+"Prepare connection details and generate the latest pairing QR." = "接続情報を準備して最新のペアリング QR を生成します。";
+"Restore connection details before generating a new QR." = "新しい QR を生成する前に接続情報を復旧してください。";

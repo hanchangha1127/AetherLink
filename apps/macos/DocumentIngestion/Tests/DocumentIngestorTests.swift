@@ -144,6 +144,39 @@ final class DocumentIngestorTests: XCTestCase {
         XCTAssertEqual(result.summary.quality, .noUsableText)
     }
 
+    func testDirectIngestionEnforcesExactUTF8ByteCeilingBeforeChunking() throws {
+        let exactText = exactUTF8CeilingText()
+        XCTAssertEqual(exactText.count, 1)
+        XCTAssertEqual(
+            exactText.utf8.count,
+            documentIngestionResourcePolicyMaxExtractedTextUTF8BytesCeiling
+        )
+
+        let result = try DocumentIngestor().ingest(extractedDocument: ExtractedDocument(
+            fileName: "utf8-ceiling.txt",
+            mimeType: "text/plain",
+            text: exactText
+        ))
+        XCTAssertEqual(result.summary.extractedCharacterCount, 1)
+        XCTAssertEqual(result.chunks.single?.text, exactText)
+
+        let oversizedText = exactText + "x"
+        XCTAssertThrowsError(try DocumentIngestor().ingest(extractedDocument: ExtractedDocument(
+            fileName: "utf8-overflow.txt",
+            mimeType: "text/plain",
+            text: oversizedText
+        ))) { error in
+            XCTAssertEqual(
+                error as? DocumentIngestionError,
+                .resourceLimitExceeded(
+                    resource: "extracted text UTF-8 bytes",
+                    limit: documentIngestionResourcePolicyMaxExtractedTextUTF8BytesCeiling,
+                    actual: documentIngestionResourcePolicyMaxExtractedTextUTF8BytesCeiling + 1
+                )
+            )
+        }
+    }
+
     func testPropagatesChunkingPolicyErrorsBeforeReturningResult() {
         let document = ExtractedDocument(fileName: "bad-policy.txt", mimeType: "text/plain", text: "policy")
         let ingestor = DocumentIngestor(chunker: DocumentChunker(policy: DocumentChunkingPolicy(
@@ -170,6 +203,17 @@ final class DocumentIngestorTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         return fileURL
+    }
+
+    private func exactUTF8CeilingText() -> String {
+        let combiningMarkBytes = "\u{0301}".utf8.count
+        let base = "é"
+        let remainingBytes = documentIngestionResourcePolicyMaxExtractedTextUTF8BytesCeiling
+            - base.utf8.count
+        return base + String(
+            repeating: "\u{0301}",
+            count: remainingBytes / combiningMarkBytes
+        )
     }
 }
 

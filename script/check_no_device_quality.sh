@@ -14,6 +14,14 @@ python3 -m unittest script/test_runtime_python_sandbox_review.py
 DEFAULT_JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 export JAVA_HOME="${JAVA_HOME:-$DEFAULT_JAVA_HOME}"
 TEMP_DIRS=()
+ACTIVE_OWNED_PROCESS_SUPERVISOR_PIDS=()
+ACTIVE_OWNED_PROCESS_SUPERVISOR_START_TIMES=()
+ACTIVE_OWNED_PROCESS_SUPERVISOR_COMMANDS=()
+ACTIVE_OWNED_PROCESS_CHILD_PIDS=()
+ACTIVE_OWNED_PROCESS_CHILD_START_TIMES=()
+ACTIVE_OWNED_PROCESS_CHILD_COMMANDS=()
+ACTIVE_OWNED_PROCESS_CHILD_ORIGINAL_PARENT_PIDS=()
+OWNED_PROCESS_RECORD_INDEX=-1
 
 cleanup_temp_dirs() {
   local temp_dir
@@ -26,12 +34,504 @@ cleanup_temp_dirs() {
   set -u
 }
 
-trap cleanup_temp_dirs EXIT
+owned_process_supervisor_is_active() {
+  local supervisor_pid="$1"
+  local parent_pid
+  local start_time
+  local command_line
+  local state
+
+  capture_owned_process_snapshot \
+    "$supervisor_pid" parent_pid start_time command_line state || return 1
+  [[ "$parent_pid" == "$$" ]] \
+    && [[ "$command_line" == *"$ROOT_DIR/script/owned_process_supervisor.sh"* ]]
+}
+
+register_owned_process_supervisor() {
+  ACTIVE_OWNED_PROCESS_SUPERVISOR_PIDS+=("$1")
+  ACTIVE_OWNED_PROCESS_SUPERVISOR_START_TIMES+=("")
+  ACTIVE_OWNED_PROCESS_SUPERVISOR_COMMANDS+=("")
+  ACTIVE_OWNED_PROCESS_CHILD_PIDS+=("")
+  ACTIVE_OWNED_PROCESS_CHILD_START_TIMES+=("")
+  ACTIVE_OWNED_PROCESS_CHILD_COMMANDS+=("")
+  ACTIVE_OWNED_PROCESS_CHILD_ORIGINAL_PARENT_PIDS+=("")
+}
+
+capture_owned_process_snapshot() {
+  local pid="$1"
+  local parent_variable="$2"
+  local start_variable="$3"
+  local command_variable="$4"
+  local state_variable="$5"
+  local captured_parent_pid
+  local captured_start_time
+  local captured_command_line
+  local captured_state
+  local confirmed_start_time
+  local confirmed_command_line
+
+  captured_parent_pid="$(ps -ww -o ppid= -p "$pid" 2>/dev/null)" || return 1
+  captured_start_time="$(ps -ww -o lstart= -p "$pid" 2>/dev/null)" || return 1
+  captured_command_line="$(ps -ww -o command= -p "$pid" 2>/dev/null)" || return 1
+  captured_state="$(ps -ww -o state= -p "$pid" 2>/dev/null)" || return 1
+  confirmed_start_time="$(ps -ww -o lstart= -p "$pid" 2>/dev/null)" || return 1
+  confirmed_command_line="$(ps -ww -o command= -p "$pid" 2>/dev/null)" || return 1
+
+  captured_parent_pid="${captured_parent_pid//[[:space:]]/}"
+  captured_start_time="${captured_start_time#"${captured_start_time%%[![:space:]]*}"}"
+  confirmed_start_time="${confirmed_start_time#"${confirmed_start_time%%[![:space:]]*}"}"
+  captured_command_line="${captured_command_line#"${captured_command_line%%[![:space:]]*}"}"
+  confirmed_command_line="${confirmed_command_line#"${confirmed_command_line%%[![:space:]]*}"}"
+  captured_state="${captured_state//[[:space:]]/}"
+
+  [[ "$captured_parent_pid" =~ ^[0-9]+$ ]] || return 1
+  [[ -n "$captured_start_time" && "$captured_start_time" == "$confirmed_start_time" ]] || return 1
+  [[ -n "$captured_command_line" && "$captured_command_line" == "$confirmed_command_line" ]] || return 1
+  [[ -n "$captured_state" && "$captured_state" != Z* ]] || return 1
+
+  printf -v "$parent_variable" '%s' "$captured_parent_pid"
+  printf -v "$start_variable" '%s' "$captured_start_time"
+  printf -v "$command_variable" '%s' "$captured_command_line"
+  printf -v "$state_variable" '%s' "$captured_state"
+}
+
+owned_process_matches_identity() {
+  local pid="$1"
+  local expected_start_time="$2"
+  local expected_command_line="$3"
+  local parent_pid
+  local start_time
+  local command_line
+  local state
+
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
+  [[ -n "$expected_start_time" && -n "$expected_command_line" ]] || return 1
+  capture_owned_process_snapshot \
+    "$pid" parent_pid start_time command_line state || return 1
+  [[ "$start_time" == "$expected_start_time" ]] \
+    && [[ "$command_line" == "$expected_command_line" ]]
+}
+
+find_owned_process_record() {
+  local supervisor_pid="$1"
+  local index
+
+  OWNED_PROCESS_RECORD_INDEX=-1
+  for ((index = 0; index < ${#ACTIVE_OWNED_PROCESS_SUPERVISOR_PIDS[@]}; index += 1)); do
+    if [[ "${ACTIVE_OWNED_PROCESS_SUPERVISOR_PIDS[$index]}" == "$supervisor_pid" ]]; then
+      OWNED_PROCESS_RECORD_INDEX="$index"
+      return 0
+    fi
+  done
+  return 1
+}
+
+attach_owned_process_record() {
+  local supervisor_pid="$1"
+  local supervisor_start_time="$2"
+  local supervisor_command_line="$3"
+  local child_pid="$4"
+  local child_start_time="$5"
+  local child_command_line="$6"
+  local child_original_parent_pid="$7"
+
+  find_owned_process_record "$supervisor_pid" || return 1
+  ACTIVE_OWNED_PROCESS_SUPERVISOR_START_TIMES[$OWNED_PROCESS_RECORD_INDEX]="$supervisor_start_time"
+  ACTIVE_OWNED_PROCESS_SUPERVISOR_COMMANDS[$OWNED_PROCESS_RECORD_INDEX]="$supervisor_command_line"
+  ACTIVE_OWNED_PROCESS_CHILD_PIDS[$OWNED_PROCESS_RECORD_INDEX]="$child_pid"
+  ACTIVE_OWNED_PROCESS_CHILD_START_TIMES[$OWNED_PROCESS_RECORD_INDEX]="$child_start_time"
+  ACTIVE_OWNED_PROCESS_CHILD_COMMANDS[$OWNED_PROCESS_RECORD_INDEX]="$child_command_line"
+  ACTIVE_OWNED_PROCESS_CHILD_ORIGINAL_PARENT_PIDS[$OWNED_PROCESS_RECORD_INDEX]="$child_original_parent_pid"
+}
+
+unregister_owned_process_supervisor() {
+  local removed_pid="$1"
+  local index
+  local remaining_supervisor_pids=()
+  local remaining_supervisor_start_times=()
+  local remaining_supervisor_commands=()
+  local remaining_child_pids=()
+  local remaining_child_start_times=()
+  local remaining_child_commands=()
+  local remaining_child_original_parent_pids=()
+
+  for ((index = 0; index < ${#ACTIVE_OWNED_PROCESS_SUPERVISOR_PIDS[@]}; index += 1)); do
+    if [[ "${ACTIVE_OWNED_PROCESS_SUPERVISOR_PIDS[$index]}" != "$removed_pid" ]]; then
+      remaining_supervisor_pids+=("${ACTIVE_OWNED_PROCESS_SUPERVISOR_PIDS[$index]}")
+      remaining_supervisor_start_times+=("${ACTIVE_OWNED_PROCESS_SUPERVISOR_START_TIMES[$index]}")
+      remaining_supervisor_commands+=("${ACTIVE_OWNED_PROCESS_SUPERVISOR_COMMANDS[$index]}")
+      remaining_child_pids+=("${ACTIVE_OWNED_PROCESS_CHILD_PIDS[$index]}")
+      remaining_child_start_times+=("${ACTIVE_OWNED_PROCESS_CHILD_START_TIMES[$index]}")
+      remaining_child_commands+=("${ACTIVE_OWNED_PROCESS_CHILD_COMMANDS[$index]}")
+      remaining_child_original_parent_pids+=("${ACTIVE_OWNED_PROCESS_CHILD_ORIGINAL_PARENT_PIDS[$index]}")
+    fi
+  done
+  if ((${#remaining_supervisor_pids[@]} == 0)); then
+    ACTIVE_OWNED_PROCESS_SUPERVISOR_PIDS=()
+    ACTIVE_OWNED_PROCESS_SUPERVISOR_START_TIMES=()
+    ACTIVE_OWNED_PROCESS_SUPERVISOR_COMMANDS=()
+    ACTIVE_OWNED_PROCESS_CHILD_PIDS=()
+    ACTIVE_OWNED_PROCESS_CHILD_START_TIMES=()
+    ACTIVE_OWNED_PROCESS_CHILD_COMMANDS=()
+    ACTIVE_OWNED_PROCESS_CHILD_ORIGINAL_PARENT_PIDS=()
+  else
+    ACTIVE_OWNED_PROCESS_SUPERVISOR_PIDS=("${remaining_supervisor_pids[@]}")
+    ACTIVE_OWNED_PROCESS_SUPERVISOR_START_TIMES=("${remaining_supervisor_start_times[@]}")
+    ACTIVE_OWNED_PROCESS_SUPERVISOR_COMMANDS=("${remaining_supervisor_commands[@]}")
+    ACTIVE_OWNED_PROCESS_CHILD_PIDS=("${remaining_child_pids[@]}")
+    ACTIVE_OWNED_PROCESS_CHILD_START_TIMES=("${remaining_child_start_times[@]}")
+    ACTIVE_OWNED_PROCESS_CHILD_COMMANDS=("${remaining_child_commands[@]}")
+    ACTIVE_OWNED_PROCESS_CHILD_ORIGINAL_PARENT_PIDS=("${remaining_child_original_parent_pids[@]}")
+  fi
+}
+
+terminate_owned_process_child_if_identical() {
+  local supervisor_pid="$1"
+  local child_pid="$2"
+  local child_start_time="$3"
+  local child_command_line="$4"
+  local child_original_parent_pid="$5"
+  local remaining_checks=60
+
+  [[ "$child_pid" != "$$" && "$child_pid" != "$PPID" ]] || return 0
+  [[ "$child_original_parent_pid" == "$supervisor_pid" ]] || return 0
+  if ! owned_process_matches_identity \
+    "$child_pid" "$child_start_time" "$child_command_line"; then
+    return 0
+  fi
+
+  kill -TERM "$child_pid" >/dev/null 2>&1 || true
+  while owned_process_matches_identity \
+    "$child_pid" "$child_start_time" "$child_command_line" \
+    && ((remaining_checks > 0)); do
+    sleep 0.05
+    remaining_checks=$((remaining_checks - 1))
+  done
+  if owned_process_matches_identity \
+    "$child_pid" "$child_start_time" "$child_command_line"; then
+    kill -KILL "$child_pid" >/dev/null 2>&1 || true
+  fi
+
+  remaining_checks=40
+  while owned_process_matches_identity \
+    "$child_pid" "$child_start_time" "$child_command_line" \
+    && ((remaining_checks > 0)); do
+    sleep 0.05
+    remaining_checks=$((remaining_checks - 1))
+  done
+}
+
+stop_and_reap_owned_process_supervisor_if_identical() {
+  local supervisor_pid="$1"
+  local supervisor_start_time="$2"
+  local supervisor_command_line="$3"
+  local term_remaining_checks=60
+  local kill_remaining_checks=40
+
+  kill -TERM "$supervisor_pid" >/dev/null 2>&1 || true
+  while owned_process_matches_identity \
+    "$supervisor_pid" "$supervisor_start_time" "$supervisor_command_line" \
+    && ((term_remaining_checks > 0)); do
+    sleep 0.05
+    term_remaining_checks=$((term_remaining_checks - 1))
+  done
+  if owned_process_matches_identity \
+    "$supervisor_pid" "$supervisor_start_time" "$supervisor_command_line"; then
+    kill -KILL "$supervisor_pid" >/dev/null 2>&1 || true
+  fi
+  while owned_process_matches_identity \
+    "$supervisor_pid" "$supervisor_start_time" "$supervisor_command_line" \
+    && ((kill_remaining_checks > 0)); do
+    sleep 0.05
+    kill_remaining_checks=$((kill_remaining_checks - 1))
+  done
+  if ! owned_process_matches_identity \
+    "$supervisor_pid" "$supervisor_start_time" "$supervisor_command_line"; then
+    wait "$supervisor_pid" >/dev/null 2>&1 || true
+  fi
+}
+
+stop_owned_process_supervisor() {
+  local supervisor_pid="$1"
+  local supervisor_start_time=""
+  local supervisor_command_line=""
+  local child_pid=""
+  local child_start_time=""
+  local child_command_line=""
+  local child_original_parent_pid=""
+  local parent_pid=""
+  local ignored_start_time=""
+  local ignored_command_line=""
+  local ignored_state=""
+  local supervisor_was_identified=0
+
+  [[ -n "$supervisor_pid" ]] || return 0
+  [[ "$supervisor_pid" != "$$" && "$supervisor_pid" != "$PPID" ]] || return 0
+  if find_owned_process_record "$supervisor_pid"; then
+    supervisor_start_time="${ACTIVE_OWNED_PROCESS_SUPERVISOR_START_TIMES[$OWNED_PROCESS_RECORD_INDEX]}"
+    supervisor_command_line="${ACTIVE_OWNED_PROCESS_SUPERVISOR_COMMANDS[$OWNED_PROCESS_RECORD_INDEX]}"
+    child_pid="${ACTIVE_OWNED_PROCESS_CHILD_PIDS[$OWNED_PROCESS_RECORD_INDEX]}"
+    child_start_time="${ACTIVE_OWNED_PROCESS_CHILD_START_TIMES[$OWNED_PROCESS_RECORD_INDEX]}"
+    child_command_line="${ACTIVE_OWNED_PROCESS_CHILD_COMMANDS[$OWNED_PROCESS_RECORD_INDEX]}"
+    child_original_parent_pid="${ACTIVE_OWNED_PROCESS_CHILD_ORIGINAL_PARENT_PIDS[$OWNED_PROCESS_RECORD_INDEX]}"
+  fi
+
+  if [[ -n "$supervisor_start_time" ]] \
+    && owned_process_matches_identity \
+      "$supervisor_pid" "$supervisor_start_time" "$supervisor_command_line" \
+    && capture_owned_process_snapshot \
+      "$supervisor_pid" parent_pid ignored_start_time ignored_command_line ignored_state \
+    && [[ "$parent_pid" == "$$" ]]; then
+    supervisor_was_identified=1
+  elif [[ -z "$supervisor_start_time" ]] \
+    && capture_owned_process_snapshot \
+      "$supervisor_pid" parent_pid ignored_start_time ignored_command_line ignored_state \
+    && [[ "$parent_pid" == "$$" ]] \
+    && [[ "$ignored_command_line" == *"$ROOT_DIR/script/owned_process_supervisor.sh"* ]]; then
+    supervisor_start_time="$ignored_start_time"
+    supervisor_command_line="$ignored_command_line"
+    supervisor_was_identified=1
+  fi
+  if ((supervisor_was_identified == 1)); then
+    stop_and_reap_owned_process_supervisor_if_identical \
+      "$supervisor_pid" "$supervisor_start_time" "$supervisor_command_line"
+  fi
+  if [[ -n "$child_pid" ]]; then
+    terminate_owned_process_child_if_identical \
+      "$supervisor_pid" \
+      "$child_pid" \
+      "$child_start_time" \
+      "$child_command_line" \
+      "$child_original_parent_pid"
+  fi
+  unregister_owned_process_supervisor "$supervisor_pid"
+}
+
+cleanup_owned_process_supervisors() {
+  local supervisor_pid
+  local active=()
+
+  if ((${#ACTIVE_OWNED_PROCESS_SUPERVISOR_PIDS[@]} == 0)); then
+    return
+  fi
+  active=("${ACTIVE_OWNED_PROCESS_SUPERVISOR_PIDS[@]}")
+
+  for supervisor_pid in "${active[@]}"; do
+    stop_owned_process_supervisor "$supervisor_pid"
+  done
+}
+
+start_owned_process_supervisor() {
+  local supervisor_variable="$1"
+  local child_variable="$2"
+  local pid_file="$3"
+  local log_file="$4"
+  local supervisor_pid
+  local child_pid=""
+  local expected_child_command
+  local supervisor_parent_pid=""
+  local supervisor_start_time=""
+  local supervisor_command_line=""
+  local supervisor_state=""
+  local child_parent_pid=""
+  local child_start_time=""
+  local child_command_line=""
+  local child_state=""
+  local attempt
+  shift 4
+
+  [[ "${1:-}" == "--" ]] || return 2
+  shift
+  [[ $# -gt 0 ]] || return 2
+  expected_child_command="$1"
+
+  rm -f "$pid_file"
+  "$ROOT_DIR/script/owned_process_supervisor.sh" \
+    --owner-pid "$$" \
+    --pid-file "$pid_file" \
+    -- "$@" \
+    >"$log_file" 2>&1 &
+  supervisor_pid="$!"
+  register_owned_process_supervisor "$supervisor_pid"
+
+  for attempt in {1..100}; do
+    if [[ -s "$pid_file" ]]; then
+      child_pid="$(<"$pid_file")"
+      break
+    fi
+    if ! kill -0 "$supervisor_pid" >/dev/null 2>&1; then
+      wait "$supervisor_pid" >/dev/null 2>&1 || true
+      unregister_owned_process_supervisor "$supervisor_pid"
+      return 1
+    fi
+    sleep 0.05
+  done
+
+  if ! [[ "$child_pid" =~ ^[1-9][0-9]*$ ]]; then
+    stop_owned_process_supervisor "$supervisor_pid"
+    return 1
+  fi
+  for attempt in {1..100}; do
+    if capture_owned_process_snapshot \
+      "$supervisor_pid" \
+      supervisor_parent_pid \
+      supervisor_start_time \
+      supervisor_command_line \
+      supervisor_state \
+      && capture_owned_process_snapshot \
+        "$child_pid" \
+        child_parent_pid \
+        child_start_time \
+        child_command_line \
+        child_state \
+      && [[ "$supervisor_parent_pid" == "$$" ]] \
+      && [[ "$child_parent_pid" == "$supervisor_pid" ]] \
+      && [[ "$child_command_line" == *"$expected_child_command"* ]]; then
+      break
+    fi
+    sleep 0.05
+  done
+  if [[ "$supervisor_parent_pid" != "$$" ]] \
+    || [[ "$child_parent_pid" != "$supervisor_pid" ]] \
+    || [[ "$child_command_line" != *"$expected_child_command"* ]]; then
+    if [[ -n "$child_start_time" \
+      && "$child_command_line" == *"$expected_child_command"* ]]; then
+      attach_owned_process_record \
+        "$supervisor_pid" \
+        "$supervisor_start_time" \
+        "$supervisor_command_line" \
+        "$child_pid" \
+        "$child_start_time" \
+        "$child_command_line" \
+        "$supervisor_pid" || true
+    fi
+    stop_owned_process_supervisor "$supervisor_pid"
+    return 1
+  fi
+
+  attach_owned_process_record \
+    "$supervisor_pid" \
+    "$supervisor_start_time" \
+    "$supervisor_command_line" \
+    "$child_pid" \
+    "$child_start_time" \
+    "$child_command_line" \
+    "$supervisor_pid"
+  printf -v "$supervisor_variable" '%s' "$supervisor_pid"
+  printf -v "$child_variable" '%s' "$child_pid"
+}
+
+run_owned_process_cleanup_self_test() {
+  local work_dir
+  local test_supervisor_pid=""
+  local test_child_pid=""
+  local child_start_time
+  local child_command_line
+  local child_original_parent_pid
+
+  work_dir="$(mktemp -d "${TMPDIR:-/tmp}/aetherlink-no-device-qr.owned-process.XXXXXX")"
+  TEMP_DIRS+=("$work_dir")
+  start_owned_process_supervisor \
+    test_supervisor_pid test_child_pid \
+    "$work_dir/child.pid" "$work_dir/child.log" \
+    -- /bin/sleep 30
+  find_owned_process_record "$test_supervisor_pid"
+  child_start_time="${ACTIVE_OWNED_PROCESS_CHILD_START_TIMES[$OWNED_PROCESS_RECORD_INDEX]}"
+  child_command_line="${ACTIVE_OWNED_PROCESS_CHILD_COMMANDS[$OWNED_PROCESS_RECORD_INDEX]}"
+  child_original_parent_pid="${ACTIVE_OWNED_PROCESS_CHILD_ORIGINAL_PARENT_PIDS[$OWNED_PROCESS_RECORD_INDEX]}"
+  [[ "$test_supervisor_pid" != "$$" && "$test_supervisor_pid" != "$PPID" ]]
+  [[ "$test_child_pid" != "$$" && "$test_child_pid" != "$PPID" ]]
+
+  kill -KILL "$test_supervisor_pid"
+  wait "$test_supervisor_pid" >/dev/null 2>&1 || true
+  owned_process_matches_identity "$test_child_pid" "$child_start_time" "$child_command_line"
+  terminate_owned_process_child_if_identical \
+    "$test_supervisor_pid" \
+    "$test_child_pid" \
+    "$child_start_time" \
+    "$child_command_line mismatched" \
+    "$child_original_parent_pid"
+  owned_process_matches_identity "$test_child_pid" "$child_start_time" "$child_command_line"
+
+  stop_owned_process_supervisor "$test_supervisor_pid"
+  if owned_process_matches_identity "$test_child_pid" "$child_start_time" "$child_command_line"; then
+    echo "Recorded child survived exact-identity parent cleanup." >&2
+    return 1
+  fi
+  echo "Default gate owned-process cleanup self-test passed."
+}
+
+cleanup_no_device_gate() {
+  cleanup_owned_process_supervisors
+  cleanup_temp_dirs
+}
+
+trap cleanup_no_device_gate EXIT
+
+if [[ "${AETHERLINK_OWNED_PROCESS_CLEANUP_SELF_TEST:-0}" == "1" ]]; then
+  run_owned_process_cleanup_self_test
+  exit 0
+fi
+
+SWIFT_TEST_BATCH_FILTER=""
+SWIFT_TEST_BATCH_SELECTOR_COUNT=0
+SWIFT_TEST_BATCH_MAX_FILTER_CHARS=12000
+
+flush_swift_test_batch() {
+  if [[ -z "$SWIFT_TEST_BATCH_FILTER" ]]; then
+    return
+  fi
+
+  echo
+  echo "==> swift test --filter $SWIFT_TEST_BATCH_FILTER"
+  echo "    batched selectors: $SWIFT_TEST_BATCH_SELECTOR_COUNT"
+  swift test --filter "$SWIFT_TEST_BATCH_FILTER"
+  SWIFT_TEST_BATCH_FILTER=""
+  SWIFT_TEST_BATCH_SELECTOR_COUNT=0
+}
+
+queue_swift_test_filter() {
+  local filter="$1"
+  local wrapped_filter="($filter)"
+  local separator_chars=0
+  if [[ -n "$SWIFT_TEST_BATCH_FILTER" ]]; then
+    separator_chars=1
+  fi
+  if [[ -n "$SWIFT_TEST_BATCH_FILTER" ]] &&
+      (( ${#SWIFT_TEST_BATCH_FILTER} + separator_chars + ${#wrapped_filter} > SWIFT_TEST_BATCH_MAX_FILTER_CHARS )); then
+    flush_swift_test_batch
+  fi
+
+  if [[ -z "$SWIFT_TEST_BATCH_FILTER" ]]; then
+    SWIFT_TEST_BATCH_FILTER="$wrapped_filter"
+  else
+    SWIFT_TEST_BATCH_FILTER="$SWIFT_TEST_BATCH_FILTER|$wrapped_filter"
+  fi
+  ((SWIFT_TEST_BATCH_SELECTOR_COUNT += 1))
+}
 
 run() {
+  if [[ "$#" -eq 4 && "$1" == "swift" && "$2" == "test" && "$3" == "--filter" ]]; then
+    queue_swift_test_filter "$4"
+    return
+  fi
+  flush_swift_test_batch
   echo
   echo "==> $*"
   "$@"
+}
+
+check_python_syntax() {
+  python3 - "$@" <<'PY'
+import ast
+from pathlib import Path
+import sys
+
+for raw_path in sys.argv[1:]:
+    path = Path(raw_path)
+    source = path.read_text(encoding="utf-8")
+    ast.parse(source, filename=str(path))
+PY
 }
 
 check_android_authenticated_read_authority_junit() {
@@ -589,6 +1089,7 @@ check_relay_preflight_allocation_guard() {
   local work_dir
   local store
   local relay_pid
+  local relay_supervisor_pid
 
   swift build --product AetherLinkRelay >/dev/null
   relay_bin="$(swift build --show-bin-path)/AetherLinkRelay"
@@ -596,14 +1097,16 @@ check_relay_preflight_allocation_guard() {
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/aetherlink-relay-preflight.XXXXXX")"
   store="$work_dir/allocations.json"
   relay_pid=""
+  relay_supervisor_pid=""
 
-  "$relay_bin" \
+  start_owned_process_supervisor \
+    relay_supervisor_pid relay_pid \
+    "$work_dir/relay-child.pid" "$work_dir/relay.log" \
+    -- "$relay_bin" \
     --host 127.0.0.1 \
     --port "$port" \
     --require-allocation \
-    --allocation-store "$store" \
-    >"$work_dir/relay.log" 2>&1 &
-  relay_pid="$!"
+    --allocation-store "$store"
 
   set +e
   python3 script/relay_allocation_preflight.py \
@@ -630,10 +1133,8 @@ PY
     status_code="$preflight_store_status"
   fi
 
-  if [[ -n "$relay_pid" ]]; then
-    kill "$relay_pid" >/dev/null 2>&1 || true
-    wait "$relay_pid" >/dev/null 2>&1 || true
-  fi
+  stop_owned_process_supervisor "$relay_supervisor_pid"
+  relay_supervisor_pid=""
   rm -rf "$work_dir"
   return "$status_code"
 }
@@ -1175,6 +1676,7 @@ check_relay_allocation_token_authorization_guard() {
   local work_dir
   local store
   local relay_pid
+  local relay_supervisor_pid
   local missing_status
   local wrong_status
   local preflight_status
@@ -1187,15 +1689,17 @@ check_relay_allocation_token_authorization_guard() {
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/aetherlink-relay-token-auth.XXXXXX")"
   store="$work_dir/allocations.json"
   relay_pid=""
+  relay_supervisor_pid=""
 
-  "$relay_bin" \
+  start_owned_process_supervisor \
+    relay_supervisor_pid relay_pid \
+    "$work_dir/relay-child.pid" "$work_dir/relay.log" \
+    -- "$relay_bin" \
     --host 127.0.0.1 \
     --port "$port" \
     --require-allocation \
     --allocation-store "$store" \
-    --allocation-token no-device-allocation-token \
-    >"$work_dir/relay.log" 2>&1 &
-  relay_pid="$!"
+    --allocation-token no-device-allocation-token
   for _ in {1..30}; do
     if [[ -f "$work_dir/relay.log" ]] && grep -q "development relay listening" "$work_dir/relay.log"; then
       break
@@ -1289,10 +1793,8 @@ PY
     status_code="$preflight_store_status"
   fi
 
-  if [[ -n "$relay_pid" ]]; then
-    kill "$relay_pid" >/dev/null 2>&1 || true
-    wait "$relay_pid" >/dev/null 2>&1 || true
-  fi
+  stop_owned_process_supervisor "$relay_supervisor_pid"
+  relay_supervisor_pid=""
   rm -rf "$work_dir"
   return "$status_code"
 }
@@ -1303,6 +1805,7 @@ check_relay_exposed_bind_token_guard() {
   local token_port
   local work_dir
   local relay_pid
+  local relay_supervisor_pid
   local output
   local status_code
   local ephemeral_output
@@ -1316,6 +1819,7 @@ check_relay_exposed_bind_token_guard() {
   token_port="$(free_tcp_port)"
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/aetherlink-relay-bind-token.XXXXXX")"
   relay_pid=""
+  relay_supervisor_pid=""
 
   set +e
   output="$("$relay_bin" --host 0.0.0.0 --port "$port" --require-allocation --ephemeral-allocations 2>&1 >/dev/null)"
@@ -1367,14 +1871,15 @@ check_relay_exposed_bind_token_guard() {
     exit 1
   fi
 
-  "$relay_bin" \
+  start_owned_process_supervisor \
+    relay_supervisor_pid relay_pid \
+    "$work_dir/relay-child.pid" "$work_dir/relay.log" \
+    -- "$relay_bin" \
     --host 0.0.0.0 \
     --port "$token_port" \
     --require-allocation \
     --allocation-store "$work_dir/allocations.json" \
-    --allocation-token no-device-bind-token \
-    >"$work_dir/relay.log" 2>&1 &
-  relay_pid="$!"
+    --allocation-token no-device-bind-token
   for _ in {1..30}; do
     if [[ -f "$work_dir/relay.log" ]] && grep -q "development relay listening" "$work_dir/relay.log"; then
       break
@@ -1395,8 +1900,8 @@ check_relay_exposed_bind_token_guard() {
     rm -rf "$work_dir"
     exit 1
   fi
-  kill "$relay_pid" >/dev/null 2>&1 || true
-  wait "$relay_pid" >/dev/null 2>&1 || true
+  stop_owned_process_supervisor "$relay_supervisor_pid"
+  relay_supervisor_pid=""
   rm -rf "$work_dir"
 }
 
@@ -2019,15 +2524,286 @@ check_relay_binary_waiting_peer_policy_cli_guard() {
   fi
 }
 
+check_relay_binary_parent_liveness_guard() {
+  local relay_bin
+  local port
+  local work_dir
+  local helper_pid
+  local child_pid
+  local launcher_pid
+  local reparent_helper_pid
+  local reparent_child_pid
+
+  relay_bin="$(swift build --show-bin-path)/AetherLinkRelay"
+  port="$(free_tcp_port)"
+  work_dir="$(mktemp -d "${TMPDIR:-/tmp}/aetherlink-relay-parent-liveness.XXXXXX")"
+  helper_pid=""
+  child_pid=""
+  launcher_pid=""
+  reparent_helper_pid=""
+  reparent_child_pid=""
+
+  python3 - "$relay_bin" "$port" "$work_dir" <<'PY'
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+relay_bin = sys.argv[1]
+port = sys.argv[2]
+work_dir = Path(sys.argv[3])
+parent_pid = str(os.getpid())
+cases = (
+    (
+        "durable allocation storage",
+        [
+            relay_bin,
+            "--host", "127.0.0.1",
+            "--port", port,
+            "--require-allocation",
+            "--allocation-store", str(work_dir / "allocations.json"),
+            "--exit-when-parent-pid", parent_pid,
+        ],
+    ),
+    (
+        "noncanonical loopback host",
+        [
+            relay_bin,
+            "--host", "127.0.0.2",
+            "--port", port,
+            "--require-allocation",
+            "--ephemeral-allocations",
+            "--exit-when-parent-pid", parent_pid,
+        ],
+    ),
+    (
+        "mismatched direct parent",
+        [
+            relay_bin,
+            "--host", "127.0.0.1",
+            "--port", port,
+            "--require-allocation",
+            "--ephemeral-allocations",
+            "--exit-when-parent-pid", str(os.getpid() + 1),
+        ],
+    ),
+)
+
+for label, command in cases:
+    try:
+        result = subprocess.run(command, capture_output=True, timeout=2, check=False)
+    except subprocess.TimeoutExpired as error:
+        raise SystemExit(f"parent-liveness scope case hung instead of rejecting {label}") from error
+    if result.returncode != 2:
+        stderr = result.stderr.decode("utf-8", errors="replace")
+        raise SystemExit(
+            f"parent-liveness scope case should reject {label} with status 2, "
+            f"got {result.returncode}: {stderr}"
+        )
+PY
+
+  python3 - "$relay_bin" "$port" "$work_dir" <<'PY' &
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+relay_bin = sys.argv[1]
+port = sys.argv[2]
+work_dir = Path(sys.argv[3])
+parent_pid = os.getpid()
+outer_parent_pid = os.getppid()
+work_dir.joinpath("helper.pid").write_text(f"{parent_pid}\n", encoding="utf-8")
+with work_dir.joinpath("relay.log").open("wb") as relay_log:
+    relay = subprocess.Popen(
+        [
+            relay_bin,
+            "--host", "127.0.0.1",
+            "--port", port,
+            "--ephemeral-allocations",
+            "--exit-when-parent-pid", str(parent_pid),
+        ],
+        stdout=relay_log,
+        stderr=subprocess.STDOUT,
+    )
+    work_dir.joinpath("child.pid").write_text(f"{relay.pid}\n", encoding="utf-8")
+    while relay.poll() is None:
+        if os.getppid() != outer_parent_pid:
+            relay.terminate()
+            try:
+                relay.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                relay.kill()
+                relay.wait(timeout=2)
+            raise SystemExit(0)
+        try:
+            relay.wait(timeout=0.05)
+        except subprocess.TimeoutExpired:
+            pass
+    raise SystemExit(relay.returncode)
+PY
+  helper_pid="$!"
+
+  for _ in {1..40}; do
+    if [[ -s "$work_dir/helper.pid" && -s "$work_dir/child.pid" ]]; then
+      child_pid="$(<"$work_dir/child.pid")"
+      if grep -q "development relay listening" "$work_dir/relay.log" 2>/dev/null; then
+        break
+      fi
+      if ! kill -0 "$child_pid" >/dev/null 2>&1; then
+        echo "Parent-liveness relay exited before listening." >&2
+        cat "$work_dir/relay.log" >&2 || true
+        wait "$helper_pid" >/dev/null 2>&1 || true
+        rm -rf "$work_dir"
+        return 1
+      fi
+    fi
+    sleep 0.1
+  done
+
+  if [[ -z "$child_pid" ]] || ! grep -q "development relay listening" "$work_dir/relay.log" 2>/dev/null; then
+    echo "Parent-liveness relay did not become ready." >&2
+    cat "$work_dir/relay.log" >&2 || true
+    kill "$helper_pid" >/dev/null 2>&1 || true
+    [[ -n "$child_pid" ]] && kill "$child_pid" >/dev/null 2>&1 || true
+    wait "$helper_pid" >/dev/null 2>&1 || true
+    rm -rf "$work_dir"
+    return 1
+  fi
+
+  if [[ "$(<"$work_dir/helper.pid")" != "$helper_pid" ]]; then
+    echo "Parent-liveness helper PID did not match the relay direct parent." >&2
+    kill "$helper_pid" "$child_pid" >/dev/null 2>&1 || true
+    wait "$helper_pid" >/dev/null 2>&1 || true
+    rm -rf "$work_dir"
+    return 1
+  fi
+
+  kill -KILL "$helper_pid" >/dev/null 2>&1 || true
+  wait "$helper_pid" >/dev/null 2>&1 || true
+  for _ in {1..40}; do
+    if ! kill -0 "$child_pid" >/dev/null 2>&1; then
+      child_pid=""
+      break
+    fi
+    sleep 0.1
+  done
+
+  if [[ -n "$child_pid" ]]; then
+    echo "Ephemeral loopback relay remained alive after its direct parent exited." >&2
+    cat "$work_dir/relay.log" >&2 || true
+    kill "$child_pid" >/dev/null 2>&1 || true
+    rm -rf "$work_dir"
+    return 1
+  fi
+
+  python3 - "$relay_bin" "$port" "$work_dir" <<'PY' &
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+relay_bin = sys.argv[1]
+port = sys.argv[2]
+work_dir = Path(sys.argv[3])
+ready_reader, ready_writer = os.pipe()
+helper_pid = os.fork()
+if helper_pid != 0:
+    os.close(ready_writer)
+    work_dir.joinpath("reparent-helper.pid").write_text(f"{helper_pid}\n", encoding="utf-8")
+    ready = os.read(ready_reader, 1)
+    os.close(ready_reader)
+    os._exit(0 if ready == b"1" else 1)
+
+os.close(ready_reader)
+outer_parent_pid = os.getppid()
+with work_dir.joinpath("reparent-relay.log").open("wb") as relay_log:
+    relay = subprocess.Popen(
+        [
+            relay_bin,
+            "--host", "127.0.0.1",
+            "--port", port,
+            "--require-allocation",
+            "--ephemeral-allocations",
+            "--exit-when-parent-pid", str(os.getpid()),
+        ],
+        stdout=relay_log,
+        stderr=subprocess.STDOUT,
+    )
+    work_dir.joinpath("reparent-child.pid").write_text(f"{relay.pid}\n", encoding="utf-8")
+    os.write(ready_writer, b"1")
+    os.close(ready_writer)
+    while relay.poll() is None:
+        if os.getppid() != outer_parent_pid:
+            relay.terminate()
+            try:
+                relay.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                relay.kill()
+                relay.wait(timeout=2)
+            raise SystemExit(0)
+        try:
+            relay.wait(timeout=0.05)
+        except subprocess.TimeoutExpired:
+            pass
+    raise SystemExit(relay.returncode)
+PY
+  launcher_pid="$!"
+  if ! wait "$launcher_pid"; then
+    echo "Parent-liveness reparent launcher failed before releasing its helper." >&2
+    rm -rf "$work_dir"
+    return 1
+  fi
+
+  if [[ ! -s "$work_dir/reparent-helper.pid" || ! -s "$work_dir/reparent-child.pid" ]]; then
+    echo "Parent-liveness reparent regression did not record helper and relay PIDs." >&2
+    cat "$work_dir/reparent-relay.log" >&2 || true
+    rm -rf "$work_dir"
+    return 1
+  fi
+  reparent_helper_pid="$(<"$work_dir/reparent-helper.pid")"
+  reparent_child_pid="$(<"$work_dir/reparent-child.pid")"
+
+  for _ in {1..40}; do
+    if ! kill -0 "$reparent_helper_pid" >/dev/null 2>&1 &&
+        ! kill -0 "$reparent_child_pid" >/dev/null 2>&1; then
+      rm -rf "$work_dir"
+      return 0
+    fi
+    sleep 0.1
+  done
+
+  echo "Reparented parent-liveness helper or its ephemeral loopback relay remained alive." >&2
+  cat "$work_dir/reparent-relay.log" >&2 || true
+  kill "$reparent_helper_pid" "$reparent_child_pid" >/dev/null 2>&1 || true
+  rm -rf "$work_dir"
+  return 1
+}
+
 relay_child_command_for_parent() {
   local parent_pid="$1"
-  ps -ax -o ppid= -o command= | awk -v parent="$parent_pid" '
-    $1 == parent {
+  ps -ax -o pid= -o ppid= -o command= | awk -v parent="$parent_pid" '
+    {
+      pid = $1
+      parents[pid] = $2
       line = $0
-      sub(/^[[:space:]]*[0-9]+[[:space:]]+/, "", line)
-      if (line ~ /AetherLinkRelay/ && line ~ /--host/) {
-        print line
-        exit
+      sub(/^[[:space:]]*[0-9]+[[:space:]]+[0-9]+[[:space:]]+/, "", line)
+      commands[pid] = line
+      order[++count] = pid
+    }
+    END {
+      for (item_index = 1; item_index <= count; item_index++) {
+        pid = order[item_index]
+        line = commands[pid]
+        is_child = parents[pid] == parent
+        is_supervised_grandchild = parents[parents[pid]] == parent
+        if ((is_child || is_supervised_grandchild) \
+            && line ~ /AetherLinkRelay/ \
+            && line ~ /--host/ \
+            && line !~ /owned_process_supervisor\.sh/) {
+          print line
+          exit
+        }
       }
     }
   '
@@ -3541,7 +4317,7 @@ if [[ ! -x "$JAVA_HOME/bin/java" ]]; then
   exit 1
 fi
 
-run python3 -m py_compile \
+run check_python_syntax \
   script/check_android_string_parity.py \
   script/check_macos_localization.py \
 	  script/check_protocol_schema.py \
@@ -3577,6 +4353,11 @@ run python3 -m py_compile \
 	  script/check_p2p_nat_phase_a_progress.py \
 	  script/test_p2p_nat_phase_a_progress.py \
 	  script/check_production_relay_security_design.py \
+	  script/test_production_relay_security_design.py \
+	  script/test_relay_allocation_preflight.py \
+	  script/test_build_and_run.py \
+	  script/test_no_adb_external_relay_pairing_smoke.py \
+	  script/test_android_usb_install.py \
 	  script/check_runtime_python_sandbox_review.py \
 	  script/test_runtime_python_sandbox_review.py \
 	  script/check_copy_hygiene.py \
@@ -3618,6 +4399,12 @@ run check_physical_external_relay_summary_guard
 run check_physical_external_relay_url_host_redaction_guard
 run check_physical_external_relay_probe_summary_redaction_guard
 run check_physical_external_relay_different_network_confirmation_guard
+run python3 -m unittest \
+  script/test_production_relay_security_design.py \
+  script/test_relay_allocation_preflight.py \
+  script/test_build_and_run.py \
+  script/test_no_adb_external_relay_pairing_smoke.py \
+  script/test_android_usb_install.py
 run git diff --check
 
 run python3 script/check_android_string_parity.py
@@ -5266,6 +6053,7 @@ ANDROID_SUITE_SUBSUMED_NAMED_EVIDENCE
 
 run swift build --product AetherLink
 run swift build --product AetherLinkRelay
+run check_relay_binary_parent_liveness_guard
 run check_relay_binary_source_rate_limit_cli_guard
 run check_relay_binary_source_peer_quota_cli_guard
 run check_relay_binary_waiting_peer_policy_cli_guard
@@ -5288,7 +6076,9 @@ run swift test --filter PairScopedRelayRouteStoreTests
 run swift test --filter 'RelayIdentityBoundSocketTests/testPairedClaimThenRenewSucceedsAndPersistsPinnedClient|RelayIdentityBoundSocketTests/testPairedRenewalRejectsTokenSubstitutionDowngradeAndAbsentTicketBeforeChallenge|RelayIdentityBoundSocketTests/testPairedProofReplayAndConcurrentGenerationRaceFailCAS|RelayIdentityBoundSocketTests/testPairedProofRejectsMissingWrongAndSwappedRoleSignatures|RelayIdentityBoundSocketTests/testPairedChallengeMutationAndExpiryFailWithoutCommit|RelayIdentityBoundSocketTests/testPairedClaimCanRecoverExpiredPersistedTombstone'
 run swift test --filter 'RelayIdentityBoundSocketTests/testPairedClaimChallengesClientAndAdmitsValidPinnedProof|RelayIdentityBoundSocketTests/testRejectedClientProofsCannotDisplaceVerifiedWaitingRuntime|RelayIdentityBoundSocketTests/testActiveRoomRejectsSecondPairUntilBridgeClosesThenReconnects|RelayIdentityBoundSocketTests/testPairedRenewalInvalidatesStaleWaitingGeneration|RelayIdentityBoundSocketTests/testTwoPairScopedRoomsBridgeConcurrentlyWithoutCrossTalk|RelayClientRegistrationAdmissionTests'
 run swift test --filter 'LocalRuntimeMessageRouterTests/testAuthenticatedRouteRefreshRejectsNilTransportBindingBeforeRefresherDispatch|LocalRuntimeMessageRouterTests/testAuthenticatedRouteRefreshRejectsMismatchedLiveBindingBeforeRefresherDispatch|LocalRuntimeMessageRouterTests/testAuthenticatedRouteRefreshForwardsExactRelayChallengeAndAcceptsCanonicalClientProof|LocalRuntimeMessageRouterTests/testRelayAllocationAuthorizationWrongProofFailsClosedAndIsOneShot|LocalRuntimeMessageRouterTests/testRelayAllocationAuthorizationTimesOutAndResumesRouteRefresh|LocalRuntimeMessageRouterTests/testRelayAllocationAuthorizationDisconnectCancelsPendingContinuation|LocalRuntimeMessageRouterTests/testRelayAllocationAuthorizationTrustReplacementCancelsPendingContinuation|LocalRuntimeMessageRouterTests/testRelayAllocationAuthorizationBindingMutationCancelsPendingContinuation|LocalRuntimeMessageRouterTests/testConcurrentRouteRefreshWithSameConnectionAndRequestAdmitsSingleAuthorization'
-run swift test --filter 'LocalRuntimeMessageRouterTests/testTCPRelayServiceRouteAllocator|LocalRuntimeMessageRouterTests/testPairingRequestBindingChangeBeforeTrustLeavesTrustedStoreEmpty|LocalRuntimeMessageRouterTests/testPairingRequestRejectsMutatedProofWithoutConsumingSession|LocalRuntimeMessageRouterTests/testPairingResultSignerFailureReleasesReservationBeforeTrust'
+# Focused macOS QR recovery contract: exact 10 regressions.
+run swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelAllocationTimeoutStopsWorkerBeforeRetry|LocalRuntimeMessageRouterTests/testCompanionAppModelDrainingWorkerBlocksSynchronousAllocationEntryPoints|LocalRuntimeMessageRouterTests/testCompanionAppModelCancelledUserInterfaceRouteRequestPublishesFailureAndIgnoresLateSuccess|LocalRuntimeMessageRouterTests/testCompanionAppModelRejectsMalformedBootstrapEndpointListsWithoutSavingThem|LocalRuntimeMessageRouterTests/testCompanionAppModelDestructiveRouteActionsFailClosedDuringSharedAllocation|LocalRuntimeMessageRouterTests/testCompanionAppModelFreshSavedLeaseDoesNotEnableQRCodeWhenKeychainSecretIsMissing|LocalRuntimeMessageRouterTests/testCompanionAppModelKeychainWriteFailureRejectsFreshAllocationBeforeQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelEnvironmentHostOnlyCannotBypassExpectedSecretHandleForQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelExplicitEnvironmentSecretRemainsQRCodeEligibleWithoutKeychainHandle|LocalRuntimeMessageRouterTests/testTCPRelayServiceRouteAllocatorUsesAbsoluteDeadlineAgainstSlowTrickle'
+run swift test --filter 'LocalRuntimeMessageRouterTests/testPairingRequestBindingChangeBeforeTrustLeavesTrustedStoreEmpty|LocalRuntimeMessageRouterTests/testPairingRequestRejectsMutatedProofWithoutConsumingSession|LocalRuntimeMessageRouterTests/testPairingResultSignerFailureReleasesReservationBeforeTrust'
 run swift test --filter TransportTests
 run swift test --filter 'RuntimeAdvertisementMetadataTests/testRuntimeAdvertisementMetadataPublishesOnlyRouteTokenIdentityHint|RuntimeAdvertisementMetadataTests/testRejectsWhitespaceMutatedRouteTokenInsteadOfNormalizing|RuntimeAdvertisementMetadataTests/testRejectsRequestedRouteTokenHintsFromDiscoveryTxtMetadata|LocalRuntimeMessageRouterTests/testCompanionAppModelAdvertisesRouteTokenWithoutStableIdentityTXTMetadata'
 run swift test --filter 'LocalRuntimeMessageRouterTests/testRuntimeHealthIncludesAggregateProviderStatuses|LocalRuntimeMessageRouterTests/testRuntimeHealthIncludesModelResidencyLastUnloadFailureWithoutRawErrorMessage'
@@ -5342,16 +6132,20 @@ run swift test --filter DocumentTextExtractorTests/testRejectsArchiveExtractionW
 		run swift test --filter 'RuntimeIdentityKeyStoreTests/testFileStoreSignsTransportBoundV2AuthChallengeWithoutV1Downgrade|RuntimeIdentityKeyStoreTests/testKeychainStoreSignsTransportBoundV2AuthChallenge|RuntimeIdentityKeyStoreTests/testRuntimeIdentitySignersRejectNoncanonicalTransportBindings'
 		run swift test --filter 'LocalRuntimeMessageRouterTests/testTransportBoundHelloAndAuthResponseUseV2SignaturesAndDispatchCommands|LocalRuntimeMessageRouterTests/testTransportBoundHelloRejectsMissingMalformedAndMismatchedBindingsBeforeCommands|LocalRuntimeMessageRouterTests/testTransportBoundAuthRejectsMissingBindingAndV1SignatureBeforeCommands|LocalRuntimeMessageRouterTests/testTransportBoundAuthRejectsReplayedOldBindingAfterSinkBindingChanges|LocalRuntimeMessageRouterTests/testUnboundSinkRejectsUnexpectedTransportBindingBeforeChallengeAndCommands'
 		run swift test --filter 'OllamaBackendTests/testListModelsUsesShowCapabilitiesToSeparateEmbeddingModels|OllamaBackendTests/testEmbedPostsBatchWithoutTruncationAndReturnsVectors|OllamaBackendTests/testEmbedRejectsEmptyOrInconsistentVectors|OllamaBackendTests/testEmbedRejectsWrongVectorCount|OllamaBackendTests/testUnloadModelPostsEmptyChatWithKeepAliveZero|OllamaBackendTests/testUnloadModelHTTPStatusReturnsStructuredError|LMStudioBackendTests/testListModelsParsesNativeLocalLLMAndEmbeddingModelsSeparately|LMStudioBackendTests/testListModelsFallsBackToOpenAICompatibleModels|LMStudioBackendTests/testEmbedPostsBatchAndRestoresIndexOrder|LMStudioBackendTests/testEmbedRejectsDuplicateMissingOrOutOfRangeIndexes|LMStudioBackendTests/testEmbedRejectsEmptyOrInconsistentVectors|LMStudioBackendTests/testUnloadModelPostsLoadedInstanceID|LMStudioBackendTests/testUnloadModelHTTPStatusReturnsStructuredError|AggregatingLlmBackendResidencyTests/testSwitchingModelsUnloadsPreviousInactiveModel|AggregatingLlmBackendResidencyTests/testRepeatedSameModelDoesNotUnloadBetweenChats|AggregatingLlmBackendResidencyTests/testIdlePolicyUnloadsActiveModelAfterDelay|AggregatingLlmBackendResidencyTests/testDoneEventClearsInFlightResidencyBeforeClientObservesCompletion|AggregatingLlmBackendResidencyTests/testManualUnloadClearsActiveResidentModelAndEmitsManualEvent|AggregatingLlmBackendResidencyTests/testManualUnloadFailureKeepsStructuredManualFailureReason|AggregatingLlmBackendResidencyTests/testManualUnloadSkipsWhileGenerationIsInFlight|AggregatingLlmBackendResidencyTests/testCancelBeforeAsyncRouteResolutionPreventsProviderChatDispatch|AggregatingLlmBackendResidencyTests/testRejectedDuplicateGenerationCannotRemoveOriginalReservation|AggregatingLlmBackendResidencyTests/testUnloadFailureEmitsProviderSpecificFailureEventWithoutBreakingNextChat|AggregatingLlmBackendResidencyTests/testInstalledEmbeddingModelIsNotRoutedAsChat|AggregatingLlmBackendResidencyTests/testInstalledCloudChatModelIsNotRoutedAsChat|AggregatingLlmBackendResidencyTests/testEmbeddingRejectsChatModelAndDoesNotRoute|AggregatingLlmBackendResidencyTests/testEmbeddingRejectsProviderManagedModelAndDoesNotRoute|AggregatingLlmBackendResidencyTests/testQualifiedInstalledEmbeddingRoutesToItsProviderModelID|AggregatingLlmBackendResidencyTests/testEmbeddingDoesNotEnterGenerationCancellationRegistry|AggregatingLlmBackendResidencyTests/testUnknownUnqualifiedModelDoesNotFallbackToOllama|AggregatingLlmBackendResidencyTests/testQualifiedModelMustBeReportedByThatProvider|AggregatingLlmBackendResidencyTests/testDuplicateProviderBackendsKeepFirstProviderInsteadOfCrashing|RuntimeSemanticChatSessionSearchTests'
-		run swift test --filter 'ProtocolCodecTests/testRelayPlaintextFrameCeilingReservesAuthenticationTag|OllamaBackendTests/testModelInfoCatalogPublicationLimitsAcceptExactBoundariesAndRejectLimitPlusOne|OllamaBackendTests/testCatalogStreamingReadAcceptsExactByteLimitAndRejectsLimitPlusOne|OllamaBackendTests/testCatalogStreamingReadRejectsOversizedPositiveContentLength|OllamaBackendTests/testShowStreamingReadAcceptsExactByteLimitAndExcludesOnlyLimitPlusOneDetail|OllamaBackendTests/testListModelsPropagatesCancellationDuringShowFanout|OllamaBackendTests/testListModelsAccepts256RowsAndRejects257RowsOrUniqueDetailFanout|OllamaBackendTests/testListModelsKeepsByteDistinctUnicodeIdentitiesAcrossCatalogs|OllamaBackendTests/testListModelsPreservesByteDistinctUnicodeCapabilities|OllamaBackendTests/testUnloadModelDoesNotMatchByteDistinctUnicodeRunningIdentity|OllamaBackendTests/testUnloadModelRejectsOversizedRunningCatalogBeforePosting|OllamaBackendTests/testHealthCheckRejectsMalformedTagsCatalog|OllamaBackendTests/testListModelsRejectsDuplicateAndEscapeEquivalentKeysInTagsAndRunningCatalogs|OllamaBackendTests/testListModelsRejectsDuplicateExactAndCanonicalModelIdentities|OllamaBackendTests/testListModelsRejectsConflictingNameAndModelIdentityAliases|OllamaBackendTests/testListModelsAcceptsContextWindowBoundariesAndMatchingAliases|OllamaBackendTests/testListModelsOmitsInvalidContextMetadataAndPreservesValidCapabilities|OllamaBackendTests/testListModelsExcludesShowDetailsWithInvalidCapabilities|OllamaBackendTests/testListModelsOmitsConflictingContextMetadataAndPreservesValidCapabilities|OllamaBackendTests/testListModelsOmitsShowDetailsWithDuplicateOrEscapeEquivalentKeys|LMStudioBackendTests/testNativeCatalogStreamingReadAcceptsExactByteLimitAndRejectsLimitPlusOneWithoutFallback|LMStudioBackendTests/testFallbackCatalogStreamingReadAcceptsExactByteLimitAndRejectsLimitPlusOne|LMStudioBackendTests/testNativeCatalogRejectsOversizedPositiveContentLengthWithoutFallback|LMStudioBackendTests/testNativeCatalogAccepts256RowsAndRejects257Rows|LMStudioBackendTests/testNativeCatalogRejectsInvalidPublicationMetadataWithoutFallback|LMStudioBackendTests/testUnloadModelRejectsOversizedNativeCatalogBeforePosting|LMStudioBackendTests/testUnloadModelAcceptsMaximumLoadedInstanceFanout|LMStudioBackendTests/testUnloadModelRejectsInvalidLoadedInstanceFanoutBeforePosting|LMStudioBackendTests/testUnloadModelRejectsInvalidLoadedInstanceMetadataDuringPolling|LMStudioBackendTests/testListModelsFallsBackToOpenAICompatibleModels|LMStudioBackendTests/testListModelsFallsBackForExplicitNativeEndpointIncompatibility|LMStudioBackendTests/testListModelsDoesNotFallbackForNativeAuthClientOrServerFailures|LMStudioBackendTests/testListModelsDoesNotFallbackForNativeTransportFailure|LMStudioBackendTests/testListModelsRejectsDuplicateAndEscapeEquivalentNativeObjectKeysWithoutFallback|LMStudioBackendTests/testListModelsRejectsDuplicateAndEscapeEquivalentFallbackObjectKeys|LMStudioBackendTests/testListModelsRejectsExactAndCanonicalDuplicateModelIdentities|LMStudioBackendTests/testListModelsRejectsConflictingNativeModelIdentityAliases|LMStudioBackendTests/testListModelsAcceptsExactIntegralContextAliasesAtSharedCeiling|LMStudioBackendTests/testListModelsAcceptsMatchingNativeContextAliases|LMStudioBackendTests/testListModelsRejectsInvalidNativeContextWindowValuesWithoutFallback|LMStudioBackendTests/testListModelsRejectsInvalidFallbackContextWindowValues|LMStudioBackendTests/testListModelsRejectsConflictingContextWindowAliases|LMStudioBackendTests/testChatStreamsFinalNativeJSONLineWithoutTrailingBlankSeparator|LMStudioBackendTests/testChatDoesNotFallbackAfterMalformedNativeStreamEmitsContent|LMStudioBackendTests/testChatRejectsNativeStreamEOFWithoutTerminalAndDoesNotFallback|AggregatingLlmBackendResidencyTests/testListModelsPropagatesCancellationInsteadOfReturningPartialCatalog|LocalRuntimeMessageRouterTests/testModelsListAcceptsCatalogAtPublicationLimits|LocalRuntimeMessageRouterTests/testModelsListRejectsValidCartesianLimitsAboveRelayFrameCeiling|LocalRuntimeMessageRouterTests/testModelsListPublishesInt64MaximumSizeWithoutPrecisionLoss|LocalRuntimeMessageRouterTests/testModelsListRejectsCatalogAbovePublicationLimit|LocalRuntimeMessageRouterTests/testModelsListRejectsUntrustedMetadataAtPublicationBoundary|LocalRuntimeMessageRouterTests/testModelsListRejectsContextWindowMetadataOutsideRuntimeCeiling|LocalRuntimeMessageRouterTests/testModelsListSingleFlightCoalescesBoundedWaitersAndDoesNotCacheSuccess|LocalRuntimeMessageRouterTests/testModelsListSingleFlightCancellationKeepsSharedWorkForRemainingWaiter|LocalRuntimeMessageRouterTests/testModelsListSingleFlightCancelledNonLastWaitersReturnBeforeProviderCompletion|LocalRuntimeMessageRouterTests/testModelsListSingleFlightLastWaiterCancellationStopsProviderWork|LocalRuntimeMessageRouterTests/testModelsListSingleFlightWaitsForCancelledProviderToRetireBeforeReplacement|LocalRuntimeMessageRouterTests/testModelsListSingleFlightDoesNotCacheFailure|LocalRuntimeMessageRouterTests/testModelsListSingleFlightSuppressesPublicationAfterReauthentication|LocalRuntimeMessageRouterTests/testChatSendIgnoresContextWindowMetadataAboveRuntimeCeiling'
+		run swift test --filter 'ProtocolCodecTests/testRelayPlaintextFrameCeilingReservesAuthenticationTag|OllamaBackendTests/testModelInfoCatalogPublicationLimitsAcceptExactBoundariesAndRejectLimitPlusOne|OllamaBackendTests/testCatalogStreamingReadAcceptsExactByteLimitAndRejectsLimitPlusOne|OllamaBackendTests/testCatalogStreamingReadRejectsOversizedPositiveContentLength|OllamaBackendTests/testShowStreamingReadAcceptsExactByteLimitAndExcludesOnlyLimitPlusOneDetail|OllamaBackendTests/testListModelsPropagatesCancellationDuringShowFanout|OllamaBackendTests/testListModelsAccepts256RowsAndRejects257RowsOrUniqueDetailFanout|OllamaBackendTests/testListModelsKeepsByteDistinctUnicodeIdentitiesAcrossCatalogs|OllamaBackendTests/testListModelsPreservesByteDistinctUnicodeCapabilities|OllamaBackendTests/testUnloadModelDoesNotMatchByteDistinctUnicodeRunningIdentity|OllamaBackendTests/testUnloadModelRejectsOversizedRunningCatalogBeforePosting|OllamaBackendTests/testHealthCheckRejectsMalformedTagsCatalog|OllamaBackendTests/testListModelsRejectsDuplicateAndEscapeEquivalentKeysInTagsAndRunningCatalogs|OllamaBackendTests/testListModelsRejectsDuplicateExactAndCanonicalModelIdentities|OllamaBackendTests/testListModelsRejectsConflictingNameAndModelIdentityAliases|OllamaBackendTests/testListModelsAcceptsContextWindowBoundariesAndMatchingAliases|OllamaBackendTests/testListModelsOmitsInvalidContextMetadataAndPreservesValidCapabilities|OllamaBackendTests/testListModelsExcludesShowDetailsWithInvalidCapabilities|OllamaBackendTests/testListModelsOmitsConflictingContextMetadataAndPreservesValidCapabilities|OllamaBackendTests/testListModelsOmitsShowDetailsWithDuplicateOrEscapeEquivalentKeys|OllamaBackendTests/testPullModelBoundedResponseAcceptsExactLimitAndRejectsLimitPlusOne|OllamaBackendTests/testPullModelBoundedResponsePropagatesCancellation|OllamaBackendTests/testPullModelBoundedResponseEnforcesAbsoluteDeadline|OllamaBackendTests/testEmbedBoundedResponseAcceptsExactLimitAndRejectsLimitPlusOne|OllamaBackendTests/testEmbedBoundedResponsePropagatesCancellation|OllamaBackendTests/testPullModelOversizedHTTPErrorPreservesStatusWithoutBufferingBody|OllamaBackendTests/testUnloadBoundedAcknowledgementAcceptsExactLimitAndRejectsLimitPlusOne|OllamaBackendTests/testUnloadBoundedAcknowledgementPropagatesCancellation|OllamaBackendTests/testChatRejectsDuplicateTerminalKeysBeforeTypedDecoding|LMStudioBackendTests/testNativeCatalogStreamingReadAcceptsExactByteLimitAndRejectsLimitPlusOneWithoutFallback|LMStudioBackendTests/testFallbackCatalogStreamingReadAcceptsExactByteLimitAndRejectsLimitPlusOne|LMStudioBackendTests/testNativeCatalogRejectsOversizedPositiveContentLengthWithoutFallback|LMStudioBackendTests/testNativeCatalogAccepts256RowsAndRejects257Rows|LMStudioBackendTests/testNativeCatalogRejectsInvalidPublicationMetadataWithoutFallback|LMStudioBackendTests/testUnloadModelRejectsOversizedNativeCatalogBeforePosting|LMStudioBackendTests/testUnloadModelAcceptsMaximumLoadedInstanceFanout|LMStudioBackendTests/testUnloadModelRejectsInvalidLoadedInstanceFanoutBeforePosting|LMStudioBackendTests/testUnloadModelRejectsInvalidLoadedInstanceMetadataDuringPolling|LMStudioBackendTests/testListModelsFallsBackToOpenAICompatibleModels|LMStudioBackendTests/testListModelsFallsBackForExplicitNativeEndpointIncompatibility|LMStudioBackendTests/testListModelsDoesNotFallbackForNativeAuthClientOrServerFailures|LMStudioBackendTests/testListModelsDoesNotFallbackForNativeTransportFailure|LMStudioBackendTests/testListModelsRejectsDuplicateAndEscapeEquivalentNativeObjectKeysWithoutFallback|LMStudioBackendTests/testListModelsRejectsDuplicateAndEscapeEquivalentFallbackObjectKeys|LMStudioBackendTests/testListModelsRejectsExactAndCanonicalDuplicateModelIdentities|LMStudioBackendTests/testListModelsRejectsConflictingNativeModelIdentityAliases|LMStudioBackendTests/testListModelsAcceptsExactIntegralContextAliasesAtSharedCeiling|LMStudioBackendTests/testListModelsAcceptsMatchingNativeContextAliases|LMStudioBackendTests/testListModelsRejectsInvalidNativeContextWindowValuesWithoutFallback|LMStudioBackendTests/testListModelsRejectsInvalidFallbackContextWindowValues|LMStudioBackendTests/testListModelsRejectsConflictingContextWindowAliases|LMStudioBackendTests/testChatStreamsFinalNativeJSONLineWithoutTrailingBlankSeparator|LMStudioBackendTests/testChatDoesNotFallbackAfterMalformedNativeStreamEmitsContent|LMStudioBackendTests/testChatRejectsNativeStreamEOFWithoutTerminalAndDoesNotFallback|LMStudioBackendTests/testEmbedBoundedResponseAcceptsExactLimitAndRejectsLimitPlusOne|LMStudioBackendTests/testEmbedBoundedResponsePropagatesCancellation|LMStudioBackendTests/testEmbedBoundedResponseEnforcesAbsoluteDeadline|LMStudioBackendTests/testEmbedOversizedHTTPErrorPreservesStatusWithoutBufferingBody|LMStudioBackendTests/testUnloadBoundedAcknowledgementAcceptsExactLimitAndRejectsLimitPlusOne|LMStudioBackendTests/testUnloadBoundedAcknowledgementPropagatesCancellation|LMStudioBackendTests/testChatAcceptsNativeSSEDataBeforeEventField|LMStudioBackendTests/testChatRejectsDuplicateNativeTerminalKeysBeforeTypedDecoding|LMStudioBackendTests/testChatRejectsDuplicateOpenAITerminalKeysBeforeTypedDecoding|AggregatingLlmBackendResidencyTests/testListModelsPropagatesCancellationInsteadOfReturningPartialCatalog|LocalRuntimeMessageRouterTests/testModelsListAcceptsCatalogAtPublicationLimits|LocalRuntimeMessageRouterTests/testModelsListRejectsValidCartesianLimitsAboveRelayFrameCeiling|LocalRuntimeMessageRouterTests/testModelsListPublishesInt64MaximumSizeWithoutPrecisionLoss|LocalRuntimeMessageRouterTests/testModelsListRejectsCatalogAbovePublicationLimit|LocalRuntimeMessageRouterTests/testModelsListRejectsUntrustedMetadataAtPublicationBoundary|LocalRuntimeMessageRouterTests/testModelsListRejectsContextWindowMetadataOutsideRuntimeCeiling|LocalRuntimeMessageRouterTests/testModelsListSingleFlightCoalescesBoundedWaitersAndDoesNotCacheSuccess|LocalRuntimeMessageRouterTests/testModelsListSingleFlightCancellationKeepsSharedWorkForRemainingWaiter|LocalRuntimeMessageRouterTests/testModelsListSingleFlightCancelledNonLastWaitersReturnBeforeProviderCompletion|LocalRuntimeMessageRouterTests/testModelsListSingleFlightLastWaiterCancellationStopsProviderWork|LocalRuntimeMessageRouterTests/testModelsListSingleFlightWaitsForCancelledProviderToRetireBeforeReplacement|LocalRuntimeMessageRouterTests/testModelsListSingleFlightDoesNotCacheFailure|LocalRuntimeMessageRouterTests/testModelsListSingleFlightSuppressesPublicationAfterReauthentication|LocalRuntimeMessageRouterTests/testChatSendIgnoresContextWindowMetadataAboveRuntimeCeiling'
 		run swift test --filter 'AggregatingLlmBackendResidencyTests/testQualifiedModelMatchesOnlyExactProviderModelID|AggregatingLlmBackendResidencyTests/testChatRejectsProviderModelIDWithReservedQualifiedPrefix|AggregatingLlmBackendResidencyTests/testEmbeddingRejectsProviderModelIDWithReservedQualifiedPrefix'
 		run swift test --filter 'AggregatingLlmBackendResidencyTests/testEmbeddingResidencyUnloadsPreviousChatModel|SQLiteRuntimeChatEventStoreTests/testSQLiteSemanticSearchSourcesReadOwnerScopedSessionsAndMessagesInOneSnapshot'
-			run swift test --filter 'RuntimeModelIdleUnloadPolicyTests|AggregatingLlmBackendResidencyTests/testUpdatingIdlePolicyUnloadsModelWhenNewDelayAlreadyElapsed|AggregatingLlmBackendResidencyTests/testUpdatingIdlePolicyWhileGenerationIsInFlightDefersUnloadUntilCompletion|AggregatingLlmBackendResidencyTests/testPendingIdleUnloadBlocksSameModelChatUntilProviderUnloadCompletes|AggregatingLlmBackendResidencyTests/testCancelledChatWaitingForSameModelUnloadDoesNotReserveOrDispatch|AggregatingLlmBackendResidencyTests/testCancelledChatWaitingForModelSwitchUnloadDoesNotReserveOrDispatch|AggregatingLlmBackendResidencyTests/testCancelledEmbeddingWaitingForSameModelUnloadDoesNotDispatch|AggregatingLlmBackendResidencyTests/testExtendingIdlePolicyInvalidatesEarlierTimer'
+			run swift test --filter 'RuntimeModelIdleUnloadPolicyTests|AggregatingLlmBackendResidencyTests/testUpdatingIdlePolicyUnloadsModelWhenNewDelayAlreadyElapsed|AggregatingLlmBackendResidencyTests/testUpdatingIdlePolicyWhileGenerationIsInFlightDefersUnloadUntilCompletion|AggregatingLlmBackendResidencyTests/testPendingIdleUnloadBlocksSameModelChatUntilProviderUnloadCompletes|AggregatingLlmBackendResidencyTests/testCancelledChatReturnsBeforeSharedUnloadAndLaterCallerStillWaitsForIt|AggregatingLlmBackendResidencyTests/testCancelledChatWaitingForSameModelUnloadDoesNotReserveOrDispatch|AggregatingLlmBackendResidencyTests/testCancelledChatWaitingForModelSwitchUnloadDoesNotReserveOrDispatch|AggregatingLlmBackendResidencyTests/testCancelledEmbeddingWaitingForSameModelUnloadDoesNotDispatch|AggregatingLlmBackendResidencyTests/testExtendingIdlePolicyInvalidatesEarlierTimer'
 			run swift test --filter 'OllamaBackendTests/testModelUnloadResultOutcomesPreserveBooleanGuard|OllamaBackendTests/testUnloadModelReturnsAlreadyAbsentWithoutPosting|OllamaBackendTests/testUnloadModelUsesCanonicalRunningTarget|OllamaBackendTests/testUnloadModelRejectsDuplicateRunningStateKeysAtInitialLookup|OllamaBackendTests/testUnloadModelRejectsDuplicateRunningStateKeysDuringPolling|OllamaBackendTests/testUnloadModelRejectsMalformedAndFalseAcknowledgements|OllamaBackendTests/testUnloadModelRejectsPersistentProviderResidencyAfterBoundedPolling|OllamaBackendTests/testUnloadModelPollingPropagatesCancellation|OllamaBackendTests/testUnloadConfirmationFailureBackendErrorIsSanitized|LMStudioBackendTests/testUnloadModelReturnsAlreadyAbsentForMissingModelWithoutRawIDFallback|LMStudioBackendTests/testUnloadModelReturnsAlreadyAbsentWhenExactModelHasNoInstances|LMStudioBackendTests/testUnloadModelRejectsMissingNullOrDuplicateResidencyAtInitialLookup|LMStudioBackendTests/testUnloadModelRejectsMissingNullOrDuplicateResidencyDuringPolling|LMStudioBackendTests/testUnloadModelResolvesExactKeyOnly|LMStudioBackendTests/testUnloadModelReturnsUnsupportedWhenNativeAPIRequiresFallback|LMStudioBackendTests/testUnloadModelRejectsMalformedAndMismatchedInstanceAcknowledgements|LMStudioBackendTests/testUnloadModelRejectsPartialMultipleInstanceAcknowledgement|LMStudioBackendTests/testUnloadModelRejectsPersistentProviderResidencyAfterBoundedPolling|LMStudioBackendTests/testUnloadModelPollingPropagatesCancellation|LMStudioBackendTests/testUnloadConfirmationFailureBackendErrorIsSanitized'
 			run swift test --filter 'AggregatingLlmBackendResidencyTests/testManualUnloadKeepsActiveModelVisibleWhileProviderConfirmationIsPending|AggregatingLlmBackendResidencyTests/testManualUnloadFailureKeepsStructuredManualFailureReason|AggregatingLlmBackendResidencyTests/testNonthrowingUnsupportedUnloadIsFailureAndKeepsManualResidencyActive|AggregatingLlmBackendResidencyTests/testMismatchedUnloadConfirmationIdentityIsFailureAndKeepsManualResidencyActive|AggregatingLlmBackendResidencyTests/testIdleUnloadFailureKeepsPossiblyResidentModelActive|AggregatingLlmBackendResidencyTests/testUnloadFailureEmitsProviderSpecificFailureEventWithoutBreakingNextChat'
 			run swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelPublishesResidencyInFlightTransitionsWithoutManualRefresh|LocalRuntimeMessageRouterTests/testCompanionAppModelRejectsRapidIdleUnloadPolicyIntentWhileUpdateIsPending'
 			# run swift test --filter 'AetherLinkLocalizationTests/testModelResidencyUnloadConfirmationStatesUseSelectedLanguage|AetherLinkRenderSmokeTests/testStatusModelResidencyStatesRenderAtCompactDetailSizeAcrossLanguagesAndAppearances'
 		run swift test --filter 'LMStudioBackendTests/testChatWithImageAttachmentUsesNativeImageInput|LMStudioBackendTests/testChatWithImageAttachmentFallsBackToOpenAICompatibleVisionContentWhenNativeRejects'
 		run swift test --filter 'OllamaBackendTests/testChatStreamsOllamaLineDelimitedJSON|OllamaBackendTests/testChatStreamsServerSentEventLines|LMStudioBackendTests/testChatStreamsNativeServerSentEvents|LMStudioBackendTests/testChatFallsBackToOpenAICompatibleStreamingWhenNativeChatShapeFails'
+		run swift test --filter 'OllamaBackendTests/testListModelsBoundsShowFanoutAtFourAndAppliesOutOfOrderResultsInCatalogOrder|OllamaBackendTests/testListModelsFanoutKeepsMalformedDetailsUntrustedAndOmitsTransportFailures|OllamaBackendTests/testBoundedLineReaderHonorsResponseAndUnfinishedLineExactLimits|OllamaBackendTests/testChatResponseLimitsHonorContentLengthAndNoLengthExactPlusOne|OllamaBackendTests/testChatRejectsStalledConsumerWhenBoundedEventBufferFills|OllamaBackendTests/testChatRejectsAggregateOutputLimitAndCancelsURLTask|OllamaBackendTests/testChatRejectsEmptyAndDeltaEOFWithoutTerminalMarker|OllamaBackendTests/testChatCanonicalTerminalMarkerEmitsExactlyOneDone|LMStudioBackendTests/testBoundedLineReaderHonorsResponseAndUnfinishedLineExactLimits|LMStudioBackendTests/testChatResponseLimitsHonorContentLengthAndNoLengthExactPlusOne|LMStudioBackendTests/testChatRejectsOversizedDecodedSSEFrameAndCancelsURLTask|LMStudioBackendTests/testChatRejectsStalledConsumerWhenBoundedEventBufferFills|LMStudioBackendTests/testChatRejectsAggregateOutputLimitAndCancelsURLTask|LMStudioBackendTests/testChatRejectsEmptyNativeEOFAndOpenAIDeltaEOFWithoutTerminalMarkers|LMStudioBackendTests/testChatCanonicalTerminalMarkersEmitExactlyOneDone'
+		run swift test --filter AggregatingLlmBackendResidencyTests/testStalledAggregateConsumerFailsClosedWhenBoundedEventBufferFills
+		run swift test --filter 'AggregatingLlmBackendResidencyTests/testCancelledChatReturnsBeforeSelfStartedUnloadAndSharedUnloadContinues|AggregatingLlmBackendResidencyTests/testCancelledEmbeddingReturnsBeforeSelfStartedUnloadCompletes'
+		run swift test --filter 'LocalRuntimeMessageRouterTests/testRequestAdmissionEnforcesPerConnectionBoundaryAndReleasesAfterCompletion|LocalRuntimeMessageRouterTests/testRequestAdmissionEnforcesGlobalBoundaryAcrossConnections|LocalRuntimeMessageRouterTests/testRequestAdmissionReleasesSlotAfterHandlerError|LocalRuntimeMessageRouterTests/testRequestAdmissionDisconnectCancellationReleasesExactlyOnce'
 	run swift test --filter 'RuntimeIdentityKeyStoreTests/testFileStoreLoadOrCreatePersistsRuntimeIdentity|RuntimeIdentityKeyStoreTests/testFileStoreCorrectsBroadPermissionsWithoutRotatingIdentity|RuntimeIdentityKeyStoreTests/testFileStoreSignsVerifiableAuthChallenge'
 run swift test --filter TrustedDeviceStoreTests
 run swift test --filter RuntimeModelPullApproval
@@ -5359,7 +6153,7 @@ run swift test --filter RuntimeModelPullApproval
 run swift test --filter CompanionModelPullApprovalTests
 run swift test --filter RuntimePermissionPolicyRegistryTests
 run swift test --filter RuntimeHostApprovalCoordinatorTests
-	run swift test --filter 'RuntimeHostApprovalCoordinatorTests/testEscapedReservationAfterPreCommitAuthorizationFailureCannotReserve|RuntimeHostApprovalCoordinatorTests/testWrongReceiptWaitsForConcurrentReservationCommitBeforeFailClosedDecision|RuntimeHostApprovalCoordinatorTests/testPublicationDelayCrossingEitherDeadlineSuppressesResult|RuntimeHostApprovalCoordinatorTests/testReservationSuppressionUsesReservationTimestampAfterWallRollback|RuntimeHostApprovalCoordinatorTests/testExpiredAdapterErrorWithoutTerminalizationEntersRecoveryMode|RuntimeHostApprovalCoordinatorTests/testUnprovenTerminalExpiredErrorEntersRecoveryMode|RuntimeHostApprovalCoordinatorTests/testAuthorityFailureCrossingExpiryMapsExpiredTerminalizationToReviewNotFound|RuntimeHostApprovalCoordinatorTests/testInMemoryPersistenceMirrorsSQLiteTerminalTransitionMatrix'
+	run swift test --filter 'RuntimeHostApprovalCoordinatorTests/testEscapedReservationAfterPreCommitAuthorizationFailureCannotReserve|RuntimeHostApprovalCoordinatorTests/testWrongReceiptFailsClosedWithoutWaitingForConcurrentReservationCommit|RuntimeHostApprovalCoordinatorTests/testPublicationDelayCrossingEitherDeadlineSuppressesResult|RuntimeHostApprovalCoordinatorTests/testReservationSuppressionUsesReservationTimestampAfterWallRollback|RuntimeHostApprovalCoordinatorTests/testExpiredAdapterErrorWithoutTerminalizationEntersRecoveryMode|RuntimeHostApprovalCoordinatorTests/testUnprovenTerminalExpiredErrorEntersRecoveryMode|RuntimeHostApprovalCoordinatorTests/testAuthorityFailureCrossingExpiryMapsExpiredTerminalizationToReviewNotFound|RuntimeHostApprovalCoordinatorTests/testInMemoryPersistenceMirrorsSQLiteTerminalTransitionMatrix'
 run swift test --filter 'RuntimePromptSkillRegistryTests|RuntimeResearchNotebookStoreTests|SQLiteRuntimeResearchNotebookStoreTests'
 run swift test --filter 'LocalRuntimeMessageRouterTests/(testChatTitle|testAutomaticChatTitle|testAutomaticAndExplicitChatTitle|testConcurrentExplicitChatTitle)'
 run swift test --filter 'LocalRuntimeMessageRouterTests/testResearchBriefCreateAcceptsEightUniqueGrantsAndStreamsUnderOriginalRequest|LocalRuntimeMessageRouterTests/testResearchBriefCreateFailsClosedWhenPinnedPromptSkillIsUnavailable|LocalRuntimeMessageRouterTests/testResearchNotebookFollowUpUsesStoredHistoricalPromptSkillRevision|LocalRuntimeMessageRouterTests/testResearchNotebookFollowUpFailsBeforeSourceConsumptionWhenStoredPromptRevisionIsUnavailable|LocalRuntimeMessageRouterTests/testResearchNotebookFollowUpCommitRejectsEveryNotebookStateDrift'
@@ -5370,6 +6164,7 @@ run swift test --filter 'LocalRuntimeMessageRouterTests/testModelsPullHostApprov
 # run swift test --filter AetherLinkRenderSmokeTests/testModelPullApprovalPanelRendersPendingReviewAcrossLanguagesAndAppearances
 run swift test --filter 'LocalRuntimeMessageRouterTests/testTrustedHelloAndAuthResponseAuthenticatesConnection|LocalRuntimeMessageRouterTests/testHelloRejectsUnknownPayloadMetadataBeforeChallengeCreation|LocalRuntimeMessageRouterTests/testAuthResponseRejectsUnknownPayloadMetadataBeforeAuthentication|LocalRuntimeMessageRouterTests/testResponseOnlyMessageTypesReturnDirectionProtocolError|LocalRuntimeMessageRouterTests/testTrustedHelloIncludesVerifiableRuntimeProofWhenSignerIsAvailable|LocalRuntimeMessageRouterTests/testTrustedAuthResponseRejectsRawNonceSignature|LocalRuntimeMessageRouterTests/testTrustedAuthResponseRejectsReplayedNonceAfterAuthentication|LocalRuntimeMessageRouterTests/testTrustedAuthResponseRejectsSupersededChallengeNonce|LocalRuntimeMessageRouterTests/testUnauthenticatedRuntimeCommandsRejectBeforeProtocolPayloadHandling|LocalRuntimeMessageRouterTests/testPairingRequestStoresTrustedDeviceAndReturnsAccepted|LocalRuntimeMessageRouterTests/testPairingRequestRejectsUnknownPayloadMetadataBeforeTrusting|LocalRuntimeMessageRouterTests/testPairingRequestRejectsBlankAllowedFieldsBeforeTrusting|LocalRuntimeMessageRouterTests/testPairingRequestRejectsWhitespaceMutatedDeviceIdentityBeforeTrusting|LocalRuntimeMessageRouterTests/testConnectionDidCloseClearsAuthenticatedSession|LocalRuntimeMessageRouterTests/testRemovedTrustedDeviceCannotContinueUsingAuthenticatedConnection|LocalRuntimeMessageRouterTests/testRuntimeHealthRejectsUnknownPayloadMetadataBeforeBackendDispatch|LocalRuntimeMessageRouterTests/testModelsListRejectsUnknownPayloadMetadataBeforeBackendDispatch|LocalRuntimeMessageRouterTests/testRouteRefreshRejectsUnknownPayloadMetadataBeforeRuntimeProviderDispatch|LocalRuntimeMessageRouterTests/testModelsPullRequiresHostApprovalWithoutBackendDispatch|LocalRuntimeMessageRouterTests/testModelsPullApprovalBarrierPreventsBackendErrorAndURLExposure|LocalRuntimeMessageRouterTests/testModelsPullRejectsUnknownPayloadMetadataBeforeBackendDispatch|LocalRuntimeMessageRouterTests/testModelsPullRejectsInvalidAllowedPayloadTypesBeforeBackendDispatch|LocalRuntimeMessageRouterTests/testChatCancelRejectsUnknownPayloadMetadataBeforeBackendDispatch|LocalRuntimeMessageRouterTests/testChatSendAppendsDocumentAttachmentTextAndPreservesImageAttachment|LocalRuntimeMessageRouterTests/testChatSendExtractsMimeOnlyStructuredTextDocumentAttachment|LocalRuntimeMessageRouterTests/testChatSendRejectsTopLevelPayloadMetadataBeforeBackendDispatch|LocalRuntimeMessageRouterTests/testChatSendRejectsInvalidAllowedPayloadTypesBeforeBackendDispatch|LocalRuntimeMessageRouterTests/testChatTitleRequestRejectsUnknownPayloadMetadataBeforeBackendDispatch|LocalRuntimeMessageRouterTests/testChatTitleRequestRejectsInvalidAllowedLocaleTypeBeforeBackendDispatch|LocalRuntimeMessageRouterTests/testChatSendRejectsMessageSourceMetadataBeforeBackendDispatch|LocalRuntimeMessageRouterTests/testChatSendRejectsAttachmentSourceMetadataBeforeBackendDispatch|LocalRuntimeMessageRouterTests/testChatSendImageAttachmentRequiresVisionCapableModel|LocalRuntimeMessageRouterTests/testChatSendAllowsLMStudioImageAttachmentsForVisionCapableModel|LocalRuntimeMessageRouterTests/testChatSendUnsupportedDocumentAttachmentReturnsStructuredError|LocalRuntimeMessageRouterTests/testChatSendRoutesQualifiedLMStudioModelThroughAggregateBackend'
 run swift test --filter 'LocalRuntimeMessageRouterTests/testIndexDocumentsListReturnsBoundedCatalogWithoutContentOrFutureMetadata|LocalRuntimeMessageRouterTests/testIndexDocumentsListRejectsUnknownMetadataBeforeStoreDispatch'
+run swift test --filter LocalRuntimeMessageRouterTests/testChatSendDocumentResourceLimitFailsBeforeBackendDispatch
 run swift test --filter 'LocalRuntimeMessageRouterTests/testRetrievalQueryReturnsBoundedLexicalResultsWithoutFullChunkOrFutureMetadata|LocalRuntimeMessageRouterTests/testRetrievalQueryRejectsUnknownMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testRetrievalQueryRejectsOversizedQueryBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testSourceAnchorResolveRejectsMissingBlankOrNonStringAnchorBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testSourceAnchorResolve'
 run swift test --filter LocalRuntimeMessageRouterTests/testUntrustedHelloReturnsPairingRequired
 run swift test --filter 'LocalRuntimeMessageRouterTests/testRepeatedInvalidPairingAttemptsInvalidateActiveSession|LocalRuntimeMessageRouterTests/testExpiredAndNoActivePairingRequestsReturnStructuredRejections'
@@ -5390,7 +6185,7 @@ run swift test --filter PairingCoordinatorTests
 			run swift test --filter 'RuntimeMemorySemanticCalibrationTests|RuntimeMemorySemanticDuplicateSuggestionsTests|MemorySemanticDuplicateSuggestionsRouterTests'
 			run python3 -m unittest script/test_memory_semantic_calibration.py
 			run python3 -m unittest script/test_memory_semantic_calibration_acceptance.py
-			run python3 -m py_compile script/run_memory_semantic_calibration.py script/test_memory_semantic_calibration.py script/check_memory_semantic_calibration_acceptance.py script/test_memory_semantic_calibration_acceptance.py
+			run check_python_syntax script/run_memory_semantic_calibration.py script/test_memory_semantic_calibration.py script/check_memory_semantic_calibration_acceptance.py script/test_memory_semantic_calibration_acceptance.py
 			run python3 script/check_memory_semantic_calibration_acceptance.py
 		echo
 		echo "==> python3 script/run_memory_semantic_calibration.py --mode offline"
@@ -5443,6 +6238,7 @@ run swift test --filter 'RelayPeerClientTests/testRelayPeerClientRetireKeepsCurr
 	run swift test --filter 'SQLiteRuntimeChatEventStoreTests/testSQLiteStorePreservesRuntimeCompactionMetadataWithoutIndexingIt|SQLiteRuntimeChatEventStoreTests/testSQLiteStorePreservesAndRevalidatesAdaptiveV3SourceFingerprint|SQLiteRuntimeChatEventStoreTests/testJSONLStoreRevalidatesAdaptiveV3SourceFingerprintAfterReopen|SQLiteRuntimeChatEventStoreTests/testSQLiteStoreRejectsInvalidOrMismatchedAdaptiveV3SourceFingerprint|SQLiteRuntimeChatEventStoreTests/testStoresRejectInvalidCompactionResolutionShapes|SQLiteRuntimeChatEventStoreTests/testStoresBindCompactionResolutionToAdaptiveV3RequestAccounting|SQLiteRuntimeChatEventStoreTests/testStoresRejectMismatchedCompactionResolutionAfterReopen|SQLiteRuntimeChatEventStoreTests/testSQLiteStoreImportsLegacyCompactionMetadataWithoutStructuralAccounting|SQLiteRuntimeChatEventStoreTests/testSQLiteStoreRejectsInvalidRuntimeCompactionMetadata'
 run swift test --filter 'SQLiteRuntimeChatEventStoreTests/testSQLiteRetentionPrunesDeletedSessionsByOwnerScopeAndCutoff|SQLiteRuntimeChatEventStoreTests/testSQLiteRetentionTombstonePreventsLegacyBackfillResurrection|SQLiteRuntimeChatEventStoreTests/testProductionRuntimeChatRetentionPolicyPrunesOnlyExpiredDeletedSessions|SQLiteRuntimeChatEventStoreTests/testSQLiteAllOwnerRetentionUsesGlobalLimitAndDeterministicOwnerTieBreak|SQLiteRuntimeChatEventStoreTests/testSQLiteAllOwnerRetentionUsesBoundedMetadataQueryAndTargetedFTSDeletion|SQLiteRuntimeChatEventStoreTests/testProductionAllOwnerMaintenanceOverloadPrunesAcrossOwnersWithOneLimit|SQLiteRuntimeChatEventStoreTests/testProductionRetentionCompactsLegacyJSONLOnlyAfterCommitAndPreservesAppendBackfill|SQLiteRuntimeChatEventStoreTests/testLegacyCompactionCoordinatesConcurrentCrossInstanceAppendWithoutDataLoss|SQLiteRuntimeChatEventStoreTests/testProductionRetentionDefersLegacyCompactionUntilFinalBatchDrain'
 run swift test --filter RuntimeLongInactivityMemorySummarizationPolicyTests
+flush_swift_test_batch
 
 echo
 echo "No-device quality checks passed."
@@ -5837,7 +6633,8 @@ echo "Covered macOS model layout addendum: macOS compact long model row render s
 echo "Covered macOS large-text addendum: macOS large accessibility text sidebar preference render."
 echo "Covered macOS sidebar preference addendum: macOS sidebar App Preferences group label, macOS sidebar preference detail copy."
 echo "Covered macOS route recovery addendum: macOS failed saved connection recovery requires a fresh QR."
-echo "Covered macOS QR-only pairing addendum: clean first-run Pairing hides Connection Recovery unless saved route diagnostics or a route-preparation issue exists, and does not expose setup only because automatic route preparation is unavailable."
+echo "Covered macOS Pairing QR recovery addendum: clean first-run Pairing exposes expanded Connection Recovery when no route exists, QR preparation is bounded and recoverable, and rendered remote QR evidence is decoded from the actual screen bitmap without claiming physical Android camera proof."
+echo "Covered macOS QR allocation cancellation and route-state fail-closed regressions: the built-in allocator binds DNS, connect, writes, and incremental reads to one absolute deadline and cancellation-driven NWConnection teardown; the model keeps asynchronous and synchronous retry entry points closed until allocator worker completion acknowledgement; each Connection Recovery request has an exact terminal result, so cancellation cannot be synthesized as success and late allocator completion is inert; malformed bootstrap lists, failed or mismatched protected-store secret bindings, host-only environment overrides, and multi-window destructive races cannot activate or erase QR route state."
 echo "Covered runtime history addendum: Android runtime history message-count clamp, macOS runtime history message-count clamp, macOS chat.cancel runtime-owned cancelled event, macOS chat.cancel immediate done closure, macOS connection-close generation cancellation."
 echo "Covered macOS P2P route material redaction addendum: macOS Activity diagnostics, route diagnostics, and companion logs redact p2p_rendezvous record IDs, encrypted bodies, anti-replay nonces, expiries, protocol versions, and compact P2P aliases."
 echo "Covered macOS Bonjour TXT metadata boundary addendum: Bonjour/local discovery TXT publishes route_token as the identity hint and omits stable device_id, fingerprint, backend, provider, model, and runtime payload metadata."

@@ -442,6 +442,37 @@ public actor RuntimeModelPullApprovalBroker {
         },
         onStateChange: (@Sendable () -> Void)? = nil
     ) {
+        self.init(
+            dispatcher: dispatcher,
+            persistence: persistence,
+            permissionPolicyRegistry: permissionPolicyRegistry,
+            approvalTTL: approvalTTL,
+            pendingLimit: pendingLimit,
+            now: now,
+            monotonicNow: monotonicNow,
+            externalStageDeadlineWait: { delay in
+                let nanoseconds = UInt64(
+                    min(max(0, delay) * 1_000_000_000, Double(UInt64.max))
+                )
+                try await Task.sleep(nanoseconds: nanoseconds)
+            },
+            onStateChange: onStateChange
+        )
+    }
+
+    init(
+        dispatcher: any ModelPullDispatching,
+        persistence: any RuntimeModelPullBrokerPersistence,
+        permissionPolicyRegistry: RuntimePermissionPolicyRegistry = .bundled,
+        approvalTTL: TimeInterval = 300,
+        pendingLimit: Int = 32,
+        now: @escaping @Sendable () -> Date = { Date() },
+        monotonicNow: @escaping @Sendable () -> TimeInterval = {
+            ProcessInfo.processInfo.systemUptime
+        },
+        externalStageDeadlineWait: @escaping @Sendable (TimeInterval) async throws -> Void,
+        onStateChange: (@Sendable () -> Void)? = nil
+    ) {
         self.dispatcher = dispatcher
         self.permissionPolicyRegistry = permissionPolicyRegistry
         self.coordinator = RuntimeHostApprovalCoordinator(
@@ -459,6 +490,7 @@ public actor RuntimeModelPullApprovalBroker {
             pendingLimit: pendingLimit,
             now: now,
             monotonicNow: monotonicNow,
+            externalStageDeadlineWait: externalStageDeadlineWait,
             onStateChange: onStateChange
         )
     }

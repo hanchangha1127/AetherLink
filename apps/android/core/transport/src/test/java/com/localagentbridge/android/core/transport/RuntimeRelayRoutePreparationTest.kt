@@ -99,6 +99,9 @@ class RuntimeRelayRoutePreparationTest {
             " relay.example.test",
             "relay.example.test ",
             "relay example.test",
+            "2130706433",
+            "167772161",
+            "${"r".repeat(254)}.test",
             "https://relay.example.test",
             "relay.example.test/path",
             "relay.example.test?route=1",
@@ -161,6 +164,7 @@ class RuntimeRelayRoutePreparationTest {
         )
 
         assertEquals("100.64.1.5", valid.toPreparedRelayRouteOrNull(identity)?.host)
+        assertEquals("private_overlay", valid.toPreparedRelayRouteOrNull(identity)?.relayScope)
         assertEquals("10.0.0.5", valid.copy(host = "10.0.0.5").toPreparedRelayRouteOrNull(identity)?.host)
         assertEquals("[fd00::1]", valid.copy(host = "[fd00::1]").toPreparedRelayRouteOrNull(identity)?.host)
         assertNull(valid.copy(host = "169.254.10.20").toPreparedRelayRouteOrNull(identity))

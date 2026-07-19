@@ -6,6 +6,9 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
 
     private static let defaultUnloadPollAttempts = 20
     private static let defaultUnloadPollIntervalNanoseconds: UInt64 = 100_000_000
+    private static let maximumConcurrentModelDetailRequests = 4
+    private static let defaultDataResponseByteLimit = 32 * 1_024 * 1_024
+    private static let defaultDataResponseTimeout: TimeInterval = 60
 
     private let baseURL: URL
     private let session: URLSession
@@ -13,6 +16,9 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
     private let unloadPollIntervalNanoseconds: UInt64
     private let unloadSleeper: @Sendable (UInt64) async throws -> Void
     private let catalogResponseByteLimit: Int
+    private let dataResponseByteLimit: Int
+    private let dataResponseTimeout: TimeInterval
+    private let streamLimits: OllamaStreamLimits
     private let registry = GenerationRegistry()
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -24,6 +30,9 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         self.unloadPollIntervalNanoseconds = Self.defaultUnloadPollIntervalNanoseconds
         self.unloadSleeper = { try await Task.sleep(nanoseconds: $0) }
         self.catalogResponseByteLimit = ModelInfo.maximumCatalogResponseBytes
+        self.dataResponseByteLimit = Self.defaultDataResponseByteLimit
+        self.dataResponseTimeout = Self.defaultDataResponseTimeout
+        self.streamLimits = OllamaStreamLimits()
     }
 
     init(
@@ -31,6 +40,9 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         session: URLSession,
         unloadPollAttempts: Int,
         catalogResponseByteLimit: Int = ModelInfo.maximumCatalogResponseBytes,
+        dataResponseByteLimit: Int = defaultDataResponseByteLimit,
+        dataResponseTimeout: TimeInterval = defaultDataResponseTimeout,
+        streamLimits: OllamaStreamLimits = OllamaStreamLimits(),
         unloadPollIntervalNanoseconds: UInt64 = 0,
         unloadSleeper: @escaping @Sendable (UInt64) async throws -> Void = { _ in }
     ) {
@@ -38,6 +50,9 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         self.session = session
         self.unloadPollAttempts = max(1, unloadPollAttempts)
         self.catalogResponseByteLimit = max(0, catalogResponseByteLimit)
+        self.dataResponseByteLimit = max(0, dataResponseByteLimit)
+        self.dataResponseTimeout = Self.normalizedDataResponseTimeout(dataResponseTimeout)
+        self.streamLimits = streamLimits
         self.unloadPollIntervalNanoseconds = unloadPollIntervalNanoseconds
         self.unloadSleeper = unloadSleeper
     }
@@ -272,25 +287,67 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
     }
 
     private func modelDetailsByName(names: [String]) async throws -> [Data: OllamaModelDetails] {
-        var result: [Data: OllamaModelDetails] = [:]
-        for name in names where !name.isEmpty {
-            try Task.checkCancellation()
-            do {
-                let details = try await fetchModelDetails(name: name)
-                if !details.isEmpty {
-                    result[Data(name.utf8)] = details
-                    result[Data(Self.canonicalModelName(name).utf8)] = details
+        let indexedNames = names.enumerated().compactMap { index, name in
+            name.isEmpty ? nil : OllamaIndexedModelName(index: index, name: name)
+        }
+        guard !indexedNames.isEmpty else { return [:] }
+
+        let outcomes = try await withThrowingTaskGroup(
+            of: OllamaIndexedModelDetailsOutcome.self,
+            returning: [OllamaModelDetailsOutcome?].self
+        ) { group in
+            var outcomes = Array<OllamaModelDetailsOutcome?>(repeating: nil, count: names.count)
+            var nextIndex = 0
+
+            func addNext() {
+                guard nextIndex < indexedNames.count else { return }
+                let indexedName = indexedNames[nextIndex]
+                nextIndex += 1
+                group.addTask { [self] in
+                    try Task.checkCancellation()
+                    do {
+                        return OllamaIndexedModelDetailsOutcome(
+                            index: indexedName.index,
+                            outcome: .details(try await fetchModelDetails(name: indexedName.name))
+                        )
+                    } catch OllamaModelDetailsError.malformedResponse {
+                        return OllamaIndexedModelDetailsOutcome(index: indexedName.index, outcome: .untrusted)
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch let error as URLError where error.code == .cancelled {
+                        throw CancellationError()
+                    } catch {
+                        return OllamaIndexedModelDetailsOutcome(index: indexedName.index, outcome: .omitted)
+                    }
                 }
-            } catch OllamaModelDetailsError.malformedResponse {
-                result[Data(name.utf8)] = .untrusted
-                result[Data(Self.canonicalModelName(name).utf8)] = .untrusted
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch let error as URLError where error.code == .cancelled {
-                throw CancellationError()
-            } catch {
+            }
+
+            for _ in 0..<min(Self.maximumConcurrentModelDetailRequests, indexedNames.count) {
+                addNext()
+            }
+            while let indexedOutcome = try await group.next() {
+                try Task.checkCancellation()
+                outcomes[indexedOutcome.index] = indexedOutcome.outcome
+                addNext()
+            }
+            return outcomes
+        }
+
+        var result: [Data: OllamaModelDetails] = [:]
+        for indexedName in indexedNames {
+            guard let outcome = outcomes[indexedName.index] else { continue }
+            let details: OllamaModelDetails
+            switch outcome {
+            case .details(let fetchedDetails):
+                guard !fetchedDetails.isEmpty else { continue }
+                details = fetchedDetails
+            case .untrusted:
+                details = .untrusted
+            case .omitted:
                 continue
             }
+            result[Data(indexedName.name.utf8)] = details
+            result[Data(Self.canonicalModelName(indexedName.name).utf8)] = details
         }
         return result
     }
@@ -300,17 +357,21 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         var urlRequest = URLRequest(url: baseURL.appending(path: "api/show"))
         urlRequest.httpMethod = "POST"
         urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.httpBody = try encoder.encode(OllamaShowRequest(model: name))
+        urlRequest.httpBody = try JSONEncoder().encode(OllamaShowRequest(model: name))
         let data: Data
         do {
-            data = try await performBoundedDataRequest(endpoint: endpoint, request: urlRequest)
+            data = try await performBoundedDataRequest(
+                endpoint: endpoint,
+                request: urlRequest,
+                byteLimit: catalogResponseByteLimit
+            )
         } catch OllamaCatalogIngestionError.responseTooLarge {
             throw OllamaModelDetailsError.malformedResponse
         }
         let response: OllamaShowResponse
         do {
             try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)
-            response = try decoder.decode(OllamaShowResponse.self, from: data)
+            response = try JSONDecoder().decode(OllamaShowResponse.self, from: data)
             guard ModelInfo.areValidCapabilities(response.capabilities) else {
                 throw OllamaCatalogValidationError.invalidCapabilities
             }
@@ -441,7 +502,11 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
 
     private func performCatalogDataRequest(endpoint: String, url: URL) async throws -> Data {
         do {
-            return try await performBoundedDataRequest(endpoint: endpoint, request: URLRequest(url: url))
+            return try await performBoundedDataRequest(
+                endpoint: endpoint,
+                request: URLRequest(url: url),
+                byteLimit: catalogResponseByteLimit
+            )
         } catch OllamaCatalogIngestionError.responseTooLarge {
             throw OllamaBackendError.responseDecoding(
                 endpoint: endpoint,
@@ -450,33 +515,31 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         }
     }
 
-    private func performBoundedDataRequest(endpoint: String, request: URLRequest) async throws -> Data {
+    private func performBoundedDataRequest(
+        endpoint: String,
+        request: URLRequest,
+        byteLimit: Int
+    ) async throws -> Data {
         do {
-            let (bytes, response) = try await session.bytes(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw OllamaBackendError.transport(endpoint: endpoint, reason: "Missing HTTP response")
-            }
-            let isSuccess = (200..<300).contains(http.statusCode)
-            if http.expectedContentLength > Int64(catalogResponseByteLimit) {
-                if isSuccess {
-                    throw OllamaCatalogIngestionError.responseTooLarge
+            let timeoutNanoseconds = UInt64(dataResponseTimeout * 1_000_000_000)
+            return try await withThrowingTaskGroup(of: Data.self) { group in
+                group.addTask { [self] in
+                    try await collectBoundedDataResponse(
+                        endpoint: endpoint,
+                        request: request,
+                        byteLimit: byteLimit
+                    )
                 }
-                throw OllamaBackendError.httpStatus(endpoint: endpoint, statusCode: http.statusCode, body: nil)
-            }
-
-            var data = Data()
-            data.reserveCapacity(min(catalogResponseByteLimit, 64 * 1_024))
-            for try await byte in bytes {
-                data.append(byte)
-                if data.count > catalogResponseByteLimit {
-                    if isSuccess {
-                        throw OllamaCatalogIngestionError.responseTooLarge
-                    }
-                    throw OllamaBackendError.httpStatus(endpoint: endpoint, statusCode: http.statusCode, body: nil)
+                group.addTask {
+                    try await Task.sleep(nanoseconds: timeoutNanoseconds)
+                    throw URLError(.timedOut)
                 }
+                defer { group.cancelAll() }
+                guard let result = try await group.next() else {
+                    throw CancellationError()
+                }
+                return result
             }
-            try Self.validate(response, endpoint: endpoint, body: data)
-            return data
         } catch let error as OllamaCatalogIngestionError {
             throw error
         } catch let error as OllamaBackendError {
@@ -496,11 +559,64 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         }
     }
 
-    private func performDataRequest(endpoint: String, request: URLRequest) async throws -> Data {
+    private func collectBoundedDataResponse(
+        endpoint: String,
+        request: URLRequest,
+        byteLimit: Int
+    ) async throws -> Data {
+        var boundedRequest = request
+        boundedRequest.timeoutInterval = dataResponseTimeout
+        let (bytes, response) = try await session.bytes(for: boundedRequest)
         do {
-            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw OllamaBackendError.transport(endpoint: endpoint, reason: "Missing HTTP response")
+            }
+            let isSuccess = (200..<300).contains(http.statusCode)
+            if http.expectedContentLength > Int64(byteLimit) {
+                if isSuccess {
+                    throw OllamaCatalogIngestionError.responseTooLarge
+                }
+                throw OllamaBackendError.httpStatus(endpoint: endpoint, statusCode: http.statusCode, body: nil)
+            }
+
+            var data = Data()
+            data.reserveCapacity(min(byteLimit, 64 * 1_024))
+            for try await byte in bytes {
+                try Task.checkCancellation()
+                guard data.count < byteLimit else {
+                    if isSuccess {
+                        throw OllamaCatalogIngestionError.responseTooLarge
+                    }
+                    throw OllamaBackendError.httpStatus(endpoint: endpoint, statusCode: http.statusCode, body: nil)
+                }
+                data.append(byte)
+            }
             try Self.validate(response, endpoint: endpoint, body: data)
             return data
+        } catch {
+            bytes.task.cancel()
+            throw error
+        }
+    }
+
+    private static func normalizedDataResponseTimeout(_ timeout: TimeInterval) -> TimeInterval {
+        let maximum: TimeInterval = 24 * 60 * 60
+        guard timeout.isFinite, timeout > 0 else { return defaultDataResponseTimeout }
+        return min(timeout, maximum)
+    }
+
+    private func performDataRequest(endpoint: String, request: URLRequest) async throws -> Data {
+        do {
+            return try await performBoundedDataRequest(
+                endpoint: endpoint,
+                request: request,
+                byteLimit: dataResponseByteLimit
+            )
+        } catch OllamaCatalogIngestionError.responseTooLarge {
+            throw OllamaBackendError.responseDecoding(
+                endpoint: endpoint,
+                reason: "The provider response exceeds the supported byte limit."
+            )
         } catch let error as OllamaBackendError {
             throw error
         } catch is CancellationError {
@@ -519,9 +635,9 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
     }
 
     public func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
-        AsyncThrowingStream { continuation in
+        AsyncThrowingStream(bufferingPolicy: .bufferingOldest(streamLimits.bufferedEventLimit)) { continuation in
             registry.prepareForGeneration(id: request.generationID)
-            let task = Task { [baseURL, session, encoder] in
+            let task = Task { [baseURL, session, encoder, streamLimits] in
                 let endpoint = "POST /api/chat"
                 do {
                     var urlRequest = URLRequest(url: baseURL.appending(path: "api/chat"))
@@ -533,38 +649,31 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
                         endpoint: endpoint
                     )
 
-                    let (bytes, response) = try await session.bytes(for: urlRequest)
-                    try Self.validate(response, endpoint: endpoint, body: nil)
-
-                    for try await line in bytes.lines {
-                        try Task.checkCancellation()
-                        guard let chunk = try Self.decodeStreamLine(line, endpoint: endpoint) else { continue }
-                        if let thinking = chunk.message?.thinking, !thinking.isEmpty {
-                            continuation.yield(.reasoningDelta(thinking))
-                        }
-                        if let content = chunk.message?.content, !content.isEmpty {
-                            continuation.yield(.delta(content))
-                        }
-                        if chunk.done == true {
-                            if chunk.promptEvalCount != nil || chunk.evalCount != nil {
-                                registry.storeUsageSource(
-                                    ChatProviderUsageSource(
-                                        provider: .ollama,
-                                        providerModelID: request.model,
-                                        wireMode: .ollamaChat
-                                    ),
-                                    id: request.generationID
-                                )
-                            }
-                            continuation.yield(.done(inputTokens: chunk.promptEvalCount, outputTokens: chunk.evalCount))
-                            continuation.finish()
-                            registry.remove(id: request.generationID)
-                            return
-                        }
+                    let completion = try await Self.streamChatResponse(
+                        endpoint: endpoint,
+                        request: urlRequest,
+                        session: session,
+                        limits: streamLimits
+                    ) { event in
+                        try Self.yield(event, to: continuation, endpoint: endpoint)
                     }
-
+                    if completion.inputTokens != nil || completion.outputTokens != nil {
+                        registry.storeUsageSource(
+                            ChatProviderUsageSource(
+                                provider: .ollama,
+                                providerModelID: request.model,
+                                wireMode: .ollamaChat
+                            ),
+                            id: request.generationID
+                        )
+                    }
+                    try Self.yield(
+                        .done(inputTokens: completion.inputTokens, outputTokens: completion.outputTokens),
+                        to: continuation,
+                        endpoint: endpoint
+                    )
                     continuation.finish()
-                    registry.remove(id: request.generationID, discardingUsageSource: true)
+                    registry.remove(id: request.generationID)
                 } catch is CancellationError {
                     continuation.finish(throwing: OllamaBackendError.generationCancelled(generationID: request.generationID))
                     registry.remove(id: request.generationID, discardingUsageSource: true)
@@ -595,6 +704,94 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
                 }
             }
         }
+    }
+
+    private static func streamChatResponse(
+        endpoint: String,
+        request: URLRequest,
+        session: URLSession,
+        limits: OllamaStreamLimits,
+        emit: (ChatStreamEvent) throws -> Void
+    ) async throws -> OllamaStreamCompletion {
+        let (bytes, response) = try await session.bytes(for: request)
+        do {
+            try validate(response, endpoint: endpoint, body: nil)
+            try validateContentLength(response, limit: limits.responseByteLimit)
+
+            var lines = OllamaBoundedLineReader(
+                bytes: bytes,
+                responseByteLimit: limits.responseByteLimit,
+                lineByteLimit: limits.lineByteLimit
+            )
+            var budget = OllamaStreamBudget(limit: limits.aggregateAccountingByteLimit)
+            while let line = try await lines.next() {
+                try Task.checkCancellation()
+                guard let chunk = try decodeStreamLine(line, endpoint: endpoint) else { continue }
+                let thinking = chunk.message?.thinking ?? ""
+                let content = chunk.message?.content ?? ""
+                try budget.record(
+                    reasoning: thinking,
+                    answer: content,
+                    includesUsage: chunk.promptEvalCount != nil || chunk.evalCount != nil
+                )
+                if !thinking.isEmpty {
+                    try emit(.reasoningDelta(thinking))
+                }
+                if !content.isEmpty {
+                    try emit(.delta(content))
+                }
+                if chunk.done == true {
+                    bytes.task.cancel()
+                    return OllamaStreamCompletion(
+                        inputTokens: chunk.promptEvalCount,
+                        outputTokens: chunk.evalCount
+                    )
+                }
+            }
+            throw OllamaStreamIngestionError.missingTerminal
+        } catch is CancellationError {
+            bytes.task.cancel()
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            bytes.task.cancel()
+            throw CancellationError()
+        } catch is OllamaStreamIngestionError {
+            bytes.task.cancel()
+            throw badStreamResponse(endpoint: endpoint)
+        } catch {
+            bytes.task.cancel()
+            throw error
+        }
+    }
+
+    private static func validateContentLength(_ response: URLResponse, limit: Int) throws {
+        guard response.expectedContentLength <= Int64(limit) else {
+            throw OllamaStreamIngestionError.responseTooLarge
+        }
+    }
+
+    private static func yield(
+        _ event: ChatStreamEvent,
+        to continuation: AsyncThrowingStream<ChatStreamEvent, Error>.Continuation,
+        endpoint: String
+    ) throws {
+        switch continuation.yield(event) {
+        case .enqueued:
+            return
+        case .dropped:
+            throw badStreamResponse(endpoint: endpoint)
+        case .terminated:
+            throw CancellationError()
+        @unknown default:
+            throw badStreamResponse(endpoint: endpoint)
+        }
+    }
+
+    private static func badStreamResponse(endpoint: String) -> OllamaBackendError {
+        OllamaBackendError.responseDecoding(
+            endpoint: endpoint,
+            reason: "The provider stream violated a bounded response contract."
+        )
     }
 
     @discardableResult
@@ -667,11 +864,126 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         }
 
         do {
+            try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)
             return try JSONDecoder().decode(OllamaChatChunk.self, from: data)
         } catch {
             throw OllamaBackendError.streamDecoding(line: line, reason: error.localizedDescription)
         }
     }
+}
+
+struct OllamaStreamLimits: Sendable {
+    static let defaultResponseByteLimit = 32 * 1_024 * 1_024
+    static let defaultLineByteLimit = 1 * 1_024 * 1_024
+    static let defaultAggregateAccountingByteLimit = 16 * 1_024 * 1_024
+    static let defaultBufferedEventLimit = 64
+
+    let responseByteLimit: Int
+    let lineByteLimit: Int
+    let aggregateAccountingByteLimit: Int
+    let bufferedEventLimit: Int
+
+    init(
+        responseByteLimit: Int = defaultResponseByteLimit,
+        lineByteLimit: Int = defaultLineByteLimit,
+        aggregateAccountingByteLimit: Int = defaultAggregateAccountingByteLimit,
+        bufferedEventLimit: Int = defaultBufferedEventLimit
+    ) {
+        self.responseByteLimit = max(1, responseByteLimit)
+        self.lineByteLimit = max(1, min(lineByteLimit, self.responseByteLimit))
+        self.aggregateAccountingByteLimit = max(1, aggregateAccountingByteLimit)
+        self.bufferedEventLimit = max(1, bufferedEventLimit)
+    }
+}
+
+struct OllamaBoundedLineReader<Bytes: AsyncSequence> where Bytes.Element == UInt8 {
+    private var iterator: Bytes.AsyncIterator
+    private let responseByteLimit: Int
+    private let lineByteLimit: Int
+    private var responseByteCount = 0
+    private var unfinishedLine = Data()
+
+    init(bytes: Bytes, responseByteLimit: Int, lineByteLimit: Int) {
+        self.iterator = bytes.makeAsyncIterator()
+        self.responseByteLimit = max(1, responseByteLimit)
+        self.lineByteLimit = max(1, lineByteLimit)
+        unfinishedLine.reserveCapacity(min(self.lineByteLimit, 4 * 1_024))
+    }
+
+    mutating func next() async throws -> String? {
+        while let byte = try await iterator.next() {
+            guard responseByteCount < responseByteLimit else {
+                throw OllamaStreamIngestionError.responseTooLarge
+            }
+            responseByteCount += 1
+            if byte == 0x0A {
+                return try takeLine()
+            }
+            guard unfinishedLine.count < lineByteLimit else {
+                throw OllamaStreamIngestionError.lineTooLarge
+            }
+            unfinishedLine.append(byte)
+        }
+        guard !unfinishedLine.isEmpty else { return nil }
+        return try takeLine()
+    }
+
+    private mutating func takeLine() throws -> String {
+        if unfinishedLine.last == 0x0D {
+            unfinishedLine.removeLast()
+        }
+        guard let line = String(data: unfinishedLine, encoding: .utf8) else {
+            throw OllamaStreamIngestionError.invalidUTF8
+        }
+        unfinishedLine.removeAll(keepingCapacity: true)
+        return line
+    }
+}
+
+private struct OllamaStreamBudget {
+    let limit: Int
+    private(set) var consumed = 0
+
+    mutating func record(reasoning: String, answer: String, includesUsage: Bool) throws {
+        let (textBytes, textOverflow) = reasoning.utf8.count.addingReportingOverflow(answer.utf8.count)
+        let usageBytes = includesUsage ? 2 * MemoryLayout<Int>.size : 0
+        let (additionalBytes, accountingOverflow) = textBytes.addingReportingOverflow(usageBytes)
+        guard !textOverflow,
+              !accountingOverflow,
+              additionalBytes <= limit - consumed else {
+            throw OllamaStreamIngestionError.aggregateAccountingTooLarge
+        }
+        consumed += additionalBytes
+    }
+}
+
+private struct OllamaStreamCompletion {
+    let inputTokens: Int?
+    let outputTokens: Int?
+}
+
+private enum OllamaStreamIngestionError: Error {
+    case responseTooLarge
+    case lineTooLarge
+    case invalidUTF8
+    case aggregateAccountingTooLarge
+    case missingTerminal
+}
+
+private struct OllamaIndexedModelName: Sendable {
+    let index: Int
+    let name: String
+}
+
+private struct OllamaIndexedModelDetailsOutcome: Sendable {
+    let index: Int
+    let outcome: OllamaModelDetailsOutcome
+}
+
+private enum OllamaModelDetailsOutcome: Sendable {
+    case details(OllamaModelDetails)
+    case untrusted
+    case omitted
 }
 
 private extension String {
@@ -931,7 +1243,7 @@ private struct OllamaShowRequest: Encodable {
     var model: String
 }
 
-private struct OllamaModelDetails {
+private struct OllamaModelDetails: Sendable {
     var capabilities: [String] = []
     var contextWindowTokens: Int?
     var isTrusted = true

@@ -1,8 +1,71 @@
-import Darwin
 import BridgeProtocol
 import CryptoKit
 import Foundation
+import Network
 import Transport
+
+public final class RelayRouteAllocationCancellation: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var cancellationHandlers: [UUID: @Sendable () -> Void] = [:]
+    private var cancelled = false
+    public let deadline: Date
+
+    public init(timeout: TimeInterval) {
+        precondition(timeout > 0, "Relay route allocation timeout must be positive")
+        deadline = Date().addingTimeInterval(timeout)
+    }
+
+    public var isCancelled: Bool {
+        condition.withLock { cancelled }
+    }
+
+    public var isExpired: Bool {
+        Date() >= deadline
+    }
+
+    public func cancel() {
+        let handlers = condition.withLock { () -> [@Sendable () -> Void] in
+            guard !cancelled else { return [] }
+            cancelled = true
+            let handlers = Array(cancellationHandlers.values)
+            cancellationHandlers.removeAll()
+            condition.broadcast()
+            return handlers
+        }
+        handlers.forEach { $0() }
+    }
+
+    public func throwIfCancelledOrExpired() throws {
+        if isCancelled {
+            throw RelayServiceRouteAllocationError.allocationCancelled
+        }
+        if isExpired {
+            throw RelayServiceRouteAllocationError.allocationTimedOut
+        }
+    }
+
+    @discardableResult
+    public func addCancellationHandler(_ handler: @escaping @Sendable () -> Void) -> UUID? {
+        let identifier = UUID()
+        let shouldInvoke = condition.withLock { () -> Bool in
+            guard !cancelled else { return true }
+            cancellationHandlers[identifier] = handler
+            return false
+        }
+        if shouldInvoke {
+            handler()
+            return nil
+        }
+        return identifier
+    }
+
+    public func removeCancellationHandler(_ identifier: UUID?) {
+        guard let identifier else { return }
+        _ = condition.withLock {
+            cancellationHandlers.removeValue(forKey: identifier)
+        }
+    }
+}
 
 public protocol RelayServiceRouteAllocating: Sendable {
     func allocateRelayRoute(
@@ -12,7 +75,8 @@ public protocol RelayServiceRouteAllocating: Sendable {
         allocationToken: String?,
         runtimeIdentity: RelayRuntimeIdentity,
         identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        cancellation: RelayRouteAllocationCancellation
     ) throws -> RelayServiceRouteAllocation
 
     func renewPairedRelayRoute(
@@ -28,6 +92,27 @@ public protocol RelayServiceRouteAllocating: Sendable {
 }
 
 public extension RelayServiceRouteAllocating {
+    func allocateRelayRoute(
+        host: String,
+        port: UInt16,
+        routeToken: String,
+        allocationToken: String? = nil,
+        runtimeIdentity: RelayRuntimeIdentity,
+        identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
+        timeout: TimeInterval = 5
+    ) throws -> RelayServiceRouteAllocation {
+        try allocateRelayRoute(
+            host: host,
+            port: port,
+            routeToken: routeToken,
+            allocationToken: allocationToken,
+            runtimeIdentity: runtimeIdentity,
+            identityAuthorizationSigner: identityAuthorizationSigner,
+            timeout: timeout,
+            cancellation: RelayRouteAllocationCancellation(timeout: timeout)
+        )
+    }
+
     func renewPairedRelayRoute(
         currentRouteToken: String,
         currentConfiguration: RelayPeerConfiguration,
@@ -122,22 +207,46 @@ public struct TCPRelayServiceRouteAllocator: RelayServiceRouteAllocating {
         identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
         timeout: TimeInterval = 5
     ) throws -> RelayServiceRouteAllocation {
+        try allocateRelayRoute(
+            host: host,
+            port: port,
+            routeToken: routeToken,
+            allocationToken: allocationToken,
+            runtimeIdentity: runtimeIdentity,
+            identityAuthorizationSigner: identityAuthorizationSigner,
+            timeout: timeout,
+            cancellation: RelayRouteAllocationCancellation(timeout: timeout)
+        )
+    }
+
+    public func allocateRelayRoute(
+        host: String,
+        port: UInt16,
+        routeToken: String,
+        allocationToken: String? = nil,
+        runtimeIdentity: RelayRuntimeIdentity,
+        identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
+        timeout: TimeInterval = 5,
+        cancellation: RelayRouteAllocationCancellation
+    ) throws -> RelayServiceRouteAllocation {
         guard try identityAuthorizationSigner.relayRuntimeIdentity() == runtimeIdentity else {
             throw RelayServiceRouteAllocationError.signingIdentityMismatch
         }
-        let socket = try Self.connectSocket(host: host, port: port, timeout: timeout)
-        defer { Darwin.close(socket) }
+        let connection = try RelayAllocationConnection(
+            host: host,
+            port: port,
+            timeout: timeout,
+            cancellation: cancellation
+        )
 
         let requestLine = try Self.allocationRequestLine(
             routeToken: routeToken,
             allocationToken: allocationToken,
             runtimeIdentity: runtimeIdentity
         )
-        guard writeAll(socket: socket, data: Data(requestLine.utf8)) else {
-            throw RelayServiceRouteAllocationError.writeFailed
-        }
+        try connection.write(Data(requestLine.utf8))
         let challenge = try Self.parseAllocationChallengeLine(
-            readLine(socket: socket),
+            connection.readLine(),
             routeToken: routeToken,
             runtimeIdentity: runtimeIdentity
         )
@@ -151,17 +260,14 @@ public struct TCPRelayServiceRouteAllocator: RelayServiceRouteAllocating {
         else {
             throw RelayServiceRouteAllocationError.signingIdentityMismatch
         }
-        guard writeAll(
-            socket: socket,
-            data: Data(try Self.allocationProofLine(
+        try connection.write(
+            Data(try Self.allocationProofLine(
                 challenge: challenge.challenge,
                 signatureBase64: proof.signatureBase64
             ).utf8)
-        ) else {
-            throw RelayServiceRouteAllocationError.writeFailed
-        }
+        )
         let response = try Self.parseAllocationResponseLine(
-            readLine(socket: socket),
+            connection.readLine(),
             challenge: challenge,
             runtimeIdentity: runtimeIdentity
         )
@@ -199,14 +305,15 @@ public struct TCPRelayServiceRouteAllocator: RelayServiceRouteAllocating {
             allocationToken: allocationToken,
             timeout: timeout
         )
+        let cancellation = RelayRouteAllocationCancellation(timeout: timeout)
         let operation = Task.detached(priority: .userInitiated) {
             try Task.checkCancellation()
-            let socket = try Self.connectSocket(
+            let connection = try RelayAllocationConnection(
                 host: currentConfiguration.host,
                 port: currentConfiguration.port,
-                timeout: timeout
+                timeout: timeout,
+                cancellation: cancellation
             )
-            defer { Darwin.close(socket) }
 
             let requestLine = try Self.pairedRenewalRequestLine(
                 currentRouteToken: currentRouteToken,
@@ -215,12 +322,10 @@ public struct TCPRelayServiceRouteAllocator: RelayServiceRouteAllocating {
                 authorizationID: authorizationID,
                 allocationToken: allocationToken
             )
-            guard writeAll(socket: socket, data: Data(requestLine.utf8)) else {
-                throw RelayServiceRouteAllocationError.writeFailed
-            }
+            try connection.write(Data(requestLine.utf8))
 
             let challenge = try Self.parsePairedAllocationChallengeLine(
-                readLine(socket: socket),
+                connection.readLine(),
                 snapshot: snapshot
             )
             let runtimeProof = try authorizationSigner.signPairedRelayAllocationAuthorization(
@@ -250,17 +355,16 @@ public struct TCPRelayServiceRouteAllocator: RelayServiceRouteAllocating {
                 throw RelayServiceRouteAllocationError.clientAuthorizationRejected
             }
             try Task.checkCancellation()
+            try cancellation.throwIfCancelledOrExpired()
 
             let proofLine = try Self.pairedAllocationProofLine(
                 challenge: challenge,
                 runtimeProof: runtimeProof,
                 clientProof: clientProof
             )
-            guard writeAll(socket: socket, data: Data(proofLine.utf8)) else {
-                throw RelayServiceRouteAllocationError.writeFailed
-            }
+            try connection.write(Data(proofLine.utf8))
             let response = try Self.parsePairedAllocationResponseLine(
-                readLine(socket: socket),
+                connection.readLine(),
                 challenge: challenge,
                 runtimeIdentity: runtimeIdentity
             )
@@ -278,6 +382,7 @@ public struct TCPRelayServiceRouteAllocator: RelayServiceRouteAllocating {
         return try await withTaskCancellationHandler {
             try await operation.value
         } onCancel: {
+            cancellation.cancel()
             operation.cancel()
         }
     }
@@ -586,39 +691,6 @@ public struct TCPRelayServiceRouteAllocator: RelayServiceRouteAllocating {
         "transport_binding",
     ]
 
-    private static func connectSocket(host: String, port: UInt16, timeout: TimeInterval) throws -> Int32 {
-        var hints = addrinfo(
-            ai_flags: 0,
-            ai_family: AF_UNSPEC,
-            ai_socktype: SOCK_STREAM,
-            ai_protocol: IPPROTO_TCP,
-            ai_addrlen: 0,
-            ai_canonname: nil,
-            ai_addr: nil,
-            ai_next: nil
-        )
-        var result: UnsafeMutablePointer<addrinfo>?
-        let status = getaddrinfo(host, String(port), &hints, &result)
-        guard status == 0, let first = result else {
-            throw RelayServiceRouteAllocationError.resolveFailed(String(cString: gai_strerror(status)))
-        }
-        defer { freeaddrinfo(first) }
-
-        var cursor: UnsafeMutablePointer<addrinfo>? = first
-        while let info = cursor {
-            let fd = Darwin.socket(info.pointee.ai_family, info.pointee.ai_socktype, info.pointee.ai_protocol)
-            if fd >= 0 {
-                setTimeout(timeout, on: fd)
-                if Darwin.connect(fd, info.pointee.ai_addr, info.pointee.ai_addrlen) == 0 {
-                    return fd
-                }
-                Darwin.close(fd)
-            }
-            cursor = info.pointee.ai_next
-        }
-
-        throw RelayServiceRouteAllocationError.connectFailed(String(cString: strerror(errno)))
-    }
 }
 
 public enum RelayServiceRouteAllocationError: Error, Equatable, LocalizedError, Sendable {
@@ -637,6 +709,8 @@ public enum RelayServiceRouteAllocationError: Error, Equatable, LocalizedError, 
     case pairedRenewalUnavailable
     case clientAuthorizationTimedOut
     case clientAuthorizationRejected
+    case allocationCancelled
+    case allocationTimedOut
 
     public var errorDescription: String? {
         switch self {
@@ -670,6 +744,222 @@ public enum RelayServiceRouteAllocationError: Error, Equatable, LocalizedError, 
             return "Paired client relay authorization timed out."
         case .clientAuthorizationRejected:
             return "Paired client relay authorization was rejected."
+        case .allocationCancelled:
+            return "Remote route allocation was cancelled."
+        case .allocationTimedOut:
+            return "Remote route allocation timed out."
+        }
+    }
+}
+
+private final class RelayAllocationConnection: @unchecked Sendable {
+    private enum State {
+        case preparing
+        case ready
+        case failed(String)
+        case cancelled
+    }
+
+    private let connection: NWConnection
+    private let queue = DispatchQueue(label: "dev.aetherlink.relay-route-allocation.connection")
+    private let condition = NSCondition()
+    private let cancellation: RelayRouteAllocationCancellation
+    private let deadline: Date
+    private var cancellationHandlerID: UUID?
+    private var state = State.preparing
+    private var sendSequence: UInt64 = 0
+    private var completedSendSequence: UInt64 = 0
+    private var sendFailed = false
+    private var receiveBuffer = Data()
+    private var receiveInFlight = false
+    private var receiveFailed = false
+    private var receiveComplete = false
+
+    init(
+        host: String,
+        port: UInt16,
+        timeout: TimeInterval,
+        cancellation: RelayRouteAllocationCancellation
+    ) throws {
+        guard timeout.isFinite, timeout > 0 else {
+            throw RelayServiceRouteAllocationError.allocationTimedOut
+        }
+        self.cancellation = cancellation
+        deadline = min(cancellation.deadline, Date().addingTimeInterval(timeout))
+        connection = NWConnection(
+            host: NWEndpoint.Host(host),
+            port: NWEndpoint.Port(rawValue: port)!,
+            using: .tcp
+        )
+        connection.stateUpdateHandler = { [weak self] nextState in
+            self?.handleStateUpdate(nextState)
+        }
+        cancellationHandlerID = cancellation.addCancellationHandler { [weak self] in
+            self?.cancel()
+        }
+        try cancellation.throwIfCancelledOrExpired()
+        connection.start(queue: queue)
+        try waitUntilReady()
+    }
+
+    deinit {
+        cancellation.removeCancellationHandler(cancellationHandlerID)
+        connection.stateUpdateHandler = nil
+        connection.cancel()
+    }
+
+    func write(_ data: Data) throws {
+        try cancellation.throwIfCancelledOrExpired()
+        let sequence = condition.withLock { () -> UInt64 in
+            sendSequence += 1
+            sendFailed = false
+            return sendSequence
+        }
+        connection.send(content: data, completion: .contentProcessed { [weak self] error in
+            guard let self else { return }
+            self.condition.withLock {
+                self.sendFailed = error != nil
+                self.completedSendSequence = max(self.completedSendSequence, sequence)
+                self.condition.broadcast()
+            }
+        })
+
+        try waitUntil {
+            self.completedSendSequence >= sequence
+        }
+        if condition.withLock({ sendFailed }) {
+            throw RelayServiceRouteAllocationError.writeFailed
+        }
+    }
+
+    func readLine(maxBytes: Int = 4096) throws -> String {
+        precondition(maxBytes > 0, "Relay control line limit must be positive")
+        while true {
+            try cancellation.throwIfCancelledOrExpired()
+            if let line = try condition.withLock({ try takeLineIfAvailable(maxBytes: maxBytes) }) {
+                return line
+            }
+
+            let shouldReceive = condition.withLock { () -> Bool in
+                guard !receiveInFlight, !receiveFailed, !receiveComplete else { return false }
+                receiveInFlight = true
+                return true
+            }
+            if shouldReceive {
+                connection.receive(minimumIncompleteLength: 1, maximumLength: maxBytes) { [weak self] data, _, isComplete, error in
+                    guard let self else { return }
+                    self.condition.withLock {
+                        if let data {
+                            self.receiveBuffer.append(data)
+                        }
+                        self.receiveFailed = error != nil
+                        self.receiveComplete = isComplete
+                        self.receiveInFlight = false
+                        self.condition.broadcast()
+                    }
+                }
+            }
+
+            try waitUntil {
+                self.receiveBuffer.contains(UInt8(ascii: "\n")) ||
+                    self.receiveBuffer.count >= maxBytes ||
+                    self.receiveFailed ||
+                    self.receiveComplete ||
+                    !self.receiveInFlight
+            }
+            let terminalFailure = condition.withLock {
+                (receiveFailed || receiveComplete) && !receiveBuffer.contains(UInt8(ascii: "\n"))
+            }
+            if terminalFailure {
+                throw RelayServiceRouteAllocationError.readFailed
+            }
+        }
+    }
+
+    private func takeLineIfAvailable(maxBytes: Int) throws -> String? {
+        if let newlineIndex = receiveBuffer.firstIndex(of: UInt8(ascii: "\n")) {
+            let lineLength = receiveBuffer.distance(from: receiveBuffer.startIndex, to: newlineIndex) + 1
+            guard lineLength <= maxBytes else {
+                throw RelayServiceRouteAllocationError.readFailed
+            }
+            let lineData = receiveBuffer.prefix(lineLength)
+            receiveBuffer.removeFirst(lineLength)
+            guard let line = String(data: lineData, encoding: .utf8) else {
+                throw RelayServiceRouteAllocationError.readFailed
+            }
+            return line
+        }
+        if receiveBuffer.count >= maxBytes {
+            throw RelayServiceRouteAllocationError.readFailed
+        }
+        return nil
+    }
+
+    private func waitUntilReady() throws {
+        try waitUntil {
+            switch self.state {
+            case .preparing:
+                return false
+            case .ready, .failed, .cancelled:
+                return true
+            }
+        }
+        switch condition.withLock({ state }) {
+        case .ready:
+            return
+        case .failed(let message):
+            throw RelayServiceRouteAllocationError.connectFailed(message)
+        case .preparing:
+            throw RelayServiceRouteAllocationError.allocationTimedOut
+        case .cancelled:
+            throw cancellation.isCancelled
+                ? RelayServiceRouteAllocationError.allocationCancelled
+                : RelayServiceRouteAllocationError.connectFailed("Connection cancelled.")
+        }
+    }
+
+    private func waitUntil(_ predicate: () -> Bool) throws {
+        condition.lock()
+        while !predicate() {
+            if cancellation.isCancelled {
+                condition.unlock()
+                connection.cancel()
+                throw RelayServiceRouteAllocationError.allocationCancelled
+            }
+            if Date() >= deadline || cancellation.isExpired {
+                condition.unlock()
+                connection.cancel()
+                throw RelayServiceRouteAllocationError.allocationTimedOut
+            }
+            _ = condition.wait(until: deadline)
+        }
+        condition.unlock()
+        try cancellation.throwIfCancelledOrExpired()
+    }
+
+    private func cancel() {
+        connection.cancel()
+        condition.withLock {
+            state = .cancelled
+            condition.broadcast()
+        }
+    }
+
+    private func handleStateUpdate(_ nextState: NWConnection.State) {
+        condition.withLock {
+            switch nextState {
+            case .ready:
+                state = .ready
+            case .failed(let error):
+                state = .failed(error.localizedDescription)
+            case .cancelled:
+                state = .cancelled
+            case .setup, .waiting, .preparing:
+                break
+            @unknown default:
+                state = .failed("Unknown connection state.")
+            }
+            condition.broadcast()
         }
     }
 }
@@ -918,49 +1208,4 @@ private func validateAllocationToken(_ value: String) throws {
     else {
         throw RelayServiceRouteAllocationError.invalidAllocationToken
     }
-}
-
-private func setTimeout(_ timeout: TimeInterval, on socket: Int32) {
-    let seconds = Int(timeout)
-    let microseconds = Int((timeout - TimeInterval(seconds)) * 1_000_000)
-    var value = timeval(tv_sec: seconds, tv_usec: Int32(microseconds))
-    setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &value, socklen_t(MemoryLayout<timeval>.size))
-    setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, &value, socklen_t(MemoryLayout<timeval>.size))
-}
-
-private func writeAll(socket: Int32, data: Data) -> Bool {
-    data.withUnsafeBytes { rawBuffer in
-        guard let base = rawBuffer.baseAddress else { return true }
-        var sent = 0
-        while sent < rawBuffer.count {
-            let count = Darwin.send(socket, base.advanced(by: sent), rawBuffer.count - sent, 0)
-            guard count > 0 else { return false }
-            sent += count
-        }
-        return true
-    }
-}
-
-private func readLine(socket: Int32, maxBytes: Int = 4096) throws -> String {
-    var bytes: [UInt8] = []
-    bytes.reserveCapacity(128)
-
-    while bytes.count < maxBytes {
-        var byte: UInt8 = 0
-        let count = Darwin.recv(socket, &byte, 1, 0)
-        guard count > 0 else {
-            throw RelayServiceRouteAllocationError.readFailed
-        }
-        bytes.append(byte)
-        if byte == UInt8(ascii: "\n") {
-            break
-        }
-    }
-
-    guard bytes.last == UInt8(ascii: "\n"),
-          let line = String(bytes: bytes, encoding: .utf8)
-    else {
-        throw RelayServiceRouteAllocationError.readFailed
-    }
-    return line
 }

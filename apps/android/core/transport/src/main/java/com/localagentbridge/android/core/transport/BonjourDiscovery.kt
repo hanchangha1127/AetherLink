@@ -61,16 +61,26 @@ class BonjourDiscovery(context: Context) {
             }
         }
 
-        nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, listener)
-        awaitClose {
-            runCatching { nsdManager.stopServiceDiscovery(listener) }
-            multicastLock?.release()
+        runBonjourDiscoveryWithCleanup(cleanup = { multicastLock?.release() }) {
+            nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, listener)
+            awaitClose {
+                runCatching { nsdManager.stopServiceDiscovery(listener) }
+            }
         }
     }
 
     companion object {
         const val SERVICE_TYPE = "_aetherlink._tcp."
     }
+}
+
+internal suspend fun <T> runBonjourDiscoveryWithCleanup(
+    cleanup: () -> Unit,
+    block: suspend () -> T,
+): T = try {
+    block()
+} finally {
+    cleanup()
 }
 
 internal data class BonjourTxtMetadata(

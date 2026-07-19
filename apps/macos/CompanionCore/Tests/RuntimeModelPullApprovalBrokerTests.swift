@@ -723,17 +723,23 @@ final class RuntimeModelPullApprovalBrokerTests: XCTestCase {
         defer { fixture.remove() }
         let wallClock = TestClock(date(100))
         let monotonicClock = TestMonotonicClock(100)
+        let deadlineWaitStarted = AsyncGate()
         let dispatcher = MockModelPullDispatcher()
         let broker = RuntimeModelPullApprovalBroker(
             dispatcher: dispatcher,
             persistence: fixture.store,
             approvalTTL: 10,
             now: { wallClock.now() },
-            monotonicNow: { monotonicClock.now() }
+            monotonicNow: { monotonicClock.now() },
+            externalStageDeadlineWait: { _ in
+                await deadlineWaitStarted.open()
+                try await Task.sleep(nanoseconds: 60_000_000_000)
+            }
         )
         let operationID = try await broker.enqueue(intake(
             digest: digest("m"),
             authorizeAndClaimDispatch: { reservation in
+                await deadlineWaitStarted.wait()
                 wallClock.set(self.date(50))
                 monotonicClock.set(110)
                 return try reservation()

@@ -714,7 +714,16 @@ final class AetherLinkLocalizationTests: XCTestCase {
     func testPairingQRCodeAccessibilityCopyUsesSelectedLanguageAndState() {
         let routeExpirationDate = Date(timeIntervalSince1970: 1_000)
         let expectations: [
-            (languageTag: String, label: String, activeValue: String, expiredValue: String, unavailableValue: String, hint: String, routeExpirationFormat: String)
+            (
+                languageTag: String,
+                label: String,
+                activeValue: String,
+                expiredValue: String,
+                unavailableValue: String,
+                hint: String,
+                unavailableHint: String,
+                routeExpirationFormat: String
+            )
         ] = [
             (
                 "en",
@@ -723,6 +732,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "Pairing QR expired. Generate a new QR.",
                 "Pairing QR code unavailable",
                 "This QR verifies AetherLink Runtime and includes connection details for pairing or refresh.",
+                "The pairing QR could not be rendered. Wait a moment or generate a new QR to try again.",
                 "Connection details from this QR expire at %@. Generate a new QR if a device scans later."
             ),
             (
@@ -732,6 +742,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "페어링 QR이 만료되었습니다. 새 QR을 생성하세요.",
                 "페어링 QR 코드를 사용할 수 없음",
                 "이 QR은 AetherLink Runtime을 확인하고 페어링 또는 갱신에 필요한 연결 정보를 포함합니다.",
+                "페어링 QR을 렌더링할 수 없습니다. 잠시 기다리거나 새 QR을 생성해 다시 시도하세요.",
                 "이 QR의 연결 정보는 %@에 만료됩니다. 기기가 나중에 스캔한다면 새 QR을 생성하세요."
             ),
             (
@@ -741,6 +752,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "ペアリング QR の有効期限が切れました。新しい QR を生成してください。",
                 "ペアリング QR コードを利用できません",
                 "この QR は AetherLink Runtime を確認し、ペアリングまたは更新用の接続情報を含みます。",
+                "ペアリング QR を表示できませんでした。しばらく待つか、新しい QR を生成して再試行してください。",
                 "この QR の接続情報は %@ に期限切れになります。後でデバイスがスキャンする場合は新しい QR を生成してください。"
             ),
             (
@@ -750,6 +762,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "配对二维码已过期。请生成新二维码。",
                 "配对 QR 码不可用",
                 "此二维码会验证 AetherLink Runtime，并包含配对或刷新所需的连接信息。",
+                "无法呈现配对二维码。请稍候，或生成新的二维码后重试。",
                 "此二维码中的连接信息将于 %@ 过期。如果设备稍后扫描，请生成新的二维码。"
             ),
             (
@@ -759,6 +772,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "Le QR de jumelage a expiré. Générez un nouveau QR.",
                 "QR code de jumelage indisponible",
                 "Ce QR vérifie AetherLink Runtime et inclut les informations de connexion pour le jumelage ou l’actualisation.",
+                "Impossible d’afficher le QR de jumelage. Attendez un instant ou générez un nouveau QR pour réessayer.",
                 "Les informations de connexion de ce QR expirent à %@. Générez un nouveau QR si un appareil scanne plus tard."
             ),
         ]
@@ -777,11 +791,26 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 XCTAssertEqual(pairingQRCodeAccessibilityValue(isExpired: true), expectation.expiredValue)
                 XCTAssertEqual(pairingQRCodeAccessibilityValue(isExpired: false, isAvailable: false), expectation.unavailableValue)
                 XCTAssertEqual(pairingQRCodeAccessibilityValue(isExpired: true, isAvailable: false), expectation.unavailableValue)
+                XCTAssertEqual(pairingQRCodeInstructionTitle(isAvailable: true), expectation.activeValue)
+                XCTAssertEqual(pairingQRCodeInstructionTitle(isAvailable: false), expectation.unavailableValue)
+                XCTAssertEqual(pairingQRCodeInstructionDetail(isAvailable: true), expectation.hint)
+                XCTAssertEqual(pairingQRCodeInstructionDetail(isAvailable: false), expectation.unavailableHint)
                 XCTAssertEqual(pairingQRCodeAccessibilityHint(), expectation.hint)
+                XCTAssertEqual(
+                    pairingQRCodeAccessibilityHint(isAvailable: false),
+                    expectation.unavailableHint
+                )
                 XCTAssertEqual(pairingQRRemoteRouteExpirationText(routeExpirationDate), routeExpirationText)
                 XCTAssertEqual(
                     pairingQRCodeAccessibilityHint(remoteRouteExpiresAt: routeExpirationDate),
                     "\(expectation.hint) \(routeExpirationText)"
+                )
+                XCTAssertEqual(
+                    pairingQRCodeAccessibilityHint(
+                        remoteRouteExpiresAt: routeExpirationDate,
+                        isAvailable: false
+                    ),
+                    expectation.unavailableHint
                 )
             }
         }
@@ -1539,6 +1568,55 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testDocumentSourceCountSurfacesUseSelectedLocaleAndNaturalPluralCopy() {
+        let expectations: [(
+            languageTag: String,
+            singularDetail: String,
+            pluralDetail: String,
+            singularCount: String,
+            pluralCount: String
+        )] = [
+            ("en", "Approved source", "Approved sources", "1 approved source", "32,768 approved sources"),
+            ("ko", "승인된 소스", "승인된 소스", "승인된 소스 1개", "승인된 소스 32,768개"),
+            (
+                "ja",
+                "承認済みソース",
+                "承認済みソース",
+                "承認済みソース 1 件",
+                "承認済みソース 32,768 件"
+            ),
+            (
+                "zh-Hans",
+                "已批准的源",
+                "已批准的源",
+                "1 个已批准的源",
+                "32,768 个已批准的源"
+            ),
+            (
+                "fr",
+                "Source approuvée",
+                "Sources approuvées",
+                "1 source approuvée",
+                "32 768 sources approuvées"
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                let selectedInteger = localizedCompanionIntegerString(32_768)
+                XCTAssertEqual(runtimeDocumentSourcesCardValue(1), localizedCompanionIntegerString(1))
+                XCTAssertEqual(runtimeDocumentSourcesCardValue(32_768), selectedInteger)
+                XCTAssertEqual(runtimeDocumentSourcesCardDetail(1), expectation.singularDetail)
+                XCTAssertEqual(runtimeDocumentSourcesCardDetail(32_768), expectation.pluralDetail)
+                XCTAssertEqual(localizedRuntimeDocumentSourceCount(1), expectation.singularCount)
+                XCTAssertEqual(localizedRuntimeDocumentSourceCount(32_768), expectation.pluralCount)
+                XCTAssertTrue(expectation.pluralCount.contains(selectedInteger), expectation.languageTag)
+            }
+        }
+    }
+
     func testCompactionCalibrationCopyLocalizesAcrossSupportedLanguages() {
         withStoredAppLanguage("en") {
             XCTAssertEqual(
@@ -1885,6 +1963,84 @@ final class AetherLinkLocalizationTests: XCTestCase {
         XCTAssertLessThanOrEqual(preview.count, 183)
     }
 
+    func testRuntimeTranscriptMessageIdentityIsStableWithinSessionAndResetsAcrossSessions() {
+        let duplicate = RuntimeChatStoredMessage(
+            role: "assistant",
+            content: "Answer",
+            reasoning: "Reasoning",
+            createdAt: Date(timeIntervalSince1970: 100)
+        )
+        let appended = RuntimeChatStoredMessage(
+            role: "user",
+            content: "Follow-up",
+            createdAt: Date(timeIntervalSince1970: 110)
+        )
+
+        let initial = identifiedRuntimeTranscriptMessages(
+            sessionID: "session-a",
+            messages: [duplicate, duplicate]
+        )
+        let afterAppend = identifiedRuntimeTranscriptMessages(
+            sessionID: "session-a",
+            messages: [duplicate, duplicate, appended]
+        )
+        let otherSession = identifiedRuntimeTranscriptMessages(
+            sessionID: "session-b",
+            messages: [duplicate, duplicate]
+        )
+
+        XCTAssertEqual(initial.map(\.id), Array(afterAppend.prefix(2).map(\.id)))
+        XCTAssertNotEqual(initial[0].id, initial[1].id)
+        XCTAssertEqual(initial.map(\.id.occurrence), [0, 1])
+        XCTAssertNotEqual(initial.map(\.id), otherSession.map(\.id))
+
+        let originalAssistantMessage = RuntimeChatStoredMessage(
+            role: "assistant",
+            content: "Draft answer",
+            reasoning: "Initial reasoning",
+            createdAt: Date(timeIntervalSince1970: 120),
+            assistantMessageID: "assistant-message-1"
+        )
+        let updatedAssistantMessage = RuntimeChatStoredMessage(
+            role: "assistant",
+            content: "Final answer",
+            reasoning: "Completed reasoning",
+            createdAt: Date(timeIntervalSince1970: 121),
+            assistantMessageID: "assistant-message-1"
+        )
+        let originalID = identifiedRuntimeTranscriptMessages(
+            sessionID: "session-a",
+            messages: [originalAssistantMessage]
+        )[0].id
+        let updatedID = identifiedRuntimeTranscriptMessages(
+            sessionID: "session-a",
+            messages: [updatedAssistantMessage]
+        )[0].id
+
+        XCTAssertEqual(originalID, updatedID)
+    }
+
+    func testActivityLogIdentityFollowsExistingRowsAcrossPrependAndTruncation() throws {
+        let firstID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
+        let secondID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000002"))
+        let thirdID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000003"))
+        let newID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000004"))
+        let previous = [
+            ActivityLogEntry(id: firstID, line: "Repeated event"),
+            ActivityLogEntry(id: secondID, line: "Older event"),
+            ActivityLogEntry(id: thirdID, line: "Oldest event"),
+        ]
+
+        let reconciled = reconcileActivityLogEntries(
+            lines: ["Repeated event", "Repeated event", "Older event"],
+            previous: previous,
+            makeID: { newID }
+        )
+
+        XCTAssertEqual(reconciled.map(\.line), ["Repeated event", "Repeated event", "Older event"])
+        XCTAssertEqual(reconciled.map(\.id), [newID, firstID, secondID])
+    }
+
     func testRuntimeMemoryInspectorCopyLocalizesAcrossSupportedLanguages() {
         withStoredAppLanguage("en") {
             XCTAssertEqual(NSLocalizedString("Inspect Runtime Memory", comment: ""), "Inspect Runtime Memory")
@@ -1935,7 +2091,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     ),
                 ]
             )
-            let collapsedSourceLabel = runtimeMemorySourceReviewAccessibilityLabel(source: source, isExpanded: false)
+            let sourceLabel = runtimeMemorySourceReviewAccessibilityLabel(source: source)
 
             XCTAssertEqual(runtimeMemorySourceSessionTitle(source), "Release planning")
             XCTAssertEqual(runtimeMemorySourceSessionText(source), "Source chat: Release planning")
@@ -1944,18 +2100,21 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(runtimeMemorySourcePointerText(source.sourcePointers[0]), "Source excerpt User: Prefer concise release notes.")
             XCTAssertEqual(runtimeMemorySourceHiddenExcerptText(1), "1 more source excerpts hidden")
             XCTAssertEqual(
-                collapsedSourceLabel,
-                "Memory source. Source chat: Release planning. Source coverage: Messages 1-4. Source review collapsed."
+                sourceLabel,
+                "Memory source. Source chat: Release planning. Source coverage: Messages 1-4."
             )
+            XCTAssertFalse(sourceLabel.contains("collapsed"))
+            XCTAssertFalse(sourceLabel.contains("expanded"))
+            XCTAssertEqual(runtimeMemorySourceReviewAccessibilityValue(isExpanded: false), "Source review collapsed")
+            XCTAssertEqual(runtimeMemorySourceReviewAccessibilityValue(isExpanded: true), "Source review expanded")
             XCTAssertEqual(
                 runtimeMemoryEntryAccessibilityLabel(
                     content: " Prefer concise answers ",
                     status: NSLocalizedString("Enabled", comment: ""),
                     createdAt: "Jun 29, 2026 at 12:50 AM",
-                    updatedAt: "Jun 29, 2026 at 1:00 AM",
-                    sourceSummary: collapsedSourceLabel
+                    updatedAt: "Jun 29, 2026 at 1:00 AM"
                 ),
-                "Memory note Prefer concise answers. Status Enabled. Created Jun 29, 2026 at 12:50 AM. Updated Jun 29, 2026 at 1:00 AM. Memory source. Source chat: Release planning. Source coverage: Messages 1-4. Source review collapsed."
+                "Memory note Prefer concise answers. Status Enabled. Created Jun 29, 2026 at 12:50 AM. Updated Jun 29, 2026 at 1:00 AM."
             )
 
             let blankSource = RuntimeMemoryEntrySource(
@@ -2036,6 +2195,50 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Approved from older chat", comment: ""), "Approuvé depuis un ancien chat")
             XCTAssertEqual(NSLocalizedString("Show source excerpts", comment: ""), "Afficher les extraits source")
             XCTAssertEqual(NSLocalizedString("Hide source excerpts", comment: ""), "Masquer les extraits source")
+        }
+    }
+
+    func testRuntimeMemorySourceDisclosureExposesOneLiveLocalizedStateValue() {
+        let source = RuntimeMemoryEntrySource(
+            kind: "long_inactivity_summary",
+            draftID: "draft-1",
+            summaryMethod: "extractive",
+            session: RuntimeMemoryEntrySourceSession(
+                sessionID: "session-1",
+                title: "Release planning",
+                model: "qwen-local",
+                lastActivityAt: Date(timeIntervalSince1970: 100),
+                messageCount: 4,
+                inactiveSeconds: 7200
+            ),
+            sourceMessageCount: 4,
+            sourceRange: "1-4",
+            sourcePointers: []
+        )
+        let expectations: [(languageTag: String, collapsed: String, expanded: String)] = [
+            ("en", "Source review collapsed", "Source review expanded"),
+            ("ko", "원본 검토 접힘", "원본 검토 펼쳐짐"),
+            ("ja", "参照レビューを折りたたみ中", "参照レビューを展開中"),
+            ("zh-Hans", "来源审核已折叠", "来源审核已展开"),
+            ("fr", "Revue de la source réduite", "Revue de la source développée"),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                let label = runtimeMemorySourceReviewAccessibilityLabel(source: source)
+                let collapsedValue = runtimeMemorySourceReviewAccessibilityValue(isExpanded: false)
+                let expandedValue = runtimeMemorySourceReviewAccessibilityValue(isExpanded: true)
+
+                XCTAssertEqual(collapsedValue, expectation.collapsed)
+                XCTAssertEqual(expandedValue, expectation.expanded)
+                XCTAssertFalse(label.contains(expectation.collapsed))
+                XCTAssertFalse(label.contains(expectation.expanded))
+                XCTAssertEqual([label, collapsedValue].filter { $0.contains(expectation.collapsed) }.count, 1)
+                XCTAssertEqual([label, expandedValue].filter { $0.contains(expectation.expanded) }.count, 1)
+                XCTAssertFalse([label, expandedValue].joined(separator: " ").contains(expectation.collapsed))
+            }
         }
     }
 
@@ -2554,7 +2757,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
     }
 
     @MainActor
-    func testRouteDiagnosticsPanelStaysHiddenOnCleanFirstRunAndPairingHidesSetup() throws {
+    func testRouteDiagnosticsPanelStaysHiddenOnCleanFirstRunAndPairingExposesSetup() throws {
         let cleanFirstRunModel = CompanionAppModel(
             environment: isolatedRuntimeIdentityEnvironment(),
             userDefaults: try isolatedDefaults()
@@ -2563,7 +2766,8 @@ final class AetherLinkLocalizationTests: XCTestCase {
         XCTAssertFalse(cleanFirstRunModel.bootstrapRelaySettings.isEnabled)
         XCTAssertNil(cleanFirstRunModel.remoteRoutePreparationIssue)
         XCTAssertFalse(shouldShowRouteDiagnosticsPanel(model: cleanFirstRunModel))
-        XCTAssertFalse(shouldShowPairingRouteSetupPanel(model: cleanFirstRunModel))
+        XCTAssertTrue(shouldShowPairingRouteSetupPanel(model: cleanFirstRunModel))
+        XCTAssertTrue(shouldExpandPairingRouteSetupByDefault(model: cleanFirstRunModel))
 
         let savedRouteModel = CompanionAppModel(
             environment: isolatedRuntimeIdentityEnvironment(),
@@ -2577,6 +2781,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
         XCTAssertTrue(savedRouteModel.hasDevelopmentRelayRoute)
         XCTAssertTrue(shouldShowRouteDiagnosticsPanel(model: savedRouteModel))
         XCTAssertTrue(shouldShowPairingRouteSetupPanel(model: savedRouteModel))
+        XCTAssertFalse(shouldExpandPairingRouteSetupByDefault(model: savedRouteModel))
 
         let routeIssueModel = CompanionAppModel(
             environment: isolatedRuntimeIdentityEnvironment(),
@@ -2590,6 +2795,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
         XCTAssertNotNil(routeIssueModel.remoteRoutePreparationIssue)
         XCTAssertTrue(shouldShowRouteDiagnosticsPanel(model: routeIssueModel))
         XCTAssertTrue(shouldShowPairingRouteSetupPanel(model: routeIssueModel))
+        XCTAssertTrue(shouldExpandPairingRouteSetupByDefault(model: routeIssueModel))
     }
 
     func testAppAppearancePickerOptionsStaySystemLightDark() {
@@ -2716,29 +2922,12 @@ final class AetherLinkLocalizationTests: XCTestCase {
     }
 
     func testToolbarAndMenuPairingQRGenerationUsesSharedAvailabilityContract() {
-        let cases: [(canPrepareAutomatically: Bool, isRouteEligibleForQRCode: Bool, isAvailable: Bool)] = [
-            (true, false, true),
-            (false, true, true),
-            (false, false, false),
-        ]
-
-        for testCase in cases {
+        for canRequestRemotePairing in [false, true] {
             XCTAssertEqual(
                 pairingQRGenerationCommandAvailable(
-                    canPrepareAutomatically: testCase.canPrepareAutomatically,
-                    isRouteEligibleForQRCode: testCase.isRouteEligibleForQRCode
+                    canRequestRemotePairing: canRequestRemotePairing
                 ),
-                testCase.isAvailable
-            )
-            XCTAssertEqual(
-                pairingQRGenerationCommandAvailable(
-                    canPrepareAutomatically: testCase.canPrepareAutomatically,
-                    isRouteEligibleForQRCode: testCase.isRouteEligibleForQRCode
-                ),
-                pairingQRGenerationAvailable(
-                    canPrepareAutomatically: testCase.canPrepareAutomatically,
-                    isRouteEligibleForQRCode: testCase.isRouteEligibleForQRCode
-                )
+                canRequestRemotePairing
             )
         }
     }
@@ -3393,7 +3582,8 @@ final class AetherLinkLocalizationTests: XCTestCase {
             unavailable: String,
             disabledHint: String,
             missingActionHint: String,
-            activeRenewalHint: String
+            activeRenewalHint: String,
+            inactiveRenewalHint: String
         )] = [
             (
                 "en",
@@ -3401,7 +3591,8 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "Unavailable",
                 "Pairing from another network needs a relay, VPN, tunnel, or private-overlay route inside the pairing QR.",
                 "Pairing QR generation is unavailable from this view.",
-                "Generate New QR"
+                "Generate New QR",
+                "Restore connection details before generating a new QR."
             ),
             (
                 "ko",
@@ -3409,7 +3600,8 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "사용 불가",
                 "다른 네트워크에서 페어링하려면 페어링 QR 안에 릴레이, VPN, 터널 또는 프라이빗 오버레이 경로가 필요합니다.",
                 "이 화면에서는 페어링 QR을 생성할 수 없습니다.",
-                "새 QR 생성"
+                "새 QR 생성",
+                "새 QR을 생성하기 전에 연결 정보를 복구하세요."
             ),
             (
                 "ja",
@@ -3417,7 +3609,8 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "利用不可",
                 "別ネットワークからペアリングするには、ペアリング QR 内にリレー、VPN、トンネル、またはプライベートオーバーレイ経路が必要です。",
                 "この画面ではペアリング QR を生成できません。",
-                "新しい QR を生成"
+                "新しい QR を生成",
+                "新しい QR を生成する前に接続情報を復旧してください。"
             ),
             (
                 "zh-Hans",
@@ -3425,7 +3618,8 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "不可用",
                 "从另一个网络配对时，配对二维码内需要包含中继、VPN、隧道或私有覆盖网络路径。",
                 "此视图无法生成配对二维码。",
-                "生成新二维码"
+                "生成新二维码",
+                "生成新二维码前，请先恢复连接信息。"
             ),
             (
                 "fr",
@@ -3433,7 +3627,8 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "Indisponible",
                 "Le jumelage depuis un autre réseau nécessite une route relais, VPN, tunnel ou overlay privé dans le QR de jumelage.",
                 "La génération du QR de jumelage n'est pas disponible depuis cette vue.",
-                "Générer un nouveau QR"
+                "Générer un nouveau QR",
+                "Restaurez les informations de connexion avant de générer un nouveau QR."
             ),
         ]
 
@@ -3469,6 +3664,92 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 XCTAssertEqual(
                     activePairingQRRenewalActionAccessibilityHint(),
                     expectation.activeRenewalHint,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    activePairingQRRenewalActionAccessibilityHint(isAvailable: false),
+                    expectation.inactiveRenewalHint,
+                    expectation.languageTag
+                )
+            }
+        }
+    }
+
+    func testPairingQRPreparationAccessibilityUsesSelectedLanguage() {
+        let expectations: [(
+            languageTag: String,
+            value: String,
+            hint: String
+        )] = [
+            (
+                "en",
+                "Connection preparation in progress",
+                "Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready."
+            ),
+            (
+                "ko",
+                "연결 준비 진행 중",
+                "연결 정보를 준비 중입니다. 이 창을 열어두면 AetherLink Runtime이 준비되었을 때 QR이 표시됩니다."
+            ),
+            (
+                "ja",
+                "接続準備中",
+                "接続情報を準備中です。このウィンドウを開いたままにすると、AetherLink Runtime の準備ができたときに QR が表示されます。"
+            ),
+            (
+                "zh-Hans",
+                "正在准备连接",
+                "正在准备连接信息。请保持此窗口打开，AetherLink Runtime 就绪后会显示二维码。"
+            ),
+            (
+                "fr",
+                "Préparation de la connexion en cours",
+                "Préparation des informations de connexion. Gardez cette fenêtre ouverte; le QR apparaît quand AetherLink Runtime est prêt."
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(
+                    pairingQRGenerationActionAccessibilityValue(
+                        isAvailable: false,
+                        isPreparing: true
+                    ),
+                    expectation.value,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    pairingQRGenerationActionAccessibilityHint(
+                        isAvailable: false,
+                        isPreparing: true
+                    ),
+                    expectation.hint,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    activePairingQRRenewalActionAccessibilityHint(
+                        isAvailable: false,
+                        isPreparing: true
+                    ),
+                    expectation.hint,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    connectionRecoveryGenerateLatestQRActionAccessibilityValue(
+                        isRouteReadyForQRCode: false,
+                        isPreparing: true
+                    ),
+                    expectation.value,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    connectionRecoveryGenerateLatestQRActionAccessibilityHint(
+                        isRouteReadyForQRCode: false,
+                        isPreparing: true
+                    ),
+                    expectation.hint,
                     expectation.languageTag
                 )
             }
@@ -3861,6 +4142,168 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testConnectionRecoveryDraftReconciliationPreservesDirtyFormsAcrossModelRevisions() {
+        let baseline = ConnectionRecoveryBootstrapDraft(
+            endpoints: "relay-a.example.test:43171",
+            allocationToken: "token-a",
+            allowsPrivateOverlay: false
+        )
+        let dirtyDraft = ConnectionRecoveryBootstrapDraft(
+            endpoints: "relay-draft.example.test:43171",
+            allocationToken: "token-draft",
+            allowsPrivateOverlay: true
+        )
+        let firstPublication = ConnectionRecoveryBootstrapDraft(
+            endpoints: "relay-b.example.test:43171",
+            allocationToken: "token-b",
+            allowsPrivateOverlay: false
+        )
+        let secondPublication = ConnectionRecoveryBootstrapDraft(
+            endpoints: "relay-c.example.test:43171",
+            allocationToken: "token-c",
+            allowsPrivateOverlay: true
+        )
+
+        let firstReconciliation = reconcileConnectionRecoveryDraft(
+            current: dirtyDraft,
+            revision: ConnectionRecoveryDraftRevision(modelValue: baseline),
+            incomingModelValue: firstPublication
+        )
+        let secondReconciliation = reconcileConnectionRecoveryDraft(
+            current: firstReconciliation.draft,
+            revision: firstReconciliation.revision,
+            incomingModelValue: secondPublication
+        )
+
+        XCTAssertEqual(firstReconciliation.draft, dirtyDraft)
+        XCTAssertEqual(firstReconciliation.revision.modelValue, firstPublication)
+        XCTAssertEqual(secondReconciliation.draft, dirtyDraft)
+        XCTAssertEqual(secondReconciliation.revision.modelValue, secondPublication)
+    }
+
+    func testConnectionRecoveryDraftReconciliationResyncsCleanOrSuccessfulForms() {
+        let baseline = ConnectionRecoveryDevelopmentDraft(
+            host: "relay-a.example.test",
+            port: "43171",
+            relaySecret: "secret-a",
+            allowsPrivateOverlay: false
+        )
+        let publication = ConnectionRecoveryDevelopmentDraft(
+            host: "relay-b.example.test",
+            port: "43172",
+            relaySecret: "secret-b",
+            allowsPrivateOverlay: true
+        )
+        let dirtyDraft = ConnectionRecoveryDevelopmentDraft(
+            host: "relay-draft.example.test",
+            port: "43173",
+            relaySecret: "secret-draft",
+            allowsPrivateOverlay: false
+        )
+        let revision = ConnectionRecoveryDraftRevision(modelValue: baseline)
+
+        let cleanReconciliation = reconcileConnectionRecoveryDraft(
+            current: baseline,
+            revision: revision,
+            incomingModelValue: publication
+        )
+        let dirtyReconciliation = reconcileConnectionRecoveryDraft(
+            current: dirtyDraft,
+            revision: revision,
+            incomingModelValue: publication
+        )
+        let successfulReconciliation = reconcileConnectionRecoveryDraft(
+            current: dirtyDraft,
+            revision: revision,
+            incomingModelValue: publication,
+            force: true
+        )
+
+        XCTAssertEqual(cleanReconciliation.draft, publication)
+        XCTAssertEqual(dirtyReconciliation.draft, dirtyDraft)
+        XCTAssertEqual(successfulReconciliation.draft, publication)
+        XCTAssertTrue(connectionRecoveryResultAllowsDraftResync(.disabled))
+        XCTAssertTrue(connectionRecoveryResultAllowsDraftResync(.savedStatic(endpoint: "relay.example.test:43171")))
+        XCTAssertTrue(connectionRecoveryResultAllowsDraftResync(.allocated(endpoint: "relay.example.test:43171")))
+        XCTAssertFalse(
+            connectionRecoveryResultAllowsDraftResync(
+                .allocationFailed(endpoint: "relay.example.test:43171", message: "Unavailable")
+            )
+        )
+    }
+
+    func testConnectionRecoveryConfigurationRequestStateTreatsLatestModelStateAsAuthoritative() {
+        let firstRequestID = UUID()
+        let secondRequestID = UUID()
+        let firstContext = CompanionRelayConfigurationRequestContext(
+            requestID: firstRequestID,
+            operation: .bootstrapRelay
+        )
+        let secondContext = CompanionRelayConfigurationRequestContext(
+            requestID: secondRequestID,
+            operation: .developmentRelay
+        )
+        let secondCompletion = CompanionRelayConfigurationRequestCompletion(
+            requestID: secondRequestID,
+            operation: .developmentRelay,
+            result: .allocated(endpoint: "relay.example.test:443")
+        )
+
+        XCTAssertEqual(
+            connectionRecoveryConfigurationRequestResolution(
+                state: .active(firstContext)
+            ),
+            .pending(firstContext),
+            "A recreated panel must recover an active model-owned request"
+        )
+        XCTAssertEqual(
+            connectionRecoveryConfigurationRequestResolution(
+                state: .active(secondContext)
+            ),
+            .pending(secondContext),
+            "A coalesced active request must replace the panel's older local request"
+        )
+        XCTAssertEqual(
+            connectionRecoveryConfigurationRequestResolution(
+                state: .completed(secondCompletion)
+            ),
+            .completed(secondCompletion),
+            "A coalesced completion must apply the model's latest authoritative request"
+        )
+    }
+
+    func testConnectionRecoveryPairingRefreshRequiresNewSessionIdentity() {
+        let request = PendingConnectionRecoveryPairingRefresh(previousSessionID: "old-session")
+
+        XCTAssertEqual(
+            connectionRecoveryPairingRefreshResolution(
+                request: request,
+                currentSessionID: "old-session",
+                isPreparationInFlight: true
+            ),
+            .pending,
+            "An existing QR must remain pending while its replacement is being prepared"
+        )
+        XCTAssertEqual(
+            connectionRecoveryPairingRefreshResolution(
+                request: request,
+                currentSessionID: "new-session",
+                isPreparationInFlight: false
+            ),
+            .succeeded,
+            "Only a newly identified pairing session proves that refresh completed"
+        )
+        XCTAssertEqual(
+            connectionRecoveryPairingRefreshResolution(
+                request: request,
+                currentSessionID: "old-session",
+                isPreparationInFlight: false
+            ),
+            .failed,
+            "Preparation ending without a new session must not report QR generation success"
+        )
+    }
+
     func testConnectionRecoveryResultAccessibilityLabelUsesSelectedLanguageAndTone() {
         let expectations: [(
             languageTag: String,
@@ -4031,8 +4474,10 @@ final class AetherLinkLocalizationTests: XCTestCase {
             ready: String,
             unavailable: String,
             routeNotReadyValue: String,
+            preparationAvailableValue: String,
             readyHint: String,
             routeNotReadyHint: String,
+            preparationAvailableHint: String,
             missingActionHint: String
         )] = [
             (
@@ -4040,8 +4485,10 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "Ready",
                 "Unavailable",
                 "Connection details not ready",
+                "Connection preparation available",
                 "Generate the latest pairing QR with saved connection details.",
                 "Connection details are not ready for QR generation. Check Connection Recovery settings.",
+                "Prepare connection details and generate the latest pairing QR.",
                 "Latest QR generation is unavailable from this view."
             ),
             (
@@ -4049,8 +4496,10 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "준비됨",
                 "사용 불가",
                 "연결 정보가 준비되지 않음",
+                "연결 준비 가능",
                 "저장된 연결 정보로 최신 페어링 QR을 생성합니다.",
                 "QR 생성을 위한 연결 정보가 준비되지 않았습니다. 연결 복구 설정을 확인하세요.",
+                "연결 정보를 준비하고 최신 페어링 QR을 생성합니다.",
                 "이 화면에서는 최신 QR을 생성할 수 없습니다."
             ),
             (
@@ -4058,8 +4507,10 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "準備完了",
                 "利用不可",
                 "接続情報が未準備",
+                "接続準備が可能",
                 "保存済みの接続情報で最新のペアリング QR を生成します。",
                 "QR 生成用の接続情報は準備できていません。接続の復旧設定を確認してください。",
+                "接続情報を準備して最新のペアリング QR を生成します。",
                 "この画面では最新の QR を生成できません。"
             ),
             (
@@ -4067,8 +4518,10 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "就绪",
                 "不可用",
                 "连接信息尚未就绪",
+                "可准备连接",
                 "使用已保存的连接信息生成最新配对二维码。",
                 "用于生成二维码的连接信息尚未就绪。请检查连接恢复设置。",
+                "准备连接信息并生成最新配对二维码。",
                 "此视图无法生成最新二维码。"
             ),
             (
@@ -4076,8 +4529,10 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "Prêt",
                 "Indisponible",
                 "Informations de connexion non prêtes",
+                "Préparation de la connexion disponible",
                 "Générer le dernier QR de jumelage avec les informations de connexion enregistrées.",
                 "Les informations de connexion ne sont pas prêtes pour générer le QR. Vérifiez les réglages de récupération de connexion.",
+                "Préparez les informations de connexion et générez le dernier QR de jumelage.",
                 "La génération du dernier QR n'est pas disponible depuis cette vue."
             ),
         ]
@@ -4094,6 +4549,14 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 XCTAssertEqual(
                     connectionRecoveryGenerateLatestQRActionAccessibilityValue(isRouteReadyForQRCode: false),
                     expectation.routeNotReadyValue,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    connectionRecoveryGenerateLatestQRActionAccessibilityValue(
+                        isRouteReadyForQRCode: false,
+                        canPrepareRoute: true
+                    ),
+                    expectation.preparationAvailableValue,
                     expectation.languageTag
                 )
                 XCTAssertEqual(
@@ -4116,6 +4579,14 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 )
                 XCTAssertEqual(
                     connectionRecoveryGenerateLatestQRActionAccessibilityHint(
+                        isRouteReadyForQRCode: false,
+                        canPrepareRoute: true
+                    ),
+                    expectation.preparationAvailableHint,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    connectionRecoveryGenerateLatestQRActionAccessibilityHint(
                         isRouteReadyForQRCode: true,
                         hasAction: false
                     ),
@@ -4123,6 +4594,29 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     expectation.languageTag
                 )
             }
+        }
+    }
+
+    func testConnectionRecoveryGenerateLatestQRActionAvailabilityMatchesPairingContract() {
+        let cases: [(
+            canRequestRemotePairing: Bool,
+            hasAction: Bool,
+            expected: Bool
+        )] = [
+            (false, true, false),
+            (true, true, true),
+            (true, false, false),
+            (false, false, false),
+        ]
+
+        for testCase in cases {
+            XCTAssertEqual(
+                connectionRecoveryGenerateLatestQRActionAvailable(
+                    canRequestRemotePairing: testCase.canRequestRemotePairing,
+                    hasAction: testCase.hasAction
+                ),
+                testCase.expected
+            )
         }
     }
 

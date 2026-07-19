@@ -118,7 +118,7 @@ PHASE_A_STATIC_EVIDENCE_SHA256 = {
     LIBNICE_SOURCE_AUDIT_TEST_PATH: "eceeed48760476db9ab9fbd2d37318882f5d64ff461283c5d78f293ebace2141",
 }
 EXPECTED_PHASE_A_STATIC_EVIDENCE_FILE_COUNT = 57
-EVIDENCE_COLLECTION_SHA256 = "7c2142fdd7ae7dd312ee8b52d320a47594517ea17b2499173b59c0fc1f40b721"
+EVIDENCE_COLLECTION_SHA256 = "d2f83be1b884cf9973037c72d2ee81f583fbf33150f6f8d843b787c7c83e29b8"
 EXPECTED_EVIDENCE_PATHS = (
     "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeRemoteRoutePlanner.kt",
     "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt",

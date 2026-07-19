@@ -2,16 +2,21 @@ import BridgeProtocol
 import Foundation
 
 let relayControlLineRelayIDMaxCharacters = 512
+let relayControlLineMaximumUTF8Bytes = 4_096
+let relayControlLineOpaqueFieldMaximumUTF8Bytes = 512
 let relaySessionNonceCharacterCount = 32
 let relayEphemeralKeyCharacterCount = 130
 
-private let relayControlLineRelayIDForbiddenCharacters = CharacterSet(charactersIn: "/\\?#@:")
+private let relayControlLineRelayIDPunctuation = Set("!$%&'*+-.^_`|~".utf8)
 
 func isCanonicalRelayControlLineID(_ relayID: String) -> Bool {
-    !relayID.isEmpty &&
-        relayID.count <= relayControlLineRelayIDMaxCharacters &&
-        relayID.rangeOfCharacter(from: .whitespacesAndNewlines) == nil &&
-        relayID.rangeOfCharacter(from: relayControlLineRelayIDForbiddenCharacters) == nil
+    !relayID.isEmpty && relayID.utf8.count <= relayControlLineRelayIDMaxCharacters &&
+        relayID.utf8.allSatisfy { byte in
+            (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte) ||
+                (UInt8(ascii: "A")...UInt8(ascii: "Z")).contains(byte) ||
+                (UInt8(ascii: "a")...UInt8(ascii: "z")).contains(byte) ||
+                relayControlLineRelayIDPunctuation.contains(byte)
+        }
 }
 
 func isCanonicalRuntimeKeyBoundRelayID(_ relayID: String) -> Bool {

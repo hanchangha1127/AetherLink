@@ -2,6 +2,24 @@
 set -euo pipefail
 
 MODE="${1:-run}"
+
+usage() {
+  echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2
+}
+
+validate_mode() {
+  case "$1" in
+    run|--debug|debug|--logs|logs|--telemetry|telemetry|--verify|verify)
+      ;;
+    *)
+      usage
+      return 2
+      ;;
+  esac
+}
+
+validate_mode "$MODE"
+
 PRODUCT_NAME="AetherLink"
 TARGET_EXECUTABLE_NAME="LocalAgentBridge"
 APP_NAME="AetherLink"
@@ -86,6 +104,9 @@ cat >"$INFO_PLIST" <<PLIST
 </plist>
 PLIST
 
+/usr/bin/codesign --force --deep --sign - "$APP_BUNDLE"
+/usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
+
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
 }
@@ -111,7 +132,7 @@ case "$MODE" in
     pgrep -x "$APP_NAME" >/dev/null
     ;;
   *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2
+    usage
     exit 2
     ;;
 esac

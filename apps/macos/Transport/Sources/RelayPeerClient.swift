@@ -114,18 +114,71 @@ public protocol RelayPeerTransport: AnyObject, Sendable {
     func stop()
 }
 
+final class RelayPeerReconnectTask {
+    private let cancelHandler: () -> Void
+
+    init(cancelHandler: @escaping () -> Void) {
+        self.cancelHandler = cancelHandler
+    }
+
+    func cancel() {
+        cancelHandler()
+    }
+}
+
+struct RelayPeerClientDependencies {
+    let makeConnection: (String, UInt16) -> NWConnection
+    let startConnection: (NWConnection) -> Void
+    let cancelConnection: (NWConnection) -> Void
+    let scheduleReconnect: (TimeInterval, @escaping () -> Void) -> RelayPeerReconnectTask
+
+    static func live() -> RelayPeerClientDependencies {
+        RelayPeerClientDependencies(
+            makeConnection: { host, port in
+                let endpointHost = NWEndpoint.Host(host)
+                let endpointPort = NWEndpoint.Port(rawValue: port) ?? .any
+                return NWConnection(host: endpointHost, port: endpointPort, using: .tcp)
+            },
+            startConnection: { connection in
+                connection.start(queue: .global(qos: .userInitiated))
+            },
+            cancelConnection: { connection in
+                connection.cancel()
+            },
+            scheduleReconnect: { delay, operation in
+                let item = DispatchWorkItem(block: operation)
+                DispatchQueue.global(qos: .utility).asyncAfter(
+                    deadline: .now() + delay,
+                    execute: item
+                )
+                return RelayPeerReconnectTask {
+                    item.cancel()
+                }
+            }
+        )
+    }
+}
+
 public final class RelayPeerClient: RelayPeerTransport, RuntimeDisconnectReporting, @unchecked Sendable {
     private let codec = ProtocolCodec()
     private let lock = NSLock()
+    private let dependencies: RelayPeerClientDependencies
     private var connection: NWConnection?
     private var connectionID: UUID?
+    private var generation: UInt64 = 0
     private var isRunning = false
-    private var reconnectWorkItem: DispatchWorkItem?
+    private var reconnectTask: RelayPeerReconnectTask?
     private var status: RelayPeerStatus = .stopped
     private var statusHandler: (@Sendable (RelayPeerStatus) -> Void)?
     public var onDisconnect: (@Sendable (UUID) -> Void)?
 
-    public init() {}
+    public convenience init() {
+        self.init(dependencies: .live())
+    }
+
+    init(dependencies: RelayPeerClientDependencies) {
+        self.dependencies = dependencies
+    }
 
     public func start(
         configuration: RelayPeerConfiguration,
@@ -133,51 +186,68 @@ public final class RelayPeerClient: RelayPeerTransport, RuntimeDisconnectReporti
         onMessage: @escaping LocalPeerMessageHandler
     ) {
         stop()
-        lock.withLock {
+        let generation = lock.withLock {
+            self.generation &+= 1
             isRunning = true
             statusHandler = onStatusChange
+            return self.generation
         }
-        updateStatus(.connecting)
-        connect(configuration: configuration, onMessage: onMessage)
+        updateStatus(.connecting, generation: generation)
+        connect(
+            configuration: configuration,
+            onMessage: onMessage,
+            generation: generation
+        )
     }
 
     public func stop() {
         let result = lock.withLock {
+            generation &+= 1
             isRunning = false
-            reconnectWorkItem?.cancel()
-            reconnectWorkItem = nil
+            reconnectTask?.cancel()
+            reconnectTask = nil
             let current = connection
             let consumedConnectionID = connectionID
             connection = nil
             connectionID = nil
-            return (connection: current, connectionID: consumedConnectionID, handler: statusHandler)
+            return (
+                connection: current,
+                connectionID: consumedConnectionID,
+                handler: statusHandler,
+                generation: generation
+            )
         }
         if let connectionID = result.connectionID {
             onDisconnect?(connectionID)
         }
-        result.connection?.cancel()
-        updateStatus(.stopped, handler: result.handler)
+        if let connection = result.connection {
+            dependencies.cancelConnection(connection)
+        }
+        updateStatus(
+            .stopped,
+            handler: result.handler,
+            generation: result.generation
+        )
     }
 
     public func retireAfterCurrentConnection() {
-        let shouldReportStopped = lock.withLock {
+        let result = lock.withLock {
             isRunning = false
-            reconnectWorkItem?.cancel()
-            reconnectWorkItem = nil
-            return connection == nil
+            reconnectTask?.cancel()
+            reconnectTask = nil
+            return (shouldReportStopped: connection == nil, generation: generation)
         }
-        if shouldReportStopped {
-            updateStatus(.stopped)
+        if result.shouldReportStopped {
+            updateStatus(.stopped, generation: result.generation)
         }
     }
 
     private func connect(
         configuration: RelayPeerConfiguration,
-        onMessage: @escaping LocalPeerMessageHandler
+        onMessage: @escaping LocalPeerMessageHandler,
+        generation: UInt64
     ) {
-        let endpointHost = NWEndpoint.Host(configuration.host)
-        let endpointPort = NWEndpoint.Port(rawValue: configuration.port) ?? .any
-        let connection = NWConnection(host: endpointHost, port: endpointPort, using: .tcp)
+        let connection = dependencies.makeConnection(configuration.host, configuration.port)
         let sink = RelayPeerConnection(
             connection: connection,
             codec: codec,
@@ -185,27 +255,33 @@ public final class RelayPeerClient: RelayPeerTransport, RuntimeDisconnectReporti
             relayNonce: configuration.relayNonce
         )
 
-        lock.withLock {
-            self.connection = connection
-            self.connectionID = sink.id
-        }
-
         connection.stateUpdateHandler = { [weak self, sink] state in
             switch state {
             case .ready:
-                guard let self else { return }
+                guard let self,
+                      self.isCurrentConnection(sink.id, generation: generation)
+                else { return }
                 let failConfirmation: @Sendable () -> Void = {
-                    self.updateStatus(.failed("Relay key confirmation failed."))
-                    connection.cancel()
+                    guard self.updateStatus(
+                        .failed("Relay key confirmation failed."),
+                        generation: generation,
+                        connectionID: sink.id
+                    ) else { return }
+                    self.dependencies.cancelConnection(connection)
                 }
                 let finishReady: @Sendable (RelaySessionKeys?) -> Void = { sessionKeys in
+                    guard self.isCurrentConnection(sink.id, generation: generation) else { return }
                     do {
                         try sink.activateFrameCipher(sessionKeys: sessionKeys)
                     } catch {
                         failConfirmation()
                         return
                     }
-                    self.updateStatus(.ready)
+                    guard self.updateStatus(
+                        .ready,
+                        generation: generation,
+                        connectionID: sink.id
+                    ) else { return }
                     Self.receiveNextFrame(
                         connection: connection,
                         peer: sink,
@@ -213,6 +289,7 @@ public final class RelayPeerClient: RelayPeerTransport, RuntimeDisconnectReporti
                     )
                 }
                 let acceptReady: @Sendable (RelayRegistrationStatus) -> Void = { readyStatus in
+                    guard self.isCurrentConnection(sink.id, generation: generation) else { return }
                     do {
                         guard case .ready(let peer) = readyStatus else {
                             failConfirmation()
@@ -239,6 +316,10 @@ public final class RelayPeerClient: RelayPeerTransport, RuntimeDisconnectReporti
                             connection: connection,
                             timeout: configuration.controlLineTimeout
                         ) { result in
+                            guard self.isCurrentConnection(
+                                sink.id,
+                                generation: generation
+                            ) else { return }
                             guard case .line(let line) = result,
                                   sink.validateClientConfirmation(line, sessionKeys: sessionKeys)
                             else {
@@ -262,38 +343,67 @@ public final class RelayPeerClient: RelayPeerTransport, RuntimeDisconnectReporti
                         connection: connection,
                         timeout: configuration.controlLineTimeout
                     ) { result in
+                        guard self.isCurrentConnection(sink.id, generation: generation) else { return }
                         switch result {
                         case .status(.registered(let strict)) where strict == sink.requiresStrictCrypto:
-                            self.updateStatus(.waitingForPeer)
+                            guard self.updateStatus(
+                                .waitingForPeer,
+                                generation: generation,
+                                connectionID: sink.id
+                            ) else { return }
                             Self.receiveRegistrationStatus(
                                 connection: connection,
                                 timeout: configuration.controlLineTimeout
                             ) { result in
+                                guard self.isCurrentConnection(
+                                    sink.id,
+                                    generation: generation
+                                ) else { return }
                                 switch result {
                                 case .status(let status):
                                     acceptReady(status)
                                 case .timedOut:
-                                    self.updateStatus(.failed("Relay ready line timed out after registration."))
-                                    connection.cancel()
+                                    guard self.updateStatus(
+                                        .failed("Relay ready line timed out after registration."),
+                                        generation: generation,
+                                        connectionID: sink.id
+                                    ) else { return }
+                                    self.dependencies.cancelConnection(connection)
                                 default:
-                                    self.updateStatus(.failed("Relay did not return ready after registration."))
-                                    connection.cancel()
+                                    guard self.updateStatus(
+                                        .failed("Relay did not return ready after registration."),
+                                        generation: generation,
+                                        connectionID: sink.id
+                                    ) else { return }
+                                    self.dependencies.cancelConnection(connection)
                                 }
                             }
                         case .status(let status):
                             acceptReady(status)
                         case .invalid:
-                            self.updateStatus(.failed("Relay did not accept runtime registration."))
-                            connection.cancel()
+                            guard self.updateStatus(
+                                .failed("Relay did not accept runtime registration."),
+                                generation: generation,
+                                connectionID: sink.id
+                            ) else { return }
+                            self.dependencies.cancelConnection(connection)
                         case .timedOut:
-                            self.updateStatus(.failed("Relay registration timed out before ready."))
-                            connection.cancel()
+                            guard self.updateStatus(
+                                .failed("Relay registration timed out before ready."),
+                                generation: generation,
+                                connectionID: sink.id
+                            ) else { return }
+                            self.dependencies.cancelConnection(connection)
                         }
                     }
                 }
                 let failAuthorization: @Sendable () -> Void = {
-                    self.updateStatus(.failed("Relay runtime registration authorization failed."))
-                    connection.cancel()
+                    guard self.updateStatus(
+                        .failed("Relay runtime registration authorization failed."),
+                        generation: generation,
+                        connectionID: sink.id
+                    ) else { return }
+                    self.dependencies.cancelConnection(connection)
                 }
 
                 sink.sendRelayHandshake(
@@ -309,6 +419,7 @@ public final class RelayPeerClient: RelayPeerTransport, RuntimeDisconnectReporti
                         connection: connection,
                         timeout: configuration.controlLineTimeout
                     ) { result in
+                        guard self.isCurrentConnection(sink.id, generation: generation) else { return }
                         guard case .challenge(let challenge) = result,
                               sink.validateRegistrationChallenge(
                                 challenge,
@@ -333,6 +444,7 @@ public final class RelayPeerClient: RelayPeerTransport, RuntimeDisconnectReporti
                             challenge: challenge.challenge,
                             signatureBase64: proof.signatureBase64
                         ) { sent in
+                            guard self.isCurrentConnection(sink.id, generation: generation) else { return }
                             guard sent else {
                                 failAuthorization()
                                 return
@@ -344,61 +456,97 @@ public final class RelayPeerClient: RelayPeerTransport, RuntimeDisconnectReporti
                     receiveRegistrationStatus()
                 }
             case .waiting(let error):
-                self?.updateStatus(.failed(error.localizedDescription))
+                self?.updateStatus(
+                    .failed(error.localizedDescription),
+                    generation: generation,
+                    connectionID: sink.id
+                )
             case .failed(let error):
-                self?.updateStatus(.failed(error.localizedDescription))
-                self?.notifyDisconnectIfCurrentConnection(sink.id)
-                self?.scheduleReconnect(
+                guard let self,
+                      self.updateStatus(
+                        .failed(error.localizedDescription),
+                        generation: generation,
+                        connectionID: sink.id
+                      )
+                else { return }
+                self.notifyDisconnectIfCurrentConnection(sink.id, generation: generation)
+                self.scheduleReconnect(
                     configuration: configuration,
                     onMessage: onMessage,
-                    message: error.localizedDescription
+                    message: error.localizedDescription,
+                    generation: generation
                 )
             case .cancelled:
-                self?.notifyDisconnectIfCurrentConnection(sink.id)
-                self?.scheduleReconnect(
+                guard let self,
+                      self.isCurrentConnection(sink.id, generation: generation)
+                else { return }
+                self.notifyDisconnectIfCurrentConnection(sink.id, generation: generation)
+                self.scheduleReconnect(
                     configuration: configuration,
                     onMessage: onMessage,
-                    message: nil
+                    message: nil,
+                    generation: generation
                 )
             default:
                 break
             }
         }
 
-        connection.start(queue: .global(qos: .userInitiated))
+        let shouldStart = lock.withLock {
+            guard self.generation == generation, isRunning else { return false }
+            self.connection = connection
+            self.connectionID = sink.id
+            return true
+        }
+        guard shouldStart else {
+            dependencies.cancelConnection(connection)
+            return
+        }
+        dependencies.startConnection(connection)
     }
 
     private func scheduleReconnect(
         configuration: RelayPeerConfiguration,
         onMessage: @escaping LocalPeerMessageHandler,
-        message: String?
+        message: String?,
+        generation: UInt64
     ) {
         let shouldReconnect = lock.withLock {
-            guard isRunning else { return false }
+            guard self.generation == generation, isRunning else { return false }
             connection = nil
             connectionID = nil
             return true
         }
         guard shouldReconnect else { return }
-        updateStatus(.reconnecting(message))
+        guard updateStatus(.reconnecting(message), generation: generation) else { return }
 
-        let item = DispatchWorkItem { [weak self] in
+        let task = dependencies.scheduleReconnect(configuration.reconnectDelay) { [weak self] in
             guard let self else { return }
-            let stillRunning = self.lock.withLock { self.isRunning }
+            let stillRunning = self.lock.withLock {
+                self.generation == generation && self.isRunning
+            }
             guard stillRunning else { return }
-            self.updateStatus(.connecting)
-            self.connect(configuration: configuration, onMessage: onMessage)
+            guard self.updateStatus(.connecting, generation: generation) else { return }
+            self.connect(
+                configuration: configuration,
+                onMessage: onMessage,
+                generation: generation
+            )
         }
-        lock.withLock {
-            reconnectWorkItem?.cancel()
-            reconnectWorkItem = item
+        let shouldKeepTask = lock.withLock {
+            guard self.generation == generation, isRunning else { return false }
+            reconnectTask?.cancel()
+            reconnectTask = task
+            return true
         }
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + configuration.reconnectDelay, execute: item)
+        if !shouldKeepTask {
+            task.cancel()
+        }
     }
 
-    private func notifyDisconnectIfCurrentConnection(_ id: UUID) {
+    private func notifyDisconnectIfCurrentConnection(_ id: UUID, generation: UInt64) {
         let shouldNotify = lock.withLock {
-            guard connectionID == id else { return false }
+            guard self.generation == generation, connectionID == id else { return false }
             connectionID = nil
             return true
         }
@@ -407,21 +555,46 @@ public final class RelayPeerClient: RelayPeerTransport, RuntimeDisconnectReporti
         }
     }
 
-    private func updateStatus(_ newStatus: RelayPeerStatus) {
-        let handler = lock.withLock {
-            status = newStatus
-            return statusHandler
+    private func isCurrentConnection(_ id: UUID, generation: UInt64) -> Bool {
+        lock.withLock {
+            self.generation == generation && connectionID == id
         }
-        handler?(newStatus)
+    }
+
+    @discardableResult
+    private func updateStatus(
+        _ newStatus: RelayPeerStatus,
+        generation: UInt64,
+        connectionID expectedConnectionID: UUID? = nil
+    ) -> Bool {
+        let result: (
+            isCurrent: Bool,
+            handler: (@Sendable (RelayPeerStatus) -> Void)?
+        ) = lock.withLock {
+            guard self.generation == generation,
+                  expectedConnectionID.map({ connectionID == $0 }) ?? true
+            else {
+                return (isCurrent: false, handler: nil)
+            }
+            status = newStatus
+            return (isCurrent: true, handler: statusHandler)
+        }
+        guard result.isCurrent else { return false }
+        result.handler?(newStatus)
+        return true
     }
 
     private func updateStatus(
         _ newStatus: RelayPeerStatus,
-        handler explicitHandler: (@Sendable (RelayPeerStatus) -> Void)?
+        handler explicitHandler: (@Sendable (RelayPeerStatus) -> Void)?,
+        generation: UInt64
     ) {
-        lock.withLock {
+        let isCurrent = lock.withLock {
+            guard self.generation == generation else { return false }
             status = newStatus
+            return true
         }
+        guard isCurrent else { return }
         explicitHandler?(newStatus)
     }
 

@@ -18,6 +18,7 @@ internal class RuntimeRemoteRoutePlanner(
     private val pendingPairingPayload: () -> RuntimePairingPayload?,
     private val trustedRuntime: () -> RuntimeTrustedRuntime?,
     private val nowEpochMillis: () -> Long = { System.currentTimeMillis() },
+    private val allowDebugUsbReverseRoutes: Boolean = false,
 ) : RuntimeRemoteRoutePreparer {
     private val peerToPeerRoutePreparer = RuntimePeerToPeerRoutePreparer(
         routePreparationsForIdentity = { identity -> peerToPeerRoutePreparations(identity) },
@@ -50,11 +51,17 @@ internal class RuntimeRemoteRoutePlanner(
         pendingPairingPayload()
             ?.takeIf { it.matchesIdentity(identity) }
             ?.let { payload ->
-                return payload.toRelayRoutePreparation(nowEpochMillis())?.let(::listOf) ?: emptyList()
+                return payload.toRelayRoutePreparation(
+                    nowEpochMillis = nowEpochMillis(),
+                    allowDebugUsbReverseRoutes = allowDebugUsbReverseRoutes,
+                )?.let(::listOf) ?: emptyList()
             }
         val preparation = trustedRuntime()
             ?.takeIf { it.matchesIdentity(identity) }
-            ?.toRelayRoutePreparation(nowEpochMillis())
+            ?.toRelayRoutePreparation(
+                nowEpochMillis = nowEpochMillis(),
+                allowDebugUsbReverseRoutes = allowDebugUsbReverseRoutes,
+            )
             ?: return emptyList()
         return listOf(preparation)
     }
@@ -259,8 +266,14 @@ private fun pinnedRuntimeIdentityFieldMatches(pinnedValue: String?, candidateVal
     return normalizedPinned == normalizedCandidate
 }
 
-private fun RuntimePairingPayload.toRelayRoutePreparation(nowEpochMillis: Long): RuntimeRelayRoutePreparation? {
+private fun RuntimePairingPayload.toRelayRoutePreparation(
+    nowEpochMillis: Long,
+    allowDebugUsbReverseRoutes: Boolean,
+): RuntimeRelayRoutePreparation? {
     if (!hasRelayRoute(nowEpochMillis)) return null
+    if (relayScope == "usb_reverse" && !allowDebugUsbReverseRoutes) {
+        return null
+    }
     return RuntimeRelayRoutePreparation(
         host = relayHost,
         port = relayPort,
@@ -297,8 +310,14 @@ internal fun RuntimePairingPayload.hasPeerToPeerRoute(
         p2pProtocolVersion == 1
 }
 
-private fun RuntimeTrustedRuntime.toRelayRoutePreparation(nowEpochMillis: Long): RuntimeRelayRoutePreparation? {
+private fun RuntimeTrustedRuntime.toRelayRoutePreparation(
+    nowEpochMillis: Long,
+    allowDebugUsbReverseRoutes: Boolean,
+): RuntimeRelayRoutePreparation? {
     if (!hasRelayRoute(nowEpochMillis)) return null
+    if (relayScope == "usb_reverse" && !allowDebugUsbReverseRoutes) {
+        return null
+    }
     return RuntimeRelayRoutePreparation(
         host = relayHost,
         port = relayPort,

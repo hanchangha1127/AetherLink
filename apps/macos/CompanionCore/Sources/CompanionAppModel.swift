@@ -167,6 +167,47 @@ public enum CompanionRelayConfigurationResult: Equatable, Sendable {
     case allocationFailed(endpoint: String, message: String)
 }
 
+public enum CompanionRelayConfigurationRequestResult: Equatable, Sendable {
+    case started(requestID: UUID)
+    case completed(CompanionRelayConfigurationResult)
+}
+
+public enum CompanionRelayConfigurationOperation: Equatable, Sendable {
+    case developmentRelay
+    case bootstrapRelay
+}
+
+public struct CompanionRelayConfigurationRequestContext: Equatable, Sendable {
+    public let requestID: UUID
+    public let operation: CompanionRelayConfigurationOperation
+
+    public init(requestID: UUID, operation: CompanionRelayConfigurationOperation) {
+        self.requestID = requestID
+        self.operation = operation
+    }
+}
+
+public struct CompanionRelayConfigurationRequestCompletion: Equatable, Sendable {
+    public let requestID: UUID
+    public let operation: CompanionRelayConfigurationOperation
+    public let result: CompanionRelayConfigurationResult
+
+    public init(
+        requestID: UUID,
+        operation: CompanionRelayConfigurationOperation,
+        result: CompanionRelayConfigurationResult
+    ) {
+        self.requestID = requestID
+        self.operation = operation
+        self.result = result
+    }
+}
+
+public enum CompanionRelayConfigurationRequestState: Equatable, Sendable {
+    case active(CompanionRelayConfigurationRequestContext)
+    case completed(CompanionRelayConfigurationRequestCompletion)
+}
+
 public struct CompanionDevelopmentRelaySettings: Equatable, Sendable {
     public enum HostReachabilityWarning: String, Equatable, Sendable {
         case invalidFormat
@@ -507,12 +548,30 @@ public protocol CompanionRemoteRelayRouteAllocating: Sendable {
         routeToken: String,
         preferredRelaySecret: String?,
         runtimeIdentity: RelayRuntimeIdentity,
-        identityAuthorizationSigner: any RelayIdentityAuthorizationSigning
+        identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
+        cancellation: RelayRouteAllocationCancellation
     ) throws -> CompanionRemoteRelayRouteAllocation?
 }
 
 public extension CompanionRemoteRelayRouteAllocating {
     var canAllocateRemoteRelayRoute: Bool { false }
+
+    func allocateRemoteRelayRoute(
+        runtimeDeviceID: String,
+        routeToken: String,
+        preferredRelaySecret: String?,
+        runtimeIdentity: RelayRuntimeIdentity,
+        identityAuthorizationSigner: any RelayIdentityAuthorizationSigning
+    ) throws -> CompanionRemoteRelayRouteAllocation? {
+        try allocateRemoteRelayRoute(
+            runtimeDeviceID: runtimeDeviceID,
+            routeToken: routeToken,
+            preferredRelaySecret: preferredRelaySecret,
+            runtimeIdentity: runtimeIdentity,
+            identityAuthorizationSigner: identityAuthorizationSigner,
+            cancellation: RelayRouteAllocationCancellation(timeout: 15)
+        )
+    }
 }
 
 public struct EnvironmentRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAllocating {
@@ -551,6 +610,25 @@ public struct EnvironmentRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAll
         runtimeIdentity: RelayRuntimeIdentity,
         identityAuthorizationSigner: any RelayIdentityAuthorizationSigning
     ) throws -> CompanionRemoteRelayRouteAllocation? {
+        try allocateRemoteRelayRoute(
+            runtimeDeviceID: runtimeDeviceID,
+            routeToken: routeToken,
+            preferredRelaySecret: preferredRelaySecret,
+            runtimeIdentity: runtimeIdentity,
+            identityAuthorizationSigner: identityAuthorizationSigner,
+            cancellation: RelayRouteAllocationCancellation(timeout: 15)
+        )
+    }
+
+    public func allocateRemoteRelayRoute(
+        runtimeDeviceID: String,
+        routeToken: String,
+        preferredRelaySecret: String? = nil,
+        runtimeIdentity: RelayRuntimeIdentity,
+        identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
+        cancellation: RelayRouteAllocationCancellation
+    ) throws -> CompanionRemoteRelayRouteAllocation? {
+        try cancellation.throwIfCancelledOrExpired()
         let defaultPort = Self.bootstrapRelayDefaultPort(from: environment)
         let endpoints = bootstrapRelayEndpoints(defaultPort: defaultPort)
         guard let firstEndpoint = endpoints.first else {
@@ -578,6 +656,7 @@ public struct EnvironmentRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAll
         let endpointRelaySecret = preferredRelaySecret?.takeIfNotEmpty()
             ?? generateRuntimeLocalRelaySecret()
         for endpoint in endpoints {
+            try cancellation.throwIfCancelledOrExpired()
             do {
                 let serviceAllocation = try relayServiceAllocator.allocateRelayRoute(
                     host: endpoint.host,
@@ -586,7 +665,8 @@ public struct EnvironmentRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAll
                     allocationToken: allocationToken,
                     runtimeIdentity: runtimeIdentity,
                     identityAuthorizationSigner: identityAuthorizationSigner,
-                    timeout: 5
+                    timeout: 5,
+                    cancellation: cancellation
                 )
                 return try serviceAllocation.attachingEndpointSecret(
                     endpointRelaySecret,
@@ -594,6 +674,7 @@ public struct EnvironmentRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAll
                     identityAuthorizationSigner: identityAuthorizationSigner
                 )
             } catch {
+                try cancellation.throwIfCancelledOrExpired()
                 lastError = error
             }
         }
@@ -633,9 +714,34 @@ public struct EnvironmentRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAll
         from endpointList: String,
         defaultPort: UInt16
     ) -> [BootstrapRelayEndpoint] {
-        endpointList
-            .split(separator: ",", omittingEmptySubsequences: true)
-            .compactMap { parseBootstrapRelayEndpoint(String($0), defaultPort: defaultPort) }
+        validatedBootstrapRelayEndpoints(from: endpointList, defaultPort: defaultPort) ?? []
+    }
+
+    static func hasValidBootstrapRelayEndpoints(_ endpointList: String) -> Bool {
+        validatedBootstrapRelayEndpoints(
+            from: endpointList,
+            defaultPort: defaultBootstrapRelayPort
+        ) != nil
+    }
+
+    private static func validatedBootstrapRelayEndpoints(
+        from endpointList: String,
+        defaultPort: UInt16
+    ) -> [BootstrapRelayEndpoint]? {
+        let values = endpointList.split(separator: ",", omittingEmptySubsequences: false)
+        guard !values.isEmpty else { return nil }
+        var endpoints: [BootstrapRelayEndpoint] = []
+        endpoints.reserveCapacity(values.count)
+        for value in values {
+            guard let endpoint = parseBootstrapRelayEndpoint(
+                String(value),
+                defaultPort: defaultPort
+            ) else {
+                return nil
+            }
+            endpoints.append(endpoint)
+        }
+        return endpoints.isEmpty ? nil : endpoints
     }
 
     private static func parseBootstrapRelayEndpoint(
@@ -645,38 +751,112 @@ public struct EnvironmentRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAll
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        if trimmed.hasPrefix("["),
-           let closeBracket = trimmed.firstIndex(of: "]") {
+        if trimmed.hasPrefix("[") {
+            guard let closeBracket = trimmed.firstIndex(of: "]") else { return nil }
             let host = String(trimmed[trimmed.index(after: trimmed.startIndex)..<closeBracket])
-            guard !host.isEmpty else { return nil }
+            guard isCanonicalBootstrapRelayHost(host) else { return nil }
             let remainder = trimmed[trimmed.index(after: closeBracket)...]
             if remainder.isEmpty {
                 return BootstrapRelayEndpoint(host: host, port: defaultPort)
             }
             guard remainder.hasPrefix(":"),
-                  let port = UInt16(String(remainder.dropFirst()))
+                  let port = UInt16(String(remainder.dropFirst())),
+                  port > 0
             else {
                 return nil
             }
             return BootstrapRelayEndpoint(host: host, port: port)
         }
 
+        guard !trimmed.contains("["), !trimmed.contains("]") else { return nil }
         let colonCount = trimmed.filter { $0 == ":" }.count
-        if colonCount == 1,
-           let colon = trimmed.lastIndex(of: ":"),
-           let port = UInt16(String(trimmed[trimmed.index(after: colon)...])) {
+        if colonCount == 1 {
+            guard let colon = trimmed.lastIndex(of: ":"),
+                  let port = UInt16(String(trimmed[trimmed.index(after: colon)...])),
+                  port > 0
+            else {
+                return nil
+            }
             let host = String(trimmed[..<colon])
-            guard !host.isEmpty else { return nil }
+            guard isCanonicalBootstrapRelayHost(host) else { return nil }
             return BootstrapRelayEndpoint(host: host, port: port)
         }
 
+        guard isCanonicalBootstrapRelayHost(trimmed) else {
+            return nil
+        }
         return BootstrapRelayEndpoint(host: trimmed, port: defaultPort)
+    }
+
+    private static func isCanonicalBootstrapRelayHost(_ host: String) -> Bool {
+        !host.isEmpty &&
+            host.rangeOfCharacter(from: .whitespacesAndNewlines) == nil &&
+            !host.contains("[") &&
+            !host.contains("]") &&
+            CompanionDevelopmentRelaySettings.hostReachabilityWarning(for: host) != .invalidFormat
     }
 }
 
 private struct BootstrapRelayEndpoint: Equatable, Sendable {
     var host: String
     var port: UInt16
+}
+
+private let companionRelayAllocationIOQueue = DispatchQueue(
+    label: "dev.aetherlink.companion.relay-allocation",
+    qos: .userInitiated,
+    attributes: .concurrent
+)
+
+private struct CompanionRouteAllocationRequest: Equatable, Sendable {
+    var routeStateRevision: UInt64
+    var generation: UInt64
+    var routeToken: String
+    var cancellation: RelayRouteAllocationCancellation
+    var timeoutIssueKind: CompanionRemoteRoutePreparationIssue.Kind
+    var timeoutEndpoint: String?
+    var timeoutBehavior: CompanionRouteAllocationTimeoutBehavior
+    var userInterfaceRequestContext: CompanionRelayConfigurationRequestContext?
+    var userInterfaceFallbackEndpoint: String?
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.routeStateRevision == rhs.routeStateRevision &&
+            lhs.generation == rhs.generation &&
+            lhs.routeToken == rhs.routeToken &&
+            lhs.cancellation === rhs.cancellation &&
+            lhs.timeoutIssueKind == rhs.timeoutIssueKind &&
+            lhs.timeoutEndpoint == rhs.timeoutEndpoint &&
+            lhs.timeoutBehavior == rhs.timeoutBehavior &&
+            lhs.userInterfaceRequestContext == rhs.userInterfaceRequestContext &&
+            lhs.userInterfaceFallbackEndpoint == rhs.userInterfaceFallbackEndpoint
+    }
+}
+
+private enum CompanionRouteAllocationTimeoutBehavior: Equatable, Sendable {
+    case none
+    case saveStaticDevelopmentRelay(
+        host: String,
+        port: UInt16,
+        secret: String,
+        allowsPrivateOverlay: Bool
+    )
+    case startConfiguredRelay
+}
+
+private enum CompanionRouteAllocationOutcome: Sendable {
+    case allocation(CompanionRemoteRelayRouteAllocation?)
+    case failure(String)
+}
+
+private enum CompanionRuntimeStartRoutePreparation {
+    case asynchronous
+    case none
+}
+
+private enum CompanionRelaySecretSource {
+    case none
+    case protectedStore
+    case environmentEphemeral
 }
 
 @MainActor
@@ -692,6 +872,9 @@ private struct PendingPairScopedRelayActivation: Equatable {
 
 @MainActor
 public final class CompanionAppModel: ObservableObject {
+    private static let relaySecretPersistenceFailureMessage =
+        "Connection secret could not be saved securely."
+
     @Published public private(set) var backendStatus = "Not checked"
     @Published public private(set) var transportStatus = "Stopped"
     @Published public private(set) var transportState: CompanionTransportStatus = .stopped
@@ -700,6 +883,8 @@ public final class CompanionAppModel: ObservableObject {
     @Published public private(set) var developmentRelaySettings: CompanionDevelopmentRelaySettings = .disabled
     @Published public private(set) var developmentRelayConnectionStatus: CompanionDevelopmentRelayStatus = .stopped
     @Published public private(set) var remoteRoutePreparationIssue: CompanionRemoteRoutePreparationIssue?
+    @Published public private(set) var isRemoteRoutePreparationInFlight = false
+    @Published public private(set) var relayConfigurationRequestState: CompanionRelayConfigurationRequestState?
     @Published public private(set) var pairingSession: PairingSession?
     @Published public private(set) var trustedDevices: [TrustedDevice] = []
     @Published public private(set) var models: [ModelInfo] = []
@@ -739,6 +924,7 @@ public final class CompanionAppModel: ObservableObject {
     private let pairScopedRelayRouteStore: PairScopedRelayRouteStore
     private var pairScopedRelayRoutes: [String: ResolvedPairScopedRelayRoute]
     private let relaySecretStore: any CompanionRelaySecretStoring
+    private var developmentRelaySecretSource: CompanionRelaySecretSource = .none
     private var remoteRelayRouteAllocator: any CompanionRemoteRelayRouteAllocating
     private let relayServiceRouteAllocator: any RelayServiceRouteAllocating
     private let environment: [String: String]
@@ -762,8 +948,37 @@ public final class CompanionAppModel: ObservableObject {
     private var runtimeChatRetentionMaintenanceTask: Task<Void, Never>?
     private let modelIdleUnloadPolicyUpdateQueue = RuntimeModelIdleUnloadPolicyUpdateQueue()
     private var shouldGenerateRemotePairingQRCodeWhenRelayReady = false
+    private var pendingRemotePairingPreparationID: UUID?
+    private var pendingRemotePairingEndpoint: String?
+    private var remotePairingPreparationTimeoutTask: Task<Void, Never>?
+    private let pairingRoutePreparationTimeoutNanoseconds: UInt64
+    private var routeAllocationTimeoutTask: Task<Void, Never>?
+    private let routeAllocationTimeoutNanoseconds: UInt64
+    private var routeStateRevision: UInt64 = 0
+    private var routeAllocationRequestGeneration: UInt64 = 0
+    private var activeRouteAllocationRequest: CompanionRouteAllocationRequest?
+    private var drainingRouteAllocationRequest: CompanionRouteAllocationRequest?
 
     private static let runtimeChatRetentionMaintenanceIntervalNanoseconds: UInt64 = 24 * 60 * 60 * 1_000_000_000
+
+    public var relayConfigurationRequestCompletion: CompanionRelayConfigurationRequestCompletion? {
+        guard case .completed(let completion) = relayConfigurationRequestState else { return nil }
+        return completion
+    }
+
+    public func acknowledgeRelayConfigurationRequestCompletion(requestID: UUID) {
+        guard case .completed(let completion) = relayConfigurationRequestState,
+              completion.requestID == requestID
+        else {
+            return
+        }
+        relayConfigurationRequestState = nil
+    }
+
+    private func clearCompletedRelayConfigurationRequestState() {
+        guard case .completed = relayConfigurationRequestState else { return }
+        relayConfigurationRequestState = nil
+    }
 
     public var hasDevelopmentRelayRoute: Bool {
         relayConfiguration != nil
@@ -779,8 +994,7 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     public var isDevelopmentRelayQRCodeReady: Bool {
-        guard isDevelopmentRelayRouteEligibleForQRCode else { return false }
-        guard isDevelopmentRelayRoutePreparedForQRCode else { return false }
+        guard hasSecureFreshRemoteRouteMaterialForQRCode else { return false }
         switch developmentRelayConnectionStatus.status {
         case .waitingForPeer, .ready:
             return true
@@ -807,6 +1021,19 @@ public final class CompanionAppModel: ObservableObject {
 
     public var canPrepareRemoteRelayRouteAutomatically: Bool {
         canAttemptAutomaticRemoteRouteAllocation
+    }
+
+    public var canRequestRemotePairingForUserInterface: Bool {
+        guard !isRemoteRoutePreparationInFlight else { return false }
+        if shouldIncludeDevelopmentRelayInPairingQRCode || hasCanonicalFreshRemoteRouteMaterialForQRCode {
+            return true
+        }
+        if canAttemptAutomaticRemoteRouteAllocation {
+            return true
+        }
+        return relayConfiguration != nil &&
+            isDevelopmentRelayRouteEligibleForQRCode &&
+            shouldRefreshConfiguredRelayRouteLeaseForPairing
     }
 
     private var hasCurrentRelayRouteLeaseForQRCode: Bool {
@@ -841,8 +1068,18 @@ public final class CompanionAppModel: ObservableObject {
         runtimePermissionPolicyRegistry: RuntimePermissionPolicyRegistry = .bundled,
         runtimeModelPullApprovalPersistence: any RuntimeModelPullBrokerPersistence = SQLiteRuntimeModelPullApprovalStore(),
         runtimeRouteHostProvider: (() -> String?)? = nil,
-        allowsAuthenticatedRouteRefresh: Bool = false
+        allowsAuthenticatedRouteRefresh: Bool = false,
+        pairingRoutePreparationTimeoutNanoseconds: UInt64 = 15_000_000_000,
+        routeAllocationTimeoutNanoseconds: UInt64 = 15_000_000_000
     ) {
+        precondition(
+            pairingRoutePreparationTimeoutNanoseconds > 0,
+            "Pairing route preparation timeout must be positive"
+        )
+        precondition(
+            routeAllocationTimeoutNanoseconds > 0,
+            "Route allocation timeout must be positive"
+        )
         let modelIdleUnloadPolicyStore = RuntimeModelIdleUnloadPolicyStore(defaults: userDefaults)
         let loadedModelIdleUnloadPolicy = modelIdleUnloadPolicyStore.load()
         let resolvedBackend = backend ?? AggregatingLlmBackend(
@@ -863,6 +1100,8 @@ public final class CompanionAppModel: ObservableObject {
         self.modelIdleUnloadPolicy = loadedModelIdleUnloadPolicy
         self.relayServiceRouteAllocator = relayServiceRouteAllocator
         self.environment = environment
+        self.pairingRoutePreparationTimeoutNanoseconds = pairingRoutePreparationTimeoutNanoseconds
+        self.routeAllocationTimeoutNanoseconds = routeAllocationTimeoutNanoseconds
         self.userDefaults = userDefaults
         self.bootstrapRelaySettings = loadedBootstrapRelaySettings
         self.relaySecretStore = relaySecretStore
@@ -908,6 +1147,10 @@ public final class CompanionAppModel: ObservableObject {
             relaySettings: relaySettings
         )
         self.developmentRelaySettings = relaySettings
+        self.developmentRelaySecretSource = Self.loadedRelaySecretSource(
+            environment: environment,
+            settings: relaySettings
+        )
         self.relayConfiguration = Self.relayConfiguration(for: relaySettings, lease: savedRelayLease)
         self.allocatedRemoteRouteLease = savedRelayLease
         self.developmentRelayConnectionStatus = CompanionDevelopmentRelayStatus(
@@ -982,9 +1225,29 @@ public final class CompanionAppModel: ObservableObject {
 
     deinit {
         runtimeChatRetentionMaintenanceTask?.cancel()
+        remotePairingPreparationTimeoutTask?.cancel()
+        routeAllocationTimeoutTask?.cancel()
+        activeRouteAllocationRequest?.cancellation.cancel()
+        drainingRouteAllocationRequest?.cancellation.cancel()
     }
 
     public func start(port: UInt16 = 43170) {
+        startRuntime(port: port, routePreparation: .asynchronous)
+    }
+
+    @discardableResult
+    public func requestStartForUserInterface(port: UInt16 = 43170) -> Bool {
+        guard !isRuntimeStarted || runtimePort != port else {
+            return false
+        }
+        startRuntime(port: port, routePreparation: .asynchronous)
+        return true
+    }
+
+    private func startRuntime(
+        port: UInt16,
+        routePreparation: CompanionRuntimeStartRoutePreparation
+    ) {
         runtimePort = port
         isRuntimeStarted = true
         let router = runtimeRouter!
@@ -997,8 +1260,22 @@ public final class CompanionAppModel: ObservableObject {
             }
             router.handle(envelope, sink: sink)
         }
-        renewSavedBootstrapRelayRouteIfNeeded()
-        startRelayClientIfConfigured()
+        switch routePreparation {
+        case .asynchronous:
+            if shouldRenewSavedBootstrapRelayRoute && !hasRouteAllocationWorkerInFlight {
+                if !requestAutomaticRemoteRelayRouteAllocation(
+                    restartRelayClientIfRunning: false,
+                    startRelayAfterCompletion: true,
+                    pairingRequest: false
+                ) {
+                    startRelayClientIfConfigured()
+                }
+            } else {
+                startRelayClientIfConfigured()
+            }
+        case .none:
+            startRelayClientIfConfigured()
+        }
         startRestoredPairScopedTransports()
         transportState = Self.transportStatus(from: localStatus)
         refreshTransportStatusText()
@@ -1052,7 +1329,9 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     public func stop() {
+        invalidateRouteAllocationRequests(routeStateChanged: true)
         isRuntimeStarted = false
+        cancelPendingRemotePairingPreparation()
         runtimeLifecycleGeneration = UUID()
         pendingPairedRelayActivations.removeAll()
         runtimeConnectionManager.stopAll()
@@ -1543,40 +1822,150 @@ public final class CompanionAppModel: ObservableObject {
         )
     }
 
-    public func beginPairing(routePolicy: CompanionPairingRoutePolicy = .remoteRequired) {
+    @discardableResult
+    public func requestRemotePairingForUserInterface() -> Bool {
+        guard !isRemoteRoutePreparationInFlight else {
+            return false
+        }
+        guard canRequestRemotePairingForUserInterface else {
+            publishRemotePairingUnavailability()
+            return false
+        }
         if !isRuntimeStarted {
-            start(port: runtimePort)
+            startRuntime(port: runtimePort, routePreparation: .none)
         }
-        if routePolicy == .remoteRequired {
-            prepareRemoteRelayRouteForPairing()
+        if shouldIncludeDevelopmentRelayInPairingQRCode {
+            generatePairingSession(routePolicy: .remoteRequired)
+            return true
         }
-        let pairingRelayConfiguration = shouldIncludeDevelopmentRelayInPairingQRCode ? relayConfiguration : nil
-        if routePolicy == .remoteRequired && pairingRelayConfiguration == nil {
-            pairingSession = nil
-            if let issue = remoteRoutePreparationIssue {
-                shouldGenerateRemotePairingQRCodeWhenRelayReady = false
-                log("Remote pairing QR not generated: \(issue.message)")
-            } else if let endpoint = developmentRelaySettings.endpointLabel {
-                if isDevelopmentRelayRouteEligibleForQRCode {
-                    shouldGenerateRemotePairingQRCodeWhenRelayReady = true
-                    log("Remote pairing QR not generated: remote route \(endpoint) is not ready")
-                } else {
-                    shouldGenerateRemotePairingQRCodeWhenRelayReady = false
-                    log("Remote pairing QR not generated: remote route \(endpoint) cannot be included in QR")
-                }
-            } else {
-                shouldGenerateRemotePairingQRCodeWhenRelayReady = false
-                remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
-                    kind: .automaticPreparationUnavailable,
-                    message: "Configure a reachable remote route before generating a remote pairing QR."
-                )
-                log("Remote pairing QR not generated: configure a reachable remote route first")
+
+        if hasCanonicalFreshRemoteRouteMaterialForQRCode {
+            let endpoint = developmentRelaySettings.endpointLabel ?? "connection service"
+            schedulePendingRemotePairingPreparation(endpoint: endpoint)
+            switch developmentRelayConnectionStatus.status {
+            case .stopped, .failed:
+                restartRelayClientIfRunning()
+            case .connecting, .reconnecting, .waitingForPeer, .ready:
+                break
             }
+            return true
+        }
+
+        let preparationEndpoint = developmentRelaySettings.endpointLabel
+            ?? bootstrapRelaySettings.endpointLabel
+            ?? "connection service"
+        if canAttemptAutomaticRemoteRouteAllocation {
+            schedulePendingRemotePairingPreparation(endpoint: preparationEndpoint)
+            guard requestAutomaticRemoteRelayRouteAllocation(
+                restartRelayClientIfRunning: true,
+                startRelayAfterCompletion: false,
+                pairingRequest: true
+            ) else {
+                cancelPendingRemotePairingPreparation()
+                return false
+            }
+            return true
+        }
+
+        if relayConfiguration != nil,
+           isDevelopmentRelayRouteEligibleForQRCode,
+           shouldRefreshConfiguredRelayRouteLeaseForPairing {
+            schedulePendingRemotePairingPreparation(endpoint: preparationEndpoint)
+            guard requestConfiguredRelayRouteLeaseRefreshForUserInterface() else {
+                cancelPendingRemotePairingPreparation()
+                return false
+            }
+            return true
+        }
+
+        publishRemotePairingUnavailability()
+        return false
+    }
+
+    public func beginPairing(routePolicy: CompanionPairingRoutePolicy = .remoteRequired) {
+        if routePolicy == .remoteRequired {
+            _ = requestRemotePairingForUserInterface()
             return
         }
-        shouldGenerateRemotePairingQRCodeWhenRelayReady = false
+        if !isRuntimeStarted {
+            startRuntime(port: runtimePort, routePreparation: .none)
+        }
+        generatePairingSession(routePolicy: routePolicy)
+    }
+
+    private func publishRemotePairingUnavailability() {
+        if let issue = remoteRoutePreparationIssue {
+            cancelPendingRemotePairingPreparation()
+            log("Remote pairing QR not generated: \(issue.message)")
+            return
+        }
+        if let endpoint = developmentRelaySettings.endpointLabel {
+            cancelPendingRemotePairingPreparation()
+            if !isDevelopmentRelayRouteEligibleForQRCode {
+                log("Remote pairing QR not generated: remote route \(endpoint) cannot be included in QR")
+                return
+            }
+            let message: String
+            let kind: CompanionRemoteRoutePreparationIssue.Kind
+            if !hasFreshCurrentRemoteRouteLease {
+                kind = .routeLeaseRefreshRejected
+                message = developmentRelaySettings.allowsPrivateOverlay && allocatedRemoteRouteLease == nil
+                    ? "Private-overlay connection details require an allocated route lease before QR generation."
+                    : "Connection details require a fresh allocated route lease before QR generation."
+            } else {
+                kind = .automaticPreparationRejected
+                message = "Connection details could not be encoded safely in the pairing QR."
+            }
+            remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                kind: kind,
+                endpoint: endpoint,
+                message: message
+            )
+            log("Remote pairing QR not generated: \(message)")
+            return
+        }
+        cancelPendingRemotePairingPreparation()
+        remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+            kind: .automaticPreparationUnavailable,
+            message: "Configure a reachable remote route before generating a remote pairing QR."
+        )
+        log("Remote pairing QR not generated: configure a reachable remote route first")
+    }
+
+    private func generatePairingSession(routePolicy: CompanionPairingRoutePolicy) {
+        let pairingRelayConfiguration = shouldIncludeDevelopmentRelayInPairingQRCode ? relayConfiguration : nil
+        if routePolicy == .remoteRequired && pairingRelayConfiguration == nil {
+            publishRemotePairingUnavailability()
+            return
+        }
+        cancelPendingRemotePairingPreparation()
         let localRouteHost = pairingRelayConfiguration == nil ? localPairingRouteHost : nil
         let relayRouteLease = relayRouteLeaseForPairing(relayConfiguration: pairingRelayConfiguration)
+        let pairingRelayScope = pairingRelayConfiguration.flatMap {
+            Self.relayScope(
+                forRelayHost: $0.host,
+                allowsPrivateOverlay: developmentRelaySettings.allowsPrivateOverlay
+            )
+        }
+        if let pairingRelayConfiguration,
+           !PairingSession.hasCompleteCanonicalRelayQRCodeMaterial(
+               relayHost: pairingRelayConfiguration.host,
+               relayPort: Int(pairingRelayConfiguration.port),
+               relayID: pairingRelayConfiguration.relayID,
+               relaySecret: pairingRelayConfiguration.relaySecret,
+               relayExpiresAtEpochMillis: relayRouteLease?.expiresAtEpochMillis,
+               relayNonce: relayRouteLease?.nonce,
+               relayScope: pairingRelayScope
+           ) {
+            let endpoint = "\(pairingRelayConfiguration.host):\(pairingRelayConfiguration.port)"
+            remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                kind: .automaticPreparationRejected,
+                endpoint: endpoint,
+                message: "Connection details could not be encoded safely in the pairing QR."
+            )
+            log("Remote pairing QR not generated: connection details for \(endpoint) are not canonical")
+            return
+        }
         pairingSession = pairingCoordinator.beginPairing(
             macDeviceID: macDeviceID,
             fingerprint: macFingerprint,
@@ -1590,12 +1979,7 @@ public final class CompanionAppModel: ObservableObject {
             relaySecret: pairingRelayConfiguration?.relaySecret,
             relayExpiresAtEpochMillis: relayRouteLease?.expiresAtEpochMillis,
             relayNonce: relayRouteLease?.nonce,
-            relayScope: pairingRelayConfiguration.flatMap {
-                Self.relayScope(
-                    forRelayHost: $0.host,
-                    allowsPrivateOverlay: developmentRelaySettings.allowsPrivateOverlay
-                )
-            }
+            relayScope: pairingRelayScope
         )
         log("Pairing code generated")
     }
@@ -1609,6 +1993,14 @@ public final class CompanionAppModel: ObservableObject {
         allowsPrivateOverlay: Bool = false
     ) -> CompanionRelayConfigurationResult {
         let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isRemoteRoutePreparationInFlight else {
+            return .allocationFailed(
+                endpoint: trimmedHost.isEmpty ? "connection service" : "\(trimmedHost):\(port)",
+                message: "Connection preparation is already in progress."
+            )
+        }
+        clearCompletedRelayConfigurationRequestState()
+        invalidateRouteAllocationRequests(routeStateChanged: true)
         guard !trimmedHost.isEmpty else {
             clearDevelopmentRelay()
             return .disabled
@@ -1635,7 +2027,8 @@ public final class CompanionAppModel: ObservableObject {
                     allocationToken: environment["AETHERLINK_RELAY_ALLOCATION_TOKEN"]?.takeIfNotEmpty(),
                     runtimeIdentity: authorization.identity,
                     identityAuthorizationSigner: authorization.signer,
-                    timeout: 5
+                    timeout: 5,
+                    cancellation: makeRouteAllocationCancellation()
                 )
                 let allocation = try serviceAllocation.attachingEndpointSecret(
                     secret,
@@ -1663,8 +2056,13 @@ public final class CompanionAppModel: ObservableObject {
                     isEnvironmentOverride: false,
                     allowsPrivateOverlay: allowsPrivateOverlay || Self.allowsPrivateOverlayRelayEnvironment(environment)
                 )
-                applyDevelopmentRelaySettings(settings, lease: allocation.lease)
                 let endpoint = settings.endpointLabel ?? "\(configuration.host):\(configuration.port)"
+                guard applyDevelopmentRelaySettings(settings, lease: allocation.lease) else {
+                    return .allocationFailed(
+                        endpoint: endpoint,
+                        message: Self.relaySecretPersistenceFailureMessage
+                    )
+                }
                 log("Remote route allocated: \(endpoint)")
                 return .allocated(endpoint: endpoint)
             } catch {
@@ -1677,8 +2075,13 @@ public final class CompanionAppModel: ObservableObject {
                     isEnvironmentOverride: false,
                     allowsPrivateOverlay: allowsPrivateOverlay || Self.allowsPrivateOverlayRelayEnvironment(environment)
                 )
-                applyDevelopmentRelaySettings(settings, lease: nil)
                 let endpoint = settings.endpointLabel ?? "\(trimmedHost):\(port)"
+                guard applyDevelopmentRelaySettings(settings, lease: nil) else {
+                    return .allocationFailed(
+                        endpoint: endpoint,
+                        message: Self.relaySecretPersistenceFailureMessage
+                    )
+                }
                 remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
                     kind: .automaticPreparationFailed,
                     endpoint: endpoint,
@@ -1698,26 +2101,156 @@ public final class CompanionAppModel: ObservableObject {
             isEnvironmentOverride: false,
             allowsPrivateOverlay: allowsPrivateOverlay || Self.allowsPrivateOverlayRelayEnvironment(environment)
         )
-        applyDevelopmentRelaySettings(settings, lease: nil)
+        guard applyDevelopmentRelaySettings(settings, lease: nil) else {
+            return .allocationFailed(
+                endpoint: settings.endpointLabel ?? "\(trimmedHost):\(port)",
+                message: Self.relaySecretPersistenceFailureMessage
+            )
+        }
         log("Remote route configured: \(trimmedHost):\(port)")
         return .savedStatic(endpoint: settings.endpointLabel ?? "\(trimmedHost):\(port)")
     }
 
+    @discardableResult
+    public func requestConfigureDevelopmentRelayForUserInterface(
+        host: String,
+        port: UInt16,
+        relaySecret: String? = nil,
+        attemptAllocation: Bool = false,
+        allowsPrivateOverlay: Bool = false
+    ) -> CompanionRelayConfigurationRequestResult {
+        guard !isRemoteRoutePreparationInFlight else {
+            let endpoint = host.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .completed(.allocationFailed(
+                endpoint: endpoint.isEmpty ? "connection service" : "\(endpoint):\(port)",
+                message: "Connection preparation is already in progress."
+            ))
+        }
+        clearCompletedRelayConfigurationRequestState()
+        guard attemptAllocation else {
+            return .completed(configureDevelopmentRelay(
+                host: host,
+                port: port,
+                relaySecret: relaySecret,
+                attemptAllocation: false,
+                allowsPrivateOverlay: allowsPrivateOverlay
+            ))
+        }
+        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedHost.isEmpty else {
+            clearDevelopmentRelay()
+            return .completed(.disabled)
+        }
+        guard CompanionDevelopmentRelaySettings.hostReachabilityWarning(for: trimmedHost) != .invalidFormat else {
+            return .completed(configureDevelopmentRelay(
+                host: trimmedHost,
+                port: port,
+                relaySecret: relaySecret,
+                attemptAllocation: false,
+                allowsPrivateOverlay: allowsPrivateOverlay
+            ))
+        }
+
+        let secret = relaySecret?.takeIfNotEmpty() ?? Self.generateRelaySecret()
+        let authorization: (
+            identity: RelayRuntimeIdentity,
+            signer: any RelayIdentityAuthorizationSigning & PairedRelayAllocationRuntimeSigning
+        )
+        do {
+            authorization = try relayAllocationAuthorization()
+        } catch {
+            applyFailedDevelopmentRelayAllocation(
+                host: trimmedHost,
+                port: port,
+                secret: secret,
+                allowsPrivateOverlay: allowsPrivateOverlay,
+                message: error.localizedDescription
+            )
+            let endpoint = "\(trimmedHost):\(port)"
+            return .completed(.allocationFailed(
+                endpoint: endpoint,
+                message: error.localizedDescription
+            ))
+        }
+
+        let requestContext = CompanionRelayConfigurationRequestContext(
+            requestID: UUID(),
+            operation: .developmentRelay
+        )
+        let request = beginRouteAllocationRequest(
+            timeoutIssueKind: .automaticPreparationFailed,
+            timeoutEndpoint: "\(trimmedHost):\(port)",
+            timeoutBehavior: .saveStaticDevelopmentRelay(
+                host: trimmedHost,
+                port: port,
+                secret: secret,
+                allowsPrivateOverlay: allowsPrivateOverlay
+            ),
+            userInterfaceRequestContext: requestContext,
+            userInterfaceFallbackEndpoint: "\(trimmedHost):\(port)"
+        )
+        let allocator = relayServiceRouteAllocator
+        let allocationToken = environment["AETHERLINK_RELAY_ALLOCATION_TOKEN"]?.takeIfNotEmpty()
+        companionRelayAllocationIOQueue.async { [weak self] in
+            let outcome: CompanionRouteAllocationOutcome
+            do {
+                let serviceAllocation = try allocator.allocateRelayRoute(
+                    host: trimmedHost,
+                    port: port,
+                    routeToken: request.routeToken,
+                    allocationToken: allocationToken,
+                    runtimeIdentity: authorization.identity,
+                    identityAuthorizationSigner: authorization.signer,
+                    timeout: 5,
+                    cancellation: request.cancellation
+                )
+                outcome = .allocation(try serviceAllocation.attachingEndpointSecret(
+                    secret,
+                    runtimeIdentity: authorization.identity,
+                    identityAuthorizationSigner: authorization.signer
+                ))
+            } catch {
+                outcome = .failure(error.localizedDescription)
+            }
+            Task { @MainActor [weak self] in
+                self?.applyDevelopmentRelayAllocationForUserInterface(
+                    outcome,
+                    request: request,
+                    requestedHost: trimmedHost,
+                    requestedPort: port,
+                    secret: secret,
+                    allowsPrivateOverlay: allowsPrivateOverlay
+                )
+            }
+        }
+        return .started(requestID: requestContext.requestID)
+    }
+
     public func clearDevelopmentRelay() {
+        clearCompletedRelayConfigurationRequestState()
+        invalidateRouteAllocationRequests(routeStateChanged: true)
         Self.clearSavedDevelopmentRelaySettings(
             defaults: userDefaults,
             relaySecretStore: relaySecretStore
         )
         Self.clearSavedRemoteRouteLease(defaults: userDefaults)
         developmentRelaySettings = .disabled
+        developmentRelaySecretSource = .none
         relayConfiguration = nil
         allocatedRemoteRouteLease = nil
         runtimeConnectionManager.stopBootstrap()
         developmentRelayConnectionStatus = CompanionDevelopmentRelayStatus(status: .stopped)
         remoteRoutePreparationIssue = nil
-        shouldGenerateRemotePairingQRCodeWhenRelayReady = false
+        cancelPendingRemotePairingPreparation()
         refreshTransportStatusText()
         log("Remote route disabled")
+    }
+
+    @discardableResult
+    public func requestClearDevelopmentRelayForUserInterface() -> Bool {
+        guard !isRemoteRoutePreparationInFlight else { return false }
+        clearDevelopmentRelay()
+        return true
     }
 
     @discardableResult
@@ -1727,10 +2260,29 @@ public final class CompanionAppModel: ObservableObject {
         allowsPrivateOverlay: Bool = false
     ) -> CompanionRelayConfigurationResult {
         let trimmedEndpoints = endpoints.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isRemoteRoutePreparationInFlight else {
+            return .allocationFailed(
+                endpoint: trimmedEndpoints.isEmpty ? "connection service" : trimmedEndpoints,
+                message: "Connection preparation is already in progress."
+            )
+        }
+        clearCompletedRelayConfigurationRequestState()
         guard !trimmedEndpoints.isEmpty else {
             clearBootstrapRelay()
             return .disabled
         }
+        guard EnvironmentRemoteRelayRouteAllocator.hasValidBootstrapRelayEndpoints(trimmedEndpoints) else {
+            let message = "Enter at least one valid connection service address."
+            remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                kind: .automaticPreparationRejected,
+                endpoint: trimmedEndpoints,
+                message: message
+            )
+            log("Bootstrap route configuration rejected: \(message)")
+            return .allocationFailed(endpoint: trimmedEndpoints, message: message)
+        }
+
+        invalidateRouteAllocationRequests(routeStateChanged: true)
 
         let settings = CompanionBootstrapRelaySettings(
             isEnabled: true,
@@ -1767,7 +2319,84 @@ public final class CompanionAppModel: ObservableObject {
         return .allocationFailed(endpoint: settings.endpointLabel ?? trimmedEndpoints, message: message)
     }
 
+    @discardableResult
+    public func requestConfigureBootstrapRelayForUserInterface(
+        endpoints: String,
+        allocationToken: String? = nil,
+        allowsPrivateOverlay: Bool = false
+    ) -> CompanionRelayConfigurationRequestResult {
+        guard !isRemoteRoutePreparationInFlight else {
+            let endpoint = endpoints.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .completed(.allocationFailed(
+                endpoint: endpoint.isEmpty ? "connection service" : endpoint,
+                message: "Connection preparation is already in progress."
+            ))
+        }
+        clearCompletedRelayConfigurationRequestState()
+        let trimmedEndpoints = endpoints.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedEndpoints.isEmpty else {
+            clearBootstrapRelay()
+            return .completed(.disabled)
+        }
+        guard EnvironmentRemoteRelayRouteAllocator.hasValidBootstrapRelayEndpoints(trimmedEndpoints) else {
+            let message = "Enter at least one valid connection service address."
+            remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                kind: .automaticPreparationRejected,
+                endpoint: trimmedEndpoints,
+                message: message
+            )
+            log("Bootstrap route configuration rejected: \(message)")
+            return .completed(.allocationFailed(endpoint: trimmedEndpoints, message: message))
+        }
+
+        invalidateRouteAllocationRequests(routeStateChanged: true)
+        let settings = CompanionBootstrapRelaySettings(
+            isEnabled: true,
+            endpoints: trimmedEndpoints,
+            allocationToken: allocationToken?.trimmingCharacters(in: .whitespacesAndNewlines),
+            allowsPrivateOverlay: allowsPrivateOverlay
+        )
+        Self.saveBootstrapRelaySettings(
+            settings,
+            defaults: userDefaults,
+            relaySecretStore: relaySecretStore
+        )
+        bootstrapRelaySettings = settings
+        remoteRelayRouteAllocator = Self.makeRemoteRelayRouteAllocator(
+            environment: environment,
+            bootstrapRelaySettings: settings,
+            relayServiceRouteAllocator: relayServiceRouteAllocator
+        )
+        remoteRoutePreparationIssue = nil
+        let requestContext = CompanionRelayConfigurationRequestContext(
+            requestID: UUID(),
+            operation: .bootstrapRelay
+        )
+        guard requestAutomaticRemoteRelayRouteAllocation(
+            restartRelayClientIfRunning: true,
+            startRelayAfterCompletion: false,
+            pairingRequest: false,
+            userInterfaceRequestContext: requestContext,
+            userInterfaceFallbackEndpoint: settings.endpointLabel ?? trimmedEndpoints
+        ) else {
+            let message = remoteRoutePreparationIssue?.message
+                ?? "Connection preparation did not return route details."
+            remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                kind: .automaticPreparationUnavailable,
+                endpoint: settings.endpointLabel,
+                message: message
+            )
+            return .completed(.allocationFailed(
+                endpoint: settings.endpointLabel ?? trimmedEndpoints,
+                message: message
+            ))
+        }
+        return .started(requestID: requestContext.requestID)
+    }
+
     public func clearBootstrapRelay() {
+        clearCompletedRelayConfigurationRequestState()
+        invalidateRouteAllocationRequests(routeStateChanged: true)
         Self.clearSavedBootstrapRelaySettings(
             defaults: userDefaults,
             relaySecretStore: relaySecretStore
@@ -1782,8 +2411,21 @@ public final class CompanionAppModel: ObservableObject {
         log("Bootstrap route disabled")
     }
 
+    @discardableResult
+    public func requestClearBootstrapRelayForUserInterface() -> Bool {
+        guard !isRemoteRoutePreparationInFlight else { return false }
+        clearBootstrapRelay()
+        return true
+    }
+
     public func regenerateDevelopmentRelaySecret() {
-        guard developmentRelaySettings.isEnabled else { return }
+        guard developmentRelaySettings.isEnabled,
+              !isRemoteRoutePreparationInFlight
+        else {
+            return
+        }
+        clearCompletedRelayConfigurationRequestState()
+        invalidateRouteAllocationRequests(routeStateChanged: true)
         let settings = CompanionDevelopmentRelaySettings(
             isEnabled: true,
             host: developmentRelaySettings.host,
@@ -1793,27 +2435,604 @@ public final class CompanionAppModel: ObservableObject {
             isEnvironmentOverride: false,
             allowsPrivateOverlay: developmentRelaySettings.allowsPrivateOverlay
         )
-        Self.saveDevelopmentRelaySettings(
-            settings,
-            deviceID: macDeviceID,
-            defaults: userDefaults,
-            relaySecretStore: relaySecretStore
-        )
-        Self.clearSavedRemoteRouteLease(defaults: userDefaults)
-        developmentRelaySettings = settings
-        relayConfiguration = Self.relayConfiguration(for: settings, lease: nil)
-        allocatedRemoteRouteLease = nil
-        remoteRoutePreparationIssue = nil
-        developmentRelayConnectionStatus = CompanionDevelopmentRelayStatus(
-            status: .stopped,
-            endpoint: settings.endpointLabel
-        )
-        restartRelayClientIfRunning()
-        refreshTransportStatusText()
+        guard applyDevelopmentRelaySettings(settings, lease: nil) else { return }
         log("Route secret regenerated")
     }
 
+    private func beginRouteAllocationRequest(
+        timeoutIssueKind: CompanionRemoteRoutePreparationIssue.Kind,
+        timeoutEndpoint: String?,
+        timeoutBehavior: CompanionRouteAllocationTimeoutBehavior = .none,
+        userInterfaceRequestContext: CompanionRelayConfigurationRequestContext? = nil,
+        userInterfaceFallbackEndpoint: String? = nil
+    ) -> CompanionRouteAllocationRequest {
+        precondition(!hasRouteAllocationWorkerInFlight, "Route allocation worker overlap is forbidden")
+        routeAllocationRequestGeneration += 1
+        let request = CompanionRouteAllocationRequest(
+            routeStateRevision: routeStateRevision,
+            generation: routeAllocationRequestGeneration,
+            routeToken: discoveryRouteToken,
+            cancellation: makeRouteAllocationCancellation(),
+            timeoutIssueKind: timeoutIssueKind,
+            timeoutEndpoint: timeoutEndpoint,
+            timeoutBehavior: timeoutBehavior,
+            userInterfaceRequestContext: userInterfaceRequestContext,
+            userInterfaceFallbackEndpoint: userInterfaceFallbackEndpoint
+        )
+        activeRouteAllocationRequest = request
+        relayConfigurationRequestState = userInterfaceRequestContext.map {
+            CompanionRelayConfigurationRequestState.active($0)
+        }
+        refreshRemoteRoutePreparationInFlightState()
+        scheduleRouteAllocationTimeout(for: request)
+        return request
+    }
+
+    private func makeRouteAllocationCancellation() -> RelayRouteAllocationCancellation {
+        RelayRouteAllocationCancellation(
+            timeout: TimeInterval(routeAllocationTimeoutNanoseconds) / 1_000_000_000
+        )
+    }
+
+    private func finishRouteAllocationRequestIfCurrent(
+        _ request: CompanionRouteAllocationRequest
+    ) -> Bool {
+        if drainingRouteAllocationRequest == request {
+            drainingRouteAllocationRequest = nil
+            refreshRemoteRoutePreparationInFlightState()
+            return false
+        }
+        guard activeRouteAllocationRequest == request,
+              request.routeStateRevision == routeStateRevision,
+              request.generation == routeAllocationRequestGeneration,
+              request.routeToken == discoveryRouteToken
+        else {
+            return false
+        }
+        routeAllocationTimeoutTask?.cancel()
+        routeAllocationTimeoutTask = nil
+        request.cancellation.cancel()
+        activeRouteAllocationRequest = nil
+        refreshRemoteRoutePreparationInFlightState()
+        return true
+    }
+
+    private func invalidateRouteAllocationRequests(routeStateChanged: Bool) {
+        clearCompletedRelayConfigurationRequestState()
+        if routeStateChanged {
+            routeStateRevision += 1
+        }
+        routeAllocationRequestGeneration += 1
+        routeAllocationTimeoutTask?.cancel()
+        routeAllocationTimeoutTask = nil
+        if let request = activeRouteAllocationRequest {
+            publishRelayConfigurationRequestCompletion(
+                for: request,
+                result: .allocationFailed(
+                    endpoint: request.userInterfaceFallbackEndpoint
+                        ?? request.timeoutEndpoint
+                        ?? "connection service",
+                    message: "Connection preparation was cancelled before completion."
+                )
+            )
+            request.cancellation.cancel()
+            drainingRouteAllocationRequest = request
+            activeRouteAllocationRequest = nil
+        }
+        refreshRemoteRoutePreparationInFlightState()
+    }
+
+    private var hasRouteAllocationWorkerInFlight: Bool {
+        activeRouteAllocationRequest != nil || drainingRouteAllocationRequest != nil
+    }
+
+    private func refreshRemoteRoutePreparationInFlightState() {
+        isRemoteRoutePreparationInFlight = hasRouteAllocationWorkerInFlight ||
+            pendingRemotePairingPreparationID != nil
+    }
+
+    private func scheduleRouteAllocationTimeout(for request: CompanionRouteAllocationRequest) {
+        routeAllocationTimeoutTask?.cancel()
+        let timeoutNanoseconds = routeAllocationTimeoutNanoseconds
+        routeAllocationTimeoutTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: timeoutNanoseconds)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self?.failRouteAllocationIfCurrent(request)
+        }
+    }
+
+    private func failRouteAllocationIfCurrent(_ request: CompanionRouteAllocationRequest) {
+        guard activeRouteAllocationRequest == request,
+              request.routeStateRevision == routeStateRevision,
+              request.generation == routeAllocationRequestGeneration,
+              request.routeToken == discoveryRouteToken
+        else {
+            return
+        }
+
+        request.cancellation.cancel()
+        routeAllocationTimeoutTask = nil
+        drainingRouteAllocationRequest = request
+        activeRouteAllocationRequest = nil
+        routeAllocationRequestGeneration += 1
+        if pendingRemotePairingPreparationID != nil {
+            cancelPendingRemotePairingPreparation()
+        } else {
+            refreshRemoteRoutePreparationInFlightState()
+        }
+
+        let message = "Connection preparation timed out."
+        switch request.timeoutBehavior {
+        case .none:
+            remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                kind: request.timeoutIssueKind,
+                endpoint: request.timeoutEndpoint,
+                message: message
+            )
+        case .saveStaticDevelopmentRelay(let host, let port, let secret, let allowsPrivateOverlay):
+            applyFailedDevelopmentRelayAllocation(
+                host: host,
+                port: port,
+                secret: secret,
+                allowsPrivateOverlay: allowsPrivateOverlay,
+                message: message
+            )
+        case .startConfiguredRelay:
+            remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                kind: request.timeoutIssueKind,
+                endpoint: request.timeoutEndpoint,
+                message: message
+            )
+            if isRuntimeStarted {
+                startRelayClientIfConfigured()
+            }
+        }
+        log("Remote route allocation timed out for \(request.timeoutEndpoint ?? "connection service")")
+        publishRelayConfigurationRequestCompletion(
+            for: request,
+            result: .allocationFailed(
+                endpoint: request.userInterfaceFallbackEndpoint
+                    ?? request.timeoutEndpoint
+                    ?? "connection service",
+                message: message
+            )
+        )
+    }
+
+    private func publishRelayConfigurationRequestCompletion(
+        for request: CompanionRouteAllocationRequest,
+        result: CompanionRelayConfigurationResult
+    ) {
+        guard let context = request.userInterfaceRequestContext else { return }
+        relayConfigurationRequestState = .completed(CompanionRelayConfigurationRequestCompletion(
+            requestID: context.requestID,
+            operation: context.operation,
+            result: result
+        ))
+    }
+
+    private func hasUserInterfaceRequestContext(
+        _ request: CompanionRouteAllocationRequest
+    ) -> Bool {
+        request.userInterfaceRequestContext != nil
+    }
+
+    private func publishCurrentRelayConfigurationRequestCompletion(
+        for request: CompanionRouteAllocationRequest
+    ) {
+        guard hasUserInterfaceRequestContext(request) else { return }
+        if let issue = remoteRoutePreparationIssue {
+            publishRelayConfigurationRequestCompletion(
+                for: request,
+                result: .allocationFailed(
+                    endpoint: issue.endpoint
+                        ?? request.userInterfaceFallbackEndpoint
+                        ?? request.timeoutEndpoint
+                        ?? "connection service",
+                    message: issue.message
+                )
+            )
+        } else if let endpoint = developmentRelayEndpoint {
+            publishRelayConfigurationRequestCompletion(
+                for: request,
+                result: .allocated(endpoint: endpoint)
+            )
+        } else {
+            publishRelayConfigurationRequestCompletion(
+                for: request,
+                result: .allocationFailed(
+                    endpoint: request.userInterfaceFallbackEndpoint
+                        ?? request.timeoutEndpoint
+                        ?? "connection service",
+                    message: "Connection preparation did not return route details."
+                )
+            )
+        }
+    }
+
+    @discardableResult
+    private func requestAutomaticRemoteRelayRouteAllocation(
+        restartRelayClientIfRunning shouldRestartRelayClient: Bool,
+        startRelayAfterCompletion: Bool,
+        pairingRequest: Bool,
+        userInterfaceRequestContext: CompanionRelayConfigurationRequestContext? = nil,
+        userInterfaceFallbackEndpoint: String? = nil
+    ) -> Bool {
+        guard !hasRouteAllocationWorkerInFlight else { return false }
+        let authorization: (
+            identity: RelayRuntimeIdentity,
+            signer: any RelayIdentityAuthorizationSigning & PairedRelayAllocationRuntimeSigning
+        )
+        do {
+            authorization = try relayAllocationAuthorization()
+        } catch {
+            remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                kind: .automaticPreparationFailed,
+                message: error.localizedDescription
+            )
+            log("Remote route bootstrap failed: \(error.localizedDescription)")
+            if pairingRequest {
+                cancelPendingRemotePairingPreparation()
+                log("Remote pairing QR not generated: \(error.localizedDescription)")
+            }
+            return false
+        }
+
+        let preferredRelaySecret = developmentRelaySettings.relaySecret?.takeIfNotEmpty()
+            ?? Self.loadSavedRelaySecret(
+                deviceID: macDeviceID,
+                relayID: developmentRelaySettings.relayID,
+                defaults: userDefaults,
+                relaySecretStore: relaySecretStore
+        )
+        let allocator = remoteRelayRouteAllocator
+        let timeoutEndpoint = bootstrapRelaySettings.endpointLabel
+            ?? developmentRelaySettings.endpointLabel
+            ?? "connection service"
+        let request = beginRouteAllocationRequest(
+            timeoutIssueKind: pairingRequest ? .relayConnectionFailed : .automaticPreparationFailed,
+            timeoutEndpoint: timeoutEndpoint,
+            timeoutBehavior: startRelayAfterCompletion ? .startConfiguredRelay : .none,
+            userInterfaceRequestContext: userInterfaceRequestContext,
+            userInterfaceFallbackEndpoint: userInterfaceFallbackEndpoint
+        )
+        let runtimeDeviceID = macDeviceID
+        companionRelayAllocationIOQueue.async { [weak self] in
+            let outcome: CompanionRouteAllocationOutcome
+            do {
+                outcome = .allocation(try allocator.allocateRemoteRelayRoute(
+                    runtimeDeviceID: runtimeDeviceID,
+                    routeToken: request.routeToken,
+                    preferredRelaySecret: preferredRelaySecret,
+                    runtimeIdentity: authorization.identity,
+                    identityAuthorizationSigner: authorization.signer,
+                    cancellation: request.cancellation
+                ))
+            } catch {
+                outcome = .failure(error.localizedDescription)
+            }
+            Task { @MainActor [weak self] in
+                self?.applyAutomaticRemoteRelayRouteAllocation(
+                    outcome,
+                    request: request,
+                    preferredRelaySecret: preferredRelaySecret,
+                    restartRelayClientIfRunning: shouldRestartRelayClient,
+                    startRelayAfterCompletion: startRelayAfterCompletion,
+                    pairingRequest: pairingRequest
+                )
+            }
+        }
+        return true
+    }
+
+    private func applyAutomaticRemoteRelayRouteAllocation(
+        _ outcome: CompanionRouteAllocationOutcome,
+        request: CompanionRouteAllocationRequest,
+        preferredRelaySecret: String?,
+        restartRelayClientIfRunning shouldRestartRelayClient: Bool,
+        startRelayAfterCompletion: Bool,
+        pairingRequest: Bool
+    ) {
+        guard finishRouteAllocationRequestIfCurrent(request) else { return }
+
+        switch outcome {
+        case .failure(let message):
+            remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                kind: .automaticPreparationFailed,
+                endpoint: bootstrapRelaySettings.endpointLabel,
+                message: message
+            )
+            log("Remote route bootstrap failed: \(message)")
+        case .allocation(nil):
+            remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                kind: .automaticPreparationUnavailable,
+                endpoint: bootstrapRelaySettings.endpointLabel,
+                message: "Connection preparation did not return route details."
+            )
+            log("Remote route bootstrap unavailable: connection preparation did not return route details")
+        case .allocation(.some(let allocation)):
+            if !isEligibleAutomaticRelayHost(allocation.configuration.host) {
+                let endpoint = "\(allocation.configuration.host):\(allocation.configuration.port)"
+                remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                    kind: .automaticPreparationRejected,
+                    endpoint: endpoint,
+                    message: "This AetherLink Runtime connection address is not reachable from another network."
+                )
+                log("Remote route bootstrap rejected unreachable connection address \(allocation.configuration.host)")
+            } else if !acceptsRemoteRouteAllocation(allocation) {
+                let endpoint = "\(allocation.configuration.host):\(allocation.configuration.port)"
+                remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                    kind: .automaticPreparationRejected,
+                    endpoint: endpoint,
+                    message: "Remote route lease did not advance."
+                )
+                log("Remote route bootstrap rejected non-advancing lease for \(endpoint)")
+            } else {
+                let configuration = allocation.configuration
+                let settings = CompanionDevelopmentRelaySettings(
+                    isEnabled: true,
+                    host: configuration.host,
+                    port: configuration.port,
+                    relayID: configuration.relayID,
+                    relaySecret: configuration.relaySecret?.takeIfNotEmpty()
+                        ?? preferredRelaySecret
+                        ?? Self.generateRelaySecret(),
+                    isEnvironmentOverride: false,
+                    allowsPrivateOverlay: allowsPrivateOverlayRelay
+                )
+                if applyDevelopmentRelaySettings(
+                    settings,
+                    lease: allocation.lease,
+                    restartRelayClient: shouldRestartRelayClient
+                ) {
+                    log("Remote route bootstrap allocated route \(settings.endpointLabel ?? "configured route")")
+                }
+            }
+        }
+
+        if startRelayAfterCompletion, isRuntimeStarted {
+            startRelayClientIfConfigured()
+        }
+        publishCurrentRelayConfigurationRequestCompletion(for: request)
+        completePairingRoutePreparationAfterAllocationIfNeeded(pairingRequest: pairingRequest)
+    }
+
+    @discardableResult
+    private func requestConfiguredRelayRouteLeaseRefreshForUserInterface(
+        pairingRequest: Bool = true
+    ) -> Bool {
+        guard !hasRouteAllocationWorkerInFlight else { return false }
+        guard developmentRelaySettings.isEnabled,
+              let currentConfiguration = relayConfiguration
+        else {
+            return false
+        }
+        guard isEligibleAutomaticRelayHost(currentConfiguration.host) else {
+            remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                kind: .routeLeaseRefreshRejected,
+                endpoint: developmentRelaySettings.endpointLabel,
+                message: "This AetherLink Runtime connection address is not reachable from another network."
+            )
+            return false
+        }
+        guard let relaySecret = currentConfiguration.relaySecret?.takeIfNotEmpty()
+            ?? developmentRelaySettings.relaySecret?.takeIfNotEmpty()
+        else {
+            remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                kind: .routeLeaseSecretMissing,
+                endpoint: developmentRelaySettings.endpointLabel,
+                message: "Route secret is missing."
+            )
+            return false
+        }
+        let authorization: (
+            identity: RelayRuntimeIdentity,
+            signer: any RelayIdentityAuthorizationSigning & PairedRelayAllocationRuntimeSigning
+        )
+        do {
+            authorization = try relayAllocationAuthorization()
+        } catch {
+            remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                kind: .routeLeaseRefreshFailed,
+                endpoint: developmentRelaySettings.endpointLabel,
+                message: error.localizedDescription
+            )
+            return false
+        }
+
+        let request = beginRouteAllocationRequest(
+            timeoutIssueKind: .routeLeaseRefreshFailed,
+            timeoutEndpoint: developmentRelaySettings.endpointLabel
+        )
+        let allocator = relayServiceRouteAllocator
+        let allocationToken = environment["AETHERLINK_RELAY_ALLOCATION_TOKEN"]?.takeIfNotEmpty()
+        companionRelayAllocationIOQueue.async { [weak self] in
+            let outcome: CompanionRouteAllocationOutcome
+            do {
+                let serviceAllocation = try allocator.allocateRelayRoute(
+                    host: currentConfiguration.host,
+                    port: currentConfiguration.port,
+                    routeToken: request.routeToken,
+                    allocationToken: allocationToken,
+                    runtimeIdentity: authorization.identity,
+                    identityAuthorizationSigner: authorization.signer,
+                    timeout: 5,
+                    cancellation: request.cancellation
+                )
+                outcome = .allocation(try serviceAllocation.attachingEndpointSecret(
+                    relaySecret,
+                    runtimeIdentity: authorization.identity,
+                    identityAuthorizationSigner: authorization.signer
+                ))
+            } catch {
+                outcome = .failure(error.localizedDescription)
+            }
+            Task { @MainActor [weak self] in
+                self?.applyConfiguredRelayRouteLeaseRefreshForUserInterface(
+                    outcome,
+                    request: request,
+                    relaySecret: relaySecret,
+                    pairingRequest: pairingRequest
+                )
+            }
+        }
+        return true
+    }
+
+    private func applyConfiguredRelayRouteLeaseRefreshForUserInterface(
+        _ outcome: CompanionRouteAllocationOutcome,
+        request: CompanionRouteAllocationRequest,
+        relaySecret: String,
+        pairingRequest: Bool
+    ) {
+        guard finishRouteAllocationRequestIfCurrent(request) else { return }
+        switch outcome {
+        case .failure(let resolvedMessage):
+            remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                kind: .routeLeaseRefreshFailed,
+                endpoint: developmentRelaySettings.endpointLabel,
+                message: resolvedMessage
+            )
+            log("Remote route lease refresh failed: \(resolvedMessage)")
+        case .allocation(nil):
+            let resolvedMessage = "Remote route allocation response was invalid."
+            remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                kind: .routeLeaseRefreshFailed,
+                endpoint: developmentRelaySettings.endpointLabel,
+                message: resolvedMessage
+            )
+            log("Remote route lease refresh failed: \(resolvedMessage)")
+        case .allocation(.some(let allocation)):
+            let endpoint = "\(allocation.configuration.host):\(allocation.configuration.port)"
+            if !isEligibleAutomaticRelayHost(allocation.configuration.host) {
+                remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                    kind: .routeLeaseRefreshRejected,
+                    endpoint: endpoint,
+                    message: "This AetherLink Runtime connection address is not reachable from another network."
+                )
+            } else if !acceptsRemoteRouteAllocation(allocation) {
+                remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                    kind: .routeLeaseRefreshRejected,
+                    endpoint: endpoint,
+                    message: "Remote route lease did not advance."
+                )
+            } else {
+                let configuration = allocation.configuration
+                let settings = CompanionDevelopmentRelaySettings(
+                    isEnabled: true,
+                    host: configuration.host,
+                    port: configuration.port,
+                    relayID: configuration.relayID,
+                    relaySecret: configuration.relaySecret?.takeIfNotEmpty() ?? relaySecret,
+                    isEnvironmentOverride: developmentRelaySettings.isEnvironmentOverride,
+                    allowsPrivateOverlay: allowsPrivateOverlayRelay
+                )
+                if applyDevelopmentRelaySettings(settings, lease: allocation.lease) {
+                    log("Remote route lease refreshed: \(settings.endpointLabel ?? "configured route")")
+                }
+            }
+        }
+        completePairingRoutePreparationAfterAllocationIfNeeded(pairingRequest: pairingRequest)
+    }
+
+    private func completePairingRoutePreparationAfterAllocationIfNeeded(pairingRequest: Bool) {
+        guard pairingRequest else { return }
+        if let issue = remoteRoutePreparationIssue {
+            cancelPendingRemotePairingPreparation()
+            log("Remote pairing QR not generated: \(issue.message)")
+            return
+        }
+        generatePendingRemotePairingQRCodeIfReady()
+    }
+
+    private func applyDevelopmentRelayAllocationForUserInterface(
+        _ outcome: CompanionRouteAllocationOutcome,
+        request: CompanionRouteAllocationRequest,
+        requestedHost: String,
+        requestedPort: UInt16,
+        secret: String,
+        allowsPrivateOverlay: Bool
+    ) {
+        guard finishRouteAllocationRequestIfCurrent(request) else { return }
+        switch outcome {
+        case .failure(let resolvedMessage):
+            applyFailedDevelopmentRelayAllocation(
+                host: requestedHost,
+                port: requestedPort,
+                secret: secret,
+                allowsPrivateOverlay: allowsPrivateOverlay,
+                message: resolvedMessage
+            )
+        case .allocation(nil):
+            applyFailedDevelopmentRelayAllocation(
+                host: requestedHost,
+                port: requestedPort,
+                secret: secret,
+                allowsPrivateOverlay: allowsPrivateOverlay,
+                message: "Remote route allocation response was invalid."
+            )
+        case .allocation(.some(let allocation)):
+            let configuration = allocation.configuration
+            guard acceptsRemoteRouteAllocation(allocation) else {
+                let endpoint = "\(configuration.host):\(configuration.port)"
+                let message = "Remote route lease did not advance."
+                remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                    kind: .automaticPreparationRejected,
+                    endpoint: endpoint,
+                    message: message
+                )
+                log("Remote route allocation rejected: non-advancing lease for \(endpoint)")
+                publishCurrentRelayConfigurationRequestCompletion(for: request)
+                return
+            }
+            let settings = CompanionDevelopmentRelaySettings(
+                isEnabled: true,
+                host: configuration.host,
+                port: configuration.port,
+                relayID: configuration.relayID,
+                relaySecret: configuration.relaySecret?.takeIfNotEmpty() ?? secret,
+                isEnvironmentOverride: false,
+                allowsPrivateOverlay: allowsPrivateOverlay || Self.allowsPrivateOverlayRelayEnvironment(environment)
+            )
+            if applyDevelopmentRelaySettings(settings, lease: allocation.lease) {
+                log("Remote route allocated: \(settings.endpointLabel ?? "\(configuration.host):\(configuration.port)")")
+            }
+        }
+        publishCurrentRelayConfigurationRequestCompletion(for: request)
+    }
+
+    private func applyFailedDevelopmentRelayAllocation(
+        host: String,
+        port: UInt16,
+        secret: String,
+        allowsPrivateOverlay: Bool,
+        message: String
+    ) {
+        let settings = CompanionDevelopmentRelaySettings(
+            isEnabled: true,
+            host: host,
+            port: port,
+            relayID: discoveryRouteToken,
+            relaySecret: secret,
+            isEnvironmentOverride: false,
+            allowsPrivateOverlay: allowsPrivateOverlay || Self.allowsPrivateOverlayRelayEnvironment(environment)
+        )
+        guard applyDevelopmentRelaySettings(settings, lease: nil) else { return }
+        let endpoint = settings.endpointLabel ?? "\(host):\(port)"
+        remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+            kind: .automaticPreparationFailed,
+            endpoint: endpoint,
+            message: message
+        )
+        log("Remote route allocation failed: \(message)")
+    }
+
     private func allocateRemoteRelayRouteIfAvailable(restartRelayClientIfRunning shouldRestartRelayClient: Bool = true) {
+        guard !hasRouteAllocationWorkerInFlight else { return }
         do {
             let authorization = try relayAllocationAuthorization()
             let preferredRelaySecret = developmentRelaySettings.relaySecret?.takeIfNotEmpty()
@@ -1828,7 +3047,8 @@ public final class CompanionAppModel: ObservableObject {
                 routeToken: discoveryRouteToken,
                 preferredRelaySecret: preferredRelaySecret,
                 runtimeIdentity: authorization.identity,
-                identityAuthorizationSigner: authorization.signer
+                identityAuthorizationSigner: authorization.signer,
+                cancellation: makeRouteAllocationCancellation()
             ) else {
                 if remoteRelayRouteAllocator.canAllocateRemoteRelayRoute {
                     remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
@@ -1872,29 +3092,13 @@ public final class CompanionAppModel: ObservableObject {
                 isEnvironmentOverride: false,
                 allowsPrivateOverlay: allowsPrivateOverlayRelay
             )
-            Self.saveDevelopmentRelaySettings(
+            guard applyDevelopmentRelaySettings(
                 settings,
-                deviceID: macDeviceID,
-                defaults: userDefaults,
-                relaySecretStore: relaySecretStore
-            )
-            if let lease = allocation.lease {
-                Self.saveRemoteRouteLease(lease, relaySettings: settings, defaults: userDefaults)
-            } else if Self.hasDynamicRelayAllocationEnvironment(environment) {
-                Self.clearSavedRemoteRouteLease(defaults: userDefaults)
+                lease: allocation.lease,
+                restartRelayClient: shouldRestartRelayClient
+            ) else {
+                return
             }
-            developmentRelaySettings = settings
-            relayConfiguration = Self.relayConfiguration(for: settings, lease: allocation.lease)
-            allocatedRemoteRouteLease = allocation.lease
-            developmentRelayConnectionStatus = CompanionDevelopmentRelayStatus(
-                status: .stopped,
-                endpoint: settings.endpointLabel
-            )
-            if shouldRestartRelayClient {
-                restartRelayClientIfRunning()
-            }
-            remoteRoutePreparationIssue = nil
-            refreshTransportStatusText()
             log("Remote route bootstrap allocated route \(settings.endpointLabel ?? "configured route")")
         } catch {
             remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
@@ -1905,125 +3109,11 @@ public final class CompanionAppModel: ObservableObject {
         }
     }
 
-    private func prepareRemoteRelayRouteForPairing() {
-        if canAttemptAutomaticRemoteRouteAllocation {
-            if !hasFreshCurrentRemoteRouteLease {
-                allocateRemoteRelayRouteIfAvailable()
-            }
-            return
-        }
-        guard relayConfiguration != nil else {
-            allocateRemoteRelayRouteIfAvailable()
-            return
-        }
-        guard isDevelopmentRelayRouteEligibleForQRCode else {
-            return
-        }
-        guard shouldRefreshConfiguredRelayRouteLeaseForPairing else {
-            return
-        }
-        if allocatedRemoteRouteLease?.isExpired(renewalMarginSeconds: pairingQRCodeLeaseRenewalMarginSeconds) == true {
-            refreshConfiguredRelayRouteLeaseIfAvailable()
-            return
-        }
-        if allocatedRemoteRouteLease == nil {
-            refreshConfiguredRelayRouteLeaseIfAvailable()
-            return
-        }
-        allocateRemoteRelayRouteIfAvailable()
-    }
-
-    private func refreshConfiguredRelayRouteLeaseIfAvailable() {
-        guard developmentRelaySettings.isEnabled,
-              let currentConfiguration = relayConfiguration
-        else {
-            return
-        }
-        guard isEligibleAutomaticRelayHost(currentConfiguration.host) else {
-            remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
-                kind: .routeLeaseRefreshRejected,
-                endpoint: developmentRelaySettings.endpointLabel,
-                message: "This AetherLink Runtime connection address is not reachable from another network."
-            )
-            log("Remote route lease refresh rejected unreachable connection address \(currentConfiguration.host)")
-            return
-        }
-        guard let relaySecret = currentConfiguration.relaySecret?.takeIfNotEmpty()
-            ?? developmentRelaySettings.relaySecret?.takeIfNotEmpty()
-        else {
-            remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
-                kind: .routeLeaseSecretMissing,
-                endpoint: developmentRelaySettings.endpointLabel,
-                message: "Route secret is missing."
-            )
-            log("Remote route lease refresh skipped: route secret is missing")
-            return
-        }
-
-        do {
-            let authorization = try relayAllocationAuthorization()
-            let serviceAllocation = try relayServiceRouteAllocator.allocateRelayRoute(
-                host: currentConfiguration.host,
-                port: currentConfiguration.port,
-                routeToken: discoveryRouteToken,
-                allocationToken: environment["AETHERLINK_RELAY_ALLOCATION_TOKEN"]?.takeIfNotEmpty(),
-                runtimeIdentity: authorization.identity,
-                identityAuthorizationSigner: authorization.signer,
-                timeout: 5
-            )
-            let allocation = try serviceAllocation.attachingEndpointSecret(
-                relaySecret,
-                runtimeIdentity: authorization.identity,
-                identityAuthorizationSigner: authorization.signer
-            )
-            guard isEligibleAutomaticRelayHost(allocation.configuration.host) else {
-                let endpoint = "\(allocation.configuration.host):\(allocation.configuration.port)"
-                remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
-                    kind: .routeLeaseRefreshRejected,
-                    endpoint: endpoint,
-                    message: "This AetherLink Runtime connection address is not reachable from another network."
-                )
-                log("Remote route lease refresh rejected unreachable connection address \(allocation.configuration.host)")
-                return
-            }
-            guard acceptsRemoteRouteAllocation(allocation) else {
-                let endpoint = "\(allocation.configuration.host):\(allocation.configuration.port)"
-                remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
-                    kind: .routeLeaseRefreshRejected,
-                    endpoint: endpoint,
-                    message: "Remote route lease did not advance."
-                )
-                log("Remote route lease refresh rejected non-advancing lease for \(endpoint)")
-                return
-            }
-            let configuration = allocation.configuration
-            let settings = CompanionDevelopmentRelaySettings(
-                isEnabled: true,
-                host: configuration.host,
-                port: configuration.port,
-                relayID: configuration.relayID,
-                relaySecret: configuration.relaySecret?.takeIfNotEmpty() ?? relaySecret,
-                isEnvironmentOverride: developmentRelaySettings.isEnvironmentOverride,
-                allowsPrivateOverlay: allowsPrivateOverlayRelay
-            )
-            applyDevelopmentRelaySettings(settings, lease: allocation.lease)
-            log("Remote route lease refreshed: \(settings.endpointLabel ?? "configured route")")
-        } catch {
-            remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
-                kind: .routeLeaseRefreshFailed,
-                endpoint: developmentRelaySettings.endpointLabel,
-                message: error.localizedDescription
-            )
-            log("Remote route lease refresh failed: \(error.localizedDescription)")
-        }
-    }
-
-    private func renewSavedBootstrapRelayRouteIfNeeded() {
-        guard developmentRelaySettings.isEnabled else { return }
-        guard relayConfiguration != nil else { return }
-        guard canAttemptAutomaticRemoteRouteAllocation else { return }
-        guard !hasFreshCurrentRemoteRouteLease else { return }
-        allocateRemoteRelayRouteIfAvailable(restartRelayClientIfRunning: false)
+    private var shouldRenewSavedBootstrapRelayRoute: Bool {
+        developmentRelaySettings.isEnabled &&
+            relayConfiguration != nil &&
+            canAttemptAutomaticRemoteRouteAllocation &&
+            !hasFreshCurrentRemoteRouteLease
     }
 
     private var hasFreshCurrentRemoteRouteLease: Bool {
@@ -2033,6 +3123,61 @@ public final class CompanionAppModel: ObservableObject {
             return false
         }
         return isRelayRouteLeaseFreshForPairingQRCode(allocatedRemoteRouteLease)
+    }
+
+    private var hasCanonicalFreshRemoteRouteMaterialForQRCode: Bool {
+        guard hasSecureFreshRemoteRouteMaterialForQRCode,
+              let relayConfiguration,
+              let relaySecret = relayConfiguration.relaySecret?.takeIfNotEmpty(),
+              let lease = relayRouteLeaseForPairing(relayConfiguration: relayConfiguration)
+        else {
+            return false
+        }
+        return PairingSession.hasCompleteCanonicalRelayQRCodeMaterial(
+            relayHost: relayConfiguration.host,
+            relayPort: Int(relayConfiguration.port),
+            relayID: relayConfiguration.relayID,
+            relaySecret: relaySecret,
+            relayExpiresAtEpochMillis: lease.expiresAtEpochMillis,
+            relayNonce: lease.nonce,
+            relayScope: Self.relayScope(
+                forRelayHost: relayConfiguration.host,
+                allowsPrivateOverlay: developmentRelaySettings.allowsPrivateOverlay
+            )
+        )
+    }
+
+    private var hasSecureFreshRemoteRouteMaterialForQRCode: Bool {
+        guard isDevelopmentRelayRouteEligibleForQRCode,
+              hasFreshCurrentRemoteRouteLease,
+              let relayConfiguration,
+              let relaySecret = relayConfiguration.relaySecret?.takeIfNotEmpty()
+        else {
+            return false
+        }
+        return hasSecureRelaySecretForQRCode(
+            relaySecret,
+            relayID: relayConfiguration.relayID
+        )
+    }
+
+    private func hasSecureRelaySecretForQRCode(_ relaySecret: String, relayID: String) -> Bool {
+        switch developmentRelaySecretSource {
+        case .none:
+            return false
+        case .environmentEphemeral:
+            return Self.explicitEnvironmentRelaySecret(
+                environment: environment,
+                settings: developmentRelaySettings
+            ) == relaySecret
+        case .protectedStore:
+            break
+        }
+        let expectedSecretRef = Self.relaySecretRef(deviceID: macDeviceID, relayID: relayID)
+        guard userDefaults.string(forKey: RelayDefaults.secretRef)?.takeIfNotEmpty() == expectedSecretRef else {
+            return false
+        }
+        return relaySecretStore.readSecret(for: expectedSecretRef)?.takeIfNotEmpty() == relaySecret
     }
 
     private func acceptsRemoteRouteAllocation(_ allocation: CompanionRemoteRelayRouteAllocation) -> Bool {
@@ -2083,34 +3228,50 @@ public final class CompanionAppModel: ObservableObject {
         }
     }
 
+    @discardableResult
     private func applyDevelopmentRelaySettings(
         _ settings: CompanionDevelopmentRelaySettings,
         lease: CompanionRemoteRouteLease?,
         restartRelayClient: Bool = true
-    ) {
-        Self.saveDevelopmentRelaySettings(
+    ) -> Bool {
+        guard Self.saveDevelopmentRelaySettings(
             settings,
             deviceID: macDeviceID,
             defaults: userDefaults,
             relaySecretStore: relaySecretStore
-        )
+        ) else {
+            remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                kind: .routeLeaseSecretMissing,
+                endpoint: settings.endpointLabel,
+                message: Self.relaySecretPersistenceFailureMessage
+            )
+            log("Remote route rejected: connection secret persistence failed")
+            return false
+        }
         if let lease {
             Self.saveRemoteRouteLease(lease, relaySettings: settings, defaults: userDefaults)
         } else {
             Self.clearSavedRemoteRouteLease(defaults: userDefaults)
         }
         developmentRelaySettings = settings
+        developmentRelaySecretSource = settings.relaySecret?.takeIfNotEmpty() == nil
+            ? .none
+            : .protectedStore
         relayConfiguration = Self.relayConfiguration(for: settings, lease: lease)
         allocatedRemoteRouteLease = lease
         developmentRelayConnectionStatus = CompanionDevelopmentRelayStatus(
             status: .stopped,
             endpoint: settings.endpointLabel
         )
+        if pendingRemotePairingPreparationID != nil {
+            pendingRemotePairingEndpoint = settings.endpointLabel
+        }
         remoteRoutePreparationIssue = nil
         if restartRelayClient {
             restartRelayClientIfRunning()
         }
         refreshTransportStatusText()
+        return true
     }
 
     public func removeTrustedDevice(_ device: TrustedDevice) async {
@@ -2342,6 +3503,7 @@ public final class CompanionAppModel: ObservableObject {
 
     private func rotateBootstrapRouteAfterPairClaim() {
         let previousSettings = developmentRelaySettings
+        invalidateRouteAllocationRequests(routeStateChanged: true)
         discoveryRouteToken = UUID().uuidString
         userDefaults.set(discoveryRouteToken, forKey: "aetherlink.discovery_route_token")
         if previousSettings.isEnabled,
@@ -2365,7 +3527,13 @@ public final class CompanionAppModel: ObservableObject {
             allocatedRemoteRouteLease = nil
         }
         runtimeConnectionManager.retireBootstrapAfterCurrentConnection()
-        allocateRemoteRelayRouteIfAvailable()
+        if canAttemptAutomaticRemoteRouteAllocation {
+            _ = requestAutomaticRemoteRelayRouteAllocation(
+                restartRelayClientIfRunning: true,
+                startRelayAfterCompletion: false,
+                pairingRequest: false
+            )
+        }
         if transportState.state == .advertising {
             let localStatus = runtimeConnectionManager.refreshLocalAdvertisement(
                 metadata: runtimeAdvertisementMetadata
@@ -2399,10 +3567,12 @@ public final class CompanionAppModel: ObservableObject {
         refreshTransportStatusText()
         switch status {
         case .ready:
+            refreshPendingRemotePairingRouteIfNeeded()
             clearRelayConnectionIssueIfRouteIsUsable()
             log("Remote route ready: \(endpoint)")
             generatePendingRemotePairingQRCodeIfReady()
         case .waitingForPeer:
+            refreshPendingRemotePairingRouteIfNeeded()
             clearRelayConnectionIssueIfRouteIsUsable()
             generatePendingRemotePairingQRCodeIfReady()
         case .failed(let message):
@@ -2412,7 +3582,10 @@ public final class CompanionAppModel: ObservableObject {
                 message: message
             )
             log("Remote route failed: \(endpoint): \(message)")
-            renewRelayRouteAfterFailureIfNeeded(endpoint: endpoint)
+            let renewalStarted = renewRelayRouteAfterFailureIfNeeded(endpoint: endpoint)
+            if !renewalStarted, remoteRoutePreparationIssue != nil {
+                cancelPendingRemotePairingPreparation()
+            }
         case .reconnecting(let message):
             if let message {
                 log("Remote route reconnecting: \(endpoint): \(message)")
@@ -2434,11 +3607,17 @@ public final class CompanionAppModel: ObservableObject {
         }
     }
 
-    private func renewRelayRouteAfterFailureIfNeeded(endpoint: String) {
-        guard isRuntimeStarted else { return }
-        guard relayConfiguration != nil, developmentRelaySettings.endpointLabel == endpoint else { return }
-        guard canAttemptAutomaticRemoteRouteAllocation else { return }
-        allocateRemoteRelayRouteIfAvailable(restartRelayClientIfRunning: true)
+    @discardableResult
+    private func renewRelayRouteAfterFailureIfNeeded(endpoint: String) -> Bool {
+        guard isRuntimeStarted else { return false }
+        guard relayConfiguration != nil, developmentRelaySettings.endpointLabel == endpoint else { return false }
+        guard canAttemptAutomaticRemoteRouteAllocation else { return false }
+        guard !hasRouteAllocationWorkerInFlight else { return true }
+        return requestAutomaticRemoteRelayRouteAllocation(
+            restartRelayClientIfRunning: true,
+            startRelayAfterCompletion: false,
+            pairingRequest: shouldGenerateRemotePairingQRCodeWhenRelayReady
+        )
     }
 
     private func relayRouteLeaseForPairing(
@@ -2456,10 +3635,83 @@ public final class CompanionAppModel: ObservableObject {
         return nil
     }
 
+    private func schedulePendingRemotePairingPreparation(endpoint: String) {
+        shouldGenerateRemotePairingQRCodeWhenRelayReady = true
+        let preparationID = UUID()
+        pendingRemotePairingPreparationID = preparationID
+        pendingRemotePairingEndpoint = endpoint
+        refreshRemoteRoutePreparationInFlightState()
+        remotePairingPreparationTimeoutTask?.cancel()
+        let timeoutNanoseconds = pairingRoutePreparationTimeoutNanoseconds
+        remotePairingPreparationTimeoutTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: timeoutNanoseconds)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self?.failPendingRemotePairingPreparationIfCurrent(
+                preparationID: preparationID
+            )
+        }
+    }
+
+    private func cancelPendingRemotePairingPreparation() {
+        shouldGenerateRemotePairingQRCodeWhenRelayReady = false
+        pendingRemotePairingPreparationID = nil
+        pendingRemotePairingEndpoint = nil
+        remotePairingPreparationTimeoutTask?.cancel()
+        remotePairingPreparationTimeoutTask = nil
+        refreshRemoteRoutePreparationInFlightState()
+    }
+
+    private func failPendingRemotePairingPreparationIfCurrent(
+        preparationID: UUID
+    ) {
+        guard pendingRemotePairingPreparationID == preparationID,
+              shouldGenerateRemotePairingQRCodeWhenRelayReady
+        else {
+            return
+        }
+        let endpoint = pendingRemotePairingEndpoint ?? "connection service"
+        cancelPendingRemotePairingPreparation()
+        invalidateRouteAllocationRequests(routeStateChanged: false)
+        remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+            kind: .relayConnectionFailed,
+            endpoint: endpoint,
+            message: "Connection preparation timed out."
+        )
+        log("Remote pairing QR not generated: connection preparation timed out for \(endpoint)")
+    }
+
+    private func refreshPendingRemotePairingRouteIfNeeded() {
+        guard shouldGenerateRemotePairingQRCodeWhenRelayReady else { return }
+        guard !isDevelopmentRelayRoutePreparedForQRCode else { return }
+        guard !hasRouteAllocationWorkerInFlight else { return }
+        let requested: Bool
+        if canAttemptAutomaticRemoteRouteAllocation {
+            requested = requestAutomaticRemoteRelayRouteAllocation(
+                restartRelayClientIfRunning: true,
+                startRelayAfterCompletion: false,
+                pairingRequest: true
+            )
+        } else if relayConfiguration != nil,
+                  isDevelopmentRelayRouteEligibleForQRCode,
+                  shouldRefreshConfiguredRelayRouteLeaseForPairing {
+            requested = requestConfiguredRelayRouteLeaseRefreshForUserInterface(pairingRequest: true)
+        } else {
+            requested = false
+            publishRemotePairingUnavailability()
+        }
+        if !requested || remoteRoutePreparationIssue != nil {
+            cancelPendingRemotePairingPreparation()
+        }
+    }
+
     private func generatePendingRemotePairingQRCodeIfReady() {
         guard shouldGenerateRemotePairingQRCodeWhenRelayReady else { return }
         guard shouldIncludeDevelopmentRelayInPairingQRCode else { return }
-        shouldGenerateRemotePairingQRCodeWhenRelayReady = false
+        cancelPendingRemotePairingPreparation()
         beginPairing(routePolicy: .allowLocalDiagnostic)
     }
 
@@ -2554,6 +3806,34 @@ public final class CompanionAppModel: ObservableObject {
         RuntimeAdvertisementMetadata(
             routeToken: discoveryRouteToken
         )
+    }
+
+    private static func loadedRelaySecretSource(
+        environment: [String: String],
+        settings: CompanionDevelopmentRelaySettings
+    ) -> CompanionRelaySecretSource {
+        guard let relaySecret = settings.relaySecret?.takeIfNotEmpty() else {
+            return .none
+        }
+        if explicitEnvironmentRelaySecret(environment: environment, settings: settings) == relaySecret {
+            return .environmentEphemeral
+        }
+        return .protectedStore
+    }
+
+    private static func explicitEnvironmentRelaySecret(
+        environment: [String: String],
+        settings: CompanionDevelopmentRelaySettings
+    ) -> String? {
+        guard settings.isEnvironmentOverride else { return nil }
+        if environment["AETHERLINK_RELAY_HOST"]?.takeIfNotEmpty() != nil {
+            return environment["AETHERLINK_RELAY_SECRET"]?.takeIfNotEmpty()
+        }
+        guard environment["AETHERLINK_BOOTSTRAP_RELAY_HOST"]?.takeIfNotEmpty() != nil else {
+            return nil
+        }
+        return environment["AETHERLINK_BOOTSTRAP_RELAY_SECRET"]?.takeIfNotEmpty()
+            ?? environment["AETHERLINK_BOOTSTRAP_RELAY_FRAME_SECRET"]?.takeIfNotEmpty()
     }
 
     private static func loadDevelopmentRelaySettings(
@@ -2669,17 +3949,33 @@ public final class CompanionAppModel: ObservableObject {
         deviceID: String,
         defaults: UserDefaults,
         relaySecretStore: any CompanionRelaySecretStoring
-    ) {
+    ) -> Bool {
+        let previousSecretRef = defaults.string(forKey: RelayDefaults.secretRef)?.takeIfNotEmpty()
+        let previousSecret = previousSecretRef.flatMap { relaySecretStore.readSecret(for: $0) }
+        let committedSecretRef: String?
+        if let relaySecret = settings.relaySecret?.takeIfNotEmpty() {
+            let secretRef = relaySecretRef(deviceID: deviceID, relayID: settings.relayID)
+            relaySecretStore.saveSecret(relaySecret, for: secretRef)
+            guard relaySecretStore.readSecret(for: secretRef)?.takeIfNotEmpty() == relaySecret else {
+                if secretRef == previousSecretRef, let previousSecret {
+                    relaySecretStore.saveSecret(previousSecret, for: secretRef)
+                } else {
+                    relaySecretStore.removeSecret(for: secretRef)
+                }
+                return false
+            }
+            committedSecretRef = secretRef
+        } else {
+            committedSecretRef = nil
+        }
+
         defaults.set(settings.host, forKey: RelayDefaults.host)
         defaults.set(Int(settings.port), forKey: RelayDefaults.port)
         defaults.set(settings.relayID, forKey: RelayDefaults.relayID)
         defaults.set(settings.allowsPrivateOverlay, forKey: RelayDefaults.allowsPrivateOverlay)
-        let previousSecretRef = defaults.string(forKey: RelayDefaults.secretRef)?.takeIfNotEmpty()
-        if let relaySecret = settings.relaySecret?.takeIfNotEmpty() {
-            let secretRef = relaySecretRef(deviceID: deviceID, relayID: settings.relayID)
-            relaySecretStore.saveSecret(relaySecret, for: secretRef)
-            defaults.set(secretRef, forKey: RelayDefaults.secretRef)
-            if let previousSecretRef, previousSecretRef != secretRef {
+        if let committedSecretRef {
+            defaults.set(committedSecretRef, forKey: RelayDefaults.secretRef)
+            if let previousSecretRef, previousSecretRef != committedSecretRef {
                 relaySecretStore.removeSecret(for: previousSecretRef)
             }
         } else {
@@ -2689,6 +3985,7 @@ public final class CompanionAppModel: ObservableObject {
             defaults.removeObject(forKey: RelayDefaults.secretRef)
         }
         defaults.removeObject(forKey: RelayDefaults.secret)
+        return true
     }
 
     private static func clearSavedDevelopmentRelaySettings(
@@ -3109,8 +4406,33 @@ private func isRelayRouteLeaseFreshForPairingQRCode(_ lease: CompanionRemoteRout
 
 extension CompanionAppModel: RuntimeRouteRefreshing {
     public func refreshRuntimeRoute() async throws -> RuntimeRouteRefreshResult? {
-        prepareRemoteRelayRouteForPairing()
+        if !hasCanonicalFreshRemoteRouteMaterialForQRCode {
+            if !hasRouteAllocationWorkerInFlight {
+                let requested: Bool
+                if canAttemptAutomaticRemoteRouteAllocation {
+                    requested = requestAutomaticRemoteRelayRouteAllocation(
+                        restartRelayClientIfRunning: true,
+                        startRelayAfterCompletion: false,
+                        pairingRequest: false
+                    )
+                } else if relayConfiguration != nil,
+                          isDevelopmentRelayRouteEligibleForQRCode,
+                          shouldRefreshConfiguredRelayRouteLeaseForPairing {
+                    requested = requestConfiguredRelayRouteLeaseRefreshForUserInterface(
+                        pairingRequest: false
+                    )
+                } else {
+                    requested = false
+                }
+                guard requested else { return nil }
+            }
+            while hasRouteAllocationWorkerInFlight {
+                try Task.checkCancellation()
+                try await Task.sleep(nanoseconds: 10_000_000)
+            }
+        }
         guard isDevelopmentRelayRouteEligibleForQRCode,
+              hasCanonicalFreshRemoteRouteMaterialForQRCode,
               let relayConfiguration,
               let relaySecret = relayConfiguration.relaySecret?.takeIfNotEmpty(),
               let lease = relayRouteLeaseForPairing(relayConfiguration: relayConfiguration)

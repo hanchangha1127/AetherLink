@@ -38,7 +38,7 @@ final class RuntimeAdvertisementMetadataTests: XCTestCase {
     }
 
     func testRejectsUnsafeDiscoveryTxtMetadata() {
-        let oversizedToken = String(repeating: "r", count: 161)
+        let oversizedToken = String(repeating: "r", count: 244)
         let metadata = RuntimeAdvertisementMetadata(
             version: "1\n2",
             routeToken: oversizedToken,
@@ -49,6 +49,31 @@ final class RuntimeAdvertisementMetadataTests: XCTestCase {
 
         XCTAssertEqual(metadata.txtRecord, [:])
         XCTAssertEqual(metadata.txtRecordData, [:])
+    }
+
+    func testDiscoveryTxtItemLimitUsesUtf8KeyEqualsAndValueBytes() {
+        let maximumVersion = String(repeating: "\u{00E9}", count: 123) + "a"
+        let maximumRouteToken = String(repeating: "\u{00E9}", count: 121) + "a"
+        let accepted = RuntimeAdvertisementMetadata(
+            version: maximumVersion,
+            routeToken: maximumRouteToken,
+            app: "AetherLink"
+        )
+
+        XCTAssertEqual("version".utf8.count + 1 + maximumVersion.utf8.count, 255)
+        XCTAssertEqual("route_token".utf8.count + 1 + maximumRouteToken.utf8.count, 255)
+        XCTAssertEqual(accepted.txtRecord["version"], maximumVersion)
+        XCTAssertEqual(accepted.txtRecord["route_token"], maximumRouteToken)
+
+        let rejected = RuntimeAdvertisementMetadata(
+            version: maximumVersion + "a",
+            routeToken: maximumRouteToken + "a",
+            app: "AetherLink"
+        )
+        XCTAssertEqual("version".utf8.count + 1 + (maximumVersion + "a").utf8.count, 256)
+        XCTAssertEqual("route_token".utf8.count + 1 + (maximumRouteToken + "a").utf8.count, 256)
+        XCTAssertNil(rejected.txtRecord["version"])
+        XCTAssertNil(rejected.txtRecord["route_token"])
     }
 
     func testRejectsRuntimeCommandAndBackendHintsFromDiscoveryTxtMetadata() {

@@ -313,7 +313,10 @@ public struct RelayAllocation: Codable, Equatable, Sendable {
         return try RelayAllocation(
             relayID: relayID,
             relaySecret: requestedRelaySecret ?? "\(UUID().uuidString).\(UUID().uuidString)",
-            relayExpiresAtEpochMillis: Int64((now.addingTimeInterval(seconds).timeIntervalSince1970 * 1000).rounded()),
+            relayExpiresAtEpochMillis: try relayAllocationExpirationEpochMillis(
+                now: now,
+                validFor: seconds
+            ),
             relayNonce: "nonce-\(UUID().uuidString)"
         )
     }
@@ -343,6 +346,7 @@ public struct RelayAllocation: Codable, Equatable, Sendable {
         }
         let object: Any
         do {
+            try StrictJSONDocumentValidator.validate(data)
             object = try JSONSerialization.jsonObject(with: data)
         } catch {
             throw RelayAllocationError.invalidResponseFormat
@@ -437,8 +441,9 @@ public struct RelayAllocationV2: Codable, Equatable, Sendable {
                 routeToken: routeToken,
                 runtimeKeyFingerprint: runtimeIdentity.fingerprint
             ),
-            relayExpiresAtEpochMillis: Int64(
-                (now.addingTimeInterval(seconds).timeIntervalSince1970 * 1000).rounded()
+            relayExpiresAtEpochMillis: try relayAllocationExpirationEpochMillis(
+                now: now,
+                validFor: seconds
             ),
             relayNonce: "nonce-\(UUID().uuidString)",
             runtimeKeyFingerprint: runtimeIdentity.fingerprint,
@@ -466,6 +471,7 @@ public struct RelayAllocationV2: Codable, Equatable, Sendable {
         }
         let object: Any
         do {
+            try StrictJSONDocumentValidator.validate(data)
             object = try JSONSerialization.jsonObject(with: data)
         } catch {
             throw RelayAllocationError.invalidResponseFormat
@@ -797,11 +803,20 @@ public final class RelayAllocationRegistry: @unchecked Sendable {
     private let persistenceURL: URL?
     private let transactionLock: RelayAllocationStoreTransactionLock?
     private let coordinationToken: String?
+    private let wallClockNow: @Sendable () -> Date
     private var persistenceStateIsValid: Bool
     private var allocations: [String: RelayAllocationBinding]
     private var consumedBootstrapAllocations: [String: RelayBootstrapConsumptionTombstone]
 
-    public init(persistenceURL: URL? = nil) {
+    public convenience init(persistenceURL: URL? = nil) {
+        self.init(persistenceURL: persistenceURL, wallClockNow: { Date() })
+    }
+
+    init(
+        persistenceURL: URL?,
+        wallClockNow: @escaping @Sendable () -> Date
+    ) {
+        self.wallClockNow = wallClockNow
         if let requestedPersistenceURL = persistenceURL {
             do {
                 let transactionLock = try RelayAllocationStoreTransactionLock(
@@ -1104,10 +1119,24 @@ public final class RelayAllocationRegistry: @unchecked Sendable {
         }
     }
 
-    public func binding(relayID: String, now: Date = Date()) -> RelayAllocationBinding? {
+    public func binding(relayID: String) -> RelayAllocationBinding? {
+        binding(relayID: relayID, validationDate: nil)
+    }
+
+    public func binding(relayID: String, now: Date) -> RelayAllocationBinding? {
+        binding(relayID: relayID, validationDate: now)
+    }
+
+    private func binding(
+        relayID: String,
+        validationDate explicitValidationDate: Date?
+    ) -> RelayAllocationBinding? {
         try? withCoordinatedState {
             guard persistenceStateIsValid else { return nil }
-            guard let binding = allocations[relayID], binding.isActive(now: now) else { return nil }
+            let validationDate = explicitValidationDate ?? wallClockNow()
+            guard let binding = allocations[relayID], binding.isActive(now: validationDate) else {
+                return nil
+            }
             return binding
         }
     }
@@ -1124,27 +1153,69 @@ public final class RelayAllocationRegistry: @unchecked Sendable {
         }
     }
 
-    public func isValid(relayID: String, now: Date = Date()) -> Bool {
+    public func isValid(relayID: String) -> Bool {
+        binding(relayID: relayID) != nil
+    }
+
+    public func isValid(relayID: String, now: Date) -> Bool {
         binding(relayID: relayID, now: now) != nil
     }
 
-    public func count(now: Date = Date()) -> Int {
+    public func count() -> Int {
+        count(validationDate: nil)
+    }
+
+    public func count(now: Date) -> Int {
+        count(validationDate: now)
+    }
+
+    private func count(validationDate explicitValidationDate: Date?) -> Int {
         (try? withCoordinatedState {
-            allocations.values.filter { $0.isActive(now: now) }.count
+            let validationDate = explicitValidationDate ?? wallClockNow()
+            return allocations.values.filter { $0.isActive(now: validationDate) }.count
         }) ?? 0
     }
 
     public func withRevalidatedBinding<T>(
         _ expected: RelayAllocationBinding,
-        now: Date = Date(),
         _ body: () throws -> T
+    ) throws -> T {
+        try withFreshlyRevalidatedBinding(expected, validationDate: nil) { _ in
+            try body()
+        }
+    }
+
+    public func withRevalidatedBinding<T>(
+        _ expected: RelayAllocationBinding,
+        now: Date,
+        _ body: () throws -> T
+    ) throws -> T {
+        try withFreshlyRevalidatedBinding(expected, validationDate: now) { _ in
+            try body()
+        }
+    }
+
+    func withFreshlyRevalidatedBinding<T>(
+        _ expected: RelayAllocationBinding,
+        _ body: (Date) throws -> T
+    ) throws -> T {
+        try withFreshlyRevalidatedBinding(expected, validationDate: nil, body)
+    }
+
+    private func withFreshlyRevalidatedBinding<T>(
+        _ expected: RelayAllocationBinding,
+        validationDate explicitValidationDate: Date?,
+        _ body: (Date) throws -> T
     ) throws -> T {
         try withCoordinatedState {
             guard persistenceStateIsValid else { throw RelayAllocationError.persistenceFailed }
-            guard allocations[expected.relayID] == expected, expected.isActive(now: now) else {
+            let validationDate = explicitValidationDate ?? wallClockNow()
+            guard allocations[expected.relayID] == expected,
+                  expected.isActive(now: validationDate)
+            else {
                 throw RelayAllocationError.allocationConflict
             }
-            return try body()
+            return try body(validationDate)
         }
     }
 
@@ -1236,6 +1307,7 @@ public final class RelayAllocationRegistry: @unchecked Sendable {
         }
         do {
             let data = try RelayAllocationStoreCoordination.readSecureFile(at: persistenceURL)
+            try StrictJSONDocumentValidator.validate(data)
             guard let version = try? JSONDecoder().decode(
                 RelayAllocationStoreVersionProbe.self,
                 from: data
@@ -1629,6 +1701,25 @@ private struct AllocationAnyCodingKey: CodingKey {
         self.stringValue = "\(intValue)"
         self.intValue = intValue
     }
+}
+
+func relayAllocationExpirationEpochMillis(
+    now: Date,
+    validFor seconds: TimeInterval
+) throws -> Int64 {
+    guard RelayServerConfiguration.isValidAllocationTTL(seconds),
+          now.timeIntervalSince1970.isFinite
+    else {
+        throw RelayAllocationError.invalidExpiration
+    }
+    let milliseconds = ((now.timeIntervalSince1970 + seconds) * 1_000).rounded()
+    guard milliseconds.isFinite,
+          milliseconds > 0,
+          milliseconds < Double(Int64.max)
+    else {
+        throw RelayAllocationError.invalidExpiration
+    }
+    return Int64(milliseconds)
 }
 
 private func epochMillis(_ date: Date) -> Int64 {

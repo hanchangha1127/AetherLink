@@ -187,8 +187,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        pairingUriState.value = intent.pairingUriOrNull()
-        sharedChatDraftState.value = intent.sharedChatDraftOrNull()
+        pairingUriState.value = restoredLaunchPayload(
+            incoming = intent.pairingUriOrNull(),
+            wasConsumed = savedInstanceState?.getBoolean(STATE_PAIRING_URI_CONSUMED) == true,
+        )
+        sharedChatDraftState.value = restoredLaunchPayload(
+            incoming = intent.sharedChatDraftOrNull(),
+            wasConsumed = savedInstanceState?.getBoolean(STATE_SHARED_DRAFT_CONSUMED) == true,
+        )
         developerDiagnosticsState.value = shouldEnableDeveloperDiagnostics(
             isDebugBuild = BuildConfig.DEBUG,
             requestedByLaunch = intent.developerDiagnosticsRequested(),
@@ -204,6 +210,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean(STATE_PAIRING_URI_CONSUMED, pairingUriState.value == null)
+        outState.putBoolean(STATE_SHARED_DRAFT_CONSUMED, sharedChatDraftState.value == null)
+        super.onSaveInstanceState(outState)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -214,7 +226,15 @@ class MainActivity : ComponentActivity() {
             requestedByLaunch = intent.developerDiagnosticsRequested(),
         )
     }
+
+    private companion object {
+        const val STATE_PAIRING_URI_CONSUMED = "aetherlink.pairing_uri_consumed"
+        const val STATE_SHARED_DRAFT_CONSUMED = "aetherlink.shared_draft_consumed"
+    }
 }
+
+internal fun <T> restoredLaunchPayload(incoming: T?, wasConsumed: Boolean): T? =
+    incoming.takeUnless { wasConsumed }
 
 internal const val DEVELOPER_DIAGNOSTICS_EXTRA = "aetherlink.dev_diagnostics"
 
@@ -2729,9 +2749,9 @@ internal fun ResearchBriefCreateDialog(
     onCreate: (String, String, List<String>) -> Unit,
 ) {
     val models = chatModelMenuModels(state.models).filter(RuntimeModel::installed)
-    var topic by remember { mutableStateOf("") }
-    var selectedModelId by remember { mutableStateOf<String?>(null) }
-    var selectedSourceAnchorIds by remember { mutableStateOf(emptyList<String>()) }
+    var topic by rememberSaveable { mutableStateOf("") }
+    var selectedModelId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedSourceAnchorIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var modelMenuExpanded by remember { mutableStateOf(false) }
     val selectedModel = models.firstOrNull { it.id == selectedModelId }
     val canCreate = topic.isNotBlank() &&
@@ -2765,6 +2785,13 @@ internal fun ResearchBriefCreateDialog(
     LaunchedEffect(state.isStreaming) {
         if (state.isStreaming) {
             modelMenuExpanded = false
+        }
+    }
+
+    LaunchedEffect(state.trustedSources, state.isLoadingTrustedSources) {
+        if (!state.isLoadingTrustedSources) {
+            val currentSourceIds = state.trustedSources.mapTo(mutableSetOf()) { it.sourceAnchorId }
+            selectedSourceAnchorIds = selectedSourceAnchorIds.filter(currentSourceIds::contains)
         }
     }
 

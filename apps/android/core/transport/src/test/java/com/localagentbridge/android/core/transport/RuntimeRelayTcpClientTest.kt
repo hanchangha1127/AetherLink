@@ -24,6 +24,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.math.BigInteger
+import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.security.AlgorithmParameters
@@ -41,6 +42,93 @@ import kotlin.concurrent.thread
 import kotlin.system.measureTimeMillis
 
 class RuntimeRelayTcpClientTest {
+    @Test
+    fun relayAddressResolutionRejectsMixedPublicAndPrivateAnswersAfterOneLookup() {
+        val resolvedHosts = mutableListOf<String>()
+        val route = addressPolicyRoute(host = "relay.example.test", relayScope = "remote")
+
+        assertThrows(IllegalArgumentException::class.java) {
+            resolveValidatedRelaySocketAddress(
+                route = route,
+                resolver = RuntimeRelayAddressResolver { host ->
+                    resolvedHosts += host
+                    arrayOf(
+                        InetAddress.getByAddress(byteArrayOf(203.toByte(), 0, 113, 10)),
+                        InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)),
+                    )
+                },
+            )
+        }
+
+        assertEquals(listOf("relay.example.test"), resolvedHosts)
+    }
+
+    @Test
+    fun relayAddressResolutionConnectsTheValidatedAddressWithoutASecondLookup() {
+        val resolved = InetAddress.getByAddress(byteArrayOf(203.toByte(), 0, 113, 10))
+        var resolutionCount = 0
+
+        val socketAddress = resolveValidatedRelaySocketAddress(
+            route = addressPolicyRoute(host = "relay.example.test.", relayScope = null),
+            resolver = RuntimeRelayAddressResolver { host ->
+                assertEquals("relay.example.test", host)
+                resolutionCount += 1
+                arrayOf(resolved)
+            },
+        )
+
+        assertEquals(1, resolutionCount)
+        assertEquals(resolved, socketAddress.address)
+        assertEquals(443, socketAddress.port)
+        assertFalse(socketAddress.isUnresolved)
+    }
+
+    @Test
+    fun relayAddressResolutionHonorsPrivateOverlayAndUsbReverseScopes() {
+        val privateOverlayAddresses = arrayOf(
+            InetAddress.getByAddress(byteArrayOf(10, 0, 0, 5)),
+            InetAddress.getByAddress(byteArrayOf(100, 64, 1, 5)),
+            InetAddress.getByAddress(
+                byteArrayOf(
+                    0xfd.toByte(), 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 1,
+                ),
+            ),
+        )
+        privateOverlayAddresses.forEach { address ->
+            assertEquals(
+                address,
+                resolveValidatedRelaySocketAddress(
+                    route = addressPolicyRoute("overlay.example.test", "private_overlay"),
+                    resolver = RuntimeRelayAddressResolver { arrayOf(address) },
+                ).address,
+            )
+        }
+
+        val linkLocal = InetAddress.getByAddress(byteArrayOf(169.toByte(), 254.toByte(), 1, 2))
+        assertThrows(IllegalArgumentException::class.java) {
+            resolveValidatedRelaySocketAddress(
+                route = addressPolicyRoute("overlay.example.test", "private_overlay"),
+                resolver = RuntimeRelayAddressResolver { arrayOf(linkLocal) },
+            )
+        }
+
+        val loopback = InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))
+        assertEquals(
+            loopback,
+            resolveValidatedRelaySocketAddress(
+                route = addressPolicyRoute("localhost", "usb_reverse"),
+                resolver = RuntimeRelayAddressResolver { arrayOf(loopback) },
+            ).address,
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            resolveValidatedRelaySocketAddress(
+                route = addressPolicyRoute("localhost", "usb_reverse"),
+                resolver = RuntimeRelayAddressResolver { arrayOf(privateOverlayAddresses[0]) },
+            )
+        }
+    }
+
     @Test
     fun relayFrameWriterEmitsExactPrefixThenBodyAtBoundarySizes() {
         val codec = ProtocolCodec()
@@ -879,6 +967,7 @@ class RuntimeRelayTcpClientTest {
         relayId = "relay-legacy",
         host = "127.0.0.1",
         port = port,
+        relayScope = "usb_reverse",
         security = RemoteRouteSecurityContext(
             rendezvousToken = "relay-legacy",
             expiresAtEpochMillis = Long.MAX_VALUE,
@@ -896,6 +985,7 @@ class RuntimeRelayTcpClientTest {
         relayId = relayId,
         host = "127.0.0.1",
         port = port,
+        relayScope = "usb_reverse",
         relayFrameSecret = relaySecret,
         security = RemoteRouteSecurityContext(
             rendezvousToken = relayId,
@@ -912,12 +1002,29 @@ class RuntimeRelayTcpClientTest {
         relayId = PAIRED_RELAY_ID,
         host = "127.0.0.1",
         port = port,
+        relayScope = "usb_reverse",
         relayFrameSecret = PAIRED_RELAY_SECRET,
         ticketGeneration = PAIRED_TICKET_GENERATION,
         security = RemoteRouteSecurityContext(
             rendezvousToken = PAIRED_RELAY_ID,
             expiresAtEpochMillis = Long.MAX_VALUE,
             antiReplayNonce = routeNonce,
+        ),
+    )
+
+    private fun addressPolicyRoute(
+        host: String,
+        relayScope: String?,
+    ) = PreparedRemoteRuntimeRoute.Relay(
+        identity = PairedRuntimeIdentity("runtime-address-policy", "AetherLink", "fingerprint"),
+        relayId = "relay-address-policy",
+        host = host,
+        port = 443,
+        relayScope = relayScope,
+        security = RemoteRouteSecurityContext(
+            rendezvousToken = "relay-address-policy",
+            expiresAtEpochMillis = Long.MAX_VALUE,
+            antiReplayNonce = "relay-address-policy-nonce",
         ),
     )
 

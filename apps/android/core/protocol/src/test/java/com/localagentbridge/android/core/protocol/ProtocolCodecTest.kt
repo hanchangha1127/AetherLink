@@ -3444,6 +3444,25 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun protocolWireRejectsDuplicateObjectKeysForEveryMessageTypeBeforeMaterialization() {
+        val codec = ProtocolCodec()
+        val envelopes = listOf(
+            """{"version":1,"type":"auth.challenge","t\u0079pe":"chat.done","request_id":"duplicate-type-1","timestamp":"2026-07-19T00:00:00Z","payload":{}}""",
+            """{"version":1,"t\u0079pe":"chat.done","type":"auth.challenge","request_id":"duplicate-type-2","timestamp":"2026-07-19T00:00:00Z","payload":{}}""",
+            """{"version":1,"type":"auth.challenge","request_id":"duplicate-auth-payload-1","timestamp":"2026-07-19T00:00:00Z","payload":{"nonce":"first","n\u006fnce":"second"}}""",
+            """{"version":1,"type":"pairing.result","request_id":"duplicate-pairing-payload-1","timestamp":"2026-07-19T00:00:00Z","payload":{"\u0061ccepted":true,"accepted":false}}""",
+            """{"version":1,"type":"route.refresh","request_id":"duplicate-route-payload-1","timestamp":"2026-07-19T00:00:00Z","payload":{"relay_id":"first","relay\u005fid":"second"}}""",
+        )
+
+        envelopes.forEach { rawEnvelope ->
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                codec.decode(rawEnvelope.encodeToByteArray())
+            }
+            assertTrue(error.message.orEmpty().contains("duplicate JSON object key"))
+        }
+    }
+
+    @Test
     fun trustedSourceOperationPayloadsRoundTripCanonicalWireShapes() {
         val approveRequest = TrustedSourceApproveRequestPayload(
             reviewId = canonicalReviewId,

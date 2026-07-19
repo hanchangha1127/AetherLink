@@ -219,6 +219,117 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
         XCTAssertNil(backend.modelResidencySnapshot().activeModelID)
     }
 
+    func testCancelledChatReturnsBeforeSharedUnloadAndLaterCallerStillWaitsForIt() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)],
+            holdsUnloadsOpen: true
+        )
+        let backend = AggregatingLlmBackend(
+            [ollama],
+            modelIdleUnloadDelayNanoseconds: 60_000_000_000
+        )
+
+        _ = try await collect(backend.chat(request: chatRequest(model: "ollama:qwen-local")))
+        let policyTask = Task {
+            await backend.updateModelIdleUnloadDelayNanoseconds(0)
+        }
+        XCTAssertTrue(ollama.waitForUnloadStart())
+
+        let cancelledRequest = chatRequest(model: "ollama:qwen-local")
+        let cancellationReturned = expectation(
+            description: "cancelled aggregate wait returns before shared unload completes"
+        )
+        let cancelledTask = Task<Error?, Never> {
+            defer { cancellationReturned.fulfill() }
+            do {
+                _ = try await collect(backend.chat(request: cancelledRequest))
+                return nil
+            } catch {
+                return error
+            }
+        }
+        await eventually {
+            ollama.modelListCallCount >= 2
+        }
+
+        XCTAssertEqual(
+            backend.cancel(generationID: cancelledRequest.generationID),
+            .cancelled(generationID: cancelledRequest.generationID)
+        )
+        await fulfillment(of: [cancellationReturned], timeout: 1)
+
+        let laterRequest = chatRequest(model: "ollama:qwen-local")
+        let laterTask = Task {
+            try await collect(backend.chat(request: laterRequest))
+        }
+        await eventually {
+            ollama.modelListCallCount >= 3
+        }
+        XCTAssertEqual(ollama.routedModels, ["qwen-local"])
+        XCTAssertEqual(ollama.unloadedModels, ["qwen-local"])
+
+        ollama.releaseUnloads()
+        await policyTask.value
+        let cancellationError = await cancelledTask.value
+        let laterEvents = try await laterTask.value
+
+        XCTAssertTrue(cancellationError is CancellationError)
+        XCTAssertEqual(laterEvents, [.done(inputTokens: 1, outputTokens: 1)])
+        XCTAssertEqual(ollama.routedModels, ["qwen-local", "qwen-local"])
+        XCTAssertEqual(ollama.unloadedModels, ["qwen-local", "qwen-local"])
+    }
+
+    func testCancelledChatReturnsBeforeSelfStartedUnloadAndSharedUnloadContinues() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)],
+            holdsUnloadsOpen: true
+        )
+        let backend = AggregatingLlmBackend(
+            [ollama],
+            modelIdleUnloadDelayNanoseconds: 0
+        )
+        let request = chatRequest(model: "ollama:qwen-local")
+        let cancellationReturned = expectation(
+            description: "cancelled chat returns before its self-started unload completes"
+        )
+        let chatTask = Task<Error?, Never> {
+            defer { cancellationReturned.fulfill() }
+            do {
+                _ = try await collect(backend.chat(request: request))
+                return nil
+            } catch {
+                return error
+            }
+        }
+        XCTAssertTrue(ollama.waitForUnloadStart())
+
+        XCTAssertEqual(
+            backend.cancel(generationID: request.generationID),
+            .cancelled(generationID: request.generationID)
+        )
+        await fulfillment(of: [cancellationReturned], timeout: 1)
+        let cancellationError = await chatTask.value
+        XCTAssertTrue(cancellationError is CancellationError)
+        XCTAssertEqual(ollama.unloadedModels, ["qwen-local"])
+        XCTAssertEqual(backend.modelResidencySnapshot().inFlightGenerations, 0)
+
+        let laterTask = Task {
+            try await collect(backend.chat(request: self.chatRequest(model: "ollama:qwen-local")))
+        }
+        await eventually {
+            ollama.modelListCallCount >= 2
+        }
+        XCTAssertEqual(ollama.routedModels, ["qwen-local"])
+
+        ollama.releaseUnloads()
+        let laterEvents = try await laterTask.value
+        XCTAssertEqual(laterEvents, [.done(inputTokens: 1, outputTokens: 1)])
+        XCTAssertEqual(ollama.routedModels, ["qwen-local", "qwen-local"])
+        XCTAssertEqual(ollama.unloadedModels, ["qwen-local", "qwen-local"])
+    }
+
     func testCancelledChatWaitingForModelSwitchUnloadDoesNotReserveOrDispatch() async throws {
         let ollama = ResidencyTestBackend(
             provider: .ollama,
@@ -257,6 +368,139 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
         XCTAssertTrue(lmStudio.routedModels.isEmpty)
         XCTAssertNil(backend.modelResidencySnapshot().activeModelID)
         XCTAssertEqual(backend.modelResidencySnapshot().inFlightGenerations, 0)
+    }
+
+    func testDifferentModelWaitIsCancellationAwareWhileCurrentModelIsInFlight() async throws {
+        let drainWaitStarted = DispatchSemaphore(value: 0)
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)],
+            holdsChatsOpen: true
+        )
+        let lmStudio = ResidencyTestBackend(
+            provider: .lmStudio,
+            models: [ModelInfo(id: "gemma-local", name: "gemma-local", provider: .lmStudio)]
+        )
+        let backend = AggregatingLlmBackend(
+            [ollama, lmStudio],
+            modelIdleUnloadDelayNanoseconds: 60_000_000_000,
+            idleUnloadSleeper: { delayNanoseconds in
+                try await Task.sleep(nanoseconds: delayNanoseconds)
+            },
+            residencyDrainWaitHandler: {
+                drainWaitStarted.signal()
+            }
+        )
+
+        let currentTask = Task {
+            try await collect(backend.chat(request: chatRequest(model: "ollama:qwen-local")))
+        }
+        await eventually {
+            ollama.routedModels == ["qwen-local"]
+        }
+
+        let waitingRequest = chatRequest(model: "lm_studio:gemma-local")
+        let waitingTask = Task {
+            try await collect(backend.chat(request: waitingRequest))
+        }
+        XCTAssertEqual(drainWaitStarted.wait(timeout: .now() + 1), .success)
+        XCTAssertTrue(lmStudio.routedModels.isEmpty)
+        XCTAssertEqual(backend.modelResidencySnapshot().activeModelID, "qwen-local")
+        XCTAssertEqual(backend.modelResidencySnapshot().inFlightGenerations, 1)
+
+        XCTAssertEqual(
+            backend.cancel(generationID: waitingRequest.generationID),
+            .cancelled(generationID: waitingRequest.generationID)
+        )
+        do {
+            _ = try await waitingTask.value
+            XCTFail("Expected cancellation while waiting for the current residency to drain.")
+        } catch is CancellationError {
+            // Expected.
+        }
+        XCTAssertTrue(lmStudio.routedModels.isEmpty)
+
+        currentTask.cancel()
+        _ = await currentTask.result
+    }
+
+    func testConcurrentDifferentModelSwitchesKeepExactlyOneInFlightResidency() async throws {
+        let drainWaitStarted = DispatchSemaphore(value: 0)
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)],
+            holdsChatsOpen: true
+        )
+        let lmStudio = ResidencyTestBackend(
+            provider: .lmStudio,
+            models: [
+                ModelInfo(id: "gemma-local", name: "gemma-local", provider: .lmStudio),
+                ModelInfo(id: "mistral-local", name: "mistral-local", provider: .lmStudio),
+            ],
+            holdsChatsOpen: true
+        )
+        let backend = AggregatingLlmBackend(
+            [ollama, lmStudio],
+            modelIdleUnloadDelayNanoseconds: 60_000_000_000,
+            idleUnloadSleeper: { delayNanoseconds in
+                try await Task.sleep(nanoseconds: delayNanoseconds)
+            },
+            residencyDrainWaitHandler: {
+                drainWaitStarted.signal()
+            }
+        )
+
+        let currentTask = Task {
+            try await collect(backend.chat(request: chatRequest(model: "ollama:qwen-local")))
+        }
+        await eventually {
+            ollama.routedModels == ["qwen-local"]
+        }
+
+        let gemmaRequest = chatRequest(model: "lm_studio:gemma-local")
+        let mistralRequest = chatRequest(model: "lm_studio:mistral-local")
+        let gemmaTask = Task {
+            try await collect(backend.chat(request: gemmaRequest))
+        }
+        let mistralTask = Task {
+            try await collect(backend.chat(request: mistralRequest))
+        }
+        XCTAssertEqual(drainWaitStarted.wait(timeout: .now() + 1), .success)
+        XCTAssertEqual(drainWaitStarted.wait(timeout: .now() + 1), .success)
+        XCTAssertTrue(lmStudio.routedModels.isEmpty)
+
+        currentTask.cancel()
+        _ = await currentTask.result
+
+        XCTAssertEqual(drainWaitStarted.wait(timeout: .now() + 1), .success)
+        await eventually {
+            lmStudio.routedModels.count == 1
+        }
+        let routedModel = try XCTUnwrap(lmStudio.routedModels.first)
+        XCTAssertEqual(lmStudio.routedModels.count, 1)
+        XCTAssertEqual(backend.modelResidencySnapshot().activeModelID, routedModel)
+        XCTAssertEqual(backend.modelResidencySnapshot().inFlightGenerations, 1)
+
+        let waitingRequest = routedModel == "gemma-local" ? mistralRequest : gemmaRequest
+        let waitingTask = routedModel == "gemma-local" ? mistralTask : gemmaTask
+        XCTAssertEqual(
+            backend.cancel(generationID: waitingRequest.generationID),
+            .cancelled(generationID: waitingRequest.generationID)
+        )
+        do {
+            _ = try await waitingTask.value
+            XCTFail("Expected the queued model switch to remain cancelled.")
+        } catch is CancellationError {
+            // Expected.
+        }
+        XCTAssertEqual(lmStudio.routedModels, [routedModel])
+
+        let residentTask = routedModel == "gemma-local" ? gemmaTask : mistralTask
+        residentTask.cancel()
+        _ = await residentTask.result
+        await eventually {
+            backend.modelResidencySnapshot().inFlightGenerations == 0
+        }
     }
 
     func testCancelledEmbeddingWaitingForSameModelUnloadDoesNotDispatch() async throws {
@@ -305,6 +549,50 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
         XCTAssertEqual(ollama.unloadedModels, ["nomic-embed"])
         XCTAssertNil(backend.modelResidencySnapshot().activeModelID)
         XCTAssertEqual(backend.modelResidencySnapshot().inFlightGenerations, 0)
+    }
+
+    func testCancelledEmbeddingReturnsBeforeSelfStartedUnloadCompletes() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(
+                id: "nomic-embed",
+                name: "nomic-embed",
+                provider: .ollama,
+                kind: .embedding
+            )],
+            holdsUnloadsOpen: true
+        )
+        let backend = AggregatingLlmBackend(
+            [ollama],
+            modelIdleUnloadDelayNanoseconds: 0
+        )
+        let request = EmbeddingRequest(model: "ollama:nomic-embed", texts: ["policy"])
+        let cancellationReturned = expectation(
+            description: "cancelled embedding returns before its self-started unload completes"
+        )
+        let embeddingTask = Task<Error?, Never> {
+            defer { cancellationReturned.fulfill() }
+            do {
+                _ = try await backend.embed(request: request)
+                return nil
+            } catch {
+                return error
+            }
+        }
+        XCTAssertTrue(ollama.waitForUnloadStart())
+
+        embeddingTask.cancel()
+        await fulfillment(of: [cancellationReturned], timeout: 1)
+        let cancellationError = await embeddingTask.value
+        XCTAssertTrue(cancellationError is CancellationError)
+        XCTAssertEqual(ollama.unloadedModels, ["nomic-embed"])
+        XCTAssertEqual(backend.modelResidencySnapshot().inFlightGenerations, 0)
+
+        ollama.releaseUnloads()
+        await eventually {
+            backend.modelResidencySnapshot().unloadingModelID == nil
+        }
+        XCTAssertNil(backend.modelResidencySnapshot().activeModelID)
     }
 
     func testExtendingIdlePolicyInvalidatesEarlierTimer() async throws {
@@ -1141,6 +1429,46 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
         XCTAssertTrue(duplicateOllama.routedModels.isEmpty)
     }
 
+    func testStalledAggregateConsumerFailsClosedWhenBoundedEventBufferFills() async throws {
+        let burst = ControlledChatEventBurst(events: (0...64).map { .delta("chunk-\($0)") })
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)],
+            controlledChatEventBurst: burst
+        )
+        let backend = AggregatingLlmBackend(
+            [ollama],
+            modelIdleUnloadDelayNanoseconds: 60_000_000_000
+        )
+
+        let stream = backend.chat(request: chatRequest(model: "ollama:qwen-local"))
+        XCTAssertTrue(burst.waitForStreamStart())
+        await eventually {
+            backend.modelResidencySnapshot().inFlightGenerations == 1
+        }
+        burst.release()
+        await eventually {
+            backend.modelResidencySnapshot().inFlightGenerations == 0
+        }
+
+        var receivedEvents: [ChatStreamEvent] = []
+        do {
+            for try await event in stream {
+                receivedEvents.append(event)
+            }
+            XCTFail("Expected aggregate event-buffer overflow rejection.")
+        } catch let error as BackendError {
+            XCTAssertEqual(error.provider, .aggregate)
+            XCTAssertEqual(error.code, "bad_backend_response")
+            XCTAssertFalse(error.retryable)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        XCTAssertEqual(receivedEvents, (0..<64).map { .delta("chunk-\($0)") })
+        XCTAssertEqual(ollama.routedModels, ["qwen-local"])
+        XCTAssertEqual(backend.modelResidencySnapshot().activeModelID, "qwen-local")
+    }
+
     private func chatRequest(model: String) -> ChatRequest {
         ChatRequest(
             generationID: UUID().uuidString,
@@ -1186,6 +1514,7 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
     private let holdsChatsOpenAfterDone: Bool
     private let holdsModelListingOpen: Bool
     private let holdsUnloadsOpen: Bool
+    private let controlledChatEventBurst: ControlledChatEventBurst?
     private let providerUsageSource: ChatProviderUsageSource?
     private let modelListStarted = DispatchSemaphore(value: 0)
     private let unloadStarted = DispatchSemaphore(value: 0)
@@ -1229,6 +1558,7 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
         holdsChatsOpenAfterDone: Bool = false,
         holdsModelListingOpen: Bool = false,
         holdsUnloadsOpen: Bool = false,
+        controlledChatEventBurst: ControlledChatEventBurst? = nil,
         providerUsageSource: ChatProviderUsageSource? = nil
     ) {
         self.provider = provider
@@ -1239,6 +1569,7 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
         self.holdsChatsOpenAfterDone = holdsChatsOpenAfterDone
         self.holdsModelListingOpen = holdsModelListingOpen
         self.holdsUnloadsOpen = holdsUnloadsOpen
+        self.controlledChatEventBurst = controlledChatEventBurst
         self.providerUsageSource = providerUsageSource
     }
 
@@ -1281,10 +1612,13 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
     }
 
     func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
-        AsyncThrowingStream { continuation in
-            lock.withLock {
-                routed.append(request.model)
-            }
+        lock.withLock {
+            routed.append(request.model)
+        }
+        if let controlledChatEventBurst {
+            return controlledChatEventBurst.makeStream()
+        }
+        return AsyncThrowingStream { continuation in
             guard !holdsChatsOpen else {
                 return
             }
@@ -1360,6 +1694,66 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
             cancellationCalls += 1
         }
         return .notFound(generationID: generationID)
+    }
+}
+
+private final class ControlledChatEventBurst: @unchecked Sendable {
+    private let lock = NSLock()
+    private let events: [ChatStreamEvent]
+    private let streamStarted = DispatchSemaphore(value: 0)
+    private var released = false
+    private var releaseContinuations: [CheckedContinuation<Void, Never>] = []
+
+    init(events: [ChatStreamEvent]) {
+        self.events = events
+    }
+
+    func makeStream() -> AsyncThrowingStream<ChatStreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                streamStarted.signal()
+                await waitUntilReleased()
+                for event in events {
+                    guard case .enqueued = continuation.yield(event) else {
+                        continuation.finish()
+                        return
+                    }
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in
+                task.cancel()
+                self.release()
+            }
+        }
+    }
+
+    func waitForStreamStart(timeout: TimeInterval = 1) -> Bool {
+        streamStarted.wait(timeout: .now() + timeout) == .success
+    }
+
+    func release() {
+        let continuations = lock.withLock {
+            guard !released else { return [CheckedContinuation<Void, Never>]() }
+            released = true
+            let continuations = releaseContinuations
+            releaseContinuations.removeAll()
+            return continuations
+        }
+        continuations.forEach { $0.resume() }
+    }
+
+    private func waitUntilReleased() async {
+        await withCheckedContinuation { continuation in
+            let shouldResume = lock.withLock {
+                guard !released else { return true }
+                releaseContinuations.append(continuation)
+                return false
+            }
+            if shouldResume {
+                continuation.resume()
+            }
+        }
     }
 }
 

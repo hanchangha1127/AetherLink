@@ -533,8 +533,10 @@ private final class BootstrapOnlyRelayAllocator: RelayServiceRouteAllocating, @u
         allocationToken: String?,
         runtimeIdentity: RelayRuntimeIdentity,
         identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        cancellation: RelayRouteAllocationCancellation
     ) throws -> RelayServiceRouteAllocation {
+        try cancellation.throwIfCancelledOrExpired()
         bootstrapCalls.increment()
         throw RelayServiceRouteAllocationError.invalidResponse
     }

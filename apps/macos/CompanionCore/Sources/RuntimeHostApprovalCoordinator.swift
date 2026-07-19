@@ -20,6 +20,10 @@ private enum RuntimeHostApprovalFlowSignal: Error {
     case expiredTerminalized
 }
 
+private enum RuntimeHostApprovalExternalStageError: Error {
+    case timedOut
+}
+
 enum RuntimeHostApprovalReservationPersistenceResult: Equatable, Sendable {
     case reserved
     case expiredTerminalized
@@ -158,6 +162,11 @@ struct RuntimeHostApprovalReservationReceipt: Equatable, Sendable {
 private final class RuntimeHostApprovalReservationReceiptIssuer:
     @unchecked Sendable
 {
+    enum InvalidationResult {
+        case persistenceInFlight
+        case settled(committedAt: Date?, terminalized: Bool)
+    }
+
     private enum State {
         case available
         case persisting
@@ -172,7 +181,6 @@ private final class RuntimeHostApprovalReservationReceiptIssuer:
     private let consumeWaitingCheckpoint: (@Sendable () -> Void)?
     private var state = State.available
     private var commitInFlight = false
-    private var committed = false
     private var terminalized = false
     private var storedCommittedAt: Date?
 
@@ -219,7 +227,6 @@ private final class RuntimeHostApprovalReservationReceiptIssuer:
             throw error
         }
         let mayIssue = condition.withLock { () -> Bool in
-            committed = true
             storedCommittedAt = reservationAt
             commitInFlight = false
             defer { condition.broadcast() }
@@ -235,9 +242,10 @@ private final class RuntimeHostApprovalReservationReceiptIssuer:
 
     func consume(_ returnedReceipt: RuntimeHostApprovalReservationReceipt) -> Bool {
         condition.withLock {
-            while commitInFlight {
+            if commitInFlight {
                 consumeWaitingCheckpoint?()
-                condition.wait()
+                state = .violated
+                return false
             }
             guard case .issued = state, returnedReceipt == receipt else {
                 state = .violated
@@ -248,10 +256,11 @@ private final class RuntimeHostApprovalReservationReceiptIssuer:
         }
     }
 
-    func invalidateAndWait() {
+    func invalidate() -> InvalidationResult {
         condition.withLock {
-            while commitInFlight {
-                condition.wait()
+            if commitInFlight {
+                state = .violated
+                return .persistenceInFlight
             }
             switch state {
             case .available, .issued:
@@ -261,15 +270,11 @@ private final class RuntimeHostApprovalReservationReceiptIssuer:
             case .consumed, .failed, .violated:
                 break
             }
+            return .settled(
+                committedAt: storedCommittedAt,
+                terminalized: terminalized
+            )
         }
-    }
-
-    var didCommit: Bool {
-        condition.withLock { committed }
-    }
-
-    var didTerminalize: Bool {
-        condition.withLock { terminalized }
     }
 
     var committedAt: Date? {
@@ -278,6 +283,11 @@ private final class RuntimeHostApprovalReservationReceiptIssuer:
 }
 
 private final class RuntimeHostApprovalTerminalPublicationGate: @unchecked Sendable {
+    enum InvalidationResult {
+        case persistenceInFlight
+        case settled(didPersist: Bool, terminalized: Bool)
+    }
+
     private enum State {
         case available
         case persisting
@@ -359,12 +369,109 @@ private final class RuntimeHostApprovalTerminalPublicationGate: @unchecked Senda
         }
     }
 
-    var didPersist: Bool {
-        lock.withLock { persisted }
+    func invalidate() -> InvalidationResult {
+        lock.withLock {
+            if case .persisting = state {
+                state = .violated
+                return .persistenceInFlight
+            }
+            switch state {
+            case .available, .committed, .completed:
+                state = .violated
+            case .persisting:
+                preconditionFailure("Persistence state changed while invalidating")
+            case .consumed, .failed, .violated:
+                break
+            }
+            return .settled(didPersist: persisted, terminalized: terminalized)
+        }
     }
 
-    var didTerminalize: Bool {
-        lock.withLock { terminalized }
+}
+
+private final class RuntimeHostApprovalExternalStageStartLatch: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var isOpen = false
+
+    func wait() {
+        condition.withLock {
+            while !isOpen {
+                condition.wait()
+            }
+        }
+    }
+
+    func open() {
+        condition.withLock {
+            isOpen = true
+            condition.broadcast()
+        }
+    }
+}
+
+private final class RuntimeHostApprovalExternalStageGate<Value: Sendable>:
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value, any Error>?
+    private var pendingResult: Result<Value, any Error>?
+    private var operationTask: Task<Void, Never>?
+    private var deadlineTask: Task<Void, Never>?
+    private var isResolved = false
+
+    func install(_ continuation: CheckedContinuation<Value, any Error>) {
+        let result = lock.withLock { () -> Result<Value, any Error>? in
+            if let pendingResult {
+                self.pendingResult = nil
+                return pendingResult
+            }
+            self.continuation = continuation
+            return nil
+        }
+        if let result {
+            continuation.resume(with: result)
+        }
+    }
+
+    func register(
+        operationTask: Task<Void, Never>,
+        deadlineTask: Task<Void, Never>
+    ) {
+        let shouldCancel = lock.withLock { () -> Bool in
+            guard !isResolved else { return true }
+            self.operationTask = operationTask
+            self.deadlineTask = deadlineTask
+            return false
+        }
+        if shouldCancel {
+            operationTask.cancel()
+            deadlineTask.cancel()
+        }
+    }
+
+    func resolve(_ result: Result<Value, any Error>) {
+        let resolution = lock.withLock { () -> (
+            CheckedContinuation<Value, any Error>?,
+            Task<Void, Never>?,
+            Task<Void, Never>?
+        ) in
+            guard !isResolved else { return (nil, nil, nil) }
+            isResolved = true
+            guard let continuation else {
+                pendingResult = result
+                return (nil, nil, nil)
+            }
+            self.continuation = nil
+            let operationTask = self.operationTask
+            let deadlineTask = self.deadlineTask
+            self.operationTask = nil
+            self.deadlineTask = nil
+            return (continuation, operationTask, deadlineTask)
+        }
+        guard let continuation = resolution.0 else { return }
+        resolution.1?.cancel()
+        resolution.2?.cancel()
+        continuation.resume(with: result)
     }
 }
 
@@ -436,6 +543,7 @@ actor RuntimeHostApprovalCoordinator {
     private let registeredActions: Set<RuntimeHostApprovalActionRegistration>
     private let now: @Sendable () -> Date
     private let monotonicNow: @Sendable () -> TimeInterval
+    private let externalStageDeadlineWait: @Sendable (TimeInterval) async throws -> Void
     private let approvalTTL: TimeInterval
     private let pendingLimit: Int
     private let onStateChange: (@Sendable () -> Void)?
@@ -454,6 +562,13 @@ actor RuntimeHostApprovalCoordinator {
         monotonicNow: @escaping @Sendable () -> TimeInterval = {
             ProcessInfo.processInfo.systemUptime
         },
+        externalStageDeadlineWait: @escaping @Sendable (TimeInterval) async throws -> Void = {
+            delay in
+            let nanoseconds = UInt64(
+                min(max(0, delay) * 1_000_000_000, Double(UInt64.max))
+            )
+            try await Task.sleep(nanoseconds: nanoseconds)
+        },
         onStateChange: (@Sendable () -> Void)? = nil,
         reservationReceiptConsumeWaitingCheckpoint: (@Sendable () -> Void)? = nil
     ) {
@@ -464,6 +579,7 @@ actor RuntimeHostApprovalCoordinator {
         self.pendingLimit = max(1, min(pendingLimit, 32))
         self.now = now
         self.monotonicNow = monotonicNow
+        self.externalStageDeadlineWait = externalStageDeadlineWait
         self.onStateChange = onStateChange
         self.reservationReceiptConsumeWaitingCheckpoint =
             reservationReceiptConsumeWaitingCheckpoint
@@ -577,6 +693,9 @@ actor RuntimeHostApprovalCoordinator {
     }
 
     public func approve(operationID: String) async throws {
+        guard !recoveryFailed else {
+            throw RuntimeHostApprovalCoordinatorError.storageUnavailable
+        }
         guard activeExecutionOperationID == nil else {
             throw RuntimeHostApprovalCoordinatorError.decisionInFlight
         }
@@ -604,6 +723,10 @@ actor RuntimeHostApprovalCoordinator {
         activeExecutionOperationID = operationID
         onStateChange?()
         let requestBindingDigest = pending.request.permissionClaim.requestBindingDigest
+        let approvalRequest = pending.request
+        let persistence = self.persistence
+        let now = self.now
+        let monotonicNow = self.monotonicNow
         let requestedAt = pending.review.requestedAt
         let expiresAt = pending.review.expiresAt
         let monotonicDeadline = pending.monotonicDeadline
@@ -617,43 +740,103 @@ actor RuntimeHostApprovalCoordinator {
 
         let reservationReceipt: RuntimeHostApprovalReservationReceipt
         do {
-            reservationReceipt = try await pending.request.authorizeAndClaimExecution {
-                [persistence, now, monotonicNow] in
-                let reservationAt = max(now(), requestedAt)
-                return try reservationReceiptIssuer.issue(at: reservationAt) {
-                    guard now() < expiresAt,
-                          monotonicNow() < monotonicDeadline else {
-                        _ = try persistence.recordTerminal(
+            reservationReceipt = try await awaitExternalStage(
+                until: monotonicDeadline
+            ) {
+                try await approvalRequest.authorizeAndClaimExecution {
+                    [persistence, now, monotonicNow] in
+                    let reservationAt = max(now(), requestedAt)
+                    return try reservationReceiptIssuer.issue(at: reservationAt) {
+                        guard now() < expiresAt,
+                              monotonicNow() < monotonicDeadline else {
+                            _ = try persistence.recordTerminal(
+                                operationID: operationID,
+                                event: .expired,
+                                at: max(now(), expiresAt)
+                            )
+                            return .expiredTerminalized
+                        }
+                        return try persistence.reserveDispatchBeforeExecution(
                             operationID: operationID,
-                            event: .expired,
-                            at: max(now(), expiresAt)
+                            requestBindingDigest: requestBindingDigest,
+                            at: reservationAt
                         )
-                        return .expiredTerminalized
                     }
-                    return try persistence.reserveDispatchBeforeExecution(
-                        operationID: operationID,
-                        requestBindingDigest: requestBindingDigest,
-                        at: reservationAt
-                    )
                 }
             }
-        } catch RuntimeHostApprovalAuthorityError.authenticationChanged {
-            reservationReceiptIssuer.invalidateAndWait()
-            if reservationReceiptIssuer.didTerminalize {
+        } catch RuntimeHostApprovalExternalStageError.timedOut {
+            let invalidation = reservationReceiptIssuer.invalidate()
+            guard case let .settled(committedAt, terminalized) = invalidation else {
+                poisonAfterPersistenceFailure(operationID: operationID)
+                throw RuntimeHostApprovalCoordinatorError.storageUnavailable
+            }
+            if terminalized {
                 finish(operationID: operationID)
-                _ = await pending.request.publishApprovalRequired()
+                await publishApprovalRequiredBounded(pending.request)
+                throw RuntimeHostApprovalCoordinatorError.reviewNotFound
+            }
+            if let reservationAt = committedAt {
+                try suppressReservedOperation(
+                    operationID: operationID,
+                    reservationAt: reservationAt
+                )
+            } else {
+                do {
+                    _ = try persistence.recordTerminal(
+                        operationID: operationID,
+                        event: .expired,
+                        at: max(now(), expiresAt)
+                    )
+                } catch {
+                    poisonAfterPersistenceFailure(operationID: operationID)
+                    throw RuntimeHostApprovalCoordinatorError.storageUnavailable
+                }
+                finish(operationID: operationID)
+                await publishApprovalRequiredBounded(pending.request)
+            }
+            throw RuntimeHostApprovalCoordinatorError.reviewNotFound
+        } catch is CancellationError {
+            let invalidation = reservationReceiptIssuer.invalidate()
+            guard case let .settled(committedAt, terminalized) = invalidation else {
+                poisonAfterPersistenceFailure(operationID: operationID)
+                throw CancellationError()
+            }
+            if terminalized {
+                finish(operationID: operationID)
+                await publishApprovalRequiredBounded(pending.request)
+            } else if let reservationAt = committedAt {
+                try suppressReservedOperation(
+                    operationID: operationID,
+                    reservationAt: reservationAt
+                )
+            } else {
+                restorePendingAfterCancelledAuthorization(
+                    operationID: operationID,
+                    token: token
+                )
+            }
+            throw CancellationError()
+        } catch RuntimeHostApprovalAuthorityError.authenticationChanged {
+            let invalidation = reservationReceiptIssuer.invalidate()
+            guard case let .settled(committedAt, terminalized) = invalidation else {
+                poisonAfterPersistenceFailure(operationID: operationID)
+                throw RuntimeHostApprovalCoordinatorError.storageUnavailable
+            }
+            if terminalized {
+                finish(operationID: operationID)
+                await publishApprovalRequiredBounded(pending.request)
                 throw RuntimeHostApprovalCoordinatorError.reviewNotFound
             }
             let terminalResult: RuntimeHostApprovalTerminalPersistenceResult
             do {
                 terminalResult = try persistence.recordTerminal(
                     operationID: operationID,
-                    event: reservationReceiptIssuer.didCommit
+                    event: committedAt != nil
                         ? .resultSuppressed
                         : .authenticationChanged,
                     at: max(
                         now(),
-                        reservationReceiptIssuer.committedAt ?? requestedAt
+                        committedAt ?? requestedAt
                     )
                 )
             } catch {
@@ -662,28 +845,32 @@ actor RuntimeHostApprovalCoordinator {
             }
             if terminalResult == .expiredTerminalized {
                 finish(operationID: operationID)
-                _ = await pending.request.publishApprovalRequired()
+                await publishApprovalRequiredBounded(pending.request)
                 throw RuntimeHostApprovalCoordinatorError.reviewNotFound
             }
             finish(operationID: operationID)
             throw RuntimeHostApprovalCoordinatorError.authenticationChanged
         } catch RuntimeHostApprovalAuthorityError.permissionChanged {
-            reservationReceiptIssuer.invalidateAndWait()
-            if reservationReceiptIssuer.didTerminalize {
+            let invalidation = reservationReceiptIssuer.invalidate()
+            guard case let .settled(committedAt, terminalized) = invalidation else {
+                poisonAfterPersistenceFailure(operationID: operationID)
+                throw RuntimeHostApprovalCoordinatorError.storageUnavailable
+            }
+            if terminalized {
                 finish(operationID: operationID)
-                _ = await pending.request.publishApprovalRequired()
+                await publishApprovalRequiredBounded(pending.request)
                 throw RuntimeHostApprovalCoordinatorError.reviewNotFound
             }
             let terminalResult: RuntimeHostApprovalTerminalPersistenceResult
             do {
                 terminalResult = try persistence.recordTerminal(
                     operationID: operationID,
-                    event: reservationReceiptIssuer.didCommit
+                    event: committedAt != nil
                         ? .resultSuppressed
                         : .permissionChanged,
                     at: max(
                         now(),
-                        reservationReceiptIssuer.committedAt ?? requestedAt
+                        committedAt ?? requestedAt
                     )
                 )
             } catch {
@@ -692,36 +879,38 @@ actor RuntimeHostApprovalCoordinator {
             }
             if terminalResult == .expiredTerminalized {
                 finish(operationID: operationID)
-                _ = await pending.request.publishApprovalRequired()
+                await publishApprovalRequiredBounded(pending.request)
                 throw RuntimeHostApprovalCoordinatorError.reviewNotFound
             }
             finish(operationID: operationID)
             throw RuntimeHostApprovalCoordinatorError.permissionChanged
         } catch RuntimeHostApprovalPersistenceError.expired {
-            reservationReceiptIssuer.invalidateAndWait()
-            guard reservationReceiptIssuer.didTerminalize else {
+            let invalidation = reservationReceiptIssuer.invalidate()
+            guard case let .settled(_, terminalized) = invalidation,
+                  terminalized else {
                 poisonAfterPersistenceFailure(operationID: operationID)
                 throw RuntimeHostApprovalCoordinatorError.storageUnavailable
             }
             finish(operationID: operationID)
-            _ = await pending.request.publishApprovalRequired()
+            await publishApprovalRequiredBounded(pending.request)
             throw RuntimeHostApprovalCoordinatorError.reviewNotFound
         } catch {
-            reservationReceiptIssuer.invalidateAndWait()
-            if reservationReceiptIssuer.didTerminalize {
+            let invalidation = reservationReceiptIssuer.invalidate()
+            guard case let .settled(committedAt, terminalized) = invalidation else {
+                poisonAfterPersistenceFailure(operationID: operationID)
+                throw RuntimeHostApprovalCoordinatorError.storageUnavailable
+            }
+            if terminalized {
                 finish(operationID: operationID)
-                _ = await pending.request.publishApprovalRequired()
+                await publishApprovalRequiredBounded(pending.request)
                 throw RuntimeHostApprovalCoordinatorError.reviewNotFound
             }
-            if reservationReceiptIssuer.didCommit {
+            if let committedAt {
                 do {
                     _ = try persistence.recordTerminal(
                         operationID: operationID,
                         event: .resultSuppressed,
-                        at: max(
-                            now(),
-                            reservationReceiptIssuer.committedAt ?? requestedAt
-                        )
+                        at: max(now(), committedAt)
                     )
                     finish(operationID: operationID)
                 } catch {
@@ -755,20 +944,37 @@ actor RuntimeHostApprovalCoordinator {
         }
         reserved.state = .executing(token)
         pendingByID[operationID] = reserved
-        let outcome = await reserved.request.execute()
+        let reservedRequest = reserved.request
+        let outcome: RuntimeHostApprovalExecutionOutcome
+        do {
+            outcome = try await awaitExternalStage(until: monotonicDeadline) {
+                await reservedRequest.execute()
+            }
+        } catch RuntimeHostApprovalExternalStageError.timedOut {
+            try suppressReservedOperation(
+                operationID: operationID,
+                reservationAt: reservationAt
+            )
+            return
+        } catch is CancellationError {
+            try suppressReservedOperation(
+                operationID: operationID,
+                reservationAt: reservationAt
+            )
+            throw CancellationError()
+        } catch {
+            try suppressReservedOperation(
+                operationID: operationID,
+                reservationAt: reservationAt
+            )
+            throw RuntimeHostApprovalCoordinatorError.storageUnavailable
+        }
         guard now() < reserved.review.expiresAt,
               monotonicNow() < reserved.monotonicDeadline else {
-            do {
-                _ = try persistence.recordTerminal(
-                    operationID: operationID,
-                    event: .resultSuppressed,
-                    at: max(now(), reservationAt)
-                )
-            } catch {
-                poisonAfterPersistenceFailure(operationID: operationID)
-                throw RuntimeHostApprovalCoordinatorError.storageUnavailable
-            }
-            finish(operationID: operationID)
+            try suppressReservedOperation(
+                operationID: operationID,
+                reservationAt: reservationAt
+            )
             return
         }
 
@@ -780,33 +986,33 @@ actor RuntimeHostApprovalCoordinator {
         }
         let publication: RuntimeHostApprovalPublication
         do {
-            publication = try await reserved.request.prepareOutcomePublication(outcome)
+            publication = try await awaitExternalStage(until: monotonicDeadline) {
+                try await reservedRequest.prepareOutcomePublication(outcome)
+            }
+        } catch RuntimeHostApprovalExternalStageError.timedOut {
+            try suppressReservedOperation(
+                operationID: operationID,
+                reservationAt: reservationAt
+            )
+            return
+        } catch is CancellationError {
+            try suppressReservedOperation(
+                operationID: operationID,
+                reservationAt: reservationAt
+            )
+            throw CancellationError()
         } catch RuntimeHostApprovalAuthorityError.authenticationChanged,
                 RuntimeHostApprovalAuthorityError.permissionChanged {
-            do {
-                _ = try persistence.recordTerminal(
-                    operationID: operationID,
-                    event: .resultSuppressed,
-                    at: max(now(), reservationAt)
-                )
-            } catch {
-                poisonAfterPersistenceFailure(operationID: operationID)
-                throw RuntimeHostApprovalCoordinatorError.storageUnavailable
-            }
-            finish(operationID: operationID)
+            try suppressReservedOperation(
+                operationID: operationID,
+                reservationAt: reservationAt
+            )
             return
         } catch {
-            do {
-                _ = try persistence.recordTerminal(
-                    operationID: operationID,
-                    event: .resultSuppressed,
-                    at: max(now(), reservationAt)
-                )
-            } catch {
-                poisonAfterPersistenceFailure(operationID: operationID)
-                throw RuntimeHostApprovalCoordinatorError.storageUnavailable
-            }
-            finish(operationID: operationID)
+            try suppressReservedOperation(
+                operationID: operationID,
+                reservationAt: reservationAt
+            )
             throw RuntimeHostApprovalCoordinatorError.storageUnavailable
         }
 
@@ -829,26 +1035,71 @@ actor RuntimeHostApprovalCoordinator {
             )
         }
         do {
-            try await publication {
-                try terminalPublicationGate.commit()
+            try await awaitExternalStage(until: monotonicDeadline) {
+                try await publication {
+                    try terminalPublicationGate.commit()
+                }
             }
             guard terminalPublicationGate.completePublication() else {
                 poisonAfterPersistenceFailure(operationID: operationID)
                 throw RuntimeHostApprovalCoordinatorError.storageUnavailable
             }
+        } catch RuntimeHostApprovalExternalStageError.timedOut {
+            let invalidation = terminalPublicationGate.invalidate()
+            guard case let .settled(didPersist, terminalized) = invalidation else {
+                poisonAfterPersistenceFailure(operationID: operationID)
+                throw RuntimeHostApprovalCoordinatorError.storageUnavailable
+            }
+            if terminalized {
+                finish(operationID: operationID)
+                return
+            }
+            guard !didPersist else {
+                poisonAfterPersistenceFailure(operationID: operationID)
+                throw RuntimeHostApprovalCoordinatorError.storageUnavailable
+            }
+            try suppressReservedOperation(
+                operationID: operationID,
+                reservationAt: reservationAt
+            )
+            return
+        } catch is CancellationError {
+            let invalidation = terminalPublicationGate.invalidate()
+            guard case let .settled(didPersist, terminalized) = invalidation else {
+                poisonAfterPersistenceFailure(operationID: operationID)
+                throw CancellationError()
+            }
+            if terminalized {
+                finish(operationID: operationID)
+                throw CancellationError()
+            }
+            guard !didPersist else {
+                poisonAfterPersistenceFailure(operationID: operationID)
+                throw RuntimeHostApprovalCoordinatorError.storageUnavailable
+            }
+            try suppressReservedOperation(
+                operationID: operationID,
+                reservationAt: reservationAt
+            )
+            throw CancellationError()
         } catch RuntimeHostApprovalFlowSignal.expiredTerminalized {
-            guard terminalPublicationGate.didTerminalize else {
+            let invalidation = terminalPublicationGate.invalidate()
+            guard case let .settled(_, terminalized) = invalidation,
+                  terminalized else {
                 poisonAfterPersistenceFailure(operationID: operationID)
                 throw RuntimeHostApprovalCoordinatorError.storageUnavailable
             }
             finish(operationID: operationID)
             return
         } catch RuntimeHostApprovalPersistenceError.expired {
+            _ = terminalPublicationGate.invalidate()
             poisonAfterPersistenceFailure(operationID: operationID)
             throw RuntimeHostApprovalCoordinatorError.storageUnavailable
         } catch RuntimeHostApprovalAuthorityError.authenticationChanged,
                 RuntimeHostApprovalAuthorityError.permissionChanged {
-            guard !terminalPublicationGate.didPersist else {
+            let invalidation = terminalPublicationGate.invalidate()
+            guard case let .settled(didPersist, _) = invalidation,
+                  !didPersist else {
                 poisonAfterPersistenceFailure(operationID: operationID)
                 throw RuntimeHostApprovalCoordinatorError.storageUnavailable
             }
@@ -865,7 +1116,12 @@ actor RuntimeHostApprovalCoordinator {
                 throw RuntimeHostApprovalCoordinatorError.storageUnavailable
             }
         } catch {
-            if terminalPublicationGate.didPersist {
+            let invalidation = terminalPublicationGate.invalidate()
+            guard case let .settled(didPersist, _) = invalidation else {
+                poisonAfterPersistenceFailure(operationID: operationID)
+                throw RuntimeHostApprovalCoordinatorError.storageUnavailable
+            }
+            if didPersist {
                 poisonAfterPersistenceFailure(operationID: operationID)
             } else {
                 do {
@@ -889,6 +1145,9 @@ actor RuntimeHostApprovalCoordinator {
     }
 
     public func dismiss(operationID: String) async throws {
+        guard !recoveryFailed else {
+            throw RuntimeHostApprovalCoordinatorError.storageUnavailable
+        }
         guard let pending = pendingByID[operationID], case .pending = pending.state else {
             throw RuntimeHostApprovalCoordinatorError.reviewNotFound
         }
@@ -903,7 +1162,7 @@ actor RuntimeHostApprovalCoordinator {
             throw RuntimeHostApprovalCoordinatorError.storageUnavailable
         }
         pendingByID[operationID] = nil
-        _ = await pending.request.publishApprovalRequired()
+        await publishApprovalRequiredBounded(pending.request)
         onStateChange?()
     }
 
@@ -957,7 +1216,101 @@ actor RuntimeHostApprovalCoordinator {
             throw RuntimeHostApprovalCoordinatorError.storageUnavailable
         }
         pendingByID[operationID] = nil
-        _ = await pending.request.publishApprovalRequired()
+        await publishApprovalRequiredBounded(pending.request)
+        onStateChange?()
+    }
+
+    private func awaitExternalStage<Value: Sendable>(
+        until monotonicDeadline: TimeInterval,
+        operation: @escaping @Sendable () async throws -> Value
+    ) async throws -> Value {
+        let gate = RuntimeHostApprovalExternalStageGate<Value>()
+        let startLatch = RuntimeHostApprovalExternalStageStartLatch()
+        let monotonicNow = self.monotonicNow
+        let deadlineWait = externalStageDeadlineWait
+
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
+                gate.install(continuation)
+                let operationTask = Task.detached {
+                    startLatch.wait()
+                    do {
+                        try Task.checkCancellation()
+                        let value = try await operation()
+                        try Task.checkCancellation()
+                        gate.resolve(.success(value))
+                    } catch {
+                        gate.resolve(.failure(error))
+                    }
+                }
+                let deadlineTask = Task.detached {
+                    startLatch.wait()
+                    do {
+                        while true {
+                            try Task.checkCancellation()
+                            let remaining = monotonicDeadline - monotonicNow()
+                            guard remaining > 0 else { break }
+                            try await deadlineWait(remaining)
+                        }
+                        try Task.checkCancellation()
+                        gate.resolve(.failure(RuntimeHostApprovalExternalStageError.timedOut))
+                    } catch is CancellationError {
+                        return
+                    } catch {
+                        gate.resolve(.failure(error))
+                    }
+                }
+                gate.register(operationTask: operationTask, deadlineTask: deadlineTask)
+                startLatch.open()
+            }
+        } onCancel: {
+            gate.resolve(.failure(CancellationError()))
+        }
+    }
+
+    private func publishApprovalRequiredBounded(
+        _ request: RuntimeHostApprovalRequest
+    ) async {
+        let deadline = monotonicNow() + approvalTTL
+        _ = try? await awaitExternalStage(until: deadline) {
+            await request.publishApprovalRequired()
+        }
+    }
+
+    private func suppressReservedOperation(
+        operationID: String,
+        reservationAt: Date
+    ) throws {
+        do {
+            _ = try persistence.recordTerminal(
+                operationID: operationID,
+                event: .resultSuppressed,
+                at: max(now(), reservationAt)
+            )
+        } catch {
+            poisonAfterPersistenceFailure(operationID: operationID)
+            throw RuntimeHostApprovalCoordinatorError.storageUnavailable
+        }
+        finish(operationID: operationID)
+    }
+
+    private func restorePendingAfterCancelledAuthorization(
+        operationID: String,
+        token: UUID
+    ) {
+        guard var pending = pendingByID[operationID],
+              case .authorizing(let currentToken) = pending.state,
+              currentToken == token else {
+            finish(operationID: operationID)
+            return
+        }
+        pending.state = .pending
+        pending.review.isDispatching = false
+        pendingByID[operationID] = pending
+        if activeExecutionOperationID == operationID {
+            activeExecutionOperationID = nil
+        }
         onStateChange?()
     }
 
@@ -1012,11 +1365,9 @@ actor RuntimeHostApprovalCoordinator {
         max(now(), pending.review.requestedAt)
     }
 
-    private func poisonAfterPersistenceFailure(operationID: String) {
-        pendingByID[operationID] = nil
-        if activeExecutionOperationID == operationID {
-            activeExecutionOperationID = nil
-        }
+    private func poisonAfterPersistenceFailure(operationID _: String) {
+        pendingByID.removeAll(keepingCapacity: true)
+        activeExecutionOperationID = nil
         recoveryFailed = true
         onStateChange?()
     }

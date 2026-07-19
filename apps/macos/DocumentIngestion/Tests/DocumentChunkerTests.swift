@@ -186,6 +186,46 @@ final class DocumentChunkerTests: XCTestCase {
         }
     }
 
+    func testChunkerEnforcesExactUTF8ByteCeilingBeforeCharacterArrayAllocation() throws {
+        let combiningMarkBytes = "\u{0301}".utf8.count
+        let base = "é"
+        let remainingBytes = documentIngestionResourcePolicyMaxExtractedTextUTF8BytesCeiling
+            - base.utf8.count
+        let exactText = base + String(
+            repeating: "\u{0301}",
+            count: remainingBytes / combiningMarkBytes
+        )
+        XCTAssertEqual(exactText.count, 1)
+        XCTAssertEqual(
+            exactText.utf8.count,
+            documentIngestionResourcePolicyMaxExtractedTextUTF8BytesCeiling
+        )
+        let document = ExtractedDocument(
+            fileName: "utf8-ceiling.txt",
+            mimeType: "text/plain",
+            text: exactText
+        )
+
+        let chunks = try DocumentChunker().chunks(from: document)
+        XCTAssertEqual(chunks.single?.text, exactText)
+
+        let oversizedDocument = ExtractedDocument(
+            fileName: document.fileName,
+            mimeType: document.mimeType,
+            text: exactText + "x"
+        )
+        XCTAssertThrowsError(try DocumentChunker().chunks(from: oversizedDocument)) { error in
+            XCTAssertEqual(
+                error as? DocumentIngestionError,
+                .resourceLimitExceeded(
+                    resource: "extracted text UTF-8 bytes",
+                    limit: documentIngestionResourcePolicyMaxExtractedTextUTF8BytesCeiling,
+                    actual: documentIngestionResourcePolicyMaxExtractedTextUTF8BytesCeiling + 1
+                )
+            )
+        }
+    }
+
     private func substring(_ text: String, start: Int, end: Int) -> String {
         let startIndex = text.index(text.startIndex, offsetBy: start)
         let endIndex = text.index(text.startIndex, offsetBy: end)

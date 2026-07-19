@@ -31,19 +31,23 @@ already protected from the service.
 
 | Evidence | Finding or document | What it establishes |
 | --- | --- | --- |
-| `E001` | Plain allocation transport and unsigned lease response | `TCPRelayServiceRouteAllocator` opens a TCP socket, sends bearer allocation material, and validates response fields against an unsigned challenge; `RelayPeerClient` also creates a plain TCP `NWConnection`. |
+| `E001` | Plain allocation transport, bounded controls, and unsigned lease response | `TCPRelayServiceRouteAllocator` opens a TCP socket, sends bearer allocation material, byte-bounds control-line reads, and validates response fields against an unsigned challenge; `RelayPeerClient` also creates a plain TCP `NWConnection` with bounded registration and confirmation lines. |
 | `E002` | Endpoint-owned traffic secret and PSK-mixed ECDH | The runtime generates the 32-byte secret locally; Swift and Kotlin derive confirmation and traffic keys from ECDH plus that secret. |
-| `E003` | Runtime-signed allocation and registration challenges | Runtime identity proofs bind allocation and runtime registration fields, but they authenticate the runtime to the service, not the service to the runtime. |
-| `E004` | Runtime/client co-authorized paired lease continuity | Paired renewal binds current/next IDs, generations, nonces, both device fingerprints, and the live transport binding. |
+| `E003` | Validated runtime identity and signed allocation/registration challenges | Runtime identity decoding re-enters the validating initializer and proofs bind allocation and runtime registration fields, but they authenticate the runtime to the service, not the service to the runtime. |
+| `E004` | Runtime/client co-authorized paired lease continuity | Paired renewal binds current/next IDs, generations, nonces, both device fingerprints, and the live transport binding; matcher registration freshly revalidates the exact lease and expiry under coordinated store state. |
 | `E005` | QR-pinned mutual device identity | Initial pairing proves both long-term device keys and binds them to the confirmed endpoint transport. |
-| `E006` | Relay-verified admission before strict frame activation | Paired endpoint proofs bind each ephemeral registration, but the relay terminates those checks; persistent identity signatures are not directly peer-verifiable in the ECDH transcript. |
+| `E006` | DNS-scope-validated relay admission before strict frame activation | Android resolves once, requires every returned address to satisfy the declared public, private-overlay, or debug-loopback scope, connects to the exact validated address, bounds strict control lines and outgoing frame bodies, and then binds paired endpoint proofs to each ephemeral registration. The relay still terminates those identity checks; persistent identity signatures are not directly peer-verifiable in the ECDH transcript. |
 | `E009` | No service lease identity in the shared schema | The schema carries transport bindings and paired allocation messages but no service key id, lease signature, or signed lease digest. |
 | `E010` | Development-relay source-aware allocation controls | Allocation- and renewal-prefixed attempts consume separate bounded source buckets before full parsing. Exact strict preflight classification, shared overflow, full-refill-before-idle validation, and source-free counters are tactical defense in depth, not service authentication. |
 | `E011` | Development-relay source peer quotas | Canonical accepted sources have bounded live connections and matcher-owned waiters; pre-waiter headroom plus atomic waiting-insertion checks reserve counterpart-only admission for an immediate match or authenticated same-source waiting replacement. Global/source reserve provenance prevents per-source reserve from discharging another source's waiter, while cross-source/nonmatching candidates close with source-free counters. This is tactical admission defense, not service authentication or lease integrity. |
 | `E012` | Development-relay bounded waiting and authenticated identity fairness | First-insertion monotonic waiting deadlines are capped by lease expiry, registration/readiness decisions atomically expire late rooms before matching or replacement, and waiting results carry the deadline without a post-publication room lookup. Role-separated verified runtime or paired-client identities have cross-source waiting quotas. Bootstrap and legacy peers remain source-only, while active bridges are uncharged. This is tactical fairness, not service authentication, signed lease integrity, or peer-verifiable identity KEX. |
 
 Observed: allocation and relay sockets are plain TCP; service responses are
-shape-checked but not service-signed. Observed: the traffic secret is attached
+shape-checked and control lines are bounded but not service-signed. Observed:
+allocation/store JSON rejects duplicate keys, allocation TTL is finite and
+capped, and registration revalidates the lease under coordinated state. These
+are tactical parser and race controls, not production service authentication.
+Observed: the traffic secret is attached
 after service allocation and never enters the service request. Inferred: a
 network attacker can steal an allocation token, observe route tokens, impersonate
 the allocation endpoint, or suppress/replace unsigned lease metadata, but still

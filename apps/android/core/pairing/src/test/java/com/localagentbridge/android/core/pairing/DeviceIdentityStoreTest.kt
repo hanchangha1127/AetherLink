@@ -3,6 +3,9 @@ package com.localagentbridge.android.core.pairing
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -20,6 +23,9 @@ import java.security.Signature
 import java.security.spec.ECGenParameterSpec
 import java.security.spec.X509EncodedKeySpec
 import java.util.Base64
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(RobolectricTestRunner::class)
 class DeviceIdentityStoreTest {
@@ -50,6 +56,27 @@ class DeviceIdentityStoreTest {
                 signatureBase64 = first.signAuthenticationResponse("auth-nonce-1"),
             )
         )
+    }
+
+    @Test
+    fun concurrentFirstRunReturnsOnePersistedIdentityAcrossStoreInstances() = runTest {
+        val keyPairStore = RacingDeviceIdentityKeyPairStore()
+        val identities = awaitAll(
+            async(Dispatchers.IO) {
+                DeviceIdentityStore(context, keyPairStore).loadOrCreate()
+            },
+            async(Dispatchers.IO) {
+                DeviceIdentityStore(context, keyPairStore).loadOrCreate()
+            },
+        )
+
+        val persisted = context.localAgentBridgeDataStore.data.first()
+        assertEquals(identities[0].deviceId, identities[1].deviceId)
+        assertEquals(identities[0].deviceName, identities[1].deviceName)
+        assertEquals(identities[0].publicKeyBase64, identities[1].publicKeyBase64)
+        assertEquals(identities[0].deviceId, persisted[stringPreferencesKey("android_device_id")])
+        assertEquals(identities[0].deviceName, persisted[stringPreferencesKey("android_device_name")])
+        assertEquals(2, keyPairStore.loadCalls.get())
     }
 
     @Test
@@ -128,6 +155,20 @@ class DeviceIdentityStoreTest {
 
         override fun loadOrCreate(): KeyPair {
             loadCalls += 1
+            return keyPair
+        }
+    }
+
+    private class RacingDeviceIdentityKeyPairStore(
+        private val keyPair: KeyPair = generateKeyPair(),
+    ) : DeviceIdentityKeyPairStore {
+        val loadCalls = AtomicInteger()
+        private val simultaneousArrivals = CountDownLatch(2)
+
+        override fun loadOrCreate(): KeyPair {
+            loadCalls.incrementAndGet()
+            simultaneousArrivals.countDown()
+            simultaneousArrivals.await(250, TimeUnit.MILLISECONDS)
             return keyPair
         }
     }

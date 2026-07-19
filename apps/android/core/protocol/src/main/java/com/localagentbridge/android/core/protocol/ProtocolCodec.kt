@@ -37,20 +37,9 @@ class ProtocolCodec(
     fun decode(bytes: ByteArray): ProtocolEnvelope {
         val body = bytes.decodeToString()
         val rawInspection = RawJsonObjectInspector(body).inspect()
-        val duplicateKeyStrictMessageType = when {
-            MessageType.ResearchBriefCreate in rawInspection.topLevelTypeValues ->
-                MessageType.ResearchBriefCreate
-            MessageType.ResearchNotebooksList in rawInspection.topLevelTypeValues ->
-                MessageType.ResearchNotebooksList
-            MessageType.MemorySemanticDuplicateSuggestionsList in rawInspection.topLevelTypeValues ->
-                MessageType.MemorySemanticDuplicateSuggestionsList
-            MessageType.MemorySemanticDuplicateClustersList in rawInspection.topLevelTypeValues ->
-                MessageType.MemorySemanticDuplicateClustersList
-            else -> null
-        }
-        if (duplicateKeyStrictMessageType != null && rawInspection.firstDuplicateKeyPath != null) {
+        if (rawInspection.firstDuplicateKeyPath != null) {
             throw IllegalArgumentException(
-                "$duplicateKeyStrictMessageType contains duplicate JSON object key: " +
+                "Protocol envelope contains duplicate JSON object key: " +
                     rawInspection.firstDuplicateKeyPath,
             )
         }
@@ -162,7 +151,6 @@ class ProtocolCodec(
 }
 
 private data class RawJsonObjectInspection(
-    val topLevelTypeValues: Set<String>,
     val firstDuplicateKeyPath: String?,
 )
 
@@ -170,7 +158,6 @@ private class RawJsonObjectInspector(
     private val source: String,
 ) {
     private var index = 0
-    private val topLevelTypeValues = mutableSetOf<String>()
     private var firstDuplicateKeyPath: String? = null
 
     fun inspect(): RawJsonObjectInspection {
@@ -178,7 +165,6 @@ private class RawJsonObjectInspector(
         skipWhitespace()
         require(index == source.length) { "Unexpected trailing JSON content" }
         return RawJsonObjectInspection(
-            topLevelTypeValues = topLevelTypeValues,
             firstDuplicateKeyPath = firstDuplicateKeyPath,
         )
     }
@@ -223,10 +209,7 @@ private class RawJsonObjectInspector(
             }
             skipWhitespace()
             expect(':')
-            val stringValue = parseValue("$path.$key", depth + 1)
-            if (path == "$" && key == "type" && stringValue != null) {
-                topLevelTypeValues += stringValue
-            }
+            parseValue("$path.$key", depth + 1)
             skipWhitespace()
             when {
                 consumeIf('}') -> return

@@ -13,10 +13,10 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 DESIGN_ROOT = ROOT / "docs/security-hardening/production-relay-v1"
 EVIDENCE_COLLECTION_SHA256 = (
-    "ca0f77f0ae8781e8492d7cca909a69651a8348e130240f1d491687da37774586"
+    "2146845a87bebff78ac5d709a36234fd611fa9be1a43750f1fd046d72c4131ad"
 )
 EVIDENCE_BASE_REVISION = "abd638482ea01d2b5f4d38eb78be04f734814c71"
-EXPECTED_EVIDENCE_PATHS = {
+EXPECTED_EVIDENCE_PATH_ORDER = (
     "apps/macos/CompanionCore/Sources/RemoteRelayAllocationClient.swift",
     "apps/macos/Protocol/Sources/RelaySessionCrypto.swift",
     "apps/macos/Protocol/Sources/RelayIdentityAuthorization.swift",
@@ -34,7 +34,8 @@ EXPECTED_EVIDENCE_PATHS = {
     "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt",
     "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairedRelayAllocationAuthorization.kt",
     "packages/protocol-schema/protocol.schema.json",
-}
+)
+EXPECTED_EVIDENCE_PATHS = frozenset(EXPECTED_EVIDENCE_PATH_ORDER)
 REQUIRED_TRADEOFFS = {
     "security",
     "performance",
@@ -100,6 +101,11 @@ PORTFOLIO_SECTION_SNIPPETS = {
     "Evidence Basis": (
         "allocation uses plain TCP",
         "no pair recovery epoch",
+        "duplicate-key rejection",
+        "24 hours",
+        "every DNS resolution result",
+        "exact validated address",
+        "unpinned working-tree context",
         "source buckets",
         "source peer quotas",
         "bounded waiting",
@@ -128,6 +134,12 @@ PROPOSAL_SECTION_SNIPPETS = {
             "`E010`",
             "`E011`",
             "`E012`",
+            "byte-bounds control-line reads",
+            "runtime identity decoding",
+            "every returned address",
+            "freshly revalidates",
+            "duplicate keys",
+            "TTL is finite",
             "not directly peer-verifiable",
             "exact strict preflight classification",
             "registration/readiness decisions",
@@ -167,6 +179,11 @@ PROPOSAL_SECTION_SNIPPETS = {
             "`E010`",
             "`E011`",
             "`E012`",
+            "duplicate object keys",
+            "24 hours",
+            "every resolved relay address",
+            "exact validated address",
+            "freshly revalidates",
             "allocation-mutation source bucket",
             "cannot reset before full refill",
             "registration/readiness decisions",
@@ -203,6 +220,160 @@ PROPOSAL_SECTION_SNIPPETS = {
     },
 }
 
+AUTHORIZATION_KEY_RE = re.compile(
+    r"(?:authori[sz](?:e|ed|ation)?|approval|permission|deployment)",
+    re.IGNORECASE,
+)
+HARDENING_SCHEMA = {
+    "documentType": str,
+    "schemaVersion": str,
+    "analysisId": str,
+    "sourceEvidence": {
+        "kind": str,
+        "label": str,
+        "collectionSha256": str,
+        "artifactCount": int,
+        "targetRevision": str,
+        "sourceDrift": str,
+    },
+    "implementationBoundary": {
+        "selectionGatedProductionDesign": str,
+        "implementedTacticalControls": {
+            "scope": str,
+            "evidenceIds": [str],
+        },
+        "notImplemented": [str],
+    },
+    "assessment": {
+        "outcome": str,
+        "summary": str,
+    },
+    "constraints": {
+        "profile": str,
+        "changeHorizons": [str],
+        "nonNegotiables": [str],
+        "assumptions": [str],
+    },
+    "opportunities": [
+        {
+            "opportunityId": str,
+            "title": str,
+            "summary": str,
+            "diagnosis": str,
+            "evidence": [
+                {
+                    "claimType": str,
+                    "sourceKind": str,
+                    "evidenceId": str,
+                    "path": str,
+                    "claim": str,
+                }
+            ],
+            "desiredInvariants": [str],
+            "proposalPath": str,
+            "options": [
+                {
+                    "optionId": str,
+                    "title": str,
+                    "kind": str,
+                    "summary": str,
+                    "diagramPaths": {
+                        "before": str,
+                        "after": str,
+                    },
+                    "evidenceCoverage": [
+                        {
+                            "evidenceId": str,
+                            "effect": str,
+                            "tacticalFixRequired": bool,
+                            "rationale": str,
+                        }
+                    ],
+                    "tradeoffs": [
+                        {
+                            "dimension": str,
+                            "direction": str,
+                            "confidence": str,
+                            "basis": str,
+                            "assessment": str,
+                            "validationPlan": str,
+                        }
+                    ],
+                    "residualRisks": [str],
+                    "implementationReadiness": {
+                        "affectedComponents": [str],
+                        "workPackages": [str],
+                        "acceptanceCriteria": [str],
+                        "migrationNotes": [str],
+                        "rollback": str,
+                    },
+                }
+            ],
+            "recommendedOptionId": str,
+            "recommendation": str,
+        }
+    ],
+    "openQuestions": [str],
+}
+
+
+class HardeningJSONError(ValueError):
+    pass
+
+
+def reject_duplicate_object_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise HardeningJSONError("hardening.json contains a duplicate object key")
+        result[key] = value
+    return result
+
+
+def reject_non_finite_json_constant(_value):
+    raise HardeningJSONError("hardening.json contains a non-finite number")
+
+
+def strict_json_loads(value: str) -> object:
+    try:
+        return json.loads(
+            value,
+            object_pairs_hook=reject_duplicate_object_keys,
+            parse_constant=reject_non_finite_json_constant,
+        )
+    except json.JSONDecodeError as error:
+        raise HardeningJSONError(f"hardening.json is invalid JSON: {error.msg}") from error
+
+
+def validate_closed_schema(value: object, schema: object, path: str) -> None:
+    if isinstance(schema, type):
+        if type(value) is not schema:
+            fail(f"{path} must have exact type {schema.__name__}")
+        return
+
+    if isinstance(schema, dict):
+        if type(value) is not dict:
+            fail(f"{path} must be an object")
+        expected_fields = set(schema)
+        actual_fields = set(value)
+        unknown_fields = actual_fields - expected_fields
+        if any(AUTHORIZATION_KEY_RE.search(field) for field in unknown_fields):
+            fail(f"{path} contains an unknown authorization-looking field")
+        if actual_fields != expected_fields:
+            fail(f"{path} does not match the expected closed field set")
+        for field, field_schema in schema.items():
+            validate_closed_schema(value[field], field_schema, f"{path}.{field}")
+        return
+
+    if isinstance(schema, list) and len(schema) == 1:
+        if type(value) is not list:
+            fail(f"{path} must be a list")
+        for index, item in enumerate(value):
+            validate_closed_schema(item, schema[0], f"{path}[{index}]")
+        return
+
+    raise RuntimeError(f"invalid internal schema at {path}")
+
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -215,6 +386,8 @@ def fail(message: str) -> None:
 def validate_evidence_manifest() -> int:
     manifest_path = DESIGN_ROOT / "evidence.sha256"
     manifest_bytes = manifest_path.read_bytes()
+    if not manifest_bytes.endswith(b"\n") or b"\r" in manifest_bytes:
+        fail("evidence manifest must use LF lines and end with one newline")
     actual_collection_hash = sha256_bytes(manifest_bytes)
     if actual_collection_hash != EVIDENCE_COLLECTION_SHA256:
         fail(
@@ -230,6 +403,7 @@ def validate_evidence_manifest() -> int:
         )
 
     seen_paths: set[str] = set()
+    ordered_paths: list[str] = []
     for line_number, line in enumerate(lines, start=1):
         match = re.fullmatch(r"([0-9a-f]{64})  ([^\r\n]+)", line)
         if match is None:
@@ -241,6 +415,7 @@ def validate_evidence_manifest() -> int:
         if relative_path in seen_paths:
             fail(f"duplicate evidence path: {relative_path}")
         seen_paths.add(relative_path)
+        ordered_paths.append(relative_path)
         source_path = ROOT / path
         if not source_path.is_file():
             fail(f"missing evidence artifact: {relative_path}")
@@ -254,6 +429,8 @@ def validate_evidence_manifest() -> int:
         missing = sorted(EXPECTED_EVIDENCE_PATHS - seen_paths)
         extra = sorted(seen_paths - EXPECTED_EVIDENCE_PATHS)
         fail(f"evidence path set mismatch; missing={missing}, extra={extra}")
+    if tuple(ordered_paths) != EXPECTED_EVIDENCE_PATH_ORDER:
+        fail("evidence manifest path order is not canonical")
     return len(lines)
 
 
@@ -302,9 +479,13 @@ def require_section_snippets(
                 fail(f"{path.name} section {heading!r} is missing {snippet!r}")
 
 
-def validate_json(artifact_count: int) -> tuple[dict[str, object], list[Path]]:
-    json_path = DESIGN_ROOT / "hardening.json"
-    document = json.loads(json_path.read_text(encoding="utf-8"))
+def validate_json_document(
+    document: object,
+    artifact_count: int,
+) -> tuple[dict[str, object], list[Path]]:
+    validate_closed_schema(document, HARDENING_SCHEMA, "hardening.json")
+    if type(document) is not dict:
+        fail("hardening.json must be an object")
     if document.get("documentType") != "codex-security.hardening-analysis":
         fail("hardening.json documentType is not canonical")
     if document.get("schemaVersion") != "1.0":
@@ -350,6 +531,10 @@ def validate_json(artifact_count: int) -> tuple[dict[str, object], list[Path]]:
     assessment_summary = " ".join(str(assessment.get("summary", "")).split()).lower()
     for snippet in (
         "tactical source-aware",
+        "strict duplicate-key",
+        "bounded ttl",
+        "fresh lease revalidation",
+        "dns scope",
         "bounded waiting",
         "authenticated identity fairness",
         "selection-gated production",
@@ -546,6 +731,12 @@ def validate_json(artifact_count: int) -> tuple[dict[str, object], list[Path]]:
     return document, referenced_paths
 
 
+def validate_json(artifact_count: int) -> tuple[dict[str, object], list[Path]]:
+    json_path = DESIGN_ROOT / "hardening.json"
+    document = strict_json_loads(json_path.read_text(encoding="utf-8"))
+    return validate_json_document(document, artifact_count)
+
+
 def validate_documents(referenced_paths: list[Path]) -> None:
     context_path = DESIGN_ROOT / "context.md"
     expected_context_headings = [
@@ -564,6 +755,11 @@ def validate_documents(referenced_paths: list[Path]) -> None:
                 EVIDENCE_BASE_REVISION,
                 "17 source/schema files",
                 "phone is disconnected",
+                "selection-gated production design remains not implemented",
+                "no deployment",
+                "socket or live-network authorization",
+                "phase b execution",
+                "production-readiness claim",
             ),
             "Evidence Inventory": (
                 "`E010`",
@@ -571,18 +767,28 @@ def validate_documents(referenced_paths: list[Path]) -> None:
                 "RelaySourceQuotaLimiter.swift",
                 "RelayWaitingPeerPolicy.swift",
                 "RelayServer.swift",
-                "RelayServer.swift:327",
-                "RelayServer.swift:811",
+                "RelayServer.swift:820",
+                "RelayServer.swift:835",
                 "RelaySourceQuotaLimiter.swift:181",
                 "RelaySourceQuotaLimiter.swift:316",
                 "RelayMatcher.swift:576",
-                "RelayServer.swift:1101",
+                "RelayServer.swift:1110",
+                "RelayServer.swift:1122",
                 "RelayWaitingPeerPolicy.swift:134",
                 "RelayMatcher.swift:455",
                 "RelayMatcher.swift:579",
-                "RelayServer.swift:483",
+                "RelayServer.swift:439",
+                "RelayServer.swift:491",
+                "RuntimeRelayTcpClient.kt:280",
+                "RelayAllocation.swift:1706",
             ),
             "Evidence Limits": (
+                "reject duplicate object keys",
+                "capped at 24 hours",
+                "every returned address",
+                "exact validated address",
+                "not one of this exact 17-artifact collection",
+                "unpinned working-tree context",
                 "in-process, restart-local",
                 "exact strict preflight envelope",
                 "fully refill before idle deletion",
@@ -596,6 +802,12 @@ def validate_documents(referenced_paths: list[Path]) -> None:
                 "post-publication room lookup",
             ),
             "Tactical Baseline Update": (
+                "rejects duplicate keys",
+                "capped at 24 hours",
+                "freshly revalidated",
+                "validates all resolved addresses",
+                "no socket/live-network authorization",
+                "phase b execution",
                 "allocation- and renewal-prefixed attempts",
                 "before full parsing",
                 "bounded overflow",

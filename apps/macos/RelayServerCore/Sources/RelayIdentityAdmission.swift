@@ -214,6 +214,7 @@ private func parseIdentityChallengeLine<T: Decodable>(
     }
     do {
         let data = Data(body.dropFirst(prefix.count).utf8)
+        try StrictJSONDocumentValidator.validate(data)
         guard let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               Set(payload.keys) == fields
         else {
@@ -236,13 +237,19 @@ private func exactJSONBody(
     let body = String(line.dropLast())
     guard body.hasPrefix(prefix) else { throw RelayAllocationError.invalidResponseFormat }
     let data = Data(body.dropFirst(prefix.count).utf8)
-    guard let object = try? JSONSerialization.jsonObject(with: data),
-          let payload = object as? [String: Any],
-          Set(payload.keys) == fields
-    else {
-        throw RelayAllocationError.unexpectedResponseMetadata
+    do {
+        try StrictJSONDocumentValidator.validate(data)
+        guard let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(payload.keys) == fields
+        else {
+            throw RelayAllocationError.unexpectedResponseMetadata
+        }
+        return data
+    } catch let error as RelayAllocationError {
+        throw error
+    } catch {
+        throw RelayAllocationError.invalidResponseFormat
     }
-    return data
 }
 
 private func exactIdentityProofFields(

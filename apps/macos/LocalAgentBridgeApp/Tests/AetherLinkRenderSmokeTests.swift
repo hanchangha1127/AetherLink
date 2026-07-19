@@ -1,9 +1,12 @@
 import AppKit
+import protocol BridgeProtocol.RelayIdentityAuthorizationSigning
+import struct BridgeProtocol.RelayRuntimeIdentity
 import CompanionCore
 import CryptoKit
 import DocumentIngestion
 import OllamaBackend
 import SwiftUI
+import Transport
 import TrustedDevices
 import Vision
 import XCTest
@@ -285,6 +288,146 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
         }
     }
 
+    func testRemoteRequiredPairingQRCodeRendersAndDecodesWithCanonicalPublicRelayRoute() async throws {
+        let relayHost = "relay.render.example"
+        let relayPort: UInt16 = 443
+        let relayID = "render-relay-route-v1"
+        let relaySecret = "render-relay-secret-v1"
+        let relayExpiration: Int64 = 4_102_444_800_000
+        let relayNonce = "render-lease-nonce-v1"
+        let directHostSentinel = "192.0.2.44"
+
+        for appearance: AetherLinkAppAppearance in [.light, .dark] {
+            try await withStoredPreferences(language: .english, appearance: appearance) {
+                let runtimeTransport = RenderSmokeRuntimeTransport()
+                let advertiser = RenderSmokeRuntimeAdvertiser()
+                let relayTransport = RenderSmokeRelayPeerTransport()
+                let identityDirectory = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(
+                        "aetherlink-render-remote-identity-\(UUID().uuidString)",
+                        isDirectory: true
+                    )
+                try FileManager.default.createDirectory(
+                    at: identityDirectory,
+                    withIntermediateDirectories: true
+                )
+                defer { try? FileManager.default.removeItem(at: identityDirectory) }
+                let identityEnvironment = [
+                    "AETHERLINK_RUNTIME_IDENTITY_FILE": identityDirectory
+                        .appendingPathComponent("runtime-identity.json")
+                        .path,
+                ]
+                let allocation = CompanionRemoteRelayRouteAllocation(
+                    configuration: RelayPeerConfiguration(
+                        host: relayHost,
+                        port: relayPort,
+                        relayID: relayID,
+                        relaySecret: relaySecret
+                    ),
+                    lease: CompanionRemoteRouteLease(
+                        expiresAtEpochMillis: relayExpiration,
+                        nonce: relayNonce,
+                        ticketGeneration: 7
+                    )
+                )
+                let model = CompanionAppModel(
+                    backend: RenderSmokeBackend(models: []),
+                    peerServer: runtimeTransport,
+                    advertiser: advertiser,
+                    relayClient: relayTransport,
+                    pairedRelayClientFactory: { RenderSmokeRelayPeerTransport() },
+                    remoteRelayRouteAllocator: RenderSmokeRemoteRelayRouteAllocator(
+                        allocation: allocation
+                    ),
+                    environment: identityEnvironment,
+                    userDefaults: isolatedDefaults(),
+                    relaySecretStore: RenderSmokeRelaySecretStore(),
+                    trustedDeviceStore: isolatedTrustedDeviceStore(),
+                    runtimeDocumentIndexStore: isolatedRuntimeDocumentIndexStore(),
+                    runtimeModelPullApprovalPersistence: isolatedRuntimeModelPullApprovalStore(),
+                    runtimeRouteHostProvider: { directHostSentinel }
+                )
+                defer { model.stop() }
+
+                model.beginPairing()
+
+                XCTAssertNil(
+                    model.pairingSession,
+                    "Remote-required pairing must wait until the allocated relay is ready"
+                )
+                XCTAssertEqual(runtimeTransport.startedPort, 43_170)
+                XCTAssertEqual(advertiser.startedPort, 43_170)
+                for _ in 0..<100 where relayTransport.startedConfiguration?.relayID != relayID {
+                    try await Task.sleep(nanoseconds: 10_000_000)
+                }
+                XCTAssertEqual(
+                    relayTransport.startedConfiguration?.host,
+                    relayHost,
+                    "Remote route issue: \(String(describing: model.remoteRoutePreparationIssue)); logs: \(model.logs)"
+                )
+                XCTAssertEqual(relayTransport.startedConfiguration?.port, relayPort)
+                XCTAssertEqual(relayTransport.startedConfiguration?.relayID, relayID)
+                XCTAssertEqual(relayTransport.startedConfiguration?.relaySecret, relaySecret)
+                XCTAssertEqual(relayTransport.startedConfiguration?.relayNonce, relayNonce)
+
+                relayTransport.emit(.waitingForPeer)
+                for _ in 0..<50 where model.pairingSession == nil {
+                    try await Task.sleep(nanoseconds: 10_000_000)
+                }
+                let pairingSession = try XCTUnwrap(
+                    model.pairingSession,
+                    "Expected the ready remote relay to produce a pairing session"
+                )
+
+                XCTAssertNil(pairingSession.host)
+                XCTAssertNil(pairingSession.port)
+                XCTAssertEqual(pairingSession.relayHost, relayHost)
+                XCTAssertEqual(pairingSession.relayPort, Int(relayPort))
+                XCTAssertEqual(pairingSession.relayID, relayID)
+                XCTAssertEqual(pairingSession.relaySecret, relaySecret)
+                XCTAssertEqual(pairingSession.relayExpiresAtEpochMillis, relayExpiration)
+                XCTAssertEqual(pairingSession.relayNonce, relayNonce)
+                XCTAssertEqual(pairingSession.relayScope, "remote")
+                XCTAssertTrue(pairingSession.hasCompleteCanonicalRelayQRCodeMaterial)
+
+                let components = try XCTUnwrap(
+                    URLComponents(string: pairingSession.compactQRCodePayload)
+                )
+                let queryItems = (components.queryItems ?? []).reduce(into: [String: String]()) {
+                    result, item in
+                    result[item.name] = item.value
+                }
+                XCTAssertEqual(queryItems["rh"], relayHost)
+                XCTAssertEqual(queryItems["rp"], String(relayPort))
+                XCTAssertEqual(queryItems["ri"], relayID)
+                XCTAssertEqual(queryItems["rs"], relaySecret)
+                XCTAssertEqual(queryItems["rx"], String(relayExpiration))
+                XCTAssertEqual(queryItems["rrn"], relayNonce)
+                XCTAssertEqual(queryItems["rsc"], "remote")
+                XCTAssertNil(queryItems["h"], "Remote-required QR must not include a direct host")
+                XCTAssertNil(queryItems["p"], "Remote-required QR must not include a direct port")
+                XCTAssertFalse(pairingSession.compactQRCodePayload.contains(directHostSentinel))
+
+                let bitmap = try render(
+                    PairingView(model: model)
+                        .environment(\.locale, Locale(identifier: "en"))
+                        .preferredColorScheme(appearance.preferredColorScheme),
+                    size: compactDetailSize
+                )
+
+                assertMeaningfulRender(
+                    bitmap,
+                    label: "Remote-required PairingView \(appearance.rawValue)"
+                )
+                assertPairingQRCodeDecodes(
+                    bitmap,
+                    expectedPayload: pairingSession.compactQRCodePayload,
+                    label: "Remote-required PairingView \(appearance.rawValue) rendered QR"
+                )
+            }
+        }
+    }
+
     func testActivePairingQRCodeRendersAtCompactAccessibilitySizeAcrossLanguages() throws {
         for language in AetherLinkAppLanguage.allCases {
             try withStoredPreferences(language: language, appearance: .system) {
@@ -310,6 +453,76 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
                     requiresVerticalVisibility: false,
                     label: "Active PairingView accessibility \(language.rawValue)"
                 )
+            }
+        }
+    }
+
+    func testUnavailablePairingQRCodeStateRendersAcrossLanguagesAndAppearances() throws {
+        for language in AetherLinkAppLanguage.allCases {
+            for appearance in AetherLinkAppAppearance.pickerOptions {
+                try withStoredPreferences(language: language, appearance: appearance) {
+                    let bitmap = try render(
+                        QRCodeView(image: nil)
+                            .frame(width: 184, height: 184)
+                            .padding(10)
+                            .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
+                            .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                            .preferredColorScheme(appearance.preferredColorScheme),
+                        size: CGSize(width: 204, height: 204)
+                    )
+
+                    assertMeaningfulRender(
+                        bitmap,
+                        label: "Unavailable pairing QR \(language.rawValue) \(appearance.rawValue)"
+                    )
+                }
+            }
+        }
+    }
+
+    func testActivePairingCardRenderFailureRendersAcrossLanguagesAndAppearances() throws {
+        for language in AetherLinkAppLanguage.allCases {
+            for appearance in AetherLinkAppAppearance.pickerOptions {
+                try withStoredPreferences(language: language, appearance: appearance) {
+                    let model = renderSmokeModel()
+                    model.beginPairing(routePolicy: .allowLocalDiagnostic)
+                    let pairingSession = try XCTUnwrap(
+                        model.pairingSession,
+                        "Expected an active pairing session for the QR render failure state"
+                    )
+                    let layoutObserver = PairingTaskLayoutObserver()
+                    var renderedPayloads: [String] = []
+
+                    let bitmap = try render(
+                        PairingView(
+                            model: model,
+                            layoutObserver: layoutObserver,
+                            qrImageRenderer: { payload in
+                                renderedPayloads.append(payload)
+                                return nil
+                            }
+                        )
+                        .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                        .preferredColorScheme(appearance.preferredColorScheme),
+                        size: compactDetailSize
+                    )
+
+                    let label = "Active PairingView QR failure \(language.rawValue) \(appearance.rawValue)"
+                    assertMeaningfulRender(bitmap, label: label)
+                    assertPairingTaskLayout(
+                        layoutObserver,
+                        viewportSize: compactDetailSize,
+                        requiresVerticalVisibility: true,
+                        label: label
+                    )
+                    XCTAssertFalse(renderedPayloads.isEmpty, "\(label) did not invoke the injected renderer")
+                    XCTAssertEqual(
+                        Set(renderedPayloads),
+                        [pairingSession.compactQRCodePayload],
+                        "\(label) requested a payload other than the active pairing payload"
+                    )
+                    assertNoPairingQRCodeDecodes(bitmap, label: label)
+                }
             }
         }
     }
@@ -970,6 +1183,34 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
         )
     }
 
+    private func assertNoPairingQRCodeDecodes(
+        _ bitmap: NSBitmapImageRep,
+        label: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard let image = bitmap.cgImage else {
+            XCTFail("\(label) CGImage conversion failed", file: file, line: line)
+            return
+        }
+
+        let request = VNDetectBarcodesRequest()
+        request.symbologies = [.qr]
+        do {
+            try VNImageRequestHandler(cgImage: image).perform([request])
+        } catch {
+            XCTFail("\(label) barcode detection failed: \(error)", file: file, line: line)
+            return
+        }
+
+        XCTAssertTrue(
+            (request.results ?? []).compactMap(\.payloadStringValue).isEmpty,
+            "\(label) unexpectedly rendered a decodable QR",
+            file: file,
+            line: line
+        )
+    }
+
     private func withStoredPreferences<T>(
         language: AetherLinkAppLanguage,
         appearance: AetherLinkAppAppearance,
@@ -1115,6 +1356,111 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
 
 private enum RenderSmokeFailure: Error {
     case bitmapAllocationFailed
+}
+
+private final class RenderSmokeRuntimeTransport: RuntimeTransport {
+    private(set) var status = PeerServerStatus.stopped
+    private(set) var startedPort: UInt16?
+
+    func start(port: UInt16, onMessage: @escaping LocalPeerMessageHandler) {
+        startedPort = port
+        status = .listening(port: port)
+    }
+
+    func stop() {
+        status = .stopped
+    }
+}
+
+private final class RenderSmokeRuntimeAdvertiser: RuntimeAdvertiser {
+    private(set) var startedPort: Int32?
+
+    func start(port: Int32, metadata: RuntimeAdvertisementMetadata) {
+        startedPort = port
+    }
+
+    func stop() {}
+}
+
+private final class RenderSmokeRelayPeerTransport: RelayPeerTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private var statusHandler: (@Sendable (RelayPeerStatus) -> Void)?
+    private var configuration: RelayPeerConfiguration?
+
+    var startedConfiguration: RelayPeerConfiguration? {
+        lock.lock()
+        defer { lock.unlock() }
+        return configuration
+    }
+
+    func start(
+        configuration: RelayPeerConfiguration,
+        onStatusChange: (@Sendable (RelayPeerStatus) -> Void)?,
+        onMessage: @escaping LocalPeerMessageHandler
+    ) {
+        lock.lock()
+        self.configuration = configuration
+        statusHandler = onStatusChange
+        lock.unlock()
+    }
+
+    func stop() {
+        let handler: (@Sendable (RelayPeerStatus) -> Void)?
+        lock.lock()
+        handler = statusHandler
+        statusHandler = nil
+        lock.unlock()
+        handler?(.stopped)
+    }
+
+    func emit(_ status: RelayPeerStatus) {
+        let handler: (@Sendable (RelayPeerStatus) -> Void)?
+        lock.lock()
+        handler = statusHandler
+        lock.unlock()
+        handler?(status)
+    }
+}
+
+private struct RenderSmokeRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAllocating {
+    let allocation: CompanionRemoteRelayRouteAllocation
+
+    var canAllocateRemoteRelayRoute: Bool { true }
+
+    func allocateRemoteRelayRoute(
+        runtimeDeviceID: String,
+        routeToken: String,
+        preferredRelaySecret: String?,
+        runtimeIdentity: RelayRuntimeIdentity,
+        identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
+        cancellation: RelayRouteAllocationCancellation
+    ) throws -> CompanionRemoteRelayRouteAllocation? {
+        try cancellation.throwIfCancelledOrExpired()
+        return allocation
+    }
+}
+
+private final class RenderSmokeRelaySecretStore: CompanionRelaySecretStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var secrets: [String: String] = [:]
+
+    func saveSecret(_ secret: String, for handle: String) {
+        lock.lock()
+        secrets[handle] = secret
+        lock.unlock()
+    }
+
+    func readSecret(for handle: String) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return secrets[handle]
+    }
+
+    func removeSecret(for handle: String) {
+        lock.lock()
+        secrets.removeValue(forKey: handle)
+        lock.unlock()
+    }
 }
 
 private final class RenderSmokeBackend: LlmBackend, @unchecked Sendable {

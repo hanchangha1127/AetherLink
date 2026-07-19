@@ -32,8 +32,8 @@ MAXIMUM_MACOS_SOURCE_FILES = 4_096
 MAXIMUM_MACOS_SOURCE_BYTES = 32 * 1024 * 1024
 MAXIMUM_MACOS_SOURCE_MODULES = 128
 
-EXPECTED_REVIEW_SHA256 = "70fc6a52abba4217b18c7826cbb6685d7dbad986ed2de13bb80a03ebd3fcea85"
-EXPECTED_MANIFEST_SHA256 = "351c2830f3113a2362a84c2bc7ac3e084ee7cfb8e1e92977ec9410eb62187fa1"
+EXPECTED_REVIEW_SHA256 = "ae42c42dac52fe82c0de09675d4ca51ce4dc3ac45e52e8c6266484a8dd841e75"
+EXPECTED_MANIFEST_SHA256 = "5d306ba9e53824a5934fc4e77ea767fdc43a644ef0c24dbd3dd943b99cebb6f6"
 EXPECTED_DOCUMENT_SHA256 = {
     REVIEW_MARKDOWN_RELATIVE: "3e2fc5892120a46522096f700ad4ca7cdb0516aa530f7e3a9ea8a8f6b308fc9a",
     THREAT_MODEL_RELATIVE: "24e63f129095b9ee57a4fd8e0a896dabe6b668397383bb274ef4b9f433435ef1",
@@ -43,7 +43,7 @@ EXPECTED_EVIDENCE = (
     ("Package.swift", "70a7f29ad2bf1929f4292b083d15007645be17dcb030f768593142bc51ce8b23"),
     (
         "apps/macos/CompanionCore/Sources/RuntimeHostApprovalCoordinator.swift",
-        "50d42d6e38889f6f27ef1c6e2bd9990c0c67588bd3f9883d25f72ea30355825c",
+        "d23ee26372c24230774f1b7af8d2207c253190ff8dc34a8c890a793a53d660d4",
     ),
     (
         "apps/macos/CompanionCore/Sources/RuntimePermissionPolicyRegistry.swift",
@@ -51,11 +51,11 @@ EXPECTED_EVIDENCE = (
     ),
     (
         "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift",
-        "7fc493539658487f2270c9218efe61492d312064743d47b675c6c8b70c7d9102",
+        "5adf544488061731cb1610010eef7c8fb005a702cf26ce91fb1135fb53b3f1ad",
     ),
     (
         "apps/macos/DocumentIngestion/Sources/DocumentTextExtractor.swift",
-        "1c531dbf48e759f9c9754c1683d14c161b053a6fd989c1658f29f258c0025a2a",
+        "7ede01eb612d519ca8bba16c3d2be07e31b4b6a99227feb5b18ebc2a9ebb644e",
     ),
     (
         "packages/protocol-schema/protocol.schema.json",

@@ -42,7 +42,7 @@ class RuntimeLocalStore(
     private val preferences = context.getSharedPreferences(STORE_NAME, Context.MODE_PRIVATE)
 
     fun load(): PersistedRuntimeData {
-        val raw = preferences.getString(STORE_KEY, null) ?: return PersistedRuntimeData()
+        val raw = storedDataStringOrNull() ?: return PersistedRuntimeData()
         return try {
             json.decodeFromString<PersistedRuntimeData>(raw)
                 .sanitized()
@@ -56,12 +56,12 @@ class RuntimeLocalStore(
     }
 
     fun save(data: PersistedRuntimeData) {
-        val previousPendingSecretRef = preferences.getString(STORE_KEY, null)
+        val previousPendingSecretRef = storedDataStringOrNull()
             ?.let { raw ->
                 runCatching { json.decodeFromString<PersistedRuntimeData>(raw) }.getOrNull()
             }
             ?.pendingPairingRoute
-            ?.relaySecretRef
+            ?.ownedPendingRelaySecretRefOrNull()
         val diskProjection = data.sanitized().withoutRuntimeOwnedLocalData()
         val dataForDisk = diskProjection.withStoredPendingPairingRelaySecretFromSanitized(relaySecretStore)
         val currentPendingSecretRef = dataForDisk.pendingPairingRoute?.relaySecretRef
@@ -74,6 +74,15 @@ class RuntimeLocalStore(
                 json.encodeToString(dataForDisk),
             )
             .apply()
+    }
+
+    private fun storedDataStringOrNull(): String? {
+        return try {
+            preferences.getString(STORE_KEY, null)
+        } catch (_: ClassCastException) {
+            preferences.edit().remove(STORE_KEY).apply()
+            null
+        }
     }
 }
 
@@ -257,7 +266,9 @@ internal fun PersistedRuntimeData.sanitized(): PersistedRuntimeData {
                     title = migratedTitle,
                     modelId = session.modelId?.trim()?.takeIf(String::isNotBlank),
                     composerDraft = if (session.archivedAtMillis == null) {
-                        session.composerDraft.take(MAX_PERSISTED_COMPOSER_DRAFT_CHARS)
+                        session.composerDraft.takeWithoutSplittingSurrogatePair(
+                            MAX_PERSISTED_COMPOSER_DRAFT_CHARS,
+                        )
                     } else {
                         ""
                     },
@@ -310,7 +321,9 @@ internal fun PersistedRuntimeData.sanitized(): PersistedRuntimeData {
         },
         selectedModelId = selectedModelId?.trim()?.takeIf(String::isNotBlank),
         selectedEmbeddingModelId = selectedEmbeddingModelId?.trim()?.takeIf(String::isNotBlank),
-        composerDraft = composerDraft.take(MAX_PERSISTED_COMPOSER_DRAFT_CHARS),
+        composerDraft = composerDraft.takeWithoutSplittingSurrogatePair(
+            MAX_PERSISTED_COMPOSER_DRAFT_CHARS,
+        ),
         trustedRuntimeAutoReconnectEnabled = trustedRuntimeAutoReconnectEnabled,
         pairingOnboardingCompleted = pairingOnboardingCompleted,
         sessions = cleanSessions.sortedByDescending { it.updatedAtMillis },
@@ -489,6 +502,7 @@ private fun PersistedPendingPairingRoute.sanitizedOrNull(): PersistedPendingPair
     if (relayId != null && cleanRelayId == null) return null
     if (relaySecret != null && cleanRelaySecret == null) return null
     if (relaySecretRef != null && cleanRelaySecretRef == null) return null
+    if (cleanRelaySecretRef != null && cleanRelaySecretRef != ownedPendingRelaySecretRefOrNull()) return null
     if (relayNonce != null && cleanRelayNonce == null) return null
     if (relayScope != null && cleanRelayScope == null) return null
     val hasRelayField = listOf(
@@ -628,6 +642,19 @@ private fun pendingPairingRelaySecretHandle(
     return "pending-relay-v1-" + digest.joinToString("") { "%02x".format(it) }
 }
 
+private fun PersistedPendingPairingRoute.ownedPendingRelaySecretRefOrNull(): String? {
+    val reference = relaySecretRef?.takeIf(::isCanonicalOpaqueRouteValue) ?: return null
+    val cleanRuntimeDeviceId = runtimeDeviceId.takeIf(::isCanonicalOpaqueRouteValue) ?: return null
+    val cleanRelayId = relayId?.takeIf(::isCanonicalOpaqueRouteValue) ?: return null
+    val cleanPairingNonce = pairingNonce.takeIf(::isCanonicalOpaqueRouteValue) ?: return null
+    val expected = pendingPairingRelaySecretHandle(
+        runtimeDeviceId = cleanRuntimeDeviceId,
+        relayId = cleanRelayId,
+        pairingNonce = cleanPairingNonce,
+    )
+    return reference.takeIf { it == expected }
+}
+
 private const val PENDING_PAIRING_ROUTE_TTL_MILLIS = 5 * 60 * 1000L
 
 internal fun PersistedRuntimeData.withSelectedModelId(modelId: String?): PersistedRuntimeData {
@@ -651,7 +678,7 @@ internal fun PersistedRuntimeData.withComposerDraft(
     value: String,
     sessionId: String? = activeSessionId,
 ): PersistedRuntimeData {
-    val cleanDraft = value.take(MAX_PERSISTED_COMPOSER_DRAFT_CHARS)
+    val cleanDraft = value.takeWithoutSplittingSurrogatePair(MAX_PERSISTED_COMPOSER_DRAFT_CHARS)
     val cleanSessionId = sessionId?.trim()?.takeIf { id -> sessions.any { it.id == id } }
         ?: return copy(composerDraft = cleanDraft).sanitized()
     return copy(
@@ -695,11 +722,29 @@ internal fun PersistedRuntimeData.withFollowSystemAppLanguageTag(languageTag: St
 internal fun PersistedRuntimeData.withSystemAppLanguageTag(languageTag: String?): PersistedRuntimeData {
     val cleanData = sanitized()
     if (cleanData.appLanguageSource == APP_LANGUAGE_SOURCE_IN_APP) return cleanData
-    val normalizedLanguageTag = RuntimeAppLanguage.supportedLanguageTagOrNull(languageTag) ?: return cleanData
+    val normalizedLanguageTag = RuntimeAppLanguage.supportedLanguageTagOrNull(languageTag)
+        ?: return cleanData.copy(
+            appLanguageTag = RuntimeAppLanguage.English.languageTag,
+            appLanguageSource = APP_LANGUAGE_SOURCE_DEFAULT,
+        ).sanitized()
     return cleanData.copy(
         appLanguageTag = normalizedLanguageTag,
         appLanguageSource = APP_LANGUAGE_SOURCE_SYSTEM,
     ).sanitized()
+}
+
+private fun String.takeWithoutSplittingSurrogatePair(maxUtf16Units: Int): String {
+    if (length <= maxUtf16Units) return this
+    var endIndex = maxUtf16Units.coerceAtLeast(0)
+    if (
+        endIndex > 0 &&
+        endIndex < length &&
+        this[endIndex - 1].isHighSurrogate() &&
+        this[endIndex].isLowSurrogate()
+    ) {
+        endIndex -= 1
+    }
+    return substring(0, endIndex)
 }
 
 internal fun PersistedRuntimeData.withAppTheme(theme: RuntimeAppTheme): PersistedRuntimeData {

@@ -26,6 +26,9 @@ public struct RelayPairedAllocationRenewalRequest: Equatable, Sendable {
         allocationToken: String? = nil
     ) throws {
         _ = try RelayAllocationRequest(routeToken: routeToken)
+        guard routeToken.utf8.count <= relayControlLineOpaqueFieldMaximumUTF8Bytes else {
+            throw RelayAllocationError.invalidRouteToken
+        }
         _ = try PairedRelayAllocationAuthorization.validatedRuntimePublicKey(
             base64: runtimePublicKey,
             fingerprint: runtimeKeyFingerprint
@@ -43,10 +46,24 @@ public struct RelayPairedAllocationRenewalRequest: Equatable, Sendable {
         }
         if let allocationToken {
             guard !allocationToken.isEmpty,
-                  allocationToken.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
+                  allocationToken.rangeOfCharacter(from: .whitespacesAndNewlines) == nil,
+                  allocationToken.utf8.count <= relayControlLineOpaqueFieldMaximumUTF8Bytes
             else {
                 throw RelayAllocationError.invalidAllocationToken
             }
+        }
+        guard Self.encodedRequestLine(
+            routeToken: routeToken,
+            runtimeKeyFingerprint: runtimeKeyFingerprint,
+            runtimePublicKey: runtimePublicKey,
+            clientKeyFingerprint: clientKeyFingerprint,
+            clientPublicKey: clientPublicKey,
+            requestID: requestID,
+            authorizationID: authorizationID,
+            transportBinding: transportBinding,
+            allocationToken: allocationToken
+        ).count <= relayControlLineMaximumUTF8Bytes else {
+            throw RelayAllocationError.invalidFormat
         }
         self.routeToken = routeToken
         self.runtimeKeyFingerprint = runtimeKeyFingerprint
@@ -69,6 +86,9 @@ public struct RelayPairedAllocationRenewalRequest: Equatable, Sendable {
     }
 
     public static func parse(_ line: String) throws -> Self {
+        guard line.utf8.count <= relayControlLineMaximumUTF8Bytes else {
+            throw RelayAllocationError.invalidFormat
+        }
         let parts = try pairedExactControlLineParts(line)
         guard (12...13).contains(parts.count),
               parts[0] == Substring(RelayHandshake.prefix),
@@ -137,6 +157,30 @@ public struct RelayPairedAllocationRenewalRequest: Equatable, Sendable {
     }
 
     public func requestLine() -> Data {
+        Self.encodedRequestLine(
+            routeToken: routeToken,
+            runtimeKeyFingerprint: runtimeKeyFingerprint,
+            runtimePublicKey: runtimePublicKey,
+            clientKeyFingerprint: clientKeyFingerprint,
+            clientPublicKey: clientPublicKey,
+            requestID: requestID,
+            authorizationID: authorizationID,
+            transportBinding: transportBinding,
+            allocationToken: allocationToken
+        )
+    }
+
+    private static func encodedRequestLine(
+        routeToken: String,
+        runtimeKeyFingerprint: String,
+        runtimePublicKey: String,
+        clientKeyFingerprint: String,
+        clientPublicKey: String,
+        requestID: String,
+        authorizationID: String,
+        transportBinding: String,
+        allocationToken: String?
+    ) -> Data {
         var parts = [
             RelayHandshake.prefix,
             Self.action,
@@ -187,6 +231,7 @@ public struct RelayPairedAllocationChallengeResponse: Equatable, Sendable {
         }
         do {
             let data = Data(body.dropFirst(responsePrefix.count).utf8)
+            try StrictJSONDocumentValidator.validate(data)
             guard let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                   Set(payload.keys) == challengeFieldNames
             else {

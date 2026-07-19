@@ -2,6 +2,58 @@ import XCTest
 @testable import Pairing
 
 final class PairingCoordinatorTests: XCTestCase {
+    func testPairingSessionReportsCompleteCanonicalRelayQRCodeMaterial() throws {
+        var session = relayPairingSession(relayHost: "RELAY.EXAMPLE.TEST.", relayScope: "remote")
+        session.relaySecret = String(repeating: "s", count: 512)
+        session.relayNonce = String(repeating: "n", count: 512)
+
+        XCTAssertTrue(session.hasCompleteCanonicalRelayQRCodeMaterial)
+        let queryItems = try parseQueryItems(from: session.qrPayload)
+        let compactQueryItems = try parseQueryItems(from: session.compactQRCodePayload)
+        XCTAssertEqual(queryItems["relay_host"], "relay.example.test")
+        XCTAssertEqual(queryItems["relay_secret"], session.relaySecret)
+        XCTAssertEqual(queryItems["relay_nonce"], session.relayNonce)
+        XCTAssertEqual(compactQueryItems["rh"], "relay.example.test")
+        XCTAssertEqual(compactQueryItems["rs"], session.relaySecret)
+        XCTAssertEqual(compactQueryItems["rrn"], session.relayNonce)
+    }
+
+    func testPairingSessionRejectsIncompleteOrNonCanonicalRelayQRCodeMaterial() throws {
+        let overlongValue = String(repeating: "x", count: 513)
+        let invalidCases: [(name: String, mutate: (inout PairingSession) -> Void)] = [
+            ("overlong secret", { $0.relaySecret = overlongValue }),
+            ("overlong nonce", { $0.relayNonce = overlongValue }),
+            ("whitespace secret", { $0.relaySecret = "relay secret" }),
+            ("whitespace nonce", { $0.relayNonce = "relay\nnonce" }),
+            ("invalid host", { $0.relayHost = "https://relay.example.test" }),
+            ("invalid scope", { $0.relayScope = "REMOTE" }),
+            ("missing host", { $0.relayHost = nil }),
+            ("missing port", { $0.relayPort = nil }),
+            ("missing id", { $0.relayID = nil }),
+            ("missing secret", { $0.relaySecret = nil }),
+            ("missing expiration", { $0.relayExpiresAtEpochMillis = nil }),
+            ("missing nonce", { $0.relayNonce = nil })
+        ]
+
+        for invalidCase in invalidCases {
+            var session = relayPairingSession(relayHost: "relay.example.test", relayScope: "remote")
+            invalidCase.mutate(&session)
+
+            XCTAssertFalse(
+                session.hasCompleteCanonicalRelayQRCodeMaterial,
+                invalidCase.name
+            )
+            let queryItems = try parseQueryItems(from: session.qrPayload)
+            let compactQueryItems = try parseQueryItems(from: session.compactQRCodePayload)
+            for key in ["relay_host", "relay_port", "relay_id", "relay_secret", "relay_expires_at", "relay_nonce"] {
+                XCTAssertNil(queryItems[key], invalidCase.name)
+            }
+            for key in ["rh", "rp", "ri", "rs", "rx", "rrn"] {
+                XCTAssertNil(compactQueryItems[key], invalidCase.name)
+            }
+        }
+    }
+
     func testPairingQRCodeRejectsInvalidRelayScopeBeforeEmission() throws {
         let session = relayPairingSession(relayHost: "relay.example.test", relayScope: "REMOTE")
 

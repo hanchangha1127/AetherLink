@@ -51,6 +51,7 @@ import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -3118,6 +3119,61 @@ class ClientScreensNoDeviceComposeTest {
 
         sourceRow(1).performScrollTo().performClick().assertIsOff()
         sourceRow(9).performScrollTo().assertIsEnabled().performClick().assertIsOn()
+    }
+
+    @Test
+    fun researchBriefDialogRestoresDraftAndDropsSourcesMissingFromAuthoritativeCatalog() {
+        val model = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val sourceA = researchDialogSources(1).single()
+        val sourceB = sourceA.copy(
+            sourceAnchorId = "research-source-anchor-b",
+            document = sourceA.document.copy(
+                id = "research-source-document-b",
+                displayName = "Replacement.pdf",
+            ),
+        )
+        val sources = mutableStateOf(listOf(sourceA))
+        val restorationTester = StateRestorationTester(compose)
+        restorationTester.setContent {
+            MaterialTheme {
+                ResearchBriefCreateDialog(
+                    state = RuntimeUiState(
+                        selectedModelId = model.id,
+                        models = listOf(model),
+                        trustedSources = sources.value,
+                    ),
+                    onDismiss = {},
+                    onCreate = { _, _, _ -> },
+                )
+            }
+        }
+
+        compose.onNode(hasSetTextAction()).performTextInput("Compare persisted sources")
+        compose.onNode(
+            hasTestTag(RESEARCH_SOURCE_SELECTOR_ROW_TEST_TAG) and hasText(sourceA.document.displayName),
+        ).performScrollTo().performClick().assertIsOn()
+        compose.onNodeWithText("Create").assertIsEnabled()
+
+        restorationTester.emulateSavedInstanceStateRestore()
+        compose.onNode(hasSetTextAction()).assertTextContains("Compare persisted sources")
+        compose.onNode(
+            hasTestTag(RESEARCH_SOURCE_SELECTOR_ROW_TEST_TAG) and hasText(sourceA.document.displayName),
+        ).performScrollTo().assertIsOn()
+        compose.onNodeWithText("Create").assertIsEnabled()
+
+        compose.runOnUiThread { sources.value = listOf(sourceB) }
+        compose.waitForIdle()
+        compose.onNode(
+            hasTestTag(RESEARCH_SOURCE_SELECTOR_ROW_TEST_TAG) and hasText(sourceB.document.displayName),
+        ).performScrollTo().assertIsOff()
+        compose.onNodeWithText("Create").assertIsNotEnabled()
     }
 
     @Test

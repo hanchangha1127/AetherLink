@@ -22,32 +22,35 @@ The separate closed `controlled-network-spike/decision-v1` and
 Phase A inspection, compile-only, cryptographic-vector, and static-policy work.
 The later `controlled-network-spike/decision-v2` and `implementation/handoff-v5`
 authorized one exact acquisition of the official libjuice v1.7.2 source and
-Android NDK r28c. That authority was consumed. The mandatory source audit then
-rejected libjuice before compilation, and the closed
-`controlled-network-spike/decision-v3` plus `implementation/handoff-v6` now keep
-all replacement acquisition, compiler, socket, runtime and harness network I/O,
-Phase B, measurement, and production deployment unauthorized.
+Android NDK r28c. That authority was consumed, and the mandatory source audit
+rejected libjuice before compilation. The versioned `decision-v4`/`handoff-v7`
+and `decision-v5`/`handoff-v8` records then authorized and consumed exact
+read-only intake of libnice 0.1.23 and GLib 2.64.2. Two independent static
+reviews rejected libnice before compilation. The closed `decision-v6` and
+`implementation/handoff-v9` now keep replacement acquisition, compiler, socket,
+runtime and harness network I/O, Phase B, measurement, and production deployment
+unauthorized.
 `route.refresh` remains the only active
 traversal-related namespace.
 
 ## Current Phase A Progress Authority
 
 `implementation/handoff-v4.json` remains the immutable four-recommendation
-approval snapshot, and `implementation/handoff-v5.json` remains the consumed
-one-shot acquisition snapshot. The current authority is the closed
-`implementation/handoff-v6.json`; current evidence status is recorded by
-`controlled-network-spike/phase-a/progress-v3.json`. Neither record rewrites its
+approval snapshot, while `handoff-v5`, `handoff-v7`, and `handoff-v8` preserve
+the consumed one-shot acquisition authorities. The current authority is the
+closed `implementation/handoff-v9.json`; current evidence status is recorded by
+`controlled-network-spike/phase-a/progress-v8.json`. Neither record rewrites its
 predecessors.
 
 The exact official libjuice v1.7.2 archive and Android NDK r28c were acquired,
-and the NDK was installed. Read-only source inspection then found five P1
-profile failures: predictable credential and transaction entropy on Android and
-macOS, plaintext ICE-password logging, unauthenticated STUN Binding error
-handling, unauthenticated TURN error and alternate-server handling, and no
-pre-resolution numeric-only destination-policy boundary. The canonical failure
-policy therefore rejected libjuice before any compiler, archiver, linker,
-loader, symbol inspection, or source execution. The proposed libnice 0.1.23
-fallback is `proposed_not_selected` and has not been acquired.
+and the NDK was installed. Read-only source inspection found five P1 profile
+failures and rejected libjuice before compilation. The later exact libnice
+0.1.23 archive and detached-signature bytes plus the GLib 2.64.2 checksum and
+archive were also acquired under bounded, consumed authorities. Two independent
+static reviews found four P1 production-profile failures and rejected libnice
+before any configure step, build system, compiler, archiver, linker, symbol tool,
+test executable, socket, or runtime network operation. No networking library or
+next candidate is selected.
 
 The current static contract applies an execution-before-import SHA-256 preflight
 to 44 files, including the acquisition and rejection records. The earlier
@@ -77,10 +80,10 @@ external egress, production networking, or deployment.
 
 - Local source root: `/Users/hanchangha/Desktop/project`
 - Git branch: `main`
-- Git HEAD: `1f839e44b261f7fdc86009bd6389777eda0f65e5`
+- Git HEAD: `1daf5b8f3fee7286946b813e9267d9d6f5f359a7`
 - Evidence manifest: `evidence.sha256`
 - Evidence manifest SHA-256:
-  `7c2142fdd7ae7dd312ee8b52d320a47594517ea17b2499173b59c0fc1f40b721`
+  `d2f83be1b884cf9973037c72d2ee81f583fbf33150f6f8d843b787c7c83e29b8`
 - Evidence artifacts: 13 source, schema, and fixture files.
 - Manifest verification: all 13 entries matched the current files when this
   portfolio was prepared.
@@ -96,16 +99,16 @@ external egress, production networking, or deployment.
 
 | ID | Title | Claim type | Primary evidence | What it establishes |
 | --- | --- | --- | --- | --- |
-| `E001` | Same-authority P2P-first route planning | Observed | `apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeRemoteRoutePlanner.kt:31`, `apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeRemoteRoutePlanner.kt:36` | Pending pairing material takes authority over trusted stored state, identity matching is required, and prepared P2P routes precede relay routes; no candidate is interpreted. |
+| `E001` | Same-authority P2P-first route planning | Observed | `apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeRemoteRoutePlanner.kt:32`, `apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeRemoteRoutePlanner.kt:38`, `apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeRemoteRoutePlanner.kt:274` | Pending identity-matched pairing material takes authority over trusted stored state, prepared P2P routes precede relay routes, and USB-reverse relay material is excluded unless an explicit debug-only flag is enabled. This is route filtering; no candidate is interpreted. |
 | `E002` | Trusted P2P route persistence boundary | Observed | `apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt:501`, `apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt:533` | Persisted P2P material is restored only when complete, canonical, version 1, and fresh. This is storage validation, not candidate or service authentication. |
-| `E003` | QR P2P family validation | Observed | `apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/RuntimePairingPayload.kt:121`, `apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/RuntimePairingPayload.kt:197` | Android accepts only a complete, bounded `p2p_rendezvous` field family and rejects unsupported class/version and incomplete material. It defines no candidate grammar or target policy. |
-| `E004` | Injected P2P connector and fallback seam | Observed | `apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeConnectionManager.kt:158`, `apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeConnectionManager.kt:181`, `apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeConnectionManager.kt:288`, `apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeConnectionManager.kt:396` | The manager validates identity, token separation, and expiration, delegates P2P behavior to an optional connector, and can proceed to relay after failure. No production connector is supplied. |
+| `E003` | QR P2P family validation | Observed | `apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/RuntimePairingPayload.kt:36`, `apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/RuntimePairingPayload.kt:149`, `apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/RuntimePairingPayload.kt:201` | Android bounds the complete QR/query input and accepts only a complete, canonical `p2p_rendezvous` field family, rejecting unsupported class/version and incomplete material. It defines no candidate grammar or target policy. |
+| `E004` | Injected P2P connector and fallback seam | Observed | `apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeConnectionManager.kt:126`, `apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeConnectionManager.kt:165`, `apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeConnectionManager.kt:350`, `apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeConnectionManager.kt:395` | The manager validates identity, token separation, expiration, and the relay-scope tag; delegates P2P and relay behavior to optional connectors; preserves cancellation; and orders prepared P2P before relay fallback. The scope tag is not DNS-resolution evidence, and no production P2P connector is supplied. |
 | `E005` | Opaque P2P route envelope | Observed | `apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimePeerToPeerRoutePreparation.kt:3` | Current preparation carries a record id, a field named encrypted candidate material, expiration, nonce, and protocol version; it checks shape, freshness, and route-token separation but does not interpret candidates or prove encryption. |
 | `E006` | macOS route and pair lifecycle owner | Observed | `apps/macos/CompanionCore/Sources/CompanionAppModel.swift:731`, `apps/macos/CompanionCore/Sources/CompanionAppModel.swift:910`, `apps/macos/CompanionCore/Sources/CompanionAppModel.swift:1981` | The app model owns the connection manager and starts pair-scoped private-overlay and relay transports, but the inventoried source does not provide production candidate gathering or traversal. |
-| `E007` | Authenticated route-refresh envelope | Observed | `apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift:882` | The runtime can return a complete fresh P2P opaque field family through authenticated route refresh, with canonicality and expiration checks. This does not authenticate a candidate service. |
+| `E007` | Authenticated route-refresh envelope | Observed | `apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift:11357`, `apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift:11409` | The runtime can return a complete fresh P2P opaque field family through authenticated route refresh, with canonicality and expiration checks. Relay host/scope validation in the same envelope does not authenticate DNS resolution or a candidate service. |
 | `E008` | Pair-scoped private-overlay lifecycle seam | Observed | `apps/macos/CompanionCore/Sources/MacRuntimeConnectionManager.swift:17`, `apps/macos/CompanionCore/Sources/MacRuntimeConnectionManager.swift:98` | Current uncommitted source defines injected per-pair private-overlay and relay transport ownership with lifecycle isolation. It does not establish ICE, TURN, or secure path migration. |
 | `E009` | macOS pairing and QR serialization boundary | Observed | `apps/macos/Pairing/Sources/PairingCoordinator.swift:186` | macOS emits canonical, complete opaque P2P QR material from a pairing boundary that has long-term device identity context. The encrypted body's producer and cryptographic meaning remain outside this code. |
-| `E010` | Common runtime transport boundary | Observed | `apps/macos/Transport/Sources/RuntimeTransport.swift:4`, `apps/macos/Transport/Sources/RuntimeTransport.swift:8` | Runtime transports share lifecycle and disconnect contracts, providing an integration boundary but no production P2P identity transcript or traversal semantics. |
+| `E010` | Common runtime transport boundary | Observed | `apps/macos/Transport/Sources/RuntimeTransport.swift:4`, `apps/macos/Transport/Sources/RuntimeTransport.swift:8`, `apps/macos/Transport/Sources/RuntimeTransport.swift:70` | Runtime transports share lifecycle and disconnect contracts, and discovery TXT entries are byte-bounded metadata. These are integration and metadata boundaries, not a production P2P identity transcript, DNS binding, or traversal semantics. |
 | `E011` | Pairing QR opaque-family schema | Observed | `packages/protocol-schema/pairing-qr.schema.json:430`, `packages/protocol-schema/pairing-qr.schema.json:561`, `packages/protocol-schema/pairing-qr.schema.json:655` | The pairing schema carries a complete opaque P2P record family rather than executable ICE credentials or a plaintext candidate grammar. |
 | `E012` | Shared all-or-nothing protocol schema | Observed | `packages/protocol-schema/protocol.schema.json:608`, `packages/protocol-schema/protocol.schema.json:639`, `packages/protocol-schema/protocol.schema.json:657` | The schema requires the P2P family together and fixes its class/version, but defines no ICE, STUN, TURN, consent, nomination, path migration, or transport-neutral session protocol. |
 | `E013` | Compact cross-platform fixture | Observed | `shared/protocol/fixtures/macos-compact-p2p-rendezvous-pairing-uri.txt:1` | Swift/Kotlin compatibility covers serialization of opaque P2P fields; `opaque-candidate-1` is test material, not evidence of encryption or NAT traversal. |

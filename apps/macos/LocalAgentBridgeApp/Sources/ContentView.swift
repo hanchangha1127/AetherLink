@@ -69,7 +69,7 @@ struct ContentView: View {
                 StatusView(
                     model: model,
                     onGenerateRelayQRCode: {
-                        model.beginPairing()
+                        model.requestRemotePairingForUserInterface()
                         selectedSection = .pairing
                     }
                 )
@@ -138,8 +138,7 @@ struct ContentView: View {
 
     private var canGeneratePairingQR: Bool {
         pairingQRGenerationCommandAvailable(
-            canPrepareAutomatically: model.canPrepareRemoteRelayRouteAutomatically,
-            isRouteEligibleForQRCode: model.isDevelopmentRelayRouteEligibleForQRCode
+            canRequestRemotePairing: model.canRequestRemotePairingForUserInterface
         )
     }
 
@@ -168,7 +167,7 @@ struct ContentView: View {
 
         case .pairingQR:
             Button {
-                model.beginPairing()
+                model.requestRemotePairingForUserInterface()
                 selectedSection = .pairing
             } label: {
                 if model.pairingSession == nil {
@@ -178,21 +177,36 @@ struct ContentView: View {
                 }
             }
             .disabled(!canGeneratePairingQR)
-            .help(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR))
-            .accessibilityValue(Text(pairingQRGenerationActionAccessibilityValue(isAvailable: canGeneratePairingQR)))
-            .accessibilityHint(Text(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR)))
+            .help(
+                pairingQRGenerationActionAccessibilityHint(
+                    isAvailable: canGeneratePairingQR,
+                    isPreparing: model.isRemoteRoutePreparationInFlight
+                )
+            )
+            .accessibilityValue(
+                Text(
+                    pairingQRGenerationActionAccessibilityValue(
+                        isAvailable: canGeneratePairingQR,
+                        isPreparing: model.isRemoteRoutePreparationInFlight
+                    )
+                )
+            )
+            .accessibilityHint(
+                Text(
+                    pairingQRGenerationActionAccessibilityHint(
+                        isAvailable: canGeneratePairingQR,
+                        isPreparing: model.isRemoteRoutePreparationInFlight
+                    )
+                )
+            )
         }
     }
 }
 
 func pairingQRGenerationCommandAvailable(
-    canPrepareAutomatically: Bool,
-    isRouteEligibleForQRCode: Bool
+    canRequestRemotePairing: Bool
 ) -> Bool {
-    pairingQRGenerationAvailable(
-        canPrepareAutomatically: canPrepareAutomatically,
-        isRouteEligibleForQRCode: isRouteEligibleForQRCode
-    )
+    canRequestRemotePairing
 }
 
 func pairingQRGenerationCommandHelpText(isAvailable: Bool) -> String {
@@ -203,25 +217,41 @@ func pairingQRGenerationCommandHelpText(isAvailable: Bool) -> String {
 
 func pairingQRGenerationActionAccessibilityValue(
     isAvailable: Bool,
-    hasAction: Bool = true
+    hasAction: Bool = true,
+    isPreparing: Bool = false
 ) -> String {
-    isAvailable && hasAction
+    if hasAction && isPreparing {
+        return NSLocalizedString("Connection preparation in progress", comment: "")
+    }
+    return isAvailable && hasAction
         ? NSLocalizedString("Ready", comment: "")
         : NSLocalizedString("Unavailable", comment: "")
 }
 
 func pairingQRGenerationActionAccessibilityHint(
     isAvailable: Bool,
-    hasAction: Bool = true
+    hasAction: Bool = true,
+    isPreparing: Bool = false
 ) -> String {
     if !hasAction {
         return NSLocalizedString("Pairing QR generation is unavailable from this view.", comment: "")
     }
+    if isPreparing {
+        return NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: "")
+    }
     return pairingQRGenerationCommandHelpText(isAvailable: isAvailable)
 }
 
-func activePairingQRRenewalActionAccessibilityHint() -> String {
-    NSLocalizedString("Generate New QR", comment: "")
+func activePairingQRRenewalActionAccessibilityHint(
+    isAvailable: Bool = true,
+    isPreparing: Bool = false
+) -> String {
+    if isPreparing {
+        return NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: "")
+    }
+    return isAvailable
+        ? NSLocalizedString("Generate New QR", comment: "")
+        : NSLocalizedString("Restore connection details before generating a new QR.", comment: "")
 }
 
 private struct AetherLinkAppearancePicker: View {

@@ -11,6 +11,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.OutputStream
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.security.MessageDigest
@@ -266,9 +267,66 @@ fun interface RuntimeRelaySocketFactory {
             Socket().apply {
                 tcpNoDelay = true
                 soTimeout = timeoutMillis
-                connect(InetSocketAddress(route.host, route.port), timeoutMillis)
+                connect(resolveValidatedRelaySocketAddress(route), timeoutMillis)
             }
         }
+    }
+}
+
+internal fun interface RuntimeRelayAddressResolver {
+    fun resolve(host: String): Array<InetAddress>
+}
+
+internal fun resolveValidatedRelaySocketAddress(
+    route: PreparedRemoteRuntimeRoute.Relay,
+    resolver: RuntimeRelayAddressResolver = RuntimeRelayAddressResolver(InetAddress::getAllByName),
+): InetSocketAddress {
+    val host = route.host.removeSuffix(".").removePrefix("[").removeSuffix("]")
+    val addresses = resolver.resolve(host)
+    require(addresses.isNotEmpty()) { "Relay host did not resolve to an address" }
+    require(addresses.all { it.isAllowedForRelayScope(route.relayScope) }) {
+        "Relay host resolved outside its approved address scope"
+    }
+    return InetSocketAddress(addresses.first(), route.port)
+}
+
+private fun InetAddress.isAllowedForRelayScope(relayScope: String?): Boolean {
+    return when (relayScope) {
+        DEBUG_USB_REVERSE_RELAY_SCOPE -> isLoopbackAddress
+        PRIVATE_OVERLAY_RELAY_SCOPE -> isPublicRelayAddress() || isPrivateOverlayRelayAddress()
+        else -> isPublicRelayAddress()
+    }
+}
+
+private fun InetAddress.isPublicRelayAddress(): Boolean {
+    if (isAnyLocalAddress || isLoopbackAddress || isLinkLocalAddress || isSiteLocalAddress || isMulticastAddress) {
+        return false
+    }
+    val octets = address.map { it.toInt() and 0xff }
+    return when (octets.size) {
+        4 -> {
+            val first = octets[0]
+            val second = octets[1]
+            first != 0 && first < 224 && !(first == 100 && second in 64..127)
+        }
+        16 -> (octets[0] and 0xfe) != 0xfc
+        else -> false
+    }
+}
+
+private fun InetAddress.isPrivateOverlayRelayAddress(): Boolean {
+    val octets = address.map { it.toInt() and 0xff }
+    return when (octets.size) {
+        4 -> {
+            val first = octets[0]
+            val second = octets[1]
+            first == 10 ||
+                (first == 100 && second in 64..127) ||
+                (first == 172 && second in 16..31) ||
+                (first == 192 && second == 168)
+        }
+        16 -> (octets[0] and 0xfe) == 0xfc
+        else -> false
     }
 }
 

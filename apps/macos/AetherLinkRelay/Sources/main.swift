@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import RelayServerCore
 
@@ -23,12 +24,13 @@ var allocationRatePerMinute = 30
 var allocationBurst = 10
 var maximumRateLimitSources = 4_096
 var usesEphemeralAllocations = false
+var exitWhenParentPID: pid_t?
 var arguments = Array(CommandLine.arguments.dropFirst())
 
 func usage(exitCode: Int32) -> Never {
     let output = exitCode == 0 ? FileHandle.standardOutput : FileHandle.standardError
     output.write(Data("""
-    Usage: AetherLinkRelay [--host <host>] [--port <port>] [--require-allocation] [--allow-legacy] [--allocation-token <token>] [--allocation-ttl-seconds <seconds>] [--allocation-store <path>] [--ephemeral-allocations] [--probe-policy <disabled|loopback-only|legacy-unauthenticated>] [--control-timeout-seconds <seconds>] [--waiting-timeout-seconds <seconds>] [--max-connections <count>] [--max-connections-per-source <count>] [--max-waiting-peers-per-source <count>] [--max-waiting-peers-per-authenticated-identity <count>] [--preflight-rate-per-minute <count>] [--preflight-burst <count>] [--allocation-rate-per-minute <count>] [--allocation-burst <count>] [--max-rate-limit-sources <count>]
+    Usage: AetherLinkRelay [--host <host>] [--port <port>] [--require-allocation] [--allow-legacy] [--allocation-token <token>] [--allocation-ttl-seconds <seconds>] [--allocation-store <path>] [--ephemeral-allocations] [--exit-when-parent-pid <pid>] [--probe-policy <disabled|loopback-only|legacy-unauthenticated>] [--control-timeout-seconds <seconds>] [--waiting-timeout-seconds <seconds>] [--max-connections <count>] [--max-connections-per-source <count>] [--max-waiting-peers-per-source <count>] [--max-waiting-peers-per-authenticated-identity <count>] [--preflight-rate-per-minute <count>] [--preflight-burst <count>] [--allocation-rate-per-minute <count>] [--allocation-burst <count>] [--max-rate-limit-sources <count>]
 
     Runs the AetherLink development connectivity relay. This relay pairs one
     runtime and one client by relay_id, sends AETHERLINK_RELAY ready, then
@@ -49,13 +51,16 @@ func usage(exitCode: Int32) -> Never {
     127.0.0.1, ::1, or localhost. Binding a wildcard, DNS, private, or public
     host requires --allocation-token or AETHERLINK_RELAY_ALLOCATION_TOKEN, and
     allocation requests must include the same token.
-    Allocation tickets are short-lived by default. Use --allocation-ttl-seconds
-    only for explicit development diagnostics that need a longer route lease.
+    Allocation tickets are short-lived by default. TTL overrides must be finite,
+    greater than zero, and at most 86400 seconds.
     Allocation tickets persist to ~/.aetherlink-relay/allocations.json by
     default so issued QR route material can survive relay process restarts.
     Use --ephemeral-allocations only for loopback diagnostics. Strict wildcard
     and non-loopback binds require the durable allocation store so runtime-key
     ownership survives relay restarts.
+    --exit-when-parent-pid is restricted to ephemeral loopback diagnostics. It
+    exits if the direct parent changes, preventing interrupted test harnesses
+    from leaving orphan relay listeners behind.
     Every accepted socket counts against --max-connections until it is closed,
     including waiting and active bridge peers. Every control record must finish
     within --control-timeout-seconds; frame forwarding remains timeout-free.
@@ -103,7 +108,9 @@ func parseCanonicalPositiveDecimal(_ value: String, maximum: Int) -> Int? {
 }
 
 if let ttlText = ProcessInfo.processInfo.environment["AETHERLINK_RELAY_ALLOCATION_TTL_SECONDS"]?.takeIfNotEmpty() {
-    guard let parsed = TimeInterval(ttlText), parsed > 0 else {
+    guard let parsed = TimeInterval(ttlText),
+          RelayServerConfiguration.isValidAllocationTTL(parsed)
+    else {
         usage(exitCode: 2)
     }
     allocationTTLSeconds = parsed
@@ -207,7 +214,7 @@ while !arguments.isEmpty {
     case "--allocation-ttl-seconds":
         guard let value = arguments.first,
               let parsed = TimeInterval(value),
-              parsed > 0
+              RelayServerConfiguration.isValidAllocationTTL(parsed)
         else {
             usage(exitCode: 2)
         }
@@ -313,6 +320,15 @@ while !arguments.isEmpty {
         arguments.removeFirst()
     case "--ephemeral-allocations":
         usesEphemeralAllocations = true
+    case "--exit-when-parent-pid":
+        guard let value = arguments.first,
+              let parsed = parseCanonicalPositiveDecimal(value, maximum: 1_000_000),
+              parsed > 1
+        else {
+            usage(exitCode: 2)
+        }
+        exitWhenParentPID = pid_t(parsed)
+        arguments.removeFirst()
     case "-h", "--help":
         usage(exitCode: 0)
     default:
@@ -322,6 +338,21 @@ while !arguments.isEmpty {
 
 guard maxWaitingPeersPerSource * 2 <= maxConnectionsPerSource else {
     usage(exitCode: 2)
+}
+
+if let exitWhenParentPID {
+    guard usesEphemeralAllocations,
+          ["127.0.0.1", "::1", "localhost"].contains(host.lowercased()),
+          Darwin.getppid() == exitWhenParentPID
+    else {
+        usage(exitCode: 2)
+    }
+    DispatchQueue.global(qos: .utility).async {
+        while Darwin.getppid() == exitWhenParentPID {
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        Darwin._exit(0)
+    }
 }
 
 do {

@@ -142,7 +142,7 @@ struct RuntimeDocumentSourcesView: View {
                     Text(NSLocalizedString("Approved sources", comment: ""))
                         .font(.headline)
                         .accessibilityAddTraits(.isHeader)
-                    Text(runtimeDocumentSourceCountText(model.runtimeDocumentSources.count))
+                    Text(localizedRuntimeDocumentSourceCount(model.runtimeDocumentSources.count))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -560,8 +560,15 @@ private let runtimeDocumentSupportedContentTypes: [UTType] = {
     return extensions.compactMap { UTType(filenameExtension: $0) }.filter { seen.insert($0.identifier).inserted }
 }()
 
-private func runtimeDocumentSourceCountText(_ count: Int) -> String {
-    "\(count.formatted()) \(NSLocalizedString("Approved sources", comment: ""))"
+func localizedRuntimeDocumentSourceCount(_ count: Int) -> String {
+    let normalizedCount = max(0, count)
+    if normalizedCount == 1 {
+        return NSLocalizedString("1 approved source", comment: "")
+    }
+    return String(
+        format: NSLocalizedString("%@ approved sources", comment: ""),
+        localizedCompanionIntegerString(normalizedCount)
+    )
 }
 
 private func runtimeDocumentMetadataText(mimeType: String, characterCount: Int, chunkCount: Int) -> String {

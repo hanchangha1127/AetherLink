@@ -181,6 +181,10 @@ final class RelayHandshakeTests: XCTestCase {
     func testRejectsNonCanonicalRelayID() {
         let relayIDs = [
             "relay 123",
+            "relay\u{0000}id",
+            "relay\u{001B}id",
+            "relay\u{007F}id",
+            "relay\u{202E}id",
             String(repeating: "r", count: relayControlLineRelayIDMaxCharacters + 1),
             "https://relay.example.test/room?route_token=secret",
             "relay.example.test:443",
@@ -199,6 +203,23 @@ final class RelayHandshakeTests: XCTestCase {
             XCTAssertThrowsError(try RelayHandshake.parse("AETHERLINK_RELAY runtime \(relayID)\n"), relayID) { error in
                 XCTAssertEqual(error as? RelayHandshakeError, .invalidRelayID)
             }
+        }
+    }
+
+    func testAcceptsExistingRelayIDFormsWithinVisibleAsciiTokenAlphabet() {
+        let relayIDs = [
+            "relay-123",
+            "relay!$%&'*+-.^_`|~123",
+            "rt1-" + String(repeating: "a", count: 64),
+            "rt2-" + String(repeating: "b", count: 64),
+        ]
+
+        for relayID in relayIDs {
+            XCTAssertNoThrow(try RelayHandshake(role: .runtime, relayID: relayID), relayID)
+            XCTAssertNoThrow(
+                try RelayHandshake.parse("AETHERLINK_RELAY runtime \(relayID)\n"),
+                relayID
+            )
         }
     }
 

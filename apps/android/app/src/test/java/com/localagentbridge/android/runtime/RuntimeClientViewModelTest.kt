@@ -68,6 +68,7 @@ import com.localagentbridge.android.core.protocol.ModelPullResultPayload
 import com.localagentbridge.android.core.protocol.ModelsResultPayload
 import com.localagentbridge.android.core.protocol.PairingRequestPayload
 import com.localagentbridge.android.core.protocol.PairingResultPayload
+import com.localagentbridge.android.core.protocol.ProtocolCodec
 import com.localagentbridge.android.core.protocol.ProtocolEnvelope
 import com.localagentbridge.android.core.protocol.RetrievalMatchKind
 import com.localagentbridge.android.core.protocol.RetrievalQueryRequestPayload
@@ -126,9 +127,11 @@ import com.localagentbridge.android.core.transport.TransportSecurityContext
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.emptyFlow
@@ -136,6 +139,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -167,7 +171,10 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayInputStream
 import java.io.File
+import java.io.IOException
+import java.io.InputStream
 import java.security.KeyPair
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
@@ -178,6 +185,13 @@ import java.security.spec.X509EncodedKeySpec
 import java.time.Instant
 import java.time.format.DateTimeFormatterBuilder
 import java.util.Base64
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.Continuation
+import kotlin.coroutines.ContinuationInterceptor
+import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 class RuntimeClientViewModelTest {
     @Test
@@ -969,6 +983,41 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
+    fun trustedRuntimeRelayReconnectRejectsUsbReverseRelayRouteByDefault() {
+        val trusted = RuntimeTrustedRuntime(
+            deviceId = "runtime-relay",
+            name = "AetherLink Runtime",
+            fingerprint = "fingerprint",
+            publicKeyBase64 = "runtime-public-key",
+            routeToken = "route-token",
+            endpointHint = null,
+            relayHost = "127.0.0.1",
+            relayPort = 43171,
+            relayId = "relay-1",
+            relaySecret = "secret-1",
+            relayExpiresAtEpochMillis = 4102444800000L,
+            relayNonce = "nonce-route-1",
+            relayScope = "usb_reverse",
+        )
+        val planner = RuntimeRemoteRoutePlanner(
+            pendingPairingPayload = { null },
+            trustedRuntime = { trusted },
+        )
+
+        val routes = planner.prepareRemoteRoutes(
+            PairedRuntimeIdentity(
+                deviceId = "runtime-relay",
+                name = "AetherLink Runtime",
+                fingerprint = "fingerprint",
+                publicKeyBase64 = "runtime-public-key",
+                routeToken = "route-token",
+            )
+        )
+
+        assertTrue(routes.isEmpty())
+    }
+
+    @Test
     fun trustedRuntimeRelayReconnectAllowsDebugUsbReverseRelayRoute() {
         val trusted = RuntimeTrustedRuntime(
             deviceId = "runtime-relay",
@@ -988,6 +1037,7 @@ class RuntimeClientViewModelTest {
         val planner = RuntimeRemoteRoutePlanner(
             pendingPairingPayload = { null },
             trustedRuntime = { trusted },
+            allowDebugUsbReverseRoutes = true,
         )
 
         val route = planner.prepareRemoteRoutes(
@@ -1619,6 +1669,7 @@ class RuntimeClientViewModelTest {
         val plannedRoute = RuntimeRemoteRoutePlanner(
             pendingPairingPayload = { payload },
             trustedRuntime = { null },
+            allowDebugUsbReverseRoutes = true,
         ).prepareRemoteRoutes(requireNotNull(target?.identity)).single() as PreparedRemoteRuntimeRoute.Relay
 
         assertNull(target.endpointHint)
@@ -4204,7 +4255,7 @@ class RuntimeClientViewModelTest {
             assertTrue(challenge.currentRelayId != challenge.nextRelayId)
             assertEquals(challenge.nextRelayExpiresAtEpochMillis, fixture.store.trusted?.relayExpiresAtEpochMillis)
             assertEquals(challenge.nextRelayNonce, fixture.store.trusted?.relayNonce)
-            assertNull(fixture.viewModel.privateField<String>("pendingRouteRefreshRequestId"))
+            assertNull(fixture.viewModel.pendingRouteRefreshRequestIdForTest())
             assertNull(
                 fixture.viewModel.privateField<Any>("pendingPairedRelayAllocationAuthorization")
             )
@@ -4242,6 +4293,55 @@ class RuntimeClientViewModelTest {
             assertEquals(challenge.nextRelayNonce, fixture.store.trusted?.relayNonce)
         } finally {
             fixture?.viewModel?.clearForTest()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun routeRefreshUsbReversePolicyRejectsByDefaultAndAllowsExplicitDebug() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val fixtures = mutableListOf<PairedRelayRefreshFixture>()
+        try {
+            val releasePolicy = pairedRelayRefreshFixture(ticketGeneration = 7L).also(fixtures::add)
+            val releaseChallenge = releasePolicy.challenge()
+            releasePolicy.channel.enqueue(releasePolicy.challengeEnvelope(releaseChallenge))
+            runCurrent()
+            releasePolicy.channel.enqueue(
+                releasePolicy.finalEnvelope(
+                    challenge = releaseChallenge,
+                    relayHost = "127.0.0.1",
+                    relayScope = "usb_reverse",
+                )
+            )
+            runCurrent()
+
+            assertEquals(0, releasePolicy.store.writeCount)
+            assertEquals("relay.example.test", releasePolicy.store.trusted?.relayHost)
+            assertEquals("remote", releasePolicy.store.trusted?.relayScope)
+
+            val debugPolicy = pairedRelayRefreshFixture(
+                ticketGeneration = 7L,
+                allowDebugUsbReverseRoutes = true,
+            ).also(fixtures::add)
+            val debugChallenge = debugPolicy.challenge()
+            debugPolicy.channel.enqueue(debugPolicy.challengeEnvelope(debugChallenge))
+            runCurrent()
+            debugPolicy.channel.enqueue(
+                debugPolicy.finalEnvelope(
+                    challenge = debugChallenge,
+                    relayHost = "127.0.0.1",
+                    relayScope = "usb_reverse",
+                )
+            )
+            runCurrent()
+
+            assertEquals(1, debugPolicy.store.writeCount)
+            assertEquals("127.0.0.1", debugPolicy.store.trusted?.relayHost)
+            assertEquals("usb_reverse", debugPolicy.store.trusted?.relayScope)
+        } finally {
+            fixtures.forEach { it.viewModel.clearForTest() }
             runCurrent()
             Dispatchers.resetMain()
         }
@@ -4393,7 +4493,7 @@ class RuntimeClientViewModelTest {
             advanceTimeBy(ROUTE_REFRESH_REQUEST_TIMEOUT_MS)
             timedOut.clock.nowEpochMillis += ROUTE_REFRESH_REQUEST_TIMEOUT_MS
             runCurrent()
-            assertNull(timedOut.viewModel.privateField<String>("pendingRouteRefreshRequestId"))
+            assertNull(timedOut.viewModel.pendingRouteRefreshRequestIdForTest())
             assertNull(
                 timedOut.viewModel.privateField<Any>("pendingPairedRelayAllocationAuthorization")
             )
@@ -4406,7 +4506,7 @@ class RuntimeClientViewModelTest {
             )
             disconnected.viewModel.disconnect()
             runCurrent()
-            assertNull(disconnected.viewModel.privateField<String>("pendingRouteRefreshRequestId"))
+            assertNull(disconnected.viewModel.pendingRouteRefreshRequestIdForTest())
             assertNull(
                 disconnected.viewModel.privateField<Any>("pendingPairedRelayAllocationAuthorization")
             )
@@ -4426,6 +4526,324 @@ class RuntimeClientViewModelTest {
             assertEquals(0, plaintext.store.writeCount)
         } finally {
             fixtures.forEach { it.viewModel.clearForTest() }
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun routeRefreshChallengeErrorAndTerminalRejectReauthenticatedAuthorityWithoutConsumption() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val fixtures = mutableListOf<PairedRelayRefreshFixture>()
+        try {
+            val staleChallenge = pairedRelayRefreshFixture(ticketGeneration = null).also(fixtures::add)
+            val staleChallengeAuthority = requireNotNull(
+                staleChallenge.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration")
+            )
+            staleChallenge.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                staleChallengeAuthority + 1L,
+            )
+            staleChallenge.channel.enqueue(staleChallenge.challengeEnvelope(staleChallenge.challenge()))
+            runCurrent()
+
+            assertEquals(
+                0,
+                staleChallenge.channel.sentEnvelopes.count {
+                    it.type == MessageType.RelayAllocationAuthorization
+                },
+            )
+            assertEquals(
+                staleChallenge.request.requestId,
+                staleChallenge.viewModel.pendingRouteRefreshRequestIdForTest(),
+            )
+
+            val staleError = pairedRelayRefreshFixture(ticketGeneration = 7L).also(fixtures::add)
+            val staleErrorAuthority = requireNotNull(
+                staleError.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration")
+            )
+            staleError.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                staleErrorAuthority + 1L,
+            )
+            staleError.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    requestId = staleError.request.requestId,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "route_refresh_unavailable",
+                        message = "Route refresh is temporarily unavailable.",
+                        retryable = true,
+                    ),
+                )
+            )
+            runCurrent()
+
+            assertEquals(
+                staleError.request.requestId,
+                staleError.viewModel.pendingRouteRefreshRequestIdForTest(),
+            )
+
+            val staleTerminal = pairedRelayRefreshFixture(ticketGeneration = 7L).also(fixtures::add)
+            val terminalChallenge = staleTerminal.challenge()
+            staleTerminal.channel.enqueue(staleTerminal.challengeEnvelope(terminalChallenge))
+            runCurrent()
+            assertEquals(
+                1,
+                staleTerminal.channel.sentEnvelopes.count {
+                    it.type == MessageType.RelayAllocationAuthorization
+                },
+            )
+            val staleTerminalAuthority = requireNotNull(
+                staleTerminal.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration")
+            )
+            staleTerminal.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                staleTerminalAuthority + 1L,
+            )
+            staleTerminal.channel.enqueue(staleTerminal.finalEnvelope(terminalChallenge))
+            runCurrent()
+
+            assertEquals(0, staleTerminal.store.writeCount)
+            assertEquals(
+                staleTerminal.request.requestId,
+                staleTerminal.viewModel.pendingRouteRefreshRequestIdForTest(),
+            )
+        } finally {
+            fixtures.forEach { it.viewModel.clearForTest() }
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun routeRefreshPersistenceIsCancelledByReauthenticationDuringStoreSuspension() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var fixture: PairedRelayRefreshFixture? = null
+        try {
+            fixture = pairedRelayRefreshFixture(ticketGeneration = 7L)
+            fixture.store.delayNextWrite = true
+            val challenge = fixture.challenge()
+            fixture.channel.enqueue(fixture.challengeEnvelope(challenge))
+            runCurrent()
+            fixture.channel.enqueue(fixture.finalEnvelope(challenge))
+            runCurrent()
+
+            assertTrue(fixture.store.delayedWriteStarted.isCompleted)
+            assertEquals(0, fixture.store.writeCount)
+
+            fixture.viewModel.sendHelloForTest()
+            runCurrent()
+            completeRuntimeAuthentication(
+                viewModel = fixture.viewModel,
+                channel = fixture.channel,
+                requestId = "route-refresh-reauthenticated",
+                transportBinding = fixture.binding,
+            )
+            fixture.store.releaseDelayedWrite.complete(Unit)
+            runCurrent()
+
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals(0, fixture.store.writeCount)
+        } finally {
+            fixture?.store?.releaseDelayedWrite?.complete(Unit)
+            fixture?.viewModel?.clearForTest()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun routeRefreshChallengeSignsOnlyForExactSourceAtMostOnce() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var fixture: PairedRelayRefreshFixture? = null
+        try {
+            fixture = pairedRelayRefreshFixture(ticketGeneration = 7L)
+            val challengeEnvelope = fixture.challengeEnvelope(fixture.challenge())
+            val connectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration")
+            )
+            val wrongChannel = ScriptedRuntimeProtocolChannel(
+                transportSecurityContext = TransportSecurityContext(fixture.binding),
+            )
+
+            fixture.viewModel.handleEnvelopeForTest(
+                envelope = challengeEnvelope,
+                sourceChannel = wrongChannel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.handleEnvelopeForTest(
+                envelope = challengeEnvelope,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration + 1L,
+            )
+
+            assertEquals(
+                0,
+                fixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.RelayAllocationAuthorization
+                },
+            )
+            assertEquals(
+                fixture.request.requestId,
+                fixture.viewModel.pendingRouteRefreshRequestIdForTest(),
+            )
+
+            fixture.viewModel.handleEnvelopeForTest(
+                envelope = challengeEnvelope,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.handleEnvelopeForTest(
+                envelope = challengeEnvelope,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+
+            assertEquals(
+                1,
+                fixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.RelayAllocationAuthorization
+                },
+            )
+            assertEquals(
+                fixture.request.requestId,
+                fixture.viewModel.pendingRouteRefreshRequestIdForTest(),
+            )
+        } finally {
+            fixture?.viewModel?.clearForTest()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun routeRefreshErrorConsumesOnlyExactSourceAtMostOnce() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var fixture: PairedRelayRefreshFixture? = null
+        try {
+            fixture = pairedRelayRefreshFixture(ticketGeneration = 7L)
+            val connectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration")
+            )
+            val wrongChannel = ScriptedRuntimeProtocolChannel(
+                transportSecurityContext = TransportSecurityContext(fixture.binding),
+            )
+            val errorEnvelope = envelope(
+                type = MessageType.Error,
+                requestId = fixture.request.requestId,
+                serializer = ErrorPayload.serializer(),
+                payload = ErrorPayload(
+                    code = "route_refresh_unavailable",
+                    message = "Route refresh is temporarily unavailable.",
+                    retryable = true,
+                ),
+            )
+
+            fixture.viewModel.handleEnvelopeForTest(
+                envelope = errorEnvelope,
+                sourceChannel = wrongChannel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.handleEnvelopeForTest(
+                envelope = errorEnvelope,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration + 1L,
+            )
+
+            assertEquals(
+                fixture.request.requestId,
+                fixture.viewModel.pendingRouteRefreshRequestIdForTest(),
+            )
+            assertNull(fixture.viewModel.privateField<Job>("routeRefreshLeaseJob"))
+
+            fixture.viewModel.handleEnvelopeForTest(
+                envelope = errorEnvelope,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            val retryJob = fixture.viewModel.privateField<Job>("routeRefreshLeaseJob")
+            assertNull(fixture.viewModel.pendingRouteRefreshRequestIdForTest())
+            assertNotNull(retryJob)
+
+            fixture.viewModel.handleEnvelopeForTest(
+                envelope = errorEnvelope,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+
+            assertSame(retryJob, fixture.viewModel.privateField<Job>("routeRefreshLeaseJob"))
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            fixture?.viewModel?.clearForTest()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun routeRefreshTerminalPersistsOnlyForExactSourceAtMostOnce() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var fixture: PairedRelayRefreshFixture? = null
+        try {
+            fixture = pairedRelayRefreshFixture(ticketGeneration = 7L)
+            val challenge = fixture.challenge()
+            val connectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration")
+            )
+            fixture.viewModel.handleEnvelopeForTest(
+                envelope = fixture.challengeEnvelope(challenge),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            val finalEnvelope = fixture.finalEnvelope(challenge)
+            val wrongChannel = ScriptedRuntimeProtocolChannel(
+                transportSecurityContext = TransportSecurityContext(fixture.binding),
+            )
+
+            fixture.viewModel.handleEnvelopeForTest(
+                envelope = finalEnvelope,
+                sourceChannel = wrongChannel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.handleEnvelopeForTest(
+                envelope = finalEnvelope,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration + 1L,
+            )
+
+            assertEquals(0, fixture.store.writeCount)
+            assertEquals(
+                fixture.request.requestId,
+                fixture.viewModel.pendingRouteRefreshRequestIdForTest(),
+            )
+
+            fixture.viewModel.handleEnvelopeForTest(
+                envelope = finalEnvelope,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            runCurrent()
+
+            assertEquals(1, fixture.store.writeCount)
+            assertNull(fixture.viewModel.pendingRouteRefreshRequestIdForTest())
+
+            fixture.viewModel.handleEnvelopeForTest(
+                envelope = finalEnvelope,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            runCurrent()
+
+            assertEquals(1, fixture.store.writeCount)
+        } finally {
+            fixture?.viewModel?.clearForTest()
             runCurrent()
             Dispatchers.resetMain()
         }
@@ -4528,7 +4946,7 @@ class RuntimeClientViewModelTest {
             assertEquals("nonce-route-1", trustedStore.trusted?.relayNonce)
             assertEquals("relay.example.test", viewModel.state.value.trustedRuntime?.relayHost)
             assertNull(viewModel.state.value.error)
-            assertNull(viewModel.privateField<String>("pendingRouteRefreshRequestId"))
+            assertNull(viewModel.pendingRouteRefreshRequestIdForTest())
             assertNotNull(viewModel.privateField<Any>("routeRefreshLeaseJob"))
             assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.RouteRefresh })
         } finally {
@@ -4635,7 +5053,7 @@ class RuntimeClientViewModelTest {
             assertEquals("relay.example.test", viewModel.state.value.trustedRuntime?.relayHost)
             assertNull(viewModel.state.value.error)
             assertTrue(viewModel.state.value.isConnected)
-            assertNull(viewModel.privateField<String>("pendingRouteRefreshRequestId"))
+            assertNull(viewModel.pendingRouteRefreshRequestIdForTest())
             assertNotNull(viewModel.privateField<Any>("routeRefreshLeaseJob"))
             assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.RouteRefresh })
 
@@ -5651,7 +6069,7 @@ class RuntimeClientViewModelTest {
             assertEquals("authenticated", stateAfterError.runtimeStatus)
             assertEquals(RuntimeActiveRouteKind.Relay, stateAfterError.activeRouteKind)
             assertNull(viewModel.privateField<Any>("routeRefreshLeaseJob"))
-            assertNull(viewModel.privateField<String>("pendingRouteRefreshRequestId"))
+            assertNull(viewModel.pendingRouteRefreshRequestIdForTest())
 
             advanceTimeBy(ROUTE_REFRESH_RETRY_DELAY_MS + 1L)
             currentTimeMillis += ROUTE_REFRESH_RETRY_DELAY_MS + 1L
@@ -6257,7 +6675,7 @@ class RuntimeClientViewModelTest {
             assertFalse(viewModel.state.value.isConnected)
             assertFalse(viewModel.state.value.isConnecting)
             assertNull(viewModel.privateField<Any>("routeRefreshLeaseJob"))
-            assertNull(viewModel.privateField<String>("pendingRouteRefreshRequestId"))
+            assertNull(viewModel.pendingRouteRefreshRequestIdForTest())
 
             advanceTimeBy(ROUTE_REFRESH_RETRY_DELAY_MS + 1)
             currentTimeMillis += ROUTE_REFRESH_RETRY_DELAY_MS + 1
@@ -6832,7 +7250,7 @@ class RuntimeClientViewModelTest {
             viewModel.disconnect()
             runCurrent()
             assertNull(viewModel.privateField<Any>("routeRefreshLeaseJob"))
-            assertNull(viewModel.privateField<String>("pendingRouteRefreshRequestId"))
+            assertNull(viewModel.pendingRouteRefreshRequestIdForTest())
 
             advanceTimeBy(ROUTE_REFRESH_RETRY_DELAY_MS + 1)
             currentTimeMillis += ROUTE_REFRESH_RETRY_DELAY_MS + 1
@@ -6913,14 +7331,14 @@ class RuntimeClientViewModelTest {
             runCurrent()
 
             assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.RouteRefresh })
-            assertNotNull(viewModel.privateField<String>("pendingRouteRefreshRequestId"))
+            assertNotNull(viewModel.pendingRouteRefreshRequestIdForTest())
             assertNull(viewModel.privateField<Any>("routeRefreshLeaseJob"))
 
             viewModel.forgetTrustedRuntime()
             advanceUntilIdle()
 
             assertNull(trustedStore.trusted)
-            assertNull(viewModel.privateField<String>("pendingRouteRefreshRequestId"))
+            assertNull(viewModel.pendingRouteRefreshRequestIdForTest())
             assertNull(viewModel.privateField<Any>("routeRefreshLeaseJob"))
             assertFalse(viewModel.state.value.isConnected)
             assertFalse(channel.isConnected)
@@ -13988,6 +14406,8 @@ class RuntimeClientViewModelTest {
             val citationId = "citation_00112233445566778899aabbccddeeff"
             val reviewId = "source_review_00112233445566778899aabbccddeeff"
             val confirmationToken = "source_confirmation_${"ab".repeat(32)}"
+            val retryReviewId = "source_review_8899aabbccddeeff0011223344556677"
+            val retryConfirmationToken = "source_confirmation_${"cd".repeat(32)}"
             val grantId = "trusted_source_00112233445566778899aabbccddeeff"
             val dismissedCitationId = "citation_ffeeddccbbaa99887766554433221100"
             val dismissedReviewId = "source_review_ffeeddccbbaa99887766554433221100"
@@ -14070,16 +14490,39 @@ class RuntimeClientViewModelTest {
                 ),
             )
             advanceUntilIdle()
-            assertFalse(requireNotNull(fixture.viewModel.state.value.sourceReview).isTrusted)
+            assertNull(fixture.viewModel.state.value.sourceReview)
             assertTrue(fixture.viewModel.state.value.trustedSources.isEmpty())
             assertEquals("trusted_source_approve_failed", fixture.viewModel.state.value.error?.code)
 
+            fixture.viewModel.resolveCitation(anchorId)
+            runCurrent()
+            val retryResolveRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.CitationResolve
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.CitationResolve,
+                    requestId = retryResolveRequest.requestId,
+                    payload = citationResolveResultJson(
+                        anchorId = anchorId,
+                        citationId = citationId,
+                        reviewId = retryReviewId,
+                        confirmationToken = retryConfirmationToken,
+                    ),
+                ),
+            )
+            advanceUntilIdle()
             fixture.viewModel.approveTrustedSource(anchorId)
             advanceUntilIdle()
             val retryApproveRequest = fixture.channel.sentEnvelopes.last {
                 it.type == MessageType.TrustedSourceApprove
             }
             assertTrue(retryApproveRequest.requestId != approveRequest.requestId)
+            assertEquals(retryReviewId, retryApproveRequest.payload["review_id"]?.jsonPrimitive?.content)
+            assertEquals(
+                retryConfirmationToken,
+                retryApproveRequest.payload["confirmation_token"]?.jsonPrimitive?.content,
+            )
             fixture.channel.enqueue(
                 ProtocolEnvelope(
                     type = MessageType.TrustedSourceApprove,
@@ -14091,6 +14534,15 @@ class RuntimeClientViewModelTest {
             assertTrue(requireNotNull(fixture.viewModel.state.value.sourceReview).isTrusted)
             assertEquals(listOf(anchorId), fixture.viewModel.state.value.trustedSources.map { it.sourceAnchorId })
             assertFalse(fixture.viewModel.state.value.toString().contains(grantId))
+            val completedApprovalCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.TrustedSourceApprove
+            }
+            fixture.viewModel.approveTrustedSource(anchorId)
+            runCurrent()
+            assertEquals(
+                completedApprovalCount,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.TrustedSourceApprove },
+            )
             fixture.viewModel.dismissTrustedSource()
             assertNull(fixture.viewModel.state.value.sourceReview)
 
@@ -14175,6 +14627,8 @@ class RuntimeClientViewModelTest {
                 citationId,
                 reviewId,
                 confirmationToken,
+                retryReviewId,
+                retryConfirmationToken,
                 grantId,
                 dismissedCitationId,
                 dismissedReviewId,
@@ -14187,6 +14641,8 @@ class RuntimeClientViewModelTest {
                 citationId,
                 reviewId,
                 confirmationToken,
+                retryReviewId,
+                retryConfirmationToken,
                 grantId,
                 dismissedCitationId,
                 dismissedReviewId,
@@ -14445,6 +14901,67 @@ class RuntimeClientViewModelTest {
             listOf(anchorId, citationId, reviewId, confirmationToken).forEach { opaqueValue ->
                 assertFalse(persisted.contains(opaqueValue))
             }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun historicalTrustedSourceConfirmationCancelsAfterSessionSelectionDrift() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val assistantMessageId = "assistant_message_aabbccddeeff00112233445566778899"
+            val localMessageId = "historical-confirmation-message"
+            val attribution = PersistedChatSourceAttribution(
+                sourceIndex = 1,
+                documentName = "Trusted Source.md",
+                mimeType = "text/markdown",
+                chunkIndex = 2,
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = persistedRuntimeHistoryWithAttribution(
+                    sessionId = "historical-confirmation-session",
+                    localMessageId = localMessageId,
+                    assistantMessageId = assistantMessageId,
+                    attribution = attribution,
+                ),
+            )
+            fixture.viewModel.reviewHistoricalSourceAttribution(localMessageId, attribution.sourceIndex)
+            runCurrent()
+            val resolveRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSourceAttributionResolve
+            }
+            val anchorId = "source_anchor_aabbccddeeff0011"
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatSourceAttributionResolve,
+                    requestId = resolveRequest.requestId,
+                    payload = citationResolveResultJson(
+                        anchorId = anchorId,
+                        citationId = "citation_aabbccddeeff00112233445566778899",
+                        reviewId = "source_review_aabbccddeeff00112233445566778899",
+                        confirmationToken = "source_confirmation_${"de".repeat(32)}",
+                    ),
+                ),
+            )
+            runCurrent()
+            assertNotNull(fixture.viewModel.state.value.sourceReview)
+            val approvalCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.TrustedSourceApprove
+            }
+
+            fixture.viewModel.startNewChat()
+            fixture.viewModel.approveTrustedSource(anchorId)
+            runCurrent()
+
+            assertNull(fixture.viewModel.state.value.sourceReview)
+            assertNull(fixture.viewModel.privateField<Any>("pendingSourceReview"))
+            assertEquals(
+                approvalCount,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.TrustedSourceApprove },
+            )
         } finally {
             Dispatchers.resetMain()
         }
@@ -15330,6 +15847,297 @@ class RuntimeClientViewModelTest {
                 approvalCount,
                 fixture.channel.sentEnvelopes.count { it.type == MessageType.TrustedSourceApprove },
             )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun trustedSourceConfirmationRejectsTargetSelectionDriftBeforeDispatch() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            val anchorId = "source_anchor_abcdef0123456789"
+            prepareTrustedSourceReview(
+                fixture = fixture,
+                anchorId = anchorId,
+                citationId = "citation_abcdef0123456789abcdef0123456789",
+                reviewId = "source_review_abcdef0123456789abcdef0123456789",
+                confirmationToken = "source_confirmation_${"ab".repeat(32)}",
+            )
+            val approvalCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.TrustedSourceApprove
+            }
+            fixture.viewModel.replaceStateForTest { current ->
+                current.copy(
+                    sourceReview = requireNotNull(current.sourceReview).copy(
+                        sourceAnchorId = "source_anchor_0123456789abcdef",
+                    ),
+                )
+            }
+
+            fixture.viewModel.approveTrustedSource(anchorId)
+            runCurrent()
+
+            assertEquals(
+                approvalCount,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.TrustedSourceApprove },
+            )
+            assertNull(fixture.viewModel.state.value.sourceReview)
+            assertNull(fixture.viewModel.privateField<Any>("pendingSourceReview"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun trustedSourceConfirmationRejectsReplacedChannelAndConnectionGeneration() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            val anchorId = "source_anchor_0011223344556677"
+            prepareTrustedSourceReview(
+                fixture = fixture,
+                anchorId = anchorId,
+                citationId = "citation_00112233445566778899aabbccddeeff",
+                reviewId = "source_review_00112233445566778899aabbccddeeff",
+                confirmationToken = "source_confirmation_${"12".repeat(32)}",
+            )
+            val originalApprovalCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.TrustedSourceApprove
+            }
+            val replacementChannel = ScriptedRuntimeProtocolChannel()
+            fixture.viewModel.setPrivateField("activeChannel", replacementChannel)
+            fixture.viewModel.setPrivateField(
+                "activeConnectionGeneration",
+                requireNotNull(fixture.viewModel.privateField<Long>("activeConnectionGeneration")) + 1L,
+            )
+
+            fixture.viewModel.approveTrustedSource(anchorId)
+            runCurrent()
+
+            assertEquals(
+                originalApprovalCount,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.TrustedSourceApprove },
+            )
+            assertTrue(replacementChannel.sentEnvelopes.none { it.type == MessageType.TrustedSourceApprove })
+            assertNull(fixture.viewModel.state.value.sourceReview)
+            assertNull(fixture.viewModel.privateField<Any>("pendingSourceReview"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun trustedSourceConfirmationFailsClosedOnDisconnectAndAuthenticationRollover() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val disconnectedFixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            val disconnectedAnchorId = "source_anchor_1122334455667788"
+            prepareTrustedSourceReview(
+                fixture = disconnectedFixture,
+                anchorId = disconnectedAnchorId,
+                citationId = "citation_11223344556677889900aabbccddeeff",
+                reviewId = "source_review_11223344556677889900aabbccddeeff",
+                confirmationToken = "source_confirmation_${"34".repeat(32)}",
+            )
+            val disconnectedApprovalCount = disconnectedFixture.channel.sentEnvelopes.count {
+                it.type == MessageType.TrustedSourceApprove
+            }
+            disconnectedFixture.viewModel.disconnect()
+            runCurrent()
+            disconnectedFixture.viewModel.approveTrustedSource(disconnectedAnchorId)
+            runCurrent()
+            assertEquals(
+                disconnectedApprovalCount,
+                disconnectedFixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.TrustedSourceApprove
+                },
+            )
+            assertNull(disconnectedFixture.viewModel.state.value.sourceReview)
+
+            val rolloverFixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            val rolloverAnchorId = "source_anchor_8877665544332211"
+            prepareTrustedSourceReview(
+                fixture = rolloverFixture,
+                anchorId = rolloverAnchorId,
+                citationId = "citation_887766554433221100ffeeddccbbaa99",
+                reviewId = "source_review_887766554433221100ffeeddccbbaa99",
+                confirmationToken = "source_confirmation_${"56".repeat(32)}",
+            )
+            val rolloverApprovalCount = rolloverFixture.channel.sentEnvelopes.count {
+                it.type == MessageType.TrustedSourceApprove
+            }
+            rolloverFixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                requireNotNull(
+                    rolloverFixture.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration"),
+                ) + 1L,
+            )
+
+            rolloverFixture.viewModel.approveTrustedSource(rolloverAnchorId)
+            runCurrent()
+
+            assertEquals(
+                rolloverApprovalCount,
+                rolloverFixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.TrustedSourceApprove
+                },
+            )
+            assertNull(rolloverFixture.viewModel.state.value.sourceReview)
+            assertNull(rolloverFixture.viewModel.privateField<Any>("pendingSourceReview"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun trustedSourceRevokeRejectsSameDisplayTargetWithReplacementGrantIdentity() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            val anchorId = "source_anchor_aabbccddeeff0011"
+            val citationId = "citation_aabbccddeeff00112233445566778899"
+            val originalGrantId = "trusted_source_aabbccddeeff00112233445566778899"
+            val replacementGrantId = "trusted_source_00112233445566778899aabbccddeeff"
+            prepareTrustedSourceReview(
+                fixture = fixture,
+                anchorId = anchorId,
+                citationId = citationId,
+                reviewId = "source_review_aabbccddeeff00112233445566778899",
+                confirmationToken = "source_confirmation_${"78".repeat(32)}",
+                grantId = originalGrantId,
+            )
+            val originalReview = requireNotNull(fixture.viewModel.state.value.sourceReview)
+            fixture.viewModel.refreshTrustedSources()
+            runCurrent()
+            val listRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.TrustedSourceList
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.TrustedSourceList,
+                    requestId = listRequest.requestId,
+                    payload = trustedSourceListResultJson(anchorId, citationId, replacementGrantId),
+                ),
+            )
+            runCurrent()
+            assertEquals(originalReview, fixture.viewModel.state.value.sourceReview)
+            val revocationCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.TrustedSourceRevoke
+            }
+
+            fixture.viewModel.revokeTrustedSource(anchorId)
+            runCurrent()
+
+            assertEquals(
+                revocationCount,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.TrustedSourceRevoke },
+            )
+            assertNull(fixture.viewModel.state.value.sourceReview)
+            assertNull(fixture.viewModel.privateField<Any>("pendingSourceReview"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun trustedSourceApproveAndDismissConfirmationsAreOneShotAfterFailure() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val approveFixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            val approveAnchorId = "source_anchor_deadbeefdeadbeef"
+            val approveCitationId = "citation_deadbeefdeadbeefdeadbeefdeadbeef"
+            prepareTrustedSourceReview(
+                fixture = approveFixture,
+                anchorId = approveAnchorId,
+                citationId = approveCitationId,
+                reviewId = "source_review_deadbeefdeadbeefdeadbeefdeadbeef",
+                confirmationToken = "source_confirmation_${"9a".repeat(32)}",
+            )
+            approveFixture.viewModel.approveTrustedSource(approveAnchorId)
+            runCurrent()
+            val approveRequest = approveFixture.channel.sentEnvelopes.last {
+                it.type == MessageType.TrustedSourceApprove
+            }
+            approveFixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.TrustedSourceApprove,
+                    requestId = approveRequest.requestId,
+                    payload = trustedSourceApproveResultJson(
+                        approveAnchorId,
+                        approveCitationId,
+                        "trusted_source_deadbeefdeadbeefdeadbeefdeadbeef",
+                    ).toMutableMap().let { values ->
+                        val trustedSource = requireNotNull(values["trusted_source"]).jsonObject.toMutableMap()
+                        val document = requireNotNull(trustedSource["document"]).jsonObject.toMutableMap()
+                        document["content_fingerprint"] = JsonPrimitive("ffeeddccbbaa9988")
+                        trustedSource["document"] = JsonObject(document)
+                        values["trusted_source"] = JsonObject(trustedSource)
+                        JsonObject(values)
+                    },
+                ),
+            )
+            runCurrent()
+            val approvalCount = approveFixture.channel.sentEnvelopes.count {
+                it.type == MessageType.TrustedSourceApprove
+            }
+            approveFixture.viewModel.approveTrustedSource(approveAnchorId)
+            runCurrent()
+            assertEquals(
+                approvalCount,
+                approveFixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.TrustedSourceApprove
+                },
+            )
+            assertNull(approveFixture.viewModel.state.value.sourceReview)
+            assertNull(approveFixture.viewModel.privateField<Any>("pendingSourceReview"))
+
+            val dismissFixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            val dismissAnchorId = "source_anchor_cafebabecafebabe"
+            prepareTrustedSourceReview(
+                fixture = dismissFixture,
+                anchorId = dismissAnchorId,
+                citationId = "citation_cafebabecafebabecafebabecafebabe",
+                reviewId = "source_review_cafebabecafebabecafebabecafebabe",
+                confirmationToken = "source_confirmation_${"bc".repeat(32)}",
+            )
+            dismissFixture.viewModel.dismissTrustedSource(dismissAnchorId)
+            runCurrent()
+            val dismissRequest = dismissFixture.channel.sentEnvelopes.last {
+                it.type == MessageType.TrustedSourceDismiss
+            }
+            dismissFixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    requestId = dismissRequest.requestId,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "backend_unavailable",
+                        message = "The confirmation attempt failed.",
+                        retryable = true,
+                    ),
+                ),
+            )
+            runCurrent()
+            val dismissalCount = dismissFixture.channel.sentEnvelopes.count {
+                it.type == MessageType.TrustedSourceDismiss
+            }
+            dismissFixture.viewModel.dismissTrustedSource(dismissAnchorId)
+            runCurrent()
+            assertEquals(
+                dismissalCount,
+                dismissFixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.TrustedSourceDismiss
+                },
+            )
+            assertNull(dismissFixture.viewModel.state.value.sourceReview)
+            assertNull(dismissFixture.viewModel.privateField<Any>("pendingSourceReview"))
         } finally {
             Dispatchers.resetMain()
         }
@@ -34600,6 +35408,76 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun exactProtocolCodecPreflightRejectsOversizeAttachmentEnvelopeWithoutStateMutation() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            val attachmentBytes = ByteArray(DEFAULT_MAX_ATTACHMENT_DECODED_BYTES) { 1 }
+            val attachment = textAttachment().copy(
+                id = "frame-boundary-attachment",
+                name = "frame-boundary.txt",
+                sizeBytes = attachmentBytes.size.toLong(),
+                dataBase64 = Base64.getEncoder().encodeToString(attachmentBytes),
+            )
+            val priorMessages = listOf(
+                RuntimeChatMessage(
+                    role = "user",
+                    content = "h".repeat(600 * 1024),
+                ),
+                RuntimeChatMessage(role = "assistant", content = "Prior response"),
+            )
+            val draft = "Preserve this draft"
+            fixture.viewModel.replaceStateForTest {
+                it.copy(
+                    activeChatSessionId = null,
+                    chatInput = draft,
+                    pendingAttachments = listOf(attachment),
+                    messages = priorMessages,
+                )
+            }
+            val representativeEnvelope = ProtocolCodec(json).envelope(
+                type = MessageType.ChatSend,
+                payloadSerializer = ChatSendPayload.serializer(),
+                payload = ChatSendPayload(
+                    sessionId = "00000000-0000-0000-0000-000000000000",
+                    model = textChatModel().id,
+                    messages = chatSendMessages(
+                        messages = priorMessages + RuntimeChatMessage(role = "user", content = draft),
+                        attachments = listOf(attachment),
+                    ),
+                    locale = "en-US",
+                ),
+                requestId = "00000000-0000-0000-0000-000000000001",
+            )
+            assertTrue(
+                ProtocolCodec(json).encodeBody(representativeEnvelope).size >
+                    ProtocolCodec.MAX_FRAME_BYTES,
+            )
+            val sendsBefore = fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSend }
+
+            fixture.viewModel.sendChatMessage()
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertEquals(sendsBefore, fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSend })
+            assertEquals("attachment_too_large", state.error?.code)
+            assertEquals(draft, state.chatInput)
+            assertEquals(listOf(attachment), state.pendingAttachments)
+            assertEquals(priorMessages, state.messages)
+            assertNull(state.activeChatSessionId)
+            assertNull(state.activeRequestId)
+            assertFalse(state.isStreaming)
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun removePendingAttachmentDropsOnlySelectedAttachmentAndClearsError() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -34754,6 +35632,116 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun addAttachmentsRejectsUnboundedProviderNameAndMimeMetadataBeforeRead() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val nameReference = "content://attachments/unbounded-name"
+            val mimeReference = "content://attachments/unbounded-mime"
+            val attachmentReader = FakeRuntimeAttachmentReader(
+                mapOf(
+                    nameReference to RuntimeAttachmentFile(
+                        name = "n".repeat(MAX_ATTACHMENT_DISPLAY_NAME_LENGTH + 1),
+                        mimeType = "text/plain",
+                        reportedSizeBytes = 1L,
+                        bytes = byteArrayOf(1),
+                    ),
+                    mimeReference to RuntimeAttachmentFile(
+                        name = "bounded.txt",
+                        mimeType = "x".repeat(MAX_ATTACHMENT_MIME_TYPE_LENGTH + 1),
+                        reportedSizeBytes = 1L,
+                        bytes = byteArrayOf(1),
+                    ),
+                ),
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                attachmentReader = attachmentReader,
+            )
+
+            fixture.viewModel.addAttachmentReferences(listOf(nameReference))
+            advanceUntilIdle()
+            assertEquals("attachment_read_failed", fixture.viewModel.state.value.error?.code)
+            assertTrue(attachmentReader.readRequests.isEmpty())
+
+            fixture.viewModel.addAttachmentReferences(listOf(mimeReference))
+            advanceUntilIdle()
+            assertEquals("attachment_read_failed", fixture.viewModel.state.value.error?.code)
+            assertEquals(listOf(nameReference, mimeReference), attachmentReader.metadataRequests)
+            assertTrue(attachmentReader.readRequests.isEmpty())
+            assertTrue(fixture.viewModel.state.value.pendingAttachments.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun attachmentProviderMetadataUsesCooperativeTimeoutAndFailsClosed() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val reference = "content://attachments/timeout"
+            val metadataStarted = CompletableDeferred<Unit>()
+            val attachmentReader = FakeRuntimeAttachmentReader(
+                files = mapOf(
+                    reference to RuntimeAttachmentFile(
+                        name = "timeout.txt",
+                        mimeType = "text/plain",
+                        reportedSizeBytes = 1L,
+                        bytes = byteArrayOf(1),
+                    ),
+                ),
+                beforeMetadata = {
+                    metadataStarted.complete(Unit)
+                    awaitCancellation()
+                },
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                attachmentReader = attachmentReader,
+                attachmentIoTimeoutMillis = 100L,
+            )
+
+            fixture.viewModel.addAttachmentReferences(listOf(reference))
+            runCurrent()
+            assertTrue(metadataStarted.isCompleted)
+            advanceTimeBy(100L)
+            runCurrent()
+
+            assertEquals("attachment_read_failed", fixture.viewModel.state.value.error?.code)
+            assertTrue(attachmentReader.readRequests.isEmpty())
+            assertTrue(fixture.viewModel.state.value.pendingAttachments.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun productionAttachmentIoLaneSerializesCancellationIgnoringProviderStarts() = runTest {
+        val firstStarted = CountDownLatch(1)
+        val releaseFirst = CountDownLatch(1)
+        val secondStarted = CountDownLatch(1)
+        val first = launch(RUNTIME_ATTACHMENT_IO_DISPATCHER) {
+            firstStarted.countDown()
+            releaseFirst.await()
+        }
+        assertTrue(firstStarted.await(2L, TimeUnit.SECONDS))
+        first.cancel()
+
+        val second = launch(RUNTIME_ATTACHMENT_IO_DISPATCHER) {
+            secondStarted.countDown()
+        }
+        assertFalse(secondStarted.await(150L, TimeUnit.MILLISECONDS))
+
+        releaseFirst.countDown()
+        assertTrue(secondStarted.await(2L, TimeUnit.SECONDS))
+        first.join()
+        second.join()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun addAttachmentsStopsBeforeReadingReportedOversizeFile() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -34794,7 +35782,7 @@ class RuntimeClientViewModelTest {
         Dispatchers.setMain(mainDispatcher)
         try {
             val largeReference = "content://attachments/unknown-large"
-            val attachmentLimitBytes = 15 * 1024 * 1024
+            val attachmentLimitBytes = DEFAULT_MAX_ATTACHMENT_DECODED_BYTES
             val attachmentReader = FakeRuntimeAttachmentReader(
                 mapOf(
                     largeReference to RuntimeAttachmentFile(
@@ -34826,6 +35814,381 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun addAttachmentsRejectsShortReadAndDoesNotSendAfterFailure() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val shortReference = "content://attachments/short"
+            val attachmentReader = FakeRuntimeAttachmentReader(
+                mapOf(
+                    shortReference to RuntimeAttachmentFile(
+                        name = "short.txt",
+                        mimeType = "text/plain",
+                        reportedSizeBytes = 5L,
+                        bytes = "bad".encodeToByteArray(),
+                    ),
+                )
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                attachmentReader = attachmentReader,
+            )
+            fixture.viewModel.updateChatInput("Do not send this after an attachment failure")
+
+            fixture.viewModel.addAttachmentReferences(listOf(shortReference))
+            advanceUntilIdle()
+
+            assertTrue(fixture.viewModel.state.value.pendingAttachments.isEmpty())
+            assertEquals("attachment_read_failed", fixture.viewModel.state.value.error?.code)
+
+            fixture.viewModel.sendChatMessage()
+            advanceUntilIdle()
+
+            assertTrue(fixture.channel.sentEnvelopes.none { it.type == MessageType.ChatSend })
+            assertEquals(
+                "Do not send this after an attachment failure",
+                fixture.viewModel.state.value.chatInput,
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun attachmentResolverAndEncodingUseInjectedIoWithoutBlockingMain() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        val ioScheduler = TestCoroutineScheduler()
+        val ioDispatcher = StandardTestDispatcher(ioScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val reference = "content://attachments/off-main"
+            val attachmentReader = FakeRuntimeAttachmentReader(
+                mapOf(
+                    reference to RuntimeAttachmentFile(
+                        name = "off-main.txt",
+                        mimeType = "text/plain",
+                        reportedSizeBytes = 4L,
+                        bytes = "data".encodeToByteArray(),
+                    ),
+                )
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                attachmentReader = attachmentReader,
+                attachmentIoDispatcher = ioDispatcher,
+            )
+            var mainWorkCompleted = false
+
+            fixture.viewModel.addAttachmentReferences(listOf(reference))
+            launch { mainWorkCompleted = true }
+            runCurrent()
+
+            assertTrue(mainWorkCompleted)
+            assertTrue(attachmentReader.metadataRequests.isEmpty())
+
+            ioScheduler.runCurrent()
+            runCurrent()
+            ioScheduler.runCurrent()
+            runCurrent()
+
+            assertEquals(listOf(reference), attachmentReader.metadataRequests)
+            assertEquals(listOf(reference), attachmentReader.readRequests)
+            assertSame(ioDispatcher, attachmentReader.metadataDispatchers.single())
+            assertSame(ioDispatcher, attachmentReader.readDispatchers.single())
+            assertEquals("ZGF0YQ==", fixture.viewModel.state.value.pendingAttachments.single().dataBase64)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun addAttachmentsAcceptsExactPerFileAndDecodedRequestBoundariesThenRejectsOverflow() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val references = listOf(
+                "content://attachments/three",
+                "content://attachments/six",
+                "content://attachments/overflow",
+            )
+            val attachmentReader = FakeRuntimeAttachmentReader(
+                mapOf(
+                    references[0] to RuntimeAttachmentFile(
+                        name = "three.txt",
+                        mimeType = "text/plain",
+                        reportedSizeBytes = 3L,
+                        bytes = "one".encodeToByteArray(),
+                    ),
+                    references[1] to RuntimeAttachmentFile(
+                        name = "six.txt",
+                        mimeType = "text/plain",
+                        reportedSizeBytes = 6L,
+                        bytes = "second".encodeToByteArray(),
+                    ),
+                    references[2] to RuntimeAttachmentFile(
+                        name = "overflow.txt",
+                        mimeType = "text/plain",
+                        reportedSizeBytes = 1L,
+                        bytes = "x".encodeToByteArray(),
+                    ),
+                )
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                attachmentReader = attachmentReader,
+                attachmentBudgets = RuntimeAttachmentBudgets(
+                    maxFileDecodedBytes = 6,
+                    maxRequestDecodedBytes = 9,
+                    maxRequestEncodedBytes = 16,
+                ),
+            )
+
+            fixture.viewModel.addAttachmentReferences(references.take(2))
+            advanceUntilIdle()
+
+            assertEquals(listOf(3L, 6L), fixture.viewModel.state.value.pendingAttachments.map { it.sizeBytes })
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.viewModel.addAttachmentReferences(listOf(references[2]))
+            advanceUntilIdle()
+
+            assertEquals(references, attachmentReader.metadataRequests)
+            assertEquals(references.take(2), attachmentReader.readRequests)
+            assertEquals(listOf(6, 6), attachmentReader.readLimits)
+            assertEquals(listOf(3L, 6L), fixture.viewModel.state.value.pendingAttachments.map { it.sizeBytes })
+            assertEquals("attachment_too_large", fixture.viewModel.state.value.error?.code)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun addAttachmentsAcceptsExactEncodedRequestBoundaryThenRejectsOverflow() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val references = listOf(
+                "content://attachments/encoded-four",
+                "content://attachments/encoded-eight",
+                "content://attachments/encoded-overflow",
+            )
+            val attachmentReader = FakeRuntimeAttachmentReader(
+                mapOf(
+                    references[0] to RuntimeAttachmentFile(
+                        name = "encoded-four.txt",
+                        mimeType = "text/plain",
+                        reportedSizeBytes = 3L,
+                        bytes = "one".encodeToByteArray(),
+                    ),
+                    references[1] to RuntimeAttachmentFile(
+                        name = "encoded-eight.txt",
+                        mimeType = "text/plain",
+                        reportedSizeBytes = 6L,
+                        bytes = "second".encodeToByteArray(),
+                    ),
+                    references[2] to RuntimeAttachmentFile(
+                        name = "encoded-overflow.txt",
+                        mimeType = "text/plain",
+                        reportedSizeBytes = 1L,
+                        bytes = "x".encodeToByteArray(),
+                    ),
+                )
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                attachmentReader = attachmentReader,
+                attachmentBudgets = RuntimeAttachmentBudgets(
+                    maxFileDecodedBytes = 6,
+                    maxRequestDecodedBytes = 12,
+                    maxRequestEncodedBytes = 12,
+                ),
+            )
+
+            fixture.viewModel.addAttachmentReferences(references.take(2))
+            advanceUntilIdle()
+
+            assertEquals(12, fixture.viewModel.state.value.pendingAttachments.sumOf { it.dataBase64.length })
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.viewModel.addAttachmentReferences(listOf(references[2]))
+            advanceUntilIdle()
+
+            assertEquals(references, attachmentReader.metadataRequests)
+            assertEquals(references.take(2), attachmentReader.readRequests)
+            assertEquals(listOf(12, 8), attachmentReader.encodedReadLimits)
+            assertEquals(12, fixture.viewModel.state.value.pendingAttachments.sumOf { it.dataBase64.length })
+            assertEquals("attachment_too_large", fixture.viewModel.state.value.error?.code)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun clearChatDraftCancelsStructuredAttachmentIngestionWithoutCommit() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val reference = "content://attachments/cancelled"
+            val readStarted = CompletableDeferred<Unit>()
+            val readCancelled = CompletableDeferred<Unit>()
+            val attachmentReader = FakeRuntimeAttachmentReader(
+                files = mapOf(
+                    reference to RuntimeAttachmentFile(
+                        name = "cancelled.txt",
+                        mimeType = "text/plain",
+                        reportedSizeBytes = 4L,
+                        bytes = "data".encodeToByteArray(),
+                    ),
+                ),
+                beforeRead = {
+                    readStarted.complete(Unit)
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        readCancelled.complete(Unit)
+                    }
+                },
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                attachmentReader = attachmentReader,
+            )
+
+            fixture.viewModel.addAttachmentReferences(listOf(reference))
+            runCurrent()
+            assertTrue(readStarted.isCompleted)
+
+            fixture.viewModel.clearChatDraft()
+            runCurrent()
+
+            assertTrue(readCancelled.isCompleted)
+            assertTrue(fixture.viewModel.state.value.pendingAttachments.isEmpty())
+            assertTrue(fixture.channel.sentEnvelopes.none { it.type == MessageType.ChatSend })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun boundedAttachmentEncodingRejectsMalformedProgressShortcutsAndIoFailure() = runTest {
+        val zeroProgressInput = object : InputStream() {
+            override fun read(): Int = -1
+
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int = 0
+        }
+        val invalidCountInput = object : InputStream() {
+            override fun read(): Int = -1
+
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int = length + 1
+        }
+        val failingInput = object : InputStream() {
+            override fun read(): Int = throw IOException("read failed")
+
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                throw IOException("read failed")
+            }
+        }
+
+        assertSame(
+            RuntimeAttachmentReadResult.ReadFailed,
+            readAttachmentBase64(zeroProgressInput, -1L, 4, 8),
+        )
+        assertSame(
+            RuntimeAttachmentReadResult.ReadFailed,
+            readAttachmentBase64(invalidCountInput, -1L, 4, 8),
+        )
+        assertSame(
+            RuntimeAttachmentReadResult.ReadFailed,
+            readAttachmentBase64(failingInput, -1L, 4, 8),
+        )
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun boundedAttachmentEncodingChecksCancellationBetweenReads() = runTest {
+        lateinit var encodingJob: Job
+        var attemptedSecondRead = false
+        var returnedResult = false
+        val cancellingInput = object : InputStream() {
+            private var readCount = 0
+
+            override fun read(): Int = -1
+
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                readCount += 1
+                if (readCount > 1) {
+                    attemptedSecondRead = true
+                    return -1
+                }
+                buffer[offset] = 1
+                encodingJob.cancel()
+                return 1
+            }
+        }
+        encodingJob = launch {
+            readAttachmentBase64(cancellingInput, -1L, 4, 8)
+            returnedResult = true
+        }
+
+        runCurrent()
+
+        assertTrue(encodingJob.isCancelled)
+        assertFalse(returnedResult)
+        assertFalse(attemptedSecondRead)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun sendChatMessageRejectsAggregateBudgetViolationWithoutStateMutation() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                attachmentBudgets = RuntimeAttachmentBudgets(
+                    maxFileDecodedBytes = 4,
+                    maxRequestDecodedBytes = 6,
+                    maxRequestEncodedBytes = 16,
+                ),
+            )
+            val attachments = listOf(
+                textAttachment().copy(
+                    id = "aggregate-1",
+                    sizeBytes = 4L,
+                    dataBase64 = "ZGF0YQ==",
+                ),
+                textAttachment().copy(
+                    id = "aggregate-2",
+                    sizeBytes = 4L,
+                    dataBase64 = "ZGF0YQ==",
+                ),
+            )
+            fixture.viewModel.replaceStateForTest {
+                it.copy(
+                    chatInput = "Do not send",
+                    pendingAttachments = attachments,
+                )
+            }
+
+            fixture.viewModel.sendChatMessage()
+            advanceUntilIdle()
+
+            assertTrue(fixture.channel.sentEnvelopes.none { it.type == MessageType.ChatSend })
+            assertEquals("attachment_too_large", fixture.viewModel.state.value.error?.code)
+            assertEquals("Do not send", fixture.viewModel.state.value.chatInput)
+            assertEquals(attachments, fixture.viewModel.state.value.pendingAttachments)
+            assertTrue(fixture.viewModel.state.value.messages.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun addAttachmentsKeepsAtMostFourPendingAttachments() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -34836,7 +36199,7 @@ class RuntimeClientViewModelTest {
                 reference to RuntimeAttachmentFile(
                     name = "$name.txt",
                     mimeType = "text/plain",
-                    reportedSizeBytes = 8L,
+                    reportedSizeBytes = name.encodeToByteArray().size.toLong(),
                     bytes = name.encodeToByteArray(),
                 )
             }
@@ -34874,7 +36237,7 @@ class RuntimeClientViewModelTest {
                 reference to RuntimeAttachmentFile(
                     name = "$name.txt",
                     mimeType = "text/plain",
-                    reportedSizeBytes = 8L,
+                    reportedSizeBytes = name.encodeToByteArray().size.toLong(),
                     bytes = name.encodeToByteArray(),
                 )
             }
@@ -35799,6 +37162,59 @@ class RuntimeClientViewModelTest {
                 }
             ),
         )
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private suspend fun TestScope.prepareTrustedSourceReview(
+        fixture: RuntimeClientFixture,
+        anchorId: String,
+        citationId: String,
+        reviewId: String,
+        confirmationToken: String,
+        grantId: String? = null,
+    ) {
+        fixture.viewModel.searchRuntimeDocuments("confirmation target")
+        runCurrent()
+        val searchRequest = fixture.channel.sentEnvelopes.last {
+            it.type == MessageType.RetrievalQuery
+        }
+        fixture.channel.enqueue(
+            ProtocolEnvelope(
+                type = MessageType.RetrievalQuery,
+                requestId = searchRequest.requestId,
+                payload = trustedSourceSearchResultJson(anchorId),
+            ),
+        )
+        runCurrent()
+        fixture.viewModel.resolveCitation(anchorId)
+        runCurrent()
+        val resolveRequest = fixture.channel.sentEnvelopes.last {
+            it.type == MessageType.CitationResolve
+        }
+        fixture.channel.enqueue(
+            ProtocolEnvelope(
+                type = MessageType.CitationResolve,
+                requestId = resolveRequest.requestId,
+                payload = if (grantId == null) {
+                    citationResolveResultJson(
+                        anchorId = anchorId,
+                        citationId = citationId,
+                        reviewId = reviewId,
+                        confirmationToken = confirmationToken,
+                    )
+                } else {
+                    citationResolveTrustedResultJson(
+                        anchorId = anchorId,
+                        citationId = citationId,
+                        reviewId = reviewId,
+                        confirmationToken = confirmationToken,
+                        grantId = grantId,
+                    )
+                },
+            ),
+        )
+        runCurrent()
+        assertEquals(anchorId, requireNotNull(fixture.viewModel.state.value.sourceReview).sourceAnchorId)
     }
 
     @Test
@@ -39218,17 +40634,19 @@ class RuntimeClientViewModelTest {
             challenge: RelayAllocationChallengePayload,
             relayNonce: String = challenge.nextRelayNonce,
             ticketGeneration: Long? = challenge.nextTicketGeneration,
+            relayHost: String = "relay.example.test",
+            relayScope: String = "remote",
         ): ProtocolEnvelope {
             val payload = RouteRefreshPayload(
                 runtimeDeviceId = "runtime-paired-relay",
                 runtimeKeyFingerprint = runtimeFingerprint,
-                relayHost = "relay.example.test",
+                relayHost = relayHost,
                 relayPort = 443,
                 relayId = challenge.nextRelayId,
                 relaySecret = relaySecret,
                 relayExpiresAtEpochMillis = challenge.nextRelayExpiresAtEpochMillis,
                 relayNonce = relayNonce,
-                relayScope = "remote",
+                relayScope = relayScope,
                 ticketGeneration = ticketGeneration,
             )
             return ProtocolEnvelope(
@@ -39250,6 +40668,7 @@ class RuntimeClientViewModelTest {
         ticketGeneration: Long?,
         secureChannel: Boolean = true,
         unversionedClaimCurrentGeneration: Long = 1L,
+        allowDebugUsbReverseRoutes: Boolean = false,
     ): PairedRelayRefreshFixture {
         val clock = MutableTestClock(1_000L)
         val binding = "b".repeat(64)
@@ -39312,6 +40731,7 @@ class RuntimeClientViewModelTest {
                 ),
                 lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
                 authenticatedRouteRefreshEnabled = ticketGeneration == null,
+                allowDebugUsbReverseRoutes = allowDebugUsbReverseRoutes,
                 currentTimeMillis = { clock.nowEpochMillis },
             ),
         )
@@ -39778,12 +41198,20 @@ class RuntimeClientViewModelTest {
     ) : RuntimeTrustedRuntimeStore {
         private val trustedRuntimeFlow = MutableStateFlow(initialTrustedRuntime)
         override val trustedRuntime: Flow<TrustedRuntime?> = trustedRuntimeFlow
+        val delayedWriteStarted = CompletableDeferred<Unit>()
+        val releaseDelayedWrite = CompletableDeferred<Unit>()
+        var delayNextWrite: Boolean = false
         var trusted: TrustedRuntime? = initialTrustedRuntime
             private set
         var writeCount: Int = 0
             private set
 
         override suspend fun trustRuntime(runtime: TrustedRuntime) {
+            if (delayNextWrite) {
+                delayNextWrite = false
+                delayedWriteStarted.complete(Unit)
+                releaseDelayedWrite.await()
+            }
             writeCount += 1
             trusted = runtime
             trustedRuntimeFlow.value = runtime
@@ -39821,13 +41249,20 @@ class RuntimeClientViewModelTest {
 
     private class FakeRuntimeAttachmentReader(
         private val files: Map<String, RuntimeAttachmentFile>,
+        private val beforeMetadata: suspend (String) -> Unit = {},
+        private val beforeRead: suspend (String) -> Unit = {},
     ) : RuntimeAttachmentReader {
         val metadataRequests = mutableListOf<String>()
         val readRequests = mutableListOf<String>()
         val readLimits = mutableListOf<Int>()
+        val encodedReadLimits = mutableListOf<Int>()
+        val metadataDispatchers = mutableListOf<ContinuationInterceptor?>()
+        val readDispatchers = mutableListOf<ContinuationInterceptor?>()
 
-        override fun metadata(reference: String): RuntimeAttachmentMetadata {
+        override suspend fun metadata(reference: String): RuntimeAttachmentMetadata {
+            beforeMetadata(reference)
             metadataRequests += reference
+            metadataDispatchers += currentCoroutineContext()[ContinuationInterceptor]
             val file = files[reference] ?: error("No fake attachment metadata for $reference")
             return RuntimeAttachmentMetadata(
                 name = file.name,
@@ -39836,12 +41271,25 @@ class RuntimeClientViewModelTest {
             )
         }
 
-        override fun readBytes(reference: String, maxBytes: Int): ByteArray? {
+        override suspend fun readBase64(
+            reference: String,
+            expectedSizeBytes: Long,
+            maxDecodedBytes: Int,
+            maxEncodedBytes: Int,
+        ): RuntimeAttachmentReadResult {
+            beforeRead(reference)
             readRequests += reference
-            readLimits += maxBytes
-            val bytes = files[reference]?.bytes ?: return null
-            val boundedSize = maxBytes + 1
-            return if (bytes.size > boundedSize) bytes.copyOf(boundedSize) else bytes
+            readLimits += maxDecodedBytes
+            encodedReadLimits += maxEncodedBytes
+            readDispatchers += currentCoroutineContext()[ContinuationInterceptor]
+            val bytes = files[reference]?.bytes ?: return RuntimeAttachmentReadResult.ReadFailed
+            if (bytes.size > maxDecodedBytes) return RuntimeAttachmentReadResult.TooLarge
+            return readAttachmentBase64(
+                input = ByteArrayInputStream(bytes),
+                expectedSizeBytes = expectedSizeBytes,
+                maxDecodedBytes = maxDecodedBytes,
+                maxEncodedBytes = maxEncodedBytes,
+            )
         }
     }
 
@@ -41927,6 +43375,9 @@ class RuntimeClientViewModelTest {
         selectedModelId: String = models.first().id,
         selectedEmbeddingModelId: String? = null,
         attachmentReader: RuntimeAttachmentReader? = null,
+        attachmentIoDispatcher: CoroutineDispatcher = Dispatchers.Main,
+        attachmentIoTimeoutMillis: Long = DEFAULT_ATTACHMENT_IO_TIMEOUT_MILLIS,
+        attachmentBudgets: RuntimeAttachmentBudgets = RuntimeAttachmentBudgets(),
         redactRuntimeOwnedLocalDataOnSave: Boolean = false,
         initialData: PersistedRuntimeData? = null,
         replacementChannel: ScriptedRuntimeProtocolChannel? = null,
@@ -41968,6 +43419,9 @@ class RuntimeClientViewModelTest {
                 localDataStore = localStore,
                 lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
                 attachmentReader = attachmentReader,
+                attachmentIoDispatcher = attachmentIoDispatcher,
+                attachmentIoTimeoutMillis = attachmentIoTimeoutMillis,
+                attachmentBudgets = attachmentBudgets,
                 attachmentPromptHeaderProvider = ::testAttachmentOnlyPromptHeader,
                 memoryMutationRequestTimeoutMillis = memoryMutationRequestTimeoutMillis,
                 memorySummaryControlRequestTimeoutMillis =
@@ -42081,6 +43535,13 @@ class RuntimeClientViewModelTest {
         return field.get(pending) as String
     }
 
+    private fun RuntimeClientViewModel.pendingRouteRefreshRequestIdForTest(): String? {
+        val pending = privateField<Any>("pendingRouteRefreshRequest") ?: return null
+        val field = pending.javaClass.getDeclaredField("requestId")
+        field.isAccessible = true
+        return field.get(pending) as String
+    }
+
     private fun RuntimeClientViewModel.pendingHistoricalResolveLocalMessageIdForTest(): String? {
         val pending = privateField<Any>("pendingHistoricalSourceAttributionResolve") ?: return null
         val field = pending.javaClass.getDeclaredField("localMessageId")
@@ -42188,6 +43649,33 @@ class RuntimeClientViewModelTest {
         )
         method.isAccessible = true
         method.invoke(this, envelope, sourceChannel, sourceConnectionGeneration)
+    }
+
+    private suspend fun RuntimeClientViewModel.handleEnvelopeForTest(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        suspendCoroutine { continuation ->
+            val method = RuntimeClientViewModel::class.java.getDeclaredMethod(
+                "handleEnvelope",
+                ProtocolEnvelope::class.java,
+                RuntimeProtocolChannel::class.java,
+                Long::class.javaPrimitiveType,
+                Continuation::class.java,
+            )
+            method.isAccessible = true
+            val result = method.invoke(
+                this,
+                envelope,
+                sourceChannel,
+                sourceConnectionGeneration,
+                continuation,
+            )
+            if (result !== COROUTINE_SUSPENDED) {
+                continuation.resume(Unit)
+            }
+        }
     }
 
     private fun RuntimeClientViewModel.handleMemoryMutationForTest(

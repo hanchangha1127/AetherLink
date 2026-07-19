@@ -47,6 +47,18 @@ final class RelayClientRegistrationAdmissionTests: XCTestCase {
             valid.replacingOccurrences(of: Self.challengeHex, with: Self.challengeHex.uppercased()),
             valid + "trailing\n",
             "AETHERLINK_RELAY client_registration_challenge {}\n",
+            valid.replacingOccurrences(
+                of: "\"ticket_generation\":8",
+                with: "\"ticket_generation\":8,\"ticket_generation\":8"
+            ),
+            valid.replacingOccurrences(
+                of: "\"ticket_generation\":8",
+                with: "\"ticket_generation\":8,\"ticket_generation\":9"
+            ),
+            valid.replacingOccurrences(
+                of: "\"ticket_generation\":8",
+                with: "\"ticket_generation\":8,\"ticket_generat\\u0069on\":8"
+            ),
         ]
 
         for line in malformed {

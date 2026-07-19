@@ -18,6 +18,31 @@ ALLOWED_PREFLIGHT_RESPONSE_FIELDS = {
 UNSAFE_RELAY_HOST_TOKENS = ("://", "/", "\\", "?", "#", "@")
 
 
+class StrictJSONError(ValueError):
+    pass
+
+
+def reject_duplicate_object_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise StrictJSONError("duplicate object key")
+        result[key] = value
+    return result
+
+
+def reject_non_finite_json_constant(_value):
+    raise StrictJSONError("non-finite JSON number")
+
+
+def strict_json_loads(value):
+    return json.loads(
+        value,
+        object_pairs_hook=reject_duplicate_object_keys,
+        parse_constant=reject_non_finite_json_constant,
+    )
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
@@ -132,9 +157,9 @@ def parse_response(host, port, line):
             f"{redacted_unexpected_response(line)}"
         )
     try:
-        payload = json.loads(line[len(RESPONSE_PREFIX):])
-    except json.JSONDecodeError as error:
-        raise RuntimeError(f"Relay {host}:{port} returned invalid preflight JSON: {error}") from error
+        payload = strict_json_loads(line[len(RESPONSE_PREFIX):])
+    except (json.JSONDecodeError, StrictJSONError, RecursionError) as error:
+        raise RuntimeError(f"Relay {host}:{port} returned invalid preflight JSON") from error
 
     if not isinstance(payload, dict):
         raise RuntimeError(f"Relay {host}:{port} returned non-object preflight JSON")

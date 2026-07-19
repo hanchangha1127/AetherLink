@@ -60,6 +60,7 @@ public final class DocumentChunker: Sendable {
 
     public func chunks(from document: ExtractedDocument) throws -> [DocumentChunk] {
         try validatePolicy()
+        try validateExtractedTextResourceLimits(document.text)
         let sourceText = document.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sourceText.isEmpty else { return [] }
 

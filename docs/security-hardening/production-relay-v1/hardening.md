@@ -19,7 +19,14 @@ The refreshed development baseline now bounds accepted sockets, suppresses
 `SIGPIPE`, tears down both active-bridge directions after the first peer closes,
 expires control records on an `EINTR`-resistant absolute deadline, cleans up
 disconnected waiting peers, disables exposed probe by default, and rejects
-exposed legacy mode. Allocation- and renewal-prefixed attempts, including
+exposed legacy mode. The refreshed 17-artifact snapshot also records strict
+duplicate-key rejection for allocation and persisted allocation JSON, validated
+runtime-identity decoding, finite positive allocation TTL capped at 24 hours,
+byte-bounded control lines, and coordinated fresh lease revalidation immediately
+before matcher registration. Android relay setup validates every DNS resolution
+result against the declared route scope, connects to the exact validated address,
+and bounds outgoing frame bodies by the protocol maximum. Allocation- and
+renewal-prefixed attempts, including
 malformed records, now consume separate monotonic source buckets before full
 parsing. A shared overflow bucket, periodic idle cleanup, scoped IPv6 identity,
 exact strict preflight classification, full-refill-before-idle validation, and
@@ -44,6 +51,10 @@ controls do not authenticate the allocation service, protect credentials with
 TLS, sign leases, establish peer-verifiable endpoint identity KEX, add pair-epoch
 recovery, or change the structural recommendation below.
 
+The current DNS-SD TXT UTF-8 byte and control-character validation lives in
+`RuntimeTransport.swift`, outside this exact 17-artifact manifest. It is noted as
+unpinned working-tree context, not treated as source-pinned portfolio evidence.
+
 ## Constraints
 
 - Preserve `Android client -> trusted runtime -> Ollama/LM Studio`; the relay is
@@ -56,6 +67,8 @@ recovery, or change the structural recommendation below.
   budget was supplied.
 - P2P NAT traversal, STUN/TURN implementation, and physical-device proof are
   separate milestones.
+- This evidence refresh grants no deployment, socket or live-network
+  authorization, Phase B execution, or production-readiness claim.
 
 ## Opportunity Portfolio
 

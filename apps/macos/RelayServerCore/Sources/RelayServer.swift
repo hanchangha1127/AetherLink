@@ -22,6 +22,7 @@ public enum RelayProbePolicy: String, Equatable, Sendable {
 public struct RelayServerConfiguration: Equatable, Sendable {
     public static let defaultHost = "127.0.0.1"
     public static let defaultAllocationTTLSeconds: TimeInterval = 15 * 60
+    public static let maximumAllocationTTLSeconds: TimeInterval = 24 * 60 * 60
     public static let defaultControlLineReadTimeoutSeconds: TimeInterval = 10
     public static let defaultMaximumConcurrentConnections = 256
 
@@ -67,6 +68,9 @@ public struct RelayServerConfiguration: Equatable, Sendable {
     }
 
     public func validate() throws {
+        guard Self.isValidAllocationTTL(allocationTTLSeconds) else {
+            throw RelayServerError.invalidAllocationTTL
+        }
         try sourceQuotaConfiguration.validate()
         try waitingPeerPolicyConfiguration.validate()
         try sourceRateLimitConfiguration.validate()
@@ -104,6 +108,10 @@ public struct RelayServerConfiguration: Equatable, Sendable {
                 RelayBindExposure.normalizedHost(host)
             )
         }
+    }
+
+    public static func isValidAllocationTTL(_ value: TimeInterval) -> Bool {
+        value.isFinite && value > 0 && value <= maximumAllocationTTLSeconds
     }
 }
 
@@ -424,27 +432,27 @@ public final class RelayServer: @unchecked Sendable {
                 registration: registration,
                 connection: connection
             )
-            let maximumWaitingDeadlineUptime = allocationBinding.map { binding in
-                let remainingLeaseSeconds = max(
-                    0,
-                    TimeInterval(
-                        binding.relayExpiresAtEpochMillis - epochMillis(Date())
-                    ) / 1_000
-                )
-                return ProcessInfo.processInfo.systemUptime + remainingLeaseSeconds
-            }
             socketRegistry.store(peer)
             let registrationAttempt: RelayRegistrationAttempt
             do {
                 if let allocationBinding {
-                    registrationAttempt = try allocationRegistry.withRevalidatedBinding(allocationBinding) {
-                        matcher.registerWithExpiredWaitingPeers(
+                    registrationAttempt = try allocationRegistry.withFreshlyRevalidatedBinding(
+                        allocationBinding
+                    ) { validationDate in
+                        let remainingLeaseSeconds = max(
+                            0,
+                            TimeInterval(
+                                allocationBinding.relayExpiresAtEpochMillis - epochMillis(validationDate)
+                            ) / 1_000
+                        )
+                        return matcher.registerWithExpiredWaitingPeers(
                             peer.registration,
                             sourceIdentity: connection.sourceIdentity,
                             requiresImmediateMatch: connection.requiresImmediateCounterpart,
                             requiresSameSourceCounterpart:
                                 connection.requiresSameSourceCounterpart,
-                            maximumWaitingDeadlineUptime: maximumWaitingDeadlineUptime
+                            maximumWaitingDeadlineUptime:
+                                ProcessInfo.processInfo.systemUptime + remainingLeaseSeconds
                         )
                     }
                 } else {
@@ -453,7 +461,7 @@ public final class RelayServer: @unchecked Sendable {
                         sourceIdentity: connection.sourceIdentity,
                         requiresImmediateMatch: connection.requiresImmediateCounterpart,
                         requiresSameSourceCounterpart: connection.requiresSameSourceCounterpart,
-                        maximumWaitingDeadlineUptime: maximumWaitingDeadlineUptime
+                        maximumWaitingDeadlineUptime: nil
                     )
                 }
             } catch {
@@ -694,8 +702,9 @@ public final class RelayServer: @unchecked Sendable {
 
         let now = Date()
         let nowEpochMillis = epochMillis(now)
-        let configuredExpiration = epochMillis(
-            now.addingTimeInterval(configuration.allocationTTLSeconds)
+        let configuredExpiration = try relayAllocationExpirationEpochMillis(
+            now: now,
+            validFor: configuration.allocationTTLSeconds
         )
         let nextExpiration = max(
             configuredExpiration,
@@ -1469,7 +1478,7 @@ struct RelayServerControlLineOperations {
 enum RelayServerControlLineReader {
     static func read(
         socket: Int32,
-        maxBytes: Int = 4096,
+        maxBytes: Int = relayControlLineMaximumUTF8Bytes,
         timeoutSeconds: TimeInterval,
         operations: RelayServerControlLineOperations = .live
     ) throws -> String {
@@ -1635,6 +1644,7 @@ public enum RelayServerError: Error, Equatable, Sendable, CustomStringConvertibl
     case registrationChallengeWriteFailed
     case probeWriteFailed
     case invalidAllocationToken
+    case invalidAllocationTTL
     case invalidControlLineReadTimeout
     case invalidMaximumConcurrentConnections
     case legacyRelayRequiresLoopback(String)
@@ -1661,6 +1671,8 @@ public enum RelayServerError: Error, Equatable, Sendable, CustomStringConvertibl
             return "probe response write failed"
         case .invalidAllocationToken:
             return "allocation token must be non-empty and contain no whitespace"
+        case .invalidAllocationTTL:
+            return "allocation TTL must be finite, greater than zero, and at most 86400 seconds"
         case .invalidControlLineReadTimeout:
             return "control line read timeout must be greater than zero and at most 300 seconds"
         case .invalidMaximumConcurrentConnections:

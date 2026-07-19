@@ -156,7 +156,7 @@
 "Source excerpt %@: %@" = "원본 발췌 %@: %@";
 "Source excerpt unavailable" = "원본 발췌 없음";
 "%d more source excerpts hidden" = "원본 발췌 %d개 더 숨김";
-"Memory source. %@. %@. %@." = "메모리 원본. %@. %@. %@.";
+"Memory source. %@. %@." = "메모리 원본. %@. %@.";
 "1 active chat" = "활성 채팅 1개";
 "%d active chats" = "활성 채팅 %d개";
 "1 archived chat" = "보관된 채팅 1개";
@@ -307,6 +307,7 @@
 "Generate New QR" = "새 QR 생성";
 "Pairing QR code" = "페어링 QR 코드";
 "Pairing QR code unavailable" = "페어링 QR 코드를 사용할 수 없음";
+"The pairing QR could not be rendered. Wait a moment or generate a new QR to try again." = "페어링 QR을 렌더링할 수 없습니다. 잠시 기다리거나 새 QR을 생성해 다시 시도하세요.";
 "Pairing QR time remaining" = "페어링 QR 남은 시간";
 "Scan this QR from AetherLink." = "AetherLink에서 이 QR을 스캔하세요.";
 "After pairing, manage or remove trusted devices in Trusted Devices." = "페어링 후 신뢰 기기에서 신뢰 기기를 관리하거나 제거할 수 있습니다.";
@@ -357,6 +358,7 @@
 "%@. Status %@. %@" = "%@. 상태 %@. %@";
 "Connection health" = "연결 상태";
 "Connection preparation" = "연결 준비";
+"Connection preparation in progress" = "연결 준비 진행 중";
 "Connection diagnostics" = "연결 진단";
 "Provider endpoint redacted." = "제공자 주소가 숨겨졌습니다.";
 "Sensitive technical detail redacted." = "민감한 기술 세부정보가 숨겨졌습니다.";
@@ -596,6 +598,9 @@
 "The document source audit was exported." = "문서 소스 감사를 내보냈습니다.";
 "Document source operation in progress" = "문서 소스 작업 진행 중";
 "Approved sources" = "승인된 소스";
+"Approved source" = "승인된 소스";
+"1 approved source" = "승인된 소스 1개";
+"%@ approved sources" = "승인된 소스 %@개";
 "No recent access audit events." = "최근 접근 감사 이벤트가 없습니다.";
 "Document sources could not be read. Check Activity." = "문서 소스를 읽을 수 없습니다. 활동을 확인하세요.";
 "Review which document sources trusted devices can access." = "신뢰된 기기가 접근할 수 있는 문서 소스를 검토하세요.";
@@ -662,3 +667,7 @@
 "%@ %@ is being unloaded by AetherLink Runtime." = "AetherLink Runtime에서 %@ %@ 모델을 언로드하고 있습니다.";
 "Could not confirm %@ %@ was unloaded. It may still be resident." = "%@ %@ 모델이 언로드되었는지 확인할 수 없습니다. 아직 상주 중일 수 있습니다.";
 "Wait for the current idle unload policy update to finish." = "현재 유휴 언로드 정책 업데이트가 끝날 때까지 기다리세요.";
+"Set up Connection Recovery before generating a pairing QR." = "페어링 QR을 생성하기 전에 연결 복구를 설정하세요.";
+"Connection preparation available" = "연결 준비 가능";
+"Prepare connection details and generate the latest pairing QR." = "연결 정보를 준비하고 최신 페어링 QR을 생성합니다.";
+"Restore connection details before generating a new QR." = "새 QR을 생성하기 전에 연결 정보를 복구하세요.";

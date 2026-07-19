@@ -20,6 +20,8 @@ WORK_DIR=""
 QR_PNG_PATH=""
 PORT="${LOCAL_AGENT_BRIDGE_PORT:-}"
 SELF_TEST_UNVERIFIED_QR_SUMMARY=0
+SELF_TEST_EVIDENCE_CORRELATION=0
+SELF_TEST_OWNED_PROCESS_CLEANUP="${AETHERLINK_OWNED_PROCESS_CLEANUP_SELF_TEST:-0}"
 
 usage() {
   cat <<'USAGE'
@@ -253,6 +255,10 @@ while [[ $# -gt 0 ]]; do
       SELF_TEST_UNVERIFIED_QR_SUMMARY=1
       shift
       ;;
+    --self-test-evidence-correlation)
+      SELF_TEST_EVIDENCE_CORRELATION=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -265,7 +271,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$SELF_TEST_UNVERIFIED_QR_SUMMARY" == "1" && -z "$RELAY_HOST" ]]; then
+if [[ "$SELF_TEST_OWNED_PROCESS_CLEANUP" == "1" ]]; then
+  RELAY_HOST="127.0.0.1"
+  RELAY_PORT="43171"
+elif [[ "$SELF_TEST_EVIDENCE_CORRELATION" == "1" ]]; then
+  RELAY_HOST="127.0.0.1"
+  RELAY_PORT="43171"
+elif [[ "$SELF_TEST_UNVERIFIED_QR_SUMMARY" == "1" && -z "$RELAY_HOST" ]]; then
   RELAY_HOST="127.0.0.1"
 fi
 
@@ -281,7 +293,10 @@ if [[ "$RELAY_HOST" == *"://"* || "$RELAY_HOST" == *"/"* || "$RELAY_HOST" == *"@
 fi
 
 NORMALIZED_RELAY_HOST="$(printf '%s' "$RELAY_HOST" | tr '[:upper:]' '[:lower:]')"
-if [[ "$START_LOCAL_RELAY" != "1" && "$SELF_TEST_UNVERIFIED_QR_SUMMARY" != "1" ]]; then
+if [[ "$START_LOCAL_RELAY" != "1" \
+  && "$SELF_TEST_UNVERIFIED_QR_SUMMARY" != "1" \
+  && "$SELF_TEST_EVIDENCE_CORRELATION" != "1" \
+  && "$SELF_TEST_OWNED_PROCESS_CLEANUP" != "1" ]]; then
   validate_remote_relay_host_for_qr "$NORMALIZED_RELAY_HOST" "$ALLOW_PRIVATE_RELAY"
 fi
 
@@ -382,35 +397,452 @@ wait_for_log() {
   done
 }
 
-log_match_count() {
-  local file="$1"
-  local pattern="$2"
-  if [[ ! -f "$file" ]]; then
-    echo 0
-    return
-  fi
-  grep -c "$pattern" "$file" || true
+refresh_correlated_evidence_state() {
+  local runtime_log="$1"
+  local state_file="$2"
+  local expected_run_id="$3"
+  local expected_route_evidence_id="$4"
+  python3 - "$runtime_log" "$state_file" "$expected_run_id" "$expected_route_evidence_id" <<'PY'
+import json
+import os
+import re
+import sys
+
+runtime_log, state_file, expected_run_id, expected_route_id = sys.argv[1:]
+
+state = {
+    "correlation_valid": False,
+    "failure_reason": None,
+    "run_anchor_present": False,
+    "route_anchor_present": False,
+    "runtime_waiting_for_peer": False,
+    "relay_ready": False,
+    "pairing_accepted": False,
+    "runtime_health": False,
+    "runtime_health_count": 0,
+    "reconnect_transition": False,
+    "reconnect_ready": False,
+    "trusted_device_reconnect": False,
+    "same_run_route_session_sequence": False,
 }
 
-wait_for_log_count_greater_than() {
-  local file="$1"
-  local pattern="$2"
-  local previous_count="$3"
-  local timeout="$4"
+run_marker = re.compile(
+    r"^\[smoke\] evidence run_start run_id=([0-9a-f]{32})$"
+)
+route_marker = re.compile(
+    r"^\[smoke\] evidence route_anchor run_id=([0-9a-f]{32}) "
+    r"route_evidence_id=([0-9a-f]{64})$"
+)
+received_health = re.compile(
+    r"^\[runtime\] relay received type=runtime\.health request_id=(\S+)$"
+)
+sent_health = re.compile(
+    r"^\[runtime\] sending type=runtime\.health request_id=(\S+)$"
+)
+
+def finish():
+    os.makedirs(os.path.dirname(os.path.abspath(state_file)), exist_ok=True)
+    temporary = state_file + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as handle:
+        json.dump(state, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    os.replace(temporary, state_file)
+
+if not re.fullmatch(r"[0-9a-f]{32}", expected_run_id):
+    state["failure_reason"] = "invalid_expected_run_id"
+    finish()
+    raise SystemExit(0)
+if not re.fullmatch(r"[0-9a-f]{64}", expected_route_id):
+    state["failure_reason"] = "route_anchor_not_generated"
+    finish()
+    raise SystemExit(0)
+
+try:
+    with open(runtime_log, encoding="utf-8", errors="replace") as handle:
+        lines = [line.rstrip("\r\n") for line in handle]
+except FileNotFoundError:
+    lines = []
+
+run_markers = [
+    (index, match.group(1))
+    for index, line in enumerate(lines)
+    if (match := run_marker.fullmatch(line)) is not None
+]
+matching_runs = [index for index, run_id in run_markers if run_id == expected_run_id]
+if len(matching_runs) != 1:
+    state["failure_reason"] = (
+        "run_anchor_missing" if not matching_runs else "run_anchor_duplicated"
+    )
+    finish()
+    raise SystemExit(0)
+
+run_index = matching_runs[0]
+state["run_anchor_present"] = True
+if any(index > run_index for index, _ in run_markers):
+    state["failure_reason"] = "run_anchor_superseded"
+    finish()
+    raise SystemExit(0)
+
+route_markers = [
+    (index, match.group(1), match.group(2))
+    for index, line in enumerate(lines)
+    if index > run_index and (match := route_marker.fullmatch(line)) is not None
+]
+matching_routes = [
+    index
+    for index, run_id, route_id in route_markers
+    if run_id == expected_run_id and route_id == expected_route_id
+]
+if len(matching_routes) != 1:
+    state["failure_reason"] = (
+        "route_anchor_missing" if not route_markers else "route_anchor_mismatch"
+    )
+    finish()
+    raise SystemExit(0)
+if len(route_markers) != 1:
+    state["failure_reason"] = "route_anchor_superseded"
+    finish()
+    raise SystemExit(0)
+
+route_index = matching_routes[0]
+state["route_anchor_present"] = True
+state["correlation_valid"] = True
+state["runtime_waiting_for_peer"] = any(
+    "[runtime] relay status=waiting_for_peer" in line
+    for line in lines[run_index + 1 :]
+)
+
+phase = "await_ready"
+pending_initial_health = set()
+pending_reconnect_health = set()
+initial_health_request_id = None
+ambiguous_pairing = False
+repaired_after_health = False
+
+for line in lines[route_index + 1 :]:
+    if "[runtime] relay status=ready" in line:
+        if phase == "await_ready":
+            state["relay_ready"] = True
+            phase = "await_pairing"
+        elif phase == "await_reconnect_ready" and state["reconnect_transition"]:
+            state["reconnect_ready"] = True
+            phase = "await_reconnect_health"
+        continue
+
+    if "[runtime] Development pairing accepted" in line:
+        if phase == "await_pairing":
+            state["pairing_accepted"] = True
+            phase = "await_initial_health"
+        elif state["pairing_accepted"] and initial_health_request_id is None:
+            ambiguous_pairing = True
+        elif initial_health_request_id is not None:
+            repaired_after_health = True
+        continue
+
+    received = received_health.fullmatch(line)
+    if received is not None:
+        request_id = received.group(1)
+        if phase == "await_initial_health":
+            pending_initial_health.add(request_id)
+        elif phase == "await_reconnect_health" and request_id != initial_health_request_id:
+            pending_reconnect_health.add(request_id)
+        continue
+
+    sent = sent_health.fullmatch(line)
+    if sent is not None:
+        request_id = sent.group(1)
+        if phase == "await_initial_health" and request_id in pending_initial_health:
+            initial_health_request_id = request_id
+            state["runtime_health"] = True
+            state["runtime_health_count"] = 1
+            state["same_run_route_session_sequence"] = True
+            phase = "await_reconnect_transition"
+        elif (
+            phase == "await_reconnect_health"
+            and request_id in pending_reconnect_health
+            and request_id != initial_health_request_id
+            and not repaired_after_health
+        ):
+            state["runtime_health_count"] = 2
+            state["trusted_device_reconnect"] = True
+            phase = "complete"
+        continue
+
+    if phase == "await_reconnect_transition" and (
+        "[runtime] relay status=reconnecting" in line
+        or "[runtime] relay status=connecting" in line
+        or "[runtime] relay status=waiting_for_peer" in line
+    ):
+        state["reconnect_transition"] = True
+        phase = "await_reconnect_ready"
+
+if ambiguous_pairing:
+    state.update(
+        correlation_valid=False,
+        failure_reason="ambiguous_pairing_sequence",
+        pairing_accepted=False,
+        runtime_health=False,
+        runtime_health_count=0,
+        reconnect_transition=False,
+        reconnect_ready=False,
+        trusted_device_reconnect=False,
+        same_run_route_session_sequence=False,
+    )
+elif repaired_after_health:
+    state["trusted_device_reconnect"] = False
+
+finish()
+PY
+}
+
+correlated_evidence_field_is_true() {
+  local state_file="$1"
+  local field="$2"
+  python3 - "$state_file" "$field" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    state = json.load(handle)
+raise SystemExit(0 if state.get(sys.argv[2]) is True else 1)
+PY
+}
+
+correlated_evidence_failure_reason() {
+  local state_file="$1"
+  python3 - "$state_file" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    state = json.load(handle)
+print(state.get("failure_reason") or "incomplete_correlated_sequence")
+PY
+}
+
+wait_for_correlated_evidence() {
+  local field="$1"
+  local description="$2"
+  local timeout="$3"
+  local timeout_label="${4:-$description}"
   local start
   start="$(date +%s)"
   while true; do
-    local count
-    count="$(log_match_count "$file" "$pattern")"
-    if (( count > previous_count )); then
+    refresh_correlated_evidence_state \
+      "$RUNTIME_LOG" \
+      "$EVIDENCE_STATE_FILE" \
+      "$EVIDENCE_RUN_ID" \
+      "$EVIDENCE_ROUTE_ID"
+    if correlated_evidence_field_is_true "$EVIDENCE_STATE_FILE" "$field"; then
       return 0
     fi
     if (( $(date +%s) - start >= timeout )); then
-      echo "Timed out waiting for another '$pattern' in $file; count stayed at $previous_count" >&2
+      local reason
+      reason="$(correlated_evidence_failure_reason "$EVIDENCE_STATE_FILE")"
+      echo "Timed out waiting for '$timeout_label' in correlated run/route/session evidence; expected $description (reason=$reason)." >&2
       return 1
     fi
     sleep 0.25
   done
+}
+
+compute_route_evidence_id() {
+  local run_id="$1"
+  local pairing_uri="$2"
+  python3 - "$run_id" "$pairing_uri" <<'PY'
+import hashlib
+import hmac
+import sys
+import urllib.parse
+
+run_id, pairing_uri = sys.argv[1:]
+parsed = urllib.parse.urlparse(pairing_uri)
+pairs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+names = [name for name, _ in pairs]
+if len(names) != len(set(names)):
+    raise SystemExit("Pairing URI contains duplicate query keys")
+query = dict(pairs)
+
+def required(*names):
+    for name in names:
+        value = query.get(name)
+        if value:
+            return value
+    raise SystemExit("Pairing URI is missing evidence correlation material")
+
+material = "\0".join(
+    (
+        required("pairing_nonce", "nonce", "n"),
+        required("runtime_device_id", "mac_device_id", "device_id", "rid"),
+        required("relay_id", "remote_id", "route_id", "network_id", "ri"),
+        required("relay_nonce", "remote_nonce", "route_nonce", "rendezvous_nonce", "rrn"),
+    )
+).encode("utf-8")
+print(hmac.new(bytes.fromhex(run_id), material, hashlib.sha256).hexdigest())
+PY
+}
+
+assert_correlated_evidence_state() {
+  local state_file="$1"
+  local field="$2"
+  local expected_json="$3"
+  python3 - "$state_file" "$field" "$expected_json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    state = json.load(handle)
+expected = json.loads(sys.argv[3])
+actual = state.get(sys.argv[2])
+if actual != expected:
+    raise SystemExit(
+        f"evidence self-test mismatch for {sys.argv[2]}: "
+        f"expected {expected!r}, got {actual!r}"
+    )
+PY
+}
+
+run_evidence_correlation_self_test() {
+  local run_id="11111111111111111111111111111111"
+  local route_id="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  local other_run_id="22222222222222222222222222222222"
+  local other_route_id="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  local duplicate_query_uri="aetherlink://pair?pairing_nonce=first&pairing_nonce=second&runtime_device_id=runtime&relay_id=relay&relay_nonce=nonce"
+  if compute_route_evidence_id "$run_id" "$duplicate_query_uri" >/dev/null 2>&1; then
+    echo "Evidence correlation accepted a duplicate pairing query key." >&2
+    return 1
+  fi
+
+  printf '%s\n' \
+    "[smoke] evidence run_start run_id=$other_run_id" \
+    "[smoke] evidence route_anchor run_id=$other_run_id route_evidence_id=$other_route_id" \
+    "[runtime] relay status=ready" \
+    "[runtime] Development pairing accepted for device_id=stale-device name=stale" \
+    "[runtime] relay received type=runtime.health request_id=stale-health" \
+    "[runtime] sending type=runtime.health request_id=stale-health" \
+    "[smoke] evidence run_start run_id=$run_id" \
+    "[runtime] relay status=waiting_for_peer" \
+    "[smoke] evidence route_anchor run_id=$run_id route_evidence_id=$route_id" \
+    >"$RUNTIME_LOG"
+  refresh_correlated_evidence_state "$RUNTIME_LOG" "$EVIDENCE_STATE_FILE" "$run_id" "$route_id"
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" correlation_valid true
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" same_run_route_session_sequence false
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" runtime_health_count 0
+
+  printf '%s\n' \
+    "[smoke] evidence run_start run_id=$run_id" \
+    "[runtime] relay status=waiting_for_peer" \
+    "[smoke] evidence route_anchor run_id=$run_id route_evidence_id=$other_route_id" \
+    "[runtime] relay status=ready" \
+    "[runtime] Development pairing accepted for device_id=mismatch-device name=mismatch" \
+    "[runtime] relay received type=runtime.health request_id=mismatch-health" \
+    "[runtime] sending type=runtime.health request_id=mismatch-health" \
+    >"$RUNTIME_LOG"
+  refresh_correlated_evidence_state "$RUNTIME_LOG" "$EVIDENCE_STATE_FILE" "$run_id" "$route_id"
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" correlation_valid false
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" failure_reason '"route_anchor_mismatch"'
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" same_run_route_session_sequence false
+
+  printf '%s\n' \
+    "[smoke] evidence run_start run_id=$run_id" \
+    "[runtime] relay status=waiting_for_peer" \
+    "[smoke] evidence route_anchor run_id=$run_id route_evidence_id=$route_id" \
+    "[runtime] relay status=ready" \
+    "[runtime] Development pairing accepted for device_id=old-run-device name=old-run" \
+    "[runtime] relay received type=runtime.health request_id=old-run-health" \
+    "[runtime] sending type=runtime.health request_id=old-run-health" \
+    "[smoke] evidence run_start run_id=$other_run_id" \
+    >"$RUNTIME_LOG"
+  refresh_correlated_evidence_state "$RUNTIME_LOG" "$EVIDENCE_STATE_FILE" "$run_id" "$route_id"
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" correlation_valid false
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" failure_reason '"run_anchor_superseded"'
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" same_run_route_session_sequence false
+
+  printf '%s\n' \
+    "[smoke] evidence run_start run_id=$run_id" \
+    "[runtime] relay status=waiting_for_peer" \
+    "[smoke] evidence route_anchor run_id=$run_id route_evidence_id=$route_id" \
+    "[runtime] relay status=ready" \
+    "[runtime] Development pairing accepted for device_id=same-request-device name=same-request" \
+    "[runtime] relay received type=runtime.health request_id=health-one" \
+    "[runtime] sending type=runtime.health request_id=health-one" \
+    "[runtime] relay status=reconnecting" \
+    "[runtime] relay status=connecting" \
+    "[runtime] relay status=waiting_for_peer" \
+    "[runtime] relay status=ready" \
+    "[runtime] relay received type=runtime.health request_id=health-one" \
+    "[runtime] sending type=runtime.health request_id=health-one" \
+    >"$RUNTIME_LOG"
+  refresh_correlated_evidence_state "$RUNTIME_LOG" "$EVIDENCE_STATE_FILE" "$run_id" "$route_id"
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" same_run_route_session_sequence true
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" runtime_health_count 1
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" trusted_device_reconnect false
+
+  printf '%s\n' \
+    "[smoke] evidence run_start run_id=$run_id" \
+    "[runtime] relay status=waiting_for_peer" \
+    "[smoke] evidence route_anchor run_id=$run_id route_evidence_id=$route_id" \
+    "[runtime] relay status=ready" \
+    "[runtime] Development pairing accepted for device_id=current-device name=current" \
+    "[runtime] relay received type=runtime.health request_id=health-one" \
+    "[runtime] sending type=runtime.health request_id=health-one" \
+    "[runtime] relay status=reconnecting" \
+    "[runtime] relay status=connecting" \
+    "[runtime] relay status=waiting_for_peer" \
+    "[runtime] relay status=ready" \
+    "[runtime] relay received type=runtime.health request_id=health-two" \
+    "[runtime] sending type=runtime.health request_id=health-two" \
+    >"$RUNTIME_LOG"
+  refresh_correlated_evidence_state "$RUNTIME_LOG" "$EVIDENCE_STATE_FILE" "$run_id" "$route_id"
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" correlation_valid true
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" runtime_waiting_for_peer true
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" relay_ready true
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" pairing_accepted true
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" runtime_health true
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" runtime_health_count 2
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" reconnect_transition true
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" reconnect_ready true
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" trusted_device_reconnect true
+  assert_correlated_evidence_state "$EVIDENCE_STATE_FILE" same_run_route_session_sequence true
+
+  EVIDENCE_RUN_ID="$run_id"
+  EVIDENCE_ROUTE_ID="$route_id"
+  EXPECT_RECONNECT=1
+  write_summary 0
+  python3 - "$SUMMARY_FILE" "$run_id" "$route_id" <<'PY'
+import json
+import sys
+
+summary_path, expected_run_id, expected_route_id = sys.argv[1:]
+with open(summary_path, encoding="utf-8") as handle:
+    summary = json.load(handle)
+coverage = summary["coverage"]
+assert summary["mode"]["evidence_correlation_self_test"] is True
+assert coverage["evidence_correlation_fixture_verified"] is True
+for field in (
+    "runtime_host_relay_registration",
+    "runtime_host_waiting_for_peer",
+    "trusted_device_relay_reachability",
+    "trusted_device_pairing",
+    "trusted_device_runtime_health",
+    "trusted_device_reconnect",
+    "same_run_route_session_correlation",
+    "reconnect_same_run_route_session_correlation",
+    "full_run_trusted_device_proof",
+    "external_network_relay_verified",
+    "production_relay",
+):
+    assert coverage[field] is False, (field, coverage[field])
+observed = summary["observed"]
+assert observed["evidence_run_id"] == expected_run_id
+assert observed["route_evidence_id"] == expected_route_id
+assert observed["runtime_health_count"] == 2
+serialized = json.dumps(summary, sort_keys=True)
+for raw_fixture_value in ("current-device", "health-one", "health-two"):
+    assert raw_fixture_value not in serialized
+PY
+
+  echo "Correlated evidence no-network self-test passed."
 }
 
 extract_pairing_uri() {
@@ -453,7 +885,11 @@ parsed = urllib.parse.urlparse(uri)
 if parsed.scheme != "aetherlink" or parsed.netloc != "pair":
     raise SystemExit("Pairing URI must use aetherlink://pair")
 
-query = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
+pairs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+names = [name for name, _ in pairs]
+if len(names) != len(set(names)):
+    raise SystemExit("Pairing URI contains duplicate query keys")
+query = dict(pairs)
 def q(*names):
     for name in names:
         value = query.get(name)
@@ -524,16 +960,331 @@ RUNTIME_IDENTITY_FILE="$WORK_DIR/runtime-identity.json"
 PAIRING_URI_FILE="$WORK_DIR/pairing-uri.txt"
 PAIRING_QR_FILE="${QR_PNG_PATH:-$WORK_DIR/pairing-qr.png}"
 SUMMARY_FILE="$WORK_DIR/summary.json"
-PORT="${PORT:-$(free_port)}"
+EVIDENCE_STATE_FILE="$WORK_DIR/evidence-state.json"
+EVIDENCE_RUN_ID="$(python3 - <<'PY'
+import secrets
+
+print(secrets.token_hex(16))
+PY
+)"
+EVIDENCE_ROUTE_ID=""
+if [[ "$SELF_TEST_EVIDENCE_CORRELATION" == "1" \
+  || "$SELF_TEST_OWNED_PROCESS_CLEANUP" == "1" ]]; then
+  PORT="${PORT:-1}"
+else
+  PORT="${PORT:-$(free_port)}"
+fi
 PAIRING_TTL_SECONDS="${PAIRING_TTL_SECONDS:-$(( TIMEOUT_SECONDS + 180 ))}"
 RUNTIME_PID=""
 RELAY_PID=""
+RELAY_SUPERVISOR_PID=""
+RELAY_PID_FILE="$WORK_DIR/relay-child.pid"
+RELAY_SUPERVISOR_START_TIME=""
+RELAY_SUPERVISOR_COMMAND=""
+RELAY_START_TIME=""
+RELAY_COMMAND=""
+RELAY_ORIGINAL_PARENT_PID=""
 QR_ROUND_TRIP_VERIFIED=0
 NETWORK_CONFIRMED=0
+
+capture_relay_process_snapshot() {
+  local pid="$1"
+  local parent_variable="$2"
+  local start_variable="$3"
+  local command_variable="$4"
+  local state_variable="$5"
+  local captured_parent_pid
+  local captured_start_time
+  local captured_command_line
+  local captured_state
+  local confirmed_start_time
+  local confirmed_command_line
+
+  captured_parent_pid="$(ps -ww -o ppid= -p "$pid" 2>/dev/null)" || return 1
+  captured_start_time="$(ps -ww -o lstart= -p "$pid" 2>/dev/null)" || return 1
+  captured_command_line="$(ps -ww -o command= -p "$pid" 2>/dev/null)" || return 1
+  captured_state="$(ps -ww -o state= -p "$pid" 2>/dev/null)" || return 1
+  confirmed_start_time="$(ps -ww -o lstart= -p "$pid" 2>/dev/null)" || return 1
+  confirmed_command_line="$(ps -ww -o command= -p "$pid" 2>/dev/null)" || return 1
+
+  captured_parent_pid="${captured_parent_pid//[[:space:]]/}"
+  captured_start_time="${captured_start_time#"${captured_start_time%%[![:space:]]*}"}"
+  confirmed_start_time="${confirmed_start_time#"${confirmed_start_time%%[![:space:]]*}"}"
+  captured_command_line="${captured_command_line#"${captured_command_line%%[![:space:]]*}"}"
+  confirmed_command_line="${confirmed_command_line#"${confirmed_command_line%%[![:space:]]*}"}"
+  captured_state="${captured_state//[[:space:]]/}"
+
+  [[ "$captured_parent_pid" =~ ^[0-9]+$ ]] || return 1
+  [[ -n "$captured_start_time" && "$captured_start_time" == "$confirmed_start_time" ]] || return 1
+  [[ -n "$captured_command_line" && "$captured_command_line" == "$confirmed_command_line" ]] || return 1
+  [[ -n "$captured_state" && "$captured_state" != Z* ]] || return 1
+
+  printf -v "$parent_variable" '%s' "$captured_parent_pid"
+  printf -v "$start_variable" '%s' "$captured_start_time"
+  printf -v "$command_variable" '%s' "$captured_command_line"
+  printf -v "$state_variable" '%s' "$captured_state"
+}
+
+relay_process_matches_identity() {
+  local pid="$1"
+  local expected_start_time="$2"
+  local expected_command_line="$3"
+  local parent_pid
+  local start_time
+  local command_line
+  local state
+
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
+  [[ -n "$expected_start_time" && -n "$expected_command_line" ]] || return 1
+  capture_relay_process_snapshot \
+    "$pid" parent_pid start_time command_line state || return 1
+  [[ "$start_time" == "$expected_start_time" ]] \
+    && [[ "$command_line" == "$expected_command_line" ]]
+}
+
+record_supervised_relay_process() {
+  local expected_child_command="$1"
+  local supervisor_parent_pid=""
+  local supervisor_start_time=""
+  local supervisor_command_line=""
+  local supervisor_state=""
+  local child_parent_pid=""
+  local child_start_time=""
+  local child_command_line=""
+  local child_state=""
+  local attempt
+
+  for attempt in {1..100}; do
+    capture_relay_process_snapshot \
+      "$RELAY_SUPERVISOR_PID" \
+      supervisor_parent_pid \
+      supervisor_start_time \
+      supervisor_command_line \
+      supervisor_state || true
+    capture_relay_process_snapshot \
+      "$RELAY_PID" \
+      child_parent_pid \
+      child_start_time \
+      child_command_line \
+      child_state || true
+    if [[ "$supervisor_parent_pid" == "$$" ]] \
+      && [[ "$child_parent_pid" == "$RELAY_SUPERVISOR_PID" ]] \
+      && [[ "$child_command_line" == *"$expected_child_command"* ]]; then
+      RELAY_SUPERVISOR_START_TIME="$supervisor_start_time"
+      RELAY_SUPERVISOR_COMMAND="$supervisor_command_line"
+      RELAY_START_TIME="$child_start_time"
+      RELAY_COMMAND="$child_command_line"
+      RELAY_ORIGINAL_PARENT_PID="$RELAY_SUPERVISOR_PID"
+      return 0
+    fi
+    if [[ -n "$child_start_time" \
+      && "$child_command_line" == *"$expected_child_command"* ]] \
+      && ! kill -0 "$RELAY_SUPERVISOR_PID" >/dev/null 2>&1; then
+      RELAY_START_TIME="$child_start_time"
+      RELAY_COMMAND="$child_command_line"
+      RELAY_ORIGINAL_PARENT_PID="$RELAY_SUPERVISOR_PID"
+      return 1
+    fi
+    sleep 0.05
+  done
+  return 1
+}
+
+terminate_recorded_relay_child_if_identical() {
+  local child_pid="$1"
+  local child_start_time="$2"
+  local child_command_line="$3"
+  local child_original_parent_pid="$4"
+  local supervisor_pid="$5"
+  local remaining_checks=60
+
+  [[ "$child_pid" != "$$" && "$child_pid" != "$PPID" ]] || return 0
+  [[ "$child_original_parent_pid" == "$supervisor_pid" ]] || return 0
+  if ! relay_process_matches_identity \
+    "$child_pid" "$child_start_time" "$child_command_line"; then
+    return 0
+  fi
+
+  kill -TERM "$child_pid" >/dev/null 2>&1 || true
+  while relay_process_matches_identity \
+    "$child_pid" "$child_start_time" "$child_command_line" \
+    && ((remaining_checks > 0)); do
+    sleep 0.05
+    remaining_checks=$((remaining_checks - 1))
+  done
+  if relay_process_matches_identity \
+    "$child_pid" "$child_start_time" "$child_command_line"; then
+    kill -KILL "$child_pid" >/dev/null 2>&1 || true
+  fi
+
+  remaining_checks=40
+  while relay_process_matches_identity \
+    "$child_pid" "$child_start_time" "$child_command_line" \
+    && ((remaining_checks > 0)); do
+    sleep 0.05
+    remaining_checks=$((remaining_checks - 1))
+  done
+}
+
+stop_and_reap_relay_supervisor_if_identical() {
+  local supervisor_pid="$1"
+  local supervisor_start_time="$2"
+  local supervisor_command_line="$3"
+  local term_remaining_checks=60
+  local kill_remaining_checks=40
+
+  kill -TERM "$supervisor_pid" >/dev/null 2>&1 || true
+  while relay_process_matches_identity \
+    "$supervisor_pid" "$supervisor_start_time" "$supervisor_command_line" \
+    && ((term_remaining_checks > 0)); do
+    sleep 0.05
+    term_remaining_checks=$((term_remaining_checks - 1))
+  done
+  if relay_process_matches_identity \
+    "$supervisor_pid" "$supervisor_start_time" "$supervisor_command_line"; then
+    kill -KILL "$supervisor_pid" >/dev/null 2>&1 || true
+  fi
+  while relay_process_matches_identity \
+    "$supervisor_pid" "$supervisor_start_time" "$supervisor_command_line" \
+    && ((kill_remaining_checks > 0)); do
+    sleep 0.05
+    kill_remaining_checks=$((kill_remaining_checks - 1))
+  done
+  if ! relay_process_matches_identity \
+    "$supervisor_pid" "$supervisor_start_time" "$supervisor_command_line"; then
+    wait "$supervisor_pid" >/dev/null 2>&1 || true
+  fi
+}
+
+cleanup_recorded_relay_process() {
+  local supervisor_pid="$RELAY_SUPERVISOR_PID"
+  local supervisor_start_time="$RELAY_SUPERVISOR_START_TIME"
+  local supervisor_command_line="$RELAY_SUPERVISOR_COMMAND"
+  local child_pid="$RELAY_PID"
+  local child_start_time="$RELAY_START_TIME"
+  local child_command_line="$RELAY_COMMAND"
+  local child_original_parent_pid="$RELAY_ORIGINAL_PARENT_PID"
+  local parent_pid=""
+  local ignored_start_time=""
+  local ignored_command_line=""
+  local ignored_state=""
+  local supervisor_was_identified=0
+
+  if [[ -n "$supervisor_pid" ]]; then
+    if [[ "$supervisor_pid" == "$$" || "$supervisor_pid" == "$PPID" ]]; then
+      return 0
+    fi
+    if [[ -n "$supervisor_start_time" ]] \
+      && relay_process_matches_identity \
+        "$supervisor_pid" "$supervisor_start_time" "$supervisor_command_line" \
+      && capture_relay_process_snapshot \
+        "$supervisor_pid" parent_pid ignored_start_time ignored_command_line ignored_state \
+      && [[ "$parent_pid" == "$$" ]]; then
+      supervisor_was_identified=1
+    elif [[ -z "$supervisor_start_time" ]] \
+      && capture_relay_process_snapshot \
+        "$supervisor_pid" parent_pid ignored_start_time ignored_command_line ignored_state \
+      && [[ "$parent_pid" == "$$" ]] \
+      && [[ "$ignored_command_line" == *"$ROOT_DIR/script/owned_process_supervisor.sh"* ]]; then
+      supervisor_start_time="$ignored_start_time"
+      supervisor_command_line="$ignored_command_line"
+      supervisor_was_identified=1
+    fi
+    if ((supervisor_was_identified == 1)); then
+      stop_and_reap_relay_supervisor_if_identical \
+        "$supervisor_pid" "$supervisor_start_time" "$supervisor_command_line"
+    fi
+  fi
+  if [[ -n "$child_pid" ]]; then
+    terminate_recorded_relay_child_if_identical \
+      "$child_pid" \
+      "$child_start_time" \
+      "$child_command_line" \
+      "$child_original_parent_pid" \
+      "$supervisor_pid"
+  fi
+
+  RELAY_SUPERVISOR_PID=""
+  RELAY_PID=""
+  RELAY_SUPERVISOR_START_TIME=""
+  RELAY_SUPERVISOR_COMMAND=""
+  RELAY_START_TIME=""
+  RELAY_COMMAND=""
+  RELAY_ORIGINAL_PARENT_PID=""
+}
+
+run_relay_cleanup_self_test() {
+  local original_child_pid
+  local original_child_start_time
+  local original_child_command
+
+  rm -f "$RELAY_PID_FILE"
+  "$ROOT_DIR/script/owned_process_supervisor.sh" \
+    --owner-pid "$$" \
+    --pid-file "$RELAY_PID_FILE" \
+    --grace-seconds 1 \
+    -- /bin/sleep 30 \
+    >"$RELAY_LOG" 2>&1 &
+  RELAY_SUPERVISOR_PID="$!"
+  for _ in {1..100}; do
+    if [[ -s "$RELAY_PID_FILE" ]]; then
+      RELAY_PID="$(<"$RELAY_PID_FILE")"
+      break
+    fi
+    sleep 0.05
+  done
+  [[ "$RELAY_PID" =~ ^[1-9][0-9]*$ ]]
+  record_supervised_relay_process /bin/sleep
+  [[ "$RELAY_SUPERVISOR_PID" != "$$" && "$RELAY_SUPERVISOR_PID" != "$PPID" ]]
+  [[ "$RELAY_PID" != "$$" && "$RELAY_PID" != "$PPID" ]]
+  original_child_pid="$RELAY_PID"
+  original_child_start_time="$RELAY_START_TIME"
+  original_child_command="$RELAY_COMMAND"
+
+  kill -KILL "$RELAY_SUPERVISOR_PID"
+  wait "$RELAY_SUPERVISOR_PID" >/dev/null 2>&1 || true
+  relay_process_matches_identity \
+    "$RELAY_PID" "$original_child_start_time" "$original_child_command"
+  terminate_recorded_relay_child_if_identical \
+    "$RELAY_PID" \
+    "$original_child_start_time" \
+    "$original_child_command mismatched" \
+    "$RELAY_ORIGINAL_PARENT_PID" \
+    "$RELAY_SUPERVISOR_PID"
+  relay_process_matches_identity \
+    "$RELAY_PID" "$original_child_start_time" "$original_child_command"
+
+  cleanup_recorded_relay_process
+  if relay_process_matches_identity \
+    "$original_child_pid" "$original_child_start_time" "$original_child_command"; then
+    echo "Recorded relay child survived exact-identity parent cleanup." >&2
+    return 1
+  fi
+  echo "No-ADB owned-process cleanup self-test passed."
+}
+
+if [[ "$SELF_TEST_OWNED_PROCESS_CLEANUP" == "1" ]]; then
+  trap cleanup_recorded_relay_process EXIT
+  run_relay_cleanup_self_test
+  trap - EXIT
+  exit 0
+fi
+
+start_evidence_run() {
+  rm -f "$RELAY_LOG" "$EVIDENCE_STATE_FILE"
+  printf '%s\n' \
+    "[smoke] evidence run_start run_id=$EVIDENCE_RUN_ID" \
+    >"$RUNTIME_LOG"
+}
 
 write_summary() {
   local exit_status="${1:-0}"
   [[ -n "${SUMMARY_FILE:-}" ]] || return 0
+  refresh_correlated_evidence_state \
+    "$RUNTIME_LOG" \
+    "$EVIDENCE_STATE_FILE" \
+    "$EVIDENCE_RUN_ID" \
+    "$EVIDENCE_ROUTE_ID"
   python3 - \
     "$SUMMARY_FILE" \
     "$exit_status" \
@@ -547,13 +1298,17 @@ write_summary() {
     "$RUNTIME_LOG" \
     "$RELAY_LOG" \
     "$PAIRING_URI_FILE" \
-	    "$PAIRING_QR_FILE" \
-	    "$QR_ROUND_TRIP_VERIFIED" \
-	    "$ALLOW_DIRECT_FALLBACK" \
-	    "$PRINT_URI" \
-	    "$REQUIRE_MANUAL_NETWORK_CONFIRMATION" \
-	    "$NETWORK_CONFIRMED" \
-	    "$SELF_TEST_UNVERIFIED_QR_SUMMARY" <<'PY'
+    "$PAIRING_QR_FILE" \
+    "$QR_ROUND_TRIP_VERIFIED" \
+    "$ALLOW_DIRECT_FALLBACK" \
+    "$PRINT_URI" \
+    "$REQUIRE_MANUAL_NETWORK_CONFIRMATION" \
+    "$NETWORK_CONFIRMED" \
+    "$SELF_TEST_UNVERIFIED_QR_SUMMARY" \
+        "$SELF_TEST_EVIDENCE_CORRELATION" \
+        "$EVIDENCE_STATE_FILE" \
+        "$EVIDENCE_RUN_ID" \
+        "$EVIDENCE_ROUTE_ID" <<'PY'
 import datetime as dt
 import json
 import os
@@ -581,6 +1336,10 @@ import urllib.parse
     require_manual_network_confirmation,
     network_confirmed,
     self_test_unverified_qr_summary,
+    self_test_evidence_correlation,
+    evidence_state_file,
+    evidence_run_id,
+    route_evidence_id,
 ) = sys.argv[1:]
 
 def read(path):
@@ -593,7 +1352,25 @@ def read(path):
 runtime_text = read(runtime_log)
 relay_text = read(relay_log)
 pairing_uri_text = read(pairing_uri_file).strip()
-health_count = runtime_text.count("runtime.health")
+try:
+    with open(evidence_state_file, encoding="utf-8") as handle:
+        evidence = json.load(handle)
+except (FileNotFoundError, json.JSONDecodeError, OSError):
+    evidence = {}
+
+def evidence_bool(field):
+    return evidence.get(field) is True
+
+health_count = evidence.get("runtime_health_count", 0)
+if not isinstance(health_count, int) or isinstance(health_count, bool) or health_count < 0:
+    health_count = 0
+same_run_route_session_sequence = evidence_bool("same_run_route_session_sequence")
+correlated_reconnect = evidence_bool("trusted_device_reconnect")
+correlation_fixture_self_test = self_test_evidence_correlation == "1"
+claimable_correlated_sequence = (
+    same_run_route_session_sequence and not correlation_fixture_self_test
+)
+claimable_correlated_reconnect = correlated_reconnect and not correlation_fixture_self_test
 runtime_log_artifact_present = os.path.exists(runtime_log)
 relay_log_artifact_present = os.path.exists(relay_log)
 pairing_uri_artifact_present = os.path.exists(pairing_uri_file)
@@ -612,7 +1389,10 @@ def pairing_uri_queries(text):
 def pairing_uri_query(uri):
     parsed = urllib.parse.urlparse(uri.strip())
     if parsed.scheme == "aetherlink" and parsed.netloc == "pair":
-        return dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
+        pairs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        names = [name for name, _ in pairs]
+        if len(names) == len(set(names)):
+            return dict(pairs)
     return {}
 
 def has_any(query, *names):
@@ -671,35 +1451,54 @@ summary = {
         "expect_reconnect": expect_reconnect == "1",
         "print_uri": print_uri == "1",
         "require_manual_network_confirmation": require_manual_network_confirmation == "1",
+        "evidence_correlation_self_test": correlation_fixture_self_test,
     },
     "artifacts": {
         "runtime_log": runtime_log if runtime_log_artifact_present else None,
         "relay_log": relay_log if relay_log_artifact_present else None,
         "pairing_uri": pairing_uri_file if pairing_uri_artifact_present else None,
         "pairing_qr": pairing_qr_file if pairing_qr_artifact_present else None,
+        "evidence_state": evidence_state_file if os.path.exists(evidence_state_file) else None,
     },
     "coverage": {
-        "runtime_host_relay_registration": "accepted role=runtime" in relay_text,
-        "runtime_host_waiting_for_peer": "relay status=waiting_for_peer" in runtime_text,
-        "trusted_device_relay_reachability": "relay status=ready" in runtime_text or "accepted role=client" in relay_text,
-        "trusted_device_pairing": "Development pairing accepted" in runtime_text,
-        "trusted_device_runtime_health": health_count > 0,
-        "trusted_device_reconnect": expect_reconnect == "1" and health_count > 1,
+        "runtime_host_relay_registration": (
+            evidence_bool("runtime_waiting_for_peer") and not correlation_fixture_self_test
+        ),
+        "runtime_host_waiting_for_peer": (
+            evidence_bool("runtime_waiting_for_peer") and not correlation_fixture_self_test
+        ),
+        "trusted_device_relay_reachability": (
+            evidence_bool("relay_ready") and not correlation_fixture_self_test
+        ),
+        "trusted_device_pairing": (
+            evidence_bool("pairing_accepted") and not correlation_fixture_self_test
+        ),
+        "trusted_device_runtime_health": (
+            evidence_bool("runtime_health") and not correlation_fixture_self_test
+        ),
+        "trusted_device_reconnect": (
+            expect_reconnect == "1" and claimable_correlated_reconnect
+        ),
+        "same_run_route_session_correlation": claimable_correlated_sequence,
+        "reconnect_same_run_route_session_correlation": (
+            expect_reconnect == "1" and claimable_correlated_reconnect
+        ),
+        "evidence_correlation_fixture_verified": (
+            correlation_fixture_self_test
+            and same_run_route_session_sequence
+            and correlated_reconnect
+        ),
         "optical_qr_scan": False,
         "external_network_operator_confirmed": network_confirmed == "1",
         "full_run_trusted_device_proof": (
             emit_only != "1"
-            and "relay status=ready" in runtime_text
-            and "Development pairing accepted" in runtime_text
-            and health_count > 0
+            and claimable_correlated_sequence
         ),
         "external_network_relay_verified": (
             start_local_relay != "1"
             and emit_only != "1"
             and network_confirmed == "1"
-            and "relay status=ready" in runtime_text
-            and "Development pairing accepted" in runtime_text
-            and health_count > 0
+            and claimable_correlated_sequence
         ),
         "production_relay": False,
         "production_session_key_exchange": False,
@@ -728,12 +1527,21 @@ summary = {
         "artifact_only_emit_mode": emit_only == "1",
     },
     "observed": {
-        "runtime_waiting_for_peer": "relay status=waiting_for_peer" in runtime_text,
-        "relay_ready": "relay status=ready" in runtime_text,
-        "pairing_accepted": "Development pairing accepted" in runtime_text,
+        "evidence_run_id": evidence_run_id,
+        "route_evidence_id": route_evidence_id or None,
+        "correlation_valid": evidence_bool("correlation_valid"),
+        "correlation_failure_reason": evidence.get("failure_reason"),
+        "run_anchor_present": evidence_bool("run_anchor_present"),
+        "route_anchor_present": evidence_bool("route_anchor_present"),
+        "runtime_waiting_for_peer": evidence_bool("runtime_waiting_for_peer"),
+        "relay_ready": evidence_bool("relay_ready"),
+        "pairing_accepted": evidence_bool("pairing_accepted"),
         "runtime_health_count": health_count,
-        "relay_runtime_registered": "accepted role=runtime" in relay_text,
-        "relay_client_registered": "accepted role=client" in relay_text,
+        "runtime_health_succeeded": evidence_bool("runtime_health"),
+        "reconnect_transition": evidence_bool("reconnect_transition"),
+        "reconnect_ready": evidence_bool("reconnect_ready"),
+        "relay_runtime_registered": evidence_bool("runtime_waiting_for_peer"),
+        "relay_client_registered": evidence_bool("relay_ready"),
     },
 }
 
@@ -754,15 +1562,25 @@ elif pairing_uri_artifact_present or pairing_qr_artifact_present:
     caveats.append("manual_scan_qr_artifacts_not_verified_as_route_material")
 if emit_only == "1":
     caveats.append("artifact_only_emit_mode")
+if correlation_fixture_self_test:
+    caveats.append("no_network_evidence_correlation_fixture_only")
 caveats.append("not_production_session_key_exchange_proof")
 caveats.append("not_production_end_to_end_transport_encryption_proof")
 if emit_only != "1" and network_confirmed != "1":
     caveats.append("external_network_operator_confirmation_missing")
 if start_local_relay == "1":
     caveats.append("local_relay_only_unless_advertised_host_is_public_vpn_tunnel_or_overlay")
-if "relay status=waiting_for_peer" in runtime_text and "relay status=ready" not in runtime_text:
+if route_evidence_id and not evidence_bool("correlation_valid"):
+    caveats.append("run_route_evidence_correlation_failed")
+if "relay status=ready" in runtime_text and not evidence_bool("relay_ready"):
+    caveats.append("uncorrelated_relay_ready_ignored")
+if "Development pairing accepted" in runtime_text and not evidence_bool("pairing_accepted"):
+    caveats.append("uncorrelated_pairing_acceptance_ignored")
+if "runtime.health" in runtime_text and not evidence_bool("runtime_health"):
+    caveats.append("uncorrelated_or_unsuccessful_runtime_health_ignored")
+if evidence_bool("runtime_waiting_for_peer") and not evidence_bool("relay_ready"):
     caveats.append("runtime_reached_relay_but_trusted_device_did_not_join")
-if "relay status=ready" in runtime_text and "Development pairing accepted" not in runtime_text:
+if evidence_bool("relay_ready") and not evidence_bool("pairing_accepted"):
     caveats.append("relay_matched_but_pairing_not_accepted")
 summary["caveats"] = caveats
 
@@ -772,11 +1590,17 @@ with open(summary_path, "w", encoding="utf-8") as handle:
 PY
 }
 
+start_evidence_run
+
+if [[ "$SELF_TEST_EVIDENCE_CORRELATION" == "1" ]]; then
+  run_evidence_correlation_self_test
+  exit 0
+fi
+
 if [[ "$SELF_TEST_UNVERIFIED_QR_SUMMARY" == "1" ]]; then
   EMIT_ONLY=1
   printf '%s\n' "aetherlink://pair?self_test=unverified_qr_summary&relay_host=$RELAY_HOST&relay_port=$RELAY_PORT" >"$PAIRING_URI_FILE"
   printf '%s\n' "self-test unverified QR artifact placeholder" >"$PAIRING_QR_FILE"
-  : >"$RUNTIME_LOG"
   : >"$RELAY_LOG"
   QR_ROUND_TRIP_VERIFIED=0
   write_summary 0
@@ -791,10 +1615,7 @@ cleanup() {
     kill "$RUNTIME_PID" >/dev/null 2>&1 || true
     wait "$RUNTIME_PID" >/dev/null 2>&1 || true
   fi
-  if [[ -n "$RELAY_PID" ]]; then
-    kill "$RELAY_PID" >/dev/null 2>&1 || true
-    wait "$RELAY_PID" >/dev/null 2>&1 || true
-  fi
+  cleanup_recorded_relay_process
 }
 trap cleanup EXIT
 
@@ -819,8 +1640,33 @@ if [[ "$START_LOCAL_RELAY" == "1" ]]; then
   if [[ -n "$ALLOCATION_TOKEN" ]]; then
     export AETHERLINK_RELAY_ALLOCATION_TOKEN="$ALLOCATION_TOKEN"
   fi
-  "${RELAY_ARGS[@]}" >"$RELAY_LOG" 2>&1 &
-  RELAY_PID="$!"
+  rm -f "$RELAY_PID_FILE"
+  "$ROOT_DIR/script/owned_process_supervisor.sh" \
+    --owner-pid "$$" \
+    --pid-file "$RELAY_PID_FILE" \
+    -- "${RELAY_ARGS[@]}" \
+    >"$RELAY_LOG" 2>&1 &
+  RELAY_SUPERVISOR_PID="$!"
+  for _ in {1..100}; do
+    if [[ -s "$RELAY_PID_FILE" ]]; then
+      RELAY_PID="$(<"$RELAY_PID_FILE")"
+      break
+    fi
+    if ! kill -0 "$RELAY_SUPERVISOR_PID" >/dev/null 2>&1; then
+      wait "$RELAY_SUPERVISOR_PID" >/dev/null 2>&1 || true
+      echo "Local relay supervisor exited before recording its child PID." >&2
+      exit 1
+    fi
+    sleep 0.05
+  done
+  if ! [[ "$RELAY_PID" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Local relay supervisor did not record a valid child PID." >&2
+    exit 1
+  fi
+  if ! record_supervised_relay_process "$RELAY_BIN"; then
+    echo "Local relay child identity could not be bound to its recorded supervisor." >&2
+    exit 1
+  fi
   wait_for_log "$RELAY_LOG" "development relay listening" 10
   echo "Relay log: $RELAY_LOG"
 fi
@@ -851,12 +1697,16 @@ if [[ "$USE_MOCK_BACKEND" == "1" ]]; then
 fi
 env \
   "${RUNTIME_ENV[@]}" \
-  "$RUNTIME_BIN" >"$RUNTIME_LOG" 2>&1 &
+  "$RUNTIME_BIN" >>"$RUNTIME_LOG" 2>&1 &
 RUNTIME_PID="$!"
 
 wait_for_log "$RUNTIME_LOG" "AETHERLINK_DEV_PAIRING_URI" 20
 PAIRING_URI="$(extract_pairing_uri "$RUNTIME_LOG")"
 validate_pairing_uri "$PAIRING_URI" "$RELAY_HOST" "$RELAY_PORT"
+EVIDENCE_ROUTE_ID="$(compute_route_evidence_id "$EVIDENCE_RUN_ID" "$PAIRING_URI")"
+printf '%s\n' \
+  "[smoke] evidence route_anchor run_id=$EVIDENCE_RUN_ID route_evidence_id=$EVIDENCE_ROUTE_ID" \
+  >>"$RUNTIME_LOG"
 printf '%s\n' "$PAIRING_URI" >"$PAIRING_URI_FILE"
 
 echo "Pairing URI: $PAIRING_URI_FILE"
@@ -909,25 +1759,29 @@ if [[ "$REQUIRE_MANUAL_NETWORK_CONFIRMATION" == "1" ]]; then
   echo "Manual network confirmation is required before waiting for the trusted device."
   echo "Confirm that the Android device is not using the same local network path as the runtime host, and that no adb reverse/tether tunnel is being used for the relay route."
   read -r -p "Type DIFFERENT_NETWORK or CELLULAR to continue: " NETWORK_CONFIRMATION
-	  if [[ "$NETWORK_CONFIRMATION" != "DIFFERENT_NETWORK" && "$NETWORK_CONFIRMATION" != "CELLULAR" ]]; then
-	    echo "Network confirmation failed; refusing to wait for a result that could be mistaken for cross-network evidence." >&2
-	    exit 2
-	  fi
-	  NETWORK_CONFIRMED=1
-	fi
+  if [[ "$NETWORK_CONFIRMATION" != "DIFFERENT_NETWORK" && "$NETWORK_CONFIRMATION" != "CELLULAR" ]]; then
+    echo "Network confirmation failed; refusing to wait for a result that could be mistaken for cross-network evidence." >&2
+    exit 2
+  fi
+  NETWORK_CONFIRMED=1
+fi
 
 echo "Waiting up to ${TIMEOUT_SECONDS}s for relay match, pairing acceptance, and runtime.health..."
-wait_for_log "$RUNTIME_LOG" "relay status=ready" "$TIMEOUT_SECONDS"
-wait_for_log "$RUNTIME_LOG" "Development pairing accepted" "$TIMEOUT_SECONDS"
-wait_for_log "$RUNTIME_LOG" "runtime.health" "$TIMEOUT_SECONDS"
-INITIAL_HEALTH_COUNT="$(log_match_count "$RUNTIME_LOG" "runtime.health")"
+wait_for_correlated_evidence \
+  same_run_route_session_sequence \
+  "relay-ready, pairing-accepted, and successful runtime.health sequence" \
+  "$TIMEOUT_SECONDS" \
+  "relay status=ready"
 
 echo "OK: no-ADB external relay pairing smoke observed relay ready, pairing accepted, and runtime.health."
 if [[ "$EXPECT_RECONNECT" == "1" ]]; then
   echo "Reconnect phase: fully close and reopen AetherLink on the trusted device, or tap reconnect."
-  echo "Waiting up to ${TIMEOUT_SECONDS}s for another runtime.health from the saved trusted relay route..."
-  wait_for_log_count_greater_than "$RUNTIME_LOG" "runtime.health" "$INITIAL_HEALTH_COUNT" "$TIMEOUT_SECONDS"
-  echo "OK: no-ADB external relay reconnect smoke observed a second runtime.health."
+  echo "Waiting up to ${TIMEOUT_SECONDS}s for a new relay-ready transition and successful runtime.health from the saved trusted relay route..."
+  wait_for_correlated_evidence \
+    trusted_device_reconnect \
+    "saved-route reconnect transition and distinct successful runtime.health" \
+    "$TIMEOUT_SECONDS"
+  echo "OK: no-ADB external relay reconnect smoke observed a correlated second runtime.health."
 fi
 echo "Runtime log: $RUNTIME_LOG"
 if [[ -f "$RELAY_LOG" ]]; then

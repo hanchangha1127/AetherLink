@@ -54,6 +54,31 @@ public struct PairingSession: Identifiable, Equatable, Sendable {
         pairingPayload(compact: true)
     }
 
+    /// Whether QR payload emission will include the complete canonical relay field set.
+    public var hasCompleteCanonicalRelayQRCodeMaterial: Bool {
+        relayQRCodeMaterial() != nil
+    }
+
+    public static func hasCompleteCanonicalRelayQRCodeMaterial(
+        relayHost: String?,
+        relayPort: Int?,
+        relayID: String?,
+        relaySecret: String?,
+        relayExpiresAtEpochMillis: Int64?,
+        relayNonce: String?,
+        relayScope: String?
+    ) -> Bool {
+        relayQRCodeMaterial(
+            relayHost: relayHost,
+            relayPort: relayPort,
+            relayID: relayID,
+            relaySecret: relaySecret,
+            relayExpiresAtEpochMillis: relayExpiresAtEpochMillis,
+            relayNonce: relayNonce,
+            relayScope: relayScope
+        ) != nil
+    }
+
     private func pairingPayload(compact: Bool) -> String {
         var components = URLComponents()
         components.scheme = "aetherlink"
@@ -107,7 +132,27 @@ public struct PairingSession: Identifiable, Equatable, Sendable {
     }
 
     private func relayQRCodeMaterial() -> RelayQRCodeMaterial? {
-        guard let rawRelayHost = relayHost,
+        Self.relayQRCodeMaterial(
+            relayHost: relayHost,
+            relayPort: relayPort,
+            relayID: relayID,
+            relaySecret: relaySecret,
+            relayExpiresAtEpochMillis: relayExpiresAtEpochMillis,
+            relayNonce: relayNonce,
+            relayScope: relayScope
+        )
+    }
+
+    private static func relayQRCodeMaterial(
+        relayHost rawRelayHost: String?,
+        relayPort: Int?,
+        relayID: String?,
+        relaySecret: String?,
+        relayExpiresAtEpochMillis: Int64?,
+        relayNonce: String?,
+        relayScope: String?
+    ) -> RelayQRCodeMaterial? {
+        guard let rawRelayHost,
               let relayHost = Self.canonicalRelayHostValue(rawRelayHost),
               Self.relayHostMatchesRelayScope(relayHost, relayScope: relayScope),
               let relayPort,

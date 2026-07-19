@@ -2,8 +2,47 @@ import CompanionCore
 import Foundation
 import SwiftUI
 
+struct ActivityLogEntry: Identifiable, Equatable {
+    let id: UUID
+    let line: String
+}
+
+func reconcileActivityLogEntries(
+    lines: [String],
+    previous: [ActivityLogEntry],
+    makeID: () -> UUID = { UUID() }
+) -> [ActivityLogEntry] {
+    guard !lines.isEmpty else { return [] }
+
+    var addedCount = lines.count
+    for candidateAddedCount in 0...lines.count {
+        let retainedCount = lines.count - candidateAddedCount
+        guard retainedCount <= previous.count else { continue }
+        let incomingSuffix = Array(lines.dropFirst(candidateAddedCount))
+        let previousPrefix = previous.prefix(retainedCount).map(\.line)
+        if incomingSuffix == previousPrefix {
+            addedCount = candidateAddedCount
+            break
+        }
+    }
+
+    let newEntries = lines.prefix(addedCount).map {
+        ActivityLogEntry(id: makeID(), line: $0)
+    }
+    let retainedEntries = previous.prefix(lines.count - addedCount)
+    return newEntries + Array(retainedEntries)
+}
+
 struct LogsView: View {
     @ObservedObject var model: CompanionAppModel
+    @State private var logEntries: [ActivityLogEntry]
+
+    init(model: CompanionAppModel) {
+        self.model = model
+        _logEntries = State(
+            initialValue: reconcileActivityLogEntries(lines: model.logs, previous: [])
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -14,7 +53,7 @@ struct LogsView: View {
             )
 
             CompanionPanel(title: NSLocalizedString("Activity", comment: ""), systemImage: "clock.arrow.circlepath") {
-                if model.logs.isEmpty {
+                if logEntries.isEmpty {
                     let emptyActivityTitle = NSLocalizedString("No activity yet", comment: "")
                     let emptyActivityDescription = NSLocalizedString("Activity appears here after AetherLink Runtime starts receiving requests.", comment: "")
                     ContentUnavailableView(
@@ -34,12 +73,12 @@ struct LogsView: View {
                     )
                 } else {
                     List {
-                        ForEach(Array(model.logs.enumerated()), id: \.offset) { index, line in
+                        ForEach(Array(logEntries.enumerated()), id: \.element.id) { index, entry in
                             LogRow(
-                                display: localizedLogDisplay(line),
-                                tone: logTone(line),
+                                display: localizedLogDisplay(entry.line),
+                                tone: logTone(entry.line),
                                 position: index + 1,
-                                totalCount: model.logs.count
+                                totalCount: logEntries.count
                             )
                             .padding(.vertical, 4)
                         }
@@ -47,13 +86,16 @@ struct LogsView: View {
                     .listStyle(.inset)
                     .frame(minHeight: 300)
                     .accessibilityLabel(Text(activityLogListAccessibilityLabel()))
-                    .accessibilityValue(Text(activityLogListAccessibilityValue(count: model.logs.count)))
+                    .accessibilityValue(Text(activityLogListAccessibilityValue(count: logEntries.count)))
                 }
             }
 
             Spacer(minLength: 0)
         }
         .padding(24)
+        .onChange(of: model.logs) { _, lines in
+            logEntries = reconcileActivityLogEntries(lines: lines, previous: logEntries)
+        }
     }
 }
 

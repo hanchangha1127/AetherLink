@@ -332,6 +332,109 @@ final class RelayPeerClientTests: XCTestCase {
         XCTAssertEqual(disconnectRecorder.count, 1)
     }
 
+    func testRelayPeerClientIgnoresLateStatesFromReplacedConnection() throws {
+        let harness = RelayPeerClientRaceHarness()
+        let firstStatuses = RelayStatusRecorder()
+        let secondStatuses = RelayStatusRecorder()
+        let disconnects = RelayDisconnectRecorder()
+        let client = RelayPeerClient(dependencies: harness.dependencies)
+        defer { client.stop() }
+        client.onDisconnect = { id in
+            disconnects.append(id)
+        }
+
+        client.start(
+            configuration: Self.raceConfiguration(host: "relay-a.test", relayID: "relay-a"),
+            onStatusChange: { status in firstStatuses.append(status) },
+            onMessage: { _, _ in }
+        )
+        let firstStateHandler = try XCTUnwrap(harness.stateHandler(at: 0))
+
+        client.start(
+            configuration: Self.raceConfiguration(host: "relay-b.test", relayID: "relay-b"),
+            onStatusChange: { status in secondStatuses.append(status) },
+            onMessage: { _, _ in }
+        )
+        let secondStateHandler = try XCTUnwrap(harness.stateHandler(at: 1))
+
+        XCTAssertEqual(disconnects.count, 1)
+        XCTAssertEqual(firstStatuses.values, [.connecting, .stopped])
+        XCTAssertEqual(secondStatuses.values, [.connecting])
+
+        firstStateHandler(.waiting(.posix(.ECONNREFUSED)))
+        firstStateHandler(.failed(.posix(.ECONNRESET)))
+        firstStateHandler(.cancelled)
+
+        XCTAssertEqual(disconnects.count, 1)
+        XCTAssertEqual(secondStatuses.values, [.connecting])
+        XCTAssertEqual(harness.scheduledCount, 0)
+
+        secondStateHandler(.cancelled)
+        XCTAssertEqual(disconnects.count, 2)
+        XCTAssertEqual(secondStatuses.values, [.connecting, .reconnecting(nil)])
+        XCTAssertEqual(harness.scheduledCount, 1)
+
+        harness.runScheduledOperation(at: 0)
+        XCTAssertEqual(harness.connectionHosts, ["relay-a.test", "relay-b.test", "relay-b.test"])
+        XCTAssertEqual(secondStatuses.values, [.connecting, .reconnecting(nil), .connecting])
+    }
+
+    func testRelayPeerClientIgnoresAlreadyFiredReconnectTimerFromPreviousGeneration() throws {
+        let harness = RelayPeerClientRaceHarness()
+        let firstStatuses = RelayStatusRecorder()
+        let secondStatuses = RelayStatusRecorder()
+        let client = RelayPeerClient(dependencies: harness.dependencies)
+        defer { client.stop() }
+
+        client.start(
+            configuration: Self.raceConfiguration(host: "relay-a.test", relayID: "relay-a"),
+            onStatusChange: { status in firstStatuses.append(status) },
+            onMessage: { _, _ in }
+        )
+        let firstStateHandler = try XCTUnwrap(harness.stateHandler(at: 0))
+        firstStateHandler(.failed(.posix(.ECONNRESET)))
+
+        XCTAssertEqual(harness.scheduledCount, 1)
+        XCTAssertEqual(
+            firstStatuses.values,
+            [
+                .connecting,
+                .failed(NWError.posix(.ECONNRESET).localizedDescription),
+                .reconnecting(NWError.posix(.ECONNRESET).localizedDescription)
+            ]
+        )
+
+        client.start(
+            configuration: Self.raceConfiguration(host: "relay-b.test", relayID: "relay-b"),
+            onStatusChange: { status in secondStatuses.append(status) },
+            onMessage: { _, _ in }
+        )
+        XCTAssertTrue(harness.isScheduledOperationCancelled(at: 0))
+
+        // Model a timer whose queue callback began just before cancellation.
+        harness.runScheduledOperation(at: 0)
+
+        XCTAssertEqual(harness.connectionHosts, ["relay-a.test", "relay-b.test"])
+        XCTAssertEqual(secondStatuses.values, [.connecting])
+
+        let secondStateHandler = try XCTUnwrap(harness.stateHandler(at: 1))
+        secondStateHandler(.cancelled)
+        XCTAssertEqual(harness.scheduledCount, 2)
+        harness.runScheduledOperation(at: 1)
+
+        XCTAssertEqual(harness.connectionHosts, ["relay-a.test", "relay-b.test", "relay-b.test"])
+        XCTAssertEqual(secondStatuses.values, [.connecting, .reconnecting(nil), .connecting])
+    }
+
+    private static func raceConfiguration(host: String, relayID: String) -> RelayPeerConfiguration {
+        RelayPeerConfiguration(
+            host: host,
+            port: 43171,
+            relayID: relayID,
+            reconnectDelay: 60
+        )
+    }
+
     func testRelayPeerClientRetireKeepsCurrentConnectionAndSuppressesReconnect() throws {
         let server = try ControlledRelayServer()
         defer { server.stop() }
@@ -1326,6 +1429,10 @@ private final class RelayStatusRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var statuses: [RelayPeerStatus] = []
 
+    var values: [RelayPeerStatus] {
+        lock.withLock { statuses }
+    }
+
     func append(_ status: RelayPeerStatus) {
         lock.withLock {
             statuses.append(status)
@@ -1342,6 +1449,79 @@ private final class RelayStatusRecorder: @unchecked Sendable {
         lock.withLock {
             statuses.contains(where: predicate)
         }
+    }
+}
+
+private final class RelayPeerClientRaceHarness: @unchecked Sendable {
+    private struct ScheduledOperation {
+        let operation: () -> Void
+        var isCancelled = false
+    }
+
+    private let lock = NSLock()
+    private var connections = [NWConnection]()
+    private var hosts = [String]()
+    private var scheduledOperations = [ScheduledOperation]()
+
+    var dependencies: RelayPeerClientDependencies {
+        RelayPeerClientDependencies(
+            makeConnection: { [weak self] host, _ in
+                let connection = NWConnection(host: "127.0.0.1", port: 1, using: .tcp)
+                self?.lock.withLock {
+                    self?.connections.append(connection)
+                    self?.hosts.append(host)
+                }
+                return connection
+            },
+            startConnection: { _ in },
+            cancelConnection: { _ in },
+            scheduleReconnect: { [weak self] _, operation in
+                guard let self else {
+                    return RelayPeerReconnectTask(cancelHandler: {})
+                }
+                let index = self.lock.withLock {
+                    self.scheduledOperations.append(ScheduledOperation(operation: operation))
+                    return self.scheduledOperations.index(before: self.scheduledOperations.endIndex)
+                }
+                return RelayPeerReconnectTask { [weak self] in
+                    self?.lock.withLock {
+                        guard let self,
+                              self.scheduledOperations.indices.contains(index)
+                        else { return }
+                        self.scheduledOperations[index].isCancelled = true
+                    }
+                }
+            }
+        )
+    }
+
+    var connectionHosts: [String] {
+        lock.withLock { hosts }
+    }
+
+    var scheduledCount: Int {
+        lock.withLock { scheduledOperations.count }
+    }
+
+    func stateHandler(at index: Int) -> ((NWConnection.State) -> Void)? {
+        lock.withLock {
+            guard connections.indices.contains(index) else { return nil }
+            return connections[index].stateUpdateHandler
+        }
+    }
+
+    func isScheduledOperationCancelled(at index: Int) -> Bool {
+        lock.withLock {
+            guard scheduledOperations.indices.contains(index) else { return false }
+            return scheduledOperations[index].isCancelled
+        }
+    }
+
+    func runScheduledOperation(at index: Int) {
+        let operation = lock.withLock {
+            scheduledOperations[index].operation
+        }
+        operation()
     }
 }
 

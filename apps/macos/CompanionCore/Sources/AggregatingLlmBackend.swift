@@ -59,11 +59,63 @@ private final class RuntimeResidencyUnloadGate: @unchecked Sendable {
     }
 }
 
+private final class RuntimeResidencyDrainGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var activated = false
+    private var waiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
+
+    func waitUntilActivated() async throws {
+        try Task.checkCancellation()
+        let waiterID = UUID()
+        let wasActivated = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let immediateResult: Bool? = lock.withLock {
+                    if activated {
+                        return true
+                    }
+                    if Task.isCancelled {
+                        return false
+                    }
+                    waiters[waiterID] = continuation
+                    return nil
+                }
+                if let immediateResult {
+                    continuation.resume(returning: immediateResult)
+                }
+            }
+        } onCancel: {
+            let continuation = self.lock.withLock {
+                self.waiters.removeValue(forKey: waiterID)
+            }
+            continuation?.resume(returning: false)
+        }
+
+        guard wasActivated else {
+            throw CancellationError()
+        }
+        try Task.checkCancellation()
+    }
+
+    func activate() {
+        let continuations = lock.withLock {
+            guard !activated else {
+                return [CheckedContinuation<Bool, Never>]()
+            }
+            activated = true
+            let continuations = Array(waiters.values)
+            waiters.removeAll(keepingCapacity: false)
+            return continuations
+        }
+        continuations.forEach { $0.resume(returning: true) }
+    }
+}
+
 private struct RuntimeResidencyUnloadOperation: @unchecked Sendable {
     let id: UUID
     let model: RuntimeModelResidencyKey
     let reason: RuntimeModelResidencyUnloadReason
     let gate: RuntimeResidencyUnloadGate
+    let completionGate: RuntimeResidencyDrainGate
     let task: Task<Void, Never>
 }
 
@@ -74,12 +126,15 @@ private enum RuntimeResidencyUnloadExecution {
 
 private enum RuntimeResidencyPreparation {
     case cancelled
+    case waitForDrain(RuntimeResidencyDrainGate)
     case wait(RuntimeResidencyUnloadOperation)
     case ready(activeChanged: Bool)
 }
 
 public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
     public let provider = ModelProvider.aggregate
+
+    private static let bufferedChatEventLimit = 64
 
     private let orderedBackends: [any LlmBackend]
     private let backendsByProvider: [ModelProvider: any LlmBackend]
@@ -97,7 +152,9 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
     private var modelIdleUnloadDelayNanoseconds: UInt64
     private let idleUnloadSleeper: @Sendable (UInt64) async throws -> Void
     private let idleUnloadAttemptHandler: @Sendable () -> Void
+    private let residencyDrainWaitHandler: @Sendable () -> Void
     private var residencyUnloadOperations: [RuntimeModelResidencyKey: RuntimeResidencyUnloadOperation] = [:]
+    private var residencyDrainGates: [RuntimeModelResidencyKey: RuntimeResidencyDrainGate] = [:]
     private var residencyEventHandler: (@Sendable (RuntimeModelResidencyEvent) -> Void)?
 
     public convenience init(
@@ -118,7 +175,8 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
         _ backends: [any LlmBackend],
         modelIdleUnloadDelayNanoseconds: UInt64,
         idleUnloadSleeper: @escaping @Sendable (UInt64) async throws -> Void,
-        idleUnloadAttemptHandler: @escaping @Sendable () -> Void = {}
+        idleUnloadAttemptHandler: @escaping @Sendable () -> Void = {},
+        residencyDrainWaitHandler: @escaping @Sendable () -> Void = {}
     ) {
         let uniqueBackends = Self.firstBackendsByProvider(backends)
         orderedBackends = uniqueBackends.ordered
@@ -126,6 +184,7 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
         self.modelIdleUnloadDelayNanoseconds = modelIdleUnloadDelayNanoseconds
         self.idleUnloadSleeper = idleUnloadSleeper
         self.idleUnloadAttemptHandler = idleUnloadAttemptHandler
+        self.residencyDrainWaitHandler = residencyDrainWaitHandler
     }
 
     public convenience init(ollama: any LlmBackend, lmStudio: any LlmBackend) {
@@ -270,7 +329,7 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
     }
 
     public func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
-        AsyncThrowingStream { continuation in
+        AsyncThrowingStream(bufferingPolicy: .bufferingOldest(Self.bufferedChatEventLimit)) { continuation in
             let reservation = RuntimeAggregateGenerationReservation()
             let task = Task {
                 await reservation.waitUntilActivated()
@@ -299,6 +358,7 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
                         backend: backend
                     )
                     for try await event in providerEvents {
+                        try Self.yieldChatEvent(event, to: continuation)
                         if case .done = event {
                             if let source = backend.takeProviderUsageSource(
                                 generationID: routedRequest.generationID
@@ -310,24 +370,28 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
                             }
                             if !residencyFinished {
                                 residencyFinished = true
-                                await finishResidency(for: currentResidencyModel)
+                                try await finishResidency(for: currentResidencyModel)
                             }
                         }
-                        continuation.yield(event)
                     }
                     if !residencyFinished {
                         residencyFinished = true
-                        await finishResidency(for: currentResidencyModel)
+                        try await finishResidency(for: currentResidencyModel)
                     }
                     forget(generationID: request.generationID, reservation: reservation)
                     continuation.finish()
                 } catch {
+                    var terminalError: Error = error
                     if let residencyModel, !residencyFinished {
                         residencyFinished = true
-                        await finishResidency(for: residencyModel)
+                        do {
+                            try await finishResidency(for: residencyModel)
+                        } catch {
+                            terminalError = error
+                        }
                     }
                     forget(generationID: request.generationID, reservation: reservation)
-                    continuation.finish(throwing: error)
+                    continuation.finish(throwing: terminalError)
                 }
             }
             reservation.task = task
@@ -373,18 +437,28 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
             modelID: resolved.modelID
         )
         try await prepareResidency(for: residencyModel)
+        var residencyFinished = false
         do {
             try Task.checkCancellation()
             let result = try await backend.embed(request: EmbeddingRequest(
                 model: resolved.modelID,
                 texts: request.texts
             ))
-            await finishResidency(for: residencyModel)
+            residencyFinished = true
+            try await finishResidency(for: residencyModel)
             return result
         } catch {
-            await finishResidency(for: residencyModel)
+            var terminalError: Error = error
+            if !residencyFinished {
+                residencyFinished = true
+                do {
+                    try await finishResidency(for: residencyModel)
+                } catch {
+                    terminalError = error
+                }
+            }
             try Task.checkCancellation()
-            throw error
+            throw terminalError
         }
     }
 
@@ -571,13 +645,13 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
                 idleResidencyStartedAtUptimeNanoseconds = nil
 
                 let previous = activeResidencyModel
-                let previousCanUnload = previous.flatMap {
-                    inFlightResidencyCounts[$0, default: 0] == 0 ? $0 : nil
-                }
-                if let previousCanUnload, previousCanUnload != model {
+                if let previous, previous != model {
+                    guard inFlightResidencyCounts[previous, default: 0] == 0 else {
+                        return .waitForDrain(makeResidencyDrainGateLocked(for: previous))
+                    }
                     return .wait(
                         makeResidencyUnloadOperationLocked(
-                            for: previousCanUnload,
+                            for: previous,
                             reason: .modelSwitch
                         )
                     )
@@ -590,9 +664,12 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
             switch preparation {
             case .cancelled:
                 throw CancellationError()
+            case .waitForDrain(let drainGate):
+                residencyDrainWaitHandler()
+                try await drainGate.waitUntilActivated()
+                continue
             case .wait(let unloadOperation):
-                await runResidencyUnloadOperation(unloadOperation)
-                try Task.checkCancellation()
+                try await waitForResidencyUnloadOperation(unloadOperation)
                 continue
             case .ready(let activeChanged):
                 if activeChanged {
@@ -605,37 +682,59 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
         }
     }
 
-    private func finishResidency(for model: RuntimeModelResidencyKey) async {
-        let unloadOperation: RuntimeResidencyUnloadOperation? = lock.withLock {
+    private func finishResidency(for model: RuntimeModelResidencyKey) async throws {
+        let outcome: (
+            unloadOperation: RuntimeResidencyUnloadOperation?,
+            drainGate: RuntimeResidencyDrainGate?
+        ) = lock.withLock {
             let remaining = max(0, inFlightResidencyCounts[model, default: 0] - 1)
             if remaining == 0 {
                 inFlightResidencyCounts[model] = nil
             } else {
                 inFlightResidencyCounts[model] = remaining
-                return nil
+                return (nil, nil)
             }
+            let drainGate = residencyDrainGates.removeValue(forKey: model)
 
             if activeResidencyModel == model {
                 idleResidencyStartedAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
                 if modelIdleUnloadDelayNanoseconds == 0 {
                     idleResidencyStartedAtUptimeNanoseconds = nil
                     cancelIdleUnloadTaskLocked()
-                    return makeResidencyUnloadOperationLocked(for: model, reason: .idleTimeout)
+                    return (
+                        makeResidencyUnloadOperationLocked(for: model, reason: .idleTimeout),
+                        drainGate
+                    )
                 }
                 scheduleIdleUnloadTaskLocked(
                     for: model,
                     delayNanoseconds: modelIdleUnloadDelayNanoseconds
                 )
-                return nil
+                return (nil, drainGate)
             }
 
-            return makeResidencyUnloadOperationLocked(for: model, reason: .modelSwitch)
+            return (
+                makeResidencyUnloadOperationLocked(for: model, reason: .modelSwitch),
+                drainGate
+            )
         }
+        outcome.drainGate?.activate()
         emit(.stateChanged)
 
-        if let unloadOperation {
-            await runResidencyUnloadOperation(unloadOperation)
+        if let unloadOperation = outcome.unloadOperation {
+            try await waitForResidencyUnloadOperation(unloadOperation)
         }
+    }
+
+    private func makeResidencyDrainGateLocked(
+        for model: RuntimeModelResidencyKey
+    ) -> RuntimeResidencyDrainGate {
+        if let existing = residencyDrainGates[model] {
+            return existing
+        }
+        let gate = RuntimeResidencyDrainGate()
+        residencyDrainGates[model] = gate
+        return gate
     }
 
     private func cancelIdleUnloadTaskLocked() {
@@ -695,7 +794,9 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
 
         let id = UUID()
         let gate = RuntimeResidencyUnloadGate()
+        let completionGate = RuntimeResidencyDrainGate()
         let task = Task { [weak self] in
+            defer { completionGate.activate() }
             await gate.waitUntilActivated()
             guard let self else { return }
             let execution = await self.performResidencyUnload(model, reason: reason)
@@ -722,6 +823,7 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
             model: model,
             reason: reason,
             gate: gate,
+            completionGate: completionGate,
             task: task
         )
         residencyUnloadOperations[model] = operation
@@ -733,6 +835,13 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
     ) async {
         operation.gate.activate()
         await operation.task.value
+    }
+
+    private func waitForResidencyUnloadOperation(
+        _ operation: RuntimeResidencyUnloadOperation
+    ) async throws {
+        operation.gate.activate()
+        try await operation.completionGate.waitUntilActivated()
     }
 
     private func completeResidencyUnloadOperation(
@@ -812,6 +921,32 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
     private func emit(_ event: RuntimeModelResidencyEvent) {
         let handler = lock.withLock { residencyEventHandler }
         handler?(event)
+    }
+
+    private static func yieldChatEvent(
+        _ event: ChatStreamEvent,
+        to continuation: AsyncThrowingStream<ChatStreamEvent, Error>.Continuation
+    ) throws {
+        switch continuation.yield(event) {
+        case .enqueued:
+            return
+        case .dropped:
+            throw BackendError(
+                provider: .aggregate,
+                code: "bad_backend_response",
+                message: "The aggregate stream violated a bounded response contract.",
+                retryable: false
+            )
+        case .terminated:
+            throw CancellationError()
+        @unknown default:
+            throw BackendError(
+                provider: .aggregate,
+                code: "bad_backend_response",
+                message: "The aggregate stream violated a bounded response contract.",
+                retryable: false
+            )
+        }
     }
 
     private static func canonicalModelName(_ name: String) -> String {

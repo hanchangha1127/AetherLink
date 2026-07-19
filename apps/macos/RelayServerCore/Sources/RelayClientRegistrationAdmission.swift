@@ -33,6 +33,7 @@ public struct RelayPairedClientRegistrationChallengeResponse: Equatable, Sendabl
             throw RelayAllocationError.invalidResponseFormat
         }
         do {
+            try StrictJSONDocumentValidator.validate(data)
             return Self(
                 challenge: try JSONDecoder().decode(
                     PairedClientRelayRegistrationChallenge.self,

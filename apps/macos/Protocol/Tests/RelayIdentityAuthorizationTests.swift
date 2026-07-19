@@ -40,6 +40,37 @@ final class RelayIdentityAuthorizationTests: XCTestCase {
         ))
     }
 
+    func testRuntimeIdentityDecodingRevalidatesFingerprintBindingAndPreservesEncoding() throws {
+        let validJSONString = """
+        {"fingerprint":"\(Self.fingerprint)","publicKeyBase64":"\(Self.publicKeyBase64)"}
+        """
+        let validJSON = Data(validJSONString.utf8)
+        let decoded = try JSONDecoder().decode(RelayRuntimeIdentity.self, from: validJSON)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+
+        XCTAssertEqual(decoded.fingerprint, Self.fingerprint)
+        XCTAssertEqual(decoded.publicKeyBase64, Self.publicKeyBase64)
+        XCTAssertEqual(
+            try encoder.encode(decoded),
+            Data(validJSONString.replacingOccurrences(of: "/", with: "\\/").utf8)
+        )
+
+        let mismatchedJSON = Data(
+            """
+            {"fingerprint":"\(String(repeating: "0", count: 64))","publicKeyBase64":"\(Self.publicKeyBase64)"}
+            """.utf8
+        )
+        XCTAssertThrowsError(
+            try JSONDecoder().decode(RelayRuntimeIdentity.self, from: mismatchedJSON)
+        ) { error in
+            XCTAssertEqual(
+                error as? RelayIdentityAuthorizationError,
+                .invalidRuntimeIdentity
+            )
+        }
+    }
+
     func testAllocationChallengeMatchesExactTranscriptAndDerivationVectors() throws {
         let challenge = try allocationChallenge()
 

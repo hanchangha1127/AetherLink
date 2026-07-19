@@ -46,14 +46,15 @@ public struct RuntimeAdvertisementMetadata: Equatable, Sendable {
 
     public var txtRecord: [String: String] {
         var record: [String: String] = [:]
-        if let version = Self.safeDiscoveryTXTValue(version) {
+        if let version = Self.safeDiscoveryTXTValue(version, key: "version") {
             record["version"] = version
         }
-        if let app = Self.safeDiscoveryTXTValue(app) {
+        if let app = Self.safeDiscoveryTXTValue(app, key: "app") {
             record["app"] = app
         }
         if let routeToken = Self.safeDiscoveryTXTValue(
             routeToken,
+            key: "route_token",
             normalizesDisplayWhitespace: false,
             rejectsWhitespace: true
         ) {
@@ -68,6 +69,7 @@ public struct RuntimeAdvertisementMetadata: Equatable, Sendable {
 
     private static func safeDiscoveryTXTValue(
         _ rawValue: String?,
+        key: String,
         normalizesDisplayWhitespace: Bool = true,
         rejectsWhitespace: Bool = false
     ) -> String? {
@@ -77,7 +79,9 @@ public struct RuntimeAdvertisementMetadata: Equatable, Sendable {
         let value = normalizesDisplayWhitespace
             ? rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
             : rawValue
-        guard !value.isEmpty, value.count <= 160 else {
+        guard !value.isEmpty,
+              key.utf8.count + 1 + value.utf8.count <= 255
+        else {
             return nil
         }
         if rejectsWhitespace,

@@ -36,6 +36,9 @@ object RuntimePairingPayloadParser {
         allowDebugLoopbackRelay: Boolean = false,
         allowDiagnosticLocalDirectEndpoint: Boolean = false,
     ): RuntimePairingPayload {
+        require(rawValue.length <= MAX_PAIRING_QR_RAW_CHARS) {
+            "Pairing QR payload is too large"
+        }
         val uri = URI(rawValue.trim())
         val scheme = uri.scheme?.lowercase()
         require(scheme == "aetherlink" || scheme == "lab") {
@@ -234,6 +237,18 @@ object RuntimePairingPayloadParser {
 
     private fun parseQuery(rawQuery: String?): Map<String, String> {
         if (rawQuery.isNullOrBlank()) return emptyMap()
+        require(rawQuery.length <= MAX_PAIRING_QR_RAW_CHARS) {
+            "Pairing QR query is too large"
+        }
+        var segmentCount = 1
+        rawQuery.forEach { character ->
+            if (character == '&') {
+                segmentCount += 1
+                require(segmentCount <= MAX_PAIRING_QR_QUERY_SEGMENTS) {
+                    "Pairing QR has too many query fields"
+                }
+            }
+        }
         val query = linkedMapOf<String, String>()
         rawQuery
             .split("&")
@@ -494,19 +509,17 @@ fun isCanonicalOpaqueRouteValue(
 fun isCanonicalRelayHostValue(host: String?): Boolean {
     val value = host ?: return false
     return value.isNotBlank() &&
+        value.length <= MAX_RELAY_HOST_CHARS &&
         value == value.trim() &&
         value.none(Char::isWhitespace) &&
         !value.contains("://") &&
-        value.none { char -> char == '/' || char == '?' || char == '#' || char == '@' }
+        value.none { char -> char == '/' || char == '?' || char == '#' || char == '@' } &&
+        !value.normalizedRelayHost().isNonCanonicalNumericRelayHost()
 }
 
 fun isEligibleRemoteRelayHost(host: String, relayScope: String? = null): Boolean {
     if (!isCanonicalRelayHostValue(host)) return false
-    val normalized = host.trim()
-        .removePrefix("[")
-        .removeSuffix("]")
-        .removeSuffix(".")
-        .lowercase()
+    val normalized = host.normalizedRelayHost()
     if (normalized.isBlank()) return false
     if (normalized == "localhost" ||
         normalized == "::1" ||
@@ -523,6 +536,15 @@ fun isEligibleRemoteRelayHost(host: String, relayScope: String? = null): Boolean
     }
     return true
 }
+
+private fun String.normalizedRelayHost(): String = trim()
+    .removePrefix("[")
+    .removeSuffix("]")
+    .removeSuffix(".")
+    .lowercase()
+
+private fun String.isNonCanonicalNumericRelayHost(): Boolean =
+    isNotEmpty() && all(Char::isDigit) && !contains('.')
 
 fun isAllowedRemoteRelayScope(relayScope: String?): Boolean =
     relayScope == null || relayScope in ALLOWED_REMOTE_RELAY_SCOPES
@@ -618,6 +640,9 @@ private fun String.isAllowedDebugLoopbackRelay(
 
 private const val DEBUG_USB_REVERSE_RELAY_SCOPE = "usb_reverse"
 private const val PRIVATE_OVERLAY_RELAY_SCOPE = "private_overlay"
+private const val MAX_RELAY_HOST_CHARS = 253
+private const val MAX_PAIRING_QR_RAW_CHARS = 16_384
+private const val MAX_PAIRING_QR_QUERY_SEGMENTS = 128
 private const val PRIVATE_OVERLAY_RELAY_SCOPE_REQUIRED_QR_ERROR =
     "Private relay hosts require relay_scope=private_overlay"
 private const val LOCAL_DIRECT_DIAGNOSTIC_SCOPE = "local_diagnostic"

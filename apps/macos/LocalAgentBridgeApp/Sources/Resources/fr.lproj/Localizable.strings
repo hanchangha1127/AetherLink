@@ -156,7 +156,7 @@
 "Source excerpt %@: %@" = "Extrait source %@ : %@";
 "Source excerpt unavailable" = "Extrait source indisponible";
 "%d more source excerpts hidden" = "%d autres extraits source masqués";
-"Memory source. %@. %@. %@." = "Source de la mémoire. %@. %@. %@.";
+"Memory source. %@. %@." = "Source de la mémoire. %@. %@.";
 "1 active chat" = "1 chat actif";
 "%d active chats" = "%d chats actifs";
 "1 archived chat" = "1 chat archivé";
@@ -307,6 +307,7 @@
 "Generate New QR" = "Générer un nouveau QR";
 "Pairing QR code" = "QR code de jumelage";
 "Pairing QR code unavailable" = "QR code de jumelage indisponible";
+"The pairing QR could not be rendered. Wait a moment or generate a new QR to try again." = "Impossible d’afficher le QR de jumelage. Attendez un instant ou générez un nouveau QR pour réessayer.";
 "Pairing QR time remaining" = "Temps restant du QR de jumelage";
 "Scan this QR from AetherLink." = "Scannez ce QR dans AetherLink.";
 "After pairing, manage or remove trusted devices in Trusted Devices." = "Après le jumelage, gérez ou retirez les appareils approuvés dans Appareils approuvés.";
@@ -357,6 +358,7 @@
 "%@. Status %@. %@" = "%@. État %@. %@";
 "Connection health" = "État de connexion";
 "Connection preparation" = "Préparation de connexion";
+"Connection preparation in progress" = "Préparation de la connexion en cours";
 "Connection diagnostics" = "Diagnostics de connexion";
 "Provider endpoint redacted." = "Adresse du fournisseur masquée.";
 "Sensitive technical detail redacted." = "Détail technique sensible masqué.";
@@ -596,6 +598,9 @@
 "The document source audit was exported." = "L’audit des sources documentaires a été exporté.";
 "Document source operation in progress" = "Opération sur la source documentaire en cours";
 "Approved sources" = "Sources approuvées";
+"Approved source" = "Source approuvée";
+"1 approved source" = "1 source approuvée";
+"%@ approved sources" = "%@ sources approuvées";
 "No recent access audit events." = "Aucun événement récent d’audit des accès.";
 "Document sources could not be read. Check Activity." = "Impossible de lire les sources documentaires. Consultez l’activité.";
 "Review which document sources trusted devices can access." = "Examinez les sources documentaires auxquelles les appareils de confiance peuvent accéder.";
@@ -662,3 +667,7 @@
 "%@ %@ is being unloaded by AetherLink Runtime." = "AetherLink Runtime décharge %@ %@.";
 "Could not confirm %@ %@ was unloaded. It may still be resident." = "Impossible de confirmer que %@ %@ a été déchargé. Il est peut-être encore en mémoire.";
 "Wait for the current idle unload policy update to finish." = "Attendez la fin de la mise à jour de la stratégie de déchargement après inactivité.";
+"Set up Connection Recovery before generating a pairing QR." = "Configurez la récupération de connexion avant de générer un QR de jumelage.";
+"Connection preparation available" = "Préparation de la connexion disponible";
+"Prepare connection details and generate the latest pairing QR." = "Préparez les informations de connexion et générez le dernier QR de jumelage.";
+"Restore connection details before generating a new QR." = "Restaurez les informations de connexion avant de générer un nouveau QR.";

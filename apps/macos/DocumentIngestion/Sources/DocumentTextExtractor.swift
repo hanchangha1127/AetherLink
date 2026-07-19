@@ -1,5 +1,6 @@
 import Foundation
 import PDFKit
+import Darwin
 
 public struct ExtractedDocument: Equatable, Sendable {
     public var fileName: String
@@ -20,6 +21,8 @@ public let documentIngestionResourcePolicyMaxArchiveEntriesCeiling = 512
 public let documentIngestionResourcePolicyMaxArchiveEntryBytesCeiling = 8 * 1024 * 1024
 public let documentIngestionResourcePolicyMaxConverterOutputBytesCeiling = 8 * 1024 * 1024
 public let documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling = 200_000
+public let documentIngestionResourcePolicyMaxExtractedTextUTF8BytesCeiling = 1 * 1024 * 1024
+let documentIngestionProcessTimeout: TimeInterval = 30
 
 public struct DocumentIngestionResourcePolicy: Equatable, Sendable {
     public static let standard = DocumentIngestionResourcePolicy()
@@ -30,6 +33,7 @@ public struct DocumentIngestionResourcePolicy: Equatable, Sendable {
     public var maxArchiveEntryBytes: Int
     public var maxConverterOutputBytes: Int
     public var maxExtractedTextCharacters: Int
+    public var maxExtractedTextUTF8Bytes: Int
 
     public init(
         maxInputBytes: Int = documentIngestionResourcePolicyMaxInputBytesCeiling,
@@ -37,7 +41,8 @@ public struct DocumentIngestionResourcePolicy: Equatable, Sendable {
         maxArchiveEntries: Int = documentIngestionResourcePolicyMaxArchiveEntriesCeiling,
         maxArchiveEntryBytes: Int = documentIngestionResourcePolicyMaxArchiveEntryBytesCeiling,
         maxConverterOutputBytes: Int = documentIngestionResourcePolicyMaxConverterOutputBytesCeiling,
-        maxExtractedTextCharacters: Int = documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling
+        maxExtractedTextCharacters: Int = documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling,
+        maxExtractedTextUTF8Bytes: Int = documentIngestionResourcePolicyMaxExtractedTextUTF8BytesCeiling
     ) {
         self.maxInputBytes = maxInputBytes
         self.maxArchiveListingBytes = maxArchiveListingBytes
@@ -45,6 +50,7 @@ public struct DocumentIngestionResourcePolicy: Equatable, Sendable {
         self.maxArchiveEntryBytes = maxArchiveEntryBytes
         self.maxConverterOutputBytes = maxConverterOutputBytes
         self.maxExtractedTextCharacters = maxExtractedTextCharacters
+        self.maxExtractedTextUTF8Bytes = maxExtractedTextUTF8Bytes
     }
 }
 
@@ -80,98 +86,177 @@ public enum DocumentIngestionError: Error, Equatable, LocalizedError, Sendable {
     }
 }
 
+public enum DocumentInputValidationError: Error, Equatable, LocalizedError, Sendable {
+    case unsafeInputFile(String)
+    case inputReadFailed(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .unsafeInputFile(let path):
+            return "Document input must be a regular file without symbolic links: \(path)"
+        case .inputReadFailed(let path):
+            return "Could not read document input: \(path)"
+        }
+    }
+}
+
+struct DocumentInputSnapshotHooks: Sendable {
+    var didOpenSourceDescriptor: (@Sendable (URL) throws -> Void)?
+
+    init(didOpenSourceDescriptor: (@Sendable (URL) throws -> Void)? = nil) {
+        self.didOpenSourceDescriptor = didOpenSourceDescriptor
+    }
+}
+
 public final class DocumentTextExtractor: Sendable {
     private let resourcePolicy: DocumentIngestionResourcePolicy
+    private let snapshotHooks: DocumentInputSnapshotHooks
 
     public init(resourcePolicy: DocumentIngestionResourcePolicy = .standard) {
         self.resourcePolicy = resourcePolicy
+        snapshotHooks = DocumentInputSnapshotHooks()
+    }
+
+    init(
+        resourcePolicy: DocumentIngestionResourcePolicy = .standard,
+        snapshotHooks: DocumentInputSnapshotHooks
+    ) {
+        self.resourcePolicy = resourcePolicy
+        self.snapshotHooks = snapshotHooks
     }
 
     public func extractText(from fileURL: URL, mimeType: String? = nil) throws -> ExtractedDocument {
         try validateResourcePolicy(resourcePolicy)
+        let processDeadline = try DocumentProcessDeadline(timeout: documentIngestionProcessTimeout)
         let kind = DocumentKind(fileURL: fileURL, mimeType: mimeType)
-        try enforceFileSizeLimit(fileURL, limit: resourcePolicy.maxInputBytes)
+        if case .unsupported = kind {
+            throw DocumentIngestionError.unsupportedFileType(fileURL.path)
+        }
+        let snapshot = try makePrivateDocumentInputSnapshot(
+            of: fileURL,
+            byteLimit: resourcePolicy.maxInputBytes,
+            deadline: processDeadline,
+            hooks: snapshotHooks
+        )
+        let snapshotURL = snapshot.fileURL
         let text: String
         switch kind {
         case .pdf:
-            text = try extractPDFText(from: fileURL)
+            text = try extractPDFText(
+                from: snapshotURL,
+                displayPath: fileURL.path,
+                processDeadline: processDeadline
+            )
         case .docx:
             text = try extractZippedText(
-                from: fileURL,
+                from: snapshotURL,
+                displayPath: fileURL.path,
                 preferredEntries: ["word/document.xml"],
                 fallbackEntryPrefixes: ["word/"],
-                allowedPathExtensions: ["xml"]
+                allowedPathExtensions: ["xml"],
+                processDeadline: processDeadline
             )
         case .hwpx:
             text = try extractZippedText(
-                from: fileURL,
+                from: snapshotURL,
+                displayPath: fileURL.path,
                 preferredEntries: ["Contents/section0.xml"],
                 fallbackEntryPrefixes: ["Contents/"],
-                allowedPathExtensions: ["xml"]
+                allowedPathExtensions: ["xml"],
+                processDeadline: processDeadline
             )
         case .odt:
             text = try extractZippedText(
-                from: fileURL,
+                from: snapshotURL,
+                displayPath: fileURL.path,
                 preferredEntries: ["content.xml"],
                 fallbackEntryPrefixes: [],
-                allowedPathExtensions: ["xml"]
+                allowedPathExtensions: ["xml"],
+                processDeadline: processDeadline
             )
         case .ods, .odp:
             text = try extractZippedText(
-                from: fileURL,
+                from: snapshotURL,
+                displayPath: fileURL.path,
                 preferredEntries: ["content.xml"],
                 fallbackEntryPrefixes: [],
-                allowedPathExtensions: ["xml"]
+                allowedPathExtensions: ["xml"],
+                processDeadline: processDeadline
             )
         case .xlsx:
             text = try extractZippedText(
-                from: fileURL,
+                from: snapshotURL,
+                displayPath: fileURL.path,
                 preferredEntries: ["xl/sharedStrings.xml"],
                 fallbackEntryPrefixes: ["xl/worksheets/"],
-                allowedPathExtensions: ["xml"]
+                allowedPathExtensions: ["xml"],
+                processDeadline: processDeadline
             )
         case .pptx:
             text = try extractZippedText(
-                from: fileURL,
+                from: snapshotURL,
+                displayPath: fileURL.path,
                 preferredEntries: [],
                 fallbackEntryPrefixes: ["ppt/slides/", "ppt/notesSlides/"],
-                allowedPathExtensions: ["xml"]
+                allowedPathExtensions: ["xml"],
+                processDeadline: processDeadline
             )
         case .epub:
             text = try extractZippedText(
-                from: fileURL,
+                from: snapshotURL,
+                displayPath: fileURL.path,
                 preferredEntries: [],
                 fallbackEntryPrefixes: [],
-                allowedPathExtensions: ["xhtml", "html", "htm", "xml", "opf", "txt"]
+                allowedPathExtensions: ["xhtml", "html", "htm", "xml", "opf", "txt"],
+                processDeadline: processDeadline
             )
         case .pages, .numbers, .keynote:
             text = try extractZippedText(
-                from: fileURL,
+                from: snapshotURL,
+                displayPath: fileURL.path,
                 preferredEntries: ["index.xml"],
                 fallbackEntryPrefixes: [],
-                allowedPathExtensions: ["xml", "xhtml", "html", "htm", "txt"]
+                allowedPathExtensions: ["xml", "xhtml", "html", "htm", "txt"],
+                processDeadline: processDeadline
             )
         case .rtf:
-            text = try extractRTFText(from: fileURL)
+            text = try extractRTFText(from: snapshotURL, processDeadline: processDeadline)
         case .html:
-            text = try extractHTMLText(from: fileURL)
+            text = try extractHTMLText(from: snapshotURL, processDeadline: processDeadline)
         case .legacyWord, .webArchive:
-            text = try extractTextutilText(from: fileURL)
+            text = try extractTextutilText(
+                from: snapshotURL,
+                displayPath: fileURL.path,
+                processDeadline: processDeadline
+            )
         case .legacySpreadsheet, .legacyPresentation, .legacyHWP:
-            text = try extractBinaryText(from: fileURL)
+            text = try extractBinaryText(from: snapshotURL, processDeadline: processDeadline)
         case .hwpml, .xml:
-            text = XMLTextCollector.collectText(from: try Data(contentsOf: fileURL))
+            text = XMLTextCollector.collectText(from: try readSnapshotData(
+                snapshotURL,
+                limit: resourcePolicy.maxInputBytes,
+                deadline: processDeadline
+            ))
         case .plainText:
-            text = try String(contentsOf: fileURL, encoding: .utf8)
+            let data = try readSnapshotData(
+                snapshotURL,
+                limit: resourcePolicy.maxInputBytes,
+                deadline: processDeadline
+            )
+            guard let decoded = String(data: data, encoding: .utf8) else {
+                throw DocumentInputValidationError.inputReadFailed(fileURL.path)
+            }
+            text = decoded
         case .unsupported:
             throw DocumentIngestionError.unsupportedFileType(fileURL.path)
         }
+        _ = try processDeadline.remainingNanoseconds(outputResource: "document extraction")
 
         let normalizedText = normalizeWhitespace(text)
-        try enforceStringLimit(
+        try validateExtractedTextResourceLimits(
             normalizedText,
-            resource: "extracted text",
-            limit: resourcePolicy.maxExtractedTextCharacters
+            characterLimit: resourcePolicy.maxExtractedTextCharacters,
+            utf8ByteLimit: resourcePolicy.maxExtractedTextUTF8Bytes
         )
         guard !normalizedText.isEmpty else {
             throw DocumentIngestionError.noExtractableText(fileURL.path)
@@ -184,22 +269,40 @@ public final class DocumentTextExtractor: Sendable {
         )
     }
 
-    private func extractPDFText(from fileURL: URL) throws -> String {
+    private func extractPDFText(
+        from fileURL: URL,
+        displayPath: String,
+        processDeadline: DocumentProcessDeadline
+    ) throws -> String {
         guard let document = PDFDocument(url: fileURL) else {
-            throw DocumentIngestionError.unreadablePDF(fileURL.path)
+            throw DocumentIngestionError.unreadablePDF(displayPath)
         }
-        return (0..<document.pageCount)
-            .compactMap { document.page(at: $0)?.string }
-            .joined(separator: "\n\n")
+        var accumulator = BoundedExtractedTextAccumulator(
+            characterLimit: resourcePolicy.maxExtractedTextCharacters,
+            utf8ByteLimit: resourcePolicy.maxExtractedTextUTF8Bytes
+        )
+        for pageIndex in 0..<document.pageCount {
+            _ = try processDeadline.remainingNanoseconds(outputResource: "PDF extraction")
+            if let pageText = document.page(at: pageIndex)?.string {
+                try accumulator.append(pageText)
+            }
+        }
+        return accumulator.text
     }
 
     private func extractZippedText(
         from fileURL: URL,
+        displayPath: String,
         preferredEntries: [String],
         fallbackEntryPrefixes: [String],
-        allowedPathExtensions: Set<String>
+        allowedPathExtensions: Set<String>,
+        processDeadline: DocumentProcessDeadline
     ) throws -> String {
-        let entries = try archiveEntries(fileURL).filter(isCanonicalArchiveEntryPath)
+        let entries = try archiveEntries(
+            fileURL,
+            displayPath: displayPath,
+            processDeadline: processDeadline
+        ).filter(isCanonicalArchiveEntryPath)
         let selectedEntries = preferredEntries.filter(entries.contains)
         let fallbackEntries = entries
             .filter { entry in
@@ -225,12 +328,19 @@ public final class DocumentTextExtractor: Sendable {
             limit: resourcePolicy.maxArchiveEntries
         )
 
-        let textParts = try xmlEntries.map { entry -> String in
-            let data = try archiveEntryData(fileURL, entry: entry)
-            return extractText(fromArchiveEntry: entry, data: data)
+        var accumulator = BoundedExtractedTextAccumulator(
+            characterLimit: resourcePolicy.maxExtractedTextCharacters,
+            utf8ByteLimit: resourcePolicy.maxExtractedTextUTF8Bytes
+        )
+        for entry in xmlEntries {
+            let data = try archiveEntryData(
+                fileURL,
+                entry: entry,
+                processDeadline: processDeadline
+            )
+            try accumulator.append(extractText(fromArchiveEntry: entry, data: data))
         }
-
-        return textParts.joined(separator: "\n\n")
+        return accumulator.text
     }
 
     private func extractText(fromArchiveEntry entry: String, data: Data) -> String {
@@ -245,8 +355,15 @@ public final class DocumentTextExtractor: Sendable {
         }
     }
 
-    private func extractRTFText(from fileURL: URL) throws -> String {
-        let data = try readFileData(fileURL, limit: resourcePolicy.maxInputBytes)
+    private func extractRTFText(
+        from fileURL: URL,
+        processDeadline: DocumentProcessDeadline
+    ) throws -> String {
+        let data = try readSnapshotData(
+            fileURL,
+            limit: resourcePolicy.maxInputBytes,
+            deadline: processDeadline
+        )
         let attributed = try NSAttributedString(
             data: data,
             options: [.documentType: NSAttributedString.DocumentType.rtf],
@@ -255,8 +372,15 @@ public final class DocumentTextExtractor: Sendable {
         return attributed.string
     }
 
-    private func extractHTMLText(from fileURL: URL) throws -> String {
-        let data = try readFileData(fileURL, limit: resourcePolicy.maxInputBytes)
+    private func extractHTMLText(
+        from fileURL: URL,
+        processDeadline: DocumentProcessDeadline
+    ) throws -> String {
+        let data = try readSnapshotData(
+            fileURL,
+            limit: resourcePolicy.maxInputBytes,
+            deadline: processDeadline
+        )
         if let attributed = try? NSAttributedString(
             data: data,
             options: [.documentType: NSAttributedString.DocumentType.html],
@@ -270,29 +394,47 @@ public final class DocumentTextExtractor: Sendable {
         return ""
     }
 
-    private func extractTextutilText(from fileURL: URL) throws -> String {
+    private func extractTextutilText(
+        from fileURL: URL,
+        displayPath: String,
+        processDeadline: DocumentProcessDeadline
+    ) throws -> String {
         let data = try runTextutil(
             arguments: ["-convert", "txt", "-stdout", fileURL.path],
-            outputResource: "textutil output"
+            outputResource: "textutil output",
+            displayPath: displayPath,
+            processDeadline: processDeadline
         )
         return String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
     }
 
-    private func extractBinaryText(from fileURL: URL) throws -> String {
-        let data = try readFileData(fileURL, limit: resourcePolicy.maxInputBytes)
+    private func extractBinaryText(
+        from fileURL: URL,
+        processDeadline: DocumentProcessDeadline
+    ) throws -> String {
+        let data = try readSnapshotData(
+            fileURL,
+            limit: resourcePolicy.maxInputBytes,
+            deadline: processDeadline
+        )
         let byteStrings = extractPrintableByteStrings(from: data)
         let utf16Strings = extractPrintableUTF16LEStrings(from: data)
         return uniqueTextParts(byteStrings + utf16Strings).joined(separator: "\n")
     }
 
-    private func archiveEntries(_ fileURL: URL) throws -> [String] {
+    private func archiveEntries(
+        _ fileURL: URL,
+        displayPath: String,
+        processDeadline: DocumentProcessDeadline
+    ) throws -> [String] {
         let data = try runUnzip(
             arguments: ["-Z1", fileURL.path],
-            error: .archiveListingFailed(fileURL.path),
-            outputResource: "archive listing"
+            error: .archiveListingFailed(displayPath),
+            outputResource: "archive listing",
+            processDeadline: processDeadline
         )
         guard let output = String(data: data, encoding: .utf8) else {
-            throw DocumentIngestionError.archiveListingFailed(fileURL.path)
+            throw DocumentIngestionError.archiveListingFailed(displayPath)
         }
         return output
             .split(separator: "\n")
@@ -300,59 +442,67 @@ public final class DocumentTextExtractor: Sendable {
             .filter { !$0.isEmpty }
     }
 
-    private func archiveEntryData(_ fileURL: URL, entry: String) throws -> Data {
+    private func archiveEntryData(
+        _ fileURL: URL,
+        entry: String,
+        processDeadline: DocumentProcessDeadline
+    ) throws -> Data {
         try runUnzip(
             arguments: ["-p", fileURL.path, entry],
             error: .archiveEntryReadFailed(entry),
-            outputResource: "archive entry \(entry)"
+            outputResource: "archive entry \(entry)",
+            processDeadline: processDeadline
         )
     }
 
     private func runUnzip(
         arguments: [String],
         error: DocumentIngestionError,
-        outputResource: String
+        outputResource: String,
+        processDeadline: DocumentProcessDeadline
     ) throws -> Data {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-        process.arguments = arguments
-        let output = Pipe()
-        let errors = Pipe()
-        process.standardOutput = output
-        process.standardError = errors
-        try process.run()
-        let data = try readProcessOutput(
-            output.fileHandleForReading,
-            process: process,
-            resource: outputResource,
-            limit: outputResource == "archive listing"
-                ? resourcePolicy.maxArchiveListingBytes
-                : resourcePolicy.maxArchiveEntryBytes
-        )
-        guard process.terminationStatus == 0 else {
+        let result: DocumentProcessResult
+        do {
+            result = try runBoundedDocumentProcess(
+                executableURL: URL(fileURLWithPath: "/usr/bin/unzip"),
+                arguments: arguments,
+                outputResource: outputResource,
+                outputLimit: outputResource == "archive listing"
+                    ? resourcePolicy.maxArchiveListingBytes
+                    : resourcePolicy.maxArchiveEntryBytes,
+                deadline: processDeadline
+            )
+        } catch is DocumentProcessError {
             throw error
         }
-        return data
+        guard result.terminationStatus == 0 else {
+            throw error
+        }
+        return result.standardOutput
     }
 
-    private func runTextutil(arguments: [String], outputResource: String) throws -> Data {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/textutil")
-        process.arguments = arguments
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = Pipe()
-        try process.run()
-        let data = try readProcessOutput(
-            output.fileHandleForReading,
-            process: process,
-            resource: outputResource,
-            limit: resourcePolicy.maxConverterOutputBytes
-        )
-        guard process.terminationStatus == 0 else {
-            throw DocumentIngestionError.converterFailed(arguments.last ?? "")
+    private func runTextutil(
+        arguments: [String],
+        outputResource: String,
+        displayPath: String,
+        processDeadline: DocumentProcessDeadline
+    ) throws -> Data {
+        let result: DocumentProcessResult
+        do {
+            result = try runBoundedDocumentProcess(
+                executableURL: URL(fileURLWithPath: "/usr/bin/textutil"),
+                arguments: arguments,
+                outputResource: outputResource,
+                outputLimit: resourcePolicy.maxConverterOutputBytes,
+                deadline: processDeadline
+            )
+        } catch is DocumentProcessError {
+            throw DocumentIngestionError.converterFailed(displayPath)
         }
-        return data
+        guard result.terminationStatus == 0 else {
+            throw DocumentIngestionError.converterFailed(displayPath)
+        }
+        return result.standardOutput
     }
 }
 
@@ -387,6 +537,11 @@ private func validateResourcePolicy(_ policy: DocumentIngestionResourcePolicy) t
         name: "maxExtractedTextCharacters",
         ceiling: documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling
     )
+    try validatePositiveCeiling(
+        policy.maxExtractedTextUTF8Bytes,
+        name: "maxExtractedTextUTF8Bytes",
+        ceiling: documentIngestionResourcePolicyMaxExtractedTextUTF8BytesCeiling
+    )
 }
 
 private func validatePositiveCeiling(_ value: Int, name: String, ceiling: Int) throws {
@@ -398,50 +553,480 @@ private func validatePositiveCeiling(_ value: Int, name: String, ceiling: Int) t
     }
 }
 
-private func enforceFileSizeLimit(_ fileURL: URL, limit: Int) throws {
-    guard let fileSize = try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
-        return
+private final class PrivateDocumentInputSnapshot {
+    let fileURL: URL
+    private let directoryURL: URL
+
+    init(fileURL: URL, directoryURL: URL) {
+        self.fileURL = fileURL
+        self.directoryURL = directoryURL
     }
-    guard fileSize <= limit else {
+
+    deinit {
+        try? FileManager.default.removeItem(at: directoryURL)
+    }
+}
+
+private func makePrivateDocumentInputSnapshot(
+    of sourceURL: URL,
+    byteLimit: Int,
+    deadline: DocumentProcessDeadline,
+    hooks: DocumentInputSnapshotHooks
+) throws -> PrivateDocumentInputSnapshot {
+    guard sourceURL.isFileURL else {
+        throw DocumentInputValidationError.unsafeInputFile(sourceURL.path)
+    }
+    var pathMetadata = stat()
+    guard Darwin.lstat(sourceURL.path, &pathMetadata) == 0 else {
+        throw DocumentInputValidationError.inputReadFailed(sourceURL.path)
+    }
+    guard pathMetadata.st_mode & S_IFMT == S_IFREG else {
+        throw DocumentInputValidationError.unsafeInputFile(sourceURL.path)
+    }
+    let sourceDescriptor = Darwin.open(
+        sourceURL.path,
+        O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK
+    )
+    guard sourceDescriptor >= 0 else {
+        if errno == ELOOP {
+            throw DocumentInputValidationError.unsafeInputFile(sourceURL.path)
+        }
+        throw DocumentInputValidationError.inputReadFailed(sourceURL.path)
+    }
+    defer { Darwin.close(sourceDescriptor) }
+
+    var sourceMetadata = stat()
+    guard Darwin.fstat(sourceDescriptor, &sourceMetadata) == 0 else {
+        throw DocumentInputValidationError.inputReadFailed(sourceURL.path)
+    }
+    guard sourceMetadata.st_mode & S_IFMT == S_IFREG else {
+        throw DocumentInputValidationError.unsafeInputFile(sourceURL.path)
+    }
+    guard sourceMetadata.st_size >= 0 else {
+        throw DocumentInputValidationError.unsafeInputFile(sourceURL.path)
+    }
+    if UInt64(sourceMetadata.st_size) > UInt64(byteLimit) {
+        throw DocumentIngestionError.resourceLimitExceeded(
+            resource: "input file",
+            limit: byteLimit,
+            actual: boundedDocumentActualCount(sourceMetadata.st_size)
+        )
+    }
+    try hooks.didOpenSourceDescriptor?(sourceURL)
+    _ = try deadline.remainingNanoseconds(outputResource: "input file snapshot")
+
+    let directoryURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent(
+            "aetherlink-document-snapshot-\(UUID().uuidString)",
+            isDirectory: true
+        )
+    do {
+        try FileManager.default.createDirectory(
+            at: directoryURL,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+    } catch {
+        throw DocumentInputValidationError.inputReadFailed(sourceURL.path)
+    }
+    var shouldRemoveDirectory = true
+    defer {
+        if shouldRemoveDirectory {
+            try? FileManager.default.removeItem(at: directoryURL)
+        }
+    }
+
+    let directoryDescriptor = Darwin.open(
+        directoryURL.path,
+        O_RDONLY | O_CLOEXEC | O_NOFOLLOW
+    )
+    guard directoryDescriptor >= 0 else {
+        throw DocumentInputValidationError.inputReadFailed(sourceURL.path)
+    }
+    defer { Darwin.close(directoryDescriptor) }
+    try secureDocumentSnapshotDescriptor(
+        directoryDescriptor,
+        expectedType: S_IFDIR,
+        permissions: 0o700,
+        displayPath: sourceURL.path
+    )
+
+    let snapshotName = privateSnapshotFileName(for: sourceURL)
+    let snapshotDescriptor = Darwin.openat(
+        directoryDescriptor,
+        snapshotName,
+        O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+        0o600
+    )
+    guard snapshotDescriptor >= 0 else {
+        throw DocumentInputValidationError.inputReadFailed(sourceURL.path)
+    }
+    defer { Darwin.close(snapshotDescriptor) }
+    try secureDocumentSnapshotDescriptor(
+        snapshotDescriptor,
+        expectedType: S_IFREG,
+        permissions: 0o600,
+        displayPath: sourceURL.path
+    )
+
+    var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+    var totalBytes = 0
+    while true {
+        _ = try deadline.remainingNanoseconds(outputResource: "input file snapshot")
+        let remainingWithSentinel = byteLimit - totalBytes + 1
+        let requestedCount = min(buffer.count, remainingWithSentinel)
+        let count = Darwin.read(sourceDescriptor, &buffer, requestedCount)
+        if count < 0 && errno == EINTR { continue }
+        guard count >= 0 else {
+            throw DocumentInputValidationError.inputReadFailed(sourceURL.path)
+        }
+        guard count > 0 else { break }
+
+        let actualBytes = totalBytes + count
+        guard actualBytes <= byteLimit else {
+            throw DocumentIngestionError.resourceLimitExceeded(
+                resource: "input file",
+                limit: byteLimit,
+                actual: actualBytes
+            )
+        }
+        try writeDocumentSnapshotBytes(
+            buffer,
+            count: count,
+            to: snapshotDescriptor,
+            displayPath: sourceURL.path
+        )
+        totalBytes = actualBytes
+    }
+    shouldRemoveDirectory = false
+    return PrivateDocumentInputSnapshot(
+        fileURL: directoryURL.appendingPathComponent(snapshotName),
+        directoryURL: directoryURL
+    )
+}
+
+private func readSnapshotData(
+    _ fileURL: URL,
+    limit: Int,
+    deadline: DocumentProcessDeadline
+) throws -> Data {
+    let descriptor = Darwin.open(
+        fileURL.path,
+        O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK
+    )
+    guard descriptor >= 0 else {
+        throw DocumentInputValidationError.inputReadFailed(fileURL.path)
+    }
+    defer { Darwin.close(descriptor) }
+
+    var metadata = stat()
+    guard Darwin.fstat(descriptor, &metadata) == 0,
+          metadata.st_mode & S_IFMT == S_IFREG,
+          metadata.st_size >= 0
+    else {
+        throw DocumentInputValidationError.unsafeInputFile(fileURL.path)
+    }
+    if UInt64(metadata.st_size) > UInt64(limit) {
         throw DocumentIngestionError.resourceLimitExceeded(
             resource: "input file",
             limit: limit,
-            actual: fileSize
+            actual: boundedDocumentActualCount(metadata.st_size)
         )
     }
-}
 
-private func readFileData(_ fileURL: URL, limit: Int) throws -> Data {
-    try enforceFileSizeLimit(fileURL, limit: limit)
-    let data = try Data(contentsOf: fileURL)
-    try enforceDataLimit(data, resource: "input file", limit: limit)
-    return data
-}
-
-private func readProcessOutput(
-    _ handle: FileHandle,
-    process: Process,
-    resource: String,
-    limit: Int
-) throws -> Data {
     var data = Data()
+    data.reserveCapacity(Int(metadata.st_size))
+    var buffer = [UInt8](repeating: 0, count: 64 * 1024)
     while true {
-        let chunk = handle.readData(ofLength: 64 * 1024)
-        if chunk.isEmpty {
-            process.waitUntilExit()
-            return data
+        _ = try deadline.remainingNanoseconds(outputResource: "input file snapshot")
+        let requestedCount = min(buffer.count, limit - data.count + 1)
+        let count = Darwin.read(descriptor, &buffer, requestedCount)
+        if count < 0 && errno == EINTR { continue }
+        guard count >= 0 else {
+            throw DocumentInputValidationError.inputReadFailed(fileURL.path)
         }
-        data.append(chunk)
-        if data.count > limit {
-            process.terminate()
-            process.waitUntilExit()
+        guard count > 0 else { return data }
+        let actualBytes = data.count + count
+        guard actualBytes <= limit else {
             throw DocumentIngestionError.resourceLimitExceeded(
-                resource: resource,
+                resource: "input file",
                 limit: limit,
-                actual: data.count
+                actual: actualBytes
             )
         }
+        data.append(contentsOf: buffer[0..<count])
     }
+}
+
+private func secureDocumentSnapshotDescriptor(
+    _ descriptor: Int32,
+    expectedType: mode_t,
+    permissions: mode_t,
+    displayPath: String
+) throws {
+    var metadata = stat()
+    guard Darwin.fstat(descriptor, &metadata) == 0,
+          metadata.st_uid == geteuid(),
+          metadata.st_mode & S_IFMT == expectedType,
+          Darwin.fchmod(descriptor, permissions) == 0,
+          removeDocumentSnapshotExtendedACL(descriptor)
+    else {
+        throw DocumentInputValidationError.inputReadFailed(displayPath)
+    }
+}
+
+private func removeDocumentSnapshotExtendedACL(_ descriptor: Int32) -> Bool {
+    guard let emptyACL = Darwin.acl_init(0) else { return false }
+    defer { Darwin.acl_free(UnsafeMutableRawPointer(emptyACL)) }
+    while Darwin.acl_set_fd_np(descriptor, emptyACL, ACL_TYPE_EXTENDED) != 0 {
+        if errno != EINTR { return false }
+    }
+    return true
+}
+
+private func writeDocumentSnapshotBytes(
+    _ bytes: [UInt8],
+    count: Int,
+    to descriptor: Int32,
+    displayPath: String
+) throws {
+    var offset = 0
+    while offset < count {
+        let written = bytes.withUnsafeBytes { buffer in
+            Darwin.write(
+                descriptor,
+                buffer.baseAddress?.advanced(by: offset),
+                count - offset
+            )
+        }
+        if written < 0 && errno == EINTR { continue }
+        guard written > 0 else {
+            throw DocumentInputValidationError.inputReadFailed(displayPath)
+        }
+        offset += written
+    }
+}
+
+private func privateSnapshotFileName(for sourceURL: URL) -> String {
+    let pathExtension = sourceURL.pathExtension.lowercased()
+    let isSafeExtension = !pathExtension.isEmpty
+        && pathExtension.utf8.count <= 16
+        && pathExtension.unicodeScalars.allSatisfy {
+            CharacterSet.alphanumerics.contains($0)
+        }
+    return isSafeExtension ? "input.\(pathExtension)" : "input.document"
+}
+
+private func boundedDocumentActualCount(_ value: off_t) -> Int {
+    value > off_t(Int.max) ? Int.max : Int(value)
+}
+
+struct DocumentProcessResult: Sendable {
+    var standardOutput: Data
+    var terminationStatus: Int32
+}
+
+enum DocumentProcessError: Error, Equatable, Sendable {
+    case timedOut(String)
+}
+
+struct DocumentProcessDeadline: Sendable {
+    private let deadlineNanoseconds: UInt64
+    private let nowNanoseconds: @Sendable () -> UInt64
+
+    init(
+        timeout: TimeInterval,
+        nowNanoseconds: @escaping @Sendable () -> UInt64 = {
+            DispatchTime.now().uptimeNanoseconds
+        }
+    ) throws {
+        guard timeout > 0, timeout.isFinite else {
+            throw DocumentProcessError.timedOut("document extraction")
+        }
+        let durationDouble = (timeout * 1_000_000_000).rounded(.up)
+        guard durationDouble.isFinite,
+              durationDouble > 0,
+              durationDouble < Double(UInt64.max)
+        else {
+            throw DocumentProcessError.timedOut("document extraction")
+        }
+        let durationNanoseconds = UInt64(durationDouble)
+        let started = nowNanoseconds()
+        let deadline = started.addingReportingOverflow(durationNanoseconds)
+        guard !deadline.overflow else {
+            throw DocumentProcessError.timedOut("document extraction")
+        }
+        deadlineNanoseconds = deadline.partialValue
+        self.nowNanoseconds = nowNanoseconds
+    }
+
+    func remainingNanoseconds(outputResource: String) throws -> UInt64 {
+        let now = nowNanoseconds()
+        guard now < deadlineNanoseconds else {
+            throw DocumentProcessError.timedOut(outputResource)
+        }
+        return deadlineNanoseconds - now
+    }
+}
+
+func runBoundedDocumentProcess(
+    executableURL: URL,
+    arguments: [String],
+    outputResource: String,
+    outputLimit: Int,
+    timeout: TimeInterval
+) throws -> DocumentProcessResult {
+    try runBoundedDocumentProcess(
+        executableURL: executableURL,
+        arguments: arguments,
+        outputResource: outputResource,
+        outputLimit: outputLimit,
+        deadline: DocumentProcessDeadline(timeout: timeout)
+    )
+}
+
+func runBoundedDocumentProcess(
+    executableURL: URL,
+    arguments: [String],
+    outputResource: String,
+    outputLimit: Int,
+    deadline: DocumentProcessDeadline
+) throws -> DocumentProcessResult {
+    precondition(outputLimit > 0)
+    _ = try deadline.remainingNanoseconds(outputResource: outputResource)
+
+    let process = Process()
+    process.executableURL = executableURL
+    process.arguments = arguments
+    process.standardInput = FileHandle.nullDevice
+
+    let outputPipe = Pipe()
+    let errorPipe = Pipe()
+    process.standardOutput = outputPipe
+    process.standardError = errorPipe
+
+    let termination = DispatchSemaphore(value: 0)
+    process.terminationHandler = { _ in termination.signal() }
+    try process.run()
+    try? outputPipe.fileHandleForWriting.close()
+    try? errorPipe.fileHandleForWriting.close()
+
+    let capture = BoundedDocumentProcessOutput(limit: outputLimit)
+    let drains = DispatchGroup()
+    drains.enter()
+    DispatchQueue.global(qos: .utility).async {
+        capture.read(from: outputPipe.fileHandleForReading)
+        drains.leave()
+    }
+    drains.enter()
+    DispatchQueue.global(qos: .utility).async {
+        drainDocumentProcessDiagnostics(from: errorPipe.fileHandleForReading)
+        drains.leave()
+    }
+
+    var didExit = false
+    var exceededOutputLimit: Int?
+    while !didExit {
+        if let actual = capture.limitExceededActualCount {
+            exceededOutputLimit = actual
+            break
+        }
+
+        guard let remainingNanoseconds = try? deadline.remainingNanoseconds(
+            outputResource: outputResource
+        ) else {
+            break
+        }
+        let waitNanoseconds = min(remainingNanoseconds, 10_000_000)
+        didExit = termination.wait(
+            timeout: .now() + .nanoseconds(Int(waitNanoseconds))
+        ) == .success
+    }
+
+    if !didExit {
+        _ = terminateAndReapDocumentProcess(process, termination: termination)
+    }
+
+    if drains.wait(timeout: .now() + .seconds(2)) == .timedOut {
+        try? outputPipe.fileHandleForReading.close()
+        try? errorPipe.fileHandleForReading.close()
+        throw DocumentProcessError.timedOut(outputResource)
+    }
+
+    if let actual = exceededOutputLimit ?? capture.limitExceededActualCount {
+        throw DocumentIngestionError.resourceLimitExceeded(
+            resource: outputResource,
+            limit: outputLimit,
+            actual: actual
+        )
+    }
+    guard didExit else {
+        throw DocumentProcessError.timedOut(outputResource)
+    }
+
+    return DocumentProcessResult(
+        standardOutput: capture.data,
+        terminationStatus: process.terminationStatus
+    )
+}
+
+private final class BoundedDocumentProcessOutput: @unchecked Sendable {
+    private let limit: Int
+    private let lock = NSLock()
+    private var storage = Data()
+    private var exceededActualCount: Int?
+
+    init(limit: Int) {
+        self.limit = limit
+        storage.reserveCapacity(min(limit, 64 * 1024))
+    }
+
+    var data: Data {
+        lock.withLock { storage }
+    }
+
+    var limitExceededActualCount: Int? {
+        lock.withLock { exceededActualCount }
+    }
+
+    func read(from handle: FileHandle) {
+        defer { try? handle.close() }
+        while true {
+            let chunk = handle.readData(ofLength: 64 * 1024)
+            guard !chunk.isEmpty else { return }
+            let shouldContinue = lock.withLock { () -> Bool in
+                let actualCount = storage.count + chunk.count
+                guard actualCount <= limit else {
+                    exceededActualCount = actualCount
+                    return false
+                }
+                storage.append(chunk)
+                return true
+            }
+            guard shouldContinue else { return }
+        }
+    }
+}
+
+private func drainDocumentProcessDiagnostics(from handle: FileHandle) {
+    defer { try? handle.close() }
+    while !handle.readData(ofLength: 64 * 1024).isEmpty {}
+}
+
+private func terminateAndReapDocumentProcess(
+    _ process: Process,
+    termination: DispatchSemaphore
+) -> Bool {
+    if process.isRunning {
+        process.terminate()
+    }
+    if termination.wait(timeout: .now() + .milliseconds(200)) == .success {
+        return true
+    }
+    if process.isRunning {
+        _ = Darwin.kill(process.processIdentifier, SIGKILL)
+    }
+    return termination.wait(timeout: .now() + .seconds(2)) == .success
 }
 
 private func enforceDataLimit(_ data: Data, resource: String, limit: Int) throws {
@@ -471,6 +1056,96 @@ private func enforceStringLimit(_ text: String, resource: String, limit: Int) th
             limit: limit,
             actual: text.count
         )
+    }
+}
+
+private func enforceStringUTF8ByteLimit(
+    _ text: String,
+    resource: String,
+    limit: Int
+) throws {
+    let byteCount = text.utf8.count
+    guard byteCount <= limit else {
+        throw DocumentIngestionError.resourceLimitExceeded(
+            resource: resource,
+            limit: limit,
+            actual: byteCount
+        )
+    }
+}
+
+func validateExtractedTextResourceLimits(
+    _ text: String,
+    characterLimit: Int = documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling,
+    utf8ByteLimit: Int = documentIngestionResourcePolicyMaxExtractedTextUTF8BytesCeiling
+) throws {
+    try enforceStringUTF8ByteLimit(
+        text,
+        resource: "extracted text UTF-8 bytes",
+        limit: utf8ByteLimit
+    )
+    try enforceStringLimit(
+        text,
+        resource: "extracted text",
+        limit: characterLimit
+    )
+}
+
+private struct BoundedExtractedTextAccumulator {
+    let characterLimit: Int
+    let utf8ByteLimit: Int
+    private(set) var text = ""
+    private var characterCount = 0
+    private var utf8ByteCount = 0
+
+    init(characterLimit: Int, utf8ByteLimit: Int) {
+        self.characterLimit = characterLimit
+        self.utf8ByteLimit = utf8ByteLimit
+        text.reserveCapacity(min(utf8ByteLimit, 64 * 1024))
+    }
+
+    mutating func append(_ rawText: String) throws {
+        let part = normalizeWhitespace(rawText)
+        guard !part.isEmpty else { return }
+
+        let separatorCount = text.isEmpty ? 0 : 1
+        let actualCharacterCount = saturatedResourceTotal(
+            characterCount,
+            separatorCount,
+            part.count
+        )
+        guard actualCharacterCount <= characterLimit else {
+            throw DocumentIngestionError.resourceLimitExceeded(
+                resource: "extracted text",
+                limit: characterLimit,
+                actual: actualCharacterCount
+            )
+        }
+        let actualUTF8ByteCount = saturatedResourceTotal(
+            utf8ByteCount,
+            separatorCount,
+            part.utf8.count
+        )
+        guard actualUTF8ByteCount <= utf8ByteLimit else {
+            throw DocumentIngestionError.resourceLimitExceeded(
+                resource: "extracted text UTF-8 bytes",
+                limit: utf8ByteLimit,
+                actual: actualUTF8ByteCount
+            )
+        }
+        if separatorCount == 1 {
+            text.append(" ")
+        }
+        text.append(part)
+        characterCount = actualCharacterCount
+        utf8ByteCount = actualUTF8ByteCount
+    }
+}
+
+private func saturatedResourceTotal(_ values: Int...) -> Int {
+    values.reduce(0) { total, value in
+        let result = total.addingReportingOverflow(value)
+        return result.overflow ? Int.max : result.partialValue
     }
 }
 

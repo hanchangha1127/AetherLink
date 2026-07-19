@@ -1,9 +1,11 @@
 package com.localagentbridge.android.core.transport
 
 import com.localagentbridge.android.core.protocol.ProtocolEnvelope
+import java.util.concurrent.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -657,6 +659,47 @@ class RuntimeConnectionManagerTest {
 
         assertEquals(listOf("relay-session"), relayCalls)
         assertEquals(listOf(ConnectCall("192.168.1.20", 43170, 5000)), directCalls)
+    }
+
+    @Test
+    fun routeCancellationIsRethrownWithoutTryingTheNextConnector() {
+        val cancellation = CancellationException("connection cancelled")
+        var firstConnectorCalls = 0
+        var secondConnectorCalls = 0
+        val routes = listOf(
+            RuntimeRouteCandidate.DirectTcp(
+                RuntimeEndpointHint("192.168.1.20", 43170, RuntimeEndpointSource.BonjourDiscovery),
+            ),
+            RuntimeRouteCandidate.DirectTcp(
+                RuntimeEndpointHint("192.168.1.21", 43170, RuntimeEndpointSource.BonjourDiscovery),
+            ),
+        )
+        val manager = RuntimeConnectionManager(
+            connector = RuntimeTransportConnector { host, _, _ ->
+                when (host) {
+                    "192.168.1.20" -> {
+                        firstConnectorCalls += 1
+                        throw cancellation
+                    }
+                    "192.168.1.21" -> {
+                        secondConnectorCalls += 1
+                        TestRuntimeProtocolChannel
+                    }
+                    else -> error("Unexpected route host: $host")
+                }
+            },
+            routeResolver = RuntimeRouteResolver { routes },
+        )
+
+        val actual = assertThrows(CancellationException::class.java) {
+            runBlocking {
+                manager.connect(RuntimeConnectionTarget(identity = pairedIdentity()))
+            }
+        }
+
+        assertSame(cancellation, actual)
+        assertEquals(1, firstConnectorCalls)
+        assertEquals(0, secondConnectorCalls)
     }
 
     @Test

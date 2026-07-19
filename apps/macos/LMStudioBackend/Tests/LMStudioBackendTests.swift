@@ -11,6 +11,8 @@ final class LMStudioBackendTests: XCTestCase {
 
     override func tearDown() {
         MockURLProtocol.handler = nil
+        LMStudioBoundedStreamingURLProtocol.handler = nil
+        LMStudioBoundedStreamingURLProtocol.onStop = nil
         super.tearDown()
     }
 
@@ -482,6 +484,90 @@ final class LMStudioBackendTests: XCTestCase {
         XCTAssertEqual(result.embeddings, [[0.1, 0.2], [0.3, 0.4]])
     }
 
+    func testEmbedBoundedResponseAcceptsExactLimitAndRejectsLimitPlusOne() async throws {
+        let body = #"{"model":"embed","data":[{"index":0,"embedding":[0.1]}]}"#
+        let limit = Data(body.utf8).count
+        let exactBackend = makeBackend(
+            dataResponseByteLimit: limit,
+            dataResponseTimeout: 7.5
+        ) { request in
+            XCTAssertEqual(request.timeoutInterval, 7.5, accuracy: 0.001)
+            return self.response(
+                statusCode: 200,
+                body: body,
+                headers: ["Content-Length": "\(limit)"]
+            )
+        }
+        _ = try await exactBackend.embed(request: EmbeddingRequest(model: "embed", texts: ["one"]))
+
+        let oversizedBackend = makeBackend(dataResponseByteLimit: limit) { _ in
+            self.response(statusCode: 200, body: " " + body)
+        }
+        await assertOversizedDataResponse(endpoint: "POST /v1/embeddings") {
+            _ = try await oversizedBackend.embed(request: EmbeddingRequest(model: "embed", texts: ["one"]))
+        }
+    }
+
+    func testEmbedBoundedResponsePropagatesCancellation() async {
+        await assertNonStreamingRequestCancellation(targetPath: "/v1/embeddings") { backend in
+            _ = try await backend.embed(request: EmbeddingRequest(model: "embed", texts: ["one"]))
+        }
+    }
+
+    func testEmbedBoundedResponseEnforcesAbsoluteDeadline() async {
+        let stopped = expectation(description: "deadline stopped LM Studio URL task")
+        LMStudioBoundedStreamingURLProtocol.onStop = { request in
+            if request.url?.path == "/v1/embeddings" { stopped.fulfill() }
+        }
+        LMStudioBoundedStreamingURLProtocol.handler = { _, urlProtocol in
+            urlProtocol.respond(body: Data(), finish: false)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LMStudioBoundedStreamingURLProtocol.self]
+        let backend = LMStudioBackend(
+            baseURL: URL(string: "http://127.0.0.1:1234")!,
+            session: URLSession(configuration: configuration),
+            unloadPollAttempts: 3,
+            dataResponseByteLimit: 64,
+            dataResponseTimeout: 0.05
+        )
+
+        do {
+            _ = try await backend.embed(request: EmbeddingRequest(model: "embed", texts: ["one"]))
+            XCTFail("Expected absolute response deadline")
+        } catch let error as LMStudioBackendError {
+            guard case .unavailable(let endpoint, _) = error else {
+                return XCTFail("Unexpected LM Studio error: \(error)")
+            }
+            XCTAssertEqual(endpoint, "POST /v1/embeddings")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        await fulfillment(of: [stopped], timeout: 1)
+    }
+
+    func testEmbedOversizedHTTPErrorPreservesStatusWithoutBufferingBody() async {
+        let backend = makeBackend(dataResponseByteLimit: 4) { _ in
+            self.response(
+                statusCode: 429,
+                body: "12345",
+                headers: ["Content-Length": "5"]
+            )
+        }
+
+        do {
+            _ = try await backend.embed(request: EmbeddingRequest(model: "embed", texts: ["one"]))
+            XCTFail("Expected bounded HTTP error")
+        } catch let error as LMStudioBackendError {
+            XCTAssertEqual(
+                error,
+                .httpStatus(endpoint: "POST /v1/embeddings", statusCode: 429, body: nil)
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testEmbedRejectsDuplicateMissingOrOutOfRangeIndexes() async {
         let bodies = [
             #"{"data":[{"index":0,"embedding":[0.1]},{"index":0,"embedding":[0.2]}]}"#,
@@ -565,6 +651,55 @@ final class LMStudioBackendTests: XCTestCase {
         XCTAssertEqual(result, .unloaded(provider: .lmStudio, modelID: "google/gemma-4-26b-a4b"))
         XCTAssertEqual(result.outcome, .confirmed)
         XCTAssertTrue(result.unloaded)
+    }
+
+    func testUnloadBoundedAcknowledgementAcceptsExactLimitAndRejectsLimitPlusOne() async throws {
+        let body = #"{"instance_id":"instance-a"}"#
+        let limit = Data(body.utf8).count
+        var exactModelRequestCount = 0
+        let exactBackend = makeBackend(
+            dataResponseByteLimit: limit,
+            dataResponseTimeout: 8.75
+        ) { request in
+            switch request.url?.path {
+            case "/api/v1/models":
+                exactModelRequestCount += 1
+                let instances = exactModelRequestCount == 1 ? #"[{"id":"instance-a"}]"# : "[]"
+                return self.response(
+                    statusCode: 200,
+                    body: #"{"models":[{"key":"model","loaded_instances":\#(instances)}]}"#
+                )
+            case "/api/v1/models/unload":
+                XCTAssertEqual(request.timeoutInterval, 8.75, accuracy: 0.001)
+                return self.response(statusCode: 200, body: body)
+            default:
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+        _ = try await exactBackend.unloadModel(providerModelID: "model")
+
+        let oversizedBackend = makeBackend(dataResponseByteLimit: limit) { request in
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(
+                    statusCode: 200,
+                    body: #"{"models":[{"key":"model","loaded_instances":[{"id":"instance-a"}]}]}"#
+                )
+            case "/api/v1/models/unload":
+                return self.response(statusCode: 200, body: " " + body)
+            default:
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+        await assertOversizedDataResponse(endpoint: "POST /api/v1/models/unload") {
+            _ = try await oversizedBackend.unloadModel(providerModelID: "model")
+        }
+    }
+
+    func testUnloadBoundedAcknowledgementPropagatesCancellation() async {
+        await assertNonStreamingRequestCancellation(targetPath: "/api/v1/models/unload") { backend in
+            _ = try await backend.unloadModel(providerModelID: "model")
+        }
     }
 
     func testUnloadModelAcceptsMaximumLoadedInstanceFanout() async throws {
@@ -1204,6 +1339,77 @@ final class LMStudioBackendTests: XCTestCase {
         XCTAssertEqual(events, [.done(inputTokens: 2, outputTokens: 1)])
     }
 
+    func testChatAcceptsNativeSSEDataBeforeEventField() async throws {
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(statusCode: 200, body: #"{"models":[{"key":"model"}]}"#)
+            case "/api/v1/chat":
+                return self.response(
+                    statusCode: 200,
+                    body: "data: {\"result\":{}}\nevent: chat.end\n\n"
+                )
+            default:
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+
+        let events = try await collect(backend.chat(request: chatRequest(id: "data-before-event")))
+        XCTAssertEqual(events, [.done(inputTokens: nil, outputTokens: nil)])
+    }
+
+    func testChatRejectsDuplicateNativeTerminalKeysBeforeTypedDecoding() async {
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(statusCode: 200, body: #"{"models":[{"key":"model"}]}"#)
+            case "/api/v1/chat":
+                return self.response(
+                    statusCode: 200,
+                    body: "event: chat.end\ndata: {\"result\":{},\"result\":{}}\n\n"
+                )
+            default:
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+
+        do {
+            _ = try await collect(backend.chat(request: chatRequest(id: "duplicate-native-terminal")))
+            XCTFail("Expected duplicate native terminal key rejection")
+        } catch let error as LMStudioBackendError {
+            XCTAssertEqual(error.code, "lm_studio_stream_decoding")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testChatRejectsDuplicateOpenAITerminalKeysBeforeTypedDecoding() async {
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(statusCode: 200, body: #"{"models":[{"key":"model"}]}"#)
+            case "/api/v1/chat":
+                return self.response(statusCode: 422, body: "fallback")
+            case "/v1/chat/completions":
+                return self.response(
+                    statusCode: 200,
+                    body: "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\",\"finish_reason\":null}]}\n"
+                )
+            default:
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+
+        do {
+            _ = try await collect(backend.chat(request: chatRequest(id: "duplicate-openai-terminal")))
+            XCTFail("Expected duplicate OpenAI terminal key rejection")
+        } catch let error as LMStudioBackendError {
+            XCTAssertEqual(error.code, "lm_studio_stream_decoding")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testChatStreamsNativeReasoningSeparatelyFromAnswerContent() async throws {
         let backend = makeBackend { request in
             switch request.url?.path {
@@ -1418,6 +1624,277 @@ final class LMStudioBackendTests: XCTestCase {
         XCTAssertNil(backend.takeProviderUsageSource(generationID: request.generationID))
     }
 
+    func testBoundedLineReaderHonorsResponseAndUnfinishedLineExactLimits() async throws {
+        var exactResponse = LMStudioBoundedLineReader(
+            bytes: byteStream("abcd"),
+            responseByteLimit: 4,
+            lineByteLimit: 4
+        )
+        let exactLine = try await exactResponse.next()
+        let exactEOF = try await exactResponse.next()
+        XCTAssertEqual(exactLine, "abcd")
+        XCTAssertNil(exactEOF)
+
+        var oversizedResponse = LMStudioBoundedLineReader(
+            bytes: byteStream("abcde"),
+            responseByteLimit: 4,
+            lineByteLimit: 8
+        )
+        do {
+            _ = try await oversizedResponse.next()
+            XCTFail("Expected response byte limit rejection")
+        } catch {}
+
+        var oversizedLine = LMStudioBoundedLineReader(
+            bytes: byteStream("abcde"),
+            responseByteLimit: 8,
+            lineByteLimit: 4
+        )
+        do {
+            _ = try await oversizedLine.next()
+            XCTFail("Expected unfinished line limit rejection")
+        } catch {}
+    }
+
+    func testChatResponseLimitsHonorContentLengthAndNoLengthExactPlusOne() async throws {
+        let terminalBody = "event: chat.end\ndata: {\"result\":{}}"
+        let byteLimit = Data(terminalBody.utf8).count
+
+        for includesContentLength in [true, false] {
+            let exactBackend = makeStreamingBackend(
+                streamLimits: LMStudioStreamLimits(responseByteLimit: byteLimit)
+            ) { _, urlProtocol in
+                let headers = includesContentLength ? ["Content-Length": "\(byteLimit)"] : [:]
+                urlProtocol.respond(body: Data(terminalBody.utf8), headers: headers, finish: true)
+            }
+            let exactEvents = try await collect(
+                exactBackend.chat(request: chatRequest(id: "lm-exact-\(includesContentLength)"))
+            )
+            XCTAssertEqual(exactEvents, [.done(inputTokens: nil, outputTokens: nil)])
+
+            let stopped = expectation(description: "oversized LM Studio stream URL task cancelled")
+            LMStudioBoundedStreamingURLProtocol.onStop = { request in
+                if request.url?.path == "/api/v1/chat" { stopped.fulfill() }
+            }
+            let oversizedBackend = makeStreamingBackend(
+                streamLimits: LMStudioStreamLimits(responseByteLimit: byteLimit)
+            ) { _, urlProtocol in
+                let headers = includesContentLength ? ["Content-Length": "\(byteLimit + 1)"] : [:]
+                urlProtocol.respond(body: Data((" " + terminalBody).utf8), headers: headers, finish: false)
+            }
+            await assertBadChatResponse(
+                from: oversizedBackend,
+                requestID: "lm-oversized-\(includesContentLength)",
+                endpoint: "POST /api/v1/chat"
+            )
+            await fulfillment(of: [stopped], timeout: 1)
+            LMStudioBoundedStreamingURLProtocol.onStop = nil
+        }
+    }
+
+    func testChatRejectsGiantUnterminatedLineAndCancelsURLTask() async {
+        let stopped = expectation(description: "giant LM Studio line URL task cancelled")
+        LMStudioBoundedStreamingURLProtocol.onStop = { request in
+            if request.url?.path == "/api/v1/chat" { stopped.fulfill() }
+        }
+        let backend = makeStreamingBackend(
+            streamLimits: LMStudioStreamLimits(responseByteLimit: 128, lineByteLimit: 16)
+        ) { _, urlProtocol in
+            urlProtocol.respond(body: Data(String(repeating: "x", count: 17).utf8), finish: false)
+        }
+
+        await assertBadChatResponse(from: backend, requestID: "lm-giant-line", endpoint: "POST /api/v1/chat")
+        await fulfillment(of: [stopped], timeout: 1)
+    }
+
+    func testChatRejectsOversizedDecodedSSEFrameAndCancelsURLTask() async {
+        let stopped = expectation(description: "oversized LM Studio frame URL task cancelled")
+        LMStudioBoundedStreamingURLProtocol.onStop = { request in
+            if request.url?.path == "/api/v1/chat" { stopped.fulfill() }
+        }
+        let backend = makeStreamingBackend(
+            streamLimits: LMStudioStreamLimits(
+                responseByteLimit: 256,
+                lineByteLimit: 64,
+                frameByteLimit: 16
+            )
+        ) { _, urlProtocol in
+            urlProtocol.respond(
+                body: Data("event: message.delta\ndata: 1234567890\ndata: 1234567890\n".utf8),
+                finish: false
+            )
+        }
+
+        await assertBadChatResponse(from: backend, requestID: "lm-frame-limit", endpoint: "POST /api/v1/chat")
+        await fulfillment(of: [stopped], timeout: 1)
+    }
+
+    func testChatRejectsStalledConsumerWhenBoundedEventBufferFills() async {
+        let stopped = expectation(description: "LM Studio backpressure URL task cancelled")
+        LMStudioBoundedStreamingURLProtocol.onStop = { request in
+            if request.url?.path == "/api/v1/chat" { stopped.fulfill() }
+        }
+        let body = """
+        event: message.delta
+        data: {"content":"one"}
+
+        event: message.delta
+        data: {"content":"two"}
+
+        event: chat.end
+        data: {"result":{}}
+
+        """
+        let backend = makeStreamingBackend(
+            streamLimits: LMStudioStreamLimits(bufferedEventLimit: 1)
+        ) { _, urlProtocol in
+            urlProtocol.respond(body: Data(body.utf8), finish: false)
+        }
+
+        let stream = backend.chat(request: chatRequest(id: "lm-stalled-consumer"))
+        await fulfillment(of: [stopped], timeout: 1)
+        var events: [ChatStreamEvent] = []
+        do {
+            for try await event in stream { events.append(event) }
+            XCTFail("Expected bounded event buffer rejection")
+        } catch let error as LMStudioBackendError {
+            XCTAssertEqual(error.backendError.code, "bad_backend_response")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        XCTAssertEqual(events, [.delta("one")])
+    }
+
+    func testChatRejectsAggregateOutputLimitAndCancelsURLTask() async {
+        let stopped = expectation(description: "LM Studio aggregate output URL task cancelled")
+        LMStudioBoundedStreamingURLProtocol.onStop = { request in
+            if request.url?.path == "/api/v1/chat" { stopped.fulfill() }
+        }
+        let backend = makeStreamingBackend(
+            streamLimits: LMStudioStreamLimits(aggregateAccountingByteLimit: 3)
+        ) { _, urlProtocol in
+            urlProtocol.respond(
+                body: Data("event: message.delta\ndata: {\"content\":\"four\"}\n\n".utf8),
+                finish: false
+            )
+        }
+
+        await assertBadChatResponse(from: backend, requestID: "lm-aggregate-limit", endpoint: "POST /api/v1/chat")
+        await fulfillment(of: [stopped], timeout: 1)
+    }
+
+    func testChatRejectsEmptyNativeEOFAndOpenAIDeltaEOFWithoutTerminalMarkers() async {
+        let emptyBackend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(statusCode: 200, body: #"{"models":[{"key":"bounded-stream-model"}]}"#)
+            case "/api/v1/chat":
+                return self.response(statusCode: 200, body: "")
+            default:
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+        await assertBadChatResponse(
+            from: emptyBackend,
+            requestID: "lm-empty-native",
+            endpoint: "POST /api/v1/chat"
+        )
+
+        let openAIBackend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(statusCode: 200, body: #"{"models":[{"key":"bounded-stream-model"}]}"#)
+            case "/api/v1/chat":
+                return self.response(statusCode: 422, body: "fallback")
+            case "/v1/chat/completions":
+                return self.response(
+                    statusCode: 200,
+                    body: #"data: {"choices":[{"delta":{"content":"partial"},"finish_reason":null}]}"#
+                )
+            default:
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+        var events: [ChatStreamEvent] = []
+        do {
+            for try await event in openAIBackend.chat(request: chatRequest(id: "lm-openai-delta-eof")) {
+                events.append(event)
+            }
+            XCTFail("Expected OpenAI-compatible terminal marker rejection")
+        } catch let error as LMStudioBackendError {
+            guard case .badResponse(let endpoint, _) = error else {
+                return XCTFail("Unexpected LM Studio error: \(error)")
+            }
+            XCTAssertEqual(endpoint, "POST /v1/chat/completions")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        XCTAssertEqual(events, [.delta("partial")])
+    }
+
+    func testChatCanonicalTerminalMarkersEmitExactlyOneDone() async throws {
+        let nativeBackend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(statusCode: 200, body: #"{"models":[{"key":"bounded-stream-model"}]}"#)
+            case "/api/v1/chat":
+                return self.response(
+                    statusCode: 200,
+                    body: "event: chat.end\ndata: {\"result\":{}}\n\nevent: chat.end\ndata: {\"result\":{}}\n\n"
+                )
+            default:
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+        let nativeEvents = try await collect(nativeBackend.chat(request: chatRequest(id: "lm-native-terminal-once")))
+        XCTAssertEqual(nativeEvents, [.done(inputTokens: nil, outputTokens: nil)])
+
+        let openAIBackend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(statusCode: 200, body: #"{"models":[{"key":"bounded-stream-model"}]}"#)
+            case "/api/v1/chat":
+                return self.response(statusCode: 422, body: "fallback")
+            case "/v1/chat/completions":
+                return self.response(statusCode: 200, body: "data: [DONE]\ndata: [DONE]\n")
+            default:
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+        let openAIEvents = try await collect(openAIBackend.chat(request: chatRequest(id: "lm-openai-terminal-once")))
+        XCTAssertEqual(openAIEvents, [.done(inputTokens: nil, outputTokens: nil)])
+    }
+
+    func testCancelActiveGenerationCancelsNativeURLTaskWithoutMalformedResponse() async {
+        let started = expectation(description: "LM Studio native stream started")
+        let stopped = expectation(description: "LM Studio native stream stopped")
+        LMStudioBoundedStreamingURLProtocol.onStop = { request in
+            if request.url?.path == "/api/v1/chat" { stopped.fulfill() }
+        }
+        let backend = makeStreamingBackend(streamLimits: LMStudioStreamLimits()) { _, urlProtocol in
+            urlProtocol.respond(body: Data(), finish: false)
+            started.fulfill()
+        }
+        let request = chatRequest(id: "lm-cancel-active")
+        let streamTask = Task<Error?, Never> {
+            do {
+                for try await _ in backend.chat(request: request) {}
+                return nil
+            } catch {
+                return error
+            }
+        }
+
+        await fulfillment(of: [started], timeout: 1)
+        XCTAssertEqual(backend.cancel(generationID: request.generationID), .cancelled(generationID: request.generationID))
+        let cancellationError = await streamTask.value
+        XCTAssertEqual(
+            cancellationError as? LMStudioBackendError,
+            .generationCancelled(generationID: request.generationID)
+        )
+        await fulfillment(of: [stopped], timeout: 1)
+    }
+
     func testChatStreamsOpenAICompatibleReasoningSeparatelyFromAnswerContent() async throws {
         let backend = makeBackend { request in
             switch request.url?.path {
@@ -1433,6 +1910,7 @@ final class LMStudioBackendTests: XCTestCase {
                     data: {"choices":[{"delta":{"thinking":"Check. ","content":"Answer"},"finish_reason":null}]}
                     data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
                     data: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":2}}
+                    data: [DONE]
 
                     """
                 )
@@ -1718,9 +2196,164 @@ final class LMStudioBackendTests: XCTestCase {
         }
     }
 
+    private func byteStream(_ value: String) -> AsyncStream<UInt8> {
+        AsyncStream { continuation in
+            for byte in value.utf8 { continuation.yield(byte) }
+            continuation.finish()
+        }
+    }
+
+    private func chatRequest(id: String) -> ChatRequest {
+        ChatRequest(
+            generationID: id,
+            sessionID: "bounded-stream-session",
+            model: "bounded-stream-model",
+            messages: [ChatMessage(role: "user", content: "Hi")]
+        )
+    }
+
+    private func collect(
+        _ stream: AsyncThrowingStream<ChatStreamEvent, Error>
+    ) async throws -> [ChatStreamEvent] {
+        var events: [ChatStreamEvent] = []
+        for try await event in stream { events.append(event) }
+        return events
+    }
+
+    private func assertBadChatResponse(
+        from backend: LMStudioBackend,
+        requestID: String,
+        endpoint: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        do {
+            _ = try await collect(backend.chat(request: chatRequest(id: requestID)))
+            XCTFail("Expected bounded stream rejection", file: file, line: line)
+        } catch let error as LMStudioBackendError {
+            guard case .badResponse(let actualEndpoint, let reason) = error else {
+                return XCTFail("Unexpected LM Studio error: \(error)", file: file, line: line)
+            }
+            XCTAssertEqual(actualEndpoint, endpoint, file: file, line: line)
+            XCTAssertEqual(
+                reason,
+                "The provider stream violated a bounded response contract.",
+                file: file,
+                line: line
+            )
+            XCTAssertEqual(error.backendError.code, "bad_backend_response", file: file, line: line)
+            XCTAssertFalse(error.backendError.message.contains(requestID), file: file, line: line)
+        } catch {
+            XCTFail("Unexpected error: \(error)", file: file, line: line)
+        }
+    }
+
+    private func assertOversizedDataResponse(
+        endpoint: String,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        operation: () async throws -> Void
+    ) async {
+        do {
+            try await operation()
+            XCTFail("Expected bounded response rejection", file: file, line: line)
+        } catch let error as LMStudioBackendError {
+            guard case .badResponse(let actualEndpoint, let reason) = error else {
+                return XCTFail("Unexpected LM Studio error: \(error)", file: file, line: line)
+            }
+            XCTAssertEqual(actualEndpoint, endpoint, file: file, line: line)
+            XCTAssertEqual(
+                reason,
+                "The provider response exceeds the supported byte limit.",
+                file: file,
+                line: line
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)", file: file, line: line)
+        }
+    }
+
+    private func assertNonStreamingRequestCancellation(
+        targetPath: String,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        operation: @escaping (LMStudioBackend) async throws -> Void
+    ) async {
+        let started = expectation(description: "\(targetPath) started")
+        let stopped = expectation(description: "\(targetPath) stopped")
+        LMStudioBoundedStreamingURLProtocol.onStop = { request in
+            if request.url?.path == targetPath { stopped.fulfill() }
+        }
+        LMStudioBoundedStreamingURLProtocol.handler = { request, urlProtocol in
+            switch request.url?.path {
+            case "/api/v1/models":
+                urlProtocol.respond(
+                    body: Data(#"{"models":[{"key":"model","loaded_instances":[{"id":"instance-a"}]}]}"#.utf8),
+                    finish: true
+                )
+            case targetPath:
+                XCTAssertEqual(request.timeoutInterval, 12, accuracy: 0.001, file: file, line: line)
+                urlProtocol.respond(body: Data(), finish: false)
+                started.fulfill()
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")", file: file, line: line)
+            }
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LMStudioBoundedStreamingURLProtocol.self]
+        let backend = LMStudioBackend(
+            baseURL: URL(string: "http://127.0.0.1:1234")!,
+            session: URLSession(configuration: configuration),
+            unloadPollAttempts: 3,
+            dataResponseByteLimit: 64,
+            dataResponseTimeout: 12
+        )
+        let task = Task {
+            try await operation(backend)
+        }
+
+        await fulfillment(of: [started], timeout: 1)
+        task.cancel()
+        do {
+            try await task.value
+            XCTFail("Expected cancellation", file: file, line: line)
+        } catch is CancellationError {
+        } catch {
+            XCTFail("Unexpected cancellation error: \(error)", file: file, line: line)
+        }
+        await fulfillment(of: [stopped], timeout: 1)
+    }
+
+    private func makeStreamingBackend(
+        streamLimits: LMStudioStreamLimits,
+        handler: @escaping (URLRequest, LMStudioBoundedStreamingURLProtocol) -> Void
+    ) -> LMStudioBackend {
+        LMStudioBoundedStreamingURLProtocol.handler = { request, urlProtocol in
+            if request.url?.path == "/api/v1/models" {
+                urlProtocol.respond(
+                    body: Data(#"{"models":[{"key":"bounded-stream-model"}]}"#.utf8),
+                    finish: true
+                )
+            } else {
+                handler(request, urlProtocol)
+            }
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LMStudioBoundedStreamingURLProtocol.self]
+        return LMStudioBackend(
+            baseURL: URL(string: "http://127.0.0.1:1234")!,
+            session: URLSession(configuration: configuration),
+            unloadPollAttempts: 3,
+            streamLimits: streamLimits
+        )
+    }
+
     private func makeBackend(
         unloadPollAttempts: Int = 3,
         catalogResponseByteLimit: Int = ModelInfo.maximumCatalogResponseBytes,
+        dataResponseByteLimit: Int = 32 * 1_024 * 1_024,
+        dataResponseTimeout: TimeInterval = 60,
+        streamLimits: LMStudioStreamLimits = LMStudioStreamLimits(),
         unloadSleeper: @escaping @Sendable (UInt64) async throws -> Void = { _ in },
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) -> LMStudioBackend {
@@ -1733,6 +2366,9 @@ final class LMStudioBackendTests: XCTestCase {
             session: session,
             unloadPollAttempts: unloadPollAttempts,
             catalogResponseByteLimit: catalogResponseByteLimit,
+            dataResponseByteLimit: dataResponseByteLimit,
+            dataResponseTimeout: dataResponseTimeout,
+            streamLimits: streamLimits,
             unloadSleeper: unloadSleeper
         )
     }
@@ -1824,6 +2460,53 @@ private struct PostedUnloadRequest: Decodable {
 private struct PostedEmbeddingRequest: Decodable {
     var model: String
     var input: [String]
+}
+
+private final class LMStudioBoundedStreamingURLProtocol: URLProtocol {
+    static var handler: ((URLRequest, LMStudioBoundedStreamingURLProtocol) -> Void)?
+    static var onStop: ((URLRequest) -> Void)?
+
+    private let stateLock = NSLock()
+    private var didStop = false
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let handler = Self.handler else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        handler(request, self)
+    }
+
+    override func stopLoading() {
+        stateLock.lock()
+        let shouldNotify = !didStop
+        didStop = true
+        stateLock.unlock()
+        if shouldNotify { Self.onStop?(request) }
+    }
+
+    func respond(
+        statusCode: Int = 200,
+        body: Data,
+        headers: [String: String] = [:],
+        finish: Bool
+    ) {
+        var responseHeaders = ["Content-Type": "text/event-stream"]
+        responseHeaders.merge(headers) { _, new in new }
+        let response = HTTPURLResponse(
+            url: request.url ?? URL(string: "http://127.0.0.1:1234")!,
+            statusCode: statusCode,
+            httpVersion: "HTTP/1.1",
+            headerFields: responseHeaders
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        if !body.isEmpty { client?.urlProtocol(self, didLoad: body) }
+        if finish { client?.urlProtocolDidFinishLoading(self) }
+    }
 }
 
 private final class MockURLProtocol: URLProtocol {

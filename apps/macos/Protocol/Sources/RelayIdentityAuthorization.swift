@@ -16,6 +16,20 @@ public struct RelayRuntimeIdentity: Codable, Equatable, Sendable {
         self.fingerprint = fingerprint
     }
 
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            publicKeyBase64: container.decode(String.self, forKey: .publicKeyBase64),
+            fingerprint: container.decode(String.self, forKey: .fingerprint)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(publicKeyBase64, forKey: .publicKeyBase64)
+        try container.encode(fingerprint, forKey: .fingerprint)
+    }
+
     public static func isValid(publicKeyBase64: String, fingerprint: String) -> Bool {
         guard isCanonicalFingerprint(fingerprint),
               let publicKeyData = Data(base64Encoded: publicKeyBase64),
@@ -32,6 +46,11 @@ public struct RelayRuntimeIdentity: Codable, Equatable, Sendable {
 
     public static func isCanonicalFingerprint(_ value: String) -> Bool {
         isLowercaseHex(value, count: 64)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case publicKeyBase64
+        case fingerprint
     }
 }
 

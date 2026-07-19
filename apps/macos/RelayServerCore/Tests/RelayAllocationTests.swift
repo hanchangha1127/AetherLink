@@ -19,6 +19,62 @@ final class RelayAllocationTests: XCTestCase {
         )
     }
 
+    func testAllocationTTLRejectsInvalidValuesBeforeEpochConversion() throws {
+        let maximum = RelayServerConfiguration.maximumAllocationTTLSeconds
+        let invalidValues: [TimeInterval] = [
+            0,
+            -1,
+            .nan,
+            .infinity,
+            -.infinity,
+            maximum.nextUp,
+        ]
+        let identity = try makeIdentity()
+
+        for value in invalidValues {
+            XCTAssertThrowsError(
+                try RelayServerConfiguration(allocationTTLSeconds: value).validate(),
+                "\(value)"
+            ) { error in
+                XCTAssertEqual(error as? RelayServerError, .invalidAllocationTTL)
+            }
+            XCTAssertThrowsError(
+                try RelayAllocation.make(
+                    routeToken: "invalid-ttl",
+                    now: Date(timeIntervalSince1970: 1),
+                    validFor: value
+                ),
+                "\(value)"
+            ) { error in
+                XCTAssertEqual(error as? RelayAllocationError, .invalidExpiration)
+            }
+            XCTAssertThrowsError(
+                try RelayAllocationV2.make(
+                    routeToken: "invalid-ttl",
+                    runtimeIdentity: identity,
+                    ticketGeneration: 1,
+                    now: Date(timeIntervalSince1970: 1),
+                    validFor: value
+                ),
+                "\(value)"
+            ) { error in
+                XCTAssertEqual(error as? RelayAllocationError, .invalidExpiration)
+            }
+        }
+
+        XCTAssertNoThrow(
+            try RelayServerConfiguration(allocationTTLSeconds: maximum).validate()
+        )
+        XCTAssertEqual(
+            try RelayAllocation.make(
+                routeToken: "maximum-ttl",
+                now: Date(timeIntervalSince1970: 1),
+                validFor: maximum
+            ).relayExpiresAtEpochMillis,
+            86_401_000
+        )
+    }
+
     func testRelayServerConfigurationCanExplicitlyAllowLegacyUnallocatedRelays() {
         let configuration = RelayServerConfiguration(requiresAllocation: false)
 
@@ -531,6 +587,43 @@ final class RelayAllocationTests: XCTestCase {
         }
     }
 
+    func testAllocationResponseParsersRejectDuplicateSensitiveJSONFields() throws {
+        let legacyPayloads = [
+            #"{"relay_id":"relay-1","relay_id":"relay-1","relay_secret":"secret-1","relay_expires_at":4102444800000,"relay_nonce":"nonce-1"}"#,
+            #"{"relay_id":"relay-1","relay_id":"relay-2","relay_secret":"secret-1","relay_expires_at":4102444800000,"relay_nonce":"nonce-1"}"#,
+            #"{"relay_id":"relay-1","relay_\u0069d":"relay-1","relay_secret":"secret-1","relay_expires_at":4102444800000,"relay_nonce":"nonce-1"}"#,
+        ]
+        for payload in legacyPayloads {
+            XCTAssertThrowsError(
+                try RelayAllocation.parseResponseLine(RelayAllocation.responsePrefix + payload + "\n"),
+                payload
+            ) { error in
+                XCTAssertEqual(error as? RelayAllocationError, .invalidResponseFormat)
+            }
+        }
+
+        let identity = try makeIdentity()
+        let relayID = RelayAllocationIdentityChallenge.relayID(
+            routeToken: "duplicate-v2",
+            runtimeKeyFingerprint: identity.fingerprint
+        )
+        let v2Payloads = [
+            "{\"relay_id\":\"\(relayID)\",\"relay_expires_at\":4102444800000,\"relay_nonce\":\"nonce-v2\",\"runtime_key_fingerprint\":\"\(identity.fingerprint)\",\"ticket_generation\":1,\"ticket_generation\":1,\"crypto_version\":2}",
+            "{\"relay_id\":\"\(relayID)\",\"relay_expires_at\":4102444800000,\"relay_nonce\":\"nonce-v2\",\"runtime_key_fingerprint\":\"\(identity.fingerprint)\",\"ticket_generation\":1,\"ticket_generation\":2,\"crypto_version\":2}",
+            "{\"relay_id\":\"\(relayID)\",\"relay_expires_at\":4102444800000,\"relay_nonce\":\"nonce-v2\",\"runtime_key_fingerprint\":\"\(identity.fingerprint)\",\"ticket_generation\":1,\"ticket_generat\\u0069on\":1,\"crypto_version\":2}",
+        ]
+        for payload in v2Payloads {
+            XCTAssertThrowsError(
+                try RelayAllocationV2.parseResponseLine(
+                    RelayAllocationV2.responsePrefix + payload + "\n"
+                ),
+                payload
+            ) { error in
+                XCTAssertEqual(error as? RelayAllocationError, .invalidResponseFormat)
+            }
+        }
+    }
+
     func testRejectsInvalidAllocationResponseLineFields() {
         XCTAssertThrowsError(
             try RelayAllocation.parseResponseLine(allocationResponseLine(relayID: "relay 1"))
@@ -624,6 +717,25 @@ final class RelayAllocationTests: XCTestCase {
         XCTAssertNoThrow(try RelayAllocationPreflightResponse.parseResponseLine(line))
         for forbidden in ["relay_id", "relay_expires_at", "relay_nonce", "runtime_public_key", "ticket_generation"] {
             XCTAssertNil(payload[forbidden])
+        }
+    }
+
+    func testPreflightResponseRejectsExactConflictingAndEscapedDuplicateKeys() {
+        let payloads = [
+            #"{"allocation_auth":"runtime-p256-v1","allocation_auth":"runtime-p256-v1","crypto_version":2,"preflight":true}"#,
+            #"{"allocation_auth":"runtime-p256-v1","allocation_auth":"runtime-p256-v2","crypto_version":2,"preflight":true}"#,
+            #"{"allocation_auth":"runtime-p256-v1","allocation_\u0061uth":"runtime-p256-v1","crypto_version":2,"preflight":true}"#,
+        ]
+
+        for payload in payloads {
+            XCTAssertThrowsError(
+                try RelayAllocationPreflightResponse.parseResponseLine(
+                    RelayAllocationPreflightResponse.responsePrefix + payload + "\n"
+                ),
+                payload
+            ) { error in
+                XCTAssertEqual(error as? RelayAllocationError, .invalidResponseFormat)
+            }
         }
     }
 
@@ -748,6 +860,87 @@ final class RelayAllocationTests: XCTestCase {
         }
     }
 
+    func testPairedRenewalSenderUsesExactComputedFieldBoundaryBelowControlLineLimit() throws {
+        let runtimeIdentity = try makeIdentity()
+        let clientIdentity = try makeIdentity()
+        let maximum = relayControlLineOpaqueFieldMaximumUTF8Bytes
+        let maximumValue = String(repeating: "x", count: maximum)
+        let maximumRequest = try RelayPairedAllocationRenewalRequest(
+            routeToken: maximumValue,
+            runtimeKeyFingerprint: runtimeIdentity.fingerprint,
+            runtimePublicKey: runtimeIdentity.publicKeyBase64,
+            clientKeyFingerprint: clientIdentity.fingerprint,
+            clientPublicKey: clientIdentity.publicKeyBase64,
+            requestID: maximumValue,
+            authorizationID: maximumValue,
+            transportBinding: String(repeating: "a", count: 64),
+            allocationToken: maximumValue
+        )
+        let minimumRequest = try RelayPairedAllocationRenewalRequest(
+            routeToken: "x",
+            runtimeKeyFingerprint: runtimeIdentity.fingerprint,
+            runtimePublicKey: runtimeIdentity.publicKeyBase64,
+            clientKeyFingerprint: clientIdentity.fingerprint,
+            clientPublicKey: clientIdentity.publicKeyBase64,
+            requestID: "x",
+            authorizationID: "x",
+            transportBinding: String(repeating: "a", count: 64),
+            allocationToken: "x"
+        )
+        let maximumLine = maximumRequest.requestLine()
+        let expectedMaximumBytes = minimumRequest.requestLine().count + 4 * (maximum - 1)
+
+        XCTAssertEqual(maximumLine.count, expectedMaximumBytes)
+        XCTAssertLessThan(maximumLine.count, relayControlLineMaximumUTF8Bytes)
+        XCTAssertEqual(try RelayPairedAllocationRenewalRequest.parse(
+            String(decoding: maximumLine, as: UTF8.self)
+        ), maximumRequest)
+
+        let overlong = String(repeating: "x", count: maximum + 1)
+        XCTAssertThrowsError(try RelayPairedAllocationRenewalRequest(
+            routeToken: overlong,
+            runtimeKeyFingerprint: runtimeIdentity.fingerprint,
+            runtimePublicKey: runtimeIdentity.publicKeyBase64,
+            clientKeyFingerprint: clientIdentity.fingerprint,
+            clientPublicKey: clientIdentity.publicKeyBase64,
+            requestID: "request-1",
+            authorizationID: "authorization-1",
+            transportBinding: String(repeating: "a", count: 64)
+        )) { error in
+            XCTAssertEqual(error as? RelayAllocationError, .invalidRouteToken)
+        }
+        XCTAssertThrowsError(try RelayPairedAllocationRenewalRequest(
+            routeToken: "route-1",
+            runtimeKeyFingerprint: runtimeIdentity.fingerprint,
+            runtimePublicKey: runtimeIdentity.publicKeyBase64,
+            clientKeyFingerprint: clientIdentity.fingerprint,
+            clientPublicKey: clientIdentity.publicKeyBase64,
+            requestID: "request-1",
+            authorizationID: "authorization-1",
+            transportBinding: String(repeating: "a", count: 64),
+            allocationToken: overlong
+        )) { error in
+            XCTAssertEqual(error as? RelayAllocationError, .invalidAllocationToken)
+        }
+        for (requestID, authorizationID) in [
+            (overlong, "authorization-1"),
+            ("request-1", overlong),
+        ] {
+            XCTAssertThrowsError(try RelayPairedAllocationRenewalRequest(
+                routeToken: "route-1",
+                runtimeKeyFingerprint: runtimeIdentity.fingerprint,
+                runtimePublicKey: runtimeIdentity.publicKeyBase64,
+                clientKeyFingerprint: clientIdentity.fingerprint,
+                clientPublicKey: clientIdentity.publicKeyBase64,
+                requestID: requestID,
+                authorizationID: authorizationID,
+                transportBinding: String(repeating: "a", count: 64)
+            )) { error in
+                XCTAssertEqual(error as? RelayAllocationError, .invalidFormat)
+            }
+        }
+    }
+
     func testPairedChallengeAndDualProofUseExactControlLines() throws {
         let runtimeKey = P256.Signing.PrivateKey()
         let clientKey = P256.Signing.PrivateKey()
@@ -803,6 +996,23 @@ final class RelayAllocationTests: XCTestCase {
             ).challenge,
             challenge
         )
+        let nextRelayField = "\"next_relay_id\":\"\(challenge.nextRelayID)\""
+        for duplicateField in [
+            nextRelayField + ",\"next_relay_id\":\"\(challenge.nextRelayID)\"",
+            nextRelayField + ",\"next_relay_id\":\"\(challenge.currentRelayID)\"",
+            nextRelayField + ",\"next_relay_\\u0069d\":\"\(challenge.nextRelayID)\"",
+        ] {
+            let duplicatedLine = challengeLine.replacingOccurrences(
+                of: nextRelayField,
+                with: duplicateField
+            )
+            XCTAssertThrowsError(
+                try RelayPairedAllocationChallengeResponse.parseResponseLine(duplicatedLine),
+                duplicatedLine
+            ) { error in
+                XCTAssertEqual(error as? RelayAllocationError, .invalidResponseFormat)
+            }
+        }
 
         let runtimeProof = try PairedRelayAllocationRuntimeProof.sign(
             challenge: challenge,
@@ -1627,6 +1837,73 @@ final class RelayAllocationTests: XCTestCase {
         )
     }
 
+    func testRevalidationReadsClockAfterCoordinationBarrierAndRejectsExpiredLease() throws {
+        let storeURL = try temporaryAllocationStoreURL()
+        let identity = try makeIdentity()
+        let relayID = RelayAllocationIdentityChallenge.relayID(
+            routeToken: "clock-after-coordination",
+            runtimeKeyFingerprint: identity.fingerprint
+        )
+        let binding = try RelayAllocationBinding(
+            relayID: relayID,
+            relayExpiresAtEpochMillis: 2_000,
+            relayNonce: "clock-after-coordination-nonce",
+            runtimeIdentity: identity,
+            ticketGeneration: 1
+        )
+        let clock = RelayAllocationTestClock(Date(timeIntervalSince1970: 1))
+        let registry = RelayAllocationRegistry(
+            persistenceURL: storeURL,
+            wallClockNow: { clock.now() }
+        )
+        try registry.commit(binding, replacingGeneration: nil)
+
+        let barrier = try RelayAllocationStoreTransactionLock(storeURL: storeURL)
+        let barrierHeld = DispatchSemaphore(value: 0)
+        let releaseBarrier = DispatchSemaphore(value: 0)
+        let barrierDone = expectation(description: "coordination barrier released")
+        let outcome = RelayAllocationRevalidationOutcome()
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try barrier.withExclusiveLock { _ in
+                    barrierHeld.signal()
+                    releaseBarrier.wait()
+                }
+            } catch {
+                outcome.record(error: error)
+            }
+            barrierDone.fulfill()
+        }
+        XCTAssertEqual(barrierHeld.wait(timeout: .now() + 2), .success)
+
+        let revalidationStarted = DispatchSemaphore(value: 0)
+        let revalidationDone = expectation(description: "revalidation completed")
+        DispatchQueue.global(qos: .userInitiated).async {
+            revalidationStarted.signal()
+            do {
+                try registry.withRevalidatedBinding(binding) {
+                    outcome.recordMatcherMutation()
+                }
+            } catch {
+                outcome.record(error: error)
+            }
+            revalidationDone.fulfill()
+        }
+        XCTAssertEqual(revalidationStarted.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(clock.didRead.wait(timeout: .now() + 0.2), .timedOut)
+        XCTAssertEqual(clock.readCount, 0)
+
+        clock.set(Date(timeIntervalSince1970: 3))
+        releaseBarrier.signal()
+        wait(for: [barrierDone, revalidationDone], timeout: 5)
+
+        XCTAssertEqual(clock.didRead.wait(timeout: .now() + 1), .success)
+        XCTAssertEqual(clock.readCount, 1)
+        XCTAssertEqual(outcome.matcherMutationCount, 0)
+        XCTAssertEqual(outcome.error as? RelayAllocationError, .allocationConflict)
+        XCTAssertEqual(registry.tombstone(relayID: relayID), binding)
+    }
+
     func testClosingSiblingTransactionLockDoesNotReleaseActiveProcessRecordLock() throws {
         let storeURL = try temporaryAllocationStoreURL()
         var siblingLock: RelayAllocationStoreTransactionLock? = try .init(storeURL: storeURL)
@@ -2049,6 +2326,27 @@ final class RelayAllocationTests: XCTestCase {
         ) { XCTAssertEqual($0 as? RelayAllocationError, .persistenceFailed) }
     }
 
+    func testDurableStoreRejectsDuplicateSensitiveKeysBeforeDecoding() throws {
+        let relayID = "rt1-" + String(repeating: "a", count: 64)
+        let duplicateFields = [
+            "\"relay_id\":\"\(relayID)\",\"relay_id\":\"\(relayID)\"",
+            "\"relay_id\":\"\(relayID)\",\"relay_id\":\"rt1-\(String(repeating: "b", count: 64))\"",
+            "\"relay_id\":\"\(relayID)\",\"relay_\\u0069d\":\"\(relayID)\"",
+        ]
+
+        for duplicateField in duplicateFields {
+            let storeURL = try temporaryAllocationStoreURL()
+            let payload = "[{\(duplicateField),\"relay_expires_at\":4102444800000," +
+                "\"relay_nonce\":\"duplicate-store-nonce\"}]"
+            try Data(payload.utf8).write(to: storeURL)
+
+            let registry = RelayAllocationRegistry(persistenceURL: storeURL)
+
+            XCTAssertFalse(registry.isPersistenceReady, duplicateField)
+            XCTAssertEqual(registry.count(), 0, duplicateField)
+        }
+    }
+
     private func temporaryAllocationStoreURL() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("AetherLinkRelayTests-\(UUID().uuidString)", isDirectory: true)
@@ -2115,5 +2413,67 @@ final class RelayAllocationTests: XCTestCase {
             publicKeyBase64: publicKeyData.base64EncodedString(),
             fingerprint: fingerprint
         )
+    }
+}
+
+private final class RelayAllocationTestClock: @unchecked Sendable {
+    let didRead = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var value: Date
+    private var reads = 0
+
+    init(_ value: Date) {
+        self.value = value
+    }
+
+    var readCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return reads
+    }
+
+    func now() -> Date {
+        lock.lock()
+        reads += 1
+        let result = value
+        lock.unlock()
+        didRead.signal()
+        return result
+    }
+
+    func set(_ value: Date) {
+        lock.lock()
+        self.value = value
+        lock.unlock()
+    }
+}
+
+private final class RelayAllocationRevalidationOutcome: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedError: Error?
+    private var storedMatcherMutationCount = 0
+
+    var error: Error? {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedError
+    }
+
+    var matcherMutationCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedMatcherMutationCount
+    }
+
+    func record(error: Error) {
+        lock.lock()
+        storedError = error
+        lock.unlock()
+    }
+
+    func recordMatcherMutation() {
+        lock.lock()
+        storedMatcherMutationCount += 1
+        lock.unlock()
     }
 }

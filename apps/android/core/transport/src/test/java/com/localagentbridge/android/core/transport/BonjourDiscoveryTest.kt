@@ -1,12 +1,30 @@
 package com.localagentbridge.android.core.transport
 
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Test
 import java.nio.charset.StandardCharsets
 
 class BonjourDiscoveryTest {
+    @Test
+    fun synchronousDiscoveryStartFailureReleasesLifecycleResourceExactlyOnce() = runBlocking {
+        val expected = IllegalStateException("discoverServices failed")
+        var releaseCount = 0
+
+        val actual = runCatching {
+            runBonjourDiscoveryWithCleanup(
+                cleanup = { releaseCount += 1 },
+                block = { throw expected },
+            )
+        }.exceptionOrNull()
+
+        assertSame(expected, actual)
+        assertEquals(1, releaseCount)
+    }
+
     @Test
     fun bonjourTxtRouteTokenRejectsWhitespaceMutationsInsteadOfTrimming() {
         listOf(

@@ -977,6 +977,28 @@ class RuntimePairingPayloadParserTest {
     }
 
     @Test
+    fun rejectsOversizedRawQrAndExcessQuerySegmentsBeforeFieldDecoding() {
+        val oversizedError = try {
+            RuntimePairingPayloadParser.parse("x".repeat(16_385))
+            fail("Expected oversized raw pairing QR to throw")
+            null
+        } catch (error: IllegalArgumentException) {
+            error
+        }
+        assertEquals("Pairing QR payload is too large", oversizedError?.message)
+
+        val excessSegments = List(129) { "version=1" }.joinToString("&")
+        val segmentError = try {
+            RuntimePairingPayloadParser.parse("aetherlink://pair?$excessSegments")
+            fail("Expected excess pairing QR query segments to throw")
+            null
+        } catch (error: IllegalArgumentException) {
+            error
+        }
+        assertEquals("Pairing QR has too many query fields", segmentError?.message)
+    }
+
+    @Test
     fun rejectsIncompleteRelayAliasFamiliesFromQrPayload() {
         listOf(
             "remote_host=relay.example.test&remote_port=443&remote_id=relay-1" +
@@ -1065,6 +1087,9 @@ class RuntimePairingPayloadParserTest {
             "%20relay.example.test",
             "relay.example.test%20",
             "relay%20example.test",
+            "2130706433",
+            "167772161",
+            "${"r".repeat(254)}.test",
             "https%3A%2F%2Frelay.example.test",
             "relay.example.test%2Fpath",
             "relay.example.test%3Froute%3D1",

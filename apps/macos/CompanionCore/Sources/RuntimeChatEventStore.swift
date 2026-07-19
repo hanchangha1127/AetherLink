@@ -96,6 +96,17 @@ public enum RuntimeChatEventStoreError: Error, LocalizedError, Equatable {
     }
 }
 
+public enum RuntimeChatHostWideProjectionError: Error, LocalizedError, Equatable {
+    case ambiguousSessionID(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .ambiguousSessionID(let sessionID):
+            return "Chat session id is shared by more than one owner: \(sessionID)"
+        }
+    }
+}
+
 public struct RuntimeChatStoredUsage: Codable, Equatable, Sendable {
     public var inputTokens: Int?
     public var outputTokens: Int?
@@ -1115,6 +1126,20 @@ struct RuntimeChatCompactionResolutionBindingKey: Hashable {
     }
 }
 
+struct RuntimeChatSessionProjectionKey: Hashable {
+    var ownerDeviceID: String?
+    var sessionID: String
+
+    init(event: RuntimeChatStoredEvent) {
+        self.init(ownerDeviceID: event.ownerDeviceID, sessionID: event.sessionID)
+    }
+
+    init(ownerDeviceID: String?, sessionID: String) {
+        self.ownerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
+        self.sessionID = sessionID
+    }
+}
+
 private struct RuntimeChatCompactionCalibrationScanEnvelope: Decodable {
     enum CalibrationPayloadShape: Equatable {
         case absent
@@ -1319,7 +1344,13 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
     ) throws -> [RuntimeChatStoredMessage] {
         guard limit > 0 else { return [] }
         return try lock.withLock {
-            try Self.messages(from: readEvents(), sessionID: sessionID, limit: limit)
+            let events = try readEvents()
+            let keys = Self.sessionProjectionKeys(from: events, sessionID: sessionID)
+            guard keys.count <= 1 else {
+                throw RuntimeChatHostWideProjectionError.ambiguousSessionID(sessionID)
+            }
+            guard let key = keys.first else { return [] }
+            return Self.messages(from: events, key: key, limit: limit)
         }
     }
 
@@ -1476,7 +1507,9 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
 
     private func readEvents(ownerDeviceID: String?) throws -> [RuntimeChatStoredEvent] {
         let scopedOwnerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
-        return try readEvents().filter { $0.ownerDeviceID == scopedOwnerDeviceID }
+        return try readEvents().filter {
+            $0.ownerDeviceID.normalizedOwnerDeviceID == scopedOwnerDeviceID
+        }
     }
 
     private func readEvents(
@@ -1512,7 +1545,7 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
             try validateCompactionResolutionBindings(indexedEvents)
             return indexedEvents
                 .filter { indexedEvent in
-                    indexedEvent.event.ownerDeviceID == ownerDeviceID
+                    indexedEvent.event.ownerDeviceID.normalizedOwnerDeviceID == ownerDeviceID
                         && sessionIDs.contains(indexedEvent.event.sessionID)
                 }
                 .map(\.event)
@@ -2395,38 +2428,50 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         limit: Int,
         includeArchived: Bool
     ) throws -> [RuntimeChatStoredSession] {
-        let grouped = Dictionary(grouping: events, by: \.sessionID)
-        return grouped.compactMap { sessionID, events in
+        let grouped = Dictionary(grouping: events) { event in
+            RuntimeChatSessionProjectionKey(event: event)
+        }
+        return grouped.compactMap { key, events -> (
+            key: RuntimeChatSessionProjectionKey,
+            session: RuntimeChatStoredSession
+        )? in
             let state = lifecycleState(from: events)
             guard state == .active || (includeArchived && state == .archived) else { return nil }
             let chatEvents = events.filter { !$0.kind.isSessionMetadata }
             guard let last = latestEvent(from: chatEvents)
                     ?? latestEvent(from: events) else { return nil }
             let storedTitle = latestStoredTitle(from: events)
-            let messages = messages(from: events, sessionID: sessionID, limit: Int.max)
+            let messages = messages(from: events, key: key, limit: Int.max)
             let archivedAt = state == .archived ? latestLifecycleEvent(from: events)?.timestamp : nil
-            return RuntimeChatStoredSession(
-                sessionID: sessionID,
-                title: storedTitle?.title ?? defaultSessionTitle,
-                titleUpdatedAt: storedTitle?.timestamp,
-                titleRevision: storedTitle?.revision ?? 0,
-                model: last.model,
-                lastActivityAt: last.timestamp,
-                messageCount: messages.count,
-                status: state.rawValue,
-                archivedAt: archivedAt,
-                lastEvent: last.kind.rawValue,
-                lastFinishReason: last.finishReason?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank,
-                lastErrorCode: last.error?.code.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
+            return (
+                key: key,
+                session: RuntimeChatStoredSession(
+                    sessionID: key.sessionID,
+                    title: storedTitle?.title ?? defaultSessionTitle,
+                    titleUpdatedAt: storedTitle?.timestamp,
+                    titleRevision: storedTitle?.revision ?? 0,
+                    model: last.model,
+                    lastActivityAt: last.timestamp,
+                    messageCount: messages.count,
+                    status: state.rawValue,
+                    archivedAt: archivedAt,
+                    lastEvent: last.kind.rawValue,
+                    lastFinishReason: last.finishReason?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank,
+                    lastErrorCode: last.error?.code.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
+                )
             )
         }
         .sorted { lhs, rhs in
-            if lhs.lastActivityAt != rhs.lastActivityAt {
-                return lhs.lastActivityAt > rhs.lastActivityAt
+            if lhs.session.lastActivityAt != rhs.session.lastActivityAt {
+                return lhs.session.lastActivityAt > rhs.session.lastActivityAt
             }
-            return lhs.sessionID < rhs.sessionID
+            if lhs.session.sessionID != rhs.session.sessionID {
+                return lhs.session.sessionID < rhs.session.sessionID
+            }
+            return (lhs.key.ownerDeviceID ?? "") < (rhs.key.ownerDeviceID ?? "")
         }
         .limited(to: limit)
+        .map(\.session)
     }
 
     static func messages(
@@ -2434,9 +2479,35 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         sessionID: String,
         limit: Int
     ) -> [RuntimeChatStoredMessage] {
-        let sessionEvents = events
+        let keys = sessionProjectionKeys(from: events, sessionID: sessionID)
+        guard keys.count == 1, let key = keys.first else { return [] }
+        return messages(from: events, key: key, limit: limit)
+    }
+
+    static func sessionProjectionKeys(
+        from events: [RuntimeChatStoredEvent],
+        sessionID: String
+    ) -> Set<RuntimeChatSessionProjectionKey> {
+        Set(events.compactMap { event in
+            event.sessionID == sessionID
+                ? RuntimeChatSessionProjectionKey(event: event)
+                : nil
+        })
+    }
+
+    static func messages(
+        from events: [RuntimeChatStoredEvent],
+        key: RuntimeChatSessionProjectionKey,
+        limit: Int
+    ) -> [RuntimeChatStoredMessage] {
+        let appendOrderedSessionEvents = events.filter {
+            RuntimeChatSessionProjectionKey(event: $0) == key
+        }
+        guard !appendOrderedSessionEvents.isEmpty else { return [] }
+        guard lifecycleState(from: appendOrderedSessionEvents) != .deleted else { return [] }
+
+        let sessionEvents = appendOrderedSessionEvents
             .enumerated()
-            .filter { $0.element.sessionID == sessionID }
             .sorted { lhs, rhs in
                 if lhs.element.timestamp == rhs.element.timestamp {
                     return lhs.offset < rhs.offset
@@ -2444,8 +2515,6 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
                 return lhs.element.timestamp < rhs.element.timestamp
             }
             .map(\.element)
-        guard !sessionEvents.isEmpty else { return [] }
-        guard lifecycleState(from: sessionEvents) != .deleted else { return [] }
 
         let requestEvents = sessionEvents.filter { $0.kind == .request }
         var messages: [RuntimeChatStoredMessage] = []
@@ -2566,16 +2635,7 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
     }
 
     private static func latestLifecycleEvent(from events: [RuntimeChatStoredEvent]) -> RuntimeChatStoredEvent? {
-        let lifecycleEvents = events
-            .enumerated()
-            .filter { $0.element.kind.isSessionLifecycle }
-        return lifecycleEvents
-            .max(by: { lhs, rhs in
-                if lhs.element.timestamp == rhs.element.timestamp {
-                    return lhs.offset < rhs.offset
-                }
-                return lhs.element.timestamp < rhs.element.timestamp
-            })?.element
+        events.last { $0.kind.isSessionLifecycle }
     }
 
     private static func latestEvent(from events: [RuntimeChatStoredEvent]) -> RuntimeChatStoredEvent? {
@@ -2602,9 +2662,14 @@ extension JSONLRuntimeChatEventStore {
     ) -> RuntimeChatResolvedSourceAttribution? {
         guard runtimeChatCanonicalAssistantMessageID(assistantMessageID) == assistantMessageID,
               (1...runtimeTrustedSourceChatContextGrantLimitCeiling).contains(sourceIndex) else { return nil }
-        let sessionEvents = events
+        let keys = sessionProjectionKeys(from: events, sessionID: sessionID)
+        guard keys.count == 1, let key = keys.first else { return nil }
+        let appendOrderedSessionEvents = events.filter {
+            RuntimeChatSessionProjectionKey(event: $0) == key
+        }
+        guard lifecycleState(from: appendOrderedSessionEvents) != .deleted else { return nil }
+        let sessionEvents = appendOrderedSessionEvents
             .enumerated()
-            .filter { $0.element.sessionID == sessionID }
             .sorted { lhs, rhs in
                 if lhs.element.timestamp == rhs.element.timestamp {
                     return lhs.offset < rhs.offset
@@ -2618,8 +2683,7 @@ extension JSONLRuntimeChatEventStore {
                 && event.finishReason == "stop"
                 && event.assistantMessageID == assistantMessageID
         }
-        guard lifecycleState(from: sessionEvents) != .deleted,
-              messages(from: events, sessionID: sessionID, limit: Int.max).contains(where: {
+        guard messages(from: events, key: key, limit: Int.max).contains(where: {
                   $0.assistantMessageID == assistantMessageID
               }),
               completionOffsets.count == 1,

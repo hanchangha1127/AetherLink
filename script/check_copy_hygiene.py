@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 import errno
 import hashlib
@@ -262,11 +263,15 @@ def route_diagnostics_guard_failures() -> list[str]:
     pairing_helper_signature = "@MainActor\nfunc shouldShowPairingRouteSetupPanel(model: CompanionAppModel) -> Bool"
     pairing_helper_snippets = (
         "shouldShowRouteDiagnosticsPanel(model: model)",
+        "|| !model.hasDevelopmentRelayRoute",
     )
-    stale_pairing_helper_snippets = (
-        "model.pairingSession == nil",
-        "!model.canPrepareRemoteRelayRouteAutomatically",
+    pairing_expansion_helper_signature = (
+        "@MainActor\nfunc shouldExpandPairingRouteSetupByDefault(model: CompanionAppModel) -> Bool"
+    )
+    pairing_expansion_helper_snippets = (
         "!model.hasDevelopmentRelayRoute",
+        "!model.bootstrapRelaySettings.isEnabled",
+        "!model.canPrepareRemoteRelayRouteAutomatically",
     )
 
     if helper_signature not in helper_text or any(snippet not in helper_text for snippet in helper_rule_snippets):
@@ -280,26 +285,159 @@ def route_diagnostics_guard_failures() -> list[str]:
     ):
         failures.append(
             "apps/macos/LocalAgentBridgeApp/Sources/RemoteRelayRoutePanel.swift: "
-            "Pairing must reuse route-diagnostics visibility so clean first-run QR pairing stays QR-only."
+            "Pairing must preserve route diagnostics and expose Connection Recovery when no route exists."
         )
-    if all(snippet in helper_text for snippet in stale_pairing_helper_snippets):
+    if pairing_expansion_helper_signature not in helper_text or any(
+        snippet not in helper_text for snippet in pairing_expansion_helper_snippets
+    ):
         failures.append(
             "apps/macos/LocalAgentBridgeApp/Sources/RemoteRelayRoutePanel.swift: "
-            "Pairing must not expose Connection Recovery only because automatic remote route preparation is unavailable."
+            "Clean first-run Pairing must expand Connection Recovery when neither a saved nor automatic route exists."
         )
-    latest_qr_ready_snippets = (
-        "let canGenerateLatestQRCode = model.isDevelopmentRelayQRCodeReady &&",
+    latest_qr_preparation_snippets = (
+        "connectionRecoveryGenerateLatestQRActionAvailable(",
+        "canRequestRemotePairing: model.canRequestRemotePairingForUserInterface",
+        "func connectionRecoveryGenerateLatestQRActionAvailable(",
+        "hasAction && canRequestRemotePairing",
         "isRouteReadyForQRCode: model.isDevelopmentRelayQRCodeReady",
-        "func connectionRecoveryGenerateLatestQRActionAccessibilityValue(\n    isRouteReadyForQRCode: Bool",
-        "func connectionRecoveryGenerateLatestQRActionAccessibilityHint(\n    isRouteReadyForQRCode: Bool",
+        "canPrepareRoute: canGenerateLatestQRCode",
+        "Connection preparation available",
     )
-    for snippet in latest_qr_ready_snippets:
+    for snippet in latest_qr_preparation_snippets:
         if snippet not in helper_text:
             failures.append(
                 "apps/macos/LocalAgentBridgeApp/Sources/RemoteRelayRoutePanel.swift: "
-                "Generate Latest QR must depend on full QR readiness, not only route eligibility."
+                "Generate Latest QR must allow an eligible route to start preparation while preserving action availability."
             )
             break
+
+    pairing_refresh_snippets = (
+        "struct PendingConnectionRecoveryPairingRefresh: Equatable",
+        "previousSessionID: model.pairingSession?.id",
+        "currentSessionID != request.previousSessionID",
+        "isPreparationInFlight ? .pending : .failed",
+        ".onChange(of: model.pairingSession?.id)",
+        "resolvePendingPairingRefresh()",
+    )
+    if any(snippet not in helper_text for snippet in pairing_refresh_snippets):
+        failures.append(
+            "apps/macos/LocalAgentBridgeApp/Sources/RemoteRelayRoutePanel.swift: "
+            "QR refresh success must require a newly identified pairing session."
+        )
+    localization_test_path = (
+        ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift"
+    )
+    localization_test_text = localization_test_path.read_text(
+        encoding="utf-8", errors="replace"
+    )
+    if "testConnectionRecoveryPairingRefreshRequiresNewSessionIdentity" not in localization_test_text:
+        failures.append(
+            "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift: "
+            "missing old-session pending and new-session QR refresh regression."
+        )
+
+    async_contract_files = {
+        ROOT / "apps/macos/CompanionCore/Sources/CompanionAppModel.swift": (
+            "public func requestStartForUserInterface(",
+            "public func requestRemotePairingForUserInterface() -> Bool",
+            "public func requestConfigureDevelopmentRelayForUserInterface(",
+            "public func requestConfigureBootstrapRelayForUserInterface(",
+            "@Published public private(set) var isRemoteRoutePreparationInFlight = false",
+            "private let companionRelayAllocationIOQueue",
+            "private var activeRouteAllocationRequest: CompanionRouteAllocationRequest?",
+            "private var drainingRouteAllocationRequest: CompanionRouteAllocationRequest?",
+            "private enum CompanionRelaySecretSource",
+            "case environmentEphemeral",
+            "private var routeAllocationTimeoutTask: Task<Void, Never>?",
+            "private let routeAllocationTimeoutNanoseconds: UInt64",
+            "public var canRequestRemotePairingForUserInterface: Bool",
+            "public enum CompanionRelayConfigurationRequestResult",
+            "public enum CompanionRelayConfigurationRequestState",
+            "acknowledgeRelayConfigurationRequestCompletion(requestID: UUID)",
+            "scheduleRouteAllocationTimeout(for: request)",
+            "failRouteAllocationIfCurrent(request)",
+            "guard finishRouteAllocationRequestIfCurrent(request) else { return }",
+            "request.cancellation.cancel()",
+            "drainingRouteAllocationRequest = request",
+            "private var hasRouteAllocationWorkerInFlight: Bool",
+            "private var pendingRemotePairingEndpoint: String?",
+            "private var hasCanonicalFreshRemoteRouteMaterialForQRCode: Bool",
+            "hasSecureRelaySecretForQRCode(",
+            "explicitEnvironmentRelaySecret(",
+            "relaySecretStore.readSecret(for: secretRef)?.takeIfNotEmpty() == relaySecret",
+            "EnvironmentRemoteRelayRouteAllocator.hasValidBootstrapRelayEndpoints(trimmedEndpoints)",
+            "public func requestClearDevelopmentRelayForUserInterface() -> Bool",
+            "public func requestClearBootstrapRelayForUserInterface() -> Bool",
+        ),
+        ROOT / "apps/macos/CompanionCore/Sources/RemoteRelayAllocationClient.swift": (
+            "public final class RelayRouteAllocationCancellation",
+            "public let deadline: Date",
+            "public func cancel()",
+            "private final class RelayAllocationConnection",
+            "deadline = min(cancellation.deadline, Date().addingTimeInterval(timeout))",
+            "connection.cancel()",
+        ),
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/PairingView.swift": (
+            "model.requestRemotePairingForUserInterface()",
+            "model.canRequestRemotePairingForUserInterface",
+            "isPreparingConnectionDetails: model.isRemoteRoutePreparationInFlight",
+        ),
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/ContentView.swift": (
+            "model.requestRemotePairingForUserInterface()",
+            "canRequestRemotePairing: model.canRequestRemotePairingForUserInterface",
+        ),
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/LocalAgentBridgeApp.swift": (
+            "model.requestStartForUserInterface()",
+            "model.requestRemotePairingForUserInterface()",
+            "canRequestRemotePairing: model.canRequestRemotePairingForUserInterface",
+        ),
+        helper_path: (
+            "model.requestConfigureDevelopmentRelayForUserInterface(",
+            "model.requestConfigureBootstrapRelayForUserInterface(",
+            "case .started(let requestID):",
+            "case .completed(let result):",
+            "pendingOperation = nil",
+            ".onChange(of: model.isRemoteRoutePreparationInFlight)",
+            ".onChange(of: model.relayConfigurationRequestState)",
+            "connectionRecoveryConfigurationRequestResolution(",
+            "model.acknowledgeRelayConfigurationRequestCompletion(",
+            ".disabled(model.isRemoteRoutePreparationInFlight)",
+            "model.requestClearBootstrapRelayForUserInterface()",
+            "model.requestClearDevelopmentRelayForUserInterface()",
+        ),
+        ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift": (
+            "testCompanionAppModelUserInterfacePairingAllocationKeepsMainActorResponsive",
+            "testCompanionAppModelUserInterfaceManualRouteAllocationKeepsMainActorResponsive",
+            "testCompanionAppModelUserInterfaceStartIsIdempotentDuringRouteAllocation",
+            "testCompanionAppModelPairingTimeoutMakesLateAllocationResultInert",
+            "testCompanionAppModelNewerPairingAllocationWinsAfterRouteClear",
+            "testCompanionAppModelAsyncRemoteFailureNeverFallsBackAndPreservesCapturedAuthorization",
+            "testCompanionAppModelManualRouteAllocationTimeoutPreservesStaticSettingsAndIgnoresLateResult",
+            "testCompanionAppModelBootstrapRouteAllocationTimeoutPreservesSavedSettingsAndIgnoresLateResult",
+            "testCompanionAppModelEmptyBootstrapConfigurationRequestReturnsDisabledCompletion",
+            "testCompanionAppModelStartRouteAllocationTimeoutStartsSavedRouteAndIgnoresLateResult",
+            "testCompanionAppModelAllocationTimeoutStopsWorkerBeforeRetry",
+            "testCompanionAppModelDrainingWorkerBlocksSynchronousAllocationEntryPoints",
+            "testCompanionAppModelRejectsMalformedBootstrapEndpointListsWithoutSavingThem",
+            "testCompanionAppModelDestructiveRouteActionsFailClosedDuringSharedAllocation",
+            "testCompanionAppModelFreshSavedLeaseDoesNotEnableQRCodeWhenKeychainSecretIsMissing",
+            "testCompanionAppModelKeychainWriteFailureRejectsFreshAllocationBeforeQRCode",
+            "testCompanionAppModelEnvironmentHostOnlyCannotBypassExpectedSecretHandleForQRCode",
+            "testCompanionAppModelExplicitEnvironmentSecretRemainsQRCodeEligibleWithoutKeychainHandle",
+            "testTCPRelayServiceRouteAllocatorUsesAbsoluteDeadlineAgainstSlowTrickle",
+            "holdCancelledWorkersUntilReleased: true",
+            '"Connection preparation is already in progress."',
+            '"relay.example.test]:443"',
+            "XCTAssertFalse(model.canRequestRemotePairingForUserInterface)",
+        ),
+    }
+    for path, snippets in async_contract_files.items():
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Missing nonblocking macOS Pairing QR recovery contract {snippet!r}."
+                )
 
     guarded_views = {
         ROOT / "apps/macos/LocalAgentBridgeApp/Sources/PairingView.swift":
@@ -315,34 +453,81 @@ def route_diagnostics_guard_failures() -> list[str]:
                 relative = path.relative_to(ROOT)
                 line_number = text.count("\n", 0, match.start()) + 1
                 failures.append(
-                    f"{relative}:{line_number}: Route Diagnostics must be hidden from normal QR pairing "
-                    "unless saved route diagnostics or a route-preparation issue exists."
+                    f"{relative}:{line_number}: Connection Recovery visibility must use the dedicated "
+                    "Pairing or Status visibility contract."
                 )
 
     localization_tests_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift"
     localization_tests_text = localization_tests_path.read_text(encoding="utf-8", errors="replace")
-    if "testRouteDiagnosticsPanelStaysHiddenOnCleanFirstRunAndPairingHidesSetup" not in localization_tests_text:
+    if "testRouteDiagnosticsPanelStaysHiddenOnCleanFirstRunAndPairingExposesSetup" not in localization_tests_text:
         failures.append(
-            f"{localization_tests_path.relative_to(ROOT)}: Missing regression test that keeps "
-            "Connection Recovery hidden on clean first-run status and Pairing."
+            f"{localization_tests_path.relative_to(ROOT)}: Missing regression test that keeps Status "
+            "diagnostics hidden while exposing expanded Connection Recovery on clean first-run Pairing."
+        )
+    render_tests_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkRenderSmokeTests.swift"
+    render_tests_text = render_tests_path.read_text(encoding="utf-8", errors="replace")
+    remote_render_snippets = (
+        "testRemoteRequiredPairingQRCodeRendersAndDecodesWithCanonicalPublicRelayRoute",
+        "model.beginPairing()",
+        "pairingSession.compactQRCodePayload",
+        "assertPairingQRCodeDecodes(",
+        "for _ in 0..<100 where relayTransport.startedConfiguration?.relayID != relayID",
+        'XCTAssertNil(queryItems["h"]',
+        'XCTAssertNil(queryItems["p"]',
+    )
+    if any(snippet not in render_tests_text for snippet in remote_render_snippets):
+        failures.append(
+            f"{render_tests_path.relative_to(ROOT)}: Remote-required QR coverage must Vision-decode "
+            "the actual rendered payload and reject a direct-route fallback."
+        )
+    no_device_gate_text = (ROOT / "script/check_no_device_quality.sh").read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    focused_qr_gate_selectors = (
+        "LocalRuntimeMessageRouterTests/testCompanionAppModelAllocationTimeoutStopsWorkerBeforeRetry",
+        "LocalRuntimeMessageRouterTests/testCompanionAppModelDrainingWorkerBlocksSynchronousAllocationEntryPoints",
+        "LocalRuntimeMessageRouterTests/testCompanionAppModelCancelledUserInterfaceRouteRequestPublishesFailureAndIgnoresLateSuccess",
+        "LocalRuntimeMessageRouterTests/testCompanionAppModelRejectsMalformedBootstrapEndpointListsWithoutSavingThem",
+        "LocalRuntimeMessageRouterTests/testCompanionAppModelDestructiveRouteActionsFailClosedDuringSharedAllocation",
+        "LocalRuntimeMessageRouterTests/testCompanionAppModelFreshSavedLeaseDoesNotEnableQRCodeWhenKeychainSecretIsMissing",
+        "LocalRuntimeMessageRouterTests/testCompanionAppModelKeychainWriteFailureRejectsFreshAllocationBeforeQRCode",
+        "LocalRuntimeMessageRouterTests/testCompanionAppModelEnvironmentHostOnlyCannotBypassExpectedSecretHandleForQRCode",
+        "LocalRuntimeMessageRouterTests/testCompanionAppModelExplicitEnvironmentSecretRemainsQRCodeEligibleWithoutKeychainHandle",
+        "LocalRuntimeMessageRouterTests/testTCPRelayServiceRouteAllocatorUsesAbsoluteDeadlineAgainstSlowTrickle",
+    )
+    focused_qr_gate_commands = []
+    for line in no_device_gate_text.splitlines():
+        match = re.fullmatch(r"run swift test --filter '([^']+)'", line)
+        if match is None:
+            continue
+        if tuple(match.group(1).split("|")) == focused_qr_gate_selectors:
+            focused_qr_gate_commands.append(line)
+    if len(focused_qr_gate_commands) != 1:
+        failures.append(
+            "script/check_no_device_quality.sh: Default no-device gate must execute all 10 focused "
+            "macOS QR recovery regressions in one exact Swift test selector."
+        )
+    if "macOS QR allocation cancellation and route-state fail-closed regressions" not in no_device_gate_text:
+        failures.append(
+            "script/check_no_device_quality.sh: Default no-device summary must name macOS QR "
+            "allocation cancellation and route-state fail-closed regressions."
         )
     required_doc_snippets = {
         ROOT / "docs/progress.md": (
-            "macOS QR-Only Clean First-Run Pairing No-Device Gate",
-            "shouldShowPairingRouteSetupPanel(model:)` still reuses `shouldShowRouteDiagnosticsPanel(model:)",
-            "rejects the older pairing-only fallback that exposed setup merely because automatic route preparation was unavailable",
-            "current progress/QA evidence, and the roadmap QR-only pairing item",
-            "physical Android recovery flows",
+            "macOS Pairing QR Recovery and Rendered Payload No-Device Gate",
+            "clean first-run Pairing exposes Connection Recovery",
+            "`remoteRequired` pairing QR rendered on screen",
+            "physical Android camera scan",
         ),
         ROOT / "docs/qa-evidence.md": (
-            "macOS QR-Only Clean First-Run Pairing No-Device Gate",
-            "Focused evidence: `swift test --filter AetherLinkLocalizationTests/testRouteDiagnosticsPanelStaysHiddenOnCleanFirstRunAndPairingHidesSetup` passed from the root SwiftPM package.",
-            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the shared visibility helper, rejecting the older pairing-only fallback that exposed setup merely because automatic route preparation was unavailable, requiring the focused SwiftPM regression, default no-device summary phrase, current progress/QA evidence, and the roadmap QR-only pairing item.",
-            "Gate evidence: `JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ANDROID_HOME=\"$HOME/Library/Android/sdk\" ./script/check_no_device_quality.sh` passed and reported `Covered macOS QR-only pairing addendum`.",
-            "physical Android recovery flows",
+            "macOS Pairing QR Recovery and Rendered Payload No-Device Gate",
+            "testRouteDiagnosticsPanelStaysHiddenOnCleanFirstRunAndPairingExposesSetup",
+            "Vision decoded the exact active remote pairing payload",
+            "physical Android camera scan",
         ),
         ROOT / "docs/roadmap.md": (
-            "normal users only pair or refresh routes by scanning QR",
+            "macOS clean first-run Pairing now exposes Connection Recovery",
         ),
     }
     for path, snippets in required_doc_snippets.items():
@@ -350,7 +535,7 @@ def route_diagnostics_guard_failures() -> list[str]:
         for snippet in snippets:
             if snippet not in text:
                 failures.append(
-                    f"{path.relative_to(ROOT)}: Missing macOS QR-only clean first-run pairing "
+                    f"{path.relative_to(ROOT)}: Missing macOS Pairing QR recovery "
                     f"evidence snippet {snippet!r}."
                 )
 
@@ -4022,7 +4207,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             macos_pairing_text,
             macos_pairing_path,
-            "let rawRelayHost = relayHost",
+            "relayHost rawRelayHost: String?",
             "PairingCoordinator must keep raw relay host input separate from canonical QR emission.",
         ),
         (
@@ -8986,7 +9171,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         'assertEquals("authenticated", stateAfterError.runtimeStatus)',
         "assertEquals(RuntimeActiveRouteKind.Relay, stateAfterError.activeRouteKind)",
         'assertNull(viewModel.privateField<Any>("routeRefreshLeaseJob"))',
-        'assertNull(viewModel.privateField<String>("pendingRouteRefreshRequestId"))',
+        "assertNull(viewModel.pendingRouteRefreshRequestIdForTest())",
         "advanceTimeBy(ROUTE_REFRESH_RETRY_DELAY_MS + 1L)",
         "assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.RouteRefresh })",
         'assertEquals("secret-1", trustedStore.trusted?.relaySecret)',
@@ -10822,7 +11007,7 @@ def android_composer_draft_persistence_guard_failures() -> list[str]:
 
     required_store_snippets = (
         "val composerDraft: String = \"\"",
-        "composerDraft = composerDraft.take(MAX_PERSISTED_COMPOSER_DRAFT_CHARS)",
+        "composerDraft = composerDraft.takeWithoutSplittingSurrogatePair(",
         "composerDraft = if (session.archivedAtMillis == null)",
         "internal fun PersistedRuntimeData.composerDraftForSession(sessionId: String? = activeSessionId): String",
         "internal fun PersistedRuntimeData.withComposerDraft(\n    value: String,\n    sessionId: String? = activeSessionId,",
@@ -15477,27 +15662,27 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
     no_adb_smoke_relative = no_adb_smoke_path.relative_to(ROOT)
     required_no_adb_qr_summary_snippets = (
         (
-            '"runtime_host_relay_registration": "accepted role=runtime" in relay_text',
+            '"runtime_host_relay_registration": (\n            evidence_bool("runtime_waiting_for_peer")',
             "No-ADB QR smoke summary must expose runtime-host relay registration coverage separately from trusted-device proof.",
         ),
         (
-            '"runtime_host_waiting_for_peer": "relay status=waiting_for_peer" in runtime_text',
+            '"runtime_host_waiting_for_peer": (\n            evidence_bool("runtime_waiting_for_peer")',
             "No-ADB QR smoke summary must expose runtime-host waiting-for-peer coverage separately from trusted-device proof.",
         ),
         (
-            '"trusted_device_relay_reachability": "relay status=ready" in runtime_text or "accepted role=client" in relay_text',
+            '"trusted_device_relay_reachability": (\n            evidence_bool("relay_ready")',
             "No-ADB QR smoke summary must expose trusted-device relay reachability coverage.",
         ),
         (
-            '"trusted_device_pairing": "Development pairing accepted" in runtime_text',
+            '"trusted_device_pairing": (\n            evidence_bool("pairing_accepted")',
             "No-ADB QR smoke summary must expose trusted-device pairing coverage.",
         ),
         (
-            '"trusted_device_runtime_health": health_count > 0',
+            '"trusted_device_runtime_health": (\n            evidence_bool("runtime_health")',
             "No-ADB QR smoke summary must expose trusted-device runtime.health coverage.",
         ),
         (
-            '"trusted_device_reconnect": expect_reconnect == "1" and health_count > 1',
+            '"trusted_device_reconnect": (\n            expect_reconnect == "1" and claimable_correlated_reconnect',
             "No-ADB QR smoke summary must expose trusted-device reconnect coverage.",
         ),
         (
@@ -16500,12 +16685,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
 
     required_bounded_attachment_read_snippets = (
         (
-            "fun readBytes(reference: String, maxBytes: Int)",
-            "Android attachment reader must accept a max byte limit.",
+            "suspend fun readBase64(\n        reference: String,\n        expectedSizeBytes: Long,\n        maxDecodedBytes: Int,\n        maxEncodedBytes: Int,",
+            "Android attachment reader must enforce decoded and encoded byte limits while streaming.",
         ),
         (
-            "val boundedSize = maxBytes + 1",
-            "Android attachment reader must stop after max bytes plus one sentinel byte.",
+            "if (decodedBytes == maxDecodedBytes) {\n                    val extraByte = input.read()",
+            "Android attachment reader must use one sentinel byte to reject unknown-size overflow.",
         ),
         (
             "addAttachmentsBoundsReadWhenReportedSizeIsUnknown",
@@ -16524,7 +16709,7 @@ def attachment_ingestion_guard_failures() -> list[str]:
 
     required_streaming_attachment_snippets = (
         (
-            "if (state.value.isStreaming) {\n                showError(\"generation_in_progress\")",
+            "if (initialState.isStreaming) {\n                    showError(\"generation_in_progress\")",
             "Android attachment add/remove paths must reject mutation while generation is streaming.",
         ),
         (
@@ -16561,6 +16746,60 @@ def attachment_ingestion_guard_failures() -> list[str]:
             )
 
     required_document_resource_policy_snippets = (
+        (
+            macos_extractor_text,
+            macos_extractor_path,
+            "makePrivateDocumentInputSnapshot(",
+            "Document extraction must process a private descriptor-validated input snapshot.",
+        ),
+        (
+            macos_extractor_text,
+            macos_extractor_path,
+            "O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK",
+            "Document extraction must reject symlink and blocking special-file inputs.",
+        ),
+        (
+            macos_extractor_text,
+            macos_extractor_path,
+            "let remainingWithSentinel = byteLimit - totalBytes + 1",
+            "Document snapshot copy must detect source growth at one byte beyond the limit.",
+        ),
+        (
+            macos_extractor_text,
+            macos_extractor_path,
+            "Darwin.acl_set_fd_np(descriptor, emptyACL, ACL_TYPE_EXTENDED)",
+            "Document snapshot files and directories must remove inherited extended ACL entries.",
+        ),
+        (
+            macos_test_text,
+            macos_test_path,
+            "testPrivateSnapshotAcceptsExactInputLimitAndRejectsLimitPlusOne",
+            "Document extraction tests must cover the exact input byte ceiling and limit plus one.",
+        ),
+        (
+            macos_test_text,
+            macos_test_path,
+            "testPrivateSnapshotRejectsFileGrowthBeyondLimitAfterDescriptorValidation",
+            "Document extraction tests must cover source growth after descriptor validation.",
+        ),
+        (
+            macos_test_text,
+            macos_test_path,
+            "testPrivateSnapshotRejectsFIFOWithoutBlocking",
+            "Document extraction tests must reject FIFO inputs without blocking.",
+        ),
+        (
+            macos_test_text,
+            macos_test_path,
+            "testPrivateSnapshotRejectsSymbolicLinkInput",
+            "Document extraction tests must reject symbolic-link inputs.",
+        ),
+        (
+            macos_test_text,
+            macos_test_path,
+            "testArchiveHelpersReadValidatedSnapshotAfterSourcePathReplacement",
+            "Document extraction tests must prove helpers use the validated snapshot after path replacement.",
+        ),
         (
             macos_document_index_text,
             macos_document_index_path,
@@ -18112,13 +18351,13 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             macos_ingestor_text,
             macos_ingestor_path,
-            "documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling",
+            "try validateExtractedTextResourceLimits(document.text)",
             "Document ingestion must reuse the extracted-text ceiling for direct extracted-document envelopes.",
         ),
         (
-            macos_ingestor_text,
-            macos_ingestor_path,
-            "DocumentIngestionError.resourceLimitExceeded",
+            macos_extractor_text,
+            macos_extractor_path,
+            "func validateExtractedTextResourceLimits(",
             "Document ingestion must reject oversized direct extracted-document text with the shared resource-limit error.",
         ),
         (
@@ -18412,6 +18651,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             macos_extractor_text,
             macos_extractor_path,
+            "documentIngestionResourcePolicyMaxExtractedTextUTF8BytesCeiling",
+            "Document ingestion resource policy must keep a store-owned extracted-text UTF-8 byte ceiling.",
+        ),
+        (
+            macos_extractor_text,
+            macos_extractor_path,
             "validateResourcePolicy(",
             "Document ingestion must validate caller-supplied resource policies before extraction.",
         ),
@@ -18448,8 +18693,38 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             macos_extractor_text,
             macos_extractor_path,
-            "readProcessOutput(",
-            "Document ingestion must read helper process output through the bounded reader.",
+            "maxExtractedTextUTF8Bytes",
+            "Document ingestion resource policy must bound normalized extracted text by UTF-8 bytes before backend dispatch.",
+        ),
+        (
+            macos_extractor_text,
+            macos_extractor_path,
+            "BoundedExtractedTextAccumulator(",
+            "Document ingestion must enforce character and UTF-8 byte limits while aggregating archive and PDF text.",
+        ),
+        (
+            macos_extractor_text,
+            macos_extractor_path,
+            "let processDeadline = try DocumentProcessDeadline(",
+            "Document ingestion must create one monotonic helper-process deadline for the complete extraction.",
+        ),
+        (
+            macos_extractor_text,
+            macos_extractor_path,
+            "deadline: processDeadline",
+            "Document ingestion helper processes must share the extraction-wide monotonic deadline.",
+        ),
+        (
+            macos_extractor_text,
+            macos_extractor_path,
+            "runBoundedDocumentProcess(",
+            "Document ingestion must drain helper output through the bounded process runner.",
+        ),
+        (
+            macos_extractor_text,
+            macos_extractor_path,
+            "terminateAndReapDocumentProcess(",
+            "Document ingestion must terminate and reap helper processes after timeout or output overflow.",
         ),
         (
             macos_extractor_text,
@@ -18516,6 +18791,36 @@ def attachment_ingestion_guard_failures() -> list[str]:
             macos_test_path,
             "testRejectsNonPositiveResourcePolicyBeforeExtraction",
             "Document ingestion tests must reject non-positive resource policies before extraction.",
+        ),
+        (
+            macos_test_text,
+            macos_test_path,
+            "testRejectsCombiningMarkPlainTextByAggregateUTF8ByteLimit",
+            "Document ingestion tests must reject character-light plain text that exceeds the UTF-8 byte ceiling.",
+        ),
+        (
+            macos_test_text,
+            macos_test_path,
+            "testRejectsCombiningMarkArchiveTextByAggregateUTF8ByteLimit",
+            "Document ingestion tests must reject character-light archive text that exceeds the aggregate UTF-8 byte ceiling.",
+        ),
+        (
+            macos_test_text,
+            macos_test_path,
+            "testBoundedProcessDrainsLargeStandardErrorWhileReadingOutput",
+            "Document ingestion tests must prove helper stderr cannot deadlock bounded stdout capture.",
+        ),
+        (
+            macos_test_text,
+            macos_test_path,
+            "testBoundedProcessKillsAndReapsAChildThatIgnoresTermination",
+            "Document ingestion tests must prove timed-out helpers are killed and reaped.",
+        ),
+        (
+            macos_test_text,
+            macos_test_path,
+            "testBoundedProcessesShareOneCumulativeMonotonicDeadline",
+            "Document ingestion tests must prove helper processes cannot reset the extraction-wide deadline.",
         ),
         (
             macos_router_text,
@@ -24183,8 +24488,8 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Runtime lexical search must use session id as the final total-order tie-break before limiting results.",
         ),
         (
-            "return lhs.sessionID < rhs.sessionID",
-            "Runtime base session lists must use session id as the final total-order tie-break.",
+            "if lhs.session.sessionID != rhs.session.sessionID {\n                return lhs.session.sessionID < rhs.session.sessionID\n            }\n            return (lhs.key.ownerDeviceID ?? \"\") < (rhs.key.ownerDeviceID ?? \"\")",
+            "Runtime host-wide session lists must use session id and owner id as total-order tie-breaks.",
         ),
         (
             "snippet: result.match.snippet",
@@ -24813,8 +25118,12 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Runtime history SQLite reads must preserve append order for same-timestamp lifecycle/title events.",
         ),
         (
-            "runtime_chat_session_fts MATCH ?",
-            "Runtime history SQLite backend must use the FTS index for queried session candidates.",
+            "instr(title, ?) > 0",
+            "Runtime history SQLite backend must preserve exact normalized substring candidates.",
+        ),
+        (
+            "streamBoundarySessionIDsUnlocked(",
+            "Runtime history SQLite backend must conservatively retain cross-event stream matches.",
         ),
         (
             "session.runtimeSearchMatch(searchQuery, messages: messages)",
@@ -24941,28 +25250,72 @@ def runtime_history_storage_guard_failures() -> list[str]:
 
     required_macos_trusted_store_snippets = (
         (
-            "private static let directoryPermissions = 0o700",
+            "private static let directoryPermissions = mode_t(S_IRWXU)",
             "Trusted-device store directory permissions must stay owner-only.",
         ),
         (
-            "private static let filePermissions = 0o600",
+            "private static let filePermissions = mode_t(S_IRUSR | S_IWUSR)",
             "Trusted-device store file permissions must stay owner-only.",
         ),
         (
-            "try secureDirectory()",
-            "Trusted-device loads and writes must secure the containing directory.",
+            "private func openSecureDirectory() throws -> TrustedDeviceStoreDirectory",
+            "Trusted-device loads and writes must open and validate the containing directory by descriptor.",
         ),
         (
-            "try secureFile()",
-            "Trusted-device loads and writes must secure the persisted trust file.",
+            "O_RDONLY | O_CLOEXEC | O_NOFOLLOW",
+            "Trusted-device loads must reject symlink traversal and descriptor inheritance.",
         ),
         (
-            "try fileManager.setAttributes(\n            [.posixPermissions: Self.directoryPermissions]",
-            "Trusted-device store must correct broad directory permissions.",
+            "Darwin.fchmod(descriptor, permissions) == 0",
+            "Trusted-device store must correct broad permissions through validated descriptors.",
         ),
         (
-            "try fileManager.setAttributes(\n            [.posixPermissions: Self.filePermissions]",
-            "Trusted-device store must correct broad file permissions after atomic writes.",
+            "Darwin.acl_set_fd_np(descriptor, emptyACL, ACL_TYPE_EXTENDED)",
+            "Trusted-device store must remove inherited extended ACL entries through validated descriptors.",
+        ),
+        (
+            "try withStoreLock(exclusive: false)",
+            "Trusted-device reads and authority snapshots must run under a shared cross-instance lock.",
+        ),
+        (
+            "try withStoreLock(exclusive: true)",
+            "Trusted-device mutations must run under an exclusive cross-instance lock.",
+        ),
+        (
+            "return try operation(device)",
+            "Trusted-device authority checks must hold the shared lock until the guarded operation completes.",
+        ),
+        (
+            "O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW",
+            "Trusted-device mutations must prepare a unique no-follow replacement file.",
+        ),
+        (
+            "try syncFile(descriptor)",
+            "Trusted-device mutations must durably flush replacement contents before publication.",
+        ),
+        (
+            "Darwin.renameat(",
+            "Trusted-device mutations must publish complete snapshots with an atomic rename.",
+        ),
+        (
+            "guard syncDescriptor(directory.descriptor) else",
+            "Trusted-device mutations must persist the replacement directory entry before success.",
+        ),
+        (
+            "public let trustedDeviceStoreMaxBytes = 1 * 1024 * 1024",
+            "Trusted-device storage must keep a bounded serialized byte ceiling.",
+        ),
+        (
+            "public let trustedDeviceStoreMaxDevices = 256",
+            "Trusted-device storage must keep a bounded row ceiling.",
+        ),
+        (
+            "let decoded = try decoder.decode(BoundedTrustedDeviceCollection.self, from: data)",
+            "Trusted-device loads must decode rows incrementally under the row ceiling.",
+        ),
+        (
+            "let requestedCount = min(buffer.count, limits.maxStoreBytes - data.count + 1)",
+            "Trusted-device reads must stop at one sentinel byte beyond the store ceiling.",
         ),
     )
     for snippet, guidance in required_macos_trusted_store_snippets:
@@ -24973,6 +25326,17 @@ def runtime_history_storage_guard_failures() -> list[str]:
         "testTrustCreatesStoreWithOwnerOnlyPermissions",
         "testLoadCorrectsBroadPermissionsWithoutDroppingTrustedDevices",
         "testRemoveMaintainsOwnerOnlyPermissions",
+        "testConcurrentLaterRevokeWinsOverEarlierStaleUpsertAcrossStoreInstances",
+        "testConcurrentUpsertsAcrossStoreInstancesPreserveBothDevices",
+        "testSnapshotHoldsSharedLockUntilOperationCompletesThenRevokeTakesEffect",
+        "testAtomicReplacementKeepsOldCompleteStoreVisibleUntilDurableTempIsReady",
+        "testMutationFailsClosedWhenLockCannotBeAcquiredBeforeDeadline",
+        "testMutationRejectsSymlinkStoreWithoutChangingTarget",
+        "testStoreByteLimitAcceptsExactBytesAndRejectsLimitPlusOneBeforeAllocation",
+        "testFieldLimitsAcceptExactUTF8BytesAndRejectLimitPlusOneOnMutationAndRead",
+        "testRepeatedTrustHonorsRowLimitAndReplacementAtCapacity",
+        "testLoadRejectsRowLimitPlusOneBeforeBuildingUnboundedArray",
+        "testLoadAndMutationRemoveExtendedACLsFromDirectoryLockStoreAndTemporaryFile",
         "XCTAssertEqual(try filePermissions(at: fileURL), 0o600)",
         "XCTAssertEqual(try directoryPermissions(at: directoryURL), 0o700)",
     )
@@ -27174,8 +27538,12 @@ def macos_pairing_qr_accessibility_guard_failures() -> list[str]:
     status_path = ROOT / "apps/macos/LocalAgentBridgeApp/Sources/StatusView.swift"
     app_path = ROOT / "apps/macos/LocalAgentBridgeApp/Sources/LocalAgentBridgeApp.swift"
     test_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift"
+    render_test_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkRenderSmokeTests.swift"
 
-    if not all(path.exists() for path in (view_path, content_path, status_path, app_path, test_path)):
+    if not all(
+        path.exists()
+        for path in (view_path, content_path, status_path, app_path, test_path, render_test_path)
+    ):
         failures.append("macOS Pairing QR accessibility guard files are missing.")
         return failures
 
@@ -27184,6 +27552,7 @@ def macos_pairing_qr_accessibility_guard_failures() -> list[str]:
     status_text = status_path.read_text(encoding="utf-8", errors="replace")
     app_text = app_path.read_text(encoding="utf-8", errors="replace")
     test_text = test_path.read_text(encoding="utf-8", errors="replace")
+    render_test_text = render_test_path.read_text(encoding="utf-8", errors="replace")
     view_relative = view_path.relative_to(ROOT)
     content_relative = content_path.relative_to(ROOT)
     status_relative = status_path.relative_to(ROOT)
@@ -27212,7 +27581,7 @@ def macos_pairing_qr_accessibility_guard_failures() -> list[str]:
             "Pairing QR rendering must remain cached by exact payload instead of repeating on timeline ticks.",
         ),
         (
-            "let isAvailable = qrImage != nil",
+            "let isQRCodeAvailable = qrImage != nil",
             "Pairing QR image parent must distinguish unavailable QR rendering from scan-ready state.",
         ),
         (
@@ -27220,7 +27589,7 @@ def macos_pairing_qr_accessibility_guard_failures() -> list[str]:
             "Pairing QR image must expose active, expired, and unavailable state through accessibility value.",
         ),
         (
-            ".accessibilityHint(Text(pairingQRCodeAccessibilityHint(remoteRouteExpiresAt: remoteRouteExpiresAt)))",
+            "pairingQRCodeAccessibilityHint(",
             "Pairing QR image must explain runtime verification, connection details, and route expiry when present.",
         ),
         (
@@ -27252,7 +27621,11 @@ def macos_pairing_qr_accessibility_guard_failures() -> list[str]:
             "Pairing QR accessibility value must announce unavailable QR generation.",
         ),
         (
-            "func pairingQRCodeAccessibilityHint(remoteRouteExpiresAt: Date? = nil) -> String",
+            'Text(NSLocalizedString("Pairing QR code unavailable", comment: ""))',
+            "Pairing QR render failures must show a visible localized unavailable state, not only a placeholder icon.",
+        ),
+        (
+            "func pairingQRCodeAccessibilityHint(",
             "Pairing QR accessibility hint must stay testable without rendering SwiftUI.",
         ),
         (
@@ -27284,24 +27657,24 @@ def macos_pairing_qr_accessibility_guard_failures() -> list[str]:
             "Pairing QR route notice accessibility label must stay testable without rendering SwiftUI.",
         ),
         (
-            ".accessibilityValue(Text(pairingQRGenerationActionAccessibilityValue(isAvailable: canGeneratePairingQR)))",
-            "Pairing QR generation action must expose ready/unavailable state through accessibility value.",
+            "isPreparingConnectionDetails: model.isRemoteRoutePreparationInFlight",
+            "Active Pairing QR must receive the live connection-preparation state.",
         ),
         (
-            ".accessibilityHint(Text(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR)))",
-            "Pairing QR generation action must expose disabled reason through accessibility hint.",
+            "pairingQRGenerationActionAccessibilityValue(",
+            "Pairing QR actions must expose their current state through the shared accessibility value helper.",
         ),
         (
-            ".help(activePairingQRRenewalActionAccessibilityHint())",
-            "Active Pairing QR renewal button must expose the same localized action hint as hover help.",
+            "pairingQRGenerationActionAccessibilityHint(",
+            "Pairing QR actions must expose their current recovery guidance through the shared accessibility hint helper.",
         ),
         (
-            ".accessibilityValue(Text(pairingQRGenerationActionAccessibilityValue(isAvailable: true)))",
-            "Active Pairing QR renewal button must expose ready state through accessibility value.",
+            "activePairingQRRenewalActionAccessibilityHint(",
+            "Active Pairing QR renewal must use preparation-aware hover and accessibility guidance.",
         ),
         (
-            ".accessibilityHint(Text(activePairingQRRenewalActionAccessibilityHint()))",
-            "Active Pairing QR renewal button must expose its localized action hint to accessibility.",
+            "isPreparing: isPreparingConnectionDetails",
+            "Active Pairing QR renewal must distinguish preparation from unavailable recovery state.",
         ),
     )
     for snippet, guidance in required_view_snippets:
@@ -27315,9 +27688,10 @@ def macos_pairing_qr_accessibility_guard_failures() -> list[str]:
     required_content_snippets = (
         "func pairingQRGenerationActionAccessibilityValue(",
         "func pairingQRGenerationActionAccessibilityHint(",
-        "func activePairingQRRenewalActionAccessibilityHint() -> String",
-        ".accessibilityValue(Text(pairingQRGenerationActionAccessibilityValue(isAvailable: canGeneratePairingQR)))",
-        ".accessibilityHint(Text(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR)))",
+        "func activePairingQRRenewalActionAccessibilityHint(",
+        "isPreparing: Bool = false",
+        "isPreparing: model.isRemoteRoutePreparationInFlight",
+        "Connection preparation in progress",
     )
     for snippet in required_content_snippets:
         if snippet not in content_text:
@@ -27333,9 +27707,12 @@ def macos_pairing_qr_accessibility_guard_failures() -> list[str]:
             failures.append(f"{status_relative}: Missing Pairing QR quick-action accessibility contract {snippet}.")
 
     required_app_snippets = (
-        ".help(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR))",
-        ".accessibilityValue(Text(pairingQRGenerationActionAccessibilityValue(isAvailable: canGeneratePairingQR)))",
-        ".accessibilityHint(Text(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR)))",
+        ".help(",
+        ".accessibilityValue(",
+        ".accessibilityHint(",
+        "pairingQRGenerationActionAccessibilityValue(",
+        "pairingQRGenerationActionAccessibilityHint(",
+        "isPreparing: model.isRemoteRoutePreparationInFlight",
     )
     for snippet in required_app_snippets:
         if snippet not in app_text:
@@ -27344,13 +27721,20 @@ def macos_pairing_qr_accessibility_guard_failures() -> list[str]:
     required_test_snippets = (
         "testToolbarAndMenuPairingQRGenerationUsesSharedAvailabilityContract",
         "testPairingQRGenerationActionAccessibilityUsesSelectedLanguage",
+        "testPairingQRPreparationAccessibilityUsesSelectedLanguage",
         "testPairingRouteNoticeAccessibilityUsesSelectedLanguage",
         "Pairing QR status",
         "페어링 QR 상태",
         "ペアリング QR の状態",
         "配对 QR 状态",
         "État du QR de jumelage",
-        "activePairingQRRenewalActionAccessibilityHint()",
+        "activePairingQRRenewalActionAccessibilityHint(isAvailable: false)",
+        "isPreparing: true",
+        "Connection preparation in progress",
+        "연결 준비 진행 중",
+        "接続準備中",
+        "正在准备连接",
+        "Préparation de la connexion en cours",
         "Generate New QR",
         "새 QR 생성",
         "新しい QR を生成",
@@ -27395,6 +27779,10 @@ def macos_pairing_qr_accessibility_guard_failures() -> list[str]:
     for snippet in required_test_snippets:
         if snippet not in test_text:
             failures.append(f"{test_relative}: Missing macOS Pairing QR accessibility regression {snippet}.")
+    if "testUnavailablePairingQRCodeStateRendersAcrossLanguagesAndAppearances" not in render_test_text:
+        failures.append(
+            f"{render_test_path.relative_to(ROOT)}: Missing rendered unavailable Pairing QR regression."
+        )
 
     return failures
 
@@ -30051,8 +30439,8 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention macOS chat.cancel immediate done closure.",
         ),
         (
-            "macOS QR-only pairing addendum: clean first-run Pairing hides Connection Recovery unless saved route diagnostics or a route-preparation issue exists, and does not expose setup only because automatic route preparation is unavailable",
-            "Default no-device gate coverage summary must mention macOS clean first-run QR-only pairing.",
+            "macOS Pairing QR recovery addendum: clean first-run Pairing exposes expanded Connection Recovery",
+            "Default no-device gate coverage summary must mention macOS clean first-run Pairing QR recovery.",
         ),
         (
             "LocalRuntimeMessageRouterTests/testRemovedTrustedDeviceCannotContinueUsingAuthenticatedConnection",
@@ -34244,7 +34632,8 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
                 "wireMode: .lmStudioOpenAICompatible",
                 "streamOptions: OpenAIStreamOptions(includeUsage: true)",
                 'case includeUsage = "include_usage"',
-                "observedFinishReason",
+                "if case .done = streamLine",
+                "throw LMStudioStreamIngestionError.missingTerminal",
             ),
         ),
         (
@@ -34499,11 +34888,11 @@ def macos_runtime_reasoning_search_guard_failures() -> list[str]:
             "SQLite FTS table must keep a dedicated reasoning column.",
         ),
         (
-            "let reasoning = messages\n            .compactMap(\\.reasoning?.runtimeSearchSnippetText)",
+            'let reasoning = event.reasoningDelta?.runtimeSearchSnippetText ?? ""',
             "SQLite search index rows must include stored assistant reasoning text.",
         ),
         (
-            "try Self.bindText(reasoning, to: statement, at: 9)",
+            "try Self.bindText(reasoning.normalizedRuntimeSearchText, to: statement, at: 11)",
             "SQLite search index inserts must bind the reasoning column.",
         ),
     ):
@@ -34611,6 +35000,7 @@ def macos_runtime_archive_polish_guard_failures() -> list[str]:
     return failures
 
 
+@lru_cache(maxsize=32)
 def code_tokens_without_comments_or_literals(source: str) -> str:
     output: list[str] = []
     index = 0
@@ -34755,11 +35145,12 @@ let afterQuotedRaw = 2
             "private struct ActivePairingCard: View {",
             "private struct PairingRouteNotice {",
             (
-                "@StateObject private var qrImageCache = PairingQRCodeImageCache()",
+                "@StateObject private var qrImageCache: PairingQRCodeImageCache",
+                "_qrImageCache = StateObject(",
                 "let qrImage = qrImageCache.image(for: qrPayload)",
-                "QRCodeView(image: qrImage)",
+                "QRCodeView(image: image)",
             ),
-            "ActivePairingCard QR cache integration",
+            "ActivePairingCard injectable QR cache integration",
         ),
         (
             "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift",
@@ -34771,6 +35162,79 @@ let afterQuotedRaw = 2
                 "XCTAssertEqual(renderedPayloads.count, 2)",
             ),
             "Pairing QR cache regression",
+        ),
+        (
+            "apps/macos/CompanionCore/Sources/CompanionAppModel.swift",
+            "    private func beginRouteAllocationRequest(",
+            "    private func makeRouteAllocationCancellation()",
+            (
+                "userInterfaceRequestContext: CompanionRelayConfigurationRequestContext? = nil",
+                "userInterfaceRequestContext: userInterfaceRequestContext",
+                "relayConfigurationRequestState = userInterfaceRequestContext.map",
+                "CompanionRelayConfigurationRequestState.active($0)",
+            ),
+            "model-owned relay configuration active-request state",
+        ),
+        (
+            "apps/macos/CompanionCore/Sources/CompanionAppModel.swift",
+            "    public func acknowledgeRelayConfigurationRequestCompletion(requestID: UUID) {",
+            "    private func clearCompletedRelayConfigurationRequestState() {",
+            (
+                "case .completed(let completion) = relayConfigurationRequestState",
+                "completion.requestID == requestID",
+                "relayConfigurationRequestState = nil",
+            ),
+            "exact relay configuration completion consumption",
+        ),
+        (
+            "apps/macos/CompanionCore/Sources/CompanionAppModel.swift",
+            "    private func publishRelayConfigurationRequestCompletion(",
+            "    private func publishCurrentRelayConfigurationRequestCompletion(",
+            (
+                "guard let context = request.userInterfaceRequestContext else { return }",
+                "relayConfigurationRequestState = .completed(",
+                "requestID: context.requestID",
+                "operation: context.operation",
+            ),
+            "model-owned relay configuration terminal state",
+        ),
+        (
+            "apps/macos/LocalAgentBridgeApp/Sources/RemoteRelayRoutePanel.swift",
+            "func connectionRecoveryConfigurationRequestResolution(",
+            "struct PendingConnectionRecoveryPairingRefresh: Equatable {",
+            (
+                "state: CompanionRelayConfigurationRequestState?",
+                "return .pending(context)",
+                "return .completed(completion)",
+            ),
+            "Connection Recovery authoritative model-state reconciliation",
+        ),
+        (
+            "apps/macos/LocalAgentBridgeApp/Sources/RemoteRelayRoutePanel.swift",
+            "    private func reconcileConfigurationRequestState(",
+            "    private func syncBootstrapDraftFromModel(",
+            (
+                "connectionRecoveryConfigurationRequestResolution(",
+                "pendingOperation = context.operation",
+                "pendingRequestID = context.requestID",
+                "pendingOperation = completion.operation",
+                "applyConfigurationResult(completion.result, operation: completion.operation)",
+                "model.acknowledgeRelayConfigurationRequestCompletion(",
+            ),
+            "Connection Recovery model-state application",
+        ),
+        (
+            "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift",
+            "    func testConnectionRecoveryConfigurationRequestStateTreatsLatestModelStateAsAuthoritative() {",
+            "    func testConnectionRecoveryPairingRefreshRequiresNewSessionIdentity() {",
+            (
+                "state: .active(firstContext)",
+                "state: .active(secondContext)",
+                "state: .completed(secondCompletion)",
+                ".pending(secondContext)",
+                ".completed(secondCompletion)",
+            ),
+            "Connection Recovery coalesced-event regression",
         ),
         (
             "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolCodec.kt",
@@ -34797,38 +35261,257 @@ let afterQuotedRaw = 2
             "Android exact-buffer frame regression",
         ),
         (
+            "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift",
+            "public final class LocalRuntimeMessageRouter: @unchecked Sendable {",
+            "    private let semanticSearchLock = NSLock()",
+            (
+                "hardMaximumConcurrentRequestTasks = 128",
+                "hardMaximumConcurrentRequestTasksPerConnection = 32",
+                "private var retiringRequestTaskIDs = Set<UUID>()",
+            ),
+            "runtime request admission hard-cap declarations",
+        ),
+        (
+            "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift",
+            "    private func finishRequestTask(connectionID: UUID, taskID: UUID) {",
+            "    private func sendIfRequestActive(",
+            (
+                "retiringRequestTaskIDs.remove(taskID)",
+                "private func admitRequestTask(connectionID: UUID, taskID: UUID) -> Bool",
+                "connectionTaskCount < maximumConcurrentRequestTasksPerConnection",
+                "retiringRequestTaskIDs.count",
+                "totalTaskCount < maximumConcurrentRequestTasks",
+            ),
+            "runtime request admission and retirement implementation",
+        ),
+        (
+            "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift",
+            "    func testRequestAdmissionEnforcesPerConnectionBoundaryAndReleasesAfterCompletion()",
+            "    func testModelsListSingleFlightCoalescesBoundedWaitersAndDoesNotCacheSuccess()",
+            (
+                "func testRequestAdmissionEnforcesGlobalBoundaryAcrossConnections()",
+                "func testRequestAdmissionReleasesSlotAfterHandlerError()",
+                "func testRequestAdmissionDisconnectCancellationReleasesExactlyOnce()",
+                "XCTAssertEqual(completedRequestTasks.value, 4)",
+            ),
+            "runtime request admission regressions",
+        ),
+        (
             "apps/macos/CompanionCore/Sources/SQLiteRuntimeChatEventStore.swift",
             "    private func appendUnlocked(_ event: RuntimeChatStoredEvent, database: OpaquePointer) throws {",
             "    private func appendBatchUnlocked(",
             (
-                "let validatedEvents = try readEventsUnlocked(database)",
-                "try refreshSearchIndexUnlocked(",
-                "affectedKeys: [RuntimeChatFTSSessionKey(event: sanitized)]",
+                "try repairIncrementalAppendStateIfNeededUnlocked(database)",
+                "try validateCompactionResolutionAppendUnlocked(sanitized, database: database)",
+                "guard let sequence = try insertEventUnlocked(",
+                "try insertIncrementalSearchDocumentUnlocked(",
+                "try markIncrementalAppendStateValidatedUnlocked(database)",
             ),
-            "SQLite affected-session FTS append integration",
+            "SQLite constant-history append integration",
         ),
         (
             "apps/macos/CompanionCore/Sources/SQLiteRuntimeChatEventStore.swift",
-            "    private func refreshSearchIndexUnlocked(",
-            "    private func searchEventsByKey(",
+            "    private func repairIncrementalAppendStateIfNeededUnlocked(",
+            "    private func incrementalAppendStateUnlocked(",
             (
-                "guard !affectedKeys.isEmpty else { return }",
-                "let eventsByKey = searchEventsByKey(validatedEvents, including: affectedKeys)",
-                "try deleteSearchRowUnlocked(",
-                "try insertSearchRowUnlocked(",
+                "appendInstrumentation?.didRunFullHistoryRepair()",
+                "let indexedEvents = try readIndexedEventsForIncrementalRepairUnlocked(database)",
+                "try insertIncrementalSearchDocumentUnlocked(",
+                "try markIncrementalAppendStateValidatedUnlocked(database)",
             ),
-            "SQLite affected-session FTS refresh implementation",
+            "SQLite one-time incremental projection repair",
+        ),
+        (
+            "apps/macos/CompanionCore/Sources/SQLiteRuntimeChatEventStore.swift",
+            "    private func insertIncrementalSearchDocumentUnlocked(",
+            "    private func semanticEmbeddingUnlocked(",
+            (
+                "normalizedRuntimeSearchText",
+                "private func searchCandidateSessionIDsUnlocked(",
+                "termSessionIDs.formUnion(streamBoundarySessionIDs)",
+                "private func substringSessionIDsUnlocked(",
+                "private func streamBoundarySessionIDsUnlocked(",
+            ),
+            "SQLite substring and stream-boundary candidate projection",
         ),
         (
             "apps/macos/CompanionCore/Tests/SQLiteRuntimeChatEventStoreTests.swift",
-            "    func testSQLiteAppendRewritesOnlyAffectedFTSSessionRow() throws {",
+            "    func testSQLiteSubstringCandidatesMatchJSONLForInternalSubstringAfterReopen() throws {",
+            "    func testSQLiteExistingDatabaseLazilyBackfillsIncrementalAppendStateOnce() throws {",
+            (
+                "func testSQLiteStreamBoundaryCandidatesMatchJSONLForSplitTokenAfterReopen() throws",
+                "SQLiteRuntimeChatAppendInstrumentationSnapshot(",
+                "decodedStoredEvents: 0",
+                "fullHistoryRepairs: 0",
+                "insertedSearchDocuments: 1",
+            ),
+            "SQLite substring and split-token search regressions",
+        ),
+        (
+            "apps/macos/CompanionCore/Tests/SQLiteRuntimeChatEventStoreTests.swift",
+            "    func testSQLiteIncrementalFTSMatchesJSONLForSingleAndBatchMultiSessionUpdates() throws {",
             "    func testSQLiteStoreUsesFTSSearchWithRankSnippetsAndRuntimeContextExclusion() throws {",
             (
-                "func testSQLiteIncrementalFTSMatchesJSONLForSingleAndBatchMultiSessionUpdates() throws",
                 "func testSQLiteIncrementalAppendRejectsUnrelatedCorruptEventAndRollsBack() throws",
                 "XCTAssertEqual(try rawFTSSessionRowIDs(at: databaseURL), rowIDsBefore)",
             ),
             "SQLite incremental FTS regressions",
+        ),
+        (
+            "apps/macos/CompanionCore/Sources/RuntimeHostApprovalCoordinator.swift",
+            "private final class RuntimeHostApprovalReservationReceiptIssuer:",
+            "private final class RuntimeHostApprovalExternalStageStartLatch:",
+            (
+                "enum InvalidationResult",
+                "case persistenceInFlight",
+                "func invalidate() -> InvalidationResult",
+                "state = .violated",
+                "return .settled(",
+            ),
+            "approval persistence nonblocking invalidation gates",
+        ),
+        (
+            "apps/macos/CompanionCore/Sources/RuntimeHostApprovalCoordinator.swift",
+            "    private func awaitExternalStage<Value: Sendable>(",
+            "    private func publishApprovalRequiredBounded(",
+            (
+                "withTaskCancellationHandler",
+                "Task.detached",
+                "gate.resolve(.failure(RuntimeHostApprovalExternalStageError.timedOut))",
+                "gate.resolve(.failure(CancellationError()))",
+            ),
+            "approval external-stage deadline and cancellation gate",
+        ),
+        (
+            "apps/macos/CompanionCore/Tests/RuntimeHostApprovalCoordinatorTests.swift",
+            "    func testAuthorizationTimeoutDoesNotWaitForBlockedReservationPersistence()",
+            "    func testApprovalTaskCancellationSuppressesAReservedExecutionAndReleasesWaiters()",
+            (
+                "func testApprovalCancellationDoesNotWaitForBlockedReservationPersistence()",
+                "func testPublicationTimeoutDoesNotWaitForBlockedTerminalPersistence()",
+                "func testApprovalCancellationDoesNotWaitForBlockedTerminalPersistence()",
+                "CancellationIgnoringSynchronousGate()",
+                "assertCoordinatorRejectsNewIntake(",
+            ),
+            "approval cancellation-ignoring persistence regressions",
+        ),
+        (
+            "apps/macos/CompanionCore/Sources/AggregatingLlmBackend.swift",
+            "    public func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {",
+            "    public func cancel(generationID: String) -> GenerationCancellationResult {",
+            (
+                "bufferingPolicy: .bufferingOldest(Self.bufferedChatEventLimit)",
+                "try Self.yieldChatEvent(event, to: continuation)",
+                "continuation.finish(throwing: terminalError)",
+            ),
+            "aggregate bounded chat stream integration",
+        ),
+        (
+            "apps/macos/CompanionCore/Sources/AggregatingLlmBackend.swift",
+            "    private func makeResidencyUnloadOperationLocked(",
+            "    private func completeResidencyUnloadOperation(",
+            (
+                "let completionGate = RuntimeResidencyDrainGate()",
+                "defer { completionGate.activate() }",
+                "private func waitForResidencyUnloadOperation(",
+                "try await operation.completionGate.waitUntilActivated()",
+            ),
+            "aggregate cancellation-aware shared unload completion",
+        ),
+        (
+            "apps/macos/CompanionCore/Sources/AggregatingLlmBackend.swift",
+            "    private static func yieldChatEvent(",
+            "    private static func canonicalModelName(",
+            (
+                "switch continuation.yield(event)",
+                "case .dropped:",
+                "code:",
+                "retryable: false",
+                "case .terminated:",
+                "throw CancellationError()",
+            ),
+            "aggregate bounded-yield fail-closed handling",
+        ),
+        (
+            "apps/macos/CompanionCore/Tests/AggregatingLlmBackendResidencyTests.swift",
+            "    func testCancelledChatReturnsBeforeSharedUnloadAndLaterCallerStillWaitsForIt() async throws {",
+            "    func testCancelledChatWaitingForModelSwitchUnloadDoesNotReserveOrDispatch() async throws {",
+            (
+                "testCancelledChatReturnsBeforeSelfStartedUnloadAndSharedUnloadContinues",
+                "await fulfillment(of: [cancellationReturned], timeout: 1)",
+                "let laterTask = Task",
+                "ollama.releaseUnloads()",
+                "XCTAssertTrue(cancellationError is CancellationError)",
+            ),
+            "aggregate shared unload cancellation regression",
+        ),
+        (
+            "apps/macos/CompanionCore/Tests/AggregatingLlmBackendResidencyTests.swift",
+            "    func testStalledAggregateConsumerFailsClosedWhenBoundedEventBufferFills() async throws {",
+            "    private func chatRequest(model: String) -> ChatRequest {",
+            (
+                "ControlledChatEventBurst(events: (0...64).map",
+                "XCTAssertEqual(error.provider, .aggregate)",
+                "XCTAssertFalse(error.retryable)",
+                "XCTAssertEqual(receivedEvents, (0..<64).map",
+            ),
+            "aggregate stalled-consumer overflow regression",
+        ),
+        (
+            "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt",
+            "private data class PendingSourceReview(",
+            "private data class PendingResearchNotebooksListRun(",
+            (
+                "private data class PendingTrustedSourceConfirmation(",
+                "val requestId: String",
+                "val review: PendingSourceReview",
+                "private data class PendingTrustedSourceRevocation(",
+                "val grantId: String",
+                "val channel: RuntimeProtocolChannel",
+                "val connectionGeneration: Long",
+                "val authorityGeneration: Long",
+            ),
+            "Android trusted-source confirmation authority snapshots",
+        ),
+        (
+            "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt",
+            "    private fun PendingSourceReview.hasCurrentTrustedSourceTargetSnapshot(): Boolean {",
+            "    private fun matchesCurrentTrustedSourceListAuthority(",
+            (
+                "state.value.sourceReview != uiReview",
+                "trustedSourceGrantsBySourceAnchorId[sourceAnchorId] != trustedGrantId",
+                "state.value.activeChatSessionId != expectedSessionId",
+                "private fun PendingTrustedSourceConfirmation.matchesCurrentTrustedSourceAuthority(",
+                "private fun PendingTrustedSourceRevocation.hasCurrentTrustedSourceRevocationTarget()",
+                "trustedSourceGrantsBySourceAnchorId[sourceAnchorId] == grantId",
+            ),
+            "Android trusted-source target and transport drift rejection",
+        ),
+        (
+            "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt",
+            "    fun trustedSourceConfirmationRejectsTargetSelectionDriftBeforeDispatch() = runTest {",
+            "    fun malformedCitationResponseReleasesPendingRequestWithoutLeakingOpaqueDetail() = runTest {",
+            (
+                "fun trustedSourceConfirmationRejectsReplacedChannelAndConnectionGeneration()",
+                "fun trustedSourceConfirmationFailsClosedOnDisconnectAndAuthenticationRollover()",
+                "fun trustedSourceRevokeRejectsSameDisplayTargetWithReplacementGrantIdentity()",
+                "fun trustedSourceApproveAndDismissConfirmationsAreOneShotAfterFailure()",
+            ),
+            "Android trusted-source destructive confirmation regressions",
+        ),
+        (
+            "apps/macos/AetherLinkRelay/Sources/main.swift",
+            "var exitWhenParentPID: pid_t?",
+            "do {\n    let allocationStoreURL",
+            (
+                "exitWhenParentPID = pid_t(parsed)",
+                "if let exitWhenParentPID",
+                "guard usesEphemeralAllocations",
+                "Darwin.getppid() == exitWhenParentPID",
+                "while Darwin.getppid() == exitWhenParentPID",
+                "Darwin._exit(0)",
+            ),
+            "ephemeral loopback relay parent-liveness monitor",
         ),
         (
             "apps/macos/LocalAgentBridgeApp/Sources/AetherLinkLocalization.swift",
@@ -34880,7 +35563,9 @@ let afterQuotedRaw = 2
             "class RuntimeLocalStore(",
             "@Serializable\ndata class PersistedRuntimeData(",
             (
-                "val previousPendingSecretRef = preferences.getString(STORE_KEY, null)",
+                "val previousPendingSecretRef = storedDataStringOrNull()",
+                "private fun storedDataStringOrNull(): String?",
+                "preferences.edit().remove(STORE_KEY).apply()",
                 "val diskProjection = data.sanitized().withoutRuntimeOwnedLocalData()",
                 "json.encodeToString(dataForDisk)",
             ),
@@ -34925,7 +35610,7 @@ let afterQuotedRaw = 2
             (
                 "fun sendWritesOneCompleteProtocolFrame()",
                 "fun concurrentSendsRemainSerializedAsCompleteProtocolFrames()",
-                "fun frameWriteFailurePropagatesWithoutClosingDirectSocketOrWritingAPrefix()",
+                "fun partialFrameWriteFailureClosesCurrentSocketAndLeavesClientDisconnected()",
             ),
             "Android direct atomic frame writer regressions",
         ),
@@ -34965,9 +35650,112 @@ let afterQuotedRaw = 2
         "script/check_no_device_quality.sh": (
             "ProtocolCodecTests/testRelayFrameCipherDerivesEpochMaterialOncePerDirectionAndEpoch",
             "Suite-subsumed named evidence is kept visible for contract guards",
+            "SWIFT_TEST_BATCH_MAX_FILTER_CHARS=12000",
+            "queue_swift_test_filter()",
+            "flush_swift_test_batch()",
+            '"$1" == "swift" && "$2" == "test" && "$3" == "--filter"',
+            "script/test_no_adb_external_relay_pairing_smoke.py",
+            "script/test_android_usb_install.py",
+            "LocalRuntimeMessageRouterTests/testRequestAdmissionDisconnectCancellationReleasesExactlyOnce",
             "run swift test --filter AetherLinkLocalizationTests",
             "run swift test --filter AetherLinkRenderSmokeTests",
             "Covered cross-codebase optimization addendum: relay epoch material cache",
+            "check_relay_binary_parent_liveness_guard()",
+            "run check_relay_binary_parent_liveness_guard",
+            "Ephemeral loopback relay remained alive after its direct parent exited.",
+            "RuntimeHostApprovalCoordinatorTests/testWrongReceiptFailsClosedWithoutWaitingForConcurrentReservationCommit",
+            "AggregatingLlmBackendResidencyTests/testCancelledChatReturnsBeforeSelfStartedUnloadAndSharedUnloadContinues",
+            "AggregatingLlmBackendResidencyTests/testCancelledEmbeddingReturnsBeforeSelfStartedUnloadCompletes",
+            "LocalRuntimeMessageRouterTests/testChatSendDocumentResourceLimitFailsBeforeBackendDispatch",
+            "outer_parent_pid = os.getppid()",
+            "if os.getppid() != outer_parent_pid:",
+            'work_dir.joinpath("reparent-helper.pid")',
+            '"--require-allocation",',
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelCancelledUserInterfaceRouteRequestPublishesFailureAndIgnoresLateSuccess",
+        ),
+        "apps/macos/AetherLinkRelay/Sources/main.swift": (
+            'case "--exit-when-parent-pid":',
+            "--exit-when-parent-pid is restricted to ephemeral loopback diagnostics.",
+        ),
+        "script/runtime_authenticated_mock_smoke.swift": (
+            '"--exit-when-parent-pid"',
+            "String(getpid())",
+            'process.arguments = [',
+            'if bootstrapRelayEndpoint != nil {',
+            'process.arguments?.append("--require-allocation")',
+        ),
+        "apps/macos/CompanionCore/Sources/SQLiteRuntimeChatEventStore.swift": (
+            'Self.execute(database, "DELETE FROM runtime_chat_event_fts_v2")',
+            "instr(title, ?) > 0",
+            "instr(transcript, ?) > 0",
+            "FROM runtime_chat_event_fts_v2",
+        ),
+        "apps/macos/CompanionCore/Sources/CompanionAppModel.swift": (
+            "case started(requestID: UUID)",
+            "CompanionRelayConfigurationRequestState",
+            "acknowledgeRelayConfigurationRequestCompletion",
+            "clearCompletedRelayConfigurationRequestState",
+            "relayConfigurationRequestCompletion",
+            "userInterfaceRequestContext",
+            "publishRelayConfigurationRequestCompletion",
+            "Connection preparation was cancelled before completion.",
+        ),
+        "apps/macos/LocalAgentBridgeApp/Sources/RemoteRelayRoutePanel.swift": (
+            ".onChange(of: model.relayConfigurationRequestState)",
+            "reconcileConfigurationRequestState()",
+            "connectionRecoveryConfigurationRequestResolution(",
+            "state: model.relayConfigurationRequestState",
+            "model.acknowledgeRelayConfigurationRequestCompletion(",
+            "case .started(let requestID)",
+        ),
+        "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift": (
+            "testCompanionAppModelCancelledUserInterfaceRouteRequestPublishesFailureAndIgnoresLateSuccess",
+            "testCompanionAppModelImmediateConfigurationClearsUnconsumedRequestCompletion",
+            "testCompanionAppModelStopClearsUnconsumedRequestCompletion",
+            "testCompanionAppModelAcknowledgingCompletedRequestCannotClearNewActiveRequest",
+            "residencyDrainWaitStarted.wait(timeout: .now() + 1)",
+            "allocator.waitUntilFinished()",
+            "holdCancelledWorkerUntilReleased: true",
+            "Connection preparation was cancelled before completion.",
+        ),
+        "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt": (
+            "DEFAULT_MAX_ATTACHMENT_DECODED_BYTES = 384 * 1024",
+            "DEFAULT_MAX_ATTACHMENT_REQUEST_ENCODED_BYTES = 512 * 1024",
+            "Dispatchers.IO.limitedParallelism(1)",
+            "withTimeout(dependencies.attachmentIoTimeoutMillis)",
+            "chatSendEnvelopePreflightErrorCode(",
+            "protocolCodec.encodeBody(envelope)",
+            "ProtocolCodec.MAX_FRAME_BYTES",
+        ),
+        "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt": (
+            "exactProtocolCodecPreflightRejectsOversizeAttachmentEnvelopeWithoutStateMutation",
+            "addAttachmentsRejectsUnboundedProviderNameAndMimeMetadataBeforeRead",
+            "attachmentProviderMetadataUsesCooperativeTimeoutAndFailsClosed",
+            "productionAttachmentIoLaneSerializesCancellationIgnoringProviderStarts",
+        ),
+        "apps/macos/TrustedDevices/Sources/TrustedDevice.swift": (
+            "case ambiguousDeviceIdentifier",
+            "guard deviceIdentifiers.insert(device.id).inserted",
+        ),
+        "apps/macos/TrustedDevices/Tests/TrustedDeviceStoreTests.swift": (
+            "testLoadAndSnapshotLookupRejectDuplicateDeviceIdentifiersWithDifferentKeys",
+            "testTrustAndRemoveRejectDuplicateDeviceIdentifiersWithoutRewritingAuthority",
+        ),
+        "apps/macos/CompanionCore/Tests/AggregatingLlmBackendResidencyTests.swift": (
+            "testCancelledChatReturnsBeforeSelfStartedUnloadAndSharedUnloadContinues",
+            "testCancelledEmbeddingReturnsBeforeSelfStartedUnloadCompletes",
+        ),
+        "script/android_usb_install.sh": (
+            'REQUESTED_SERIAL="${ANDROID_SERIAL:-}"',
+            "Multiple authorized Android devices are attached",
+            'export ANDROID_SERIAL="$SERIAL"',
+            '"$GRADLE" --no-daemon :app:installDebug --console=plain',
+        ),
+        "script/test_android_usb_install.py": (
+            "test_multiple_authorized_devices_require_explicit_serial",
+            "test_cli_serial_binds_adb_and_gradle_to_the_same_device",
+            "test_android_serial_environment_selects_one_authorized_device",
+            "test_requested_unauthorized_device_fails_before_gradle",
         ),
         "script/check_macos_localization.py": (
             '"final class PairingQRCodeImageCache: ObservableObject"',
@@ -34975,31 +35763,40 @@ let afterQuotedRaw = 2
             '"testPairingQRCodeImageCacheRendersOncePerExactPayload"',
         ),
         "docs/progress.md": (
-            "2026-07-18 Cross-Codebase Optimization Pass",
-            "complete disjoint inventory of 302 tracked first-party code files",
-            "affected-session FTS refresh",
-            "Gradle invocations fall from 11 to 5",
+            "2026-07-19 Whole-Codebase Optimization And Hardening Pass",
+            "one per-event search projection",
+            "wrong, repeated, or concurrent reservation receipt fails immediately",
+            "first v2 projection repair intentionally reads the complete event log",
         ),
         "docs/qa-evidence.md": (
-            "2026-07-18 Cross-Codebase Optimization No-Device Checklist",
-            "Final aggregate no-device verification and post-change wall-time comparison",
-            "730 unique suite-subsumed named selectors",
+            "2026-07-19 Whole-Codebase Optimization And Hardening No-Device Checklist",
+            "pass 29/29 under Thread Sanitizer",
+            "all 1,110 app JVM tests pass",
+            "multi-delta boundary discovery",
         ),
         "docs/roadmap.md": (
-            "Cross-Codebase Optimization Pass",
-            "coalesce Android draft and streaming whole-state persistence",
-            "affected-session incremental FTS refresh",
+            "Whole-Codebase Optimization And Hardening",
+            "versioned trigram/cross-event projection migration",
+            "bounded Ollama detail concurrency",
         ),
         "docs/architecture.md": (
             "Hot-Path Efficiency Invariants",
             "sequence-specific nonce and AAD suffixes are still rebuilt for every frame",
-            "affected owner/session keys",
+            "one event-level search projection atomically",
+            "self-started unload",
             "prefix and body are written separately",
         ),
         "docs/security.md": (
             "Optimization Security Invariants",
             "no derived key is persisted or shared across sessions",
-            "Full event-log validation remains inside each SQLite append transaction",
+            "wrong or concurrent approval receipt never waits",
+            "descriptor-validated regular file",
+            "synchronous filesystem reads, PDFKit work, and in-process `NSAttributedString` parsing cannot be forcibly interrupted",
+            "Decision-v6, progress-v8, and handoff-v9",
+        ),
+        "docs/protocol.md": (
+            "Decision-v6, progress-v8, and handoff-v9 reject `libnice-0.1.23-glib-c-abi` before compilation",
+            "no networking library is selected",
         ),
     }
 
@@ -35012,6 +35809,163 @@ let afterQuotedRaw = 2
         for snippet in snippets:
             if snippet not in text:
                 failures.append(f"{relative_path}: missing cross-codebase optimization contract {snippet!r}.")
+
+    route_panel_path = ROOT / "apps/macos/LocalAgentBridgeApp/Sources/RemoteRelayRoutePanel.swift"
+    if route_panel_path.is_file():
+        route_panel_text = route_panel_path.read_text(encoding="utf-8", errors="replace")
+        if "completePendingOperation" in route_panel_text:
+            failures.append(
+                "apps/macos/LocalAgentBridgeApp/Sources/RemoteRelayRoutePanel.swift: "
+                "Connection Recovery must not synthesize allocation success from global in-flight state."
+            )
+        route_panel_code = code_tokens_without_comments_or_literals(route_panel_text)
+        body_start = route_panel_code.find("    var body: some View {")
+        body_end = route_panel_code.find("    @ViewBuilder", body_start)
+        if body_start < 0 or body_end < 0:
+            failures.append(
+                "apps/macos/LocalAgentBridgeApp/Sources/RemoteRelayRoutePanel.swift: "
+                "Connection Recovery body-state observation boundary is missing."
+            )
+        else:
+            body_region = route_panel_code[body_start:body_end]
+            sync_index = body_region.find("syncFromModel()")
+            appear_reconcile_index = body_region.find("reconcileConfigurationRequestState()")
+            state_observer_index = body_region.find(
+                ".onChange(of: model.relayConfigurationRequestState)"
+            )
+            if (
+                sync_index < 0
+                or appear_reconcile_index < sync_index
+                or state_observer_index < appear_reconcile_index
+            ):
+                failures.append(
+                    "apps/macos/LocalAgentBridgeApp/Sources/RemoteRelayRoutePanel.swift: "
+                    "onAppear must reconcile model-owned relay request state after draft sync, and the view "
+                    "must observe the same atomic state."
+                )
+        if ".onChange(of: model.relayConfigurationRequestCompletion)" in route_panel_code:
+            failures.append(
+                "apps/macos/LocalAgentBridgeApp/Sources/RemoteRelayRoutePanel.swift: "
+                "Connection Recovery must observe the atomic active/completed request state, not completion alone."
+            )
+
+    android_view_model_path = (
+        ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"
+    )
+    if android_view_model_path.is_file():
+        android_view_model_text = android_view_model_path.read_text(encoding="utf-8", errors="replace")
+        send_start = android_view_model_text.find("    fun sendChatMessage() {")
+        send_end = android_view_model_text.find("    fun regenerateLatestResponse() {", send_start)
+        if send_start < 0 or send_end < 0:
+            failures.append(
+                "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt: "
+                "chat-send preflight boundary is missing."
+            )
+        else:
+            send_region = android_view_model_text[send_start:send_end]
+            preflight_index = send_region.find("chatSendEnvelopePreflightErrorCode(")
+            mutation_indices = [
+                send_region.find("ensureActiveChatSession("),
+                send_region.find("clearAttachmentIngestionFailure("),
+                send_region.find("clearPendingHistoricalSourceAttributionResolve("),
+                send_region.find('persistComposerDraft(""'),
+                send_region.find("clearPendingAttachmentsForSession("),
+                send_region.find("mutableState.update"),
+                send_region.find("persistMessages("),
+                send_region.find("sendEnvelope(chatSendEnvelope)"),
+            ]
+            if (
+                preflight_index < 0
+                or any(index < 0 or index < preflight_index for index in mutation_indices)
+            ):
+                failures.append(
+                    "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt: "
+                    "the exact ProtocolCodec frame preflight must precede every session, draft, attachment, state, "
+                    "persistence, and transport mutation."
+                )
+
+    trusted_store_path = ROOT / "apps/macos/TrustedDevices/Sources/TrustedDevice.swift"
+    if trusted_store_path.is_file():
+        trusted_store_code = code_tokens_without_comments_or_literals(
+            trusted_store_path.read_text(encoding="utf-8", errors="replace")
+        )
+        save_start = trusted_store_code.find("    private func saveUnlocked(")
+        save_end = trusted_store_code.find("    private func validateDestination(", save_start)
+        bounded_start = trusted_store_code.find("private struct BoundedTrustedDeviceCollection")
+        bounded_end = trusted_store_code.find("private func validateTrustedDevice(", bounded_start)
+        if save_start < 0 or save_end < 0:
+            failures.append(
+                "apps/macos/TrustedDevices/Sources/TrustedDevice.swift: "
+                "trusted-device save validation boundary is missing."
+            )
+        else:
+            save_region = trusted_store_code[save_start:save_end]
+            validation_index = save_region.find("try validateDevices(devices)")
+            encode_index = save_region.find("let data = try encoder.encode(devices)")
+            if validation_index < 0 or encode_index < validation_index:
+                failures.append(
+                    "apps/macos/TrustedDevices/Sources/TrustedDevice.swift: "
+                    "duplicate trusted-device identifiers must fail before encoding or rewriting authority."
+                )
+        if bounded_start < 0 or bounded_end < 0:
+            failures.append(
+                "apps/macos/TrustedDevices/Sources/TrustedDevice.swift: "
+                "bounded trusted-device decode validation boundary is missing."
+            )
+        else:
+            bounded_region = trusted_store_code[bounded_start:bounded_end]
+            duplicate_index = bounded_region.find("guard deviceIdentifiers.insert(device.id).inserted")
+            append_index = bounded_region.find("devices.append(device)")
+            if duplicate_index < 0 or append_index < duplicate_index:
+                failures.append(
+                    "apps/macos/TrustedDevices/Sources/TrustedDevice.swift: "
+                    "duplicate trusted-device identifiers must fail before decoded authority is admitted."
+                )
+
+    relay_smoke_path = ROOT / "script/runtime_authenticated_mock_smoke.swift"
+    relay_smoke_text = relay_smoke_path.read_text(encoding="utf-8", errors="replace")
+    relay_arguments_match = re.search(
+        r"process\.arguments\s*=\s*\[(?P<body>.*?)\]\s*"
+        r"if bootstrapRelayEndpoint != nil \{\s*"
+        r"process\.arguments\?\.append\(\"--require-allocation\"\)",
+        relay_smoke_text,
+        re.DOTALL,
+    )
+    if relay_arguments_match is None:
+        failures.append(
+            "script/runtime_authenticated_mock_smoke.swift: smoke-owned relay arguments must keep "
+            "bootstrap allocation gating adjacent to the launch block."
+        )
+    else:
+        relay_arguments = relay_arguments_match.group("body")
+        for snippet in (
+            '"--host"',
+            '"--port"',
+            '"--ephemeral-allocations"',
+            '"--exit-when-parent-pid"',
+            "String(getpid())",
+        ):
+            if snippet not in relay_arguments:
+                failures.append(
+                    "script/runtime_authenticated_mock_smoke.swift: smoke-owned relay launch "
+                    f"is missing scoped parent-liveness argument {snippet!r}."
+                )
+
+    request_admission_selector = (
+        "run swift test --filter '"
+        "LocalRuntimeMessageRouterTests/testRequestAdmissionEnforcesPerConnectionBoundaryAndReleasesAfterCompletion|"
+        "LocalRuntimeMessageRouterTests/testRequestAdmissionEnforcesGlobalBoundaryAcrossConnections|"
+        "LocalRuntimeMessageRouterTests/testRequestAdmissionReleasesSlotAfterHandlerError|"
+        "LocalRuntimeMessageRouterTests/testRequestAdmissionDisconnectCancellationReleasesExactlyOnce'"
+    )
+    no_device_text = (ROOT / "script/check_no_device_quality.sh").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    if no_device_text.count(request_admission_selector) != 1:
+        failures.append(
+            "script/check_no_device_quality.sh: runtime request admission selector must appear "
+            "exactly once in canonical boundary order."
+        )
 
     android_codec_path = (
         ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolCodec.kt"
@@ -35123,12 +36077,12 @@ def frontend_readiness_design_guard_failures() -> list[str]:
             "private struct ActivePairingCard: View {",
             "private struct PairingRouteNotice {",
             (
-                "regularContent(at: timeline.date, isExpired: isExpired)",
-                "compactContent(at: timeline.date, isExpired: isExpired)",
-                "stackedContent(at: timeline.date, isExpired: isExpired)",
-                "qrCode(dimension: 184, isExpired: isExpired)",
-                "qrCode(dimension: 220, isExpired: isExpired)",
-                "instructions(at: date, compact: true)",
+                "private func regularContent(",
+                "private func compactContent(",
+                "private func stackedContent(",
+                "qrCode(image: qrImage, dimension: 184, isExpired: isExpired)",
+                "qrCode(image: qrImage, dimension: 220, isExpired: isExpired)",
+                "instructions(at: date, compact: true, isQRCodeAvailable: isQRCodeAvailable)",
             ),
             "macOS compact pairing task surface",
         ),
@@ -36104,7 +37058,7 @@ def macos_localization_script_guard_failures() -> list[str]:
             "macOS localization guard must require Activity log list accessibility labels.",
         ),
         (
-            "activityLogListAccessibilityValue(count: model.logs.count)",
+            "activityLogListAccessibilityValue(count: logEntries.count)",
             "macOS localization guard must require Activity log list accessibility values.",
         ),
         (
@@ -36424,7 +37378,7 @@ def macos_localization_script_guard_failures() -> list[str]:
             "macOS localization guard must require saved connection removal hint XCTest coverage.",
         ),
         (
-            "pairingQRCodeAccessibilityHint(remoteRouteExpiresAt:",
+            '"func pairingQRCodeAccessibilityHint("',
             "macOS localization guard must require Pairing QR remote-route expiry accessibility hints.",
         ),
         (
@@ -37717,8 +38671,8 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
     for snippet in (
         "public func retireAfterCurrentConnection()",
         "isRunning = false",
-        "reconnectWorkItem?.cancel()",
-        "return connection == nil",
+        "reconnectTask?.cancel()",
+        "shouldReportStopped: connection == nil",
     ):
         if snippet not in relay_peer_client_text:
             failures.append(
@@ -39370,15 +40324,17 @@ def macos_runtime_memory_source_review_guard_failures() -> list[str]:
 
     required_status_snippets = (
         "RuntimeMemoryInspectorSourceReview(source: source)",
-        "sourceSummary: entry.source.map { runtimeMemorySourceReviewAccessibilityLabel(source: $0, isExpanded: false) }",
         "private struct RuntimeMemoryInspectorSourceReview: View",
+        ".accessibilityLabel(Text(runtimeMemorySourceReviewAccessibilityLabel(source: source)))",
+        "runtimeMemorySourceReviewAccessibilityValue(isExpanded: isExpanded)",
         "runtimeMemorySourceVisiblePointers(source)",
         "source.sourcePointers.prefix(runtimeMemorySourceVisibleExcerptLimit)",
         "runtimeTranscriptRoleDisplayName(pointer.role)",
         "NSLocalizedString(\"Approved from older chat\", comment: \"\")",
         "NSLocalizedString(\"Show source excerpts\", comment: \"\")",
         "NSLocalizedString(\"Hide source excerpts\", comment: \"\")",
-        "NSLocalizedString(\"Memory source. %@. %@. %@.\", comment: \"\")",
+        "NSLocalizedString(\"Memory source. %@. %@.\", comment: \"\")",
+        "func runtimeMemorySourceReviewAccessibilityValue(isExpanded: Bool) -> String",
     )
     for snippet in required_status_snippets:
         if snippet not in status_text:
@@ -39400,8 +40356,11 @@ def macos_runtime_memory_source_review_guard_failures() -> list[str]:
     required_localization_test_snippets = (
         "runtimeMemorySourceVisiblePointers(source).count, 2",
         "runtimeMemorySourcePointerText(source.sourcePointers[0])",
-        "Memory source. Source chat: Release planning. Source coverage: Messages 1-4. Source review collapsed.",
-        "Memory note Prefer concise answers. Status Enabled. Created Jun 29, 2026 at 12:50 AM. Updated Jun 29, 2026 at 1:00 AM. Memory source.",
+        "Memory source. Source chat: Release planning. Source coverage: Messages 1-4.",
+        "XCTAssertFalse(sourceLabel.contains(\"collapsed\"))",
+        "XCTAssertFalse(sourceLabel.contains(\"expanded\"))",
+        "runtimeMemorySourceReviewAccessibilityValue(isExpanded: false)",
+        "runtimeMemorySourceReviewAccessibilityValue(isExpanded: true)",
         "runtimeMemorySourceSessionTitle(blankSource), \"Untitled chat\"",
         "Source excerpt Assistant: Source excerpt unavailable",
         "이전 채팅에서 승인됨",
@@ -39604,9 +40563,9 @@ def runtime_research_notebook_guard_failures() -> list[str]:
             '"c".repeat(513)',
         ),
         ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolCodec.kt": (
-            "MessageType.ResearchBriefCreate in rawInspection.topLevelTypeValues",
-            "MessageType.ResearchNotebooksList in rawInspection.topLevelTypeValues",
-            "contains duplicate JSON object key",
+            "RawJsonObjectInspector(body).inspect()",
+            "if (rawInspection.firstDuplicateKeyPath != null)",
+            "Protocol envelope contains duplicate JSON object key",
         ),
         ROOT / "apps/macos/CompanionCore/Sources/RuntimeResearchNotebookStore.swift": (
             "maximumTrustedSourceGrantCount = 8",
@@ -46473,6 +47432,196 @@ def android_protocol_envelope_decode_guard_failures() -> list[str]:
     return failures
 
 
+def owned_process_supervisor_guard_failures() -> list[str]:
+    failures: list[str] = []
+    required_files = {
+        "script/owned_process_supervisor.sh": (
+            "AETHERLINK_OWNED_PROCESS_SIGNALS_RESET",
+            'for name in ("SIGTERM", "SIGINT", "SIGHUP"):',
+            "start_child_with_default_signals()",
+            "os.execvp(sys.argv[1], sys.argv[1:])",
+            '[[ "$parent_pid" == "$$" ]] || return 1',
+            "umask 077",
+            'chmod 600 "$temporary_file"',
+            "terminate_child()",
+            'kill -KILL "$CHILD_PID"',
+            'trap \'shutdown_for_signal TERM 143\' TERM',
+            'trap \'shutdown_for_signal INT 130\' INT',
+            'trap \'shutdown_for_signal HUP 129\' HUP',
+            'if [[ "$CURRENT_PARENT_PID" != "$OWNER_PID" ]]; then',
+            "The explicit owner PID must be the supervisor's direct parent.",
+        ),
+        "script/no_adb_external_relay_pairing_smoke.sh": (
+            '"$ROOT_DIR/script/owned_process_supervisor.sh"',
+            '--owner-pid "$$"',
+            '--pid-file "$RELAY_PID_FILE"',
+            "--require-allocation",
+            '--allocation-store "$WORK_DIR/relay-allocations.json"',
+            "record_supervised_relay_process()",
+            "terminate_recorded_relay_child_if_identical()",
+            "cleanup_recorded_relay_process()",
+            'RELAY_ORIGINAL_PARENT_PID="$RELAY_SUPERVISOR_PID"',
+        ),
+        "script/check_no_device_quality.sh": (
+            "ACTIVE_OWNED_PROCESS_SUPERVISOR_PIDS=()",
+            "ACTIVE_OWNED_PROCESS_CHILD_START_TIMES=()",
+            "ACTIVE_OWNED_PROCESS_CHILD_COMMANDS=()",
+            "ACTIVE_OWNED_PROCESS_CHILD_ORIGINAL_PARENT_PIDS=()",
+            "start_owned_process_supervisor()",
+            "stop_owned_process_supervisor()",
+            "terminate_owned_process_child_if_identical()",
+            "cleanup_owned_process_supervisors()",
+            "trap cleanup_no_device_gate EXIT",
+            '"$ROOT_DIR/script/owned_process_supervisor.sh"',
+        ),
+        "script/test_no_adb_external_relay_pairing_smoke.py": (
+            "test_local_relay_keeps_allocation_guards_under_supervisor",
+            "test_default_gate_supervises_every_durable_direct_relay",
+            "test_gate_durable_relay_launches_use_active_supervisor_cleanup",
+            "test_default_gate_parent_cleanup_recovers_child_after_supervisor_sigkill",
+            "test_no_adb_parent_cleanup_recovers_child_after_supervisor_sigkill",
+            "test_supervisor_rejects_non_parent_owner_before_starting_child",
+            "test_supervisor_forwards_shutdown_signals_without_sockets",
+            "test_child_exec_restores_default_term_int_and_hup",
+            "test_owner_sigkill_terminates_supervisor_and_child_without_sockets",
+        ),
+    }
+    loaded: dict[str, str] = {}
+    for relative_path, snippets in required_files.items():
+        path = ROOT / relative_path
+        if not path.exists():
+            failures.append(f"{relative_path}: required owned-process supervisor contract is missing.")
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        loaded[relative_path] = text
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{relative_path}: missing owned-process supervisor contract snippet {snippet!r}."
+                )
+
+    supervisor_path = ROOT / "script/owned_process_supervisor.sh"
+    if supervisor_path.exists():
+        metadata = supervisor_path.lstat()
+        if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+            failures.append("script/owned_process_supervisor.sh must remain a regular non-symlink file.")
+        elif metadata.st_mode & 0o111 == 0:
+            failures.append("script/owned_process_supervisor.sh must remain executable.")
+
+    supervisor_text = loaded.get("script/owned_process_supervisor.sh", "")
+    start_child_start = supervisor_text.find("start_child_with_default_signals() {")
+    start_child_end = supervisor_text.find("\n}\n", start_child_start) if start_child_start >= 0 else -1
+    if start_child_start < 0 or start_child_end < 0:
+        failures.append("script/owned_process_supervisor.sh: child exec wrapper is not structurally readable.")
+    else:
+        start_child_text = supervisor_text[start_child_start:start_child_end]
+        reset_index = start_child_text.find('for name in ("SIGTERM", "SIGINT", "SIGHUP"):')
+        exec_index = start_child_text.find("os.execvp(sys.argv[1], sys.argv[1:])")
+        if reset_index < 0 or exec_index < 0 or reset_index > exec_index:
+            failures.append(
+                "script/owned_process_supervisor.sh: child termination signals must reset immediately before exec."
+            )
+
+    terminate_start = supervisor_text.find("terminate_child() {")
+    terminate_end = supervisor_text.find("\n}\n", terminate_start) if terminate_start >= 0 else -1
+    if terminate_start < 0 or terminate_end < 0:
+        failures.append("script/owned_process_supervisor.sh: terminate_child is not structurally readable.")
+    else:
+        terminate_text = supervisor_text[terminate_start:terminate_end]
+        for snippet in (
+            "local kill_remaining_checks=40",
+            "&& ((kill_remaining_checks > 0))",
+        ):
+            if snippet not in terminate_text:
+                failures.append(
+                    "script/owned_process_supervisor.sh: post-KILL child waiting must remain bounded."
+                )
+                break
+        if "while child_is_owned_and_running; do" in terminate_text:
+            failures.append(
+                "script/owned_process_supervisor.sh: unbounded post-KILL child waiting is forbidden."
+            )
+
+    for relative_path, helper_name, matcher_name in (
+        (
+            "script/check_no_device_quality.sh",
+            "stop_and_reap_owned_process_supervisor_if_identical",
+            "owned_process_matches_identity",
+        ),
+        (
+            "script/no_adb_external_relay_pairing_smoke.sh",
+            "stop_and_reap_relay_supervisor_if_identical",
+            "relay_process_matches_identity",
+        ),
+    ):
+        source = loaded.get(relative_path, "")
+        helper_start = source.find(f"{helper_name}() {{")
+        helper_end = source.find("\n}\n", helper_start) if helper_start >= 0 else -1
+        if helper_start < 0 or helper_end < 0:
+            failures.append(f"{relative_path}: bounded supervisor cleanup helper is missing.")
+            continue
+        helper_text = source[helper_start:helper_end]
+        for snippet in (
+            "local term_remaining_checks=60",
+            "local kill_remaining_checks=40",
+            "kill -KILL",
+            f"if ! {matcher_name}",
+            'wait "$supervisor_pid"',
+        ):
+            if snippet not in helper_text:
+                failures.append(
+                    f"{relative_path}: supervisor cleanup must bound termination and reap only after identity exit."
+                )
+                break
+
+    for relative_path, source in loaded.items():
+        for forbidden_trace in (
+            "AETHERLINK_OWNED_PROCESS_TRACE_FILE",
+            "aetherlink-owned-process-trace.log",
+        ):
+            if forbidden_trace in source:
+                failures.append(
+                    f"{relative_path}: temporary owned-process tracing must not remain in source."
+                )
+
+    gate_text = loaded.get("script/check_no_device_quality.sh", "")
+    if re.search(r"for\s*\(\s*index\s*=", gate_text):
+        failures.append(
+            "script/check_no_device_quality.sh: awk loop variables must not shadow the macOS awk index builtin."
+        )
+    durable_functions = (
+        "check_relay_preflight_allocation_guard",
+        "check_relay_allocation_token_authorization_guard",
+        "check_relay_exposed_bind_token_guard",
+    )
+    for function_name in durable_functions:
+        start = gate_text.find(f"{function_name}() {{")
+        end = gate_text.find("\n}\n", start) if start >= 0 else -1
+        if start < 0 or end < 0:
+            failures.append(
+                f"script/check_no_device_quality.sh: missing durable relay function {function_name}."
+            )
+            continue
+        function_text = gate_text[start:end]
+        for snippet in (
+            "start_owned_process_supervisor",
+            "stop_owned_process_supervisor",
+            "--allocation-store",
+        ):
+            if snippet not in function_text:
+                failures.append(
+                    "script/check_no_device_quality.sh: "
+                    f"{function_name} must retain {snippet!r}."
+                )
+    if gate_text.count("relay_supervisor_pid relay_pid") != len(durable_functions):
+        failures.append(
+            "script/check_no_device_quality.sh: exactly three durable direct relay launches "
+            "must use the active owned-process supervisor helper."
+        )
+
+    return failures
+
+
 def relay_exposed_bind_token_guard_failures() -> list[str]:
     failures: list[str] = []
     required_files = {
@@ -47046,7 +48195,9 @@ def relay_control_line_relay_id_canonicality_guard_failures() -> list[str]:
     required_files = {
         "apps/macos/RelayServerCore/Sources/RelayHandshake.swift": (
             "relayControlLineRelayIDMaxCharacters = 512",
-            "relayControlLineRelayIDForbiddenCharacters",
+            "relayControlLineRelayIDPunctuation",
+            "relayID.utf8.count <= relayControlLineRelayIDMaxCharacters",
+            "relayID.utf8.allSatisfy",
             "isCanonicalRelayControlLineID",
             "guard isCanonicalRelayControlLineID(relayID)",
         ),
@@ -47444,7 +48595,8 @@ def runtime_key_bound_relay_admission_guard_failures() -> list[str]:
             "guard persistenceStateIsValid else { throw RelayAllocationError.persistenceFailed }",
             "case schemaVersion:",
             "public func withRevalidatedBinding<T>",
-            "guard allocations[expected.relayID] == expected, expected.isActive(now: now)",
+            "func withFreshlyRevalidatedBinding<T>",
+            "expected.isActive(now: validationDate)",
         ),
         "apps/macos/RelayServerCore/Sources/RelayServer.swift": (
             "RelayAllocationPreflightResponse().responseLine()",
@@ -47454,7 +48606,7 @@ def runtime_key_bound_relay_admission_guard_failures() -> list[str]:
             "try allocationRegistry.commit(",
             "try authorizeRuntimeRegistration(",
             "RelayRuntimeRegistrationProofRequest.parse(",
-            "registrationAttempt = try allocationRegistry.withRevalidatedBinding(allocationBinding)",
+            "registrationAttempt = try allocationRegistry.withFreshlyRevalidatedBinding(",
             "matcher.registerWithExpiredWaitingPeers(",
         ),
         "apps/macos/CompanionCore/Sources/RemoteRelayAllocationClient.swift": (
@@ -47605,7 +48757,7 @@ def runtime_key_bound_relay_admission_guard_failures() -> list[str]:
     server_text = texts.get(server_relative, "")
     authorization_position = server_text.find("try authorizeRuntimeRegistration(")
     recheck_position = server_text.find(
-        "registrationAttempt = try allocationRegistry.withRevalidatedBinding(allocationBinding)"
+        "registrationAttempt = try allocationRegistry.withFreshlyRevalidatedBinding("
     )
     matcher_position = server_text.find(
         "matcher.registerWithExpiredWaitingPeers(", recheck_position
@@ -49180,10 +50332,13 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             '"runtimeNetworkIOAllowed": false',
         ),
         "context": (
-            "progress-v3.json",
-            "implementation/handoff-v6.json",
-            "rejected libjuice before any compiler",
-            "proposed_not_selected",
+            "progress-v8.json",
+            "implementation/handoff-v9.json",
+            "rejected libjuice before compilation",
+            "static reviews found four P1 production-profile failures and rejected libnice",
+            "before any configure step, build system, compiler",
+            "No networking library or",
+            "next candidate is selected.",
         ),
         "vectors": (
             '"schema": "aetherlink-production-p2p-nat-v1-vectors"',
@@ -49226,6 +50381,55 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
         for snippet in snippets:
             if snippet.lower() not in text.lower():
                 failures.append(f"{paths[name].relative_to(ROOT)} is missing {snippet!r}.")
+
+    try:
+        current_progress = json.loads(texts.get("current_phase_a_progress", ""))
+    except (json.JSONDecodeError, TypeError):
+        current_progress = None
+        failures.append(
+            "Production P2P/NAT progress-v8 must be valid JSON before current documentation is checked."
+        )
+    if isinstance(current_progress, dict):
+        summary = current_progress.get("summary")
+        receipt = current_progress.get("acquisitionAndToolReceipt")
+        if not isinstance(summary, dict) or not isinstance(receipt, dict):
+            failures.append(
+                "Production P2P/NAT progress-v8 must expose summary and acquisitionAndToolReceipt objects."
+            )
+        elif (
+            summary.get("latestCandidate") != "libnice-0.1.23-glib-c-abi"
+            or summary.get("latestCandidateDisposition") != "rejected_before_compile"
+            or summary.get("selectedNetworkingLibrary") is not None
+            or receipt.get("libniceArchiveAcquired") is not True
+            or receipt.get("glibArchiveAcquired") is not True
+        ):
+            failures.append(
+                "Production P2P/NAT progress-v8 current libnice/GLib acquisition and rejection state drifted."
+            )
+        else:
+            stale_current_claims = (
+                "libnice-0.1.23-glib-c-abi` is not selected or acquired",
+                "libnice-0.1.23-glib-c-abi` remains `proposed_not_selected`, and no source or dependency was acquired",
+            )
+            for name in ("security", "protocol"):
+                current_doc = texts.get(name, "")
+                for stale_claim in stale_current_claims:
+                    if stale_claim in current_doc:
+                        failures.append(
+                            f"{paths[name].relative_to(ROOT)} contradicts progress-v8 by retaining "
+                            f"stale pre-acquisition libnice wording {stale_claim!r}."
+                        )
+                for required_claim in (
+                    "libnice 0.1.23",
+                    "GLib 2.64.2",
+                    "before compilation",
+                    "no selected networking library" if name == "security" else "no networking library is selected",
+                ):
+                    if required_claim not in current_doc:
+                        failures.append(
+                            f"{paths[name].relative_to(ROOT)} must reflect progress-v8 current state "
+                            f"with {required_claim!r}."
+                        )
 
     phase_a_gate_order = (
         "run python3 script/check_p2p_nat_security_design.py",
@@ -49282,7 +50486,7 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
         failures.append("P2P/NAT security design evidence manifest must contain 13 artifacts.")
     manifest_bytes = paths["manifest"].read_bytes() if paths["manifest"].is_file() else b""
     manifest_hash = hashlib.sha256(manifest_bytes).hexdigest()
-    expected_manifest_hash = "7c2142fdd7ae7dd312ee8b52d320a47594517ea17b2499173b59c0fc1f40b721"
+    expected_manifest_hash = "d2f83be1b884cf9973037c72d2ee81f583fbf33150f6f8d843b787c7c83e29b8"
     if manifest_hash != expected_manifest_hash:
         failures.append(
             "P2P/NAT security design evidence manifest collection hash drifted: "
@@ -49559,6 +50763,104 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
                 failures.append(
                     f"{paths[name].relative_to(ROOT)} section {heading!r} is missing {snippet!r}."
                 )
+    return failures
+
+
+def bounded_script_hardening_guard_failures() -> list[str]:
+    failures: list[str] = []
+    paths = {
+        "preflight": ROOT / "script/relay_allocation_preflight.py",
+        "preflight_test": ROOT / "script/test_relay_allocation_preflight.py",
+        "production": ROOT / "script/check_production_relay_security_design.py",
+        "production_test": ROOT / "script/test_production_relay_security_design.py",
+        "build": ROOT / "script/build_and_run.sh",
+        "build_test": ROOT / "script/test_build_and_run.py",
+        "gate": ROOT / "script/check_no_device_quality.sh",
+    }
+    texts: dict[str, str] = {}
+    for name, path in paths.items():
+        if not path.is_file():
+            failures.append(f"Missing bounded script-hardening file: {path.relative_to(ROOT)}")
+            continue
+        texts[name] = path.read_text(encoding="utf-8", errors="replace")
+
+    required_snippets = {
+        "preflight": (
+            "object_pairs_hook=reject_duplicate_object_keys",
+            "parse_constant=reject_non_finite_json_constant",
+            "payload = strict_json_loads(line[len(RESPONSE_PREFIX):])",
+        ),
+        "preflight_test": (
+            "test_duplicate_canonical_response_fields_are_rejected",
+            "test_nested_duplicate_object_key_is_rejected",
+            "test_non_finite_values_are_rejected",
+        ),
+        "production": (
+            "HARDENING_SCHEMA = {",
+            "object_pairs_hook=reject_duplicate_object_keys",
+            "parse_constant=reject_non_finite_json_constant",
+            'validate_closed_schema(document, HARDENING_SCHEMA, "hardening.json")',
+            "if type(value) is not schema:",
+            "unknown authorization-looking field",
+        ),
+        "production_test": (
+            "test_current_hardening_evidence_passes",
+            "test_duplicate_keys_are_rejected_at_top_level_and_nested",
+            "test_unknown_authorization_looking_keys_are_rejected",
+            "test_exact_scalar_types_reject_bool_int_and_float_confusion",
+        ),
+        "build": (
+            "validate_mode() {",
+            'validate_mode "$MODE"',
+        ),
+        "build_test": (
+            "test_invalid_mode_invokes_no_fake_toolchain_commands",
+            'environment["FAKE_TOOLCHAIN_LOG"]',
+            'environment["PATH"] = f"{fake_bin}:/usr/bin:/bin"',
+        ),
+        "gate": (
+            "check_python_syntax() {",
+            "ast.parse(source, filename=str(path))",
+        ),
+    }
+    for name, snippets in required_snippets.items():
+        text = texts.get(name, "")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{paths[name].relative_to(ROOT)} is missing bounded script-hardening guard {snippet!r}."
+                )
+
+    build_text = texts.get("build", "")
+    validation_marker = 'validate_mode "$MODE"'
+    validation_index = build_text.find(validation_marker)
+    for side_effect in (
+        "pkill -x",
+        "swift build",
+        'rm -rf "$APP_BUNDLE"',
+        "/usr/bin/codesign",
+        "/usr/bin/open",
+    ):
+        side_effect_index = build_text.find(side_effect)
+        if (
+            validation_index < 0
+            or side_effect_index < 0
+            or validation_index > side_effect_index
+        ):
+            failures.append(
+                "script/build_and_run.sh must validate MODE before "
+                f"the {side_effect!r} side effect."
+            )
+
+    gate_text = texts.get("gate", "")
+    if "python3 -m py_compile" in gate_text:
+        failures.append(
+            "script/check_no_device_quality.sh must not write Python bytecode into the source tree."
+        )
+    if gate_text.count("run check_python_syntax") != 2:
+        failures.append(
+            "script/check_no_device_quality.sh must route both Python syntax checks through AST parsing."
+        )
     return failures
 
 
@@ -50253,7 +51555,8 @@ def relay_waiting_peer_policy_guard_failures() -> list[str]:
             "waitingPeerPolicyMetricsSnapshot",
             "allocationBinding?.runtimeKeyFingerprint",
             "allocationBinding?.pairedClientKeyFingerprint",
-            "binding.relayExpiresAtEpochMillis - epochMillis(Date())",
+            "allocationRegistry.withFreshlyRevalidatedBinding(",
+            "allocationBinding.relayExpiresAtEpochMillis - epochMillis(validationDate)",
             "maximumWaitingDeadlineUptime:",
             "waitingDeadlineUptime - ProcessInfo.processInfo.systemUptime",
             "waitingPeerLimiter.recordWaitingPeerTimeout()",
@@ -50970,7 +52273,7 @@ def review_only_memory_semantic_duplicate_suggestions_guard_failures() -> list[s
         ),
         "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolCodec.kt": (
             "RawJsonObjectInspector(body).inspect()",
-            "duplicateKeyStrictMessageType",
+            "Protocol envelope contains duplicate JSON object key",
             "contains duplicate JSON object key",
             "MAX_JSON_NESTING_DEPTH = 128",
         ),
@@ -51267,8 +52570,9 @@ def review_only_memory_semantic_duplicate_clusters_guard_failures() -> list[str]
             "MAX_MEMORY_SEMANTIC_DUPLICATE_CLUSTER_ID_AGGREGATE_UTF8_BYTES",
         ),
         "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolCodec.kt": (
-            "MessageType.MemorySemanticDuplicateClustersList",
             "RawJsonObjectInspector(body).inspect()",
+            "if (rawInspection.firstDuplicateKeyPath != null)",
+            "Protocol envelope contains duplicate JSON object key",
             "MAX_JSON_NESTING_DEPTH = 128",
         ),
         "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt": (
@@ -53419,19 +54723,24 @@ def runtime_permission_policy_registry_guard_failures() -> list[str]:
         "recoveryFailed = true",
         "RuntimeHostApprovalPersistenceError.duplicateRequestBinding",
         "reserveDispatchBeforeExecution",
-        "let outcome = await reserved.request.execute()",
+        "let reservedRequest = reserved.request",
+        "outcome = try await awaitExternalStage(until: monotonicDeadline) {",
+        "await reservedRequest.execute()",
         "enum RuntimeHostApprovalReservationPersistenceResult",
         "case expiredTerminalized",
         "enum RuntimeHostApprovalTerminalPersistenceResult",
-        "func invalidateAndWait()",
+        "func invalidate() -> InvalidationResult",
+        "case persistenceInFlight",
+        "if commitInFlight {\n                consumeWaitingCheckpoint?()\n                state = .violated\n                return false",
         "storedCommittedAt = reservationAt",
         "prepareOutcomePublication(outcome)",
         "try await publication {",
         "terminalPublicationGate.commit()",
         "terminalPublicationGate.completePublication()",
         "RuntimeHostApprovalFlowSignal.expiredTerminalized",
-        "terminalPublicationGate.didTerminalize",
+        "guard case let .settled(didPersist, terminalized) = invalidation else",
         "at: max(now(), reservationAt)",
+        "pendingByID.removeAll(keepingCapacity: true)",
     ):
         if snippet not in coordinator:
             failures.append(
@@ -53440,6 +54749,10 @@ def runtime_permission_policy_registry_guard_failures() -> list[str]:
     if coordinator.count("poisonAfterPersistenceFailure(operationID: operationID)") < 6:
         failures.append(
             "RuntimeHostApprovalCoordinator.swift must poison all ambiguous persistence failure paths."
+        )
+    if coordinator.count("guard !recoveryFailed else") < 3:
+        failures.append(
+            "RuntimeHostApprovalCoordinator.swift must block enqueue, approval, and dismissal while recovery is required."
         )
     for forbidden in (
         "URLSession",
@@ -53689,7 +55002,7 @@ def runtime_permission_policy_registry_guard_failures() -> list[str]:
             "testOutcomePublicationPreparationFailureSuppressesWithoutPublication",
             "testPublicationDelayCrossingEitherDeadlineSuppressesResult",
             "testExpiredAdapterErrorWithoutTerminalizationEntersRecoveryMode",
-            "testWrongReceiptWaitsForConcurrentReservationCommitBeforeFailClosedDecision",
+            "testWrongReceiptFailsClosedWithoutWaitingForConcurrentReservationCommit",
             "testAuthorityFailureCrossingExpiryMapsExpiredTerminalizationToReviewNotFound",
             "testUnprovenTerminalExpiredErrorEntersRecoveryMode",
             "testInMemoryPersistenceMirrorsSQLiteTerminalTransitionMatrix",
@@ -54105,12 +55418,12 @@ def runtime_python_sandbox_review_guard_failures() -> list[str]:
         return failures
 
     expected_hashes = {
-        "review": "70fc6a52abba4217b18c7826cbb6685d7dbad986ed2de13bb80a03ebd3fcea85",
+        "review": "ae42c42dac52fe82c0de09675d4ca51ce4dc3ac45e52e8c6266484a8dd841e75",
         "review_md": "3e2fc5892120a46522096f700ad4ca7cdb0516aa530f7e3a9ea8a8f6b308fc9a",
         "threat": "24e63f129095b9ee57a4fd8e0a896dabe6b668397383bb274ef4b9f433435ef1",
         "standards": "3c43ed9fc2aa63e7d4eee8f6a19392c97d1eca3a814a4c79b5fd91e9618cdbdd",
-        "manifest": "351c2830f3113a2362a84c2bc7ac3e084ee7cfb8e1e92977ec9410eb62187fa1",
-        "validator": "2bd0edb1460edc40fbb329a85daae8cc7e8c2e9efa55978d0b9ca3fd9d723aa3",
+        "manifest": "5d306ba9e53824a5934fc4e77ea767fdc43a644ef0c24dbd3dd943b99cebb6f6",
+        "validator": "47103ff36c7a4122ce83a56b5e1a2b1072f9d15597d73ab9409b09b85859cb32",
         "tests": "3bc1af16952520d474efa40bd81d47230e6747ff99ef97ca18ac8409c8ba30b0",
     }
     for label, expected in expected_hashes.items():
@@ -54210,10 +55523,24 @@ def runtime_python_sandbox_review_guard_failures() -> list[str]:
         failures.append(
             "check_no_device_quality.sh: runtime Python validation, tests, and marker order is invalid."
         )
-    expected_run_function = 'run() {\n  echo\n  echo "==> $*"\n  "$@"\n}'
-    if texts["no_device"].count(expected_run_function) != 1:
+    expected_run_batch_branch = '''run() {
+  if [[ "$#" -eq 4 && "$1" == "swift" && "$2" == "test" && "$3" == "--filter" ]]; then
+    queue_swift_test_filter "$4"
+    return
+  fi
+'''
+    expected_run_execution_tail = '''  flush_swift_test_batch
+  echo
+  echo "==> $*"
+  "$@"
+}'''
+    if (
+        texts["no_device"].count(expected_run_batch_branch) != 1
+        or texts["no_device"].count(expected_run_execution_tail) != 1
+    ):
         failures.append(
-            "check_no_device_quality.sh: run() must execute each runtime Python gate command exactly."
+            "check_no_device_quality.sh: run() must batch only exact Swift filters and execute "
+            "every other gate command exactly after flushing the batch."
         )
     expected_python_gate_prefix = """#!/usr/bin/env bash
 set -euo pipefail
@@ -54384,10 +55711,16 @@ def provider_model_catalog_context_window_guard_failures() -> list[str]:
         ),
         "ollama": (
             "private let catalogResponseByteLimit: Int",
-            "private func performBoundedDataRequest(endpoint: String, request: URLRequest) async throws -> Data",
-            "let (bytes, response) = try await session.bytes(for: request)",
-            "http.expectedContentLength > Int64(catalogResponseByteLimit)",
-            "if data.count > catalogResponseByteLimit",
+            "private let dataResponseByteLimit: Int",
+            "private let dataResponseTimeout: TimeInterval",
+            "private func performBoundedDataRequest(",
+            "byteLimit: Int",
+            "withThrowingTaskGroup(of: Data.self)",
+            "try await Task.sleep(nanoseconds: timeoutNanoseconds)",
+            "let (bytes, response) = try await session.bytes(for: boundedRequest)",
+            "http.expectedContentLength > Int64(byteLimit)",
+            "guard data.count < byteLimit else",
+            "bytes.task.cancel()",
             "response.models.count <= ModelInfo.maximumCatalogModelCount",
             "detailNames.count <= ModelInfo.maximumCatalogModelCount",
             "try ModelInfo.validateForCatalogPublication(candidate)",
@@ -54409,19 +55742,37 @@ def provider_model_catalog_context_window_guard_failures() -> list[str]:
             "ModelInfo.validatedContextWindowTokens(decimal: value)",
             "throw OllamaCatalogValidationError.conflictingContextWindowAliases",
             "guard details.isTrusted else { continue }",
-            "result[Data(name.utf8)] = .untrusted",
-            "result[Data(Self.canonicalModelName(name).utf8)] = .untrusted",
+            "catch OllamaModelDetailsError.malformedResponse",
+            "outcome: .untrusted",
+            "case .untrusted:",
+            "details = .untrusted",
+            "result[Data(indexedName.name.utf8)] = details",
+            "result[Data(Self.canonicalModelName(indexedName.name).utf8)] = details",
             "private func modelDetailsByName(names: [String]) async throws",
             "try Task.checkCancellation()",
             "catch is CancellationError",
+            "private static let maximumConcurrentModelDetailRequests = 4",
+            "AsyncThrowingStream(bufferingPolicy: .bufferingOldest(streamLimits.bufferedEventLimit))",
+            "var lines = OllamaBoundedLineReader(",
+            "try validateContentLength(response, limit: limits.responseByteLimit)",
+            "throw OllamaStreamIngestionError.missingTerminal",
+            "case .dropped:",
+            "private static func decodeStreamLine(_ line: String, endpoint: String)",
+            "try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)",
             "static let untrusted = OllamaModelDetails(isTrusted: false)",
         ),
         "lm_studio": (
             "private let catalogResponseByteLimit: Int",
-            "private func performBoundedCatalogDataRequest(endpoint: String, request: URLRequest) async throws -> Data",
-            "let (bytes, response) = try await session.bytes(for: request)",
-            "http.expectedContentLength > Int64(catalogResponseByteLimit)",
-            "if data.count > catalogResponseByteLimit",
+            "private let dataResponseByteLimit: Int",
+            "private let dataResponseTimeout: TimeInterval",
+            "private func performBoundedDataRequest(",
+            "byteLimit: Int",
+            "withThrowingTaskGroup(of: Data.self)",
+            "try await Task.sleep(nanoseconds: timeoutNanoseconds)",
+            "let (bytes, response) = try await session.bytes(for: boundedRequest)",
+            "http.expectedContentLength > Int64(byteLimit)",
+            "guard data.count < byteLimit else",
+            "bytes.task.cancel()",
             "response.models.count <= ModelInfo.maximumCatalogModelCount",
             "response.data.count <= ModelInfo.maximumCatalogModelCount",
             "try ModelInfo.validateForCatalogPublication(modelInfo)",
@@ -54445,10 +55796,20 @@ def provider_model_catalog_context_window_guard_failures() -> list[str]:
             "var shouldFallbackNativeEndpointToOpenAICompatible: Bool",
             "return statusCode == 400 || statusCode == 404 || statusCode == 405",
             "|| statusCode == 422 || statusCode == 501",
-            'if event.name == "chat.end"',
+            'case "chat.end":',
+            "private static func handleNativeEvent(",
+            "if let completion = try handleNativeEvent(",
             "for event in parser.finish()",
-            "throw LMStudioBackendError.badResponse(",
-            'reason: "The native stream ended without chat.end."',
+            "throw LMStudioStreamIngestionError.missingTerminal",
+            "AsyncThrowingStream(bufferingPolicy: .bufferingOldest(streamLimits.bufferedEventLimit))",
+            "var lines = LMStudioBoundedLineReader(",
+            "try validateContentLength(response, limit: limits.responseByteLimit)",
+            "case .dropped:",
+            "private static func decode<T: Decodable>(",
+            "private static func decodeOpenAIStreamLine(",
+            "try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)",
+            "eventName = String(trimmed.dropFirst(\"event:\".count))",
+            "guard !dataLines.isEmpty else",
         ),
         "aggregate": (
             "public func listModels() async throws -> [ModelInfo]",
@@ -54535,10 +55896,13 @@ def provider_model_catalog_context_window_guard_failures() -> list[str]:
             "apps/macos/OllamaBackend/Sources/OllamaBackend.swift: installed and running model "
             "paths must both exclude untrusted show metadata."
         )
-    if texts["lm_studio"].count('if event.name == "chat.end"') != 2:
+    if (
+        texts["lm_studio"].count("if let completion = try handleNativeEvent(") != 2
+        or texts["lm_studio"].count('case "chat.end":') != 1
+    ):
         failures.append(
             "apps/macos/LMStudioBackend/Sources/LMStudioBackend.swift: native chat must require "
-            "chat.end in both the main stream loop and parser.finish() path."
+            "chat.end through the shared handler in both the main stream loop and parser.finish() path."
         )
 
     ollama_tests = (
@@ -54561,6 +55925,15 @@ def provider_model_catalog_context_window_guard_failures() -> list[str]:
         "testListModelsExcludesShowDetailsWithInvalidCapabilities",
         "testListModelsOmitsConflictingContextMetadataAndPreservesValidCapabilities",
         "testListModelsOmitsShowDetailsWithDuplicateOrEscapeEquivalentKeys",
+        "testPullModelBoundedResponseAcceptsExactLimitAndRejectsLimitPlusOne",
+        "testPullModelBoundedResponsePropagatesCancellation",
+        "testPullModelBoundedResponseEnforcesAbsoluteDeadline",
+        "testEmbedBoundedResponseAcceptsExactLimitAndRejectsLimitPlusOne",
+        "testEmbedBoundedResponsePropagatesCancellation",
+        "testPullModelOversizedHTTPErrorPreservesStatusWithoutBufferingBody",
+        "testUnloadBoundedAcknowledgementAcceptsExactLimitAndRejectsLimitPlusOne",
+        "testUnloadBoundedAcknowledgementPropagatesCancellation",
+        "testChatRejectsDuplicateTerminalKeysBeforeTypedDecoding",
     )
     lm_studio_tests = (
         "testNativeCatalogStreamingReadAcceptsExactByteLimitAndRejectsLimitPlusOneWithoutFallback",
@@ -54588,6 +55961,34 @@ def provider_model_catalog_context_window_guard_failures() -> list[str]:
         "testChatStreamsFinalNativeJSONLineWithoutTrailingBlankSeparator",
         "testChatDoesNotFallbackAfterMalformedNativeStreamEmitsContent",
         "testChatRejectsNativeStreamEOFWithoutTerminalAndDoesNotFallback",
+        "testEmbedBoundedResponseAcceptsExactLimitAndRejectsLimitPlusOne",
+        "testEmbedBoundedResponsePropagatesCancellation",
+        "testEmbedBoundedResponseEnforcesAbsoluteDeadline",
+        "testEmbedOversizedHTTPErrorPreservesStatusWithoutBufferingBody",
+        "testUnloadBoundedAcknowledgementAcceptsExactLimitAndRejectsLimitPlusOne",
+        "testUnloadBoundedAcknowledgementPropagatesCancellation",
+        "testChatAcceptsNativeSSEDataBeforeEventField",
+        "testChatRejectsDuplicateNativeTerminalKeysBeforeTypedDecoding",
+        "testChatRejectsDuplicateOpenAITerminalKeysBeforeTypedDecoding",
+    )
+    ollama_stream_bound_tests = (
+        "testListModelsBoundsShowFanoutAtFourAndAppliesOutOfOrderResultsInCatalogOrder",
+        "testListModelsFanoutKeepsMalformedDetailsUntrustedAndOmitsTransportFailures",
+        "testBoundedLineReaderHonorsResponseAndUnfinishedLineExactLimits",
+        "testChatResponseLimitsHonorContentLengthAndNoLengthExactPlusOne",
+        "testChatRejectsStalledConsumerWhenBoundedEventBufferFills",
+        "testChatRejectsAggregateOutputLimitAndCancelsURLTask",
+        "testChatRejectsEmptyAndDeltaEOFWithoutTerminalMarker",
+        "testChatCanonicalTerminalMarkerEmitsExactlyOneDone",
+    )
+    lm_studio_stream_bound_tests = (
+        "testBoundedLineReaderHonorsResponseAndUnfinishedLineExactLimits",
+        "testChatResponseLimitsHonorContentLengthAndNoLengthExactPlusOne",
+        "testChatRejectsOversizedDecodedSSEFrameAndCancelsURLTask",
+        "testChatRejectsStalledConsumerWhenBoundedEventBufferFills",
+        "testChatRejectsAggregateOutputLimitAndCancelsURLTask",
+        "testChatRejectsEmptyNativeEOFAndOpenAIDeltaEOFWithoutTerminalMarkers",
+        "testChatCanonicalTerminalMarkersEmitExactlyOneDone",
     )
     router_tests = (
         "testModelsListAcceptsCatalogAtPublicationLimits",
@@ -54627,6 +56028,27 @@ def provider_model_catalog_context_window_guard_failures() -> list[str]:
             failures.append(
                 f"{paths[label].relative_to(ROOT)}: missing strict catalog test helper {helper!r}."
             )
+    for label, test_names in (
+        ("ollama_tests", ollama_stream_bound_tests),
+        ("lm_studio_tests", lm_studio_stream_bound_tests),
+    ):
+        for test_name in test_names:
+            if f"func {test_name}" not in texts[label]:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: missing bounded provider stream regression {test_name}."
+                )
+
+    bounded_stream_selector = "run swift test --filter '" + "|".join(
+        [
+            *(f"OllamaBackendTests/{name}" for name in ollama_stream_bound_tests),
+            *(f"LMStudioBackendTests/{name}" for name in lm_studio_stream_bound_tests),
+        ]
+    ) + "'"
+    if texts["no_device"].count(bounded_stream_selector) != 1:
+        failures.append(
+            "script/check_no_device_quality.sh: bounded provider stream selector must appear "
+            "exactly once with the canonical regression order."
+        )
     android_tests = (
         "modelsResultPayloadEnforcesExactCatalogRowLimitWithoutTruncation",
         "modelInfoPayloadUsesUnicodeCodePointLimitsForIdentityStrings",
@@ -57139,6 +58561,13 @@ def main() -> int:
             print(f" - {failure}", file=sys.stderr)
         return 1
 
+    bounded_script_hardening_failures = bounded_script_hardening_guard_failures()
+    if bounded_script_hardening_failures:
+        print("Bounded script hardening guard failed:", file=sys.stderr)
+        for failure in bounded_script_hardening_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
     production_relay_security_design_failures = production_relay_security_design_guard_failures()
     if production_relay_security_design_failures:
         print("Production relay security design guard failed:", file=sys.stderr)
@@ -57331,6 +58760,13 @@ def main() -> int:
     if android_protocol_envelope_decode_failures:
         print("Android protocol envelope decode guard failed:", file=sys.stderr)
         for failure in android_protocol_envelope_decode_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    owned_process_supervisor_failures = owned_process_supervisor_guard_failures()
+    if owned_process_supervisor_failures:
+        print("Owned-process supervisor guard failed:", file=sys.stderr)
+        for failure in owned_process_supervisor_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 

@@ -19,7 +19,7 @@ struct LocalAgentBridgeApp: App {
                 .preferredColorScheme(currentAppAppearance.preferredColorScheme)
                 .frame(minWidth: 860, minHeight: 560)
                 .task {
-                    model.start()
+                    model.requestStartForUserInterface()
                 }
         }
         .commands {
@@ -96,8 +96,7 @@ struct LocalAgentBridgeApp: App {
 
     private var canGeneratePairingQR: Bool {
         pairingQRGenerationCommandAvailable(
-            canPrepareAutomatically: model.canPrepareRemoteRelayRouteAutomatically,
-            isRouteEligibleForQRCode: model.isDevelopmentRelayRouteEligibleForQRCode
+            canRequestRemotePairing: model.canRequestRemotePairingForUserInterface
         )
     }
 
@@ -132,15 +131,34 @@ struct LocalAgentBridgeApp: App {
 
         case .pairingQR:
             Button(pairingQRGenerationCommandTitle(hasActiveSession: model.pairingSession != nil)) {
-                model.beginPairing()
+                model.requestRemotePairingForUserInterface()
                 requestedSection = .pairing
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
             }
             .disabled(!canGeneratePairingQR)
-            .help(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR))
-            .accessibilityValue(Text(pairingQRGenerationActionAccessibilityValue(isAvailable: canGeneratePairingQR)))
-            .accessibilityHint(Text(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR)))
+            .help(
+                pairingQRGenerationActionAccessibilityHint(
+                    isAvailable: canGeneratePairingQR,
+                    isPreparing: model.isRemoteRoutePreparationInFlight
+                )
+            )
+            .accessibilityValue(
+                Text(
+                    pairingQRGenerationActionAccessibilityValue(
+                        isAvailable: canGeneratePairingQR,
+                        isPreparing: model.isRemoteRoutePreparationInFlight
+                    )
+                )
+            )
+            .accessibilityHint(
+                Text(
+                    pairingQRGenerationActionAccessibilityHint(
+                        isAvailable: canGeneratePairingQR,
+                        isPreparing: model.isRemoteRoutePreparationInFlight
+                    )
+                )
+            )
         }
     }
 }

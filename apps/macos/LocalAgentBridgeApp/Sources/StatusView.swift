@@ -83,7 +83,7 @@ struct StatusView: View {
                     )
                     StatusCard(
                         title: NSLocalizedString("Document Sources", comment: ""),
-                        value: model.runtimeDocumentSources.count.formatted(),
+                        value: runtimeDocumentSourcesCardValue(model.runtimeDocumentSources.count),
                         detail: runtimeDocumentSourcesDetail,
                         systemImage: "doc.text.magnifyingglass",
                         tone: runtimeDocumentSourcesTone
@@ -432,7 +432,7 @@ struct StatusView: View {
         if model.runtimeDocumentSourcesError != nil {
             return NSLocalizedString("Document sources could not be read. Check Activity.", comment: "")
         }
-        return NSLocalizedString("Approved sources", comment: "")
+        return runtimeDocumentSourcesCardDetail(model.runtimeDocumentSources.count)
     }
 
     private var runtimeDocumentSourcesTone: StatusTone {
@@ -566,12 +566,19 @@ struct StatusView: View {
     }
 
     private var canGeneratePairingQR: Bool {
-        pairingQRGenerationAvailable(
-            canPrepareAutomatically: model.canPrepareRemoteRelayRouteAutomatically,
-            isRouteEligibleForQRCode: model.isDevelopmentRelayRouteEligibleForQRCode
-        )
+        model.canRequestRemotePairingForUserInterface
     }
 
+}
+
+func runtimeDocumentSourcesCardValue(_ count: Int) -> String {
+    localizedCompanionIntegerString(max(0, count))
+}
+
+func runtimeDocumentSourcesCardDetail(_ count: Int) -> String {
+    count == 1
+        ? NSLocalizedString("Approved source", comment: "")
+        : NSLocalizedString("Approved sources", comment: "")
 }
 
 func runtimeHistoryCardValue(activeCount: Int, archivedCount: Int) -> String {
@@ -1770,6 +1777,57 @@ private struct RuntimeHistoryInspectorRow: View {
     }
 }
 
+enum RuntimeTranscriptMessageIdentityKey: Hashable {
+    case assistantMessage(String)
+    case stored(
+        role: String,
+        content: String,
+        reasoning: String?,
+        createdAt: Date?
+    )
+}
+
+struct RuntimeTranscriptMessageIdentity: Hashable {
+    let sessionID: String
+    let key: RuntimeTranscriptMessageIdentityKey
+    let occurrence: Int
+}
+
+struct IdentifiedRuntimeTranscriptMessage: Identifiable, Equatable {
+    let id: RuntimeTranscriptMessageIdentity
+    let message: RuntimeChatStoredMessage
+}
+
+func identifiedRuntimeTranscriptMessages(
+    sessionID: String,
+    messages: [RuntimeChatStoredMessage]
+) -> [IdentifiedRuntimeTranscriptMessage] {
+    var occurrences: [RuntimeTranscriptMessageIdentityKey: Int] = [:]
+    return messages.map { message in
+        let key: RuntimeTranscriptMessageIdentityKey
+        if let assistantMessageID = trimmedNonEmpty(message.assistantMessageID ?? "") {
+            key = .assistantMessage(assistantMessageID)
+        } else {
+            key = .stored(
+                role: message.role,
+                content: message.content,
+                reasoning: message.reasoning,
+                createdAt: message.createdAt
+            )
+        }
+        let occurrence = occurrences[key, default: 0]
+        occurrences[key] = occurrence + 1
+        return IdentifiedRuntimeTranscriptMessage(
+            id: RuntimeTranscriptMessageIdentity(
+                sessionID: sessionID,
+                key: key,
+                occurrence: occurrence
+            ),
+            message: message
+        )
+    }
+}
+
 private struct RuntimeTranscriptPreviewPane: View {
     let session: RuntimeChatStoredSession?
     let messages: [RuntimeChatStoredMessage]?
@@ -1799,7 +1857,7 @@ private struct RuntimeTranscriptPreviewPane: View {
                 )
             }
 
-            if session != nil {
+            if let session {
                 Text(titleText)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(2)
@@ -1844,8 +1902,13 @@ private struct RuntimeTranscriptPreviewPane: View {
                     } else {
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 10) {
-                                ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
-                                    RuntimeTranscriptPreviewMessageRow(message: message)
+                                ForEach(
+                                    identifiedRuntimeTranscriptMessages(
+                                        sessionID: session.sessionID,
+                                        messages: messages
+                                    )
+                                ) { identifiedMessage in
+                                    RuntimeTranscriptPreviewMessageRow(message: identifiedMessage.message)
                                 }
                             }
                             .padding(.vertical, 2)
@@ -2349,8 +2412,7 @@ private struct RuntimeMemoryInspectorRow: View {
                         content: entry.content,
                         status: statusText,
                         createdAt: localizedCompanionDateString(from: entry.createdAt),
-                        updatedAt: localizedCompanionDateString(from: entry.updatedAt),
-                        sourceSummary: entry.source.map { runtimeMemorySourceReviewAccessibilityLabel(source: $0, isExpanded: false) }
+                        updatedAt: localizedCompanionDateString(from: entry.updatedAt)
                     )
                 )
             )
@@ -2390,20 +2452,25 @@ private struct RuntimeMemoryInspectorSourceReview: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(NSLocalizedString("Approved from older chat", comment: ""), systemImage: "checkmark.seal")
-                .font(.subheadline.weight(.semibold))
+            VStack(alignment: .leading, spacing: 8) {
+                Label(NSLocalizedString("Approved from older chat", comment: ""), systemImage: "checkmark.seal")
+                    .font(.subheadline.weight(.semibold))
 
-            Text(runtimeMemorySourceSessionText(source))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+                Text(runtimeMemorySourceSessionText(source))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            Text(runtimeMemorySourceCoverageText(source))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+                Text(runtimeMemorySourceCoverageText(source))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(runtimeMemorySourceReviewAccessibilityLabel(source: source)))
+            .accessibilityHidden(!visiblePointers.isEmpty)
 
             if !visiblePointers.isEmpty {
                 DisclosureGroup(isExpanded: $isExpanded) {
@@ -2429,22 +2496,15 @@ private struct RuntimeMemoryInspectorSourceReview: View {
                     Text(disclosureTitle)
                         .font(.caption.weight(.semibold))
                 }
+                .accessibilityLabel(Text(runtimeMemorySourceReviewAccessibilityLabel(source: source)))
                 .accessibilityValue(
-                    Text(
-                        isExpanded
-                            ? NSLocalizedString("Source review expanded", comment: "")
-                            : NSLocalizedString("Source review collapsed", comment: "")
-                    )
+                    Text(runtimeMemorySourceReviewAccessibilityValue(isExpanded: isExpanded))
                 )
             }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(
-            Text(runtimeMemorySourceReviewAccessibilityLabel(source: source, isExpanded: isExpanded))
-        )
     }
 }
 
@@ -2493,24 +2553,25 @@ func runtimeMemorySourceHiddenExcerptText(_ count: Int) -> String {
     )
 }
 
-func runtimeMemorySourceReviewAccessibilityLabel(source: RuntimeMemoryEntrySource, isExpanded: Bool) -> String {
-    let state = isExpanded
+func runtimeMemorySourceReviewAccessibilityLabel(source: RuntimeMemoryEntrySource) -> String {
+    return String(
+        format: NSLocalizedString("Memory source. %@. %@.", comment: ""),
+        runtimeMemorySourceSessionText(source),
+        runtimeMemorySourceCoverageText(source)
+    )
+}
+
+func runtimeMemorySourceReviewAccessibilityValue(isExpanded: Bool) -> String {
+    isExpanded
         ? NSLocalizedString("Source review expanded", comment: "")
         : NSLocalizedString("Source review collapsed", comment: "")
-    return String(
-        format: NSLocalizedString("Memory source. %@. %@. %@.", comment: ""),
-        runtimeMemorySourceSessionText(source),
-        runtimeMemorySourceCoverageText(source),
-        state
-    )
 }
 
 func runtimeMemoryEntryAccessibilityLabel(
     content: String,
     status: String,
     createdAt: String,
-    updatedAt: String,
-    sourceSummary: String? = nil
+    updatedAt: String
 ) -> String {
     let normalizedContent = trimmedNonEmpty(content)
         ?? NSLocalizedString("Untitled memory note", comment: "")
@@ -2520,17 +2581,13 @@ func runtimeMemoryEntryAccessibilityLabel(
         ?? NSLocalizedString("Unknown creation time", comment: "")
     let normalizedUpdatedAt = trimmedNonEmpty(updatedAt)
         ?? NSLocalizedString("Unknown update time", comment: "")
-    let baseLabel = String(
+    return String(
         format: NSLocalizedString("Memory note %@. Status %@. Created %@. Updated %@.", comment: ""),
         normalizedContent,
         normalizedStatus,
         normalizedCreatedAt,
         normalizedUpdatedAt
     )
-    guard let normalizedSourceSummary = trimmedNonEmpty(sourceSummary ?? "") else {
-        return baseLabel
-    }
-    return "\(baseLabel) \(normalizedSourceSummary)"
 }
 
 private func trimmedNonEmpty(_ value: String) -> String? {

@@ -22,6 +22,9 @@ final class OllamaBackendTests: XCTestCase {
 
     override func tearDown() {
         MockURLProtocol.handler = nil
+        BoundedStreamingURLProtocol.handler = nil
+        BoundedStreamingURLProtocol.onStop = nil
+        OllamaShowFanoutURLProtocol.controller = nil
         SuspendingURLProtocol.onStart = nil
         SuspendingURLProtocol.onStop = nil
         SuspendingCatalogURLProtocol.onShowStart = nil
@@ -201,27 +204,20 @@ final class OllamaBackendTests: XCTestCase {
     }
 
     func testListModelsPropagatesCancellationDuringShowFanout() async {
-        let showStarted = expectation(description: "show request started")
-        let loadingStopped = expectation(description: "show request stopped")
-        SuspendingCatalogURLProtocol.onShowStart = {
-            showStarted.fulfill()
-        }
-        SuspendingCatalogURLProtocol.onStop = {
-            loadingStopped.fulfill()
-        }
-
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [SuspendingCatalogURLProtocol.self]
-        let session = URLSession(configuration: configuration)
-        let backend = OllamaBackend(
-            baseURL: URL(string: "http://127.0.0.1:11434")!,
-            session: session
-        )
+        let fourRequestsStarted = expectation(description: "four show requests started")
+        let loadingStopped = expectation(description: "all active show requests stopped")
+        loadingStopped.expectedFulfillmentCount = 4
+        let names = (0..<8).map { "cancel-model-\($0)" }
+        let controller = OllamaShowFanoutController(modelNames: names)
+        controller.onFourActive = { fourRequestsStarted.fulfill() }
+        controller.onStop = { loadingStopped.fulfill() }
+        let backend = makeShowFanoutBackend(controller: controller)
         let task = Task {
             try await backend.listModels()
         }
 
-        await fulfillment(of: [showStarted], timeout: 1)
+        await fulfillment(of: [fourRequestsStarted], timeout: 1)
+        XCTAssertEqual(controller.maximumActiveRequestCount, 4)
         task.cancel()
 
         do {
@@ -232,11 +228,60 @@ final class OllamaBackendTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
         await fulfillment(of: [loadingStopped], timeout: 1)
+        XCTAssertEqual(controller.stoppedRequestCount, 4)
+    }
+
+    func testListModelsBoundsShowFanoutAtFourAndAppliesOutOfOrderResultsInCatalogOrder() async throws {
+        let fourRequestsStarted = expectation(description: "fanout reached four requests")
+        let names = (0..<11).map { "ordered-model-\($0)" }
+        let controller = OllamaShowFanoutController(modelNames: names)
+        controller.onFourActive = { fourRequestsStarted.fulfill() }
+        let backend = makeShowFanoutBackend(controller: controller)
+        let task = Task { try await backend.listModels() }
+
+        await fulfillment(of: [fourRequestsStarted], timeout: 1)
+        XCTAssertEqual(controller.maximumActiveRequestCount, 4)
+        controller.releaseHeldRequestsInReverseOrder()
+
+        let models = try await task.value
+        XCTAssertEqual(models.map(\.id), names)
+        XCTAssertEqual(models.map(\.contextWindowTokens), names.indices.map { 4_096 + $0 })
+        XCTAssertEqual(controller.maximumActiveRequestCount, 4)
+        XCTAssertNotEqual(controller.completedModelNames, names)
+    }
+
+    func testListModelsFanoutKeepsMalformedDetailsUntrustedAndOmitsTransportFailures() async throws {
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/tags":
+                return self.response(
+                    statusCode: 200,
+                    body: #"{"models":[{"name":"malformed-detail"},{"name":"transport-detail"}]}"#
+                )
+            case "/api/ps":
+                return self.response(statusCode: 200, body: #"{"models":[]}"#)
+            case "/api/show":
+                let posted = try JSONDecoder().decode(
+                    PostedShowRequest.self,
+                    from: self.requestBodyData(from: request)
+                )
+                if posted.model == "malformed-detail" {
+                    return self.response(statusCode: 200, body: "not-json")
+                }
+                throw URLError(.networkConnectionLost)
+            default:
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+
+        let models = try await backend.listModels()
+        XCTAssertEqual(models.map(\.id), ["transport-detail"])
+        XCTAssertNil(models.first?.contextWindowTokens)
     }
 
     func testListModelsAccepts256RowsAndRejects257RowsOrUniqueDetailFanout() async throws {
         let acceptedRows = (0..<ModelInfo.maximumCatalogModelCount).map { "{\"name\":\"model-\($0)\"}" }.joined(separator: ",")
-        var acceptedShowCalls = 0
+        let acceptedShowCalls = LockedBox(0)
         let acceptedBackend = makeBackend { request in
             switch request.url?.path {
             case "/api/tags":
@@ -244,7 +289,7 @@ final class OllamaBackendTests: XCTestCase {
             case "/api/ps":
                 return self.response(statusCode: 200, body: #"{"models":[]}"#)
             case "/api/show":
-                acceptedShowCalls += 1
+                acceptedShowCalls.withValue { $0 += 1 }
                 return self.response(statusCode: 200, body: "{}")
             default:
                 return self.response(statusCode: 404, body: "{}")
@@ -252,7 +297,7 @@ final class OllamaBackendTests: XCTestCase {
         }
         let acceptedModels = try await acceptedBackend.listModels()
         XCTAssertEqual(acceptedModels.count, ModelInfo.maximumCatalogModelCount)
-        XCTAssertEqual(acceptedShowCalls, ModelInfo.maximumCatalogModelCount)
+        XCTAssertEqual(acceptedShowCalls.snapshot, ModelInfo.maximumCatalogModelCount)
 
         let rejectedRows = (0...ModelInfo.maximumCatalogModelCount).map { "{\"name\":\"model-\($0)\"}" }.joined(separator: ",")
         let tooManyRowsBackend = makeBackend { _ in
@@ -399,7 +444,6 @@ final class OllamaBackendTests: XCTestCase {
     }
 
     func testListModelsUsesShowCapabilitiesToSeparateEmbeddingModels() async throws {
-        var showRequestCount = 0
         let backend = makeBackend { request in
             switch request.url?.path {
             case "/api/tags":
@@ -407,8 +451,11 @@ final class OllamaBackendTests: XCTestCase {
             case "/api/ps":
                 return self.response(statusCode: 200, body: #"{"models":[]}"#)
             case "/api/show":
-                showRequestCount += 1
-                if showRequestCount == 1 {
+                let posted = try JSONDecoder().decode(
+                    PostedShowRequest.self,
+                    from: self.requestBodyData(from: request)
+                )
+                if posted.model == "nomic-embed-text" {
                     return self.response(
                         statusCode: 200,
                         body: #"{"capabilities":["embedding"],"context_window_tokens":8192}"#
@@ -471,7 +518,7 @@ final class OllamaBackendTests: XCTestCase {
     func testListModelsKeepsByteDistinctUnicodeIdentitiesAcrossCatalogs() async throws {
         let installedName = "caf\u{00E9}"
         let runningName = "cafe\u{0301}"
-        var showModelIdentities: [Data] = []
+        let showModelIdentities = LockedBox<[Data]>([])
         let backend = makeBackend { request in
             switch request.url?.path {
             case "/api/tags":
@@ -489,7 +536,7 @@ final class OllamaBackendTests: XCTestCase {
                     PostedShowRequest.self,
                     from: self.requestBodyData(from: request)
                 )
-                showModelIdentities.append(Data(posted.model.utf8))
+                showModelIdentities.withValue { $0.append(Data(posted.model.utf8)) }
                 return self.response(statusCode: 200, body: #"{"capabilities":["chat"]}"#)
             default:
                 return self.response(statusCode: 404, body: "{}")
@@ -504,8 +551,8 @@ final class OllamaBackendTests: XCTestCase {
         )
         XCTAssertEqual(models.map(\.running), [false, true])
         XCTAssertEqual(
-            showModelIdentities,
-            [Data(installedName.utf8), Data(runningName.utf8)]
+            Set(showModelIdentities.snapshot),
+            Set([Data(installedName.utf8), Data(runningName.utf8)])
         )
     }
 
@@ -773,6 +820,67 @@ final class OllamaBackendTests: XCTestCase {
         XCTAssertEqual(result, ModelPullResult(model: "deepseek-v4-pro:cloud", status: "success", installed: true))
     }
 
+    func testPullModelBoundedResponseAcceptsExactLimitAndRejectsLimitPlusOne() async throws {
+        let body = #"{"status":"success"}"#
+        let limit = Data(body.utf8).count
+        let exactBackend = makeBackend(
+            dataResponseByteLimit: limit,
+            dataResponseTimeout: 7.25
+        ) { request in
+            XCTAssertEqual(request.timeoutInterval, 7.25, accuracy: 0.001)
+            return self.response(
+                statusCode: 200,
+                body: body,
+                headers: ["Content-Length": "\(limit)"]
+            )
+        }
+        _ = try await exactBackend.pullModel(name: "bounded-pull")
+
+        let oversizedBackend = makeBackend(dataResponseByteLimit: limit) { _ in
+            self.response(
+                statusCode: 200,
+                body: " " + body,
+                headers: ["Content-Length": "\(limit + 1)"]
+            )
+        }
+        await assertOversizedDataResponse(endpoint: "POST /api/pull") {
+            _ = try await oversizedBackend.pullModel(name: "oversized-pull")
+        }
+    }
+
+    func testPullModelBoundedResponsePropagatesCancellation() async {
+        await assertNonStreamingRequestCancellation(targetPath: "/api/pull") { backend in
+            _ = try await backend.pullModel(name: "cancelled-pull")
+        }
+    }
+
+    func testPullModelBoundedResponseEnforcesAbsoluteDeadline() async {
+        let stopped = expectation(description: "deadline stopped URL task")
+        BoundedStreamingURLProtocol.onStop = { request in
+            if request.url?.path == "/api/pull" { stopped.fulfill() }
+        }
+        let backend = makeStreamingBackend(
+            dataResponseByteLimit: 64,
+            dataResponseTimeout: 0.05,
+            streamLimits: OllamaStreamLimits()
+        ) { _, urlProtocol in
+            urlProtocol.respond(body: Data(), finish: false)
+        }
+
+        do {
+            _ = try await backend.pullModel(name: "deadline-pull")
+            XCTFail("Expected absolute response deadline")
+        } catch let error as OllamaBackendError {
+            guard case .unreachable(let endpoint, _, _) = error else {
+                return XCTFail("Unexpected Ollama error: \(error)")
+            }
+            XCTAssertEqual(endpoint, "POST /api/pull")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        await fulfillment(of: [stopped], timeout: 1)
+    }
+
     func testEmbedPostsBatchWithoutTruncationAndReturnsVectors() async throws {
         let backend = makeBackend { request in
             XCTAssertEqual(request.url?.path, "/api/embed")
@@ -794,6 +902,32 @@ final class OllamaBackendTests: XCTestCase {
 
         XCTAssertEqual(result.model, "nomic-embed-text:latest")
         XCTAssertEqual(result.embeddings, [[0.1, 0.2], [0.3, 0.4]])
+    }
+
+    func testEmbedBoundedResponseAcceptsExactLimitAndRejectsLimitPlusOne() async throws {
+        let body = #"{"model":"embed","embeddings":[[0.1,0.2]]}"#
+        let limit = Data(body.utf8).count
+        let exactBackend = makeBackend(
+            dataResponseByteLimit: limit,
+            dataResponseTimeout: 8.5
+        ) { request in
+            XCTAssertEqual(request.timeoutInterval, 8.5, accuracy: 0.001)
+            return self.response(statusCode: 200, body: body)
+        }
+        _ = try await exactBackend.embed(request: EmbeddingRequest(model: "embed", texts: ["one"]))
+
+        let oversizedBackend = makeBackend(dataResponseByteLimit: limit) { _ in
+            self.response(statusCode: 200, body: " " + body)
+        }
+        await assertOversizedDataResponse(endpoint: "POST /api/embed") {
+            _ = try await oversizedBackend.embed(request: EmbeddingRequest(model: "embed", texts: ["one"]))
+        }
+    }
+
+    func testEmbedBoundedResponsePropagatesCancellation() async {
+        await assertNonStreamingRequestCancellation(targetPath: "/api/embed") { backend in
+            _ = try await backend.embed(request: EmbeddingRequest(model: "embed", texts: ["one"]))
+        }
     }
 
     func testEmbedRejectsWrongVectorCount() async {
@@ -866,6 +1000,28 @@ final class OllamaBackendTests: XCTestCase {
         }
     }
 
+    func testPullModelOversizedHTTPErrorPreservesStatusWithoutBufferingBody() async {
+        let backend = makeBackend(dataResponseByteLimit: 4) { _ in
+            self.response(
+                statusCode: 503,
+                body: "12345",
+                headers: ["Content-Length": "5"]
+            )
+        }
+
+        do {
+            _ = try await backend.pullModel(name: "bounded-error")
+            XCTFail("Expected bounded HTTP error")
+        } catch let error as OllamaBackendError {
+            XCTAssertEqual(
+                error,
+                .httpStatus(endpoint: "POST /api/pull", statusCode: 503, body: nil)
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testUnloadModelPostsEmptyChatWithKeepAliveZero() async throws {
         var paths: [String] = []
         var psRequestCount = 0
@@ -898,6 +1054,51 @@ final class OllamaBackendTests: XCTestCase {
         XCTAssertEqual(result, .unloaded(provider: .ollama, modelID: "llama3.1:8b"))
         XCTAssertEqual(result.outcome, .confirmed)
         XCTAssertTrue(result.unloaded)
+    }
+
+    func testUnloadBoundedAcknowledgementAcceptsExactLimitAndRejectsLimitPlusOne() async throws {
+        let body = #"{"done":true,"done_reason":"unload"}"#
+        let limit = Data(body.utf8).count
+        var exactPSCount = 0
+        let exactBackend = makeBackend(
+            dataResponseByteLimit: limit,
+            dataResponseTimeout: 9.75
+        ) { request in
+            switch request.url?.path {
+            case "/api/ps":
+                exactPSCount += 1
+                return self.response(
+                    statusCode: 200,
+                    body: exactPSCount == 1 ? #"{"models":[{"name":"model"}]}"# : #"{"models":[]}"#
+                )
+            case "/api/chat":
+                XCTAssertEqual(request.timeoutInterval, 9.75, accuracy: 0.001)
+                return self.response(statusCode: 200, body: body)
+            default:
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+        _ = try await exactBackend.unloadModel(providerModelID: "model")
+
+        let oversizedBackend = makeBackend(dataResponseByteLimit: limit) { request in
+            switch request.url?.path {
+            case "/api/ps":
+                return self.response(statusCode: 200, body: #"{"models":[{"name":"model"}]}"#)
+            case "/api/chat":
+                return self.response(statusCode: 200, body: " " + body)
+            default:
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+        await assertOversizedDataResponse(endpoint: "POST /api/chat") {
+            _ = try await oversizedBackend.unloadModel(providerModelID: "model")
+        }
+    }
+
+    func testUnloadBoundedAcknowledgementPropagatesCancellation() async {
+        await assertNonStreamingRequestCancellation(targetPath: "/api/chat") { backend in
+            _ = try await backend.unloadModel(providerModelID: "model")
+        }
     }
 
     func testUnloadModelUsesCanonicalRunningTarget() async throws {
@@ -1317,6 +1518,197 @@ final class OllamaBackendTests: XCTestCase {
         XCTAssertNil(backend.takeProviderUsageSource(generationID: request.generationID))
     }
 
+    func testBoundedLineReaderHonorsResponseAndUnfinishedLineExactLimits() async throws {
+        var exactResponse = OllamaBoundedLineReader(
+            bytes: byteStream("abcd"),
+            responseByteLimit: 4,
+            lineByteLimit: 4
+        )
+        let exactLine = try await exactResponse.next()
+        let exactEOF = try await exactResponse.next()
+        XCTAssertEqual(exactLine, "abcd")
+        XCTAssertNil(exactEOF)
+
+        var oversizedResponse = OllamaBoundedLineReader(
+            bytes: byteStream("abcde"),
+            responseByteLimit: 4,
+            lineByteLimit: 8
+        )
+        do {
+            _ = try await oversizedResponse.next()
+            XCTFail("Expected response byte limit rejection")
+        } catch {}
+
+        var oversizedLine = OllamaBoundedLineReader(
+            bytes: byteStream("abcde"),
+            responseByteLimit: 8,
+            lineByteLimit: 4
+        )
+        do {
+            _ = try await oversizedLine.next()
+            XCTFail("Expected unfinished line limit rejection")
+        } catch {}
+    }
+
+    func testChatResponseLimitsHonorContentLengthAndNoLengthExactPlusOne() async throws {
+        let terminalBody = #"{"done":true}"#
+        let byteLimit = Data(terminalBody.utf8).count
+
+        for includesContentLength in [true, false] {
+            let exactBackend = makeStreamingBackend(
+                streamLimits: OllamaStreamLimits(responseByteLimit: byteLimit)
+            ) { _, urlProtocol in
+                let headers = includesContentLength ? ["Content-Length": "\(byteLimit)"] : [:]
+                urlProtocol.respond(body: Data(terminalBody.utf8), headers: headers, finish: true)
+            }
+            let exactEvents = try await collect(
+                exactBackend.chat(request: chatRequest(id: "exact-\(includesContentLength)"))
+            )
+            XCTAssertEqual(exactEvents, [
+                .done(inputTokens: nil, outputTokens: nil)
+            ])
+
+            let stopped = expectation(description: "oversized stream URL task cancelled")
+            BoundedStreamingURLProtocol.onStop = { request in
+                if request.url?.path == "/api/chat" { stopped.fulfill() }
+            }
+            let oversizedBody = Data((" " + terminalBody).utf8)
+            let oversizedBackend = makeStreamingBackend(
+                streamLimits: OllamaStreamLimits(responseByteLimit: byteLimit)
+            ) { _, urlProtocol in
+                let headers = includesContentLength ? ["Content-Length": "\(byteLimit + 1)"] : [:]
+                urlProtocol.respond(body: oversizedBody, headers: headers, finish: false)
+            }
+            await assertBadChatResponse(from: oversizedBackend, requestID: "oversized-\(includesContentLength)")
+            await fulfillment(of: [stopped], timeout: 1)
+            BoundedStreamingURLProtocol.onStop = nil
+        }
+    }
+
+    func testChatRejectsGiantUnterminatedLineAndCancelsURLTask() async {
+        let stopped = expectation(description: "giant line URL task cancelled")
+        BoundedStreamingURLProtocol.onStop = { request in
+            if request.url?.path == "/api/chat" { stopped.fulfill() }
+        }
+        let backend = makeStreamingBackend(
+            streamLimits: OllamaStreamLimits(responseByteLimit: 128, lineByteLimit: 16)
+        ) { _, urlProtocol in
+            urlProtocol.respond(body: Data(String(repeating: "x", count: 17).utf8), finish: false)
+        }
+
+        await assertBadChatResponse(from: backend, requestID: "giant-line")
+        await fulfillment(of: [stopped], timeout: 1)
+    }
+
+    func testChatRejectsStalledConsumerWhenBoundedEventBufferFills() async {
+        let stopped = expectation(description: "backpressure URL task cancelled")
+        BoundedStreamingURLProtocol.onStop = { request in
+            if request.url?.path == "/api/chat" { stopped.fulfill() }
+        }
+        let body = """
+        {"message":{"content":"one"},"done":false}
+        {"message":{"content":"two"},"done":false}
+        {"done":true}
+        """
+        let backend = makeStreamingBackend(
+            streamLimits: OllamaStreamLimits(bufferedEventLimit: 1)
+        ) { _, urlProtocol in
+            urlProtocol.respond(body: Data(body.utf8), finish: false)
+        }
+
+        let stream = backend.chat(request: chatRequest(id: "stalled-consumer"))
+        await fulfillment(of: [stopped], timeout: 1)
+        var events: [ChatStreamEvent] = []
+        do {
+            for try await event in stream { events.append(event) }
+            XCTFail("Expected bounded event buffer rejection")
+        } catch let error as OllamaBackendError {
+            XCTAssertEqual(error.backendError.code, "bad_backend_response")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        XCTAssertEqual(events, [.delta("one")])
+    }
+
+    func testChatRejectsAggregateOutputLimitAndCancelsURLTask() async {
+        let stopped = expectation(description: "aggregate output URL task cancelled")
+        BoundedStreamingURLProtocol.onStop = { request in
+            if request.url?.path == "/api/chat" { stopped.fulfill() }
+        }
+        let backend = makeStreamingBackend(
+            streamLimits: OllamaStreamLimits(aggregateAccountingByteLimit: 3)
+        ) { _, urlProtocol in
+            urlProtocol.respond(
+                body: Data((#"{"message":{"content":"four"},"done":false}"# + "\n").utf8),
+                finish: false
+            )
+        }
+
+        await assertBadChatResponse(from: backend, requestID: "aggregate-limit")
+        await fulfillment(of: [stopped], timeout: 1)
+    }
+
+    func testChatRejectsEmptyAndDeltaEOFWithoutTerminalMarker() async {
+        let cases: [(body: String, expectedEvents: [ChatStreamEvent])] = [
+            ("", []),
+            (#"{"message":{"content":"partial"},"done":false}"#, [.delta("partial")]),
+        ]
+        for (index, testCase) in cases.enumerated() {
+            let backend = makeBackend { _ in
+                self.response(statusCode: 200, body: testCase.body)
+            }
+            var events: [ChatStreamEvent] = []
+            do {
+                for try await event in backend.chat(request: chatRequest(id: "missing-terminal-\(index)")) {
+                    events.append(event)
+                }
+                XCTFail("Expected terminal-less stream rejection")
+            } catch let error as OllamaBackendError {
+                guard case .responseDecoding(let endpoint, let reason) = error else {
+                    return XCTFail("Unexpected Ollama error: \(error)")
+                }
+                XCTAssertEqual(endpoint, "POST /api/chat")
+                XCTAssertEqual(reason, "The provider stream violated a bounded response contract.")
+                XCTAssertEqual(error.backendError.code, "bad_backend_response")
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertEqual(events, testCase.expectedEvents)
+        }
+    }
+
+    func testChatCanonicalTerminalMarkerEmitsExactlyOneDone() async throws {
+        let backend = makeBackend { _ in
+            self.response(
+                statusCode: 200,
+                body: """
+                {"done":true,"prompt_eval_count":1,"eval_count":2}
+                {"done":true,"prompt_eval_count":9,"eval_count":9}
+                """
+            )
+        }
+
+        let events = try await collect(backend.chat(request: chatRequest(id: "terminal-once")))
+        XCTAssertEqual(events, [
+            .done(inputTokens: 1, outputTokens: 2)
+        ])
+    }
+
+    func testChatRejectsDuplicateTerminalKeysBeforeTypedDecoding() async {
+        let backend = makeBackend { _ in
+            self.response(statusCode: 200, body: #"{"done":true,"done":false}"#)
+        }
+
+        do {
+            _ = try await collect(backend.chat(request: chatRequest(id: "duplicate-terminal")))
+            XCTFail("Expected duplicate stream key rejection")
+        } catch let error as OllamaBackendError {
+            XCTAssertEqual(error.code, "ollama_stream_decoding")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testHTTPStatusReturnsStructuredError() async {
         let backend = makeBackend { _ in
             self.response(statusCode: 503, body: "offline")
@@ -1433,9 +1825,163 @@ final class OllamaBackendTests: XCTestCase {
         XCTAssertFalse(runningAfter.contains(where: { Self.sameOllamaModel($0, modelID) }))
     }
 
+    private func byteStream(_ value: String) -> AsyncStream<UInt8> {
+        AsyncStream { continuation in
+            for byte in value.utf8 { continuation.yield(byte) }
+            continuation.finish()
+        }
+    }
+
+    private func chatRequest(id: String) -> ChatRequest {
+        ChatRequest(
+            generationID: id,
+            sessionID: "bounded-stream-session",
+            model: "bounded-stream-model",
+            messages: [ChatMessage(role: "user", content: "Hi")]
+        )
+    }
+
+    private func collect(
+        _ stream: AsyncThrowingStream<ChatStreamEvent, Error>
+    ) async throws -> [ChatStreamEvent] {
+        var events: [ChatStreamEvent] = []
+        for try await event in stream { events.append(event) }
+        return events
+    }
+
+    private func assertBadChatResponse(
+        from backend: OllamaBackend,
+        requestID: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        do {
+            _ = try await collect(backend.chat(request: chatRequest(id: requestID)))
+            XCTFail("Expected bounded stream rejection", file: file, line: line)
+        } catch let error as OllamaBackendError {
+            guard case .responseDecoding(let endpoint, let reason) = error else {
+                return XCTFail("Unexpected Ollama error: \(error)", file: file, line: line)
+            }
+            XCTAssertEqual(endpoint, "POST /api/chat", file: file, line: line)
+            XCTAssertEqual(
+                reason,
+                "The provider stream violated a bounded response contract.",
+                file: file,
+                line: line
+            )
+            XCTAssertEqual(error.backendError.code, "bad_backend_response", file: file, line: line)
+            XCTAssertFalse(error.backendError.message.contains(requestID), file: file, line: line)
+        } catch {
+            XCTFail("Unexpected error: \(error)", file: file, line: line)
+        }
+    }
+
+    private func assertOversizedDataResponse(
+        endpoint: String,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        operation: () async throws -> Void
+    ) async {
+        do {
+            try await operation()
+            XCTFail("Expected bounded response rejection", file: file, line: line)
+        } catch let error as OllamaBackendError {
+            guard case .responseDecoding(let actualEndpoint, let reason) = error else {
+                return XCTFail("Unexpected Ollama error: \(error)", file: file, line: line)
+            }
+            XCTAssertEqual(actualEndpoint, endpoint, file: file, line: line)
+            XCTAssertEqual(
+                reason,
+                "The provider response exceeds the supported byte limit.",
+                file: file,
+                line: line
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)", file: file, line: line)
+        }
+    }
+
+    private func assertNonStreamingRequestCancellation(
+        targetPath: String,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        operation: @escaping (OllamaBackend) async throws -> Void
+    ) async {
+        let started = expectation(description: "\(targetPath) started")
+        let stopped = expectation(description: "\(targetPath) stopped")
+        BoundedStreamingURLProtocol.onStop = { request in
+            if request.url?.path == targetPath { stopped.fulfill() }
+        }
+        let backend = makeStreamingBackend(
+            dataResponseByteLimit: 64,
+            dataResponseTimeout: 11,
+            streamLimits: OllamaStreamLimits()
+        ) { request, urlProtocol in
+            switch request.url?.path {
+            case "/api/ps":
+                urlProtocol.respond(
+                    body: Data(#"{"models":[{"name":"model"}]}"#.utf8),
+                    finish: true
+                )
+            case targetPath:
+                XCTAssertEqual(request.timeoutInterval, 11, accuracy: 0.001, file: file, line: line)
+                urlProtocol.respond(body: Data(), finish: false)
+                started.fulfill()
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")", file: file, line: line)
+            }
+        }
+        let task = Task {
+            try await operation(backend)
+        }
+
+        await fulfillment(of: [started], timeout: 1)
+        task.cancel()
+        do {
+            try await task.value
+            XCTFail("Expected cancellation", file: file, line: line)
+        } catch is CancellationError {
+        } catch {
+            XCTFail("Unexpected cancellation error: \(error)", file: file, line: line)
+        }
+        await fulfillment(of: [stopped], timeout: 1)
+    }
+
+    private func makeStreamingBackend(
+        dataResponseByteLimit: Int = 32 * 1_024 * 1_024,
+        dataResponseTimeout: TimeInterval = 60,
+        streamLimits: OllamaStreamLimits,
+        handler: @escaping (URLRequest, BoundedStreamingURLProtocol) -> Void
+    ) -> OllamaBackend {
+        BoundedStreamingURLProtocol.handler = handler
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [BoundedStreamingURLProtocol.self]
+        return OllamaBackend(
+            baseURL: URL(string: "http://127.0.0.1:11434")!,
+            session: URLSession(configuration: configuration),
+            unloadPollAttempts: 3,
+            dataResponseByteLimit: dataResponseByteLimit,
+            dataResponseTimeout: dataResponseTimeout,
+            streamLimits: streamLimits
+        )
+    }
+
+    private func makeShowFanoutBackend(controller: OllamaShowFanoutController) -> OllamaBackend {
+        OllamaShowFanoutURLProtocol.controller = controller
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [OllamaShowFanoutURLProtocol.self]
+        return OllamaBackend(
+            baseURL: URL(string: "http://127.0.0.1:11434")!,
+            session: URLSession(configuration: configuration)
+        )
+    }
+
     private func makeBackend(
         unloadPollAttempts: Int = 3,
         catalogResponseByteLimit: Int = ModelInfo.maximumCatalogResponseBytes,
+        dataResponseByteLimit: Int = 32 * 1_024 * 1_024,
+        dataResponseTimeout: TimeInterval = 60,
+        streamLimits: OllamaStreamLimits = OllamaStreamLimits(),
         unloadSleeper: @escaping @Sendable (UInt64) async throws -> Void = { _ in },
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) -> OllamaBackend {
@@ -1448,6 +1994,9 @@ final class OllamaBackendTests: XCTestCase {
             session: session,
             unloadPollAttempts: unloadPollAttempts,
             catalogResponseByteLimit: catalogResponseByteLimit,
+            dataResponseByteLimit: dataResponseByteLimit,
+            dataResponseTimeout: dataResponseTimeout,
+            streamLimits: streamLimits,
             unloadSleeper: unloadSleeper
         )
     }
@@ -1633,6 +2182,257 @@ private final class UnsupportedEmbeddingBackend: LlmBackend, @unchecked Sendable
     }
     func cancel(generationID: String) -> GenerationCancellationResult {
         .notFound(generationID: generationID)
+    }
+}
+
+private final class LockedBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value
+
+    init(_ value: Value) {
+        self.value = value
+    }
+
+    var snapshot: Value {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func withValue(_ body: (inout Value) -> Void) {
+        lock.lock()
+        defer { lock.unlock() }
+        body(&value)
+    }
+}
+
+private final class OllamaShowFanoutController: @unchecked Sendable {
+    let modelNames: [String]
+    var onFourActive: (() -> Void)?
+    var onStop: (() -> Void)?
+
+    private let lock = NSLock()
+    private var pending: [(name: String, urlProtocol: OllamaShowFanoutURLProtocol)] = []
+    private var released = false
+    private var didNotifyFourActive = false
+    private var activeRequestCount = 0
+    private var maximumActive = 0
+    private var stopped = 0
+    private var completed: [String] = []
+
+    init(modelNames: [String]) {
+        self.modelNames = modelNames
+    }
+
+    var maximumActiveRequestCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return maximumActive
+    }
+
+    var stoppedRequestCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return stopped
+    }
+
+    var completedModelNames: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return completed
+    }
+
+    func startShow(_ urlProtocol: OllamaShowFanoutURLProtocol, modelName: String) {
+        lock.lock()
+        activeRequestCount += 1
+        maximumActive = max(maximumActive, activeRequestCount)
+        let respondImmediately = released
+        if !respondImmediately {
+            pending.append((modelName, urlProtocol))
+        }
+        let notifyFourActive = activeRequestCount == 4 && !didNotifyFourActive
+        if notifyFourActive { didNotifyFourActive = true }
+        lock.unlock()
+
+        if notifyFourActive { onFourActive?() }
+        if respondImmediately {
+            urlProtocol.completeShow(body: showBody(for: modelName), modelName: modelName)
+        }
+    }
+
+    func releaseHeldRequestsInReverseOrder() {
+        lock.lock()
+        released = true
+        let held = pending.sorted {
+            (modelNames.firstIndex(of: $0.name) ?? 0) > (modelNames.firstIndex(of: $1.name) ?? 0)
+        }
+        pending.removeAll()
+        lock.unlock()
+
+        for item in held {
+            item.urlProtocol.completeShow(body: showBody(for: item.name), modelName: item.name)
+        }
+    }
+
+    func finishShow(
+        _ urlProtocol: OllamaShowFanoutURLProtocol,
+        modelName: String,
+        cancelled: Bool
+    ) {
+        lock.lock()
+        pending.removeAll { $0.urlProtocol === urlProtocol }
+        activeRequestCount = max(0, activeRequestCount - 1)
+        if cancelled {
+            stopped += 1
+        } else {
+            completed.append(modelName)
+        }
+        lock.unlock()
+        if cancelled { onStop?() }
+    }
+
+    func tagsBody() -> Data {
+        let rows = modelNames.map { "{\"name\":\"\($0)\"}" }.joined(separator: ",")
+        return Data("{\"models\":[\(rows)]}".utf8)
+    }
+
+    private func showBody(for modelName: String) -> Data {
+        let index = modelNames.firstIndex(of: modelName) ?? 0
+        return Data("{\"capabilities\":[\"chat\"],\"context_window_tokens\":\(4_096 + index)}".utf8)
+    }
+}
+
+private final class OllamaShowFanoutURLProtocol: URLProtocol {
+    static var controller: OllamaShowFanoutController?
+
+    private let stateLock = NSLock()
+    private var showModelName: String?
+    private var didFinishShow = false
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let controller = Self.controller else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        switch request.url?.path {
+        case "/api/tags":
+            complete(body: controller.tagsBody())
+        case "/api/ps":
+            complete(body: Data(#"{"models":[]}"#.utf8))
+        case "/api/show":
+            do {
+                let posted = try JSONDecoder().decode(PostedShowRequest.self, from: requestBodyData())
+                stateLock.lock()
+                showModelName = posted.model
+                stateLock.unlock()
+                controller.startShow(self, modelName: posted.model)
+            } catch {
+                client?.urlProtocol(self, didFailWithError: error)
+            }
+        default:
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+        }
+    }
+
+    override func stopLoading() {
+        stateLock.lock()
+        let modelName = showModelName
+        let shouldFinish = modelName != nil && !didFinishShow
+        if shouldFinish { didFinishShow = true }
+        stateLock.unlock()
+        if shouldFinish, let modelName {
+            Self.controller?.finishShow(self, modelName: modelName, cancelled: true)
+        }
+    }
+
+    func completeShow(body: Data, modelName: String) {
+        stateLock.lock()
+        let shouldFinish = !didFinishShow
+        if shouldFinish { didFinishShow = true }
+        stateLock.unlock()
+        guard shouldFinish else { return }
+
+        complete(body: body)
+        Self.controller?.finishShow(self, modelName: modelName, cancelled: false)
+    }
+
+    private func complete(body: Data) {
+        let response = HTTPURLResponse(
+            url: request.url ?? URL(string: "http://127.0.0.1:11434")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    private func requestBodyData() throws -> Data {
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { throw URLError(.cannotDecodeContentData) }
+        stream.open()
+        defer { stream.close() }
+        var result = Data()
+        var buffer = [UInt8](repeating: 0, count: 1_024)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count >= 0 else { throw stream.streamError ?? URLError(.cannotDecodeContentData) }
+            guard count > 0 else { break }
+            result.append(buffer, count: count)
+        }
+        return result
+    }
+}
+
+private final class BoundedStreamingURLProtocol: URLProtocol {
+    static var handler: ((URLRequest, BoundedStreamingURLProtocol) -> Void)?
+    static var onStop: ((URLRequest) -> Void)?
+
+    private let stateLock = NSLock()
+    private var didStop = false
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let handler = Self.handler else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        handler(request, self)
+    }
+
+    override func stopLoading() {
+        stateLock.lock()
+        let shouldNotify = !didStop
+        didStop = true
+        stateLock.unlock()
+        if shouldNotify { Self.onStop?(request) }
+    }
+
+    func respond(
+        statusCode: Int = 200,
+        body: Data,
+        headers: [String: String] = [:],
+        finish: Bool
+    ) {
+        var responseHeaders = ["Content-Type": "application/x-ndjson"]
+        responseHeaders.merge(headers) { _, new in new }
+        let response = HTTPURLResponse(
+            url: request.url ?? URL(string: "http://127.0.0.1:11434")!,
+            statusCode: statusCode,
+            httpVersion: "HTTP/1.1",
+            headerFields: responseHeaders
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        if !body.isEmpty { client?.urlProtocol(self, didLoad: body) }
+        if finish { client?.urlProtocolDidFinishLoading(self) }
     }
 }
 

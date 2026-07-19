@@ -1,5 +1,7 @@
 package com.localagentbridge.android.core.transport
 
+import java.util.concurrent.CancellationException
+
 data class RuntimeEndpointHint(
     val host: String,
     val port: Int,
@@ -121,6 +123,7 @@ sealed class PreparedRemoteRuntimeRoute {
         val port: Int,
         val relayFrameSecret: String? = null,
         val ticketGeneration: Long? = null,
+        val relayScope: String? = null,
         override val security: RemoteRouteSecurityContext,
     ) : PreparedRemoteRuntimeRoute() {
         init {
@@ -130,6 +133,9 @@ sealed class PreparedRemoteRuntimeRoute {
             require(relayFrameSecret?.isNotBlank() != false) { "Relay frame secret must not be blank" }
             require(ticketGeneration == null || ticketGeneration > 0L) {
                 "Relay ticket generation must be positive"
+            }
+            require(relayScope.isAllowedPreparedRelayScope()) {
+                "Relay scope must be remote, private_overlay, usb_reverse, or absent"
             }
         }
 
@@ -344,14 +350,15 @@ class RuntimeConnectionManager(
 
         val failures = mutableListOf<RuntimeRouteAttemptFailure>()
         connectableRoutes.forEach { route ->
-            runCatching {
-                connect(route, timeoutMillis)
-            }.onSuccess {
+            try {
+                val channel = connect(route, timeoutMillis)
                 return RuntimeConnectionResult(
-                    channel = it,
+                    channel = channel,
                     route = route,
                 )
-            }.onFailure { error ->
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
                 failures += RuntimeRouteAttemptFailure(route, error)
             }
         }

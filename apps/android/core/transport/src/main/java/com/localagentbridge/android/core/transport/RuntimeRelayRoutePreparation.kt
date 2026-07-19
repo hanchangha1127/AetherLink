@@ -44,6 +44,7 @@ fun RuntimeRelayRoutePreparation.toPreparedRelayRouteOrNull(
         port = routePort,
         relayFrameSecret = frameSecret,
         ticketGeneration = generation,
+        relayScope = relayScope,
         security = RemoteRouteSecurityContext(
             rendezvousToken = routeRelayId,
             expiresAtEpochMillis = expiresAt,
@@ -56,10 +57,12 @@ private fun String?.canonicalRelayHostOrNull(): String? {
     val value = this ?: return null
     return value.takeIf {
         it.isNotBlank() &&
+            it.length <= MAX_RELAY_HOST_CHARS &&
             it == it.trim() &&
             it.none(Char::isWhitespace) &&
             !it.contains("://") &&
-            it.none { char -> char == '/' || char == '?' || char == '#' || char == '@' }
+            it.none { char -> char == '/' || char == '?' || char == '#' || char == '@' } &&
+            !it.normalizedRelayHost().isNonCanonicalNumericRelayHost()
     }
 }
 
@@ -74,11 +77,7 @@ private fun String?.opaqueRelayRouteValueOrNull(): String? {
 }
 
 private fun String.isAllowedPreparedRelayHost(relayScope: String?): Boolean {
-    val normalized = trim()
-        .removePrefix("[")
-        .removeSuffix("]")
-        .removeSuffix(".")
-        .lowercase()
+    val normalized = normalizedRelayHost()
     if (normalized.isBlank()) return false
     if (normalized == "localhost" ||
         normalized == "::1" ||
@@ -95,6 +94,15 @@ private fun String.isAllowedPreparedRelayHost(relayScope: String?): Boolean {
     }
     return true
 }
+
+private fun String.normalizedRelayHost(): String = trim()
+    .removePrefix("[")
+    .removeSuffix("]")
+    .removeSuffix(".")
+    .lowercase()
+
+private fun String.isNonCanonicalNumericRelayHost(): Boolean =
+    isNotEmpty() && all(Char::isDigit) && !contains('.')
 
 private fun String.isPrivateOrLocalIpv4Literal(): Boolean {
     val octets = split('.')
@@ -164,11 +172,12 @@ private fun String?.isPrivateOverlayScope(): Boolean =
 private fun String?.isDebugUsbReverseScope(): Boolean =
     this == DEBUG_USB_REVERSE_RELAY_SCOPE
 
-private fun String?.isAllowedPreparedRelayScope(): Boolean =
+internal fun String?.isAllowedPreparedRelayScope(): Boolean =
     this == null || this in ALLOWED_PREPARED_RELAY_SCOPES
 
-private const val PRIVATE_OVERLAY_RELAY_SCOPE = "private_overlay"
-private const val DEBUG_USB_REVERSE_RELAY_SCOPE = "usb_reverse"
+internal const val PRIVATE_OVERLAY_RELAY_SCOPE = "private_overlay"
+private const val MAX_RELAY_HOST_CHARS = 253
+internal const val DEBUG_USB_REVERSE_RELAY_SCOPE = "usb_reverse"
 private val ALLOWED_PREPARED_RELAY_SCOPES = setOf(
     "remote",
     PRIVATE_OVERLAY_RELAY_SCOPE,

@@ -7,6 +7,8 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
 
     private static let defaultUnloadPollAttempts = 20
     private static let defaultUnloadPollIntervalNanoseconds: UInt64 = 100_000_000
+    private static let defaultDataResponseByteLimit = 32 * 1_024 * 1_024
+    private static let defaultDataResponseTimeout: TimeInterval = 60
 
     private let baseURL: URL
     private let session: URLSession
@@ -14,6 +16,9 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
     private let unloadPollIntervalNanoseconds: UInt64
     private let unloadSleeper: @Sendable (UInt64) async throws -> Void
     private let catalogResponseByteLimit: Int
+    private let dataResponseByteLimit: Int
+    private let dataResponseTimeout: TimeInterval
+    private let streamLimits: LMStudioStreamLimits
     private let registry = LMStudioGenerationRegistry()
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -25,6 +30,9 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         self.unloadPollIntervalNanoseconds = Self.defaultUnloadPollIntervalNanoseconds
         self.unloadSleeper = { try await Task.sleep(nanoseconds: $0) }
         self.catalogResponseByteLimit = ModelInfo.maximumCatalogResponseBytes
+        self.dataResponseByteLimit = Self.defaultDataResponseByteLimit
+        self.dataResponseTimeout = Self.defaultDataResponseTimeout
+        self.streamLimits = LMStudioStreamLimits()
     }
 
     init(
@@ -32,6 +40,9 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         session: URLSession,
         unloadPollAttempts: Int,
         catalogResponseByteLimit: Int = ModelInfo.maximumCatalogResponseBytes,
+        dataResponseByteLimit: Int = defaultDataResponseByteLimit,
+        dataResponseTimeout: TimeInterval = defaultDataResponseTimeout,
+        streamLimits: LMStudioStreamLimits = LMStudioStreamLimits(),
         unloadPollIntervalNanoseconds: UInt64 = 0,
         unloadSleeper: @escaping @Sendable (UInt64) async throws -> Void = { _ in }
     ) {
@@ -39,6 +50,9 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         self.session = session
         self.unloadPollAttempts = max(1, unloadPollAttempts)
         self.catalogResponseByteLimit = max(0, catalogResponseByteLimit)
+        self.dataResponseByteLimit = max(0, dataResponseByteLimit)
+        self.dataResponseTimeout = Self.normalizedDataResponseTimeout(dataResponseTimeout)
+        self.streamLimits = streamLimits
         self.unloadPollIntervalNanoseconds = unloadPollIntervalNanoseconds
         self.unloadSleeper = unloadSleeper
     }
@@ -180,35 +194,54 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
     }
 
     public func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
-        AsyncThrowingStream { continuation in
+        AsyncThrowingStream(bufferingPolicy: .bufferingOldest(streamLimits.bufferedEventLimit)) { continuation in
             registry.prepareForGeneration(id: request.generationID)
-            let task = Task { [baseURL, session, encoder] in
+            let task = Task { [baseURL, session, encoder, streamLimits] in
                 do {
                     let availableModels = try await self.listModels()
                     guard !availableModels.isEmpty else {
                         throw LMStudioBackendError.noModels
                     }
 
+                    let completion: LMStudioStreamCompletion
                     do {
-                        try await Self.streamNativeChat(
+                        completion = try await Self.streamNativeChat(
                             request: request,
                             baseURL: baseURL,
                             session: session,
                             encoder: encoder,
-                            registry: registry,
-                            continuation: continuation
-                        )
+                            limits: streamLimits
+                        ) { event in
+                            try Self.yield(event, to: continuation, endpoint: "POST /api/v1/chat")
+                        }
                     } catch let error as LMStudioBackendError where error.shouldFallbackNativeEndpointToOpenAICompatible {
                         try Task.checkCancellation()
-                        try await Self.streamOpenAICompatibleChat(
+                        completion = try await Self.streamOpenAICompatibleChat(
                             request: request,
                             baseURL: baseURL,
                             session: session,
                             encoder: encoder,
-                            registry: registry,
-                            continuation: continuation
+                            limits: streamLimits
+                        ) { event in
+                            try Self.yield(event, to: continuation, endpoint: "POST /v1/chat/completions")
+                        }
+                    }
+                    if completion.hasUsage {
+                        registry.storeUsageSource(
+                            ChatProviderUsageSource(
+                                provider: .lmStudio,
+                                providerModelID: request.model,
+                                wireMode: completion.wireMode
+                            ),
+                            id: request.generationID
                         )
                     }
+                    try Self.yield(
+                        .done(inputTokens: completion.inputTokens, outputTokens: completion.outputTokens),
+                        to: continuation,
+                        endpoint: completion.endpoint
+                    )
+                    continuation.finish()
                     registry.remove(id: request.generationID)
                 } catch is CancellationError {
                     continuation.finish(throwing: LMStudioBackendError.generationCancelled(generationID: request.generationID))
@@ -403,9 +436,10 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
 
     private func performCatalogDataRequest(endpoint: String, url: URL) async throws -> Data {
         do {
-            return try await performBoundedCatalogDataRequest(
+            return try await performBoundedDataRequest(
                 endpoint: endpoint,
-                request: URLRequest(url: url)
+                request: URLRequest(url: url),
+                byteLimit: catalogResponseByteLimit
             )
         } catch LMStudioCatalogIngestionError.responseTooLarge {
             throw LMStudioBackendError.badResponse(
@@ -415,33 +449,31 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         }
     }
 
-    private func performBoundedCatalogDataRequest(endpoint: String, request: URLRequest) async throws -> Data {
+    private func performBoundedDataRequest(
+        endpoint: String,
+        request: URLRequest,
+        byteLimit: Int
+    ) async throws -> Data {
         do {
-            let (bytes, response) = try await session.bytes(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw LMStudioBackendError.transport(endpoint: endpoint, reason: "Missing HTTP response")
-            }
-            let isSuccess = (200..<300).contains(http.statusCode)
-            if http.expectedContentLength > Int64(catalogResponseByteLimit) {
-                if isSuccess {
-                    throw LMStudioCatalogIngestionError.responseTooLarge
+            let timeoutNanoseconds = UInt64(dataResponseTimeout * 1_000_000_000)
+            return try await withThrowingTaskGroup(of: Data.self) { group in
+                group.addTask { [self] in
+                    try await collectBoundedDataResponse(
+                        endpoint: endpoint,
+                        request: request,
+                        byteLimit: byteLimit
+                    )
                 }
-                throw LMStudioBackendError.httpStatus(endpoint: endpoint, statusCode: http.statusCode, body: nil)
-            }
-
-            var data = Data()
-            data.reserveCapacity(min(catalogResponseByteLimit, 64 * 1_024))
-            for try await byte in bytes {
-                data.append(byte)
-                if data.count > catalogResponseByteLimit {
-                    if isSuccess {
-                        throw LMStudioCatalogIngestionError.responseTooLarge
-                    }
-                    throw LMStudioBackendError.httpStatus(endpoint: endpoint, statusCode: http.statusCode, body: nil)
+                group.addTask {
+                    try await Task.sleep(nanoseconds: timeoutNanoseconds)
+                    throw URLError(.timedOut)
                 }
+                defer { group.cancelAll() }
+                guard let result = try await group.next() else {
+                    throw CancellationError()
+                }
+                return result
             }
-            try Self.validate(response, endpoint: endpoint, body: data)
-            return data
         } catch let error as LMStudioCatalogIngestionError {
             throw error
         } catch let error as LMStudioBackendError {
@@ -457,11 +489,64 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         }
     }
 
-    private func performDataRequest(endpoint: String, request: URLRequest) async throws -> Data {
+    private func collectBoundedDataResponse(
+        endpoint: String,
+        request: URLRequest,
+        byteLimit: Int
+    ) async throws -> Data {
+        var boundedRequest = request
+        boundedRequest.timeoutInterval = dataResponseTimeout
+        let (bytes, response) = try await session.bytes(for: boundedRequest)
         do {
-            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw LMStudioBackendError.transport(endpoint: endpoint, reason: "Missing HTTP response")
+            }
+            let isSuccess = (200..<300).contains(http.statusCode)
+            if http.expectedContentLength > Int64(byteLimit) {
+                if isSuccess {
+                    throw LMStudioCatalogIngestionError.responseTooLarge
+                }
+                throw LMStudioBackendError.httpStatus(endpoint: endpoint, statusCode: http.statusCode, body: nil)
+            }
+
+            var data = Data()
+            data.reserveCapacity(min(byteLimit, 64 * 1_024))
+            for try await byte in bytes {
+                try Task.checkCancellation()
+                guard data.count < byteLimit else {
+                    if isSuccess {
+                        throw LMStudioCatalogIngestionError.responseTooLarge
+                    }
+                    throw LMStudioBackendError.httpStatus(endpoint: endpoint, statusCode: http.statusCode, body: nil)
+                }
+                data.append(byte)
+            }
             try Self.validate(response, endpoint: endpoint, body: data)
             return data
+        } catch {
+            bytes.task.cancel()
+            throw error
+        }
+    }
+
+    private static func normalizedDataResponseTimeout(_ timeout: TimeInterval) -> TimeInterval {
+        let maximum: TimeInterval = 24 * 60 * 60
+        guard timeout.isFinite, timeout > 0 else { return defaultDataResponseTimeout }
+        return min(timeout, maximum)
+    }
+
+    private func performDataRequest(endpoint: String, request: URLRequest) async throws -> Data {
+        do {
+            return try await performBoundedDataRequest(
+                endpoint: endpoint,
+                request: request,
+                byteLimit: dataResponseByteLimit
+            )
+        } catch LMStudioCatalogIngestionError.responseTooLarge {
+            throw LMStudioBackendError.badResponse(
+                endpoint: endpoint,
+                reason: "The provider response exceeds the supported byte limit."
+            )
         } catch let error as LMStudioBackendError {
             throw error
         } catch is CancellationError {
@@ -480,9 +565,9 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         baseURL: URL,
         session: URLSession,
         encoder: JSONEncoder,
-        registry: LMStudioGenerationRegistry,
-        continuation: AsyncThrowingStream<ChatStreamEvent, Error>.Continuation
-    ) async throws {
+        limits: LMStudioStreamLimits,
+        emit: (ChatStreamEvent) throws -> Void
+    ) async throws -> LMStudioStreamCompletion {
         let endpoint = "POST /api/v1/chat"
         var urlRequest = URLRequest(url: baseURL.appending(path: "api/v1/chat"))
         urlRequest.httpMethod = "POST"
@@ -494,46 +579,57 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         )
 
         let (bytes, response) = try await session.bytes(for: urlRequest)
-        try validate(response, endpoint: endpoint, body: nil)
+        do {
+            try validate(response, endpoint: endpoint, body: nil)
+            try validateContentLength(response, limit: limits.responseByteLimit)
 
-        var parser = ServerSentEventParser()
-        for try await line in bytes.lines {
-            try Task.checkCancellation()
-            let events = try parser.append(line)
-            for event in events {
-                try handleNativeEvent(
-                    event,
-                    providerModelID: request.model,
-                    generationID: request.generationID,
-                    registry: registry,
-                    continuation: continuation,
-                    endpoint: endpoint
-                )
-                if event.name == "chat.end" {
-                    continuation.finish()
-                    return
+            var lines = LMStudioBoundedLineReader(
+                bytes: bytes,
+                responseByteLimit: limits.responseByteLimit,
+                lineByteLimit: limits.lineByteLimit
+            )
+            var parser = ServerSentEventParser(frameByteLimit: limits.frameByteLimit)
+            var budget = LMStudioStreamBudget(limit: limits.aggregateAccountingByteLimit)
+            while let line = try await lines.next() {
+                try Task.checkCancellation()
+                for event in try parser.append(line) {
+                    if let completion = try handleNativeEvent(
+                        event,
+                        budget: &budget,
+                        emit: emit,
+                        endpoint: endpoint
+                    ) {
+                        bytes.task.cancel()
+                        return completion
+                    }
                 }
             }
-        }
 
-        for event in parser.finish() {
-            try handleNativeEvent(
-                event,
-                providerModelID: request.model,
-                generationID: request.generationID,
-                registry: registry,
-                continuation: continuation,
-                endpoint: endpoint
-            )
-            if event.name == "chat.end" {
-                continuation.finish()
-                return
+            for event in parser.finish() {
+                if let completion = try handleNativeEvent(
+                    event,
+                    budget: &budget,
+                    emit: emit,
+                    endpoint: endpoint
+                ) {
+                    bytes.task.cancel()
+                    return completion
+                }
             }
+            throw LMStudioStreamIngestionError.missingTerminal
+        } catch is CancellationError {
+            bytes.task.cancel()
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            bytes.task.cancel()
+            throw CancellationError()
+        } catch is LMStudioStreamIngestionError {
+            bytes.task.cancel()
+            throw badStreamResponse(endpoint: endpoint)
+        } catch {
+            bytes.task.cancel()
+            throw error
         }
-        throw LMStudioBackendError.badResponse(
-            endpoint: endpoint,
-            reason: "The native stream ended without chat.end."
-        )
     }
 
     private static func streamOpenAICompatibleChat(
@@ -541,9 +637,9 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         baseURL: URL,
         session: URLSession,
         encoder: JSONEncoder,
-        registry: LMStudioGenerationRegistry,
-        continuation: AsyncThrowingStream<ChatStreamEvent, Error>.Continuation
-    ) async throws {
+        limits: LMStudioStreamLimits,
+        emit: (ChatStreamEvent) throws -> Void
+    ) async throws -> LMStudioStreamCompletion {
         let endpoint = "POST /v1/chat/completions"
         var urlRequest = URLRequest(url: baseURL.appending(path: "v1/chat/completions"))
         urlRequest.httpMethod = "POST"
@@ -560,96 +656,90 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         )
 
         let (bytes, response) = try await session.bytes(for: urlRequest)
-        try validate(response, endpoint: endpoint, body: nil)
+        do {
+            try validate(response, endpoint: endpoint, body: nil)
+            try validateContentLength(response, limit: limits.responseByteLimit)
 
-        var inputTokens: Int?
-        var outputTokens: Int?
-        var observedFinishReason = false
-        for try await line in bytes.lines {
-            try Task.checkCancellation()
-            guard let streamLine = try decodeOpenAIStreamLine(line, endpoint: endpoint) else { continue }
-            if case .done = streamLine {
-                if observedFinishReason {
-                    yieldOpenAICompletion(
+            var lines = LMStudioBoundedLineReader(
+                bytes: bytes,
+                responseByteLimit: limits.responseByteLimit,
+                lineByteLimit: limits.lineByteLimit
+            )
+            var budget = LMStudioStreamBudget(limit: limits.aggregateAccountingByteLimit)
+            var inputTokens: Int?
+            var outputTokens: Int?
+            var hasUsage = false
+            while let line = try await lines.next() {
+                try Task.checkCancellation()
+                guard let streamLine = try decodeOpenAIStreamLine(line, endpoint: endpoint) else { continue }
+                if case .done = streamLine {
+                    bytes.task.cancel()
+                    return LMStudioStreamCompletion(
+                        endpoint: endpoint,
+                        wireMode: .lmStudioOpenAICompatible,
                         inputTokens: inputTokens,
                         outputTokens: outputTokens,
-                        providerModelID: request.model,
-                        generationID: request.generationID,
-                        registry: registry,
-                        continuation: continuation
+                        hasUsage: hasUsage
                     )
                 }
-                continuation.finish()
-                return
+                guard case .chunk(let chunk) = streamLine else { continue }
+                let reasoning = chunk.choices.first?.delta.reasoningText ?? ""
+                let content = chunk.choices.first?.delta.content ?? ""
+                try budget.record(
+                    reasoning: reasoning,
+                    answer: content,
+                    includesUsage: chunk.usage != nil
+                )
+                if !reasoning.isEmpty {
+                    try emit(.reasoningDelta(reasoning))
+                }
+                if !content.isEmpty {
+                    try emit(.delta(content))
+                }
+                if let usage = chunk.usage {
+                    inputTokens = usage.promptTokens
+                    outputTokens = usage.completionTokens
+                    hasUsage = true
+                }
             }
-            guard case .chunk(let chunk) = streamLine else { continue }
-            if let reasoning = chunk.choices.first?.delta.reasoningText, !reasoning.isEmpty {
-                continuation.yield(.reasoningDelta(reasoning))
-            }
-            if let content = chunk.choices.first?.delta.content, !content.isEmpty {
-                continuation.yield(.delta(content))
-            }
-            if let usage = chunk.usage {
-                inputTokens = usage.promptTokens
-                outputTokens = usage.completionTokens
-            }
-            if chunk.choices.contains(where: { $0.finishReason != nil }) {
-                observedFinishReason = true
-            }
+            throw LMStudioStreamIngestionError.missingTerminal
+        } catch is CancellationError {
+            bytes.task.cancel()
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            bytes.task.cancel()
+            throw CancellationError()
+        } catch is LMStudioStreamIngestionError {
+            bytes.task.cancel()
+            throw badStreamResponse(endpoint: endpoint)
+        } catch {
+            bytes.task.cancel()
+            throw error
         }
-        if observedFinishReason {
-            yieldOpenAICompletion(
-                inputTokens: inputTokens,
-                outputTokens: outputTokens,
-                providerModelID: request.model,
-                generationID: request.generationID,
-                registry: registry,
-                continuation: continuation
-            )
-        }
-        continuation.finish()
-    }
-
-    private static func yieldOpenAICompletion(
-        inputTokens: Int?,
-        outputTokens: Int?,
-        providerModelID: String,
-        generationID: String,
-        registry: LMStudioGenerationRegistry,
-        continuation: AsyncThrowingStream<ChatStreamEvent, Error>.Continuation
-    ) {
-        if inputTokens != nil || outputTokens != nil {
-            registry.storeUsageSource(
-                ChatProviderUsageSource(
-                    provider: .lmStudio,
-                    providerModelID: providerModelID,
-                    wireMode: .lmStudioOpenAICompatible
-                ),
-                id: generationID
-            )
-        }
-        continuation.yield(.done(inputTokens: inputTokens, outputTokens: outputTokens))
     }
 
     private static func handleNativeEvent(
         _ event: ServerSentEvent,
-        providerModelID: String,
-        generationID: String,
-        registry: LMStudioGenerationRegistry,
-        continuation: AsyncThrowingStream<ChatStreamEvent, Error>.Continuation,
+        budget: inout LMStudioStreamBudget,
+        emit: (ChatStreamEvent) throws -> Void,
         endpoint: String
-    ) throws {
+    ) throws -> LMStudioStreamCompletion? {
         guard let data = event.data.data(using: .utf8) else {
-            throw LMStudioBackendError.streamDecoding(line: event.data, reason: "Event data is not valid UTF-8")
+            throw LMStudioStreamIngestionError.invalidUTF8
         }
         switch event.name {
         case "message.delta":
             let delta = try decode(LMStudioMessageDelta.self, from: data, endpoint: endpoint, line: event.data)
+            try budget.record(
+                reasoning: delta.reasoningText,
+                answer: delta.answerText,
+                includesUsage: false
+            )
             if !delta.reasoningText.isEmpty {
-                continuation.yield(.reasoningDelta(delta.reasoningText))
+                try emit(.reasoningDelta(delta.reasoningText))
             }
             if !delta.answerText.isEmpty {
-                continuation.yield(.delta(delta.answerText))
+                try emit(.delta(delta.answerText))
             }
         case "error":
             let payload = try decode(LMStudioStreamError.self, from: data, endpoint: endpoint, line: event.data)
@@ -658,20 +748,48 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
             let end = try decode(LMStudioChatEnd.self, from: data, endpoint: endpoint, line: event.data)
             let inputTokens = end.result.stats?.inputTokens
             let outputTokens = end.result.stats?.totalOutputTokens
-            if end.result.stats != nil {
-                registry.storeUsageSource(
-                    ChatProviderUsageSource(
-                        provider: .lmStudio,
-                        providerModelID: providerModelID,
-                        wireMode: .lmStudioNative
-                    ),
-                    id: generationID
-                )
-            }
-            continuation.yield(.done(inputTokens: inputTokens, outputTokens: outputTokens))
+            try budget.record(reasoning: "", answer: "", includesUsage: end.result.stats != nil)
+            return LMStudioStreamCompletion(
+                endpoint: endpoint,
+                wireMode: .lmStudioNative,
+                inputTokens: inputTokens,
+                outputTokens: outputTokens,
+                hasUsage: end.result.stats != nil
+            )
         default:
             break
         }
+        return nil
+    }
+
+    private static func validateContentLength(_ response: URLResponse, limit: Int) throws {
+        guard response.expectedContentLength <= Int64(limit) else {
+            throw LMStudioStreamIngestionError.responseTooLarge
+        }
+    }
+
+    private static func yield(
+        _ event: ChatStreamEvent,
+        to continuation: AsyncThrowingStream<ChatStreamEvent, Error>.Continuation,
+        endpoint: String
+    ) throws {
+        switch continuation.yield(event) {
+        case .enqueued:
+            return
+        case .dropped:
+            throw badStreamResponse(endpoint: endpoint)
+        case .terminated:
+            throw CancellationError()
+        @unknown default:
+            throw badStreamResponse(endpoint: endpoint)
+        }
+    }
+
+    private static func badStreamResponse(endpoint: String) -> LMStudioBackendError {
+        LMStudioBackendError.badResponse(
+            endpoint: endpoint,
+            reason: "The provider stream violated a bounded response contract."
+        )
     }
 
     private static func validate(_ response: URLResponse, endpoint: String, body: Data?) throws {
@@ -734,6 +852,7 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
 
     private static func decode<T: Decodable>(_ type: T.Type, from data: Data, endpoint: String, line: String) throws -> T {
         do {
+            try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)
             return try JSONDecoder().decode(type, from: data)
         } catch {
             throw LMStudioBackendError.streamDecoding(line: line, reason: error.localizedDescription)
@@ -758,11 +877,118 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         }
 
         do {
+            try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)
             return .chunk(try JSONDecoder().decode(OpenAIChatChunk.self, from: data))
         } catch {
             throw LMStudioBackendError.streamDecoding(line: line, reason: error.localizedDescription)
         }
     }
+}
+
+struct LMStudioStreamLimits: Sendable {
+    static let defaultResponseByteLimit = 32 * 1_024 * 1_024
+    static let defaultLineByteLimit = 1 * 1_024 * 1_024
+    static let defaultFrameByteLimit = 1 * 1_024 * 1_024
+    static let defaultAggregateAccountingByteLimit = 16 * 1_024 * 1_024
+    static let defaultBufferedEventLimit = 64
+
+    let responseByteLimit: Int
+    let lineByteLimit: Int
+    let frameByteLimit: Int
+    let aggregateAccountingByteLimit: Int
+    let bufferedEventLimit: Int
+
+    init(
+        responseByteLimit: Int = defaultResponseByteLimit,
+        lineByteLimit: Int = defaultLineByteLimit,
+        frameByteLimit: Int = defaultFrameByteLimit,
+        aggregateAccountingByteLimit: Int = defaultAggregateAccountingByteLimit,
+        bufferedEventLimit: Int = defaultBufferedEventLimit
+    ) {
+        self.responseByteLimit = max(1, responseByteLimit)
+        self.lineByteLimit = max(1, min(lineByteLimit, self.responseByteLimit))
+        self.frameByteLimit = max(1, min(frameByteLimit, self.responseByteLimit))
+        self.aggregateAccountingByteLimit = max(1, aggregateAccountingByteLimit)
+        self.bufferedEventLimit = max(1, bufferedEventLimit)
+    }
+}
+
+struct LMStudioBoundedLineReader<Bytes: AsyncSequence> where Bytes.Element == UInt8 {
+    private var iterator: Bytes.AsyncIterator
+    private let responseByteLimit: Int
+    private let lineByteLimit: Int
+    private var responseByteCount = 0
+    private var unfinishedLine = Data()
+
+    init(bytes: Bytes, responseByteLimit: Int, lineByteLimit: Int) {
+        self.iterator = bytes.makeAsyncIterator()
+        self.responseByteLimit = max(1, responseByteLimit)
+        self.lineByteLimit = max(1, lineByteLimit)
+        unfinishedLine.reserveCapacity(min(self.lineByteLimit, 4 * 1_024))
+    }
+
+    mutating func next() async throws -> String? {
+        while let byte = try await iterator.next() {
+            guard responseByteCount < responseByteLimit else {
+                throw LMStudioStreamIngestionError.responseTooLarge
+            }
+            responseByteCount += 1
+            if byte == 0x0A {
+                return try takeLine()
+            }
+            guard unfinishedLine.count < lineByteLimit else {
+                throw LMStudioStreamIngestionError.lineTooLarge
+            }
+            unfinishedLine.append(byte)
+        }
+        guard !unfinishedLine.isEmpty else { return nil }
+        return try takeLine()
+    }
+
+    private mutating func takeLine() throws -> String {
+        if unfinishedLine.last == 0x0D {
+            unfinishedLine.removeLast()
+        }
+        guard let line = String(data: unfinishedLine, encoding: .utf8) else {
+            throw LMStudioStreamIngestionError.invalidUTF8
+        }
+        unfinishedLine.removeAll(keepingCapacity: true)
+        return line
+    }
+}
+
+private struct LMStudioStreamBudget {
+    let limit: Int
+    private(set) var consumed = 0
+
+    mutating func record(reasoning: String, answer: String, includesUsage: Bool) throws {
+        let (textBytes, textOverflow) = reasoning.utf8.count.addingReportingOverflow(answer.utf8.count)
+        let usageBytes = includesUsage ? 2 * MemoryLayout<Int>.size : 0
+        let (additionalBytes, accountingOverflow) = textBytes.addingReportingOverflow(usageBytes)
+        guard !textOverflow,
+              !accountingOverflow,
+              additionalBytes <= limit - consumed else {
+            throw LMStudioStreamIngestionError.aggregateAccountingTooLarge
+        }
+        consumed += additionalBytes
+    }
+}
+
+private struct LMStudioStreamCompletion {
+    let endpoint: String
+    let wireMode: ChatProviderWireMode
+    let inputTokens: Int?
+    let outputTokens: Int?
+    let hasUsage: Bool
+}
+
+private enum LMStudioStreamIngestionError: Error {
+    case responseTooLarge
+    case lineTooLarge
+    case frameTooLarge
+    case invalidUTF8
+    case aggregateAccountingTooLarge
+    case missingTerminal
 }
 
 private extension LMStudioBackendError {
@@ -1370,8 +1596,14 @@ private struct ServerSentEvent {
 }
 
 private struct ServerSentEventParser {
+    private let frameByteLimit: Int
     private var eventName = "message"
     private var dataLines: [String] = []
+    private var dataByteCount = 0
+
+    init(frameByteLimit: Int) {
+        self.frameByteLimit = max(1, frameByteLimit)
+    }
 
     mutating func append(_ line: String) throws -> [ServerSentEvent] {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1379,12 +1611,19 @@ private struct ServerSentEventParser {
             return flush()
         }
         if trimmed.hasPrefix("event:") {
-            let pending = flush()
             eventName = String(trimmed.dropFirst("event:".count)).trimmingCharacters(in: .whitespaces)
-            return pending
+            return []
         }
         if trimmed.hasPrefix("data:") {
-            dataLines.append(String(trimmed.dropFirst("data:".count)).trimmingCharacters(in: .whitespaces))
+            let dataLine = String(trimmed.dropFirst("data:".count)).trimmingCharacters(in: .whitespaces)
+            let separatorBytes = dataLines.isEmpty ? 0 : 1
+            let (lineAndSeparatorBytes, overflow) = dataLine.utf8.count.addingReportingOverflow(separatorBytes)
+            guard !overflow,
+                  lineAndSeparatorBytes <= frameByteLimit - dataByteCount else {
+                throw LMStudioStreamIngestionError.frameTooLarge
+            }
+            dataLines.append(dataLine)
+            dataByteCount += lineAndSeparatorBytes
             return []
         }
         if trimmed.hasPrefix(":") {
@@ -1405,6 +1644,7 @@ private struct ServerSentEventParser {
         let event = ServerSentEvent(name: eventName, data: dataLines.joined(separator: "\n"))
         eventName = "message"
         dataLines = []
+        dataByteCount = 0
         return [event]
     }
 }

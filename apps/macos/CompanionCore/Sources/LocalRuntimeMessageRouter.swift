@@ -11,6 +11,8 @@ import TrustedDevices
 
 public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     static let maximumConcurrentModelCatalogWaiters = 8
+    private static let hardMaximumConcurrentRequestTasks = 128
+    private static let hardMaximumConcurrentRequestTasksPerConnection = 32
 
     private let backend: any RuntimeModelServingBackend
     private let modelPullApprovalBroker: RuntimeModelPullApprovalBroker?
@@ -55,6 +57,9 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private let chatTitleCancellationDispatcher = RuntimeChatTitleCancellationDispatcher()
     private let requestTaskLock = NSLock()
     private var requestTasksByConnection: [UUID: [UUID: TrackedRuntimeRequestTask]] = [:]
+    private var retiringRequestTaskIDs = Set<UUID>()
+    private let maximumConcurrentRequestTasks: Int
+    private let maximumConcurrentRequestTasksPerConnection: Int
     private let modelCatalogCoordinator: RuntimeModelCatalogCoordinator
     private let semanticSearchLock = NSLock()
     private var activeSemanticSearchConnections = Set<UUID>()
@@ -73,6 +78,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private var latestChatSessionInitialRequestGenerations: [UUID: UInt64] = [:]
     private var latestResearchNotebookInitialRequestGenerations: [UUID: UInt64] = [:]
     private let requestTaskRegistrationCheckpoint: (@Sendable () -> Void)?
+    private let requestTaskCompletionCheckpoint: (@Sendable () -> Void)?
     private let modelsListWaiterRegistrationCheckpoint: (@Sendable () -> Void)?
     private let memorySummaryCacheCommitCheckpoint: (@Sendable () -> Void)?
     private let memorySummaryPublicationCheckpoint: (@Sendable () -> Void)?
@@ -135,7 +141,10 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         routeRefresher: (any RuntimeRouteRefreshing)? = nil,
         runtimeChallengeSigner: (any RuntimeChallengeSigning & InitialPairingRuntimeResultSigning)? = nil,
         pairedRelayAuthorizationTimeout: TimeInterval = 5,
+        requestTaskGlobalLimit: Int = 128,
+        requestTaskPerConnectionLimit: Int = 32,
         requestTaskRegistrationCheckpoint: (@Sendable () -> Void)? = nil,
+        requestTaskCompletionCheckpoint: (@Sendable () -> Void)? = nil,
         modelsListWaiterRegistrationCheckpoint: (@Sendable () -> Void)? = nil,
         memorySummaryCacheCommitCheckpoint: (@Sendable () -> Void)? = nil,
         memorySummaryPublicationCheckpoint: (@Sendable () -> Void)? = nil,
@@ -202,7 +211,17 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         self.routeRefresher = routeRefresher
         self.runtimeChallengeSigner = runtimeChallengeSigner
         self.pairedRelayAuthorizationTimeout = max(0.01, min(pairedRelayAuthorizationTimeout, 60))
+        self.maximumConcurrentRequestTasks = min(
+            max(1, requestTaskGlobalLimit),
+            Self.hardMaximumConcurrentRequestTasks
+        )
+        self.maximumConcurrentRequestTasksPerConnection = min(
+            max(1, requestTaskPerConnectionLimit),
+            self.maximumConcurrentRequestTasks,
+            Self.hardMaximumConcurrentRequestTasksPerConnection
+        )
         self.requestTaskRegistrationCheckpoint = requestTaskRegistrationCheckpoint
+        self.requestTaskCompletionCheckpoint = requestTaskCompletionCheckpoint
         self.modelsListWaiterRegistrationCheckpoint = modelsListWaiterRegistrationCheckpoint
         self.modelCatalogCoordinator = RuntimeModelCatalogCoordinator(
             maximumWaiterCount: Self.maximumConcurrentModelCatalogWaiters
@@ -295,8 +314,14 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     public func handle(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
         let taskID = UUID()
-        requestTaskLock.withLock {
-            requestTasksByConnection[sink.connectionID, default: [:]][taskID] = TrackedRuntimeRequestTask(task: nil)
+        guard admitRequestTask(connectionID: sink.connectionID, taskID: taskID) else {
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                code: "backend_unavailable",
+                message: "AetherLink Runtime is currently handling other requests.",
+                retryable: true
+            ))
+            return
         }
         let startGate = RuntimeRequestTaskStartGate()
         let task = Task { [weak self] in
@@ -321,8 +346,12 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     }
 
     public func connectionDidClose(_ connectionID: UUID) {
-        let requestTasks = requestTaskLock.withLock {
-            requestTasksByConnection.removeValue(forKey: connectionID)?.values.compactMap(\.task) ?? []
+        let requestTasks: [Task<Void, Never>] = requestTaskLock.withLock {
+            guard let removedTasks = requestTasksByConnection.removeValue(forKey: connectionID) else {
+                return []
+            }
+            retiringRequestTaskIDs.formUnion(removedTasks.keys)
+            return removedTasks.values.compactMap(\.task)
         }
         cancelActiveChats(for: connectionID)
         requestTasks.forEach { $0.cancel() }
@@ -380,7 +409,11 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             await handleRelayAllocationAuthorization(envelope, sink: sink)
         case MessageType.runtimeHealth:
             guard await allowRuntimeCommand(envelope, sink: sink) else { return }
-            await handleRuntimeHealth(envelope, sink: sink)
+            await handleRuntimeHealth(
+                envelope,
+                sink: sink,
+                requestTaskID: requestTaskID
+            )
         case MessageType.modelsList:
             guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             await handleModelsList(
@@ -920,11 +953,19 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
     }
 
-    private func handleRuntimeHealth(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
+    private func handleRuntimeHealth(
+        _ envelope: ProtocolEnvelope,
+        sink: any RuntimeMessageSink,
+        requestTaskID: UUID
+    ) async {
         do {
             try validateEmptyRequestPayload(envelope)
         } catch {
-            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+            sendIfRequestActive(
+                errorEnvelope(requestID: envelope.requestID, error: error),
+                sink: sink,
+                requestTaskID: requestTaskID
+            )
             return
         }
 
@@ -950,36 +991,48 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 ])
             ]
             payload["model_residency"] = modelResidencyPayload(for: aggregate.modelResidencySnapshot())
-            sink.send(ProtocolEnvelope(
-                type: MessageType.runtimeHealth,
-                requestID: envelope.requestID,
-                payload: payload
-            ))
+            sendIfRequestActive(
+                ProtocolEnvelope(
+                    type: MessageType.runtimeHealth,
+                    requestID: envelope.requestID,
+                    payload: payload
+                ),
+                sink: sink,
+                requestTaskID: requestTaskID
+            )
             return
         }
 
         switch await backend.healthCheck() {
         case .available:
-            sink.send(ProtocolEnvelope(
-                type: MessageType.runtimeHealth,
-                requestID: envelope.requestID,
-                payload: [
-                    "status": .string("ok"),
-                    backend.provider.rawValue: .object([
-                        "available": .bool(true),
-                        "message": .string("\(backend.provider.displayName) is reachable from AetherLink Runtime")
-                    ])
-                ]
-            ))
+            sendIfRequestActive(
+                ProtocolEnvelope(
+                    type: MessageType.runtimeHealth,
+                    requestID: envelope.requestID,
+                    payload: [
+                        "status": .string("ok"),
+                        backend.provider.rawValue: .object([
+                            "available": .bool(true),
+                            "message": .string("\(backend.provider.displayName) is reachable from AetherLink Runtime")
+                        ])
+                    ]
+                ),
+                sink: sink,
+                requestTaskID: requestTaskID
+            )
         case .unavailable(let error):
-            sink.send(ProtocolEnvelope(
-                type: MessageType.runtimeHealth,
-                requestID: envelope.requestID,
-                payload: [
-                    "status": .string("unavailable"),
-                    error.provider.rawValue: healthPayload(for: .unavailable(error))
-                ]
-            ))
+            sendIfRequestActive(
+                ProtocolEnvelope(
+                    type: MessageType.runtimeHealth,
+                    requestID: envelope.requestID,
+                    payload: [
+                        "status": .string("unavailable"),
+                        error.provider.rawValue: healthPayload(for: .unavailable(error))
+                    ]
+                ),
+                sink: sink,
+                requestTaskID: requestTaskID
+            )
         }
     }
 
@@ -3414,11 +3467,38 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     }
 
     private func finishRequestTask(connectionID: UUID, taskID: UUID) {
-        requestTaskLock.withLock {
-            requestTasksByConnection[connectionID]?[taskID] = nil
-            if requestTasksByConnection[connectionID]?.isEmpty == true {
-                requestTasksByConnection[connectionID] = nil
+        let didFinish = requestTaskLock.withLock { () -> Bool in
+            guard var tasks = requestTasksByConnection[connectionID] else {
+                return retiringRequestTaskIDs.remove(taskID) != nil
             }
+            guard tasks.removeValue(forKey: taskID) != nil else {
+                return retiringRequestTaskIDs.remove(taskID) != nil
+            }
+            if tasks.isEmpty {
+                requestTasksByConnection[connectionID] = nil
+            } else {
+                requestTasksByConnection[connectionID] = tasks
+            }
+            return true
+        }
+        if didFinish { requestTaskCompletionCheckpoint?() }
+    }
+
+    private func admitRequestTask(connectionID: UUID, taskID: UUID) -> Bool {
+        requestTaskLock.withLock {
+            let connectionTaskCount = requestTasksByConnection[connectionID]?.count ?? 0
+            guard connectionTaskCount < maximumConcurrentRequestTasksPerConnection else {
+                return false
+            }
+            let totalTaskCount = requestTasksByConnection.values.reduce(into: 0) { count, tasks in
+                count += tasks.count
+            } + retiringRequestTaskIDs.count
+            guard totalTaskCount < maximumConcurrentRequestTasks else {
+                return false
+            }
+            requestTasksByConnection[connectionID, default: [:]][taskID] =
+                TrackedRuntimeRequestTask(task: nil)
+            return true
         }
     }
 
@@ -7733,14 +7813,16 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 mappedError = .chatSessionNotFound(sessionID)
             case .sessionMustBeArchivedBeforeDelete(let sessionID):
                 mappedError = .chatSessionMustBeArchivedBeforeDelete(sessionID)
-            case .bulkMutationUnsupported,
-                 .invalidTargetedSessionSummarySessionID,
-                 .duplicateTargetedSessionSummarySessionID,
-                 .targetedSessionSummaryLimitExceeded,
-                 .corruptEventLog:
+            default:
                 mappedError = .chatStoreUnavailable(error.localizedDescription)
             }
             return errorEnvelope(requestID: requestID, error: mappedError)
+        }
+        if let error = error as? RuntimeChatHostWideProjectionError {
+            return errorEnvelope(
+                requestID: requestID,
+                error: LocalRuntimeRouterError.chatStoreUnavailable(error.localizedDescription)
+            )
         }
         if let error = error as? LocalRuntimeRouterError {
             return errorEnvelope(
@@ -12775,13 +12857,11 @@ private func extractDocumentAttachment(
             throw LocalRuntimeRouterError.unsupportedAttachment(
                 "Attachment '\(name)' has unsupported document type '\(mimeType)'."
             )
-        case .unreadablePDF,
-             .archiveListingFailed,
-             .archiveEntryReadFailed,
-             .converterFailed,
-             .noExtractableText,
-             .resourceLimitExceeded,
-             .invalidResourcePolicy:
+        case .resourceLimitExceeded, .invalidResourcePolicy:
+            throw LocalRuntimeRouterError.unreadableAttachment(
+                "Attachment '\(name)' could not be processed within document safety limits."
+            )
+        default:
             throw LocalRuntimeRouterError.unreadableAttachment(
                 "Attachment '\(name)' could not be read: \(error.localizedDescription)"
             )

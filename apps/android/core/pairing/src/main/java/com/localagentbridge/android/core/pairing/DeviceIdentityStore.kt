@@ -8,6 +8,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.security.KeyPair
 import java.security.KeyPairGenerator
@@ -23,24 +25,28 @@ class DeviceIdentityStore internal constructor(
     constructor(context: Context) : this(context, AndroidKeystoreDeviceIdentityKeyPairStore())
 
     suspend fun loadOrCreate(): DeviceIdentity = withContext(Dispatchers.IO) {
-        val prefs = context.localAgentBridgeDataStore.data.first()
-        val deviceId = prefs[Keys.deviceId] ?: UUID.randomUUID().toString()
-        val deviceName = prefs[Keys.deviceName] ?: defaultDeviceName()
-        val keyPair = keyPairStore.loadOrCreate()
+        identityCreationMutex.withLock {
+            val prefs = context.localAgentBridgeDataStore.data.first()
+            val deviceId = prefs[Keys.deviceId] ?: UUID.randomUUID().toString()
+            val deviceName = prefs[Keys.deviceName] ?: defaultDeviceName()
+            val keyPair = keyPairStore.loadOrCreate()
 
-        if (prefs[Keys.deviceId] == null || prefs[Keys.deviceName] == null) {
-            context.localAgentBridgeDataStore.edit { updated ->
-                updated[Keys.deviceId] = deviceId
-                updated[Keys.deviceName] = deviceName
+            val persisted = if (prefs[Keys.deviceId] == null || prefs[Keys.deviceName] == null) {
+                context.localAgentBridgeDataStore.edit { updated ->
+                    updated[Keys.deviceId] = deviceId
+                    updated[Keys.deviceName] = deviceName
+                }
+            } else {
+                prefs
             }
-        }
 
-        DeviceIdentity(
-            deviceId = deviceId,
-            deviceName = deviceName,
-            publicKeyBase64 = Base64.getEncoder().encodeToString(keyPair.public.encoded),
-            keyPair = keyPair,
-        )
+            DeviceIdentity(
+                deviceId = checkNotNull(persisted[Keys.deviceId]),
+                deviceName = checkNotNull(persisted[Keys.deviceName]),
+                publicKeyBase64 = Base64.getEncoder().encodeToString(keyPair.public.encoded),
+                keyPair = keyPair,
+            )
+        }
     }
 
     private fun defaultDeviceName(): String {
@@ -55,6 +61,10 @@ class DeviceIdentityStore internal constructor(
     private object Keys {
         val deviceId = stringPreferencesKey("android_device_id")
         val deviceName = stringPreferencesKey("android_device_name")
+    }
+
+    private companion object {
+        val identityCreationMutex = Mutex()
     }
 }
 

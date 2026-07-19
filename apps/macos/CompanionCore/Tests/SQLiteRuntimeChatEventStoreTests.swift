@@ -4,6 +4,807 @@ import SQLite3
 import XCTest
 
 final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
+    func testJSONLHostWideProjectionKeepsCollidingOwnerSessionsIsolatedAfterReopen() throws {
+        let fileURL = try temporaryJSONLURL()
+        let store = JSONLRuntimeChatEventStore(fileURL: fileURL)
+        try appendOwnerCollisionFixture(to: store)
+
+        try assertOwnerCollisionProjection(store, label: "JSONL live")
+        try assertOwnerCollisionProjection(
+            JSONLRuntimeChatEventStore(fileURL: fileURL),
+            label: "JSONL reopened"
+        )
+    }
+
+    func testSQLiteHostWideProjectionKeepsCollidingOwnerSessionsIsolatedAfterReopen() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let store = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        try appendOwnerCollisionFixture(to: store)
+
+        try assertOwnerCollisionProjection(store, label: "SQLite live")
+        try assertOwnerCollisionProjection(
+            SQLiteRuntimeChatEventStore(databaseURL: databaseURL),
+            label: "SQLite reopened"
+        )
+    }
+
+    func testJSONLAndSQLiteLifecycleUsesAppendOrderAcrossClockRollbackAndReopen() throws {
+        let jsonlURL = try temporaryJSONLURL()
+        let databaseURL = try temporaryDatabaseURL()
+        let stores: [any RuntimeChatEventStore] = [
+            JSONLRuntimeChatEventStore(fileURL: jsonlURL),
+            SQLiteRuntimeChatEventStore(databaseURL: databaseURL),
+        ]
+
+        for store in stores {
+            try store.append(RuntimeChatStoredEvent(
+                id: "reverse-lifecycle-request",
+                timestamp: Date(timeIntervalSince1970: 100),
+                kind: .request,
+                requestID: "reverse-lifecycle-turn",
+                sessionID: "reverse-lifecycle-session",
+                model: "ollama:llama3.1:8b",
+                messages: [ChatMessage(role: "user", content: "Preserve append order.")],
+                ownerDeviceID: "device-a"
+            ))
+            _ = try store.mutateSession(
+                ownerDeviceID: "device-a",
+                sessionID: "reverse-lifecycle-session",
+                requestID: "reverse-lifecycle-archive",
+                mutation: .archive,
+                timestamp: Date(timeIntervalSince1970: 300)
+            )
+            _ = try store.mutateSession(
+                ownerDeviceID: "device-a",
+                sessionID: "reverse-lifecycle-session",
+                requestID: "reverse-lifecycle-delete",
+                mutation: .delete,
+                timestamp: Date(timeIntervalSince1970: 200)
+            )
+            XCTAssertTrue(try store.listSessions(
+                ownerDeviceID: "device-a",
+                limit: 10,
+                includeArchived: true
+            ).isEmpty)
+            XCTAssertTrue(try store.listMessages(
+                ownerDeviceID: "device-a",
+                sessionID: "reverse-lifecycle-session",
+                limit: 10
+            ).isEmpty)
+
+            try store.append(RuntimeChatStoredEvent(
+                id: "reverse-lifecycle-restore",
+                timestamp: Date(timeIntervalSince1970: 150),
+                kind: .restored,
+                requestID: "reverse-lifecycle-restore",
+                sessionID: "reverse-lifecycle-session",
+                model: "ollama:llama3.1:8b",
+                ownerDeviceID: "device-a"
+            ))
+            let restored = try XCTUnwrap(store.listSessions(
+                ownerDeviceID: "device-a",
+                limit: 10,
+                includeArchived: true
+            ).first)
+            XCTAssertEqual(restored.status, "active")
+            XCTAssertNil(restored.archivedAt)
+            XCTAssertEqual(restored.messageCount, 1)
+        }
+
+        let reopenedSessions = try [
+            JSONLRuntimeChatEventStore(fileURL: jsonlURL) as any RuntimeChatEventStore,
+            SQLiteRuntimeChatEventStore(databaseURL: databaseURL) as any RuntimeChatEventStore,
+        ].map { store in
+            try XCTUnwrap(store.listSessions(
+                ownerDeviceID: "device-a",
+                limit: 10,
+                includeArchived: true
+            ).first)
+        }
+        XCTAssertEqual(reopenedSessions[0], reopenedSessions[1])
+        XCTAssertEqual(reopenedSessions.map(\.status), ["active", "active"])
+        XCTAssertEqual(reopenedSessions.map(\.messageCount), [1, 1])
+    }
+
+    func testSQLiteAllOwnerRetentionUsesOwnerSessionSequenceAfterClockRollbackAndReopen() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let store = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        for (owner, content, timestamp) in [
+            ("device-a", "Owner A deleted transcript", 100.0),
+            ("device-b", "Owner B active transcript", 110.0),
+        ] {
+            try store.append(RuntimeChatStoredEvent(
+                id: "retention-sequence-\(owner)-request",
+                timestamp: Date(timeIntervalSince1970: timestamp),
+                kind: .request,
+                requestID: "retention-sequence-\(owner)-turn",
+                sessionID: "retention-sequence-shared",
+                model: "ollama:llama3.1:8b",
+                messages: [ChatMessage(role: "user", content: content)],
+                ownerDeviceID: owner
+            ))
+        }
+        _ = try store.mutateSession(
+            ownerDeviceID: "device-a",
+            sessionID: "retention-sequence-shared",
+            requestID: "retention-sequence-archive",
+            mutation: .archive,
+            timestamp: Date(timeIntervalSince1970: 300)
+        )
+        _ = try store.mutateSession(
+            ownerDeviceID: "device-a",
+            sessionID: "retention-sequence-shared",
+            requestID: "retention-sequence-delete",
+            mutation: .delete,
+            timestamp: Date(timeIntervalSince1970: 200)
+        )
+
+        let reopened = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        let result = try reopened.pruneDeletedSessions(
+            deletedBefore: Date(timeIntervalSince1970: 250)
+        )
+        XCTAssertEqual(result.prunedSessionIDs, ["retention-sequence-shared"])
+        XCTAssertEqual(result.prunedEventCount, 3)
+        XCTAssertTrue(try reopened.listSessions(
+            ownerDeviceID: "device-a",
+            limit: 10,
+            includeArchived: true
+        ).isEmpty)
+        XCTAssertEqual(
+            try reopened.listMessages(
+                ownerDeviceID: "device-b",
+                sessionID: "retention-sequence-shared",
+                limit: 10
+            ).map(\.content),
+            ["Owner B active transcript"]
+        )
+        XCTAssertEqual(
+            try SQLiteRuntimeChatEventStore(databaseURL: databaseURL).listSessions(
+                ownerDeviceID: "device-b",
+                limit: 10,
+                includeArchived: true
+            ).map(\.sessionID),
+            ["retention-sequence-shared"]
+        )
+    }
+
+    func testJSONLAndSQLiteCompactionBindingsUseOwnerSessionRequestScopeAfterReopen() throws {
+        let jsonlURL = try temporaryJSONLURL()
+        let databaseURL = try temporaryDatabaseURL()
+        let stores: [any RuntimeChatEventStore] = [
+            JSONLRuntimeChatEventStore(fileURL: jsonlURL),
+            SQLiteRuntimeChatEventStore(databaseURL: databaseURL),
+        ]
+        let fixture = adaptiveV3CompactionFixture()
+        var ownerARequest = fixture.request
+        ownerARequest.id = "owner-a-shared-compaction-request"
+        ownerARequest.ownerDeviceID = "device-a"
+        var ownerATerminal = calibratedTerminal(
+            request: ownerARequest,
+            resolution: fixture.resolution,
+            id: "owner-a-shared-compaction-terminal"
+        )
+        ownerATerminal.ownerDeviceID = "device-a"
+        var ownerBRequest = ownerARequest
+        ownerBRequest.id = "owner-b-shared-compaction-request"
+        ownerBRequest.ownerDeviceID = "device-b"
+        var ownerBTerminal = ownerATerminal
+        ownerBTerminal.id = "owner-b-shared-compaction-terminal"
+        ownerBTerminal.ownerDeviceID = "device-b"
+
+        for store in stores {
+            try store.append(ownerARequest)
+            try store.append(ownerATerminal)
+            try store.append(ownerBRequest)
+            try store.append(ownerBTerminal)
+        }
+
+        let reopenedStores: [any RuntimeChatEventStore] = [
+            JSONLRuntimeChatEventStore(fileURL: jsonlURL),
+            SQLiteRuntimeChatEventStore(databaseURL: databaseURL),
+        ]
+        for store in reopenedStores {
+            XCTAssertEqual(try store.listSessions(
+                ownerDeviceID: "device-a",
+                limit: 10,
+                includeArchived: true
+            ).count, 1)
+            XCTAssertEqual(try store.listSessions(
+                ownerDeviceID: "device-b",
+                limit: 10,
+                includeArchived: true
+            ).count, 1)
+            XCTAssertNoThrow(try store.chatCompactionCalibrationReport())
+        }
+    }
+
+    func testSQLiteIncrementalAppendProjectionMatchesInMemoryProjectionAfterReopen() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let store = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        let events = [
+            RuntimeChatStoredEvent(
+                id: "incremental-parity-request-1",
+                timestamp: Date(timeIntervalSince1970: 100),
+                kind: .request,
+                requestID: "incremental-parity-turn-1",
+                sessionID: "incremental-parity-session",
+                model: "ollama:llama3.1:8b",
+                messages: [ChatMessage(
+                    role: "user",
+                    content: "Parity question",
+                    attachments: [ChatAttachment(
+                        type: "text",
+                        mimeType: "text/plain",
+                        name: "parity.txt",
+                        text: "Parity attachment"
+                    )]
+                )],
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "incremental-parity-obsolete-delta",
+                timestamp: Date(timeIntervalSince1970: 101),
+                kind: .assistantDelta,
+                requestID: "incremental-parity-turn-1",
+                sessionID: "incremental-parity-session",
+                model: "ollama:llama3.1:8b",
+                delta: "Obsolete answer",
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "incremental-parity-done-1",
+                timestamp: Date(timeIntervalSince1970: 102),
+                kind: .done,
+                requestID: "incremental-parity-turn-1",
+                sessionID: "incremental-parity-session",
+                model: "ollama:llama3.1:8b",
+                finishReason: "stop",
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "incremental-parity-request-2",
+                timestamp: Date(timeIntervalSince1970: 103),
+                kind: .request,
+                requestID: "incremental-parity-turn-2",
+                sessionID: "incremental-parity-session",
+                model: "ollama:llama3.1:8b",
+                messages: [ChatMessage(
+                    role: "user",
+                    content: "Parity question",
+                    attachments: [ChatAttachment(
+                        type: "text",
+                        mimeType: "text/plain",
+                        name: "parity.txt",
+                        text: "Parity attachment"
+                    )]
+                )],
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "incremental-parity-reasoning",
+                timestamp: Date(timeIntervalSince1970: 104),
+                kind: .reasoningDelta,
+                requestID: "incremental-parity-turn-2",
+                sessionID: "incremental-parity-session",
+                model: "ollama:llama3.1:8b",
+                reasoningDelta: "Fresh reasoning",
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "incremental-parity-fresh-delta",
+                timestamp: Date(timeIntervalSince1970: 105),
+                kind: .assistantDelta,
+                requestID: "incremental-parity-turn-2",
+                sessionID: "incremental-parity-session",
+                model: "ollama:llama3.1:8b",
+                delta: "Fresh answer",
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "incremental-parity-done-2",
+                timestamp: Date(timeIntervalSince1970: 106),
+                kind: .done,
+                requestID: "incremental-parity-turn-2",
+                sessionID: "incremental-parity-session",
+                model: "ollama:llama3.1:8b",
+                finishReason: "stop",
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "incremental-parity-title-old",
+                timestamp: Date(timeIntervalSince1970: 300),
+                kind: .title,
+                requestID: "incremental-parity-title-old",
+                sessionID: "incremental-parity-session",
+                model: "ollama:llama3.1:8b",
+                title: "Superseded parity title",
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "incremental-parity-title-current",
+                timestamp: Date(timeIntervalSince1970: 200),
+                kind: .title,
+                requestID: "incremental-parity-title-current",
+                sessionID: "incremental-parity-session",
+                model: "ollama:llama3.1:8b",
+                title: "Current parity title",
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "incremental-parity-archive",
+                timestamp: Date(timeIntervalSince1970: 400),
+                kind: .archived,
+                requestID: "incremental-parity-archive",
+                sessionID: "incremental-parity-session",
+                model: "ollama:llama3.1:8b",
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "incremental-parity-restore",
+                timestamp: Date(timeIntervalSince1970: 350),
+                kind: .restored,
+                requestID: "incremental-parity-restore",
+                sessionID: "incremental-parity-session",
+                model: "ollama:llama3.1:8b",
+                ownerDeviceID: "device-a"
+            ),
+        ]
+        for event in events {
+            try store.append(event)
+        }
+
+        let expectedSessions = try JSONLRuntimeChatEventStore.sessions(
+            from: events,
+            limit: 10,
+            includeArchived: true
+        )
+        let expectedMessages = JSONLRuntimeChatEventStore.messages(
+            from: events,
+            sessionID: "incremental-parity-session",
+            limit: 10
+        )
+        for candidate in [
+            store,
+            SQLiteRuntimeChatEventStore(databaseURL: databaseURL),
+        ] {
+            XCTAssertEqual(try candidate.listSessions(
+                ownerDeviceID: "device-a",
+                limit: 10,
+                includeArchived: true
+            ), expectedSessions)
+            XCTAssertEqual(try candidate.listMessages(
+                ownerDeviceID: "device-a",
+                sessionID: "incremental-parity-session",
+                limit: 10
+            ), expectedMessages)
+            XCTAssertEqual(try candidate.listSessions(
+                ownerDeviceID: "device-a",
+                limit: 10,
+                includeArchived: true,
+                query: "parity fresh"
+            ).map(\.sessionID), ["incremental-parity-session"])
+            XCTAssertEqual(try candidate.listSessions(
+                ownerDeviceID: "device-a",
+                limit: 10,
+                includeArchived: true,
+                query: "fresh reasoning"
+            ).map(\.sessionID), ["incremental-parity-session"])
+            XCTAssertTrue(try candidate.listSessions(
+                ownerDeviceID: "device-a",
+                limit: 10,
+                includeArchived: true,
+                query: "obsolete"
+            ).isEmpty)
+        }
+    }
+
+    func testSQLiteSubstringCandidatesMatchJSONLForInternalSubstringAfterReopen() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let jsonlStore = JSONLRuntimeChatEventStore(fileURL: try temporaryJSONLURL())
+        let counter = SQLiteRuntimeChatAppendInstrumentationCounter()
+        let sqliteStore = SQLiteRuntimeChatEventStore(
+            databaseURL: databaseURL,
+            appendInstrumentation: SQLiteRuntimeChatEventStoreAppendInstrumentation(
+                didDecodeStoredEvent: { counter.recordDecode() },
+                didRunFullHistoryRepair: { counter.recordRepair() },
+                didInsertSearchDocument: { counter.recordSearchDocument() }
+            )
+        )
+        let seed = RuntimeChatStoredEvent(
+            id: "substring-candidate-seed",
+            timestamp: Date(timeIntervalSince1970: 100),
+            kind: .request,
+            requestID: "substring-candidate-seed-turn",
+            sessionID: "substring-candidate-seed-session",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Unrelated baseline")],
+            ownerDeviceID: "device-a"
+        )
+        try jsonlStore.append(seed)
+        try sqliteStore.append(seed)
+
+        let target = RuntimeChatStoredEvent(
+            id: "substring-candidate-target",
+            timestamp: Date(timeIntervalSince1970: 101),
+            kind: .request,
+            requestID: "substring-candidate-target-turn",
+            sessionID: "substring-candidate-target-session",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Device repair procedure")],
+            ownerDeviceID: "device-a"
+        )
+        try jsonlStore.append(target)
+        counter.reset()
+        try sqliteStore.append(target)
+        XCTAssertEqual(
+            counter.snapshot(),
+            SQLiteRuntimeChatAppendInstrumentationSnapshot(
+                decodedStoredEvents: 0,
+                fullHistoryRepairs: 0,
+                insertedSearchDocuments: 1
+            )
+        )
+
+        let expected = try jsonlStore.listSessions(
+            ownerDeviceID: "device-a",
+            limit: 10,
+            includeArchived: true,
+            query: "pair"
+        )
+        XCTAssertEqual(expected.map(\.sessionID), ["substring-candidate-target-session"])
+
+        counter.reset()
+        XCTAssertEqual(try sqliteStore.listSessions(
+            ownerDeviceID: "device-a",
+            limit: 10,
+            includeArchived: true,
+            query: "pair"
+        ), expected)
+        XCTAssertEqual(
+            counter.snapshot(),
+            SQLiteRuntimeChatAppendInstrumentationSnapshot(
+                decodedStoredEvents: 1,
+                fullHistoryRepairs: 0,
+                insertedSearchDocuments: 0
+            )
+        )
+        XCTAssertEqual(try SQLiteRuntimeChatEventStore(databaseURL: databaseURL).listSessions(
+            ownerDeviceID: "device-a",
+            limit: 10,
+            includeArchived: true,
+            query: "pair"
+        ), expected)
+        XCTAssertEqual(try rawSQLiteInt(
+            "SELECT COUNT(*) FROM runtime_chat_event_fts_v2",
+            at: databaseURL
+        ), 2)
+    }
+
+    func testSQLiteStreamBoundaryCandidatesMatchJSONLForSplitTokenAfterReopen() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let jsonlStore = JSONLRuntimeChatEventStore(fileURL: try temporaryJSONLURL())
+        let counter = SQLiteRuntimeChatAppendInstrumentationCounter()
+        let sqliteStore = SQLiteRuntimeChatEventStore(
+            databaseURL: databaseURL,
+            appendInstrumentation: SQLiteRuntimeChatEventStoreAppendInstrumentation(
+                didDecodeStoredEvent: { counter.recordDecode() },
+                didRunFullHistoryRepair: { counter.recordRepair() },
+                didInsertSearchDocument: { counter.recordSearchDocument() }
+            )
+        )
+        let events = [
+            RuntimeChatStoredEvent(
+                id: "split-candidate-decoy",
+                timestamp: Date(timeIntervalSince1970: 90),
+                kind: .request,
+                requestID: "split-candidate-decoy-turn",
+                sessionID: "split-candidate-decoy-session",
+                model: "ollama:llama3.1:8b",
+                messages: [ChatMessage(role: "user", content: "Unrelated baseline")],
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "split-candidate-request",
+                timestamp: Date(timeIntervalSince1970: 100),
+                kind: .request,
+                requestID: "split-candidate-turn",
+                sessionID: "split-candidate-session",
+                model: "ollama:llama3.1:8b",
+                messages: [ChatMessage(role: "user", content: "Complete the greeting")],
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "split-candidate-delta-1",
+                timestamp: Date(timeIntervalSince1970: 101),
+                kind: .assistantDelta,
+                requestID: "split-candidate-turn",
+                sessionID: "split-candidate-session",
+                model: "ollama:llama3.1:8b",
+                delta: "hel",
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "split-candidate-delta-2",
+                timestamp: Date(timeIntervalSince1970: 102),
+                kind: .assistantDelta,
+                requestID: "split-candidate-turn",
+                sessionID: "split-candidate-session",
+                model: "ollama:llama3.1:8b",
+                delta: "lo",
+                ownerDeviceID: "device-a"
+            ),
+        ]
+        for (index, event) in events.enumerated() {
+            try jsonlStore.append(event)
+            if index > 0 { counter.reset() }
+            try sqliteStore.append(event)
+            if index > 0 {
+                XCTAssertEqual(
+                    counter.snapshot(),
+                    SQLiteRuntimeChatAppendInstrumentationSnapshot(
+                        decodedStoredEvents: 0,
+                        fullHistoryRepairs: 0,
+                        insertedSearchDocuments: 1
+                    )
+                )
+            }
+        }
+
+        let expected = try jsonlStore.listSessions(
+            ownerDeviceID: "device-a",
+            limit: 10,
+            includeArchived: true,
+            query: "hello"
+        )
+        XCTAssertEqual(expected.map(\.sessionID), ["split-candidate-session"])
+
+        counter.reset()
+        XCTAssertEqual(try sqliteStore.listSessions(
+            ownerDeviceID: "device-a",
+            limit: 10,
+            includeArchived: true,
+            query: "hello"
+        ), expected)
+        XCTAssertEqual(
+            counter.snapshot(),
+            SQLiteRuntimeChatAppendInstrumentationSnapshot(
+                decodedStoredEvents: 3,
+                fullHistoryRepairs: 0,
+                insertedSearchDocuments: 0
+            )
+        )
+        XCTAssertEqual(try SQLiteRuntimeChatEventStore(databaseURL: databaseURL).listSessions(
+            ownerDeviceID: "device-a",
+            limit: 10,
+            includeArchived: true,
+            query: "hello"
+        ), expected)
+        XCTAssertEqual(try rawSQLiteInt(
+            "SELECT COUNT(*) FROM runtime_chat_event_fts_v2",
+            at: databaseURL
+        ), events.count)
+    }
+
+    func testSQLiteExistingDatabaseLazilyBackfillsIncrementalAppendStateOnce() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let originalStore = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        try originalStore.append(RuntimeChatStoredEvent(
+            id: "incremental-migration-request",
+            timestamp: Date(timeIntervalSince1970: 100),
+            kind: .request,
+            requestID: "incremental-migration-turn",
+            sessionID: "incremental-migration-session",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Migration question")],
+            ownerDeviceID: "device-a"
+        ))
+        try originalStore.append(RuntimeChatStoredEvent(
+            id: "incremental-migration-delta",
+            timestamp: Date(timeIntervalSince1970: 101),
+            kind: .assistantDelta,
+            requestID: "incremental-migration-turn",
+            sessionID: "incremental-migration-session",
+            model: "ollama:llama3.1:8b",
+            delta: "Migration answer",
+            ownerDeviceID: "device-a"
+        ))
+        try executeRawSQLite(
+            """
+            DROP TRIGGER runtime_chat_events_append_state_insert_v2;
+            DROP TRIGGER runtime_chat_events_append_state_update_v2;
+            DROP TRIGGER runtime_chat_events_append_state_delete_v2;
+            DROP TABLE runtime_chat_event_fts_v2;
+            DROP TABLE runtime_chat_append_state;
+            DROP INDEX idx_runtime_chat_events_event_id;
+            """,
+            at: databaseURL
+        )
+
+        let counter = SQLiteRuntimeChatAppendInstrumentationCounter()
+        let migratedStore = SQLiteRuntimeChatEventStore(
+            databaseURL: databaseURL,
+            appendInstrumentation: SQLiteRuntimeChatEventStoreAppendInstrumentation(
+                didDecodeStoredEvent: { counter.recordDecode() },
+                didRunFullHistoryRepair: { counter.recordRepair() },
+                didInsertSearchDocument: { counter.recordSearchDocument() }
+            )
+        )
+        try migratedStore.append(RuntimeChatStoredEvent(
+            id: "incremental-migration-done",
+            timestamp: Date(timeIntervalSince1970: 102),
+            kind: .done,
+            requestID: "incremental-migration-turn",
+            sessionID: "incremental-migration-session",
+            model: "ollama:llama3.1:8b",
+            finishReason: "stop",
+            ownerDeviceID: "device-a"
+        ))
+        XCTAssertEqual(
+            counter.snapshot(),
+            SQLiteRuntimeChatAppendInstrumentationSnapshot(
+                decodedStoredEvents: 2,
+                fullHistoryRepairs: 1,
+                insertedSearchDocuments: 3
+            )
+        )
+
+        counter.reset()
+        try migratedStore.append(RuntimeChatStoredEvent(
+            id: "incremental-migration-title",
+            timestamp: Date(timeIntervalSince1970: 90),
+            kind: .title,
+            requestID: "incremental-migration-title",
+            sessionID: "incremental-migration-session",
+            model: "ollama:llama3.1:8b",
+            title: "Migrated title",
+            ownerDeviceID: "device-a"
+        ))
+        XCTAssertEqual(
+            counter.snapshot(),
+            SQLiteRuntimeChatAppendInstrumentationSnapshot(
+                decodedStoredEvents: 0,
+                fullHistoryRepairs: 0,
+                insertedSearchDocuments: 1
+            )
+        )
+        XCTAssertEqual(try SQLiteRuntimeChatEventStore(databaseURL: databaseURL).listSessions(
+            ownerDeviceID: "device-a",
+            limit: 10,
+            includeArchived: true,
+            query: "migration answer"
+        ).map(\.sessionID), ["incremental-migration-session"])
+    }
+
+    func testSQLiteAppendCostDoesNotDecodeOrMaterializeExistingSessionHistory() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let counter = SQLiteRuntimeChatAppendInstrumentationCounter()
+        let store = SQLiteRuntimeChatEventStore(
+            databaseURL: databaseURL,
+            appendInstrumentation: SQLiteRuntimeChatEventStoreAppendInstrumentation(
+                didDecodeStoredEvent: { counter.recordDecode() },
+                didRunFullHistoryRepair: { counter.recordRepair() },
+                didInsertSearchDocument: { counter.recordSearchDocument() }
+            )
+        )
+        let existingDeltaCount = 256
+        try store.append(RuntimeChatStoredEvent(
+            id: "bounded-append-request",
+            timestamp: Date(timeIntervalSince1970: 1),
+            kind: .request,
+            requestID: "bounded-append-turn",
+            sessionID: "bounded-append-session",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Bounded append")],
+            ownerDeviceID: "device-a"
+        ))
+        for index in 0..<existingDeltaCount {
+            try store.append(RuntimeChatStoredEvent(
+                id: "bounded-append-delta-\(index)",
+                timestamp: Date(timeIntervalSince1970: TimeInterval(index + 2)),
+                kind: .assistantDelta,
+                requestID: "bounded-append-turn",
+                sessionID: "bounded-append-session",
+                model: "ollama:llama3.1:8b",
+                delta: "chunk-\(index) ",
+                ownerDeviceID: "device-a"
+            ))
+        }
+
+        for offset in 0..<3 {
+            counter.reset()
+            try store.append(RuntimeChatStoredEvent(
+                id: "bounded-append-follow-up-\(offset)",
+                timestamp: Date(timeIntervalSince1970: TimeInterval(existingDeltaCount + offset + 2)),
+                kind: .assistantDelta,
+                requestID: "bounded-append-turn",
+                sessionID: "bounded-append-session",
+                model: "ollama:llama3.1:8b",
+                delta: "follow-up-\(offset)",
+                ownerDeviceID: "device-a"
+            ))
+            XCTAssertEqual(
+                counter.snapshot(),
+                SQLiteRuntimeChatAppendInstrumentationSnapshot(
+                    decodedStoredEvents: 0,
+                    fullHistoryRepairs: 0,
+                    insertedSearchDocuments: 1
+                )
+            )
+        }
+        XCTAssertEqual(
+            try rawSQLiteInt("SELECT COUNT(*) FROM runtime_chat_events", at: databaseURL),
+            existingDeltaCount + 4
+        )
+        XCTAssertEqual(
+            try rawSQLiteInt("SELECT COUNT(*) FROM runtime_chat_event_fts_v2", at: databaseURL),
+            existingDeltaCount + 4
+        )
+        XCTAssertTrue(
+            try rawSQLiteQueryPlan(
+                "SELECT 1 FROM runtime_chat_events WHERE event_id = 'missing-event' LIMIT 1",
+                at: databaseURL
+            ).contains { $0.contains("idx_runtime_chat_events_event_id") }
+        )
+    }
+
+    func testSQLiteCompactionTerminalAppendDecodesOnlyItsBoundRequest() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let counter = SQLiteRuntimeChatAppendInstrumentationCounter()
+        let store = SQLiteRuntimeChatEventStore(
+            databaseURL: databaseURL,
+            appendInstrumentation: SQLiteRuntimeChatEventStoreAppendInstrumentation(
+                didDecodeStoredEvent: { counter.recordDecode() },
+                didRunFullHistoryRepair: { counter.recordRepair() },
+                didInsertSearchDocument: { counter.recordSearchDocument() }
+            )
+        )
+        for index in 0..<128 {
+            try store.append(RuntimeChatStoredEvent(
+                id: "bounded-compaction-unrelated-\(index)",
+                timestamp: Date(timeIntervalSince1970: TimeInterval(index + 1)),
+                kind: .assistantDelta,
+                requestID: "bounded-compaction-unrelated-turn",
+                sessionID: "bounded-compaction-unrelated-session",
+                model: "ollama:llama3.1:8b",
+                delta: "unrelated-\(index)",
+                ownerDeviceID: "device-a"
+            ))
+        }
+        let fixture = adaptiveV3CompactionFixture()
+        try store.append(fixture.request)
+        let terminal = calibratedTerminal(
+            request: fixture.request,
+            resolution: fixture.resolution,
+            id: "bounded-compaction-terminal"
+        )
+
+        counter.reset()
+        try store.append(terminal)
+        XCTAssertEqual(
+            counter.snapshot(),
+            SQLiteRuntimeChatAppendInstrumentationSnapshot(
+                decodedStoredEvents: 1,
+                fullHistoryRepairs: 0,
+                insertedSearchDocuments: 1
+            )
+        )
+        XCTAssertTrue(
+            try rawSQLiteQueryPlan(
+                """
+                SELECT 1
+                FROM runtime_chat_events
+                WHERE kind IN ('done', 'cancelled', 'error')
+                  AND COALESCE(NULLIF(TRIM(owner_device_id), ''), '') = 'device-a'
+                  AND session_id = '\(fixture.request.sessionID)'
+                  AND request_id = '\(fixture.request.requestID)'
+                  AND json_type(event_json, '$.compaction_resolution') IS NOT NULL
+                LIMIT 1
+                """,
+                at: databaseURL
+            ).contains { $0.contains("idx_runtime_chat_events_compaction_binding") }
+        )
+    }
+
     func testTargetedSessionSummariesMatchJSONLAndSQLiteAcrossBatchesArchiveAndOwnerScope() throws {
         let jsonlStore = JSONLRuntimeChatEventStore(fileURL: try temporaryJSONLURL())
         let sqliteStore = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
@@ -3668,7 +4469,7 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         )
     }
 
-    func testSQLiteAppendRewritesOnlyAffectedFTSSessionRow() throws {
+    func testSQLiteAppendAddsOnlyAffectedFTSEventDocument() throws {
         let databaseURL = try temporaryDatabaseURL()
         let store = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
         try store.append(RuntimeChatStoredEvent(
@@ -3706,7 +4507,10 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
 
         let after = try rawFTSSessionRowIDs(at: databaseURL)
         XCTAssertEqual(after.count, 2)
-        XCTAssertNotEqual(before["device-a|incremental-affected"], after["device-a|incremental-affected"])
+        let affectedBefore = try XCTUnwrap(before["device-a|incremental-affected"])
+        let affectedAfter = try XCTUnwrap(after["device-a|incremental-affected"])
+        XCTAssertTrue(affectedBefore.isSubset(of: affectedAfter))
+        XCTAssertEqual(affectedAfter.count, affectedBefore.count + 1)
         XCTAssertEqual(before["device-a|incremental-unaffected"], after["device-a|incremental-unaffected"])
         XCTAssertEqual(
             try store.listSessions(
@@ -3831,6 +4635,12 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
             XCTAssertEqual(rowIDsBeforeBatch[key], rowIDsAfterBatch[key], key)
         }
         XCTAssertEqual(rowIDsAfterBatch.count, rowIDsBeforeBatch.count)
+        for key in affectedKeys {
+            let before = try XCTUnwrap(rowIDsBeforeBatch[key], key)
+            let after = try XCTUnwrap(rowIDsAfterBatch[key], key)
+            XCTAssertTrue(before.isSubset(of: after), key)
+            XCTAssertEqual(after.count, before.count + 1, key)
+        }
         for query in ["archived", "single incremental", "gamma searchable", "beta searchable"] {
             XCTAssertEqual(
                 try sqliteStore.listSessions(
@@ -4726,9 +5536,6 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
             "UPDATE runtime_chat_events SET event_json = '{not-json'",
             at: databaseURL
         )
-        try insertRawFTSSession(ownerKey: "", sessionID: "metadata-oldest", at: databaseURL)
-        try insertRawFTSSession(ownerKey: "device-a", sessionID: "metadata-later", at: databaseURL)
-
         let result = try store.pruneDeletedSessions(
             deletedBefore: Date(timeIntervalSince1970: 1_000),
             limit: 1
@@ -5353,6 +6160,226 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         )
     }
 
+    private func appendOwnerCollisionFixture(to store: any RuntimeChatEventStore) throws {
+        let ownerAAttribution = RuntimeChatSourceAttribution(
+            sourceIndex: 1,
+            documentName: "owner-a.md",
+            mimeType: "text/markdown",
+            chunkIndex: 1
+        )
+        let ownerBAttribution = RuntimeChatSourceAttribution(
+            sourceIndex: 1,
+            documentName: "owner-b.md",
+            mimeType: "text/markdown",
+            chunkIndex: 2
+        )
+        let ownerABinding = RuntimeChatSourceAttributionBinding(
+            sourceIndex: 1,
+            sourceAnchorID: "source_anchor_aaaaaaaaaaaaaaaa",
+            documentID: "doc-owner-a",
+            sourceRevision: String(repeating: "a", count: 64)
+        )
+        let ownerBBinding = RuntimeChatSourceAttributionBinding(
+            sourceIndex: 1,
+            sourceAnchorID: "source_anchor_bbbbbbbbbbbbbbbb",
+            documentID: "doc-owner-b",
+            sourceRevision: String(repeating: "b", count: 64)
+        )
+        let events = [
+            RuntimeChatStoredEvent(
+                id: "owner-a-collision-request",
+                timestamp: Date(timeIntervalSince1970: 100),
+                kind: .request,
+                requestID: "owner-a-collision-turn",
+                sessionID: "shared-owner-session",
+                model: "ollama:owner-a-model",
+                messages: [ChatMessage(role: "user", content: "Owner A question")],
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "owner-a-collision-title",
+                timestamp: Date(timeIntervalSince1970: 101),
+                kind: .title,
+                requestID: "owner-a-collision-title",
+                sessionID: "shared-owner-session",
+                model: "ollama:owner-a-model",
+                title: "Owner A title",
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "owner-a-collision-delta",
+                timestamp: Date(timeIntervalSince1970: 102),
+                kind: .assistantDelta,
+                requestID: "owner-a-collision-turn",
+                sessionID: "shared-owner-session",
+                model: "ollama:owner-a-model",
+                delta: "Owner A answer",
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "owner-a-collision-done",
+                timestamp: Date(timeIntervalSince1970: 103),
+                kind: .done,
+                requestID: "owner-a-collision-turn",
+                sessionID: "shared-owner-session",
+                model: "ollama:owner-a-model",
+                finishReason: "stop",
+                ownerDeviceID: "device-a",
+                sourceAttributions: [ownerAAttribution],
+                assistantMessageID: "assistant_message_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                sourceAttributionBindings: [ownerABinding]
+            ),
+            RuntimeChatStoredEvent(
+                id: "owner-a-collision-archive",
+                timestamp: Date(timeIntervalSince1970: 300),
+                kind: .archived,
+                requestID: "owner-a-collision-archive",
+                sessionID: "shared-owner-session",
+                model: "ollama:owner-a-model",
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "owner-b-collision-request",
+                timestamp: Date(timeIntervalSince1970: 200),
+                kind: .request,
+                requestID: "owner-b-collision-turn",
+                sessionID: "shared-owner-session",
+                model: "ollama:owner-b-model",
+                messages: [
+                    ChatMessage(role: "user", content: "Owner B prior question"),
+                    ChatMessage(role: "assistant", content: "Owner B prior answer"),
+                    ChatMessage(role: "user", content: "Owner B follow-up"),
+                ],
+                ownerDeviceID: "device-b"
+            ),
+            RuntimeChatStoredEvent(
+                id: "owner-b-collision-title",
+                timestamp: Date(timeIntervalSince1970: 201),
+                kind: .title,
+                requestID: "owner-b-collision-title",
+                sessionID: "shared-owner-session",
+                model: "ollama:owner-b-model",
+                title: "Owner B title",
+                ownerDeviceID: "device-b"
+            ),
+            RuntimeChatStoredEvent(
+                id: "owner-b-collision-delta",
+                timestamp: Date(timeIntervalSince1970: 202),
+                kind: .assistantDelta,
+                requestID: "owner-b-collision-turn",
+                sessionID: "shared-owner-session",
+                model: "ollama:owner-b-model",
+                delta: "Owner B answer",
+                ownerDeviceID: "device-b"
+            ),
+            RuntimeChatStoredEvent(
+                id: "owner-b-collision-done",
+                timestamp: Date(timeIntervalSince1970: 203),
+                kind: .done,
+                requestID: "owner-b-collision-turn",
+                sessionID: "shared-owner-session",
+                model: "ollama:owner-b-model",
+                finishReason: "stop",
+                ownerDeviceID: "device-b",
+                sourceAttributions: [ownerBAttribution],
+                assistantMessageID: "assistant_message_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                sourceAttributionBindings: [ownerBBinding]
+            ),
+        ]
+        for event in events {
+            try store.append(event)
+        }
+    }
+
+    private func assertOwnerCollisionProjection(
+        _ store: any RuntimeChatEventStore,
+        label: String
+    ) throws {
+        let allSessions = try store.listAllSessions(limit: 10, includeArchived: true)
+        XCTAssertEqual(allSessions.count, 2, label)
+        let sessionsByTitle = Dictionary(uniqueKeysWithValues: allSessions.map { ($0.title, $0) })
+        XCTAssertEqual(sessionsByTitle["Owner A title"]?.status, "archived", label)
+        XCTAssertEqual(
+            sessionsByTitle["Owner A title"]?.archivedAt,
+            Date(timeIntervalSince1970: 300),
+            label
+        )
+        XCTAssertEqual(sessionsByTitle["Owner A title"]?.messageCount, 2, label)
+        XCTAssertEqual(sessionsByTitle["Owner A title"]?.model, "ollama:owner-a-model", label)
+        XCTAssertEqual(sessionsByTitle["Owner B title"]?.status, "active", label)
+        XCTAssertNil(sessionsByTitle["Owner B title"]?.archivedAt, label)
+        XCTAssertEqual(sessionsByTitle["Owner B title"]?.messageCount, 4, label)
+        XCTAssertEqual(sessionsByTitle["Owner B title"]?.model, "ollama:owner-b-model", label)
+
+        let ownerAMessages = try store.listMessages(
+            ownerDeviceID: "device-a",
+            sessionID: "shared-owner-session",
+            limit: 10
+        )
+        XCTAssertEqual(ownerAMessages.map(\.content), ["Owner A question", "Owner A answer"], label)
+        XCTAssertEqual(ownerAMessages.last?.sourceAttributions.first?.documentName, "owner-a.md", label)
+        let ownerBMessages = try store.listMessages(
+            ownerDeviceID: "device-b",
+            sessionID: "shared-owner-session",
+            limit: 10
+        )
+        XCTAssertEqual(ownerBMessages.map(\.content), [
+            "Owner B prior question",
+            "Owner B prior answer",
+            "Owner B follow-up",
+            "Owner B answer",
+        ], label)
+        XCTAssertEqual(ownerBMessages.last?.sourceAttributions.first?.documentName, "owner-b.md", label)
+
+        let ownerASources = try store.listSemanticSearchSources(
+            ownerDeviceID: "device-a",
+            sessionLimit: 10,
+            messageLimit: 10,
+            includeArchived: true
+        )
+        let ownerBSources = try store.listSemanticSearchSources(
+            ownerDeviceID: "device-b",
+            sessionLimit: 10,
+            messageLimit: 10,
+            includeArchived: true
+        )
+        XCTAssertEqual(ownerASources.count, 1, label)
+        XCTAssertEqual(ownerASources.first?.session.title, "Owner A title", label)
+        XCTAssertEqual(ownerASources.first?.messages, ownerAMessages, label)
+        XCTAssertEqual(ownerBSources.count, 1, label)
+        XCTAssertEqual(ownerBSources.first?.session.title, "Owner B title", label)
+        XCTAssertEqual(ownerBSources.first?.messages, ownerBMessages, label)
+
+        XCTAssertEqual(try store.resolveSourceAttribution(
+            ownerDeviceID: "device-a",
+            sessionID: "shared-owner-session",
+            assistantMessageID: "assistant_message_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            sourceIndex: 1
+        )?.binding.documentID, "doc-owner-a", label)
+        XCTAssertEqual(try store.resolveSourceAttribution(
+            ownerDeviceID: "device-b",
+            sessionID: "shared-owner-session",
+            assistantMessageID: "assistant_message_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            sourceIndex: 1
+        )?.binding.documentID, "doc-owner-b", label)
+        XCTAssertNil(try store.resolveSourceAttribution(
+            ownerDeviceID: "device-a",
+            sessionID: "shared-owner-session",
+            assistantMessageID: "assistant_message_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            sourceIndex: 1
+        ), label)
+        XCTAssertThrowsError(try store.listAllMessages(
+            sessionID: "shared-owner-session",
+            limit: 10
+        ), label) { error in
+            XCTAssertEqual(
+                error as? RuntimeChatHostWideProjectionError,
+                .ambiguousSessionID("shared-owner-session"),
+                label
+            )
+        }
+    }
+
     private func executeRawSQLite(at databaseURL: URL, sql: String) throws {
         var database: OpaquePointer?
         guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
@@ -5803,41 +6830,6 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         }
     }
 
-    private func insertRawFTSSession(
-        ownerKey: String,
-        sessionID: String,
-        at databaseURL: URL
-    ) throws {
-        var database: OpaquePointer?
-        guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
-              let database else {
-            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 32)
-        }
-        defer { sqlite3_close(database) }
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(
-            database,
-            """
-            INSERT INTO runtime_chat_session_fts(
-                owner_key, session_id, title, indexed_session_id, model,
-                status, metadata, transcript, reasoning, attachment
-            ) VALUES (?, ?, '', '', '', '', '', 'stale retention row', '', '')
-            """,
-            -1,
-            &statement,
-            nil
-        ) == SQLITE_OK,
-              let statement else {
-            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 33)
-        }
-        defer { sqlite3_finalize(statement) }
-        guard sqlite3_bind_text(statement, 1, ownerKey, -1, sqliteRuntimeChatTestTransient) == SQLITE_OK,
-              sqlite3_bind_text(statement, 2, sessionID, -1, sqliteRuntimeChatTestTransient) == SQLITE_OK,
-              sqlite3_step(statement) == SQLITE_DONE else {
-            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 34)
-        }
-    }
-
     private func rawSQLiteInt(_ sql: String, at databaseURL: URL) throws -> Int {
         var database: OpaquePointer?
         guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
@@ -5857,6 +6849,32 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         return Int(sqlite3_column_int64(statement, 0))
     }
 
+    private func rawSQLiteQueryPlan(_ sql: String, at databaseURL: URL) throws -> [String] {
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+              let database else {
+            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 45)
+        }
+        defer { sqlite3_close(database) }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, "EXPLAIN QUERY PLAN \(sql)", -1, &statement, nil) == SQLITE_OK,
+              let statement else {
+            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 46)
+        }
+        defer { sqlite3_finalize(statement) }
+        var details: [String] = []
+        while true {
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { break }
+            guard result == SQLITE_ROW,
+                  let detail = sqlite3_column_text(statement, 3) else {
+                throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 47)
+            }
+            details.append(String(cString: detail))
+        }
+        return details
+    }
+
     private func rawFTSSessionKeys(at databaseURL: URL) throws -> [String] {
         var database: OpaquePointer?
         guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
@@ -5867,7 +6885,11 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(
             database,
-            "SELECT owner_key, session_id FROM runtime_chat_session_fts ORDER BY owner_key, session_id",
+            """
+            SELECT DISTINCT owner_key, session_id
+            FROM runtime_chat_event_fts_v2
+            ORDER BY owner_key, session_id
+            """,
             -1,
             &statement,
             nil
@@ -5890,7 +6912,7 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         return keys
     }
 
-    private func rawFTSSessionRowIDs(at databaseURL: URL) throws -> [String: Int64] {
+    private func rawFTSSessionRowIDs(at databaseURL: URL) throws -> [String: Set<Int64>] {
         var database: OpaquePointer?
         guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
               let database else {
@@ -5900,7 +6922,7 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(
             database,
-            "SELECT rowid, owner_key, session_id FROM runtime_chat_session_fts",
+            "SELECT rowid, owner_key, session_id FROM runtime_chat_event_fts_v2",
             -1,
             &statement,
             nil
@@ -5909,7 +6931,7 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
             throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 42)
         }
         defer { sqlite3_finalize(statement) }
-        var rowIDs: [String: Int64] = [:]
+        var rowIDs: [String: Set<Int64>] = [:]
         while true {
             let result = sqlite3_step(statement)
             if result == SQLITE_DONE { break }
@@ -5919,9 +6941,7 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
                 throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 43)
             }
             let key = "\(String(cString: ownerKey))|\(String(cString: sessionID))"
-            guard rowIDs.updateValue(sqlite3_column_int64(statement, 0), forKey: key) == nil else {
-                throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 44)
-            }
+            rowIDs[key, default: []].insert(sqlite3_column_int64(statement, 0))
         }
         return rowIDs
     }
@@ -5993,6 +7013,55 @@ private final class SQLiteRuntimeChatConcurrentResultBox<Value>: @unchecked Send
         lock.lock()
         defer { lock.unlock() }
         return value
+    }
+}
+
+private struct SQLiteRuntimeChatAppendInstrumentationSnapshot: Equatable {
+    var decodedStoredEvents: Int
+    var fullHistoryRepairs: Int
+    var insertedSearchDocuments: Int
+}
+
+private final class SQLiteRuntimeChatAppendInstrumentationCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var decodedStoredEvents = 0
+    private var fullHistoryRepairs = 0
+    private var insertedSearchDocuments = 0
+
+    func recordDecode() {
+        lock.lock()
+        decodedStoredEvents += 1
+        lock.unlock()
+    }
+
+    func recordRepair() {
+        lock.lock()
+        fullHistoryRepairs += 1
+        lock.unlock()
+    }
+
+    func recordSearchDocument() {
+        lock.lock()
+        insertedSearchDocuments += 1
+        lock.unlock()
+    }
+
+    func reset() {
+        lock.lock()
+        decodedStoredEvents = 0
+        fullHistoryRepairs = 0
+        insertedSearchDocuments = 0
+        lock.unlock()
+    }
+
+    func snapshot() -> SQLiteRuntimeChatAppendInstrumentationSnapshot {
+        lock.lock()
+        defer { lock.unlock() }
+        return SQLiteRuntimeChatAppendInstrumentationSnapshot(
+            decodedStoredEvents: decodedStoredEvents,
+            fullHistoryRepairs: fullHistoryRepairs,
+            insertedSearchDocuments: insertedSearchDocuments
+        )
     }
 }
 

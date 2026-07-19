@@ -156,7 +156,7 @@
 "Source excerpt %@: %@" = "Source excerpt %@: %@";
 "Source excerpt unavailable" = "Source excerpt unavailable";
 "%d more source excerpts hidden" = "%d more source excerpts hidden";
-"Memory source. %@. %@. %@." = "Memory source. %@. %@. %@.";
+"Memory source. %@. %@." = "Memory source. %@. %@.";
 "1 active chat" = "1 active chat";
 "%d active chats" = "%d active chats";
 "1 archived chat" = "1 archived chat";
@@ -307,6 +307,7 @@
 "Generate New QR" = "Generate New QR";
 "Pairing QR code" = "Pairing QR code";
 "Pairing QR code unavailable" = "Pairing QR code unavailable";
+"The pairing QR could not be rendered. Wait a moment or generate a new QR to try again." = "The pairing QR could not be rendered. Wait a moment or generate a new QR to try again.";
 "Pairing QR time remaining" = "Pairing QR time remaining";
 "Scan this QR from AetherLink." = "Scan this QR from AetherLink.";
 "After pairing, manage or remove trusted devices in Trusted Devices." = "After pairing, manage or remove trusted devices in Trusted Devices.";
@@ -357,6 +358,7 @@
 "%@. Status %@. %@" = "%@. Status %@. %@";
 "Connection health" = "Connection health";
 "Connection preparation" = "Connection preparation";
+"Connection preparation in progress" = "Connection preparation in progress";
 "Connection diagnostics" = "Connection diagnostics";
 "Provider endpoint redacted." = "Provider address hidden.";
 "Sensitive technical detail redacted." = "Sensitive technical detail redacted.";
@@ -596,6 +598,9 @@
 "The document source audit was exported." = "The document source audit was exported.";
 "Document source operation in progress" = "Document source operation in progress";
 "Approved sources" = "Approved sources";
+"Approved source" = "Approved source";
+"1 approved source" = "1 approved source";
+"%@ approved sources" = "%@ approved sources";
 "No recent access audit events." = "No recent access audit events.";
 "Document sources could not be read. Check Activity." = "Document sources could not be read. Check Activity.";
 "Review which document sources trusted devices can access." = "Review which document sources trusted devices can access.";
@@ -662,3 +667,7 @@
 "%@ %@ is being unloaded by AetherLink Runtime." = "%@ %@ is being unloaded by AetherLink Runtime.";
 "Could not confirm %@ %@ was unloaded. It may still be resident." = "Could not confirm %@ %@ was unloaded. It may still be resident.";
 "Wait for the current idle unload policy update to finish." = "Wait for the current idle unload policy update to finish.";
+"Set up Connection Recovery before generating a pairing QR." = "Set up Connection Recovery before generating a pairing QR.";
+"Connection preparation available" = "Connection preparation available";
+"Prepare connection details and generate the latest pairing QR." = "Prepare connection details and generate the latest pairing QR.";
+"Restore connection details before generating a new QR." = "Restore connection details before generating a new QR.";

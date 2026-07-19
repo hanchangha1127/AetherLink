@@ -156,7 +156,7 @@
 "Source excerpt %@: %@" = "来源摘录 %@：%@";
 "Source excerpt unavailable" = "来源摘录不可用";
 "%d more source excerpts hidden" = "另外 %d 条来源摘录已隐藏";
-"Memory source. %@. %@. %@." = "记忆来源。%@。%@。%@。";
+"Memory source. %@. %@." = "记忆来源。%@。%@。";
 "1 active chat" = "1 个活跃聊天";
 "%d active chats" = "%d 个活跃聊天";
 "1 archived chat" = "1 个已归档聊天";
@@ -307,6 +307,7 @@
 "Generate New QR" = "生成新二维码";
 "Pairing QR code" = "配对 QR 码";
 "Pairing QR code unavailable" = "配对 QR 码不可用";
+"The pairing QR could not be rendered. Wait a moment or generate a new QR to try again." = "无法呈现配对二维码。请稍候，或生成新的二维码后重试。";
 "Pairing QR time remaining" = "配对 QR 剩余时间";
 "Scan this QR from AetherLink." = "请在 AetherLink 中扫描此二维码。";
 "After pairing, manage or remove trusted devices in Trusted Devices." = "配对后，可在受信任设备中管理或移除受信任设备。";
@@ -357,6 +358,7 @@
 "%@. Status %@. %@" = "%@。状态 %@。%@";
 "Connection health" = "连接状态";
 "Connection preparation" = "连接准备";
+"Connection preparation in progress" = "正在准备连接";
 "Connection diagnostics" = "连接诊断";
 "Provider endpoint redacted." = "提供方地址已隐藏。";
 "Sensitive technical detail redacted." = "敏感技术详情已隐藏。";
@@ -596,6 +598,9 @@
 "The document source audit was exported." = "文档源审计已导出。";
 "Document source operation in progress" = "文档源操作正在进行";
 "Approved sources" = "已批准的源";
+"Approved source" = "已批准的源";
+"1 approved source" = "1 个已批准的源";
+"%@ approved sources" = "%@ 个已批准的源";
 "No recent access audit events." = "没有近期访问审计事件。";
 "Document sources could not be read. Check Activity." = "无法读取文档源。请检查活动。";
 "Review which document sources trusted devices can access." = "检查受信任设备可以访问哪些文档源。";
@@ -662,3 +667,7 @@
 "%@ %@ is being unloaded by AetherLink Runtime." = "AetherLink Runtime 正在卸载 %@ %@。";
 "Could not confirm %@ %@ was unloaded. It may still be resident." = "无法确认 %@ %@ 已卸载。它可能仍驻留在内存中。";
 "Wait for the current idle unload policy update to finish." = "请等待当前空闲卸载策略更新完成。";
+"Set up Connection Recovery before generating a pairing QR." = "生成配对二维码前，请先设置连接恢复。";
+"Connection preparation available" = "可准备连接";
+"Prepare connection details and generate the latest pairing QR." = "准备连接信息并生成最新配对二维码。";
+"Restore connection details before generating a new QR." = "生成新二维码前，请先恢复连接信息。";

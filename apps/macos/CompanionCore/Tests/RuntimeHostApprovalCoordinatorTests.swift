@@ -151,7 +151,7 @@ final class RuntimeHostApprovalCoordinatorTests: XCTestCase {
         XCTAssertTrue(rejectedReviews.isEmpty)
     }
 
-    func testWrongReceiptWaitsForConcurrentReservationCommitBeforeFailClosedDecision()
+    func testWrongReceiptFailsClosedWithoutWaitingForConcurrentReservationCommit()
         async throws
     {
         let manifest = syntheticManifest()
@@ -214,30 +214,31 @@ final class RuntimeHostApprovalCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(reservationObserved.wait(timeout: .now() + 1), .success)
         XCTAssertEqual(wrongReceiptWaiting.wait(timeout: .now() + 1), .success)
-        XCTAssertTrue(
-            approvalFinished.values.isEmpty,
-            "Wrong-receipt handling must wait for an in-flight reservation commit"
-        )
-        releaseReservation.signal()
+        try await waitForCount(1, recorder: approvalFinished)
         do {
             try await approvalTask.value
-            XCTFail("A wrong receipt must fail closed after the reservation resolves")
+            XCTFail("A wrong receipt must fail closed while persistence remains blocked")
         } catch {
             assertCoordinatorError(error, is: .storageUnavailable)
         }
 
         XCTAssertTrue(rejectedExecutions.values.isEmpty)
+        releaseReservation.signal()
+        try await waitForCondition {
+            persistence.state(operationID: rejectedOperationID) == .reserved
+        }
         XCTAssertEqual(persistence.reservationCallCount, 2)
         XCTAssertEqual(
             persistence.auditEvents.map(\.event),
             [
                 "requested", "dispatch_reserved", "dispatch_succeeded",
-                "requested", "dispatch_reserved", "result_suppressed",
+                "requested", "dispatch_reserved",
             ]
         )
+        try await coordinator.recoverUnfinished()
         XCTAssertEqual(
             persistence.state(operationID: rejectedOperationID),
-            .terminal(.resultSuppressed)
+            .recoveredReserved
         )
     }
 
@@ -557,6 +558,11 @@ final class RuntimeHostApprovalCoordinatorTests: XCTestCase {
             manifest: manifest,
             requestID: "unterminated-expired-adapter"
         ))
+        let waitingOperationID = try await coordinator.enqueue(try syntheticRequest(
+            registry: registry,
+            manifest: manifest,
+            requestID: "waiting-during-unterminated-expired-adapter"
+        ))
 
         do {
             try await coordinator.approve(operationID: operationID)
@@ -565,6 +571,19 @@ final class RuntimeHostApprovalCoordinatorTests: XCTestCase {
             assertCoordinatorError(error, is: .storageUnavailable)
         }
         XCTAssertEqual(persistence.state(operationID: operationID), .pending)
+
+        do {
+            try await coordinator.approve(operationID: waitingOperationID)
+            XCTFail("Recovery mode must block an already queued approval")
+        } catch {
+            assertCoordinatorError(error, is: .storageUnavailable)
+        }
+        do {
+            try await coordinator.dismiss(operationID: waitingOperationID)
+            XCTFail("Recovery mode must block dismissal of an already queued approval")
+        } catch {
+            assertCoordinatorError(error, is: .storageUnavailable)
+        }
 
         do {
             _ = try await coordinator.enqueue(try syntheticRequest(
@@ -579,6 +598,7 @@ final class RuntimeHostApprovalCoordinatorTests: XCTestCase {
 
         try await coordinator.recoverUnfinished()
         XCTAssertEqual(persistence.state(operationID: operationID), .recoveredPending)
+        XCTAssertEqual(persistence.state(operationID: waitingOperationID), .recoveredPending)
     }
 
     func testUnprovenTerminalExpiredErrorEntersRecoveryMode() async throws {
@@ -628,6 +648,650 @@ final class RuntimeHostApprovalCoordinatorTests: XCTestCase {
         } catch {
             assertCoordinatorError(error, is: .storageUnavailable)
         }
+    }
+
+    func testAuthorizationTimeoutAndTerminalNotificationAreMonotonicAndBounded()
+        async throws
+    {
+        let manifest = syntheticManifest()
+        let registry = try RuntimePermissionPolicyRegistry(manifests: [manifest])
+        let persistence = InMemoryHostApprovalPersistence()
+        let monotonicClock = TestMonotonicClock(100)
+        let deadline = ManualApprovalStageDeadline()
+        let authorizationGate = CancellableAsyncGate()
+        let notificationGate = CancellableAsyncGate()
+        let authorizationStarted = LockedRecorder<Bool>()
+        let authorizationCancelled = LockedRecorder<Bool>()
+        let notificationStarted = LockedRecorder<Bool>()
+        let notificationCancelled = LockedRecorder<Bool>()
+        let coordinator = makeCoordinator(
+            persistence: persistence,
+            registry: registry,
+            manifest: manifest,
+            approvalTTL: 10,
+            monotonicNow: { monotonicClock.now() },
+            externalStageDeadlineWait: { try await deadline.wait(delay: $0) }
+        )
+        let operationID = try await coordinator.enqueue(try syntheticRequest(
+            registry: registry,
+            manifest: manifest,
+            requestID: "authorization-timeout",
+            authorizeAndClaimExecution: { _ in
+                authorizationStarted.append(true)
+                do {
+                    try await authorizationGate.wait()
+                } catch is CancellationError {
+                    authorizationCancelled.append(true)
+                    throw CancellationError()
+                }
+                throw HostApprovalTestError.invalidPersistenceTransition
+            },
+            publishApprovalRequired: {
+                notificationStarted.append(true)
+                do {
+                    try await notificationGate.wait()
+                } catch is CancellationError {
+                    notificationCancelled.append(true)
+                } catch {
+                    return false
+                }
+                return false
+            }
+        ))
+        let approvalTask = Task {
+            try await coordinator.approve(operationID: operationID)
+        }
+
+        try await waitForCount(1, recorder: authorizationStarted)
+        try await waitForCondition { deadline.activeCount == 1 }
+        monotonicClock.set(110)
+        XCTAssertTrue(deadline.fireNext())
+
+        try await waitForCount(1, recorder: notificationStarted)
+        try await waitForCondition { deadline.activeCount == 1 }
+        monotonicClock.set(120)
+        XCTAssertTrue(deadline.fireNext())
+        do {
+            try await approvalTask.value
+            XCTFail("An authorization stage that reaches its deadline must expire")
+        } catch {
+            assertCoordinatorError(error, is: .reviewNotFound)
+        }
+
+        try await waitForCount(1, recorder: authorizationCancelled)
+        try await waitForCount(1, recorder: notificationCancelled)
+        try await waitForCondition { deadline.activeCount == 0 }
+        XCTAssertEqual(persistence.reservationCallCount, 0)
+        XCTAssertEqual(persistence.state(operationID: operationID), .terminal(.expired))
+        XCTAssertEqual(persistence.auditEvents.map(\.event), ["requested", "expired"])
+        let pendingReviews = await coordinator.pendingReviews()
+        XCTAssertTrue(pendingReviews.isEmpty)
+    }
+
+    func testAuthorizationTimeoutDoesNotWaitForBlockedReservationPersistence()
+        async throws
+    {
+        let manifest = syntheticManifest()
+        let registry = try RuntimePermissionPolicyRegistry(manifests: [manifest])
+        let blocker = CancellationIgnoringSynchronousGate()
+        defer { blocker.release() }
+        let terminalAttempts = LockedRecorder<RuntimeHostApprovalPersistenceEventKind>()
+        let persistence = InMemoryHostApprovalPersistence(
+            reservationOperationCheckpoint: { blocker.block() },
+            terminalOperationCheckpoint: { terminalAttempts.append($0) }
+        )
+        let monotonicClock = TestMonotonicClock(100)
+        let deadline = ManualApprovalStageDeadline()
+        let authorizationReturned = LockedRecorder<Bool>()
+        let approvalFinished = LockedRecorder<Bool>()
+        let executions = LockedRecorder<Bool>()
+        let publications = LockedRecorder<Bool>()
+        let coordinator = makeCoordinator(
+            persistence: persistence,
+            registry: registry,
+            manifest: manifest,
+            approvalTTL: 10,
+            monotonicNow: { monotonicClock.now() },
+            externalStageDeadlineWait: { try await deadline.wait(delay: $0) }
+        )
+        let operationID = try await coordinator.enqueue(try syntheticRequest(
+            registry: registry,
+            manifest: manifest,
+            requestID: "blocked-reservation-timeout",
+            authorizeAndClaimExecution: { reservation in
+                defer { authorizationReturned.append(true) }
+                return try reservation()
+            },
+            execute: {
+                executions.append(true)
+                return .success
+            },
+            prepareOutcomePublication: { _ in
+                { terminalCommit in
+                    try terminalCommit()
+                    publications.append(true)
+                }
+            }
+        ))
+        let approvalTask = Task {
+            defer { approvalFinished.append(true) }
+            try await coordinator.approve(operationID: operationID)
+        }
+
+        XCTAssertTrue(blocker.waitUntilBlocked())
+        try await waitForCondition { deadline.activeCount == 1 }
+        monotonicClock.set(110)
+        XCTAssertTrue(deadline.fireNext())
+        try await waitForCount(1, recorder: approvalFinished)
+        do {
+            try await approvalTask.value
+            XCTFail("Unknown reservation persistence must fail closed")
+        } catch {
+            assertCoordinatorError(error, is: .storageUnavailable)
+        }
+
+        XCTAssertEqual(persistence.state(operationID: operationID), .pending)
+        XCTAssertEqual(persistence.auditEvents.map(\.event), ["requested"])
+        XCTAssertTrue(terminalAttempts.values.isEmpty)
+        XCTAssertTrue(executions.values.isEmpty)
+        XCTAssertTrue(publications.values.isEmpty)
+        await assertCoordinatorRejectsNewIntake(
+            coordinator,
+            registry: registry,
+            manifest: manifest,
+            requestID: "blocked-reservation-timeout-poisoned"
+        )
+
+        blocker.release()
+        try await waitForCount(1, recorder: authorizationReturned)
+        try await waitForCondition {
+            persistence.state(operationID: operationID) == .reserved
+        }
+        XCTAssertEqual(
+            persistence.auditEvents.map(\.event),
+            ["requested", "dispatch_reserved"]
+        )
+        XCTAssertTrue(terminalAttempts.values.isEmpty)
+        XCTAssertTrue(executions.values.isEmpty)
+        XCTAssertTrue(publications.values.isEmpty)
+
+        try await coordinator.recoverUnfinished()
+        XCTAssertEqual(persistence.state(operationID: operationID), .recoveredReserved)
+        XCTAssertTrue(executions.values.isEmpty)
+        XCTAssertTrue(publications.values.isEmpty)
+    }
+
+    func testApprovalCancellationDoesNotWaitForBlockedReservationPersistence()
+        async throws
+    {
+        let manifest = syntheticManifest()
+        let registry = try RuntimePermissionPolicyRegistry(manifests: [manifest])
+        let blocker = CancellationIgnoringSynchronousGate()
+        defer { blocker.release() }
+        let terminalAttempts = LockedRecorder<RuntimeHostApprovalPersistenceEventKind>()
+        let persistence = InMemoryHostApprovalPersistence(
+            reservationOperationCheckpoint: { blocker.block() },
+            terminalOperationCheckpoint: { terminalAttempts.append($0) }
+        )
+        let deadline = ManualApprovalStageDeadline()
+        let authorizationReturned = LockedRecorder<Bool>()
+        let approvalFinished = LockedRecorder<Bool>()
+        let executions = LockedRecorder<Bool>()
+        let publications = LockedRecorder<Bool>()
+        let coordinator = makeCoordinator(
+            persistence: persistence,
+            registry: registry,
+            manifest: manifest,
+            externalStageDeadlineWait: { try await deadline.wait(delay: $0) }
+        )
+        let operationID = try await coordinator.enqueue(try syntheticRequest(
+            registry: registry,
+            manifest: manifest,
+            requestID: "blocked-reservation-cancellation",
+            authorizeAndClaimExecution: { reservation in
+                defer { authorizationReturned.append(true) }
+                return try reservation()
+            },
+            execute: {
+                executions.append(true)
+                return .success
+            },
+            prepareOutcomePublication: { _ in
+                { terminalCommit in
+                    try terminalCommit()
+                    publications.append(true)
+                }
+            }
+        ))
+        let approvalTask = Task {
+            defer { approvalFinished.append(true) }
+            try await coordinator.approve(operationID: operationID)
+        }
+
+        XCTAssertTrue(blocker.waitUntilBlocked())
+        try await waitForCondition { deadline.activeCount == 1 }
+        approvalTask.cancel()
+        try await waitForCount(1, recorder: approvalFinished)
+        do {
+            try await approvalTask.value
+            XCTFail("Cancellation must return while reservation persistence is blocked")
+        } catch is CancellationError {
+            // Expected.
+        }
+
+        XCTAssertEqual(persistence.state(operationID: operationID), .pending)
+        XCTAssertEqual(persistence.auditEvents.map(\.event), ["requested"])
+        XCTAssertTrue(terminalAttempts.values.isEmpty)
+        XCTAssertTrue(executions.values.isEmpty)
+        XCTAssertTrue(publications.values.isEmpty)
+        await assertCoordinatorRejectsNewIntake(
+            coordinator,
+            registry: registry,
+            manifest: manifest,
+            requestID: "blocked-reservation-cancellation-poisoned"
+        )
+
+        blocker.release()
+        try await waitForCount(1, recorder: authorizationReturned)
+        try await waitForCondition {
+            persistence.state(operationID: operationID) == .reserved
+        }
+        XCTAssertEqual(
+            persistence.auditEvents.map(\.event),
+            ["requested", "dispatch_reserved"]
+        )
+        XCTAssertTrue(terminalAttempts.values.isEmpty)
+        XCTAssertTrue(executions.values.isEmpty)
+        XCTAssertTrue(publications.values.isEmpty)
+
+        try await coordinator.recoverUnfinished()
+        XCTAssertEqual(persistence.state(operationID: operationID), .recoveredReserved)
+        XCTAssertTrue(executions.values.isEmpty)
+        XCTAssertTrue(publications.values.isEmpty)
+    }
+
+    func testPublicationTimeoutDoesNotWaitForBlockedTerminalPersistence()
+        async throws
+    {
+        let manifest = syntheticManifest()
+        let registry = try RuntimePermissionPolicyRegistry(manifests: [manifest])
+        let blocker = CancellationIgnoringSynchronousGate()
+        defer { blocker.release() }
+        let terminalAttempts = LockedRecorder<RuntimeHostApprovalPersistenceEventKind>()
+        let persistence = InMemoryHostApprovalPersistence(
+            terminalOperationCheckpoint: { event in
+                terminalAttempts.append(event)
+                if event == .dispatchSucceeded {
+                    blocker.block()
+                }
+            }
+        )
+        let monotonicClock = TestMonotonicClock(100)
+        let deadline = ManualApprovalStageDeadline()
+        let publicationReturned = LockedRecorder<Bool>()
+        let approvalFinished = LockedRecorder<Bool>()
+        let executions = LockedRecorder<Bool>()
+        let publications = LockedRecorder<Bool>()
+        let coordinator = makeCoordinator(
+            persistence: persistence,
+            registry: registry,
+            manifest: manifest,
+            approvalTTL: 10,
+            monotonicNow: { monotonicClock.now() },
+            externalStageDeadlineWait: { try await deadline.wait(delay: $0) }
+        )
+        let operationID = try await coordinator.enqueue(try syntheticRequest(
+            registry: registry,
+            manifest: manifest,
+            requestID: "blocked-terminal-timeout",
+            execute: {
+                executions.append(true)
+                return .success
+            },
+            prepareOutcomePublication: { _ in
+                { terminalCommit in
+                    defer { publicationReturned.append(true) }
+                    try terminalCommit()
+                    publications.append(true)
+                }
+            }
+        ))
+        let approvalTask = Task {
+            defer { approvalFinished.append(true) }
+            try await coordinator.approve(operationID: operationID)
+        }
+
+        XCTAssertTrue(blocker.waitUntilBlocked())
+        try await waitForCondition { deadline.activeCount == 1 }
+        monotonicClock.set(110)
+        XCTAssertTrue(deadline.fireNext())
+        try await waitForCount(1, recorder: approvalFinished)
+        do {
+            try await approvalTask.value
+            XCTFail("Unknown terminal persistence must fail closed")
+        } catch {
+            assertCoordinatorError(error, is: .storageUnavailable)
+        }
+
+        XCTAssertEqual(persistence.state(operationID: operationID), .reserved)
+        XCTAssertEqual(
+            persistence.auditEvents.map(\.event),
+            ["requested", "dispatch_reserved"]
+        )
+        XCTAssertEqual(terminalAttempts.values, [.dispatchSucceeded])
+        XCTAssertEqual(executions.values, [true])
+        XCTAssertTrue(publications.values.isEmpty)
+        await assertCoordinatorRejectsNewIntake(
+            coordinator,
+            registry: registry,
+            manifest: manifest,
+            requestID: "blocked-terminal-timeout-poisoned"
+        )
+
+        blocker.release()
+        try await waitForCount(1, recorder: publicationReturned)
+        try await waitForCondition {
+            persistence.state(operationID: operationID) == .terminal(.dispatchSucceeded)
+        }
+        XCTAssertEqual(terminalAttempts.values, [.dispatchSucceeded])
+        XCTAssertTrue(publications.values.isEmpty)
+
+        try await coordinator.recoverUnfinished()
+        XCTAssertEqual(
+            persistence.state(operationID: operationID),
+            .terminal(.dispatchSucceeded)
+        )
+        XCTAssertEqual(terminalAttempts.values, [.dispatchSucceeded])
+        XCTAssertTrue(publications.values.isEmpty)
+    }
+
+    func testApprovalCancellationDoesNotWaitForBlockedTerminalPersistence()
+        async throws
+    {
+        let manifest = syntheticManifest()
+        let registry = try RuntimePermissionPolicyRegistry(manifests: [manifest])
+        let blocker = CancellationIgnoringSynchronousGate()
+        defer { blocker.release() }
+        let terminalAttempts = LockedRecorder<RuntimeHostApprovalPersistenceEventKind>()
+        let persistence = InMemoryHostApprovalPersistence(
+            terminalOperationCheckpoint: { event in
+                terminalAttempts.append(event)
+                if event == .dispatchSucceeded {
+                    blocker.block()
+                }
+            }
+        )
+        let deadline = ManualApprovalStageDeadline()
+        let publicationReturned = LockedRecorder<Bool>()
+        let approvalFinished = LockedRecorder<Bool>()
+        let executions = LockedRecorder<Bool>()
+        let publications = LockedRecorder<Bool>()
+        let coordinator = makeCoordinator(
+            persistence: persistence,
+            registry: registry,
+            manifest: manifest,
+            externalStageDeadlineWait: { try await deadline.wait(delay: $0) }
+        )
+        let operationID = try await coordinator.enqueue(try syntheticRequest(
+            registry: registry,
+            manifest: manifest,
+            requestID: "blocked-terminal-cancellation",
+            execute: {
+                executions.append(true)
+                return .success
+            },
+            prepareOutcomePublication: { _ in
+                { terminalCommit in
+                    defer { publicationReturned.append(true) }
+                    try terminalCommit()
+                    publications.append(true)
+                }
+            }
+        ))
+        let approvalTask = Task {
+            defer { approvalFinished.append(true) }
+            try await coordinator.approve(operationID: operationID)
+        }
+
+        XCTAssertTrue(blocker.waitUntilBlocked())
+        try await waitForCondition { deadline.activeCount == 1 }
+        approvalTask.cancel()
+        try await waitForCount(1, recorder: approvalFinished)
+        do {
+            try await approvalTask.value
+            XCTFail("Cancellation must return while terminal persistence is blocked")
+        } catch is CancellationError {
+            // Expected.
+        }
+
+        XCTAssertEqual(persistence.state(operationID: operationID), .reserved)
+        XCTAssertEqual(
+            persistence.auditEvents.map(\.event),
+            ["requested", "dispatch_reserved"]
+        )
+        XCTAssertEqual(terminalAttempts.values, [.dispatchSucceeded])
+        XCTAssertEqual(executions.values, [true])
+        XCTAssertTrue(publications.values.isEmpty)
+        await assertCoordinatorRejectsNewIntake(
+            coordinator,
+            registry: registry,
+            manifest: manifest,
+            requestID: "blocked-terminal-cancellation-poisoned"
+        )
+
+        blocker.release()
+        try await waitForCount(1, recorder: publicationReturned)
+        try await waitForCondition {
+            persistence.state(operationID: operationID) == .terminal(.dispatchSucceeded)
+        }
+        XCTAssertEqual(terminalAttempts.values, [.dispatchSucceeded])
+        XCTAssertTrue(publications.values.isEmpty)
+
+        try await coordinator.recoverUnfinished()
+        XCTAssertEqual(
+            persistence.state(operationID: operationID),
+            .terminal(.dispatchSucceeded)
+        )
+        XCTAssertEqual(terminalAttempts.values, [.dispatchSucceeded])
+        XCTAssertTrue(publications.values.isEmpty)
+    }
+
+    func testApprovalTaskCancellationSuppressesAReservedExecutionAndReleasesWaiters()
+        async throws
+    {
+        let manifest = syntheticManifest()
+        let registry = try RuntimePermissionPolicyRegistry(manifests: [manifest])
+        let persistence = InMemoryHostApprovalPersistence()
+        let deadline = ManualApprovalStageDeadline()
+        let executionGate = CancellableAsyncGate()
+        let executions = LockedRecorder<Bool>()
+        let cancellations = LockedRecorder<Bool>()
+        let coordinator = makeCoordinator(
+            persistence: persistence,
+            registry: registry,
+            manifest: manifest,
+            externalStageDeadlineWait: { try await deadline.wait(delay: $0) }
+        )
+        let operationID = try await coordinator.enqueue(try syntheticRequest(
+            registry: registry,
+            manifest: manifest,
+            requestID: "cancel-reserved-execution",
+            execute: {
+                executions.append(true)
+                do {
+                    try await executionGate.wait()
+                } catch is CancellationError {
+                    cancellations.append(true)
+                } catch {
+                    return .failure
+                }
+                return .success
+            }
+        ))
+        let approvalTask = Task {
+            try await coordinator.approve(operationID: operationID)
+        }
+
+        try await waitForCount(1, recorder: executions)
+        try await waitForCondition { deadline.activeCount == 1 }
+        approvalTask.cancel()
+        do {
+            try await approvalTask.value
+            XCTFail("Cancelling approval must cancel the active execution stage")
+        } catch is CancellationError {
+            // Expected.
+        }
+
+        try await waitForCount(1, recorder: cancellations)
+        try await waitForCondition { deadline.activeCount == 0 }
+        XCTAssertEqual(
+            persistence.auditEvents.map(\.event),
+            ["requested", "dispatch_reserved", "result_suppressed"]
+        )
+        XCTAssertEqual(
+            persistence.state(operationID: operationID),
+            .terminal(.resultSuppressed)
+        )
+        let pendingReviews = await coordinator.pendingReviews()
+        XCTAssertTrue(pendingReviews.isEmpty)
+    }
+
+    func testLateAuthorizationAfterTimeoutCannotReserveOrResurrectExpiredReview()
+        async throws
+    {
+        let manifest = syntheticManifest()
+        let registry = try RuntimePermissionPolicyRegistry(manifests: [manifest])
+        let persistence = InMemoryHostApprovalPersistence()
+        let monotonicClock = TestMonotonicClock(100)
+        let deadline = ManualApprovalStageDeadline()
+        let lateGate = AsyncGate()
+        let authorizationStarted = LockedRecorder<Bool>()
+        let lateRejections = LockedRecorder<Bool>()
+        let coordinator = makeCoordinator(
+            persistence: persistence,
+            registry: registry,
+            manifest: manifest,
+            approvalTTL: 10,
+            monotonicNow: { monotonicClock.now() },
+            externalStageDeadlineWait: { try await deadline.wait(delay: $0) }
+        )
+        let operationID = try await coordinator.enqueue(try syntheticRequest(
+            registry: registry,
+            manifest: manifest,
+            requestID: "late-authorization",
+            authorizeAndClaimExecution: { reservation in
+                authorizationStarted.append(true)
+                await lateGate.wait()
+                do {
+                    return try reservation()
+                } catch {
+                    lateRejections.append(true)
+                    throw error
+                }
+            }
+        ))
+        let approvalTask = Task {
+            try await coordinator.approve(operationID: operationID)
+        }
+
+        try await waitForCount(1, recorder: authorizationStarted)
+        try await waitForCondition { deadline.activeCount == 1 }
+        monotonicClock.set(110)
+        XCTAssertTrue(deadline.fireNext())
+        do {
+            try await approvalTask.value
+            XCTFail("The expired authorization must not remain in flight")
+        } catch {
+            assertCoordinatorError(error, is: .reviewNotFound)
+        }
+
+        await lateGate.open()
+        try await waitForCount(1, recorder: lateRejections)
+        try await waitForCondition { deadline.activeCount == 0 }
+        XCTAssertEqual(persistence.reservationCallCount, 0)
+        XCTAssertEqual(persistence.state(operationID: operationID), .terminal(.expired))
+        XCTAssertEqual(persistence.auditEvents.map(\.event), ["requested", "expired"])
+        let pendingReviews = await coordinator.pendingReviews()
+        XCTAssertTrue(pendingReviews.isEmpty)
+    }
+
+    func testAllExternalApprovalStagesCompleteWithinInjectedDeadlineWithoutLeaks()
+        async throws
+    {
+        let manifest = syntheticManifest()
+        let registry = try RuntimePermissionPolicyRegistry(manifests: [manifest])
+        let persistence = InMemoryHostApprovalPersistence()
+        let deadline = ManualApprovalStageDeadline()
+        let authorizationGate = AsyncGate()
+        let executionGate = AsyncGate()
+        let preparationGate = AsyncGate()
+        let publicationGate = AsyncGate()
+        let authorizationStarted = LockedRecorder<Bool>()
+        let executionStarted = LockedRecorder<Bool>()
+        let preparationStarted = LockedRecorder<Bool>()
+        let publicationStarted = LockedRecorder<Bool>()
+        let publications = LockedRecorder<RuntimeHostApprovalExecutionOutcome>()
+        let coordinator = makeCoordinator(
+            persistence: persistence,
+            registry: registry,
+            manifest: manifest,
+            externalStageDeadlineWait: { try await deadline.wait(delay: $0) }
+        )
+        let operationID = try await coordinator.enqueue(try syntheticRequest(
+            registry: registry,
+            manifest: manifest,
+            requestID: "in-time-all-stages",
+            authorizeAndClaimExecution: { reservation in
+                authorizationStarted.append(true)
+                await authorizationGate.wait()
+                return try reservation()
+            },
+            execute: {
+                executionStarted.append(true)
+                await executionGate.wait()
+                return .success
+            },
+            prepareOutcomePublication: { outcome in
+                preparationStarted.append(true)
+                await preparationGate.wait()
+                return { terminalCommit in
+                    publicationStarted.append(true)
+                    await publicationGate.wait()
+                    try terminalCommit()
+                    publications.append(outcome)
+                }
+            }
+        ))
+        let approvalTask = Task {
+            try await coordinator.approve(operationID: operationID)
+        }
+
+        try await waitForCount(1, recorder: authorizationStarted)
+        try await waitForCondition { deadline.startedCount >= 1 }
+        await authorizationGate.open()
+        try await waitForCount(1, recorder: executionStarted)
+        try await waitForCondition { deadline.startedCount >= 2 }
+        await executionGate.open()
+        try await waitForCount(1, recorder: preparationStarted)
+        try await waitForCondition { deadline.startedCount >= 3 }
+        await preparationGate.open()
+        try await waitForCount(1, recorder: publicationStarted)
+        try await waitForCondition { deadline.startedCount >= 4 }
+        await publicationGate.open()
+        try await approvalTask.value
+
+        try await waitForCondition { deadline.activeCount == 0 }
+        XCTAssertEqual(publications.values, [.success])
+        XCTAssertEqual(
+            persistence.auditEvents.map(\.event),
+            ["requested", "dispatch_reserved", "dispatch_succeeded"]
+        )
+        XCTAssertEqual(
+            persistence.state(operationID: operationID),
+            .terminal(.dispatchSucceeded)
+        )
+        let pendingReviews = await coordinator.pendingReviews()
+        XCTAssertTrue(pendingReviews.isEmpty)
     }
 
     func testInMemoryPersistenceMirrorsSQLiteTerminalTransitionMatrix() throws {
@@ -1110,6 +1774,10 @@ final class RuntimeHostApprovalCoordinatorTests: XCTestCase {
         approvalTTL: TimeInterval = 60,
         now: @escaping @Sendable () -> Date = { date(100) },
         monotonicNow: @escaping @Sendable () -> TimeInterval = { 100 },
+        externalStageDeadlineWait: @escaping @Sendable (TimeInterval) async throws -> Void = {
+            delay in
+            try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        },
         reservationReceiptConsumeWaitingCheckpoint: (@Sendable () -> Void)? = nil
     ) -> RuntimeHostApprovalCoordinator {
         RuntimeHostApprovalCoordinator(
@@ -1124,6 +1792,7 @@ final class RuntimeHostApprovalCoordinatorTests: XCTestCase {
             approvalTTL: approvalTTL,
             now: now,
             monotonicNow: monotonicNow,
+            externalStageDeadlineWait: externalStageDeadlineWait,
             reservationReceiptConsumeWaitingCheckpoint:
                 reservationReceiptConsumeWaitingCheckpoint
         )
@@ -1219,6 +1888,18 @@ final class RuntimeHostApprovalCoordinatorTests: XCTestCase {
         throw HostApprovalTestError.timedOut
     }
 
+    private func waitForCondition(
+        _ condition: @escaping @Sendable () -> Bool
+    ) async throws {
+        for _ in 0..<10_000 {
+            if condition() {
+                return
+            }
+            await Task.yield()
+        }
+        throw HostApprovalTestError.timedOut
+    }
+
     private func assertCoordinatorError(
         _ error: Error,
         is expected: RuntimeHostApprovalCoordinatorError,
@@ -1231,6 +1912,31 @@ final class RuntimeHostApprovalCoordinatorTests: XCTestCase {
             file: file,
             line: line
         )
+    }
+
+    private func assertCoordinatorRejectsNewIntake(
+        _ coordinator: RuntimeHostApprovalCoordinator,
+        registry: RuntimePermissionPolicyRegistry,
+        manifest: RuntimePermissionPolicyManifest,
+        requestID: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        do {
+            _ = try await coordinator.enqueue(try syntheticRequest(
+                registry: registry,
+                manifest: manifest,
+                requestID: requestID
+            ))
+            XCTFail("Unknown persistence state must poison new intake", file: file, line: line)
+        } catch {
+            XCTAssertEqual(
+                error as? RuntimeHostApprovalCoordinatorError,
+                .storageUnavailable,
+                file: file,
+                line: line
+            )
+        }
     }
 }
 
@@ -1261,6 +1967,10 @@ private final class InMemoryHostApprovalPersistence:
     private let throwsExpiredReservationWithoutTerminalization: Bool
     private let throwsExpiredTerminalWithoutTerminalization: Bool
     private let reservationCheckpoint: (@Sendable (Int) -> Void)?
+    private let reservationOperationCheckpoint: (@Sendable () -> Void)?
+    private let terminalOperationCheckpoint: (@Sendable (
+        RuntimeHostApprovalPersistenceEventKind
+    ) -> Void)?
     private var rows: [String: Row] = [:]
     private var events: [RuntimeHostApprovalAuditSummary] = []
     private var storedCreateCallCount = 0
@@ -1272,7 +1982,11 @@ private final class InMemoryHostApprovalPersistence:
         failingTerminalEvents: Set<RuntimeHostApprovalPersistenceEventKind> = [],
         throwsExpiredReservationWithoutTerminalization: Bool = false,
         throwsExpiredTerminalWithoutTerminalization: Bool = false,
-        reservationCheckpoint: (@Sendable (Int) -> Void)? = nil
+        reservationCheckpoint: (@Sendable (Int) -> Void)? = nil,
+        reservationOperationCheckpoint: (@Sendable () -> Void)? = nil,
+        terminalOperationCheckpoint: (@Sendable (
+            RuntimeHostApprovalPersistenceEventKind
+        ) -> Void)? = nil
     ) {
         self.order = order
         self.failingTerminalEvents = failingTerminalEvents
@@ -1281,6 +1995,8 @@ private final class InMemoryHostApprovalPersistence:
         self.throwsExpiredTerminalWithoutTerminalization =
             throwsExpiredTerminalWithoutTerminalization
         self.reservationCheckpoint = reservationCheckpoint
+        self.reservationOperationCheckpoint = reservationOperationCheckpoint
+        self.terminalOperationCheckpoint = terminalOperationCheckpoint
     }
 
     var auditEvents: [RuntimeHostApprovalAuditSummary] {
@@ -1359,6 +2075,7 @@ private final class InMemoryHostApprovalPersistence:
         requestBindingDigest: String,
         at: Date
     ) throws -> RuntimeHostApprovalReservationPersistenceResult {
+        reservationOperationCheckpoint?()
         let result = try lock.withLock { () -> RuntimeHostApprovalReservationPersistenceResult in
             storedReservationCallCount += 1
             reservationCheckpoint?(storedReservationCallCount)
@@ -1407,6 +2124,7 @@ private final class InMemoryHostApprovalPersistence:
         event: RuntimeHostApprovalPersistenceEventKind,
         at: Date
     ) throws -> RuntimeHostApprovalTerminalPersistenceResult {
+        terminalOperationCheckpoint?(event)
         let recordedEvent = try lock.withLock { () -> RuntimeHostApprovalPersistenceEventKind in
             if throwsExpiredTerminalWithoutTerminalization {
                 throw RuntimeHostApprovalPersistenceError.expired
@@ -1534,6 +2252,146 @@ private actor AsyncGate {
         let continuations = waiters
         waiters.removeAll()
         continuations.forEach { $0.resume() }
+    }
+}
+
+private final class CancellationIgnoringSynchronousGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private let started = DispatchSemaphore(value: 0)
+    private let releaseSemaphore = DispatchSemaphore(value: 0)
+    private var didRelease = false
+
+    func block() {
+        started.signal()
+        releaseSemaphore.wait()
+    }
+
+    func waitUntilBlocked() -> Bool {
+        started.wait(timeout: .now() + 1) == .success
+    }
+
+    func release() {
+        let shouldSignal = lock.withLock { () -> Bool in
+            guard !didRelease else { return false }
+            didRelease = true
+            return true
+        }
+        if shouldSignal {
+            releaseSemaphore.signal()
+        }
+    }
+}
+
+private final class CancellableAsyncGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isOpen = false
+    private var nextWaiterID = 0
+    private var cancelledBeforeInstall: Set<Int> = []
+    private var waiters: [Int: CheckedContinuation<Void, any Error>] = [:]
+
+    func wait() async throws {
+        let waiterID = lock.withLock { () -> Int in
+            defer { nextWaiterID += 1 }
+            return nextWaiterID
+        }
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let disposition = lock.withLock { () -> Int in
+                    if isOpen {
+                        return 1
+                    }
+                    if cancelledBeforeInstall.remove(waiterID) != nil {
+                        return 2
+                    }
+                    waiters[waiterID] = continuation
+                    return 0
+                }
+                switch disposition {
+                case 1:
+                    continuation.resume()
+                case 2:
+                    continuation.resume(throwing: CancellationError())
+                default:
+                    break
+                }
+            }
+        } onCancel: {
+            let continuation: CheckedContinuation<Void, any Error>? = self.lock.withLock {
+                if let continuation = self.waiters.removeValue(forKey: waiterID) {
+                    return continuation
+                }
+                self.cancelledBeforeInstall.insert(waiterID)
+                return nil
+            }
+            continuation?.resume(throwing: CancellationError())
+        }
+    }
+
+    func open() {
+        let continuations = lock.withLock { () -> [CheckedContinuation<Void, any Error>] in
+            isOpen = true
+            let continuations = Array(waiters.values)
+            waiters.removeAll()
+            return continuations
+        }
+        continuations.forEach { $0.resume() }
+    }
+}
+
+private final class ManualApprovalStageDeadline: @unchecked Sendable {
+    private let lock = NSLock()
+    private var nextWaiterID = 0
+    private var cancelledBeforeInstall: Set<Int> = []
+    private var waiters: [Int: CheckedContinuation<Void, any Error>] = [:]
+    private var delays: [TimeInterval] = []
+
+    var startedCount: Int {
+        lock.withLock { delays.count }
+    }
+
+    var activeCount: Int {
+        lock.withLock { waiters.count }
+    }
+
+    func wait(delay: TimeInterval) async throws {
+        let waiterID = lock.withLock { () -> Int in
+            delays.append(delay)
+            defer { nextWaiterID += 1 }
+            return nextWaiterID
+        }
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let wasCancelled = lock.withLock { () -> Bool in
+                    if cancelledBeforeInstall.remove(waiterID) != nil {
+                        return true
+                    }
+                    waiters[waiterID] = continuation
+                    return false
+                }
+                if wasCancelled {
+                    continuation.resume(throwing: CancellationError())
+                }
+            }
+        } onCancel: {
+            let continuation: CheckedContinuation<Void, any Error>? = self.lock.withLock {
+                if let continuation = self.waiters.removeValue(forKey: waiterID) {
+                    return continuation
+                }
+                self.cancelledBeforeInstall.insert(waiterID)
+                return nil
+            }
+            continuation?.resume(throwing: CancellationError())
+        }
+    }
+
+    @discardableResult
+    func fireNext() -> Bool {
+        let continuation = lock.withLock { () -> CheckedContinuation<Void, any Error>? in
+            guard let waiterID = waiters.keys.min() else { return nil }
+            return waiters.removeValue(forKey: waiterID)
+        }
+        continuation?.resume()
+        return continuation != nil
     }
 }
 

@@ -336,6 +336,7 @@ class RuntimeClientViewModelRelayIntegrationTest {
                         deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
                         localDataStore = localStore,
                         lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                        allowDebugUsbReverseRoutes = true,
                         currentTimeMillis = { 1_000L },
                     ),
                 )

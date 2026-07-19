@@ -58,6 +58,18 @@ class RuntimeLocalStoreTest {
     }
 
     @Test
+    fun wrongTypedPreferenceRecoversToDefaultsAndRemainsWritable() {
+        preferences().edit().putInt(STORE_KEY_FOR_TEST, 7).commit()
+        val store = RuntimeLocalStore(context, json, RecordingRelaySecretStore())
+
+        assertEquals(PersistedRuntimeData(), store.load())
+        assertFalse(preferences().contains(STORE_KEY_FOR_TEST))
+
+        store.save(PersistedRuntimeData(composerDraft = "after-type-recovery"))
+        assertEquals("after-type-recovery", store.load().composerDraft)
+    }
+
+    @Test
     fun processRecreationLoadsPendingSecretAndReplacementRemovesPreviousHandle() {
         val secrets = RecordingRelaySecretStore()
         val firstStore = RuntimeLocalStore(context, json, secrets)
@@ -80,7 +92,7 @@ class RuntimeLocalStoreTest {
     }
 
     @Test
-    fun decodedButInvalidPendingRouteStillRemovesItsPreviousSecretOnNextSave() {
+    fun invalidPendingRouteCannotDeleteForeignSecretReferenceOnNextSave() {
         val secrets = RecordingRelaySecretStore()
         val invalidRef = "invalid-route-secret-ref"
         secrets.saveSecret(invalidRef, "orphaned-secret")
@@ -103,8 +115,33 @@ class RuntimeLocalStoreTest {
 
         store.save(PersistedRuntimeData())
 
-        assertEquals(listOf(invalidRef), secrets.removedHandles)
-        assertNull(secrets.readSecret(invalidRef))
+        assertTrue(secrets.removedHandles.isEmpty())
+        assertEquals("orphaned-secret", secrets.readSecret(invalidRef))
+    }
+
+    @Test
+    fun validPendingMetadataCannotReadOrDeleteTrustedSecretNamespace() {
+        val secrets = RecordingRelaySecretStore()
+        val trustedRef = "relay-v1-${"a".repeat(64)}"
+        secrets.saveSecret(trustedRef, "trusted-secret")
+        val foreignData = runtimeDataWithPendingRelay("foreign", "unused").copy(
+            pendingPairingRoute = runtimeDataWithPendingRelay("foreign", "unused")
+                .pendingPairingRoute
+                ?.copy(
+                    relaySecret = null,
+                    relaySecretRef = trustedRef,
+                ),
+        )
+        preferences().edit()
+            .putString(STORE_KEY_FOR_TEST, json.encodeToString(PersistedRuntimeData.serializer(), foreignData))
+            .commit()
+        val store = RuntimeLocalStore(context, json, secrets)
+
+        assertNull(store.load().pendingPairingRoute)
+        store.save(PersistedRuntimeData())
+
+        assertTrue(secrets.removedHandles.isEmpty())
+        assertEquals("trusted-secret", secrets.readSecret(trustedRef))
     }
 
     @Test
@@ -161,6 +198,35 @@ class RuntimeLocalStoreTest {
         assertNull(pending.relaySecret)
         assertNotNull(pending.relaySecretRef)
         assertTrue(persisted.sessions.single().messages.isEmpty())
+    }
+
+    @Test
+    fun unsupportedSystemLanguageFallsBackWithoutOverridingExplicitLanguage() {
+        val systemKorean = PersistedRuntimeData().withSystemAppLanguageTag("ko-KR")
+        val unsupportedSystem = systemKorean.withSystemAppLanguageTag("de-DE")
+        val explicitKorean = PersistedRuntimeData()
+            .withAppLanguageTag("ko-KR")
+            .withSystemAppLanguageTag("de-DE")
+
+        assertEquals("en", unsupportedSystem.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_DEFAULT, unsupportedSystem.appLanguageSource)
+        assertEquals("ko", explicitKorean.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_IN_APP, explicitKorean.appLanguageSource)
+    }
+
+    @Test
+    fun composerDraftLimitNeverPersistsHalfOfSurrogatePair() {
+        val splitBoundary = "a".repeat(19_999) + "😀" + "tail"
+        val exactBoundary = "a".repeat(19_998) + "😀"
+        val store = RuntimeLocalStore(context, json, RecordingRelaySecretStore())
+
+        store.save(PersistedRuntimeData().withComposerDraft(splitBoundary))
+        val truncated = store.load().composerDraft
+        assertEquals(19_999, truncated.length)
+        assertFalse(truncated.any(Char::isSurrogate))
+
+        store.save(PersistedRuntimeData().withComposerDraft(exactBoundary))
+        assertEquals(exactBoundary, store.load().composerDraft)
     }
 
     private fun runtimeDataWithPendingRelay(suffix: String, secret: String): PersistedRuntimeData {

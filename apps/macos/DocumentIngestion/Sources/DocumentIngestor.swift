@@ -113,13 +113,7 @@ private func canonicalizedDocumentEnvelope(_ document: ExtractedDocument) -> Ext
 }
 
 private func validateExtractedDocumentEnvelope(_ document: ExtractedDocument) throws {
-    guard document.text.count <= documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling else {
-        throw DocumentIngestionError.resourceLimitExceeded(
-            resource: "extracted text",
-            limit: documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling,
-            actual: document.text.count
-        )
-    }
+    try validateExtractedTextResourceLimits(document.text)
 }
 
 private func canonicalDocumentFileName(_ fileName: String?) -> String? {

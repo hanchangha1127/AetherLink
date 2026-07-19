@@ -11,7 +11,135 @@ func shouldShowRouteDiagnosticsPanel(model: CompanionAppModel) -> Bool {
 
 @MainActor
 func shouldShowPairingRouteSetupPanel(model: CompanionAppModel) -> Bool {
-    shouldShowRouteDiagnosticsPanel(model: model)
+    shouldShowRouteDiagnosticsPanel(model: model) || !model.hasDevelopmentRelayRoute
+}
+
+@MainActor
+func shouldExpandPairingRouteSetupByDefault(model: CompanionAppModel) -> Bool {
+    !model.hasDevelopmentRelayRoute &&
+        !model.bootstrapRelaySettings.isEnabled &&
+        !model.canPrepareRemoteRelayRouteAutomatically
+}
+
+enum ConnectionRecoveryConfigurationRequestResolution: Equatable {
+    case unchanged
+    case pending(CompanionRelayConfigurationRequestContext)
+    case completed(CompanionRelayConfigurationRequestCompletion)
+}
+
+func connectionRecoveryConfigurationRequestResolution(
+    state: CompanionRelayConfigurationRequestState?
+) -> ConnectionRecoveryConfigurationRequestResolution {
+    guard let state else { return .unchanged }
+    switch state {
+    case .active(let context):
+        return .pending(context)
+    case .completed(let completion):
+        return .completed(completion)
+    }
+}
+
+struct PendingConnectionRecoveryPairingRefresh: Equatable {
+    let previousSessionID: String?
+}
+
+enum ConnectionRecoveryPairingRefreshResolution: Equatable {
+    case pending
+    case succeeded
+    case failed
+}
+
+func connectionRecoveryPairingRefreshResolution(
+    request: PendingConnectionRecoveryPairingRefresh,
+    currentSessionID: String?,
+    isPreparationInFlight: Bool
+) -> ConnectionRecoveryPairingRefreshResolution {
+    if let currentSessionID, currentSessionID != request.previousSessionID {
+        return .succeeded
+    }
+    return isPreparationInFlight ? .pending : .failed
+}
+
+struct ConnectionRecoveryBootstrapDraft: Equatable {
+    var endpoints: String
+    var allocationToken: String
+    var allowsPrivateOverlay: Bool
+
+    init(
+        endpoints: String = "",
+        allocationToken: String = "",
+        allowsPrivateOverlay: Bool = false
+    ) {
+        self.endpoints = endpoints
+        self.allocationToken = allocationToken
+        self.allowsPrivateOverlay = allowsPrivateOverlay
+    }
+
+    init(settings: CompanionBootstrapRelaySettings) {
+        self.init(
+            endpoints: settings.endpoints,
+            allocationToken: settings.allocationToken ?? "",
+            allowsPrivateOverlay: settings.allowsPrivateOverlay
+        )
+    }
+}
+
+struct ConnectionRecoveryDevelopmentDraft: Equatable {
+    var host: String
+    var port: String
+    var relaySecret: String
+    var allowsPrivateOverlay: Bool
+
+    init(
+        host: String = "",
+        port: String = "43171",
+        relaySecret: String = "",
+        allowsPrivateOverlay: Bool = false
+    ) {
+        self.host = host
+        self.port = port
+        self.relaySecret = relaySecret
+        self.allowsPrivateOverlay = allowsPrivateOverlay
+    }
+
+    init(settings: CompanionDevelopmentRelaySettings) {
+        self.init(
+            host: settings.host,
+            port: settings.isEnabled ? String(settings.port) : "43171",
+            relaySecret: settings.relaySecret ?? "",
+            allowsPrivateOverlay: settings.allowsPrivateOverlay
+        )
+    }
+}
+
+struct ConnectionRecoveryDraftRevision<Value: Equatable>: Equatable {
+    var modelValue: Value
+}
+
+struct ConnectionRecoveryDraftReconciliation<Value: Equatable>: Equatable {
+    var draft: Value
+    var revision: ConnectionRecoveryDraftRevision<Value>
+}
+
+func reconcileConnectionRecoveryDraft<Value: Equatable>(
+    current: Value,
+    revision: ConnectionRecoveryDraftRevision<Value>,
+    incomingModelValue: Value,
+    force: Bool = false
+) -> ConnectionRecoveryDraftReconciliation<Value> {
+    ConnectionRecoveryDraftReconciliation(
+        draft: force || current == revision.modelValue ? incomingModelValue : current,
+        revision: ConnectionRecoveryDraftRevision(modelValue: incomingModelValue)
+    )
+}
+
+func connectionRecoveryResultAllowsDraftResync(_ result: CompanionRelayConfigurationResult) -> Bool {
+    switch result {
+    case .disabled, .savedStatic, .allocated:
+        return true
+    case .allocationFailed:
+        return false
+    }
 }
 
 struct RemoteRelayRoutePanel: View {
@@ -30,6 +158,34 @@ struct RemoteRelayRoutePanel: View {
     @State private var isAdvancedRouteSettingsExpanded = false
     @State private var isRemoveBootstrapRelayConfirmationPresented = false
     @State private var isRemoveSavedConnectionDetailsConfirmationPresented = false
+    @State private var pendingOperation: CompanionRelayConfigurationOperation?
+    @State private var pendingRequestID: UUID?
+    @State private var pendingPairingRefresh: PendingConnectionRecoveryPairingRefresh?
+    @State private var bootstrapDraftRevision: ConnectionRecoveryDraftRevision<ConnectionRecoveryBootstrapDraft>
+    @State private var developmentDraftRevision: ConnectionRecoveryDraftRevision<ConnectionRecoveryDevelopmentDraft>
+
+    init(model: CompanionAppModel, onGenerateRelayQRCode: (() -> Void)? = nil) {
+        let bootstrapDraft = ConnectionRecoveryBootstrapDraft(settings: model.bootstrapRelaySettings)
+        let developmentDraft = ConnectionRecoveryDevelopmentDraft(settings: model.developmentRelaySettings)
+        self.model = model
+        self.onGenerateRelayQRCode = onGenerateRelayQRCode
+        _bootstrapEndpoints = State(initialValue: bootstrapDraft.endpoints)
+        _bootstrapAllocationToken = State(initialValue: bootstrapDraft.allocationToken)
+        _bootstrapAllowsPrivateOverlay = State(initialValue: bootstrapDraft.allowsPrivateOverlay)
+        _host = State(initialValue: developmentDraft.host)
+        _port = State(initialValue: developmentDraft.port)
+        _relaySecret = State(initialValue: developmentDraft.relaySecret)
+        _allowsPrivateOverlay = State(initialValue: developmentDraft.allowsPrivateOverlay)
+        _bootstrapDraftRevision = State(
+            initialValue: ConnectionRecoveryDraftRevision(modelValue: bootstrapDraft)
+        )
+        _developmentDraftRevision = State(
+            initialValue: ConnectionRecoveryDraftRevision(modelValue: developmentDraft)
+        )
+        _isAdvancedRouteSettingsExpanded = State(
+            initialValue: shouldExpandPairingRouteSetupByDefault(model: model)
+        )
+    }
 
     var body: some View {
         CompanionPanel(title: NSLocalizedString("Connection Recovery", comment: ""), systemImage: "point.3.connected.trianglepath.dotted") {
@@ -61,12 +217,24 @@ struct RemoteRelayRoutePanel: View {
                 }
             }
         }
-        .onAppear(perform: syncFromModel)
-        .onChange(of: model.developmentRelaySettings) { _, _ in
+        .onAppear {
             syncFromModel()
+            reconcileConfigurationRequestState()
+        }
+        .onChange(of: model.developmentRelaySettings) { _, _ in
+            syncDevelopmentDraftFromModel()
         }
         .onChange(of: model.bootstrapRelaySettings) { _, _ in
-            syncFromModel()
+            syncBootstrapDraftFromModel()
+        }
+        .onChange(of: model.isRemoteRoutePreparationInFlight) { _, _ in
+            resolvePendingPairingRefresh()
+        }
+        .onChange(of: model.relayConfigurationRequestState) { _, _ in
+            reconcileConfigurationRequestState()
+        }
+        .onChange(of: model.pairingSession?.id) { _, _ in
+            resolvePendingPairingRefresh()
         }
         .confirmationDialog(
             NSLocalizedString("Remove saved bootstrap relay?", comment: ""),
@@ -74,12 +242,20 @@ struct RemoteRelayRoutePanel: View {
             titleVisibility: .visible
         ) {
             Button(NSLocalizedString("Remove Bootstrap Relay", comment: ""), role: .destructive) {
-                model.clearBootstrapRelay()
-                syncFromModel()
+                guard model.requestClearBootstrapRelayForUserInterface() else {
+                    diagnosticMessage = nil
+                    message = NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: "")
+                    messageTone = .neutral
+                    return
+                }
+                pendingOperation = nil
+                pendingRequestID = nil
+                syncBootstrapDraftFromModel(force: true)
                 diagnosticMessage = nil
                 message = NSLocalizedString("Saved bootstrap relay removed.", comment: "")
                 messageTone = .neutral
             }
+            .disabled(model.isRemoteRoutePreparationInFlight)
             .accessibilityLabel(
                 Text(
                     removeSavedBootstrapRelayAccessibilityLabel(
@@ -105,12 +281,20 @@ struct RemoteRelayRoutePanel: View {
             titleVisibility: .visible
         ) {
             Button(NSLocalizedString("Remove Saved Connection Details", comment: ""), role: .destructive) {
-                model.clearDevelopmentRelay()
-                syncFromModel()
+                guard model.requestClearDevelopmentRelayForUserInterface() else {
+                    diagnosticMessage = nil
+                    message = NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: "")
+                    messageTone = .neutral
+                    return
+                }
+                pendingOperation = nil
+                pendingRequestID = nil
+                syncDevelopmentDraftFromModel(force: true)
                 diagnosticMessage = nil
                 message = NSLocalizedString("Saved connection details removed.", comment: "")
                 messageTone = .neutral
             }
+            .disabled(model.isRemoteRoutePreparationInFlight)
             .accessibilityLabel(
                 Text(
                     removeSavedConnectionDetailsAccessibilityLabel(
@@ -142,11 +326,15 @@ struct RemoteRelayRoutePanel: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if settings.isEnabled {
-                let canGenerateLatestQRCode = model.isDevelopmentRelayQRCodeReady &&
-                    onGenerateRelayQRCode != nil
+                let canGenerateLatestQRCode = connectionRecoveryGenerateLatestQRActionAvailable(
+                    canRequestRemotePairing: model.canRequestRemotePairingForUserInterface,
+                    hasAction: onGenerateRelayQRCode != nil
+                )
                 let generateLatestQRHint = connectionRecoveryGenerateLatestQRActionAccessibilityHint(
                     isRouteReadyForQRCode: model.isDevelopmentRelayQRCodeReady,
-                    hasAction: onGenerateRelayQRCode != nil
+                    canPrepareRoute: canGenerateLatestQRCode,
+                    hasAction: onGenerateRelayQRCode != nil,
+                    isPreparing: model.isRemoteRoutePreparationInFlight
                 )
                 Button {
                     generateRelayQRCode()
@@ -160,7 +348,9 @@ struct RemoteRelayRoutePanel: View {
                     Text(
                         connectionRecoveryGenerateLatestQRActionAccessibilityValue(
                             isRouteReadyForQRCode: model.isDevelopmentRelayQRCodeReady,
-                            hasAction: onGenerateRelayQRCode != nil
+                            canPrepareRoute: canGenerateLatestQRCode,
+                            hasAction: onGenerateRelayQRCode != nil,
+                            isPreparing: model.isRemoteRoutePreparationInFlight
                         )
                     )
                 )
@@ -233,6 +423,7 @@ struct RemoteRelayRoutePanel: View {
                             Label(NSLocalizedString("Save Bootstrap Relay", comment: ""), systemImage: "externaldrive.badge.checkmark")
                         }
                         .buttonStyle(.bordered)
+                        .disabled(model.isRemoteRoutePreparationInFlight)
                         .help(connectionRecoverySaveBootstrapRelayActionAccessibilityHint())
                         .accessibilityValue(
                             Text(
@@ -250,6 +441,7 @@ struct RemoteRelayRoutePanel: View {
                                 Label(NSLocalizedString("Remove Bootstrap Relay", comment: ""), systemImage: "xmark.circle")
                             }
                             .buttonStyle(.bordered)
+                            .disabled(model.isRemoteRoutePreparationInFlight)
                             .accessibilityLabel(
                                 Text(
                                     removeSavedBootstrapRelayAccessibilityLabel(
@@ -309,19 +501,21 @@ struct RemoteRelayRoutePanel: View {
                             Label(NSLocalizedString("Save Connection", comment: ""), systemImage: "externaldrive.badge.checkmark")
                         }
                         .buttonStyle(.bordered)
+                        .disabled(model.isRemoteRoutePreparationInFlight)
                         .help(connectionRecoverySaveConnectionActionAccessibilityHint())
                         .accessibilityValue(Text(saveConnectionActionValue))
                         .accessibilityHint(Text(connectionRecoverySaveConnectionActionAccessibilityHint()))
 
                         Button {
                             model.regenerateDevelopmentRelaySecret()
-                            syncFromModel()
+                            syncDevelopmentDraftFromModel(force: true)
                             message = NSLocalizedString("Connection setup secret regenerated.", comment: "")
                             messageTone = .ready
                         } label: {
                             Label(NSLocalizedString("Rotate Secret", comment: ""), systemImage: "key")
                         }
                         .buttonStyle(.bordered)
+                        .disabled(model.isRemoteRoutePreparationInFlight)
                         .help(connectionRecoveryRotateSecretActionAccessibilityHint())
                         .accessibilityValue(Text(NSLocalizedString("Ready", comment: "")))
                         .accessibilityHint(Text(connectionRecoveryRotateSecretActionAccessibilityHint()))
@@ -333,6 +527,7 @@ struct RemoteRelayRoutePanel: View {
                                 Label(NSLocalizedString("Remove Saved Connection Details", comment: ""), systemImage: "xmark.circle")
                             }
                             .buttonStyle(.bordered)
+                            .disabled(model.isRemoteRoutePreparationInFlight)
                             .accessibilityLabel(Text(removeSavedConnectionDetailsAccessibilityLabel(endpoint: settings.endpointLabel)))
                             .help(removeSavedConnectionDetailsAccessibilityHint())
                             .accessibilityHint(Text(removeSavedConnectionDetailsAccessibilityHint()))
@@ -584,62 +779,175 @@ struct RemoteRelayRoutePanel: View {
                 }
             }
         }
-        let result = model.configureDevelopmentRelay(
+        let requestResult = model.requestConfigureDevelopmentRelayForUserInterface(
             host: normalizedHost,
             port: relayPort,
             relaySecret: relaySecret.trimmingCharacters(in: .whitespacesAndNewlines),
             attemptAllocation: true,
             allowsPrivateOverlay: allowsPrivateOverlay
         )
-        syncFromModel()
-        message = relaySaveMessage(
-            for: result,
-            fallback: NSLocalizedString("Connection details saved. Generate the latest QR and scan it in AetherLink to pair or refresh connectivity.", comment: "")
-        )
-        messageTone = relaySaveTone(for: result)
-        diagnosticMessage = relaySaveDiagnostic(for: result)
+        switch requestResult {
+        case .started(let requestID):
+            syncDevelopmentDraftFromModel()
+            pendingOperation = .developmentRelay
+            pendingRequestID = requestID
+            message = NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: "")
+            messageTone = .neutral
+            diagnosticMessage = nil
+        case .completed(let result):
+            applyConfigurationResult(result, operation: .developmentRelay)
+        }
     }
 
     private func generateRelayQRCode() {
         guard let onGenerateRelayQRCode else { return }
-        onGenerateRelayQRCode()
+        pendingPairingRefresh = PendingConnectionRecoveryPairingRefresh(
+            previousSessionID: model.pairingSession?.id
+        )
+        message = NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: "")
+        messageTone = .neutral
         diagnosticMessage = nil
-        if model.pairingSession != nil {
-            message = NSLocalizedString("Latest connection QR generated. Scan it in AetherLink to pair or refresh connectivity.", comment: "")
-            messageTone = .ready
-        } else if model.isDevelopmentRelayRouteEligibleForQRCode {
+        onGenerateRelayQRCode()
+        resolvePendingPairingRefresh()
+    }
+
+    private func resolvePendingPairingRefresh() {
+        guard let pendingPairingRefresh else { return }
+        switch connectionRecoveryPairingRefreshResolution(
+            request: pendingPairingRefresh,
+            currentSessionID: model.pairingSession?.id,
+            isPreparationInFlight: model.isRemoteRoutePreparationInFlight
+        ) {
+        case .pending:
             message = NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: "")
             messageTone = .neutral
-        } else {
-            message = NSLocalizedString("Connection details cannot be included in QR. Connection Recovery needs an address reachable by both devices.", comment: "")
+            diagnosticMessage = nil
+        case .succeeded:
+            self.pendingPairingRefresh = nil
+            message = NSLocalizedString("Latest connection QR generated. Scan it in AetherLink to pair or refresh connectivity.", comment: "")
+            messageTone = .ready
+            diagnosticMessage = nil
+        case .failed:
+            self.pendingPairingRefresh = nil
+            if let issue = model.remoteRoutePreparationIssue {
+                message = remoteRoutePreparationIssueText(issue)
+                diagnosticMessage = issue.message.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            } else {
+                message = NSLocalizedString("Connection details could not be prepared automatically. Check Connection Recovery, then generate a fresh QR.", comment: "")
+                diagnosticMessage = nil
+            }
             messageTone = .warning
         }
     }
 
-    private func syncFromModel() {
-        let bootstrapSettings = model.bootstrapRelaySettings
-        bootstrapEndpoints = bootstrapSettings.endpoints
-        bootstrapAllocationToken = bootstrapSettings.allocationToken ?? ""
-        bootstrapAllowsPrivateOverlay = bootstrapSettings.allowsPrivateOverlay
-
-        let settings = model.developmentRelaySettings
-        host = settings.host
-        port = settings.isEnabled ? String(settings.port) : "43171"
-        relaySecret = settings.relaySecret ?? ""
-        allowsPrivateOverlay = settings.allowsPrivateOverlay
+    private func syncFromModel(force: Bool = false) {
+        syncBootstrapDraftFromModel(force: force)
+        syncDevelopmentDraftFromModel(force: force)
     }
 
-    private func saveBootstrapRelay() {
-        let result = model.configureBootstrapRelay(
+    private func reconcileConfigurationRequestState() {
+        switch connectionRecoveryConfigurationRequestResolution(
+            state: model.relayConfigurationRequestState
+        ) {
+        case .unchanged:
+            return
+        case .pending(let context):
+            pendingOperation = context.operation
+            pendingRequestID = context.requestID
+            message = NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: "")
+            messageTone = .neutral
+            diagnosticMessage = nil
+        case .completed(let completion):
+            pendingOperation = completion.operation
+            pendingRequestID = completion.requestID
+            applyConfigurationResult(completion.result, operation: completion.operation)
+            model.acknowledgeRelayConfigurationRequestCompletion(
+                requestID: completion.requestID
+            )
+        }
+    }
+
+    private func syncBootstrapDraftFromModel(force: Bool = false) {
+        let current = ConnectionRecoveryBootstrapDraft(
             endpoints: bootstrapEndpoints,
             allocationToken: bootstrapAllocationToken,
             allowsPrivateOverlay: bootstrapAllowsPrivateOverlay
         )
-        syncFromModel()
-        message = relaySaveMessage(
-            for: result,
-            fallback: NSLocalizedString("Bootstrap relay saved. Generate the latest QR and scan it in AetherLink to pair or refresh connectivity.", comment: "")
+        let reconciliation = reconcileConnectionRecoveryDraft(
+            current: current,
+            revision: bootstrapDraftRevision,
+            incomingModelValue: ConnectionRecoveryBootstrapDraft(settings: model.bootstrapRelaySettings),
+            force: force
         )
+        bootstrapEndpoints = reconciliation.draft.endpoints
+        bootstrapAllocationToken = reconciliation.draft.allocationToken
+        bootstrapAllowsPrivateOverlay = reconciliation.draft.allowsPrivateOverlay
+        bootstrapDraftRevision = reconciliation.revision
+    }
+
+    private func syncDevelopmentDraftFromModel(force: Bool = false) {
+        let current = ConnectionRecoveryDevelopmentDraft(
+            host: host,
+            port: port,
+            relaySecret: relaySecret,
+            allowsPrivateOverlay: allowsPrivateOverlay
+        )
+        let reconciliation = reconcileConnectionRecoveryDraft(
+            current: current,
+            revision: developmentDraftRevision,
+            incomingModelValue: ConnectionRecoveryDevelopmentDraft(settings: model.developmentRelaySettings),
+            force: force
+        )
+        host = reconciliation.draft.host
+        port = reconciliation.draft.port
+        relaySecret = reconciliation.draft.relaySecret
+        allowsPrivateOverlay = reconciliation.draft.allowsPrivateOverlay
+        developmentDraftRevision = reconciliation.revision
+    }
+
+    private func saveBootstrapRelay() {
+        let requestResult = model.requestConfigureBootstrapRelayForUserInterface(
+            endpoints: bootstrapEndpoints,
+            allocationToken: bootstrapAllocationToken,
+            allowsPrivateOverlay: bootstrapAllowsPrivateOverlay
+        )
+        switch requestResult {
+        case .started(let requestID):
+            syncBootstrapDraftFromModel()
+            pendingOperation = .bootstrapRelay
+            pendingRequestID = requestID
+            message = NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: "")
+            messageTone = .neutral
+            diagnosticMessage = nil
+        case .completed(let result):
+            applyConfigurationResult(result, operation: .bootstrapRelay)
+        }
+    }
+
+    private func applyConfigurationResult(
+        _ result: CompanionRelayConfigurationResult,
+        operation: CompanionRelayConfigurationOperation,
+        fallback: String? = nil
+    ) {
+        pendingOperation = nil
+        pendingRequestID = nil
+        let forceDraftResync = connectionRecoveryResultAllowsDraftResync(result)
+        switch operation {
+        case .bootstrapRelay:
+            syncBootstrapDraftFromModel(force: forceDraftResync)
+        case .developmentRelay:
+            syncDevelopmentDraftFromModel(force: forceDraftResync)
+        }
+        if operation == .bootstrapRelay, result == .disabled {
+            message = NSLocalizedString("Saved bootstrap relay removed.", comment: "")
+            messageTone = .ready
+            diagnosticMessage = nil
+            return
+        }
+        let resolvedFallback = fallback ?? (operation == .bootstrapRelay
+            ? NSLocalizedString("Bootstrap relay saved. Generate the latest QR and scan it in AetherLink to pair or refresh connectivity.", comment: "")
+            : NSLocalizedString("Connection details saved. Generate the latest QR and scan it in AetherLink to pair or refresh connectivity.", comment: ""))
+        message = relaySaveMessage(for: result, fallback: resolvedFallback)
         messageTone = relaySaveTone(for: result)
         diagnosticMessage = relaySaveDiagnostic(for: result)
     }
@@ -897,10 +1205,18 @@ func connectionRecoveryGeneratedSecretAccessibilityValue(_ value: String) -> Str
 
 func connectionRecoveryGenerateLatestQRActionAccessibilityValue(
     isRouteReadyForQRCode: Bool,
-    hasAction: Bool = true
+    canPrepareRoute: Bool = false,
+    hasAction: Bool = true,
+    isPreparing: Bool = false
 ) -> String {
     if !hasAction {
         return NSLocalizedString("Unavailable", comment: "")
+    }
+    if isPreparing {
+        return NSLocalizedString("Connection preparation in progress", comment: "")
+    }
+    if canPrepareRoute && !isRouteReadyForQRCode {
+        return NSLocalizedString("Connection preparation available", comment: "")
     }
     if !isRouteReadyForQRCode {
         return NSLocalizedString("Connection details not ready", comment: "")
@@ -910,15 +1226,30 @@ func connectionRecoveryGenerateLatestQRActionAccessibilityValue(
 
 func connectionRecoveryGenerateLatestQRActionAccessibilityHint(
     isRouteReadyForQRCode: Bool,
-    hasAction: Bool = true
+    canPrepareRoute: Bool = false,
+    hasAction: Bool = true,
+    isPreparing: Bool = false
 ) -> String {
     if !hasAction {
         return NSLocalizedString("Latest QR generation is unavailable from this view.", comment: "")
+    }
+    if isPreparing {
+        return NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: "")
+    }
+    if canPrepareRoute && !isRouteReadyForQRCode {
+        return NSLocalizedString("Prepare connection details and generate the latest pairing QR.", comment: "")
     }
     if !isRouteReadyForQRCode {
         return NSLocalizedString("Connection details are not ready for QR generation. Check Connection Recovery settings.", comment: "")
     }
     return NSLocalizedString("Generate the latest pairing QR with saved connection details.", comment: "")
+}
+
+func connectionRecoveryGenerateLatestQRActionAvailable(
+    canRequestRemotePairing: Bool,
+    hasAction: Bool = true
+) -> Bool {
+    hasAction && canRequestRemotePairing
 }
 
 func connectionRecoverySaveBootstrapRelayActionAccessibilityHint() -> String {

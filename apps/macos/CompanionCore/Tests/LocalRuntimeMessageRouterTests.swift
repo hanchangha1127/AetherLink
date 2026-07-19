@@ -715,6 +715,224 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertFalse(String(describing: message?.payload).contains("127.0.0.1"))
     }
 
+    func testRequestAdmissionEnforcesPerConnectionBoundaryAndReleasesAfterCompletion()
+        async throws
+    {
+        let backend = MockBackend(holdHealthCheckUntilReleased: true)
+        defer { backend.releaseHeldHealthChecks() }
+        let router = makeRouter(
+            backend: backend,
+            requestTaskGlobalLimit: 4,
+            requestTaskPerConnectionLimit: 2
+        )
+        let sink = RecordingSink()
+
+        for index in 0..<2 {
+            router.handle(ProtocolEnvelope(
+                type: MessageType.runtimeHealth,
+                requestID: "request-per-connection-\(index)"
+            ), sink: sink)
+        }
+        let boundaryRequestsStarted = await waitForCondition {
+            backend.healthCheckCallCount == 2
+        }
+        XCTAssertTrue(boundaryRequestsStarted)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.runtimeHealth,
+            requestID: "request-per-connection-overflow"
+        ), sink: sink)
+        let overflow = try await sink.waitForMessages(count: 1).first {
+            $0.requestID == "request-per-connection-overflow"
+        }
+        XCTAssertEqual(overflow?.type, MessageType.error)
+        XCTAssertEqual(overflow?.payload["code"], .string("backend_unavailable"))
+        XCTAssertEqual(overflow?.payload["retryable"], .bool(true))
+        XCTAssertEqual(backend.healthCheckCallCount, 2)
+
+        backend.releaseHeldHealthChecks()
+        let boundaryRequestsCompleted = await waitForCondition {
+            let completedRequestIDs = Set(
+                sink.recordedMessages
+                    .filter { $0.type == MessageType.runtimeHealth }
+                    .map(\.requestID)
+            )
+            return completedRequestIDs.contains("request-per-connection-0") &&
+                completedRequestIDs.contains("request-per-connection-1")
+        }
+        XCTAssertTrue(boundaryRequestsCompleted)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.runtimeHealth,
+            requestID: "request-per-connection-reused"
+        ), sink: sink)
+        let reused = try await sink.waitForMessages(count: 4).first {
+            $0.requestID == "request-per-connection-reused"
+        }
+        XCTAssertEqual(reused?.type, MessageType.runtimeHealth)
+        XCTAssertEqual(backend.healthCheckCallCount, 3)
+    }
+
+    func testRequestAdmissionEnforcesGlobalBoundaryAcrossConnections() async throws {
+        let backend = MockBackend(holdHealthCheckUntilReleased: true)
+        defer { backend.releaseHeldHealthChecks() }
+        let router = makeRouter(
+            backend: backend,
+            requestTaskGlobalLimit: 3,
+            requestTaskPerConnectionLimit: 2
+        )
+        let firstSink = RecordingSink()
+        let secondSink = RecordingSink()
+        let overflowSink = RecordingSink()
+
+        for index in 0..<2 {
+            router.handle(ProtocolEnvelope(
+                type: MessageType.runtimeHealth,
+                requestID: "request-global-a-\(index)"
+            ), sink: firstSink)
+        }
+        router.handle(ProtocolEnvelope(
+            type: MessageType.runtimeHealth,
+            requestID: "request-global-b"
+        ), sink: secondSink)
+        let globalRequestsStarted = await waitForCondition {
+            backend.healthCheckCallCount == 3
+        }
+        XCTAssertTrue(globalRequestsStarted)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.runtimeHealth,
+            requestID: "request-global-overflow"
+        ), sink: overflowSink)
+        let overflow = try await overflowSink.waitForMessages(count: 1).first
+        XCTAssertEqual(overflow?.type, MessageType.error)
+        XCTAssertEqual(overflow?.requestID, "request-global-overflow")
+        XCTAssertEqual(overflow?.payload["code"], .string("backend_unavailable"))
+        XCTAssertEqual(backend.healthCheckCallCount, 3)
+    }
+
+    func testRequestAdmissionReleasesSlotAfterHandlerError() async throws {
+        let backend = MockBackend(
+            modelListError: OllamaBackendError.unreachable(
+                endpoint: "GET /api/tags",
+                baseURL: "http://127.0.0.1:11434",
+                reason: "Connection refused"
+            ),
+            holdHealthCheckUntilReleased: true
+        )
+        defer { backend.releaseHeldHealthChecks() }
+        let router = makeRouter(
+            backend: backend,
+            requestTaskGlobalLimit: 2,
+            requestTaskPerConnectionLimit: 2
+        )
+        let sink = RecordingSink()
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.runtimeHealth,
+            requestID: "request-error-anchor"
+        ), sink: sink)
+        let anchorStarted = await waitForCondition { backend.healthCheckCallCount == 1 }
+        XCTAssertTrue(anchorStarted)
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "request-error"
+        ), sink: sink)
+        let error = try await sink.waitForMessages(count: 1).first {
+            $0.requestID == "request-error"
+        }
+        XCTAssertEqual(error?.type, MessageType.error)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.runtimeHealth,
+            requestID: "request-after-error"
+        ), sink: sink)
+        let requestAfterErrorStarted = await waitForCondition {
+            backend.healthCheckCallCount == 2
+        }
+        XCTAssertTrue(requestAfterErrorStarted)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.runtimeHealth,
+            requestID: "request-after-error-overflow"
+        ), sink: sink)
+        let overflow = try await sink.waitForMessages(count: 2).first {
+            $0.requestID == "request-after-error-overflow"
+        }
+        XCTAssertEqual(overflow?.payload["code"], .string("backend_unavailable"))
+    }
+
+    func testRequestAdmissionDisconnectCancellationReleasesExactlyOnce() async throws {
+        let backend = MockBackend(holdHealthCheckUntilReleased: true)
+        defer { backend.releaseHeldHealthChecks() }
+        let completedRequestTasks = LockedBox(0)
+        let router = makeRouter(
+            backend: backend,
+            requestTaskGlobalLimit: 2,
+            requestTaskPerConnectionLimit: 2,
+            requestTaskCompletionCheckpoint: {
+                completedRequestTasks.value += 1
+            }
+        )
+        let disconnectedSink = RecordingSink()
+
+        for index in 0..<2 {
+            router.handle(ProtocolEnvelope(
+                type: MessageType.runtimeHealth,
+                requestID: "request-disconnected-\(index)"
+            ), sink: disconnectedSink)
+        }
+        let disconnectedRequestsStarted = await waitForCondition {
+            backend.healthCheckCallCount == 2
+        }
+        XCTAssertTrue(disconnectedRequestsStarted)
+
+        router.connectionDidClose(disconnectedSink.connectionID)
+        router.connectionDidClose(disconnectedSink.connectionID)
+
+        let prematureReplacementSink = RecordingSink()
+        for index in 0..<2 {
+            router.handle(ProtocolEnvelope(
+                type: MessageType.runtimeHealth,
+                requestID: "request-premature-replacement-\(index)"
+            ), sink: prematureReplacementSink)
+        }
+        let prematureResponses = try await prematureReplacementSink.waitForMessages(count: 2)
+        XCTAssertEqual(prematureResponses.count, 2)
+        XCTAssertTrue(prematureResponses.allSatisfy {
+            $0.payload["code"] == .string("backend_unavailable")
+        })
+        XCTAssertEqual(backend.healthCheckCallCount, 2)
+        XCTAssertEqual(completedRequestTasks.value, 0)
+
+        backend.releaseHeldHealthChecks()
+        let disconnectedTasksRetired = await waitForCondition {
+            completedRequestTasks.value == 2
+        }
+        XCTAssertTrue(disconnectedTasksRetired)
+        XCTAssertTrue(disconnectedSink.recordedMessages.isEmpty)
+
+        let replacementSink = RecordingSink()
+        for index in 0..<2 {
+            router.handle(ProtocolEnvelope(
+                type: MessageType.runtimeHealth,
+                requestID: "request-replacement-\(index)"
+            ), sink: replacementSink)
+        }
+        let replacementRequestsCompleted = await waitForCondition {
+            replacementSink.recordedMessages.filter {
+                $0.type == MessageType.runtimeHealth
+            }.count == 2
+        }
+        XCTAssertTrue(replacementRequestsCompleted)
+        let replacementTasksRetired = await waitForCondition {
+            completedRequestTasks.value == 4
+        }
+        XCTAssertTrue(replacementTasksRetired)
+        router.connectionDidClose(disconnectedSink.connectionID)
+        XCTAssertEqual(completedRequestTasks.value, 4)
+    }
+
     func testModelsListSingleFlightCoalescesBoundedWaitersAndDoesNotCacheSuccess()
         async throws
     {
@@ -3772,6 +3990,35 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         } else {
             XCTFail("Expected structured chat-store error message")
         }
+    }
+
+    func testRuntimeChatHistoryAmbiguousHostWideSessionReturnsChatStoreError() async throws {
+        let sink = RecordingSink()
+        let store = RecordingRuntimeChatEventStore(
+            listMessagesFailure: RuntimeChatHostWideProjectionError.ambiguousSessionID(
+                "shared-owner-session"
+            )
+        )
+        let router = makeRouter(backend: MockBackend(), chatEventStore: store)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatMessagesList,
+            requestID: "messages-ambiguous-owner",
+            payload: [
+                "session_id": .string("shared-owner-session"),
+                "limit": .number(20)
+            ]
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(response?.type, MessageType.error)
+        XCTAssertEqual(response?.requestID, "messages-ambiguous-owner")
+        XCTAssertEqual(response?.payload["code"], .string("chat_store_unavailable"))
+        XCTAssertEqual(response?.payload["retryable"], .bool(false))
+        XCTAssertEqual(
+            Set(response?.payload.keys.map { $0 } ?? []),
+            ["code", "message", "retryable"]
+        )
     }
 
     func testRuntimeChatHistorySemanticallyInvalidEventReturnsStructuredError() async throws {
@@ -8443,8 +8690,19 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 lmStudioRequests.value = lmStudioRequests.value + [request]
             }
         )
+        let residencyDrainWaitStarted = DispatchSemaphore(value: 0)
+        let aggregateBackend = AggregatingLlmBackend(
+            [ollama, lmStudio],
+            modelIdleUnloadDelayNanoseconds: 60_000_000_000,
+            idleUnloadSleeper: { delayNanoseconds in
+                try await Task.sleep(nanoseconds: delayNanoseconds)
+            },
+            residencyDrainWaitHandler: {
+                residencyDrainWaitStarted.signal()
+            }
+        )
         let router = makeRouter(
-            backend: AggregatingLlmBackend([ollama, lmStudio]),
+            backend: aggregateBackend,
             chatEventStore: chatStore,
             memoryStore: memoryStore
         )
@@ -8486,13 +8744,15 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 "expected_source_message_count": .number(6),
             ]
         ), sink: sinkB)
-        let lmStudioStarted = await waitForCondition { lmStudioRequests.value.count == 1 }
-        XCTAssertTrue(lmStudioStarted)
+        XCTAssertEqual(residencyDrainWaitStarted.wait(timeout: .now() + 1), .success)
+        XCTAssertTrue(lmStudioRequests.value.isEmpty)
 
         ollama.finishChat(with: [
             .delta(#"{"summary":"Concurrent Ollama summary."}"#),
             .done(inputTokens: 3, outputTokens: 4),
         ])
+        let lmStudioStarted = await waitForCondition { lmStudioRequests.value.count == 1 }
+        XCTAssertTrue(lmStudioStarted)
         lmStudio.finishChat(with: [
             .delta(#"{"summary":"Concurrent LM Studio summary."}"#),
             .done(inputTokens: 5, outputTokens: 6),
@@ -15899,6 +16159,57 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(message?.requestID, "chat-unsupported-attachment")
         XCTAssertEqual(message?.payload["code"], .string("unsupported_attachment"))
         XCTAssertEqual(message?.payload["retryable"], .bool(false))
+        XCTAssertNil(capturedRequest.value)
+    }
+
+    func testChatSendDocumentResourceLimitFailsBeforeBackendDispatch() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let router = makeRouter(backend: MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            onChatRequest: { request in
+                capturedRequest.value = request
+            }
+        ))
+        let oversizedText = String(repeating: "a", count: 200_001)
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-document-resource-limit",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Read this."),
+                        "attachments": .array([
+                            .object([
+                                "type": .string("document"),
+                                "mime_type": .string("text/plain"),
+                                "name": .string("oversized.txt"),
+                                "data_base64": .string(
+                                    Data(oversizedText.utf8).base64EncodedString()
+                                )
+                            ])
+                        ])
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "chat-document-resource-limit")
+        XCTAssertEqual(message?.payload["code"], .string("unreadable_attachment"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+        XCTAssertEqual(
+            message?.payload["message"],
+            .string(
+                "Attachment 'oversized.txt' could not be processed within document safety limits."
+            )
+        )
         XCTAssertNil(capturedRequest.value)
     }
 
@@ -28225,6 +28536,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             runtimeRouteHostProvider: { "192.168.1.44" }
         )
 
+        XCTAssertFalse(model.canRequestRemotePairingForUserInterface)
         model.beginPairing()
 
         XCTAssertNil(model.pairingSession)
@@ -28235,6 +28547,1074 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             "Configure a reachable remote route before generating a remote pairing QR."
         )
         XCTAssertEqual(model.logs.first, "Remote pairing QR not generated: configure a reachable remote route first")
+    }
+
+    @MainActor
+    func testCompanionAppModelFailedRemotePairingRenewalPreservesVisibleSession() throws {
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+        model.beginPairing(routePolicy: .allowLocalDiagnostic)
+        let existingSession = try XCTUnwrap(model.pairingSession)
+
+        model.beginPairing()
+
+        XCTAssertEqual(model.pairingSession?.id, existingSession.id)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.kind, .automaticPreparationUnavailable)
+    }
+
+    @MainActor
+    func testCompanionAppModelUserInterfacePairingAllocationKeepsMainActorResponsive() async throws {
+        let relayClient = FakeRelayPeerClient()
+        let allocator = BlockingRemoteRelayRouteAllocator(outcomes: [
+            .allocation(remoteRouteAllocation(
+                host: "relay.async-responsive.test",
+                relayID: "relay-async-responsive",
+                relaySecret: "secret-async-responsive",
+                relayNonce: "nonce-async-responsive"
+            ))
+        ])
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: relayClient,
+            remoteRelayRouteAllocator: allocator,
+            userDefaults: try isolatedDefaults(),
+            pairingRoutePreparationTimeoutNanoseconds: 2_000_000_000
+        )
+
+        XCTAssertTrue(model.canRequestRemotePairingForUserInterface)
+        XCTAssertTrue(model.requestRemotePairingForUserInterface())
+        XCTAssertTrue(model.isRemoteRoutePreparationInFlight)
+        XCTAssertFalse(model.canRequestRemotePairingForUserInterface)
+        let allocationStarted = await allocator.waitUntilStarted(call: 0)
+        XCTAssertTrue(allocationStarted)
+
+        var mainActorFollowUpRan = false
+        Task { @MainActor in
+            mainActorFollowUpRan = true
+        }
+        await Task.yield()
+        XCTAssertTrue(mainActorFollowUpRan)
+
+        allocator.release(call: 0)
+        let routeApplied = await waitForCondition {
+            model.developmentRelaySettings.relayID == "relay-async-responsive"
+        }
+        XCTAssertTrue(routeApplied)
+        relayClient.emit(.waitingForPeer)
+        let pairingGenerated = await waitForCondition { model.pairingSession != nil }
+        XCTAssertTrue(pairingGenerated)
+        XCTAssertFalse(model.isRemoteRoutePreparationInFlight)
+    }
+
+    @MainActor
+    func testCompanionAppModelUserInterfaceManualRouteAllocationKeepsMainActorResponsive() async throws {
+        let allocator = BlockingRelayServiceRouteAllocator(
+            host: "relay.manual-result.test",
+            port: 443,
+            relayID: "relay-manual-result",
+            relayNonce: "nonce-manual-result"
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayServiceRouteAllocator: allocator,
+            userDefaults: try isolatedDefaults()
+        )
+
+        let manualRequestResult = model.requestConfigureDevelopmentRelayForUserInterface(
+            host: "relay.manual-bootstrap.test",
+            port: 8443,
+            relaySecret: "secret-manual-result",
+            attemptAllocation: true
+        )
+        guard case .started(let requestID) = manualRequestResult else {
+            return XCTFail("Expected asynchronous manual route allocation")
+        }
+        XCTAssertEqual(
+            model.relayConfigurationRequestState,
+            .active(CompanionRelayConfigurationRequestContext(
+                requestID: requestID,
+                operation: .developmentRelay
+            ))
+        )
+        XCTAssertTrue(model.isRemoteRoutePreparationInFlight)
+        let allocationStarted = await allocator.waitUntilStarted()
+        XCTAssertTrue(allocationStarted)
+
+        var mainActorFollowUpRan = false
+        Task { @MainActor in
+            mainActorFollowUpRan = true
+        }
+        await Task.yield()
+        XCTAssertTrue(mainActorFollowUpRan)
+
+        allocator.release()
+        let routeApplied = await waitForCondition {
+            model.developmentRelaySettings.relayID == "relay-manual-result"
+        }
+        XCTAssertTrue(routeApplied)
+        XCTAssertEqual(model.developmentRelaySettings.host, "relay.manual-result.test")
+        XCTAssertEqual(model.developmentRelaySettings.port, 443)
+        XCTAssertEqual(model.developmentRelaySettings.relaySecret, "secret-manual-result")
+        XCTAssertTrue(model.isDevelopmentRelayRoutePreparedForQRCode)
+        XCTAssertFalse(model.isRemoteRoutePreparationInFlight)
+        XCTAssertEqual(
+            model.relayConfigurationRequestCompletion,
+            CompanionRelayConfigurationRequestCompletion(
+                requestID: requestID,
+                operation: .developmentRelay,
+                result: .allocated(endpoint: "relay.manual-result.test:443")
+            )
+        )
+        XCTAssertEqual(
+            model.relayConfigurationRequestState,
+            .completed(CompanionRelayConfigurationRequestCompletion(
+                requestID: requestID,
+                operation: .developmentRelay,
+                result: .allocated(endpoint: "relay.manual-result.test:443")
+            ))
+        )
+        model.acknowledgeRelayConfigurationRequestCompletion(requestID: UUID())
+        XCTAssertNotNil(model.relayConfigurationRequestCompletion)
+        model.acknowledgeRelayConfigurationRequestCompletion(requestID: requestID)
+        XCTAssertNil(model.relayConfigurationRequestState)
+    }
+
+    @MainActor
+    func testCompanionAppModelImmediateConfigurationClearsUnconsumedRequestCompletion() async throws {
+        let allocator = BlockingRelayServiceRouteAllocator(
+            host: "relay.completed-result.test",
+            port: 443,
+            relayID: "relay-completed-result",
+            relayNonce: "nonce-completed-result"
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayServiceRouteAllocator: allocator,
+            userDefaults: try isolatedDefaults()
+        )
+
+        let requestResult = model.requestConfigureDevelopmentRelayForUserInterface(
+            host: "relay.completed-bootstrap.test",
+            port: 8443,
+            relaySecret: "secret-completed-result",
+            attemptAllocation: true
+        )
+        guard case .started(let requestID) = requestResult else {
+            return XCTFail("Expected asynchronous manual route allocation")
+        }
+        assertAsyncTrue(await allocator.waitUntilStarted())
+        allocator.release()
+        assertAsyncTrue(await allocator.waitUntilFinished())
+        assertAsyncTrue(await waitForCondition {
+            model.relayConfigurationRequestCompletion?.requestID == requestID
+        })
+
+        XCTAssertEqual(
+            model.requestConfigureDevelopmentRelayForUserInterface(
+                host: "relay.static-replacement.test",
+                port: 43171,
+                relaySecret: "secret-static-replacement",
+                attemptAllocation: false
+            ),
+            .completed(.savedStatic(endpoint: "relay.static-replacement.test:43171"))
+        )
+        XCTAssertNil(model.relayConfigurationRequestState)
+    }
+
+    @MainActor
+    func testCompanionAppModelStopClearsUnconsumedRequestCompletion() async throws {
+        let allocator = BlockingRelayServiceRouteAllocator(
+            host: "relay.completed-before-stop.test",
+            port: 443,
+            relayID: "relay-completed-before-stop",
+            relayNonce: "nonce-completed-before-stop"
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayServiceRouteAllocator: allocator,
+            userDefaults: try isolatedDefaults()
+        )
+
+        let requestResult = model.requestConfigureDevelopmentRelayForUserInterface(
+            host: "relay.stop-bootstrap.test",
+            port: 8443,
+            relaySecret: "secret-completed-before-stop",
+            attemptAllocation: true
+        )
+        guard case .started(let requestID) = requestResult else {
+            return XCTFail("Expected asynchronous manual route allocation")
+        }
+        assertAsyncTrue(await allocator.waitUntilStarted())
+        allocator.release()
+        assertAsyncTrue(await allocator.waitUntilFinished())
+        assertAsyncTrue(await waitForCondition {
+            model.relayConfigurationRequestCompletion?.requestID == requestID
+        })
+
+        model.stop()
+
+        XCTAssertNil(model.relayConfigurationRequestState)
+    }
+
+    @MainActor
+    func testCompanionAppModelAcknowledgingCompletedRequestCannotClearNewActiveRequest() async throws {
+        let allocator = BlockingRelayServiceRouteAllocator(
+            host: "relay.sequenced-result.test",
+            port: 443,
+            relayID: "relay-sequenced-result",
+            relayNonce: "nonce-sequenced-result"
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayServiceRouteAllocator: allocator,
+            userDefaults: try isolatedDefaults()
+        )
+
+        let firstResult = model.requestConfigureDevelopmentRelayForUserInterface(
+            host: "relay.sequence-a.test",
+            port: 8443,
+            relaySecret: "secret-sequence-a",
+            attemptAllocation: true
+        )
+        guard case .started(let firstRequestID) = firstResult else {
+            return XCTFail("Expected the first asynchronous route allocation")
+        }
+        assertAsyncTrue(await allocator.waitUntilStarted())
+        allocator.release()
+        assertAsyncTrue(await allocator.waitUntilFinished())
+        assertAsyncTrue(await waitForCondition {
+            model.relayConfigurationRequestCompletion?.requestID == firstRequestID
+        })
+
+        let secondResult = model.requestConfigureDevelopmentRelayForUserInterface(
+            host: "relay.sequence-b.test",
+            port: 9443,
+            relaySecret: "secret-sequence-b",
+            attemptAllocation: true
+        )
+        guard case .started(let secondRequestID) = secondResult else {
+            return XCTFail("Expected the second asynchronous route allocation")
+        }
+        let secondState = CompanionRelayConfigurationRequestState.active(
+            CompanionRelayConfigurationRequestContext(
+                requestID: secondRequestID,
+                operation: .developmentRelay
+            )
+        )
+        XCTAssertEqual(model.relayConfigurationRequestState, secondState)
+
+        model.acknowledgeRelayConfigurationRequestCompletion(requestID: firstRequestID)
+
+        XCTAssertEqual(model.relayConfigurationRequestState, secondState)
+        assertAsyncTrue(await allocator.waitUntilStarted())
+        allocator.release()
+        assertAsyncTrue(await allocator.waitUntilFinished())
+        assertAsyncTrue(await waitForCondition {
+            model.relayConfigurationRequestCompletion?.requestID == secondRequestID
+        })
+    }
+
+    @MainActor
+    func testCompanionAppModelCancelledUserInterfaceRouteRequestPublishesFailureAndIgnoresLateSuccess() async throws {
+        let allocator = BlockingRelayServiceRouteAllocator(
+            host: "relay.cancelled-late.test",
+            port: 443,
+            relayID: "relay-cancelled-late",
+            relayNonce: "nonce-cancelled-late",
+            holdCancelledWorkerUntilReleased: true
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayServiceRouteAllocator: allocator,
+            userDefaults: try isolatedDefaults()
+        )
+
+        let requestResult = model.requestConfigureDevelopmentRelayForUserInterface(
+            host: "relay.cancelled-request.test",
+            port: 8443,
+            relaySecret: "secret-cancelled-request",
+            attemptAllocation: true
+        )
+        guard case .started(let requestID) = requestResult else {
+            return XCTFail("Expected asynchronous manual route allocation")
+        }
+        XCTAssertEqual(
+            model.relayConfigurationRequestState,
+            .active(CompanionRelayConfigurationRequestContext(
+                requestID: requestID,
+                operation: .developmentRelay
+            ))
+        )
+        assertAsyncTrue(await allocator.waitUntilStarted())
+
+        model.stop()
+
+        XCTAssertEqual(
+            model.relayConfigurationRequestCompletion,
+            CompanionRelayConfigurationRequestCompletion(
+                requestID: requestID,
+                operation: .developmentRelay,
+                result: .allocationFailed(
+                    endpoint: "relay.cancelled-request.test:8443",
+                    message: "Connection preparation was cancelled before completion."
+                )
+            )
+        )
+        XCTAssertTrue(model.isRemoteRoutePreparationInFlight)
+        XCTAssertFalse(model.developmentRelaySettings.isEnabled)
+
+        allocator.release()
+        assertAsyncTrue(await waitForCondition { !model.isRemoteRoutePreparationInFlight })
+
+        XCTAssertEqual(
+            model.relayConfigurationRequestCompletion,
+            CompanionRelayConfigurationRequestCompletion(
+                requestID: requestID,
+                operation: .developmentRelay,
+                result: .allocationFailed(
+                    endpoint: "relay.cancelled-request.test:8443",
+                    message: "Connection preparation was cancelled before completion."
+                )
+            )
+        )
+        XCTAssertFalse(model.developmentRelaySettings.isEnabled)
+        XCTAssertNotEqual(model.developmentRelaySettings.relayID, "relay-cancelled-late")
+    }
+
+    @MainActor
+    func testCompanionAppModelUserInterfaceStartIsIdempotentDuringRouteAllocation() async throws {
+        let defaults = try isolatedDefaults()
+        defaults.set("relay.start-stale.test", forKey: "aetherlink.relay.host")
+        defaults.set(43171, forKey: "aetherlink.relay.port")
+        defaults.set("relay-start-stale", forKey: "aetherlink.relay.id")
+        defaults.set("secret-start-stale", forKey: "aetherlink.relay.secret")
+        let peerServer = FakeRuntimeTransport()
+        let allocator = BlockingRemoteRelayRouteAllocator(outcomes: [
+            .allocation(remoteRouteAllocation(
+                host: "relay.start-fresh.test",
+                relayID: "relay-start-fresh",
+                relaySecret: "secret-start-stale",
+                relayNonce: "nonce-start-fresh"
+            ))
+        ])
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: peerServer,
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: FakeRelayPeerClient(),
+            remoteRelayRouteAllocator: allocator,
+            environment: [
+                "AETHERLINK_BOOTSTRAP_RELAY_ENDPOINTS": "relay.start-bootstrap.test:443"
+            ],
+            userDefaults: defaults,
+            relaySecretStore: FakeCompanionRelaySecretStore()
+        )
+
+        XCTAssertTrue(model.requestStartForUserInterface(port: 43210))
+        XCTAssertFalse(model.requestStartForUserInterface(port: 43210))
+        XCTAssertEqual(peerServer.startedPort, 43210)
+        let allocationStarted = await allocator.waitUntilStarted(call: 0)
+        XCTAssertTrue(allocationStarted)
+        XCTAssertEqual(allocator.recordedCalls.count, 1)
+
+        var mainActorFollowUpRan = false
+        Task { @MainActor in
+            mainActorFollowUpRan = true
+        }
+        await Task.yield()
+        XCTAssertTrue(mainActorFollowUpRan)
+
+        allocator.release(call: 0)
+        let routeApplied = await waitForCondition {
+            model.developmentRelaySettings.relayID == "relay-start-fresh"
+        }
+        XCTAssertTrue(routeApplied)
+        XCTAssertFalse(model.isRemoteRoutePreparationInFlight)
+        XCTAssertEqual(allocator.recordedCalls.count, 1)
+    }
+
+    @MainActor
+    func testCompanionAppModelManualRouteAllocationTimeoutPreservesStaticSettingsAndIgnoresLateResult() async throws {
+        let allocator = BlockingRelayServiceRouteAllocator(
+            host: "relay.manual-late.test",
+            port: 443,
+            relayID: "relay-manual-late",
+            relayNonce: "nonce-manual-late",
+            holdCancelledWorkerUntilReleased: true
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayServiceRouteAllocator: allocator,
+            userDefaults: try isolatedDefaults(),
+            routeAllocationTimeoutNanoseconds: 20_000_000
+        )
+
+        let manualRequestResult = model.requestConfigureDevelopmentRelayForUserInterface(
+            host: "relay.manual-timeout.test",
+            port: 8443,
+            relaySecret: "secret-manual-timeout",
+            attemptAllocation: true
+        )
+        guard case .started(let requestID) = manualRequestResult else {
+            return XCTFail("Expected asynchronous manual route allocation")
+        }
+        XCTAssertEqual(
+            model.relayConfigurationRequestState,
+            .active(CompanionRelayConfigurationRequestContext(
+                requestID: requestID,
+                operation: .developmentRelay
+            ))
+        )
+        let manualAllocationStarted = await allocator.waitUntilStarted()
+        XCTAssertTrue(manualAllocationStarted)
+
+        let didTimeOut = await waitForCondition {
+            model.remoteRoutePreparationIssue?.message == "Connection preparation timed out."
+        }
+        XCTAssertTrue(didTimeOut)
+        XCTAssertTrue(model.isRemoteRoutePreparationInFlight)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.kind, .automaticPreparationFailed)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.endpoint, "relay.manual-timeout.test:8443")
+        XCTAssertEqual(model.developmentRelaySettings.host, "relay.manual-timeout.test")
+        XCTAssertEqual(model.developmentRelaySettings.port, 8443)
+        XCTAssertEqual(model.developmentRelaySettings.relaySecret, "secret-manual-timeout")
+        XCTAssertFalse(model.isDevelopmentRelayRoutePreparedForQRCode)
+        XCTAssertFalse(model.canRequestRemotePairingForUserInterface)
+        XCTAssertEqual(
+            model.relayConfigurationRequestCompletion,
+            CompanionRelayConfigurationRequestCompletion(
+                requestID: requestID,
+                operation: .developmentRelay,
+                result: .allocationFailed(
+                    endpoint: "relay.manual-timeout.test:8443",
+                    message: "Connection preparation timed out."
+                )
+            )
+        )
+
+        allocator.release()
+        assertAsyncTrue(await allocator.waitUntilFinished())
+        assertAsyncTrue(await waitForCondition { !model.isRemoteRoutePreparationInFlight })
+
+        XCTAssertEqual(model.developmentRelaySettings.host, "relay.manual-timeout.test")
+        XCTAssertNotEqual(model.developmentRelaySettings.relayID, "relay-manual-late")
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.message, "Connection preparation timed out.")
+        XCTAssertTrue(model.canRequestRemotePairingForUserInterface)
+    }
+
+    @MainActor
+    func testCompanionAppModelBootstrapRouteAllocationTimeoutPreservesSavedSettingsAndIgnoresLateResult() async throws {
+        let allocator = BlockingRelayServiceRouteAllocator(
+            host: "relay.bootstrap-late.test",
+            port: 443,
+            relayID: "relay-bootstrap-late",
+            relayNonce: "nonce-bootstrap-late",
+            holdCancelledWorkerUntilReleased: true
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayServiceRouteAllocator: allocator,
+            userDefaults: try isolatedDefaults(),
+            routeAllocationTimeoutNanoseconds: 20_000_000
+        )
+
+        let bootstrapRequestResult = model.requestConfigureBootstrapRelayForUserInterface(
+            endpoints: "relay.bootstrap-timeout.test:443",
+            allocationToken: "bootstrap-timeout-token"
+        )
+        guard case .started(let requestID) = bootstrapRequestResult else {
+            return XCTFail("Expected asynchronous bootstrap route allocation")
+        }
+        XCTAssertEqual(
+            model.relayConfigurationRequestState,
+            .active(CompanionRelayConfigurationRequestContext(
+                requestID: requestID,
+                operation: .bootstrapRelay
+            ))
+        )
+        let bootstrapAllocationStarted = await allocator.waitUntilStarted()
+        XCTAssertTrue(bootstrapAllocationStarted)
+
+        let didTimeOut = await waitForCondition {
+            model.remoteRoutePreparationIssue?.message == "Connection preparation timed out."
+        }
+        XCTAssertTrue(didTimeOut)
+        XCTAssertTrue(model.isRemoteRoutePreparationInFlight)
+        XCTAssertTrue(model.bootstrapRelaySettings.isEnabled)
+        XCTAssertEqual(model.bootstrapRelaySettings.endpoints, "relay.bootstrap-timeout.test:443")
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.kind, .automaticPreparationFailed)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.endpoint, "relay.bootstrap-timeout.test:443")
+        XCTAssertFalse(model.developmentRelaySettings.isEnabled)
+        XCTAssertEqual(
+            model.relayConfigurationRequestCompletion,
+            CompanionRelayConfigurationRequestCompletion(
+                requestID: requestID,
+                operation: .bootstrapRelay,
+                result: .allocationFailed(
+                    endpoint: "relay.bootstrap-timeout.test:443",
+                    message: "Connection preparation timed out."
+                )
+            )
+        )
+
+        allocator.release()
+        assertAsyncTrue(await allocator.waitUntilFinished())
+        assertAsyncTrue(await waitForCondition { !model.isRemoteRoutePreparationInFlight })
+
+        XCTAssertTrue(model.bootstrapRelaySettings.isEnabled)
+        XCTAssertFalse(model.developmentRelaySettings.isEnabled)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.message, "Connection preparation timed out.")
+    }
+
+    @MainActor
+    func testCompanionAppModelEmptyBootstrapConfigurationRequestReturnsDisabledCompletion() throws {
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            userDefaults: try isolatedDefaults()
+        )
+
+        XCTAssertEqual(
+            model.requestConfigureBootstrapRelayForUserInterface(
+                endpoints: "  \n\t  ",
+                allocationToken: "unused-token"
+            ),
+            .completed(.disabled)
+        )
+        XCTAssertFalse(model.bootstrapRelaySettings.isEnabled)
+        XCTAssertFalse(model.isRemoteRoutePreparationInFlight)
+    }
+
+    @MainActor
+    func testCompanionAppModelRejectsMalformedBootstrapEndpointListsWithoutSavingThem() throws {
+        let allocator = FakeRelayServiceRouteAllocator(allocation: nil)
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayServiceRouteAllocator: allocator,
+            userDefaults: try isolatedDefaults()
+        )
+
+        let malformedEndpointLists = [
+            ",,,",
+            "relay.example.test:0",
+            "relay.example.test:70000",
+            "[::1",
+            "relay.example.test]:443",
+            "relay[.example.test:443",
+            "relay.example.test :443",
+            "[2001:db8::1]]:443",
+            "relay.example.test:443,"
+        ]
+        for endpoints in malformedEndpointLists {
+            let result = model.requestConfigureBootstrapRelayForUserInterface(
+                endpoints: endpoints,
+                allocationToken: "must-not-be-saved"
+            )
+
+            XCTAssertEqual(
+                result,
+                .completed(.allocationFailed(
+                    endpoint: endpoints,
+                    message: "Enter at least one valid connection service address."
+                ))
+            )
+            XCTAssertFalse(model.bootstrapRelaySettings.isEnabled)
+            XCTAssertFalse(model.isRemoteRoutePreparationInFlight)
+        }
+        XCTAssertTrue(allocator.calls.isEmpty)
+    }
+
+    @MainActor
+    func testCompanionAppModelDestructiveRouteActionsFailClosedDuringSharedAllocation() async throws {
+        let allocator = BlockingRelayServiceRouteAllocator(
+            host: "relay.window-result.test",
+            port: 443,
+            relayID: "relay-window-result",
+            relayNonce: "nonce-window-result"
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayServiceRouteAllocator: allocator,
+            userDefaults: try isolatedDefaults()
+        )
+
+        let bootstrapRequestResult = model.requestConfigureBootstrapRelayForUserInterface(
+            endpoints: "relay.window-bootstrap.test:443",
+            allocationToken: "window-allocation-token"
+        )
+        guard case .started(let requestID) = bootstrapRequestResult else {
+            return XCTFail("Expected asynchronous bootstrap route allocation")
+        }
+        assertAsyncTrue(await allocator.waitUntilStarted())
+        XCTAssertTrue(model.bootstrapRelaySettings.isEnabled)
+        let activeRequestState = CompanionRelayConfigurationRequestState.active(
+            CompanionRelayConfigurationRequestContext(
+                requestID: requestID,
+                operation: .bootstrapRelay
+            )
+        )
+        XCTAssertEqual(model.relayConfigurationRequestState, activeRequestState)
+
+        XCTAssertFalse(model.requestClearBootstrapRelayForUserInterface())
+        XCTAssertFalse(model.requestClearDevelopmentRelayForUserInterface())
+        XCTAssertEqual(model.bootstrapRelaySettings.endpoints, "relay.window-bootstrap.test:443")
+        XCTAssertEqual(model.relayConfigurationRequestState, activeRequestState)
+
+        allocator.release()
+        assertAsyncTrue(await allocator.waitUntilFinished())
+        assertAsyncTrue(await waitForCondition {
+            !model.isRemoteRoutePreparationInFlight &&
+                model.developmentRelaySettings.relayID == "relay-window-result"
+        })
+        guard case .completed(let completion) = model.relayConfigurationRequestState else {
+            return XCTFail("Expected the exact bootstrap request completion")
+        }
+        XCTAssertEqual(completion.requestID, requestID)
+        XCTAssertEqual(completion.operation, .bootstrapRelay)
+
+        XCTAssertTrue(model.requestClearBootstrapRelayForUserInterface())
+        XCTAssertNil(model.relayConfigurationRequestState)
+        XCTAssertTrue(model.requestClearDevelopmentRelayForUserInterface())
+        XCTAssertFalse(model.bootstrapRelaySettings.isEnabled)
+        XCTAssertFalse(model.developmentRelaySettings.isEnabled)
+    }
+
+    @MainActor
+    func testCompanionAppModelStartRouteAllocationTimeoutStartsSavedRouteAndIgnoresLateResult() async throws {
+        let defaults = try isolatedDefaults()
+        defaults.set("relay.start-timeout.test", forKey: "aetherlink.relay.host")
+        defaults.set(43171, forKey: "aetherlink.relay.port")
+        defaults.set("relay-start-timeout", forKey: "aetherlink.relay.id")
+        defaults.set("secret-start-timeout", forKey: "aetherlink.relay.secret")
+        let relayClient = FakeRelayPeerClient()
+        let allocator = BlockingRemoteRelayRouteAllocator(outcomes: [
+            .allocation(remoteRouteAllocation(
+                host: "relay.start-late.test",
+                relayID: "relay-start-late",
+                relaySecret: "secret-start-timeout",
+                relayNonce: "nonce-start-late"
+            ))
+        ])
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: relayClient,
+            remoteRelayRouteAllocator: allocator,
+            environment: [
+                "AETHERLINK_BOOTSTRAP_RELAY_ENDPOINTS": "relay.start-bootstrap.test:443"
+            ],
+            userDefaults: defaults,
+            relaySecretStore: FakeCompanionRelaySecretStore(),
+            routeAllocationTimeoutNanoseconds: 20_000_000
+        )
+
+        XCTAssertTrue(model.requestStartForUserInterface(port: 43210))
+        let startAllocationStarted = await allocator.waitUntilStarted(call: 0)
+        XCTAssertTrue(startAllocationStarted)
+
+        let didTimeOut = await waitForCondition {
+            model.remoteRoutePreparationIssue?.message == "Connection preparation timed out."
+        }
+        XCTAssertTrue(didTimeOut)
+        XCTAssertFalse(model.isRemoteRoutePreparationInFlight)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.kind, .automaticPreparationFailed)
+        XCTAssertEqual(model.developmentRelaySettings.host, "relay.start-timeout.test")
+        XCTAssertEqual(model.developmentRelaySettings.relayID, "relay-start-timeout")
+        XCTAssertEqual(relayClient.startedConfiguration?.host, "relay.start-timeout.test")
+        XCTAssertEqual(relayClient.startedConfiguration?.relayID, "relay-start-timeout")
+
+        allocator.release(call: 0)
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(model.developmentRelaySettings.host, "relay.start-timeout.test")
+        XCTAssertEqual(model.developmentRelaySettings.relayID, "relay-start-timeout")
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.message, "Connection preparation timed out.")
+    }
+
+    @MainActor
+    func testCompanionAppModelPairingTimeoutMakesLateAllocationResultInert() async throws {
+        let allocator = BlockingRemoteRelayRouteAllocator(outcomes: [
+            .allocation(remoteRouteAllocation(
+                host: "relay.async-late.test",
+                relayID: "relay-async-late",
+                relaySecret: "secret-async-late",
+                relayNonce: "nonce-async-late"
+            ))
+        ])
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            remoteRelayRouteAllocator: allocator,
+            userDefaults: try isolatedDefaults(),
+            runtimeRouteHostProvider: { "192.168.1.44" },
+            pairingRoutePreparationTimeoutNanoseconds: 20_000_000
+        )
+
+        XCTAssertTrue(model.requestRemotePairingForUserInterface())
+        let allocationStarted = await allocator.waitUntilStarted(call: 0)
+        XCTAssertTrue(allocationStarted)
+        let didTimeOut = await waitForCondition {
+            model.remoteRoutePreparationIssue?.message == "Connection preparation timed out."
+        }
+        XCTAssertTrue(didTimeOut)
+        XCTAssertFalse(model.isRemoteRoutePreparationInFlight)
+
+        allocator.release(call: 0)
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertFalse(model.developmentRelaySettings.isEnabled)
+        XCTAssertNil(model.pairingSession)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.message, "Connection preparation timed out.")
+        XCTAssertFalse(model.logs.contains("Pairing code generated"))
+    }
+
+    @MainActor
+    func testCompanionAppModelAllocationTimeoutStopsWorkerBeforeRetry() async throws {
+        let relayClient = FakeRelayPeerClient()
+        let allocator = BlockingRemoteRelayRouteAllocator(
+            outcomes: [
+                .allocation(remoteRouteAllocation(
+                    host: "relay.cancelled.test",
+                    relayID: "relay-cancelled",
+                    relaySecret: "secret-cancelled",
+                    relayNonce: "nonce-cancelled"
+                )),
+                .allocation(remoteRouteAllocation(
+                    host: "relay.retry.test",
+                    relayID: "relay-retry",
+                    relaySecret: "secret-retry",
+                    relayNonce: "nonce-retry"
+                ))
+            ],
+            holdCancelledWorkersUntilReleased: true
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: relayClient,
+            remoteRelayRouteAllocator: allocator,
+            userDefaults: try isolatedDefaults(),
+            pairingRoutePreparationTimeoutNanoseconds: 2_000_000_000,
+            routeAllocationTimeoutNanoseconds: 20_000_000
+        )
+
+        XCTAssertTrue(model.requestRemotePairingForUserInterface())
+        assertAsyncTrue(await allocator.waitUntilStarted(call: 0))
+        assertAsyncTrue(await allocator.waitUntilCancelled(call: 0))
+
+        XCTAssertTrue(model.isRemoteRoutePreparationInFlight)
+        XCTAssertFalse(model.canRequestRemotePairingForUserInterface)
+        XCTAssertFalse(model.requestRemotePairingForUserInterface())
+        XCTAssertEqual(allocator.recordedCalls.count, 1)
+
+        allocator.allowCancelledWorkerToFinish(call: 0)
+        assertAsyncTrue(await allocator.waitUntilFinished(call: 0))
+        assertAsyncTrue(await waitForCondition {
+            !model.isRemoteRoutePreparationInFlight &&
+                model.remoteRoutePreparationIssue?.message == "Connection preparation timed out."
+        })
+
+        XCTAssertTrue(model.requestRemotePairingForUserInterface())
+        assertAsyncTrue(await allocator.waitUntilStarted(call: 1))
+        allocator.release(call: 1)
+        assertAsyncTrue(await waitForCondition {
+            model.developmentRelaySettings.relayID == "relay-retry"
+        })
+        relayClient.emit(.waitingForPeer)
+        assertAsyncTrue(await waitForCondition { model.pairingSession != nil })
+        XCTAssertEqual(
+            try queryItems(from: XCTUnwrap(model.pairingSession).qrPayload)["relay_id"],
+            "relay-retry"
+        )
+    }
+
+    @MainActor
+    func testCompanionAppModelDrainingWorkerBlocksSynchronousAllocationEntryPoints() async throws {
+        let defaults = try isolatedDefaults()
+        defaults.set("relay.draining-saved.test", forKey: "aetherlink.relay.host")
+        defaults.set(443, forKey: "aetherlink.relay.port")
+        defaults.set("relay-draining-saved", forKey: "aetherlink.relay.id")
+        defaults.set("secret-draining-saved", forKey: "aetherlink.relay.secret")
+        let remoteAllocator = BlockingRemoteRelayRouteAllocator(
+            outcomes: [
+                .allocation(remoteRouteAllocation(
+                    host: "relay.draining-old.test",
+                    relayID: "relay-draining-old",
+                    relaySecret: "secret-draining-old",
+                    relayNonce: "nonce-draining-old"
+                )),
+                .allocation(remoteRouteAllocation(
+                    host: "relay.draining-overlap.test",
+                    relayID: "relay-draining-overlap",
+                    relaySecret: "secret-draining-overlap",
+                    relayNonce: "nonce-draining-overlap"
+                ))
+            ],
+            holdCancelledWorkersUntilReleased: true
+        )
+        let serviceAllocator = FakeRelayServiceRouteAllocator(
+            allocation: remoteRouteAllocation(
+                host: "relay.sync-overlap.test",
+                relayID: "relay-sync-overlap",
+                relaySecret: "secret-sync-overlap",
+                relayNonce: "nonce-sync-overlap"
+            )
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: FakeRelayPeerClient(),
+            remoteRelayRouteAllocator: remoteAllocator,
+            relayServiceRouteAllocator: serviceAllocator,
+            userDefaults: defaults,
+            relaySecretStore: FakeCompanionRelaySecretStore(),
+            routeAllocationTimeoutNanoseconds: 20_000_000
+        )
+
+        XCTAssertTrue(model.developmentRelaySettings.isEnabled)
+        XCTAssertFalse(model.isDevelopmentRelayRoutePreparedForQRCode)
+        XCTAssertTrue(model.canPrepareRemoteRelayRouteAutomatically)
+        XCTAssertTrue(model.requestRemotePairingForUserInterface())
+        assertAsyncTrue(await remoteAllocator.waitUntilStarted(call: 0))
+        assertAsyncTrue(await remoteAllocator.waitUntilCancelled(call: 0))
+        XCTAssertTrue(model.isRemoteRoutePreparationInFlight)
+
+        XCTAssertEqual(
+            model.configureDevelopmentRelay(
+                host: "relay.sync-bypass.test",
+                port: 443,
+                relaySecret: "secret-sync-bypass",
+                attemptAllocation: true
+            ),
+            .allocationFailed(
+                endpoint: "relay.sync-bypass.test:443",
+                message: "Connection preparation is already in progress."
+            )
+        )
+        XCTAssertEqual(
+            model.configureBootstrapRelay(
+                endpoints: "relay.bootstrap-bypass.test:443",
+                allocationToken: "bootstrap-bypass-token"
+            ),
+            .allocationFailed(
+                endpoint: "relay.bootstrap-bypass.test:443",
+                message: "Connection preparation is already in progress."
+            )
+        )
+        XCTAssertTrue(model.requestStartForUserInterface(port: 43210))
+        XCTAssertTrue(serviceAllocator.calls.isEmpty)
+        XCTAssertEqual(remoteAllocator.recordedCalls.count, 1)
+
+        remoteAllocator.allowCancelledWorkerToFinish(call: 0)
+        assertAsyncTrue(await remoteAllocator.waitUntilFinished(call: 0))
+        assertAsyncTrue(await waitForCondition { !model.isRemoteRoutePreparationInFlight })
+        XCTAssertEqual(remoteAllocator.recordedCalls.count, 1)
+    }
+
+    @MainActor
+    func testCompanionAppModelNewerPairingAllocationWinsAfterRouteClear() async throws {
+        let relayClient = FakeRelayPeerClient()
+        let allocator = BlockingRemoteRelayRouteAllocator(outcomes: [
+            .allocation(remoteRouteAllocation(
+                host: "relay.async-old.test",
+                relayID: "relay-async-old",
+                relaySecret: "secret-async-old",
+                relayNonce: "nonce-async-old"
+            )),
+            .allocation(remoteRouteAllocation(
+                host: "relay.async-new.test",
+                relayID: "relay-async-new",
+                relaySecret: "secret-async-new",
+                relayNonce: "nonce-async-new"
+            ))
+        ])
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: relayClient,
+            remoteRelayRouteAllocator: allocator,
+            userDefaults: try isolatedDefaults(),
+            pairingRoutePreparationTimeoutNanoseconds: 2_000_000_000
+        )
+
+        XCTAssertTrue(model.requestRemotePairingForUserInterface())
+        let firstAllocationStarted = await allocator.waitUntilStarted(call: 0)
+        XCTAssertTrue(firstAllocationStarted)
+        model.clearDevelopmentRelay()
+
+        XCTAssertTrue(model.isRemoteRoutePreparationInFlight)
+        XCTAssertFalse(model.requestRemotePairingForUserInterface())
+        assertAsyncTrue(await allocator.waitUntilCancelled(call: 0))
+        assertAsyncTrue(await allocator.waitUntilFinished(call: 0))
+        assertAsyncTrue(await waitForCondition { !model.isRemoteRoutePreparationInFlight })
+
+        XCTAssertTrue(model.requestRemotePairingForUserInterface())
+        let secondAllocationStarted = await allocator.waitUntilStarted(call: 1)
+        XCTAssertTrue(secondAllocationStarted)
+
+        allocator.release(call: 1)
+        let newerRouteApplied = await waitForCondition {
+            model.developmentRelaySettings.relayID == "relay-async-new"
+        }
+        XCTAssertTrue(newerRouteApplied)
+        relayClient.emit(.waitingForPeer)
+        let pairingGenerated = await waitForCondition { model.pairingSession != nil }
+        XCTAssertTrue(pairingGenerated)
+        let newPairingSessionID = try XCTUnwrap(model.pairingSession?.id)
+
+        XCTAssertEqual(model.developmentRelaySettings.host, "relay.async-new.test")
+        XCTAssertEqual(model.developmentRelaySettings.relayID, "relay-async-new")
+        XCTAssertEqual(model.pairingSession?.id, newPairingSessionID)
+        let qrItems = try queryItems(from: try XCTUnwrap(model.pairingSession).qrPayload)
+        XCTAssertEqual(qrItems["relay_id"], "relay-async-new")
+        XCTAssertNotEqual(qrItems["relay_id"], "relay-async-old")
+    }
+
+    @MainActor
+    func testCompanionAppModelAsyncRemoteFailureNeverFallsBackAndPreservesCapturedAuthorization() async throws {
+        let defaults = try isolatedDefaults()
+        let allocator = BlockingRemoteRelayRouteAllocator(outcomes: [
+            .failure("Async route allocator offline")
+        ])
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            remoteRelayRouteAllocator: allocator,
+            userDefaults: defaults,
+            runtimeRouteHostProvider: { "192.168.1.44" },
+            pairingRoutePreparationTimeoutNanoseconds: 2_000_000_000
+        )
+
+        XCTAssertTrue(model.requestRemotePairingForUserInterface())
+        let allocationStarted = await allocator.waitUntilStarted(call: 0)
+        XCTAssertTrue(allocationStarted)
+        allocator.release(call: 0)
+        let failurePublished = await waitForCondition {
+            model.remoteRoutePreparationIssue?.message == "Async route allocator offline"
+        }
+        XCTAssertTrue(failurePublished)
+
+        let call = try XCTUnwrap(allocator.recordedCalls.first)
+        XCTAssertEqual(call.routeToken, defaults.string(forKey: "aetherlink.discovery_route_token"))
+        XCTAssertEqual(call.runtimeIdentity, call.signerRuntimeIdentity)
+        XCTAssertNil(model.pairingSession)
+        XCTAssertFalse(model.logs.contains("Pairing code generated"))
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.kind, .automaticPreparationFailed)
+        XCTAssertFalse(model.isRemoteRoutePreparationInFlight)
+    }
+
+    @MainActor
+    func testCompanionAppModelPendingRemotePairingTimesOutInsteadOfWaitingForever() async throws {
+        let relayClient = FakeRelayPeerClient()
+        let allocator = FakeRemoteRelayRouteAllocator(
+            allocation: CompanionRemoteRelayRouteAllocation(
+                configuration: RelayPeerConfiguration(
+                    host: "relay.timeout.test",
+                    port: 43171,
+                    relayID: "relay-timeout",
+                    relaySecret: "secret-timeout"
+                ),
+                lease: CompanionRemoteRouteLease(
+                    expiresAtEpochMillis: 4_102_444_800_000,
+                    nonce: "nonce-timeout"
+                )
+            )
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: relayClient,
+            remoteRelayRouteAllocator: allocator,
+            userDefaults: try isolatedDefaults(),
+            pairingRoutePreparationTimeoutNanoseconds: 200_000_000
+        )
+
+        model.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            model.developmentRelayEndpoint == "relay.timeout.test:43171"
+        })
+        relayClient.emit(.reconnecting("still connecting"))
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertNil(model.pairingSession)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.kind, .relayConnectionFailed)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.endpoint, "relay.timeout.test:43171")
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.message, "Connection preparation timed out.")
+        XCTAssertTrue(model.logs.contains(
+            "Remote pairing QR not generated: connection preparation timed out for relay.timeout.test:43171"
+        ))
+    }
+
+    @MainActor
+    func testCompanionAppModelReadyRemotePairingCancelsPreparationTimeout() async throws {
+        let relayClient = FakeRelayPeerClient()
+        let allocator = FakeRemoteRelayRouteAllocator(
+            allocation: CompanionRemoteRelayRouteAllocation(
+                configuration: RelayPeerConfiguration(
+                    host: "relay.ready.test",
+                    port: 43171,
+                    relayID: "relay-ready",
+                    relaySecret: "secret-ready"
+                ),
+                lease: CompanionRemoteRouteLease(
+                    expiresAtEpochMillis: 4_102_444_800_000,
+                    nonce: "nonce-ready"
+                )
+            )
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: relayClient,
+            remoteRelayRouteAllocator: allocator,
+            userDefaults: try isolatedDefaults(),
+            pairingRoutePreparationTimeoutNanoseconds: 2_000_000_000
+        )
+
+        model.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            model.developmentRelayEndpoint == "relay.ready.test:43171"
+        })
+        relayClient.emit(.waitingForPeer)
+        assertAsyncTrue(await waitForCondition { model.pairingSession != nil })
+        let sessionID = try XCTUnwrap(model.pairingSession?.id)
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(model.pairingSession?.id, sessionID)
+        XCTAssertNil(model.remoteRoutePreparationIssue)
     }
 
     @MainActor
@@ -28749,7 +30129,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
-    func testCompanionAppModelPublishesRemoteRoutePreparationIssueWhenBootstrapAllocationThrows() throws {
+    func testCompanionAppModelPublishesRemoteRoutePreparationIssueWhenBootstrapAllocationThrows() async throws {
         let allocator = FakeRemoteRelayRouteAllocator(
             allocation: nil,
             canAllocateRemoteRelayRoute: true,
@@ -28768,12 +30148,14 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
 
         model.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            model.remoteRoutePreparationIssue?.message == "Route allocator offline"
+        })
 
         XCTAssertNil(model.pairingSession)
         XCTAssertEqual(model.remoteRoutePreparationIssue?.kind, .automaticPreparationFailed)
         XCTAssertNil(model.remoteRoutePreparationIssue?.endpoint)
         XCTAssertEqual(model.remoteRoutePreparationIssue?.message, "Route allocator offline")
-        XCTAssertEqual(model.logs.first, "Remote pairing QR not generated: Route allocator offline")
         XCTAssertTrue(model.logs.contains("Remote pairing QR not generated: Route allocator offline"))
         XCTAssertTrue(model.logs.contains("Remote route bootstrap failed: Route allocator offline"))
     }
@@ -28809,6 +30191,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
 
         model.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            model.developmentRelayEndpoint == "relay.bootstrap.test:43171"
+        })
 
         XCTAssertNil(model.pairingSession)
         XCTAssertEqual(model.developmentRelayEndpoint, "relay.bootstrap.test:43171")
@@ -28822,7 +30207,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         assertStoredRelaySecret("secret-bootstrap-1", defaults: defaults, store: relaySecretStore)
 
         relayClient.emit(.waitingForPeer)
-        await Task.yield()
+        assertAsyncTrue(await waitForCondition { model.pairingSession != nil })
 
         let session = try XCTUnwrap(model.pairingSession)
         let qrItems = try queryItems(from: session.qrPayload)
@@ -28849,6 +30234,54 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertNil(compactQRItems["p"])
         XCTAssertNil(compactQRItems["relay_host"])
         XCTAssertNil(compactQRItems["relay_secret"])
+    }
+
+    @MainActor
+    func testCompanionAppModelRejectsRemotePairingWhenRelayMaterialCannotBeEncodedCanonically() async throws {
+        let relayClient = FakeRelayPeerClient()
+        let oversizedSecret = String(repeating: "s", count: 513)
+        let allocator = FakeRemoteRelayRouteAllocator(
+            allocation: CompanionRemoteRelayRouteAllocation(
+                configuration: RelayPeerConfiguration(
+                    host: "relay.canonical.test",
+                    port: 43171,
+                    relayID: "relay-canonical",
+                    relaySecret: oversizedSecret
+                ),
+                lease: CompanionRemoteRouteLease(
+                    expiresAtEpochMillis: 4_102_444_800_000,
+                    nonce: "nonce-canonical"
+                )
+            )
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: relayClient,
+            remoteRelayRouteAllocator: allocator,
+            userDefaults: try isolatedDefaults()
+        )
+
+        model.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            model.developmentRelayEndpoint == "relay.canonical.test:43171"
+        })
+        relayClient.emit(.waitingForPeer)
+        assertAsyncTrue(await waitForCondition {
+            model.remoteRoutePreparationIssue?.kind == .automaticPreparationRejected
+        })
+
+        XCTAssertNil(model.pairingSession)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.kind, .automaticPreparationRejected)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.endpoint, "relay.canonical.test:43171")
+        XCTAssertEqual(
+            model.remoteRoutePreparationIssue?.message,
+            "Connection details could not be encoded safely in the pairing QR."
+        )
+        XCTAssertTrue(model.logs.contains(
+            "Remote pairing QR not generated: connection details for relay.canonical.test:43171 are not canonical"
+        ))
     }
 
     @MainActor
@@ -28891,6 +30324,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
 
         model.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            serviceAllocator.calls.count == 2 && relayClient.startedConfiguration?.host == "relay-good.test"
+        })
 
         XCTAssertNil(model.pairingSession)
         XCTAssertEqual(serviceAllocator.calls, [
@@ -28917,7 +30353,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.port"), 443)
 
         relayClient.emit(.waitingForPeer)
-        await Task.yield()
+        assertAsyncTrue(await waitForCondition { model.pairingSession != nil })
 
         let session = try XCTUnwrap(model.pairingSession)
         let qrItems = try queryItems(from: session.qrPayload)
@@ -28972,6 +30408,10 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         assertStoredBootstrapAllocationToken("stored-allocation-token", defaults: defaults, store: relaySecretStore)
 
         model.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            serviceAllocator.calls.count == 2 &&
+                relayClient.startedConfiguration?.host == "relay-saved-good.test"
+        })
 
         XCTAssertNil(model.pairingSession)
         XCTAssertEqual(serviceAllocator.calls, [
@@ -28995,7 +30435,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(relayClient.startedConfiguration?.relayNonce, "relay-saved-nonce")
 
         relayClient.emit(.waitingForPeer)
-        await Task.yield()
+        assertAsyncTrue(await waitForCondition { model.pairingSession != nil })
 
         let session = try XCTUnwrap(model.pairingSession)
         let qrItems = try queryItems(from: session.qrPayload)
@@ -29052,6 +30492,10 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertFalse(model.isDevelopmentRelayQRCodeReady)
 
         model.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            serviceAllocator.calls.count == 1 &&
+                relayClient.startedConfiguration?.relayID == "relay-bootstrap-fresh"
+        })
 
         XCTAssertNil(model.pairingSession)
         XCTAssertEqual(serviceAllocator.calls.count, 1)
@@ -29062,7 +30506,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertFalse(model.isDevelopmentRelayQRCodeReady)
 
         relayClient.emit(.waitingForPeer)
-        await Task.yield()
+        assertAsyncTrue(await waitForCondition { model.pairingSession != nil })
 
         let session = try XCTUnwrap(model.pairingSession)
         let qrItems = try queryItems(from: session.qrPayload)
@@ -29076,7 +30520,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
-    func testCompanionAppModelRejectsUnreachableRemoteRouteAllocation() throws {
+    func testCompanionAppModelRejectsUnreachableRemoteRouteAllocation() async throws {
         let relayClient = FakeRelayPeerClient()
         let allocator = FakeRemoteRelayRouteAllocator(
             allocation: CompanionRemoteRelayRouteAllocation(
@@ -29098,6 +30542,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
 
         model.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            model.remoteRoutePreparationIssue?.kind == .automaticPreparationRejected
+        })
 
         XCTAssertNil(model.pairingSession)
         XCTAssertNil(relayClient.startedConfiguration)
@@ -29105,7 +30552,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
-    func testCompanionAppModelStartRenewsSavedBootstrapRelayRouteBeforeRelayStart() throws {
+    func testCompanionAppModelStartRenewsSavedBootstrapRelayRouteBeforeRelayStart() async throws {
         let defaults = try isolatedDefaults()
         defaults.set("relay.stale.test", forKey: "aetherlink.relay.host")
         defaults.set(43171, forKey: "aetherlink.relay.port")
@@ -29148,6 +30595,10 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
 
         model.start(port: 43210)
+        assertAsyncTrue(await waitForCondition {
+            !model.isRemoteRoutePreparationInFlight &&
+                relayClient.startedConfiguration?.relayID == "relay-renewed"
+        })
 
         XCTAssertEqual(events, ["allocate", "relay-start"])
         XCTAssertEqual(allocator.calls.map(\.preferredRelaySecret), ["saved-secret"])
@@ -29167,7 +30618,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
-    func testCompanionAppModelStartDoesNotAllocateSavedRelayWithoutBootstrapEnvironment() throws {
+    func testCompanionAppModelStartDoesNotAllocateSavedRelayWithoutBootstrapEnvironment() async throws {
         let defaults = try isolatedDefaults()
         defaults.set("relay.saved.test", forKey: "aetherlink.relay.host")
         defaults.set(43171, forKey: "aetherlink.relay.port")
@@ -29183,7 +30634,8 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                     relayID: "relay-renewed",
                     relaySecret: "saved-secret"
                 )
-            )
+            ),
+            canAllocateRemoteRelayRoute: false
         )
         let model = CompanionAppModel(
             backend: MockBackend(status: .available),
@@ -29198,6 +30650,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
 
         model.start(port: 43210)
+        assertAsyncTrue(await waitForCondition {
+            relayClient.startedConfiguration?.relayID == "relay-saved"
+        })
 
         XCTAssertTrue(allocator.calls.isEmpty)
         XCTAssertEqual(relayClient.startedConfiguration?.host, "relay.saved.test")
@@ -29243,6 +30698,10 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
 
         model.start(port: 43210)
+        assertAsyncTrue(await waitForCondition {
+            !model.isRemoteRoutePreparationInFlight &&
+                relayClient.startedConfiguration?.relayID == "relay-renewed"
+        })
         XCTAssertEqual(allocator.calls.map(\.preferredRelaySecret), ["saved-secret"])
         XCTAssertEqual(relayClient.startedConfiguration?.relayID, "relay-renewed")
 
@@ -29255,8 +30714,11 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             )
         )
         relayClient.emit(.failed("Relay did not return ready after registration."))
-        await Task.yield()
+        let renewedRouteApplied = await waitForCondition {
+            model.developmentRelaySettings.relayID == "relay-after-failure"
+        }
 
+        XCTAssertTrue(renewedRouteApplied)
         XCTAssertEqual(allocator.calls.map(\.preferredRelaySecret), ["saved-secret", "saved-secret"])
         XCTAssertEqual(relayClient.startedConfiguration?.host, "relay.after-failure.test")
         XCTAssertEqual(relayClient.startedConfiguration?.port, 443)
@@ -29285,7 +30747,8 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                     relayID: "relay-renewed",
                     relaySecret: "saved-secret"
                 )
-            )
+            ),
+            canAllocateRemoteRelayRoute: false
         )
         let model = CompanionAppModel(
             backend: MockBackend(status: .available),
@@ -29300,6 +30763,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
 
         model.start(port: 43210)
+        assertAsyncTrue(await waitForCondition {
+            relayClient.startedConfiguration?.relayID == "relay-saved"
+        })
         relayClient.emit(.failed("Relay did not return ready after registration."))
         await Task.yield()
 
@@ -29440,6 +30906,32 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(allocation.runtimeKeyFingerprint, authorization.identity.fingerprint)
         XCTAssertEqual(allocation.ticketGeneration, 1)
         XCTAssertEqual(allocation.cryptoVersion, 2)
+    }
+
+    func testTCPRelayServiceRouteAllocatorUsesAbsoluteDeadlineAgainstSlowTrickle() throws {
+        let authorization = try testRelayAuthorization()
+        let server = try TricklingRelayAllocationServer(
+            response: "AETHERLINK_RELAY allocation_challenge this-line-never-finishes\n",
+            byteDelayMicroseconds: 20_000
+        )
+        defer { server.stop() }
+        let cancellation = RelayRouteAllocationCancellation(timeout: 0.08)
+        let startedAt = Date()
+
+        XCTAssertThrowsError(try TCPRelayServiceRouteAllocator().allocateRelayRoute(
+            host: "127.0.0.1",
+            port: server.port,
+            routeToken: "route-token-slow-trickle",
+            allocationToken: nil,
+            runtimeIdentity: authorization.identity,
+            identityAuthorizationSigner: authorization.signer,
+            timeout: 0.08,
+            cancellation: cancellation
+        )) {
+            XCTAssertEqual($0 as? RelayServiceRouteAllocationError, .allocationTimedOut)
+        }
+
+        XCTAssertLessThan(Date().timeIntervalSince(startedAt), 0.5)
     }
 
     func testTCPRelayServiceRouteAllocatorRejectsSecretAndAnyExtraV2ResponseFields() throws {
@@ -29880,13 +31372,10 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertFalse(model.isDevelopmentRelayQRCodeReady)
         XCTAssertFalse(model.shouldIncludeDevelopmentRelayInPairingQRCode)
         XCTAssertNil(model.pairingSession)
-        XCTAssertEqual(
-            model.logs.first,
-            "Remote pairing QR not generated: remote route relay.example.test:43171 is not ready"
-        )
+        XCTAssertTrue(model.isRemoteRoutePreparationInFlight)
 
         relayClient.emit(.waitingForPeer)
-        await Task.yield()
+        assertAsyncTrue(await waitForCondition { model.pairingSession != nil })
 
         XCTAssertTrue(model.hasDevelopmentRelayRoute)
         XCTAssertEqual(model.developmentRelayEndpoint, "relay.example.test:43171")
@@ -30156,6 +31645,10 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertFalse(model.isDevelopmentRelayRoutePreparedForQRCode)
 
         model.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            serviceAllocator.calls.count == 2 &&
+                relayClient.startedConfiguration?.relayID == "allocated-relay-retry"
+        })
         XCTAssertNil(model.pairingSession)
         XCTAssertEqual(serviceAllocator.calls.count, 2)
         XCTAssertEqual(serviceAllocator.calls.last?.host, "relay.example.test")
@@ -30163,7 +31656,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(relayClient.startedConfiguration?.relayNonce, "allocated-nonce-retry")
 
         relayClient.emit(.waitingForPeer)
-        await Task.yield()
+        assertAsyncTrue(await waitForCondition { model.pairingSession != nil })
 
         let qrItems = try queryItems(from: try XCTUnwrap(model.pairingSession).qrPayload)
         XCTAssertEqual(qrItems["relay_host"], "relay.example.test")
@@ -30275,7 +31768,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
-    func testCompanionAppModelWaitsForLeaseBeforeUsingCGNATPrivateOverlayRelayQRCode() async throws {
+    func testCompanionAppModelRejectsPrivateOverlayQRCodeWithoutAllocatedLease() async throws {
         let relayClient = FakeRelayPeerClient()
         let model = CompanionAppModel(
             backend: MockBackend(status: .available),
@@ -30300,12 +31793,18 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertTrue(model.developmentRelaySettings.allowsPrivateOverlay)
         XCTAssertTrue(model.isDevelopmentRelayRouteEligibleForQRCode)
         XCTAssertFalse(model.isDevelopmentRelayQRCodeReady)
+        XCTAssertFalse(model.canRequestRemotePairingForUserInterface)
 
         model.beginPairing()
 
         XCTAssertNil(model.pairingSession)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.kind, .routeLeaseRefreshRejected)
+        XCTAssertEqual(
+            model.remoteRoutePreparationIssue?.message,
+            "Private-overlay connection details require an allocated route lease before QR generation."
+        )
         XCTAssertTrue(model.logs.contains(
-            "Remote pairing QR not generated: remote route 100.64.1.10:43171 is not ready"
+            "Remote pairing QR not generated: Private-overlay connection details require an allocated route lease before QR generation."
         ))
     }
 
@@ -30378,6 +31877,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         await Task.yield()
 
         model.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            model.remoteRoutePreparationIssue?.kind == .routeLeaseRefreshFailed
+        })
 
         XCTAssertNil(model.pairingSession)
         XCTAssertEqual(serviceAllocator.calls.count, 1)
@@ -30511,6 +32013,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
 
         model.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            model.remoteRoutePreparationIssue?.kind == .automaticPreparationRejected
+        })
 
         XCTAssertNil(model.pairingSession)
         XCTAssertNil(relayClient.startedConfiguration)
@@ -30554,13 +32059,16 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
 
         model.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            relayClient.startedConfiguration?.host == "192.168.50.10"
+        })
 
         XCTAssertNil(model.pairingSession)
         XCTAssertEqual(relayClient.startedConfiguration?.host, "192.168.50.10")
         XCTAssertNil(model.remoteRoutePreparationIssue)
 
         relayClient.emit(.waitingForPeer)
-        await Task.yield()
+        assertAsyncTrue(await waitForCondition { model.pairingSession != nil })
 
         let queryItems = try queryItems(from: try XCTUnwrap(model.pairingSession).qrPayload)
         XCTAssertEqual(queryItems["relay_host"], "192.168.50.10")
@@ -30575,7 +32083,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
-    func testCompanionAppModelAllowsEnvironmentPrivateOverlayRelayButWaitsForLease() async throws {
+    func testCompanionAppModelEnvironmentPrivateOverlayRelayRequiresAllocatedLease() async throws {
         let relayClient = FakeRelayPeerClient()
         let model = CompanionAppModel(
             backend: MockBackend(status: .available),
@@ -30609,9 +32117,185 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         model.beginPairing()
 
         XCTAssertNil(model.pairingSession)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.kind, .routeLeaseRefreshRejected)
         XCTAssertTrue(model.logs.contains(
-            "Remote pairing QR not generated: remote route 192.168.50.10:43171 is not ready"
+            "Remote pairing QR not generated: Private-overlay connection details require an allocated route lease before QR generation."
         ))
+    }
+
+    @MainActor
+    func testCompanionAppModelFreshSavedLeaseDoesNotEnableQRCodeWhenKeychainSecretIsMissing() async throws {
+        let defaults = try isolatedDefaults()
+        defaults.set("relay.secretless.test", forKey: "aetherlink.relay.host")
+        defaults.set(443, forKey: "aetherlink.relay.port")
+        defaults.set("relay-secretless", forKey: "aetherlink.relay.id")
+        defaults.set("missing-keychain-reference", forKey: "aetherlink.relay.secret_ref")
+        defaults.set(4_102_444_800_000, forKey: "aetherlink.relay.lease_expires_at")
+        defaults.set("nonce-secretless", forKey: "aetherlink.relay.lease_nonce")
+        defaults.set("relay.secretless.test", forKey: "aetherlink.relay.lease_host")
+        defaults.set(443, forKey: "aetherlink.relay.lease_port")
+        defaults.set("relay-secretless", forKey: "aetherlink.relay.lease_id")
+        let allocator = FakeRemoteRelayRouteAllocator(
+            allocation: nil,
+            canAllocateRemoteRelayRoute: false
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            remoteRelayRouteAllocator: allocator,
+            environment: [:],
+            userDefaults: defaults,
+            relaySecretStore: FakeCompanionRelaySecretStore()
+        )
+
+        XCTAssertTrue(model.isDevelopmentRelayRoutePreparedForQRCode)
+        XCTAssertFalse(model.relayFrameEncryptionEnabled)
+        XCTAssertFalse(model.isDevelopmentRelayRouteEligibleForQRCode)
+        XCTAssertFalse(model.isDevelopmentRelayQRCodeReady)
+        XCTAssertFalse(model.canRequestRemotePairingForUserInterface)
+
+        model.beginPairing()
+        await Task.yield()
+
+        XCTAssertNil(model.pairingSession)
+        XCTAssertTrue(allocator.calls.isEmpty)
+        XCTAssertNil(defaults.string(forKey: "aetherlink.relay.secret_ref"))
+        XCTAssertTrue(model.logs.contains(
+            "Remote pairing QR not generated: remote route relay.secretless.test:443 cannot be included in QR"
+        ))
+    }
+
+    @MainActor
+    func testCompanionAppModelEnvironmentHostOnlyCannotBypassExpectedSecretHandleForQRCode() async throws {
+        let defaults = try isolatedDefaults()
+        defaults.set("environment-host-device", forKey: "aetherlink.mac_device_id")
+        defaults.set("wrong-relay-secret-ref", forKey: "aetherlink.relay.secret_ref")
+        defaults.set(4_102_444_800_000, forKey: "aetherlink.relay.lease_expires_at")
+        defaults.set("nonce-environment-host", forKey: "aetherlink.relay.lease_nonce")
+        defaults.set("relay.environment-host.test", forKey: "aetherlink.relay.lease_host")
+        defaults.set(443, forKey: "aetherlink.relay.lease_port")
+        defaults.set("relay-environment-host", forKey: "aetherlink.relay.lease_id")
+        let relaySecretStore = FakeCompanionRelaySecretStore()
+        relaySecretStore.saveSecret("secret-from-wrong-handle", for: "wrong-relay-secret-ref")
+        let allocator = FakeRemoteRelayRouteAllocator(
+            allocation: nil,
+            canAllocateRemoteRelayRoute: false
+        )
+        let relayClient = FakeRelayPeerClient()
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: relayClient,
+            remoteRelayRouteAllocator: allocator,
+            environment: [
+                "AETHERLINK_BOOTSTRAP_RELAY_HOST": "relay.environment-host.test",
+                "AETHERLINK_BOOTSTRAP_RELAY_PORT": "443"
+            ],
+            userDefaults: defaults,
+            relaySecretStore: relaySecretStore,
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+
+        model.start(port: 43210)
+        relayClient.emit(.waitingForPeer)
+        await Task.yield()
+
+        XCTAssertEqual(relayClient.startedConfiguration?.relaySecret, "secret-from-wrong-handle")
+        XCTAssertFalse(model.isDevelopmentRelayQRCodeReady)
+        XCTAssertFalse(model.shouldIncludeDevelopmentRelayInPairingQRCode)
+
+        model.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            !model.isRemoteRoutePreparationInFlight &&
+                model.remoteRoutePreparationIssue != nil
+        })
+        XCTAssertNil(model.pairingSession)
+        XCTAssertEqual(allocator.calls.count, 1)
+    }
+
+    @MainActor
+    func testCompanionAppModelExplicitEnvironmentSecretRemainsQRCodeEligibleWithoutKeychainHandle() async throws {
+        let defaults = try isolatedDefaults()
+        defaults.set(4_102_444_800_000, forKey: "aetherlink.relay.lease_expires_at")
+        defaults.set("nonce-environment-ephemeral", forKey: "aetherlink.relay.lease_nonce")
+        defaults.set("relay.environment-ephemeral.test", forKey: "aetherlink.relay.lease_host")
+        defaults.set(443, forKey: "aetherlink.relay.lease_port")
+        defaults.set("relay-environment-ephemeral", forKey: "aetherlink.relay.lease_id")
+        let relayClient = FakeRelayPeerClient()
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: relayClient,
+            environment: [
+                "AETHERLINK_RELAY_HOST": "relay.environment-ephemeral.test",
+                "AETHERLINK_RELAY_PORT": "443",
+                "AETHERLINK_RELAY_ID": "relay-environment-ephemeral",
+                "AETHERLINK_RELAY_SECRET": "secret-environment-ephemeral"
+            ],
+            userDefaults: defaults,
+            relaySecretStore: FakeCompanionRelaySecretStore(),
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+
+        model.start(port: 43210)
+        relayClient.emit(.waitingForPeer)
+        assertAsyncTrue(await waitForCondition { model.isDevelopmentRelayQRCodeReady })
+
+        model.beginPairing()
+        let session = try XCTUnwrap(model.pairingSession)
+        let qrItems = try queryItems(from: session.qrPayload)
+        XCTAssertEqual(qrItems["relay_id"], "relay-environment-ephemeral")
+        XCTAssertEqual(qrItems["relay_secret"], "secret-environment-ephemeral")
+        XCTAssertNil(defaults.string(forKey: "aetherlink.relay.secret_ref"))
+    }
+
+    @MainActor
+    func testCompanionAppModelKeychainWriteFailureRejectsFreshAllocationBeforeQRCode() async throws {
+        let defaults = try isolatedDefaults()
+        let relaySecretStore = RejectingCompanionRelaySecretStore()
+        let allocator = FakeRemoteRelayRouteAllocator(
+            allocation: remoteRouteAllocation(
+                host: "relay.keychain-write-failure.test",
+                relayID: "relay-keychain-write-failure",
+                relaySecret: "secret-keychain-write-failure",
+                relayNonce: "nonce-keychain-write-failure"
+            )
+        )
+        let relayClient = FakeRelayPeerClient()
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: relayClient,
+            remoteRelayRouteAllocator: allocator,
+            userDefaults: defaults,
+            relaySecretStore: relaySecretStore,
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+
+        model.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            !model.isRemoteRoutePreparationInFlight &&
+                model.remoteRoutePreparationIssue?.kind == .routeLeaseSecretMissing
+        })
+
+        XCTAssertEqual(relaySecretStore.saveAttempts.count, 1)
+        XCTAssertEqual(allocator.calls.count, 1)
+        XCTAssertFalse(model.developmentRelaySettings.isEnabled)
+        XCTAssertFalse(model.isDevelopmentRelayQRCodeReady)
+        XCTAssertNil(model.pairingSession)
+        XCTAssertNil(relayClient.startedConfiguration)
+        XCTAssertEqual(
+            model.remoteRoutePreparationIssue?.message,
+            "Connection secret could not be saved securely."
+        )
+        XCTAssertNil(defaults.string(forKey: "aetherlink.relay.host"))
+        XCTAssertNil(defaults.string(forKey: "aetherlink.relay.id"))
+        XCTAssertNil(defaults.string(forKey: "aetherlink.relay.secret_ref"))
+        XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.lease_expires_at"), 0)
     }
 
     @MainActor
@@ -30650,8 +32334,12 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
 
         model.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            allocator.calls.count == 1 &&
+                relayClient.startedConfiguration?.relayID == "relay-opaque-bootstrap"
+        })
         relayClient.emit(.waitingForPeer)
-        await Task.yield()
+        assertAsyncTrue(await waitForCondition { model.pairingSession != nil })
 
         let qrItems = try queryItems(from: try XCTUnwrap(model.pairingSession).qrPayload)
         XCTAssertEqual(relayClient.startedConfiguration?.relayNonce, "allocated-nonce-1")
@@ -30686,8 +32374,11 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
 
         restoredModel.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            restoredRelayClient.startedConfiguration?.relayID == "relay-opaque-bootstrap"
+        })
         restoredRelayClient.emit(.waitingForPeer)
-        await Task.yield()
+        assertAsyncTrue(await waitForCondition { restoredModel.pairingSession != nil })
 
         let restoredQRItems = try queryItems(from: try XCTUnwrap(restoredModel.pairingSession).qrPayload)
         XCTAssertEqual(restoredRelayClient.startedConfiguration?.relayNonce, "allocated-nonce-1")
@@ -30743,6 +32434,10 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
 
         model.start(port: 43210)
+        assertAsyncTrue(await waitForCondition {
+            !model.isRemoteRoutePreparationInFlight &&
+                relayClient.startedConfiguration?.relayNonce == "nonce-renewed"
+        })
 
         XCTAssertEqual(allocator.calls.count, 1)
         XCTAssertEqual(allocator.calls.first?.preferredRelaySecret, "saved-secret")
@@ -30753,8 +32448,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         assertStoredRelaySecret("saved-secret", defaults: defaults, store: relaySecretStore)
 
         relayClient.emit(.waitingForPeer)
-        await Task.yield()
+        assertAsyncTrue(await waitForCondition { model.isDevelopmentRelayQRCodeReady })
         model.beginPairing()
+        assertAsyncTrue(await waitForCondition { model.pairingSession != nil })
 
         XCTAssertEqual(allocator.calls.count, 1)
         let qrItems = try queryItems(from: try XCTUnwrap(model.pairingSession).qrPayload)
@@ -30812,6 +32508,10 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
 
         model.start(port: 43210)
+        assertAsyncTrue(await waitForCondition {
+            !model.isRemoteRoutePreparationInFlight &&
+                relayClient.startedConfiguration?.relayNonce == "nonce-current"
+        })
 
         XCTAssertEqual(allocator.calls.count, 1)
         XCTAssertEqual(relayClient.startedConfiguration?.relayID, "relay-stable")
@@ -30822,8 +32522,11 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         assertStoredRelaySecret("saved-secret", defaults: defaults, store: relaySecretStore)
 
         relayClient.emit(.waitingForPeer)
-        await Task.yield()
         model.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            allocator.calls.count == 2 &&
+                model.remoteRoutePreparationIssue?.kind == .automaticPreparationRejected
+        })
 
         XCTAssertNil(model.pairingSession)
         XCTAssertEqual(allocator.calls.count, 2)
@@ -30866,8 +32569,10 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
 
         model.start(port: 43210)
         relayClient.emit(.waitingForPeer)
-        await Task.yield()
         model.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            model.remoteRoutePreparationIssue?.kind == .routeLeaseRefreshFailed
+        })
 
         XCTAssertNil(model.pairingSession)
         XCTAssertNil(relayClient.startedConfiguration?.relayNonce)
@@ -30917,8 +32622,12 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
 
         model.beginPairing()
+        assertAsyncTrue(await waitForCondition {
+            allocator.calls.count == 1 &&
+                relayClient.startedConfiguration?.relayID == "relay-opaque-bootstrap-fresh"
+        })
         relayClient.emit(.waitingForPeer)
-        await Task.yield()
+        assertAsyncTrue(await waitForCondition { model.pairingSession != nil })
 
         let qrItems = try queryItems(from: try XCTUnwrap(model.pairingSession).qrPayload)
         XCTAssertEqual(qrItems["relay_host"], "relay.example.test")
@@ -30987,10 +32696,14 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
 
         model.beginPairing()
         XCTAssertNil(model.pairingSession)
+        assertAsyncTrue(await waitForCondition {
+            serviceAllocator.calls.count == 2 &&
+                relayClient.startedConfiguration?.relayID == "allocated-relay-fresh"
+        })
         XCTAssertEqual(relayClient.startedConfiguration?.relayID, "allocated-relay-fresh")
         XCTAssertEqual(relayClient.startedConfiguration?.relayNonce, "fresh-nonce")
         relayClient.emit(.waitingForPeer)
-        await Task.yield()
+        assertAsyncTrue(await waitForCondition { model.pairingSession != nil })
 
         let qrItems = try queryItems(from: try XCTUnwrap(model.pairingSession).qrPayload)
         XCTAssertEqual(qrItems["relay_host"], "relay.example.test")
@@ -31060,10 +32773,14 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
 
         model.beginPairing()
         XCTAssertNil(model.pairingSession)
+        assertAsyncTrue(await waitForCondition {
+            serviceAllocator.calls.count == 2 &&
+                relayClient.startedConfiguration?.relayID == "allocated-relay-fresh"
+        })
         XCTAssertEqual(relayClient.startedConfiguration?.relayID, "allocated-relay-fresh")
         XCTAssertEqual(relayClient.startedConfiguration?.relayNonce, "fresh-nonce")
         relayClient.emit(.waitingForPeer)
-        await Task.yield()
+        assertAsyncTrue(await waitForCondition { model.pairingSession != nil })
 
         let qrItems = try queryItems(from: try XCTUnwrap(model.pairingSession).qrPayload)
         XCTAssertEqual(qrItems["relay_host"], "relay.example.test")
@@ -31765,7 +33482,10 @@ private func makeRouter(
     routeRefresher: (any RuntimeRouteRefreshing)? = nil,
     runtimeChallengeSigner: (any RuntimeChallengeSigning & InitialPairingRuntimeResultSigning)? = nil,
     pairedRelayAuthorizationTimeout: TimeInterval = 5,
+    requestTaskGlobalLimit: Int = 128,
+    requestTaskPerConnectionLimit: Int = 32,
     requestTaskRegistrationCheckpoint: (@Sendable () -> Void)? = nil,
+    requestTaskCompletionCheckpoint: (@Sendable () -> Void)? = nil,
     modelsListWaiterRegistrationCheckpoint: (@Sendable () -> Void)? = nil,
     memorySummaryCacheCommitCheckpoint: (@Sendable () -> Void)? = nil,
     memorySummaryPublicationCheckpoint: (@Sendable () -> Void)? = nil,
@@ -31822,7 +33542,10 @@ private func makeRouter(
         routeRefresher: routeRefresher,
         runtimeChallengeSigner: runtimeChallengeSigner,
         pairedRelayAuthorizationTimeout: pairedRelayAuthorizationTimeout,
+        requestTaskGlobalLimit: requestTaskGlobalLimit,
+        requestTaskPerConnectionLimit: requestTaskPerConnectionLimit,
         requestTaskRegistrationCheckpoint: requestTaskRegistrationCheckpoint,
+        requestTaskCompletionCheckpoint: requestTaskCompletionCheckpoint,
         modelsListWaiterRegistrationCheckpoint: modelsListWaiterRegistrationCheckpoint,
         memorySummaryCacheCommitCheckpoint: memorySummaryCacheCommitCheckpoint,
         memorySummaryPublicationCheckpoint: memorySummaryPublicationCheckpoint,
@@ -33761,12 +35484,12 @@ private final class FakeRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAllo
 
     init(
         allocation: CompanionRemoteRelayRouteAllocation?,
-        canAllocateRemoteRelayRoute: Bool = false,
+        canAllocateRemoteRelayRoute: Bool? = nil,
         error: Error? = nil,
         onAllocate: (() -> Void)? = nil
     ) {
         self.allocation = allocation
-        self.canAllocateRemoteRelayRoute = canAllocateRemoteRelayRoute
+        self.canAllocateRemoteRelayRoute = canAllocateRemoteRelayRoute ?? (allocation != nil || error != nil)
         self.error = error
         self.onAllocate = onAllocate
     }
@@ -33776,8 +35499,10 @@ private final class FakeRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAllo
         routeToken: String,
         preferredRelaySecret: String?,
         runtimeIdentity: RelayRuntimeIdentity,
-        identityAuthorizationSigner: any RelayIdentityAuthorizationSigning
+        identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
+        cancellation: RelayRouteAllocationCancellation
     ) throws -> CompanionRemoteRelayRouteAllocation? {
+        try cancellation.throwIfCancelledOrExpired()
         calls.append(Call(
             runtimeDeviceID: runtimeDeviceID,
             routeToken: routeToken,
@@ -33788,6 +35513,334 @@ private final class FakeRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAllo
             throw error
         }
         return allocation
+    }
+}
+
+private func remoteRouteAllocation(
+    host: String,
+    relayID: String,
+    relaySecret: String,
+    relayNonce: String
+) -> CompanionRemoteRelayRouteAllocation {
+    CompanionRemoteRelayRouteAllocation(
+        configuration: RelayPeerConfiguration(
+            host: host,
+            port: 43171,
+            relayID: relayID,
+            relaySecret: relaySecret
+        ),
+        lease: CompanionRemoteRouteLease(
+            expiresAtEpochMillis: 4_102_444_800_000,
+            nonce: relayNonce
+        )
+    )
+}
+
+private final class BlockingRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAllocating, @unchecked Sendable {
+    enum Outcome: Sendable {
+        case allocation(CompanionRemoteRelayRouteAllocation?)
+        case failure(String)
+    }
+
+    struct Call: Equatable, Sendable {
+        var runtimeDeviceID: String
+        var routeToken: String
+        var preferredRelaySecret: String?
+        var runtimeIdentity: RelayRuntimeIdentity
+        var signerRuntimeIdentity: RelayRuntimeIdentity?
+    }
+
+    private final class Gate: @unchecked Sendable {
+        let started = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let cancelled = DispatchSemaphore(value: 0)
+        let finishAfterCancellation = DispatchSemaphore(value: 0)
+        let finished = DispatchSemaphore(value: 0)
+    }
+
+    let canAllocateRemoteRelayRoute = true
+    private let outcomes: [Outcome]
+    private let gates: [Gate]
+    private let holdCancelledWorkersUntilReleased: Bool
+    private let lock = NSLock()
+    private var calls: [Call] = []
+
+    init(
+        outcomes: [Outcome],
+        holdCancelledWorkersUntilReleased: Bool = false
+    ) {
+        self.outcomes = outcomes
+        self.gates = outcomes.map { _ in Gate() }
+        self.holdCancelledWorkersUntilReleased = holdCancelledWorkersUntilReleased
+    }
+
+    var recordedCalls: [Call] {
+        lock.withLock { calls }
+    }
+
+    func waitUntilStarted(call index: Int, timeout: TimeInterval = 1) async -> Bool {
+        guard gates.indices.contains(index) else { return false }
+        return await waitForSemaphore(gates[index].started, timeout: timeout)
+    }
+
+    func release(call index: Int) {
+        guard gates.indices.contains(index) else { return }
+        gates[index].release.signal()
+    }
+
+    func waitUntilCancelled(call index: Int, timeout: TimeInterval = 1) async -> Bool {
+        guard gates.indices.contains(index) else { return false }
+        return await waitForSemaphore(gates[index].cancelled, timeout: timeout)
+    }
+
+    func waitUntilFinished(call index: Int, timeout: TimeInterval = 1) async -> Bool {
+        guard gates.indices.contains(index) else { return false }
+        return await waitForSemaphore(gates[index].finished, timeout: timeout)
+    }
+
+    func allowCancelledWorkerToFinish(call index: Int) {
+        guard gates.indices.contains(index) else { return }
+        gates[index].finishAfterCancellation.signal()
+    }
+
+    func allocateRemoteRelayRoute(
+        runtimeDeviceID: String,
+        routeToken: String,
+        preferredRelaySecret: String?,
+        runtimeIdentity: RelayRuntimeIdentity,
+        identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
+        cancellation: RelayRouteAllocationCancellation
+    ) throws -> CompanionRemoteRelayRouteAllocation? {
+        let callIndex = lock.withLock { () -> Int in
+            let index = calls.count
+            calls.append(Call(
+                runtimeDeviceID: runtimeDeviceID,
+                routeToken: routeToken,
+                preferredRelaySecret: preferredRelaySecret,
+                runtimeIdentity: runtimeIdentity,
+                signerRuntimeIdentity: try? identityAuthorizationSigner.relayRuntimeIdentity()
+            ))
+            return index
+        }
+        guard gates.indices.contains(callIndex), outcomes.indices.contains(callIndex) else {
+            throw BlockingRemoteRelayRouteAllocatorError.unexpectedCall
+        }
+        let gate = gates[callIndex]
+        defer { gate.finished.signal() }
+        gate.started.signal()
+        let cancellationHandlerID = cancellation.addCancellationHandler {
+            gate.release.signal()
+        }
+        defer { cancellation.removeCancellationHandler(cancellationHandlerID) }
+        guard gate.release.wait(timeout: .now() + 5) == .success else {
+            throw BlockingRemoteRelayRouteAllocatorError.releaseTimedOut
+        }
+        do {
+            try cancellation.throwIfCancelledOrExpired()
+        } catch {
+            if cancellation.isCancelled {
+                gate.cancelled.signal()
+                if holdCancelledWorkersUntilReleased,
+                   gate.finishAfterCancellation.wait(timeout: .now() + 5) != .success {
+                    throw BlockingRemoteRelayRouteAllocatorError.releaseTimedOut
+                }
+            }
+            throw error
+        }
+        switch outcomes[callIndex] {
+        case .allocation(let allocation):
+            return allocation
+        case .failure(let message):
+            throw BlockingRemoteRelayRouteAllocatorError.failure(message)
+        }
+    }
+}
+
+private enum BlockingRemoteRelayRouteAllocatorError: Error, LocalizedError {
+    case unexpectedCall
+    case releaseTimedOut
+    case failure(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unexpectedCall:
+            return "Unexpected blocking route allocation call."
+        case .releaseTimedOut:
+            return "Blocking route allocation release timed out."
+        case .failure(let message):
+            return message
+        }
+    }
+}
+
+private final class BlockingRelayServiceRouteAllocator: RelayServiceRouteAllocating, @unchecked Sendable {
+    struct Call: Equatable, Sendable {
+        var host: String
+        var port: UInt16
+        var routeToken: String
+        var allocationToken: String?
+    }
+
+    private let responseHost: String
+    private let responsePort: UInt16
+    private let responseRelayID: String
+    private let responseRelayNonce: String
+    private let holdCancelledWorkerUntilReleased: Bool
+    private let started = DispatchSemaphore(value: 0)
+    private let finished = DispatchSemaphore(value: 0)
+    private let releaseGate = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var calls: [Call] = []
+
+    init(
+        host: String,
+        port: UInt16,
+        relayID: String,
+        relayNonce: String,
+        holdCancelledWorkerUntilReleased: Bool = false
+    ) {
+        responseHost = host
+        responsePort = port
+        responseRelayID = relayID
+        responseRelayNonce = relayNonce
+        self.holdCancelledWorkerUntilReleased = holdCancelledWorkerUntilReleased
+    }
+
+    var recordedCalls: [Call] {
+        lock.withLock { calls }
+    }
+
+    func waitUntilStarted(timeout: TimeInterval = 1) async -> Bool {
+        await waitForSemaphore(started, timeout: timeout)
+    }
+
+    func waitUntilFinished(timeout: TimeInterval = 1) async -> Bool {
+        await waitForSemaphore(finished, timeout: timeout)
+    }
+
+    func release() {
+        releaseGate.signal()
+    }
+
+    func allocateRelayRoute(
+        host: String,
+        port: UInt16,
+        routeToken: String,
+        allocationToken: String?,
+        runtimeIdentity: RelayRuntimeIdentity,
+        identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
+        timeout: TimeInterval,
+        cancellation: RelayRouteAllocationCancellation
+    ) throws -> RelayServiceRouteAllocation {
+        defer { finished.signal() }
+        lock.withLock {
+            calls.append(Call(
+                host: host,
+                port: port,
+                routeToken: routeToken,
+                allocationToken: allocationToken
+            ))
+        }
+        started.signal()
+        let cancellationHandlerID = cancellation.addCancellationHandler {
+            if !self.holdCancelledWorkerUntilReleased {
+                self.releaseGate.signal()
+            }
+        }
+        defer { cancellation.removeCancellationHandler(cancellationHandlerID) }
+        guard releaseGate.wait(timeout: .now() + 5) == .success else {
+            throw BlockingRemoteRelayRouteAllocatorError.releaseTimedOut
+        }
+        try cancellation.throwIfCancelledOrExpired()
+        return RelayServiceRouteAllocation(
+            host: responseHost,
+            port: responsePort,
+            relayID: responseRelayID,
+            relayExpiresAtEpochMillis: 4_102_444_800_000,
+            relayNonce: responseRelayNonce,
+            runtimeKeyFingerprint: runtimeIdentity.fingerprint,
+            ticketGeneration: 1
+        )
+    }
+}
+
+private final class TricklingRelayAllocationServer: @unchecked Sendable {
+    let port: UInt16
+
+    private let listenSocket: Int32
+    private let response: [UInt8]
+    private let byteDelayMicroseconds: useconds_t
+
+    init(response: String, byteDelayMicroseconds: useconds_t) throws {
+        let socket = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+        guard socket >= 0 else {
+            throw RelayAllocationServerError.socket(String(cString: strerror(errno)))
+        }
+        var yes: Int32 = 1
+        setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = UInt16(0).bigEndian
+        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        let bound = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                Darwin.bind(socket, sockaddrPointer, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard bound == 0, Darwin.listen(socket, 1) == 0 else {
+            Darwin.close(socket)
+            throw RelayAllocationServerError.socket(String(cString: strerror(errno)))
+        }
+
+        var boundAddress = sockaddr_in()
+        var boundAddressLength = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let named = withUnsafeMutablePointer(to: &boundAddress) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                Darwin.getsockname(socket, sockaddrPointer, &boundAddressLength)
+            }
+        }
+        guard named == 0 else {
+            Darwin.close(socket)
+            throw RelayAllocationServerError.socket(String(cString: strerror(errno)))
+        }
+
+        listenSocket = socket
+        port = UInt16(bigEndian: boundAddress.sin_port)
+        self.response = Array(response.utf8)
+        self.byteDelayMicroseconds = byteDelayMicroseconds
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            self?.serveOnce()
+        }
+    }
+
+    func stop() {
+        Darwin.close(listenSocket)
+    }
+
+    private func serveOnce() {
+        let socket = Darwin.accept(listenSocket, nil, nil)
+        guard socket >= 0 else { return }
+        defer { Darwin.close(socket) }
+        var noSigPipe: Int32 = 1
+        setsockopt(socket, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
+
+        while true {
+            var byte: UInt8 = 0
+            guard Darwin.recv(socket, &byte, 1, 0) == 1 else { return }
+            if byte == UInt8(ascii: "\n") { break }
+        }
+
+        for responseByte in response {
+            var byte = responseByte
+            let sent = withUnsafeBytes(of: &byte) { rawBuffer in
+                Darwin.send(socket, rawBuffer.baseAddress, rawBuffer.count, 0)
+            }
+            guard sent == 1 else { return }
+            Darwin.usleep(byteDelayMicroseconds)
+        }
     }
 }
 
@@ -33918,8 +35971,10 @@ private final class FakeRelayServiceRouteAllocator: RelayServiceRouteAllocating,
         allocationToken: String?,
         runtimeIdentity: RelayRuntimeIdentity,
         identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        cancellation: RelayRouteAllocationCancellation
     ) throws -> RelayServiceRouteAllocation {
+        try cancellation.throwIfCancelledOrExpired()
         calls.append(Call(
             host: host,
             port: port,
@@ -33974,6 +36029,20 @@ private final class FakeCompanionRelaySecretStore: CompanionRelaySecretStoring, 
     func removeSecret(for handle: String) {
         secrets.removeValue(forKey: handle)
     }
+}
+
+private final class RejectingCompanionRelaySecretStore: CompanionRelaySecretStoring, @unchecked Sendable {
+    private(set) var saveAttempts: [(secret: String, handle: String)] = []
+
+    func saveSecret(_ secret: String, for handle: String) {
+        saveAttempts.append((secret, handle))
+    }
+
+    func readSecret(for handle: String) -> String? {
+        nil
+    }
+
+    func removeSecret(for handle: String) {}
 }
 
 private func assertStoredRelaySecret(
@@ -34180,6 +36249,14 @@ private func waitForSessionTitle(
     return lastTitle
 }
 
+private func assertAsyncTrue(
+    _ result: Bool,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
+    XCTAssertTrue(result, file: file, line: line)
+}
+
 private func waitForCondition(
     timeout: TimeInterval = 1.0,
     _ condition: () -> Bool
@@ -34365,6 +36442,10 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
     private let modelListCancellationReleaseLock = NSLock()
     private var modelListCancellationReleaseRequested = false
     private var modelListCancellationReleaseContinuations: [CheckedContinuation<Void, Never>] = []
+    private let holdHealthCheckUntilReleased: Bool
+    private let healthCheckReleaseLock = NSLock()
+    private var healthCheckReleaseRequested = false
+    private var healthCheckReleaseContinuations: [CheckedContinuation<Void, Never>] = []
     private let pullResult: ModelPullResult
     private let pullError: Error?
     private let unloadError: Error?
@@ -34416,6 +36497,7 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
         holdModelListUntilReleased: Bool = false,
         holdModelListUntilCancelled: Bool = false,
         holdModelListCancellationUntilReleased: Bool = false,
+        holdHealthCheckUntilReleased: Bool = false,
         pullResult: ModelPullResult = ModelPullResult(model: "mock", status: "success", installed: true),
         pullError: Error? = nil,
         unloadError: Error? = nil,
@@ -34447,6 +36529,7 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
         self.holdModelListUntilCancelled = holdModelListUntilCancelled
         self.holdModelListCancellationUntilReleased =
             holdModelListCancellationUntilReleased
+        self.holdHealthCheckUntilReleased = holdHealthCheckUntilReleased
         self.pullResult = pullResult
         self.pullError = pullError
         self.unloadError = unloadError
@@ -34483,6 +36566,16 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
 
     var listModelsCallCount: Int {
         listModelsCallCountLock.withLock { listModelsCalls }
+    }
+
+    func releaseHeldHealthChecks() {
+        let continuations = healthCheckReleaseLock.withLock {
+            healthCheckReleaseRequested = true
+            let continuations = healthCheckReleaseContinuations
+            healthCheckReleaseContinuations.removeAll()
+            return continuations
+        }
+        continuations.forEach { $0.resume() }
     }
 
     var modelListCancellationCount: Int {
@@ -34550,6 +36643,16 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
     func healthCheck() async -> BackendStatus {
         healthCheckCallCountLock.withLock {
             healthCheckCalls += 1
+        }
+        if holdHealthCheckUntilReleased {
+            await withCheckedContinuation { continuation in
+                let resumeImmediately = healthCheckReleaseLock.withLock { () -> Bool in
+                    guard !healthCheckReleaseRequested else { return true }
+                    healthCheckReleaseContinuations.append(continuation)
+                    return false
+                }
+                if resumeImmediately { continuation.resume() }
+            }
         }
         return status
     }
@@ -34784,6 +36887,7 @@ private final class RecordingRuntimeChatEventStore: RuntimeChatEventStore, @unch
     private let onAppend: ((RuntimeChatStoredEvent) throws -> Void)?
     private let onMutation: (@Sendable () -> Void)?
     private let sourceAttributionResolution: RuntimeChatResolvedSourceAttribution?
+    private let listMessagesFailure: (any Error)?
     private var compactionCalibrationReport: RuntimeChatCompactionCalibrationReport
     private var compactionCalibrationReportFailure: (any Error)?
     private var didReadCompactionCalibrationReportOnMainThread = false
@@ -34794,6 +36898,7 @@ private final class RecordingRuntimeChatEventStore: RuntimeChatEventStore, @unch
         onAppend: ((RuntimeChatStoredEvent) throws -> Void)? = nil,
         onMutation: (@Sendable () -> Void)? = nil,
         sourceAttributionResolution: RuntimeChatResolvedSourceAttribution? = nil,
+        listMessagesFailure: (any Error)? = nil,
         compactionCalibrationReport: RuntimeChatCompactionCalibrationReport =
             RuntimeChatCompactionCalibrationReport()
     ) {
@@ -34802,6 +36907,7 @@ private final class RecordingRuntimeChatEventStore: RuntimeChatEventStore, @unch
         self.onAppend = onAppend
         self.onMutation = onMutation
         self.sourceAttributionResolution = sourceAttributionResolution
+        self.listMessagesFailure = listMessagesFailure
         self.compactionCalibrationReport = compactionCalibrationReport
     }
 
@@ -34953,7 +37059,10 @@ private final class RecordingRuntimeChatEventStore: RuntimeChatEventStore, @unch
     }
 
     func listMessages(ownerDeviceID: String?, sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage] {
-        lock.withLock { Array((storedMessages[sessionID] ?? []).suffix(limit)) }
+        if let listMessagesFailure {
+            throw listMessagesFailure
+        }
+        return lock.withLock { Array((storedMessages[sessionID] ?? []).suffix(limit)) }
     }
 
     func listAllMessages(sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage] {
@@ -35442,6 +37551,10 @@ private final class RecordingSink: RuntimeMessageSink, @unchecked Sendable {
 
     init(transportBinding: String? = nil) {
         self.transportBinding = transportBinding
+    }
+
+    var recordedMessages: [ProtocolEnvelope] {
+        lock.withLock { messages }
     }
 
     var transportSecurityContext: TransportSecurityContext? {

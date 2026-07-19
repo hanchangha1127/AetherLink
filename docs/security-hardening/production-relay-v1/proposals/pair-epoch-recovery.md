@@ -29,10 +29,10 @@ for replacing a compromised long-term key.
 
 | Evidence | Finding or document | What it establishes |
 | --- | --- | --- |
-| `E004` | Runtime/client co-authorized paired lease continuity | Paired renewal requires both current endpoint keys and binds exact current/next lease state. |
+| `E004` | Runtime/client co-authorized paired lease continuity | Paired renewal requires both current endpoint keys, binds exact current/next lease state, and freshly revalidates the exact lease plus expiry under coordinated store state before matcher admission. |
 | `E005` | QR-pinned mutual device identity | Initial pairing is the existing user-authorized out-of-band ceremony for both long-term keys. |
-| `E006` | Paired admission and strict frame activation | Client/runtime identity proofs bind current session nonce, ephemeral key, lease, and transport state before encrypted frames. |
-| `E007` | Durable generation and consumed-bootstrap CAS | The registry persists monotonic generation and prevents consumed bootstrap recreation, but it has no pair epoch or revocation counter. |
+| `E006` | DNS-scope-validated paired admission and strict frame activation | Android validates every resolved relay address against the declared route scope, connects to the exact validated address, bounds control lines and outgoing frame bodies, and binds client/runtime identity proofs to the current session nonce, ephemeral key, lease, and transport state before encrypted frames. |
+| `E007` | Strict allocation JSON, bounded TTL, durable generation, and consumed-bootstrap CAS | The registry rejects duplicate object keys in allocation/store JSON, limits TTL to a finite positive maximum of 24 hours with checked epoch conversion, persists monotonic generation, and prevents consumed bootstrap recreation, but it has no pair epoch or revocation counter. |
 | `E008` | Client route and secret persistence | Android stores pinned runtime identity, lease generation, nonce, expiry, and secret handle; lower-level storage has no rollback-resistant pair epoch. |
 | `E009` | Missing recovery transition in shared schema | The protocol has allocation authorization and transport binding but no recovery, revocation receipt, pair epoch, or service keyset contract. |
 | `E010` | Development-relay source-aware allocation controls | Paired claim/renew attempts, including malformed renewal records, consume the allocation-mutation source bucket before full parsing, authorization, and proof work; burst capacity cannot reset before full refill. This adds no recovery authority or epoch state. |
