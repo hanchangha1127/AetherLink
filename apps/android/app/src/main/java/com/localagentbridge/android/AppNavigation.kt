@@ -64,6 +64,13 @@ internal fun shouldUsePermanentNavigationRail(screenWidthDp: Int): Boolean {
     return screenWidthDp >= 840
 }
 
+internal fun shouldShowTopBarNewChatAction(
+    destination: AppDestination,
+    usePermanentNavigation: Boolean,
+): Boolean {
+    return destination == AppDestination.Chat && !usePermanentNavigation
+}
+
 @StringRes
 internal fun appDestinationTitleRes(
     destination: AppDestination,

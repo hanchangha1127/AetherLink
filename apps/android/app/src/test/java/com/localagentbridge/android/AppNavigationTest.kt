@@ -6,6 +6,9 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.LocaleList
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.test.core.app.ApplicationProvider
 import com.localagentbridge.android.core.transport.RuntimeEndpointHint
@@ -105,6 +108,7 @@ import com.localagentbridge.android.ui.settingsPrimaryConnectionSectionTitleRes
 import com.localagentbridge.android.ui.settingsLowerPrioritySectionInitiallyExpanded
 import com.localagentbridge.android.ui.settingsScreenShowsGenericHeader
 import com.localagentbridge.android.ui.settingsScreenShowsTroubleshootingSection
+import com.localagentbridge.android.ui.settingsTopError
 import com.localagentbridge.android.ui.usableManualPairingPayload
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -426,6 +430,138 @@ class AppNavigationTest {
     }
 
     @Test
+    fun connectionJourneyPrioritizesRouteAvailabilityErrorOverUsableSavedRoute() {
+        val trusted = trustedRuntime(
+            relayExpiresAtEpochMillis = Long.MAX_VALUE,
+            relayNonce = "nonce-route-error",
+        )
+        val connectState = RuntimeUiState(
+            trustedRuntime = trusted,
+            error = RuntimeUiError(code = "no_route"),
+        )
+        val scanLatestQrStates = listOf(
+            RuntimeUiState(
+                trustedRuntime = trusted,
+                error = RuntimeUiError(
+                    code = "remote_route_unreachable",
+                    diagnosticCode = "route_diagnostic_relay_failed",
+                ),
+            ),
+            RuntimeUiState(
+                trustedRuntime = trusted,
+                error = RuntimeUiError(code = "pairing_route_retrying"),
+            ),
+        )
+
+        val connectPresentation = connectionJourneyPresentation(connectState)
+        assertEquals(R.string.route_notice_short_unavailable, connectPresentation.titleRes)
+        assertEquals(
+            routeAvailabilityCompactLabelRes(requireNotNull(connectState.error)),
+            connectPresentation.detailRes,
+        )
+        assertEquals(ConnectionJourneyTone.Warning, connectPresentation.tone)
+        assertEquals(Icons.Filled.Error, connectPresentation.icon)
+        assertEquals(RouteNoticePrimaryAction.Connect, connectPresentation.primaryAction)
+        assertNull(settingsTopError(connectState))
+
+        scanLatestQrStates.forEach { state ->
+            val presentation = connectionJourneyPresentation(state)
+            assertEquals(R.string.status_route_needed_title, presentation.titleRes)
+            assertEquals(
+                routeAvailabilityCompactLabelRes(requireNotNull(state.error)),
+                presentation.detailRes,
+            )
+            assertEquals(ConnectionJourneyTone.Warning, presentation.tone)
+            assertEquals(Icons.Filled.Error, presentation.icon)
+            assertEquals(RouteNoticePrimaryAction.ScanLatestQr, presentation.primaryAction)
+            assertNull(settingsTopError(state))
+        }
+    }
+
+    @Test
+    fun connectionJourneyKeepsConnectedAndConnectingPriorityOverStaleRouteError() {
+        val trusted = trustedRuntime(
+            relayExpiresAtEpochMillis = Long.MAX_VALUE,
+            relayNonce = "nonce-stale-error",
+        )
+        val staleError = RuntimeUiError(
+            code = "remote_route_unreachable",
+            diagnosticCode = "route_diagnostic_relay_failed",
+        )
+
+        val connected = connectionJourneyPresentation(
+            RuntimeUiState(
+                isConnected = true,
+                trustedRuntime = trusted,
+                error = staleError,
+            ),
+        )
+        assertEquals(R.string.status_connected_trusted_title, connected.titleRes)
+        assertEquals(R.string.status_connected_trusted_detail, connected.detailRes)
+        assertEquals(ConnectionJourneyTone.Ready, connected.tone)
+        assertNull(connected.primaryAction)
+
+        val connecting = connectionJourneyPresentation(
+            RuntimeUiState(
+                isConnecting = true,
+                trustedRuntime = trusted,
+                error = staleError,
+            ),
+        )
+        assertEquals(R.string.status_connecting_trusted_title, connecting.titleRes)
+        assertEquals(R.string.status_connecting_trusted_detail, connecting.detailRes)
+        assertEquals(ConnectionJourneyTone.Action, connecting.tone)
+        assertEquals(RouteNoticePrimaryAction.Connect, connecting.primaryAction)
+    }
+
+    @Test
+    fun connectionJourneyDoesNotClaimAuthenticationWhileAuthenticationErrorsRemain() {
+        val trusted = trustedRuntime(
+            relayExpiresAtEpochMillis = Long.MAX_VALUE,
+            relayNonce = "nonce-auth-error",
+        )
+
+        listOf(
+            "runtime_authentication_failed",
+            "authentication_failed",
+            "authentication_required",
+        ).forEach { errorCode ->
+            val presentation = connectionJourneyPresentation(
+                RuntimeUiState(
+                    isConnected = true,
+                    trustedRuntime = trusted,
+                    error = RuntimeUiError(code = errorCode),
+                ),
+            )
+
+            assertEquals(errorCode, R.string.status_connected_diagnostics_title, presentation.titleRes)
+            assertEquals(errorCode, R.string.status_connected_diagnostics_detail, presentation.detailRes)
+            assertEquals(errorCode, ConnectionJourneyTone.Neutral, presentation.tone)
+            assertEquals(errorCode, Icons.Filled.Link, presentation.icon)
+            assertNull(errorCode, presentation.primaryAction)
+        }
+
+        listOf(
+            null,
+            RuntimeUiError(code = "send_failed"),
+            RuntimeUiError(code = "runtime_identity_mismatch"),
+        ).forEach { error ->
+            val presentation = connectionJourneyPresentation(
+                RuntimeUiState(
+                    isConnected = true,
+                    trustedRuntime = trusted,
+                    runtimeStatus = "degraded",
+                    error = error,
+                ),
+            )
+
+            assertEquals(R.string.status_connected_trusted_title, presentation.titleRes)
+            assertEquals(R.string.status_connected_trusted_detail, presentation.detailRes)
+            assertEquals(ConnectionJourneyTone.Ready, presentation.tone)
+        }
+    }
+
+    @Test
     fun trustedSettingsScreenKeepsGenericSettingsHeader() {
         val state = RuntimeUiState(
             isConnected = true,
@@ -577,6 +713,31 @@ class AppNavigationTest {
         assertEquals(false, shouldUsePermanentNavigationRail(839))
         assertEquals(true, shouldUsePermanentNavigationRail(840))
         assertEquals(true, shouldUsePermanentNavigationRail(1200))
+    }
+
+    @Test
+    fun topBarNewChatActionYieldsToPermanentNavigationRail() {
+        assertEquals(
+            true,
+            shouldShowTopBarNewChatAction(
+                destination = AppDestination.Chat,
+                usePermanentNavigation = false,
+            ),
+        )
+        assertEquals(
+            false,
+            shouldShowTopBarNewChatAction(
+                destination = AppDestination.Chat,
+                usePermanentNavigation = true,
+            ),
+        )
+        assertEquals(
+            false,
+            shouldShowTopBarNewChatAction(
+                destination = AppDestination.Settings,
+                usePermanentNavigation = false,
+            ),
+        )
     }
 
     @Test

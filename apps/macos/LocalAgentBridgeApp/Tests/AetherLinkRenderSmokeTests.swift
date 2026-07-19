@@ -62,6 +62,111 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
         }
     }
 
+    func testCompanionPageHeaderWrapsLongTitlesAtCompactAccessibilitySizeAcrossLanguages() throws {
+        let width: CGFloat = 360
+
+        for language in AetherLinkAppLanguage.allCases {
+            try withStoredPreferences(language: language, appearance: .system) {
+                let titleSegments = [
+                    NSLocalizedString("Document Source Inspector", comment: ""),
+                    NSLocalizedString("Trusted Devices", comment: ""),
+                ]
+                let title = (titleSegments + titleSegments).joined(separator: " · ")
+                let header = CompanionPageHeader(
+                    title: title,
+                    subtitle: "",
+                    systemImage: "doc.text.magnifyingglass"
+                )
+                .frame(width: width, alignment: .topLeading)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                .environment(\.dynamicTypeSize, .accessibility3)
+
+                let idealSize = fittingSize(header)
+                XCTAssertLessThanOrEqual(
+                    idealSize.width,
+                    width,
+                    "Header width \(language.rawValue)"
+                )
+                XCTAssertGreaterThan(
+                    idealSize.height,
+                    50,
+                    "Header should grow vertically for a wrapped accessibility title in \(language.rawValue)"
+                )
+
+                let renderSize = CGSize(width: width, height: max(idealSize.height, 120))
+                let bitmap = try render(
+                    header.frame(
+                        width: renderSize.width,
+                        height: renderSize.height,
+                        alignment: .topLeading
+                    ),
+                    size: renderSize
+                )
+                assertMeaningfulRender(
+                    bitmap,
+                    label: "Wrapped companion page header \(language.rawValue)"
+                )
+            }
+        }
+    }
+
+    func testAdaptiveControlRowStacksLongActionsAtCompactAccessibilitySizeAcrossLanguages() throws {
+        let viewportSize = CGSize(width: 360, height: 320)
+
+        for language in AetherLinkAppLanguage.allCases {
+            try withStoredPreferences(language: language, appearance: .system) {
+                let observer = AdaptiveControlRenderObserver()
+                let view = AdaptiveControlRow(spacing: 8) { isStacked in
+                    Button {} label: {
+                        Label(NSLocalizedString("Save Connection", comment: ""), systemImage: "externaldrive.badge.checkmark")
+                            .frame(maxWidth: isStacked ? .infinity : nil, alignment: .leading)
+                    }
+                    .buttonStyle(.bordered)
+                    .reportAdaptiveControlFrame(.save)
+
+                    Button {} label: {
+                        Label(NSLocalizedString("Rotate Secret", comment: ""), systemImage: "key")
+                            .frame(maxWidth: isStacked ? .infinity : nil, alignment: .leading)
+                    }
+                    .buttonStyle(.bordered)
+                    .reportAdaptiveControlFrame(.rotate)
+
+                    Button(role: .destructive) {} label: {
+                        Label(NSLocalizedString("Remove Saved Connection Details", comment: ""), systemImage: "xmark.circle")
+                            .frame(maxWidth: isStacked ? .infinity : nil, alignment: .leading)
+                    }
+                    .buttonStyle(.bordered)
+                    .reportAdaptiveControlFrame(.remove)
+                }
+                .padding(12)
+                .frame(
+                    width: viewportSize.width,
+                    height: viewportSize.height,
+                    alignment: .topLeading
+                )
+                .background(Color(nsColor: .windowBackgroundColor))
+                .coordinateSpace(name: AdaptiveControlRenderCoordinateSpace.name)
+                .onPreferenceChange(AdaptiveControlRenderFramePreferenceKey.self) { frames in
+                    observer.update(frames)
+                }
+                .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                .environment(\.dynamicTypeSize, .accessibility3)
+
+                let bitmap = try render(view, size: viewportSize)
+                assertMeaningfulRender(
+                    bitmap,
+                    label: "Adaptive control row \(language.rawValue)"
+                )
+                assertAdaptiveControlFrames(
+                    observer.frames,
+                    viewportSize: viewportSize,
+                    label: "Adaptive control row \(language.rawValue)"
+                )
+            }
+        }
+    }
+
     func testModelPullApprovalPanelRendersPendingReviewAcrossLanguagesAndAppearances() throws {
         let requestedAt = Date(timeIntervalSince1970: 1_782_000_000)
         let review = CompanionPendingModelPullReview(
@@ -546,6 +651,38 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
                         label: "Compact StatusView Quick Actions \(language.rawValue) \(appearance.rawValue)"
                     )
                 }
+            }
+        }
+    }
+
+    func testExpandedStatusQuickActionsDisclosureRendersAtCompactAccessibilitySizeAcrossLanguages() throws {
+        for language in AetherLinkAppLanguage.allCases {
+            try withStoredPreferences(language: language, appearance: .system) {
+                let model = renderSmokeModel()
+
+                let bitmap = try render(
+                    ScrollView {
+                        StatusQuickActionsDisclosure(
+                            model: model,
+                            isExpanded: .constant(true),
+                            onInspectRuntimeHistory: {},
+                            onInspectRuntimeMemory: {},
+                            onInspectRuntimeChatCompactionCalibration: {},
+                            onManageRuntimeDocumentSources: {}
+                        )
+                        .padding(12)
+                    }
+                    .background(Color(nsColor: .windowBackgroundColor))
+                    .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                    .environment(\.dynamicTypeSize, .accessibility3),
+                    size: compactDetailSize
+                )
+
+                assertMeaningfulRender(
+                    bitmap,
+                    label: "Expanded Quick Actions accessibility layout \(language.rawValue)",
+                    minimumSampledColorCount: 3
+                )
             }
         }
     }
@@ -1187,9 +1324,51 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
         XCTAssertFalse(summaryFrame.intersects(actionFrame), "\(label) action overlaps summary", file: file, line: line)
     }
 
+    private func assertAdaptiveControlFrames(
+        _ frames: [AdaptiveControlRenderElement: CGRect],
+        viewportSize: CGSize,
+        label: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let orderedElements: [AdaptiveControlRenderElement] = [.save, .rotate, .remove]
+        let orderedFrames = orderedElements.compactMap { frames[$0] }
+        XCTAssertEqual(
+            orderedFrames.count,
+            orderedElements.count,
+            "\(label) should report every action frame",
+            file: file,
+            line: line
+        )
+        guard orderedFrames.count == orderedElements.count else { return }
+
+        let viewport = CGRect(origin: .zero, size: viewportSize).insetBy(dx: -0.5, dy: -0.5)
+        for frame in orderedFrames {
+            XCTAssertFalse(frame.isEmpty, "\(label) contains an empty action frame", file: file, line: line)
+            XCTAssertTrue(viewport.contains(frame), "\(label) action is clipped: \(frame)", file: file, line: line)
+            XCTAssertGreaterThan(
+                frame.width,
+                viewportSize.width * 0.70,
+                "\(label) stacked action should use the available width: \(frame)",
+                file: file,
+                line: line
+            )
+        }
+        for (upper, lower) in zip(orderedFrames, orderedFrames.dropFirst()) {
+            XCTAssertLessThanOrEqual(
+                upper.maxY,
+                lower.minY,
+                "\(label) actions should stack without overlap: \(upper), \(lower)",
+                file: file,
+                line: line
+            )
+        }
+    }
+
     private func assertMeaningfulRender(
         _ bitmap: NSBitmapImageRep,
         label: String,
+        minimumSampledColorCount: Int = 4,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
@@ -1226,7 +1405,13 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
         }
 
         XCTAssertGreaterThan(opaqueSamples, 20, "\(label) opaque samples", file: file, line: line)
-        XCTAssertGreaterThanOrEqual(colors.count, 4, "\(label) sampled colors", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(
+            colors.count,
+            minimumSampledColorCount,
+            "\(label) sampled colors",
+            file: file,
+            line: line
+        )
     }
 
     private func assertPairingQRCodeDecodes(
@@ -1428,6 +1613,50 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
             file: file,
             line: line
         )
+    }
+}
+
+private enum AdaptiveControlRenderElement: Hashable {
+    case save
+    case rotate
+    case remove
+}
+
+private final class AdaptiveControlRenderObserver {
+    private(set) var frames: [AdaptiveControlRenderElement: CGRect] = [:]
+
+    func update(_ frames: [AdaptiveControlRenderElement: CGRect]) {
+        self.frames = frames
+    }
+}
+
+private enum AdaptiveControlRenderCoordinateSpace {
+    static let name = "aetherlink-adaptive-control-render"
+}
+
+private struct AdaptiveControlRenderFramePreferenceKey: PreferenceKey {
+    static let defaultValue: [AdaptiveControlRenderElement: CGRect] = [:]
+
+    static func reduce(
+        value: inout [AdaptiveControlRenderElement: CGRect],
+        nextValue: () -> [AdaptiveControlRenderElement: CGRect]
+    ) {
+        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+    }
+}
+
+private extension View {
+    func reportAdaptiveControlFrame(_ element: AdaptiveControlRenderElement) -> some View {
+        background {
+            GeometryReader { geometry in
+                Color.clear.preference(
+                    key: AdaptiveControlRenderFramePreferenceKey.self,
+                    value: [
+                        element: geometry.frame(in: .named(AdaptiveControlRenderCoordinateSpace.name)),
+                    ]
+                )
+            }
+        }
     }
 }
 

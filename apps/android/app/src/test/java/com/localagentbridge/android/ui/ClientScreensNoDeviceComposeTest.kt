@@ -79,6 +79,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.dp
@@ -710,6 +711,161 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun settingsErrorsStayNearHeaderAndTrustedRouteErrorsUseHeroAndDetailsWithoutDuplicateBanner() {
+        val trustedRuntime = RuntimeTrustedRuntime(
+            deviceId = "runtime-settings-error-order",
+            name = "Studio Runtime",
+            relayHost = "relay.example.test",
+            relayPort = 443,
+            relayId = "relay-settings-error-order",
+            relaySecret = "secret-settings-error-order",
+            relayExpiresAtEpochMillis = 1L,
+            relayNonce = "nonce-settings-error-order",
+        )
+        val currentState = mutableStateOf(
+            RuntimeUiState(
+                trustedRuntime = trustedRuntime,
+                error = RuntimeUiError(code = "send_failed", detail = "Request failed"),
+            ),
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(
+                    modifier = Modifier
+                        .width(360.dp)
+                        .height(760.dp),
+                ) {
+                    SettingsScreen(
+                        state = currentState.value,
+                        onHostChange = {},
+                        onPortChange = {},
+                        onUseUsbReverse = {},
+                        onUseEmulator = {},
+                        onStartDiscovery = {},
+                        onStopDiscovery = {},
+                        onUseDiscoveredRuntime = {},
+                        onForgetTrustedRuntime = {},
+                        onScanPairingQr = {},
+                        onSubmitPairingPayload = {},
+                        onConnect = {},
+                        onRefreshHealth = {},
+                        onRequestModels = {},
+                        onDisconnect = {},
+                        onSetAutoReconnectEnabled = {},
+                        onSetLanguageTag = {},
+                        onSetTheme = {},
+                        onSelectEmbeddingModel = {},
+                        onAddMemoryEntry = {},
+                        onRemoveMemoryEntry = {},
+                        onSetMemoryEntryEnabled = { _, _ -> },
+                        onArchiveChatSession = {},
+                        onRestoreChatSession = {},
+                        onPermanentlyDeleteChatSession = {},
+                        onArchiveAllChatSessions = {},
+                        onPermanentlyDeleteArchivedChatSessions = {},
+                        showDeveloperDiagnostics = false,
+                        modifier = Modifier.testTag(settingsHeadersListTestTag),
+                    )
+                }
+            }
+        }
+
+        val headerBounds = compose.onNode(hasText("Settings") and hasHeading())
+            .assertIsDisplayed()
+            .getUnclippedBoundsInRoot()
+        val errorBounds = compose.onNodeWithTag(CHAT_RUNTIME_ERROR_BANNER_TEST_TAG, useUnmergedTree = true)
+            .assertIsDisplayed()
+            .getUnclippedBoundsInRoot()
+        val connectionSectionBounds = compose.onNodeWithTag(
+            settingsExpandableSectionHeaderTestTag(R.string.status_title),
+            useUnmergedTree = true,
+        )
+            .assertIsDisplayed()
+            .getUnclippedBoundsInRoot()
+        assertTrue("Settings error should follow the header.", headerBounds.bottom <= errorBounds.top)
+        assertTrue(
+            "Settings error should precede the connection section.",
+            errorBounds.bottom <= connectionSectionBounds.top,
+        )
+
+        compose.runOnUiThread {
+            currentState.value = RuntimeUiState(
+                isConnected = true,
+                trustedRuntime = trustedRuntime,
+                error = RuntimeUiError(code = "runtime_authentication_failed"),
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(settingsHeadersListTestTag)
+            .performScrollToNode(hasText("Connected through troubleshooting"))
+        compose.onNodeWithText("Connected through troubleshooting")
+            .assertIsDisplayed()
+        compose.onAllNodesWithText("Connected through trusted runtime")
+            .assertCountEquals(0)
+        compose.onNodeWithText(
+            "AetherLink Runtime could not verify the saved trust. Scan the latest trusted QR before continuing.",
+        ).assertExists()
+
+        compose.runOnUiThread {
+            currentState.value = RuntimeUiState(
+                trustedRuntime = trustedRuntime,
+                error = RuntimeUiError(code = "remote_route_expired"),
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onAllNodesWithTag(CHAT_RUNTIME_ERROR_BANNER_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onAllNodesWithTag(ROUTE_AVAILABILITY_NOTICE_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onNodeWithTag(CONNECTION_STATUS_HERO_TEST_TAG, useUnmergedTree = true)
+            .assertIsDisplayed()
+        compose.onAllNodesWithTag(RUNTIME_ROUTE_NOTICE_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onNodeWithTag(settingsHeadersListTestTag)
+            .performScrollToNode(hasTestTag(CONNECTION_STATUS_DETAILS_DISCLOSURE_TEST_TAG))
+        compose.waitForIdle()
+        ensureConnectionDetailsExpanded()
+        compose.onNodeWithTag(settingsHeadersListTestTag)
+            .performScrollToNode(hasTestTag(RUNTIME_ROUTE_NOTICE_TEST_TAG))
+        compose.waitForIdle()
+        compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_TEST_TAG, useUnmergedTree = true)
+            .assertIsDisplayed()
+
+        compose.runOnUiThread {
+            currentState.value = RuntimeUiState(
+                error = RuntimeUiError(code = "remote_route_expired"),
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onAllNodesWithTag(CONNECTION_STATUS_HERO_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onNodeWithTag(settingsHeadersListTestTag)
+            .performScrollToIndex(0)
+        compose.waitForIdle()
+        val routeErrorBounds = compose.onNodeWithTag(
+            ROUTE_AVAILABILITY_NOTICE_TEST_TAG,
+            useUnmergedTree = true,
+        )
+            .performScrollTo()
+            .assertIsDisplayed()
+            .getUnclippedBoundsInRoot()
+        val pairingSectionBounds = compose.onNodeWithTag(
+            settingsExpandableSectionHeaderTestTag(R.string.pairing_title),
+            useUnmergedTree = true,
+        )
+            .assertIsDisplayed()
+            .getUnclippedBoundsInRoot()
+        assertTrue(
+            "Route error without a trusted runtime should stay above pairing.",
+            routeErrorBounds.bottom <= pairingSectionBounds.top,
+        )
+    }
+
+    @Test
     fun settingsPreferenceGroupLabelsExposeHeadingSemanticsAcrossSupportedLanguages() {
         val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
         val currentLanguage = mutableStateOf(languageTags.first())
@@ -1078,6 +1234,406 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun settingsRouteAvailabilityErrorHeroStaysCoherentAtLargeFontAcrossSupportedLanguages() {
+        data class RouteErrorHeroCase(
+            val name: String,
+            val width: Dp,
+            val state: RuntimeUiState,
+            val expectedAction: RouteNoticePrimaryAction?,
+        )
+
+        val runtimeName = "AetherLink Runtime With A Long Saved Connection Name"
+        val trustedRuntime = RuntimeTrustedRuntime(
+            deviceId = "runtime-route-error-hero",
+            name = runtimeName,
+            relayHost = "relay.example.test",
+            relayPort = 443,
+            relayId = "relay-route-error-hero",
+            relaySecret = "secret-route-error-hero",
+            relayExpiresAtEpochMillis = Long.MAX_VALUE,
+            relayNonce = "nonce-route-error-hero",
+            relayScope = "remote",
+        )
+        val cases = listOf(
+            RouteErrorHeroCase(
+                name = "connect-existing-route",
+                width = 300.dp,
+                state = RuntimeUiState(
+                    trustedRuntime = trustedRuntime,
+                    error = RuntimeUiError(code = "no_route"),
+                ),
+                expectedAction = RouteNoticePrimaryAction.Connect,
+            ),
+            RouteErrorHeroCase(
+                name = "scan-after-unreachable-route",
+                width = 320.dp,
+                state = RuntimeUiState(
+                    trustedRuntime = trustedRuntime,
+                    error = RuntimeUiError(
+                        code = "remote_route_unreachable",
+                        diagnosticCode = "route_diagnostic_relay_failed",
+                    ),
+                ),
+                expectedAction = RouteNoticePrimaryAction.ScanLatestQr,
+            ),
+            RouteErrorHeroCase(
+                name = "scan-while-latest-route-retries",
+                width = 300.dp,
+                state = RuntimeUiState(
+                    trustedRuntime = trustedRuntime,
+                    error = RuntimeUiError(code = "pairing_route_retrying"),
+                ),
+                expectedAction = RouteNoticePrimaryAction.ScanLatestQr,
+            ),
+            RouteErrorHeroCase(
+                name = "connected-stale-route-error",
+                width = 320.dp,
+                state = RuntimeUiState(
+                    isConnected = true,
+                    runtimeStatus = "authenticated",
+                    trustedRuntime = trustedRuntime,
+                    error = RuntimeUiError(
+                        code = "remote_route_unreachable",
+                        diagnosticCode = "route_diagnostic_relay_failed",
+                    ),
+                ),
+                expectedAction = null,
+            ),
+        )
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguage = mutableStateOf(languageTags.first())
+        val currentCase = mutableStateOf(cases.first())
+        val fontScale = 1.5f
+        var connectClicks = 0
+        var scanQrClicks = 0
+
+        compose.setContent {
+            val activeCase = currentCase.value
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguage.value, fontScale = fontScale) {
+                    key(currentLanguage.value, activeCase.name) {
+                        Surface(
+                            modifier = Modifier
+                                .width(activeCase.width)
+                                .height(860.dp)
+                                .testTag(settingsRouteErrorHeroNarrowRootTestTag),
+                        ) {
+                            SettingsScreen(
+                                state = activeCase.state.copy(
+                                    selectedLanguageTag = currentLanguage.value,
+                                ),
+                                onHostChange = {},
+                                onPortChange = {},
+                                onUseUsbReverse = {},
+                                onUseEmulator = {},
+                                onStartDiscovery = {},
+                                onStopDiscovery = {},
+                                onUseDiscoveredRuntime = {},
+                                onForgetTrustedRuntime = {},
+                                onScanPairingQr = { scanQrClicks += 1 },
+                                onSubmitPairingPayload = {},
+                                onConnect = { connectClicks += 1 },
+                                onRefreshHealth = {},
+                                onRequestModels = {},
+                                onDisconnect = {},
+                                onSetAutoReconnectEnabled = {},
+                                onSetLanguageTag = {},
+                                onSetTheme = {},
+                                onSelectEmbeddingModel = {},
+                                onAddMemoryEntry = {},
+                                onRemoveMemoryEntry = {},
+                                onSetMemoryEntryEnabled = { _, _ -> },
+                                onArchiveChatSession = {},
+                                onRestoreChatSession = {},
+                                onPermanentlyDeleteChatSession = {},
+                                onArchiveAllChatSessions = {},
+                                onPermanentlyDeleteArchivedChatSessions = {},
+                                showDeveloperDiagnostics = false,
+                                modifier = Modifier.testTag(settingsRouteErrorHeroListTestTag),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { languageTag ->
+            cases.forEach { routeCase ->
+                compose.runOnUiThread {
+                    currentLanguage.value = languageTag
+                    currentCase.value = routeCase
+                }
+                compose.waitForIdle()
+
+                val localizedContext = ApplicationProvider
+                    .getApplicationContext<Context>()
+                    .localizedContext(languageTag, fontScale = fontScale)
+                val presentation = connectionJourneyPresentation(routeCase.state)
+                assertEquals(routeCase.expectedAction, presentation.primaryAction)
+                val title = localizedContext.getString(presentation.titleRes)
+                val detail = localizedContext.getString(presentation.detailRes, runtimeName)
+                val summary = localizedContext.getString(
+                    R.string.status_hero_accessibility_summary,
+                    title,
+                    detail,
+                )
+                val sectionHeader = compose.onNodeWithTag(
+                    settingsExpandableSectionHeaderTestTag(R.string.status_title),
+                    useUnmergedTree = true,
+                )
+                if (routeCase.state.isConnected) {
+                    sectionHeader.performClick()
+                    compose.waitForIdle()
+                }
+
+                compose.onAllNodesWithTag(CHAT_RUNTIME_ERROR_BANNER_TEST_TAG, useUnmergedTree = true)
+                    .assertCountEquals(0)
+                compose.onNodeWithTag(settingsRouteErrorHeroListTestTag)
+                    .performScrollToNode(hasTestTag(CONNECTION_STATUS_HERO_TEST_TAG))
+                compose.waitForIdle()
+
+                val rootBounds = compose.onNodeWithTag(settingsRouteErrorHeroNarrowRootTestTag)
+                    .getUnclippedBoundsInRoot()
+                val heroBounds = compose
+                    .onNodeWithTag(CONNECTION_STATUS_HERO_TEST_TAG, useUnmergedTree = true)
+                    .assertIsDisplayed()
+                    .getUnclippedBoundsInRoot()
+                val rowBounds = compose
+                    .onNodeWithTag(CONNECTION_STATUS_HERO_ROW_TEST_TAG, useUnmergedTree = true)
+                    .assert(hasContentDescription(summary) and hasPoliteLiveRegion())
+                    .assertIsDisplayed()
+                    .getUnclippedBoundsInRoot()
+                val iconBounds = compose
+                    .onNodeWithTag(CONNECTION_STATUS_HERO_ICON_TEST_TAG, useUnmergedTree = true)
+                    .assertIsDisplayed()
+                    .getUnclippedBoundsInRoot()
+                val titleBounds = compose
+                    .onNodeWithTag(CONNECTION_STATUS_HERO_TITLE_TEST_TAG, useUnmergedTree = true)
+                    .assertTextContains(title)
+                    .assertIsDisplayed()
+                    .getUnclippedBoundsInRoot()
+                val detailBounds = compose
+                    .onNodeWithTag(CONNECTION_STATUS_HERO_DETAIL_TEST_TAG, useUnmergedTree = true)
+                    .assertTextContains(detail)
+                    .assertIsDisplayed()
+                    .getUnclippedBoundsInRoot()
+
+                compose.onAllNodesWithContentDescription(summary, useUnmergedTree = true)
+                    .assertCountEquals(1)
+                compose.onAllNodes(hasPoliteLiveRegion(), useUnmergedTree = true)
+                    .assertCountEquals(1)
+                assertBoundsInside("$languageTag ${routeCase.name} hero", heroBounds, rootBounds)
+                assertBoundsInside("$languageTag ${routeCase.name} hero row", rowBounds, heroBounds)
+                assertBoundsInside("$languageTag ${routeCase.name} hero icon", iconBounds, rowBounds)
+                assertBoundsInside("$languageTag ${routeCase.name} hero title", titleBounds, rowBounds)
+                assertBoundsInside("$languageTag ${routeCase.name} hero detail", detailBounds, rowBounds)
+                assertFalse(
+                    "$languageTag ${routeCase.name} hero icon should not overlap title.",
+                    boundsOverlap(iconBounds, titleBounds),
+                )
+                assertFalse(
+                    "$languageTag ${routeCase.name} hero title should not overlap detail.",
+                    boundsOverlap(titleBounds, detailBounds),
+                )
+
+                val collapsed = localizedContext.getString(R.string.section_state_collapsed)
+                compose.onNodeWithTag(
+                    CONNECTION_STATUS_DETAILS_DISCLOSURE_TEST_TAG,
+                    useUnmergedTree = true,
+                ).assert(hasStateDescription(collapsed))
+                compose.onAllNodesWithTag(
+                    CONNECTION_STATUS_DETAILS_CONTENT_TEST_TAG,
+                    useUnmergedTree = true,
+                ).assertCountEquals(0)
+
+                val connectBefore = connectClicks
+                val scanBefore = scanQrClicks
+                when (routeCase.expectedAction) {
+                    RouteNoticePrimaryAction.Connect,
+                    RouteNoticePrimaryAction.ScanLatestQr,
+                    -> {
+                        val actionLabelRes = when (routeCase.expectedAction) {
+                            RouteNoticePrimaryAction.Connect -> connectRuntimeActionLabelRes(routeCase.state)
+                            RouteNoticePrimaryAction.ScanLatestQr ->
+                                routeNoticeActionLabelRes(RouteNoticePrimaryAction.ScanLatestQr)
+                        }
+                        val actionLabel = localizedContext.getString(actionLabelRes)
+                        val actionBounds = compose
+                            .onNodeWithTag(SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG, useUnmergedTree = true)
+                            .assert(hasClickActionLabel(actionLabel))
+                            .assertHeightIsAtLeast(48.dp)
+                            .assertIsDisplayed()
+                            .getUnclippedBoundsInRoot()
+                        assertBoundsInside(
+                            "$languageTag ${routeCase.name} hero CTA",
+                            actionBounds,
+                            heroBounds,
+                        )
+                        assertFalse(
+                            "$languageTag ${routeCase.name} hero summary should not overlap CTA.",
+                            boundsOverlap(rowBounds, actionBounds),
+                        )
+                        compose.onAllNodes(
+                            hasTestTag(SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG) and
+                                hasAnyAncestor(hasTestTag(CONNECTION_STATUS_HERO_ROW_TEST_TAG)),
+                            useUnmergedTree = true,
+                        ).assertCountEquals(0)
+                        compose.onNodeWithTag(SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG)
+                            .performClick()
+                        compose.waitForIdle()
+                    }
+                    null -> compose.onAllNodesWithTag(
+                        SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG,
+                        useUnmergedTree = true,
+                    ).assertCountEquals(0)
+                }
+                when (routeCase.expectedAction) {
+                    RouteNoticePrimaryAction.Connect -> {
+                        assertEquals(connectBefore + 1, connectClicks)
+                        assertEquals(scanBefore, scanQrClicks)
+                    }
+                    RouteNoticePrimaryAction.ScanLatestQr -> {
+                        assertEquals(connectBefore, connectClicks)
+                        assertEquals(scanBefore + 1, scanQrClicks)
+                    }
+                    null -> {
+                        assertEquals(connectBefore, connectClicks)
+                        assertEquals(scanBefore, scanQrClicks)
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun connectionDetailsDisclosureDefaultsCollapsedAndExpandsAccessiblyAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguageTag = mutableStateOf(languageTags.first())
+        val hapticFeedback = RecordingHapticFeedback()
+        val state = RuntimeUiState(
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-connection-details",
+                name = "Studio Runtime",
+                relayHost = "relay.example.test",
+                relayPort = 443,
+                relayId = "relay-connection-details",
+                relaySecret = null,
+                relayExpiresAtEpochMillis = Long.MAX_VALUE,
+                relayNonce = "nonce-connection-details",
+                relayScope = "remote",
+            ),
+            backendAvailable = true,
+        )
+
+        compose.setContent {
+            CompositionLocalProvider(LocalHapticFeedback provides hapticFeedback) {
+                MaterialTheme {
+                    LocalizedTestContent(languageTag = currentLanguageTag.value) {
+                        key(currentLanguageTag.value) {
+                            ConnectionStatusScreen(
+                                state = state.copy(selectedLanguageTag = currentLanguageTag.value),
+                                onConnect = {},
+                                onRefreshHealth = {},
+                                onDisconnect = {},
+                                onScanLatestQr = {},
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { languageTag ->
+            compose.runOnUiThread { currentLanguageTag.value = languageTag }
+            compose.waitForIdle()
+
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(languageTag)
+            val detailsTitle = localizedContext.getString(R.string.connection_details)
+            val collapsedState = localizedContext.getString(R.string.section_state_collapsed)
+            val expandedState = localizedContext.getString(R.string.section_state_expanded)
+            val showDetails = localizedContext.getString(R.string.show_connection_details)
+            val hideDetails = localizedContext.getString(R.string.hide_connection_details)
+            val heroTitle = localizedContext.getString(R.string.status_route_needed_title)
+            val heroDetail = localizedContext.getString(
+                R.string.status_route_needed_detail,
+                "Studio Runtime",
+            )
+            val heroSummary = localizedContext.getString(
+                R.string.status_hero_accessibility_summary,
+                heroTitle,
+                heroDetail,
+            )
+            val disclosure = compose.onNodeWithTag(
+                CONNECTION_STATUS_DETAILS_DISCLOSURE_TEST_TAG,
+                useUnmergedTree = true,
+            )
+
+            disclosure
+                .assert(hasHeading())
+                .assert(hasStateDescription(collapsedState) and hasClickActionLabel(showDetails))
+                .assertHeightIsAtLeast(48.dp)
+                .assertIsDisplayed()
+            compose.onNodeWithTag(
+                CONNECTION_STATUS_DETAILS_DISCLOSURE_LABEL_TEST_TAG,
+                useUnmergedTree = true,
+            ).assertTextContains(detailsTitle)
+            compose.onAllNodesWithTag(
+                CONNECTION_STATUS_DETAILS_CONTENT_TEST_TAG,
+                useUnmergedTree = true,
+            ).assertCountEquals(0)
+            compose.onAllNodesWithTag(
+                connectionStatusLineTestTag(CONNECTION_STATUS_RUNTIME_LINE_KEY),
+                useUnmergedTree = true,
+            ).assertCountEquals(0)
+            compose.onAllNodesWithTag(RUNTIME_ROUTE_NOTICE_TEST_TAG, useUnmergedTree = true)
+                .assertCountEquals(0)
+
+            compose.onNodeWithTag(CONNECTION_STATUS_HERO_ROW_TEST_TAG, useUnmergedTree = true)
+                .assert(hasContentDescription(heroSummary) and hasPoliteLiveRegion())
+            compose.onAllNodesWithContentDescription(heroSummary, useUnmergedTree = true)
+                .assertCountEquals(1)
+            compose.onNodeWithTag(CONNECTION_STATUS_HERO_ACTION_TEST_TAG, useUnmergedTree = true)
+                .assert(hasClickAction())
+            compose.onAllNodes(
+                hasTestTag(CONNECTION_STATUS_HERO_ACTION_TEST_TAG) and
+                    hasAnyAncestor(hasTestTag(CONNECTION_STATUS_HERO_ROW_TEST_TAG)),
+                useUnmergedTree = true,
+            ).assertCountEquals(0)
+
+            disclosure
+                .performScrollTo()
+                .performClick()
+            compose.waitForIdle()
+            disclosure.assert(hasStateDescription(expandedState) and hasClickActionLabel(hideDetails))
+            compose.onNodeWithTag(CONNECTION_STATUS_DETAILS_CONTENT_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+            compose.onNodeWithTag(
+                connectionStatusLineTestTag(CONNECTION_STATUS_RUNTIME_LINE_KEY),
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+            compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_TEST_TAG, useUnmergedTree = true)
+                .performScrollTo()
+                .assertIsDisplayed()
+
+            disclosure
+                .performScrollTo()
+                .performClick()
+            compose.waitForIdle()
+            compose.onAllNodesWithTag(
+                CONNECTION_STATUS_DETAILS_CONTENT_TEST_TAG,
+                useUnmergedTree = true,
+            ).assertCountEquals(0)
+        }
+
+        assertEquals(
+            languageTags.size * 2,
+            hapticFeedback.events.count { it == HapticFeedbackType.TextHandleMove },
+        )
+    }
+
+    @Test
     fun connectionStatusPanelStaysBoundedAtLargeFontAcrossSupportedLanguages() {
         data class PanelScenario(
             val name: String,
@@ -1276,6 +1832,7 @@ class ClientScreensNoDeviceComposeTest {
                 compose.waitForIdle()
 
                 assertHeroBounds(languageTag, scenario.name)
+                ensureConnectionDetailsExpanded()
                 scenario.expectedLineKeys.forEach { key ->
                     assertStatusLineBounds(languageTag, scenario.name, key)
                 }
@@ -1436,6 +1993,7 @@ class ClientScreensNoDeviceComposeTest {
                 val expectedLabel = localizedContext.getString(R.string.model_residency)
                 val expectedValue = scenario.expectedValue(localizedContext)
 
+                ensureConnectionDetailsExpanded()
                 compose.onNodeWithTag(connectionStatusPanelListTestTag)
                     .performScrollToNode(hasTestTag(lineTag))
                 compose.waitForIdle()
@@ -1886,6 +2444,8 @@ class ClientScreensNoDeviceComposeTest {
                 "$languageTag section title should not overlap subtitle for $titleRes.",
                 boundsOverlap(titleBounds, subtitleBounds),
             )
+            assertTextHasNoVisualOverflow(settingsExpandableSectionTitleTestTag(titleRes))
+            assertTextHasNoVisualOverflow(settingsExpandableSectionSubtitleTestTag(titleRes))
         }
 
         languageTags.forEach { languageTag ->
@@ -2964,6 +3524,8 @@ class ClientScreensNoDeviceComposeTest {
         val archivedOptions = compose.onNodeWithTag(
             researchNotebookDrawerOptionsTestTag(archivedNotebook.sessionId),
         )
+            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(48.dp)
             .assertIsDisplayed()
         val archivedRow = compose.onNodeWithTag(
             researchNotebookDrawerRowTestTag(archivedNotebook.sessionId),
@@ -4784,6 +5346,67 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun appTopBarOmitsNewChatActionWhenPermanentNavigationOwnsIt() {
+        var navigationClicks = 0
+        var newChatClicks = 0
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(
+                    modifier = Modifier
+                        .width(300.dp)
+                        .height(96.dp),
+                ) {
+                    AetherLinkTopAppBar(
+                        state = RuntimeUiState(
+                            isConnected = true,
+                            runtimeStatus = "authenticated",
+                            backendAvailable = true,
+                            trustedRuntime = RuntimeTrustedRuntime(
+                                deviceId = "runtime-top-bar-owned-action",
+                                name = "AetherLink Runtime",
+                            ),
+                            selectedModelId = chatModel.id,
+                            models = listOf(chatModel),
+                        ),
+                        effectiveDestination = AppDestination.Chat,
+                        destinationTitle = "Chat",
+                        showNewChatAction = false,
+                        onOpenNavigation = { navigationClicks += 1 },
+                        onStartNewChat = { newChatClicks += 1 },
+                        onRequestModels = {},
+                        onSelectModel = {},
+                    )
+                }
+            }
+        }
+
+        compose.onAllNodesWithTag(CHAT_TOP_BAR_NEW_CHAT_ACTION_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onNodeWithTag(CHAT_TOP_BAR_MODEL_PICKER_TEST_TAG, useUnmergedTree = true)
+            .assertIsDisplayed()
+        compose.onNode(
+            hasContentDescription("Open navigation menu") and
+                hasClickActionLabel("Open navigation menu"),
+        )
+            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(48.dp)
+            .assertIsDisplayed()
+            .performClick()
+
+        assertEquals(1, navigationClicks)
+        assertEquals(0, newChatClicks)
+    }
+
+    @Test
     fun newChatActionsExplainDisabledStreamingStateAcrossSupportedLanguages() {
         data class ExpectedNewChatState(
             val languageTag: String,
@@ -5047,7 +5670,7 @@ class ClientScreensNoDeviceComposeTest {
             )
         }
         val currentCase = mutableStateOf(layoutCases.first())
-        val fontScale = 1.45f
+        val fontScale = 1.5f
         var newChatClicks = 0
         val chatModel = RuntimeModel(
             id = "ollama:qwen3:8b",
@@ -5154,6 +5777,8 @@ class ClientScreensNoDeviceComposeTest {
                         hasStateDescription(expectedState) and
                         hasClickActionLabel(expectedLabel),
                 )
+                .assertHeightIsAtLeast(48.dp)
+                .assertWidthIsAtLeast(48.dp)
                 .assertIsDisplayed()
             if (layoutCase.enabled) {
                 newChatAction.assertIsEnabled()
@@ -5875,6 +6500,7 @@ class ClientScreensNoDeviceComposeTest {
             }
         }
 
+        ensureConnectionDetailsExpanded()
         compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_TEST_TAG, useUnmergedTree = true)
             .performScrollTo()
             .assert(hasStateDescription("Saved connection"))
@@ -5918,6 +6544,7 @@ class ClientScreensNoDeviceComposeTest {
         val recoverySteps = "Open AetherLink Runtime, generate the latest QR, then scan it here."
         val noticeSummary = "Connection status. Refresh needed. $detail $recoverySteps"
 
+        ensureConnectionDetailsExpanded()
         compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_TEST_TAG)
             .performScrollTo()
             .assertIsDisplayed()
@@ -5957,7 +6584,10 @@ class ClientScreensNoDeviceComposeTest {
 
         assertEquals(0, connectClicks)
         assertEquals(1, scanQrClicks)
-        assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
+        assertEquals(
+            listOf(HapticFeedbackType.TextHandleMove, HapticFeedbackType.TextHandleMove),
+            hapticFeedback.events,
+        )
     }
 
     @Test
@@ -5980,6 +6610,7 @@ class ClientScreensNoDeviceComposeTest {
             }
         }
 
+        ensureConnectionDetailsExpanded()
         listOf(
             RuntimeEndpointSource.Manual,
             RuntimeEndpointSource.UsbReverse,
@@ -6287,6 +6918,7 @@ class ClientScreensNoDeviceComposeTest {
             }
             compose.waitForIdle()
 
+            ensureConnectionDetailsExpanded()
             compose.onNode(
                 hasContentDescription(expected.availableSummary),
                 useUnmergedTree = true,
@@ -6355,6 +6987,7 @@ class ClientScreensNoDeviceComposeTest {
             }
             compose.waitForIdle()
 
+            ensureConnectionDetailsExpanded()
             val localizedContext = ApplicationProvider
                 .getApplicationContext<Context>()
                 .localizedContext(languageTag, fontScale = 1.5f)
@@ -6489,6 +7122,7 @@ class ClientScreensNoDeviceComposeTest {
             }
             compose.waitForIdle()
 
+            ensureConnectionDetailsExpanded()
             val localizedContext = ApplicationProvider
                 .getApplicationContext<Context>()
                 .localizedContext(languageTag, fontScale = 1.5f)
@@ -6603,6 +7237,7 @@ class ClientScreensNoDeviceComposeTest {
             }
         }
 
+        ensureConnectionDetailsExpanded()
         scrollUntilTextIsVisible("Show details")
         compose.onNode(
             hasText("Show details") and
@@ -6616,7 +7251,10 @@ class ClientScreensNoDeviceComposeTest {
             .performClick()
         compose.waitForIdle()
 
-        assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
+        assertEquals(
+            listOf(HapticFeedbackType.TextHandleMove, HapticFeedbackType.TextHandleMove),
+            hapticFeedback.events,
+        )
         compose.onNode(
             hasText("Hide details") and
                 hasContentDescription("Hide details for Ollama") and
@@ -6741,6 +7379,7 @@ class ClientScreensNoDeviceComposeTest {
             }
             compose.waitForIdle()
 
+            ensureConnectionDetailsExpanded()
             compose.onNodeWithText(expected.savedRouteDetail)
                 .performScrollTo()
                 .assertIsDisplayed()
@@ -6788,6 +7427,7 @@ class ClientScreensNoDeviceComposeTest {
             }
         }
 
+        ensureConnectionDetailsExpanded()
         compose.onNode(
             hasContentDescription(
                 "Connection status. Saved connection. Trusted connection saved. AetherLink will reconnect when both devices are available.",
@@ -6817,7 +7457,10 @@ class ClientScreensNoDeviceComposeTest {
 
         assertEquals(1, connectClicks)
         assertEquals(0, scanQrClicks)
-        assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
+        assertEquals(
+            listOf(HapticFeedbackType.TextHandleMove, HapticFeedbackType.TextHandleMove),
+            hapticFeedback.events,
+        )
     }
 
     @Test
@@ -6851,6 +7494,7 @@ class ClientScreensNoDeviceComposeTest {
             }
         }
 
+        ensureConnectionDetailsExpanded()
         compose.onNode(
             hasContentDescription(
                 "Connection status. Refresh needed. Connection details need refreshing. Scan the latest AetherLink Runtime QR with remote connection details before using AetherLink away from this network. Open AetherLink Runtime, generate the latest QR, then scan it here.",
@@ -6885,7 +7529,10 @@ class ClientScreensNoDeviceComposeTest {
         ).assertCountEquals(0)
         assertEquals(0, connectClicks)
         assertEquals(1, scanQrClicks)
-        assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
+        assertEquals(
+            listOf(HapticFeedbackType.TextHandleMove, HapticFeedbackType.TextHandleMove),
+            hapticFeedback.events,
+        )
     }
 
     @Test
@@ -6925,6 +7572,7 @@ class ClientScreensNoDeviceComposeTest {
         val detail = "Scan the latest AetherLink Runtime QR with connection details to refresh this trusted connection."
         val noticeSummary = "Connection status. Scan QR. $detail"
 
+        ensureConnectionDetailsExpanded()
         compose.onAllNodesWithText("Scan latest QR")
             .onLast()
             .performScrollTo()
@@ -6959,7 +7607,10 @@ class ClientScreensNoDeviceComposeTest {
 
         assertEquals(0, connectClicks)
         assertEquals(1, scanQrClicks)
-        assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
+        assertEquals(
+            listOf(HapticFeedbackType.TextHandleMove, HapticFeedbackType.TextHandleMove),
+            hapticFeedback.events,
+        )
     }
 
     @Test
@@ -7107,6 +7758,7 @@ class ClientScreensNoDeviceComposeTest {
                     )
                 }
 
+                ensureConnectionDetailsExpanded()
                 compose.onNodeWithTag(connectionStatusRouteNoticeListTestTag)
                     .performScrollToNode(hasTestTag(RUNTIME_ROUTE_NOTICE_TEST_TAG))
                 compose.waitForIdle()
@@ -7338,6 +7990,12 @@ class ClientScreensNoDeviceComposeTest {
         }
         compose.waitForIdle()
 
+        compose.onAllNodesWithTag(ROUTE_AVAILABILITY_NOTICE_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onNodeWithTag(settingsHeadersListTestTag)
+            .performScrollToNode(hasTestTag(CONNECTION_STATUS_DETAILS_DISCLOSURE_TEST_TAG))
+        compose.waitForIdle()
+        ensureConnectionDetailsExpanded()
         compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_TEST_TAG, useUnmergedTree = true)
             .performScrollTo()
             .assert(hasStateDescription("Refresh needed"))
@@ -7351,17 +8009,6 @@ class ClientScreensNoDeviceComposeTest {
         compose.onAllNodesWithTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG, useUnmergedTree = true)
             .assertCountEquals(0)
         compose.onNodeWithTag(settingsHeadersListTestTag)
-            .performScrollToNode(hasTestTag(ROUTE_AVAILABILITY_NOTICE_TEST_TAG))
-        compose.waitForIdle()
-        compose.onNodeWithTag(ROUTE_AVAILABILITY_NOTICE_TEST_TAG, useUnmergedTree = true)
-            .assertIsDisplayed()
-        compose.onAllNodes(
-            hasTestTag(ROUTE_AVAILABILITY_NOTICE_TEST_TAG) and hasClickAction(),
-            useUnmergedTree = true,
-        ).assertCountEquals(0)
-        compose.onAllNodesWithTag(ROUTE_AVAILABILITY_NOTICE_ACTION_TEST_TAG, useUnmergedTree = true)
-            .assertCountEquals(0)
-        compose.onNodeWithTag(settingsHeadersListTestTag)
             .performScrollToNode(hasTestTag(SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG))
         compose.waitForIdle()
         compose.onNodeWithTag(SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG)
@@ -7371,7 +8018,11 @@ class ClientScreensNoDeviceComposeTest {
         assertEquals(1, connectClicks)
         assertEquals(1, scanQrClicks)
         assertEquals(
-            listOf(HapticFeedbackType.TextHandleMove, HapticFeedbackType.TextHandleMove),
+            listOf(
+                HapticFeedbackType.TextHandleMove,
+                HapticFeedbackType.TextHandleMove,
+                HapticFeedbackType.TextHandleMove,
+            ),
             hapticFeedback.events,
         )
     }
@@ -7662,6 +8313,8 @@ class ClientScreensNoDeviceComposeTest {
                         .performClick()
                     compose.waitForIdle()
 
+                    scrollToTag(CONNECTION_STATUS_DETAILS_DISCLOSURE_TEST_TAG)
+                    ensureConnectionDetailsExpanded()
                     val noticeBounds = assertVisibleTagInsideRoot(
                         "$languageTag ${settingsCase.name} Settings route notice",
                         RUNTIME_ROUTE_NOTICE_TEST_TAG,
@@ -11497,6 +12150,8 @@ class ClientScreensNoDeviceComposeTest {
                 .getUnclippedBoundsInRoot()
             val optionsBounds = compose
                 .onNodeWithTag(drawerChatRowOptionsTestTag(session.id), useUnmergedTree = true)
+                .assertHeightIsAtLeast(48.dp)
+                .assertWidthIsAtLeast(48.dp)
                 .getUnclippedBoundsInRoot()
 
             assertBoundsInside("$nextLanguageTag drawer chat row", rowBounds, rootBounds)
@@ -12641,6 +13296,8 @@ class ClientScreensNoDeviceComposeTest {
                 "$nextLanguageTag generic error technical label should not overlap icon.",
                 boundsOverlap(toggleLabelBounds, toggleIconBounds),
             )
+            assertTextHasNoVisualOverflow(CHAT_RUNTIME_ERROR_MESSAGE_TEST_TAG)
+            assertTextHasNoVisualOverflow(CHAT_RUNTIME_ERROR_DETAIL_TEST_TAG)
 
             compose.onNodeWithTag(CHAT_RUNTIME_ERROR_TECHNICAL_TOGGLE_TEST_TAG, useUnmergedTree = true)
                 .performClick()
@@ -12649,35 +13306,64 @@ class ClientScreensNoDeviceComposeTest {
             compose.onNodeWithTag(CHAT_RUNTIME_ERROR_TECHNICAL_TOGGLE_TEST_TAG, useUnmergedTree = true)
                 .assert(hasStateDescription(expanded))
                 .assert(hasClickActionLabel(hideTechnicalDetails))
-            val expandedTechnicalBounds = compose
-                .onNodeWithTag(CHAT_RUNTIME_ERROR_TECHNICAL_TEST_TAG, useUnmergedTree = true)
+            compose.onNodeWithTag(CHAT_RUNTIME_ERROR_TECHNICAL_TEST_TAG, useUnmergedTree = true)
+                .assertExists()
+            compose.onNodeWithTag(
+                CHAT_RUNTIME_ERROR_TECHNICAL_PANEL_TEST_TAG,
+                useUnmergedTree = true,
+            )
+                .performScrollTo()
                 .assertIsDisplayed()
-                .getUnclippedBoundsInRoot()
-            val panelBounds = compose
-                .onNodeWithTag(CHAT_RUNTIME_ERROR_TECHNICAL_PANEL_TEST_TAG, useUnmergedTree = true)
-                .assertIsDisplayed()
-                .getUnclippedBoundsInRoot()
-            val actionsBounds = compose
-                .onNodeWithTag(CHAT_RUNTIME_ERROR_TECHNICAL_ACTIONS_TEST_TAG, useUnmergedTree = true)
-                .assertIsDisplayed()
-                .getUnclippedBoundsInRoot()
+
             val copyBounds = compose
                 .onNodeWithContentDescription(copyDiagnostics, useUnmergedTree = true)
+                .performScrollTo()
+                .assertIsDisplayed()
                 .assert(hasClickActionLabel(copyDiagnostics))
                 .getUnclippedBoundsInRoot()
-            val reportBounds = compose
-                .onNodeWithTag(CHAT_RUNTIME_ERROR_TECHNICAL_REPORT_TEST_TAG, useUnmergedTree = true)
-                .assertTextContains(expectedReport)
+            val copyNoticeAreaBounds = compose
+                .onNodeWithTag(CHAT_BOTTOM_NOTICE_AREA_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val composerBoundsAfterCopy = compose
+                .onNodeWithTag(CHAT_COMPOSER_CONTAINER_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
                 .getUnclippedBoundsInRoot()
 
-            assertBoundsInside("$nextLanguageTag generic error expanded technical", expandedTechnicalBounds, bannerBounds)
-            assertBoundsInside("$nextLanguageTag generic error technical panel", panelBounds, expandedTechnicalBounds)
-            assertBoundsInside("$nextLanguageTag generic error technical actions", actionsBounds, panelBounds)
-            assertBoundsInside("$nextLanguageTag generic error copy action", copyBounds, actionsBounds)
-            assertBoundsInside("$nextLanguageTag generic error technical report", reportBounds, panelBounds)
-            assertFalse(
-                "$nextLanguageTag generic error copy action should not overlap report.",
-                boundsOverlap(copyBounds, reportBounds),
+            val reportBounds = compose
+                .onNodeWithTag(CHAT_RUNTIME_ERROR_TECHNICAL_REPORT_TEST_TAG, useUnmergedTree = true)
+                .performScrollTo()
+                .assertIsDisplayed()
+                .assertTextContains(expectedReport)
+                .getUnclippedBoundsInRoot()
+            val reportNoticeAreaBounds = compose
+                .onNodeWithTag(CHAT_BOTTOM_NOTICE_AREA_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val composerBoundsAfterReport = compose
+                .onNodeWithTag(CHAT_COMPOSER_CONTAINER_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+
+            assertBoundsInside(
+                "$nextLanguageTag generic error copy action after scrolling",
+                copyBounds,
+                copyNoticeAreaBounds,
+            )
+            assertTrue(
+                "$nextLanguageTag generic error notice should stay above the composer after scrolling to copy. " +
+                    "notice=$copyNoticeAreaBounds composer=$composerBoundsAfterCopy",
+                copyNoticeAreaBounds.bottom <= composerBoundsAfterCopy.top,
+            )
+            assertBoundsInside(
+                "$nextLanguageTag generic error technical report after scrolling",
+                reportBounds,
+                reportNoticeAreaBounds,
+            )
+            assertTrue(
+                "$nextLanguageTag generic error notice should stay above the composer after scrolling to report. " +
+                    "notice=$reportNoticeAreaBounds composer=$composerBoundsAfterReport",
+                reportNoticeAreaBounds.bottom <= composerBoundsAfterReport.top,
             )
             compose.onAllNodesWithText(unsafeTechnicalDetail, useUnmergedTree = true).assertCountEquals(0)
             compose.onAllNodesWithText("http://127.0.0.1:11434/api/tags", useUnmergedTree = true)
@@ -12685,6 +13371,262 @@ class ClientScreensNoDeviceComposeTest {
             compose.onAllNodesWithText("route_token=secret", useUnmergedTree = true).assertCountEquals(0)
             compose.onAllNodesWithText("relay_id=relay-1", useUnmergedTree = true).assertCountEquals(0)
         }
+    }
+
+    @Test
+    fun chatAuthenticationRecoveryDoesNotEllipsizeOrCoverEmptyStateAtLargeFont() {
+        data class LayoutCase(val label: String, val width: Dp, val height: Dp)
+
+        val layoutCases = listOf(
+            LayoutCase(label = "narrow portrait", width = 300.dp, height = 560.dp),
+            LayoutCase(label = "device portrait", width = 320.dp, height = 560.dp),
+            LayoutCase(label = "app-height compact", width = 320.dp, height = 330.dp),
+            LayoutCase(label = "compact-height stress", width = 320.dp, height = 411.dp),
+        )
+        val currentCase = mutableStateOf(layoutCases.first())
+        val state = RuntimeUiState(
+            isConnected = true,
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-auth-recovery-layout",
+                name = "AetherLink Runtime",
+            ),
+            error = RuntimeUiError(code = "runtime_authentication_failed"),
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = "ko", fontScale = 1.5f) {
+                    Surface(
+                        modifier = Modifier
+                            .width(currentCase.value.width)
+                            .height(currentCase.value.height)
+                            .testTag(chatAuthenticationRecoveryResponsiveRootTestTag),
+                    ) {
+                        ChatScreen(
+                            state = state,
+                            onInputChange = {},
+                            onSend = {},
+                            onCancel = {},
+                            onConnect = {},
+                            onScanPairingQr = {},
+                            onRefreshHealth = {},
+                            onAttachFiles = {},
+                            onRemoveAttachment = {},
+                            onScanLatestQr = {},
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+            }
+        }
+
+        val localizedContext = ApplicationProvider.getApplicationContext<Context>()
+            .localizedContext("ko", fontScale = 1.5f)
+        val expectedError = localizedContext.getString(R.string.error_runtime_authentication_failed)
+
+        layoutCases.forEach { layoutCase ->
+            compose.runOnUiThread { currentCase.value = layoutCase }
+            compose.waitForIdle()
+
+            val rootBounds = compose.onNodeWithTag(chatAuthenticationRecoveryResponsiveRootTestTag)
+                .getUnclippedBoundsInRoot()
+            val viewportBounds = compose.onNodeWithTag(
+                CHAT_CONTENT_VIEWPORT_TEST_TAG,
+                useUnmergedTree = true,
+            )
+                .assertHeightIsAtLeast(48.dp)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val dockBounds = compose.onNodeWithTag(CHAT_BOTTOM_DOCK_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val noticeAreaBounds = compose.onNodeWithTag(
+                CHAT_BOTTOM_NOTICE_AREA_TEST_TAG,
+                useUnmergedTree = true,
+            )
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val bannerBounds = compose.onNodeWithTag(
+                CHAT_RUNTIME_ERROR_BANNER_TEST_TAG,
+                useUnmergedTree = true,
+            )
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val messageBounds = compose.onNodeWithTag(
+                CHAT_RUNTIME_ERROR_MESSAGE_TEST_TAG,
+                useUnmergedTree = true,
+            )
+                .assertIsDisplayed()
+                .assertTextContains(expectedError, substring = false)
+                .getUnclippedBoundsInRoot()
+            val composerBounds = compose.onNodeWithTag(
+                CHAT_COMPOSER_CONTAINER_TEST_TAG,
+                useUnmergedTree = true,
+            )
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+
+            assertBoundsInside("${layoutCase.label} content viewport", viewportBounds, rootBounds)
+            assertBoundsInside("${layoutCase.label} bottom dock", dockBounds, rootBounds)
+            assertBoundsInside("${layoutCase.label} bottom notice area", noticeAreaBounds, dockBounds)
+            assertBoundsInsideHorizontally(
+                "${layoutCase.label} authentication banner",
+                bannerBounds,
+                noticeAreaBounds,
+            )
+            assertBoundsInside("${layoutCase.label} authentication message", messageBounds, bannerBounds)
+            assertBoundsInside("${layoutCase.label} composer", composerBounds, dockBounds)
+            assertTrue(
+                "${layoutCase.label} content and bottom dock must be adjacent without overlap. " +
+                    "viewport=$viewportBounds dock=$dockBounds",
+                viewportBounds.bottom <= dockBounds.top,
+            )
+            assertTrue(
+                "${layoutCase.label} authentication banner should stay above the composer. " +
+                    "banner=$bannerBounds composer=$composerBounds",
+                bannerBounds.bottom <= composerBounds.top,
+            )
+            assertTextHasNoVisualOverflow(CHAT_RUNTIME_ERROR_MESSAGE_TEST_TAG)
+
+            compose.onNodeWithTag(CHAT_EMPTY_STATE_BODY_TEST_TAG, useUnmergedTree = true)
+                .performScrollTo()
+                .assertIsDisplayed()
+            val emptyBodyBounds = compose.onNodeWithTag(
+                CHAT_EMPTY_STATE_BODY_TEST_TAG,
+                useUnmergedTree = true,
+            ).getUnclippedBoundsInRoot()
+            assertBoundsInside("${layoutCase.label} empty-state guidance", emptyBodyBounds, viewportBounds)
+        }
+    }
+
+    @Test
+    fun chatCompactHeightKeepsComposerFixedWhenTechnicalErrorDetailsExpand() {
+        val chatModel = RuntimeModel(
+            id = "local:compact-error-layout",
+            name = "Compact Error Layout",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val visibleDetail = List(6) {
+            "The attachment recovery detail remains available without displacing the composer."
+        }.joinToString("\n")
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = "fr", fontScale = 1.5f) {
+                    Surface(
+                        modifier = Modifier
+                            .width(320.dp)
+                            .height(330.dp)
+                            .testTag(chatExpandedTechnicalCompactRootTestTag),
+                    ) {
+                        ChatScreen(
+                            state = RuntimeUiState(
+                                isConnected = true,
+                                runtimeStatus = "authenticated",
+                                trustedRuntime = RuntimeTrustedRuntime(
+                                    deviceId = "runtime-compact-technical-error",
+                                    name = "AetherLink Runtime",
+                                ),
+                                backendAvailable = true,
+                                selectedLanguageTag = "fr",
+                                selectedModelId = chatModel.id,
+                                models = listOf(chatModel),
+                                error = RuntimeUiError(
+                                    code = "attachment_too_large",
+                                    detail = visibleDetail,
+                                    technicalDetail =
+                                        "attachment rejected near relay_id=relay-compact route_token=secret",
+                                ),
+                            ),
+                            onInputChange = {},
+                            onSend = {},
+                            onCancel = {},
+                            onConnect = {},
+                            onScanPairingQr = {},
+                            onRefreshHealth = {},
+                            onAttachFiles = {},
+                            onRemoveAttachment = {},
+                            onScanLatestQr = {},
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithTag(
+            CHAT_RUNTIME_ERROR_TECHNICAL_TOGGLE_TEST_TAG,
+            useUnmergedTree = true,
+        )
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag(
+            CHAT_RUNTIME_ERROR_TECHNICAL_PANEL_TEST_TAG,
+            useUnmergedTree = true,
+        )
+            .performScrollTo()
+            .assertIsDisplayed()
+        val localizedContext = ApplicationProvider
+            .getApplicationContext<Context>()
+            .localizedContext("fr", fontScale = 1.5f)
+        val copyDiagnostics = localizedContext.getString(R.string.runtime_error_copy_diagnostics)
+        compose.onNodeWithContentDescription(copyDiagnostics, useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assert(hasClickActionLabel(copyDiagnostics))
+        compose.onNodeWithTag(
+            CHAT_RUNTIME_ERROR_TECHNICAL_REPORT_TEST_TAG,
+            useUnmergedTree = true,
+        )
+            .performScrollTo()
+            .assertIsDisplayed()
+
+        val rootBounds = compose.onNodeWithTag(chatExpandedTechnicalCompactRootTestTag)
+            .getUnclippedBoundsInRoot()
+        val viewportBounds = compose.onNodeWithTag(
+            CHAT_CONTENT_VIEWPORT_TEST_TAG,
+            useUnmergedTree = true,
+        )
+            .assertHeightIsAtLeast(48.dp)
+            .assertIsDisplayed()
+            .getUnclippedBoundsInRoot()
+        val dockBounds = compose.onNodeWithTag(CHAT_BOTTOM_DOCK_TEST_TAG, useUnmergedTree = true)
+            .assertIsDisplayed()
+            .getUnclippedBoundsInRoot()
+        val noticeAreaBounds = compose.onNodeWithTag(
+            CHAT_BOTTOM_NOTICE_AREA_TEST_TAG,
+            useUnmergedTree = true,
+        )
+            .assertIsDisplayed()
+            .getUnclippedBoundsInRoot()
+        val composerBounds = compose.onNodeWithTag(
+            CHAT_COMPOSER_CONTAINER_TEST_TAG,
+            useUnmergedTree = true,
+        )
+            .assertIsDisplayed()
+            .getUnclippedBoundsInRoot()
+
+        assertBoundsInside("expanded technical content viewport", viewportBounds, rootBounds)
+        assertBoundsInside("expanded technical bottom dock", dockBounds, rootBounds)
+        assertBoundsInside("expanded technical notice area", noticeAreaBounds, dockBounds)
+        assertBoundsInside("expanded technical composer", composerBounds, dockBounds)
+        assertTrue(
+            "Expanded technical notice area should stay above the composer. " +
+                "notice=$noticeAreaBounds composer=$composerBounds",
+            noticeAreaBounds.bottom <= composerBounds.top,
+        )
+        assertTrue(
+            "Expanded technical dock should not overlap the content viewport. " +
+                "viewport=$viewportBounds dock=$dockBounds",
+            viewportBounds.bottom <= dockBounds.top,
+        )
+        assertTextHasNoVisualOverflow(CHAT_RUNTIME_ERROR_MESSAGE_TEST_TAG)
+        assertTextHasNoVisualOverflow(CHAT_RUNTIME_ERROR_DETAIL_TEST_TAG)
     }
 
     @Test
@@ -13027,10 +13969,41 @@ class ClientScreensNoDeviceComposeTest {
                     hasClickAction(),
                 useUnmergedTree = true,
             ).assertIsDisplayed()
-            compose.onNodeWithText(expectedLocalizedReport, useUnmergedTree = true).assertIsDisplayed()
             compose.onNodeWithContentDescription(copyDiagnostics, useUnmergedTree = true)
+                .performScrollTo()
                 .assert(hasClickActionLabel(copyDiagnostics))
                 .assertIsDisplayed()
+            val copyNoticeAreaBounds = compose
+                .onNodeWithTag(CHAT_BOTTOM_NOTICE_AREA_TEST_TAG, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            val composerBoundsAfterCopy = compose
+                .onNodeWithTag(CHAT_COMPOSER_CONTAINER_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            compose.onNodeWithTag(
+                CHAT_RUNTIME_ERROR_TECHNICAL_REPORT_TEST_TAG,
+                useUnmergedTree = true,
+            )
+                .performScrollTo()
+                .assertIsDisplayed()
+                .assertTextContains(expectedLocalizedReport)
+            val reportNoticeAreaBounds = compose
+                .onNodeWithTag(CHAT_BOTTOM_NOTICE_AREA_TEST_TAG, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            val composerBoundsAfterReport = compose
+                .onNodeWithTag(CHAT_COMPOSER_CONTAINER_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            assertTrue(
+                "$languageTag diagnostics notice should stay above the composer after scrolling to copy. " +
+                    "notice=$copyNoticeAreaBounds composer=$composerBoundsAfterCopy",
+                copyNoticeAreaBounds.bottom <= composerBoundsAfterCopy.top,
+            )
+            assertTrue(
+                "$languageTag diagnostics notice should stay above the composer after scrolling to report. " +
+                    "notice=$reportNoticeAreaBounds composer=$composerBoundsAfterReport",
+                reportNoticeAreaBounds.bottom <= composerBoundsAfterReport.top,
+            )
             compose.onAllNodesWithText(technicalDetail, useUnmergedTree = true).assertCountEquals(0)
             compose.onAllNodesWithText("http://127.0.0.1:11434/api/tags", useUnmergedTree = true).assertCountEquals(0)
             compose.onAllNodesWithText("route_token=secret", useUnmergedTree = true).assertCountEquals(0)
@@ -15148,7 +16121,7 @@ class ClientScreensNoDeviceComposeTest {
 
         compose.setContent {
             MaterialTheme {
-                LocalizedTestContent(languageTag = currentLanguage.value, fontScale = 1.35f) {
+                LocalizedTestContent(languageTag = currentLanguage.value, fontScale = 1.5f) {
                     key(currentLanguage.value) {
                         Surface(
                             modifier = Modifier
@@ -15190,7 +16163,7 @@ class ClientScreensNoDeviceComposeTest {
         languageTags.forEach { languageTag ->
             val localizedContext = ApplicationProvider
                 .getApplicationContext<Context>()
-                .localizedContext(languageTag, fontScale = 1.35f)
+                .localizedContext(languageTag, fontScale = 1.5f)
             val documentType = localizedContext.getString(R.string.attachment_type_document)
             val unsupportedImageState = localizedContext.getString(R.string.attachment_requires_vision_model)
 
@@ -15237,6 +16210,8 @@ class ClientScreensNoDeviceComposeTest {
                     hasClickActionLabel(removeActionLabel) and hasAnyAncestor(hasTestTag(chipTag)),
                     useUnmergedTree = true,
                 )
+                    .assertHeightIsAtLeast(48.dp)
+                    .assertWidthIsAtLeast(48.dp)
                     .assertIsDisplayed()
             }
         }
@@ -15979,7 +16954,7 @@ class ClientScreensNoDeviceComposeTest {
     fun chatSurfaceRepresentativePopulatedStateStaysBoundedAtLargeFontAcrossSupportedLanguages() {
         val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
         val currentLanguage = mutableStateOf(languageTags.first())
-        val fontScale = 1.45f
+        val fontScale = 1.5f
         val chatModel = RuntimeModel(
             id = "ollama:qwen3:8b",
             name = "Qwen3 8B",
@@ -16057,7 +17032,7 @@ class ClientScreensNoDeviceComposeTest {
                     key(currentLanguage.value) {
                         Surface(
                             modifier = Modifier
-                                .width(320.dp)
+                                .width(300.dp)
                                 .height(470.dp)
                                 .testTag(chatSurfaceRepresentativeLargeFontRootTestTag),
                         ) {
@@ -16118,6 +17093,7 @@ class ClientScreensNoDeviceComposeTest {
             val copyLabel = localizedContext.getString(R.string.copy_message)
             val reuseLabel = localizedContext.getString(R.string.reuse_message)
             val regenerateLabel = localizedContext.getString(R.string.regenerate_response)
+            val sourceAction = localizedContext.getString(R.string.chat_trusted_sources_select)
             val attachAction = localizedContext.getString(R.string.content_desc_attach_files)
             val inputDescription = localizedContext.getString(R.string.message)
             val clearDraftAction = localizedContext.getString(R.string.clear_draft)
@@ -16129,7 +17105,7 @@ class ClientScreensNoDeviceComposeTest {
             compose.waitForIdle()
 
             val rootBounds = compose.onNodeWithTag(chatSurfaceRepresentativeLargeFontRootTestTag)
-                .assertWidthIsAtLeast(320.dp)
+                .assertWidthIsAtLeast(300.dp)
                 .assertHeightIsAtLeast(470.dp)
                 .getUnclippedBoundsInRoot()
             val modelPickerBounds = compose.onNodeWithContentDescription(
@@ -16162,6 +17138,8 @@ class ClientScreensNoDeviceComposeTest {
                 .assertIsDisplayed()
                 .getUnclippedBoundsInRoot()
             val jumpBounds = compose.onNodeWithTag(CHAT_JUMP_TO_LATEST_TEST_TAG, useUnmergedTree = true)
+                .assertHeightIsAtLeast(48.dp)
+                .assertWidthIsAtLeast(48.dp)
                 .assertIsDisplayed()
                 .getUnclippedBoundsInRoot()
             assertBoundsInside("$languageTag attachment chip", attachmentBounds, rootBounds)
@@ -16212,24 +17190,32 @@ class ClientScreensNoDeviceComposeTest {
                 hasContentDescription(copyLabel) and hasAnyAncestor(hasTestTag(userActionsTag)),
                 useUnmergedTree = true,
             )
+                .assertHeightIsAtLeast(48.dp)
+                .assertWidthIsAtLeast(48.dp)
                 .assertIsDisplayed()
                 .getUnclippedBoundsInRoot()
             val reuseBounds = compose.onNode(
                 hasContentDescription(reuseLabel) and hasAnyAncestor(hasTestTag(userActionsTag)),
                 useUnmergedTree = true,
             )
+                .assertHeightIsAtLeast(48.dp)
+                .assertWidthIsAtLeast(48.dp)
                 .assertIsDisplayed()
                 .getUnclippedBoundsInRoot()
             val assistantCopyBounds = compose.onNode(
                 hasContentDescription(copyLabel) and hasAnyAncestor(hasTestTag(assistantActionsTag)),
                 useUnmergedTree = true,
             )
+                .assertHeightIsAtLeast(48.dp)
+                .assertWidthIsAtLeast(48.dp)
                 .assertIsDisplayed()
                 .getUnclippedBoundsInRoot()
             val regenerateBounds = compose.onNode(
                 hasContentDescription(regenerateLabel) and hasAnyAncestor(hasTestTag(assistantActionsTag)),
                 useUnmergedTree = true,
             )
+                .assertHeightIsAtLeast(48.dp)
+                .assertWidthIsAtLeast(48.dp)
                 .assertIsDisplayed()
                 .getUnclippedBoundsInRoot()
             listOf(
@@ -16256,21 +17242,36 @@ class ClientScreensNoDeviceComposeTest {
             val controlsRowBounds = compose.onNodeWithTag(CHAT_COMPOSER_CONTROLS_ROW_TEST_TAG, useUnmergedTree = true)
                 .assertIsDisplayed()
                 .getUnclippedBoundsInRoot()
-            listOf(attachAction, inputDescription, clearDraftAction, sendAction).forEach { description ->
+            listOf(sourceAction, attachAction, inputDescription, clearDraftAction, sendAction).forEach { description ->
                 compose.onNodeWithContentDescription(description, useUnmergedTree = true)
                     .assertIsDisplayed()
             }
-            listOf(
+            val controlTags = listOf(
+                CHAT_COMPOSER_SOURCE_ACTION_TEST_TAG,
                 CHAT_COMPOSER_ATTACH_ACTION_TEST_TAG,
                 CHAT_COMPOSER_INPUT_TEST_TAG,
                 CHAT_COMPOSER_CLEAR_DRAFT_ACTION_TEST_TAG,
                 CHAT_COMPOSER_SEND_ACTION_TEST_TAG,
-            ).forEach { tag ->
+            )
+            val controlBounds = controlTags.map { tag ->
                 val controlBounds = compose.onNodeWithTag(tag, useUnmergedTree = true)
                     .assertIsDisplayed()
+                    .apply {
+                        if (tag != CHAT_COMPOSER_INPUT_TEST_TAG) {
+                            assertHeightIsAtLeast(48.dp)
+                            assertWidthIsAtLeast(48.dp)
+                        }
+                    }
                     .getUnclippedBoundsInRoot()
                 assertBoundsInside("$languageTag composer control $tag", controlBounds, composerBounds)
                 assertBoundsInsideHorizontally("$languageTag composer control $tag", controlBounds, controlsRowBounds)
+                tag to controlBounds
+            }
+            controlBounds.zipWithNext().forEach { (current, next) ->
+                assertTrue(
+                    "$languageTag composer controls ${current.first} and ${next.first} should not overlap.",
+                    current.second.right <= next.second.left,
+                )
             }
         }
     }
@@ -18910,6 +19911,7 @@ class ClientScreensNoDeviceComposeTest {
                 "$languageTag $label radio should not overlap label.",
                 boundsOverlap(radioBounds, labelBounds),
             )
+            assertTextHasNoVisualOverflow(labelTag)
 
             detailTag?.let {
                 val detailBounds = compose.onNodeWithTag(it, useUnmergedTree = true)
@@ -18919,6 +19921,7 @@ class ClientScreensNoDeviceComposeTest {
                     "$languageTag $label radio should not overlap detail.",
                     boundsOverlap(radioBounds, detailBounds),
                 )
+                assertTextHasNoVisualOverflow(it)
             }
         }
 
@@ -18934,22 +19937,20 @@ class ClientScreensNoDeviceComposeTest {
                 SETTINGS_APPEARANCE_GROUP_LABEL_TEST_TAG,
                 rootBounds(),
             )
-            assertPreferenceRowBounds(
-                languageTag = languageTag,
-                label = "appearance system",
-                rowTag = appearancePreferenceOptionRowTestTag(RuntimeAppTheme.System),
-                radioTag = appearancePreferenceOptionRadioTestTag(RuntimeAppTheme.System),
-                labelTag = appearancePreferenceOptionLabelTestTag(RuntimeAppTheme.System),
-                detailTag = appearancePreferenceOptionDetailTestTag(RuntimeAppTheme.System),
-            )
-            assertPreferenceRowBounds(
-                languageTag = languageTag,
-                label = "appearance dark",
-                rowTag = appearancePreferenceOptionRowTestTag(RuntimeAppTheme.Dark),
-                radioTag = appearancePreferenceOptionRadioTestTag(RuntimeAppTheme.Dark),
-                labelTag = appearancePreferenceOptionLabelTestTag(RuntimeAppTheme.Dark),
-                detailTag = null,
-            )
+            appThemePreferenceOptions().forEach { (theme, _) ->
+                assertPreferenceRowBounds(
+                    languageTag = languageTag,
+                    label = "appearance ${theme.name}",
+                    rowTag = appearancePreferenceOptionRowTestTag(theme),
+                    radioTag = appearancePreferenceOptionRadioTestTag(theme),
+                    labelTag = appearancePreferenceOptionLabelTestTag(theme),
+                    detailTag = if (theme == RuntimeAppTheme.System) {
+                        appearancePreferenceOptionDetailTestTag(theme)
+                    } else {
+                        null
+                    },
+                )
+            }
             assertTaggedBoundsInside(
                 "$languageTag language group label",
                 SETTINGS_LANGUAGE_GROUP_LABEL_TEST_TAG,
@@ -18963,14 +19964,16 @@ class ClientScreensNoDeviceComposeTest {
                 labelTag = languagePreferenceOptionLabelTestTag(APP_LANGUAGE_SOURCE_SYSTEM),
                 detailTag = languagePreferenceOptionDetailTestTag(APP_LANGUAGE_SOURCE_SYSTEM),
             )
-            assertPreferenceRowBounds(
-                languageTag = languageTag,
-                label = "fixed language",
-                rowTag = languagePreferenceOptionRowTestTag(languageTag),
-                radioTag = languagePreferenceOptionRadioTestTag(languageTag),
-                labelTag = languagePreferenceOptionLabelTestTag(languageTag),
-                detailTag = null,
-            )
+            appLanguagePreferenceOptions().forEach { (language, _) ->
+                assertPreferenceRowBounds(
+                    languageTag = languageTag,
+                    label = "fixed language ${language.languageTag}",
+                    rowTag = languagePreferenceOptionRowTestTag(language.languageTag),
+                    radioTag = languagePreferenceOptionRadioTestTag(language.languageTag),
+                    labelTag = languagePreferenceOptionLabelTestTag(language.languageTag),
+                    detailTag = null,
+                )
+            }
         }
     }
 
@@ -20734,6 +21737,8 @@ class ClientScreensNoDeviceComposeTest {
                 hasContentDescription(removeAction) and hasClickActionLabel(removeAction),
                 useUnmergedTree = true,
             )
+                .assertHeightIsAtLeast(48.dp)
+                .assertWidthIsAtLeast(48.dp)
                 .assertIsDisplayed()
                 .performClick()
             compose.waitForIdle()
@@ -21930,6 +22935,12 @@ class ClientScreensNoDeviceComposeTest {
             }
         }
 
+        compose.onNodeWithTag(
+            documentSourceReviewActionTestTag(document.id, result.rank),
+            useUnmergedTree = true,
+        )
+            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(48.dp)
         compose.onNodeWithContentDescription("Review source for Review Source.md", useUnmergedTree = true)
             .assertIsDisplayed()
             .performClick()
@@ -28216,6 +29227,7 @@ class ClientScreensNoDeviceComposeTest {
             compose.waitForIdle()
             assertRootHasStableLayout()
             if (nextCase.surface == RenderSmokeSurface.Connection) {
+                ensureConnectionDetailsExpanded()
                 compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_TEST_TAG, useUnmergedTree = true)
                     .performScrollTo()
                     .assert(hasStateDescription(requireNotNull(nextCase.visibleAnchor)))
@@ -28663,6 +29675,104 @@ class ClientScreensNoDeviceComposeTest {
             .assertCountEquals(0)
         compose.onAllNodesWithContentDescription("trusted_source_", substring = true, useUnmergedTree = true)
             .assertCountEquals(0)
+    }
+
+    @Test
+    fun chatTrustedSourceRemoveMeetsTouchTargetAtLargeFontAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguage = mutableStateOf(languageTags.first())
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val source = RuntimeTrustedSource(
+            sourceAnchorId = "opaque-touch-target-anchor",
+            document = RuntimeDocumentIndexDocument(
+                id = "trusted-source-touch-target",
+                displayName = "International runtime handoff reference.pdf",
+                mimeType = "application/pdf",
+                contentFingerprint = "0123456789abcdef",
+                extractedCharacterCount = 100,
+                chunkCount = 1,
+                quality = "single_chunk",
+            ),
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguage.value, fontScale = 1.5f) {
+                    key(currentLanguage.value) {
+                        Surface(
+                            modifier = Modifier
+                                .width(300.dp)
+                                .height(360.dp)
+                                .testTag(chatTrustedSourceRemoveNarrowRootTestTag),
+                        ) {
+                            ChatScreen(
+                                state = RuntimeUiState(
+                                    isConnected = true,
+                                    runtimeStatus = "authenticated",
+                                    trustedRuntime = RuntimeTrustedRuntime(
+                                        deviceId = "runtime-trusted-source-touch-target",
+                                        name = "AetherLink Runtime",
+                                    ),
+                                    backendAvailable = true,
+                                    selectedLanguageTag = currentLanguage.value,
+                                    selectedModelId = chatModel.id,
+                                    models = listOf(chatModel),
+                                    trustedSources = listOf(source),
+                                    selectedTrustedSourceAnchorIds = listOf(source.sourceAnchorId),
+                                ),
+                                onInputChange = {},
+                                onSend = {},
+                                onCancel = {},
+                                onConnect = {},
+                                onScanPairingQr = {},
+                                onRefreshHealth = {},
+                                onAttachFiles = {},
+                                onRemoveAttachment = {},
+                                onRemoveTrustedSource = {},
+                                onScanLatestQr = {},
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { languageTag ->
+            compose.runOnUiThread { currentLanguage.value = languageTag }
+            compose.waitForIdle()
+
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(languageTag, fontScale = 1.5f)
+            val removeLabel = localizedContext.getString(
+                R.string.chat_trusted_source_remove_named,
+                source.document.displayName,
+            )
+            val rootBounds = compose.onNodeWithTag(chatTrustedSourceRemoveNarrowRootTestTag)
+                .getUnclippedBoundsInRoot()
+            val chipTag = chatTrustedSourceChipTestTag(source.document.id)
+            val chipBounds = compose.onNodeWithTag(chipTag, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val removeBounds = compose.onNode(
+                hasContentDescription(removeLabel) and
+                    hasClickAction(),
+            )
+                .assertHeightIsAtLeast(48.dp)
+                .assertWidthIsAtLeast(48.dp)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+
+            assertBoundsInside("$languageTag trusted source chip", chipBounds, rootBounds)
+            assertBoundsInside("$languageTag trusted source remove action", removeBounds, chipBounds)
+        }
     }
 
     @Test
@@ -29455,7 +30565,7 @@ class ClientScreensNoDeviceComposeTest {
         val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
         val languageTag = mutableStateOf(languageTags.first())
         val streaming = mutableStateOf(false)
-        val fontScale = 1.45f
+        val fontScale = 1.5f
         val chatModel = RuntimeModel(
             id = "ollama:qwen3:8b",
             name = "Qwen3 8B",
@@ -29708,6 +30818,8 @@ class ClientScreensNoDeviceComposeTest {
 
             val streamingAttachBounds = compose
                 .onNodeWithTag(CHAT_COMPOSER_ATTACH_ACTION_TEST_TAG, useUnmergedTree = true)
+                .assertHeightIsAtLeast(48.dp)
+                .assertWidthIsAtLeast(48.dp)
                 .assertIsDisplayed()
                 .getUnclippedBoundsInRoot()
             val streamingInputBounds = compose
@@ -29717,6 +30829,8 @@ class ClientScreensNoDeviceComposeTest {
                 .assertIsNotEnabled()
                 .getUnclippedBoundsInRoot()
             val cancelBounds = compose.onNodeWithTag(CHAT_COMPOSER_CANCEL_ACTION_TEST_TAG, useUnmergedTree = true)
+                .assertHeightIsAtLeast(48.dp)
+                .assertWidthIsAtLeast(48.dp)
                 .assertIsDisplayed()
                 .getUnclippedBoundsInRoot()
             compose.onNode(
@@ -30013,6 +31127,10 @@ class ClientScreensNoDeviceComposeTest {
         "chat_backend_readiness_banner_narrow_root"
     private val chatGenericErrorBannerNarrowRootTestTag =
         "chat_generic_error_banner_narrow_root"
+    private val chatAuthenticationRecoveryResponsiveRootTestTag =
+        "chat_authentication_recovery_responsive_root"
+    private val chatExpandedTechnicalCompactRootTestTag =
+        "chat_expanded_technical_compact_root"
     private val chatMarkdownBlocksNarrowRootTestTag = "chat_markdown_blocks_narrow_root"
     private val connectionStatusPanelNarrowRootTestTag =
         "connection_status_panel_narrow_root"
@@ -30040,6 +31158,9 @@ class ClientScreensNoDeviceComposeTest {
         "settings_auto_reconnect_row_narrow_root"
     private val settingsConnectionStatusTalkBackOrderNarrowRootTestTag =
         "settings_connection_status_talkback_order_narrow_root"
+    private val settingsRouteErrorHeroNarrowRootTestTag =
+        "settings_route_error_hero_narrow_root"
+    private val settingsRouteErrorHeroListTestTag = "settings_route_error_hero_list"
     private val settingsConnectionStatusTalkBackOrderListTestTag =
         "settings_connection_status_talkback_order_list"
     private val settingsPreferenceRowsNarrowRootTestTag =
@@ -30064,6 +31185,8 @@ class ClientScreensNoDeviceComposeTest {
         "chat_read_only_attachment_chips_narrow_root"
     private val chatPendingAttachmentChipsNarrowRootTestTag =
         "chat_pending_attachment_chips_narrow_root"
+    private val chatTrustedSourceRemoveNarrowRootTestTag =
+        "chat_trusted_source_remove_narrow_root"
     private val settingsQrPairingPanelNarrowRootTestTag =
         "settings_qr_pairing_panel_narrow_root"
     private val settingsChatHistoryRuntimeSearchNarrowRootTestTag =
@@ -30075,6 +31198,45 @@ class ClientScreensNoDeviceComposeTest {
         return SemanticsMatcher.expectValue(
             SemanticsProperties.LiveRegion,
             LiveRegionMode.Polite,
+        )
+    }
+
+    private fun assertTextHasNoVisualOverflow(testTag: String) {
+        val results = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithTag(testTag, useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                action(results)
+            }
+
+        assertEquals("$testTag should expose one text layout result", 1, results.size)
+        val result = results.single()
+        val minLineLeft = (0 until result.lineCount)
+            .minOfOrNull(result::getLineLeft)
+            ?: 0f
+        val maxLineRight = (0 until result.lineCount)
+            .maxOfOrNull(result::getLineRight)
+            ?: 0f
+        assertFalse(
+            "$testTag should not overflow vertically. " +
+                "size=${result.size} lines=${result.lineCount} " +
+                "overflowWidth=${result.didOverflowWidth} overflowHeight=${result.didOverflowHeight} " +
+                "constraints=${result.layoutInput.constraints}",
+            result.didOverflowHeight,
+        )
+        assertTrue(
+            "$testTag should not exceed its measured left edge beyond subpixel rounding. " +
+                "lineLeft=$minLineLeft overflowWidth=${result.didOverflowWidth}",
+            minLineLeft >= -1f,
+        )
+        assertTrue(
+            "$testTag should not exceed its measured width beyond subpixel rounding. " +
+                "lineRight=$maxLineRight width=${result.size.width} " +
+                "overflowWidth=${result.didOverflowWidth}",
+            maxLineRight <= result.size.width + 1f,
+        )
+        assertFalse(
+            "$testTag should not contain an ellipsized line",
+            (0 until result.lineCount).any(result::isLineEllipsized),
         )
     }
 
@@ -30131,6 +31293,21 @@ class ClientScreensNoDeviceComposeTest {
             .assertIsDisplayed()
             .performClick()
         compose.waitForIdle()
+    }
+
+    private fun ensureConnectionDetailsExpanded() {
+        if (
+            compose.onAllNodesWithTag(
+                CONNECTION_STATUS_DETAILS_CONTENT_TEST_TAG,
+                useUnmergedTree = true,
+            ).fetchSemanticsNodes().isEmpty()
+        ) {
+            compose.onNodeWithTag(
+                CONNECTION_STATUS_DETAILS_DISCLOSURE_TEST_TAG,
+                useUnmergedTree = true,
+            ).performClick()
+            compose.waitForIdle()
+        }
     }
 
     private fun testLocalMillis(

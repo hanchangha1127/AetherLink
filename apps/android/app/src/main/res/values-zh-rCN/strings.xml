@@ -7,6 +7,9 @@
     <string name="collapse_section">收起分区</string>
     <string name="section_state_expanded">已展开</string>
     <string name="section_state_collapsed">已收起</string>
+    <string name="connection_details">连接详情</string>
+    <string name="show_connection_details">显示连接详情</string>
+    <string name="hide_connection_details">隐藏连接详情</string>
     <string name="setting_state_on">已开启</string>
     <string name="setting_state_off">已关闭</string>
     <string name="setting_action_enable_named">开启%1$s</string>

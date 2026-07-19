@@ -6,6 +6,7 @@ import SwiftUI
 
 struct StatusView: View {
     @ObservedObject var model: CompanionAppModel
+    @StateObject private var announcementScope = AccessibilityAnnouncementScope()
     var onGenerateRelayQRCode: (() -> Void)?
     var onGenerateRemoteRelayQRCode: (() -> Void)? = nil
     @State private var isRuntimeHistoryInspectorPresented = false
@@ -13,6 +14,7 @@ struct StatusView: View {
     @State private var isRuntimeChatCompactionCalibrationPresented = false
     @State private var isRuntimeDocumentSourcesInspectorPresented = false
     @State private var isRuntimeDetailsExpanded = false
+    @State private var isQuickActionsExpanded = quickActionsDisclosureInitialState()
     @State private var connectionRecoveryExpansionRequest = 0
     private let columns = [GridItem(.adaptive(minimum: 240), spacing: 12)]
 
@@ -39,6 +41,14 @@ struct StatusView: View {
                         onPrimaryAction: { action in
                             performRuntimeOverviewAction(action, scrollProxy: scrollProxy)
                         }
+                    )
+                    .politeAccessibilityAnnouncement(
+                        for: runtimeOverviewAccessibilityLabel(
+                            title: overview.title,
+                            status: overview.statusText,
+                            detail: overview.detail,
+                            footnote: overview.footnote
+                        )
                     )
 
                     CompanionPanel(title: NSLocalizedString("Readiness", comment: ""), systemImage: "checklist") {
@@ -71,27 +81,26 @@ struct StatusView: View {
                         .accessibilityHint(Text(runtimeDetailsDisclosureAccessibilityHint()))
                     }
 
-                    CompanionPanel(title: NSLocalizedString("Quick Actions", comment: ""), systemImage: "bolt.horizontal") {
-                        StatusQuickActions(
-                            model: model,
-                            onInspectRuntimeHistory: {
-                                model.refreshRuntimeChatSessions()
-                                isRuntimeHistoryInspectorPresented = true
-                            },
-                            onInspectRuntimeMemory: {
-                                model.refreshRuntimeMemoryEntries()
-                                isRuntimeMemoryInspectorPresented = true
-                            },
-                            onInspectRuntimeChatCompactionCalibration: {
-                                isRuntimeChatCompactionCalibrationPresented = true
-                                Task { await model.refreshRuntimeChatCompactionCalibrationReport() }
-                            },
-                            onManageRuntimeDocumentSources: {
-                                isRuntimeDocumentSourcesInspectorPresented = true
-                                Task { await model.refreshRuntimeDocumentSources() }
-                            }
-                        )
-                    }
+                    StatusQuickActionsDisclosure(
+                        model: model,
+                        isExpanded: $isQuickActionsExpanded,
+                        onInspectRuntimeHistory: {
+                            model.refreshRuntimeChatSessions()
+                            isRuntimeHistoryInspectorPresented = true
+                        },
+                        onInspectRuntimeMemory: {
+                            model.refreshRuntimeMemoryEntries()
+                            isRuntimeMemoryInspectorPresented = true
+                        },
+                        onInspectRuntimeChatCompactionCalibration: {
+                            isRuntimeChatCompactionCalibrationPresented = true
+                            Task { await model.refreshRuntimeChatCompactionCalibrationReport() }
+                        },
+                        onManageRuntimeDocumentSources: {
+                            isRuntimeDocumentSourcesInspectorPresented = true
+                            Task { await model.refreshRuntimeDocumentSources() }
+                        }
+                    )
 
                     CompanionPanel(title: NSLocalizedString("Model Providers", comment: ""), systemImage: "server.rack") {
                         if providerStatuses.isEmpty {
@@ -215,6 +224,7 @@ struct StatusView: View {
             await model.refreshRuntimeDocumentSources()
             await model.refreshModelPullApprovals()
         }
+        .accessibilityAnnouncementScope(announcementScope)
     }
 
     @ViewBuilder
@@ -752,6 +762,85 @@ func modelResidencyStatusTone(_ residency: CompanionModelResidencyStatus) -> Sta
         return .neutral
     }
     return residency.activeModelID == nil ? .neutral : .ready
+}
+
+struct StatusQuickActionsDisclosure: View {
+    @ObservedObject var model: CompanionAppModel
+    @Binding var isExpanded: Bool
+    let onInspectRuntimeHistory: () -> Void
+    let onInspectRuntimeMemory: () -> Void
+    let onInspectRuntimeChatCompactionCalibration: () -> Void
+    let onManageRuntimeDocumentSources: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: isExpanded ? 12 : 0) {
+            let hint = quickActionsDisclosureAccessibilityHint(isExpanded: isExpanded)
+            Button {
+                isExpanded = quickActionsDisclosureStateAfterToggle(isExpanded: isExpanded)
+            } label: {
+                HStack(spacing: 10) {
+                    Label(NSLocalizedString("Quick Actions", comment: ""), systemImage: "bolt.horizontal")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .accessibilityHidden(true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(hint)
+            .accessibilityIdentifier("status-quick-actions-disclosure")
+            .accessibilityLabel(Text(quickActionsDisclosureAccessibilityLabel()))
+            .accessibilityValue(Text(quickActionsDisclosureAccessibilityValue(isExpanded: isExpanded)))
+            .accessibilityHint(Text(hint))
+            .accessibilityAddTraits(.isHeader)
+
+            if isExpanded {
+                StatusQuickActions(
+                    model: model,
+                    onInspectRuntimeHistory: onInspectRuntimeHistory,
+                    onInspectRuntimeMemory: onInspectRuntimeMemory,
+                    onInspectRuntimeChatCompactionCalibration: onInspectRuntimeChatCompactionCalibration,
+                    onManageRuntimeDocumentSources: onManageRuntimeDocumentSources
+                )
+            }
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(.separator.opacity(0.5), lineWidth: 1)
+        }
+    }
+}
+
+func quickActionsDisclosureStateAfterToggle(isExpanded: Bool) -> Bool {
+    !isExpanded
+}
+
+func quickActionsDisclosureInitialState() -> Bool {
+    false
+}
+
+func quickActionsDisclosureAccessibilityLabel() -> String {
+    NSLocalizedString("Quick Actions", comment: "")
+}
+
+func quickActionsDisclosureAccessibilityValue(isExpanded: Bool) -> String {
+    isExpanded
+        ? NSLocalizedString("Quick Actions expanded", comment: "")
+        : NSLocalizedString("Quick Actions collapsed", comment: "")
+}
+
+func quickActionsDisclosureAccessibilityHint(isExpanded: Bool) -> String {
+    isExpanded
+        ? NSLocalizedString("Collapse to hide maintenance and inspection actions.", comment: "")
+        : NSLocalizedString("Expand to show maintenance and inspection actions.", comment: "")
 }
 
 private struct StatusQuickActions: View {

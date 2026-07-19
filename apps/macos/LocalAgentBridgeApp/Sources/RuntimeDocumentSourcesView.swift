@@ -330,47 +330,58 @@ private struct RuntimeDocumentSourceRow: View {
     let onRemove: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            Image(systemName: "doc.text.fill")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-                .frame(width: 24, height: 24)
-                .accessibilityHidden(true)
+        AdaptiveControlRow(alignment: .top, spacing: 14) { isStacked in
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: "doc.text.fill")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+                    .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 7) {
-                Text(source.displayName)
-                    .font(.body.weight(.semibold))
-                    .lineLimit(2)
-                    .textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(source.displayName)
+                        .font(.body.weight(.semibold))
+                        .lineLimit(2)
+                        .textSelection(.enabled)
 
-                Text(runtimeDocumentMetadataText(
-                    mimeType: source.mimeType,
-                    characterCount: source.extractedCharacterCount,
-                    chunkCount: source.chunkCount
-                ))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                    Text(runtimeDocumentMetadataText(
+                        mimeType: source.mimeType,
+                        characterCount: source.extractedCharacterCount,
+                        chunkCount: source.chunkCount
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                HStack(spacing: 10) {
-                    Label(NSLocalizedString("Approved", comment: ""), systemImage: "checkmark.seal")
-                    Text(localizedCompanionDateString(from: source.approvedAt))
+                    HStack(spacing: 10) {
+                        Label(NSLocalizedString("Approved", comment: ""), systemImage: "checkmark.seal")
+                        Text(localizedCompanionDateString(from: source.approvedAt))
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Spacer(minLength: 8)
+            if !isStacked {
+                Spacer(minLength: 8)
+            }
 
             Button(action: onReplace) {
                 Label(NSLocalizedString("Replace Source", comment: ""), systemImage: "arrow.triangle.2.circlepath")
+                    .frame(maxWidth: isStacked ? .infinity : nil, alignment: .leading)
             }
             .buttonStyle(.bordered)
             .disabled(isDisabled)
             .help(NSLocalizedString("This source will replace the currently approved revision only after you confirm.", comment: ""))
 
             Button(role: .destructive, action: onRemove) {
-                Image(systemName: "trash")
+                if isStacked {
+                    Label(NSLocalizedString("Remove Source", comment: ""), systemImage: "trash")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Image(systemName: "trash")
+                }
             }
             .buttonStyle(.bordered)
             .disabled(isDisabled)

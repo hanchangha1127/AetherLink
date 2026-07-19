@@ -245,6 +245,12 @@ struct RemoteRelayRoutePanel: View {
         .onChange(of: advancedSettingsExpansionRequest) { _, _ in
             isAdvancedRouteSettingsExpanded = true
         }
+        .politeAccessibilityAnnouncement(
+            for: message.map {
+                connectionRecoveryResultAccessibilityLabel(message: $0, tone: messageTone)
+            },
+            scopePriority: .childResult
+        )
         .confirmationDialog(
             NSLocalizedString("Remove saved bootstrap relay?", comment: ""),
             isPresented: $isRemoveBootstrapRelayConfirmationPresented,
@@ -465,14 +471,16 @@ struct RemoteRelayRoutePanel: View {
 
                     Divider()
 
-                    HStack(spacing: 8) {
+                    AdaptiveControlRow(spacing: 8) { isStacked in
                         TextField(NSLocalizedString("Connection address", comment: ""), text: $host)
                             .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: isStacked ? .infinity : nil, alignment: .leading)
                             .accessibilityLabel(Text(NSLocalizedString("Connection address", comment: "")))
                             .accessibilityValue(Text(connectionRecoveryTextFieldAccessibilityValue(host)))
                         TextField(NSLocalizedString("Port", comment: ""), text: $port)
                             .textFieldStyle(.roundedBorder)
-                            .frame(width: 86)
+                            .frame(width: isStacked ? nil : 86)
+                            .frame(maxWidth: isStacked ? .infinity : nil, alignment: .leading)
                             .accessibilityLabel(Text(NSLocalizedString("Port", comment: "")))
                             .accessibilityValue(Text(connectionRecoveryTextFieldAccessibilityValue(port)))
                     }
@@ -499,7 +507,7 @@ struct RemoteRelayRoutePanel: View {
                         .accessibilityHint(Text(NSLocalizedString("Enable only when this private address is reachable through a VPN, tunnel, or private overlay shared by both devices.", comment: "")))
                     }
 
-                    HStack(spacing: 8) {
+                    AdaptiveControlRow(spacing: 8) { isStacked in
                         let saveConnectionActionValue = connectionRecoverySaveConnectionActionAccessibilityValue(
                             host: host,
                             port: port
@@ -508,6 +516,7 @@ struct RemoteRelayRoutePanel: View {
                             saveRelay()
                         } label: {
                             Label(NSLocalizedString("Save Connection", comment: ""), systemImage: "externaldrive.badge.checkmark")
+                                .frame(maxWidth: isStacked ? .infinity : nil, alignment: .leading)
                         }
                         .buttonStyle(.bordered)
                         .disabled(model.isRemoteRoutePreparationInFlight)
@@ -522,6 +531,7 @@ struct RemoteRelayRoutePanel: View {
                             messageTone = .ready
                         } label: {
                             Label(NSLocalizedString("Rotate Secret", comment: ""), systemImage: "key")
+                                .frame(maxWidth: isStacked ? .infinity : nil, alignment: .leading)
                         }
                         .buttonStyle(.bordered)
                         .disabled(model.isRemoteRoutePreparationInFlight)
@@ -534,6 +544,7 @@ struct RemoteRelayRoutePanel: View {
                                 isRemoveSavedConnectionDetailsConfirmationPresented = true
                             } label: {
                                 Label(NSLocalizedString("Remove Saved Connection Details", comment: ""), systemImage: "xmark.circle")
+                                    .frame(maxWidth: isStacked ? .infinity : nil, alignment: .leading)
                             }
                             .buttonStyle(.bordered)
                             .disabled(model.isRemoteRoutePreparationInFlight)

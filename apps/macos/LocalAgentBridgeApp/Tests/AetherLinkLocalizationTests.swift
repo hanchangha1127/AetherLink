@@ -2964,6 +2964,27 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testPairingRenewalActionBecomesPrimaryOnlyWhenTheCurrentQRNeedsRecovery() {
+        XCTAssertFalse(
+            pairingQRRenewalActionIsProminent(
+                isExpired: false,
+                isQRCodeAvailable: true
+            )
+        )
+        XCTAssertTrue(
+            pairingQRRenewalActionIsProminent(
+                isExpired: true,
+                isQRCodeAvailable: true
+            )
+        )
+        XCTAssertTrue(
+            pairingQRRenewalActionIsProminent(
+                isExpired: false,
+                isQRCodeAvailable: false
+            )
+        )
+    }
+
     func testPrimaryActionsPrioritizePairingQRWhenNoTrustedDevicesExist() {
         XCTAssertEqual(
             companionPrimaryActionOrder(trustedDeviceCount: -1),
@@ -2990,6 +3011,14 @@ final class AetherLinkLocalizationTests: XCTestCase {
         )
         XCTAssertEqual(
             companionToolbarPrimaryActionOrder(section: .pairing, trustedDeviceCount: 0),
+            [.refreshProviders, .loadModels]
+        )
+        XCTAssertEqual(
+            companionToolbarPrimaryActionOrder(section: .pairing, trustedDeviceCount: 1),
+            [.refreshProviders, .loadModels]
+        )
+        XCTAssertEqual(
+            companionToolbarPrimaryActionOrder(section: .trustedDevices, trustedDeviceCount: 0),
             companionPrimaryActionOrder(trustedDeviceCount: 0)
         )
     }

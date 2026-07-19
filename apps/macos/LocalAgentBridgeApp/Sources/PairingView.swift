@@ -4,6 +4,7 @@ import SwiftUI
 
 struct PairingView: View {
     @ObservedObject var model: CompanionAppModel
+    @StateObject private var announcementScope = AccessibilityAnnouncementScope()
     let layoutObserver: PairingTaskLayoutObserver?
     let qrImageRenderer: (String) -> NSImage?
 
@@ -42,52 +43,14 @@ struct PairingView: View {
                         )
                         .id(session.id)
                     } else {
-                        VStack(alignment: .leading, spacing: 14) {
-                            let emptyPairingTitle = NSLocalizedString("No pairing QR ready", comment: "")
-                            let emptyPairingDescription = emptyPairingQRDescription
-                            ContentUnavailableView(
-                                emptyPairingTitle,
-                                systemImage: "qrcode",
-                                description: Text(emptyPairingDescription)
-                            )
-                            .frame(maxWidth: .infinity, minHeight: 180)
-                            .accessibilityElement(children: .ignore)
-                            .accessibilityLabel(
-                                Text(
-                                    companionEmptyStateAccessibilityLabel(
-                                        title: emptyPairingTitle,
-                                        description: emptyPairingDescription
-                                    )
-                                )
-                            )
-
-                            Button {
-                                generatePairingQR()
-                            } label: {
-                                Label(NSLocalizedString("Generate Pairing QR", comment: ""), systemImage: "qrcode")
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(!canGeneratePairingQR)
-                            .help(pairingQRGenerationHelpText)
-                            .accessibilityValue(
-                                Text(
-                                    pairingQRGenerationActionAccessibilityValue(
-                                        isAvailable: canGeneratePairingQR,
-                                        isPreparing: model.isRemoteRoutePreparationInFlight
-                                    )
-                                )
-                            )
-                            .accessibilityHint(
-                                Text(
-                                    pairingQRGenerationActionAccessibilityHint(
-                                        isAvailable: canGeneratePairingQR,
-                                        isPreparing: model.isRemoteRoutePreparationInFlight
-                                    )
-                                )
-                            )
-
-                            PairingRouteSetupNotice(routeNotice: pairingRouteNotice)
-                        }
+                        PairingEmptyStateCard(
+                            title: NSLocalizedString("No pairing QR ready", comment: ""),
+                            detail: pairingRouteNotice.text,
+                            routeNotice: pairingRouteNotice,
+                            canGeneratePairingQR: canGeneratePairingQR,
+                            isPreparingConnectionDetails: model.isRemoteRoutePreparationInFlight,
+                            onGeneratePairingQR: generatePairingQR
+                        )
                     }
                 }
 
@@ -110,115 +73,44 @@ struct PairingView: View {
         .onPreferenceChange(PairingTaskFramePreferenceKey.self) { frames in
             layoutObserver?.update(frames)
         }
+        .politeAccessibilityAnnouncement(
+            for: pairingRouteStatusAccessibilityAnnouncement(pairingRouteNotice.text)
+        )
+        .accessibilityAnnouncementScope(announcementScope)
     }
 
     private var pairingRouteNotice: PairingRouteNotice {
         if model.isRemoteRoutePreparationInFlight {
-            return PairingRouteNotice(
-                text: NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: ""),
-                systemImage: "hourglass",
-                tone: .neutral
-            )
+            return makePairingRouteNotice(for: .preparing)
         }
         if model.shouldUseLocalDiagnosticPairingForUserInterface {
-            return PairingRouteNotice(
-                text: localDiagnosticPairingNoticeText(),
-                systemImage: "network",
-                tone: .neutral
-            )
+            return makePairingRouteNotice(for: .localDiagnostic(localDiagnosticPairingNoticeText()))
         }
         if let issue = model.remoteRoutePreparationIssue {
-            return PairingRouteNotice(
-                text: remoteRoutePreparationIssueText(issue),
-                systemImage: "exclamationmark.triangle",
-                tone: .warning
-            )
+            return makePairingRouteNotice(for: .issue(remoteRoutePreparationIssueText(issue)))
         }
 
         guard model.hasDevelopmentRelayRoute else {
-            if model.canPrepareRemoteRelayRouteAutomatically {
-                return PairingRouteNotice(
-                    text: NSLocalizedString("Generate a pairing QR. AetherLink prepares connection details automatically when available.", comment: ""),
-                    systemImage: "point.3.connected.trianglepath.dotted",
-                    tone: .neutral
+            return makePairingRouteNotice(
+                for: .noConfiguredRoute(
+                    canPrepareAutomatically: model.canPrepareRemoteRelayRouteAutomatically
                 )
-            }
-            return PairingRouteNotice(
-                text: NSLocalizedString("Set up Connection Recovery before generating a pairing QR.", comment: ""),
-                systemImage: "exclamationmark.triangle",
-                tone: .warning
             )
         }
 
-        guard model.isDevelopmentRelayQRCodeReady else {
-            let endpoint = model.developmentRelayEndpoint ?? NSLocalizedString("saved connection", comment: "")
-            let text: String
-            if !model.isDevelopmentRelayRouteEligibleForQRCode {
-                text = String(
-                    format: NSLocalizedString("Connection details for %@ cannot be included in this QR. Connection Recovery needs an address both devices can reach.", comment: ""),
-                    endpoint
-                )
-            } else if !model.isDevelopmentRelayRoutePreparedForQRCode {
-                text = NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: "")
-            } else {
-                text = String(
-                    format: NSLocalizedString("Connection details for %@ are not ready yet. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: ""),
-                    endpoint
-                )
-            }
-            return PairingRouteNotice(
-                text: text,
-                systemImage: "exclamationmark.triangle",
-                tone: .warning
-            )
-        }
-
-        let endpoint = model.developmentRelayEndpoint ?? NSLocalizedString("saved connection", comment: "")
-        if model.relayFrameEncryptionEnabled {
-            return PairingRouteNotice(
-                text: String(
-                    format: NSLocalizedString("This QR includes connection details for %@. Pairing or refresh still requires the scanning device to reach that route.", comment: ""),
-                    endpoint
-                ),
-                systemImage: "point.3.connected.trianglepath.dotted",
-                tone: .ready
-            )
-        }
-        return PairingRouteNotice(
-            text: String(
-                format: NSLocalizedString("This QR includes connection details for %@, but the secure connection secret is missing.", comment: ""),
-                endpoint
+        return makePairingRouteNotice(
+            for: .configuredRoute(
+                endpoint: model.developmentRelayEndpoint ?? NSLocalizedString("saved connection", comment: ""),
+                isEligibleForQRCode: model.isDevelopmentRelayRouteEligibleForQRCode,
+                isPreparedForQRCode: model.isDevelopmentRelayRoutePreparedForQRCode,
+                isQRCodeReady: model.isDevelopmentRelayQRCodeReady,
+                frameEncryptionEnabled: model.relayFrameEncryptionEnabled
             ),
-            systemImage: "exclamationmark.triangle",
-            tone: .warning
         )
-    }
-
-    private var emptyPairingQRDescription: String {
-        if model.isRemoteRoutePreparationInFlight {
-            return NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: "")
-        }
-        if model.shouldUseLocalDiagnosticPairingForUserInterface {
-            return localDiagnosticPairingNoticeText()
-        }
-        if let issue = model.remoteRoutePreparationIssue {
-            return remoteRoutePreparationIssueText(issue)
-        }
-        if model.canPrepareRemoteRelayRouteAutomatically {
-            return NSLocalizedString("Generate a pairing QR. AetherLink prepares connection details automatically and shows the QR when ready.", comment: "")
-        }
-        return NSLocalizedString("Set up Connection Recovery before generating a pairing QR.", comment: "")
     }
 
     private var canGeneratePairingQR: Bool {
         model.canRequestPairingForUserInterface
-    }
-
-    private var pairingQRGenerationHelpText: String {
-        pairingQRGenerationActionAccessibilityHint(
-            isAvailable: canGeneratePairingQR,
-            isPreparing: model.isRemoteRoutePreparationInFlight
-        )
     }
 
     private func generatePairingQR() {
@@ -293,6 +185,12 @@ private extension View {
             }
         }
     }
+}
+
+func pairingRouteStatusAccessibilityAnnouncement(_ status: String) -> String {
+    [pairingRouteNoticeAccessibilityLabel(), status]
+        .compactMap(normalizedAccessibilityAnnouncementValue)
+        .joined(separator: ". ")
 }
 
 private struct ActivePairingCard: View {
@@ -475,35 +373,10 @@ private struct ActivePairingCard: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
 
-            Button {
-                onGenerateNewQR()
-            } label: {
-                Label(NSLocalizedString("Generate New QR", comment: ""), systemImage: "arrow.triangle.2.circlepath")
-            }
-            .buttonStyle(.bordered)
-            .disabled(!canGenerateNewQR)
-            .reportPairingTaskFrame(.renewalAction)
-            .accessibilityIdentifier("pairing-renew-action")
-            .help(
-                activePairingQRRenewalActionAccessibilityHint(
-                    isAvailable: canGenerateNewQR,
-                    isPreparing: isPreparingConnectionDetails
-                )
-            )
-            .accessibilityValue(
-                Text(
-                    pairingQRGenerationActionAccessibilityValue(
-                        isAvailable: canGenerateNewQR,
-                        isPreparing: isPreparingConnectionDetails
-                    )
-                )
-            )
-            .accessibilityHint(
-                Text(
-                    activePairingQRRenewalActionAccessibilityHint(
-                        isAvailable: canGenerateNewQR,
-                        isPreparing: isPreparingConnectionDetails
-                    )
+            pairingRenewalAction(
+                isProminent: pairingQRRenewalActionIsProminent(
+                    isExpired: expiresAt <= date,
+                    isQRCodeAvailable: isQRCodeAvailable
                 )
             )
 
@@ -552,12 +425,245 @@ private struct ActivePairingCard: View {
         pairingQRRemoteRouteExpirationText(date)
     }
 
+    @ViewBuilder
+    private func pairingRenewalAction(isProminent: Bool) -> some View {
+        if isProminent {
+            pairingRenewalButton
+                .buttonStyle(.borderedProminent)
+        } else {
+            pairingRenewalButton
+                .buttonStyle(.bordered)
+        }
+    }
+
+    private var pairingRenewalButton: some View {
+        Button {
+            onGenerateNewQR()
+        } label: {
+            Label(NSLocalizedString("Generate New QR", comment: ""), systemImage: "arrow.triangle.2.circlepath")
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .disabled(!canGenerateNewQR)
+        .reportPairingTaskFrame(.renewalAction)
+        .accessibilityIdentifier("pairing-renew-action")
+        .help(
+            activePairingQRRenewalActionAccessibilityHint(
+                isAvailable: canGenerateNewQR,
+                isPreparing: isPreparingConnectionDetails
+            )
+        )
+        .accessibilityValue(
+            Text(
+                pairingQRGenerationActionAccessibilityValue(
+                    isAvailable: canGenerateNewQR,
+                    isPreparing: isPreparingConnectionDetails
+                )
+            )
+        )
+        .accessibilityHint(
+            Text(
+                activePairingQRRenewalActionAccessibilityHint(
+                    isAvailable: canGenerateNewQR,
+                    isPreparing: isPreparingConnectionDetails
+                )
+            )
+        )
+    }
+
 }
 
-private struct PairingRouteNotice {
+func pairingQRRenewalActionIsProminent(
+    isExpired: Bool,
+    isQRCodeAvailable: Bool
+) -> Bool {
+    isExpired || !isQRCodeAvailable
+}
+
+enum PairingRouteNoticeState {
+    case preparing
+    case localDiagnostic(String)
+    case issue(String)
+    case noConfiguredRoute(canPrepareAutomatically: Bool)
+    case configuredRoute(
+        endpoint: String,
+        isEligibleForQRCode: Bool,
+        isPreparedForQRCode: Bool,
+        isQRCodeReady: Bool,
+        frameEncryptionEnabled: Bool
+    )
+}
+
+struct PairingRouteNotice {
     let text: String
     let systemImage: String
     let tone: StatusTone
+}
+
+func makePairingRouteNotice(for state: PairingRouteNoticeState) -> PairingRouteNotice {
+    switch state {
+    case .preparing:
+        return PairingRouteNotice(
+            text: NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: ""),
+            systemImage: "hourglass",
+            tone: .neutral
+        )
+    case .localDiagnostic(let text):
+        return PairingRouteNotice(text: text, systemImage: "network", tone: .neutral)
+    case .issue(let text):
+        return PairingRouteNotice(
+            text: text,
+            systemImage: "exclamationmark.triangle",
+            tone: .warning
+        )
+    case .noConfiguredRoute(let canPrepareAutomatically):
+        if canPrepareAutomatically {
+            return PairingRouteNotice(
+                text: NSLocalizedString("Generate a pairing QR. AetherLink prepares connection details automatically when available.", comment: ""),
+                systemImage: "point.3.connected.trianglepath.dotted",
+                tone: .neutral
+            )
+        }
+        return PairingRouteNotice(
+            text: NSLocalizedString("Set up Connection Recovery before generating a pairing QR.", comment: ""),
+            systemImage: "exclamationmark.triangle",
+            tone: .warning
+        )
+    case let .configuredRoute(
+        endpoint,
+        isEligibleForQRCode,
+        isPreparedForQRCode,
+        isQRCodeReady,
+        frameEncryptionEnabled
+    ):
+        guard isQRCodeReady else {
+            let text: String
+            if !isEligibleForQRCode {
+                text = String(
+                    format: NSLocalizedString("Connection details for %@ cannot be included in this QR. Connection Recovery needs an address both devices can reach.", comment: ""),
+                    endpoint
+                )
+            } else if !isPreparedForQRCode {
+                text = NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: "")
+            } else {
+                text = String(
+                    format: NSLocalizedString("Connection details for %@ are not ready yet. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: ""),
+                    endpoint
+                )
+            }
+            return PairingRouteNotice(
+                text: text,
+                systemImage: "exclamationmark.triangle",
+                tone: .warning
+            )
+        }
+        if frameEncryptionEnabled {
+            return PairingRouteNotice(
+                text: String(
+                    format: NSLocalizedString("This QR includes connection details for %@. Pairing or refresh still requires the scanning device to reach that route.", comment: ""),
+                    endpoint
+                ),
+                systemImage: "point.3.connected.trianglepath.dotted",
+                tone: .ready
+            )
+        }
+        return PairingRouteNotice(
+            text: String(
+                format: NSLocalizedString("This QR includes connection details for %@, but the secure connection secret is missing.", comment: ""),
+                endpoint
+            ),
+            systemImage: "exclamationmark.triangle",
+            tone: .warning
+        )
+    }
+}
+
+private struct PairingEmptyStateCard: View {
+    let title: String
+    let detail: String
+    let routeNotice: PairingRouteNotice
+    let canGeneratePairingQR: Bool
+    let isPreparingConnectionDetails: Bool
+    let onGeneratePairingQR: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: routeNotice.systemImage)
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(routeNotice.tone.color)
+                    .frame(width: 42, height: 42)
+                    .background(
+                        routeNotice.tone.color.opacity(0.14),
+                        in: RoundedRectangle(cornerRadius: 8)
+                    )
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(title)
+                        .font(.title3.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(detail)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityIdentifier("pairing-empty-status")
+            .accessibilityLabel(
+                Text(
+                    companionEmptyStateAccessibilityLabel(
+                        title: title,
+                        description: detail
+                    )
+                )
+            )
+
+            Button {
+                onGeneratePairingQR()
+            } label: {
+                Label(NSLocalizedString("Generate Pairing QR", comment: ""), systemImage: "qrcode")
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!canGeneratePairingQR)
+            .help(
+                pairingQRGenerationActionAccessibilityHint(
+                    isAvailable: canGeneratePairingQR,
+                    isPreparing: isPreparingConnectionDetails
+                )
+            )
+            .accessibilityIdentifier("pairing-empty-primary-action")
+            .accessibilityValue(
+                Text(
+                    pairingQRGenerationActionAccessibilityValue(
+                        isAvailable: canGeneratePairingQR,
+                        isPreparing: isPreparingConnectionDetails
+                    )
+                )
+            )
+            .accessibilityHint(
+                Text(
+                    pairingQRGenerationActionAccessibilityHint(
+                        isAvailable: canGeneratePairingQR,
+                        isPreparing: isPreparingConnectionDetails
+                    )
+                )
+            )
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            routeNotice.tone.color.opacity(0.07),
+            in: RoundedRectangle(cornerRadius: 8)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(routeNotice.tone.color.opacity(0.22), lineWidth: 1)
+        }
+        .accessibilityElement(children: .contain)
+    }
 }
 
 private struct PairingRouteSetupNotice: View {

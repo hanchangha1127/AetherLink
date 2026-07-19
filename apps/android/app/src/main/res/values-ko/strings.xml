@@ -7,6 +7,9 @@
     <string name="collapse_section">섹션 접기</string>
     <string name="section_state_expanded">펼쳐짐</string>
     <string name="section_state_collapsed">접힘</string>
+    <string name="connection_details">연결 세부정보</string>
+    <string name="show_connection_details">연결 세부정보 보기</string>
+    <string name="hide_connection_details">연결 세부정보 숨기기</string>
     <string name="setting_state_on">켜짐</string>
     <string name="setting_state_off">꺼짐</string>
     <string name="setting_action_enable_named">%1$s 켜기</string>

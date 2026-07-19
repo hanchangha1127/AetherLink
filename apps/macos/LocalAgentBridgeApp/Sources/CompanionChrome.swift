@@ -9,26 +9,14 @@ struct CompanionPageHeader: View {
     let systemImage: String
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            Image(systemName: systemImage)
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(.tint)
-                .frame(width: 40, height: 40)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(.separator.opacity(0.45), lineWidth: 1)
-                }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.title2.weight(.semibold))
-                    .lineLimit(1)
-                Text(subtitle)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 14) {
+                headerIcon
+                headerText
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                headerIcon
+                headerText
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -36,6 +24,62 @@ struct CompanionPageHeader: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(companionPageHeaderAccessibilityLabel(title: title, subtitle: subtitle)))
         .accessibilityAddTraits(.isHeader)
+    }
+
+    private var headerIcon: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 24, weight: .semibold))
+            .foregroundStyle(.tint)
+            .frame(width: 40, height: 40)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(.separator.opacity(0.45), lineWidth: 1)
+            }
+    }
+
+    private var headerText: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.title2.weight(.semibold))
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(subtitle)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .layoutPriority(1)
+    }
+}
+
+struct AdaptiveControlRow<Content: View>: View {
+    let horizontalAlignment: VerticalAlignment
+    let spacing: CGFloat
+    private let content: (Bool) -> Content
+
+    init(
+        alignment: VerticalAlignment = .center,
+        spacing: CGFloat = 8,
+        @ViewBuilder content: @escaping (Bool) -> Content
+    ) {
+        self.horizontalAlignment = alignment
+        self.spacing = spacing
+        self.content = content
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: horizontalAlignment, spacing: spacing) {
+                content(false)
+            }
+            VStack(alignment: .leading, spacing: spacing) {
+                content(true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

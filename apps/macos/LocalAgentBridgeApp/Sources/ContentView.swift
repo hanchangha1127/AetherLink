@@ -219,7 +219,11 @@ func companionToolbarPrimaryActionOrder(
     guard section != .status else {
         return []
     }
-    return companionPrimaryActionOrder(trustedDeviceCount: trustedDeviceCount)
+    let actions = companionPrimaryActionOrder(trustedDeviceCount: trustedDeviceCount)
+    if section == .pairing {
+        return actions.filter { $0 != .pairingQR }
+    }
+    return actions
 }
 
 func pairingQRGenerationCommandAvailable(

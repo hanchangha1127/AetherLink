@@ -793,6 +793,10 @@ private fun LocalAgentBridgeApp(
                                 state = state,
                                 effectiveDestination = effectiveDestination,
                                 destinationTitle = destinationTitle,
+                                showNewChatAction = shouldShowTopBarNewChatAction(
+                                    destination = effectiveDestination,
+                                    usePermanentNavigation = usePermanentNavigation,
+                                ),
                                 onOpenNavigation = {
                                     scope.launch { drawerState.open() }
                                 },
@@ -955,6 +959,7 @@ internal fun AetherLinkTopAppBar(
     state: RuntimeUiState,
     effectiveDestination: AppDestination,
     destinationTitle: String,
+    showNewChatAction: Boolean = true,
     onOpenNavigation: () -> Unit,
     onStartNewChat: () -> Unit,
     onRequestModels: () -> Unit,
@@ -994,9 +999,11 @@ internal fun AetherLinkTopAppBar(
                         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                         onOpenNavigation()
                     },
-                    modifier = Modifier.semantics {
-                        onClick(label = openNavigationActionLabel, action = null)
-                    },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .semantics {
+                            onClick(label = openNavigationActionLabel, action = null)
+                        },
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Menu,
@@ -1005,7 +1012,7 @@ internal fun AetherLinkTopAppBar(
                 }
             },
             actions = {
-                if (effectiveDestination == AppDestination.Chat) {
+                if (effectiveDestination == AppDestination.Chat && showNewChatAction) {
                     IconButton(
                         onClick = {
                             hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
@@ -1013,6 +1020,7 @@ internal fun AetherLinkTopAppBar(
                         },
                         enabled = newChatEnabled,
                         modifier = Modifier
+                            .size(48.dp)
                             .testTag(CHAT_TOP_BAR_NEW_CHAT_ACTION_TEST_TAG)
                             .semantics {
                                 stateDescription = newChatStateDescription
@@ -2552,7 +2560,7 @@ internal fun ResearchNotebookDrawerItem(
                     },
                     enabled = enabled,
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(48.dp)
                         .testTag(researchNotebookDrawerOptionsTestTag(notebook.sessionId))
                         .semantics {
                             contentDescription = optionsDescription
@@ -3431,7 +3439,7 @@ private fun ChatSessionDrawerItemContent(
                     },
                     enabled = enabled,
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(48.dp)
                         .testTag(drawerChatRowOptionsTestTag(session.id))
                         .semantics {
                             contentDescription = chatSessionOptionsContentDescription

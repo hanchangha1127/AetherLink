@@ -162,8 +162,10 @@ struct ModelPullApprovalPanel: View {
             .toggleStyle(.checkbox)
             .disabled(review.isDispatching || model.isModelPullDecisionInFlight)
 
-            HStack(spacing: 8) {
-                Spacer()
+            AdaptiveControlRow(spacing: 8) { isStacked in
+                if !isStacked {
+                    Spacer(minLength: 0)
+                }
                 Button {
                     confirmedOperationIDs.remove(review.operationID)
                     Task {
@@ -171,6 +173,7 @@ struct ModelPullApprovalPanel: View {
                     }
                 } label: {
                     Label(NSLocalizedString("Dismiss", comment: ""), systemImage: "xmark")
+                        .frame(maxWidth: isStacked ? .infinity : nil, alignment: .leading)
                 }
                 .help(NSLocalizedString("Dismiss model download request", comment: ""))
                 .disabled(review.isDispatching || model.isModelPullDecisionInFlight)
@@ -182,6 +185,7 @@ struct ModelPullApprovalPanel: View {
                     }
                 } label: {
                     Label(NSLocalizedString("Approve Download", comment: ""), systemImage: "checkmark")
+                        .frame(maxWidth: isStacked ? .infinity : nil, alignment: .leading)
                 }
                 .buttonStyle(.borderedProminent)
                 .help(NSLocalizedString("Approve model download on this runtime host", comment: ""))

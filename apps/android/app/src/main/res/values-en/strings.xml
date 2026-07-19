@@ -7,6 +7,9 @@
     <string name="collapse_section">Collapse section</string>
     <string name="section_state_expanded">Expanded</string>
     <string name="section_state_collapsed">Collapsed</string>
+    <string name="connection_details">Connection details</string>
+    <string name="show_connection_details">Show connection details</string>
+    <string name="hide_connection_details">Hide connection details</string>
     <string name="setting_state_on">On</string>
     <string name="setting_state_off">Off</string>
     <string name="setting_action_enable_named">Enable %1$s</string>

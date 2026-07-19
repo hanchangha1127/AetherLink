@@ -35,6 +35,10 @@
 "Model Providers" = "Fournisseurs de modèles";
 "Model provider" = "Fournisseur de modèles";
 "Quick Actions" = "Actions rapides";
+"Quick Actions expanded" = "Actions rapides développées";
+"Quick Actions collapsed" = "Actions rapides réduites";
+"Collapse to hide maintenance and inspection actions." = "Réduire pour masquer les actions de maintenance et d’inspection.";
+"Expand to show maintenance and inspection actions." = "Développer pour afficher les actions de maintenance et d’inspection.";
 "Check Model Providers" = "Vérifier les fournisseurs de modèles";
 "Check model provider availability through AetherLink Runtime." = "Vérifie la disponibilité des fournisseurs de modèles via AetherLink Runtime.";
 "Load Model List" = "Charger la liste des modèles";

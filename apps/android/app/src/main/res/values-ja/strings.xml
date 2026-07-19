@@ -7,6 +7,9 @@
     <string name="collapse_section">セクションを折りたたむ</string>
     <string name="section_state_expanded">展開中</string>
     <string name="section_state_collapsed">折りたたみ中</string>
+    <string name="connection_details">接続の詳細</string>
+    <string name="show_connection_details">接続の詳細を表示</string>
+    <string name="hide_connection_details">接続の詳細を非表示</string>
     <string name="setting_state_on">オン</string>
     <string name="setting_state_off">オフ</string>
     <string name="setting_action_enable_named">%1$sをオンにする</string>

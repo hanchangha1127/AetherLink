@@ -35,6 +35,10 @@
 "Model Providers" = "모델 제공자";
 "Model provider" = "모델 제공자";
 "Quick Actions" = "빠른 작업";
+"Quick Actions expanded" = "빠른 작업 펼쳐짐";
+"Quick Actions collapsed" = "빠른 작업 접힘";
+"Collapse to hide maintenance and inspection actions." = "유지 관리 및 검사 작업을 숨기려면 접으세요.";
+"Expand to show maintenance and inspection actions." = "유지 관리 및 검사 작업을 표시하려면 펼치세요.";
 "Check Model Providers" = "모델 제공자 확인";
 "Check model provider availability through AetherLink Runtime." = "AetherLink Runtime을 통해 모델 제공자 사용 가능 여부를 확인합니다.";
 "Load Model List" = "모델 목록 불러오기";

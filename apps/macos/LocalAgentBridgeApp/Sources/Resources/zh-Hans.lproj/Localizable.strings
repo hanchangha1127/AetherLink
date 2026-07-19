@@ -35,6 +35,10 @@
 "Model Providers" = "模型提供方";
 "Model provider" = "模型提供方";
 "Quick Actions" = "快速操作";
+"Quick Actions expanded" = "快速操作已展开";
+"Quick Actions collapsed" = "快速操作已折叠";
+"Collapse to hide maintenance and inspection actions." = "折叠以隐藏维护和检查操作。";
+"Expand to show maintenance and inspection actions." = "展开以显示维护和检查操作。";
 "Check Model Providers" = "检查模型提供方";
 "Check model provider availability through AetherLink Runtime." = "通过 AetherLink Runtime 检查模型提供方可用性。";
 "Load Model List" = "加载模型列表";

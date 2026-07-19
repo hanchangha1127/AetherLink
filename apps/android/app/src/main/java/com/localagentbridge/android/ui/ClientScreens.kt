@@ -17,6 +17,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -198,6 +199,7 @@ import java.util.Date
 import java.util.Locale
 
 private const val COPY_SUCCESS_ANNOUNCEMENT_DURATION_MS = 1_800L
+private const val CHAT_BOTTOM_NOTICE_MAX_HEIGHT_FRACTION = 0.46f
 
 private data class CopySuccessAnnouncement(
     val id: Int,
@@ -705,6 +707,24 @@ private fun ConnectionStatusPanel(
     onScanLatestQr: (() -> Unit)? = null,
     primaryActionTestTag: String = CONNECTION_STATUS_HERO_ACTION_TEST_TAG,
 ) {
+    var detailsExpanded by rememberSaveable { mutableStateOf(false) }
+    val hapticFeedback = LocalHapticFeedback.current
+    val detailsTitle = stringResource(R.string.connection_details)
+    val detailsStateDescription = stringResource(
+        if (detailsExpanded) {
+            R.string.section_state_expanded
+        } else {
+            R.string.section_state_collapsed
+        },
+    )
+    val detailsActionLabel = stringResource(
+        if (detailsExpanded) {
+            R.string.hide_connection_details
+        } else {
+            R.string.show_connection_details
+        },
+    )
+
     OutlinedCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -722,64 +742,118 @@ private fun ConnectionStatusPanel(
                 onScanLatestQr = onScanLatestQr,
                 primaryActionTestTag = primaryActionTestTag,
             )
-            StatusLine(
-                label = stringResource(R.string.runtime),
-                value = runtimeStatusLabel(state.runtimeStatus),
-                tagKey = CONNECTION_STATUS_RUNTIME_LINE_KEY,
-            )
-            if (state.isPairingAwaitingRoute) {
-                StatusLine(
-                    label = stringResource(R.string.pairing_title),
-                    value = stringResource(
-                        R.string.pending_pairing_route_status,
-                        state.pendingPairingRuntimeName
-                            ?.takeIf { it.isNotBlank() }
-                            ?: stringResource(R.string.trusted_runtime),
-                    ),
-                    tagKey = CONNECTION_STATUS_PAIRING_LINE_KEY,
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .testTag(CONNECTION_STATUS_DETAILS_DISCLOSURE_TEST_TAG)
+                    .clickable(
+                        role = Role.Button,
+                        onClickLabel = detailsActionLabel,
+                        onClick = {
+                            hapticFeedback.performAetherLinkFeedback(
+                                AetherLinkInteractionFeedback.Toggle,
+                            )
+                            detailsExpanded = !detailsExpanded
+                        },
+                    )
+                    .semantics(mergeDescendants = true) {
+                        heading()
+                        stateDescription = detailsStateDescription
+                    }
+                    .padding(horizontal = 4.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = detailsTitle,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag(CONNECTION_STATUS_DETAILS_DISCLOSURE_LABEL_TEST_TAG),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Icon(
+                    imageVector = if (detailsExpanded) {
+                        Icons.Filled.KeyboardArrowUp
+                    } else {
+                        Icons.Filled.KeyboardArrowDown
+                    },
+                    contentDescription = null,
+                    modifier = Modifier.testTag(CONNECTION_STATUS_DETAILS_DISCLOSURE_ICON_TEST_TAG),
                 )
             }
-            StatusLine(
-                label = stringResource(R.string.backend),
-                value = backendStatusLabel(state.backendAvailable),
-                tagKey = CONNECTION_STATUS_BACKEND_LINE_KEY,
-            )
-            StatusLine(
-                label = stringResource(R.string.providers),
-                value = providerStatusSummary(state),
-                tagKey = CONNECTION_STATUS_PROVIDERS_LINE_KEY,
-            )
-            StatusLine(
-                label = stringResource(R.string.model_residency),
-                value = modelResidencySummary(state.modelResidency),
-                tagKey = CONNECTION_STATUS_MODEL_RESIDENCY_LINE_KEY,
-            )
-            ProviderStatusRows(providers = state.providerStatuses)
-            RuntimeRouteNotice(
-                state = state,
-                onConnect = null,
-                onScanLatestQr = null,
-            )
-            StatusLine(
-                label = stringResource(R.string.connected),
-                value = if (state.isConnected) stringResource(R.string.yes) else stringResource(R.string.no),
-                tagKey = CONNECTION_STATUS_CONNECTED_LINE_KEY,
-            )
-            StatusLine(
-                label = stringResource(R.string.auto_reconnect),
-                value = if (state.trustedRuntimeAutoReconnectEnabled) {
-                    stringResource(R.string.yes)
-                } else {
-                    stringResource(R.string.no)
-                },
-                tagKey = CONNECTION_STATUS_AUTO_RECONNECT_LINE_KEY,
-            )
-            if (state.trustedRuntime != null && !state.trustedRuntimeAutoReconnectEnabled && !state.isConnected) {
-                Text(
-                    text = stringResource(R.string.auto_reconnect_paused),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
+            if (detailsExpanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(CONNECTION_STATUS_DETAILS_CONTENT_TEST_TAG),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    StatusLine(
+                        label = stringResource(R.string.runtime),
+                        value = runtimeStatusLabel(state.runtimeStatus),
+                        tagKey = CONNECTION_STATUS_RUNTIME_LINE_KEY,
+                    )
+                    if (state.isPairingAwaitingRoute) {
+                        StatusLine(
+                            label = stringResource(R.string.pairing_title),
+                            value = stringResource(
+                                R.string.pending_pairing_route_status,
+                                state.pendingPairingRuntimeName
+                                    ?.takeIf { it.isNotBlank() }
+                                    ?: stringResource(R.string.trusted_runtime),
+                            ),
+                            tagKey = CONNECTION_STATUS_PAIRING_LINE_KEY,
+                        )
+                    }
+                    StatusLine(
+                        label = stringResource(R.string.backend),
+                        value = backendStatusLabel(state.backendAvailable),
+                        tagKey = CONNECTION_STATUS_BACKEND_LINE_KEY,
+                    )
+                    StatusLine(
+                        label = stringResource(R.string.providers),
+                        value = providerStatusSummary(state),
+                        tagKey = CONNECTION_STATUS_PROVIDERS_LINE_KEY,
+                    )
+                    StatusLine(
+                        label = stringResource(R.string.model_residency),
+                        value = modelResidencySummary(state.modelResidency),
+                        tagKey = CONNECTION_STATUS_MODEL_RESIDENCY_LINE_KEY,
+                    )
+                    ProviderStatusRows(providers = state.providerStatuses)
+                    RuntimeRouteNotice(
+                        state = state,
+                        onConnect = null,
+                        onScanLatestQr = null,
+                    )
+                    StatusLine(
+                        label = stringResource(R.string.connected),
+                        value = if (state.isConnected) stringResource(R.string.yes) else stringResource(R.string.no),
+                        tagKey = CONNECTION_STATUS_CONNECTED_LINE_KEY,
+                    )
+                    StatusLine(
+                        label = stringResource(R.string.auto_reconnect),
+                        value = if (state.trustedRuntimeAutoReconnectEnabled) {
+                            stringResource(R.string.yes)
+                        } else {
+                            stringResource(R.string.no)
+                        },
+                        tagKey = CONNECTION_STATUS_AUTO_RECONNECT_LINE_KEY,
+                    )
+                    if (
+                        state.trustedRuntime != null &&
+                        !state.trustedRuntimeAutoReconnectEnabled &&
+                        !state.isConnected
+                    ) {
+                        Text(
+                            text = stringResource(R.string.auto_reconnect_paused),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
+                }
             }
         }
     }
@@ -829,6 +903,7 @@ private fun ConnectionStatusHero(
                     .testTag(CONNECTION_STATUS_HERO_ROW_TEST_TAG)
                     .semantics(mergeDescendants = true) {
                         contentDescription = accessibilitySummary
+                        liveRegion = LiveRegionMode.Polite
                     },
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.Top,
@@ -890,18 +965,31 @@ internal enum class ConnectionJourneyTone {
 }
 
 internal fun connectionJourneyPresentation(state: RuntimeUiState): ConnectionJourneyPresentation {
-    val isTrustedConnection = state.isConnected && state.trustedRuntime != null
+    val isTrustedConnection = state.isConnected &&
+        state.trustedRuntime != null &&
+        state.error?.blocksTrustedConnectionSuccess() != true
     val needsPairing = state.trustedRuntime == null && !state.isConnected
     val hasRelayRoute = state.trustedRuntime.hasUsableRelayRoute()
     val hasConnectableRoute = hasConnectableTrustedRuntimeRoute(state)
     val needsRoute = state.trustedRuntime != null && !hasConnectableRoute && !state.isConnected
     val hasSavedRelayRoute = hasRelayRoute && !state.isConnected
     val hasSavedRoute = hasConnectableRoute && !state.isConnected
+    val routeAvailabilityError = state.error?.takeIf {
+        !state.isConnected && !state.isConnecting && it.isRouteAvailabilityNotice()
+    }
+    val routeAvailabilityAction = routeAvailabilityError?.let { routeNoticePrimaryAction(state) }
 
     val titleRes = when {
         isTrustedConnection -> R.string.status_connected_trusted_title
         state.isConnected -> R.string.status_connected_diagnostics_title
         state.isConnecting -> R.string.status_connecting_trusted_title
+        routeAvailabilityError != null -> if (
+            routeAvailabilityAction == RouteNoticePrimaryAction.ScanLatestQr
+        ) {
+            R.string.status_route_needed_title
+        } else {
+            R.string.route_notice_short_unavailable
+        }
         state.isPairingAwaitingRoute || needsRoute -> R.string.status_route_needed_title
         needsPairing -> R.string.status_pairing_needed_title
         hasSavedRelayRoute -> R.string.status_relay_ready_title
@@ -912,6 +1000,7 @@ internal fun connectionJourneyPresentation(state: RuntimeUiState): ConnectionJou
         isTrustedConnection -> R.string.status_connected_trusted_detail
         state.isConnected -> R.string.status_connected_diagnostics_detail
         state.isConnecting -> R.string.status_connecting_trusted_detail
+        routeAvailabilityError != null -> routeAvailabilityCompactLabelRes(routeAvailabilityError)
         state.isPairingAwaitingRoute -> R.string.pending_pairing_route_detail
         needsRoute -> R.string.status_route_needed_detail
         needsPairing -> R.string.status_pairing_needed_detail
@@ -921,6 +1010,7 @@ internal fun connectionJourneyPresentation(state: RuntimeUiState): ConnectionJou
     }
     val tone = when {
         isTrustedConnection -> ConnectionJourneyTone.Ready
+        routeAvailabilityError != null -> ConnectionJourneyTone.Warning
         state.isPairingAwaitingRoute || needsRoute -> ConnectionJourneyTone.Warning
         needsPairing || hasSavedRelayRoute || hasSavedRoute -> ConnectionJourneyTone.Action
         else -> ConnectionJourneyTone.Neutral
@@ -928,6 +1018,7 @@ internal fun connectionJourneyPresentation(state: RuntimeUiState): ConnectionJou
     val icon = when {
         isTrustedConnection -> Icons.Filled.CheckCircle
         state.isConnecting -> Icons.Filled.Refresh
+        routeAvailabilityError != null -> Icons.Filled.Error
         needsPairing -> Icons.Filled.QrCodeScanner
         state.isPairingAwaitingRoute || needsRoute -> Icons.Filled.Error
         else -> Icons.Filled.Link
@@ -1712,7 +1803,13 @@ fun ChatScreen(
     val jumpToLatestActionLabel = stringResource(R.string.content_desc_jump_to_latest)
     val density = LocalDensity.current
     val keyboardDockPadding = if (WindowInsets.ime.getBottom(density) > 0) 64.dp else 0.dp
-    val composerDockSpace = if (state.selectedTrustedSourceAnchorIds.isEmpty()) 166.dp else 206.dp
+    val emptyStateScroll = rememberScrollState()
+    val bottomNoticeScroll = rememberScrollState()
+    val showChatBottomError = state.error != null && shouldShowChatBottomError(state)
+    val showBottomNotices =
+        (state.isConnected && state.backendAvailable == false) ||
+            !state.routeRefreshNoticeRuntimeName.isNullOrBlank() ||
+            showChatBottomError
     var previousMessageCount by rememberSaveable { mutableStateOf(0) }
     var copyAnnouncement by remember { mutableStateOf<CopySuccessAnnouncement?>(null) }
     var copyAnnouncementId by remember { mutableStateOf(0) }
@@ -1771,169 +1868,223 @@ fun ChatScreen(
         }
     }
 
+    LaunchedEffect(
+        state.selectedLanguageTag,
+        state.isConnected,
+        state.isConnecting,
+        state.trustedRuntime?.deviceId,
+        state.error?.code,
+        state.error?.diagnosticCode,
+        state.selectedModelId,
+        state.isStreaming,
+        state.isLoadingActiveChatMessages,
+    ) {
+        emptyStateScroll.scrollTo(0)
+    }
+
+    LaunchedEffect(
+        state.error,
+        state.backendAvailable,
+        state.routeRefreshNoticeRuntimeName,
+        state.selectedLanguageTag,
+    ) {
+        bottomNoticeScroll.scrollTo(0)
+    }
+
     CompositionLocalProvider(LocalCopySuccessAnnouncer provides announceCopySuccess) {
-        Box(
+        BoxWithConstraints(
             modifier = modifier
                 .fillMaxSize()
                 .padding(horizontal = 12.dp, vertical = 6.dp),
         ) {
-        if (state.messages.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = composerDockSpace),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (state.isLoadingActiveChatMessages) {
-                    ChatMessagesLoadingState()
-                } else if (shouldShowChatEmptyState(state)) {
-                    ChatEmptyState(
-                        state = state,
-                        onConnect = onConnect,
-                        onScanPairingQr = onScanPairingQr,
-                        onScanLatestQr = onScanLatestQr,
-                    )
-                }
+            val bottomNoticeMaxHeight = maxHeight * CHAT_BOTTOM_NOTICE_MAX_HEIGHT_FRACTION
+            LaunchedEffect(maxWidth, maxHeight) {
+                emptyStateScroll.scrollTo(0)
+                bottomNoticeScroll.scrollTo(0)
             }
-        } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .widthIn(max = 840.dp)
-                    .fillMaxWidth()
-                    .fillMaxHeight()
-                    .testTag(CHAT_MESSAGE_LIST_TEST_TAG),
-                verticalArrangement = Arrangement.spacedBy(0.dp),
-                contentPadding = PaddingValues(
-                    start = 4.dp,
-                    top = 16.dp,
-                    end = 4.dp,
-                    bottom = composerDockSpace + 12.dp,
-                ),
-            ) {
-                itemsIndexed(
-                    items = state.messages,
-                    key = { _, message -> message.id },
-                ) { index, message ->
-                    val isLatestAssistant = message.role == "assistant" &&
-                        message.id == state.messages.lastAssistantMessageId()
-                    val isLatestUser = message.role == "user" &&
-                        message.id == state.messages.lastUserMessageId()
-                    if (index > 0) {
-                        Spacer(
-                            modifier = Modifier.height(
-                                chatTranscriptMessageGap(
-                                    previousRole = state.messages[index - 1].role,
-                                    currentRole = message.role,
-                                ),
+            Column(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .testTag(CHAT_CONTENT_VIEWPORT_TEST_TAG),
+                ) {
+                    if (state.messages.isEmpty()) {
+                        if (state.isLoadingActiveChatMessages) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                ChatMessagesLoadingState()
+                            }
+                        } else if (shouldShowChatEmptyState(state)) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(emptyStateScroll),
+                                verticalArrangement = Arrangement.Center,
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                ChatEmptyState(
+                                    state = state,
+                                    onConnect = onConnect,
+                                    onScanPairingQr = onScanPairingQr,
+                                    onScanLatestQr = onScanLatestQr,
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .widthIn(max = 840.dp)
+                                .fillMaxSize()
+                                .testTag(CHAT_MESSAGE_LIST_TEST_TAG),
+                            verticalArrangement = Arrangement.spacedBy(0.dp),
+                            contentPadding = PaddingValues(
+                                start = 4.dp,
+                                top = 16.dp,
+                                end = 4.dp,
+                                bottom = 12.dp,
                             ),
-                        )
+                        ) {
+                            itemsIndexed(
+                                items = state.messages,
+                                key = { _, message -> message.id },
+                            ) { index, message ->
+                                val isLatestAssistant = message.role == "assistant" &&
+                                    message.id == state.messages.lastAssistantMessageId()
+                                val isLatestUser = message.role == "user" &&
+                                    message.id == state.messages.lastUserMessageId()
+                                if (index > 0) {
+                                    Spacer(
+                                        modifier = Modifier.height(
+                                            chatTranscriptMessageGap(
+                                                previousRole = state.messages[index - 1].role,
+                                                currentRole = message.role,
+                                            ),
+                                        ),
+                                    )
+                                }
+                                ChatMessageRow(
+                                    message = message,
+                                    isStreaming = state.isStreaming &&
+                                        message.role == "assistant" &&
+                                        message.id == state.messages.lastOrNull()?.id,
+                                    showRegenerateAction = isLatestAssistant &&
+                                        message.content.isNotBlank() &&
+                                        !state.isStreaming &&
+                                        !state.isLoadingActiveChatMessages,
+                                    showReuseAction = isLatestUser &&
+                                        message.content.isNotBlank() &&
+                                        message.attachments.isEmpty() &&
+                                        !state.isStreaming &&
+                                        !state.isLoadingActiveChatMessages,
+                                    onRegenerateLatestResponse = onRegenerateLatestResponse,
+                                    onReuseLatestUserMessage = onReuseLatestUserMessage,
+                                    sourceAttributionActionsEnabled = state.isConnected &&
+                                        state.runtimeStatus == "authenticated" &&
+                                        !state.isStreaming &&
+                                        !state.isLoadingActiveChatMessages &&
+                                        !state.isResolvingCitation &&
+                                        state.resolvingSourceAttributionMessageId == null,
+                                    resolvingSourceAttributionMessageId = state.resolvingSourceAttributionMessageId,
+                                    resolvingSourceAttributionIndex = state.resolvingSourceAttributionIndex,
+                                    onReviewHistoricalSourceAttribution = onReviewHistoricalSourceAttribution,
+                                    modifier = Modifier.testTag(chatMessageRowTestTag(message.id)),
+                                )
+                            }
+                        }
                     }
-                    ChatMessageRow(
-                        message = message,
-                        isStreaming = state.isStreaming &&
-                            message.role == "assistant" &&
-                            message.id == state.messages.lastOrNull()?.id,
-                        showRegenerateAction = isLatestAssistant &&
-                            message.content.isNotBlank() &&
-                            !state.isStreaming &&
-                            !state.isLoadingActiveChatMessages,
-                        showReuseAction = isLatestUser &&
-                            message.content.isNotBlank() &&
-                            message.attachments.isEmpty() &&
-                            !state.isStreaming &&
-                            !state.isLoadingActiveChatMessages,
-                        onRegenerateLatestResponse = onRegenerateLatestResponse,
-                        onReuseLatestUserMessage = onReuseLatestUserMessage,
-                        sourceAttributionActionsEnabled = state.isConnected &&
-                            state.runtimeStatus == "authenticated" &&
-                            !state.isStreaming &&
-                            !state.isLoadingActiveChatMessages &&
-                            !state.isResolvingCitation &&
-                            state.resolvingSourceAttributionMessageId == null,
-                        resolvingSourceAttributionMessageId = state.resolvingSourceAttributionMessageId,
-                        resolvingSourceAttributionIndex = state.resolvingSourceAttributionIndex,
-                        onReviewHistoricalSourceAttribution = onReviewHistoricalSourceAttribution,
-                        modifier = Modifier.testTag(chatMessageRowTestTag(message.id)),
+                    if (showJumpToLatest) {
+                        FilledTonalIconButton(
+                            onClick = {
+                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                                scope.launch {
+                                    listState.animateScrollToItem(state.messages.lastIndex)
+                                }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 18.dp)
+                                .size(48.dp)
+                                .testTag(CHAT_JUMP_TO_LATEST_TEST_TAG)
+                                .semantics {
+                                    stateDescription = jumpToLatestStateDescription
+                                    onClick(label = jumpToLatestActionLabel, action = null)
+                                },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.KeyboardArrowDown,
+                                contentDescription = jumpToLatestActionLabel,
+                            )
+                        }
+                    }
+                }
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .widthIn(max = 840.dp)
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(bottom = keyboardDockPadding)
+                        .testTag(CHAT_BOTTOM_DOCK_TEST_TAG),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (showBottomNotices) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = bottomNoticeMaxHeight)
+                                .verticalScroll(bottomNoticeScroll)
+                                .testTag(CHAT_BOTTOM_NOTICE_AREA_TEST_TAG),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            BackendReadinessBanner(
+                                state = state,
+                                onRefreshHealth = onRefreshHealth,
+                            )
+                            RouteRefreshSavedNotice(state = state)
+                            if (showChatBottomError) {
+                                ErrorText(
+                                    error = state.error,
+                                    routeAction = routeNoticePrimaryAction(state),
+                                    onConnect = onConnect,
+                                    onScanLatestQr = onScanLatestQr,
+                                )
+                            }
+                        }
+                    }
+                    ChatComposer(
+                        value = state.chatInput,
+                        attachments = state.pendingAttachments,
+                        trustedSources = state.trustedSources,
+                        selectedTrustedSourceAnchorIds = state.selectedTrustedSourceAnchorIds,
+                        hasLoadedTrustedSources = state.hasLoadedTrustedSources,
+                        isLoadingTrustedSources = state.isLoadingTrustedSources,
+                        enabled = canEditComposer,
+                        imageAttachmentsSupported = !hasUnsupportedImageAttachment,
+                        canSend = canSend,
+                        hasSendableContent = hasSendableContent,
+                        isStreaming = state.isStreaming,
+                        hint = chatInputHint(state),
+                        onInputChange = onInputChange,
+                        onClearDraft = onClearDraft,
+                        onAttachFiles = onAttachFiles,
+                        onRemoveAttachment = onRemoveAttachment,
+                        onToggleTrustedSource = onToggleTrustedSource,
+                        onRemoveTrustedSource = onRemoveTrustedSource,
+                        onRefreshTrustedSources = onRefreshTrustedSources,
+                        onSend = onSend,
+                        onCancel = onCancel,
                     )
                 }
             }
-        }
-        if (showJumpToLatest) {
-            FilledTonalIconButton(
-                onClick = {
-                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                    scope.launch {
-                        listState.animateScrollToItem(state.messages.lastIndex)
-                    }
-                },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = composerDockSpace + keyboardDockPadding + 18.dp)
-                    .size(40.dp)
-                    .testTag(CHAT_JUMP_TO_LATEST_TEST_TAG)
-                    .semantics {
-                        stateDescription = jumpToLatestStateDescription
-                        onClick(label = jumpToLatestActionLabel, action = null)
-                    },
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.KeyboardArrowDown,
-                    contentDescription = jumpToLatestActionLabel,
-                )
+            copyAnnouncement?.let { announcement ->
+                CopySuccessLiveRegion(message = announcement.message)
             }
         }
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .widthIn(max = 840.dp)
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(bottom = keyboardDockPadding),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            BackendReadinessBanner(
-                state = state,
-                onRefreshHealth = onRefreshHealth,
-            )
-            RouteRefreshSavedNotice(state = state)
-            if (shouldShowChatBottomError(state)) {
-                ErrorText(
-                    error = state.error,
-                    routeAction = routeNoticePrimaryAction(state),
-                    onConnect = onConnect,
-                    onScanLatestQr = onScanLatestQr,
-                )
-            }
-            ChatComposer(
-                value = state.chatInput,
-                attachments = state.pendingAttachments,
-                trustedSources = state.trustedSources,
-                selectedTrustedSourceAnchorIds = state.selectedTrustedSourceAnchorIds,
-                hasLoadedTrustedSources = state.hasLoadedTrustedSources,
-                isLoadingTrustedSources = state.isLoadingTrustedSources,
-                enabled = canEditComposer,
-                imageAttachmentsSupported = !hasUnsupportedImageAttachment,
-                canSend = canSend,
-                hasSendableContent = hasSendableContent,
-                isStreaming = state.isStreaming,
-                hint = chatInputHint(state),
-                onInputChange = onInputChange,
-                onClearDraft = onClearDraft,
-                onAttachFiles = onAttachFiles,
-                onRemoveAttachment = onRemoveAttachment,
-                onToggleTrustedSource = onToggleTrustedSource,
-                onRemoveTrustedSource = onRemoveTrustedSource,
-                onRefreshTrustedSources = onRefreshTrustedSources,
-                onSend = onSend,
-                onCancel = onCancel,
-            )
-        }
-        copyAnnouncement?.let { announcement ->
-            CopySuccessLiveRegion(message = announcement.message)
-        }
-    }
     }
 
     SourceReviewDialog(
@@ -2143,6 +2294,7 @@ fun SettingsScreen(
     showDeveloperDiagnostics: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val topError = settingsTopError(state)
     ScreenList(modifier) {
         if (settingsScreenShowsGenericHeader(state)) {
             item {
@@ -2150,6 +2302,11 @@ fun SettingsScreen(
                     title = R.string.settings_title,
                     subtitle = R.string.settings_subtitle,
                 )
+            }
+        }
+        if (topError != null) {
+            item {
+                ErrorText(error = topError)
             }
         }
         item {
@@ -2385,14 +2542,13 @@ fun SettingsScreen(
                 )
             }
         }
-        item {
-            ErrorText(
-                error = state.error,
-                routeAction = routeNoticePrimaryAction(state),
-                onConnect = null,
-                onScanLatestQr = null,
-            )
-        }
+    }
+}
+
+internal fun settingsTopError(state: RuntimeUiState): RuntimeUiError? {
+    val error = state.error ?: return null
+    return error.takeUnless {
+        state.trustedRuntime != null && it.isRouteAvailabilityNotice()
     }
 }
 
@@ -2636,16 +2792,12 @@ private fun SettingsExpandableSection(
                     text = stringResource(title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.testTag(settingsExpandableSectionTitleTestTag(title)),
                 )
                 Text(
                     text = stringResource(subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.secondary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.testTag(settingsExpandableSectionSubtitleTestTag(title)),
                 )
             }
@@ -3699,7 +3851,7 @@ private fun ChatMessageRow(
                                     onReuseLatestUserMessage()
                                 },
                                 modifier = Modifier
-                                    .size(36.dp)
+                                    .size(48.dp)
                                     .semantics {
                                         contentDescription = reuseActionLabel
                                         stateDescription = reuseActionStateDescription
@@ -3848,7 +4000,7 @@ private fun AssistantMessage(
                                         onRegenerateLatestResponse()
                                     },
                                     modifier = Modifier
-                                        .size(36.dp)
+                                        .size(48.dp)
                                         .semantics {
                                             contentDescription = regenerateActionLabel
                                             stateDescription = regenerateActionStateDescription
@@ -4452,10 +4604,12 @@ private fun MessageCopyButton(
         },
         enabled = textToCopy.isNotBlank(),
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-        modifier = modifier.semantics {
-            contentDescription = copyActionLabel
-            onClick(label = copyActionLabel, action = null)
-        },
+        modifier = modifier
+            .size(48.dp)
+            .semantics {
+                contentDescription = copyActionLabel
+                onClick(label = copyActionLabel, action = null)
+            },
     ) {
         Icon(
             imageVector = Icons.Filled.ContentCopy,
@@ -5136,7 +5290,7 @@ private fun ChatComposer(
         color = MaterialTheme.colorScheme.surface.copy(alpha = CHAT_COMPOSER_CONTAINER_ALPHA),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (isStreaming) {
@@ -5157,9 +5311,9 @@ private fun ChatComposer(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 42.dp)
+                    .heightIn(min = 48.dp)
                     .testTag(CHAT_COMPOSER_CONTROLS_ROW_TEST_TAG),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.Bottom,
             ) {
                 Box {
@@ -5170,7 +5324,7 @@ private fun ChatComposer(
                         },
                         enabled = canSelectSources,
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(48.dp)
                             .testTag(CHAT_COMPOSER_SOURCE_ACTION_TEST_TAG),
                     ) {
                         Icon(
@@ -5241,7 +5395,7 @@ private fun ChatComposer(
                     },
                     enabled = canAttachFiles,
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(48.dp)
                         .testTag(CHAT_COMPOSER_ATTACH_ACTION_TEST_TAG)
                         .semantics {
                             stateDescription = attachFilesStateDescription
@@ -5312,7 +5466,7 @@ private fun ChatComposer(
                             onClearDraft()
                         },
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(48.dp)
                             .testTag(CHAT_COMPOSER_CLEAR_DRAFT_ACTION_TEST_TAG)
                             .semantics {
                                 contentDescription = clearDraftActionLabel
@@ -5338,7 +5492,7 @@ private fun ChatComposer(
                         },
                         enabled = true,
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(48.dp)
                             .testTag(CHAT_COMPOSER_CANCEL_ACTION_TEST_TAG)
                             .semantics {
                                 stateDescription = cancelGenerationStateDescription
@@ -5362,7 +5516,7 @@ private fun ChatComposer(
                         },
                         enabled = canSend,
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(48.dp)
                             .testTag(CHAT_COMPOSER_SEND_ACTION_TEST_TAG)
                             .semantics {
                                 stateDescription = sendStateDescription
@@ -5420,7 +5574,7 @@ private fun TrustedSourceChips(
                 modifier = Modifier.testTag(chatTrustedSourceChipTestTag(source.document.id)),
             ) {
                 Row(
-                    modifier = Modifier.heightIn(min = 32.dp),
+                    modifier = Modifier.heightIn(min = 48.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -5435,7 +5589,7 @@ private fun TrustedSourceChips(
                     IconButton(
                         onClick = { onRemoveSource(source.sourceAnchorId) },
                         enabled = enabled,
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier.size(48.dp),
                     ) {
                         Icon(
                             Icons.Filled.Close,
@@ -5648,7 +5802,7 @@ private fun AttachmentChip(
         ) {
             Column(
                 modifier = Modifier
-                    .widthIn(max = 190.dp)
+                    .widthIn(max = 170.dp)
                     .semantics {
                         contentDescription = attachmentContentDescription
                         stateDescription = attachmentStateDescription
@@ -5679,7 +5833,7 @@ private fun AttachmentChip(
                 },
                 enabled = enabled,
                 modifier = Modifier
-                    .size(28.dp)
+                    .size(48.dp)
                     .semantics {
                         onClick(label = removeAttachmentActionLabel) {
                             if (enabled) {
@@ -5898,8 +6052,6 @@ private fun AppearancePreferenceSelector(
                     Text(
                         text = optionLabel,
                         style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.testTag(appearancePreferenceOptionLabelTestTag(theme)),
                     )
                     if (optionDetail != null) {
@@ -5907,8 +6059,6 @@ private fun AppearancePreferenceSelector(
                             text = optionDetail,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.secondary,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.testTag(appearancePreferenceOptionDetailTestTag(theme)),
                         )
                     }
@@ -6430,16 +6580,12 @@ private fun LanguagePreferenceSelector(
                 Text(
                     text = systemOptionLabel,
                     style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.testTag(languagePreferenceOptionLabelTestTag(APP_LANGUAGE_SOURCE_SYSTEM)),
                 )
                 Text(
                     text = systemOptionDetail,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.secondary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.testTag(languagePreferenceOptionDetailTestTag(APP_LANGUAGE_SOURCE_SYSTEM)),
                 )
             }
@@ -6498,8 +6644,6 @@ private fun LanguagePreferenceSelector(
                 Text(
                     text = optionLabel,
                     style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
                         .weight(1f)
                         .testTag(languagePreferenceOptionLabelTestTag(language.languageTag)),
@@ -8037,7 +8181,7 @@ private fun DocumentSearchResultRow(
                         onClick = { onResolveCitation(result.sourceAnchorId) },
                         enabled = reviewEnabled,
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(48.dp)
                             .testTag(documentSourceReviewActionTestTag(result.document.id, result.rank))
                             .semantics {
                                 contentDescription = reviewLabel
@@ -9819,7 +9963,7 @@ internal fun MemoryEntryRow(
                     },
                     enabled = actionsEnabled,
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(48.dp)
                         .semantics {
                             contentDescription = memoryRemoveContentDescription
                             disabledActionStateDescription?.let { stateDescription = it }
@@ -9989,6 +10133,12 @@ internal const val CONNECTION_STATUS_HERO_ICON_TEST_TAG = "connection_status_her
 internal const val CONNECTION_STATUS_HERO_TITLE_TEST_TAG = "connection_status_hero_title"
 internal const val CONNECTION_STATUS_HERO_DETAIL_TEST_TAG = "connection_status_hero_detail"
 internal const val CONNECTION_STATUS_HERO_ACTION_TEST_TAG = "connection_status_hero_action"
+internal const val CONNECTION_STATUS_DETAILS_DISCLOSURE_TEST_TAG = "connection_status_details_disclosure"
+internal const val CONNECTION_STATUS_DETAILS_DISCLOSURE_LABEL_TEST_TAG =
+    "connection_status_details_disclosure_label"
+internal const val CONNECTION_STATUS_DETAILS_DISCLOSURE_ICON_TEST_TAG =
+    "connection_status_details_disclosure_icon"
+internal const val CONNECTION_STATUS_DETAILS_CONTENT_TEST_TAG = "connection_status_details_content"
 internal const val CONNECTION_STATUS_LINE_TEST_TAG_PREFIX = "connection_status_line_"
 internal const val CONNECTION_STATUS_LINE_LABEL_TEST_TAG_PREFIX = "connection_status_line_label_"
 internal const val CONNECTION_STATUS_LINE_VALUE_TEST_TAG_PREFIX = "connection_status_line_value_"
@@ -10522,8 +10672,6 @@ private fun ErrorText(
                     Text(
                         text = errorLabel,
                         color = MaterialTheme.colorScheme.onErrorContainer,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.testTag(CHAT_RUNTIME_ERROR_MESSAGE_TEST_TAG),
                     )
                     detailLabel?.let { detail ->
@@ -10531,8 +10679,6 @@ private fun ErrorText(
                             text = detail,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onErrorContainer,
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.testTag(CHAT_RUNTIME_ERROR_DETAIL_TEST_TAG),
                         )
                     }
@@ -10541,8 +10687,6 @@ private fun ErrorText(
                             text = diagnostic,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onErrorContainer,
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.testTag(CHAT_RUNTIME_ERROR_DIAGNOSTIC_TEST_TAG),
                         )
                     }
@@ -10782,6 +10926,7 @@ internal fun routeAvailabilityCompactLabelRes(error: RuntimeUiError): Int {
         "route_diagnostic_private_overlay_scope_required" ->
             R.string.route_diagnostic_private_overlay_scope_required
         else -> when {
+            error.code == "no_route" -> R.string.error_no_runtime_route
             error.code == "remote_route_unreachable_from_device" -> R.string.error_remote_route_unreachable_from_device
             error.code == "remote_route_unreachable" -> R.string.error_remote_route_unreachable
             error.code == "pairing_endpoint_unavailable" -> R.string.route_notice_pairing_endpoint_unavailable
@@ -10800,6 +10945,16 @@ internal fun routeAvailabilityCompactLabelRes(error: RuntimeUiError): Int {
 private fun RuntimeUiError.isRouteAvailabilityNotice(): Boolean {
     return code in ROUTE_AVAILABILITY_NOTICE_CODES || diagnosticCode in ROUTE_AVAILABILITY_DIAGNOSTIC_CODES
 }
+
+private fun RuntimeUiError.blocksTrustedConnectionSuccess(): Boolean {
+    return code in TRUSTED_CONNECTION_SUCCESS_BLOCKING_ERROR_CODES
+}
+
+private val TRUSTED_CONNECTION_SUCCESS_BLOCKING_ERROR_CODES = setOf(
+    "runtime_authentication_failed",
+    "authentication_failed",
+    "authentication_required",
+)
 
 private val ROUTE_AVAILABILITY_NOTICE_CODES = setOf(
     "no_route",
@@ -10937,6 +11092,9 @@ internal fun connectionStatusLineValueTestTag(key: String): String =
     "$CONNECTION_STATUS_LINE_VALUE_TEST_TAG_PREFIX$key"
 
 internal const val CHAT_MESSAGE_LIST_TEST_TAG = "aetherlink_chat_message_list"
+internal const val CHAT_CONTENT_VIEWPORT_TEST_TAG = "aetherlink_chat_content_viewport"
+internal const val CHAT_BOTTOM_DOCK_TEST_TAG = "aetherlink_chat_bottom_dock"
+internal const val CHAT_BOTTOM_NOTICE_AREA_TEST_TAG = "aetherlink_chat_bottom_notice_area"
 internal const val CHAT_JUMP_TO_LATEST_TEST_TAG = "aetherlink_chat_jump_to_latest"
 internal const val CHAT_STREAMING_PROGRESS_TEST_TAG = "aetherlink_chat_streaming_progress"
 internal const val CHAT_MESSAGES_LOADING_PANEL_TEST_TAG = "aetherlink_chat_messages_loading_panel"
