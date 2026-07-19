@@ -2,6 +2,8 @@
 
 AetherLink is a local-first client-to-runtime AI companion. A paired runtime host owns the AI runtime and backend adapters; the AetherLink device app is the controller for chat, model selection, and generation control. The current implementation has mobile-client and desktop-runtime targets, but the product architecture is intentionally OS-neutral.
 
+For continuation in a new Codex session, read [`docs/handoff.md`](docs/handoff.md) first. It records the live dirty-worktree map, latest QR recovery evidence, proof boundaries, verification commands, and next-session decision flow; older progress entries remain historical unless that handoff promotes them as current.
+
 v0.1 is intentionally narrow. It proves one product loop:
 
 1. Start AetherLink Runtime on the runtime host.

@@ -144,7 +144,7 @@ func connectionRecoveryResultAllowsDraftResync(_ result: CompanionRelayConfigura
 
 struct RemoteRelayRoutePanel: View {
     @ObservedObject var model: CompanionAppModel
-    var onGenerateRelayQRCode: (() -> Void)?
+    var onGenerateRemotePairingQRCode: (() -> Void)?
     @State private var bootstrapEndpoints = ""
     @State private var bootstrapAllocationToken = ""
     @State private var bootstrapAllowsPrivateOverlay = false
@@ -164,11 +164,11 @@ struct RemoteRelayRoutePanel: View {
     @State private var bootstrapDraftRevision: ConnectionRecoveryDraftRevision<ConnectionRecoveryBootstrapDraft>
     @State private var developmentDraftRevision: ConnectionRecoveryDraftRevision<ConnectionRecoveryDevelopmentDraft>
 
-    init(model: CompanionAppModel, onGenerateRelayQRCode: (() -> Void)? = nil) {
+    init(model: CompanionAppModel, onGenerateRemotePairingQRCode: (() -> Void)? = nil) {
         let bootstrapDraft = ConnectionRecoveryBootstrapDraft(settings: model.bootstrapRelaySettings)
         let developmentDraft = ConnectionRecoveryDevelopmentDraft(settings: model.developmentRelaySettings)
         self.model = model
-        self.onGenerateRelayQRCode = onGenerateRelayQRCode
+        self.onGenerateRemotePairingQRCode = onGenerateRemotePairingQRCode
         _bootstrapEndpoints = State(initialValue: bootstrapDraft.endpoints)
         _bootstrapAllocationToken = State(initialValue: bootstrapDraft.allocationToken)
         _bootstrapAllowsPrivateOverlay = State(initialValue: bootstrapDraft.allowsPrivateOverlay)
@@ -328,12 +328,12 @@ struct RemoteRelayRoutePanel: View {
             if settings.isEnabled {
                 let canGenerateLatestQRCode = connectionRecoveryGenerateLatestQRActionAvailable(
                     canRequestRemotePairing: model.canRequestRemotePairingForUserInterface,
-                    hasAction: onGenerateRelayQRCode != nil
+                    hasAction: onGenerateRemotePairingQRCode != nil
                 )
                 let generateLatestQRHint = connectionRecoveryGenerateLatestQRActionAccessibilityHint(
                     isRouteReadyForQRCode: model.isDevelopmentRelayQRCodeReady,
                     canPrepareRoute: canGenerateLatestQRCode,
-                    hasAction: onGenerateRelayQRCode != nil,
+                    hasAction: onGenerateRemotePairingQRCode != nil,
                     isPreparing: model.isRemoteRoutePreparationInFlight
                 )
                 Button {
@@ -349,7 +349,7 @@ struct RemoteRelayRoutePanel: View {
                         connectionRecoveryGenerateLatestQRActionAccessibilityValue(
                             isRouteReadyForQRCode: model.isDevelopmentRelayQRCodeReady,
                             canPrepareRoute: canGenerateLatestQRCode,
-                            hasAction: onGenerateRelayQRCode != nil,
+                            hasAction: onGenerateRemotePairingQRCode != nil,
                             isPreparing: model.isRemoteRoutePreparationInFlight
                         )
                     )
@@ -800,14 +800,14 @@ struct RemoteRelayRoutePanel: View {
     }
 
     private func generateRelayQRCode() {
-        guard let onGenerateRelayQRCode else { return }
+        guard let onGenerateRemotePairingQRCode else { return }
         pendingPairingRefresh = PendingConnectionRecoveryPairingRefresh(
             previousSessionID: model.pairingSession?.id
         )
         message = NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: "")
         messageTone = .neutral
         diagnosticMessage = nil
-        onGenerateRelayQRCode()
+        onGenerateRemotePairingQRCode()
         resolvePendingPairingRefresh()
     }
 

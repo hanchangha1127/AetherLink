@@ -250,6 +250,180 @@ def target_files() -> list[Path]:
     return sorted(path for path in targets if path.is_file())
 
 
+def swift_code_without_comments_or_strings(source: str) -> str:
+    """Blank Swift comments and literals while preserving offsets and braces."""
+    output = list(source)
+
+    def blank(start: int, end: int) -> None:
+        for index in range(start, min(end, len(output))):
+            if output[index] not in ("\n", "\r"):
+                output[index] = " "
+
+    index = 0
+    while index < len(source):
+        if source.startswith("//", index):
+            end = source.find("\n", index + 2)
+            if end < 0:
+                end = len(source)
+            blank(index, end)
+            index = end
+            continue
+
+        if source.startswith("/*", index):
+            depth = 1
+            end = index + 2
+            while end < len(source) and depth > 0:
+                if source.startswith("/*", end):
+                    depth += 1
+                    end += 2
+                elif source.startswith("*/", end):
+                    depth -= 1
+                    end += 2
+                else:
+                    end += 1
+            blank(index, end)
+            index = end
+            continue
+
+        raw_hash_count = 0
+        if source[index] == "#":
+            while (
+                index + raw_hash_count < len(source)
+                and source[index + raw_hash_count] == "#"
+            ):
+                raw_hash_count += 1
+        quote_index = index + raw_hash_count
+        if raw_hash_count > 0 and quote_index < len(source) and source[quote_index] == '"':
+            quote_count = 3 if source.startswith('"""', quote_index) else 1
+            closing = ('"' * quote_count) + ('#' * raw_hash_count)
+            end = source.find(closing, quote_index + quote_count)
+            end = len(source) if end < 0 else end + len(closing)
+            blank(index, end)
+            index = end
+            continue
+
+        if source.startswith('"""', index):
+            end = source.find('"""', index + 3)
+            end = len(source) if end < 0 else end + 3
+            blank(index, end)
+            index = end
+            continue
+
+        if source[index] == '"':
+            end = index + 1
+            while end < len(source):
+                if source[end] == "\\":
+                    end += 2
+                    continue
+                end += 1
+                if source[end - 1] == '"':
+                    break
+            blank(index, end)
+            index = end
+            continue
+
+        index += 1
+
+    return "".join(output)
+
+
+def swift_block_after(source: str, anchor: str) -> str | None:
+    code = swift_code_without_comments_or_strings(source)
+    if code.count(anchor) != 1:
+        return None
+    anchor_index = code.find(anchor)
+    opening_brace = code.find("{", anchor_index + len(anchor))
+    if opening_brace < 0:
+        return None
+
+    depth = 0
+    for index in range(opening_brace, len(code)):
+        if code[index] == "{":
+            depth += 1
+        elif code[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return code[opening_brace + 1:index]
+    return None
+
+
+def macos_pairing_callback_wiring_failures(
+    pairing_text: str,
+    content_text: str,
+    status_text: str,
+    app_text: str,
+) -> list[str]:
+    generic_model_call = "model.requestPairingForUserInterface()"
+    remote_model_call = "model.requestRemotePairingForUserInterface()"
+    failures: list[str] = []
+
+    block_contracts = (
+        (
+            pairing_text,
+            "private func generatePairingQR()",
+            generic_model_call,
+            remote_model_call,
+            "PairingView.generatePairingQR() must call the generic pairing action exactly once and never call the remote-only action.",
+        ),
+        (
+            pairing_text,
+            "RemoteRelayRoutePanel(model: model)",
+            remote_model_call,
+            generic_model_call,
+            "PairingView Connection Recovery must call the remote-only pairing action exactly once and never call the generic action.",
+        ),
+        (
+            content_text,
+            "onGenerateRelayQRCode:",
+            generic_model_call,
+            remote_model_call,
+            "ContentView Status quick-action closure must call the generic pairing action exactly once.",
+        ),
+        (
+            content_text,
+            "onGenerateRemoteRelayQRCode:",
+            remote_model_call,
+            generic_model_call,
+            "ContentView Status recovery closure must call the remote-only pairing action exactly once.",
+        ),
+        (
+            content_text,
+            "case .pairingQR:",
+            generic_model_call,
+            remote_model_call,
+            "ContentView toolbar pairing command must call the generic pairing action exactly once.",
+        ),
+        (
+            status_text,
+            "if shouldShowRouteDiagnosticsPanel(model: model)",
+            "onGenerateRemotePairingQRCode: onGenerateRemoteRelayQRCode",
+            "onGenerateRemotePairingQRCode: onGenerateRelayQRCode",
+            "StatusView Connection Recovery must receive only the remote callback.",
+        ),
+        (
+            status_text,
+            "private struct StatusQuickActions: View",
+            "onGenerateRelayQRCode?()",
+            "onGenerateRemoteRelayQRCode?()",
+            "StatusView Quick Actions must invoke only the generic callback.",
+        ),
+        (
+            app_text,
+            "case .pairingQR:",
+            generic_model_call,
+            remote_model_call,
+            "LocalAgentBridgeApp menu pairing command must call the generic pairing action exactly once.",
+        ),
+    )
+
+    for source, anchor, required, forbidden, guidance in block_contracts:
+        block = swift_block_after(source, anchor)
+        if block is None or block.count(required) != 1 or forbidden in block:
+            failures.append(guidance)
+
+    return failures
+
+
 def route_diagnostics_guard_failures() -> list[str]:
     failures: list[str] = []
     helper_path = ROOT / "apps/macos/LocalAgentBridgeApp/Sources/RemoteRelayRoutePanel.swift"
@@ -336,9 +510,31 @@ def route_diagnostics_guard_failures() -> list[str]:
             "missing old-session pending and new-session QR refresh regression."
         )
 
+    pairing_view_text = (
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/PairingView.swift"
+    ).read_text(encoding="utf-8", errors="replace")
+    content_view_text = (
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/ContentView.swift"
+    ).read_text(encoding="utf-8", errors="replace")
+    status_view_text = (
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/StatusView.swift"
+    ).read_text(encoding="utf-8", errors="replace")
+    app_text = (
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/LocalAgentBridgeApp.swift"
+    ).read_text(encoding="utf-8", errors="replace")
+    failures.extend(
+        macos_pairing_callback_wiring_failures(
+            pairing_view_text,
+            content_view_text,
+            status_view_text,
+            app_text,
+        )
+    )
+
     async_contract_files = {
         ROOT / "apps/macos/CompanionCore/Sources/CompanionAppModel.swift": (
             "public func requestStartForUserInterface(",
+            "public func requestPairingForUserInterface() -> Bool",
             "public func requestRemotePairingForUserInterface() -> Bool",
             "public func requestConfigureDevelopmentRelayForUserInterface(",
             "public func requestConfigureBootstrapRelayForUserInterface(",
@@ -351,6 +547,13 @@ def route_diagnostics_guard_failures() -> list[str]:
             "private var routeAllocationTimeoutTask: Task<Void, Never>?",
             "private let routeAllocationTimeoutNanoseconds: UInt64",
             "public var canRequestRemotePairingForUserInterface: Bool",
+            "public var canRequestPairingForUserInterface: Bool",
+            "private var hasReadyRemotePairingRouteForUserInterface: Bool",
+            "requestedOverride: allowsLocalDiagnosticPairingFromUserInterface",
+            "isDebugAssertConfiguration: _isDebugAssertConfiguration()",
+            "guard isDebugAssertConfiguration else { return false }",
+            '"State:/Network/Global/IPv4" as CFString',
+            'return state["PrimaryInterface"] as? String',
             "public enum CompanionRelayConfigurationRequestResult",
             "public enum CompanionRelayConfigurationRequestState",
             "acknowledgeRelayConfigurationRequestCompletion(requestID: UUID)",
@@ -378,20 +581,28 @@ def route_diagnostics_guard_failures() -> list[str]:
             "connection.cancel()",
         ),
         ROOT / "apps/macos/LocalAgentBridgeApp/Sources/PairingView.swift": (
+            "model.requestPairingForUserInterface()",
             "model.requestRemotePairingForUserInterface()",
-            "model.canRequestRemotePairingForUserInterface",
+            "model.canRequestPairingForUserInterface",
+            "model.shouldUseLocalDiagnosticPairingForUserInterface",
+            "localDiagnosticPairingNoticeText()",
             "isPreparingConnectionDetails: model.isRemoteRoutePreparationInFlight",
         ),
         ROOT / "apps/macos/LocalAgentBridgeApp/Sources/ContentView.swift": (
+            "model.requestPairingForUserInterface()",
             "model.requestRemotePairingForUserInterface()",
-            "canRequestRemotePairing: model.canRequestRemotePairingForUserInterface",
+            "canRequestPairing: model.canRequestPairingForUserInterface",
+        ),
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/StatusView.swift": (
+            "onGenerateRemotePairingQRCode: onGenerateRemoteRelayQRCode",
         ),
         ROOT / "apps/macos/LocalAgentBridgeApp/Sources/LocalAgentBridgeApp.swift": (
             "model.requestStartForUserInterface()",
-            "model.requestRemotePairingForUserInterface()",
-            "canRequestRemotePairing: model.canRequestRemotePairingForUserInterface",
+            "model.requestPairingForUserInterface()",
+            "canRequestPairing: model.canRequestPairingForUserInterface",
         ),
         helper_path: (
+            "var onGenerateRemotePairingQRCode: (() -> Void)?",
             "model.requestConfigureDevelopmentRelayForUserInterface(",
             "model.requestConfigureBootstrapRelayForUserInterface(",
             "case .started(let requestID):",
@@ -429,6 +640,24 @@ def route_diagnostics_guard_failures() -> list[str]:
             '"Connection preparation is already in progress."',
             '"relay.example.test]:443"',
             "XCTAssertFalse(model.canRequestRemotePairingForUserInterface)",
+            "testCompanionAppModelDebugUserInterfaceGeneratesLocalDiagnosticQRCodeWithoutRemoteRoute",
+            "testCompanionAppModelDebugUserInterfaceDoesNotGenerateQRCodeWhenRuntimeListenerFails",
+            "testCompanionAppModelReleaseUserInterfaceDoesNotEnableLocalDiagnosticFallback",
+            "testCompanionAppModelDebugUserInterfaceUsesLocalDiagnosticAfterExplicitRemoteFailure",
+            "testCompanionAppModelLocalPairingInterfaceScorePrefersPrimaryPhysicalRoute",
+        ),
+        ROOT / "script/test_documentation_handoff_guards.py": (
+            "test_current_callback_wiring_passes",
+            "test_pairing_main_and_recovery_swap_is_rejected_even_when_both_calls_remain",
+            "test_comments_and_strings_cannot_satisfy_pairing_wiring",
+            "test_content_status_callback_swap_is_rejected",
+            "test_status_callback_swap_is_rejected",
+            "test_toolbar_and_menu_remote_calls_are_rejected",
+            "test_current_physical_qr_manifest_passes_closed_schema",
+            "test_unknown_secret_manifest_key_is_rejected",
+            "test_manifest_digest_drift_is_rejected_against_current_docs",
+            "test_duplicate_manifest_key_is_rejected",
+            "test_full_pairing_uri_variant_in_manifest_value_is_rejected",
         ),
     }
     for path, snippets in async_contract_files.items():
@@ -527,7 +756,26 @@ def route_diagnostics_guard_failures() -> list[str]:
             "physical Android camera scan",
         ),
         ROOT / "docs/roadmap.md": (
-            "macOS clean first-run Pairing now exposes Connection Recovery",
+            "Historical Checkpoint: macOS Pairing QR Recovery And Bounded Route Preparation (Superseded)",
+            "Product result at that checkpoint",
+            "Historical Checkpoint: Cross-Platform Readiness UI Pass (Superseded)",
+        ),
+        ROOT / "docs/handoff.md": (
+            "This is the canonical first document for the next Codex session.",
+            "Android device state at handoff: disconnected",
+            "No URI or deep-link injection was used",
+            "Connection Recovery uses a separately named remote-only callback.",
+            "## UI Callback Wiring Matrix",
+            "`PairingView` main `Generate Pairing QR`",
+            "Pairing nested Connection Recovery `Generate Latest QR`",
+            "## Debug And Release Evidence Matrix",
+            "docs/evidence/physical-qr-pairing-20260719.json",
+            "progress-v8.json",
+            "decision-v6.json",
+            "handoff-v9.json",
+            "`--verify` does not establish listener readiness",
+            "Do not assume every modified line belongs to QR recovery.",
+            "Recommended next product-quality slice: physical expired/rotated QR recovery",
         ),
     }
     for path, snippets in required_doc_snippets.items():
@@ -1229,7 +1477,9 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         )
 
     required_main_activity_snippets = (
-        "val requireRemoteRouteForPairingQr = true",
+        "val requireRemoteRouteForPairingQr = pairingQrRequiresRemoteRoute(",
+        "isDebugBuild = BuildConfig.DEBUG",
+        "internal fun pairingQrRequiresRemoteRoute(isDebugBuild: Boolean): Boolean = !isDebugBuild",
         "requireRemoteRoute = requireRemoteRoute",
         "internal data class SharedChatDraft(",
         "internal fun Intent?.sharedChatDraftOrNull(): SharedChatDraft?",
@@ -1278,6 +1528,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "validCompactPrivateOverlayRouteQrReturnsValid",
         "macos-compact-private-overlay-pairing-uri.txt",
         "identityOnlyPairQrIsInvalidWhenRemoteRouteIsRequired",
+        "compactLocalDiagnosticQrIsValidOnlyWhenRemoteRouteIsNotRequired",
         "nonAetherLinkQrReturnsUnsupported",
         "blankAndNullFrameValuesAreIgnored",
         "mixedFrameBatchPrioritizesValidPairingQr",
@@ -10980,27 +11231,63 @@ def android_regenerate_response_guard_failures() -> list[str]:
 
 def android_composer_draft_persistence_guard_failures() -> list[str]:
     failures: list[str] = []
+    manifest_path = ROOT / "apps/android/app/src/main/AndroidManifest.xml"
     store_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt"
     runtime_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"
+    pairing_store_path = ROOT / "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt"
     ui_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt"
+    app_navigation_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt"
+    pairing_store_test_path = ROOT / "apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/PairingStoreTest.kt"
+    local_store_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeLocalStoreTest.kt"
     runtime_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
     compose_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
+    progress_path = ROOT / "docs/progress.md"
+    qa_evidence_path = ROOT / "docs/qa-evidence.md"
+    roadmap_path = ROOT / "docs/roadmap.md"
 
-    for path in (store_path, runtime_path, ui_path, runtime_test_path, compose_test_path, no_device_path):
+    for path in (
+        manifest_path,
+        store_path,
+        runtime_path,
+        pairing_store_path,
+        ui_path,
+        app_navigation_test_path,
+        pairing_store_test_path,
+        local_store_test_path,
+        runtime_test_path,
+        compose_test_path,
+        no_device_path,
+        progress_path,
+        qa_evidence_path,
+        roadmap_path,
+    ):
         if not path.exists():
             failures.append(f"{path.relative_to(ROOT)}: missing Android composer-draft persistence guard file.")
             return failures
 
+    manifest_text = manifest_path.read_text(encoding="utf-8", errors="replace")
     store_text = store_path.read_text(encoding="utf-8", errors="replace")
     runtime_text = runtime_path.read_text(encoding="utf-8", errors="replace")
+    pairing_store_text = pairing_store_path.read_text(encoding="utf-8", errors="replace")
     ui_text = ui_path.read_text(encoding="utf-8", errors="replace")
+    app_navigation_test_text = app_navigation_test_path.read_text(encoding="utf-8", errors="replace")
+    pairing_store_test_text = pairing_store_test_path.read_text(encoding="utf-8", errors="replace")
+    local_store_test_text = local_store_test_path.read_text(encoding="utf-8", errors="replace")
     runtime_test_text = runtime_test_path.read_text(encoding="utf-8", errors="replace")
     compose_test_text = compose_test_path.read_text(encoding="utf-8", errors="replace")
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    progress_text = progress_path.read_text(encoding="utf-8", errors="replace")
+    qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
+    roadmap_text = roadmap_path.read_text(encoding="utf-8", errors="replace")
+    manifest_relative = manifest_path.relative_to(ROOT)
     store_relative = store_path.relative_to(ROOT)
     runtime_relative = runtime_path.relative_to(ROOT)
+    pairing_store_relative = pairing_store_path.relative_to(ROOT)
     ui_relative = ui_path.relative_to(ROOT)
+    app_navigation_test_relative = app_navigation_test_path.relative_to(ROOT)
+    pairing_store_test_relative = pairing_store_test_path.relative_to(ROOT)
+    local_store_test_relative = local_store_test_path.relative_to(ROOT)
     runtime_test_relative = runtime_test_path.relative_to(ROOT)
     compose_test_relative = compose_test_path.relative_to(ROOT)
     no_device_relative = no_device_path.relative_to(ROOT)
@@ -11011,6 +11298,20 @@ def android_composer_draft_persistence_guard_failures() -> list[str]:
         "composerDraft = if (session.archivedAtMillis == null)",
         "internal fun PersistedRuntimeData.composerDraftForSession(sessionId: String? = activeSessionId): String",
         "internal fun PersistedRuntimeData.withComposerDraft(\n    value: String,\n    sessionId: String? = activeSessionId,",
+        "fun save(data: PersistedRuntimeData, commitToDisk: Boolean = false)",
+        '@SuppressLint("ApplySharedPref")',
+        "val pendingSecretWrite = diskProjection.pendingRelaySecretWrite(relaySecretStore)",
+        "pendingSecretWrite?.requiresWrite == true",
+        "relaySecretStore.readSecret(it) == relaySecret",
+        'return "pending-relay-v2-$routeDigest-$secretDigest"',
+        "compensateUncommittedSecret(",
+        "drainPendingRelaySecretCleanup(",
+        "PENDING_RELAY_SECRET_CLEANUP_KEY",
+        "replacePendingRelaySecretCleanupReferences",
+        "requireDurableRelaySecretStore(relaySecretStore)",
+        "val metadataPersisted = if (commitToDisk)",
+        "durableMetadataCommit(editor)",
+        "editor.commit()",
     )
     for snippet in required_store_snippets:
         if snippet not in store_text:
@@ -11018,7 +11319,7 @@ def android_composer_draft_persistence_guard_failures() -> list[str]:
 
     required_runtime_snippets = (
         "publishPersistedRuntimeData(loadedRuntimeData, save = false, syncComposerDraft = true)",
-        "val cleanDraft = persistComposerDraft(value)",
+        "val cleanDraft = persistComposerDraft(\n            value,\n            persistenceMode = RuntimeStatePersistenceMode.Coalesced,",
         ".withNoActiveSession()\n                .withComposerDraft(\"\", sessionId = null)",
         "persistComposerDraft(\"\", sessionId = sessionId)",
         "private fun persistComposerDraft(\n        value: String,\n        sessionId: String? = state.value.activeChatSessionId,",
@@ -11027,10 +11328,59 @@ def android_composer_draft_persistence_guard_failures() -> list[str]:
         "loadingChatSessionId = sessionId",
         "rejectUserMutationWhileActiveChatMessagesLoading",
         "loadingSessionId != null &&",
+        "internal const val VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS = 250L",
+        "latestData = { persistedRuntimeData }",
+        "localStore.save(data, RuntimeLocalDataWriteDurability.Volatile)",
+        "localStore.save(data, RuntimeLocalDataWriteDurability.Durable)",
+        "override fun onActivityPaused(activity: Activity) {\n            statePersistence.flush()",
+        "override fun onActivityStopped(activity: Activity) {\n            statePersistence.flush()",
+        "override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {\n            statePersistence.flush()",
+        "override fun onCleared() {\n        statePersistence.flush()",
+        "private fun showError(code: String, detail: String? = null) {\n        statePersistence.flush()",
     )
     for snippet in required_runtime_snippets:
         if snippet not in runtime_text:
             failures.append(f"{runtime_relative}: Missing persisted composer draft ViewModel path {snippet}.")
+
+    coalesced_callsite = "persistenceMode = RuntimeStatePersistenceMode.Coalesced"
+    if runtime_text.count(coalesced_callsite) != 2:
+        failures.append(
+            f"{runtime_relative}: Volatile persistence must remain limited to composer typing and active chat.delta."
+        )
+    if "private var pendingData: PersistedRuntimeData?" in runtime_text:
+        failures.append(
+            f"{runtime_relative}: Volatile persistence must retain only dirty state, not a secret-bearing snapshot."
+        )
+
+    required_pairing_store_snippets = (
+        "interface DurableRelaySecretStore : RelaySecretStore",
+        "fun saveSecretDurably(handle: String, secret: String): Boolean",
+        "fun removeSecretDurably(handle: String): Boolean",
+        '@SuppressLint("ApplySharedPref")',
+        ".putString(handle, encrypt(secret))\n            .commit()",
+        "return preferences.edit().remove(handle).commit()",
+        "private val relaySecretStore: DurableRelaySecretStore",
+        "relaySecretStore.saveSecretDurably(reference, cleanRelaySecret)",
+        "relaySecretStore.readSecret(reference) != cleanRelaySecret",
+        "prefs.enqueueRelaySecretCleanup(cleanupReferences)",
+        "drainRelaySecretCleanup()",
+        "reference != currentReference &&",
+        'stringSetPreferencesKey("runtime_relay_secret_cleanup_refs")',
+        'return "relay-v2-"',
+    )
+    for snippet in required_pairing_store_snippets:
+        if snippet not in pairing_store_text:
+            failures.append(
+                f"{pairing_store_relative}: Missing confirmed relay-secret persistence path {snippet}."
+            )
+
+    required_manifest_snippets = (
+        'android:documentLaunchMode="never"',
+        'android:launchMode="singleTask"',
+    )
+    for snippet in required_manifest_snippets:
+        if snippet not in manifest_text:
+            failures.append(f"{manifest_relative}: Missing single-writer launch contract {snippet}.")
 
     required_test_snippets = (
         "persistedComposerDraftRestoresOnViewModelCreationAndUpdatesWithTyping",
@@ -11045,6 +11395,14 @@ def android_composer_draft_persistence_guard_failures() -> list[str]:
         "sanitizedCapsSessionScopedComposerDrafts",
         "sanitizedDropsArchivedSessionComposerDrafts",
         "sendChatMessageClearsPersistedComposerDraft",
+        "volatilePersistenceCoordinatorCoalescesBurstAtExactMaximumDelay",
+        "immediatePersistenceCancelsStaleSnapshotAndCannotResurrectRemovedPairingSecret",
+        "composerDraftBurstFlushesOnLifecycleAndClearAndRestoresAfterRecreation",
+        "chatDeltaBurstCoalescesAndDonePersistsLatestSnapshotExactlyOnce",
+        "cancelRequestFlushesPendingChatDeltaBeforeDispatch",
+        "activeChatErrorSupersedesPendingDeltaWithoutDelayedRewrite",
+        "malformedChatDoneFlushesPendingDeltaWithoutDelayedRewrite",
+        "localSendValidationErrorFlushesPendingDraftWithoutDelayedRewrite",
         'assertEquals("stored draft", localStore.data.composerDraft)',
         'assertEquals("Revise this prompt", fixture.localStore.data.composerDraft)',
         "assertTrue(fixture.viewModel.state.value.pendingAttachments.isEmpty())",
@@ -11053,6 +11411,39 @@ def android_composer_draft_persistence_guard_failures() -> list[str]:
     for snippet in required_test_snippets:
         if snippet not in runtime_test_text:
             failures.append(f"{runtime_test_relative}: Missing persisted composer draft regression {snippet}.")
+
+    if "durableSaveConfirmsSecretWriteMetadataAndOldSecretCleanup" not in local_store_test_text:
+        failures.append(
+            f"{local_store_test_relative}: Missing confirmed durable runtime-state store regression."
+        )
+    if "durableSaveRejectsSecretStoreWithoutConfirmationContract" not in local_store_test_text:
+        failures.append(
+            f"{local_store_test_relative}: Missing fail-closed durable secret-store regression."
+        )
+    for test_name in (
+        "durableMetadataFailureCompensatesNewSecretBeforeReturningFailure",
+        "durableCleanupFailureRetainsJournalAndRetriesOnNextBarrier",
+        "sameRouteSecretReplacementMetadataFailurePreservesPreviousSecret",
+        "unchangedPendingSecretIsNotRewrittenAcrossStateBarriers",
+    ):
+        if test_name not in local_store_test_text:
+            failures.append(
+                f"{local_store_test_relative}: Missing durable partial-failure regression {test_name}."
+            )
+    for test_name in (
+        "pairingStoreDurablyRotatesRelaySecretBeforeRemovingPreviousHandle",
+        "pairingStoreFailedDurableSecretRotationPreservesPreviousRoute",
+        "pairingStoreCleanupFailureKeepsJournalAndRetriesOnRead",
+        "pairingStoreRePairDoesNotDrainJournaledCurrentSecret",
+    ):
+        if test_name not in pairing_store_test_text:
+            failures.append(
+                f"{pairing_store_test_relative}: Missing trusted relay-secret durability regression {test_name}."
+            )
+    if "mainActivityRoutesNewEntryIntentsToOneTaskScopedStateWriter" not in app_navigation_test_text:
+        failures.append(
+            f"{app_navigation_test_relative}: Missing task-scoped single-writer manifest regression."
+        )
 
     required_ui_snippets = (
         "CHAT_MESSAGES_LOADING_PANEL_TEST_TAG",
@@ -11085,6 +11476,25 @@ def android_composer_draft_persistence_guard_failures() -> list[str]:
 
     required_no_device_snippets = (
         "RuntimeClientViewModelTest.persistedComposerDraftRestoresOnViewModelCreationAndUpdatesWithTyping",
+        "RuntimeClientViewModelTest.volatilePersistenceCoordinatorCoalescesBurstAtExactMaximumDelay",
+        "RuntimeClientViewModelTest.immediatePersistenceCancelsStaleSnapshotAndCannotResurrectRemovedPairingSecret",
+        "RuntimeClientViewModelTest.composerDraftBurstFlushesOnLifecycleAndClearAndRestoresAfterRecreation",
+        "RuntimeClientViewModelTest.chatDeltaBurstCoalescesAndDonePersistsLatestSnapshotExactlyOnce",
+        "RuntimeClientViewModelTest.cancelRequestFlushesPendingChatDeltaBeforeDispatch",
+        "RuntimeClientViewModelTest.activeChatErrorSupersedesPendingDeltaWithoutDelayedRewrite",
+        "RuntimeClientViewModelTest.malformedChatDoneFlushesPendingDeltaWithoutDelayedRewrite",
+        "RuntimeClientViewModelTest.localSendValidationErrorFlushesPendingDraftWithoutDelayedRewrite",
+        "RuntimeLocalStoreTest.durableSaveConfirmsSecretWriteMetadataAndOldSecretCleanup",
+        "RuntimeLocalStoreTest.durableSaveRejectsSecretStoreWithoutConfirmationContract",
+        "RuntimeLocalStoreTest.durableMetadataFailureCompensatesNewSecretBeforeReturningFailure",
+        "RuntimeLocalStoreTest.durableCleanupFailureRetainsJournalAndRetriesOnNextBarrier",
+        "RuntimeLocalStoreTest.sameRouteSecretReplacementMetadataFailurePreservesPreviousSecret",
+        "RuntimeLocalStoreTest.unchangedPendingSecretIsNotRewrittenAcrossStateBarriers",
+        "PairingStoreTest.pairingStoreDurablyRotatesRelaySecretBeforeRemovingPreviousHandle",
+        "PairingStoreTest.pairingStoreFailedDurableSecretRotationPreservesPreviousRoute",
+        "PairingStoreTest.pairingStoreCleanupFailureKeepsJournalAndRetriesOnRead",
+        "PairingStoreTest.pairingStoreRePairDoesNotDrainJournaledCurrentSecret",
+        "AppNavigationTest.mainActivityRoutesNewEntryIntentsToOneTaskScopedStateWriter",
         "RuntimeClientViewModelTest.openPreviousChatRestoresSessionScopedComposerDrafts",
         "RuntimeClientViewModelTest.startNewChatClearsNoActiveDraftButKeepsSessionDrafts",
         "RuntimeClientViewModelTest.archiveActiveChatClearsNoActiveDraftAndPendingAttachments",
@@ -11103,10 +11513,53 @@ def android_composer_draft_persistence_guard_failures() -> list[str]:
         "Android runtime transcript loading state",
         "Android runtime transcript loading compact layout",
         "Android runtime transcript lifecycle mutation lockout",
+        "Covered Android bounded volatile persistence addendum",
     )
     for snippet in required_no_device_snippets:
         if snippet not in no_device_text:
             failures.append(f"{no_device_relative}: Missing no-device composer draft coverage {snippet}.")
+
+    required_document_snippets = {
+        progress_path: (
+            "Android Bounded Volatile Persistence Optimization",
+            "One hundred composer updates therefore produce one scheduled save",
+            "The complete Android app suite passes 1,125/1,125",
+            "retryable cleanup journal",
+            "skip unchanged secret rewrites",
+            "No actionable P0-P3 remains",
+            "Abrupt process death before a lifecycle/terminal barrier",
+        ),
+        qa_evidence_path: (
+            "Android Bounded Volatile Persistence No-Device Checklist",
+            "All 19 focused regressions pass",
+            "all 1,125 app JVM tests",
+            "failed old-secret cleanup remains journaled",
+            "current-reference exclusion",
+            "No actionable P0-P3 remains",
+            "the scheduled path uses `SharedPreferences.apply()`",
+        ),
+        roadmap_path: (
+            "Android Bounded Volatile Persistence Optimization",
+            "100 composer mutations collapse to one scheduled save",
+            "19 focused regressions pass",
+            "The app passes 1,125 JVM tests",
+            "current-safe cleanup journals",
+            "No actionable P0-P3 remains",
+            "asynchronous volatile writes are not abrupt-process-death durability",
+        ),
+    }
+    document_texts = {
+        progress_path: progress_text,
+        qa_evidence_path: qa_evidence_text,
+        roadmap_path: roadmap_text,
+    }
+    for path, snippets in required_document_snippets.items():
+        text = document_texts[path]
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Missing bounded volatile persistence evidence {snippet}."
+                )
 
     return failures
 
@@ -27723,6 +28176,9 @@ def macos_pairing_qr_accessibility_guard_failures() -> list[str]:
         "testPairingQRGenerationActionAccessibilityUsesSelectedLanguage",
         "testPairingQRPreparationAccessibilityUsesSelectedLanguage",
         "testPairingRouteNoticeAccessibilityUsesSelectedLanguage",
+        "testLocalDiagnosticPairingNoticeUsesSelectedLanguage",
+        "This debug QR uses a local-network route.",
+        "이 디버그 QR은 로컬 네트워크 경로를 사용합니다.",
         "Pairing QR status",
         "페어링 QR 상태",
         "ペアリング QR の状態",
@@ -35560,7 +36016,7 @@ let afterQuotedRaw = 2
         ),
         (
             "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt",
-            "class RuntimeLocalStore(",
+            "class RuntimeLocalStore internal constructor(",
             "@Serializable\ndata class PersistedRuntimeData(",
             (
                 "val previousPendingSecretRef = storedDataStringOrNull()",
@@ -36002,7 +36458,9 @@ let afterQuotedRaw = 2
     )
     if runtime_local_store_path.exists():
         runtime_local_store_text = runtime_local_store_path.read_text(encoding="utf-8", errors="replace")
-        save_start = runtime_local_store_text.find("    fun save(data: PersistedRuntimeData)")
+        save_start = runtime_local_store_text.find(
+            "    fun save(data: PersistedRuntimeData, commitToDisk: Boolean = false)"
+        )
         store_end = runtime_local_store_text.find("\n}\n\n@Serializable", save_start)
         if save_start < 0 or store_end < 0:
             failures.append(
@@ -36372,15 +36830,16 @@ def no_device_suite_subsumed_rerun_guard_failures() -> list[str]:
         "com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest": ":app:testDebugUnitTest",
     }
     android_subsumed_named_counts = {
-        "com.localagentbridge.android.AppNavigationTest": 7,
+        "com.localagentbridge.android.AppNavigationTest": 8,
         "com.localagentbridge.android.PairingQrScanResultTest": 1,
-        "com.localagentbridge.android.core.pairing.PairingStoreTest": 3,
+        "com.localagentbridge.android.core.pairing.PairingStoreTest": 7,
         "com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest": 15,
         "com.localagentbridge.android.core.protocol.ProtocolCodecTest": 92,
         "com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest": 17,
         "com.localagentbridge.android.core.transport.RuntimeTransportClientTest": 1,
         "com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest": 2,
-        "com.localagentbridge.android.runtime.RuntimeClientViewModelTest": 437,
+        "com.localagentbridge.android.runtime.RuntimeClientViewModelTest": 445,
+        "com.localagentbridge.android.runtime.RuntimeLocalStoreTest": 6,
         "com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest": 155,
     }
     android_subsumed_test_sources = {
@@ -36402,6 +36861,8 @@ def no_device_suite_subsumed_rerun_guard_failures() -> list[str]:
             ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientChatSessionMutationFailureTest.kt",
         "com.localagentbridge.android.runtime.RuntimeClientViewModelTest":
             ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt",
+        "com.localagentbridge.android.runtime.RuntimeLocalStoreTest":
+            ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeLocalStoreTest.kt",
         "com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest":
             ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt",
     }
@@ -36622,7 +37083,7 @@ def no_device_suite_subsumed_rerun_guard_failures() -> list[str]:
             f"contains duplicates: {duplicate_evidence_selectors}."
         )
     evidence_digest = hashlib.sha256("\n".join(evidence_selectors).encode("utf-8")).hexdigest()
-    expected_evidence_digest = "aebaa4fd794131c956852fe2fc0dfebb7a15c8f343e86f913442f1c5a0e9ba9a"
+    expected_evidence_digest = "35c7e9dacae084999edec3d57211178807dd4121227e85145c36d1151f83ff3d"
     if evidence_digest != expected_evidence_digest:
         failures.append(
             f"{no_device_path.relative_to(ROOT)}: Android suite-subsumed named-selector evidence "
@@ -50486,7 +50947,7 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
         failures.append("P2P/NAT security design evidence manifest must contain 13 artifacts.")
     manifest_bytes = paths["manifest"].read_bytes() if paths["manifest"].is_file() else b""
     manifest_hash = hashlib.sha256(manifest_bytes).hexdigest()
-    expected_manifest_hash = "d2f83be1b884cf9973037c72d2ee81f583fbf33150f6f8d843b787c7c83e29b8"
+    expected_manifest_hash = "6e6dfbfc0cdb70370c30f54222584b69042a6e22b6df04c7f3e65043c38522bd"
     if manifest_hash != expected_manifest_hash:
         failures.append(
             "P2P/NAT security design evidence manifest collection hash drifted: "
@@ -50812,9 +51273,16 @@ def bounded_script_hardening_guard_failures() -> list[str]:
         "build": (
             "validate_mode() {",
             'validate_mode "$MODE"',
+            "DEBUG_RUNTIME_IDENTITY_FILE=",
+            "/usr/bin/nohup /usr/bin/env",
+            'AETHERLINK_RUNTIME_IDENTITY_FILE="$DEBUG_RUNTIME_IDENTITY_FILE"',
+            "APP_LAUNCH_SETTLE_SECONDS=5",
+            'sleep "$APP_LAUNCH_SETTLE_SECONDS"',
+            'kill -0 "$launch_pid"',
         ),
         "build_test": (
             "test_invalid_mode_invokes_no_fake_toolchain_commands",
+            "test_debug_launch_uses_file_backed_runtime_identity",
             'environment["FAKE_TOOLCHAIN_LOG"]',
             'environment["PATH"] = f"{fake_bin}:/usr/bin:/bin"',
         ),
@@ -50839,7 +51307,7 @@ def bounded_script_hardening_guard_failures() -> list[str]:
         "swift build",
         'rm -rf "$APP_BUNDLE"',
         "/usr/bin/codesign",
-        "/usr/bin/open",
+        "/usr/bin/nohup",
     ):
         side_effect_index = build_text.find(side_effect)
         if (

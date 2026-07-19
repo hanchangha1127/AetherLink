@@ -1,5 +1,6 @@
 package com.localagentbridge.android.core.pairing
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -9,6 +10,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -24,44 +26,78 @@ internal val Context.localAgentBridgeDataStore by preferencesDataStore("local_ag
 
 class PairingStore(
     private val context: Context,
-    private val relaySecretStore: RelaySecretStore = AndroidKeystoreRelaySecretStore(context),
+    private val relaySecretStore: DurableRelaySecretStore = AndroidKeystoreRelaySecretStore(context),
 ) {
     val trustedRuntime: Flow<TrustedRuntime?> = flow {
         context.localAgentBridgeDataStore.data.collect { prefs ->
             val loaded = loadTrustedRuntime(prefs)
+            val hasPendingSecretCleanup =
+                !prefs[Keys.runtimeRelaySecretCleanupRefs].isNullOrEmpty()
             if (
                 loaded.shouldRemoveStoredTrustedRuntime ||
                 loaded.shouldRemoveStoredRouteToken ||
                 loaded.shouldRemoveStoredRelayRoute ||
                 loaded.shouldRemoveStoredP2pRoute ||
                 loaded.shouldRemoveStoredDirectEndpoint ||
-                loaded.relaySecretRefToPersist != null
+                loaded.relaySecretRefToPersist != null ||
+                hasPendingSecretCleanup
             ) {
-                context.localAgentBridgeDataStore.edit { editPrefs ->
-                    if (loaded.shouldRemoveStoredTrustedRuntime) {
-                        editPrefs[Keys.runtimeRelaySecretRef]?.let(relaySecretStore::removeSecret)
-                        editPrefs.removeRuntimeKeys()
-                        editPrefs.removeLegacyRuntimeKeys()
-                    } else {
-                        if (loaded.shouldRemoveStoredRouteToken) {
-                            editPrefs.removeRouteTokenKeys()
-                        }
-                        if (loaded.shouldRemoveStoredRelayRoute) {
-                            loaded.relaySecretRefsToRemove.forEach(relaySecretStore::removeSecret)
-                            editPrefs.removeRelayRouteKeys()
-                        }
-                        if (loaded.shouldRemoveStoredP2pRoute) {
-                            editPrefs.removeP2pRouteKeys()
-                        }
-                        if (loaded.shouldRemoveStoredDirectEndpoint) {
-                            editPrefs.removeDirectEndpointKeys()
-                        }
-                        if (loaded.relaySecretRefToPersist != null) {
-                            editPrefs[Keys.runtimeRelaySecretRef] = loaded.relaySecretRefToPersist
-                            editPrefs.remove(Keys.runtimeRelaySecret)
+                val cleanupReferences = linkedSetOf<String>()
+                var migratedSecretReference: String? = null
+                try {
+                    if (loaded.relaySecretRefToPersist != null) {
+                        val secret = requireNotNull(loaded.relaySecretToPersist)
+                        if (relaySecretStore.readSecret(loaded.relaySecretRefToPersist) != secret) {
+                            migratedSecretReference = loaded.relaySecretRefToPersist
+                            check(
+                                relaySecretStore.saveSecretDurably(
+                                    loaded.relaySecretRefToPersist,
+                                    secret,
+                                )
+                            ) { "Trusted runtime relay secret migration failed" }
                         }
                     }
+                    context.localAgentBridgeDataStore.edit { editPrefs ->
+                        if (loaded.shouldRemoveStoredTrustedRuntime) {
+                            editPrefs[Keys.runtimeRelaySecretRef]
+                                ?.takeIf(::isOwnedTrustedRelaySecretReference)
+                                ?.let(cleanupReferences::add)
+                            editPrefs.removeRuntimeKeys()
+                            editPrefs.removeLegacyRuntimeKeys()
+                        } else {
+                            if (loaded.shouldRemoveStoredRouteToken) {
+                                editPrefs.removeRouteTokenKeys()
+                            }
+                            if (loaded.shouldRemoveStoredRelayRoute) {
+                                cleanupReferences += loaded.relaySecretRefsToRemove
+                                editPrefs.removeRelayRouteKeys()
+                            }
+                            if (loaded.shouldRemoveStoredP2pRoute) {
+                                editPrefs.removeP2pRouteKeys()
+                            }
+                            if (loaded.shouldRemoveStoredDirectEndpoint) {
+                                editPrefs.removeDirectEndpointKeys()
+                            }
+                            if (loaded.relaySecretRefToPersist != null) {
+                                editPrefs[Keys.runtimeRelaySecretRef]
+                                    ?.takeIf { it != loaded.relaySecretRefToPersist }
+                                    ?.takeIf(::isOwnedTrustedRelaySecretReference)
+                                    ?.let(cleanupReferences::add)
+                                editPrefs[Keys.runtimeRelaySecretRef] = loaded.relaySecretRefToPersist
+                                editPrefs.remove(Keys.runtimeRelaySecret)
+                            }
+                        }
+                        editPrefs.enqueueRelaySecretCleanup(cleanupReferences)
+                    }
+                } catch (error: Throwable) {
+                    val uncommittedReference = migratedSecretReference
+                        ?.takeIf { it != prefs[Keys.runtimeRelaySecretRef] }
+                    if (uncommittedReference != null) {
+                        compensateUncommittedRelaySecret(uncommittedReference)
+                    }
+                    throw error
                 }
+                drainRelaySecretCleanup()
             }
             emit(loaded.trustedRuntime)
         }
@@ -143,9 +179,11 @@ class PairingStore(
         val shouldRemoveStoredP2pRoute = hasStoredP2pRoute && !trusted.hasValidP2pRoute()
         return if (trusted.hasValidRelayRoute()) {
             val relaySecretRefToPersist = if (!legacyRelaySecret.isNullOrBlank() || relaySecretRef.isNullOrBlank()) {
-                val ref = relaySecretHandle(id, requireNotNull(relayId))
-                relaySecretStore.saveSecret(ref, requireNotNull(relaySecret))
-                ref
+                relaySecretHandle(
+                    deviceId = id,
+                    relayId = requireNotNull(relayId),
+                    relaySecret = requireNotNull(relaySecret),
+                )
             } else {
                 null
             }
@@ -156,6 +194,12 @@ class PairingStore(
                 shouldRemoveStoredP2pRoute = shouldRemoveStoredP2pRoute,
                 shouldRemoveStoredDirectEndpoint = hasStoredDirectEndpoint,
                 relaySecretRefToPersist = relaySecretRefToPersist,
+                relaySecretToPersist = relaySecret?.takeIf { relaySecretRefToPersist != null },
+                relaySecretRefsToRemove = listOfNotNull(
+                    relaySecretRef
+                        ?.takeIf { it != relaySecretRefToPersist }
+                        ?.takeIf(::isOwnedTrustedRelaySecretReference),
+                ),
             )
         } else {
             LoadedTrustedRuntime(
@@ -164,7 +208,9 @@ class PairingStore(
                 shouldRemoveStoredRelayRoute = hasStoredRelayRoute,
                 shouldRemoveStoredP2pRoute = shouldRemoveStoredP2pRoute,
                 shouldRemoveStoredDirectEndpoint = hasStoredDirectEndpoint,
-                relaySecretRefsToRemove = listOfNotNull(relaySecretRef),
+                relaySecretRefsToRemove = listOfNotNull(
+                    relaySecretRef?.takeIf(::isOwnedTrustedRelaySecretReference),
+                ),
             )
         }
     }
@@ -177,91 +223,150 @@ class PairingStore(
             ?.takeIf { it.isNotBlank() }
             ?.takeIf(::isCanonicalOpaqueRouteValue)
         val hasInvalidPublicKeyBase64 = !rawPublicKeyBase64.isNullOrBlank() && publicKeyBase64 == null
-        context.localAgentBridgeDataStore.edit { prefs ->
-            if (deviceId == null || fingerprint == null || hasInvalidPublicKeyBase64) {
-                prefs[Keys.runtimeRelaySecretRef]?.let(relaySecretStore::removeSecret)
-                prefs.removeRuntimeKeys()
+        val cleanupReferences = linkedSetOf<String>()
+        var previousSecretReference: String? = null
+        var attemptedSecretReference: String? = null
+        try {
+            context.localAgentBridgeDataStore.edit { prefs ->
+                previousSecretReference = prefs[Keys.runtimeRelaySecretRef]
+                    ?.takeIf(::isOwnedTrustedRelaySecretReference)
+                if (deviceId == null || fingerprint == null || hasInvalidPublicKeyBase64) {
+                    previousSecretReference?.let(cleanupReferences::add)
+                    prefs.enqueueRelaySecretCleanup(cleanupReferences)
+                    prefs.removeRuntimeKeys()
+                    prefs.removeLegacyRuntimeKeys()
+                    return@edit
+                }
+                prefs[Keys.runtimeDeviceId] = deviceId
+                prefs[Keys.runtimeName] = runtime.name
+                prefs[Keys.runtimeFingerprint] = fingerprint
+                if (publicKeyBase64 != null) {
+                    prefs[Keys.runtimePublicKey] = publicKeyBase64
+                } else {
+                    prefs.remove(Keys.runtimePublicKey)
+                }
+                val routeToken = runtime.routeToken?.takeIf(::isCanonicalOpaqueRouteValue)
+                if (routeToken != null) {
+                    prefs[Keys.runtimeRouteToken] = routeToken
+                } else {
+                    prefs.removeRouteTokenKeys()
+                }
+                prefs.removeDirectEndpointKeys()
+                val relayHost = runtime.relayHost
+                val relayPort = runtime.relayPort
+                val relayId = runtime.relayId
+                val relaySecret = runtime.relaySecret
+                val relayScope = runtime.relayScope
+                if (runtime.hasValidRelayRoute()) {
+                    val cleanRelayId = requireNotNull(relayId)
+                    val cleanRelaySecret = requireNotNull(relaySecret)
+                    val reference = relaySecretHandle(
+                        deviceId = runtime.deviceId,
+                        relayId = cleanRelayId,
+                        relaySecret = cleanRelaySecret,
+                    )
+                    if (relaySecretStore.readSecret(reference) != cleanRelaySecret) {
+                        attemptedSecretReference = reference
+                        check(relaySecretStore.saveSecretDurably(reference, cleanRelaySecret)) {
+                            "Trusted runtime relay secret persistence failed"
+                        }
+                    }
+                    prefs[Keys.runtimeRelayHost] = requireNotNull(relayHost)
+                    prefs[Keys.runtimeRelayPort] = requireNotNull(relayPort)
+                    prefs[Keys.runtimeRelayId] = cleanRelayId
+                    prefs[Keys.runtimeRelaySecretRef] = reference
+                    prefs.remove(Keys.runtimeRelaySecret)
+                    previousSecretReference
+                        ?.takeIf { it != reference }
+                        ?.let(cleanupReferences::add)
+                    val relayExpiresAtEpochMillis = runtime.relayExpiresAtEpochMillis
+                    if (relayExpiresAtEpochMillis != null && relayExpiresAtEpochMillis > 0L) {
+                        prefs[Keys.runtimeRelayExpiresAtEpochMillis] = relayExpiresAtEpochMillis
+                    } else {
+                        prefs.remove(Keys.runtimeRelayExpiresAtEpochMillis)
+                    }
+                    val relayNonce = runtime.relayNonce
+                    if (!relayNonce.isNullOrBlank()) {
+                        prefs[Keys.runtimeRelayNonce] = relayNonce
+                    } else {
+                        prefs.remove(Keys.runtimeRelayNonce)
+                    }
+                    if (!relayScope.isNullOrBlank()) {
+                        prefs[Keys.runtimeRelayScope] = relayScope
+                    } else {
+                        prefs.remove(Keys.runtimeRelayScope)
+                    }
+                    val relayTicketGeneration = runtime.relayTicketGeneration
+                    if (relayTicketGeneration != null && relayTicketGeneration > 0L) {
+                        prefs[Keys.runtimeRelayTicketGeneration] = relayTicketGeneration
+                    } else {
+                        prefs.remove(Keys.runtimeRelayTicketGeneration)
+                    }
+                } else {
+                    previousSecretReference?.let(cleanupReferences::add)
+                    prefs.removeRelayRouteKeys()
+                }
+                if (runtime.hasValidP2pRoute()) {
+                    prefs[Keys.runtimeP2pRouteClass] = requireNotNull(runtime.p2pRouteClass)
+                    prefs[Keys.runtimeP2pRecordId] = requireNotNull(runtime.p2pRecordId)
+                    prefs[Keys.runtimeP2pEncryptedBody] = requireNotNull(runtime.p2pEncryptedBody)
+                    prefs[Keys.runtimeP2pExpiresAtEpochMillis] = requireNotNull(runtime.p2pExpiresAtEpochMillis)
+                    prefs[Keys.runtimeP2pAntiReplayNonce] = requireNotNull(runtime.p2pAntiReplayNonce)
+                    prefs[Keys.runtimeP2pProtocolVersion] = requireNotNull(runtime.p2pProtocolVersion)
+                } else {
+                    prefs.removeP2pRouteKeys()
+                }
                 prefs.removeLegacyRuntimeKeys()
-                return@edit
+                prefs.enqueueRelaySecretCleanup(cleanupReferences)
             }
-            prefs[Keys.runtimeDeviceId] = deviceId
-            prefs[Keys.runtimeName] = runtime.name
-            prefs[Keys.runtimeFingerprint] = fingerprint
-            if (publicKeyBase64 != null) {
-                prefs[Keys.runtimePublicKey] = publicKeyBase64
-            } else {
-                prefs.remove(Keys.runtimePublicKey)
+        } catch (error: Throwable) {
+            val uncommittedReference = attemptedSecretReference
+                ?.takeIf { it != previousSecretReference }
+            if (uncommittedReference != null) {
+                compensateUncommittedRelaySecret(uncommittedReference)
             }
-            val routeToken = runtime.routeToken?.takeIf(::isCanonicalOpaqueRouteValue)
-            if (routeToken != null) {
-                prefs[Keys.runtimeRouteToken] = routeToken
-            } else {
-                prefs.removeRouteTokenKeys()
-            }
-            prefs.removeDirectEndpointKeys()
-            val relayHost = runtime.relayHost
-            val relayPort = runtime.relayPort
-            val relayId = runtime.relayId
-            val relaySecret = runtime.relaySecret
-            val relayScope = runtime.relayScope
-            if (runtime.hasValidRelayRoute()) {
-                val oldRelaySecretRef = prefs[Keys.runtimeRelaySecretRef]
-                val newRelaySecretRef = relaySecretHandle(runtime.deviceId, requireNotNull(relayId))
-                relaySecretStore.saveSecret(newRelaySecretRef, requireNotNull(relaySecret))
-                prefs[Keys.runtimeRelayHost] = requireNotNull(relayHost)
-                prefs[Keys.runtimeRelayPort] = requireNotNull(relayPort)
-                prefs[Keys.runtimeRelayId] = relayId
-                prefs[Keys.runtimeRelaySecretRef] = newRelaySecretRef
-                prefs.remove(Keys.runtimeRelaySecret)
-                if (oldRelaySecretRef != null && oldRelaySecretRef != newRelaySecretRef) {
-                    relaySecretStore.removeSecret(oldRelaySecretRef)
-                }
-                val relayExpiresAtEpochMillis = runtime.relayExpiresAtEpochMillis
-                if (relayExpiresAtEpochMillis != null && relayExpiresAtEpochMillis > 0L) {
-                    prefs[Keys.runtimeRelayExpiresAtEpochMillis] = relayExpiresAtEpochMillis
-                } else {
-                    prefs.remove(Keys.runtimeRelayExpiresAtEpochMillis)
-                }
-                val relayNonce = runtime.relayNonce
-                if (!relayNonce.isNullOrBlank()) {
-                    prefs[Keys.runtimeRelayNonce] = relayNonce
-                } else {
-                    prefs.remove(Keys.runtimeRelayNonce)
-                }
-                if (!relayScope.isNullOrBlank()) {
-                    prefs[Keys.runtimeRelayScope] = relayScope
-                } else {
-                    prefs.remove(Keys.runtimeRelayScope)
-                }
-                val relayTicketGeneration = runtime.relayTicketGeneration
-                if (relayTicketGeneration != null && relayTicketGeneration > 0L) {
-                    prefs[Keys.runtimeRelayTicketGeneration] = relayTicketGeneration
-                } else {
-                    prefs.remove(Keys.runtimeRelayTicketGeneration)
-                }
-            } else {
-                prefs[Keys.runtimeRelaySecretRef]?.let(relaySecretStore::removeSecret)
-                prefs.removeRelayRouteKeys()
-            }
-            if (runtime.hasValidP2pRoute()) {
-                prefs[Keys.runtimeP2pRouteClass] = requireNotNull(runtime.p2pRouteClass)
-                prefs[Keys.runtimeP2pRecordId] = requireNotNull(runtime.p2pRecordId)
-                prefs[Keys.runtimeP2pEncryptedBody] = requireNotNull(runtime.p2pEncryptedBody)
-                prefs[Keys.runtimeP2pExpiresAtEpochMillis] = requireNotNull(runtime.p2pExpiresAtEpochMillis)
-                prefs[Keys.runtimeP2pAntiReplayNonce] = requireNotNull(runtime.p2pAntiReplayNonce)
-                prefs[Keys.runtimeP2pProtocolVersion] = requireNotNull(runtime.p2pProtocolVersion)
-            } else {
-                prefs.removeP2pRouteKeys()
-            }
-            prefs.removeLegacyRuntimeKeys()
+            throw error
         }
+        drainRelaySecretCleanup()
     }
 
     suspend fun forgetRuntime() {
+        val cleanupReferences = linkedSetOf<String>()
         context.localAgentBridgeDataStore.edit { prefs ->
-            prefs[Keys.runtimeRelaySecretRef]?.let(relaySecretStore::removeSecret)
+            prefs[Keys.runtimeRelaySecretRef]
+                ?.takeIf(::isOwnedTrustedRelaySecretReference)
+                ?.let(cleanupReferences::add)
+            prefs.enqueueRelaySecretCleanup(cleanupReferences)
             prefs.removeRuntimeKeys()
             prefs.removeLegacyRuntimeKeys()
+        }
+        drainRelaySecretCleanup()
+    }
+
+    private suspend fun compensateUncommittedRelaySecret(reference: String) {
+        if (relaySecretStore.removeSecretDurably(reference)) return
+        context.localAgentBridgeDataStore.edit { prefs ->
+            prefs.enqueueRelaySecretCleanup(setOf(reference))
+        }
+    }
+
+    private suspend fun drainRelaySecretCleanup() {
+        var failedReferences = emptySet<String>()
+        context.localAgentBridgeDataStore.edit { prefs ->
+            val currentReference = prefs[Keys.runtimeRelaySecretRef]
+            val pendingReferences = prefs[Keys.runtimeRelaySecretCleanupRefs]
+                .orEmpty()
+                .filterTo(linkedSetOf()) { reference ->
+                    reference != currentReference &&
+                        isOwnedTrustedRelaySecretReference(reference)
+                }
+            failedReferences = pendingReferences.filterTo(linkedSetOf()) { reference ->
+                !relaySecretStore.removeSecretDurably(reference)
+            }
+            prefs.replaceRelaySecretCleanup(failedReferences)
+        }
+        check(failedReferences.isEmpty()) {
+            "Trusted runtime relay secret cleanup failed"
         }
     }
 
@@ -278,6 +383,8 @@ class PairingStore(
         val runtimeRelayId = stringPreferencesKey("runtime_relay_id")
         val runtimeRelaySecret = stringPreferencesKey("runtime_relay_secret")
         val runtimeRelaySecretRef = stringPreferencesKey("runtime_relay_secret_ref")
+        val runtimeRelaySecretCleanupRefs =
+            stringSetPreferencesKey("runtime_relay_secret_cleanup_refs")
         val runtimeRelayExpiresAtEpochMillis = longPreferencesKey("runtime_relay_expires_at_epoch_millis")
         val runtimeRelayNonce = stringPreferencesKey("runtime_relay_nonce")
         val runtimeRelayScope = stringPreferencesKey("runtime_relay_scope")
@@ -333,6 +440,21 @@ class PairingStore(
         remove(Keys.runtimeRelayNonce)
         remove(Keys.runtimeRelayScope)
         remove(Keys.runtimeRelayTicketGeneration)
+    }
+
+    private fun MutablePreferences.enqueueRelaySecretCleanup(references: Set<String>) {
+        val cleanReferences = references.filterTo(linkedSetOf(), ::isOwnedTrustedRelaySecretReference)
+        if (cleanReferences.isEmpty()) return
+        this[Keys.runtimeRelaySecretCleanupRefs] =
+            this[Keys.runtimeRelaySecretCleanupRefs].orEmpty() + cleanReferences
+    }
+
+    private fun MutablePreferences.replaceRelaySecretCleanup(references: Set<String>) {
+        if (references.isEmpty()) {
+            remove(Keys.runtimeRelaySecretCleanupRefs)
+        } else {
+            this[Keys.runtimeRelaySecretCleanupRefs] = references
+        }
     }
 
     private fun MutablePreferences.removeP2pRouteKeys() {
@@ -398,6 +520,7 @@ class PairingStore(
         val shouldRemoveStoredP2pRoute: Boolean = false,
         val shouldRemoveStoredDirectEndpoint: Boolean = false,
         val relaySecretRefToPersist: String? = null,
+        val relaySecretToPersist: String? = null,
         val relaySecretRefsToRemove: List<String> = emptyList(),
     )
 }
@@ -408,13 +531,25 @@ interface RelaySecretStore {
     fun removeSecret(handle: String)
 }
 
-class AndroidKeystoreRelaySecretStore(context: Context) : RelaySecretStore {
+interface DurableRelaySecretStore : RelaySecretStore {
+    fun saveSecretDurably(handle: String, secret: String): Boolean
+    fun removeSecretDurably(handle: String): Boolean
+}
+
+class AndroidKeystoreRelaySecretStore(context: Context) : DurableRelaySecretStore {
     private val preferences = context.getSharedPreferences(RELAY_SECRET_STORE_NAME, Context.MODE_PRIVATE)
 
     override fun saveSecret(handle: String, secret: String) {
         preferences.edit()
             .putString(handle, encrypt(secret))
             .apply()
+    }
+
+    @SuppressLint("ApplySharedPref")
+    override fun saveSecretDurably(handle: String, secret: String): Boolean {
+        return preferences.edit()
+            .putString(handle, encrypt(secret))
+            .commit()
     }
 
     override fun readSecret(handle: String): String? {
@@ -424,6 +559,11 @@ class AndroidKeystoreRelaySecretStore(context: Context) : RelaySecretStore {
 
     override fun removeSecret(handle: String) {
         preferences.edit().remove(handle).apply()
+    }
+
+    @SuppressLint("ApplySharedPref")
+    override fun removeSecretDurably(handle: String): Boolean {
+        return preferences.edit().remove(handle).commit()
     }
 
     private fun encrypt(secret: String): String {
@@ -478,11 +618,21 @@ class AndroidKeystoreRelaySecretStore(context: Context) : RelaySecretStore {
     }
 }
 
-private fun relaySecretHandle(deviceId: String, relayId: String): String {
+private fun relaySecretHandle(
+    deviceId: String,
+    relayId: String,
+    relaySecret: String,
+): String {
     val digest = MessageDigest.getInstance("SHA-256")
-        .digest("$deviceId\n$relayId".toByteArray(Charsets.UTF_8))
-    return "relay-v1-" + digest.joinToString("") { "%02x".format(it) }
+        .digest("$deviceId\n$relayId\n$relaySecret".toByteArray(Charsets.UTF_8))
+    return "relay-v2-" + digest.joinToString("") { "%02x".format(it) }
 }
+
+private fun isOwnedTrustedRelaySecretReference(reference: String): Boolean {
+    return TRUSTED_RELAY_SECRET_REFERENCE_PATTERN.matches(reference)
+}
+
+private val TRUSTED_RELAY_SECRET_REFERENCE_PATTERN = Regex("^relay-v[12]-[0-9a-f]{64}$")
 
 internal fun TrustedRuntime.hasValidRelayRoute(): Boolean {
     val expiresAt = relayExpiresAtEpochMillis

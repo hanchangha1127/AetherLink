@@ -28550,6 +28550,137 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
+    func testCompanionAppModelDebugUserInterfaceGeneratesLocalDiagnosticQRCodeWithoutRemoteRoute() throws {
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            runtimeRouteHostProvider: { "192.168.1.44" },
+            allowsLocalDiagnosticPairingFromUserInterface: true
+        )
+
+        XCTAssertFalse(model.canRequestRemotePairingForUserInterface)
+        XCTAssertTrue(model.canRequestLocalDiagnosticPairingForUserInterface)
+        XCTAssertTrue(model.shouldUseLocalDiagnosticPairingForUserInterface)
+        XCTAssertTrue(model.canRequestPairingForUserInterface)
+        XCTAssertTrue(model.requestPairingForUserInterface())
+
+        let session = try XCTUnwrap(model.pairingSession)
+        let components = try XCTUnwrap(URLComponents(string: session.compactQRCodePayload))
+        let queryItems = try XCTUnwrap(components.queryItems).reduce(into: [String: String]()) { result, item in
+            result[item.name] = item.value
+        }
+        XCTAssertEqual(session.host, "192.168.1.44")
+        XCTAssertEqual(session.port, 43_170)
+        XCTAssertNil(session.relayHost)
+        XCTAssertEqual(queryItems["h"], "192.168.1.44")
+        XCTAssertEqual(queryItems["p"], "43170")
+        XCTAssertEqual(queryItems["rsc"], "local_diagnostic")
+        XCTAssertNil(model.remoteRoutePreparationIssue)
+    }
+
+    @MainActor
+    func testCompanionAppModelDebugUserInterfaceDoesNotGenerateQRCodeWhenRuntimeListenerFails() {
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(statusAfterStart: .failed("Port is already in use.")),
+            advertiser: FakeRuntimeAdvertiser(),
+            runtimeRouteHostProvider: { "192.168.1.44" },
+            allowsLocalDiagnosticPairingFromUserInterface: true
+        )
+
+        XCTAssertTrue(model.canRequestLocalDiagnosticPairingForUserInterface)
+        XCTAssertFalse(model.requestPairingForUserInterface())
+        XCTAssertEqual(model.transportState.state, .failed)
+        XCTAssertFalse(model.canRequestLocalDiagnosticPairingForUserInterface)
+        XCTAssertFalse(model.canRequestPairingForUserInterface)
+        XCTAssertNil(model.pairingSession)
+    }
+
+    @MainActor
+    func testCompanionAppModelReleaseUserInterfaceDoesNotEnableLocalDiagnosticFallback() {
+        XCTAssertFalse(CompanionAppModel.resolveLocalDiagnosticPairingUIAllowance(
+            requestedOverride: true,
+            isDebugAssertConfiguration: false
+        ))
+        XCTAssertFalse(CompanionAppModel.resolveLocalDiagnosticPairingUIAllowance(
+            requestedOverride: nil,
+            isDebugAssertConfiguration: false
+        ))
+        XCTAssertTrue(CompanionAppModel.resolveLocalDiagnosticPairingUIAllowance(
+            requestedOverride: true,
+            isDebugAssertConfiguration: true
+        ))
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            runtimeRouteHostProvider: { "192.168.1.44" },
+            allowsLocalDiagnosticPairingFromUserInterface: false
+        )
+
+        XCTAssertFalse(model.canRequestRemotePairingForUserInterface)
+        XCTAssertFalse(model.canRequestLocalDiagnosticPairingForUserInterface)
+        XCTAssertFalse(model.shouldUseLocalDiagnosticPairingForUserInterface)
+        XCTAssertFalse(model.canRequestPairingForUserInterface)
+        XCTAssertFalse(model.requestPairingForUserInterface())
+        XCTAssertNil(model.pairingSession)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.kind, .automaticPreparationUnavailable)
+    }
+
+    @MainActor
+    func testCompanionAppModelDebugUserInterfaceUsesLocalDiagnosticAfterExplicitRemoteFailure() async throws {
+        let allocator = FakeRemoteRelayRouteAllocator(
+            allocation: nil,
+            canAllocateRemoteRelayRoute: true,
+            error: NSError(
+                domain: "AetherLinkTests",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Route allocator offline"]
+            )
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            remoteRelayRouteAllocator: allocator,
+            runtimeRouteHostProvider: { "192.168.1.44" },
+            allowsLocalDiagnosticPairingFromUserInterface: true
+        )
+
+        XCTAssertTrue(model.requestRemotePairingForUserInterface())
+        assertAsyncTrue(await waitForCondition {
+            model.remoteRoutePreparationIssue?.message == "Route allocator offline"
+        })
+        XCTAssertTrue(model.shouldUseLocalDiagnosticPairingForUserInterface)
+        XCTAssertTrue(model.requestPairingForUserInterface())
+
+        let session = try XCTUnwrap(model.pairingSession)
+        XCTAssertEqual(session.host, "192.168.1.44")
+        XCTAssertNil(session.relayHost)
+        XCTAssertEqual(allocator.calls.count, 1)
+    }
+
+    func testCompanionAppModelLocalPairingInterfaceScorePrefersPrimaryPhysicalRoute() {
+        XCTAssertEqual(CompanionAppModel.pairingInterfaceScore(
+            name: "en7",
+            primaryInterfaceName: "en7"
+        ), 0)
+        XCTAssertEqual(CompanionAppModel.pairingInterfaceScore(
+            name: "en0",
+            primaryInterfaceName: "en7"
+        ), 10)
+        XCTAssertEqual(CompanionAppModel.pairingInterfaceScore(
+            name: "other0",
+            primaryInterfaceName: "en7"
+        ), 20)
+        XCTAssertNil(CompanionAppModel.pairingInterfaceScore(
+            name: "utun3",
+            primaryInterfaceName: "utun3"
+        ))
+    }
+
+    @MainActor
     func testCompanionAppModelFailedRemotePairingRenewalPreservesVisibleSession() throws {
         let model = CompanionAppModel(
             backend: MockBackend(status: .available),

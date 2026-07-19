@@ -1,0 +1,76 @@
+{
+  "documentType": "aetherlink.physical-qr-pairing-observation",
+  "schemaVersion": 1,
+  "recordedDate": "2026-07-19",
+  "source": {
+    "repository": "/Users/hanchangha/Desktop/project",
+    "branch": "main",
+    "headAtObservation": "df19c53a",
+    "worktreeDirty": true,
+    "exactTreeDigestRetained": false,
+    "laterSourceDelta": "macos_ui_and_launcher_only_without_android_retest"
+  },
+  "device": {
+    "model": "SM-S936N",
+    "operatingSystem": "Android 16",
+    "apiLevel": 36,
+    "appBuildVariant": "debug",
+    "deviceIdentifierRetained": false
+  },
+  "topology": {
+    "runtimeHost": "macos_development_app",
+    "deviceAndRuntimeNetwork": "same_wifi_lan",
+    "usbRouteUsedForOpticalClaim": false,
+    "externalRelayUsed": false,
+    "p2pNatTraversalUsed": false
+  },
+  "qrObservation": {
+    "captureSurface": "actual_macos_window_screen",
+    "scanMethod": "physical_android_camera",
+    "uriInjectionUsed": false,
+    "routeScope": "local_diagnostic",
+    "queryKeyCount": 11,
+    "listenerPortAtObservation": 43170,
+    "endpointReusable": false,
+    "payloadSha256": "efc77b1402ed6270b741e5ee69bb30a7527ad563876f58eee31e7587ef9544ef",
+    "fullPayloadRetained": false
+  },
+  "observedMilestones": {
+    "pairingQrSourceConnected": true,
+    "pairingRequestSent": true,
+    "pairingResultReceived": true,
+    "helloSent": true,
+    "authenticationChallengeReceived": true,
+    "authenticationResponseCompleted": true,
+    "runtimeHealthCompleted": true,
+    "trustedDeviceReportedByMacos": true,
+    "bonjourReconnectAfterForceStop": true,
+    "storedTrustAuthenticationCompleted": true,
+    "runtimeHealthAfterReconnect": true
+  },
+  "retention": {
+    "rawLogcatRetained": false,
+    "screenCaptureRetainedInRepository": false,
+    "completeQrVerifierOutputRetained": false,
+    "apkDigestRetained": false,
+    "sanitizedManifestRetained": true,
+    "sensitiveMaterialIncluded": false
+  },
+  "proofBoundary": {
+    "proves": [
+      "one_same_wifi_debug_optical_pairing",
+      "challenge_response_and_runtime_health",
+      "one_stored_trust_bonjour_reconnect"
+    ],
+    "doesNotProve": [
+      "release_apk_camera_pairing",
+      "expired_or_rotated_qr_recovery",
+      "camera_permission_recovery",
+      "talkback_or_voiceover",
+      "different_network_pairing",
+      "external_relay_operation",
+      "p2p_nat_or_phase_b",
+      "production_capacity_reliability_or_readiness"
+    ]
+  }
+}

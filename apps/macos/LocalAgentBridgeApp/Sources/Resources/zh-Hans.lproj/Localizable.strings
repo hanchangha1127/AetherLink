@@ -671,3 +671,4 @@
 "Connection preparation available" = "可准备连接";
 "Prepare connection details and generate the latest pairing QR." = "准备连接信息并生成最新配对二维码。";
 "Restore connection details before generating a new QR." = "生成新二维码前，请先恢复连接信息。";
+"This debug QR uses a local-network route. Keep AetherLink Runtime open and both devices on the same network." = "此调试二维码使用本地网络路由。请保持 AetherLink Runtime 运行，并让两台设备连接到同一网络。";

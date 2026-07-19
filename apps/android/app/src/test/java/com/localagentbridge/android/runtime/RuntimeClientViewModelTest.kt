@@ -1,6 +1,8 @@
 package com.localagentbridge.android.runtime
 
 import android.app.Application
+import android.app.Activity
+import android.os.Bundle
 import com.localagentbridge.android.core.protocol.AuthResponsePayload
 import com.localagentbridge.android.core.protocol.CHAT_SOURCE_ATTRIBUTIONS_CAPABILITY
 import com.localagentbridge.android.core.protocol.CHAT_SOURCE_ATTRIBUTION_RESOLVE_CAPABILITY
@@ -29176,6 +29178,488 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun volatilePersistenceCoordinatorCoalescesBurstAtExactMaximumDelay() = runTest {
+        val localStore = FakeRuntimeLocalDataStore()
+        var latestData = PersistedRuntimeData()
+        val coordinator = RuntimeStatePersistenceCoordinator(
+            localStore = localStore,
+            scope = this,
+            coalesceWindowMillis = VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS,
+            latestData = { latestData },
+        )
+
+        repeat(100) { index ->
+            latestData = PersistedRuntimeData(composerDraft = "draft-$index")
+            coordinator.saveCoalesced()
+        }
+
+        assertEquals(0, localStore.saveCount)
+        assertEquals("", localStore.data.composerDraft)
+
+        advanceTimeBy(VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS - 1L)
+        runCurrent()
+        assertEquals(0, localStore.saveCount)
+        latestData = PersistedRuntimeData(composerDraft = "draft-at-249ms")
+        coordinator.saveCoalesced()
+
+        advanceTimeBy(1L)
+        runCurrent()
+        assertEquals(1, localStore.saveCount)
+        assertEquals("draft-at-249ms", localStore.data.composerDraft)
+        assertEquals(
+            listOf(RuntimeLocalDataWriteDurability.Volatile),
+            localStore.savedDurabilities,
+        )
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun immediatePersistenceCancelsStaleSnapshotAndCannotResurrectRemovedPairingSecret() = runTest {
+        val localStore = FakeRuntimeLocalDataStore()
+        var latestData = PersistedRuntimeData()
+        val coordinator = RuntimeStatePersistenceCoordinator(
+            localStore = localStore,
+            scope = this,
+            coalesceWindowMillis = VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS,
+            latestData = { latestData },
+        )
+        val routeData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = false)
+            .withPendingPairingRoute(
+                payload = runtimePairingPayload(
+                    host = null,
+                    port = null,
+                    relayHost = "relay.example.test",
+                    relayPort = 443,
+                    relayId = "relay-volatile-persistence",
+                    relaySecret = "secret-volatile-persistence",
+                    relayScope = "remote",
+                ),
+                nowMillis = 1_000L,
+            )
+
+        latestData = routeData
+        coordinator.saveImmediately(latestData)
+        val secretRef = requireNotNull(localStore.data.pendingPairingRoute?.relaySecretRef)
+        assertEquals("secret-volatile-persistence", localStore.relaySecret(secretRef))
+
+        latestData = localStore.load().withComposerDraft("pending stale draft")
+        coordinator.saveCoalesced()
+        latestData = localStore.load().withoutPendingPairingRoute()
+        coordinator.saveImmediately(latestData)
+
+        assertEquals(2, localStore.saveCount)
+        assertEquals(
+            listOf(
+                RuntimeLocalDataWriteDurability.Durable,
+                RuntimeLocalDataWriteDurability.Durable,
+            ),
+            localStore.savedDurabilities,
+        )
+        assertNull(localStore.data.pendingPairingRoute)
+        assertNull(localStore.relaySecret(secretRef))
+
+        advanceTimeBy(VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS)
+        runCurrent()
+        assertEquals(2, localStore.saveCount)
+        assertNull(localStore.data.pendingPairingRoute)
+        assertNull(localStore.relaySecret(secretRef))
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun composerDraftBurstFlushesOnLifecycleAndClearAndRestoresAfterRecreation() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val localStore = FakeRuntimeLocalDataStore(
+            initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = false),
+        )
+        val lifecycleRegistrar = CapturingRuntimeLifecycleCallbacksRegistrar()
+        var viewModel: RuntimeClientViewModel? = null
+        fun createViewModel(): RuntimeClientViewModel {
+            return RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Draft persistence must not open direct transport")
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ ->
+                        error("Draft persistence must not open relay transport")
+                    },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = FakeTrustedRuntimeStore(),
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = localStore,
+                    lifecycleCallbacksRegistrar = lifecycleRegistrar,
+                    volatileStatePersistenceCoalesceMillis =
+                        VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS,
+                ),
+            )
+        }
+
+        try {
+            viewModel = createViewModel()
+            runCurrent()
+            repeat(100) { index ->
+                viewModel.updateChatInput("draft-$index")
+            }
+
+            assertEquals("draft-99", viewModel.state.value.chatInput)
+            assertEquals(0, localStore.saveCount)
+            assertEquals("", localStore.data.composerDraft)
+
+            val activity = Activity()
+            lifecycleRegistrar.callbacks?.onActivitySaveInstanceState(activity, Bundle())
+            lifecycleRegistrar.callbacks?.onActivitySaveInstanceState(activity, Bundle())
+            assertEquals(1, localStore.saveCount)
+            assertEquals("draft-99", localStore.data.composerDraft)
+
+            viewModel.clearForTest()
+            assertNull(lifecycleRegistrar.callbacks)
+            viewModel = createViewModel()
+            runCurrent()
+            assertEquals("draft-99", viewModel.state.value.chatInput)
+
+            viewModel.updateChatInput("pause-flush")
+            lifecycleRegistrar.callbacks?.onActivityPaused(activity)
+            assertEquals(2, localStore.saveCount)
+            assertEquals("pause-flush", localStore.data.composerDraft)
+
+            viewModel.updateChatInput("stop-flush")
+            lifecycleRegistrar.callbacks?.onActivityStopped(activity)
+            assertEquals(3, localStore.saveCount)
+            assertEquals("stop-flush", localStore.data.composerDraft)
+
+            viewModel.updateChatInput("clear-flush")
+            viewModel.clearForTest()
+            viewModel = null
+            assertNull(lifecycleRegistrar.callbacks)
+            assertEquals(4, localStore.saveCount)
+            assertEquals("clear-flush", localStore.data.composerDraft)
+            assertTrue(
+                localStore.savedDurabilities.all {
+                    it == RuntimeLocalDataWriteDurability.Durable
+                },
+            )
+
+            advanceTimeBy(VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS)
+            runCurrent()
+            assertEquals(4, localStore.saveCount)
+        } finally {
+            viewModel?.clearForTest()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun chatDeltaBurstCoalescesAndDonePersistsLatestSnapshotExactlyOnce() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var fixture: RuntimeClientFixture? = null
+        try {
+            fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                volatileStatePersistenceCoalesceMillis =
+                    VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS,
+            )
+            fixture.viewModel.replaceStateForTest {
+                it.copy(chatInput = "Measure stream persistence")
+            }
+            fixture.viewModel.sendChatMessage()
+            runCurrent()
+            val sendEnvelope = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSend
+            }
+            val baselineSaveCount = fixture.localStore.saveCount
+
+            repeat(100) {
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatDelta,
+                        requestId = sendEnvelope.requestId,
+                        serializer = ChatDeltaPayload.serializer(),
+                        payload = ChatDeltaPayload(delta = "x"),
+                    ),
+                )
+            }
+            runCurrent()
+
+            assertEquals(baselineSaveCount, fixture.localStore.saveCount)
+            assertEquals("x".repeat(100), fixture.viewModel.state.value.messages.last().content)
+
+            advanceTimeBy(VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS - 1L)
+            runCurrent()
+            assertEquals(baselineSaveCount, fixture.localStore.saveCount)
+
+            advanceTimeBy(1L)
+            runCurrent()
+            assertEquals(baselineSaveCount + 1, fixture.localStore.saveCount)
+            assertEquals(
+                RuntimeLocalDataWriteDurability.Volatile,
+                fixture.localStore.savedDurabilities.last(),
+            )
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDelta,
+                    requestId = sendEnvelope.requestId,
+                    serializer = ChatDeltaPayload.serializer(),
+                    payload = ChatDeltaPayload(delta = "terminal"),
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDone,
+                    requestId = sendEnvelope.requestId,
+                    serializer = ChatDonePayload.serializer(),
+                    payload = ChatDonePayload(),
+                ),
+            )
+            runCurrent()
+
+            assertEquals(baselineSaveCount + 2, fixture.localStore.saveCount)
+            assertEquals(
+                RuntimeLocalDataWriteDurability.Durable,
+                fixture.localStore.savedDurabilities.last(),
+            )
+            assertFalse(fixture.viewModel.state.value.isStreaming)
+            assertEquals(
+                "x".repeat(100) + "terminal",
+                fixture.localStore.data.sessions.single().messages.last().content,
+            )
+
+            advanceTimeBy(VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS)
+            runCurrent()
+            assertEquals(baselineSaveCount + 2, fixture.localStore.saveCount)
+        } finally {
+            fixture?.viewModel?.clearForTest()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun cancelRequestFlushesPendingChatDeltaBeforeDispatch() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var fixture: RuntimeClientFixture? = null
+        try {
+            fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                volatileStatePersistenceCoalesceMillis =
+                    VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS,
+            )
+            fixture.viewModel.replaceStateForTest { it.copy(chatInput = "Cancel persistence") }
+            fixture.viewModel.sendChatMessage()
+            runCurrent()
+            val sendEnvelope = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSend
+            }
+            val baselineSaveCount = fixture.localStore.saveCount
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDelta,
+                    requestId = sendEnvelope.requestId,
+                    serializer = ChatDeltaPayload.serializer(),
+                    payload = ChatDeltaPayload(delta = "persist before cancel"),
+                ),
+            )
+            runCurrent()
+            assertEquals(baselineSaveCount, fixture.localStore.saveCount)
+
+            fixture.viewModel.cancelGeneration()
+            assertEquals(baselineSaveCount + 1, fixture.localStore.saveCount)
+            assertEquals(
+                RuntimeLocalDataWriteDurability.Durable,
+                fixture.localStore.savedDurabilities.last(),
+            )
+            runCurrent()
+            val cancelEnvelope = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatCancel }
+            assertEquals(
+                "persist before cancel",
+                fixture.localStore.data.sessions.single().messages.last().content,
+            )
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatCancel,
+                    requestId = cancelEnvelope.requestId,
+                    serializer = ChatCancelPayload.serializer(),
+                    payload = ChatCancelPayload(targetRequestId = sendEnvelope.requestId),
+                ),
+            )
+            runCurrent()
+            assertEquals(baselineSaveCount + 2, fixture.localStore.saveCount)
+            assertEquals(
+                RuntimeLocalDataWriteDurability.Durable,
+                fixture.localStore.savedDurabilities.last(),
+            )
+            assertFalse(fixture.viewModel.state.value.isStreaming)
+
+            advanceTimeBy(VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS)
+            runCurrent()
+            assertEquals(baselineSaveCount + 2, fixture.localStore.saveCount)
+        } finally {
+            fixture?.viewModel?.clearForTest()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun activeChatErrorSupersedesPendingDeltaWithoutDelayedRewrite() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var fixture: RuntimeClientFixture? = null
+        try {
+            fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                volatileStatePersistenceCoalesceMillis =
+                    VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS,
+            )
+            fixture.viewModel.replaceStateForTest { it.copy(chatInput = "Error persistence") }
+            fixture.viewModel.sendChatMessage()
+            runCurrent()
+            val sendEnvelope = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSend
+            }
+            val baselineSaveCount = fixture.localStore.saveCount
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDelta,
+                    requestId = sendEnvelope.requestId,
+                    serializer = ChatDeltaPayload.serializer(),
+                    payload = ChatDeltaPayload(delta = "partial before error"),
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    requestId = sendEnvelope.requestId,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "backend_unavailable",
+                        message = "Backend unavailable.",
+                        retryable = true,
+                    ),
+                ),
+            )
+            runCurrent()
+
+            assertEquals(baselineSaveCount + 1, fixture.localStore.saveCount)
+            assertEquals(
+                RuntimeLocalDataWriteDurability.Durable,
+                fixture.localStore.savedDurabilities.last(),
+            )
+            assertFalse(fixture.viewModel.state.value.isStreaming)
+            assertEquals("backend_unavailable", fixture.viewModel.state.value.error?.code)
+            assertEquals(
+                "partial before error",
+                fixture.localStore.data.sessions.single().messages.last().content,
+            )
+
+            advanceTimeBy(VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS)
+            runCurrent()
+            assertEquals(baselineSaveCount + 1, fixture.localStore.saveCount)
+        } finally {
+            fixture?.viewModel?.clearForTest()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun malformedChatDoneFlushesPendingDeltaWithoutDelayedRewrite() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var fixture: RuntimeClientFixture? = null
+        try {
+            fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                volatileStatePersistenceCoalesceMillis =
+                    VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS,
+            )
+            fixture.viewModel.replaceStateForTest { it.copy(chatInput = "Malformed terminal") }
+            fixture.viewModel.sendChatMessage()
+            runCurrent()
+            val sendEnvelope = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSend
+            }
+            val baselineSaveCount = fixture.localStore.saveCount
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDelta,
+                    requestId = sendEnvelope.requestId,
+                    serializer = ChatDeltaPayload.serializer(),
+                    payload = ChatDeltaPayload(delta = "persist before malformed done"),
+                ),
+            )
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatDone,
+                    requestId = sendEnvelope.requestId,
+                    payload = json.parseToJsonElement(
+                        """{"finish_reason":"stop","unsupported":"value"}""",
+                    ).jsonObject,
+                ),
+            )
+            runCurrent()
+
+            assertEquals(baselineSaveCount + 1, fixture.localStore.saveCount)
+            assertEquals(
+                RuntimeLocalDataWriteDurability.Durable,
+                fixture.localStore.savedDurabilities.last(),
+            )
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertEquals(
+                "persist before malformed done",
+                fixture.localStore.data.sessions.single().messages.last().content,
+            )
+
+            advanceTimeBy(VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS)
+            runCurrent()
+            assertEquals(baselineSaveCount + 1, fixture.localStore.saveCount)
+        } finally {
+            fixture?.viewModel?.clearForTest()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun localSendValidationErrorFlushesPendingDraftWithoutDelayedRewrite() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var fixture: RuntimeClientFixture? = null
+        try {
+            fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                volatileStatePersistenceCoalesceMillis =
+                    VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS,
+            )
+            fixture.viewModel.disconnect()
+            runCurrent()
+            val baselineSaveCount = fixture.localStore.saveCount
+            fixture.viewModel.updateChatInput("persist before rejected send")
+            assertEquals(baselineSaveCount, fixture.localStore.saveCount)
+
+            fixture.viewModel.sendChatMessage()
+
+            assertEquals(baselineSaveCount + 1, fixture.localStore.saveCount)
+            assertEquals(
+                RuntimeLocalDataWriteDurability.Durable,
+                fixture.localStore.savedDurabilities.last(),
+            )
+            assertEquals("connect_first", fixture.viewModel.state.value.error?.code)
+            assertEquals("persist before rejected send", fixture.localStore.data.composerDraft)
+
+            advanceTimeBy(VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS)
+            runCurrent()
+            assertEquals(baselineSaveCount + 1, fixture.localStore.saveCount)
+        } finally {
+            fixture?.viewModel?.clearForTest()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun persistedComposerDraftRestoresOnViewModelCreationAndUpdatesWithTyping() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -41140,12 +41624,20 @@ class RuntimeClientViewModelTest {
         private val redactRuntimeOwnedLocalDataOnSave: Boolean = false,
     ) : RuntimeLocalDataStore {
         private val relaySecretStore = FakeRelaySecretStore()
+        var saveCount: Int = 0
+            private set
+        val savedDurabilities = mutableListOf<RuntimeLocalDataWriteDurability>()
         var data: PersistedRuntimeData = initialData.withStoredPendingPairingRelaySecret(relaySecretStore)
             private set
 
         override fun load(): PersistedRuntimeData = data.withLoadedPendingPairingRelaySecret(relaySecretStore)
 
-        override fun save(data: PersistedRuntimeData) {
+        override fun save(
+            data: PersistedRuntimeData,
+            durability: RuntimeLocalDataWriteDurability,
+        ) {
+            saveCount += 1
+            savedDurabilities += durability
             val previousPendingSecretRef = this.data.pendingPairingRoute?.relaySecretRef
             val cleanData = if (redactRuntimeOwnedLocalDataOnSave) {
                 data.withoutRuntimeOwnedLocalData()
@@ -41308,6 +41800,27 @@ class RuntimeClientViewModelTest {
         override fun register(application: Application, callbacks: Application.ActivityLifecycleCallbacks) = Unit
 
         override fun unregister(application: Application, callbacks: Application.ActivityLifecycleCallbacks) = Unit
+    }
+
+    private class CapturingRuntimeLifecycleCallbacksRegistrar : RuntimeLifecycleCallbacksRegistrar {
+        var callbacks: Application.ActivityLifecycleCallbacks? = null
+            private set
+
+        override fun register(
+            application: Application,
+            callbacks: Application.ActivityLifecycleCallbacks,
+        ) {
+            this.callbacks = callbacks
+        }
+
+        override fun unregister(
+            application: Application,
+            callbacks: Application.ActivityLifecycleCallbacks,
+        ) {
+            if (this.callbacks === callbacks) {
+                this.callbacks = null
+            }
+        }
     }
 
     private data class RuntimeClientFixture(
@@ -43386,6 +43899,7 @@ class RuntimeClientViewModelTest {
         memoryMutationRequestTimeoutMillis: Long? = null,
         memorySummaryControlRequestTimeoutMillis: Long? = null,
         memorySummaryGenerationRequestTimeoutMillis: Long? = null,
+        volatileStatePersistenceCoalesceMillis: Long = 0L,
     ): RuntimeClientFixture {
         val leaveScheduledTimeoutsPending =
             leaveResearchNotebooksPending ||
@@ -43428,6 +43942,8 @@ class RuntimeClientViewModelTest {
                     memorySummaryControlRequestTimeoutMillis,
                 memorySummaryGenerationRequestTimeoutMillis =
                     memorySummaryGenerationRequestTimeoutMillis,
+                volatileStatePersistenceCoalesceMillis =
+                    volatileStatePersistenceCoalesceMillis,
                 currentTimeMillis = { 1_000L },
             ),
         )

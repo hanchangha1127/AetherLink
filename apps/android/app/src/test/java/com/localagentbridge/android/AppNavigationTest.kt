@@ -1,9 +1,13 @@
 package com.localagentbridge.android
 
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.LocaleList
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.test.core.app.ApplicationProvider
 import com.localagentbridge.android.core.transport.RuntimeEndpointHint
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_DEFAULT
@@ -111,6 +115,18 @@ import java.util.Calendar
 
 @RunWith(RobolectricTestRunner::class)
 class AppNavigationTest {
+    @Test
+    fun mainActivityRoutesNewEntryIntentsToOneTaskScopedStateWriter() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val activityInfo = context.packageManager.getActivityInfo(
+            ComponentName(context, MainActivity::class.java),
+            0,
+        )
+
+        assertEquals(ActivityInfo.LAUNCH_SINGLE_TASK, activityInfo.launchMode)
+        assertEquals(ActivityInfo.DOCUMENT_LAUNCH_NEVER, activityInfo.documentLaunchMode)
+    }
+
     @Test
     fun freshInstallStartsInSettingsForPairing() {
         val destination = resolveAppDestination(
@@ -1561,6 +1577,12 @@ class AppNavigationTest {
         assertEquals(false, "lab://pair?pairing_code=123456".isAetherLinkPairingQrValue())
         assertEquals(false, "https://example.test/pair?code=123456".isAetherLinkPairingQrValue())
         assertEquals(false, "aetherlink://settings?pairing_code=123456".isAetherLinkPairingQrValue())
+    }
+
+    @Test
+    fun pairingQrRoutePolicyAllowsLocalDiagnosticOnlyInDebugBuilds() {
+        assertEquals(false, pairingQrRequiresRemoteRoute(isDebugBuild = true))
+        assertEquals(true, pairingQrRequiresRemoteRoute(isDebugBuild = false))
     }
 
     @Test

@@ -7,6 +7,7 @@ import SwiftUI
 struct StatusView: View {
     @ObservedObject var model: CompanionAppModel
     var onGenerateRelayQRCode: (() -> Void)?
+    var onGenerateRemoteRelayQRCode: (() -> Void)? = nil
     @State private var isRuntimeHistoryInspectorPresented = false
     @State private var isRuntimeMemoryInspectorPresented = false
     @State private var isRuntimeChatCompactionCalibrationPresented = false
@@ -197,7 +198,7 @@ struct StatusView: View {
                 if shouldShowRouteDiagnosticsPanel(model: model) {
                     RemoteRelayRoutePanel(
                         model: model,
-                        onGenerateRelayQRCode: onGenerateRelayQRCode
+                        onGenerateRemotePairingQRCode: onGenerateRemoteRelayQRCode
                     )
                 }
             }
@@ -559,6 +560,9 @@ struct StatusView: View {
     }
 
     private var pairingOverviewDetail: String {
+        if model.shouldUseLocalDiagnosticPairingForUserInterface {
+            return localDiagnosticPairingNoticeText()
+        }
         if model.canPrepareRemoteRelayRouteAutomatically {
             return NSLocalizedString("Generate and scan a pairing QR. AetherLink prepares connection details automatically when available.", comment: "")
         }
@@ -566,7 +570,7 @@ struct StatusView: View {
     }
 
     private var canGeneratePairingQR: Bool {
-        model.canRequestRemotePairingForUserInterface
+        model.canRequestPairingForUserInterface
     }
 
 }

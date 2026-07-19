@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -310,6 +311,187 @@ class PairingStoreTest {
         val relaySecretRef = prefs[stringPreferencesKey("runtime_relay_secret_ref")]
         assertNotNull(relaySecretRef)
         assertEquals("secret-1", secretStore.secrets[relaySecretRef])
+
+        store.forgetRuntime()
+    }
+
+    @Test
+    fun pairingStoreDurablyRotatesRelaySecretBeforeRemovingPreviousHandle() = runTest {
+        val secretStore = FakeRelaySecretStore()
+        val store = pairingStore(secretStore)
+        store.forgetRuntime()
+
+        store.trustRuntime(completeRelayRuntime())
+        val firstPrefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        val firstReference = requireNotNull(
+            firstPrefs[stringPreferencesKey("runtime_relay_secret_ref")],
+        )
+        store.trustRuntime(completeRelayRuntime())
+        assertEquals(listOf(firstReference), secretStore.durablySavedHandles)
+
+        store.trustRuntime(
+            completeRelayRuntime().copy(
+                relaySecret = "secret-2",
+                relayNonce = "nonce-route-2",
+                relayTicketGeneration = 2L,
+            )
+        )
+
+        val secondPrefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        val secondReference = requireNotNull(
+            secondPrefs[stringPreferencesKey("runtime_relay_secret_ref")],
+        )
+        assertTrue(firstReference != secondReference)
+        assertTrue(secretStore.asynchronouslySavedHandles.isEmpty())
+        assertEquals(listOf(firstReference, secondReference), secretStore.durablySavedHandles)
+        assertEquals(listOf(firstReference), secretStore.durablyRemovedHandles)
+        assertNull(secretStore.secrets[firstReference])
+        assertEquals("secret-2", secretStore.secrets[secondReference])
+        assertEquals("secret-2", store.trustedRuntime.first()?.relaySecret)
+
+        store.forgetRuntime()
+    }
+
+    @Test
+    fun pairingStoreFailedDurableSecretRotationPreservesPreviousRoute() = runTest {
+        val secretStore = FakeRelaySecretStore()
+        val store = pairingStore(secretStore)
+        store.forgetRuntime()
+        store.trustRuntime(completeRelayRuntime())
+        val before = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        val previousReference = requireNotNull(
+            before[stringPreferencesKey("runtime_relay_secret_ref")],
+        )
+        secretStore.failNextDurableSave = true
+
+        val failure = runCatching {
+            store.trustRuntime(
+                completeRelayRuntime().copy(
+                    relaySecret = "secret-rejected",
+                    relayNonce = "nonce-route-rejected",
+                )
+            )
+        }.exceptionOrNull()
+
+        assertNotNull(failure)
+        assertTrue(failure?.message.orEmpty().contains("persistence failed"))
+        val after = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertEquals(previousReference, after[stringPreferencesKey("runtime_relay_secret_ref")])
+        assertEquals("secret-1", secretStore.secrets[previousReference])
+        assertEquals("secret-1", store.trustedRuntime.first()?.relaySecret)
+        assertTrue(secretStore.asynchronouslySavedHandles.isEmpty())
+        val rejectedReference = secretStore.durablySavedHandles.last()
+        assertTrue(rejectedReference != previousReference)
+        assertTrue(rejectedReference in secretStore.durablyRemovedHandles)
+        assertNull(secretStore.secrets[rejectedReference])
+
+        store.forgetRuntime()
+    }
+
+    @Test
+    fun pairingStoreCleanupFailureKeepsJournalAndRetriesOnRead() = runTest {
+        val secretStore = FakeRelaySecretStore()
+        val store = pairingStore(secretStore)
+        store.forgetRuntime()
+        store.trustRuntime(completeRelayRuntime())
+        val firstPrefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        val firstReference = requireNotNull(
+            firstPrefs[stringPreferencesKey("runtime_relay_secret_ref")],
+        )
+        secretStore.failNextDurableRemoval = true
+
+        val failure = runCatching {
+            store.trustRuntime(
+                completeRelayRuntime().copy(
+                    relaySecret = "secret-journal",
+                    relayNonce = "nonce-route-journal",
+                )
+            )
+        }.exceptionOrNull()
+
+        assertNotNull(failure)
+        assertTrue(failure?.message.orEmpty().contains("cleanup failed"))
+        val pendingCleanup = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        val replacementReference = requireNotNull(
+            pendingCleanup[stringPreferencesKey("runtime_relay_secret_ref")],
+        )
+        assertTrue(firstReference != replacementReference)
+        assertEquals(
+            setOf(firstReference),
+            pendingCleanup[stringSetPreferencesKey("runtime_relay_secret_cleanup_refs")],
+        )
+        assertEquals("secret-1", secretStore.secrets[firstReference])
+
+        assertEquals("secret-journal", store.trustedRuntime.first()?.relaySecret)
+
+        val cleaned = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertNull(cleaned[stringSetPreferencesKey("runtime_relay_secret_cleanup_refs")])
+        assertNull(secretStore.secrets[firstReference])
+        assertEquals("secret-journal", secretStore.secrets[replacementReference])
+
+        store.forgetRuntime()
+    }
+
+    @Test
+    fun pairingStoreRePairDoesNotDrainJournaledCurrentSecret() = runTest {
+        val secretStore = FakeRelaySecretStore()
+        val store = pairingStore(secretStore)
+        store.forgetRuntime()
+        store.trustRuntime(completeRelayRuntime())
+        val before = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        val currentReference = requireNotNull(
+            before[stringPreferencesKey("runtime_relay_secret_ref")],
+        )
+        secretStore.failNextDurableRemoval = true
+
+        val forgetFailure = runCatching { store.forgetRuntime() }.exceptionOrNull()
+
+        assertNotNull(forgetFailure)
+        val forgotten = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertNull(forgotten[stringPreferencesKey("runtime_relay_secret_ref")])
+        assertEquals(
+            setOf(currentReference),
+            forgotten[stringSetPreferencesKey("runtime_relay_secret_cleanup_refs")],
+        )
+        assertEquals("secret-1", secretStore.secrets[currentReference])
+
+        store.trustRuntime(completeRelayRuntime())
+
+        val repaired = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertEquals(currentReference, repaired[stringPreferencesKey("runtime_relay_secret_ref")])
+        assertNull(repaired[stringSetPreferencesKey("runtime_relay_secret_cleanup_refs")])
+        assertEquals("secret-1", secretStore.secrets[currentReference])
+        assertEquals("secret-1", store.trustedRuntime.first()?.relaySecret)
 
         store.forgetRuntime()
     }
@@ -1196,7 +1378,9 @@ class PairingStoreTest {
         "USB_REVERSE",
     )
 
-    private fun pairingStore(relaySecretStore: RelaySecretStore = FakeRelaySecretStore()): PairingStore {
+    private fun pairingStore(
+        relaySecretStore: DurableRelaySecretStore = FakeRelaySecretStore(),
+    ): PairingStore {
         return PairingStore(ApplicationProvider.getApplicationContext(), relaySecretStore)
     }
 
@@ -1210,6 +1394,7 @@ class PairingStoreTest {
         assertNull(prefs[stringPreferencesKey("runtime_relay_nonce")])
         assertNull(prefs[stringPreferencesKey("runtime_relay_scope")])
         assertNull(prefs[longPreferencesKey("runtime_relay_ticket_generation")])
+        assertNull(prefs[stringSetPreferencesKey("runtime_relay_secret_cleanup_refs")])
     }
 
     private fun assertNoStoredP2pRoute(prefs: androidx.datastore.preferences.core.Preferences) {
@@ -1249,11 +1434,31 @@ class PairingStoreTest {
         assertNoStoredP2pRoute(prefs)
     }
 
-    private class FakeRelaySecretStore : RelaySecretStore {
+    private class FakeRelaySecretStore : DurableRelaySecretStore {
         val secrets = linkedMapOf<String, String>()
+        val asynchronouslySavedHandles = mutableListOf<String>()
+        val durablySavedHandles = mutableListOf<String>()
+        val durablyRemovedHandles = mutableListOf<String>()
+        var failNextDurableSave = false
+        var retainFailedDurableSave = true
+        var failNextDurableRemoval = false
 
         override fun saveSecret(handle: String, secret: String) {
+            asynchronouslySavedHandles += handle
             secrets[handle] = secret
+        }
+
+        override fun saveSecretDurably(handle: String, secret: String): Boolean {
+            durablySavedHandles += handle
+            if (failNextDurableSave) {
+                failNextDurableSave = false
+                if (retainFailedDurableSave) {
+                    secrets[handle] = secret
+                }
+                return false
+            }
+            secrets[handle] = secret
+            return true
         }
 
         override fun readSecret(handle: String): String? {
@@ -1262,6 +1467,16 @@ class PairingStoreTest {
 
         override fun removeSecret(handle: String) {
             secrets.remove(handle)
+        }
+
+        override fun removeSecretDurably(handle: String): Boolean {
+            durablyRemovedHandles += handle
+            if (failNextDurableRemoval) {
+                failNextDurableRemoval = false
+                return false
+            }
+            secrets.remove(handle)
+            return true
         }
     }
 }

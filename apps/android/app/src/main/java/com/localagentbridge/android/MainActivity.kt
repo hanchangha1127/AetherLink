@@ -531,7 +531,9 @@ private fun LocalAgentBridgeApp(
             ) { uris ->
                 handlePickedAttachments(uris, viewModel::addAttachments)
             }
-            val requireRemoteRouteForPairingQr = true
+            val requireRemoteRouteForPairingQr = pairingQrRequiresRemoteRoute(
+                isDebugBuild = BuildConfig.DEBUG,
+            )
             val handlePairingQr: (String) -> Unit = { rawValue ->
                 val treatAsOnboarding = shouldTreatPairingQrAsOnboarding(
                     destination = destination,
@@ -944,6 +946,8 @@ private fun LocalAgentBridgeApp(
         }
     }
 }
+
+internal fun pairingQrRequiresRemoteRoute(isDebugBuild: Boolean): Boolean = !isDebugBuild
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)

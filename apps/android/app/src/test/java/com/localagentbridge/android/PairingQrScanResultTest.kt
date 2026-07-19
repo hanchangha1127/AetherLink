@@ -39,6 +39,23 @@ class PairingQrScanResultTest {
     }
 
     @Test
+    fun compactLocalDiagnosticQrIsValidOnlyWhenRemoteRouteIsNotRequired() {
+        val rawUri = "aetherlink://pair?v=1&n=nonce-local&c=123456" +
+            "&rid=runtime-local&rn=AetherLink%20Runtime&rf=fp-local" +
+            "&rk=runtime-public-key&rt=route-token-local" +
+            "&h=192.168.1.44&p=43170&rsc=local_diagnostic"
+
+        assertEquals(
+            PairingQrScanResult.InvalidPairingQr,
+            listOf(rawUri).aetherLinkPairingScanResultOrNull(requireRemoteRoute = true),
+        )
+        assertEquals(
+            PairingQrScanResult.Valid(rawUri),
+            listOf(rawUri).aetherLinkPairingScanResultOrNull(requireRemoteRoute = false),
+        )
+    }
+
+    @Test
     fun nonAetherLinkQrReturnsUnsupported() {
         assertEquals(
             PairingQrScanResult.UnsupportedQr,

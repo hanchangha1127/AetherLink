@@ -1,6 +1,8 @@
 package com.localagentbridge.android.runtime
 
+import android.annotation.SuppressLint
 import android.content.Context
+import android.content.SharedPreferences
 import com.localagentbridge.android.core.protocol.ChatAttachmentPayload
 import com.localagentbridge.android.core.protocol.ChatMessagePayload
 import com.localagentbridge.android.core.protocol.ChatSourceAttributionPayload
@@ -11,6 +13,7 @@ import com.localagentbridge.android.core.protocol.ChatStoredMessagePayload
 import com.localagentbridge.android.core.protocol.MemoryEntryPayload
 import com.localagentbridge.android.core.protocol.MemoryEntrySourcePayload
 import com.localagentbridge.android.core.pairing.AndroidKeystoreRelaySecretStore
+import com.localagentbridge.android.core.pairing.DurableRelaySecretStore
 import com.localagentbridge.android.core.pairing.OPAQUE_ROUTE_BODY_MAX_CHARS
 import com.localagentbridge.android.core.pairing.RelaySecretStore
 import com.localagentbridge.android.core.pairing.RuntimePairingPayload
@@ -28,16 +31,20 @@ import java.util.UUID
 
 private const val STORE_NAME = "runtime_local_store"
 private const val STORE_KEY = "runtime_data"
+private const val PENDING_RELAY_SECRET_CLEANUP_KEY = "pending_relay_secret_cleanup_refs"
 private const val SUPPRESSED_REASON_DELETED = "deleted"
 private const val MAX_PERSISTED_COMPOSER_DRAFT_CHARS = 20_000
 internal const val APP_LANGUAGE_SOURCE_DEFAULT = "default"
 internal const val APP_LANGUAGE_SOURCE_SYSTEM = "system"
 internal const val APP_LANGUAGE_SOURCE_IN_APP = "in_app"
 
-class RuntimeLocalStore(
+class RuntimeLocalStore internal constructor(
     context: Context,
     private val json: Json,
     private val relaySecretStore: RelaySecretStore = AndroidKeystoreRelaySecretStore(context),
+    private val durableMetadataCommit: (SharedPreferences.Editor) -> Boolean = { editor ->
+        editor.commit()
+    },
 ) {
     private val preferences = context.getSharedPreferences(STORE_NAME, Context.MODE_PRIVATE)
 
@@ -55,7 +62,8 @@ class RuntimeLocalStore(
         }
     }
 
-    fun save(data: PersistedRuntimeData) {
+    @SuppressLint("ApplySharedPref")
+    fun save(data: PersistedRuntimeData, commitToDisk: Boolean = false) {
         val previousPendingSecretRef = storedDataStringOrNull()
             ?.let { raw ->
                 runCatching { json.decodeFromString<PersistedRuntimeData>(raw) }.getOrNull()
@@ -63,17 +71,139 @@ class RuntimeLocalStore(
             ?.pendingPairingRoute
             ?.ownedPendingRelaySecretRefOrNull()
         val diskProjection = data.sanitized().withoutRuntimeOwnedLocalData()
-        val dataForDisk = diskProjection.withStoredPendingPairingRelaySecretFromSanitized(relaySecretStore)
+        val pendingSecretWrite = diskProjection.pendingRelaySecretWrite(relaySecretStore)
+        val dataForDisk = diskProjection.withPendingPairingRelaySecretReferenceFromSanitized(
+            secretReference = pendingSecretWrite?.reference,
+        )
         val currentPendingSecretRef = dataForDisk.pendingPairingRoute?.relaySecretRef
-        if (previousPendingSecretRef != null && previousPendingSecretRef != currentPendingSecretRef) {
-            relaySecretStore.removeSecret(previousPendingSecretRef)
+        val durableSecretStore = if (commitToDisk) {
+            requireDurableRelaySecretStore(relaySecretStore)
+        } else {
+            null
         }
-        preferences.edit()
+        if (pendingSecretWrite?.requiresWrite == true) {
+            val secretPersisted = if (durableSecretStore != null) {
+                durableSecretStore.saveSecretDurably(
+                    pendingSecretWrite.reference,
+                    pendingSecretWrite.secret,
+                )
+            } else {
+                relaySecretStore.saveSecret(
+                    pendingSecretWrite.reference,
+                    pendingSecretWrite.secret,
+                )
+                true
+            }
+            if (!secretPersisted) {
+                durableSecretStore?.let { store ->
+                    compensateUncommittedSecret(
+                        durableSecretStore = store,
+                        secretReference = pendingSecretWrite.reference,
+                        previousSecretReference = previousPendingSecretRef,
+                    )
+                }
+                error("Runtime state secret persistence failed")
+            }
+        }
+        val cleanupReferences = if (commitToDisk) {
+            pendingRelaySecretCleanupReferences() + listOfNotNull(
+                previousPendingSecretRef?.takeIf { it != currentPendingSecretRef },
+            )
+        } else {
+            emptySet()
+        }
+        val editor = preferences.edit()
             .putString(
                 STORE_KEY,
                 json.encodeToString(dataForDisk),
             )
-            .apply()
+        if (commitToDisk) {
+            editor.replacePendingRelaySecretCleanupReferences(cleanupReferences)
+        }
+        // Durable barriers need a synchronous success signal before old-secret cleanup.
+        val metadataPersisted = if (commitToDisk) {
+            durableMetadataCommit(editor)
+        } else {
+            editor.apply()
+            true
+        }
+        if (!metadataPersisted) {
+            if (pendingSecretWrite != null && durableSecretStore != null) {
+                compensateUncommittedSecret(
+                    durableSecretStore = durableSecretStore,
+                    secretReference = pendingSecretWrite.reference,
+                    previousSecretReference = previousPendingSecretRef,
+                )
+            }
+            error("Runtime state metadata persistence failed")
+        }
+        if (durableSecretStore != null) {
+            drainPendingRelaySecretCleanup(
+                durableSecretStore = durableSecretStore,
+                cleanupReferences = cleanupReferences,
+                currentSecretReference = currentPendingSecretRef,
+            )
+        } else if (
+            previousPendingSecretRef != null &&
+            previousPendingSecretRef != currentPendingSecretRef
+        ) {
+            relaySecretStore.removeSecret(previousPendingSecretRef)
+        }
+    }
+
+    private fun compensateUncommittedSecret(
+        durableSecretStore: DurableRelaySecretStore,
+        secretReference: String,
+        previousSecretReference: String?,
+    ) {
+        if (secretReference == previousSecretReference) return
+        if (durableSecretStore.removeSecretDurably(secretReference)) return
+        val cleanupReferences = pendingRelaySecretCleanupReferences() + secretReference
+        val journalPersisted = durableMetadataCommit(
+            preferences.edit().replacePendingRelaySecretCleanupReferences(cleanupReferences),
+        )
+        check(journalPersisted) {
+            "Runtime state secret compensation and cleanup journal persistence failed"
+        }
+    }
+
+    private fun drainPendingRelaySecretCleanup(
+        durableSecretStore: DurableRelaySecretStore,
+        cleanupReferences: Set<String>,
+        currentSecretReference: String?,
+    ) {
+        if (cleanupReferences.isEmpty()) return
+        val eligibleReferences = cleanupReferences.filterTo(linkedSetOf()) { reference ->
+            reference != currentSecretReference && isOwnedPendingRelaySecretReference(reference)
+        }
+        val failedReferences = eligibleReferences.filterTo(linkedSetOf()) { reference ->
+            !durableSecretStore.removeSecretDurably(reference)
+        }
+        val journalPersisted = durableMetadataCommit(
+            preferences.edit().replacePendingRelaySecretCleanupReferences(failedReferences),
+        )
+        check(journalPersisted) { "Runtime state secret cleanup journal persistence failed" }
+        check(failedReferences.isEmpty()) { "Runtime state secret cleanup failed" }
+    }
+
+    private fun pendingRelaySecretCleanupReferences(): Set<String> {
+        return try {
+            preferences.getStringSet(PENDING_RELAY_SECRET_CLEANUP_KEY, emptySet())
+                .orEmpty()
+                .filterTo(linkedSetOf(), ::isOwnedPendingRelaySecretReference)
+        } catch (_: ClassCastException) {
+            emptySet()
+        }
+    }
+
+    private fun SharedPreferences.Editor.replacePendingRelaySecretCleanupReferences(
+        references: Set<String>,
+    ): SharedPreferences.Editor {
+        return if (references.isEmpty()) {
+            remove(PENDING_RELAY_SECRET_CLEANUP_KEY)
+        } else {
+            putStringSet(PENDING_RELAY_SECRET_CLEANUP_KEY, references.toSet())
+        }
     }
 
     private fun storedDataStringOrNull(): String? {
@@ -444,6 +574,7 @@ private fun RuntimePairingPayload.toPersistedPendingPairingRoute(nowMillis: Long
                     runtimeDeviceId = runtimeDeviceId,
                     relayId = relayId,
                     pairingNonce = pairingNonce,
+                    relaySecret = it,
                 )
             },
         relayExpiresAtEpochMillis = relayRouteExpiresAt,
@@ -579,25 +710,49 @@ private fun PersistedPendingPairingRoute.sanitizedOrNull(): PersistedPendingPair
 internal fun PersistedRuntimeData.withStoredPendingPairingRelaySecret(
     relaySecretStore: RelaySecretStore,
 ): PersistedRuntimeData {
-    return sanitized().withStoredPendingPairingRelaySecretFromSanitized(relaySecretStore)
+    val cleanData = sanitized()
+    val secretWrite = cleanData.pendingRelaySecretWrite(relaySecretStore)
+    if (secretWrite?.requiresWrite == true) {
+        relaySecretStore.saveSecret(secretWrite.reference, secretWrite.secret)
+    }
+    return cleanData.withPendingPairingRelaySecretReferenceFromSanitized(
+        secretReference = secretWrite?.reference,
+    )
 }
 
-private fun PersistedRuntimeData.withStoredPendingPairingRelaySecretFromSanitized(
+private data class PendingRelaySecretWrite(
+    val reference: String,
+    val secret: String,
+    val requiresWrite: Boolean,
+)
+
+private fun PersistedRuntimeData.pendingRelaySecretWrite(
     relaySecretStore: RelaySecretStore,
+): PendingRelaySecretWrite? {
+    val pending = pendingPairingRoute ?: return null
+    val relaySecret = pending.relaySecret ?: return null
+    val existingReference = pending.relaySecretRef
+        ?.takeIf { relaySecretStore.readSecret(it) == relaySecret }
+    val relaySecretReference = existingReference ?: pendingPairingRelaySecretHandle(
+        runtimeDeviceId = pending.runtimeDeviceId,
+        relayId = pending.relayId,
+        pairingNonce = pending.pairingNonce,
+        relaySecret = relaySecret,
+    )
+    return PendingRelaySecretWrite(
+        reference = relaySecretReference,
+        secret = relaySecret,
+        requiresWrite = existingReference == null,
+    )
+}
+
+private fun PersistedRuntimeData.withPendingPairingRelaySecretReferenceFromSanitized(
+    secretReference: String?,
 ): PersistedRuntimeData {
     val pending = pendingPairingRoute ?: return this
-    val relaySecret = pending.relaySecret
     val relaySecretRef = when {
-        relaySecret != null -> pending.relaySecretRef
-            ?: pendingPairingRelaySecretHandle(
-                runtimeDeviceId = pending.runtimeDeviceId,
-                relayId = pending.relayId,
-                pairingNonce = pending.pairingNonce,
-            )
+        pending.relaySecret != null -> secretReference
         else -> pending.relaySecretRef
-    }
-    if (relaySecret != null && relaySecretRef != null) {
-        relaySecretStore.saveSecret(relaySecretRef, relaySecret)
     }
     return copy(
         pendingPairingRoute = pending.copy(
@@ -605,6 +760,13 @@ private fun PersistedRuntimeData.withStoredPendingPairingRelaySecretFromSanitize
             relaySecretRef = relaySecretRef,
         ),
     )
+}
+
+private fun requireDurableRelaySecretStore(
+    relaySecretStore: RelaySecretStore,
+): DurableRelaySecretStore {
+    return relaySecretStore as? DurableRelaySecretStore
+        ?: error("Confirmed runtime state persistence requires a durable relay secret store")
 }
 
 internal fun PersistedRuntimeData.withLoadedPendingPairingRelaySecret(
@@ -636,10 +798,33 @@ private fun pendingPairingRelaySecretHandle(
     runtimeDeviceId: String,
     relayId: String?,
     pairingNonce: String,
+    relaySecret: String,
 ): String {
+    val routeDigest = pendingPairingRelayRouteDigest(
+        runtimeDeviceId = runtimeDeviceId,
+        relayId = relayId,
+        pairingNonce = pairingNonce,
+    )
+    val secretDigest = sha256Hex(relaySecret)
+    return "pending-relay-v2-$routeDigest-$secretDigest"
+}
+
+private fun pendingPairingRelayRouteDigest(
+    runtimeDeviceId: String,
+    relayId: String?,
+    pairingNonce: String,
+): String {
+    return sha256Hex("$runtimeDeviceId\n$relayId\n$pairingNonce")
+}
+
+private fun sha256Hex(value: String): String {
     val digest = MessageDigest.getInstance("SHA-256")
-        .digest("$runtimeDeviceId\n$relayId\n$pairingNonce".toByteArray(Charsets.UTF_8))
-    return "pending-relay-v1-" + digest.joinToString("") { "%02x".format(it) }
+        .digest(value.toByteArray(Charsets.UTF_8))
+    return digest.joinToString("") { "%02x".format(it) }
+}
+
+private fun isOwnedPendingRelaySecretReference(reference: String): Boolean {
+    return PENDING_RELAY_SECRET_REFERENCE_PATTERN.matches(reference)
 }
 
 private fun PersistedPendingPairingRoute.ownedPendingRelaySecretRefOrNull(): String? {
@@ -647,15 +832,23 @@ private fun PersistedPendingPairingRoute.ownedPendingRelaySecretRefOrNull(): Str
     val cleanRuntimeDeviceId = runtimeDeviceId.takeIf(::isCanonicalOpaqueRouteValue) ?: return null
     val cleanRelayId = relayId?.takeIf(::isCanonicalOpaqueRouteValue) ?: return null
     val cleanPairingNonce = pairingNonce.takeIf(::isCanonicalOpaqueRouteValue) ?: return null
-    val expected = pendingPairingRelaySecretHandle(
+    val routeDigest = pendingPairingRelayRouteDigest(
         runtimeDeviceId = cleanRuntimeDeviceId,
         relayId = cleanRelayId,
         pairingNonce = cleanPairingNonce,
     )
-    return reference.takeIf { it == expected }
+    val legacyReference = "pending-relay-v1-$routeDigest"
+    if (reference == legacyReference) return reference
+    val versionTwoMatch = PENDING_RELAY_SECRET_V2_REFERENCE_PATTERN.matchEntire(reference)
+        ?: return null
+    return reference.takeIf { versionTwoMatch.groupValues[1] == routeDigest }
 }
 
 private const val PENDING_PAIRING_ROUTE_TTL_MILLIS = 5 * 60 * 1000L
+private val PENDING_RELAY_SECRET_REFERENCE_PATTERN =
+    Regex("^pending-relay-(?:v1-[0-9a-f]{64}|v2-[0-9a-f]{64}-[0-9a-f]{64})$")
+private val PENDING_RELAY_SECRET_V2_REFERENCE_PATTERN =
+    Regex("^pending-relay-v2-([0-9a-f]{64})-[0-9a-f]{64}$")
 
 internal fun PersistedRuntimeData.withSelectedModelId(modelId: String?): PersistedRuntimeData {
     return copy(selectedModelId = modelId?.trim()?.takeIf(String::isNotBlank)).sanitized()

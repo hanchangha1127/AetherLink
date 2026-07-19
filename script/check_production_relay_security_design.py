@@ -13,7 +13,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 DESIGN_ROOT = ROOT / "docs/security-hardening/production-relay-v1"
 EVIDENCE_COLLECTION_SHA256 = (
-    "2146845a87bebff78ac5d709a36234fd611fa9be1a43750f1fd046d72c4131ad"
+    "e188e1b885419e376b9dcea85282b4aafb1d48692b134edc13aff2eedfbf6b66"
 )
 EVIDENCE_BASE_REVISION = "abd638482ea01d2b5f4d38eb78be04f734814c71"
 EXPECTED_EVIDENCE_PATH_ORDER = (

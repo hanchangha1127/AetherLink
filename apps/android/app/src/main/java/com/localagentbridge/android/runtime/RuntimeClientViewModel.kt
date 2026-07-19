@@ -143,6 +143,7 @@ import com.localagentbridge.android.core.transport.RuntimeTransportConnector
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -196,9 +197,89 @@ internal interface RuntimeDiscoverySource {
     fun discover(): Flow<List<DiscoveredRuntime>>
 }
 
+internal enum class RuntimeLocalDataWriteDurability {
+    Volatile,
+    Durable,
+}
+
 internal interface RuntimeLocalDataStore {
     fun load(): PersistedRuntimeData
-    fun save(data: PersistedRuntimeData)
+    fun save(
+        data: PersistedRuntimeData,
+        durability: RuntimeLocalDataWriteDurability = RuntimeLocalDataWriteDurability.Durable,
+    )
+}
+
+internal class RuntimeStatePersistenceCoordinator(
+    private val localStore: RuntimeLocalDataStore,
+    private val scope: CoroutineScope,
+    private val coalesceWindowMillis: Long,
+    private val latestData: () -> PersistedRuntimeData,
+) {
+    private val lock = Any()
+    private var generation = 0L
+    private var isDirty = false
+    private var pendingJob: Job? = null
+
+    init {
+        require(coalesceWindowMillis >= 0L) {
+            "Runtime state persistence coalesce window must not be negative"
+        }
+    }
+
+    fun saveCoalesced() {
+        if (coalesceWindowMillis == 0L) {
+            saveImmediately(latestData())
+            return
+        }
+        synchronized(lock) {
+            isDirty = true
+            if (pendingJob != null) return
+            val scheduledGeneration = ++generation
+            pendingJob = scope.launch {
+                delay(coalesceWindowMillis)
+                flushScheduled(scheduledGeneration)
+            }
+        }
+    }
+
+    fun saveImmediately(data: PersistedRuntimeData) {
+        synchronized(lock) {
+            generation += 1L
+            pendingJob?.cancel()
+            pendingJob = null
+            isDirty = false
+            localStore.save(data, RuntimeLocalDataWriteDurability.Durable)
+        }
+    }
+
+    fun flush() {
+        synchronized(lock) {
+            generation += 1L
+            pendingJob?.cancel()
+            pendingJob = null
+            if (!isDirty) return
+            val data = latestData()
+            localStore.save(data, RuntimeLocalDataWriteDurability.Durable)
+            isDirty = false
+        }
+    }
+
+    private fun flushScheduled(scheduledGeneration: Long) {
+        synchronized(lock) {
+            if (generation != scheduledGeneration) return
+            pendingJob = null
+            if (!isDirty) return
+            val data = latestData()
+            localStore.save(data, RuntimeLocalDataWriteDurability.Volatile)
+            isDirty = false
+        }
+    }
+}
+
+private enum class RuntimeStatePersistenceMode {
+    Immediate,
+    Coalesced,
 }
 
 internal interface RuntimeLifecycleCallbacksRegistrar {
@@ -727,6 +808,7 @@ internal data class RuntimeClientViewModelDependencies(
     val memoryMutationRequestTimeoutMillis: Long? = null,
     val memorySummaryControlRequestTimeoutMillis: Long? = null,
     val memorySummaryGenerationRequestTimeoutMillis: Long? = null,
+    val volatileStatePersistenceCoalesceMillis: Long = 0L,
     val currentTimeMillis: () -> Long = { System.currentTimeMillis() },
 ) {
     init {
@@ -750,6 +832,12 @@ internal data class RuntimeClientViewModelDependencies(
                 memorySummaryGenerationRequestTimeoutMillis > 0L
         ) {
             "Memory-summary generation request timeout must be positive when enabled"
+        }
+        require(
+            volatileStatePersistenceCoalesceMillis in
+                0L..VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS
+        ) {
+            "Volatile state persistence coalesce window must be within the production maximum"
         }
     }
 
@@ -786,6 +874,8 @@ internal data class RuntimeClientViewModelDependencies(
                     MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS,
                 memorySummaryGenerationRequestTimeoutMillis =
                     MEMORY_SUMMARY_GENERATION_REQUEST_TIMEOUT_MS,
+                volatileStatePersistenceCoalesceMillis =
+                    VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS,
             )
         }
     }
@@ -941,8 +1031,14 @@ private class AndroidRuntimeLocalDataStore(
 ) : RuntimeLocalDataStore {
     override fun load(): PersistedRuntimeData = store.load()
 
-    override fun save(data: PersistedRuntimeData) {
-        store.save(data)
+    override fun save(
+        data: PersistedRuntimeData,
+        durability: RuntimeLocalDataWriteDurability,
+    ) {
+        store.save(
+            data = data,
+            commitToDisk = durability == RuntimeLocalDataWriteDurability.Durable,
+        )
     }
 }
 
@@ -1975,6 +2071,7 @@ internal const val CHAT_TITLE_RECONCILIATION_LEG_TIMEOUT_MS = 15_000L
 internal const val CHAT_TITLE_RECONCILIATION_TIMEOUT_MS = 30_000L
 internal const val MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS = 15_000L
 internal const val MEMORY_SUMMARY_GENERATION_REQUEST_TIMEOUT_MS = 75_000L
+internal const val VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS = 250L
 // Valid matching stream progress restarts this bounded create idle interval.
 internal const val RESEARCH_BRIEF_CREATE_IDLE_TIMEOUT_MS = 30_000L
 private val CHAT_ASSISTANT_MESSAGE_ID_PATTERN = Regex("^assistant_message_[0-9a-f]{32}$")
@@ -2057,6 +2154,13 @@ class RuntimeClientViewModel internal constructor(
     private val pairingStore = dependencies.trustedRuntimeStore
     private val deviceIdentityStore = dependencies.deviceIdentityProvider
     private val localStore = dependencies.localDataStore
+    private var persistedRuntimeData = PersistedRuntimeData()
+    private val statePersistence = RuntimeStatePersistenceCoordinator(
+        localStore = localStore,
+        scope = viewModelScope,
+        coalesceWindowMillis = dependencies.volatileStatePersistenceCoalesceMillis,
+        latestData = { persistedRuntimeData },
+    )
     private val attachmentReader = dependencies.attachmentReader ?: AndroidRuntimeAttachmentReader(application)
     private val attachmentBudgets = dependencies.attachmentBudgets
     private var attachmentIngestionJob: Job? = null
@@ -2191,7 +2295,6 @@ class RuntimeClientViewModel internal constructor(
     private var isSessionAuthenticated = false
     private var authenticatedRuntimeCapabilities: Set<String> = emptySet()
     private var runtimeSessionAuthorityGeneration = 0L
-    private var persistedRuntimeData = PersistedRuntimeData()
     private var shouldRestoreTrustedRuntimeConnection = true
     private var didAttemptTrustedRuntimeRestore = false
     private val connectionMutex = Mutex()
@@ -2202,9 +2305,17 @@ class RuntimeClientViewModel internal constructor(
             restoreTrustedRuntimeConnection()
             requestResearchNotebooks()
         }
-        override fun onActivityPaused(activity: Activity) = Unit
-        override fun onActivityStopped(activity: Activity) = Unit
-        override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
+        override fun onActivityPaused(activity: Activity) {
+            statePersistence.flush()
+        }
+
+        override fun onActivityStopped(activity: Activity) {
+            statePersistence.flush()
+        }
+
+        override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {
+            statePersistence.flush()
+        }
         override fun onActivityDestroyed(activity: Activity) = Unit
     }
 
@@ -2334,7 +2445,10 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         if (rejectUserMutationWhileActiveChatMessagesLoading()) return
-        val cleanDraft = persistComposerDraft(value)
+        val cleanDraft = persistComposerDraft(
+            value,
+            persistenceMode = RuntimeStatePersistenceMode.Coalesced,
+        )
         mutableState.update { it.copy(chatInput = cleanDraft) }
     }
 
@@ -4211,14 +4325,14 @@ class RuntimeClientViewModel internal constructor(
             nowMillis = nowMillis(),
         )
         persistedRuntimeData = cleanData
-        localStore.save(cleanData)
+        statePersistence.saveImmediately(cleanData)
     }
 
     private fun clearPersistedPendingPairingRoute() {
         val cleanData = persistedRuntimeData.withoutPendingPairingRoute()
         if (cleanData == persistedRuntimeData) return
         persistedRuntimeData = cleanData
-        localStore.save(cleanData)
+        statePersistence.saveImmediately(cleanData)
     }
 
     private fun restorePersistedPendingPairingRouteIfNeeded(data: PersistedRuntimeData) {
@@ -5577,6 +5691,7 @@ class RuntimeClientViewModel internal constructor(
 
     fun cancelGeneration() {
         val activeRequestId = state.value.activeRequestId ?: return
+        statePersistence.flush()
         sendEnvelope(
             envelope(
                 type = MessageType.ChatCancel,
@@ -7486,7 +7601,10 @@ class RuntimeClientViewModel internal constructor(
             ?.takeIf { it.requestId == envelope.requestId }
             ?.let(::scheduleResearchBriefCreateIdleTimeout)
         mutableState.value = updatedState
-        persistActiveMessages(updatedState.messages)
+        persistActiveMessages(
+            updatedState.messages,
+            persistenceMode = RuntimeStatePersistenceMode.Coalesced,
+        )
     }
 
     private fun handleChatDone(
@@ -11779,6 +11897,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun showError(code: String, detail: String? = null) {
+        statePersistence.flush()
         mutableState.update { it.copy(error = runtimeUiError(code, detail)) }
     }
 
@@ -13155,9 +13274,15 @@ class RuntimeClientViewModel internal constructor(
     private fun persistActiveMessages(
         messages: List<RuntimeChatMessage>,
         clearError: Boolean = true,
+        persistenceMode: RuntimeStatePersistenceMode = RuntimeStatePersistenceMode.Immediate,
     ) {
         val sessionId = state.value.activeChatSessionId ?: return
-        persistMessages(sessionId, messages, clearError = clearError)
+        persistMessages(
+            sessionId,
+            messages,
+            clearError = clearError,
+            persistenceMode = persistenceMode,
+        )
     }
 
     private fun persistMessages(
@@ -13165,6 +13290,7 @@ class RuntimeClientViewModel internal constructor(
         messages: List<RuntimeChatMessage>,
         clearError: Boolean = true,
         runtimeBacked: Boolean = false,
+        persistenceMode: RuntimeStatePersistenceMode = RuntimeStatePersistenceMode.Immediate,
     ) {
         if (sessionId in researchNotebookSessionIds) {
             transientResearchMessagesBySessionId[sessionId] = messages
@@ -13189,6 +13315,7 @@ class RuntimeClientViewModel internal constructor(
             ),
             save = true,
             clearError = clearError,
+            persistenceMode = persistenceMode,
         )
     }
 
@@ -13197,11 +13324,19 @@ class RuntimeClientViewModel internal constructor(
         save: Boolean,
         clearError: Boolean = true,
         syncComposerDraft: Boolean = false,
+        persistenceMode: RuntimeStatePersistenceMode = RuntimeStatePersistenceMode.Immediate,
     ) {
         val cleanData = data.sanitized()
         persistedRuntimeData = cleanData
         if (save) {
-            localStore.save(cleanData)
+            when (persistenceMode) {
+                RuntimeStatePersistenceMode.Immediate -> {
+                    statePersistence.saveImmediately(cleanData)
+                }
+                RuntimeStatePersistenceMode.Coalesced -> {
+                    statePersistence.saveCoalesced()
+                }
+            }
         }
         mutableState.update {
             val activeResearchSessionId = it.activeChatSessionId
@@ -13286,13 +13421,21 @@ class RuntimeClientViewModel internal constructor(
     private fun persistComposerDraft(
         value: String,
         sessionId: String? = state.value.activeChatSessionId,
+        persistenceMode: RuntimeStatePersistenceMode = RuntimeStatePersistenceMode.Immediate,
     ): String {
         if (sessionId in researchNotebookSessionIds) {
             return value.take(20_000)
         }
         val cleanData = persistedRuntimeData.withComposerDraft(value, sessionId = sessionId)
         persistedRuntimeData = cleanData
-        localStore.save(cleanData)
+        when (persistenceMode) {
+            RuntimeStatePersistenceMode.Immediate -> {
+                statePersistence.saveImmediately(cleanData)
+            }
+            RuntimeStatePersistenceMode.Coalesced -> {
+                statePersistence.saveCoalesced()
+            }
+        }
         return cleanData.composerDraftForSession(sessionId)
     }
 
@@ -13326,7 +13469,7 @@ class RuntimeClientViewModel internal constructor(
     private fun persistSelectedModel(modelId: String?, publish: Boolean = true) {
         val cleanData = persistedRuntimeData.withSelectedModelId(modelId)
         persistedRuntimeData = cleanData
-        localStore.save(cleanData)
+        statePersistence.saveImmediately(cleanData)
         if (publish) {
             mutableState.update {
                 it.copy(
@@ -13342,7 +13485,7 @@ class RuntimeClientViewModel internal constructor(
         val selectionChanged = cleanData.selectedEmbeddingModelId !=
             persistedRuntimeData.selectedEmbeddingModelId
         persistedRuntimeData = cleanData
-        localStore.save(cleanData)
+        statePersistence.saveImmediately(cleanData)
         if (selectionChanged) {
             clearMemorySemanticDuplicateSuggestions()
             clearMemorySemanticDuplicateClusters()
@@ -13367,7 +13510,7 @@ class RuntimeClientViewModel internal constructor(
         shouldRestoreTrustedRuntimeConnection = enabled
         val cleanData = persistedRuntimeData.withTrustedRuntimeAutoReconnectEnabled(enabled)
         persistedRuntimeData = cleanData
-        localStore.save(cleanData)
+        statePersistence.saveImmediately(cleanData)
         mutableState.update {
             it.copy(
                 trustedRuntimeAutoReconnectEnabled = cleanData.trustedRuntimeAutoReconnectEnabled,
@@ -13411,6 +13554,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     override fun onCleared() {
+        statePersistence.flush()
         dependencies.lifecycleCallbacksRegistrar.unregister(getApplication(), lifecycleCallbacks)
         stopDiscoveryInternal()
         closeRuntimeConnection()

@@ -96,7 +96,7 @@ struct LocalAgentBridgeApp: App {
 
     private var canGeneratePairingQR: Bool {
         pairingQRGenerationCommandAvailable(
-            canRequestRemotePairing: model.canRequestRemotePairingForUserInterface
+            canRequestPairing: model.canRequestPairingForUserInterface
         )
     }
 
@@ -131,7 +131,7 @@ struct LocalAgentBridgeApp: App {
 
         case .pairingQR:
             Button(pairingQRGenerationCommandTitle(hasActiveSession: model.pairingSession != nil)) {
-                model.requestRemotePairingForUserInterface()
+                model.requestPairingForUserInterface()
                 requestedSection = .pairing
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)

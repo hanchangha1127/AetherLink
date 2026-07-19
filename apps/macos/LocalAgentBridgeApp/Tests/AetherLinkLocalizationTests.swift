@@ -963,6 +963,38 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testLocalDiagnosticPairingNoticeUsesSelectedLanguage() {
+        let expectations: [(languageTag: String, notice: String)] = [
+            (
+                "en",
+                "This debug QR uses a local-network route. Keep AetherLink Runtime open and both devices on the same network."
+            ),
+            (
+                "ko",
+                "이 디버그 QR은 로컬 네트워크 경로를 사용합니다. AetherLink Runtime을 열어 두고 두 기기를 같은 네트워크에 연결하세요."
+            ),
+            (
+                "ja",
+                "このデバッグ QR はローカルネットワーク経路を使用します。AetherLink Runtime を開いたままにし、両方のデバイスを同じネットワークに接続してください。"
+            ),
+            (
+                "zh-Hans",
+                "此调试二维码使用本地网络路由。请保持 AetherLink Runtime 运行，并让两台设备连接到同一网络。"
+            ),
+            (
+                "fr",
+                "Ce QR de débogage utilise une route du réseau local. Laissez AetherLink Runtime ouvert et connectez les deux appareils au même réseau."
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(localDiagnosticPairingNoticeText(), expectation.notice)
+            }
+        }
+    }
+
     func testVisibleModelGroupsShowOnlyInstalledLocalModels() {
         let groups = visibleModelGroups(for: [
             ModelInfo(
@@ -2922,12 +2954,12 @@ final class AetherLinkLocalizationTests: XCTestCase {
     }
 
     func testToolbarAndMenuPairingQRGenerationUsesSharedAvailabilityContract() {
-        for canRequestRemotePairing in [false, true] {
+        for canRequestPairing in [false, true] {
             XCTAssertEqual(
                 pairingQRGenerationCommandAvailable(
-                    canRequestRemotePairing: canRequestRemotePairing
+                    canRequestPairing: canRequestPairing
                 ),
-                canRequestRemotePairing
+                canRequestPairing
             )
         }
     }

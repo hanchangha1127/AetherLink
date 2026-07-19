@@ -252,7 +252,8 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
             for appearance in AetherLinkAppAppearance.pickerOptions {
                 try withStoredPreferences(language: language, appearance: appearance) {
                     let model = renderSmokeModel()
-                    model.beginPairing(routePolicy: .allowLocalDiagnostic)
+                    XCTAssertTrue(model.canRequestPairingForUserInterface)
+                    XCTAssertTrue(model.requestPairingForUserInterface())
                     let pairingSession = try XCTUnwrap(
                         model.pairingSession,
                         "Expected an active pairing QR session for \(language.rawValue) \(appearance.rawValue)"
@@ -1278,7 +1279,8 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
             trustedDeviceStore: trustedDeviceStore ?? isolatedTrustedDeviceStore(),
             runtimeDocumentIndexStore: runtimeDocumentIndexStore ?? isolatedRuntimeDocumentIndexStore(),
             runtimeModelPullApprovalPersistence: isolatedRuntimeModelPullApprovalStore(),
-            runtimeRouteHostProvider: { "127.0.0.1" }
+            runtimeRouteHostProvider: { "192.168.1.44" },
+            allowsLocalDiagnosticPairingFromUserInterface: true
         )
     }
 

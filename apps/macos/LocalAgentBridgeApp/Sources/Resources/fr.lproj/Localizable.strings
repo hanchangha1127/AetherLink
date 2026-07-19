@@ -671,3 +671,4 @@
 "Connection preparation available" = "Préparation de la connexion disponible";
 "Prepare connection details and generate the latest pairing QR." = "Préparez les informations de connexion et générez le dernier QR de jumelage.";
 "Restore connection details before generating a new QR." = "Restaurez les informations de connexion avant de générer un nouveau QR.";
+"This debug QR uses a local-network route. Keep AetherLink Runtime open and both devices on the same network." = "Ce QR de débogage utilise une route du réseau local. Laissez AetherLink Runtime ouvert et connectez les deux appareils au même réseau.";

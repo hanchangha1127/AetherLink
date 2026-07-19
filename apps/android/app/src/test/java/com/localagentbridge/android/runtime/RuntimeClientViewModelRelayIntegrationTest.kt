@@ -1839,7 +1839,10 @@ class RuntimeClientViewModelRelayIntegrationTest {
 
         override fun load(): PersistedRuntimeData = data
 
-        override fun save(data: PersistedRuntimeData) {
+        override fun save(
+            data: PersistedRuntimeData,
+            durability: RuntimeLocalDataWriteDurability,
+        ) {
             this.data = data
         }
     }

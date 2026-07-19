@@ -70,10 +70,30 @@ class BuildAndRunModeTests(unittest.TestCase):
             "swift build",
             'rm -rf "$APP_BUNDLE"',
             "/usr/bin/codesign",
-            "/usr/bin/open",
+            "/usr/bin/nohup",
         ):
             with self.subTest(marker=marker):
                 self.assertLess(validation_index, source.index(marker))
+
+    def test_debug_launch_uses_file_backed_runtime_identity(self) -> None:
+        source = SCRIPT_PATH.read_text(encoding="utf-8")
+
+        self.assertIn(
+            'DEBUG_RUNTIME_IDENTITY_FILE="${AETHERLINK_RUNTIME_IDENTITY_FILE:-',
+            source,
+        )
+        self.assertIn(
+            "/usr/bin/nohup /usr/bin/env",
+            source,
+        )
+        self.assertIn(
+            'AETHERLINK_RUNTIME_IDENTITY_FILE="$DEBUG_RUNTIME_IDENTITY_FILE"',
+            source,
+        )
+        self.assertIn("APP_LAUNCH_SETTLE_SECONDS=5", source)
+        self.assertIn('sleep "$APP_LAUNCH_SETTLE_SECONDS"', source)
+        self.assertIn('kill -0 "$launch_pid"', source)
+        self.assertNotIn("/usr/bin/open", source)
 
 
 if __name__ == "__main__":

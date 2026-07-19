@@ -1,64 +1,465 @@
-# AetherLink Session Handoff - 2026-06-29 KST
+# AetherLink Session Handoff
 
-This file is the short handoff for continuing work in another Codex session.
-Treat it as the first document to read before touching code.
+Last updated: 2026-07-19 KST.
 
-## Read First
+This is the canonical first document for the next Codex session. Read it before
+editing, staging, rebuilding, or making claims from older QA logs. It describes
+the current dirty worktree, the macOS QR recovery, the physical Android proof,
+the remaining proof boundaries, and the shortest safe path to resume work.
 
-- `docs/connection-overlay.md`: current and target connection model, including QR-first remote route requirements.
-- `docs/qa-evidence.md`: current verification rule and the latest evidence. Old screenshots and artifacts are historical unless explicitly named by current progress entries.
-- `docs/progress.md`: chronological implementation notes and verification commands.
-- `docs/protocol.md`: Android/client to AetherLink Runtime protocol boundary.
-- `docs/security.md`: trust, pairing, and local-first threat model.
+## Contents
 
-## Non-Negotiable Boundaries
+- [Current truth versus historical evidence](#current-truth-versus-historical-evidence)
+- [Current handoff snapshot](#current-handoff-snapshot)
+- [First five minutes](#first-five-minutes)
+- [Current verified outcome](#current-verified-outcome)
+- [Root causes and final design](#root-causes-and-final-design)
+- [UI callback wiring matrix](#ui-callback-wiring-matrix)
+- [QR recovery file map](#qr-recovery-file-map)
+- [Dirty worktree map](#dirty-worktree-map)
+- [Evidence ledger](#evidence-ledger)
+- [Debug and Release evidence matrix](#debug-and-release-evidence-matrix)
+- [Focused verification commands](#focused-verification-commands)
+- [Physical device procedure](#physical-device-procedure-for-a-future-session)
+- [Not yet proven](#not-yet-proven)
+- [Authority and security boundary](#authority-and-security-boundary)
+- [Recommended next session flow](#recommended-next-session-flow)
+- [Handoff maintenance rule](#handoff-maintenance-rule)
 
-- AetherLink is local-first. There is no cloud AI backend.
-- Client targets are controllers. They must never call Ollama, LM Studio, or future model-provider URLs directly.
-- AetherLink Runtime mediates all model access, provider health, chat streaming, cancellation, runtime-owned chat history, and runtime-owned memory.
-- QR-first persistent pairing is the product path. Normal product QR payloads must include remote route material, not only identity material.
-- Identity-only QR remains useful for diagnostics and local compatibility tests, but it is not enough for unrelated-network pairing.
-- Different-network connectivity cannot rely on a fixed private IP, mDNS alone, or a stale last-known address.
-- Product copy should stay OS-neutral because target support expands beyond the first client/runtime platforms.
-- Do not use `gpt-5.3-codex-spark` in this workstream. A GPT-5.5 explorer named Harvey was closed before this handoff.
+## Current Truth Versus Historical Evidence
 
-## Current Worktree Status
+- This file is the current continuation contract. Its snapshot, behavior,
+  evidence matrix, proof boundaries, and next-session flow take precedence over
+  older chronological entries in `docs/progress.md`, `docs/qa-evidence.md`, and
+  `docs/roadmap.md`.
+- The top 2026-07-19 sections in those three documents are synchronized current
+  summaries. Sections explicitly labeled historical or superseded record what
+  was true at that checkpoint; they do not override this handoff.
+- `docs/evidence/physical-qr-pairing-20260719.json` is a sanitized observation
+  manifest. It preserves safe test metadata and claim boundaries, but it is not
+  a substitute for the discarded raw logcat stream, full QR payload, or a fresh
+  run from the current checkout.
+- Runtime process, listener, IP address, attached-device, and worktree state are
+  inherently live facts. Refresh them before use even when this document names
+  the last observed value.
 
-The tree is intentionally dirty. Do not revert unrelated files.
+## Current Handoff Snapshot
 
-Current change areas include:
+- Repository: `/Users/hanchangha/Desktop/project`
+- Branch at handoff: `main`
+- HEAD at the start of this handoff refresh: `df19c53a`
+- Worktree: intentionally dirty with many tracked modifications. At 2026-07-19
+  15:13 KST, before the sanitized evidence manifest was added, the snapshot
+  contained 44 modified tracked files and zero untracked files. At completion
+  of this refresh the expected baseline is 44 modified tracked files plus two
+  untracked files: `docs/evidence/physical-qr-pairing-20260719.json` and
+  `script/test_documentation_handoff_guards.py`. Run
+  `git status --short` again; live output is authoritative and counts can
+  change.
+- Android device state at handoff: disconnected by the user after physical QR
+  pairing and reconnect verification. Do not assume ADB is available.
+- macOS state at handoff: the verified ad-hoc `dist/AetherLink.app` was running,
+  listening on TCP port 43170, and displaying a decodable local-diagnostic QR.
+  This is an ephemeral process state; verify it again in the next session.
+- Git publication state: no commit or push was created for the QR recovery or
+  this handoff refresh. Do not reset, clean, stage, commit, or push unrelated
+  dirty changes without an explicit user request and a reviewed file scope.
+- Subagent preference for this workstream: use GPT-5.6 Sol. Do not use
+  GPT-5.3-Codex-Spark.
 
-- Android client shell, chat UI, Settings, runtime state, local store, pairing QR handling, model/embedding selection, attachments, reasoning preview, localization, and no-device tests.
-- Runtime host app UI, trusted devices, pairing view, status view, remote route preparation copy, localization, and runtime app model behavior.
-- Runtime relay code and tests, including relay matching, allocation/probe behavior, route retention, and development relay readiness.
-- Documentation in `README.md`, `docs/connection-overlay.md`, `docs/progress.md`, and `docs/qa-evidence.md`.
-- QA scripts under `script/`, including no-device quality, docs/copy hygiene, Android string parity, external relay pairing, deeplink smoke, and relay reachability probes.
-- Untracked runtime relay probe files:
-  - `apps/macos/RelayServerCore/Sources/RelayProbe.swift`
-  - `apps/macos/RelayServerCore/Tests/RelayProbeTests.swift`
+## First Five Minutes
 
-## Latest Focused Change
+Run these before deciding what is current:
 
-Product QR pairing was tightened so scanner/deeplink product entry points require route-capable QR material.
+```bash
+cd /Users/hanchangha/Desktop/project
+git branch --show-current
+git rev-parse --short HEAD
+git status --short
+sed -n '1,650p' docs/handoff.md
+sed -n '1,90p' docs/progress.md
+sed -n '1,90p' docs/qa-evidence.md
+sed -n '1,75p' docs/roadmap.md
+```
 
-Current behavior:
+Then run the cheap integrity checks:
 
-- Android product QR scans call `trustRuntimeFromPairingQr(... requireRemoteRoute = true)`.
-- Pairing deeplink entry calls `trustRuntimeFromPairingQr(... requireRemoteRoute = true)`.
-- `String.isAetherLinkPairingQrValue(requireRemoteRoute: Boolean = true)` defaults to product scanner policy.
-- Identity-only QR can still be parsed explicitly with `requireRemoteRoute = false` for diagnostics/local compatibility tests.
-- Route-less product QR now reports the existing route-unavailable path instead of appearing accepted and timing out later.
+```bash
+python3 script/check_docs_hygiene.py
+python3 script/check_copy_hygiene.py
+python3 script/check_macos_localization.py
+python3 -m unittest script.test_build_and_run
+python3 -m unittest script.test_documentation_handoff_guards
+python3 script/check_p2p_nat_security_design.py
+python3 script/check_production_relay_security_design.py
+python3 -m unittest script.test_p2p_nat_phase_a_progress
+python3 -m json.tool docs/evidence/physical-qr-pairing-20260719.json >/dev/null
+bash -n script/build_and_run.sh
+git diff --check
+```
 
-Focused tests updated around this:
+Do not start with `git reset`, `git checkout --`, `git clean`, or blanket
+staging. The worktree contains several completed but unpublished workstreams.
 
-- `AppNavigationTest.pairingQrRawValueAcceptsCompactRelayPayloadsFromScanner`
-- `AppNavigationTest.pairingQrScannerClassifiesRawValuesBeforeConsumingCameraResult`
-- `RuntimeClientViewModelTest.productPairingQrParserRejectsIdentityOnlyQrWhenRemoteRouteIsRequired`
-- `RuntimeClientViewModelTest.identityOnlyQrPlanStartsDiscoveryAndWaitsForRoute`
+## Current Verified Outcome
 
-## Verified Evidence
+The immediate user-reported problem is fixed in the bounded local-development
+scope:
 
-The latest no-device quality gate passed before this handoff:
+1. A clean macOS debug app can start AetherLink Runtime and generate a visible
+   QR without configured relay bootstrap material.
+2. The visible QR is a valid `aetherlink://pair` payload with explicit
+   `route_scope=local_diagnostic`, a nonloopback host, and the actual listener
+   port.
+3. Android debug camera/deeplink admission accepts that explicit local route;
+   Android release builds continue to require canonical remote route material.
+4. A physical `SM-S936N` camera scan recognized the displayed QR and completed
+   pairing, trust admission, challenge-response authentication, and
+   `runtime.health`. No URI or deep-link injection was used for the optical
+   pairing claim.
+5. Android force-stop and relaunch then rediscovered the runtime through
+   Bonjour, authenticated with the stored trust relationship, and received
+   `runtime.health` without rescanning.
+6. After the phone was released, the final UI-only callback and macOS launcher
+   fixes were reverified on the Mac: the app remained responsive, listened on
+   port 43170, exposed accessibility ID `pairing-active-qr`, and its actual
+   screen capture decoded to `192.168.0.113:43170` with local-diagnostic scope.
+   That IP was a time-specific LAN address, not a value to persist or reuse.
+
+## Root Causes And Final Design
+
+### 1. macOS pairing never reached the renderer
+
+The normal UI previously used only `remoteRequired`. A clean development host
+without remote bootstrap, allocation, lease, or protected relay secret could
+not create a `PairingSession`, so there was no payload for the QR renderer.
+
+Final behavior in `CompanionAppModel`:
+
+- `requestPairingForUserInterface()` prefers already-ready remote material.
+- In a debug assertion build only, it may use an explicit local-diagnostic
+  route when no complete remote route is ready.
+- It starts the runtime when needed and generates a QR only after the transport
+  reaches `advertising`.
+- It validates a nonempty, nonloopback connection address and uses the real listener
+  port.
+- A constructor override cannot enable this path in a release build.
+- The default connection-address selector rejects virtual interfaces and prioritizes
+  SystemConfiguration's primary IPv4 interface before other physical
+  candidates.
+- A failed explicit remote preparation no longer traps the generic debug action
+  in repeated allocator attempts; the generic action can recover locally.
+
+### 2. Android recognized the QR but rejected it before pairing
+
+The lower QR parser already supported explicit local diagnostics in debug, but
+`MainActivity` hardcoded remote-route enforcement for the optical/deeplink entry
+path. The camera could recognize a valid QR and still surface invalid, expired,
+or failed pairing behavior before the view model received it.
+
+Final behavior:
+
+- `pairingQrRequiresRemoteRoute(isDebugBuild = BuildConfig.DEBUG)` returns
+  `false` only for debug builds.
+- Release remains remote-required.
+- Tests prove the same compact local QR is accepted only when remote route
+  enforcement is disabled.
+
+### 3. Explicit Connection Recovery could call the generic action
+
+After local fallback was introduced, `Generate Latest QR` in Connection
+Recovery could receive a generic callback and silently generate a local QR.
+
+Final behavior:
+
+- Pairing and Status quick actions use the generic pairing decision.
+- Connection Recovery uses a separately named remote-only callback.
+- `PairingView`'s main QR button calls the generic action, while its nested
+  Connection Recovery panel calls `requestRemotePairingForUserInterface()`
+  directly.
+- `StatusView` receives separate generic and remote callbacks from
+  `ContentView`.
+- Copy hygiene extracts and validates every callback block listed in the matrix;
+  comments or string literals cannot satisfy the contract.
+
+### 4. Ad-hoc macOS launches could stall or prompt for Keychain access
+
+Changing ad-hoc signatures can make the Keychain runtime-identity path request
+authorization and prevent the listener from becoming ready. LaunchServices
+`open --env` also reproduced a startup stall while direct execution was healthy.
+
+Final development-launch behavior:
+
+- `script/build_and_run.sh` supplies an owner-only file-backed debug runtime
+  identity outside the repository.
+- It launches the signed bundle executable under `nohup`, waits through a fixed
+  five-second launch-settle delay, and checks only that the exact launch PID is
+  still alive before returning.
+- `--verify` does not establish listener readiness, UI responsiveness, QR
+  generation, or QR decode. Those require the separate process, port,
+  accessibility, screenshot, and Vision checks below.
+- Production runtime identity behavior remains Keychain-first.
+
+## UI Callback Wiring Matrix
+
+| Surface and action | Concrete wiring | Required behavior |
+| --- | --- | --- |
+| `PairingView` main `Generate Pairing QR` / `Generate New QR` button | `generatePairingQR()` -> `requestPairingForUserInterface()` | Ready remote route first; debug-only `local_diagnostic` fallback when remote material is unavailable. |
+| Pairing nested Connection Recovery `Generate Latest QR` | `RemoteRelayRoutePanel` closure -> `requestRemotePairingForUserInterface()` | Remote-only route preparation; never silently falls back to a local QR. |
+| Status Quick Actions pairing QR button | `StatusView.onGenerateRelayQRCode` -> `ContentView` -> `requestPairingForUserInterface()` | Same generic decision as the Pairing main button. |
+| Status Connection Recovery `Generate Latest QR` | `StatusView.onGenerateRemoteRelayQRCode` -> `ContentView` -> `requestRemotePairingForUserInterface()` | Remote-only route preparation. |
+| Main-window toolbar pairing QR command | `ContentView` -> `requestPairingForUserInterface()` | Generic decision and navigation to Pairing. |
+| Menu-bar pairing QR command | `LocalAgentBridgeApp` -> `requestPairingForUserInterface()` | Generic decision and opening of the Pairing window. |
+
+Do not simplify this to "PairingView is remote-only" or "all QR actions are
+generic." Both statements are false and would reintroduce the recovery bug.
+
+## QR Recovery File Map
+
+Core macOS behavior:
+
+- `apps/macos/CompanionCore/Sources/CompanionAppModel.swift`
+  - generic UI pairing request
+  - debug-only local allowance and release gate
+  - listener readiness
+  - local host selection and primary-interface priority
+- `apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift`
+  - debug generation
+  - failed listener closure
+  - release override closure
+  - explicit remote failure to generic local recovery
+  - primary-interface scoring
+
+macOS UI and render contracts:
+
+- `apps/macos/LocalAgentBridgeApp/Sources/PairingView.swift`
+- `apps/macos/LocalAgentBridgeApp/Sources/ContentView.swift`
+- `apps/macos/LocalAgentBridgeApp/Sources/LocalAgentBridgeApp.swift`
+- `apps/macos/LocalAgentBridgeApp/Sources/StatusView.swift`
+- `apps/macos/LocalAgentBridgeApp/Sources/RemoteRelayRoutePanel.swift`
+- `apps/macos/LocalAgentBridgeApp/Sources/Resources/*.lproj/Localizable.strings`
+- `apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift`
+- `apps/macos/LocalAgentBridgeApp/Tests/AetherLinkRenderSmokeTests.swift`
+
+Android optical-entry policy:
+
+- `apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt`
+- `apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt`
+- `apps/android/app/src/test/java/com/localagentbridge/android/PairingQrScanResultTest.kt`
+
+Supporting pipeline files to read even when they are not part of this QR diff:
+
+- `apps/macos/Pairing/Sources/PairingCoordinator.swift`
+  - canonical session and compact payload construction
+- `apps/android/app/src/main/java/com/localagentbridge/android/PairingQrScanResult.kt`
+  - camera frame classification and safe scan result
+- `apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt`
+  - payload parsing, endpoint connection, pairing request, authentication, and
+    trusted reconnect
+- `apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/RuntimePairingPayload.kt`
+  - canonical compact/full payload and route policy rules
+- `script/verify_pairing_qr.swift`
+  - actual-screen QR decode and structural validation
+
+Development launch and static contracts:
+
+- `script/build_and_run.sh`
+- `script/test_build_and_run.py`
+- `script/test_documentation_handoff_guards.py`
+- `script/check_copy_hygiene.py`
+
+Current evidence and planning:
+
+- `docs/handoff.md`
+- `docs/evidence/physical-qr-pairing-20260719.json`
+- `docs/progress.md`
+- `docs/qa-evidence.md`
+- `docs/roadmap.md`
+- `script/check_docs_hygiene.py`
+
+## Dirty Worktree Map
+
+Do not assume every modified line belongs to QR recovery. The current tree also
+contains substantial earlier unpublished work.
+
+Latest QR/handoff-related areas are the files listed above. Other major dirty
+areas include:
+
+- Android bounded volatile-persistence work in `AndroidManifest.xml`,
+  `RuntimeClientViewModel.kt`, `RuntimeLocalStore.kt`, `PairingStore.kt`, and
+  their larger test suites.
+- Android pairing-secret durability, cleanup-journal, lifecycle, and single
+  Activity/ViewModel ownership regressions.
+- Existing no-device gate and copy-contract changes in
+  `script/check_no_device_quality.sh` and `script/check_copy_hygiene.py`.
+- Production P2P/NAT and production-relay governance documents, hashes, and
+  validators. Those are authority records, not evidence that production
+  networking has been implemented or enabled.
+
+Practical review rule:
+
+```bash
+git diff -- <specific-file>
+git diff --stat
+git status --short
+```
+
+Review and stage by explicit file list. Do not use a broad diff as evidence that
+all current changes form one atomic feature.
+
+## Evidence Ledger
+
+### Physical Android evidence completed
+
+The following was observed on one `SM-S936N` on the same Wi-Fi as the runtime
+host:
+
+- Debug APK installation and foreground launch.
+- Physical camera scan of the QR actually shown by AetherLink Runtime.
+- Android log source `PairingQr` connecting to the QR endpoint.
+- `pairing.request` sent and `pairing.result` received.
+- hello sent, `auth.challenge` received, `auth.response` sent and received.
+- `runtime.health` sent and received.
+- macOS reported one trusted device.
+- After force-stop/relaunch, log source `BonjourDiscovery` connected to the same
+  runtime identity and repeated authentication plus `runtime.health`.
+
+The sanitized manifest at
+`docs/evidence/physical-qr-pairing-20260719.json` records the device/OS class,
+dirty source revision, debug build variant, same-Wi-Fi topology, on-screen QR
+digest, observed protocol milestones, retention state, and explicit limits. It
+contains no device serial, full QR URI, pairing code, nonce, secret, token, or
+private identity material. Because the raw logcat and screenshot were not
+retained, the manifest is a bounded record of the observed session rather than
+independent replayable proof. Docs hygiene rejects duplicate JSON keys, enforces
+an exact closed schema, rejects sensitive keys and credential-like string
+values, pins every safe value, and requires its QR digest to match the current
+progress and QA records.
+
+This proves one same-Wi-Fi debug route. It does not prove a different network,
+remote relay, production route, multiple devices, or every camera condition.
+
+### Mac-only verification after the phone was released
+
+- Final ad-hoc app build, deep signature verification, and stable launch.
+- Listener observed on TCP 43170.
+- Final live UI exposed `pairing-active-qr`.
+- The actual screen QR decoded as one valid `aetherlink://pair` URI with 11 query
+  keys, local-diagnostic scope, primary-interface host, and listener port.
+- No QR payload, pairing code, nonce, relay secret, or token was committed.
+  No payload or screenshot artifact was retained in the repository, and the
+  assistant-created `/tmp` payload/screenshot copies were removed.
+- The physical logcat stream and complete QR payload were intentionally not
+  retained as durable artifacts. This section records an observed run, not a
+  replayable cryptographic evidence bundle.
+- `build/qa` is ignored local output. Existing historical v3-v5 no-device logs
+  predate the final local-debug QR path and cannot substitute for a new physical
+  run from another checkout, build, device, or network.
+
+### Completed automated evidence
+
+- `LocalRuntimeMessageRouterTests`: 525/525 passed before the final review
+  remediations. The final five QR policy/route regressions then passed 5/5.
+- `AetherLinkLocalizationTests`: 137/137 passed after final UI wiring.
+- Active QR render: all five languages and three appearances rendered; Vision
+  decoded the English/light bitmap to the exact active compact payload.
+- Primary companion surfaces: all five languages and three appearances passed,
+  including Connection Recovery.
+- `swift build -c release --product AetherLink` passed on final source.
+- Android focused QR policy/parser tests passed.
+- Android `:app:assembleRelease` passed including `lintVital`.
+- Android `:app:installDebug` passed on the attached phone before it was
+  disconnected.
+- Final documentation refresh checks passed: docs hygiene across 12 current
+  docs, copy hygiene across 91 source/resource files, five-locale macOS parity,
+  all three launcher unit tests, 11 handoff contract mutation tests, manifest
+  JSON parsing, the 13-artifact P2P/NAT security design validator, all seven
+  Phase A progress tests, the 17-artifact production-relay design validator,
+  shell syntax, and `git diff --check`.
+- Final GPT-5.6 Sol review reported no remaining P0-P2 finding.
+
+Do not convert the earlier 525/525 result into a claim that the entire suite was
+rerun after every UI-only or documentation edit. Rerun the full selection when
+future core behavior changes and before committing or publishing this combined
+core/UI recovery:
+
+```bash
+swift test --filter LocalRuntimeMessageRouterTests
+```
+
+## Debug And Release Evidence Matrix
+
+| Scope | Debug evidence completed | Release evidence completed | Still not established |
+| --- | --- | --- | --- |
+| macOS | Focused model policy tests; ad-hoc app build and exact-PID launch; listener observed on 43170; live accessibility ID; actual screen QR decoded as `local_diagnostic`. | `swift build -c release --product AetherLink`; test-only release gate proves constructor overrides cannot enable local fallback. | Installed/notarized distribution build, release UI pairing, deployment signing, and production remote-route operation. |
+| Android | Focused parser/policy tests; `:app:installDebug`; physical camera pairing, authentication, health, and stored-trust Bonjour reconnect on one `SM-S936N`. | `:app:assembleRelease` including `lintVital`; release policy tests require remote route material. | Installing the release APK, scanning with its camera path, release-to-release pairing, broader devices, and production deployment. |
+| Cross-platform | One same-Wi-Fi debug optical pairing and trusted reconnect. | No release end-to-end cross-platform run was performed. | Different-network, external relay, P2P/NAT, Phase B, production capacity/reliability, or readiness. |
+
+Compilation and policy tests are not a substitute for installing and exercising
+release artifacts. The physical claim in this handoff is explicitly a debug
+APK paired with the development macOS app.
+
+## Focused Verification Commands
+
+### macOS core QR regressions
+
+```bash
+swift test --filter 'LocalRuntimeMessageRouterTests/(testCompanionAppModelDebugUserInterfaceGeneratesLocalDiagnosticQRCodeWithoutRemoteRoute|testCompanionAppModelDebugUserInterfaceDoesNotGenerateQRCodeWhenRuntimeListenerFails|testCompanionAppModelReleaseUserInterfaceDoesNotEnableLocalDiagnosticFallback|testCompanionAppModelDebugUserInterfaceUsesLocalDiagnosticAfterExplicitRemoteFailure|testCompanionAppModelLocalPairingInterfaceScorePrefersPrimaryPhysicalRoute)'
+```
+
+### macOS localization, render, and release
+
+```bash
+swift test --filter AetherLinkLocalizationTests
+swift test --filter AetherLinkRenderSmokeTests/testActivePairingQRCodeRendersAtCompactDetailSizeAcrossLanguagesAndAppearances
+swift test --filter AetherLinkRenderSmokeTests/testPrimaryCompanionSurfacesRenderAtMinimumDetailSizeAcrossLanguagesAndAppearances
+swift build -c release --product AetherLink
+```
+
+### Android debug/release QR policy
+
+Use Android Studio's JBR:
+
+```bash
+JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
+ANDROID_HOME="$HOME/Library/Android/sdk" \
+./gradlew --no-daemon :app:testDebugUnitTest \
+  --tests com.localagentbridge.android.AppNavigationTest.pairingQrRoutePolicyAllowsLocalDiagnosticOnlyInDebugBuilds \
+  --tests com.localagentbridge.android.PairingQrScanResultTest.compactLocalDiagnosticQrIsValidOnlyWhenRemoteRouteIsNotRequired \
+  -Pkotlin.incremental=false
+
+JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
+ANDROID_HOME="$HOME/Library/Android/sdk" \
+./gradlew --no-daemon :app:assembleRelease -Pkotlin.incremental=false
+```
+
+### Build and inspect the live macOS app
+
+This is not a read-only check. It rebuilds `dist/AetherLink.app`, terminates an
+existing AetherLink process, launches a new process, and may create or reuse the
+owner-only debug identity file outside the repository.
+
+```bash
+./script/build_and_run.sh --verify
+pgrep -fl '/dist/AetherLink.app/Contents/MacOS/AetherLink'
+lsof -nP -iTCP:43170 -sTCP:LISTEN
+```
+
+Generate the QR through the actual UI. For a screenshot captured from the live
+window, validate the displayed code rather than a frame-only fixture:
+
+```bash
+script/verify_pairing_qr.swift --image <actual-aetherlink-window-screenshot>
+```
+
+The verifier prints the complete payload. Treat its output as sensitive and do
+not paste it into docs, logs, commits, or chat. Record only safe fields such as
+scheme, action, query-key count, route scope, host/port, and a payload digest.
+
+### Full no-device gate
+
+Run only when broad fresh-source evidence is needed. It is intentionally much
+slower than the focused commands:
 
 ```bash
 JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
@@ -66,94 +467,129 @@ ANDROID_HOME="$HOME/Library/Android/sdk" \
 bash script/check_no_device_quality.sh
 ```
 
-Targeted QR-policy tests passed:
+Inspect the final log and exit status before claiming completion. A started or
+partially observed gate is not a passing final-source result.
 
-```bash
-JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
-./gradlew --no-daemon :app:testDebugUnitTest \
-  --tests com.localagentbridge.android.AppNavigationTest.pairingQrRawValueAcceptsCompactRelayPayloadsFromScanner \
-  --tests com.localagentbridge.android.AppNavigationTest.pairingQrScannerClassifiesRawValuesBeforeConsumingCameraResult \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.productPairingQrParserRejectsIdentityOnlyQrWhenRemoteRouteIsRequired \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.identityOnlyQrPlanStartsDiscoveryAndWaitsForRoute \
-  -Pkotlin.incremental=false
-```
+## Physical Device Procedure For A Future Session
 
-Fast hygiene checks passed:
+Run this only when `adb devices -l` reports an authorized device and the user
+has said the phone is connected.
 
-```bash
-python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py
-python3 script/check_copy_hygiene.py
-python3 script/check_docs_hygiene.py
-git diff --check
-```
+1. Confirm the runtime host and phone are on the intended network.
+2. Install the current debug APK; installation alone is not pairing proof.
+3. Launch the current macOS app and generate the QR through its UI.
+4. Decode the actual on-screen QR separately to prove render correctness.
+5. Scan with the physical camera. Do not inject the URI if claiming optical
+   proof.
+6. Verify `PairingQr`, `pairing.request`, `pairing.result`, hello,
+   `auth.challenge`, `auth.response`, and `runtime.health` in logs.
+7. Confirm the runtime reports the trusted device.
+8. Clear logcat, force-stop, and relaunch Android.
+9. Verify `BonjourDiscovery`, stored-trust authentication, and
+   `runtime.health` without rescanning.
+10. Record device model, OS/API, network topology, exact build, and proof
+    boundary. Do not persist secrets or the full QR payload.
 
 ## Not Yet Proven
 
-Do not claim these as complete without a fresh physical run:
+Do not claim the following from the current evidence:
 
-- Optical/camera QR scan on a physical phone.
-- Physical Android rendering.
-- Physical TalkBack or VoiceOver traversal.
-- Android system/per-app locale mutation on hardware.
-- Real device haptics.
-- Live provider-backed streaming chat and cancel.
-- Real unrelated-network runtime connectivity.
-- Production NAT traversal, rendezvous, TURN-style relay allocation, replay protection, and production end-to-end transport encryption.
+- Expired or rotated QR recovery on a physical device.
+- Camera denial and permission regrant recovery.
+- Real TalkBack or VoiceOver traversal.
+- Physical rendering across more Android models or OS versions.
+- Network handoff during an authenticated session.
+- Pairing while the devices are on unrelated networks.
+- Live external relay allocation or production relay operations.
+- P2P/NAT traversal, ICE/STUN/TURN behavior, Phase B, or deployment.
+- Production performance, capacity, reliability, or readiness.
+- Live provider-backed chat/cancel as part of this QR recovery proof.
 
-## Different-Network Connection State
+## Authority And Security Boundary
 
-The intended product requirement is QR-only connection even when devices are not on the same Wi-Fi.
-
-Current implementation status:
-
-- Local/direct and development relay routes exist.
-- QR payloads can carry relay route material: `relay_host`, `relay_port`, `relay_id`, `relay_secret`, `relay_expires_at`, and `relay_nonce`.
-- Android product scanner now requires route-capable QR material.
-- A physical external relay QA wrapper exists, but this session did not prove it against a real phone on another network.
-
-Next physical validation command when a phone is connected and a relay host reachable by both sides exists:
-
-```bash
-bash script/check_physical_external_relay_pairing.sh \
-  --relay-host <public-or-vpn-host> \
-  --relay-port <port>
-```
-
-Use `--allow-private-relay` only for a user-controlled VPN, tunnel, or private overlay where both devices can actually reach the relay address.
+- The new local QR is debug-only and must remain explicitly
+  `local_diagnostic`.
+- Release/default product pairing remains remote-required.
+- Connection Recovery remains the explicit remote-route path.
+- No source-acquisition, native-library execution, socket destination,
+  runtime-network, external-egress, P2P Phase B, production-network, or
+  deployment authority was expanded.
+- The canonical P2P/NAT authority records are:
+  - `docs/security-hardening/production-p2p-nat-v1/controlled-network-spike/phase-a/progress-v8.json`
+  - `docs/security-hardening/production-p2p-nat-v1/controlled-network-spike/decision-v6.json`
+  - `docs/security-hardening/production-p2p-nat-v1/implementation/handoff-v9.json`
+- Those records reject both `libjuice-1.7.2-static-c-abi` and
+  `libnice-0.1.23-glib-c-abi` before compile and leave the selected networking
+  library `null`. The exact one-shot acquisition authorities are consumed;
+  compile-only integration was not run.
+- The 13-artifact P2P/NAT source-evidence collection was integrity-refreshed
+  after the QR changes to `CompanionAppModel.swift`; its current collection
+  SHA-256 is
+  `6e6dfbfc0cdb70370c30f54222584b69042a6e22b6df04c7f3e65043c38522bd`.
+  `check_p2p_nat_security_design.py` and all seven Phase A progress tests pass.
+  This is source-freshness synchronization only and grants no authority.
+- `implementationAuthorized=false`, `compilerInvocationAuthorized=false`,
+  `socketCreationAllowed=false`, and `runtimeNetworkIOAllowed=false` remain the
+  operative boundary. A new candidate requires a new versioned review and an
+  explicit user decision; rejected authority cannot be reused implicitly.
+- AetherLink remains local-first. The client never calls Ollama or LM Studio
+  directly; AetherLink Runtime mediates provider access.
+- Network reachability is not authorization. Pairing, trusted-device records,
+  challenge-response, and encrypted runtime sessions remain required.
+- Never commit QR payloads, pairing codes, nonces, relay secrets, allocation
+  tokens, runtime identity private material, provider URLs, or device-specific
+  credentials.
 
 ## Recommended Next Session Flow
 
-1. Confirm no stale subagents are open. Harvey was closed before this handoff.
-2. Run `git status --short` and inspect only the files relevant to the next task.
-3. If continuing QA without a phone, run:
+Unless the user redirects the task, use this decision order:
 
-```bash
-python3 script/check_docs_hygiene.py
-python3 script/check_copy_hygiene.py
-git diff --check
-```
+1. Re-read this handoff and refresh Git/device/process state.
+2. If the task is documentation or local regression, keep the phone detached
+   and use focused tests plus hygiene checks.
+3. If the task is physical QR UX, ask only whether the phone is connected, then
+   prioritize expiry/rotation, camera permission recovery, and TalkBack. Do not
+   repeat installation-only checks as pairing evidence.
+4. If the task is different-network pairing, stop before execution unless the
+   exact route, environment, and authority are clear. Same-Wi-Fi local QR proof
+   does not authorize a production relay or P2P workstream.
+5. If the task is commit/push, first partition the intended files from the other
+   dirty Android persistence and security-governance changes. Show the exact
+   scope; do not stage everything by default.
 
-4. If the phone is connected and the task is pairing/connectivity, run a physical device check rather than relying on old artifacts.
-5. If testing unrelated-network pairing, use a public, VPN, tunnel, or private-overlay relay address reachable from both devices. A same-machine loopback or same-Wi-Fi route is not evidence for the product requirement.
-6. Keep commits small. The user said they will handle commit and push unless they explicitly ask otherwise.
+Recommended next product-quality slice: physical expired/rotated QR recovery,
+camera permission denial/regrant, and TalkBack/VoiceOver verification. These are
+the closest remaining gaps to the now-proven same-Wi-Fi optical pairing path and
+do not require expanding production network authority.
 
-## High-Priority Open Work
+### Revalidation Triggers
 
-1. Prove QR-only pairing on a physical phone using route-capable QR material and a mutually reachable relay.
-2. Prove saved trusted-route reconnect after relaunch on the physical phone.
-3. Prove runtime-mediated `models.list`, streamed `chat.send`/`chat.delta`/`chat.done`, and `chat.cancel` over that route.
-4. Keep AetherLink Runtime as the only model-provider caller for Ollama and LM Studio.
-5. Continue replacing fixed-IP assumptions with identity plus route resolution.
-6. Continue UI polish toward a modern, quiet ChatGPT-like chat surface while keeping product copy OS-neutral.
-7. Keep embedding models separate from chat models.
-8. Keep vision/document/file input gated by runtime provider capabilities.
-9. Keep runtime-owned chat history and memory scoped by trusted device owner identity.
-10. Move production transport toward private overlay, P2P candidate exchange, blind encrypted relay fallback, replay protection, and key rotation.
+- If `CompanionAppModel`, Pairing/Status callback wiring, Android QR policy, or
+  payload parsing changes, rerun the focused tests and both release builds.
+- If a physical claim is needed after source changes, reinstall the current
+  debug APK and repeat actual camera scan, authentication/health, and relaunch
+  reconnect. An earlier device run does not transfer to a later binary.
+- If `script/build_and_run.sh` changes, rerun its Python tests and shell syntax,
+  then separately verify exact PID, listener, visible QR, and screen decode.
+- If any P2P/NAT authority record is superseded, read the newest versioned
+  progress, decision, and handoff together before acquisition, compilation, or
+  networking work.
+- Before commit or push, rerun the relevant full suites and inspect the exact
+  staged diff. The earlier 525/525 router result predates the last UI/docs-only
+  changes and must not be represented as a final combined-source rerun.
 
-## Security Notes For Continuation
+## Handoff Maintenance Rule
 
-- Do not commit GitHub tokens, relay allocation secrets, pairing secrets, or local provider URLs.
-- Do not expose Ollama or LM Studio endpoints to client code or QR payloads.
-- Network reachability is not authorization. Pairing, trusted-device records, challenge-response, and encrypted sessions remain required.
-- Remote relay infrastructure is not a cloud AI backend and must not see plaintext prompts, files, memory, or model output in the production design.
+At the end of the next substantial session, update this file rather than adding
+another stale handoff beside it. Refresh:
 
+- date, branch, HEAD, and live worktree state;
+- device attached/disconnected state;
+- latest completed evidence versus tests merely started;
+- root cause and final design if behavior changed;
+- proof and authority boundaries;
+- exact next action and conditional commands;
+- closed subagent state and model preference.
+
+Keep `docs/progress.md`, `docs/qa-evidence.md`, and `docs/roadmap.md` aligned with
+the same facts.

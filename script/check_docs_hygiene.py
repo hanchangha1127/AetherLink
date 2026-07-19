@@ -5,11 +5,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import json
 import re
 import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PHYSICAL_QR_OBSERVATION_MANIFEST = (
+    ROOT / "docs/evidence/physical-qr-pairing-20260719.json"
+)
+
+
+class DuplicateJSONKeyError(ValueError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -93,6 +101,7 @@ HYGIENE_TARGETS = (
     "apps/macos/README.md",
     "docs/architecture.md",
     "docs/connection-overlay.md",
+    "docs/handoff.md",
     "docs/mvp-v0.1.md",
     "docs/protocol.md",
     "docs/qa-evidence.md",
@@ -101,7 +110,9 @@ HYGIENE_TARGETS = (
     "examples/README.md",
 )
 
-CONTRACT_TARGETS = HYGIENE_TARGETS
+CONTRACT_TARGETS = tuple(
+    target for target in HYGIENE_TARGETS if target != "docs/handoff.md"
+)
 
 CONTRACTS = (
     DocsContract(
@@ -172,6 +183,43 @@ CONTRACTS = (
 )
 
 FILE_CONTRACTS = (
+    DocsFileContract(
+        "canonical-session-handoff",
+        "docs/handoff.md",
+        (
+            re.compile(r"\bcanonical first document\b", re.IGNORECASE),
+            re.compile(r"\bintentionally dirty\b.*\bworktree\b|\bworktree\b.*\bintentionally dirty\b", re.IGNORECASE | re.DOTALL),
+            re.compile(r"\bAndroid device state at handoff:\s*disconnected\b", re.IGNORECASE),
+            re.compile(r"\bphysical\b.*\bcamera scan\b.*\bNo URI or deep-link injection\b", re.IGNORECASE | re.DOTALL),
+            re.compile(r"\bPairingQr\b.*\bBonjourDiscovery\b", re.IGNORECASE | re.DOTALL),
+            re.compile(r"\blocal_diagnostic\b.*\brelease\b.*\bremote-required\b", re.IGNORECASE | re.DOTALL),
+            re.compile(r"\bCurrent Truth Versus Historical Evidence\b", re.IGNORECASE),
+            re.compile(r"\bUI Callback Wiring Matrix\b", re.IGNORECASE),
+            re.compile(r"\bPairingView\b.*\bmain\b.*\brequestPairingForUserInterface\b", re.IGNORECASE | re.DOTALL),
+            re.compile(r"\bPairing\b.*\bnested Connection Recovery\b.*\brequestRemotePairingForUserInterface\b", re.IGNORECASE | re.DOTALL),
+            re.compile(r"\bDebug And Release Evidence Matrix\b", re.IGNORECASE),
+            re.compile(r"\bphysical-qr-pairing-20260719\.json\b", re.IGNORECASE),
+            re.compile(r"\bprogress-v8\.json\b.*\bdecision-v6\.json\b.*\bhandoff-v9\.json\b", re.IGNORECASE | re.DOTALL),
+            re.compile(r"\bimplementationAuthorized=false\b.*\bruntimeNetworkIOAllowed=false\b", re.IGNORECASE | re.DOTALL),
+            re.compile(r"\bNot Yet Proven\b", re.IGNORECASE),
+            re.compile(r"\bP2P/NAT\b.*\bPhase B\b.*\bproduction\b", re.IGNORECASE | re.DOTALL),
+            re.compile(r"\bGPT-5\.6 Sol\b", re.IGNORECASE),
+            re.compile(r"\bHandoff Maintenance Rule\b", re.IGNORECASE),
+        ),
+        "docs/handoff.md must remain a current, bounded, and executable continuation contract rather than a stale narrative snapshot.",
+    ),
+    DocsFileContract(
+        "roadmap-qr-history-supersession",
+        "docs/roadmap.md",
+        (
+            re.compile(r"\bReading rule:.*\bHistorical Checkpoint\b.*\bcannot override\b", re.IGNORECASE | re.DOTALL),
+            re.compile(r"\bHistorical Checkpoint: macOS Pairing QR Recovery And Bounded Route Preparation \(Superseded\)", re.IGNORECASE),
+            re.compile(r"\bProduct result at that checkpoint:", re.IGNORECASE),
+            re.compile(r"\bHistorical Checkpoint: Cross-Platform Readiness UI Pass \(Superseded\)", re.IGNORECASE),
+            re.compile(r"\blater physical debug result\b.*\bdoes not\b.*\bhistorical aggregate\b", re.IGNORECASE | re.DOTALL),
+        ),
+        "Historical QR and readiness checkpoints must remain explicitly superseded by the current handoff and roadmap sections.",
+    ),
     DocsFileContract(
         "protocol-locale-contract",
         "docs/protocol.md",
@@ -601,6 +649,289 @@ def syntax_only_no_device_gate_evidence_failures() -> list[str]:
     return failures
 
 
+def physical_qr_observation_manifest_failures() -> list[str]:
+    if not PHYSICAL_QR_OBSERVATION_MANIFEST.is_file():
+        return [
+            "docs/evidence/physical-qr-pairing-20260719.json: missing sanitized physical QR observation manifest."
+        ]
+
+    def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise DuplicateJSONKeyError(f"duplicate JSON key {key!r}")
+            result[key] = value
+        return result
+
+    try:
+        raw_text = PHYSICAL_QR_OBSERVATION_MANIFEST.read_text(encoding="utf-8")
+        document = json.loads(raw_text, object_pairs_hook=reject_duplicate_keys)
+    except (OSError, UnicodeError, json.JSONDecodeError, DuplicateJSONKeyError) as error:
+        return [
+            "docs/evidence/physical-qr-pairing-20260719.json: unreadable or invalid JSON: "
+            f"{error}"
+        ]
+
+    if not isinstance(document, dict):
+        return [
+            "docs/evidence/physical-qr-pairing-20260719.json: root must be a JSON object."
+        ]
+
+    failures: list[str] = []
+
+    def read_path(path: tuple[str, ...]) -> object:
+        value: object = document
+        for key in path:
+            if not isinstance(value, dict) or key not in value:
+                return None
+            value = value[key]
+        return value
+
+    allowed_keys_by_path = {
+        (): {
+            "documentType",
+            "schemaVersion",
+            "recordedDate",
+            "source",
+            "device",
+            "topology",
+            "qrObservation",
+            "observedMilestones",
+            "retention",
+            "proofBoundary",
+        },
+        ("source",): {
+            "repository",
+            "branch",
+            "headAtObservation",
+            "worktreeDirty",
+            "exactTreeDigestRetained",
+            "laterSourceDelta",
+        },
+        ("device",): {
+            "model",
+            "operatingSystem",
+            "apiLevel",
+            "appBuildVariant",
+            "deviceIdentifierRetained",
+        },
+        ("topology",): {
+            "runtimeHost",
+            "deviceAndRuntimeNetwork",
+            "usbRouteUsedForOpticalClaim",
+            "externalRelayUsed",
+            "p2pNatTraversalUsed",
+        },
+        ("qrObservation",): {
+            "captureSurface",
+            "scanMethod",
+            "uriInjectionUsed",
+            "routeScope",
+            "queryKeyCount",
+            "listenerPortAtObservation",
+            "endpointReusable",
+            "payloadSha256",
+            "fullPayloadRetained",
+        },
+        ("observedMilestones",): {
+            "pairingQrSourceConnected",
+            "pairingRequestSent",
+            "pairingResultReceived",
+            "helloSent",
+            "authenticationChallengeReceived",
+            "authenticationResponseCompleted",
+            "runtimeHealthCompleted",
+            "trustedDeviceReportedByMacos",
+            "bonjourReconnectAfterForceStop",
+            "storedTrustAuthenticationCompleted",
+            "runtimeHealthAfterReconnect",
+        },
+        ("retention",): {
+            "rawLogcatRetained",
+            "screenCaptureRetainedInRepository",
+            "completeQrVerifierOutputRetained",
+            "apkDigestRetained",
+            "sanitizedManifestRetained",
+            "sensitiveMaterialIncluded",
+        },
+        ("proofBoundary",): {"proves", "doesNotProve"},
+    }
+    for path, allowed_keys in allowed_keys_by_path.items():
+        value = read_path(path)
+        if not isinstance(value, dict):
+            failures.append(
+                "docs/evidence/physical-qr-pairing-20260719.json: expected object at "
+                f"{'.'.join(path) or '<root>'}."
+            )
+            continue
+        actual_keys = set(value)
+        if actual_keys != allowed_keys:
+            failures.append(
+                "docs/evidence/physical-qr-pairing-20260719.json: closed schema mismatch at "
+                f"{'.'.join(path) or '<root>'}; missing={sorted(allowed_keys - actual_keys)}, "
+                f"unexpected={sorted(actual_keys - allowed_keys)}."
+            )
+
+    forbidden_key_names = {
+        "serial",
+        "deviceserial",
+        "fullpayload",
+        "fullqrpayload",
+        "fullqruri",
+        "verifieroutput",
+        "completeqrverifieroutput",
+        "pairingcode",
+        "pairingnonce",
+        "nonce",
+        "relaysecret",
+        "allocationtoken",
+        "routetoken",
+        "privatekey",
+        "identityprivatekey",
+        "privateidentitymaterial",
+        "devicecredential",
+        "devicecredentials",
+    }
+    sensitive_string_patterns = (
+        re.compile(r"\baetherlink\s*:\s*//\s*pair\b", re.IGNORECASE),
+        re.compile(
+            r"\b(?:pairing[\s_-]*(?:code|nonce)|nonce|secret|token|"
+            r"relay[\s_-]*secret|allocation[\s_-]*token|route[\s_-]*token|"
+            r"private[\s_-]*(?:key|identity))\b\s*[:=]",
+            re.IGNORECASE,
+        ),
+    )
+
+    def reject_sensitive_content(value: object, path: tuple[str, ...] = ()) -> None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                normalized_key = re.sub(r"[^a-z0-9]", "", key.lower())
+                if normalized_key in forbidden_key_names:
+                    failures.append(
+                        "docs/evidence/physical-qr-pairing-20260719.json: prohibited sensitive key "
+                        f"{'.'.join(path + (key,))}."
+                    )
+                reject_sensitive_content(child, path + (key,))
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                reject_sensitive_content(child, path + (str(index),))
+        elif isinstance(value, str) and any(
+            pattern.search(value) for pattern in sensitive_string_patterns
+        ):
+            failures.append(
+                "docs/evidence/physical-qr-pairing-20260719.json: prohibited credential-like string value at "
+                f"{'.'.join(path) or '<root>'}."
+            )
+
+    reject_sensitive_content(document)
+
+    expected_values = (
+        (("documentType",), "aetherlink.physical-qr-pairing-observation"),
+        (("schemaVersion",), 1),
+        (("recordedDate",), "2026-07-19"),
+        (("source", "repository"), "/Users/hanchangha/Desktop/project"),
+        (("source", "branch"), "main"),
+        (("source", "headAtObservation"), "df19c53a"),
+        (("source", "worktreeDirty"), True),
+        (("source", "exactTreeDigestRetained"), False),
+        (("source", "laterSourceDelta"), "macos_ui_and_launcher_only_without_android_retest"),
+        (("device", "model"), "SM-S936N"),
+        (("device", "operatingSystem"), "Android 16"),
+        (("device", "apiLevel"), 36),
+        (("device", "appBuildVariant"), "debug"),
+        (("device", "deviceIdentifierRetained"), False),
+        (("topology", "runtimeHost"), "macos_development_app"),
+        (("topology", "deviceAndRuntimeNetwork"), "same_wifi_lan"),
+        (("topology", "usbRouteUsedForOpticalClaim"), False),
+        (("topology", "externalRelayUsed"), False),
+        (("topology", "p2pNatTraversalUsed"), False),
+        (("qrObservation", "captureSurface"), "actual_macos_window_screen"),
+        (("qrObservation", "scanMethod"), "physical_android_camera"),
+        (("qrObservation", "uriInjectionUsed"), False),
+        (("qrObservation", "routeScope"), "local_diagnostic"),
+        (("qrObservation", "queryKeyCount"), 11),
+        (("qrObservation", "listenerPortAtObservation"), 43170),
+        (("qrObservation", "endpointReusable"), False),
+        (("qrObservation", "payloadSha256"), "efc77b1402ed6270b741e5ee69bb30a7527ad563876f58eee31e7587ef9544ef"),
+        (("qrObservation", "fullPayloadRetained"), False),
+        (("observedMilestones", "pairingQrSourceConnected"), True),
+        (("observedMilestones", "pairingRequestSent"), True),
+        (("observedMilestones", "pairingResultReceived"), True),
+        (("observedMilestones", "helloSent"), True),
+        (("observedMilestones", "authenticationChallengeReceived"), True),
+        (("observedMilestones", "authenticationResponseCompleted"), True),
+        (("observedMilestones", "runtimeHealthCompleted"), True),
+        (("observedMilestones", "trustedDeviceReportedByMacos"), True),
+        (("observedMilestones", "bonjourReconnectAfterForceStop"), True),
+        (("observedMilestones", "storedTrustAuthenticationCompleted"), True),
+        (("observedMilestones", "runtimeHealthAfterReconnect"), True),
+        (("retention", "rawLogcatRetained"), False),
+        (("retention", "screenCaptureRetainedInRepository"), False),
+        (("retention", "completeQrVerifierOutputRetained"), False),
+        (("retention", "apkDigestRetained"), False),
+        (("retention", "sanitizedManifestRetained"), True),
+        (("retention", "sensitiveMaterialIncluded"), False),
+        (("proofBoundary", "proves"), [
+            "one_same_wifi_debug_optical_pairing",
+            "challenge_response_and_runtime_health",
+            "one_stored_trust_bonjour_reconnect",
+        ]),
+        (("proofBoundary", "doesNotProve"), [
+            "release_apk_camera_pairing",
+            "expired_or_rotated_qr_recovery",
+            "camera_permission_recovery",
+            "talkback_or_voiceover",
+            "different_network_pairing",
+            "external_relay_operation",
+            "p2p_nat_or_phase_b",
+            "production_capacity_reliability_or_readiness",
+        ]),
+    )
+    for path, expected in expected_values:
+        actual = read_path(path)
+        if type(actual) is not type(expected) or actual != expected:
+            failures.append(
+                "docs/evidence/physical-qr-pairing-20260719.json: expected "
+                f"{'.'.join(path)}={expected!r}, found {actual!r}."
+            )
+
+    payload_digest = read_path(("qrObservation", "payloadSha256"))
+    if not isinstance(payload_digest, str) or re.fullmatch(r"[0-9a-f]{64}", payload_digest) is None:
+        failures.append(
+            "docs/evidence/physical-qr-pairing-20260719.json: qrObservation.payloadSha256 must be one lowercase SHA-256 digest."
+        )
+
+    if isinstance(payload_digest, str):
+        for relative_path in ("docs/progress.md", "docs/qa-evidence.md"):
+            path = ROOT / relative_path
+            if payload_digest not in path.read_text(encoding="utf-8", errors="replace"):
+                failures.append(
+                    f"{relative_path}: physical QR payload digest must match the sanitized observation manifest."
+                )
+
+    nonclaims = read_path(("proofBoundary", "doesNotProve"))
+    required_nonclaims = {
+        "release_apk_camera_pairing",
+        "different_network_pairing",
+        "external_relay_operation",
+        "p2p_nat_or_phase_b",
+        "production_capacity_reliability_or_readiness",
+    }
+    if not isinstance(nonclaims, list) or not required_nonclaims.issubset(
+        {value for value in nonclaims if isinstance(value, str)}
+    ):
+        failures.append(
+            "docs/evidence/physical-qr-pairing-20260719.json: proofBoundary.doesNotProve must retain release, different-network, relay, P2P/Phase B, and production limits."
+        )
+
+    if re.search(r"\baetherlink\s*:\s*(?:\\?/){2}\s*pair\b", raw_text, re.IGNORECASE):
+        failures.append(
+            "docs/evidence/physical-qr-pairing-20260719.json: full credential-bearing QR URI must not be retained."
+        )
+
+    return failures
+
+
 def main() -> int:
     failures: list[str] = []
 
@@ -646,6 +977,7 @@ def main() -> int:
     failures.extend(latest_progress_evidence_failures())
     failures.extend(latest_qa_evidence_failures())
     failures.extend(syntax_only_no_device_gate_evidence_failures())
+    failures.extend(physical_qr_observation_manifest_failures())
 
     if failures:
         print("Docs hygiene check failed:", file=sys.stderr)

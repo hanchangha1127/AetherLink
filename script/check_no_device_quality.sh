@@ -5317,7 +5317,7 @@ run check_android_chat_sessions_bulk_terminal_authority_junit
 run check_android_memory_mutation_authority_junit
 
 # Suite-subsumed Android named evidence: every selector below is executed by the active full-class selector.
-# The checker proves all 730 unique entries still name real @Test methods and that none remains an active Gradle selector.
+# The checker proves all 749 unique entries still name real @Test methods and that none remains an active Gradle selector.
 : <<'ANDROID_SUITE_SUBSUMED_NAMED_EVIDENCE'
 --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsWhitespaceMutatedRelaySecretAliasesInQrPayload
 --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.parsesAllowedDiscoveryServiceTypeHints
@@ -5337,6 +5337,10 @@ run check_android_memory_mutation_authority_junit
 --tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsNonCanonicalStoredTrustedIdentityOnRead
 --tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsNonCanonicalStoredRuntimePublicKeyOnRead
 --tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsNonCanonicalTrustedIdentityOnWrite
+--tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDurablyRotatesRelaySecretBeforeRemovingPreviousHandle
+--tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreFailedDurableSecretRotationPreservesPreviousRoute
+--tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreCleanupFailureKeepsJournalAndRetriesOnRead
+--tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreRePairDoesNotDrainJournaledCurrentSecret
 --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.decodeRejectsMalformedRequiredEnvelopeFields
 --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.decodeRejectsUnsupportedVersionAndBlankRequestId
 --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.decodeRejectsUnknownTopLevelEnvelopeFields
@@ -5750,6 +5754,21 @@ run check_android_memory_mutation_authority_junit
 --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sanitizedPreservesExplicitAndRuntimeGeneratedPromptTitles
 --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.generatedChatTitleAppliesOnlyUntilUserRenamesSession
 --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedComposerDraftRestoresOnViewModelCreationAndUpdatesWithTyping
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.volatilePersistenceCoordinatorCoalescesBurstAtExactMaximumDelay
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.immediatePersistenceCancelsStaleSnapshotAndCannotResurrectRemovedPairingSecret
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.composerDraftBurstFlushesOnLifecycleAndClearAndRestoresAfterRecreation
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatDeltaBurstCoalescesAndDonePersistsLatestSnapshotExactlyOnce
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.cancelRequestFlushesPendingChatDeltaBeforeDispatch
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.activeChatErrorSupersedesPendingDeltaWithoutDelayedRewrite
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.malformedChatDoneFlushesPendingDeltaWithoutDelayedRewrite
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.localSendValidationErrorFlushesPendingDraftWithoutDelayedRewrite
+--tests com.localagentbridge.android.runtime.RuntimeLocalStoreTest.durableSaveConfirmsSecretWriteMetadataAndOldSecretCleanup
+--tests com.localagentbridge.android.runtime.RuntimeLocalStoreTest.durableSaveRejectsSecretStoreWithoutConfirmationContract
+--tests com.localagentbridge.android.runtime.RuntimeLocalStoreTest.durableMetadataFailureCompensatesNewSecretBeforeReturningFailure
+--tests com.localagentbridge.android.runtime.RuntimeLocalStoreTest.durableCleanupFailureRetainsJournalAndRetriesOnNextBarrier
+--tests com.localagentbridge.android.runtime.RuntimeLocalStoreTest.sameRouteSecretReplacementMetadataFailurePreservesPreviousSecret
+--tests com.localagentbridge.android.runtime.RuntimeLocalStoreTest.unchangedPendingSecretIsNotRewrittenAcrossStateBarriers
+--tests com.localagentbridge.android.AppNavigationTest.mainActivityRoutesNewEntryIntentsToOneTaskScopedStateWriter
 --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.openPreviousChatRestoresSessionScopedComposerDrafts
 --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.clearChatDraftClearsActiveSessionTextAndPendingAttachments
 --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.startNewChatClearsNoActiveDraftButKeepsSessionDrafts
@@ -6662,6 +6681,7 @@ echo "Covered Android route.refresh response unknown metadata addendum: Android 
 echo "Covered Android route.refresh runtime identity canonicality addendum: authenticated route.refresh rejects whitespace-mutated or oversized runtime identity fields before trusted route storage changes."
 echo "Covered Android route.refresh malformed allowed-field retry addendum: authenticated route.refresh responses with allowed keys but invalid JSON types keep the current trusted route and retry inside the active lease before trusted storage changes."
 echo "Covered Android layout addendum: Android ChatGPT-like chat surface narrow-phone layout regression, Android representative populated chat surface compact layout, Android populated Settings history and Memory narrow-phone render, Android drawer chat row compact layout, Android drawer overflow menu compact layout, Android drawer empty-history compact layout, Android drawer chat-search no-results compact layout, Android drawer runtime summary compact layout, Android provider status compact diagnostic layout, Android connection status panel compact layout, Android Connection Status route notice compact layout, Android Settings QR pairing panel compact first-run layout, Android Settings pending pairing route compact layout, Android Settings route-refresh saved notice compact layout, Android Settings companion-only compact layout, Android Settings discovery actions compact layout, Android Settings developer diagnostics toggle compact layout, Android Settings memory compact long-content actions layout, Android Settings memory approved-source compact layout, Android Settings memory add controls compact layout, Android Settings memory empty-state compact layout, Android Settings chat-history search-refresh header compact layout, Android Settings chat-history compact row actions, Android Settings chat-history bulk action compact layout, Android memory summary draft compact review layout, Android assistant reasoning compact layout, Android read-only attachment chip wrapping, Android pending attachment chip wrapping, Android text-only draft composer controls compact layout, Android streaming cancel composer controls compact layout, Android streaming assistant progress decorative compact layout, Android composer readiness status compact layout, Android chat route availability notice compact layout, Android route-refresh saved notice compact layout, Android QR recovery diagnostics compact layout, Android chat empty-state compact layout, Android markdown table and code block compact layout, Android Settings memory saved/paused summary localization, Android markdown message rendering, Android assistant response regenerate action, Android latest user-message draft reuse action, Android latest message action localized states, Android latest message action wrapping, Android transcript role-change spacing rhythm, Android chat top-bar active-title compact layout, Android chat top-bar streaming-disabled model picker compact layout, Android model picker general row compact layout, Android model picker vision recovery compact row layout, Android model picker search no-results compact layout, Android model picker refresh compact row layout, Android localized clipboard payload labels, Android composer clear-draft action, Android composer clear-draft localized state, Android clear-draft attachment cleanup, Android composer draft persistence, Android session-scoped composer draft switching, Android transient attachment cleanup on chat switching, Android transient attachment cleanup on chat lifecycle exits, Android runtime transcript loading state, Android runtime transcript loading compact layout, Android runtime transcript lifecycle mutation lockout, Android empty-state latest-QR composer alignment."
+echo "Covered Android bounded volatile persistence addendum: composer typing and active chat.delta use one fixed 250ms latest-state window; terminal, malformed/error, rejected-send, cancel, lifecycle, clear, settings, session, and pairing-secret barriers use confirmed durable writes; secret-bound pending and trusted handles use compensation plus current-safe retryable cleanup journals and skip unchanged secret rewrites; single-task intent routing prevents ordinary duplicate Activity writers."
 echo "Covered Android large-font chat addendum: Android large-font multilingual Chat render."
 echo "Covered Android TalkBack-order proxy addendum: Android Chat transcript, latest message actions, jump-to-latest, send composer, and cancel composer controls keep localized semantics and bounds order at large font."
 echo "Covered Android large-font layout addendum: Android large-font multilingual Settings render."

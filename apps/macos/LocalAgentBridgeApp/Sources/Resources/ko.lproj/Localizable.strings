@@ -671,3 +671,4 @@
 "Connection preparation available" = "연결 준비 가능";
 "Prepare connection details and generate the latest pairing QR." = "연결 정보를 준비하고 최신 페어링 QR을 생성합니다.";
 "Restore connection details before generating a new QR." = "새 QR을 생성하기 전에 연결 정보를 복구하세요.";
+"This debug QR uses a local-network route. Keep AetherLink Runtime open and both devices on the same network." = "이 디버그 QR은 로컬 네트워크 경로를 사용합니다. AetherLink Runtime을 열어 두고 두 기기를 같은 네트워크에 연결하세요.";

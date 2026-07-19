@@ -5,7 +5,7 @@
   "sourceEvidence": {
     "kind": "source_tree_collection",
     "label": "AetherLink P2P route-preparation and transport source snapshot for production NAT traversal security design",
-    "collectionSha256": "d2f83be1b884cf9973037c72d2ee81f583fbf33150f6f8d843b787c7c83e29b8",
+    "collectionSha256": "6e6dfbfc0cdb70370c30f54222584b69042a6e22b6df04c7f3e65043c38522bd",
     "artifactCount": 13,
     "sourceDrift": "present"
   },

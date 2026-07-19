@@ -2,6 +2,7 @@ package com.localagentbridge.android.runtime
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.localagentbridge.android.core.pairing.DurableRelaySecretStore
 import com.localagentbridge.android.core.pairing.RelaySecretStore
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
@@ -11,6 +12,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -89,6 +91,163 @@ class RuntimeLocalStoreTest {
         assertEquals(listOf(firstRef), secrets.removedHandles)
         assertNull(secrets.readSecret(firstRef))
         assertEquals("secret-second", secrets.readSecret(secondRef))
+    }
+
+    @Test
+    fun durableSaveConfirmsSecretWriteMetadataAndOldSecretCleanup() {
+        val secrets = RecordingRelaySecretStore()
+        val store = RuntimeLocalStore(context, json, secrets)
+
+        store.save(
+            data = runtimeDataWithPendingRelay("durable-first", "secret-durable-first"),
+            commitToDisk = true,
+        )
+        val firstRef = requireNotNull(diskData().pendingPairingRoute?.relaySecretRef)
+        store.save(
+            data = runtimeDataWithPendingRelay("durable-second", "secret-durable-second"),
+            commitToDisk = true,
+        )
+        val secondRef = requireNotNull(diskData().pendingPairingRoute?.relaySecretRef)
+
+        assertEquals(listOf(firstRef, secondRef), secrets.durablySavedHandles)
+        assertEquals(listOf(firstRef), secrets.durablyRemovedHandles)
+        assertNull(secrets.readSecret(firstRef))
+        assertEquals("secret-durable-second", secrets.readSecret(secondRef))
+        assertEquals("secret-durable-second", store.load().pendingPairingRoute?.relaySecret)
+    }
+
+    @Test
+    fun durableSaveRejectsSecretStoreWithoutConfirmationContract() {
+        val store = RuntimeLocalStore(context, json, NonDurableRelaySecretStore())
+
+        val error = assertThrows(IllegalStateException::class.java) {
+            store.save(
+                data = runtimeDataWithPendingRelay("non-durable", "secret-non-durable"),
+                commitToDisk = true,
+            )
+        }
+
+        assertTrue(error.message.orEmpty().contains("durable relay secret store"))
+        assertNull(preferences().getString(STORE_KEY_FOR_TEST, null))
+    }
+
+    @Test
+    fun durableMetadataFailureCompensatesNewSecretBeforeReturningFailure() {
+        val secrets = RecordingRelaySecretStore()
+        val store = RuntimeLocalStore(
+            context = context,
+            json = json,
+            relaySecretStore = secrets,
+            durableMetadataCommit = { false },
+        )
+
+        val error = assertThrows(IllegalStateException::class.java) {
+            store.save(
+                data = runtimeDataWithPendingRelay("metadata-failure", "secret-metadata-failure"),
+                commitToDisk = true,
+            )
+        }
+
+        assertTrue(error.message.orEmpty().contains("metadata persistence failed"))
+        assertEquals(1, secrets.durablySavedHandles.size)
+        assertEquals(secrets.durablySavedHandles, secrets.durablyRemovedHandles)
+        assertTrue(secrets.storedHandles.isEmpty())
+        assertNull(preferences().getString(STORE_KEY_FOR_TEST, null))
+    }
+
+    @Test
+    fun durableCleanupFailureRetainsJournalAndRetriesOnNextBarrier() {
+        val secrets = RecordingRelaySecretStore()
+        val store = RuntimeLocalStore(context, json, secrets)
+        val firstData = runtimeDataWithPendingRelay("cleanup-first", "secret-cleanup-first")
+        val secondData = runtimeDataWithPendingRelay("cleanup-second", "secret-cleanup-second")
+        store.save(firstData, commitToDisk = true)
+        val firstReference = requireNotNull(diskData().pendingPairingRoute?.relaySecretRef)
+        secrets.failNextDurableRemoval = true
+
+        val error = assertThrows(IllegalStateException::class.java) {
+            store.save(secondData, commitToDisk = true)
+        }
+
+        assertTrue(error.message.orEmpty().contains("secret cleanup failed"))
+        val secondReference = requireNotNull(diskData().pendingPairingRoute?.relaySecretRef)
+        assertTrue(firstReference != secondReference)
+        assertEquals("secret-cleanup-first", secrets.readSecret(firstReference))
+        assertEquals(
+            setOf(firstReference),
+            preferences().getStringSet(PENDING_RELAY_SECRET_CLEANUP_KEY_FOR_TEST, emptySet()),
+        )
+
+        store.save(secondData, commitToDisk = true)
+
+        assertNull(secrets.readSecret(firstReference))
+        assertEquals("secret-cleanup-second", secrets.readSecret(secondReference))
+        assertTrue(
+            preferences()
+                .getStringSet(PENDING_RELAY_SECRET_CLEANUP_KEY_FOR_TEST, emptySet())
+                .orEmpty()
+                .isEmpty(),
+        )
+        assertEquals(listOf(firstReference, firstReference), secrets.durablyRemovedHandles)
+    }
+
+    @Test
+    fun sameRouteSecretReplacementMetadataFailurePreservesPreviousSecret() {
+        val secrets = RecordingRelaySecretStore()
+        var failNextMetadataCommit = false
+        val store = RuntimeLocalStore(
+            context = context,
+            json = json,
+            relaySecretStore = secrets,
+            durableMetadataCommit = { editor ->
+                if (failNextMetadataCommit) {
+                    failNextMetadataCommit = false
+                    false
+                } else {
+                    editor.commit()
+                }
+            },
+        )
+        store.save(
+            runtimeDataWithPendingRelay("same-route", "secret-before-failure"),
+            commitToDisk = true,
+        )
+        val previousReference = requireNotNull(diskData().pendingPairingRoute?.relaySecretRef)
+        failNextMetadataCommit = true
+
+        val error = assertThrows(IllegalStateException::class.java) {
+            store.save(
+                runtimeDataWithPendingRelay("same-route", "secret-after-failure"),
+                commitToDisk = true,
+            )
+        }
+
+        assertTrue(error.message.orEmpty().contains("metadata persistence failed"))
+        val rejectedReference = secrets.durablySavedHandles.last()
+        assertTrue(previousReference != rejectedReference)
+        assertEquals(previousReference, diskData().pendingPairingRoute?.relaySecretRef)
+        assertEquals("secret-before-failure", store.load().pendingPairingRoute?.relaySecret)
+        assertEquals("secret-before-failure", secrets.readSecret(previousReference))
+        assertNull(secrets.readSecret(rejectedReference))
+        assertTrue(rejectedReference in secrets.durablyRemovedHandles)
+    }
+
+    @Test
+    fun unchangedPendingSecretIsNotRewrittenAcrossStateBarriers() {
+        val secrets = RecordingRelaySecretStore()
+        val store = RuntimeLocalStore(context, json, secrets)
+        val data = runtimeDataWithPendingRelay("stable-secret", "secret-stable")
+        store.save(data, commitToDisk = true)
+        val firstReference = requireNotNull(diskData().pendingPairingRoute?.relaySecretRef)
+        val loaded = store.load()
+
+        store.save(loaded.copy(composerDraft = "durable barrier"), commitToDisk = true)
+        store.save(loaded.copy(composerDraft = "volatile barrier"), commitToDisk = false)
+
+        assertEquals(listOf(firstReference), secrets.durablySavedHandles)
+        assertTrue(secrets.removedHandles.isEmpty())
+        assertTrue(secrets.durablyRemovedHandles.isEmpty())
+        assertEquals("secret-stable", secrets.readSecret(firstReference))
     }
 
     @Test
@@ -259,9 +418,45 @@ class RuntimeLocalStoreTest {
 
     private fun preferences() = context.getSharedPreferences(STORE_NAME_FOR_TEST, Context.MODE_PRIVATE)
 
-    private class RecordingRelaySecretStore : RelaySecretStore {
+    private class RecordingRelaySecretStore : DurableRelaySecretStore {
         private val secrets = mutableMapOf<String, String>()
         val removedHandles = mutableListOf<String>()
+        val durablySavedHandles = mutableListOf<String>()
+        val durablyRemovedHandles = mutableListOf<String>()
+        val storedHandles: Set<String>
+            get() = secrets.keys.toSet()
+        var failNextDurableRemoval = false
+
+        override fun saveSecret(handle: String, secret: String) {
+            secrets[handle] = secret
+        }
+
+        override fun readSecret(handle: String): String? = secrets[handle]
+
+        override fun saveSecretDurably(handle: String, secret: String): Boolean {
+            durablySavedHandles += handle
+            secrets[handle] = secret
+            return true
+        }
+
+        override fun removeSecret(handle: String) {
+            removedHandles += handle
+            secrets.remove(handle)
+        }
+
+        override fun removeSecretDurably(handle: String): Boolean {
+            durablyRemovedHandles += handle
+            if (failNextDurableRemoval) {
+                failNextDurableRemoval = false
+                return false
+            }
+            secrets.remove(handle)
+            return true
+        }
+    }
+
+    private class NonDurableRelaySecretStore : RelaySecretStore {
+        private val secrets = mutableMapOf<String, String>()
 
         override fun saveSecret(handle: String, secret: String) {
             secrets[handle] = secret
@@ -270,7 +465,6 @@ class RuntimeLocalStoreTest {
         override fun readSecret(handle: String): String? = secrets[handle]
 
         override fun removeSecret(handle: String) {
-            removedHandles += handle
             secrets.remove(handle)
         }
     }
@@ -278,5 +472,6 @@ class RuntimeLocalStoreTest {
     private companion object {
         const val STORE_NAME_FOR_TEST = "runtime_local_store"
         const val STORE_KEY_FOR_TEST = "runtime_data"
+        const val PENDING_RELAY_SECRET_CLEANUP_KEY_FOR_TEST = "pending_relay_secret_cleanup_refs"
     }
 }

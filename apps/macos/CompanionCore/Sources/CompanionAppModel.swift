@@ -10,6 +10,7 @@ import LMStudioBackend
 import OllamaBackend
 import Pairing
 import Security
+import SystemConfiguration
 import Transport
 import TrustedDevices
 
@@ -929,6 +930,7 @@ public final class CompanionAppModel: ObservableObject {
     private let relayServiceRouteAllocator: any RelayServiceRouteAllocating
     private let environment: [String: String]
     private let runtimeRouteHostProvider: () -> String?
+    private let allowsLocalDiagnosticPairingFromUserInterface: Bool
     private var relayConfiguration: RelayPeerConfiguration?
     private var allocatedRemoteRouteLease: CompanionRemoteRouteLease?
     private var pendingPairedRelayActivations: [String: PendingPairScopedRelayActivation] = [:]
@@ -1036,6 +1038,30 @@ public final class CompanionAppModel: ObservableObject {
             shouldRefreshConfiguredRelayRouteLeaseForPairing
     }
 
+    private var hasReadyRemotePairingRouteForUserInterface: Bool {
+        shouldIncludeDevelopmentRelayInPairingQRCode || hasCanonicalFreshRemoteRouteMaterialForQRCode
+    }
+
+    public var canRequestLocalDiagnosticPairingForUserInterface: Bool {
+        guard allowsLocalDiagnosticPairingFromUserInterface,
+              !isRemoteRoutePreparationInFlight
+        else {
+            return false
+        }
+        if isRuntimeStarted, transportState.state != .advertising {
+            return false
+        }
+        return localDiagnosticPairingRouteHostCandidate != nil
+    }
+
+    public var shouldUseLocalDiagnosticPairingForUserInterface: Bool {
+        canRequestLocalDiagnosticPairingForUserInterface && !hasReadyRemotePairingRouteForUserInterface
+    }
+
+    public var canRequestPairingForUserInterface: Bool {
+        canRequestRemotePairingForUserInterface || canRequestLocalDiagnosticPairingForUserInterface
+    }
+
     private var hasCurrentRelayRouteLeaseForQRCode: Bool {
         if let allocatedRemoteRouteLease {
             return isRelayRouteLeaseFreshForPairingQRCode(allocatedRemoteRouteLease)
@@ -1069,6 +1095,7 @@ public final class CompanionAppModel: ObservableObject {
         runtimeModelPullApprovalPersistence: any RuntimeModelPullBrokerPersistence = SQLiteRuntimeModelPullApprovalStore(),
         runtimeRouteHostProvider: (() -> String?)? = nil,
         allowsAuthenticatedRouteRefresh: Bool = false,
+        allowsLocalDiagnosticPairingFromUserInterface: Bool? = nil,
         pairingRoutePreparationTimeoutNanoseconds: UInt64 = 15_000_000_000,
         routeAllocationTimeoutNanoseconds: UInt64 = 15_000_000_000
     ) {
@@ -1125,6 +1152,10 @@ public final class CompanionAppModel: ObservableObject {
             relayServiceRouteAllocator: relayServiceRouteAllocator
         )
         self.runtimeRouteHostProvider = runtimeRouteHostProvider ?? Self.defaultRuntimeRouteHost
+        self.allowsLocalDiagnosticPairingFromUserInterface = Self.resolveLocalDiagnosticPairingUIAllowance(
+            requestedOverride: allowsLocalDiagnosticPairingFromUserInterface,
+            isDebugAssertConfiguration: _isDebugAssertConfiguration()
+        )
         let macDeviceID = Self.loadOrCreateMacDeviceID(defaults: userDefaults)
         let runtimeIdentity = Self.loadOrCreateRuntimeIdentityKey(
             deviceID: macDeviceID,
@@ -1823,6 +1854,32 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     @discardableResult
+    public func requestPairingForUserInterface() -> Bool {
+        if !shouldUseLocalDiagnosticPairingForUserInterface,
+           canRequestRemotePairingForUserInterface {
+            return requestRemotePairingForUserInterface()
+        }
+        guard canRequestLocalDiagnosticPairingForUserInterface,
+              let localRouteHost = localDiagnosticPairingRouteHostCandidate
+        else {
+            publishRemotePairingUnavailability()
+            return false
+        }
+        if !isRuntimeStarted {
+            startRuntime(port: runtimePort, routePreparation: .none)
+        }
+        guard transportState.state == .advertising else {
+            return false
+        }
+        remoteRoutePreparationIssue = nil
+        generatePairingSession(
+            routePolicy: .allowLocalDiagnostic,
+            localRouteHostOverride: localRouteHost
+        )
+        return pairingSession?.host == localRouteHost
+    }
+
+    @discardableResult
     public func requestRemotePairingForUserInterface() -> Bool {
         guard !isRemoteRoutePreparationInFlight else {
             return false
@@ -1932,14 +1989,19 @@ public final class CompanionAppModel: ObservableObject {
         log("Remote pairing QR not generated: configure a reachable remote route first")
     }
 
-    private func generatePairingSession(routePolicy: CompanionPairingRoutePolicy) {
+    private func generatePairingSession(
+        routePolicy: CompanionPairingRoutePolicy,
+        localRouteHostOverride: String? = nil
+    ) {
         let pairingRelayConfiguration = shouldIncludeDevelopmentRelayInPairingQRCode ? relayConfiguration : nil
         if routePolicy == .remoteRequired && pairingRelayConfiguration == nil {
             publishRemotePairingUnavailability()
             return
         }
         cancelPendingRemotePairingPreparation()
-        let localRouteHost = pairingRelayConfiguration == nil ? localPairingRouteHost : nil
+        let localRouteHost = pairingRelayConfiguration == nil
+            ? (localRouteHostOverride ?? localPairingRouteHost)
+            : nil
         let relayRouteLease = relayRouteLeaseForPairing(relayConfiguration: pairingRelayConfiguration)
         let pairingRelayScope = pairingRelayConfiguration.flatMap {
             Self.relayScope(
@@ -3800,6 +3862,17 @@ public final class CompanionAppModel: ObservableObject {
         return runtimeRouteHostProvider()
     }
 
+    private var localDiagnosticPairingRouteHostCandidate: String? {
+        guard allowsLocalDiagnosticPairingFromUserInterface,
+              let host = runtimeRouteHostProvider()?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !host.isEmpty,
+              Self.isUsablePairingAddress(host)
+        else {
+            return nil
+        }
+        return host
+    }
+
     private var discoveryRouteToken: String
 
     private var runtimeAdvertisementMetadata: RuntimeAdvertisementMetadata {
@@ -4321,6 +4394,14 @@ public final class CompanionAppModel: ObservableObject {
         return nil
     }
 
+    nonisolated static func resolveLocalDiagnosticPairingUIAllowance(
+        requestedOverride: Bool?,
+        isDebugAssertConfiguration: Bool
+    ) -> Bool {
+        guard isDebugAssertConfiguration else { return false }
+        return requestedOverride ?? true
+    }
+
     nonisolated private static func defaultRuntimeRouteHost() -> String? {
         var interfaces: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&interfaces) == 0, let firstInterface = interfaces else {
@@ -4328,6 +4409,7 @@ public final class CompanionAppModel: ObservableObject {
         }
         defer { freeifaddrs(interfaces) }
 
+        let primaryInterfaceName = primaryIPv4InterfaceName()
         var candidates: [(name: String, address: String, score: Int)] = []
         var cursor: UnsafeMutablePointer<ifaddrs>? = firstInterface
         while let interface = cursor {
@@ -4348,7 +4430,12 @@ public final class CompanionAppModel: ObservableObject {
             )
             guard result == 0 else { continue }
             let interfaceName = String(cString: interface.pointee.ifa_name)
-            guard let score = pairingInterfaceScore(name: interfaceName) else { continue }
+            guard let score = pairingInterfaceScore(
+                name: interfaceName,
+                primaryInterfaceName: primaryInterfaceName
+            ) else {
+                continue
+            }
             let addressString = String(cString: hostBuffer)
             guard isUsablePairingAddress(addressString) else { continue }
             candidates.append((interfaceName, addressString, score))
@@ -4365,7 +4452,20 @@ public final class CompanionAppModel: ObservableObject {
             .address
     }
 
-    nonisolated private static func pairingInterfaceScore(name: String) -> Int? {
+    nonisolated private static func primaryIPv4InterfaceName() -> String? {
+        guard let state = SCDynamicStoreCopyValue(
+            nil,
+            "State:/Network/Global/IPv4" as CFString
+        ) as? [String: Any] else {
+            return nil
+        }
+        return state["PrimaryInterface"] as? String
+    }
+
+    nonisolated static func pairingInterfaceScore(
+        name: String,
+        primaryInterfaceName: String?
+    ) -> Int? {
         let virtualPrefixes = [
             "bridge",
             "utun",
@@ -4380,10 +4480,13 @@ public final class CompanionAppModel: ObservableObject {
         if virtualPrefixes.contains(where: { name.hasPrefix($0) }) {
             return nil
         }
-        if name.hasPrefix("en") {
+        if name == primaryInterfaceName {
             return 0
         }
-        return 10
+        if name.hasPrefix("en") {
+            return 10
+        }
+        return 20
     }
 
     nonisolated private static func isUsablePairingAddress(_ address: String) -> Bool {

@@ -69,6 +69,10 @@ struct ContentView: View {
                 StatusView(
                     model: model,
                     onGenerateRelayQRCode: {
+                        model.requestPairingForUserInterface()
+                        selectedSection = .pairing
+                    },
+                    onGenerateRemoteRelayQRCode: {
                         model.requestRemotePairingForUserInterface()
                         selectedSection = .pairing
                     }
@@ -138,7 +142,7 @@ struct ContentView: View {
 
     private var canGeneratePairingQR: Bool {
         pairingQRGenerationCommandAvailable(
-            canRequestRemotePairing: model.canRequestRemotePairingForUserInterface
+            canRequestPairing: model.canRequestPairingForUserInterface
         )
     }
 
@@ -167,7 +171,7 @@ struct ContentView: View {
 
         case .pairingQR:
             Button {
-                model.requestRemotePairingForUserInterface()
+                model.requestPairingForUserInterface()
                 selectedSection = .pairing
             } label: {
                 if model.pairingSession == nil {
@@ -204,9 +208,9 @@ struct ContentView: View {
 }
 
 func pairingQRGenerationCommandAvailable(
-    canRequestRemotePairing: Bool
+    canRequestPairing: Bool
 ) -> Bool {
-    canRequestRemotePairing
+    canRequestPairing
 }
 
 func pairingQRGenerationCommandHelpText(isAvailable: Bool) -> String {

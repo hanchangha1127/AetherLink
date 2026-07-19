@@ -25,6 +25,8 @@ TARGET_EXECUTABLE_NAME="LocalAgentBridge"
 APP_NAME="AetherLink"
 BUNDLE_ID="dev.aetherlink.companion"
 MIN_SYSTEM_VERSION="14.0"
+DEBUG_RUNTIME_IDENTITY_FILE="${AETHERLINK_RUNTIME_IDENTITY_FILE:-$HOME/Library/Application Support/AetherLink/debug-runtime-identity.json}"
+APP_LAUNCH_SETTLE_SECONDS=5
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -108,7 +110,15 @@ PLIST
 /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
 
 open_app() {
-  /usr/bin/open -n "$APP_BUNDLE"
+  /usr/bin/nohup /usr/bin/env \
+    AETHERLINK_RUNTIME_IDENTITY_FILE="$DEBUG_RUNTIME_IDENTITY_FILE" \
+    "$APP_BINARY" >/dev/null 2>&1 &
+  local launch_pid=$!
+  sleep "$APP_LAUNCH_SETTLE_SECONDS"
+  if ! kill -0 "$launch_pid" >/dev/null 2>&1; then
+    echo "error: $APP_NAME exited during launch" >&2
+    return 1
+  fi
 }
 
 case "$MODE" in
@@ -116,7 +126,8 @@ case "$MODE" in
     open_app
     ;;
   --debug|debug)
-    lldb -- "$APP_BINARY"
+    /usr/bin/env AETHERLINK_RUNTIME_IDENTITY_FILE="$DEBUG_RUNTIME_IDENTITY_FILE" \
+      lldb -- "$APP_BINARY"
     ;;
   --logs|logs)
     open_app
@@ -128,8 +139,6 @@ case "$MODE" in
     ;;
   --verify|verify)
     open_app
-    sleep 1
-    pgrep -x "$APP_NAME" >/dev/null
     ;;
   *)
     usage

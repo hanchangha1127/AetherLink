@@ -93,7 +93,7 @@ struct PairingView: View {
 
                 if shouldShowPairingRouteSetupPanel(model: model) {
                     RemoteRelayRoutePanel(model: model) {
-                        generatePairingQR()
+                        model.requestRemotePairingForUserInterface()
                     }
                 }
 
@@ -117,6 +117,13 @@ struct PairingView: View {
             return PairingRouteNotice(
                 text: NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: ""),
                 systemImage: "hourglass",
+                tone: .neutral
+            )
+        }
+        if model.shouldUseLocalDiagnosticPairingForUserInterface {
+            return PairingRouteNotice(
+                text: localDiagnosticPairingNoticeText(),
+                systemImage: "network",
                 tone: .neutral
             )
         }
@@ -191,6 +198,9 @@ struct PairingView: View {
         if model.isRemoteRoutePreparationInFlight {
             return NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: "")
         }
+        if model.shouldUseLocalDiagnosticPairingForUserInterface {
+            return localDiagnosticPairingNoticeText()
+        }
         if let issue = model.remoteRoutePreparationIssue {
             return remoteRoutePreparationIssueText(issue)
         }
@@ -201,7 +211,7 @@ struct PairingView: View {
     }
 
     private var canGeneratePairingQR: Bool {
-        model.canRequestRemotePairingForUserInterface
+        model.canRequestPairingForUserInterface
     }
 
     private var pairingQRGenerationHelpText: String {
@@ -212,7 +222,7 @@ struct PairingView: View {
     }
 
     private func generatePairingQR() {
-        model.requestRemotePairingForUserInterface()
+        model.requestPairingForUserInterface()
     }
 }
 
@@ -662,6 +672,13 @@ func pairingQRCodeInstructionDetail(isAvailable: Bool) -> String {
 
 func pairingRouteNoticeAccessibilityLabel() -> String {
     NSLocalizedString("Pairing QR status", comment: "")
+}
+
+func localDiagnosticPairingNoticeText() -> String {
+    NSLocalizedString(
+        "This debug QR uses a local-network route. Keep AetherLink Runtime open and both devices on the same network.",
+        comment: ""
+    )
 }
 
 func pairingQRCodeAccessibilityHint(
