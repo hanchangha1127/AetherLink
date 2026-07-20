@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from pathlib import Path
 import unittest
@@ -22,6 +23,14 @@ class V1G0ReceiptBundleContractTests(unittest.TestCase):
         cls.raw_blobs = tuple(
             (ROOT / path).read_bytes() for path in receipt_bundle.LINEAGE_PATHS
         )
+        cls.recorded_receipt_raw = (
+            ROOT / receipt_bundle.RECORDED_PUBLICATION_RECEIPT_PATH
+        ).read_bytes()
+        cls.recorded_receipt = json.loads(cls.recorded_receipt_raw)
+        cls.owner_catalog_input_raw = (
+            ROOT / receipt_bundle.OWNER_CATALOG_INPUT_PATH
+        ).read_bytes()
+        cls.owner_catalog_input = json.loads(cls.owner_catalog_input_raw)
         cls.documents = tuple(json.loads(raw) for raw in cls.raw_blobs)
         cls.effective_v2 = decision.apply_assurance_amendment_operations(
             cls.documents[0],
@@ -491,6 +500,668 @@ class V1G0ReceiptBundleContractTests(unittest.TestCase):
 
     def test_worktree_checker_passes_the_content_addressed_candidate(self) -> None:
         self.assertEqual(receipt_bundle._collect_worktree_failures(ROOT), ())
+        self.assertEqual(
+            hashlib.sha256(self.recorded_receipt_raw).hexdigest(),
+            receipt_bundle.EXPECTED_RECORDED_PUBLICATION_RECEIPT_RAW_SHA256,
+        )
+        self.assertEqual(
+            tuple(self.recorded_receipt),
+            receipt_bundle.PUBLICATION_RECEIPT_FIELDS,
+        )
+        self.assertEqual(
+            self.recorded_receipt["repositoryRef"],
+            receipt_bundle.EXPECTED_RECORDED_REPOSITORY_REF,
+        )
+        self.assertEqual(
+            self.recorded_receipt["commitObjectId"],
+            receipt_bundle.EXPECTED_RECORDED_COMMIT_OBJECT_ID,
+        )
+        self.assertEqual(
+            receipt_bundle._collect_recorded_publication_receipt_candidate_failures(
+                self.recorded_receipt_raw,
+                lineage_blobs=self.raw_blobs,
+            ),
+            (receipt_bundle.RECORDED_PUBLICATION_RECEIPT_DORMANT_MESSAGE,),
+        )
+
+        mutations: list[tuple[str, object, str]] = []
+        wrong_repository = copy.deepcopy(self.recorded_receipt)
+        wrong_repository["repositoryRef"] = "github:someone-else/AetherLink"
+        mutations.append(("repository", wrong_repository, "reviewed repositoryRef"))
+
+        wrong_commit = copy.deepcopy(self.recorded_receipt)
+        wrong_commit["commitObjectId"] = "a" * 40
+        mutations.append(("commit", wrong_commit, "reviewed commitObjectId"))
+
+        wrong_time = copy.deepcopy(self.recorded_receipt)
+        wrong_time["remoteReadbackAt"] = "2026-07-20T12:05:43Z"
+        mutations.append(("time", wrong_time, "observed remoteReadbackAt"))
+
+        reordered_fields = {
+            key: self.recorded_receipt[key]
+            for key in reversed(tuple(self.recorded_receipt))
+        }
+        mutations.append(("field order", reordered_fields, "field order"))
+
+        self_asserted = copy.deepcopy(self.recorded_receipt)
+        self_asserted["status"] = "verified"
+        mutations.append(("self asserted status", self_asserted, "field order"))
+
+        reordered_bindings = copy.deepcopy(self.recorded_receipt)
+        reordered_bindings["artifactBindings"][0], reordered_bindings[
+            "artifactBindings"
+        ][1] = (
+            reordered_bindings["artifactBindings"][1],
+            reordered_bindings["artifactBindings"][0],
+        )
+        mutations.append(("binding order", reordered_bindings, "binding 0.role"))
+
+        missing_binding = copy.deepcopy(self.recorded_receipt)
+        missing_binding["artifactBindings"].pop()
+        mutations.append(("missing binding", missing_binding, "exactly six"))
+
+        extra_binding = copy.deepcopy(self.recorded_receipt)
+        extra_binding["artifactBindings"].append(
+            copy.deepcopy(extra_binding["artifactBindings"][-1])
+        )
+        mutations.append(("extra binding", extra_binding, "exactly six"))
+
+        binding_path = copy.deepcopy(self.recorded_receipt)
+        binding_path["artifactBindings"][5]["path"] = "docs/v1/g0/other.json"
+        mutations.append(("binding path", binding_path, "binding 5.path"))
+
+        binding_raw_hash = copy.deepcopy(self.recorded_receipt)
+        binding_raw_hash["artifactBindings"][5]["rawSha256"] = "0" * 64
+        mutations.append(
+            ("binding raw hash", binding_raw_hash, "binding 5.rawSha256")
+        )
+
+        binding_canonical_hash = copy.deepcopy(self.recorded_receipt)
+        binding_canonical_hash["artifactBindings"][5]["canonicalSha256"] = (
+            "0" * 64
+        )
+        mutations.append(
+            (
+                "binding canonical hash",
+                binding_canonical_hash,
+                "binding 5.canonicalSha256",
+            )
+        )
+
+        binding_unknown_field = copy.deepcopy(self.recorded_receipt)
+        binding_unknown_field["artifactBindings"][0]["verified"] = True
+        mutations.append(
+            ("binding unknown field", binding_unknown_field, "fields or field order")
+        )
+
+        effective_hash = copy.deepcopy(self.recorded_receipt)
+        effective_hash["effectiveAssuranceCanonicalSha256"] = "0" * 64
+        mutations.append(
+            ("effective hash", effective_hash, "effectiveAssuranceCanonicalSha256")
+        )
+
+        checkpoint_path = copy.deepcopy(self.recorded_receipt)
+        checkpoint_path["remoteCheckpointPath"] = "docs/v1/g0/other.json"
+        mutations.append(
+            ("remote checkpoint path", checkpoint_path, "remoteCheckpointPath")
+        )
+
+        checkpoint_hash = copy.deepcopy(self.recorded_receipt)
+        checkpoint_hash["remoteReadbackSha256"] = "0" * 64
+        mutations.append(
+            ("remote readback hash", checkpoint_hash, "remoteReadbackSha256")
+        )
+
+        malformed_time = copy.deepcopy(self.recorded_receipt)
+        malformed_time["remoteReadbackAt"] = "2026-07-20T21:05:44+09:00"
+        mutations.append(("malformed time", malformed_time, "canonical RFC3339 UTC"))
+
+        boolean_version = copy.deepcopy(self.recorded_receipt)
+        boolean_version["parentClosureSchemaVersion"] = True
+        mutations.append(
+            ("boolean version", boolean_version, "parentClosureSchemaVersion")
+        )
+
+        for label, mutation, expected_failure in mutations:
+            with self.subTest(mutation=label):
+                failures = (
+                    receipt_bundle._collect_recorded_publication_receipt_candidate_failures(
+                        self.encoded(mutation),
+                        lineage_blobs=self.raw_blobs,
+                    )
+                )
+                self.assertGreater(len(failures), 1)
+                self.assertTrue(
+                    any(expected_failure in failure for failure in failures),
+                    failures,
+                )
+                self.assertEqual(
+                    failures[-1],
+                    receipt_bundle.RECORDED_PUBLICATION_RECEIPT_DORMANT_MESSAGE,
+                )
+
+        duplicate_key = self.recorded_receipt_raw.replace(
+            b'{\n  "repositoryRef": ',
+            b'{\n  "repositoryRef": "github:duplicate/target",\n  "repositoryRef": ',
+            1,
+        )
+        duplicate_failures = (
+            receipt_bundle._collect_recorded_publication_receipt_candidate_failures(
+                duplicate_key,
+                lineage_blobs=self.raw_blobs,
+            )
+        )
+        self.assertGreater(len(duplicate_failures), 1)
+        self.assertTrue(
+            any("duplicate" in failure for failure in duplicate_failures),
+            duplicate_failures,
+        )
+        self.assertEqual(
+            duplicate_failures[-1],
+            receipt_bundle.RECORDED_PUBLICATION_RECEIPT_DORMANT_MESSAGE,
+        )
+
+        malformed_inputs = (
+            b"",
+            b"\xff",
+            b'{"value":NaN}',
+            (b'{"x":' * 1_500) + b"0" + (b"}" * 1_500),
+            memoryview(
+                bytearray(receipt_bundle.MAX_RECORDED_PUBLICATION_RECEIPT_BYTES + 1)
+            ),
+        )
+        for raw in malformed_inputs:
+            with self.subTest(malformed_size=len(raw)):
+                failures = (
+                    receipt_bundle._collect_recorded_publication_receipt_candidate_failures(
+                        raw,
+                        lineage_blobs=self.raw_blobs,
+                    )
+                )
+                self.assertGreater(len(failures), 1)
+                self.assertEqual(
+                    failures[-1],
+                    receipt_bundle.RECORDED_PUBLICATION_RECEIPT_DORMANT_MESSAGE,
+                )
+
+        released = memoryview(self.recorded_receipt_raw)
+        released.release()
+        released_failures = (
+            receipt_bundle._collect_recorded_publication_receipt_candidate_failures(
+                released,
+                lineage_blobs=self.raw_blobs,
+            )
+        )
+        self.assertGreater(len(released_failures), 1)
+        self.assertEqual(
+            released_failures[-1],
+            receipt_bundle.RECORDED_PUBLICATION_RECEIPT_DORMANT_MESSAGE,
+        )
+
+        mutable_receipt = bytearray(self.recorded_receipt_raw)
+        original_parser = receipt_bundle._parse_object
+
+        def parse_then_mutate(
+            raw: bytes,
+            label: str,
+            failures: list[str],
+        ) -> dict[str, object] | None:
+            if label == "recorded G0 V3 publication receipt candidate":
+                self.assertIsInstance(raw, bytes)
+                mutable_receipt.extend(b" ")
+            return original_parser(raw, label, failures)
+
+        with mock.patch.object(
+            receipt_bundle,
+            "_parse_object",
+            side_effect=parse_then_mutate,
+        ):
+            self.assertEqual(
+                receipt_bundle._collect_recorded_publication_receipt_candidate_failures(
+                    mutable_receipt,
+                    lineage_blobs=self.raw_blobs,
+                ),
+                (receipt_bundle.RECORDED_PUBLICATION_RECEIPT_DORMANT_MESSAGE,),
+            )
+
+        original_final_check = decision.collect_g0_final_snapshot_failures
+
+        def report_sidecar_replacement(*args: object, **kwargs: object) -> tuple[str, ...]:
+            if len(args) > 1 and args[1] == receipt_bundle.RECORDED_PUBLICATION_RECEIPT_PATH:
+                return ("recorded receipt changed after validation",)
+            return original_final_check(*args, **kwargs)
+
+        with mock.patch.object(
+            decision,
+            "collect_g0_final_snapshot_failures",
+            side_effect=report_sidecar_replacement,
+        ):
+            self.assertIn(
+                "recorded receipt changed after validation",
+                receipt_bundle._collect_worktree_failures(ROOT),
+            )
+
+        with mock.patch.object(
+            receipt_bundle,
+            "_collect_recorded_publication_receipt_candidate_failures",
+            return_value=(),
+        ):
+            self.assertIn(
+                "recorded publication receipt validator did not return the exact "
+                "dormant non-authorizing result",
+                receipt_bundle._collect_worktree_failures(ROOT),
+            )
+
+        original_reader = decision.read_g0_content_addressed_snapshot
+
+        def reject_sidecar_read(*args: object, **kwargs: object) -> object:
+            if len(args) > 1 and args[1] == receipt_bundle.RECORDED_PUBLICATION_RECEIPT_PATH:
+                raise receipt_bundle.checkpoint.CheckpointValidationError(
+                    "recorded receipt is not a regular no-follow snapshot"
+                )
+            return original_reader(*args, **kwargs)
+
+        with mock.patch.object(
+            decision,
+            "read_g0_content_addressed_snapshot",
+            side_effect=reject_sidecar_read,
+        ):
+            self.assertEqual(
+                receipt_bundle._collect_worktree_failures(ROOT),
+                ("recorded receipt is not a regular no-follow snapshot",),
+            )
+
+    def test_owner_catalog_input_is_reference_only_and_always_dormant(self) -> None:
+        self.assertEqual(
+            hashlib.sha256(self.owner_catalog_input_raw).hexdigest(),
+            receipt_bundle.EXPECTED_OWNER_CATALOG_INPUT_RAW_SHA256,
+        )
+        self.assertEqual(self.owner_catalog_input["responses"], [])
+        self.assertTrue(
+            all(value is False for value in self.owner_catalog_input["state"].values())
+        )
+        self.assertEqual(
+            receipt_bundle._collect_owner_catalog_input_candidate_failures(
+                self.owner_catalog_input_raw,
+                lineage_blobs=self.raw_blobs,
+            ),
+            (receipt_bundle.OWNER_CATALOG_INPUT_DORMANT_MESSAGE,),
+        )
+
+        candidate = copy.deepcopy(self.owner_catalog_input)
+        candidate["responses"] = [
+            {
+                "blockerId": "g0_assurance_artifacts_and_baseline_gate",
+                "requirementDisposition": "proposed_as_written",
+                "ownerCandidates": [
+                    {
+                        "role": "repository_quality_owner",
+                        "ownerBindingRefCandidate": (
+                            "owner-candidate:repository-quality-owner:v1"
+                        ),
+                    },
+                    {
+                        "role": "release_quality_owner",
+                        "ownerBindingRefCandidate": (
+                            "owner-candidate:release-quality-owner:v1"
+                        ),
+                    },
+                ],
+                "evidenceCandidates": [],
+                "changeRequestRefCandidate": None,
+                "inputSourceRefCandidate": "user-input:session-20260720:item-1",
+            },
+            {
+                "blockerId": "production_application_namespaces",
+                "requirementDisposition": "proposed_as_written",
+                "ownerCandidates": [
+                    {
+                        "role": "product_and_distribution_owner",
+                        "ownerBindingRefCandidate": (
+                            "owner-candidate:product-and-distribution-owner:v1"
+                        ),
+                    }
+                ],
+                "evidenceCandidates": [
+                    {
+                        "evidenceKind": "owned_application_ids",
+                        "evidenceInputRefCandidate": (
+                            "evidence-input-candidate:owned-application-ids:v1"
+                        ),
+                        "supportingArtifactRefCandidate": (
+                            "docs/evidence/"
+                            "g0-owned-application-ids-candidate-v1.json"
+                        ),
+                    }
+                ],
+                "changeRequestRefCandidate": None,
+                "inputSourceRefCandidate": "user-input:session-20260720:item-2",
+            },
+            {
+                "blockerId": "quality_measurement_owners",
+                "requirementDisposition": "proposed_as_written",
+                "ownerCandidates": [
+                    {
+                        "role": "release_quality_owner",
+                        "ownerBindingRefCandidate": (
+                            "owner-candidate:release-quality-owner:v1"
+                        ),
+                    },
+                    {
+                        "role": "release_network_qa_owner",
+                        "ownerBindingRefCandidate": (
+                            "owner-candidate:release-network-qa-owner:v1"
+                        ),
+                    },
+                    {
+                        "role": "release_performance_qa_owner",
+                        "ownerBindingRefCandidate": (
+                            "owner-candidate:release-performance-qa-owner:v1"
+                        ),
+                    },
+                    {
+                        "role": "service_operations_and_abuse_owner",
+                        "ownerBindingRefCandidate": (
+                            "owner-candidate:service-operations-and-abuse-owner:v1"
+                        ),
+                    },
+                    {
+                        "role": "product_security_owner",
+                        "ownerBindingRefCandidate": (
+                            "owner-candidate:product-security-owner:v1"
+                        ),
+                    },
+                ],
+                "evidenceCandidates": [],
+                "changeRequestRefCandidate": None,
+                "inputSourceRefCandidate": "user-input:session-20260720:item-3",
+            },
+            {
+                "blockerId": "relay_region_capacity_and_cost_budget",
+                "requirementDisposition": "proposed_with_changes",
+                "ownerCandidates": [
+                    {
+                        "role": "service_operations_owner",
+                        "ownerBindingRefCandidate": (
+                            "owner-candidate:service-operations-owner:v1"
+                        ),
+                    }
+                ],
+                "evidenceCandidates": [
+                    {
+                        "evidenceKind": (
+                            "approved_region_peak_capacity_and_cost_ceiling"
+                        ),
+                        "evidenceInputRefCandidate": (
+                            "evidence-input-candidate:"
+                            "approved-region-peak-capacity-and-cost-ceiling:v1"
+                        ),
+                        "supportingArtifactRefCandidate": (
+                            "docs/evidence/g0-approved-region-peak-capacity-and-"
+                            "cost-ceiling-candidate-v1.json"
+                        ),
+                    }
+                ],
+                "changeRequestRefCandidate": (
+                    "change-request-candidate:"
+                    "relay-region-capacity-and-cost-budget:v1"
+                ),
+                "inputSourceRefCandidate": "user-input:session-20260720:item-4",
+            },
+        ]
+        self.assertEqual(
+            receipt_bundle._collect_owner_catalog_input_candidate_failures(
+                self.encoded(candidate),
+                lineage_blobs=self.raw_blobs,
+            ),
+            (receipt_bundle.OWNER_CATALOG_INPUT_DORMANT_MESSAGE,),
+        )
+
+        def assert_rejected(
+            mutation: dict[str, object],
+            expected_fragment: str,
+        ) -> None:
+            failures = receipt_bundle._collect_owner_catalog_input_candidate_failures(
+                self.encoded(mutation),
+                lineage_blobs=self.raw_blobs,
+            )
+            self.assertGreater(len(failures), 1)
+            self.assertTrue(
+                any(expected_fragment in failure for failure in failures),
+                failures,
+            )
+            self.assertEqual(
+                failures[-1],
+                receipt_bundle.OWNER_CATALOG_INPUT_DORMANT_MESSAGE,
+            )
+
+        status_claim = copy.deepcopy(candidate)
+        status_claim["status"] = "accepted"
+        assert_rejected(status_claim, "candidate status")
+
+        target_drift = copy.deepcopy(candidate)
+        target_drift["contractBinding"]["publicationCommitObjectId"] = "a" * 40
+        assert_rejected(target_drift, "publicationCommitObjectId")
+
+        reordered_responses = copy.deepcopy(candidate)
+        reordered_responses["responses"].reverse()
+        assert_rejected(reordered_responses, "canonical blocker order")
+
+        duplicate_response = copy.deepcopy(candidate)
+        duplicate_response["responses"].insert(
+            1,
+            copy.deepcopy(duplicate_response["responses"][0]),
+        )
+        assert_rejected(duplicate_response, "duplicated")
+
+        unknown_blocker = copy.deepcopy(candidate)
+        unknown_blocker["responses"][0]["blockerId"] = "invented_blocker"
+        assert_rejected(unknown_blocker, "blockerId is invalid")
+
+        accepted_disposition = copy.deepcopy(candidate)
+        accepted_disposition["responses"][0]["requirementDisposition"] = "accepted"
+        assert_rejected(accepted_disposition, "requirementDisposition")
+
+        wrong_role = copy.deepcopy(candidate)
+        wrong_role["responses"][1]["ownerCandidates"][0]["role"] = (
+            "service_operations_owner"
+        )
+        assert_rejected(wrong_role, ".role is invalid")
+
+        misbound_owner_ref = copy.deepcopy(candidate)
+        misbound_owner_ref["responses"][1]["ownerCandidates"][0][
+            "ownerBindingRefCandidate"
+        ] = "owner-candidate:repository-quality-owner:v1"
+        assert_rejected(misbound_owner_ref, "binding reference is invalid")
+
+        inconsistent_role = copy.deepcopy(candidate)
+        inconsistent_role["responses"][2]["ownerCandidates"][0][
+            "ownerBindingRefCandidate"
+        ] = "owner-candidate:release-quality-owner:v2"
+        assert_rejected(inconsistent_role, "is inconsistent")
+
+        personal_identity = copy.deepcopy(candidate)
+        personal_identity["responses"][1]["ownerCandidates"][0][
+            "ownerBindingRefCandidate"
+        ] = "person@example.com"
+        assert_rejected(personal_identity, "binding reference is invalid")
+
+        derived_evidence = copy.deepcopy(candidate)
+        derived_evidence["responses"][2]["evidenceCandidates"] = [
+            {
+                "evidenceKind": "quality_measurement_contract_owner_approvals",
+                "evidenceInputRefCandidate": (
+                    "evidence-input-candidate:self-asserted-approval:v1"
+                ),
+                "supportingArtifactRefCandidate": None,
+            }
+        ]
+        assert_rejected(derived_evidence, "evidenceCandidates is invalid")
+
+        freeform_input = copy.deepcopy(candidate)
+        freeform_input["responses"][1]["evidenceCandidates"][0][
+            "nonSecretInput"
+        ] = "Authorization: Bearer header.payload.signature"
+        assert_rejected(freeform_input, "fields or field order")
+
+        invalid_evidence_ref = copy.deepcopy(candidate)
+        invalid_evidence_ref["responses"][1]["evidenceCandidates"][0][
+            "evidenceInputRefCandidate"
+        ] = "evidence-input-candidate:relay-secret:v1"
+        assert_rejected(invalid_evidence_ref, "input reference is invalid")
+
+        token_owner_ref = copy.deepcopy(candidate)
+        token_owner_ref["responses"][1]["ownerCandidates"][0][
+            "ownerBindingRefCandidate"
+        ] = "owner-candidate:ghp-example-token:v1"
+        assert_rejected(token_owner_ref, "binding reference is invalid")
+
+        unsafe_artifact = copy.deepcopy(candidate)
+        unsafe_artifact["responses"][3]["evidenceCandidates"][0][
+            "supportingArtifactRefCandidate"
+        ] = "../private.json"
+        assert_rejected(unsafe_artifact, "supporting artifact candidate is invalid")
+
+        misbound_artifact = copy.deepcopy(candidate)
+        misbound_artifact["responses"][1]["evidenceCandidates"][0][
+            "supportingArtifactRefCandidate"
+        ] = "docs/evidence/g0-published-checkpoint-candidate-v1.json"
+        assert_rejected(misbound_artifact, "supporting artifact candidate is invalid")
+
+        invalid_source = copy.deepcopy(candidate)
+        invalid_source["responses"][0]["inputSourceRefCandidate"] = (
+            "user-input:token:sk-proj-example"
+        )
+        assert_rejected(invalid_source, "inputSourceRefCandidate is invalid")
+
+        valid_not_available = copy.deepcopy(candidate)
+        valid_not_available["responses"][0]["requirementDisposition"] = (
+            "not_available"
+        )
+        valid_not_available["responses"][0]["ownerCandidates"] = []
+        self.assertEqual(
+            receipt_bundle._collect_owner_catalog_input_candidate_failures(
+                self.encoded(valid_not_available),
+                lineage_blobs=self.raw_blobs,
+            ),
+            (receipt_bundle.OWNER_CATALOG_INPUT_DORMANT_MESSAGE,),
+        )
+
+        not_available_with_input = copy.deepcopy(candidate)
+        not_available_with_input["responses"][0]["requirementDisposition"] = (
+            "not_available"
+        )
+        assert_rejected(not_available_with_input, "not-available response")
+
+        missing_change_request = copy.deepcopy(candidate)
+        missing_change_request["responses"][3]["changeRequestRefCandidate"] = None
+        assert_rejected(missing_change_request, "change request reference is invalid")
+
+        misbound_change_request = copy.deepcopy(candidate)
+        misbound_change_request["responses"][3]["changeRequestRefCandidate"] = (
+            "change-request-candidate:relay-budget:v1"
+        )
+        assert_rejected(misbound_change_request, "change request reference is invalid")
+
+        unexpected_change_request = copy.deepcopy(candidate)
+        unexpected_change_request["responses"][0]["changeRequestRefCandidate"] = (
+            "change-request-candidate:unexpected:v1"
+        )
+        assert_rejected(unexpected_change_request, "must not include a change request")
+
+        empty_proposal = copy.deepcopy(candidate)
+        empty_proposal["responses"][0]["ownerCandidates"] = []
+        assert_rejected(empty_proposal, "proposal contains no input")
+
+        activated = copy.deepcopy(candidate)
+        activated["state"]["receiptActivationAllowed"] = True
+        assert_rejected(activated, "state.receiptActivationAllowed")
+
+        extra_field = copy.deepcopy(candidate)
+        extra_field["g0ExitComplete"] = True
+        assert_rejected(extra_field, "fields or field order")
+
+        reordered_root = {key: candidate[key] for key in reversed(tuple(candidate))}
+        assert_rejected(reordered_root, "fields or field order")
+
+        for raw in (
+            b"",
+            b"\xff",
+            memoryview(bytearray(receipt_bundle.MAX_OWNER_CATALOG_INPUT_BYTES + 1)),
+        ):
+            with self.subTest(owner_catalog_input_size=len(raw)):
+                failures = (
+                    receipt_bundle._collect_owner_catalog_input_candidate_failures(
+                        raw,
+                        lineage_blobs=self.raw_blobs,
+                    )
+                )
+                self.assertGreater(len(failures), 1)
+                self.assertEqual(
+                    failures[-1],
+                    receipt_bundle.OWNER_CATALOG_INPUT_DORMANT_MESSAGE,
+                )
+
+        released = memoryview(self.owner_catalog_input_raw)
+        released.release()
+        released_failures = (
+            receipt_bundle._collect_owner_catalog_input_candidate_failures(
+                released,
+                lineage_blobs=self.raw_blobs,
+            )
+        )
+        self.assertGreater(len(released_failures), 1)
+        self.assertEqual(
+            released_failures[-1],
+            receipt_bundle.OWNER_CATALOG_INPUT_DORMANT_MESSAGE,
+        )
+
+        original_reader = decision.read_g0_content_addressed_snapshot
+
+        def reject_input_read(*args: object, **kwargs: object) -> object:
+            if len(args) > 1 and args[1] == receipt_bundle.OWNER_CATALOG_INPUT_PATH:
+                raise receipt_bundle.checkpoint.CheckpointValidationError(
+                    "owner/catalog input is not a regular no-follow snapshot"
+                )
+            return original_reader(*args, **kwargs)
+
+        with mock.patch.object(
+            decision,
+            "read_g0_content_addressed_snapshot",
+            side_effect=reject_input_read,
+        ):
+            self.assertEqual(
+                receipt_bundle._collect_worktree_failures(ROOT),
+                ("owner/catalog input is not a regular no-follow snapshot",),
+            )
+
+        original_final_check = decision.collect_g0_final_snapshot_failures
+
+        def report_input_replacement(*args: object, **kwargs: object) -> tuple[str, ...]:
+            if len(args) > 1 and args[1] == receipt_bundle.OWNER_CATALOG_INPUT_PATH:
+                return ("owner/catalog input changed after validation",)
+            return original_final_check(*args, **kwargs)
+
+        with mock.patch.object(
+            decision,
+            "collect_g0_final_snapshot_failures",
+            side_effect=report_input_replacement,
+        ):
+            self.assertIn(
+                "owner/catalog input changed after validation",
+                receipt_bundle._collect_worktree_failures(ROOT),
+            )
+
+        with mock.patch.object(
+            receipt_bundle,
+            "_collect_owner_catalog_input_candidate_failures",
+            return_value=(),
+        ):
+            self.assertIn(
+                "owner/catalog input validator did not return the exact dormant "
+                "non-authorizing result",
+                receipt_bundle._collect_worktree_failures(ROOT),
+            )
 
     def test_exact_complete_bundle_fixture_is_structural_only_and_dormant(self) -> None:
         failures = receipt_bundle._collect_complete_bundle_candidate_failures(

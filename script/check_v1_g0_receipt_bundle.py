@@ -27,9 +27,27 @@ V3_AMENDMENT_PATH = "docs/v1/g0/assurance-closure-amendment-v3.json"
 V3_CHECKPOINT_PATH = (
     "docs/v1/g0/assurance-closure-amendment-checkpoint-v3.json"
 )
+RECORDED_PUBLICATION_RECEIPT_PATH = (
+    "docs/v1/g0/assurance-closure-publication-receipt-candidate-v3.json"
+)
+OWNER_CATALOG_INPUT_PATH = "docs/v1/g0/owner-catalog-input-candidate-v1.json"
 
 MAX_V3_AMENDMENT_BYTES = 262_144
 MAX_V3_CHECKPOINT_BYTES = 131_072
+MAX_RECORDED_PUBLICATION_RECEIPT_BYTES = 65_536
+MAX_OWNER_CATALOG_INPUT_BYTES = 262_144
+
+EXPECTED_RECORDED_PUBLICATION_RECEIPT_RAW_SHA256 = (
+    "d9d6c43713a4550f88080306a0150a6a7325f7575e369b2d80cd18902b272856"
+)
+EXPECTED_RECORDED_REPOSITORY_REF = "github:hanchangha1127/AetherLink"
+EXPECTED_RECORDED_COMMIT_OBJECT_ID = (
+    "12c381547935b96d383ac39976261ea6c3ce6a5b"
+)
+EXPECTED_RECORDED_REMOTE_READBACK_AT = "2026-07-20T12:05:44Z"
+EXPECTED_OWNER_CATALOG_INPUT_RAW_SHA256 = (
+    "fa8037c975e76c64c7a3e6e33274c6ac7a91f49c49b5ec35e0133477972d35a0"
+)
 
 LINEAGE_PATHS = (
     publication.PARENT_ASSURANCE_PATH,
@@ -105,6 +123,14 @@ COMPLETE_BUNDLE_DORMANT_MESSAGE = (
     "G0 V3 complete receipt bundle candidate is dormant_non_authorizing; "
     "it cannot establish trust, activate receipts, close G0, or authorize G1a"
 )
+RECORDED_PUBLICATION_RECEIPT_DORMANT_MESSAGE = (
+    "G0 V3 recorded publication receipt candidate is dormant_non_authorizing; "
+    "it cannot establish independent trust, activate receipts, close G0, or authorize G1a"
+)
+OWNER_CATALOG_INPUT_DORMANT_MESSAGE = (
+    "G0 V3 owner/catalog input candidate is draft_unverified_non_authorizing; "
+    "it cannot authenticate owners, verify evidence, accept receipts, close G0, or authorize G1a"
+)
 COMPLETE_BUNDLE_FIELDS = (
     "documentType",
     "schemaVersion",
@@ -133,6 +159,49 @@ PUBLICATION_RECEIPT_FIELDS = (
     "remoteReadbackSha256",
 )
 ARTIFACT_BINDING_FIELDS = ("role", "path", "rawSha256", "canonicalSha256")
+OWNER_CATALOG_INPUT_FIELDS = (
+    "documentType",
+    "schemaVersion",
+    "status",
+    "contractBinding",
+    "responses",
+    "state",
+)
+OWNER_CATALOG_CONTRACT_BINDING_FIELDS = (
+    "repositoryRef",
+    "publicationCommitObjectId",
+    "publicationCheckpointSha256",
+    "effectiveAssuranceCanonicalSha256",
+    "effectiveClosureCanonicalSha256",
+)
+OWNER_CATALOG_RESPONSE_FIELDS = (
+    "blockerId",
+    "requirementDisposition",
+    "ownerCandidates",
+    "evidenceCandidates",
+    "changeRequestRefCandidate",
+    "inputSourceRefCandidate",
+)
+OWNER_CANDIDATE_FIELDS = ("role", "ownerBindingRefCandidate")
+EVIDENCE_CANDIDATE_FIELDS = (
+    "evidenceKind",
+    "evidenceInputRefCandidate",
+    "supportingArtifactRefCandidate",
+)
+OWNER_CATALOG_STATE_FIELDS = (
+    "ownerIdentityAuthenticated",
+    "evidenceCatalogVerified",
+    "approvalReceiptsAccepted",
+    "blockerClosureDerived",
+    "receiptActivationAllowed",
+    "g0ExitComplete",
+    "g1aMayStartNow",
+)
+OWNER_CATALOG_REQUIREMENT_DISPOSITIONS = (
+    "proposed_as_written",
+    "proposed_with_changes",
+    "not_available",
+)
 OWNER_BINDING_FIELDS = (
     "ownerBindingRef",
     "role",
@@ -242,6 +311,18 @@ _RUNNER_ATTESTATION_REF_PATTERN = re.compile(
     r"^g0-runner-attestation-[a-z0-9][a-z0-9_-]{0,95}-v[1-9][0-9]*$"
 )
 _CANONICAL_UTC_PATTERN = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
+_OWNER_BINDING_REF_CANDIDATE_PATTERN = re.compile(
+    r"^owner-candidate:([a-z][a-z0-9-]{0,95}):v([1-9][0-9]{0,8})$"
+)
+_EVIDENCE_INPUT_REF_CANDIDATE_PATTERN = re.compile(
+    r"^evidence-input-candidate:([a-z][a-z0-9-]{0,127}):v([1-9][0-9]{0,8})$"
+)
+_CHANGE_REQUEST_REF_CANDIDATE_PATTERN = re.compile(
+    r"^change-request-candidate:([a-z][a-z0-9-]{0,127}):v([1-9][0-9]{0,8})$"
+)
+_INPUT_SOURCE_REF_CANDIDATE_PATTERN = re.compile(
+    r"^user-input:session-[0-9]{8}:item-[1-9][0-9]{0,2}$"
+)
 
 
 def _sha256(raw: bytes) -> str:
@@ -353,8 +434,13 @@ def _parse_canonical_utc(
     return parsed
 
 
-def _validate_json_resources(value: object, failures: list[str]) -> None:
-    stack: list[tuple[object, int, str]] = [(value, 1, "complete receipt bundle")]
+def _validate_json_resources(
+    value: object,
+    failures: list[str],
+    *,
+    root_label: str,
+) -> None:
+    stack: list[tuple[object, int, str]] = [(value, 1, root_label)]
     while stack:
         current, depth, label = stack.pop()
         if depth > MAX_COMPLETE_BUNDLE_DEPTH:
@@ -406,6 +492,39 @@ def _safe_artifact_path(value: object) -> bool:
     except checkpoint.CheckpointValidationError:
         return False
     return True
+
+
+def _canonical_candidate_version(
+    value: object,
+    pattern: re.Pattern[str],
+    canonical_identifier: object,
+) -> int | None:
+    if not isinstance(value, str) or not isinstance(canonical_identifier, str):
+        return None
+    match = pattern.fullmatch(value)
+    if match is None or match.group(1) != canonical_identifier.replace("_", "-"):
+        return None
+    return int(match.group(2))
+
+
+def _safe_supporting_artifact_candidate(
+    value: object,
+    evidence_kind: object,
+    candidate_version: int | None,
+) -> bool:
+    if value is None:
+        return True
+    if (
+        not isinstance(value, str)
+        or not isinstance(evidence_kind, str)
+        or candidate_version is None
+    ):
+        return False
+    expected = (
+        "docs/evidence/g0-"
+        f"{evidence_kind.replace('_', '-')}-candidate-v{candidate_version}.json"
+    )
+    return value == expected and _safe_artifact_path(value)
 
 
 def _exact_zero(value: object) -> bool:
@@ -981,98 +1100,18 @@ def _collect_v3_lineage_failures(
     return tuple(failures)
 
 
-def _finish_candidate_failures(failures: list[str]) -> tuple[str, ...]:
-    if COMPLETE_BUNDLE_DORMANT_MESSAGE not in failures:
-        failures.append(COMPLETE_BUNDLE_DORMANT_MESSAGE)
-    return tuple(failures)
-
-
-def _collect_complete_bundle_candidate_failures(
-    bundle_bytes: object,
+def _validate_publication_receipt(
+    value: object,
+    failures: list[str],
     *,
-    lineage_blobs: tuple[object, ...],
-) -> tuple[str, ...]:
-    """Compile caller-supplied candidate bytes while always remaining dormant."""
-
-    failures: list[str] = []
-    if not isinstance(lineage_blobs, tuple) or len(lineage_blobs) != len(LINEAGE_PATHS):
-        failures.append("V3 bundle lineage must be an exact six-blob tuple")
-        return _finish_candidate_failures(failures)
-    lineage_snapshots: list[bytes] = []
-    for role, value, maximum_bytes in zip(
-        LINEAGE_ROLES,
-        lineage_blobs,
-        LINEAGE_MAXIMUM_BYTES,
-    ):
-        snapshot = _bounded_snapshot(
-            value,
-            f"G0 V3 bundle lineage {role}",
-            maximum_bytes,
-            failures,
-        )
-        if snapshot is not None:
-            lineage_snapshots.append(snapshot)
-    if failures or len(lineage_snapshots) != len(LINEAGE_PATHS):
-        return _finish_candidate_failures(failures)
-    immutable_lineage = tuple(lineage_snapshots)
-    failures.extend(_collect_v3_lineage_failures(*immutable_lineage))
-    if failures:
-        return _finish_candidate_failures(failures)
-
-    raw = _bounded_snapshot(
-        bundle_bytes,
-        "G0 V3 complete receipt bundle candidate",
-        MAX_COMPLETE_BUNDLE_BYTES,
-        failures,
-    )
-    if raw is None:
-        return _finish_candidate_failures(failures)
-    bundle = _parse_object(raw, "G0 V3 complete receipt bundle candidate", failures)
-    if bundle is None:
-        return _finish_candidate_failures(failures)
-    _validate_json_resources(bundle, failures)
-    root = _exact_ordered_object(
-        bundle,
-        COMPLETE_BUNDLE_FIELDS,
-        "complete receipt bundle",
-        failures,
-    )
-    _require_equal(
-        root.get("documentType"),
-        "aetherlink.v1-g0-complete-receipt-bundle-candidate",
-        "complete receipt bundle documentType",
-        failures,
-    )
-    _require_equal(
-        root.get("schemaVersion"),
-        1,
-        "complete receipt bundle schemaVersion",
-        failures,
-    )
-    _require_equal(
-        root.get("effectiveAssuranceCanonicalSha256"),
-        EXPECTED_EFFECTIVE_V3_SHA256,
-        "complete receipt bundle effective assurance binding",
-        failures,
-    )
-
-    effective_v3 = _materialize_effective_v3(immutable_lineage, failures)
-    if effective_v3 is None:
-        return _finish_candidate_failures(failures)
-    closure = effective_v3.get("g0ClosureContract")
-    if not isinstance(closure, dict):
-        failures.append("effective V3 g0ClosureContract must be an object")
-        return _finish_candidate_failures(failures)
-    (
-        roles,
-        evidence_kinds,
-        role_blockers,
-        profile_by_check,
-        executable_checks,
-    ) = _derive_contract_sets(effective_v3, failures)
+    expected_repository_ref: str | None = None,
+    expected_commit_object_id: str | None = None,
+    expected_remote_readback_at: str | None = None,
+) -> tuple[dict[str, object], datetime | None]:
+    """Validate the exact V3 receipt shape without deriving trust or authority."""
 
     publication_receipt = _exact_ordered_object(
-        root.get("publicationReceipt"),
+        value,
         PUBLICATION_RECEIPT_FIELDS,
         "publication receipt",
         failures,
@@ -1081,11 +1120,31 @@ def _collect_complete_bundle_candidate_failures(
     commit_object_id = publication_receipt.get("commitObjectId")
     if not _valid_opaque_text(repository_ref):
         failures.append("publication receipt repositoryRef is invalid")
-    if not isinstance(commit_object_id, str) or _GIT_OBJECT_ID_PATTERN.fullmatch(commit_object_id) is None:
+    if (
+        not isinstance(commit_object_id, str)
+        or _GIT_OBJECT_ID_PATTERN.fullmatch(commit_object_id) is None
+    ):
         failures.append("publication receipt commitObjectId is invalid")
+    if expected_repository_ref is not None:
+        _require_equal(
+            repository_ref,
+            expected_repository_ref,
+            "publication receipt reviewed repositoryRef",
+            failures,
+        )
+    if expected_commit_object_id is not None:
+        _require_equal(
+            commit_object_id,
+            expected_commit_object_id,
+            "publication receipt reviewed commitObjectId",
+            failures,
+        )
+
     artifact_bindings = publication_receipt.get("artifactBindings")
     if not isinstance(artifact_bindings, list) or len(artifact_bindings) != 6:
-        failures.append("publication receipt artifactBindings must contain exactly six entries")
+        failures.append(
+            "publication receipt artifactBindings must contain exactly six entries"
+        )
         artifact_bindings = []
     for index, (role, path, raw_sha256, canonical_sha256) in enumerate(
         zip(
@@ -1135,6 +1194,505 @@ def _collect_complete_bundle_candidate_failures(
         "publication receipt remoteReadbackAt",
         failures,
     )
+    if expected_remote_readback_at is not None:
+        _require_equal(
+            publication_receipt.get("remoteReadbackAt"),
+            expected_remote_readback_at,
+            "publication receipt observed remoteReadbackAt",
+            failures,
+        )
+    return publication_receipt, remote_readback_at
+
+
+def _snapshot_validated_v3_lineage(
+    lineage_blobs: object,
+    *,
+    label: str,
+    failures: list[str],
+) -> tuple[bytes, ...] | None:
+    if not isinstance(lineage_blobs, tuple) or len(lineage_blobs) != len(LINEAGE_PATHS):
+        failures.append(f"{label} must be an exact six-blob tuple")
+        return None
+    snapshots: list[bytes] = []
+    for role, value, maximum_bytes in zip(
+        LINEAGE_ROLES,
+        lineage_blobs,
+        LINEAGE_MAXIMUM_BYTES,
+    ):
+        snapshot = _bounded_snapshot(
+            value,
+            f"{label} {role}",
+            maximum_bytes,
+            failures,
+        )
+        if snapshot is not None:
+            snapshots.append(snapshot)
+    if failures or len(snapshots) != len(LINEAGE_PATHS):
+        return None
+    immutable_lineage = tuple(snapshots)
+    failures.extend(_collect_v3_lineage_failures(*immutable_lineage))
+    return None if failures else immutable_lineage
+
+
+def _finish_candidate_failures(failures: list[str]) -> tuple[str, ...]:
+    if COMPLETE_BUNDLE_DORMANT_MESSAGE not in failures:
+        failures.append(COMPLETE_BUNDLE_DORMANT_MESSAGE)
+    return tuple(failures)
+
+
+def _finish_recorded_publication_receipt_failures(
+    failures: list[str],
+) -> tuple[str, ...]:
+    if RECORDED_PUBLICATION_RECEIPT_DORMANT_MESSAGE not in failures:
+        failures.append(RECORDED_PUBLICATION_RECEIPT_DORMANT_MESSAGE)
+    return tuple(failures)
+
+
+def _finish_owner_catalog_input_failures(failures: list[str]) -> tuple[str, ...]:
+    if OWNER_CATALOG_INPUT_DORMANT_MESSAGE not in failures:
+        failures.append(OWNER_CATALOG_INPUT_DORMANT_MESSAGE)
+    return tuple(failures)
+
+
+def _collect_recorded_publication_receipt_candidate_failures(
+    receipt_bytes: object,
+    *,
+    lineage_blobs: tuple[object, ...],
+) -> tuple[str, ...]:
+    """Validate the recorded observation while always remaining dormant."""
+
+    failures: list[str] = []
+    immutable_lineage = _snapshot_validated_v3_lineage(
+        lineage_blobs,
+        label="recorded publication receipt lineage",
+        failures=failures,
+    )
+    if immutable_lineage is None:
+        return _finish_recorded_publication_receipt_failures(failures)
+
+    raw = _bounded_snapshot(
+        receipt_bytes,
+        "recorded G0 V3 publication receipt candidate",
+        MAX_RECORDED_PUBLICATION_RECEIPT_BYTES,
+        failures,
+    )
+    if raw is None:
+        return _finish_recorded_publication_receipt_failures(failures)
+    _require_equal(
+        _sha256(raw),
+        EXPECTED_RECORDED_PUBLICATION_RECEIPT_RAW_SHA256,
+        "recorded publication receipt raw SHA-256",
+        failures,
+    )
+    receipt = _parse_object(
+        raw,
+        "recorded G0 V3 publication receipt candidate",
+        failures,
+    )
+    if receipt is None:
+        return _finish_recorded_publication_receipt_failures(failures)
+    _validate_json_resources(
+        receipt,
+        failures,
+        root_label="recorded G0 V3 publication receipt candidate",
+    )
+    _validate_publication_receipt(
+        receipt,
+        failures,
+        expected_repository_ref=EXPECTED_RECORDED_REPOSITORY_REF,
+        expected_commit_object_id=EXPECTED_RECORDED_COMMIT_OBJECT_ID,
+        expected_remote_readback_at=EXPECTED_RECORDED_REMOTE_READBACK_AT,
+    )
+    return _finish_recorded_publication_receipt_failures(failures)
+
+
+def _collect_owner_catalog_input_candidate_failures(
+    input_bytes: object,
+    *,
+    lineage_blobs: tuple[object, ...],
+) -> tuple[str, ...]:
+    """Validate sparse external input without accepting or authenticating it."""
+
+    failures: list[str] = []
+    immutable_lineage = _snapshot_validated_v3_lineage(
+        lineage_blobs,
+        label="G0 owner/catalog input lineage",
+        failures=failures,
+    )
+    if immutable_lineage is None:
+        return _finish_owner_catalog_input_failures(failures)
+
+    raw = _bounded_snapshot(
+        input_bytes,
+        "G0 owner/catalog input candidate",
+        MAX_OWNER_CATALOG_INPUT_BYTES,
+        failures,
+    )
+    if raw is None:
+        return _finish_owner_catalog_input_failures(failures)
+    document = _parse_object(raw, "G0 owner/catalog input candidate", failures)
+    if document is None:
+        return _finish_owner_catalog_input_failures(failures)
+    _validate_json_resources(
+        document,
+        failures,
+        root_label="G0 owner/catalog input candidate",
+    )
+    root = _exact_ordered_object(
+        document,
+        OWNER_CATALOG_INPUT_FIELDS,
+        "owner/catalog input candidate",
+        failures,
+    )
+    for field, expected in (
+        ("documentType", "aetherlink.v1-g0-owner-catalog-input-candidate"),
+        ("schemaVersion", 1),
+        ("status", "draft_unverified_non_authorizing"),
+    ):
+        _require_equal(
+            root.get(field),
+            expected,
+            f"owner/catalog input candidate {field}",
+            failures,
+        )
+
+    contract_binding = _exact_ordered_object(
+        root.get("contractBinding"),
+        OWNER_CATALOG_CONTRACT_BINDING_FIELDS,
+        "owner/catalog input contractBinding",
+        failures,
+    )
+    for field, expected in (
+        ("repositoryRef", EXPECTED_RECORDED_REPOSITORY_REF),
+        ("publicationCommitObjectId", EXPECTED_RECORDED_COMMIT_OBJECT_ID),
+        ("publicationCheckpointSha256", LINEAGE_RAW_SHA256[-1]),
+        ("effectiveAssuranceCanonicalSha256", EXPECTED_EFFECTIVE_V3_SHA256),
+        ("effectiveClosureCanonicalSha256", EXPECTED_CLOSURE_V3_SHA256),
+    ):
+        _require_equal(
+            contract_binding.get(field),
+            expected,
+            f"owner/catalog input contractBinding.{field}",
+            failures,
+        )
+
+    effective_v3 = _materialize_effective_v3(immutable_lineage, failures)
+    if effective_v3 is None:
+        return _finish_owner_catalog_input_failures(failures)
+    closure = effective_v3.get("g0ClosureContract")
+    if not isinstance(closure, dict):
+        failures.append("effective V3 g0ClosureContract must be an object")
+        return _finish_owner_catalog_input_failures(failures)
+    roles, evidence_kinds, _, _, _ = _derive_contract_sets(effective_v3, failures)
+    derived = closure.get("derivedEvidenceKinds")
+    derived_evidence_kinds = set(derived) if isinstance(derived, dict) else set()
+    blockers = closure.get("blockerRequirements")
+    if not isinstance(blockers, list):
+        failures.append("effective V3 blockerRequirements must be a list")
+        blockers = []
+    blocker_order: list[str] = []
+    blocker_roles: dict[str, tuple[str, ...]] = {}
+    blocker_evidence: dict[str, tuple[str, ...]] = {}
+    for raw_blocker in blockers:
+        if not isinstance(raw_blocker, dict):
+            continue
+        blocker_id = raw_blocker.get("blockerId")
+        required_roles = raw_blocker.get("requiredOwnerRoles")
+        required_evidence = raw_blocker.get("requiredEvidenceKinds")
+        if (
+            isinstance(blocker_id, str)
+            and isinstance(required_roles, list)
+            and isinstance(required_evidence, list)
+        ):
+            blocker_order.append(blocker_id)
+            blocker_roles[blocker_id] = tuple(
+                role for role in required_roles if isinstance(role, str)
+            )
+            blocker_evidence[blocker_id] = tuple(
+                kind
+                for kind in required_evidence
+                if isinstance(kind, str) and kind not in derived_evidence_kinds
+            )
+
+    responses = root.get("responses")
+    if not isinstance(responses, list) or len(responses) > len(blocker_order):
+        failures.append("owner/catalog responses must be a sparse list of at most ten items")
+        responses = []
+    seen_blockers: set[str] = set()
+    previous_blocker_index = -1
+    owner_version_by_role: dict[str, int] = {}
+    seen_evidence_kinds: set[str] = set()
+    for response_index, raw_response in enumerate(responses):
+        response = _exact_ordered_object(
+            raw_response,
+            OWNER_CATALOG_RESPONSE_FIELDS,
+            f"owner/catalog response {response_index}",
+            failures,
+        )
+        blocker_id = response.get("blockerId")
+        if not isinstance(blocker_id, str) or blocker_id not in blocker_roles:
+            failures.append(f"owner/catalog response {response_index}.blockerId is invalid")
+            required_roles = ()
+            allowed_evidence = ()
+        else:
+            blocker_position = blocker_order.index(blocker_id)
+            if blocker_id in seen_blockers:
+                failures.append(
+                    f"owner/catalog response {response_index}.blockerId is duplicated"
+                )
+            elif blocker_position <= previous_blocker_index:
+                failures.append("owner/catalog responses are not in canonical blocker order")
+            else:
+                seen_blockers.add(blocker_id)
+                previous_blocker_index = blocker_position
+            required_roles = blocker_roles[blocker_id]
+            allowed_evidence = blocker_evidence[blocker_id]
+
+        disposition = response.get("requirementDisposition")
+        if disposition not in OWNER_CATALOG_REQUIREMENT_DISPOSITIONS:
+            failures.append(
+                f"owner/catalog response {response_index}.requirementDisposition is invalid"
+            )
+
+        owner_candidates = response.get("ownerCandidates")
+        if not isinstance(owner_candidates, list) or len(owner_candidates) > len(
+            required_roles
+        ):
+            failures.append(
+                f"owner/catalog response {response_index}.ownerCandidates is invalid"
+            )
+            owner_candidates = []
+        observed_roles: list[str] = []
+        for owner_index, raw_owner in enumerate(owner_candidates):
+            owner = _exact_ordered_object(
+                raw_owner,
+                OWNER_CANDIDATE_FIELDS,
+                f"owner/catalog response {response_index} owner {owner_index}",
+                failures,
+            )
+            role = owner.get("role")
+            owner_ref = owner.get("ownerBindingRefCandidate")
+            if not isinstance(role, str) or role not in required_roles or role not in roles:
+                failures.append(
+                    f"owner/catalog response {response_index} owner {owner_index}.role is invalid"
+                )
+            else:
+                observed_roles.append(role)
+            owner_version = _canonical_candidate_version(
+                owner_ref,
+                _OWNER_BINDING_REF_CANDIDATE_PATTERN,
+                role,
+            )
+            if owner_version is None:
+                failures.append(
+                    f"owner/catalog response {response_index} owner {owner_index} "
+                    "binding reference is invalid"
+                )
+                continue
+            if isinstance(role, str):
+                existing_version = owner_version_by_role.get(role)
+                if existing_version is not None and existing_version != owner_version:
+                    failures.append(
+                        f"owner binding candidate for role {role!r} is inconsistent"
+                    )
+                owner_version_by_role[role] = owner_version
+        if tuple(observed_roles) != tuple(
+            role for role in required_roles if role in observed_roles
+        ) or len(observed_roles) != len(set(observed_roles)):
+            failures.append(
+                f"owner/catalog response {response_index} owner role order is not canonical"
+            )
+
+        evidence_candidates = response.get("evidenceCandidates")
+        if not isinstance(evidence_candidates, list) or len(evidence_candidates) > len(
+            allowed_evidence
+        ):
+            failures.append(
+                f"owner/catalog response {response_index}.evidenceCandidates is invalid"
+            )
+            evidence_candidates = []
+        observed_evidence: list[str] = []
+        for evidence_index, raw_evidence in enumerate(evidence_candidates):
+            evidence = _exact_ordered_object(
+                raw_evidence,
+                EVIDENCE_CANDIDATE_FIELDS,
+                f"owner/catalog response {response_index} evidence {evidence_index}",
+                failures,
+            )
+            evidence_kind = evidence.get("evidenceKind")
+            if (
+                not isinstance(evidence_kind, str)
+                or evidence_kind not in allowed_evidence
+                or evidence_kind not in evidence_kinds
+            ):
+                failures.append(
+                    f"owner/catalog response {response_index} evidence "
+                    f"{evidence_index}.kind is invalid"
+                )
+            else:
+                observed_evidence.append(evidence_kind)
+                if evidence_kind in seen_evidence_kinds:
+                    failures.append(
+                        f"owner catalog evidence kind {evidence_kind!r} is duplicated"
+                    )
+                else:
+                    seen_evidence_kinds.add(evidence_kind)
+            evidence_input_ref = evidence.get("evidenceInputRefCandidate")
+            evidence_candidate_version = _canonical_candidate_version(
+                evidence_input_ref,
+                _EVIDENCE_INPUT_REF_CANDIDATE_PATTERN,
+                evidence_kind,
+            )
+            if evidence_candidate_version is None:
+                failures.append(
+                    f"owner/catalog response {response_index} evidence {evidence_index} "
+                    "input reference is invalid"
+                )
+            if not _safe_supporting_artifact_candidate(
+                evidence.get("supportingArtifactRefCandidate"),
+                evidence_kind,
+                evidence_candidate_version,
+            ):
+                failures.append(
+                    f"owner/catalog response {response_index} evidence {evidence_index} "
+                    "supporting artifact candidate is invalid"
+                )
+        if tuple(observed_evidence) != tuple(
+            kind for kind in allowed_evidence if kind in observed_evidence
+        ) or len(observed_evidence) != len(set(observed_evidence)):
+            failures.append(
+                f"owner/catalog response {response_index} evidence order is not canonical"
+            )
+
+        change_request_ref = response.get("changeRequestRefCandidate")
+        if disposition == "proposed_as_written":
+            if change_request_ref is not None:
+                failures.append(
+                    f"owner/catalog response {response_index} as-written proposal "
+                    "must not include a change request"
+                )
+            if not owner_candidates and not evidence_candidates:
+                failures.append(
+                    f"owner/catalog response {response_index} proposal contains no input"
+                )
+        elif disposition == "proposed_with_changes":
+            if _canonical_candidate_version(
+                change_request_ref,
+                _CHANGE_REQUEST_REF_CANDIDATE_PATTERN,
+                blocker_id,
+            ) is None:
+                failures.append(
+                    f"owner/catalog response {response_index} change request "
+                    "reference is invalid"
+                )
+        elif disposition == "not_available":
+            if owner_candidates or evidence_candidates or change_request_ref is not None:
+                failures.append(
+                    f"owner/catalog response {response_index} not-available response "
+                    "must not include owner, evidence, or change candidates"
+                )
+        input_source_ref = response.get("inputSourceRefCandidate")
+        if (
+            not isinstance(input_source_ref, str)
+            or _INPUT_SOURCE_REF_CANDIDATE_PATTERN.fullmatch(input_source_ref) is None
+        ):
+            failures.append(
+                f"owner/catalog response {response_index}.inputSourceRefCandidate is invalid"
+            )
+
+    state = _exact_ordered_object(
+        root.get("state"),
+        OWNER_CATALOG_STATE_FIELDS,
+        "owner/catalog input state",
+        failures,
+    )
+    for field in OWNER_CATALOG_STATE_FIELDS:
+        _require_equal(
+            state.get(field),
+            False,
+            f"owner/catalog input state.{field}",
+            failures,
+        )
+    return _finish_owner_catalog_input_failures(failures)
+
+
+def _collect_complete_bundle_candidate_failures(
+    bundle_bytes: object,
+    *,
+    lineage_blobs: tuple[object, ...],
+) -> tuple[str, ...]:
+    """Compile caller-supplied candidate bytes while always remaining dormant."""
+
+    failures: list[str] = []
+    immutable_lineage = _snapshot_validated_v3_lineage(
+        lineage_blobs,
+        label="G0 V3 bundle lineage",
+        failures=failures,
+    )
+    if immutable_lineage is None:
+        return _finish_candidate_failures(failures)
+
+    raw = _bounded_snapshot(
+        bundle_bytes,
+        "G0 V3 complete receipt bundle candidate",
+        MAX_COMPLETE_BUNDLE_BYTES,
+        failures,
+    )
+    if raw is None:
+        return _finish_candidate_failures(failures)
+    bundle = _parse_object(raw, "G0 V3 complete receipt bundle candidate", failures)
+    if bundle is None:
+        return _finish_candidate_failures(failures)
+    _validate_json_resources(
+        bundle,
+        failures,
+        root_label="complete receipt bundle",
+    )
+    root = _exact_ordered_object(
+        bundle,
+        COMPLETE_BUNDLE_FIELDS,
+        "complete receipt bundle",
+        failures,
+    )
+    _require_equal(
+        root.get("documentType"),
+        "aetherlink.v1-g0-complete-receipt-bundle-candidate",
+        "complete receipt bundle documentType",
+        failures,
+    )
+    _require_equal(
+        root.get("schemaVersion"),
+        1,
+        "complete receipt bundle schemaVersion",
+        failures,
+    )
+    _require_equal(
+        root.get("effectiveAssuranceCanonicalSha256"),
+        EXPECTED_EFFECTIVE_V3_SHA256,
+        "complete receipt bundle effective assurance binding",
+        failures,
+    )
+
+    effective_v3 = _materialize_effective_v3(immutable_lineage, failures)
+    if effective_v3 is None:
+        return _finish_candidate_failures(failures)
+    closure = effective_v3.get("g0ClosureContract")
+    if not isinstance(closure, dict):
+        failures.append("effective V3 g0ClosureContract must be an object")
+        return _finish_candidate_failures(failures)
+    (
+        roles,
+        evidence_kinds,
+        role_blockers,
+        profile_by_check,
+        executable_checks,
+    ) = _derive_contract_sets(effective_v3, failures)
+
+    publication_receipt, remote_readback_at = _validate_publication_receipt(
+        root.get("publicationReceipt"),
+        failures,
+    )
+    commit_object_id = publication_receipt.get("commitObjectId")
 
     owner_bindings = root.get("ownerBindings")
     if not isinstance(owner_bindings, list) or len(owner_bindings) != len(roles):
@@ -1617,6 +2175,26 @@ def _collect_complete_bundle_candidate_failures(
     return _finish_candidate_failures(failures)
 
 
+def _consume_exact_dormant_result(
+    candidate_failures: tuple[str, ...],
+    *,
+    expected_message: str,
+    label: str,
+    failures: list[str],
+) -> None:
+    if candidate_failures == (expected_message,):
+        return
+    non_dormant_failures = tuple(
+        failure for failure in candidate_failures if failure != expected_message
+    )
+    if non_dormant_failures:
+        failures.extend(non_dormant_failures)
+    else:
+        failures.append(
+            f"{label} validator did not return the exact dormant non-authorizing result"
+        )
+
+
 def _collect_worktree_failures(root: Path = ROOT) -> tuple[str, ...]:
     failures: list[str] = []
     snapshots: list[bytes] = []
@@ -1640,7 +2218,50 @@ def _collect_worktree_failures(root: Path = ROOT) -> tuple[str, ...]:
         identities.append(identity)
     if failures:
         return tuple(failures)
-    failures.extend(_collect_v3_lineage_failures(*snapshots))
+    try:
+        receipt_raw, receipt_identity = decision.read_g0_content_addressed_snapshot(
+            root,
+            RECORDED_PUBLICATION_RECEIPT_PATH,
+            "recorded G0 V3 publication receipt candidate",
+            MAX_RECORDED_PUBLICATION_RECEIPT_BYTES,
+        )
+    except checkpoint.CheckpointValidationError as error:
+        return (str(error),)
+    try:
+        input_raw, input_identity = decision.read_g0_content_addressed_snapshot(
+            root,
+            OWNER_CATALOG_INPUT_PATH,
+            "G0 owner/catalog input candidate",
+            MAX_OWNER_CATALOG_INPUT_BYTES,
+        )
+    except checkpoint.CheckpointValidationError as error:
+        return (str(error),)
+    receipt_failures = _collect_recorded_publication_receipt_candidate_failures(
+        receipt_raw,
+        lineage_blobs=tuple(snapshots),
+    )
+    _consume_exact_dormant_result(
+        receipt_failures,
+        expected_message=RECORDED_PUBLICATION_RECEIPT_DORMANT_MESSAGE,
+        label="recorded publication receipt",
+        failures=failures,
+    )
+    _require_equal(
+        _sha256(input_raw),
+        EXPECTED_OWNER_CATALOG_INPUT_RAW_SHA256,
+        "recorded owner/catalog input raw SHA-256",
+        failures,
+    )
+    input_failures = _collect_owner_catalog_input_candidate_failures(
+        input_raw,
+        lineage_blobs=tuple(snapshots),
+    )
+    _consume_exact_dormant_result(
+        input_failures,
+        expected_message=OWNER_CATALOG_INPUT_DORMANT_MESSAGE,
+        label="owner/catalog input",
+        failures=failures,
+    )
     for role, path, maximum_bytes, identity, expected_sha256 in zip(
         LINEAGE_ROLES,
         LINEAGE_PATHS,
@@ -1658,6 +2279,26 @@ def _collect_worktree_failures(root: Path = ROOT) -> tuple[str, ...]:
                 expected_sha256,
             )
         )
+    failures.extend(
+        decision.collect_g0_final_snapshot_failures(
+            root,
+            RECORDED_PUBLICATION_RECEIPT_PATH,
+            "recorded G0 V3 publication receipt candidate",
+            MAX_RECORDED_PUBLICATION_RECEIPT_BYTES,
+            receipt_identity,
+            EXPECTED_RECORDED_PUBLICATION_RECEIPT_RAW_SHA256,
+        )
+    )
+    failures.extend(
+        decision.collect_g0_final_snapshot_failures(
+            root,
+            OWNER_CATALOG_INPUT_PATH,
+            "G0 owner/catalog input candidate",
+            MAX_OWNER_CATALOG_INPUT_BYTES,
+            input_identity,
+            EXPECTED_OWNER_CATALOG_INPUT_RAW_SHA256,
+        )
+    )
     return tuple(failures)
 
 
@@ -1668,9 +2309,10 @@ def main() -> int:
             print(f"V1 G0 V3 receipt-bundle contract validation failed: {failure}", file=sys.stderr)
         return 1
     print(
-        "V1 G0 effective V3 complete-receipt-bundle contract reconstructed from six "
-        "content-addressed local candidate blobs; publication, independent trust inputs, "
-        "receipt activation, command execution, G0 exit, and G1a remain closed."
+        "V1 G0 effective V3 contract, published-target receipt candidate, and empty "
+        "owner/catalog intake envelope were reconstructed from six lineage blobs; both "
+        "candidates remain dormant, and owner authentication, evidence verification, "
+        "activation, command execution, G0 exit, and G1a remain closed."
     )
     return 0
 

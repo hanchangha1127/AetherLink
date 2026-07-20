@@ -20,8 +20,9 @@ This document separates current verification evidence from historical captures.
   bindings are closed. Receipt-derived trust anchors, partial bundles, and
   activation before a factory-only independently verified trust context are
   forbidden and mutation-pinned. The current checker exposes no receipt-
-  acceptance API; every current receipt remains absent and every blocker remains
-  open.
+  acceptance API. A local dormant publication receipt candidate now exists
+  outside the immutable V1/V2/V3 bytes, but every owner/gate/activation state
+  and every blocker remains open.
 - [x] `docs/v1/g0/assurance-checkpoint-readback-v1.json` captures the current
   assurance raw and canonical hashes plus an ordered 29-record source readback.
   `script/check_v1_g0_checkpoint.py` independently rehashes every exact regular
@@ -100,8 +101,9 @@ This document separates current verification evidence from historical captures.
   every explicitly supplied receipt bundle. The exact synthetic matching
   fixture still returns `dormant_non_authorizing` and changes no acceptance or
   authority state.
-- [x] `python3 -m unittest script.test_v1_g0_receipt_bundle` passes 10 V3
-  lineage and complete-bundle candidate tests. They preserve the V1/V2 bytes,
+- [x] `python3 -m unittest script.test_v1_g0_receipt_bundle` passes 11 V3
+  lineage, complete-bundle, publication-sidecar, and sparse-intake candidate
+  tests. They preserve the V1/V2 bytes,
   reconstruct effective V3 from one immutable snapshot of six exact blobs,
   enforce the 10-blocker/9-check/14-role/15-pair/15-non-derived-evidence/
   2-executable-check graph plus two derived evidence kinds, cross-check ordered
@@ -109,7 +111,21 @@ This document separates current verification evidence from historical captures.
   partial/duplicate/orphan records, graph substitutions, mutable-input races,
   cross-profile and time drift, oversized/deep/released buffers, and prove an
   exact synthetic complete fixture still returns `dormant_non_authorizing`.
-- [x] The four focused G0 mutation suites therefore contain 92 passing tests;
+  The same suite now pins the standalone receipt sidecar's full raw SHA-256,
+  exact 13-field order, reviewed repository/commit/readback time, six binding
+  records, duplicate/unknown/self-asserted field rejection, and final file
+  identity/hash recheck. An exact sidecar also remains
+  `dormant_non_authorizing`.
+  The added sparse owner/catalog test pins the empty packet raw SHA-256 and
+  target binding, derives its allowed blocker/role/evidence graph from effective
+  V3, accepts only ordered reference-only proposals with role/kind/blocker-bound
+  versions, rejects unknown, duplicate, reordered, cross-role, derived-evidence,
+  free-form-value, malformed or misbound reference/path, contradictory-
+  disposition, state-promotion, reader, released-buffer, and final-identity
+  mutations, and proves even a populated structural
+  candidate remains `draft_unverified_non_authorizing`. It does not inspect or
+  certify the contents of separately referenced candidate artifacts.
+- [x] The four focused G0 mutation suites therefore contain 93 passing tests;
   this count does not represent the unrun full no-device aggregate.
 - [x] The committed `assurance-v1.json` and
   `assurance-checkpoint-readback-v1.json` remain byte-identical to `929fda5f`.
@@ -120,12 +136,21 @@ This document separates current verification evidence from historical captures.
   The composite publication profile binds all four exact files, while bounded
   no-follow reads and final identity/hash readback reject symlinks and
   validation-time replacement.
+- [x] The unchanged six-record V1/V2/V3 lineage is contained in published commit
+  `12c38154`. Fresh no-alternates remote acquisition directly matched all 18
+  approved file bytes, including the 4,692-byte V3 checkpoint at SHA-256
+  `37462cd8303ce61742bc480d0f7d37e0ccb380ec12375cc8c8d10169aebf4dc5`.
+  This external observation does not alter the embedded absent/false receipt and
+  activation fields.
 - [x] The V3 successor binds the V1/V2 lineage without rewriting it, applies
   thirteen allowlisted operations, and pins effective assurance/closure
   digests plus a separate V3 checkpoint. Its six-artifact publication profile
-  and complete-bundle profiles remove caller-supplied result/activation fields;
-  publication, independent registry/revocation/runner/artifact trust, receipt
-  activation, G0 exit, and G1a all remain absent or false.
+  and complete-bundle profiles remove caller-supplied result/activation fields.
+  Exact publication bytes are externally observed and recorded only by the local
+  dormant sidecar. The separate local sparse intake packet has no responses and
+  every state flag false. Independent registry/revocation/runner/artifact trust,
+  authenticated owner input, receipt activation, G0 exit, and G1a all remain
+  absent or false.
 - [x] The G0 checker now classifies exactly two executable checks and rejects
   command-profile removal, scope expansion, digest forgery, authority
   promotion, offline-argv weakening, evidence-kind drift, and any mismatch
@@ -157,15 +182,18 @@ This document separates current verification evidence from historical captures.
   evidence-conformance audits were used. The final product and
   evidence-conformance re-reviews report no remaining P0-P3 finding.
   GPT-5.3-Codex-Spark was not used.
-- Proof boundary: this is local documentation, source hashing, configuration
-  inspection, and Python mutation evidence. It does not implement G1a, create a
-  key, sign an artifact, select or compile a P2P dependency, open a socket, use
-  an Android device, access an external network, deploy a service, or prove V1.
-- Remaining G0 gate: the assurance content is present and statically validated,
-  and its local candidate hashes/readback are reproducible. Immutable published
-  readback, accountable owner acceptance, the full no-device aggregate, and
-  Android/macOS release compilation are not claimed by this checklist and keep
-  the first blocker open.
+- Proof boundary: this checklist includes one bounded GitHub publication/ref and
+  exact-byte readback of `12c38154`. It does not include product/runtime
+  external-network behavior, implement G1a, create a key, sign an artifact,
+  select or compile a P2P dependency, open a product socket, use an Android
+  device, deploy a service, or prove V1.
+- Remaining G0 gate: immutable publication and exact remote-byte observation are
+  complete for this session. A local dormant receipt sidecar encodes the
+  target/checkpoint/hash/time candidate but does not persist or independently
+  reproduce the acquisition provenance. The sidecar is not committed or pushed
+  and is not activation-capable. Accountable owner acceptance, evidence catalog,
+  authorized full no-device/release-compilation gates, complete-bundle trust, G0
+  exit, and G1a remain unclaimed.
 
 ## 2026-07-20 Android Runtime Session Summary Linear Merge No-Device Checklist
 

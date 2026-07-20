@@ -60,7 +60,7 @@ but cannot independently satisfy the V1 release gate.
 | P2P authority | `libjuice` and `libnice` were rejected before compile; no networking library is selected and all compile/socket/runtime-network authority is closed. | A new candidate and version must start a new staged authority chain. No rejected decision or consumed authority may be reused. |
 | Relay security | Bounded leases, identity challenges, strict JSON, encrypted frame bodies, quotas, and development lifecycle controls exist. | Allocation TLS, service-signed lease capabilities, peer-verifiable KEX, pair epoch recovery, immediate revocation, signer rotation, multi-instance operations, and deployment remain open. |
 | Distribution | Android is version `0.1.0` with no production signing configuration; the macOS development bundle is ad-hoc signed. | Production application identity, signing custody, channel validation such as direct-distribution notarization or App Store review, install/update/rollback, artifact provenance, and staged distribution are required. |
-| Repository state | The implementation baseline remains `d32c1846`. Local Git state shows the first 15-file G0 packet in `929fda5f`, with `main` and the local `origin/main` tracking ref aligned and a push update in the local reflog. No independent remote checkpoint-byte readback or publication receipt exists. The current worktree is a bounded V2/V3 successor for executable-command profiles, offline gate enforcement, and a dormant complete-bundle contract, with no transport implementation. | Review and intentionally publish the successor G0 checkpoint, then independently read the exact remote commit/path/bytes before owner or gate receipts can accept it. A local tracking ref or push reflog is not publication proof; commit or push still requires explicit user direction. |
+| Repository state | The implementation baseline remains `d32c1846`. The bounded G0 V2/V3 packet is intentionally published at `main@12c381547935b96d383ac39976261ea6c3ce6a5b`. A fresh repository with no object alternates resolved the remote target to that exact commit and directly matched all 18 approved file bytes. The remote V3 checkpoint readback completed from `2026-07-20T12:05:21Z` through `12:05:44Z`: 4,692 bytes at SHA-256 `37462cd8303ce61742bc480d0f7d37e0ccb380ec12375cc8c8d10169aebf4dc5`. The current worktree adds a local dormant publication-receipt sidecar candidate, an empty sparse owner/catalog input candidate, their validator/tests, the no-device status copy, and synchronized current documents; V1/V2/V3 bytes remain unchanged. | Publication and exact remote-byte observation no longer block the next evidence collection. Both local candidates are non-authorizing and establish no owner, catalog, authority, runner, gate, activation, G0-exit, or G1a evidence. The receipt sidecar does not persist the acquisition provenance needed to independently reproduce the session readback, while the intake packet has no responses and all state flags false. Any candidate commit or push still requires separate explicit review and direction. |
 
 ### Governing Source Records
 
@@ -197,8 +197,9 @@ order. Eleven mutation tests keep path, role, hash, symlink, concurrent identity
 drift, the 4 MiB per-source ceiling, non-finite numeric overflow, over-128-digit
 integers, recursive type confusion, owner, publication, blocker, and authority
 claims fail-closed. Its status remains
-`candidate_observed_not_immutable`; a local checker constant is not an owner-
-accepted or published repository checkpoint.
+`candidate_observed_not_immutable`; that embedded state and a local checker
+constant alone were not publication proof. The later commit publication and
+remote observation are external facts and do not rewrite this frozen record.
 
 The committed V1 assurance/checkpoint bytes remain unchanged. The separate
 [V2 closure amendment](v1/g0/assurance-closure-amendment-v2.md) and its
@@ -229,14 +230,39 @@ private pure compiler snapshots the six lineage blobs once and derives exact
 10-blocker, 9-check, 14-owner, 15-role/blocker-pair,
 15-non-derived-evidence, 2-derived-evidence, and 2-executable-check coverage
 from effective V3, including exact ordered checklist/blocker evidence union.
-It rejects caller-supplied outcomes and inconsistent references/times and still returns
-`dormant_non_authorizing` for an exact synthetic fixture. The V3 amendment and
-checkpoint are local content-addressed candidates, not publication, trust,
+It rejects caller-supplied outcomes and inconsistent references/times and still
+returns `dormant_non_authorizing` for an exact synthetic fixture. The unchanged
+V3 amendment and checkpoint bytes are now contained in published commit
+`12c38154`; their embedded pre-publication candidate state remains unchanged.
+The separate exact 13-field
+[publication receipt sidecar](v1/g0/assurance-closure-publication-receipt-candidate-v3.json)
+encodes the reviewed repository, commit, checkpoint hashes, and completion time
+drawn from the session observation and is content-addressed by the checker. It
+does not persist the fresh-clone/no-alternates acquisition or 18-file comparison
+provenance, independently reproduce remote readback, or establish trust,
 approval, execution authority, receipt activation, G0 exit, or G1a authority.
+The separate
+[owner/catalog input candidate](v1/g0/owner-catalog-input-candidate-v1.json)
+is an empty, content-addressed sparse envelope bound to the same repository,
+commit, checkpoint, and effective V3 digests. It copies none of the ten-blocker
+role/evidence graph: the checker derives that graph from the six immutable
+lineage blobs and permits only canonical reference-only proposals mechanically
+bound to exact role/evidence-kind/blocker slugs and versions. Free-form catalog
+values are not fields in this envelope; a kind-and-version-bound supporting path
+only reserves the canonical location for an artifact that must be separately
+typed, created, and reviewed. Its current `responses` array
+is empty, all state flags are false, and even a structurally valid future
+population remains `draft_unverified_non_authorizing`; it cannot authenticate
+owners, inspect or verify referenced evidence, accept receipts, close blockers,
+or grant G1a authority.
+`proposed_as_written` requires owner/evidence input and no change reference;
+`proposed_with_changes` requires the exact blocker-bound change reference; and
+`not_available` forbids owner, evidence, and change candidates. These are intake
+dispositions only, never accepted decisions.
 
 G0 remains `blocked_before_g1a`. The ten open items are externally rooted
-immutable assurance readback/acceptance and authorized baseline gate results;
-checkpoint publication;
+published-assurance owner acceptance and authorized baseline gate results;
+activation-capable acceptance of the recorded publication observation;
 production application namespaces; actual Apple/Google account and key owners;
 a versioned provider-compatibility baseline; service-domain, DNS, and WebPKI
 owners; service-root and online-signer owners; privacy/incident owners; named
@@ -254,10 +280,11 @@ changes begin.
 Work packages:
 
 - Preserve `main@d32c1846` as the selected implementation baseline and
-  `929fda5f` as the locally observed first G0 packet commit. Keep the bounded
-  successor command-profile/validation correction isolated, and create its
-  intentional checkpoint only after explicit commit approval. Do not mix a new
-  transport change into this worktree.
+  `12c381547935b96d383ac39976261ea6c3ce6a5b` as the intentionally published G0
+  V2/V3 checkpoint. Preserve every V1/V2/V3 byte. Keep the local dormant
+  publication-receipt sidecar and empty sparse owner/catalog input candidates
+  isolated, and do not commit, push, or mix transport work into them without
+  separate explicit direction.
 - Approve the V1 definition in this section, including whether P2P is a GA gate.
   Under this canonical plan it is required for eligible networks; a relay-only
   build must remain a pre-V1 beta unless an explicit versioned product decision
@@ -757,7 +784,7 @@ content.
 | Physical evidence is too narrow | One debug Samsung/same-Wi-Fi run is the current optical proof. | Maintain the G5/G6 device and network matrix; preserve no-device versus physical versus production labels. |
 | Release pipeline is absent | Ad-hoc macOS signing, no Android production signing, and no repository CI workflows. | Begin signing/provenance/CI work during G1-G3 rather than after networking completes. |
 | Advanced features displace launch work | The repository already contains broad memory, research, permission, and future-platform plans. | Treat them as maintenance-only unless required for compatibility or a release blocker; keep the canonical critical path above. |
-| Historical docs or mixed work obscure truth | The implementation baseline is published, the first G0 packet is locally committed, the bounded command-profile/offline-gate successor is the current unpublished scope, and older version labels describe feature themes. | Keep G0 isolated from transport implementation, synchronize the handoff/progress/QA current entries, and let this section govern shipping order while the handoff governs evidence. |
+| Historical docs or mixed work obscure truth | The implementation baseline and bounded G0 V2/V3 packet are published, with fresh exact remote-byte readback for `12c38154`; the only current unpublished scope is the dormant receipt sidecar candidate, while older version labels describe historical feature themes. | Keep G0 isolated from transport implementation, synchronize the handoff/progress/QA current entries, and let this section govern shipping order while the handoff governs evidence. |
 
 ### V1 Definition Of Done
 
@@ -790,23 +817,22 @@ V1 is complete only when all of the following are true:
 
 ### Immediate Execution Queue
 
-1. Review the content-addressed local assurance/source readback candidate and
-   establish publication readiness for the versioned G0 threat model,
-   protocol/data-flow inventories,
-   risk register, release checklist, observability schema, and incident/rollback
-   runbook. Review the content-addressed V2 closure amendment and verify its two
-   executable command profiles plus offline/egress-denied side-effect
-   boundaries; both remain unauthorized. Review the dormant publication
-   validator's four-blob/remote-byte provenance boundary as candidate code only.
-   Review the V3 six-blob complete-bundle profiles and dormant compiler without
-   treating structural completeness as trust or activation. None of these local
-   candidates is immutable publication or owner acceptance.
-2. Review and intentionally publish the bounded V2/V3 successor roadmap plus G0
-   decision/assurance/validation packet based on `929fda5f`; do not mix
-   transport implementation into that checkpoint. Independently remote-read
-   the exact successor commit, checkpoint path, and bytes before any owner or
-   gate receipt accepts it. The local push-tracking evidence for `929fda5f`
-   cannot substitute for that readback.
+1. Preserve and revalidate the exact six-blob V1/V2/V3 lineage at published
+   target `12c38154`. Review the local exact 13-field publication receipt
+   sidecar, its non-persisted acquisition-provenance limitation, and the empty
+   sparse owner/catalog intake candidate without treating structural validity as
+   independent trust, owner acceptance, receipt activation, G0 exit, or G1a
+   authority.
+2. Keep both candidates local, uncommitted, and unpushed unless the user
+   separately reviews and authorizes publication. Fresh remote commit/path/byte
+   readback is complete. Obtain only candidate versions, requirement dispositions,
+   session-item references, and optional evidence-artifact presence; derive every
+   owner, evidence-input, change-request, and artifact reference mechanically from
+   its canonical role, evidence kind, or blocker. Do not store catalog values,
+   credentials, personal contact details, or acceptance claims in the intake
+   packet. Actual public values require separately typed and reviewed evidence
+   candidates. Accountable authentication, evidence verification, and separately
+   authorized gate evidence remain later steps.
 3. Close the remaining machine-recorded G0 blockers: application namespaces,
    distribution accounts/key owners, provider compatibility, service-domain/
    DNS/WebPKI ownership, service-root/signer owners, privacy/incident owners,
@@ -832,11 +858,11 @@ V1 is complete only when all of the following are true:
 
 ## Canonical Session Continuation Baseline
 
-- Priority and status: the selected implementation baseline remains `d32c1846`; local Git shows the first G0 packet at `main@929fda5f`, aligned with the local `origin/main` tracking ref and a local push update. This is not independent remote readback. The current successor candidate adds the exact two-check command-profile catalog, offline Gradle enforcement, validation, and synchronized documents; no transport implementation is in scope. It has no publication receipt or owner acceptance. The next session must still refresh branch, HEAD, Git status, device attachment, and runtime process state instead of inheriting stale conversation or artifact assumptions.
+- Priority and status: the selected implementation baseline remains `d32c1846`; the bounded G0 V2/V3 packet is published at `main@12c38154`. Fresh no-alternates remote acquisition matched that commit and all 18 approved file bytes, including the 4,692-byte V3 checkpoint at SHA-256 `37462cd8303ce61742bc480d0f7d37e0ccb380ec12375cc8c8d10169aebf4dc5`. The current local successor scope is the exact dormant publication-receipt sidecar candidate, empty sparse owner/catalog input candidate, their validator/tests, gate status copy, and current documents. It is not committed or pushed and grants no owner acceptance, independent trust, evidence verification, receipt activation, G0 exit, or G1a authority. The sidecar does not persist enough acquisition provenance to independently reproduce the session readback; the intake candidate has no responses and all state flags false. The next session must still refresh branch, HEAD, Git status, device attachment, and runtime process state instead of inheriting stale assumptions.
 - Current product checkpoint: one same-Wi-Fi debug QR has been decoded from the real macOS screen and paired through a physical `SM-S936N` camera; trust, challenge-response, health exchange, and stored-trust Bonjour reconnect were observed. Release remote-route enforcement, explicit Connection Recovery remote wiring, and primary-interface selection remain pinned by final focused, UI, static, and release evidence.
-- Default next bounded slice: close the machine-recorded G0 ownership and publication blockers, then issue a separate G1a no-network authority record. The strict JSON optimization remains maintenance-only. When a device is attached, physical expired/rotated QR recovery, camera permission denial/regrant, TalkBack/VoiceOver traversal, and process-death persistence remain G5/G6 evidence gaps rather than a substitute for G0.
+- Default next bounded slice: preserve both local candidates without publishing them, obtain and structurally record only reference-only owner/catalog proposals in the sparse intake packet, then independently authenticate owners, inspect and verify separately typed evidence, and collect separately authorized gate results before considering a G1a authority record. The strict JSON optimization remains maintenance-only. When a device is attached, physical expired/rotated QR recovery, camera permission denial/regrant, TalkBack/VoiceOver traversal, and process-death persistence remain G5/G6 evidence gaps rather than a substitute for G0.
 - Conditional next slice: different-network pairing may begin only after the exact reachable route, environment, and execution authority are established. Same-Wi-Fi `local_diagnostic` evidence is not a relay, P2P/NAT, Phase B, production-capacity, deployment, or readiness result.
-- Publication rule: the first G0 packet is locally committed at `929fda5f`, but only an independently acquired remote commit/path/byte readback can create publication evidence. The current unpublished scope is the bounded command-profile/offline-gate successor correction and synchronized hashes/documents. Any commit or push must still start from an explicit file review; blanket staging is not the default.
+- Publication rule: `12c38154` has intentional publication and fresh exact remote-byte readback evidence from this session. The local V3 receipt sidecar encodes the target/checkpoint/hash/time candidate but not the acquisition provenance needed for independent reproduction; the sparse intake candidate contains no owner/catalog response. Both remain non-authorizing, uncommitted, and unpushed. Any later commit or push must still start from explicit file review and user direction; blanket staging is not the default.
 - Continuity rule: update the existing canonical handoff after future substantial work and synchronize current progress, QA, and roadmap facts. GPT-5.6 Sol is the requested subagent model; GPT-5.3-Codex-Spark remains excluded for this workstream.
 - Reading rule: `docs/handoff.md` and the current sections at the top of this roadmap are authoritative. Sections marked Historical Checkpoint or Superseded preserve at-checkpoint evidence only and cannot override the current Debug/Release matrix, physical observation manifest, or authority boundary.
 - Authority freshness: the QR-modified P2P/NAT source snapshot is synchronized at 13-artifact collection SHA-256 `6e6dfbfc0cdb70370c30f54222584b69042a6e22b6df04c7f3e65043c38522bd`; its validator and seven Phase A progress tests pass. This does not select a library or open compiler, socket, runtime-network, Phase B, production, or deployment authority.

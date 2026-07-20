@@ -1,0 +1,52 @@
+{
+  "repositoryRef": "github:hanchangha1127/AetherLink",
+  "commitObjectId": "12c381547935b96d383ac39976261ea6c3ce6a5b",
+  "artifactBindings": [
+    {
+      "role": "v1_parent_assurance",
+      "path": "docs/v1/g0/assurance-v1.json",
+      "rawSha256": "64d7d48c1f82b43a33e860b45c769878cb654f0678e94bfd540f12c3d1a9a43d",
+      "canonicalSha256": "7642029c307dd658b4e325f409deeef7f0b2addb82105270aa4c83cc588c4a11"
+    },
+    {
+      "role": "v1_parent_checkpoint",
+      "path": "docs/v1/g0/assurance-checkpoint-readback-v1.json",
+      "rawSha256": "9b2a108b7a2e8223ec4c50b538277857a2dbc064b9da694fa7c6c200f1081048",
+      "canonicalSha256": "1e20f60154ea82e3a6a4c16573d7d52b60e362098e7c5a614b6866d303a2b2b5"
+    },
+    {
+      "role": "v2_parent_amendment",
+      "path": "docs/v1/g0/assurance-closure-amendment-v2.json",
+      "rawSha256": "b04204e86c9af4291e8b7112c14e420877a54d2688b5b5d967432949b8f7aea6",
+      "canonicalSha256": "8b843526eef12e147593084d21ea3f40336628c623f732f0fd64d6ad80bbec7b"
+    },
+    {
+      "role": "v2_parent_checkpoint",
+      "path": "docs/v1/g0/assurance-closure-amendment-checkpoint-v2.json",
+      "rawSha256": "b12bf8d1f6e782f57b9012728f5b7dada1008d9885f4263782fafa0c256cdc0c",
+      "canonicalSha256": "4f26d087b0eb0cf312911ddbd1ee25dc8fcfbb0deef6fb8d10009515a16391ca"
+    },
+    {
+      "role": "v3_amendment",
+      "path": "docs/v1/g0/assurance-closure-amendment-v3.json",
+      "rawSha256": "f8314bcb37f98d0877e8d2a5279b2702fa6a5883f7efb4fcd91af5508eb126bc",
+      "canonicalSha256": "1bc500f2798da19bf74a1513f15d8822b5c41fa73c28795e1501696c1b4dad97"
+    },
+    {
+      "role": "v3_checkpoint",
+      "path": "docs/v1/g0/assurance-closure-amendment-checkpoint-v3.json",
+      "rawSha256": "37462cd8303ce61742bc480d0f7d37e0ccb380ec12375cc8c8d10169aebf4dc5",
+      "canonicalSha256": "a9ceca766845f0e2d23987425eeee5498f9bf5b114a3f9c4d272867cfe70d7f3"
+    }
+  ],
+  "parentEffectiveAssuranceCanonicalSha256": "5777e26d1f2535da58deb74d5f7907617caf8aa99fa20885c771c29ecfb7726a",
+  "parentClosureSchemaVersion": 2,
+  "parentClosureCanonicalSha256": "d8dcc755ba58b2e5eb72f5df7ce09ff9586504105eddb75290b9c11f5478a20d",
+  "effectiveAssuranceCanonicalSha256": "e8f661094a678a2ac0966d8b35de46824316883a845eb9ae8c6e9f76df18ad4b",
+  "effectiveClosureSchemaVersion": 3,
+  "effectiveClosureCanonicalSha256": "79b0d7275bcf371e8b9ab5a6b123969474bfbc86b1d7e78fcb28ed7256e3a93c",
+  "remoteCheckpointPath": "docs/v1/g0/assurance-closure-amendment-checkpoint-v3.json",
+  "remoteCheckpointRawSha256": "37462cd8303ce61742bc480d0f7d37e0ccb380ec12375cc8c8d10169aebf4dc5",
+  "remoteReadbackAt": "2026-07-20T12:05:44Z",
+  "remoteReadbackSha256": "37462cd8303ce61742bc480d0f7d37e0ccb380ec12375cc8c8d10169aebf4dc5"
+}

@@ -62,10 +62,12 @@ This document records what has been implemented so far and what should happen ne
   opaque, independently anchored validation context covering actual commit-tree,
   remote, evidence-artifact and sanitized-log bytes, authenticated owner and
   runner attestations, authority/command bindings, and complete non-ambiguous
-  closure coverage before any receipt can participate. A synthetic-only,
-  non-authorizing publication candidate context now verifies four supplied
-  commit blobs plus independently supplied remote checkpoint bytes, but no
-  activation-capable context or receipt exists.
+  closure coverage before any receipt can participate. A non-authorizing
+  candidate context can verify supplied commit and remote bytes. The local
+  sidecar encodes repository/commit/checkpoint/hash/time values drawn from the
+  actual session observation but does not persist its acquisition provenance or
+  independently reproduce it. The canonical checker still accepts no receipt,
+  and no activation-capable context exists.
 - V2 closure amendment: the committed V1 assurance and checkpoint bytes remain
   unchanged. `assurance-closure-amendment-v2.json` binds their raw/canonical
   hashes, defines eleven exact ordered JSON Pointer operations, advances the
@@ -100,8 +102,23 @@ This document records what has been implemented so far and what should happen ne
   non-derived evidence kinds, 15 role/blocker pairs, and two executable checks
   from effective V3. It rejects self-asserted outcomes, partial or ambiguous
   coverage, cross-binding and time drift, and unbounded input. Its exact
-  synthetic complete fixture still returns `dormant_non_authorizing`; no
-  independent trust adapter, activation path, or G1a authority was added.
+  synthetic complete fixture still returns `dormant_non_authorizing`. The local
+  exact 13-field publication-receipt sidecar binds published commit `12c38154`,
+  the six unchanged lineage records, the remotely read V3 checkpoint bytes, and
+  the observed UTC time. Its raw bytes and final file identity are pinned, but
+  fresh-clone/no-alternates and 18-file comparison provenance are not persisted;
+  no independent trust adapter, activation path, or G1a authority was added.
+- Sparse owner/catalog intake: the separate content-addressed
+  `owner-catalog-input-candidate-v1.json` binds the published target and effective
+  V3 digests but starts with `responses: []` and all state flags false. Its
+  checker derives the ten-blocker role/evidence graph from effective V3, admits
+  only canonically ordered sparse proposals whose references are mechanically
+  bound to exact role/evidence-kind/blocker slugs and versions, rejects free-form
+  catalog values, mismatched or unsafe paths, contradictory dispositions, and
+  non-derived-evidence violations, and always returns
+  `draft_unverified_non_authorizing`. The packet currently contains no owner
+  identity, catalog value, approval, credential, or blocker-closing input;
+  actual candidate artifact bytes require separate typed review.
 - Release-evidence boundary: a content hash alone cannot satisfy a release
   metric. The exact evidence envelope must carry the complete raw sample array,
   bind campaign/build/metric/threshold/platform/context, name an approved
@@ -133,8 +150,9 @@ This document records what has been implemented so far and what should happen ne
   recursive type-confusion, source count/order/path/role/hash, the 4 MiB source
   ceiling, symlink, same-descriptor and final-path identity, owner, publication,
   blocker, status, and authority drift. The candidate explicitly
-  remains `candidate_observed_not_immutable`: it is not owner acceptance, a
-  reviewed commit, publication provenance, or G0 exit evidence.
+  remains `candidate_observed_not_immutable`: this embedded frozen state is not
+  changed by the later publication observation and is not owner acceptance,
+  receipt activation, or G0 exit evidence.
 - Guard evidence: `script/check_v1_g0_decision.py` passes after verifying exact
   canonical decision/assurance content, nine decision source hashes, 29
   assurance source hashes, current Android/macOS configuration and locales,
@@ -148,8 +166,9 @@ This document records what has been implemented so far and what should happen ne
   network-variant outcomes, and evidence-free checklist passes. The G0 checker
   now also requires the candidate readback validator. Its separate eleven-test
   mutation suite, the dormant publication candidate's eight-test suite, and
-  the V3 lineage/bundle candidate's ten-test suite are included in the default
-  no-device gate, for 92 focused G0 mutation tests in total.
+  the V3 lineage/bundle and sparse-intake candidate's eleven-test suite are
+  included in the default no-device gate, for 93 focused G0 mutation tests in
+  total.
 - Offline gate hardening: all five Gradle invocations inside
   `script/check_no_device_quality.sh` now include `--offline`. Future authorized
   execution must additionally use a runner-level egress deny and preseeded,
@@ -163,22 +182,29 @@ This document records what has been implemented so far and what should happen ne
   five-locale parity, both protocol schemas, closed P2P/NAT and production-relay
   design validators, 21 documentation/launcher/Phase-A tests, shell syntax, and
   diff hygiene. This is not the full no-device aggregate.
-- G0 status: `blocked_before_g1a`. Assurance content now exists, but immutable
-  publication-root readback, owner acceptance, and separately authorized full
-  baseline/release-compile gates are incomplete. The local content-addressed
-  candidate proves only current-byte reproducibility. Checkpoint
-  publication, production namespaces, distribution account/key owners, provider
-  compatibility baseline, service domain/DNS/WebPKI owners, service root/signer
-  owners, privacy/incident owners, quality-measurement owners, and relay
-  region/capacity/cost also remain unresolved. G1a, source acquisition, P2P
-  selection or compile, sockets, network I/O, production keys, signing, upload,
-  and deployment remain closed.
-- Publication status: local Git shows the first G0 packet committed at
-  `929fda5f`, aligned with the local `origin/main` tracking ref and a local push
-  reflog update. Those local facts do not prove current remote bytes. The
-  content-addressed V2 closure-amendment/offline-gate successor and its V3
-  complete-bundle contract successor are uncommitted, and no publication,
-  owner, authority, runner, gate, or activation receipt exists.
+- G0 status: `blocked_before_g1a`. The bounded V2/V3 packet is intentionally
+  published at `12c38154`, and a fresh no-alternates repository directly matched
+  all 18 approved remote file bytes. The V3 checkpoint readback ran from
+  `2026-07-20T12:05:21Z` through `12:05:44Z`, yielding 4,692 bytes at SHA-256
+  `37462cd8303ce61742bc480d0f7d37e0ccb380ec12375cc8c8d10169aebf4dc5`.
+  V1/V2/V3 lineage bytes remain unchanged.
+- Publication-receipt status: the local exact 13-field sidecar encodes the
+  observed target/checkpoint/hash/time only as a dormant candidate. It does not
+  persist or independently reproduce the acquisition provenance, is not
+  committed or pushed, is not consumed by an activation-capable independent
+  trust adapter, and establishes no owner, authority, runner, gate, approval,
+  G0-exit, or G1a state.
+- Owner/catalog-input status: the local packet is empty, content-addressed, and
+  uncommitted/unpushed. Structural validation proves only that later non-secret
+  proposals would be bound to the canonical target and graph; it does not
+  authenticate an owner, verify an artifact, accept a disposition, activate a
+  receipt, or close any of the ten blockers.
+- Remaining boundary: accountable owner acceptance, catalog artifacts,
+  authorized aggregate/release-compile evidence, namespaces/accounts/custody,
+  provider/service/privacy/quality/capacity ownership, and all later execution
+  authorities remain unresolved or false. G1a, source acquisition, P2P selection
+  or compile, sockets, network I/O, production keys, signing, upload, and
+  deployment remain closed.
 - Live evidence boundary: no Android device is attached. The existing ad-hoc
   arm64 macOS app was observed running on port 43170, but QR decode, provider
   traffic, physical UI, unrelated networks, and production behavior were not
