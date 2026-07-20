@@ -1,0 +1,343 @@
+{
+  "documentType": "aetherlink.v1-g0-assurance-closure-amendment",
+  "schemaVersion": "1.0",
+  "amendmentId": "aetherlink_v1_g0_assurance_closure_amendment_v2",
+  "recordedDate": "2026-07-20",
+  "status": "candidate_not_published_not_authorized",
+  "parent": {
+    "assuranceId": "aetherlink_v1_g0_assurance_v1",
+    "assurancePath": "docs/v1/g0/assurance-v1.json",
+    "assuranceRawByteSha256": "64d7d48c1f82b43a33e860b45c769878cb654f0678e94bfd540f12c3d1a9a43d",
+    "assuranceCanonicalSha256": "7642029c307dd658b4e325f409deeef7f0b2addb82105270aa4c83cc588c4a11",
+    "checkpointId": "aetherlink_v1_g0_assurance_checkpoint_readback_v1",
+    "checkpointPath": "docs/v1/g0/assurance-checkpoint-readback-v1.json",
+    "checkpointRawByteSha256": "9b2a108b7a2e8223ec4c50b538277857a2dbc064b9da694fa7c6c200f1081048",
+    "checkpointCanonicalSha256": "1e20f60154ea82e3a6a4c16573d7d52b60e362098e7c5a614b6866d303a2b2b5",
+    "observedContainingCommit": "929fda5f2c01cd7d53325a036071b6a684ecaa1f",
+    "publicationObservation": "local_commit_and_remote_tracking_push_reflog_only_not_independent_remote_byte_readback"
+  },
+  "patchProfile": {
+    "semantics": "ordered_json_pointer_add_replace_v1",
+    "allowedOperations": [
+      {"op": "replace", "path": "/schemaVersion"},
+      {"op": "replace", "path": "/assuranceId"},
+      {"op": "replace", "path": "/g0ClosureContract/schemaVersion"},
+      {"op": "add", "path": "/g0ClosureContract/sourceBindings/commandProfiles"},
+      {"op": "add", "path": "/g0ClosureContract/executableCheckIds"},
+      {"op": "add", "path": "/g0ClosureContract/nonExecutableCheckIds"},
+      {"op": "add", "path": "/g0ClosureContract/commandProfileSchema"},
+      {"op": "add", "path": "/g0ClosureContract/commandProfiles"},
+      {"op": "replace", "path": "/g0ClosureContract/gateReceiptProfile"},
+      {"op": "replace", "path": "/g0ClosureContract/publicationReceiptProfile"},
+      {"op": "replace", "path": "/g0ClosureContract/receiptActivationPolicy/successorActivationPrerequisites"}
+    ],
+    "unknownOperationOrPathPolicy": "reject",
+    "arrayIndexOperationPolicy": "reject",
+    "parentMutationPolicy": "deep_copy_parent_then_apply_exact_ordered_operations",
+    "effectiveDigestPolicy": "lowercase_sha256_of_utf8_json_sort_keys_true_separators_comma_colon_ensure_ascii_false_effective_document"
+  },
+  "operations": [
+    {
+      "op": "replace",
+      "path": "/schemaVersion",
+      "value": "2.0"
+    },
+    {
+      "op": "replace",
+      "path": "/assuranceId",
+      "value": "aetherlink_v1_g0_assurance_v2"
+    },
+    {
+      "op": "replace",
+      "path": "/g0ClosureContract/schemaVersion",
+      "value": 2
+    },
+    {
+      "op": "add",
+      "path": "/g0ClosureContract/sourceBindings/commandProfiles",
+      "value": "#/g0ClosureContract/commandProfiles"
+    },
+    {
+      "op": "add",
+      "path": "/g0ClosureContract/executableCheckIds",
+      "value": [
+        "full_no_device_aggregate",
+        "android_and_macos_release_compilation"
+      ]
+    },
+    {
+      "op": "add",
+      "path": "/g0ClosureContract/nonExecutableCheckIds",
+      "value": [
+        "g0_assurance_packet",
+        "roadmap_and_g0_checkpoint_publication",
+        "production_namespaces_distribution_and_key_custody",
+        "provider_compatibility_baseline",
+        "service_identity_and_signer_custody",
+        "privacy_incident_quality_and_operations_ownership",
+        "relay_region_capacity_and_cost"
+      ]
+    },
+    {
+      "op": "add",
+      "path": "/g0ClosureContract/commandProfileSchema",
+      "value": {
+        "exactProfileFields": ["commandProfileId", "canonicalProfileSha256", "profileBody"],
+        "canonicalProfileSha256Policy": "lowercase_sha256_of_utf8_json_sort_keys_true_separators_comma_colon_ensure_ascii_false_profile_body_only",
+        "workingDirectoryPolicy": "repository_root_resolved_from_exact_source_publication_commit",
+        "environmentPolicy": "clean_trusted_runner_environment_with_exact_full_name_value_digest_and_only_declared_nonsensitive_bindings",
+        "orderedStepPolicy": "execute_exact_argv_in_declared_order_stop_on_first_nonzero_exit",
+        "networkPolicy": "operating_system_egress_denied_and_all_build_dependencies_preseeded_and_hash_attested",
+        "authorizationPolicy": "catalog_membership_does_not_authorize_execution_each_profile_requires_a_separate_nonrevoked_versioned_authority"
+      }
+    },
+    {
+      "op": "add",
+      "path": "/g0ClosureContract/commandProfiles",
+      "value": [
+        {
+          "commandProfileId": "g0-command-profile-full-no-device-aggregate-v1",
+          "canonicalProfileSha256": "6e60c1f17812a16a6b24bd172ad95e9d3e9b91a793c56ca332467e8961c84f78",
+          "profileBody": {
+            "checkId": "full_no_device_aggregate",
+            "currentAuthorizationState": "not_authorized",
+            "workingDirectory": "repository_root",
+            "orderedSteps": [
+              {
+                "stepId": "full_no_device_quality",
+                "argv": ["bash", "script/check_no_device_quality.sh"]
+              }
+            ],
+            "environmentRequirements": {
+              "mode": "clean_trusted_runner_environment",
+              "requiredBindings": ["JAVA_HOME", "ANDROID_HOME", "PATH", "TMPDIR"],
+              "forbiddenInheritedNamePatterns": [
+                "AETHERLINK_*",
+                "GRADLE_*",
+                "SWIFT_*",
+                "JAVA_TOOL_OPTIONS",
+                "_JAVA_OPTIONS",
+                "JDK_JAVA_OPTIONS",
+                "ANDROID_SERIAL",
+                "ADB_SERVER_SOCKET",
+                "HTTP_PROXY",
+                "HTTPS_PROXY",
+                "ALL_PROXY"
+              ],
+              "fullEnvironmentSha256RequiredInAuthorityAndRunnerAttestation": true
+            },
+            "toolchainRequirements": [
+              "bash_python3_git_swift_and_android_jbr_executables_version_and_sha256_attested",
+              "android_sdk_platform_36_and_required_build_tools_preseeded_and_hash_attested",
+              "gradle_wrapper_9_4_1_distribution_sha256_matches_repository_pin",
+              "all_gradle_plugins_and_dependencies_preseeded_and_hash_attested"
+            ],
+            "allowedSideEffects": [
+              "repository_build_and_test_output_writes",
+              "trusted_runner_gradle_swift_and_test_cache_writes",
+              "trusted_runner_temporary_file_and_directory_writes",
+              "compiler_linker_and_test_child_process_execution",
+              "owned_child_process_start_and_stop",
+              "loopback_test_socket_creation",
+              "build_tool_local_ipc_socket_creation",
+              "test_only_ephemeral_identity_and_secret_generation_in_owner_only_temporary_paths"
+            ],
+            "forbiddenSideEffects": [
+              "external_or_nonloopback_network_io",
+              "adb_or_physical_device_access",
+              "source_or_dependency_acquisition",
+              "production_key_generation_or_injection",
+              "signing_notarization_install_upload_or_deployment"
+            ],
+            "networkPolicy": "operating_system_egress_denied_gradle_offline_no_adb_no_physical_device",
+            "requiredPreconditions": [
+              "exact_source_publication_commit_checked_out_with_clean_worktree",
+              "all_toolchains_wrapper_distributions_plugins_dependencies_and_sdk_components_preseeded",
+              "operating_system_egress_deny_and_process_observation_active",
+              "separate_authority_covers_exact_profile_digest_environment_digest_cwd_digest_and_allowed_side_effects"
+            ],
+            "requiredEvidenceKinds": ["separately_authorized_full_gate_result"],
+            "sanitizedLogPolicy": "complete_ordered_stdout_and_stderr_with_deterministic_path_and_secret_redaction_exact_bytes_sha256_and_no_omitted_failure_output",
+            "successPolicy": "exit_code_zero_and_exact_no_device_quality_checks_passed_marker_once"
+          }
+        },
+        {
+          "commandProfileId": "g0-command-profile-android-macos-release-compilation-v1",
+          "canonicalProfileSha256": "3c64524bf371c27412e29fe75f1be52b36d31b2bc25791320e67a12381bacc68",
+          "profileBody": {
+            "checkId": "android_and_macos_release_compilation",
+            "currentAuthorizationState": "not_authorized",
+            "workingDirectory": "repository_root",
+            "orderedSteps": [
+              {
+                "stepId": "android_release_compilation",
+                "argv": ["./gradlew", "--offline", "--no-daemon", ":app:assembleRelease", "-Pkotlin.incremental=false"]
+              },
+              {
+                "stepId": "macos_release_compilation",
+                "argv": ["swift", "build", "-c", "release", "--product", "AetherLink"]
+              }
+            ],
+            "environmentRequirements": {
+              "mode": "clean_trusted_runner_environment",
+              "requiredBindings": ["JAVA_HOME", "ANDROID_HOME", "PATH", "TMPDIR"],
+              "forbiddenInheritedNamePatterns": [
+                "AETHERLINK_*",
+                "GRADLE_*",
+                "SWIFT_*",
+                "JAVA_TOOL_OPTIONS",
+                "_JAVA_OPTIONS",
+                "JDK_JAVA_OPTIONS",
+                "ANDROID_SERIAL",
+                "ADB_SERVER_SOCKET",
+                "HTTP_PROXY",
+                "HTTPS_PROXY",
+                "ALL_PROXY"
+              ],
+              "fullEnvironmentSha256RequiredInAuthorityAndRunnerAttestation": true
+            },
+            "toolchainRequirements": [
+              "swift_and_android_jbr_executables_version_and_sha256_attested",
+              "android_sdk_platform_36_and_required_build_tools_preseeded_and_hash_attested",
+              "gradle_wrapper_9_4_1_distribution_sha256_matches_repository_pin",
+              "all_gradle_plugins_and_dependencies_preseeded_and_hash_attested"
+            ],
+            "allowedSideEffects": [
+              "repository_android_and_swift_release_build_output_writes",
+              "trusted_runner_gradle_and_swift_cache_writes",
+              "compiler_and_linker_child_process_execution",
+              "build_tool_local_ipc_socket_creation",
+              "unsigned_android_apk_and_unsigned_macos_executable_creation"
+            ],
+            "forbiddenSideEffects": [
+              "external_or_nonloopback_network_io",
+              "adb_or_physical_device_access",
+              "source_or_dependency_acquisition",
+              "production_key_generation_or_injection",
+              "signing_notarization_install_upload_or_deployment"
+            ],
+            "networkPolicy": "operating_system_egress_denied_gradle_offline_no_adb_no_physical_device",
+            "requiredPreconditions": [
+              "exact_source_publication_commit_checked_out_with_clean_worktree",
+              "all_toolchains_wrapper_distributions_plugins_dependencies_and_sdk_components_preseeded",
+              "operating_system_egress_deny_and_process_observation_active",
+              "separate_authority_covers_exact_profile_digest_environment_digest_cwd_digest_and_allowed_side_effects"
+            ],
+            "requiredEvidenceKinds": ["android_release_compile_result", "macos_release_compile_result"],
+            "sanitizedLogPolicy": "complete_ordered_step_stdout_and_stderr_with_deterministic_path_and_secret_redaction_exact_bytes_sha256_and_no_omitted_failure_output",
+            "successPolicy": "both_ordered_steps_exit_zero_and_unsigned_outputs_and_metadata_are_hash_attested_without_signed_release_claim"
+          }
+        }
+      ]
+    },
+    {
+      "op": "replace",
+      "path": "/g0ClosureContract/gateReceiptProfile",
+      "value": {
+        "exactFields": [
+          "checkId",
+          "authorizationRef",
+          "sourcePublicationCommit",
+          "commandProfileId",
+          "commandProfileSha256",
+          "startedAt",
+          "completedAt",
+          "exitCode",
+          "result",
+          "sanitizedLogSha256",
+          "evidenceRefs"
+        ],
+        "checkIdPolicy": "exact_executable_g0_exit_check_id",
+        "authorizationRefPattern": "^g0-authority-[a-z0-9][a-z0-9_-]{0,95}-v[1-9][0-9]*$",
+        "authorizationRefPolicy": "nonempty_nonrevoked_versioned_authority_reference_authorizing_the_exact_command_profile_digest_environment_digest_cwd_digest_and_allowed_side_effects",
+        "sourcePublicationCommitPolicy": "exact_verified_publication_commit_object_id",
+        "commandProfileIdPattern": "^g0-command-profile-[a-z0-9][a-z0-9_-]{0,95}-v[1-9][0-9]*$",
+        "commandProfileIdPolicy": "nonempty_immutable_versioned_command_profile_id",
+        "commandProfileSha256Policy": "equals_the_catalog_profile_canonical_sha256_for_command_profile_id",
+        "timestampPolicy": "rfc3339_utc_started_at_not_after_completed_at",
+        "exitCodePolicy": "exact_integer_zero",
+        "resultDomain": ["passed"],
+        "sanitizedLogSha256Policy": "lowercase_sha256_of_exact_sanitized_log_bytes",
+        "evidenceRefsPolicy": "ordered_unique_nonempty_verified_evidence_catalog_ids_covering_the_profiles_exact_required_evidence_kinds",
+        "sourceTreePolicy": "command_executes_from_the_exact_source_publication_commit"
+      }
+    },
+    {
+      "op": "replace",
+      "path": "/g0ClosureContract/publicationReceiptProfile",
+      "value": {
+        "exactFields": [
+          "repositoryRef",
+          "commitObjectId",
+          "parentAssurancePath",
+          "parentAssuranceSha256",
+          "parentCheckpointPath",
+          "parentCheckpointSha256",
+          "amendmentPath",
+          "amendmentSha256",
+          "amendmentCheckpointPath",
+          "amendmentCheckpointSha256",
+          "effectiveAssuranceCanonicalSha256",
+          "remoteReadbackAt",
+          "remoteReadbackSha256",
+          "result"
+        ],
+        "repositoryRefPolicy": "nonempty_opaque_non_secret_repository_identity_equal_to_the_expected_publication_target",
+        "commitObjectIdPattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+        "parentAssurancePathPolicy": "exact_docs_v1_g0_assurance_v1_json",
+        "parentCheckpointPathPolicy": "exact_docs_v1_g0_assurance_checkpoint_readback_v1_json",
+        "amendmentPathPolicy": "exact_docs_v1_g0_assurance_closure_amendment_v2_json",
+        "amendmentCheckpointPathPolicy": "exact_docs_v1_g0_assurance_closure_amendment_checkpoint_v2_json",
+        "sha256Pattern": "^[0-9a-f]{64}$",
+        "remoteReadbackAtPolicy": "rfc3339_utc",
+        "resultDomain": ["verified"],
+        "commitContainmentPolicy": "resolved_commit_tree_contains_exact_parent_assurance_parent_checkpoint_amendment_and_amendment_checkpoint_bytes_at_their_exact_paths_and_hashes",
+        "effectiveReconstructionPolicy": "independently_apply_exact_amendment_to_exact_parent_and_match_effective_assurance_canonical_sha256",
+        "remoteEqualityPolicy": "remote_readback_sha256_equals_amendment_checkpoint_sha256",
+        "expectedIdentityPolicy": "repository_commit_all_four_paths_all_four_byte_hashes_and_effective_canonical_sha256_equal_the_explicitly_reviewed_publication_target"
+      }
+    },
+    {
+      "op": "replace",
+      "path": "/g0ClosureContract/receiptActivationPolicy/successorActivationPrerequisites",
+      "value": [
+        "canonical_closure_digest_and_version_with_internally_derived_roles_role_blocker_scopes_blocker_checks_evidence_kinds_and_exact_check_set",
+        "one_reviewed_publication_target_with_actual_commit_tree_checkpoint_bytes_and_independently_acquired_remote_checkpoint_bytes_all_hash_equal",
+        "verified_evidence_catalog_records_with_authenticated_provenance_subject_revision_checkpoint_binding_safe_paths_actual_artifact_byte_hashes_result_time_and_blocker_relevance",
+        "one_nonambiguous_versioned_authority_binding_per_executable_check_with_exact_command_profile_digest_argv_environment_cwd_digest_allowed_side_effects_source_commit_validity_revocation_and_provenance",
+        "trusted_runner_attestation_per_gate_binding_source_commit_exact_command_digest_ordered_times_exit_result_and_actual_sanitized_log_bytes_hash",
+        "trusted_owner_identity_or_key_and_authenticated_acceptance_covering_every_approval_receipt_field",
+        "exact_final_coverage_of_every_required_role_blocker_pair_check_and_evidence_kind_with_duplicate_ambiguity_and_partial_bundle_rejection"
+      ]
+    }
+  ],
+  "effectiveAssurance": {
+    "assuranceId": "aetherlink_v1_g0_assurance_v2",
+    "schemaVersion": "2.0",
+    "canonicalSha256": "5777e26d1f2535da58deb74d5f7907617caf8aa99fa20885c771c29ecfb7726a",
+    "status": "blocked_before_g1a",
+    "materializationPolicy": "validator_reconstructs_from_exact_parent_bytes_and_exact_ordered_patch_without_mutating_parent"
+  },
+  "authority": {
+    "g0DocumentationAndStaticValidationAllowed": true,
+    "commandProfileCatalogAuthorizesExecution": false,
+    "fullNoDeviceAggregateAllowed": false,
+    "androidAndMacosReleaseCompilationAllowed": false,
+    "compilerOrLinkerInvocationAllowed": false,
+    "buildToolLocalIpcSocketAllowed": false,
+    "loopbackTestSocketAllowed": false,
+    "externalNetworkIoAllowed": false,
+    "adbOrPhysicalDeviceAllowed": false,
+    "productionKeySigningUploadOrDeploymentAllowed": false,
+    "g1aNoNetworkImplementationAllowed": false
+  },
+  "acceptance": {
+    "parentBytesUnchanged": true,
+    "amendmentPublicationReceipt": "absent",
+    "ownerAcceptance": "absent",
+    "gateReceipts": [],
+    "effectiveAssuranceActivated": false,
+    "g0ExitComplete": false,
+    "g1aMayStartNow": false
+  }
+}

@@ -60,7 +60,7 @@ but cannot independently satisfy the V1 release gate.
 | P2P authority | `libjuice` and `libnice` were rejected before compile; no networking library is selected and all compile/socket/runtime-network authority is closed. | A new candidate and version must start a new staged authority chain. No rejected decision or consumed authority may be reused. |
 | Relay security | Bounded leases, identity challenges, strict JSON, encrypted frame bodies, quotas, and development lifecycle controls exist. | Allocation TLS, service-signed lease capabilities, peer-verifiable KEX, pair epoch recovery, immediate revocation, signer rotation, multi-instance operations, and deployment remain open. |
 | Distribution | Android is version `0.1.0` with no production signing configuration; the macOS development bundle is ad-hoc signed. | Production application identity, signing custody, channel validation such as direct-distribution notarization or App Store review, install/update/rollback, artifact provenance, and staged distribution are required. |
-| Repository state | `main` and `origin/main` are aligned at `d32c1846`; the reviewed optimization work is published. The current V1 execution scope contains this roadmap, the G0 decision/validator, a content-addressed local assurance readback candidate, and synchronized current documentation, with no transport implementation. | Keep the G0 packet isolated from protocol and networking implementation, obtain owner review, and publish an intentional checkpoint before G1a. The local candidate is not publication; commit or push still requires explicit user direction. |
+| Repository state | The implementation baseline remains `d32c1846`. Local Git state shows the first 15-file G0 packet in `929fda5f`, with `main` and the local `origin/main` tracking ref aligned and a push update in the local reflog. No independent remote checkpoint-byte readback or publication receipt exists. The current worktree is a bounded V2/V3 successor for executable-command profiles, offline gate enforcement, and a dormant complete-bundle contract, with no transport implementation. | Review and intentionally publish the successor G0 checkpoint, then independently read the exact remote commit/path/bytes before owner or gate receipts can accept it. A local tracking ref or push reflog is not publication proof; commit or push still requires explicit user direction. |
 
 ### Governing Source Records
 
@@ -169,7 +169,7 @@ product, platform, distribution, fallback, relay-control, pair-recovery,
 privacy, SLO, evidence, and authority defaults. A dedicated validator and
 the versioned [G0 assurance packet](v1/g0/assurance-v1.md) now hash-pin the
 protocol/data-flow inventory, threat/risk refresh, observability schema, release
-checklist, and incident/rollback runbooks. Its 62-test mutation suite keeps both
+checklist, and incident/rollback runbooks. Its 63-test mutation suite keeps both
 records fail-closed; release metrics require an approved signer, Ed25519
 verification, bounded canonical raw samples, and exact signed outcomes for each
 required network variant derived from ordered per-attempt outage and recovery
@@ -200,6 +200,40 @@ claims fail-closed. Its status remains
 `candidate_observed_not_immutable`; a local checker constant is not an owner-
 accepted or published repository checkpoint.
 
+The committed V1 assurance/checkpoint bytes remain unchanged. The separate
+[V2 closure amendment](v1/g0/assurance-closure-amendment-v2.md) and its
+[content-addressed checkpoint](v1/g0/assurance-closure-amendment-checkpoint-v2.json)
+bind the exact parent raw/canonical digests, apply eleven allowlisted ordered
+JSON Pointer operations to a deep copy, advance the effective and nested
+closure schema identities, and pin the reconstructed effective V2 assurance
+digest. A composite publication receipt binds all four exact files and the
+effective digest; bounded no-follow reads plus final identity/hash readback
+protect the local candidate. They classify only the full no-device aggregate
+and ordered Android/macOS release compilation as executable checks. Both
+command profiles remain unauthorized, and the amendment has no publication or
+owner receipt.
+
+A dormant composite-publication validator now reconstructs the V2 candidate
+from four supplied exact commit blobs and compares a strict 14-field receipt to
+a factory-owned immutable target plus independently supplied remote checkpoint
+bytes. It performs no receipt-directed I/O and returns failures only. Synthetic
+matching evidence is not publication: the private matcher still returns
+`dormant_non_authorizing`, the canonical checker rejects every supplied bundle,
+and no acceptance, execution authority, or G0 state changes.
+
+The separate
+[V3 closure amendment](v1/g0/assurance-closure-amendment-v3.md) preserves every
+V1/V2 byte and adds the previously missing complete-bundle, owner, evidence,
+authority, runner, gate, approval, and six-artifact publication profiles. Its
+private pure compiler snapshots the six lineage blobs once and derives exact
+10-blocker, 9-check, 14-owner, 15-role/blocker-pair,
+15-non-derived-evidence, 2-derived-evidence, and 2-executable-check coverage
+from effective V3, including exact ordered checklist/blocker evidence union.
+It rejects caller-supplied outcomes and inconsistent references/times and still returns
+`dormant_non_authorizing` for an exact synthetic fixture. The V3 amendment and
+checkpoint are local content-addressed candidates, not publication, trust,
+approval, execution authority, receipt activation, G0 exit, or G1a authority.
+
 G0 remains `blocked_before_g1a`. The ten open items are externally rooted
 immutable assurance readback/acceptance and authorized baseline gate results;
 checkpoint publication;
@@ -219,10 +253,11 @@ changes begin.
 
 Work packages:
 
-- Preserve `main@d32c1846` as the published implementation baseline, keep the
-  roadmap and G0 decision/validation packet isolated, and create its intentional
-  checkpoint only after explicit commit approval. Do not mix a new transport
-  change into this worktree.
+- Preserve `main@d32c1846` as the selected implementation baseline and
+  `929fda5f` as the locally observed first G0 packet commit. Keep the bounded
+  successor command-profile/validation correction isolated, and create its
+  intentional checkpoint only after explicit commit approval. Do not mix a new
+  transport change into this worktree.
 - Approve the V1 definition in this section, including whether P2P is a GA gate.
   Under this canonical plan it is required for eligible networks; a relay-only
   build must remain a pre-V1 beta unless an explicit versioned product decision
@@ -722,7 +757,7 @@ content.
 | Physical evidence is too narrow | One debug Samsung/same-Wi-Fi run is the current optical proof. | Maintain the G5/G6 device and network matrix; preserve no-device versus physical versus production labels. |
 | Release pipeline is absent | Ad-hoc macOS signing, no Android production signing, and no repository CI workflows. | Begin signing/provenance/CI work during G1-G3 rather than after networking completes. |
 | Advanced features displace launch work | The repository already contains broad memory, research, permission, and future-platform plans. | Treat them as maintenance-only unless required for compatibility or a release blocker; keep the canonical critical path above. |
-| Historical docs or mixed work obscure truth | The implementation baseline is published, the bounded roadmap/G0 packet is the current unpublished scope, and older version labels describe feature themes. | Keep G0 isolated from transport implementation, synchronize the handoff/progress/QA current entries, and let this section govern shipping order while the handoff governs evidence. |
+| Historical docs or mixed work obscure truth | The implementation baseline is published, the first G0 packet is locally committed, the bounded command-profile/offline-gate successor is the current unpublished scope, and older version labels describe feature themes. | Keep G0 isolated from transport implementation, synchronize the handoff/progress/QA current entries, and let this section govern shipping order while the handoff governs evidence. |
 
 ### V1 Definition Of Done
 
@@ -759,14 +794,19 @@ V1 is complete only when all of the following are true:
    establish publication readiness for the versioned G0 threat model,
    protocol/data-flow inventories,
    risk register, release checklist, observability schema, and incident/rollback
-   runbook; obtain separate authority for the full no-device and release-
-   compilation gates before running them. The local candidate alone is not
-   immutable publication or owner acceptance.
-2. Review and intentionally publish the roadmap plus G0 decision/validation
-   packet from `main@d32c1846`; do not mix transport implementation into that
-   checkpoint. Remote-read the exact commit and checkpoint digest before any
-   owner or gate receipt accepts it; record those receipts only in a successor
-   versioned checkpoint.
+   runbook. Review the content-addressed V2 closure amendment and verify its two
+   executable command profiles plus offline/egress-denied side-effect
+   boundaries; both remain unauthorized. Review the dormant publication
+   validator's four-blob/remote-byte provenance boundary as candidate code only.
+   Review the V3 six-blob complete-bundle profiles and dormant compiler without
+   treating structural completeness as trust or activation. None of these local
+   candidates is immutable publication or owner acceptance.
+2. Review and intentionally publish the bounded V2/V3 successor roadmap plus G0
+   decision/assurance/validation packet based on `929fda5f`; do not mix
+   transport implementation into that checkpoint. Independently remote-read
+   the exact successor commit, checkpoint path, and bytes before any owner or
+   gate receipt accepts it. The local push-tracking evidence for `929fda5f`
+   cannot substitute for that readback.
 3. Close the remaining machine-recorded G0 blockers: application namespaces,
    distribution accounts/key owners, provider compatibility, service-domain/
    DNS/WebPKI ownership, service-root/signer owners, privacy/incident owners,
@@ -792,11 +832,11 @@ V1 is complete only when all of the following are true:
 
 ## Canonical Session Continuation Baseline
 
-- Priority and status: the implementation baseline is published at `main@d32c1846` and aligned with `origin/main` when refreshed. V1 execution has started with the roadmap, versioned G0 decision/assurance validation, a content-addressed local assurance readback candidate, and synchronized current documents; no transport implementation is in scope. The candidate has no publication root or owner acceptance. The next session must still refresh branch, HEAD, Git status, device attachment, and runtime process state instead of inheriting stale conversation or artifact assumptions.
+- Priority and status: the selected implementation baseline remains `d32c1846`; local Git shows the first G0 packet at `main@929fda5f`, aligned with the local `origin/main` tracking ref and a local push update. This is not independent remote readback. The current successor candidate adds the exact two-check command-profile catalog, offline Gradle enforcement, validation, and synchronized documents; no transport implementation is in scope. It has no publication receipt or owner acceptance. The next session must still refresh branch, HEAD, Git status, device attachment, and runtime process state instead of inheriting stale conversation or artifact assumptions.
 - Current product checkpoint: one same-Wi-Fi debug QR has been decoded from the real macOS screen and paired through a physical `SM-S936N` camera; trust, challenge-response, health exchange, and stored-trust Bonjour reconnect were observed. Release remote-route enforcement, explicit Connection Recovery remote wiring, and primary-interface selection remain pinned by final focused, UI, static, and release evidence.
 - Default next bounded slice: close the machine-recorded G0 ownership and publication blockers, then issue a separate G1a no-network authority record. The strict JSON optimization remains maintenance-only. When a device is attached, physical expired/rotated QR recovery, camera permission denial/regrant, TalkBack/VoiceOver traversal, and process-death persistence remain G5/G6 evidence gaps rather than a substitute for G0.
 - Conditional next slice: different-network pairing may begin only after the exact reachable route, environment, and execution authority are established. Same-Wi-Fi `local_diagnostic` evidence is not a relay, P2P/NAT, Phase B, production-capacity, deployment, or readiness result.
-- Publication rule: the prior optimization and documentation work is published in `d32c1846`; the current unpublished scope is the roadmap and bounded G0 decision/assurance/validation/documentation packet. Any commit or push must still start from an explicit file review; blanket staging is not the default.
+- Publication rule: the first G0 packet is locally committed at `929fda5f`, but only an independently acquired remote commit/path/byte readback can create publication evidence. The current unpublished scope is the bounded command-profile/offline-gate successor correction and synchronized hashes/documents. Any commit or push must still start from an explicit file review; blanket staging is not the default.
 - Continuity rule: update the existing canonical handoff after future substantial work and synchronize current progress, QA, and roadmap facts. GPT-5.6 Sol is the requested subagent model; GPT-5.3-Codex-Spark remains excluded for this workstream.
 - Reading rule: `docs/handoff.md` and the current sections at the top of this roadmap are authoritative. Sections marked Historical Checkpoint or Superseded preserve at-checkpoint evidence only and cannot override the current Debug/Release matrix, physical observation manifest, or authority boundary.
 - Authority freshness: the QR-modified P2P/NAT source snapshot is synchronized at 13-artifact collection SHA-256 `6e6dfbfc0cdb70370c30f54222584b69042a6e22b6df04c7f3e65043c38522bd`; its validator and seven Phase A progress tests pass. This does not select a library or open compiler, socket, runtime-network, Phase B, production, or deployment authority.

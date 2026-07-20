@@ -5,8 +5,12 @@ import copy
 from decimal import Decimal, Inexact, localcontext
 import hashlib
 import json
+import os
 from pathlib import Path
+import shutil
+import tempfile
 import unittest
+from unittest import mock
 
 from script import check_v1_g0_decision
 
@@ -170,6 +174,16 @@ class V1G0DecisionTests(unittest.TestCase):
         cls.assurance_raw = (ROOT / "docs/v1/g0/assurance-v1.json").read_text(encoding="utf-8")
         cls.assurance = json.loads(cls.assurance_raw)
         cls.assurance_markdown = (ROOT / "docs/v1/g0/assurance-v1.md").read_text(encoding="utf-8")
+        cls.amendment_raw = (
+            ROOT / "docs/v1/g0/assurance-closure-amendment-v2.json"
+        ).read_text(encoding="utf-8")
+        cls.amendment = json.loads(cls.amendment_raw)
+        cls.amendment_checkpoint_raw = (
+            ROOT / "docs/v1/g0/assurance-closure-amendment-checkpoint-v2.json"
+        ).read_text(encoding="utf-8")
+        cls.amendment_markdown = (
+            ROOT / "docs/v1/g0/assurance-closure-amendment-v2.md"
+        ).read_text(encoding="utf-8")
 
     def failures(
         self,
@@ -208,8 +222,196 @@ class V1G0DecisionTests(unittest.TestCase):
     def mutated_assurance(self) -> dict[str, object]:
         return copy.deepcopy(self.assurance)
 
+    def amendment_failures(
+        self,
+        amendment: dict[str, object] | None = None,
+        *,
+        raw: str | None = None,
+        checkpoint_raw: str | None = None,
+    ) -> list[str]:
+        if raw is None:
+            raw = json.dumps(amendment if amendment is not None else self.amendment)
+        return check_v1_g0_decision.collect_assurance_amendment_failures(
+            raw_json=raw,
+            checkpoint_raw_json=(
+                self.amendment_checkpoint_raw
+                if checkpoint_raw is None
+                else checkpoint_raw
+            ),
+            markdown=self.amendment_markdown,
+            verify_files=False,
+        )
+
+    def mutated_amendment(self) -> dict[str, object]:
+        return copy.deepcopy(self.amendment)
+
+    def copy_amendment_fixture(self, root: Path) -> None:
+        for relative_path in (
+            "docs/v1/g0/assurance-v1.json",
+            "docs/v1/g0/assurance-checkpoint-readback-v1.json",
+            "docs/v1/g0/assurance-closure-amendment-v2.json",
+            "docs/v1/g0/assurance-closure-amendment-checkpoint-v2.json",
+            "docs/v1/g0/assurance-closure-amendment-v2.md",
+            "script/check_no_device_quality.sh",
+        ):
+            destination = root / relative_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / relative_path, destination)
+
     def test_current_decision_and_repository_baseline_pass(self) -> None:
         self.assertEqual(check_v1_g0_decision.collect_failures(), [])
+        aggregate = (ROOT / "script/check_no_device_quality.sh").read_text(
+            encoding="utf-8"
+        )
+        for required in (
+            "script/check_v1_g0_publication_receipt.py",
+            "script/test_v1_g0_publication_receipt.py",
+            "script/check_v1_g0_receipt_bundle.py",
+            "script/test_v1_g0_receipt_bundle.py",
+        ):
+            self.assertIn(required, aggregate)
+
+    def test_assurance_closure_amendment_is_exact_fail_closed_and_non_authorizing(self) -> None:
+        self.assertEqual(self.amendment_failures(), [])
+
+        mutations: list[dict[str, object]] = []
+
+        parent_drift = self.mutated_amendment()
+        parent_drift["parent"]["assuranceRawByteSha256"] = "0" * 64
+        mutations.append(parent_drift)
+
+        nested_schema_reused = self.mutated_amendment()
+        nested_schema_reused["operations"][2]["value"] = 1
+        mutations.append(nested_schema_reused)
+
+        reordered_patch = self.mutated_amendment()
+        reordered_patch["operations"][3:5] = reversed(
+            reordered_patch["operations"][3:5]
+        )
+        mutations.append(reordered_patch)
+
+        unknown_path = self.mutated_amendment()
+        unknown_path["operations"][3]["path"] = "/g0ClosureContract/implicitAuthority"
+        mutations.append(unknown_path)
+
+        profile_digest_forged = self.mutated_amendment()
+        profile_digest_forged["operations"][7]["value"][0][
+            "canonicalProfileSha256"
+        ] = "0" * 64
+        mutations.append(profile_digest_forged)
+
+        profile_authorized = self.mutated_amendment()
+        profile_authorized["operations"][7]["value"][0]["profileBody"][
+            "currentAuthorizationState"
+        ] = "authorized"
+        mutations.append(profile_authorized)
+
+        offline_removed = self.mutated_amendment()
+        offline_removed["operations"][7]["value"][1]["profileBody"][
+            "orderedSteps"
+        ][0]["argv"].remove("--offline")
+        mutations.append(offline_removed)
+
+        executable_scope_expanded = self.mutated_amendment()
+        executable_scope_expanded["operations"][4]["value"].append(
+            "roadmap_and_g0_checkpoint_publication"
+        )
+        mutations.append(executable_scope_expanded)
+
+        publication_binding_weakened = self.mutated_amendment()
+        publication_binding_weakened["operations"][9]["value"][
+            "commitContainmentPolicy"
+        ] = "checkpoint_only"
+        mutations.append(publication_binding_weakened)
+
+        authority_opened = self.mutated_amendment()
+        authority_opened["authority"]["compilerOrLinkerInvocationAllowed"] = True
+        mutations.append(authority_opened)
+
+        effective_digest_forged = self.mutated_amendment()
+        effective_digest_forged["effectiveAssurance"]["canonicalSha256"] = "0" * 64
+        mutations.append(effective_digest_forged)
+
+        for index, mutation in enumerate(mutations):
+            with self.subTest(mutation=index):
+                self.assertTrue(self.amendment_failures(mutation))
+
+        duplicate_raw = self.amendment_raw.replace(
+            '  "schemaVersion": "1.0",',
+            '  "schemaVersion": "1.0",\n  "schemaVersion": "1.0",',
+            1,
+        )
+        self.assertTrue(
+            any("duplicate key" in failure for failure in self.amendment_failures(raw=duplicate_raw))
+        )
+
+        checkpoint = json.loads(self.amendment_checkpoint_raw)
+        checkpoint["authority"]["commandProfileExecutionAllowed"] = True
+        self.assertTrue(
+            self.amendment_failures(
+                checkpoint_raw=json.dumps(checkpoint),
+            )
+        )
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fixture_root = Path(temporary_directory)
+            self.copy_amendment_fixture(fixture_root)
+            amendment_path = (
+                fixture_root / "docs/v1/g0/assurance-closure-amendment-v2.json"
+            )
+            matching_target = fixture_root / "matching-amendment.json"
+            shutil.copy2(amendment_path, matching_target)
+            amendment_path.unlink()
+            amendment_path.symlink_to(matching_target)
+            symlink_failures = (
+                check_v1_g0_decision.collect_assurance_amendment_failures(
+                    root=fixture_root,
+                )
+            )
+            self.assertTrue(
+                any("regular non-symlink" in failure for failure in symlink_failures)
+            )
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fixture_root = Path(temporary_directory)
+            self.copy_amendment_fixture(fixture_root)
+            amendment_path = (
+                fixture_root / "docs/v1/g0/assurance-closure-amendment-v2.json"
+            )
+            original_apply = (
+                check_v1_g0_decision.apply_assurance_amendment_operations
+            )
+            replacement_done = False
+
+            def apply_after_identical_replacement(
+                parent: dict[str, object],
+                operations: object,
+                failures: list[str],
+            ) -> dict[str, object]:
+                nonlocal replacement_done
+                if not replacement_done:
+                    replacement_path = amendment_path.with_suffix(".replacement")
+                    shutil.copy2(amendment_path, replacement_path)
+                    os.replace(replacement_path, amendment_path)
+                    replacement_done = True
+                return original_apply(parent, operations, failures)
+
+            with mock.patch.object(
+                check_v1_g0_decision,
+                "apply_assurance_amendment_operations",
+                side_effect=apply_after_identical_replacement,
+            ):
+                replacement_failures = (
+                    check_v1_g0_decision.collect_assurance_amendment_failures(
+                        root=fixture_root,
+                    )
+                )
+            self.assertTrue(
+                any(
+                    "repository path identity changed during validation" in failure
+                    for failure in replacement_failures
+                )
+            )
 
     def test_duplicate_key_is_rejected(self) -> None:
         raw = self.raw.replace(

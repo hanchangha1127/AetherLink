@@ -1,0 +1,461 @@
+{
+  "documentType": "aetherlink.v1-g0-assurance-closure-amendment",
+  "schemaVersion": "1.0",
+  "amendmentId": "aetherlink_v1_g0_assurance_closure_amendment_v3",
+  "recordedDate": "2026-07-20",
+  "status": "candidate_not_published_not_authorized",
+  "supersedes": {
+    "amendmentId": "aetherlink_v1_g0_assurance_closure_amendment_v2",
+    "amendmentPath": "docs/v1/g0/assurance-closure-amendment-v2.json",
+    "checkpointPath": "docs/v1/g0/assurance-closure-amendment-checkpoint-v2.json",
+    "policy": "exact_lineage_successor_without_v1_or_v2_mutation"
+  },
+  "parent": {
+    "assuranceId": "aetherlink_v1_g0_assurance_v2",
+    "schemaVersion": "2.0",
+    "effectiveAssuranceCanonicalSha256": "5777e26d1f2535da58deb74d5f7907617caf8aa99fa20885c771c29ecfb7726a",
+    "closureSchemaVersion": 2,
+    "closureCanonicalSha256": "d8dcc755ba58b2e5eb72f5df7ce09ff9586504105eddb75290b9c11f5478a20d",
+    "materializationPolicy": "exact_v1_parent_deep_copy_plus_ordered_v2_operations",
+    "lineageArtifacts": [
+      {
+        "role": "v1_parent_assurance",
+        "path": "docs/v1/g0/assurance-v1.json",
+        "rawSha256": "64d7d48c1f82b43a33e860b45c769878cb654f0678e94bfd540f12c3d1a9a43d",
+        "canonicalSha256": "7642029c307dd658b4e325f409deeef7f0b2addb82105270aa4c83cc588c4a11"
+      },
+      {
+        "role": "v1_parent_checkpoint",
+        "path": "docs/v1/g0/assurance-checkpoint-readback-v1.json",
+        "rawSha256": "9b2a108b7a2e8223ec4c50b538277857a2dbc064b9da694fa7c6c200f1081048",
+        "canonicalSha256": "1e20f60154ea82e3a6a4c16573d7d52b60e362098e7c5a614b6866d303a2b2b5"
+      },
+      {
+        "role": "v2_parent_amendment",
+        "path": "docs/v1/g0/assurance-closure-amendment-v2.json",
+        "rawSha256": "b04204e86c9af4291e8b7112c14e420877a54d2688b5b5d967432949b8f7aea6",
+        "canonicalSha256": "8b843526eef12e147593084d21ea3f40336628c623f732f0fd64d6ad80bbec7b"
+      },
+      {
+        "role": "v2_parent_checkpoint",
+        "path": "docs/v1/g0/assurance-closure-amendment-checkpoint-v2.json",
+        "rawSha256": "b12bf8d1f6e782f57b9012728f5b7dada1008d9885f4263782fafa0c256cdc0c",
+        "canonicalSha256": "4f26d087b0eb0cf312911ddbd1ee25dc8fcfbb0deef6fb8d10009515a16391ca"
+      }
+    ]
+  },
+  "patchProfile": {
+    "semantics": "ordered_json_pointer_add_replace_v1",
+    "allowedOperations": [
+      {
+        "op": "replace",
+        "path": "/schemaVersion"
+      },
+      {
+        "op": "replace",
+        "path": "/assuranceId"
+      },
+      {
+        "op": "replace",
+        "path": "/g0ClosureContract/schemaVersion"
+      },
+      {
+        "op": "add",
+        "path": "/g0ClosureContract/sourceBindings/receiptBundleProfile"
+      },
+      {
+        "op": "add",
+        "path": "/g0ClosureContract/receiptBundleProfile"
+      },
+      {
+        "op": "add",
+        "path": "/g0ClosureContract/ownerBindingProfile"
+      },
+      {
+        "op": "replace",
+        "path": "/g0ClosureContract/evidenceCatalogRecordProfile"
+      },
+      {
+        "op": "add",
+        "path": "/g0ClosureContract/authorityBindingProfile"
+      },
+      {
+        "op": "add",
+        "path": "/g0ClosureContract/runnerAttestationProfile"
+      },
+      {
+        "op": "replace",
+        "path": "/g0ClosureContract/gateReceiptProfile"
+      },
+      {
+        "op": "replace",
+        "path": "/g0ClosureContract/approvalReceiptProfile"
+      },
+      {
+        "op": "replace",
+        "path": "/g0ClosureContract/publicationReceiptProfile"
+      },
+      {
+        "op": "replace",
+        "path": "/g0ClosureContract/receiptActivationPolicy"
+      }
+    ],
+    "unknownOperationOrPathPolicy": "reject",
+    "arrayIndexOperationPolicy": "reject",
+    "parentMutationPolicy": "deep_copy_effective_v2_then_apply_exact_ordered_operations",
+    "effectiveDigestPolicy": "lowercase_sha256_of_utf8_json_sort_keys_true_separators_comma_colon_ensure_ascii_false_effective_document"
+  },
+  "operations": [
+    {
+      "op": "replace",
+      "path": "/schemaVersion",
+      "value": "3.0"
+    },
+    {
+      "op": "replace",
+      "path": "/assuranceId",
+      "value": "aetherlink_v1_g0_assurance_v3"
+    },
+    {
+      "op": "replace",
+      "path": "/g0ClosureContract/schemaVersion",
+      "value": 3
+    },
+    {
+      "op": "add",
+      "path": "/g0ClosureContract/sourceBindings/receiptBundleProfile",
+      "value": "#/g0ClosureContract/receiptBundleProfile"
+    },
+    {
+      "op": "add",
+      "path": "/g0ClosureContract/receiptBundleProfile",
+      "value": {
+        "exactFields": [
+          "documentType",
+          "schemaVersion",
+          "effectiveAssuranceCanonicalSha256",
+          "publicationReceipt",
+          "ownerBindings",
+          "evidenceCatalog",
+          "authorityBindings",
+          "runnerAttestations",
+          "gateReceipts",
+          "approvalReceipts"
+        ],
+        "documentType": "aetherlink.v1-g0-complete-receipt-bundle-candidate",
+        "schemaVersion": 1,
+        "effectiveAssuranceBindingPolicy": "equals_independently_reconstructed_effective_v3_canonical_sha256_and_publication_receipt_effective_assurance_canonical_sha256",
+        "arrayOrderPolicy": "owner_and_approval_arrays_exact_canonical_role_order_evidence_exact_non_derived_kind_order_authority_runner_and_gate_exact_executable_check_order",
+        "exactCardinalityPolicy": "one_publication_receipt_fourteen_owner_bindings_fifteen_non_derived_evidence_records_two_authority_bindings_two_runner_attestations_two_gate_receipts_fourteen_approval_receipts",
+        "evidenceCatalogPolicy": "exact_non_derived_evidence_kind_coverage_unique_ids_no_orphans_and_no_derived_evidence_kind_inputs",
+        "unknownFieldPolicy": "reject",
+        "partialBundlePolicy": "reject",
+        "forbiddenInputFields": [
+          "result",
+          "status",
+          "activated",
+          "effectiveAssuranceActivated",
+          "g0ExitComplete",
+          "g1aMayStartNow"
+        ],
+        "resourceBounds": {
+          "maximumBundleBytes": 4194304,
+          "maximumJsonDepth": 32,
+          "maximumArrayItems": 256,
+          "maximumStringUtf8Bytes": 4096,
+          "maximumReferencedArtifactBytes": 4194304,
+          "maximumTotalReferencedArtifactBytes": 62914560,
+          "maximumSanitizedLogBytes": 4194304
+        }
+      }
+    },
+    {
+      "op": "add",
+      "path": "/g0ClosureContract/ownerBindingProfile",
+      "value": {
+        "exactFields": [
+          "ownerBindingRef",
+          "role",
+          "ownerIdentityRef",
+          "credentialRef",
+          "identityRegistryRef",
+          "identityRegistryRevision",
+          "validFrom",
+          "validUntil",
+          "revocationRef",
+          "provenanceRef"
+        ],
+        "ownerBindingRefPattern": "^g0-owner-binding-[a-z0-9][a-z0-9_-]{0,95}-v[1-9][0-9]*$",
+        "rolePolicy": "one_exact_binding_per_role_in_canonical_approval_role_order",
+        "identityPolicy": "all_fourteen_owner_identity_refs_nonempty_unique_opaque_nonsecret_and_no_key_or_credential_bytes_in_bundle",
+        "validityPolicy": "canonical_rfc3339_utc_valid_from_strictly_before_valid_until_and_covers_the_corresponding_accepted_at",
+        "provenancePolicy": "private_context_independently_authenticates_the_exact_binding_against_the_exact_external_registry_revision_and_revocation_snapshot"
+      }
+    },
+    {
+      "op": "replace",
+      "path": "/g0ClosureContract/evidenceCatalogRecordProfile",
+      "value": {
+        "exactFields": [
+          "evidenceId",
+          "evidenceKind",
+          "evidenceClass",
+          "subjectImplementationRevision",
+          "subjectCheckpointSha256",
+          "artifactPath",
+          "artifactByteLength",
+          "artifactSha256",
+          "verificationMethod",
+          "verifierIdentityRef",
+          "verifiedAt",
+          "provenanceRef"
+        ],
+        "evidenceIdPattern": "^g0-evidence-[a-z0-9_-]{1,96}$",
+        "sha256Pattern": "^[0-9a-f]{64}$",
+        "evidenceKindPolicy": "exact_first_occurrence_order_of_all_required_evidence_kinds_after_removing_the_two_canonical_derived_kinds",
+        "artifactPolicy": "exact_repository_relative_regular_non_symlink_sanitized_artifact_with_private_context_bytes_length_and_sha256_match",
+        "subjectPolicy": "implementation_revision_equals_publication_commit_and_checkpoint_sha256_equals_v3_amendment_checkpoint_raw_sha256",
+        "provenancePolicy": "private_context_independently_authenticates_the_exact_record_artifact_bytes_verifier_and_verified_at",
+        "sensitiveDataPolicy": "no_credentials_keys_tokens_personal_contacts_pairing_material_private_account_data_or_unsanitized_logs",
+        "derivedEvidenceKindsForbidden": [
+          "owner_acceptance",
+          "quality_measurement_contract_owner_approvals"
+        ],
+        "unknownFieldPolicy": "reject"
+      }
+    },
+    {
+      "op": "add",
+      "path": "/g0ClosureContract/authorityBindingProfile",
+      "value": {
+        "exactFields": [
+          "authorizationRef",
+          "authorityIssuerRef",
+          "checkId",
+          "sourcePublicationCommit",
+          "commandProfileId",
+          "commandProfileSha256",
+          "commandArgvSha256",
+          "workingDirectorySha256",
+          "environmentSha256",
+          "allowedSideEffectsSha256",
+          "notBefore",
+          "notAfter",
+          "revocationRef",
+          "provenanceRef"
+        ],
+        "authorizationRefPattern": "^g0-authority-[a-z0-9][a-z0-9_-]{0,95}-v[1-9][0-9]*$",
+        "sha256Pattern": "^[0-9a-f]{64}$",
+        "checkPolicy": "one_exact_binding_per_executable_check_in_canonical_executable_check_order",
+        "profilePolicy": "profile_id_and_profile_digest_equal_the_effective_v3_catalog_and_command_argv_digest_equals_the_canonical_ordered_steps_digest",
+        "executionContextPolicy": "working_directory_environment_and_allowed_side_effect_digests_bind_the_exact_nonsecret_execution_context_with_no_wildcard_or_superset",
+        "validityPolicy": "canonical_rfc3339_utc_not_before_strictly_before_not_after_and_the_entire_runner_interval_is_covered",
+        "provenancePolicy": "private_context_independently_authenticates_the_exact_binding_issuer_validity_and_nonrevocation"
+      }
+    },
+    {
+      "op": "add",
+      "path": "/g0ClosureContract/runnerAttestationProfile",
+      "value": {
+        "exactFields": [
+          "runnerAttestationRef",
+          "runnerIdentityRef",
+          "authorizationRef",
+          "checkId",
+          "sourcePublicationCommit",
+          "commandProfileId",
+          "commandProfileSha256",
+          "commandArgvSha256",
+          "workingDirectorySha256",
+          "environmentSha256",
+          "allowedSideEffectsSha256",
+          "toolchainManifestSha256",
+          "dependencyManifestSha256",
+          "observationManifestSha256",
+          "orderedStepResults",
+          "startedAt",
+          "completedAt",
+          "exitCode",
+          "sanitizedLogSha256",
+          "evidenceRefs",
+          "provenanceRef"
+        ],
+        "orderedStepResultExactFields": [
+          "stepId",
+          "argvSha256",
+          "startedAt",
+          "completedAt",
+          "exitCode"
+        ],
+        "runnerAttestationRefPattern": "^g0-runner-attestation-[a-z0-9][a-z0-9_-]{0,95}-v[1-9][0-9]*$",
+        "sha256Pattern": "^[0-9a-f]{64}$",
+        "stepPolicy": "exact_profile_step_count_order_step_ids_and_per_step_argv_digests_all_exit_codes_integer_zero",
+        "timePolicy": "canonical_rfc3339_utc_profile_ordered_nonoverlapping_steps_within_the_attestation_interval",
+        "exitPolicy": "exact_integer_zero_and_equal_to_the_gate_receipt_exit_code",
+        "manifestPolicy": "private_context_exact_toolchain_dependency_and_egress_process_observation_manifest_bytes_sha256_match_the_three_manifest_digests",
+        "logPolicy": "private_context_exact_sanitized_log_bytes_sha256_match_with_no_omitted_failure_output",
+        "evidenceRefsPolicy": "ordered_unique_catalog_ids_exactly_covering_the_command_profiles_required_evidence_kinds",
+        "provenancePolicy": "private_context_independently_authenticates_the_exact_attestation_trusted_runner_identity_and_observation_controls"
+      }
+    },
+    {
+      "op": "replace",
+      "path": "/g0ClosureContract/gateReceiptProfile",
+      "value": {
+        "exactFields": [
+          "checkId",
+          "authorizationRef",
+          "runnerAttestationRef",
+          "sourcePublicationCommit",
+          "commandProfileId",
+          "commandProfileSha256",
+          "startedAt",
+          "completedAt",
+          "exitCode",
+          "sanitizedLogSha256",
+          "evidenceRefs"
+        ],
+        "checkPolicy": "one_exact_receipt_per_executable_check_in_canonical_executable_check_order",
+        "authorityRunnerPolicy": "all_shared_fields_exactly_equal_the_unique_authority_and_runner_records_for_the_same_check_id",
+        "exitPolicy": "exact_integer_zero_and_all_exact_profile_steps_attested_zero",
+        "evidenceRefsPolicy": "ordered_unique_catalog_ids_exactly_covering_the_command_profiles_required_evidence_kinds",
+        "timePolicy": "publication_remote_readback_at_not_after_started_at_not_after_completed_at_and_authority_valid_for_the_entire_interval",
+        "sourceTreePolicy": "exact_verified_publication_commit",
+        "unknownFieldPolicy": "reject"
+      }
+    },
+    {
+      "op": "replace",
+      "path": "/g0ClosureContract/approvalReceiptProfile",
+      "value": {
+        "exactFields": [
+          "role",
+          "ownerIdentityRef",
+          "status",
+          "acceptedRevision",
+          "acceptedPublicationCommit",
+          "acceptedBlockerIds",
+          "acceptedAt",
+          "acceptanceEvidenceRefs"
+        ],
+        "completeBundleStatusPolicy": "exact_accepted",
+        "rolePolicy": "one_exact_receipt_per_role_in_canonical_approval_role_order",
+        "ownerBindingPolicy": "role_and_owner_identity_ref_exactly_equal_the_unique_corresponding_owner_binding",
+        "publicationBindingPolicy": "accepted_revision_equals_v3_amendment_checkpoint_raw_sha256_and_accepted_publication_commit_equals_the_verified_publication_commit",
+        "blockerScopePolicy": "accepted_blocker_ids_equal_canonical_blocker_order_filtered_to_every_blocker_requiring_the_role_with_no_subset",
+        "authenticationPolicy": "private_context_authenticates_the_exact_canonical_eight_field_receipt_using_the_corresponding_owner_binding_identity_and_credential_valid_and_nonrevoked_at_accepted_at",
+        "timePolicy": "canonical_rfc3339_utc_after_all_referenced_evidence_and_within_the_owner_binding_validity_interval",
+        "acceptanceEvidenceRefsPolicy": "exact_evidence_catalog_order_filter_for_published_checkpoint_plus_all_non_derived_required_evidence_kinds_of_the_accepted_blocker_scope",
+        "derivedEvidenceInputPolicy": "owner_acceptance_and_quality_measurement_contract_owner_approvals_are_never_catalog_or_acceptance_reference_inputs",
+        "unknownFieldPolicy": "reject"
+      }
+    },
+    {
+      "op": "replace",
+      "path": "/g0ClosureContract/publicationReceiptProfile",
+      "value": {
+        "exactFields": [
+          "repositoryRef",
+          "commitObjectId",
+          "artifactBindings",
+          "parentEffectiveAssuranceCanonicalSha256",
+          "parentClosureSchemaVersion",
+          "parentClosureCanonicalSha256",
+          "effectiveAssuranceCanonicalSha256",
+          "effectiveClosureSchemaVersion",
+          "effectiveClosureCanonicalSha256",
+          "remoteCheckpointPath",
+          "remoteCheckpointRawSha256",
+          "remoteReadbackAt",
+          "remoteReadbackSha256"
+        ],
+        "artifactBindingExactFields": [
+          "role",
+          "path",
+          "rawSha256",
+          "canonicalSha256"
+        ],
+        "repositoryRefPolicy": "nonempty_opaque_nonsecret_expected_publication_target",
+        "commitObjectIdPattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+        "artifactPolicy": "exact_six_roles_paths_raw_and_canonical_hashes_in_canonical_lineage_order",
+        "sha256Pattern": "^[0-9a-f]{64}$",
+        "commitContainmentPolicy": "resolved_commit_tree_contains_the_exact_six_blob_bytes_at_the_exact_paths_and_hashes",
+        "effectiveReconstructionPolicy": "independently_apply_exact_v2_operations_to_exact_v1_then_exact_v3_operations_to_effective_v2_and_match_the_effective_v3_assurance_and_closure_digests",
+        "remoteEqualityPolicy": "independently_acquired_remote_v3_checkpoint_exact_bytes_equal_the_commit_blob_and_both_remote_checkpoint_hash_fields",
+        "timePolicy": "canonical_rfc3339_utc",
+        "unknownFieldPolicy": "reject"
+      }
+    },
+    {
+      "op": "replace",
+      "path": "/g0ClosureContract/receiptActivationPolicy",
+      "value": {
+        "currentCandidateState": "v3_complete_receipt_bundle_candidate_dormant_non_authorizing",
+        "receiptDerivedTrustAnchorsAllowed": false,
+        "bundleSuppliedResultOrActivationFieldsAllowed": false,
+        "validationContextPolicy": "module_owned_factory_only_opaque_deep_immutable_and_built_from_canonical_contracts_exact_six_blob_bytes_and_independent_publication_owner_registry_revocation_authority_runner_provenance_artifact_log_manifest_and_time_observations",
+        "independentTrustInputs": [
+          "reviewed_repository_and_commit_target",
+          "independent_remote_v3_checkpoint_bytes",
+          "trusted_owner_identity_registry_and_revocation_snapshot",
+          "trusted_authority_issuer_registry_and_revocation_snapshot",
+          "trusted_runner_registry_and_attestation_verifier_outputs",
+          "exact_artifact_log_and_runner_manifest_bytes",
+          "trusted_validation_time"
+        ],
+        "exactFinalCoveragePolicy": "derive_role_blocker_check_and_evidence_sets_only_from_effective_v3_and_reject_missing_extra_duplicate_ambiguous_or_orphan_records",
+        "derivedEvidencePolicy": "owner_acceptance_and_quality_measurement_contract_owner_approvals_are_validator_derived_only_and_never_catalog_inputs",
+        "timePolicy": "remote_readback_not_after_authority_and_execution_evidence_not_after_acceptance_not_after_trusted_validation_time",
+        "replayPolicy": "cross_target_replay_rejected_by_exact_bindings_same_target_activation_requires_a_future_external_consumed_bundle_ledger",
+        "partialBundleAcceptanceAllowed": false,
+        "candidateValidationMayAuthorize": false,
+        "receiptActivationAllowed": false,
+        "g1aAuthorityDerivationAllowed": false,
+        "successorActivationPrerequisites": [
+          "implemented_and_reviewed_independent_trust_adapters_for_every_independent_trust_input",
+          "module_owned_unforgeable_validation_context_with_resource_bounded_snapshotting",
+          "authenticated_nonrevoked_owner_authority_and_runner_provenance_over_exact_payloads",
+          "actual_artifact_log_manifest_commit_and_remote_bytes_recomputed_and_cross_bound",
+          "exact_complete_coverage_with_no_partial_duplicate_ambiguous_or_orphan_records",
+          "external_consumed_bundle_ledger_before_any_stateful_activation",
+          "separate_versioned_g1a_authority_record_for_any_g1a_transition"
+        ]
+      }
+    }
+  ],
+  "acceptance": {
+    "v1AndV2BytesUnchanged": true,
+    "amendmentPublicationReceipt": "absent",
+    "completeReceiptBundle": "absent",
+    "ownerAcceptance": "absent",
+    "gateReceipts": [],
+    "effectiveAssuranceActivated": false,
+    "g0ExitComplete": false,
+    "g1aMayStartNow": false
+  },
+  "authority": {
+    "g0DocumentationAndStaticValidationAllowed": true,
+    "receiptBundleCandidateStaticValidationAllowed": true,
+    "receiptBundleActivationAllowed": false,
+    "commandProfileCatalogAuthorizesExecution": false,
+    "fullNoDeviceAggregateAllowed": false,
+    "androidAndMacosReleaseCompilationAllowed": false,
+    "compilerOrLinkerInvocationAllowed": false,
+    "buildToolLocalIpcSocketAllowed": false,
+    "loopbackTestSocketAllowed": false,
+    "externalNetworkIoAllowed": false,
+    "adbOrPhysicalDeviceAllowed": false,
+    "productionKeySigningUploadOrDeploymentAllowed": false,
+    "g1aNoNetworkImplementationAllowed": false
+  },
+  "effectiveAssurance": {
+    "assuranceId": "aetherlink_v1_g0_assurance_v3",
+    "schemaVersion": "3.0",
+    "canonicalSha256": "e8f661094a678a2ac0966d8b35de46824316883a845eb9ae8c6e9f76df18ad4b",
+    "closureSchemaVersion": 3,
+    "closureCanonicalSha256": "79b0d7275bcf371e8b9ab5a6b123969474bfbc86b1d7e78fcb28ed7256e3a93c",
+    "status": "blocked_before_g1a",
+    "materializationPolicy": "validator_reconstructs_effective_v2_then_deep_copies_and_applies_the_exact_v3_operations_without_mutating_v1_or_v2"
+  },
+  "publication": null
+}

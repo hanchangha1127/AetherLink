@@ -62,8 +62,46 @@ This document records what has been implemented so far and what should happen ne
   opaque, independently anchored validation context covering actual commit-tree,
   remote, evidence-artifact and sanitized-log bytes, authenticated owner and
   runner attestations, authority/command bindings, and complete non-ambiguous
-  closure coverage before any receipt can participate. No such context or
-  receipt exists yet.
+  closure coverage before any receipt can participate. A synthetic-only,
+  non-authorizing publication candidate context now verifies four supplied
+  commit blobs plus independently supplied remote checkpoint bytes, but no
+  activation-capable context or receipt exists.
+- V2 closure amendment: the committed V1 assurance and checkpoint bytes remain
+  unchanged. `assurance-closure-amendment-v2.json` binds their raw/canonical
+  hashes, defines eleven exact ordered JSON Pointer operations, advances the
+  effective and nested closure schema identities, and records the independently
+  reconstructed effective V2 assurance digest. Its separate V2 checkpoint and
+  composite publication receipt bind parent, amendment, effective, commit, and
+  remote-readback identities. Unknown/reordered paths, array operations, missing
+  replace targets, occupied add targets, hash drift, symlinks, validation-time
+  replacement, authority promotion, and parent mutation fail closed.
+- Executable gate contract candidate: only `full_no_device_aggregate` and
+  `android_and_macos_release_compilation` are command gates. Their two
+  canonical profiles pin ordered argv, repository-root execution, clean
+  environment and full environment digest requirements, toolchain attestation,
+  exact allowed/forbidden side effects, offline Gradle plus OS-enforced egress
+  denial, sanitized logs, and required evidence kinds. The remaining seven G0
+  checks close from publication/catalog/owner evidence and cannot be forced
+  through a command receipt. Both profiles remain `not_authorized`; catalog
+  presence grants no build, IPC-socket, loopback-socket, or execution authority.
+- Dormant publication-receipt boundary: a factory-only immutable candidate
+  context snapshots the four exact commit blobs, separately reviewed target,
+  and distinct-provenance remote checkpoint bytes. Strict receipt validation
+  performs no receipt-directed I/O and returns failures only. Eight mutation
+  tests cover bundle reconstruction, mutable-input isolation, provenance,
+  fields, formats, targets, and malformed/oversized inputs. The canonical G0
+  checker rejects any explicitly supplied bundle, including a well-shaped one;
+  the private exact matcher also returns `dormant_non_authorizing`, and
+  acceptance, authority, and G0 state remain unchanged.
+- V3 complete-bundle contract: a new versioned successor preserves all V1/V2
+  bytes, reconstructs effective V2, then applies thirteen exact operations to
+  pin bundle, owner, evidence, authority, runner, gate, approval, and six-blob
+  publication profiles. The private pure compiler derives 14 roles, 15
+  non-derived evidence kinds, 15 role/blocker pairs, and two executable checks
+  from effective V3. It rejects self-asserted outcomes, partial or ambiguous
+  coverage, cross-binding and time drift, and unbounded input. Its exact
+  synthetic complete fixture still returns `dormant_non_authorizing`; no
+  independent trust adapter, activation path, or G1a authority was added.
 - Release-evidence boundary: a content hash alone cannot satisfy a release
   metric. The exact evidence envelope must carry the complete raw sample array,
   bind campaign/build/metric/threshold/platform/context, name an approved
@@ -101,16 +139,25 @@ This document records what has been implemented so far and what should happen ne
   canonical decision/assurance content, nine decision source hashes, 29
   assurance source hashes, current Android/macOS configuration and locales,
   active protocol message/error parity, all ten blockers, and every false
-  authority. Its 62 mutation tests reject nested unknown fields, security
+  authority. Its 63 mutation tests reject nested unknown fields, security
   downgrades, missing hard stops, protocol/threat/user-loop removal, forbidden
   observability fields, invented approvals, arbitrary or unsigned evidence,
   forged percentile scalars, oversized or noncanonical evidence, ambient-
   Decimal precision collisions, malformed signer IDs, noncanonical base64url
   terminal bits, zero-based/late/mixed network-variant observations, unbound
   network-variant outcomes, and evidence-free checklist passes. The G0 checker
-  now also requires the candidate readback validator; its separate eleven-test
-  mutation suite and checker are included in the default no-device gate, for 73
-  focused G0 mutation tests in total.
+  now also requires the candidate readback validator. Its separate eleven-test
+  mutation suite, the dormant publication candidate's eight-test suite, and
+  the V3 lineage/bundle candidate's ten-test suite are included in the default
+  no-device gate, for 92 focused G0 mutation tests in total.
+- Offline gate hardening: all five Gradle invocations inside
+  `script/check_no_device_quality.sh` now include `--offline`. Future authorized
+  execution must additionally use a runner-level egress deny and preseeded,
+  hash-attested wrapper/plugins/dependencies because the wrapper may otherwise
+  attempt bootstrap before Gradle applies project flags. No aggregate or release
+  compilation was run by this correction. Copy hygiene now recognizes only the
+  offline Gradle prefix for its active-command inventory and authoritative
+  three-class coverage guard, so later removal of `--offline` fails statically.
 - Current non-socket static verification also passes copy hygiene across 92
   user-facing files, docs hygiene across 12 current documents, Android/macOS
   five-locale parity, both protocol schemas, closed P2P/NAT and production-relay
@@ -126,6 +173,12 @@ This document records what has been implemented so far and what should happen ne
   region/capacity/cost also remain unresolved. G1a, source acquisition, P2P
   selection or compile, sockets, network I/O, production keys, signing, upload,
   and deployment remain closed.
+- Publication status: local Git shows the first G0 packet committed at
+  `929fda5f`, aligned with the local `origin/main` tracking ref and a local push
+  reflog update. Those local facts do not prove current remote bytes. The
+  content-addressed V2 closure-amendment/offline-gate successor and its V3
+  complete-bundle contract successor are uncommitted, and no publication,
+  owner, authority, runner, gate, or activation receipt exists.
 - Live evidence boundary: no Android device is attached. The existing ad-hoc
   arm64 macOS app was observed running on port 43170, but QR decode, provider
   traffic, physical UI, unrelated networks, and production behavior were not

@@ -4294,6 +4294,10 @@ run check_python_syntax \
   script/test_v1_g0_checkpoint.py \
   script/check_v1_g0_decision.py \
   script/test_v1_g0_decision.py \
+  script/check_v1_g0_publication_receipt.py \
+  script/test_v1_g0_publication_receipt.py \
+  script/check_v1_g0_receipt_bundle.py \
+  script/test_v1_g0_receipt_bundle.py \
   script/check_android_string_parity.py \
   script/check_macos_localization.py \
 	  script/check_protocol_schema.py \
@@ -4378,6 +4382,8 @@ run check_physical_external_relay_different_network_confirmation_guard
 run python3 -m unittest \
   script/test_v1_g0_checkpoint.py \
   script/test_v1_g0_decision.py \
+  script/test_v1_g0_publication_receipt.py \
+  script/test_v1_g0_receipt_bundle.py \
   script/test_production_relay_security_design.py \
   script/test_relay_allocation_preflight.py \
   script/test_build_and_run.py \
@@ -4387,6 +4393,7 @@ run git diff --check
 
 run python3 script/check_v1_g0_checkpoint.py
 run python3 script/check_v1_g0_decision.py
+run python3 script/check_v1_g0_receipt_bundle.py
 run python3 script/check_android_string_parity.py
 run python3 script/check_macos_localization.py
 run python3 script/check_protocol_schema.py
@@ -4416,7 +4423,7 @@ run python3 -m unittest script/test_p2p_nat_session_crypto_vectors.py
 run python3 script/check_p2p_nat_phase_a_harness_egress.py
 run python3 -m unittest script/test_p2p_nat_phase_a_harness_egress.py
 run python3 script/check_production_relay_security_design.py
-run ./gradlew --no-daemon \
+run ./gradlew --offline --no-daemon \
 	  :core:protocol:testDebugUnitTest \
 	  :core:transport:testDebugUnitTest \
 	  --tests 'com.localagentbridge.android.core.protocol.p2pnat.*' \
@@ -5229,7 +5236,7 @@ PY
 run ./script/runtime_authenticated_mock_smoke.swift --default-mock-routing-only
 run ./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh
 
-run ./gradlew --no-daemon \
+run ./gradlew --offline --no-daemon \
 	  :core:pairing:testDebugUnitTest \
 	  --tests com.localagentbridge.android.core.pairing.InitialPairingProofTest \
 	  --tests com.localagentbridge.android.core.pairing.PairedRelayAllocationAuthorizationTest \
@@ -5239,13 +5246,13 @@ run ./gradlew --no-daemon \
   --tests com.localagentbridge.android.core.pairing.PairingStoreTest \
   -Pkotlin.incremental=false
 
-run ./gradlew --no-daemon \
+run ./gradlew --offline --no-daemon \
   :core:protocol:testDebugUnitTest \
 	  --tests com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationAuthorizationTest \
 	  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest \
   -Pkotlin.incremental=false
 
-run ./gradlew --no-daemon \
+run ./gradlew --offline --no-daemon \
   :core:transport:testDebugUnitTest \
   --tests com.localagentbridge.android.core.transport.BonjourDiscoveryTest.bonjourTxtRouteTokenRejectsWhitespaceMutationsInsteadOfTrimming \
   --tests com.localagentbridge.android.core.transport.BonjourDiscoveryTest.bonjourTxtRouteTokenRejectsOversizedAndMalformedValues \
@@ -5271,7 +5278,7 @@ run ./gradlew --no-daemon \
 	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest \
   -Pkotlin.incremental=false
 
-run ./gradlew --no-daemon \
+run ./gradlew --offline --no-daemon \
 	  :app:compileDebugKotlin \
 		  :app:testDebugUnitTest \
 		  --tests com.localagentbridge.android.AppNavigationTest \

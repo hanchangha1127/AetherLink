@@ -60,7 +60,7 @@ This document separates current verification evidence from historical captures.
   version, application ID, backup policy, camera permission, macOS minimum,
   development bundle ID/signature, both five-locale sets, the entire canonical
   G0 records, active protocol message/error parity, and closed nested schemas.
-- [x] `python3 -m unittest script.test_v1_g0_decision` passes 62 tests. Mutations
+- [x] `python3 -m unittest script.test_v1_g0_decision` passes 63 tests. Mutations
   reject duplicate keys, non-finite or overflowed numbers, over-128-digit
   integers, closure-crosswalk drift, risk-gate promotion, local-path leakage,
   nested unknown authority, premature
@@ -79,7 +79,10 @@ This document separates current verification evidence from historical captures.
   observations, mixed outcome-route cohorts, missing regional binding,
   baseline/variant coverage reuse, ambient-Decimal precision collisions,
   undeclared signer IDs, noncanonical base64url terminal bits, and weakened
-  human wording.
+  human wording. The added amendment matrix also rejects parent hash drift,
+  reordered/unknown overlay paths, profile digest forgery, implicit authority,
+  offline-argv removal, executable-scope expansion, forged effective digests,
+  duplicate JSON keys, and an authority-promoted amendment checkpoint.
 - [x] `python3 -m unittest script.test_v1_g0_checkpoint` passes 11 tests.
   Mutations reject any checkpoint-byte change, duplicate/non-finite JSON
   including exponent overflow and over-128-digit integers, recursive boolean/
@@ -89,17 +92,67 @@ This document separates current verification evidence from historical captures.
   absolute/parent/symlink/non-file paths, oversized sources, same-descriptor and
   final-path identity drift, fabricated owner acceptance or publication,
   blocker removal, gate promotion, and every authority expansion.
-- [x] The two focused G0 mutation suites therefore contain 73 passing tests;
+- [x] `python3 -m unittest script.test_v1_g0_publication_receipt` passes 8
+  dormant candidate tests. They reconstruct V2 from four supplied commit blobs,
+  snapshot mutable inputs, reject ambiguous/local-only provenance, missing or
+  reordered blobs, receipt field/type/order/hash/path/time/target drift,
+  duplicate/non-finite/oversized JSON, and prove the canonical checker rejects
+  every explicitly supplied receipt bundle. The exact synthetic matching
+  fixture still returns `dormant_non_authorizing` and changes no acceptance or
+  authority state.
+- [x] `python3 -m unittest script.test_v1_g0_receipt_bundle` passes 10 V3
+  lineage and complete-bundle candidate tests. They preserve the V1/V2 bytes,
+  reconstruct effective V3 from one immutable snapshot of six exact blobs,
+  enforce the 10-blocker/9-check/14-role/15-pair/15-non-derived-evidence/
+  2-executable-check graph plus two derived evidence kinds, cross-check ordered
+  checklist and blocker evidence coverage, reject self-asserted outcomes,
+  partial/duplicate/orphan records, graph substitutions, mutable-input races,
+  cross-profile and time drift, oversized/deep/released buffers, and prove an
+  exact synthetic complete fixture still returns `dormant_non_authorizing`.
+- [x] The four focused G0 mutation suites therefore contain 92 passing tests;
   this count does not represent the unrun full no-device aggregate.
+- [x] The committed `assurance-v1.json` and
+  `assurance-checkpoint-readback-v1.json` remain byte-identical to `929fda5f`.
+  The V2 closure amendment binds both parent raw/canonical digests, permits only
+  eleven exact ordered add/replace paths, advances both effective schema
+  identities, reconstructs the effective V2 assurance on a deep copy, and pins
+  that independent canonical digest plus a separate V2 amendment checkpoint.
+  The composite publication profile binds all four exact files, while bounded
+  no-follow reads and final identity/hash readback reject symlinks and
+  validation-time replacement.
+- [x] The V3 successor binds the V1/V2 lineage without rewriting it, applies
+  thirteen allowlisted operations, and pins effective assurance/closure
+  digests plus a separate V3 checkpoint. Its six-artifact publication profile
+  and complete-bundle profiles remove caller-supplied result/activation fields;
+  publication, independent registry/revocation/runner/artifact trust, receipt
+  activation, G0 exit, and G1a all remain absent or false.
+- [x] The G0 checker now classifies exactly two executable checks and rejects
+  command-profile removal, scope expansion, digest forgery, authority
+  promotion, offline-argv weakening, evidence-kind drift, and any mismatch
+  between the canonical profile body and its pinned SHA-256. The other seven
+  G0 checks remain publication/catalog/owner-evidence checks.
+- [x] Both executable command profiles are `not_authorized`. Their gate receipt
+  shape binds profile ID plus digest and verified evidence references; future
+  authorities must separately bind the exact full environment, resolved cwd,
+  source commit, side effects, and non-revoked validity. The dormant publication
+  candidate validator returns failures only, and no receipt acceptance API is
+  activated.
 - [x] The current non-socket static batch passes copy hygiene across 92
   user-facing files, docs hygiene across 12 current documents, Android and macOS
   five-locale parity, both protocol schemas, the closed P2P/NAT and
   production-relay design validators, 21 documentation/launcher/Phase-A unit
   tests, shell syntax, and `git diff --check`.
-- [x] `bash -n script/check_no_device_quality.sh` passes syntax only after both
-  G0 checkers, both mutation suites, and an explicit local-candidate versus
+- [x] `bash -n script/check_no_device_quality.sh` passes syntax only after all
+  three G0 checkers, all four mutation suites, and an explicit local-candidate versus
   immutable-publication boundary marker were added to the aggregate. The full
   aggregate is not claimed until it finishes on the integrated source.
+- [x] Every active Gradle command in the aggregate uses `--offline`. This does
+  not itself prove zero egress: an authorized run must also preseed and hash-
+  attest the Gradle wrapper, plugins, dependencies, Android SDK components, and
+  enforce runner-level egress denial before execution. Copy hygiene parses the
+  offline prefix as part of the active-command contract, preserving exact
+  Android suite/selector coverage while rejecting a return to the online-capable
+  prefix.
 - Agent state: independent GPT-5.6 Sol product/release, security/authority, and
   evidence-conformance audits were used. The final product and
   evidence-conformance re-reviews report no remaining P0-P3 finding.

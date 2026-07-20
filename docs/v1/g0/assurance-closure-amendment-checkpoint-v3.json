@@ -1,0 +1,111 @@
+{
+  "documentType": "aetherlink.v1-g0-assurance-closure-amendment-checkpoint",
+  "schemaVersion": "1.0",
+  "checkpointId": "aetherlink_v1_g0_assurance_closure_amendment_checkpoint_v3",
+  "recordedDate": "2026-07-20",
+  "status": "candidate_observed_not_immutable",
+  "evidenceClass": "static_no_device",
+  "lineageReadback": {
+    "artifacts": [
+      {
+        "role": "v1_parent_assurance",
+        "path": "docs/v1/g0/assurance-v1.json",
+        "rawSha256": "64d7d48c1f82b43a33e860b45c769878cb654f0678e94bfd540f12c3d1a9a43d",
+        "canonicalSha256": "7642029c307dd658b4e325f409deeef7f0b2addb82105270aa4c83cc588c4a11",
+        "result": "match"
+      },
+      {
+        "role": "v1_parent_checkpoint",
+        "path": "docs/v1/g0/assurance-checkpoint-readback-v1.json",
+        "rawSha256": "9b2a108b7a2e8223ec4c50b538277857a2dbc064b9da694fa7c6c200f1081048",
+        "canonicalSha256": "1e20f60154ea82e3a6a4c16573d7d52b60e362098e7c5a614b6866d303a2b2b5",
+        "result": "match"
+      },
+      {
+        "role": "v2_parent_amendment",
+        "path": "docs/v1/g0/assurance-closure-amendment-v2.json",
+        "rawSha256": "b04204e86c9af4291e8b7112c14e420877a54d2688b5b5d967432949b8f7aea6",
+        "canonicalSha256": "8b843526eef12e147593084d21ea3f40336628c623f732f0fd64d6ad80bbec7b",
+        "result": "match"
+      },
+      {
+        "role": "v2_parent_checkpoint",
+        "path": "docs/v1/g0/assurance-closure-amendment-checkpoint-v2.json",
+        "rawSha256": "b12bf8d1f6e782f57b9012728f5b7dada1008d9885f4263782fafa0c256cdc0c",
+        "canonicalSha256": "4f26d087b0eb0cf312911ddbd1ee25dc8fcfbb0deef6fb8d10009515a16391ca",
+        "result": "match"
+      },
+      {
+        "role": "v3_amendment",
+        "path": "docs/v1/g0/assurance-closure-amendment-v3.json",
+        "rawSha256": "f8314bcb37f98d0877e8d2a5279b2702fa6a5883f7efb4fcd91af5508eb126bc",
+        "canonicalSha256": "1bc500f2798da19bf74a1513f15d8822b5c41fa73c28795e1501696c1b4dad97",
+        "result": "match"
+      }
+    ]
+  },
+  "effectiveParentReadback": {
+    "assuranceId": "aetherlink_v1_g0_assurance_v2",
+    "schemaVersion": "2.0",
+    "reconstructionProfile": "exact_v1_parent_deep_copy_plus_ordered_v2_operations",
+    "canonicalSha256": "5777e26d1f2535da58deb74d5f7907617caf8aa99fa20885c771c29ecfb7726a",
+    "closureSchemaVersion": 2,
+    "closureCanonicalSha256": "d8dcc755ba58b2e5eb72f5df7ce09ff9586504105eddb75290b9c11f5478a20d",
+    "result": "match"
+  },
+  "amendmentReadback": {
+    "amendmentPath": "docs/v1/g0/assurance-closure-amendment-v3.json",
+    "amendmentRawByteSha256": "f8314bcb37f98d0877e8d2a5279b2702fa6a5883f7efb4fcd91af5508eb126bc",
+    "amendmentCanonicalSha256": "1bc500f2798da19bf74a1513f15d8822b5c41fa73c28795e1501696c1b4dad97",
+    "result": "match"
+  },
+  "effectiveAssuranceReadback": {
+    "assuranceId": "aetherlink_v1_g0_assurance_v3",
+    "schemaVersion": "3.0",
+    "reconstructionProfile": "exact_effective_v2_deep_copy_plus_ordered_v3_operations",
+    "canonicalSha256": "e8f661094a678a2ac0966d8b35de46824316883a845eb9ae8c6e9f76df18ad4b",
+    "closureSchemaVersion": 3,
+    "closureCanonicalSha256": "79b0d7275bcf371e8b9ab5a6b123969474bfbc86b1d7e78fcb28ed7256e3a93c",
+    "result": "match"
+  },
+  "contractControls": {
+    "completeBundleSchemaPinned": true,
+    "ownerBindingCount": 14,
+    "nonDerivedEvidenceRecordCount": 15,
+    "authorityBindingCount": 2,
+    "runnerAttestationCount": 2,
+    "gateReceiptCount": 2,
+    "approvalReceiptCount": 14,
+    "selfAssertedResultStatusOrActivationFieldsAllowed": false,
+    "derivedEvidenceAcceptedAsCatalogInput": false,
+    "candidateValidationMayAuthorize": false
+  },
+  "evidenceDisposition": {
+    "publicationReceipt": "absent",
+    "completeReceiptBundle": "absent",
+    "ownerAcceptance": "absent",
+    "gateReceipts": [],
+    "effectiveAssuranceActivated": false,
+    "g0ExitComplete": false,
+    "g1aMayStartNow": false
+  },
+  "authority": {
+    "g0DocumentationAndStaticValidationAllowed": true,
+    "receiptBundleCandidateStaticValidationAllowed": true,
+    "receiptBundleActivationAllowed": false,
+    "commandProfileExecutionAllowed": false,
+    "compilerOrLinkerInvocationAllowed": false,
+    "buildToolLocalIpcSocketAllowed": false,
+    "loopbackTestSocketAllowed": false,
+    "externalNetworkIoAllowed": false,
+    "adbOrPhysicalDeviceAllowed": false,
+    "productionKeySigningUploadOrDeploymentAllowed": false,
+    "g1aNoNetworkImplementationAllowed": false
+  },
+  "immutability": {
+    "recordState": "content_addressed_local_candidate_not_publication",
+    "amendmentPolicy": "supersede_with_new_versioned_candidate",
+    "externalPublicationRootRequired": true,
+    "publicationRoot": "absent"
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "documentType": "aetherlink.v1-g0-assurance-closure-amendment-checkpoint",
+  "schemaVersion": "1.0",
+  "checkpointId": "aetherlink_v1_g0_assurance_closure_amendment_checkpoint_v2",
+  "recordedDate": "2026-07-20",
+  "status": "candidate_observed_not_immutable",
+  "evidenceClass": "static_no_device",
+  "parentReadback": {
+    "assurancePath": "docs/v1/g0/assurance-v1.json",
+    "assuranceRawByteSha256": "64d7d48c1f82b43a33e860b45c769878cb654f0678e94bfd540f12c3d1a9a43d",
+    "assuranceCanonicalSha256": "7642029c307dd658b4e325f409deeef7f0b2addb82105270aa4c83cc588c4a11",
+    "checkpointPath": "docs/v1/g0/assurance-checkpoint-readback-v1.json",
+    "checkpointRawByteSha256": "9b2a108b7a2e8223ec4c50b538277857a2dbc064b9da694fa7c6c200f1081048",
+    "checkpointCanonicalSha256": "1e20f60154ea82e3a6a4c16573d7d52b60e362098e7c5a614b6866d303a2b2b5",
+    "parentBytesUnchanged": true,
+    "result": "match"
+  },
+  "amendmentReadback": {
+    "amendmentPath": "docs/v1/g0/assurance-closure-amendment-v2.json",
+    "amendmentRawByteSha256": "b04204e86c9af4291e8b7112c14e420877a54d2688b5b5d967432949b8f7aea6",
+    "amendmentCanonicalSha256": "8b843526eef12e147593084d21ea3f40336628c623f732f0fd64d6ad80bbec7b",
+    "result": "match"
+  },
+  "effectiveAssuranceReadback": {
+    "assuranceId": "aetherlink_v1_g0_assurance_v2",
+    "schemaVersion": "2.0",
+    "reconstructionProfile": "exact_parent_deep_copy_plus_ordered_json_pointer_add_replace_v1",
+    "canonicalSha256": "5777e26d1f2535da58deb74d5f7907617caf8aa99fa20885c771c29ecfb7726a",
+    "result": "match"
+  },
+  "sourceTreeControls": {
+    "sourceCommitBinding": "future_publication_receipt_required",
+    "offlineGradleInvocationCount": 5,
+    "allObservedAggregateGradleInvocationsOffline": true,
+    "runnerEgressDenyRequiredBeforeExecution": true,
+    "preseededHashAttestedDependenciesRequiredBeforeExecution": true,
+    "commandProfileCatalogAuthorizesExecution": false
+  },
+  "evidenceDisposition": {
+    "amendmentPublicationReceipt": "absent",
+    "ownerAcceptance": "absent",
+    "fullNoDeviceAggregate": "not_run_requires_separate_build_loopback_and_local_ipc_authority",
+    "androidReleaseCompilation": "not_run_requires_separate_compiler_and_local_ipc_authority",
+    "macosReleaseCompilation": "not_run_requires_separate_compiler_and_local_ipc_authority",
+    "g0ExitComplete": false,
+    "g1aMayStartNow": false
+  },
+  "authority": {
+    "g0DocumentationAndStaticValidationAllowed": true,
+    "commandProfileExecutionAllowed": false,
+    "compilerOrLinkerInvocationAllowed": false,
+    "buildToolLocalIpcSocketAllowed": false,
+    "loopbackTestSocketAllowed": false,
+    "externalNetworkIoAllowed": false,
+    "adbOrPhysicalDeviceAllowed": false,
+    "productionKeySigningUploadOrDeploymentAllowed": false,
+    "g1aNoNetworkImplementationAllowed": false
+  },
+  "immutability": {
+    "recordState": "content_addressed_local_candidate_not_publication",
+    "amendmentPolicy": "supersede_with_new_versioned_candidate",
+    "externalPublicationRootRequired": true,
+    "publicationRoot": "absent"
+  }
+}

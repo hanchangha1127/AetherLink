@@ -36843,7 +36843,7 @@ def no_device_suite_subsumed_rerun_guard_failures() -> list[str]:
         return [
             (index, command)
             for index, command in logical_shell_lines(source_lines)
-            if command.startswith("run ./gradlew --no-daemon ")
+            if command.startswith("run ./gradlew --offline --no-daemon ")
         ]
 
     def gradle_command_tokens(command: str) -> list[str]:
@@ -37207,11 +37207,11 @@ def no_device_suite_subsumed_rerun_guard_failures() -> list[str]:
         )
 
     android_parser_sample = [
-        "run ./gradlew --no-daemon \\",
+        "run ./gradlew --offline --no-daemon \\",
         "  :app:testDebugUnitTest \\",
         "  --tests com.example.ExampleTest \\",
         "  --tests com.example.ExampleTest.namedMethod",
-        "# run ./gradlew --no-daemon :app:testDebugUnitTest --tests com.example.CommentedTest",
+        "# run ./gradlew --offline --no-daemon :app:testDebugUnitTest --tests com.example.CommentedTest",
         "--tests com.example.EvidenceOnlyTest.namedMethod",
     ]
     sample_commands = active_gradle_commands(android_parser_sample)
@@ -44260,7 +44260,7 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
     android_authoritative_commands = [
         " ".join(line.split())
         for line in logical_no_device_text.splitlines()
-        if line.lstrip().startswith("run ./gradlew --no-daemon ")
+        if line.lstrip().startswith("run ./gradlew --offline --no-daemon ")
     ]
     if not any(
         ":app:testDebugUnitTest" in command

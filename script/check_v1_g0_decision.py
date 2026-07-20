@@ -6,10 +6,12 @@ from __future__ import annotations
 import base64
 import binascii
 from collections.abc import Callable
+import copy
 from decimal import Decimal, DecimalException
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
 import sys
@@ -31,6 +33,11 @@ DECISION_PATH = ROOT / "docs/v1/g0/decision-v1.json"
 MARKDOWN_PATH = ROOT / "docs/v1/g0/decision-v1.md"
 ASSURANCE_PATH = ROOT / "docs/v1/g0/assurance-v1.json"
 ASSURANCE_MARKDOWN_PATH = ROOT / "docs/v1/g0/assurance-v1.md"
+ASSURANCE_AMENDMENT_PATH = ROOT / "docs/v1/g0/assurance-closure-amendment-v2.json"
+ASSURANCE_AMENDMENT_MARKDOWN_PATH = ROOT / "docs/v1/g0/assurance-closure-amendment-v2.md"
+ASSURANCE_AMENDMENT_CHECKPOINT_PATH = (
+    ROOT / "docs/v1/g0/assurance-closure-amendment-checkpoint-v2.json"
+)
 
 
 class DuplicateJSONKeyError(ValueError):
@@ -50,6 +57,8 @@ class ReleaseEvidenceNumberError(ValueError):
 
 
 MAX_G0_JSON_INTEGER_DIGITS = 128
+MAX_G0_ASSURANCE_AMENDMENT_BYTES = 1_048_576
+MAX_G0_ASSURANCE_AMENDMENT_CHECKPOINT_BYTES = 1_048_576
 G0_SHA256_PATTERN = r"^[0-9a-f]{64}$"
 G0_GIT_OBJECT_ID_PATTERN = r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
 G0_AUTHORIZATION_REF_PATTERN = (
@@ -233,6 +242,71 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def read_g0_content_addressed_snapshot(
+    root: Path,
+    relative_path: str,
+    label: str,
+    maximum_bytes: int,
+) -> tuple[bytes, tuple[int, int, int, int, int, int]]:
+    """Read one fixed G0 artifact without following links and retain identity."""
+
+    file_fd = checkpoint_checker.open_repository_file(root, relative_path, label)
+    try:
+        before = os.fstat(file_fd)
+        if before.st_size > maximum_bytes:
+            raise checkpoint_checker.CheckpointValidationError(
+                f"{label} exceeds {maximum_bytes} bytes"
+            )
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(file_fd, 1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > maximum_bytes:
+                raise checkpoint_checker.CheckpointValidationError(
+                    f"{label} exceeds {maximum_bytes} bytes"
+                )
+            chunks.append(chunk)
+        after = os.fstat(file_fd)
+        checkpoint_checker.require_stable_file(before, after, label)
+        return b"".join(chunks), checkpoint_checker.stable_stat_fields(after)
+    except OSError as error:
+        raise checkpoint_checker.CheckpointValidationError(
+            f"cannot read {label}: {error}"
+        ) from error
+    finally:
+        os.close(file_fd)
+
+
+def collect_g0_final_snapshot_failures(
+    root: Path,
+    relative_path: str,
+    label: str,
+    maximum_bytes: int,
+    expected_identity: tuple[int, int, int, int, int, int],
+    expected_raw_sha256: str,
+) -> list[str]:
+    """Re-open a validated artifact and reject namespace or byte drift."""
+
+    try:
+        current_raw, current_identity = read_g0_content_addressed_snapshot(
+            root,
+            relative_path,
+            label,
+            maximum_bytes,
+        )
+    except checkpoint_checker.CheckpointValidationError as error:
+        return [f"{label} final readback failed: {error}"]
+    failures: list[str] = []
+    if current_identity != expected_identity:
+        failures.append(f"{label} repository path identity changed during validation")
+    if hashlib.sha256(current_raw).hexdigest() != expected_raw_sha256:
+        failures.append(f"{label} bytes changed during validation")
+    return failures
+
+
 def canonical_json_sha256(value: object) -> str:
     encoded = json.dumps(
         value,
@@ -242,6 +316,34 @@ def canonical_json_sha256(value: object) -> str:
         allow_nan=False,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def parse_g0_json_object(
+    raw_json: str,
+    label: str,
+) -> tuple[dict[str, object], list[str]]:
+    try:
+        value = json.loads(
+            raw_json,
+            object_pairs_hook=reject_duplicate_keys,
+            parse_constant=reject_non_finite,
+            parse_float=parse_g0_finite_float,
+            parse_int=parse_g0_bounded_integer,
+        )
+    except DuplicateJSONKeyError as error:
+        return {}, [f"{label} contains duplicate key {error.args[0]!r}"]
+    except NonFiniteJSONNumberError as error:
+        return {}, [f"{label} contains non-finite number {error.args[0]!r}"]
+    except G0JSONNumberError as error:
+        return {}, [
+            f"{label} contains an integer exceeding "
+            f"{MAX_G0_JSON_INTEGER_DIGITS} digits: {error.args[0]!r}"
+        ]
+    except json.JSONDecodeError as error:
+        return {}, [f"{label} is invalid JSON: {error.msg}"]
+    if not isinstance(value, dict):
+        return {}, [f"{label} must be an object"]
+    return value, []
 
 
 def exact_keys(
@@ -1516,6 +1618,118 @@ EXPECTED_ASSURANCE_CANONICAL_SHA256 = (
     "7642029c307dd658b4e325f409deeef7f0b2addb82105270aa4c83cc588c4a11"
 )
 
+EXPECTED_ASSURANCE_BYTE_SHA256 = (
+    "64d7d48c1f82b43a33e860b45c769878cb654f0678e94bfd540f12c3d1a9a43d"
+)
+EXPECTED_ASSURANCE_CHECKPOINT_BYTE_SHA256 = (
+    "9b2a108b7a2e8223ec4c50b538277857a2dbc064b9da694fa7c6c200f1081048"
+)
+EXPECTED_ASSURANCE_CHECKPOINT_CANONICAL_SHA256 = (
+    "1e20f60154ea82e3a6a4c16573d7d52b60e362098e7c5a614b6866d303a2b2b5"
+)
+EXPECTED_ASSURANCE_AMENDMENT_BYTE_SHA256 = (
+    "b04204e86c9af4291e8b7112c14e420877a54d2688b5b5d967432949b8f7aea6"
+)
+EXPECTED_ASSURANCE_AMENDMENT_CANONICAL_SHA256 = (
+    "8b843526eef12e147593084d21ea3f40336628c623f732f0fd64d6ad80bbec7b"
+)
+EXPECTED_EFFECTIVE_ASSURANCE_V2_CANONICAL_SHA256 = (
+    "5777e26d1f2535da58deb74d5f7907617caf8aa99fa20885c771c29ecfb7726a"
+)
+EXPECTED_ASSURANCE_AMENDMENT_CHECKPOINT_BYTE_SHA256 = (
+    "b12bf8d1f6e782f57b9012728f5b7dada1008d9885f4263782fafa0c256cdc0c"
+)
+EXPECTED_ASSURANCE_AMENDMENT_CHECKPOINT_CANONICAL_SHA256 = (
+    "4f26d087b0eb0cf312911ddbd1ee25dc8fcfbb0deef6fb8d10009515a16391ca"
+)
+EXPECTED_G0_EXECUTABLE_CHECK_IDS = [
+    "full_no_device_aggregate",
+    "android_and_macos_release_compilation",
+]
+EXPECTED_G0_NON_EXECUTABLE_CHECK_IDS = [
+    "g0_assurance_packet",
+    "roadmap_and_g0_checkpoint_publication",
+    "production_namespaces_distribution_and_key_custody",
+    "provider_compatibility_baseline",
+    "service_identity_and_signer_custody",
+    "privacy_incident_quality_and_operations_ownership",
+    "relay_region_capacity_and_cost",
+]
+EXPECTED_G0_COMMAND_PROFILE_SHA256 = {
+    "g0-command-profile-full-no-device-aggregate-v1": (
+        "6e60c1f17812a16a6b24bd172ad95e9d3e9b91a793c56ca332467e8961c84f78"
+    ),
+    "g0-command-profile-android-macos-release-compilation-v1": (
+        "3c64524bf371c27412e29fe75f1be52b36d31b2bc25791320e67a12381bacc68"
+    ),
+}
+EXPECTED_G0_PUBLICATION_RECEIPT_PROFILE = {
+    "exactFields": [
+        "repositoryRef",
+        "commitObjectId",
+        "parentAssurancePath",
+        "parentAssuranceSha256",
+        "parentCheckpointPath",
+        "parentCheckpointSha256",
+        "amendmentPath",
+        "amendmentSha256",
+        "amendmentCheckpointPath",
+        "amendmentCheckpointSha256",
+        "effectiveAssuranceCanonicalSha256",
+        "remoteReadbackAt",
+        "remoteReadbackSha256",
+        "result",
+    ],
+    "repositoryRefPolicy": (
+        "nonempty_opaque_non_secret_repository_identity_equal_to_the_expected_publication_target"
+    ),
+    "commitObjectIdPattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+    "parentAssurancePathPolicy": "exact_docs_v1_g0_assurance_v1_json",
+    "parentCheckpointPathPolicy": (
+        "exact_docs_v1_g0_assurance_checkpoint_readback_v1_json"
+    ),
+    "amendmentPathPolicy": (
+        "exact_docs_v1_g0_assurance_closure_amendment_v2_json"
+    ),
+    "amendmentCheckpointPathPolicy": (
+        "exact_docs_v1_g0_assurance_closure_amendment_checkpoint_v2_json"
+    ),
+    "sha256Pattern": "^[0-9a-f]{64}$",
+    "remoteReadbackAtPolicy": "rfc3339_utc",
+    "resultDomain": ["verified"],
+    "commitContainmentPolicy": (
+        "resolved_commit_tree_contains_exact_parent_assurance_parent_checkpoint_"
+        "amendment_and_amendment_checkpoint_bytes_at_their_exact_paths_and_hashes"
+    ),
+    "effectiveReconstructionPolicy": (
+        "independently_apply_exact_amendment_to_exact_parent_and_match_effective_"
+        "assurance_canonical_sha256"
+    ),
+    "remoteEqualityPolicy": (
+        "remote_readback_sha256_equals_amendment_checkpoint_sha256"
+    ),
+    "expectedIdentityPolicy": (
+        "repository_commit_all_four_paths_all_four_byte_hashes_and_effective_"
+        "canonical_sha256_equal_the_explicitly_reviewed_publication_target"
+    ),
+}
+EXPECTED_ASSURANCE_AMENDMENT_OPERATIONS = [
+    ("replace", "/schemaVersion"),
+    ("replace", "/assuranceId"),
+    ("replace", "/g0ClosureContract/schemaVersion"),
+    ("add", "/g0ClosureContract/sourceBindings/commandProfiles"),
+    ("add", "/g0ClosureContract/executableCheckIds"),
+    ("add", "/g0ClosureContract/nonExecutableCheckIds"),
+    ("add", "/g0ClosureContract/commandProfileSchema"),
+    ("add", "/g0ClosureContract/commandProfiles"),
+    ("replace", "/g0ClosureContract/gateReceiptProfile"),
+    ("replace", "/g0ClosureContract/publicationReceiptProfile"),
+    (
+        "replace",
+        "/g0ClosureContract/receiptActivationPolicy/successorActivationPrerequisites",
+    ),
+]
+
 EXPECTED_ASSURANCE_SOURCE_HASHES = {
     "docs/v1/g0/decision-v1.json":
         "44dd88a0de7e02fdb2b7c22e597496ffe4f00f9a67a54af6e9ace8afdcf9308a",
@@ -2338,6 +2552,13 @@ FALSE_AUTHORITIES = [
     "productionDeploymentAllowed",
 ]
 
+_G0_RECEIPT_BUNDLE_ABSENT = object()
+G0_RECEIPT_ACTIVATION_DISABLED_MESSAGE = (
+    "G0 receipt activation is disabled until a successor canonical contract "
+    "and independently anchored validation context satisfy every activation "
+    "prerequisite"
+)
+
 
 def collect_failures(
     *,
@@ -2345,6 +2566,7 @@ def collect_failures(
     markdown: str | None = None,
     root: Path = ROOT,
     verify_files: bool = True,
+    receipt_bundle: object = _G0_RECEIPT_BUNDLE_ABSENT,
 ) -> list[str]:
     failures: list[str] = []
     if raw_json is None:
@@ -3103,6 +3325,14 @@ def collect_failures(
             f"G0 assurance checkpoint: {failure}"
             for failure in checkpoint_checker.collect_failures(root=root)
         )
+        failures.extend(
+            f"G0 assurance closure amendment: {failure}"
+            for failure in collect_assurance_amendment_failures(root=root)
+        )
+    if failures:
+        return failures
+    if receipt_bundle is not _G0_RECEIPT_BUNDLE_ABSENT:
+        return [G0_RECEIPT_ACTIVATION_DISABLED_MESSAGE]
     return failures
 
 
@@ -5016,6 +5246,687 @@ def collect_assurance_failures(
     return failures
 
 
+def apply_assurance_amendment_operations(
+    parent: dict[str, object],
+    operations: object,
+    failures: list[str],
+) -> dict[str, object]:
+    if not isinstance(operations, list):
+        failures.append("G0 assurance closure amendment operations must be a list")
+        return copy.deepcopy(parent)
+    effective = copy.deepcopy(parent)
+    observed_operations: list[tuple[object, object]] = []
+    for index, raw_operation in enumerate(operations):
+        operation = exact_keys(
+            raw_operation,
+            {"op", "path", "value"},
+            f"G0 assurance closure amendment operations[{index}]",
+            failures,
+        )
+        operation_kind = operation.get("op")
+        path = operation.get("path")
+        observed_operations.append((operation_kind, path))
+        if operation_kind not in {"add", "replace"}:
+            failures.append(
+                f"G0 assurance closure amendment operations[{index}].op is invalid"
+            )
+            continue
+        if (
+            not isinstance(path, str)
+            or not path.startswith("/")
+            or path == "/"
+            or "~" in path
+        ):
+            failures.append(
+                f"G0 assurance closure amendment operations[{index}].path is invalid"
+            )
+            continue
+        parts = path[1:].split("/")
+        if any(not part or part.isdigit() for part in parts):
+            failures.append(
+                f"G0 assurance closure amendment operations[{index}] cannot address arrays or blank keys"
+            )
+            continue
+        target: object = effective
+        valid_target = True
+        for part in parts[:-1]:
+            if not isinstance(target, dict) or part not in target:
+                failures.append(
+                    f"G0 assurance closure amendment operations[{index}] parent path is absent"
+                )
+                valid_target = False
+                break
+            target = target[part]
+        if not valid_target or not isinstance(target, dict):
+            continue
+        key = parts[-1]
+        if operation_kind == "add" and key in target:
+            failures.append(
+                f"G0 assurance closure amendment operations[{index}] add target already exists"
+            )
+            continue
+        if operation_kind == "replace" and key not in target:
+            failures.append(
+                f"G0 assurance closure amendment operations[{index}] replace target is absent"
+            )
+            continue
+        target[key] = copy.deepcopy(operation.get("value"))
+    require_equal(
+        observed_operations,
+        EXPECTED_ASSURANCE_AMENDMENT_OPERATIONS,
+        "G0 assurance closure amendment operation order",
+        failures,
+    )
+    return effective
+
+
+def collect_assurance_amendment_failures(
+    *,
+    root: Path = ROOT,
+    raw_json: str | None = None,
+    checkpoint_raw_json: str | None = None,
+    markdown: str | None = None,
+    verify_files: bool = True,
+) -> list[str]:
+    failures: list[str] = []
+    amendment_relative_path = "docs/v1/g0/assurance-closure-amendment-v2.json"
+    checkpoint_relative_path = (
+        "docs/v1/g0/assurance-closure-amendment-checkpoint-v2.json"
+    )
+    parent_relative_path = "docs/v1/g0/assurance-v1.json"
+    parent_checkpoint_relative_path = (
+        "docs/v1/g0/assurance-checkpoint-readback-v1.json"
+    )
+    artifact_snapshots: list[
+        tuple[
+            str,
+            str,
+            int,
+            tuple[int, int, int, int, int, int],
+            str,
+        ]
+    ] = []
+    try:
+        if verify_files:
+            amendment_bytes, amendment_identity = read_g0_content_addressed_snapshot(
+                root,
+                amendment_relative_path,
+                "G0 assurance closure amendment",
+                MAX_G0_ASSURANCE_AMENDMENT_BYTES,
+            )
+            parent_bytes, parent_identity = read_g0_content_addressed_snapshot(
+                root,
+                parent_relative_path,
+                "G0 assurance closure amendment parent assurance",
+                checkpoint_checker.MAX_ASSURANCE_BYTES,
+            )
+            (
+                parent_checkpoint_bytes,
+                parent_checkpoint_identity,
+            ) = read_g0_content_addressed_snapshot(
+                root,
+                parent_checkpoint_relative_path,
+                "G0 assurance closure amendment parent checkpoint",
+                checkpoint_checker.MAX_CHECKPOINT_BYTES,
+            )
+            checkpoint_bytes, checkpoint_identity = read_g0_content_addressed_snapshot(
+                root,
+                checkpoint_relative_path,
+                "G0 assurance closure amendment checkpoint",
+                MAX_G0_ASSURANCE_AMENDMENT_CHECKPOINT_BYTES,
+            )
+            artifact_snapshots = [
+                (
+                    amendment_relative_path,
+                    "G0 assurance closure amendment",
+                    MAX_G0_ASSURANCE_AMENDMENT_BYTES,
+                    amendment_identity,
+                    hashlib.sha256(amendment_bytes).hexdigest(),
+                ),
+                (
+                    parent_relative_path,
+                    "G0 assurance closure amendment parent assurance",
+                    checkpoint_checker.MAX_ASSURANCE_BYTES,
+                    parent_identity,
+                    hashlib.sha256(parent_bytes).hexdigest(),
+                ),
+                (
+                    parent_checkpoint_relative_path,
+                    "G0 assurance closure amendment parent checkpoint",
+                    checkpoint_checker.MAX_CHECKPOINT_BYTES,
+                    parent_checkpoint_identity,
+                    hashlib.sha256(parent_checkpoint_bytes).hexdigest(),
+                ),
+                (
+                    checkpoint_relative_path,
+                    "G0 assurance closure amendment checkpoint",
+                    MAX_G0_ASSURANCE_AMENDMENT_CHECKPOINT_BYTES,
+                    checkpoint_identity,
+                    hashlib.sha256(checkpoint_bytes).hexdigest(),
+                ),
+            ]
+        else:
+            amendment_bytes = (root / amendment_relative_path).read_bytes()
+            parent_bytes = (root / parent_relative_path).read_bytes()
+            parent_checkpoint_bytes = (
+                root / parent_checkpoint_relative_path
+            ).read_bytes()
+            checkpoint_bytes = (root / checkpoint_relative_path).read_bytes()
+    except (OSError, checkpoint_checker.CheckpointValidationError) as error:
+        return [f"cannot securely read G0 assurance closure amendment inputs: {error}"]
+    if raw_json is None:
+        try:
+            raw_json = amendment_bytes.decode("utf-8")
+        except UnicodeDecodeError as error:
+            return [f"G0 assurance closure amendment is not UTF-8: {error}"]
+    if verify_files:
+        require_equal(
+            hashlib.sha256(amendment_bytes).hexdigest(),
+            EXPECTED_ASSURANCE_AMENDMENT_BYTE_SHA256,
+            "G0 assurance closure amendment raw byte sha256",
+            failures,
+        )
+    amendment, parse_failures = parse_g0_json_object(
+        raw_json,
+        "G0 assurance closure amendment",
+    )
+    failures.extend(parse_failures)
+    if parse_failures:
+        return failures
+    require_equal(
+        canonical_json_sha256(amendment),
+        EXPECTED_ASSURANCE_AMENDMENT_CANONICAL_SHA256,
+        "G0 assurance closure amendment canonical sha256",
+        failures,
+    )
+    amendment = exact_keys(
+        amendment,
+        {
+            "documentType",
+            "schemaVersion",
+            "amendmentId",
+            "recordedDate",
+            "status",
+            "parent",
+            "patchProfile",
+            "operations",
+            "effectiveAssurance",
+            "authority",
+            "acceptance",
+        },
+        "G0 assurance closure amendment",
+        failures,
+    )
+    require_equal(
+        amendment.get("documentType"),
+        "aetherlink.v1-g0-assurance-closure-amendment",
+        "G0 assurance closure amendment documentType",
+        failures,
+    )
+    require_equal(
+        amendment.get("schemaVersion"),
+        "1.0",
+        "G0 assurance closure amendment schemaVersion",
+        failures,
+    )
+    require_equal(
+        amendment.get("amendmentId"),
+        "aetherlink_v1_g0_assurance_closure_amendment_v2",
+        "G0 assurance closure amendment amendmentId",
+        failures,
+    )
+    require_equal(
+        amendment.get("status"),
+        "candidate_not_published_not_authorized",
+        "G0 assurance closure amendment status",
+        failures,
+    )
+
+    parent_raw_sha256 = hashlib.sha256(parent_bytes).hexdigest()
+    parent_checkpoint_raw_sha256 = hashlib.sha256(parent_checkpoint_bytes).hexdigest()
+    try:
+        parent_raw = parent_bytes.decode("utf-8")
+        parent_checkpoint_raw = parent_checkpoint_bytes.decode("utf-8")
+    except UnicodeDecodeError as error:
+        failures.append(f"G0 assurance closure amendment parent is not UTF-8: {error}")
+        return failures
+    parent, parent_parse_failures = parse_g0_json_object(
+        parent_raw,
+        "G0 assurance closure amendment parent assurance",
+    )
+    parent_checkpoint, checkpoint_parse_failures = parse_g0_json_object(
+        parent_checkpoint_raw,
+        "G0 assurance closure amendment parent checkpoint",
+    )
+    failures.extend(parent_parse_failures)
+    failures.extend(checkpoint_parse_failures)
+    if parent_parse_failures or checkpoint_parse_failures:
+        return failures
+    parent_record = exact_keys(
+        amendment.get("parent"),
+        {
+            "assuranceId",
+            "assurancePath",
+            "assuranceRawByteSha256",
+            "assuranceCanonicalSha256",
+            "checkpointId",
+            "checkpointPath",
+            "checkpointRawByteSha256",
+            "checkpointCanonicalSha256",
+            "observedContainingCommit",
+            "publicationObservation",
+        },
+        "G0 assurance closure amendment parent",
+        failures,
+    )
+    expected_parent = {
+        "assuranceId": "aetherlink_v1_g0_assurance_v1",
+        "assurancePath": "docs/v1/g0/assurance-v1.json",
+        "assuranceRawByteSha256": EXPECTED_ASSURANCE_BYTE_SHA256,
+        "assuranceCanonicalSha256": EXPECTED_ASSURANCE_CANONICAL_SHA256,
+        "checkpointId": "aetherlink_v1_g0_assurance_checkpoint_readback_v1",
+        "checkpointPath": "docs/v1/g0/assurance-checkpoint-readback-v1.json",
+        "checkpointRawByteSha256": EXPECTED_ASSURANCE_CHECKPOINT_BYTE_SHA256,
+        "checkpointCanonicalSha256": EXPECTED_ASSURANCE_CHECKPOINT_CANONICAL_SHA256,
+        "observedContainingCommit": "929fda5f2c01cd7d53325a036071b6a684ecaa1f",
+        "publicationObservation": (
+            "local_commit_and_remote_tracking_push_reflog_only_not_independent_remote_byte_readback"
+        ),
+    }
+    require_equal(
+        parent_record,
+        expected_parent,
+        "G0 assurance closure amendment exact parent binding",
+        failures,
+    )
+    require_equal(
+        parent_raw_sha256,
+        EXPECTED_ASSURANCE_BYTE_SHA256,
+        "G0 assurance closure amendment parent assurance raw sha256",
+        failures,
+    )
+    require_equal(
+        canonical_json_sha256(parent),
+        EXPECTED_ASSURANCE_CANONICAL_SHA256,
+        "G0 assurance closure amendment parent assurance canonical sha256",
+        failures,
+    )
+    require_equal(
+        parent_checkpoint_raw_sha256,
+        EXPECTED_ASSURANCE_CHECKPOINT_BYTE_SHA256,
+        "G0 assurance closure amendment parent checkpoint raw sha256",
+        failures,
+    )
+    require_equal(
+        canonical_json_sha256(parent_checkpoint),
+        EXPECTED_ASSURANCE_CHECKPOINT_CANONICAL_SHA256,
+        "G0 assurance closure amendment parent checkpoint canonical sha256",
+        failures,
+    )
+
+    patch_profile = exact_keys(
+        amendment.get("patchProfile"),
+        {
+            "semantics",
+            "allowedOperations",
+            "unknownOperationOrPathPolicy",
+            "arrayIndexOperationPolicy",
+            "parentMutationPolicy",
+            "effectiveDigestPolicy",
+        },
+        "G0 assurance closure amendment patchProfile",
+        failures,
+    )
+    require_equal(
+        patch_profile.get("semantics"),
+        "ordered_json_pointer_add_replace_v1",
+        "G0 assurance closure amendment patch semantics",
+        failures,
+    )
+    require_equal(
+        patch_profile.get("allowedOperations"),
+        [
+            {"op": operation, "path": path}
+            for operation, path in EXPECTED_ASSURANCE_AMENDMENT_OPERATIONS
+        ],
+        "G0 assurance closure amendment allowed operation order",
+        failures,
+    )
+    effective = apply_assurance_amendment_operations(
+        parent,
+        amendment.get("operations"),
+        failures,
+    )
+    effective_record = exact_keys(
+        amendment.get("effectiveAssurance"),
+        {
+            "assuranceId",
+            "schemaVersion",
+            "canonicalSha256",
+            "status",
+            "materializationPolicy",
+        },
+        "G0 assurance closure amendment effectiveAssurance",
+        failures,
+    )
+    require_equal(
+        effective_record.get("assuranceId"),
+        "aetherlink_v1_g0_assurance_v2",
+        "G0 effective assurance ID",
+        failures,
+    )
+    require_equal(
+        effective_record.get("schemaVersion"),
+        "2.0",
+        "G0 effective assurance schemaVersion",
+        failures,
+    )
+    require_equal(
+        effective_record.get("status"),
+        "blocked_before_g1a",
+        "G0 effective assurance status",
+        failures,
+    )
+    require_equal(
+        effective.get("assuranceId"),
+        effective_record.get("assuranceId"),
+        "G0 reconstructed effective assurance ID",
+        failures,
+    )
+    require_equal(
+        effective.get("schemaVersion"),
+        effective_record.get("schemaVersion"),
+        "G0 reconstructed effective assurance schemaVersion",
+        failures,
+    )
+    require_equal(
+        canonical_json_sha256(effective),
+        EXPECTED_EFFECTIVE_ASSURANCE_V2_CANONICAL_SHA256,
+        "G0 reconstructed effective assurance canonical sha256",
+        failures,
+    )
+    require_equal(
+        effective_record.get("canonicalSha256"),
+        EXPECTED_EFFECTIVE_ASSURANCE_V2_CANONICAL_SHA256,
+        "G0 recorded effective assurance canonical sha256",
+        failures,
+    )
+
+    closure = effective.get("g0ClosureContract")
+    if not isinstance(closure, dict):
+        failures.append("G0 effective assurance closure contract must be an object")
+        closure = {}
+    require_equal(
+        closure.get("schemaVersion"),
+        2,
+        "G0 effective assurance closure contract schemaVersion",
+        failures,
+    )
+    require_equal(
+        closure.get("executableCheckIds"),
+        EXPECTED_G0_EXECUTABLE_CHECK_IDS,
+        "G0 executable check IDs",
+        failures,
+    )
+    require_equal(
+        closure.get("nonExecutableCheckIds"),
+        EXPECTED_G0_NON_EXECUTABLE_CHECK_IDS,
+        "G0 non-executable check IDs",
+        failures,
+    )
+    require_equal(
+        closure.get("publicationReceiptProfile"),
+        EXPECTED_G0_PUBLICATION_RECEIPT_PROFILE,
+        "G0 effective assurance composite publication receipt profile",
+        failures,
+    )
+    command_profiles = closure.get("commandProfiles")
+    if not isinstance(command_profiles, list):
+        failures.append("G0 effective assurance commandProfiles must be a list")
+        command_profiles = []
+    observed_profile_ids: list[object] = []
+    observed_profile_checks: list[object] = []
+    for index, raw_profile in enumerate(command_profiles):
+        profile = exact_keys(
+            raw_profile,
+            {"commandProfileId", "canonicalProfileSha256", "profileBody"},
+            f"G0 effective assurance commandProfiles[{index}]",
+            failures,
+        )
+        profile_id = profile.get("commandProfileId")
+        observed_profile_ids.append(profile_id)
+        if not isinstance(profile_id, str) or re.fullmatch(
+            G0_COMMAND_PROFILE_ID_PATTERN, profile_id
+        ) is None:
+            failures.append(f"G0 command profile {index} has invalid ID")
+        profile_body = profile.get("profileBody")
+        if not isinstance(profile_body, dict):
+            failures.append(f"G0 command profile {index} body must be an object")
+            profile_body = {}
+        observed_profile_checks.append(profile_body.get("checkId"))
+        require_equal(
+            profile.get("canonicalProfileSha256"),
+            canonical_json_sha256(profile_body),
+            f"G0 command profile {index} self digest",
+            failures,
+        )
+        if isinstance(profile_id, str):
+            require_equal(
+                profile.get("canonicalProfileSha256"),
+                EXPECTED_G0_COMMAND_PROFILE_SHA256.get(profile_id),
+                f"G0 command profile {index} pinned digest",
+                failures,
+            )
+        require_equal(
+            profile_body.get("currentAuthorizationState"),
+            "not_authorized",
+            f"G0 command profile {index} authorization state",
+            failures,
+        )
+        require_equal(
+            profile_body.get("networkPolicy"),
+            "operating_system_egress_denied_gradle_offline_no_adb_no_physical_device",
+            f"G0 command profile {index} network policy",
+            failures,
+        )
+    require_equal(
+        observed_profile_ids,
+        list(EXPECTED_G0_COMMAND_PROFILE_SHA256),
+        "G0 command profile order",
+        failures,
+    )
+    require_equal(
+        observed_profile_checks,
+        EXPECTED_G0_EXECUTABLE_CHECK_IDS,
+        "G0 command profile executable-check coverage",
+        failures,
+    )
+    if len(command_profiles) == 2:
+        full_steps = command_profiles[0].get("profileBody", {}).get("orderedSteps")
+        release_steps = command_profiles[1].get("profileBody", {}).get("orderedSteps")
+        require_equal(
+            full_steps,
+            [{"stepId": "full_no_device_quality", "argv": ["bash", "script/check_no_device_quality.sh"]}],
+            "G0 full no-device command argv",
+            failures,
+        )
+        require_equal(
+            release_steps,
+            [
+                {
+                    "stepId": "android_release_compilation",
+                    "argv": [
+                        "./gradlew",
+                        "--offline",
+                        "--no-daemon",
+                        ":app:assembleRelease",
+                        "-Pkotlin.incremental=false",
+                    ],
+                },
+                {
+                    "stepId": "macos_release_compilation",
+                    "argv": ["swift", "build", "-c", "release", "--product", "AetherLink"],
+                },
+            ],
+            "G0 release compilation ordered argv",
+            failures,
+        )
+
+    expected_authority = {
+        "g0DocumentationAndStaticValidationAllowed": True,
+        "commandProfileCatalogAuthorizesExecution": False,
+        "fullNoDeviceAggregateAllowed": False,
+        "androidAndMacosReleaseCompilationAllowed": False,
+        "compilerOrLinkerInvocationAllowed": False,
+        "buildToolLocalIpcSocketAllowed": False,
+        "loopbackTestSocketAllowed": False,
+        "externalNetworkIoAllowed": False,
+        "adbOrPhysicalDeviceAllowed": False,
+        "productionKeySigningUploadOrDeploymentAllowed": False,
+        "g1aNoNetworkImplementationAllowed": False,
+    }
+    require_equal(
+        amendment.get("authority"),
+        expected_authority,
+        "G0 assurance closure amendment authority",
+        failures,
+    )
+    require_equal(
+        amendment.get("acceptance"),
+        {
+            "parentBytesUnchanged": True,
+            "amendmentPublicationReceipt": "absent",
+            "ownerAcceptance": "absent",
+            "gateReceipts": [],
+            "effectiveAssuranceActivated": False,
+            "g0ExitComplete": False,
+            "g1aMayStartNow": False,
+        },
+        "G0 assurance closure amendment acceptance",
+        failures,
+    )
+
+    aggregate_script = root / "script/check_no_device_quality.sh"
+    try:
+        gradle_lines = [
+            line.strip()
+            for line in aggregate_script.read_text(encoding="utf-8").splitlines()
+            if line.strip().startswith("run ./gradlew")
+        ]
+    except OSError as error:
+        failures.append(f"cannot read G0 aggregate command source: {error}")
+        gradle_lines = []
+    require_equal(len(gradle_lines), 5, "G0 aggregate Gradle invocation count", failures)
+    if any(not line.startswith("run ./gradlew --offline --no-daemon") for line in gradle_lines):
+        failures.append("every G0 aggregate Gradle invocation must be offline")
+
+    if checkpoint_raw_json is None:
+        try:
+            checkpoint_raw_json = checkpoint_bytes.decode("utf-8")
+        except UnicodeDecodeError as error:
+            failures.append(f"G0 assurance closure amendment checkpoint is not UTF-8: {error}")
+            return failures
+    if verify_files:
+        require_equal(
+            hashlib.sha256(checkpoint_bytes).hexdigest(),
+            EXPECTED_ASSURANCE_AMENDMENT_CHECKPOINT_BYTE_SHA256,
+            "G0 assurance closure amendment checkpoint raw byte sha256",
+            failures,
+        )
+    checkpoint, checkpoint_failures = parse_g0_json_object(
+        checkpoint_raw_json,
+        "G0 assurance closure amendment checkpoint",
+    )
+    failures.extend(checkpoint_failures)
+    if not checkpoint_failures:
+        require_equal(
+            canonical_json_sha256(checkpoint),
+            EXPECTED_ASSURANCE_AMENDMENT_CHECKPOINT_CANONICAL_SHA256,
+            "G0 assurance closure amendment checkpoint canonical sha256",
+            failures,
+        )
+        amendment_readback = checkpoint.get("amendmentReadback")
+        effective_readback = checkpoint.get("effectiveAssuranceReadback")
+        if not isinstance(amendment_readback, dict):
+            failures.append("G0 amendment checkpoint amendmentReadback must be an object")
+        else:
+            require_equal(
+                amendment_readback.get("amendmentRawByteSha256"),
+                EXPECTED_ASSURANCE_AMENDMENT_BYTE_SHA256,
+                "G0 amendment checkpoint amendment raw sha256",
+                failures,
+            )
+            require_equal(
+                amendment_readback.get("amendmentCanonicalSha256"),
+                EXPECTED_ASSURANCE_AMENDMENT_CANONICAL_SHA256,
+                "G0 amendment checkpoint amendment canonical sha256",
+                failures,
+            )
+        if not isinstance(effective_readback, dict):
+            failures.append("G0 amendment checkpoint effectiveAssuranceReadback must be an object")
+        else:
+            require_equal(
+                effective_readback.get("canonicalSha256"),
+                EXPECTED_EFFECTIVE_ASSURANCE_V2_CANONICAL_SHA256,
+                "G0 amendment checkpoint effective assurance canonical sha256",
+                failures,
+            )
+        require_equal(
+            checkpoint.get("status"),
+            "candidate_observed_not_immutable",
+            "G0 amendment checkpoint status",
+            failures,
+        )
+        checkpoint_authority = checkpoint.get("authority")
+        if not isinstance(checkpoint_authority, dict) or any(
+            value is not False
+            for key, value in checkpoint_authority.items()
+            if key != "g0DocumentationAndStaticValidationAllowed"
+        ):
+            failures.append("G0 amendment checkpoint cannot open execution authority")
+
+    if markdown is None:
+        try:
+            markdown = (
+                root / "docs/v1/g0/assurance-closure-amendment-v2.md"
+            ).read_text(encoding="utf-8")
+        except OSError as error:
+            failures.append(f"cannot read G0 assurance closure amendment markdown: {error}")
+            markdown = ""
+    for snippet in (
+        "candidate_not_published_not_authorized",
+        "preserves the exact committed V1 assurance and checkpoint bytes",
+        "eleven ordered JSON Pointer operations",
+        "composite publication receipt",
+        "dormant composite publication candidate validator",
+        "Only these two checks use command and gate receipts",
+        "Both command profiles are `not_authorized`",
+        "`--offline` alone is not zero-egress proof",
+        "No receipt validator is activated",
+        "G0 remains `blocked_before_g1a`",
+    ):
+        if snippet not in markdown:
+            failures.append(f"G0 assurance closure amendment markdown is missing {snippet!r}")
+    for (
+        relative_path,
+        label,
+        maximum_bytes,
+        expected_identity,
+        expected_raw_sha256,
+    ) in artifact_snapshots:
+        failures.extend(
+            collect_g0_final_snapshot_failures(
+                root,
+                relative_path,
+                label,
+                maximum_bytes,
+                expected_identity,
+                expected_raw_sha256,
+            )
+        )
+    return failures
+
+
 def check_repository_baseline(root: Path) -> list[str]:
     failures: list[str] = []
     gradle = (root / "apps/android/app/build.gradle.kts").read_text(encoding="utf-8")
@@ -5069,8 +5980,9 @@ def main() -> int:
             print(f"G0 decision/assurance check failed: {failure}", file=sys.stderr)
         return 1
     print(
-        "V1 G0 decision, assurance, and candidate readback are internally "
-        "consistent; owner acceptance, publication, full gates, G1a, and all "
+        "V1 G0 decision, frozen V1 assurance/readback, and the content-addressed "
+        "V2 closure-amendment candidate are internally consistent; owner "
+        "acceptance, publication, command execution, full gates, G1a, and all "
         "network, signing, store, key, and deployment authorities remain closed."
     )
     return 0

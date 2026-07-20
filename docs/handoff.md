@@ -53,12 +53,16 @@ resume work.
   `d32c1846eead13ab1462619145fc4da1194cce7e`, with `main` and `origin/main`
   aligned when checked. The former `41e932e9` plus 12-file dirty snapshot was
   subsequently published and is historical.
-- Worktree: intentionally dirty with the canonical V1 roadmap, versioned G0
-  decision, versioned assurance packet, content-addressed local assurance
-  readback candidate, machine validators, no-device gate integration, and
-  synchronized current documentation. The candidate is neither published nor
-  owner-accepted. There is no V1 transport implementation in this scope. Run
-  `git status --short` again; live output is authoritative.
+- G0 packet commit observed locally: `929fda5f2c01cd7d53325a036071b6a684ecaa1f`
+  contains the reviewed 15-file roadmap/decision/assurance/validator packet.
+  At refresh, `main` and the local `origin/main` tracking ref were aligned and
+  the remote-tracking reflog recorded a push update. This is not independent
+  remote byte readback or a publication receipt.
+- Worktree: intentionally dirty again with a bounded successor correction that
+  adds two immutable, still-unauthorized executable G0 command profiles, makes
+  every aggregate Gradle invocation offline, and synchronizes current
+  documentation and hashes. There is no V1 transport implementation in this
+  scope. Run `git status --short` again; live output is authoritative.
 - Android device state at handoff: disconnected by the user after physical QR
   pairing and reconnect verification. Do not assume ADB is available.
 - macOS state at handoff: the ad-hoc `dist/AetherLink.app` process was running
@@ -66,9 +70,11 @@ resume work.
   payload decode were not rerun in G0. Process and port state are ephemeral;
   verify them again before making a live claim.
 - Git publication state: the implementation baseline is published through
-  `d32c1846`; the roadmap/G0 packet is not committed or pushed. Do not reset,
-  clean, stage, commit, or push it without an explicit user request and reviewed
-  file scope.
+  `d32c1846`; the G0 packet has local commit/push-tracking evidence at
+  `929fda5f`, but still lacks independently acquired remote checkpoint bytes,
+  a verified publication receipt, and owner acceptance. The successor
+  command-profile correction is uncommitted. Do not reset, clean, stage,
+  commit, or push it without an explicit user request and reviewed file scope.
 - Subagent preference for this workstream: use GPT-5.6 Sol. Do not use
   GPT-5.3-Codex-Spark.
 
@@ -84,6 +90,8 @@ git status --short
 sed -n '1,650p' docs/handoff.md
 sed -n '1,260p' docs/v1/g0/decision-v1.md
 sed -n '1,340p' docs/v1/g0/assurance-v1.md
+sed -n '1,220p' docs/v1/g0/assurance-closure-amendment-v2.md
+sed -n '1,220p' docs/v1/g0/assurance-closure-amendment-v3.md
 sed -n '1,90p' docs/progress.md
 sed -n '1,90p' docs/qa-evidence.md
 sed -n '1,230p' docs/roadmap.md
@@ -99,6 +107,9 @@ python3 script/check_v1_g0_checkpoint.py
 python3 -m unittest script.test_v1_g0_checkpoint
 python3 script/check_v1_g0_decision.py
 python3 -m unittest script.test_v1_g0_decision
+python3 -m unittest script.test_v1_g0_publication_receipt
+python3 script/check_v1_g0_receipt_bundle.py
+python3 -m unittest script.test_v1_g0_receipt_bundle
 python3 -m unittest script.test_build_and_run
 python3 -m unittest script.test_documentation_handoff_guards
 python3 script/check_p2p_nat_security_design.py
@@ -141,16 +152,23 @@ success 1.0, and thirteen zero-allowance security hard stops. Android and macOS
 build/sign/distribute/install/update or rollback trust boundaries are explicit
 without granting signing, upload, or deployment authority.
 
-The assurance record now has one machine-enforced G0 closure contract that
+The frozen V1 assurance record has one machine-enforced G0 closure contract that
 crosswalks all ten blockers, nine checklist items, fourteen accountable roles,
 and exact gate-scoped evidence kinds. Owner receipts must bind the exact
 published checkpoint digest, containing commit, scoped blocker IDs, timestamp,
 and non-empty verified catalog evidence. Gate and publication receipts also
 require exact source commit/path/hash bindings, successful result domains, and
-ordered timestamps. The current checker accepts no receipt at all; a successor
-must first implement the independently anchored, factory-only validation context
-pinned by the activation policy. No receipt exists yet; the crosswalk does not
-close G0.
+ordered timestamps. The separate V2 closure amendment preserves those V1 bytes
+and classifies exactly two checks as executable: the full no-device aggregate
+and the ordered Android/macOS release-compilation pair. Its canonical command
+profiles require an egress-denied runner, offline Gradle,
+preseeded dependencies, exact environment/cwd/profile digests, bounded build/
+loopback side effects, and complete sanitized logs. Both profiles remain
+`not_authorized`; the other seven checks close only from publication, catalog,
+and accountable-owner evidence. The current checker validates the amendment
+but accepts no receipt at all; a later successor must first implement the independently anchored, factory-only
+validation context pinned by the activation policy. No receipt exists yet; the
+crosswalk does not close G0.
 
 `docs/v1/g0/assurance-checkpoint-readback-v1.json` is the separate local
 candidate for assurance hash and source readback. Its validator pins the
@@ -162,6 +180,37 @@ hash/symlink/identity drift, oversized sources or integers, non-finite numbers,
 fabricated owner acceptance or publication, blocker removal, and authority
 promotion. Status remains `candidate_observed_not_immutable`; this is not a
 reviewed commit, immutable publication root, owner acceptance, or G0 exit.
+
+`docs/v1/g0/assurance-closure-amendment-v2.json` is the separate successor
+candidate for the command-profile correction. It pins the unchanged parent V1
+raw/canonical hashes, applies eleven exact ordered JSON Pointer operations to a
+deep copy, advances both effective schema identities, and records the
+independently recomputed effective V2 assurance digest. Its own V2 checkpoint
+pins parent, amendment, and effective bytes; the composite publication profile
+binds all four exact files. Bounded no-follow reads plus final identity/hash
+readback reject symlinks and validation-time replacement. This avoids changing
+either committed V1 file and still grants no execution or receipt authority.
+
+`script/check_v1_g0_publication_receipt.py` contains a dormant, non-authorizing
+private candidate matcher for only the composite publication receipt. It checks
+strict receipt bytes against a factory-owned immutable snapshot of the four
+exact commit blobs and separately sourced remote checkpoint bytes. It performs
+no receipt-directed file, Git, or network lookup and even an exact synthetic
+match returns `dormant_non_authorizing`. The canonical checker rejects every
+supplied receipt bundle; the eight synthetic tests neither record publication
+nor change acceptance, authority, or G0 state.
+
+The separate V3 successor preserves all V1/V2 bytes and applies thirteen exact
+operations to effective V2. It pins the missing complete-bundle, owner,
+evidence, authority, runner, gate, approval, and six-artifact publication
+profiles. `script/check_v1_g0_receipt_bundle.py` reconstructs the six exact
+lineage blobs from one immutable snapshot and privately derives ten blockers,
+nine G0 checks, 14 roles, 15 role/blocker pairs, 15 non-derived evidence kinds,
+two derived kinds, and two executable checks from effective V3. It also binds
+the ordered checklist evidence union to the blocker evidence union. It has no
+public API; even an exact complete fixture returns `dormant_non_authorizing`, and actual
+publication, registry, revocation, artifact, log, runner, clock, and signature
+trust inputs remain absent.
 
 G0 is `blocked_before_g1a`, not complete. Ten evidence-bearing blockers remain:
 
@@ -180,8 +229,11 @@ G0 is `blocked_before_g1a`, not complete. Ten evidence-bearing blockers remain:
 `script/check_v1_g0_decision.py` hash-pins the inherited security decisions,
 checks the current application/platform/locale baseline, and keeps G1a plus all
 source-acquisition, library, compiler, socket, network, production-key, signing,
-store-upload, and deployment authorities false. Its combined decision and
-assurance mutation suite contains 62 tests. Release metrics fail closed without
+store-upload, and deployment authorities false. Its combined decision,
+assurance, and closure-amendment mutation suite contains 63 tests; the separate
+V1 checkpoint suite contains 11, the dormant publication suite contains 8, and
+the V3 lineage/bundle suite contains 10, for 92 focused G0 tests total. Release
+metrics fail closed without
 an approved evidence signer and verifier, and percentile/scalar values are
 recomputed from bounded, canonical signed samples. Required network variants
 also bind one raw observation per attempt: affected plane/region, outage result
@@ -363,6 +415,12 @@ Current evidence and planning:
 - `docs/v1/g0/decision-v1.md`
 - `docs/v1/g0/decision-v1.json`
 - `docs/v1/g0/assurance-checkpoint-readback-v1.json`
+- `docs/v1/g0/assurance-closure-amendment-v2.md`
+- `docs/v1/g0/assurance-closure-amendment-v2.json`
+- `docs/v1/g0/assurance-closure-amendment-checkpoint-v2.json`
+- `docs/v1/g0/assurance-closure-amendment-v3.md`
+- `docs/v1/g0/assurance-closure-amendment-v3.json`
+- `docs/v1/g0/assurance-closure-amendment-checkpoint-v3.json`
 - `docs/evidence/physical-qr-pairing-20260719.json`
 - `docs/progress.md`
 - `docs/qa-evidence.md`
@@ -371,23 +429,35 @@ Current evidence and planning:
 - `script/test_v1_g0_checkpoint.py`
 - `script/check_v1_g0_decision.py`
 - `script/test_v1_g0_decision.py`
+- `script/check_v1_g0_publication_receipt.py`
+- `script/test_v1_g0_publication_receipt.py`
+- `script/check_v1_g0_receipt_bundle.py`
+- `script/test_v1_g0_receipt_bundle.py`
 - `script/check_docs_hygiene.py`
 
 ## Dirty Worktree Map
 
 The earlier QR, persistence, and security-governance work is part of the
 published `d32c1846` baseline. The optimization work is published there as well.
-The intended current unpublished scope is:
+The first G0 packet is locally committed at `929fda5f`; its V1 assurance and
+checkpoint bytes remain unchanged. The intended current unpublished successor
+scope is:
 
-- `README.md`;
 - `docs/handoff.md`, `docs/progress.md`, `docs/qa-evidence.md`, and
   `docs/roadmap.md`;
-- `docs/v1/g0/decision-v1.md` and `decision-v1.json`;
-- `docs/v1/g0/assurance-v1.md` and `assurance-v1.json`;
-- `docs/v1/g0/assurance-checkpoint-readback-v1.json`;
-- `script/check_v1_g0_checkpoint.py` and `script/test_v1_g0_checkpoint.py`;
-- `script/check_v1_g0_decision.py` and `script/test_v1_g0_decision.py`;
-- `script/check_no_device_quality.sh` integration.
+- `docs/v1/g0/assurance-closure-amendment-v2.md`,
+  `assurance-closure-amendment-v2.json`, and
+  `assurance-closure-amendment-checkpoint-v2.json`;
+- `docs/v1/g0/assurance-closure-amendment-v3.md`,
+  `assurance-closure-amendment-v3.json`, and
+  `assurance-closure-amendment-checkpoint-v3.json`;
+- `script/check_v1_g0_decision.py`, `script/test_v1_g0_decision.py`,
+  `script/check_v1_g0_publication_receipt.py`, and
+  `script/test_v1_g0_publication_receipt.py`, plus the V3
+  `script/check_v1_g0_receipt_bundle.py` and
+  `script/test_v1_g0_receipt_bundle.py`;
+- `script/check_copy_hygiene.py` Gradle-command parser alignment;
+- `script/check_no_device_quality.sh` offline Gradle enforcement.
 
 There are no Android, macOS, protocol, schema, transport, or relay
 implementation edits in this scope. The documentation records the G0 decision,
@@ -419,7 +489,7 @@ all current changes form one atomic feature.
 - The integrated G0 checker passes against nine decision source hashes, 29
   assurance source hashes, the live Android/macOS configuration and locale
   baseline, and protocol-schema message/error parity.
-- Its 62 mutation tests pass and reject premature G1a/network/deployment
+- Its 63 mutation tests pass and reject premature G1a/network/deployment
   authority, nested unknown fields, security downgrades, missing hard stops,
   fallback or platform drift, network-cell/variant/measurement-contract/blocker
   removal, missing protocol/threat/user-loop inventory, forbidden observability
@@ -578,7 +648,7 @@ ANDROID_HOME="$HOME/Library/Android/sdk" \
 
 JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
 ANDROID_HOME="$HOME/Library/Android/sdk" \
-./gradlew --no-daemon :app:assembleRelease -Pkotlin.incremental=false
+./gradlew --offline --no-daemon :app:assembleRelease -Pkotlin.incremental=false
 ```
 
 ### Build and inspect the live macOS app
@@ -698,9 +768,10 @@ Unless the user redirects the task, use this decision order:
    confuse that candidate with publication or owner acceptance, and do not
    start G1a because the machine authority remains false.
 3. If the user explicitly requests commit/push after reviewing scope, publish
-   the bounded roadmap/G0 packet without unrelated implementation. Blanket
-   staging is not the default.
-4. Read back the exact remote repository, commit object, checkpoint path, and
+   only the bounded successor command-profile/offline-gate correction without
+   unrelated implementation. Blanket staging is not the default.
+4. Independently read back the exact remote repository, commit object,
+   checkpoint path, and
    checkpoint digest. Only that verified identity may receive owner or
    authorized-gate receipts.
 5. Obtain the actual account/owner/budget evidence and separately authorized
