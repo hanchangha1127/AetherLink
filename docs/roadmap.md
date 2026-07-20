@@ -1,5 +1,786 @@
 # Roadmap
 
+## Canonical V1 Delivery Roadmap
+
+Last revised: 2026-07-20 KST.
+
+This section is the canonical forward plan for the first production release of
+AetherLink. It supersedes the shipping order implied by the historical feature
+theme headings later in this document. Those entries remain useful product
+ideas and implementation history, but `v0.x` or `v1.x` labels in older sections
+are not release commitments. In particular, Windows, DGX OS, iOS, additional
+serving backends, MCP, web search, skills, workspaces, and automations are
+post-V1 work unless a later approved scope decision explicitly changes that.
+
+### V1 Product Outcome
+
+AetherLink V1 is a production release in which an Android controller can pair
+with a macOS AetherLink Runtime by QR, reconnect without entering an Ollama or
+LM Studio URL, and use the complete trusted runtime loop on the same LAN or on
+unrelated networks. The supported product loop is:
+
+1. Install signed release artifacts on a supported macOS host and Android
+   device.
+2. Start AetherLink Runtime and obtain a fresh production pairing QR backed by
+   an authenticated, expiring route.
+3. Pair identities through the physical camera, confirm trust, and establish an
+   identity-bound secure session.
+4. Prefer identity-matched local direct connectivity, then production P2P/NAT
+   traversal, then the G0-approved end-to-end encrypted fallback profile. G0
+   must either retain the currently approved TURN plus sealed-emergency-relay
+   profile or explicitly supersede it with a newly reviewed profile.
+5. Read runtime and backend health, list installed Ollama or LM Studio models,
+   stream chat and reasoning, cancel generation, reopen runtime history, and use
+   runtime-owned memory and the already-supported attachment paths.
+6. Recover after app or runtime restart, network handoff, route expiry, QR
+   rotation, and explicit trust revocation without falling back to an anonymous,
+   development, plaintext, or stale route.
+
+The macOS Runtime continues to own AI execution, provider URLs, credentials,
+history, memory, and tool boundaries. Android remains a trusted controller and
+never connects directly to Ollama or LM Studio. Reachability never establishes
+authorization. Local direct, P2P, and relay transports must all terminate in the
+same paired-identity and secure-session contract. A relay may observe bounded
+routing metadata, timing, and ciphertext size, but must not read model lists,
+prompts, responses, files, memory, provider URLs, or session traffic keys.
+
+A V1 claim requires signed release-to-release evidence and production-like
+external-network evidence. A debug QR, local authenticated smoke, release
+compile, mock relay, or same-Wi-Fi camera run is valuable lower-rung evidence
+but cannot independently satisfy the V1 release gate.
+
+### Current Baseline And Gap
+
+| Area | Current 2026-07-20 baseline | V1 gap |
+| --- | --- | --- |
+| Product loop | macOS Runtime and Android controller implement pairing, trust, health, installed-model selection, chat streaming/cancel, history, memory, and attachment flows. | Exercise the supported loop from clean signed release installs, with live Ollama and LM Studio, across every required route. |
+| Local physical proof | One `SM-S936N` completed debug same-Wi-Fi optical QR pairing, challenge-response authentication, health, force-stop, Bonjour rediscovery, and trusted reconnect. | Expiry/rotation, camera denial/regrant, process death, TalkBack/VoiceOver, additional supported devices, and release binaries remain unproven. |
+| Automated proof | The current snapshot records 1,809 Swift tests and 1,528 Android JVM tests, release compilation, static contracts, authenticated direct/relay smokes, and debug APK assembly. | CI does not yet provide signed artifacts, physical-device, external-network, sanitizer/fuzz, soak, or production deployment evidence. Counts are snapshot facts, not permanent release thresholds. |
+| Transport | Identity-first routing, local discovery, route records, and a bounded encrypted development relay exist. | Production endpoint-authenticated session crypto, hardened allocation, signaling, ICE/STUN/TURN, P2P path migration, and blind relay operations are incomplete. |
+| P2P authority | `libjuice` and `libnice` were rejected before compile; no networking library is selected and all compile/socket/runtime-network authority is closed. | A new candidate and version must start a new staged authority chain. No rejected decision or consumed authority may be reused. |
+| Relay security | Bounded leases, identity challenges, strict JSON, encrypted frame bodies, quotas, and development lifecycle controls exist. | Allocation TLS, service-signed lease capabilities, peer-verifiable KEX, pair epoch recovery, immediate revocation, signer rotation, multi-instance operations, and deployment remain open. |
+| Distribution | Android is version `0.1.0` with no production signing configuration; the macOS development bundle is ad-hoc signed. | Production application identity, signing custody, channel validation such as direct-distribution notarization or App Store review, install/update/rollback, artifact provenance, and staged distribution are required. |
+| Repository state | `main` and `origin/main` are aligned at `d32c1846`; the reviewed optimization work is published. The current V1 execution scope contains this roadmap, the G0 decision/validator, a content-addressed local assurance readback candidate, and synchronized current documentation, with no transport implementation. | Keep the G0 packet isolated from protocol and networking implementation, obtain owner review, and publish an intentional checkpoint before G1a. The local candidate is not publication; commit or push still requires explicit user direction. |
+
+### Governing Source Records
+
+- The current product/evidence boundary is maintained in
+  [the canonical handoff](handoff.md), while the transport shape and current
+  implementation gaps are maintained in [architecture](architecture.md) and
+  [protocol](protocol.md).
+- The current P2P/NAT profile is
+  [approved only for a bounded handoff](security-hardening/production-p2p-nat-v1/selection-profile.md).
+  Its latest [progress](security-hardening/production-p2p-nat-v1/controlled-network-spike/phase-a/progress-v8.json),
+  [decision](security-hardening/production-p2p-nat-v1/controlled-network-spike/decision-v6.json),
+  and [handoff](security-hardening/production-p2p-nat-v1/implementation/handoff-v9.json)
+  leave no library selected and all execution authority closed.
+- The relay portfolio originally recommended
+  [TLS plus signed lease capabilities](security-hardening/production-relay-v1/proposals/authenticated-allocation-control-plane.md)
+  and [pair epoch recovery](security-hardening/production-relay-v1/proposals/pair-epoch-recovery.md).
+  G0 now selects both as V1 requirements, while the
+  [relay hardening review](security-hardening/production-relay-v1/hardening.md)
+  remains implementation-, socket-, network-, key-, and deployment-gated.
+- This roadmap is planning guidance. It does not itself authorize source
+  acquisition, implementation, compilation, sockets, external network access,
+  service deployment, production traffic, signing-key use, or publication.
+
+### V1 Required Scope
+
+- Android controller and macOS Runtime only. The current declared Android
+  minimum is API 26 and the Swift package minimum is macOS 14; G0 must confirm
+  the final supported OS and hardware matrix rather than inheriting those
+  values silently.
+- Ollama and LM Studio through runtime-host adapters. No direct client-provider
+  traffic and no provider URL in client storage, UI, telemetry, or diagnostics.
+- Production QR onboarding, trusted-device listing and revocation, route
+  refresh, expiring leases, pair epoch recovery, and clean re-pairing.
+- Identity-matched local direct routing, real different-network P2P/NAT
+  traversal for eligible networks, and every data plane required by the
+  G0-approved encrypted fallback profile.
+- One versioned secure-session profile shared by all route types, including
+  replay resistance, downgrade prevention, rekey/expiry, bounded clocks, and
+  explicit N/N-1 migration behavior during rollout.
+- Core health, installed models, chat stream/cancel, reasoning, history, memory,
+  and current attachment behavior without expanding their authority model.
+- Actionable connection/recovery UX, five-locale parity, large text, keyboard
+  and screen-reader semantics, camera permission recovery, and lifecycle
+  recovery.
+- Signed Android and channel-valid signed macOS artifacts, clean install and
+  declared upgrade or fresh-pair transition, rollback, privacy-safe operations,
+  capacity and failure drills, and staged GA.
+
+### Explicit V1 Non-Goals
+
+- iOS, Windows, DGX OS, additional runtime-host platforms, or additional serving
+  backends.
+- Account service, cloud AI backend, cloud synchronization, organization or
+  multi-tenant management, and account-based recovery.
+- DHT or fully decentralized rendezvous, anonymous/public peer discovery,
+  censorship resistance, universal firewall traversal, or complete
+  traffic-analysis resistance.
+- Multi-party/group trust, threshold recovery, or cross-user sharing. Pair epoch
+  recovery is required; threshold recovery remains post-V1.
+- MCP, terminal execution, general Python execution, web search, new skill
+  execution, workspaces, scheduling, and automation.
+- New advanced memory, research, or RAG surface expansion. Already implemented
+  functionality must remain safe and compatible, but it must not displace the
+  transport and release critical path.
+- QUIC promotion or another transport rewrite unless the selected V1 stack and
+  measured evidence make it necessary. V1 needs one proven profile, not every
+  plausible transport.
+
+### Critical Path And Planning Envelope
+
+The dependency order is:
+
+```text
+G0 V1 contract and baseline
+  -> G1 secure-session and control-plane contract
+       -> G2 new NAT-stack authority and selection --\
+       -> G3 production rendezvous/fallback services --> G4 endpoint route integration
+  -> Q continuous product, data, accessibility, and CI hardening -----/
+  -> G5 lifecycle and recovery closure
+  -> G6 signed release-to-release qualification
+  -> G7 RC, operations, and staged GA
+```
+
+G2 and G3 may overlap only after G1 freezes their shared identity, lease, epoch,
+and transcript contracts. Product and QA work may proceed in parallel, but no
+later phase inherits compile, socket, external-network, or deployment authority
+from an earlier phase. An indicative planning envelope is 18 to 26 elapsed
+engineering weeks when networking, service operations, application, and release
+work can overlap. This is not a delivery commitment; G0 must re-estimate after
+owners, infrastructure, support matrix, and service SLOs are assigned, and G2
+must re-estimate after a candidate actually passes source review.
+
+The `Q` lane starts in G0 and is owned jointly by application and QA owners. It
+keeps current health/model/chat/history/memory/attachment behavior compatible,
+adds CI and release evidence as contracts stabilize, and fixes release blockers
+without expanding product scope. Its exit gate is continuous: every G0-G4
+checkpoint must pass the affected fast and full suites with no unexplained
+baseline regression, and G5 owns its final physical/product closure.
+
+### Current Execution Status
+
+The V1 execution goal is active. The versioned
+[G0 decision](v1/g0/decision-v1.md) and its
+[machine record](v1/g0/decision-v1.json) now freeze the repository-derived
+product, platform, distribution, fallback, relay-control, pair-recovery,
+privacy, SLO, evidence, and authority defaults. A dedicated validator and
+the versioned [G0 assurance packet](v1/g0/assurance-v1.md) now hash-pin the
+protocol/data-flow inventory, threat/risk refresh, observability schema, release
+checklist, and incident/rollback runbooks. Its 62-test mutation suite keeps both
+records fail-closed; release metrics require an approved signer, Ed25519
+verification, bounded canonical raw samples, and exact signed outcomes for each
+required network variant derived from ordered per-attempt outage and recovery
+observations. Twelve non-omittable
+network cells, including VPN and suspend/resume, plus six symmetric-NAT,
+consent-loss, deliberate-failure, and outage variants now define the release
+population. Native-IPv6 and home-NAT cells have a separate release-blocking
+direct-P2P threshold. Four measurement contracts bind targets to owner roles,
+sources, sample/window rules, and failure actions.
+
+A closed G0 derivation contract now crosswalks all ten blockers to all nine G0
+checks, all fourteen accountable roles, and exact gate-scoped evidence kinds.
+It defines owner, catalog, gate, and publication receipt shapes and their exact
+repository/commit/path/hash/result/timestamp bindings without fabricating any
+receipt. Receipt acceptance stays disabled until a successor implements the
+machine-pinned independent trust context and complete bundle aggregation. Later
+G2/G4/G5/G6 risk evidence remains mandatory at its own gate and cannot be
+silently promoted into, or substituted for, G0.
+
+The separate
+[G0 assurance checkpoint readback candidate](v1/g0/assurance-checkpoint-readback-v1.json)
+pins its own bytes in an external validator, recomputes the assurance raw and
+canonical hashes, and rehashes all 29 assurance source records in exact declared
+order. Eleven mutation tests keep path, role, hash, symlink, concurrent identity
+drift, the 4 MiB per-source ceiling, non-finite numeric overflow, over-128-digit
+integers, recursive type confusion, owner, publication, blocker, and authority
+claims fail-closed. Its status remains
+`candidate_observed_not_immutable`; a local checker constant is not an owner-
+accepted or published repository checkpoint.
+
+G0 remains `blocked_before_g1a`. The ten open items are externally rooted
+immutable assurance readback/acceptance and authorized baseline gate results;
+checkpoint publication;
+production application namespaces; actual Apple/Google account and key owners;
+a versioned provider-compatibility baseline; service-domain, DNS, and WebPKI
+owners; service-root and online-signer owners; privacy/incident owners; named
+quality-measurement owners; and approved relay region/capacity/cost. Until they
+close and a separate G1a authority record is approved, G1a, source acquisition,
+library selection or compilation, sockets including loopback, network I/O,
+production keys, signing, store upload, and deployment remain closed.
+
+### G0 - Freeze The V1 Contract And Publish A Baseline
+
+Objective: turn the current strong v0.1 checkpoint into one reproducible base
+and eliminate product, authority, and release ambiguity before cross-cutting
+changes begin.
+
+Work packages:
+
+- Preserve `main@d32c1846` as the published implementation baseline, keep the
+  roadmap and G0 decision/validation packet isolated, and create its intentional
+  checkpoint only after explicit commit approval. Do not mix a new transport
+  change into this worktree.
+- Approve the V1 definition in this section, including whether P2P is a GA gate.
+  Under this canonical plan it is required for eligible networks; a relay-only
+  build must remain a pre-V1 beta unless an explicit versioned product decision
+  changes that rule.
+- Fix the supported Android API/device/OEM, macOS version/architecture, Ollama,
+  LM Studio, localization, and network matrix. Confirm whether Intel macOS is a
+  supported V1 architecture rather than assuming it from Apple Silicon builds.
+- Choose Android and macOS distribution channels, production application and
+  bundle identifiers, version/build-number policy, update model, minimum
+  rollback window, and N/N-1 compatibility policy.
+- Decide the Android pre-release data transition before changing application id
+  or signing lineage: either retain a compatible id/signing lineage, implement
+  an explicit reviewed export/import path, or declare development `0.1.0`
+  installs non-migratable and require clean install plus fresh pairing. The
+  current debug-signed app with backup disabled cannot be assumed upgradeable.
+- Select the production relay/control-plane option and the pair-epoch recovery
+  option from their gated portfolios, and decide whether one-sided deny-only
+  revoke is an accepted denial-of-service tradeoff. The currently approved
+  `production_p2p_nat_v1_recommended` profile requires standards-based TURN plus
+  a sealed AetherLink emergency fallback. Retaining it makes both data planes V1
+  scope. Choosing a single-plane TURN or sealed-relay profile is a new product
+  and security decision that must explicitly supersede the existing profile and
+  selection decision; it must version and re-approve the changed fallback state
+  machine, no-network vectors, security manifest, rollback policy, and release
+  evidence. A generic relay selection does not silently remove either existing
+  requirement.
+- Approve the service trust-root owner, delegated online key custody, rotation
+  overlap, emergency revocation owner, privacy policy, log retention, incident
+  owner, relay-region plan, and cost/capacity owner.
+- Freeze a versioned error taxonomy and measurable targets for setup,
+  reconnect, handoff, revocation, crash-free operation, soak stability, and
+  relay capacity. A target without an owner, measurement source, sample rule,
+  and failure action is not a release SLO.
+- Refresh the V1 threat model, protocol inventory, data-flow inventory, test
+  matrix, risk register, and release checklist against the checkpoint commit.
+
+Required artifacts:
+
+- Versioned V1 scope/architecture decision and supported matrix.
+- Versioned security requirements/ADR, compatibility requirements, and
+  migration policy. G1 owns the exact wire/crypto profile and vectors.
+- Updated threat model and privacy-safe observability schema.
+- Versioned selection decisions for relay allocation, fallback profile, pair
+  epoch/revocation, and their implementation boundaries. Any one-plane choice
+  explicitly names the superseded profile and decision plus every replacement
+  artifact; absent that supersession, the existing two-plane profile governs.
+- Separate staged authority records for relay implementation and any P2P/NAT
+  candidate work.
+- CI tiers, device/network/provider matrix, release checklist, incident and
+  rollback runbook skeletons.
+
+Exit gate:
+
+- The baseline is reproducible and intentionally published, or an explicit
+  decision records why work continues on a dirty tree.
+- Every required V1 capability and non-goal has an owner and acceptance method.
+- Trust root, pair recovery, supported platforms, distribution channel,
+  telemetry boundary, service ownership, and SLO decisions have no unresolved
+  release-blocking question.
+- Existing no-device gates and release compilation pass from the selected base.
+
+Stop conditions: do not begin G1 implementation or live-network work while the
+trust root, secure-session requirements, relay/recovery selection, pair epoch
+model, supported topology, migration policy, or authority owner is unresolved.
+
+### G1 - Production Secure Session And Allocation Contract
+
+Objective: turn the approved G0 requirements and selections into one exact
+endpoint-authenticated security contract, then implement it through separately
+authorized no-network and loopback phases. The contract remains invariant
+across local direct, P2P, and relay paths.
+
+Authority split:
+
+- G1a is no-network work: schemas, canonical encodings, vectors, parsers,
+  persistent-state transitions, migration rules, and injected transport tests.
+- G1b may implement and exercise loopback-only TLS and record transport only
+  after the exact relay design is selected and a separate implementation,
+  compilation, and loopback-socket authority is recorded.
+- Controlled or external service/network execution belongs to G3 and later
+  gates. Completing G1a never grants G1b or G3 authority.
+
+Work packages:
+
+- Authenticate the allocation channel with TLS 1.3 using an explicit production
+  trust source. Keep development route classes, ports, credentials, and feature
+  gates separate from production.
+- Define two service-signed, short-lived capability states. Initial QR bootstrap
+  is runtime-bound, one-use, narrowly scoped, and protected by short expiry plus
+  a durable consumed tombstone because the new client identity is not known
+  yet. Only after the protected pairing exchange accepts the client may the
+  service issue a paired lease binding runtime and client identities and roles,
+  pair epoch, generation, nonce, expiry, allocation/route data, service key id,
+  and algorithm/profile identifiers.
+- Establish peer-verifiable endpoint key exchange. Bind both paired identities,
+  roles, ephemeral keys, pair epoch, generation, nonces, selected suite, and a
+  typed `route_authorization_kind` plus its canonical digest into the transcript.
+  Local direct binds QR-pinned pair state and its nominated local path receipt
+  without requiring a service lease. P2P direct binds rendezvous/candidate
+  generation and ICE path-validation context, plus a signed route capability
+  only when one was issued. Sealed-relay and TURN-relay paths must bind their
+  signed lease/capability and exact allocation/path context. No digest type may
+  be accepted under another route kind.
+- Add replay windows, ordered record handling, expiry, rekey, clock-skew bounds,
+  transcript confirmation, and explicit downgrade rejection. Relay reachability
+  or service authentication must never substitute for endpoint authentication.
+- Add monotonic pair epoch and service keyset state, deny-only emergency
+  revocation, fresh-QR key replacement, idempotent transition identifiers,
+  signed pair-status reconciliation, and rollback-resistant local persistence.
+- Define protocol N/N-1 rollout and rollback so an older client cannot lower
+  the pair epoch, keyset version, generation, or secure-session profile.
+
+Evidence and exit gate:
+
+- Canonical Swift/Kotlin vectors cover valid handshakes, every typed route
+  authorization context, applicable lease/capability verification, key
+  derivation, record protection, rekey, revoke, and migration.
+- Negative and mutation suites reject MITM substitution, identity/role swaps,
+  altered ephemeral keys, nonce/epoch/generation/route-authorization changes,
+  cross-kind digest substitution, replay, truncation, clock abuse, rollback,
+  and every production-to-development downgrade before application-ready state.
+- Fuzz and bounded-parser suites cover all new untrusted messages and persistent
+  records; crash injection proves transactional recovery.
+- After G1b receives loopback authority, packet and log inspection finds zero
+  traffic keys, provider URLs, prompts, responses, files, memory, raw QR
+  payloads, route secrets, or stable device identifiers.
+- An independent security review has no unresolved P0/P1 finding and every P2
+  has an explicit release disposition.
+
+Stop conditions: G1a stops before socket creation. G1b stops unless its exact
+selection and loopback authority exist. No later socket or external-network
+phase may proceed if peers can become application-ready through a legacy/plain
+fallback, relay trust is used as endpoint identity, cross-platform vectors
+disagree, or lower epoch/keyset/generation state can be accepted without
+detection, fail-closed behavior, and signed status reconciliation.
+
+### G2 - Select A New P2P/NAT Stack Under Fresh Authority
+
+Objective: select a maintained, bounded, auditable cross-platform stack without
+reusing the rejected `libjuice`/`libnice` decisions or their consumed authority.
+
+The required authority ladder is sequential and immutable:
+
+1. Requirements, maintenance, license, privacy, platform, and threat review.
+2. Official-source identity, version/hash, signature, and acquisition decision.
+3. Offline static source and dependency review with secret/logging, redirect,
+   resolver, callback, threading, shutdown, and pre-I/O destination controls.
+4. Dependency closure, license inventory, SBOM, reproducible-source manifest,
+   and patch policy.
+5. Compile-only integration for declared Android and macOS architectures.
+6. ABI, sanitizer, fuzz, malformed-input, deterministic-shutdown, and
+   no-network conformance.
+7. Loopback-only sockets with exact process and destination policy.
+8. Destination-allowlisted controlled-network execution.
+
+Each rung needs its own input identity, commands, captured evidence, decision,
+consumed authority, rollback rule, and next permitted action. A later rung is
+not implicitly authorized because an earlier one passed.
+
+G2 ends at the specifically authorized controlled-network candidate evaluation.
+G4 owns a new explicit authority for external test-network P2P integration, and
+G7 owns the separate production deployment decision. Listing those later gates
+here would not authorize them and would make G2 depend circularly on G4/G7.
+
+Candidate acceptance requirements:
+
+- Supported licenses and active maintenance with a documented upgrade/CVE path.
+- Bounded candidates, attributes, callbacks, tasks, timers, queues, logs, and
+  shutdown time; cancellation and ownership must be explicit.
+- No hidden bootstrap, telemetry, redirect, DNS, proxy, STUN, TURN, or other
+  egress before destination policy approves it.
+- Configurable privacy mode, candidate redaction, mDNS/host-candidate policy,
+  consent freshness, credential lifetime, and log suppression.
+- Clear separation between reachability and AetherLink authentication/session
+  crypto. Third-party library crypto must not silently redefine the V1 endpoint
+  identity contract.
+- Deterministic Android/macOS build inputs and a stable minimal ABI surface.
+
+Exit gate: one exact candidate/version is selected with complete provenance,
+all authorized no-network and controlled-network evidence passes, residual risks
+are accepted, and a versioned decision explicitly opens the next rung. Otherwise
+G2 remains blocked with no library selected.
+
+### G3 - Production Rendezvous And Approved Fallback Services
+
+Objective: make every service-side component in the G0-approved fallback
+profile ready for endpoint integration while keeping AI traffic end-to-end
+protected from those services. For a sealed AetherLink relay, G3 owns both the
+service and its independent release-like endpoint integration. For TURN, G3
+owns credentials, allocation, quota, forwarding, and standards-level service
+interoperability; G4 alone owns AetherLink ICE consumption and endpoint E2E.
+The currently approved profile requires TURN plus a sealed emergency relay
+unless G0 explicitly supersedes it under the rules above.
+
+Work packages:
+
+- Build authenticated allocation and rendezvous over the G1 TLS and signed-lease
+  contract. Signaling exchanges only bounded, expiring, encrypted reachability
+  records.
+- Forward opaque encrypted records through every required sealed-relay or TURN
+  data plane. No forwarding service may mint endpoint trust or possess endpoint
+  traffic keys.
+- Enforce short leases, one-use bootstrap semantics, pair/session/source quotas,
+  connection and byte ceilings, bounded waiters, admission fairness, expiry,
+  immediate revoke, and closed-by-default overload behavior.
+- Persist monotonic allocation generation, pair epoch, keyset version, and
+  revocation state safely across service restart and multi-instance failover.
+- Implement offline-root/delegated-key provisioning, overlap rotation,
+  emergency revoke, backup/restore, disaster recovery, regional isolation, and
+  rollback procedures.
+- Add infrastructure-as-code, secret management, health checks, capacity
+  dashboards, alerts, deploy/rollback automation, and privacy-safe diagnostics.
+- Record separate implementation, loopback, controlled-network, external-test,
+  and deployment decisions for the G0-selected relay requirements. This
+  roadmap and G1 completion grant none of those authorities.
+
+Evidence and exit gate:
+
+- Common service evidence covers credential issuance, bounded allocation and
+  forwarding, expiry/refresh/revoke, privacy, load, restart, and failover for
+  every data plane required by the approved fallback profile.
+- For a required sealed relay, two release-like AetherLink endpoints establish
+  the G1 secure session through staging on unrelated networks; packet capture
+  exposes no application plaintext or traffic key.
+- For required TURN, standards-compliant interoperability clients prove
+  credential issuance, allocation, permission, channel-bind, refresh, expiry,
+  quota, and forwarding lifecycle. A synthetic endpoint-encrypted payload stays
+  opaque to the service. AetherLink endpoint TURN E2E is deliberately deferred
+  to G4 and is not a G3 exit condition.
+- Forged, expired, replayed, wrong-role, wrong-epoch, wrong-generation, and
+  revoked leases fail closed. Active and waiting rooms close on revocation.
+- Restart, partial outage, regional failover, clock skew, signer rotation,
+  backup/restore, duplicate requests, and split-brain attempts preserve
+  monotonic state and do not recreate consumed bootstrap authority.
+- Load and abuse tests demonstrate configured admission, memory, descriptor,
+  task, connection, waiter, and bandwidth ceilings without an open-relay mode.
+- Logs and metrics pass the V1 redaction schema and incident/rollback drills are
+  executable by someone other than the implementer.
+
+Stop conditions: no production deployment while allocation is unauthenticated,
+leases are unsigned, signer rotation/revocation is untested, split-brain can
+lower state, the relay can decrypt application traffic, or overload opens a
+weaker path.
+
+### G4 - P2P, ICE/STUN, Approved Fallback, And Path Migration
+
+Objective: connect eligible peers directly across unrelated networks and fall
+back deterministically through the G3 services required by the approved
+fallback profile without changing identity or security semantics.
+
+Work packages:
+
+- Select and document the supported ICE profile, candidate types, gathering and
+  trickle limits, privacy mode, STUN and, when selected, TURN credential flow,
+  destination policy, consent freshness, restart, nomination, and teardown
+  behavior.
+- Encrypt and authenticate candidate/signaling material under the G1 contract;
+  never publish stable public device directories or treat a candidate as proof
+  of identity.
+- Implement bounded local-direct to P2P to approved-fallback route selection.
+  Preserve the current trusted identity across path changes and reject stale
+  session, lease, epoch, generation, or route callbacks. Route priority,
+  credential authority, quota ownership, and kill-switch behavior must name the
+  applicable data plane explicitly.
+- Support consent loss, interface changes, Wi-Fi/cellular handoff, suspend/resume,
+  ICE restart, P2P failure, relay failover, and return to a better path only
+  after validation. A kill switch may force encrypted relay-only behavior but
+  may never enable development/plain/anonymous fallback.
+- Produce route outcomes and failure classes that the application can explain
+  without exposing raw candidates, IPs, identities, or credentials.
+
+Required network matrix:
+
+- Same LAN, unrelated Wi-Fi networks, Wi-Fi to cellular, cellular to Wi-Fi,
+  IPv4, IPv6, NAT64, carrier-grade NAT, symmetric NAT, restrictive firewall,
+  VPN, interface change, host sleep/wake, client background/Doze, consent loss,
+  required-fallback outage, relay regional outage when applicable, and
+  deliberate P2P failure.
+- Universal NAT success is not required. P2P must work on declared eligible
+  topologies, and every supported topology must still meet the approved overall
+  connection target when the approved fallback profile is available.
+
+Exit gate:
+
+- Direct P2P and each forced fallback route required by the approved profile
+  complete pairing/authentication, health, model list, chat stream/cancel, and
+  reconnect with the same endpoint identities and session profile.
+- Interoperability, sanitizer, malformed-signaling, packet-capture, privacy,
+  path-migration, timeout, resource-bound, and shutdown evidence passes across
+  the declared network matrix.
+- No stale route becomes application-ready; no failed route enables a weaker
+  transport; route metrics match packet-level observations without logging
+  protected identifiers or candidates.
+
+### G5 - Product Lifecycle, Recovery, Accessibility, And Data Closure
+
+Objective: close the user-visible and durable-state gaps that no-device tests
+and a single debug pairing cannot prove.
+
+Work packages:
+
+- Complete production QR creation, optical scan, expiry, rotation, refresh,
+  stale-code rejection, transient render retry, camera denial/regrant, and
+  accessible recovery on release builds.
+- Verify explicit trust revoke, fresh re-pair, pair epoch reconciliation,
+  service-key rotation, route loss, clock skew, offline use, and actionable
+  error recovery without exposing technical secrets.
+- Exercise Android background/foreground, Doze, process kill, force-stop,
+  reboot, storage pressure, upgrade, and rollback. Exercise macOS app/runtime
+  restart, sleep/wake, network changes, provider restart, and Keychain state.
+- Prove lifecycle barriers for composer/session persistence, pairing-secret
+  cleanup, history/memory mutation, attachments, cancellation, terminal events,
+  and migration from only the pre-release state explicitly declared compatible
+  in G0. If development `0.1.0` installs are non-migratable, verify clean install,
+  stale-data non-import, and fresh pairing instead of claiming in-place upgrade.
+- Run the complete live-provider loop with supported Ollama and LM Studio
+  versions: health, empty and populated catalog, stream, reasoning, cancel,
+  provider failure, model unload/residency, history, memory, and supported
+  attachment paths.
+- Complete TalkBack and VoiceOver traversal, focus order, announcements,
+  headings, selected state, modal behavior, dynamic type/large font, keyboard,
+  reduced-motion/high-contrast where applicable, and five-locale layout/copy.
+
+Minimum qualification matrix:
+
+- Android API 26, 30, 33, and 36 in automation where supported, plus physical
+  coverage at the minimum supported API, a current reference device, and a
+  current OEM variant including Samsung. Emulators supplement but do not replace
+  camera, accessibility, lifecycle, radio, and permission evidence.
+- macOS 14, latest-minus-one, and latest on every architecture declared in G0.
+- Font scales 100%, 150%, and 200%; Korean, English, and smoke coverage for all
+  five supported locales.
+- Each supported Ollama and LM Studio compatibility target, including clean
+  absence, provider unavailable, malformed/oversized metadata, and cancellation.
+
+Exit gate:
+
+- No P0/P1 product, data-loss, security, accessibility, or lifecycle defect is
+  open; every P2 has an approved release disposition.
+- Required release-device scenarios complete without crash, ANR, trust loss,
+  stale secret revival, duplicate terminal event, transcript corruption, or
+  unauthorized provider call.
+- Sanitized evidence records source/build identity, device/OS class, route
+  class, milestones, and explicit non-claims without retaining QR or secrets.
+
+### G6 - Release Engineering And Release-To-Release Qualification
+
+Objective: replace development artifacts with reproducible, installable,
+upgradable, supportable release artifacts and prove the complete V1 loop between
+them.
+
+macOS deliverables:
+
+- Production bundle identifier and semantic/build version policy.
+- Channel-specific signing and distribution. Direct distribution requires
+  Developer ID Application signing, hardened runtime, least entitlements,
+  strict nested-code verification, notarization, stapling, and the G0-selected
+  signed DMG. PKG and Mac App Store distribution are outside the current V1
+  decision and would require a new versioned release-channel decision plus their
+  own signing, custody, install, review, and update gates.
+- Clean-machine install, first launch, permission and Keychain behavior,
+  upgrade, rollback, uninstall, configuration migration, and recovery testing.
+- Update-channel and rollback strategy with N/N-1 protocol compatibility and
+  monotonic pair/keyset state protection.
+
+Android deliverables:
+
+- Final production application identity, versionCode/versionName policy, release
+  keystore custody or Play App Signing, and signed AAB/APK.
+- R8/resource-shrinking decision, mapping/native-symbol archive, dependency and
+  permission review, backup/export policy, and release secret isolation.
+- Clean install, upgrade only from a G0-declared compatible package/signing
+  lineage, or the approved export/import or fresh-pair transition when that
+  lineage is unavailable; process/reboot survival, rollback behavior,
+  channel-appropriate pre-launch/internal/closed distribution checks, and final
+  manifest/network-security validation.
+
+Shared supply-chain deliverables:
+
+- Pinned dependencies, license inventory, SBOM, vulnerability review, build
+  provenance, artifact checksums/signatures, secret scan, reproducible unsigned
+  payload/build-manifest comparison where practical, and retained
+  symbols/mappings for incident use. Timestamped signatures and notarization or
+  store receipts are provenance-tracked rather than required to be byte-identical.
+- CI-generated release notes, compatibility matrix, migration notes, known
+  limitations, support diagnostics, privacy disclosure, and rollback procedure.
+
+Exit gate:
+
+- Installed signed Android release and installed channel-valid macOS release
+  complete physical camera pairing, authentication, health, model list, live
+  chat stream/cancel, history/memory, restart, and trusted reconnect on local
+  direct, P2P, and every forced fallback route required by the approved profile.
+- Gate evidence identifies exact source and artifact digests. A locally rebuilt,
+  debug, ad-hoc, or unsigned artifact cannot substitute.
+- Clean install, N/N-1 upgrade for the declared release lineage, the G0-selected
+  pre-release migration or fresh-pair policy, service/client rollback, and
+  uninstall paths pass without lowering pair epoch, service keyset, generation,
+  or transport security.
+
+### G7 - Release Candidate, Operations, And Staged GA
+
+Objective: prove the product and service can be observed, operated, revoked,
+recovered, and rolled back under production-like load before calling it V1.
+
+CI and evidence tiers:
+
+| Tier | Trigger | Required coverage |
+| --- | --- | --- |
+| PR fast | Every change | Schema and canonical vectors, docs/copy/security contracts, focused Swift/Kotlin units, affected compilation, deterministic static checks. |
+| Merge full | Every accepted merge | Complete Swift and Android unit suites, release builds, no-device aggregate, sanitizer/fuzz seed corpus, SBOM/license and secret checks. |
+| Nightly product | Scheduled | Emulator/device lifecycle, accessibility, localization, live Ollama/LM Studio smoke, migration, install/upgrade, and failure injection. |
+| Controlled-network nightly | Authorized environment | Local direct, P2P, every approved-profile fallback route, network handoff, revoke/expiry, packet privacy, and route-metric correlation. |
+| Weekly resilience | Staging | Long soak, load, descriptor/memory/thread stability, relay restart/failover, signer rotation, backup/restore, abuse and chaos drills. |
+| RC | Tagged source | Reproducible unsigned payload/build manifests plus provenance-traceable signed artifacts, release-to-release physical/device/network matrix, full security review closure, runbook rehearsal, and rollback proof. |
+
+Privacy-safe observability may record aggregate route attempt/success, fallback
+reason class, setup/reconnect latency, ICE restart or consent loss, relay
+occupancy/bytes, authentication rejection class, lease/revoke latency, crash or
+ANR, and version/region class. It must not record raw IP/candidates, device or
+key fingerprints, pair/relay identifiers, QR or route/allocation tokens, keys,
+prompts, responses, files, memory, model names, or provider/backend URLs.
+
+The selected G0 release targets below are not current product claims:
+
+- At least 1,200 authenticated sessions complete across the twelve-cell required
+  matrix, with at least 100 attempts per topology cell and 30 attempts per
+  required symmetric-NAT, consent-loss, deliberate-failure, or outage variant.
+  Each cell requires at least 99% observed success and a 95% Wilson lower bound
+  of at least 95%.
+  A separately reported usage-weighted total cannot hide a failing NAT64,
+  CGNAT, restrictive-network, mobility, or outage cell. Native-IPv6 and
+  home-NAT P2P-required cells additionally require at least 95% observed direct
+  success and a 95% Wilson lower bound of at least 90%; fallback cannot satisfy
+  that gate. Other attempt-required cells report direct P2P as a separate KPI.
+- Traversal setup is at most 1.5 seconds p50, 5 seconds p95, and 10 seconds p99.
+  Full cold setup is at most 8 seconds p95 and 15 seconds p99; authenticated
+  reconnect is at most 5 seconds p95; network handoff is at most 10 seconds p95;
+  revocation closure is at most 10 seconds p95 and 30 seconds p99.
+- Zero false acceptance for stale, replayed, revoked, downgraded, wrong-identity,
+  wrong-role, wrong-epoch, or wrong-generation sessions.
+- Zero application plaintext, traffic key, route secret, QR payload, or provider
+  URL in packet/log/privacy negative tests.
+- Closed-beta crash-free and ANR-free session rates are each at least 99.5%.
+  One 24-hour RC soak has zero crash or ANR, and capacity passes at twice the
+  approved projected peak without unbounded RSS, descriptor, task, thread,
+  room, waiter, or queue growth or a weaker admission mode.
+
+Rollout sequence:
+
+1. Internal dogfood with production security and staging services.
+2. Closed external beta across the required device, provider, and network matrix.
+3. Small production cohort, then larger cohorts, with a predeclared observation
+   window and error budget at every promotion.
+4. GA only after service and client rollback, signer rotation, emergency revoke,
+   incident response, capacity, and disaster-recovery drills pass.
+
+Rollback may disable P2P/direct promotion and force the G0-designated emergency
+route within the approved encrypted fallback profile. It must never enable
+development, plaintext, anonymous, stale, or unauthenticated fallback. Client
+and service rollback must honor N/N-1 compatibility without lowering monotonic
+pair, keyset, generation, or revocation state.
+
+GA stop conditions:
+
+- Any open P0/P1, unresolved transport/security P2, SLO miss, error-budget
+  exhaustion, or incomplete release-to-release matrix.
+- Signing, channel validation, artifact identity, key rotation, revocation,
+  backup, restore, incident, or rollback drill failure.
+- Unredacted telemetry or logs, a relay that can recover application plaintext,
+  a weaker downgrade path, or a required route without privacy evidence.
+- Release artifacts that do not match the reviewed source and provenance.
+
+### Evidence Ladder And Claim Boundary
+
+| Evidence rung | It can prove | It cannot prove |
+| --- | --- | --- |
+| Static and no-device | Compilation, deterministic state machines, schemas, vectors, mutation/fuzz seeds, resource ceilings, and release-build construction. | Camera, screen reader, OS lifecycle, radio behavior, external reachability, service reliability, or production readiness. |
+| Physical same-LAN | Actual QR rendering/scan, permissions, paired authentication, local route, lifecycle, accessibility, and provider interaction for the tested artifacts. | Unrelated networks, P2P, approved-profile fallback routes, production service, or another device/OS. |
+| Controlled external network | Exact P2P and every approved-profile fallback path, NAT/network matrix, handoff, packet privacy, failure injection, and service restart for release-like artifacts. | Signed-store distribution, production capacity, long-run reliability, or GA readiness. |
+| Signed RC and staging | Install/upgrade/rollback, channel-specific signing and validation, release-to-release E2E, soak/load/chaos, key rotation, revoke, and operational runbooks. | Production outcomes outside the measured cohort, topology, duration, and capacity. |
+| Production rollout | Real error budget, capacity, incident and rollback behavior for the promoted cohort. | Universal NAT traversal, zero metadata leakage, or unsupported platforms and networks. |
+
+No evidence from a lower rung may be phrased as if it completed a higher rung.
+Every retained artifact must record source identity, build identity, environment,
+route class, result, and explicit non-claims without storing credentials or user
+content.
+
+### V1 Risk Register
+
+| Risk | Current signal | Mitigation and decision gate |
+| --- | --- | --- |
+| No accepted P2P library | Two candidates rejected before compile and no authority remains open. | Keep G2 independent, start with a new exact candidate/version, and stop rather than relaxing pre-I/O, secret, consent, or lifecycle requirements. |
+| Security contract spans every route | Current development paths have stronger pieces but no complete production profile. | Freeze G1 before networking; use one cross-platform vector suite and prohibit route-specific downgrade. |
+| Relay becomes an authority or data observer | Current allocation transport is development-grade. | TLS plus signed leases, endpoint KEX, blinded payloads, split-compatible capability shape, packet/log privacy tests, and operational key separation. |
+| Infrastructure becomes the schedule bottleneck | Production allocation, signaling, relay, key custody, monitoring, and incident ownership are not deployed. | Assign an owner and service plan in G0; develop G3 alongside G2 after G1. No client-only workaround counts as progress. |
+| Physical evidence is too narrow | One debug Samsung/same-Wi-Fi run is the current optical proof. | Maintain the G5/G6 device and network matrix; preserve no-device versus physical versus production labels. |
+| Release pipeline is absent | Ad-hoc macOS signing, no Android production signing, and no repository CI workflows. | Begin signing/provenance/CI work during G1-G3 rather than after networking completes. |
+| Advanced features displace launch work | The repository already contains broad memory, research, permission, and future-platform plans. | Treat them as maintenance-only unless required for compatibility or a release blocker; keep the canonical critical path above. |
+| Historical docs or mixed work obscure truth | The implementation baseline is published, the bounded roadmap/G0 packet is the current unpublished scope, and older version labels describe feature themes. | Keep G0 isolated from transport implementation, synchronize the handoff/progress/QA current entries, and let this section govern shipping order while the handoff governs evidence. |
+
+### V1 Definition Of Done
+
+V1 is complete only when all of the following are true:
+
+- The exact supported Android, macOS, architecture, provider, locale, and network
+  matrix is versioned and tested with signed release artifacts.
+- Fresh production QR pairing, trust, authentication, local direct, eligible
+  P2P, every fallback path required by the approved profile, route refresh,
+  revoke, re-pair, restart, reconnect, and handoff meet their approved contracts
+  and SLOs.
+- Health, model list, live chat/reasoning stream, cancel, history, memory, and
+  supported attachments work through the Runtime on both supported providers.
+- Every route uses the same identity-bound secure session, rejects replay and
+  downgrade, preserves monotonic epoch/keyset/generation state, and exposes no
+  protected payload or secret to relay, logs, diagnostics, or client storage.
+- Camera recovery, app/runtime process lifecycle, TalkBack, and VoiceOver pass
+  required physical-device evidence. Keyboard, large text, localization, and
+  responsive layout pass rendered/semantic automation plus the physical checks
+  assigned by the G0 support matrix; rendered tests cannot substitute for the
+  device-only flows.
+- Clean install, declared release-lineage upgrade or approved fresh-pair
+  transition, rollback, uninstall, channel-specific signing/distribution,
+  provenance, SBOM, and incident artifacts are complete and reproducible.
+- Required CI, device, provider, external-network, soak, load, failure, rotation,
+  revocation, restore, and rollback gates pass with no open P0/P1 and an approved
+  disposition for every P2.
+- The staged production cohort stays inside the approved error budget and the
+  go/no-go authority signs the final release record.
+
+### Immediate Execution Queue
+
+1. Review the content-addressed local assurance/source readback candidate and
+   establish publication readiness for the versioned G0 threat model,
+   protocol/data-flow inventories,
+   risk register, release checklist, observability schema, and incident/rollback
+   runbook; obtain separate authority for the full no-device and release-
+   compilation gates before running them. The local candidate alone is not
+   immutable publication or owner acceptance.
+2. Review and intentionally publish the roadmap plus G0 decision/validation
+   packet from `main@d32c1846`; do not mix transport implementation into that
+   checkpoint. Remote-read the exact commit and checkpoint digest before any
+   owner or gate receipt accepts it; record those receipts only in a successor
+   versioned checkpoint.
+3. Close the remaining machine-recorded G0 blockers: application namespaces,
+   distribution accounts/key owners, provider compatibility, service-domain/
+   DNS/WebPKI ownership, service-root/signer owners, privacy/incident owners,
+   quality-measurement owners, and relay region/capacity/cost ownership.
+4. Issue a separate fail-closed G1a no-network authority record, then turn the
+   TLS/signed-lease and pair-epoch selections into the exact protocol/crypto
+   profile and canonical vectors.
+5. Open a completely new G2 candidate decision only after its exact source,
+   license, maintenance, dependency, pre-I/O, logging, consent, and lifecycle
+   requirements are approved. Do not reopen `libjuice` or `libnice` implicitly.
+6. After the real account and custody owners are recorded, begin release signing,
+   CI tiering, artifact provenance, and staging-service preparation in parallel
+   with G1 so distribution does not become the final unmeasured blocker.
+
 ## Android Runtime Session Summary Linear Merge
 
 - Priority and status: implemented and broad Android-verified for the bounded no-device slice. Authoritative history can admit up to 10,000 sessions, so the former per-summary suppression reconstruction and persisted-session scan was the highest-value low-risk follow-up after the whole-codebase optimization pass.
@@ -11,11 +792,11 @@
 
 ## Canonical Session Continuation Baseline
 
-- Priority and status: the canonical handoff is refreshed for the current `main@41e932e9` baseline and the bounded unpublished optimization worktree. The next session must still refresh branch, HEAD, Git status, device attachment, and runtime process state instead of inheriting stale conversation or artifact assumptions.
+- Priority and status: the implementation baseline is published at `main@d32c1846` and aligned with `origin/main` when refreshed. V1 execution has started with the roadmap, versioned G0 decision/assurance validation, a content-addressed local assurance readback candidate, and synchronized current documents; no transport implementation is in scope. The candidate has no publication root or owner acceptance. The next session must still refresh branch, HEAD, Git status, device attachment, and runtime process state instead of inheriting stale conversation or artifact assumptions.
 - Current product checkpoint: one same-Wi-Fi debug QR has been decoded from the real macOS screen and paired through a physical `SM-S936N` camera; trust, challenge-response, health exchange, and stored-trust Bonjour reconnect were observed. Release remote-route enforcement, explicit Connection Recovery remote wiring, and primary-interface selection remain pinned by final focused, UI, static, and release evidence.
-- Default next bounded slice without a device: strict JSON validator input-copy and literal-allocation reduction with differential parser evidence. When a device is attached, physical expired/rotated QR recovery, camera permission denial/regrant, TalkBack/VoiceOver traversal, and process-death persistence remain the closest product-evidence gaps.
+- Default next bounded slice: close the machine-recorded G0 ownership and publication blockers, then issue a separate G1a no-network authority record. The strict JSON optimization remains maintenance-only. When a device is attached, physical expired/rotated QR recovery, camera permission denial/regrant, TalkBack/VoiceOver traversal, and process-death persistence remain G5/G6 evidence gaps rather than a substitute for G0.
 - Conditional next slice: different-network pairing may begin only after the exact reachable route, environment, and execution authority are established. Same-Wi-Fi `local_diagnostic` evidence is not a relay, P2P/NAT, Phase B, production-capacity, deployment, or readiness result.
-- Publication rule: the current unpublished tree is the reviewed 12-file optimization and documentation follow-up listed in `docs/handoff.md`. Any commit or push must still start from an explicit file review; blanket staging is not the default.
+- Publication rule: the prior optimization and documentation work is published in `d32c1846`; the current unpublished scope is the roadmap and bounded G0 decision/assurance/validation/documentation packet. Any commit or push must still start from an explicit file review; blanket staging is not the default.
 - Continuity rule: update the existing canonical handoff after future substantial work and synchronize current progress, QA, and roadmap facts. GPT-5.6 Sol is the requested subagent model; GPT-5.3-Codex-Spark remains excluded for this workstream.
 - Reading rule: `docs/handoff.md` and the current sections at the top of this roadmap are authoritative. Sections marked Historical Checkpoint or Superseded preserve at-checkpoint evidence only and cannot override the current Debug/Release matrix, physical observation manifest, or authority boundary.
 - Authority freshness: the QR-modified P2P/NAT source snapshot is synchronized at 13-artifact collection SHA-256 `6e6dfbfc0cdb70370c30f54222584b69042a6e22b6df04c7f3e65043c38522bd`; its validator and seven Phase A progress tests pass. This does not select a library or open compiler, socket, runtime-network, Phase B, production, or deployment authority.
@@ -1714,14 +2495,19 @@ This is not v0.1 implementation scope. Scheduling and automation should be runti
 - Mobile approval/status surfaces for reviewing, pausing, resuming, cancelling, and approving automation runs.
 - Client apps remain controllers; scheduled jobs execute only through the trusted runtime.
 
-## v1.0 Platform Expansion
+## Post-V1 Platform Expansion (Former v1.0 Placeholder)
+
+This historical heading is superseded by the canonical V1 delivery roadmap at
+the top of this file. Windows, DGX OS, and iOS are not gates for the first
+production macOS Runtime plus Android Controller release. Their exact version
+numbers should be assigned only after V1 GA.
 
 - Runtime targets expand from the current runtime host to Windows and DGX OS-class workstation/server support.
 - Client/controller targets expand from the current mobile client to iOS.
 - Keep the same trust boundary: clients control sessions; runtime targets mediate all model access.
 - Keep the same private P2P identity model across platforms so paired devices can reconnect across local and remote networks without exposing backend URLs or relying on OS-specific fixed endpoints or local-only discovery.
 
-## v1.1 Serving Backend Expansion
+## Post-V1 Serving Backend Expansion
 
 - Add more AI serving backend adapters beyond Ollama and LM Studio.
 - Preserve a common capability model for health, installed/running models, streaming chat, cancellation, embeddings, context windows, and structured errors.

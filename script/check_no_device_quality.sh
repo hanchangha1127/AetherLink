@@ -4290,6 +4290,10 @@ if [[ ! -x "$JAVA_HOME/bin/java" ]]; then
 fi
 
 run check_python_syntax \
+  script/check_v1_g0_checkpoint.py \
+  script/test_v1_g0_checkpoint.py \
+  script/check_v1_g0_decision.py \
+  script/test_v1_g0_decision.py \
   script/check_android_string_parity.py \
   script/check_macos_localization.py \
 	  script/check_protocol_schema.py \
@@ -4372,6 +4376,8 @@ run check_physical_external_relay_url_host_redaction_guard
 run check_physical_external_relay_probe_summary_redaction_guard
 run check_physical_external_relay_different_network_confirmation_guard
 run python3 -m unittest \
+  script/test_v1_g0_checkpoint.py \
+  script/test_v1_g0_decision.py \
   script/test_production_relay_security_design.py \
   script/test_relay_allocation_preflight.py \
   script/test_build_and_run.py \
@@ -4379,6 +4385,8 @@ run python3 -m unittest \
   script/test_android_usb_install.py
 run git diff --check
 
+run python3 script/check_v1_g0_checkpoint.py
+run python3 script/check_v1_g0_decision.py
 run python3 script/check_android_string_parity.py
 run python3 script/check_macos_localization.py
 run python3 script/check_protocol_schema.py
@@ -6238,6 +6246,8 @@ echo "Reviewed Swift filters subsumed by full suite: $SWIFT_SUBSUMED_FILTER_COUN
 
 echo
 echo "No-device quality checks passed."
+echo "Covered V1 G0 decision and assurance addendum: the versioned product, platform, distribution, twelve-cell plus six-variant network matrix, release-blocking direct-P2P thresholds, two-plane fallback, mandatory service-mediated P2P capabilities, absolute revocation closure, TLS signed-lease, pair-epoch, privacy, measurement-contract, protocol/data-flow/threat/risk/observability/release/incident/rollback, and evidence defaults are machine-validated against their exact source records. A content-addressed local candidate re-reads the assurance raw/canonical hashes and all 29 source hashes, but it is not immutable publication or owner acceptance. G0 remains blocked on owner acceptance and full baseline gates, checkpoint publication, production namespaces, distribution/key/provider/service-identity/root/privacy/quality/operations ownership, and relay region/capacity/cost approval; G1a, source acquisition, library selection or compilation, sockets, network I/O, production keys, signing, store upload, and deployment remain closed."
+echo "Covered V1 G0 closure-contract addendum: all ten blockers crosswalk to all nine G0 checks, fourteen accountable roles, and gate-scoped evidence. Any future owner, gate, and publication receipts must bind the exact reviewed repository, commit, checkpoint path and SHA-256, commit-tree and remote readback, authorized command profile, successful result, ordered UTC timestamps, role-scoped blocker ids, and non-empty verified evidence references. The current checker accepts no receipt; activation requires a separately implemented factory-only, independently anchored, deeply immutable validation context and complete non-ambiguous bundle coverage."
 echo "Covered cross-platform readiness UI addendum: one primary pairing task before trust, compact macOS QR renewal, and Android pairing/chat-entry hierarchy"
 echo "Covered cross-codebase optimization addendum: relay epoch material cache, exact-payload Pairing QR cache, exact-buffer Android frame reads, affected-session chat FTS, localized Bundle cache, direct relay raw-buffer forwarding, single-pass Android disk projection, relay-only split frame writes, and source-validated deduplicated no-device suites"
 echo "Covered v0.4 addendum: Android runtime-mediated model capability display"

@@ -1,0 +1,668 @@
+{
+  "documentType": "aetherlink.v1-g0-decision",
+  "schemaVersion": "1.0",
+  "decisionId": "aetherlink_v1_g0_decision_v1",
+  "recordedDate": "2026-07-20",
+  "status": "blocked_before_g1a",
+  "approvalSource": "user_delegated_canonical_v1_roadmap_execution_20260720",
+  "baseline": {
+    "repository": "source_repository_root",
+    "branch": "main",
+    "implementationRevision": "d32c1846eead13ab1462619145fc4da1194cce7e",
+    "originAlignedAtInspection": true,
+    "roadmapPath": "docs/roadmap.md",
+    "roadmapCheckpointState": "uncommitted",
+    "deviceState": "no_android_device_attached",
+    "physicalEvidence": "one_debug_same_wifi_sm_s936n_android_16_api_36",
+    "productionEvidence": "none"
+  },
+  "productScope": {
+    "releaseVersion": "1.0.0",
+    "p2pIsGaGate": true,
+    "platforms": {
+      "android": {
+        "minimumApi": 26,
+        "targetApi": 36,
+        "compileApi": 36,
+        "productionDeviceAbis": [
+          "arm64-v8a"
+        ],
+        "formFactors": [
+          "phone"
+        ],
+        "freshPairingRequiresCamera": true,
+        "emulatorApiMatrix": [
+          26,
+          30,
+          33,
+          36
+        ],
+        "physicalMatrix": [
+          "api26_arm64_phone",
+          "pixel_current_supported_release",
+          "galaxy_s_android16_api36"
+        ]
+      },
+      "macos": {
+        "minimumMajorVersion": 14,
+        "architectures": [
+          "arm64"
+        ],
+        "releaseTestMajorVersions": [
+          14,
+          15,
+          26
+        ],
+        "intelDisposition": "post_v1"
+      }
+    },
+    "locales": [
+      "en",
+      "ko",
+      "ja",
+      "zh-Hans",
+      "fr"
+    ],
+    "providers": [
+      {
+        "id": "ollama",
+        "access": "runtime_host_only",
+        "g0ObservedVersion": "0.32.1",
+        "minimumSupportedVersion": null,
+        "releasePolicy": "exact_rc_current_stable_and_previous_verified_versions"
+      },
+      {
+        "id": "lm_studio",
+        "access": "runtime_host_only",
+        "g0ObservedVersion": "cli_commit_6041ae0_desktop_version_unresolved",
+        "minimumSupportedVersion": null,
+        "releasePolicy": "exact_rc_current_stable_and_previous_verified_versions"
+      }
+    ],
+    "requiredUserLoop": [
+      "physical_qr_pairing",
+      "trusted_reconnect",
+      "runtime_health",
+      "installed_model_list",
+      "chat_reasoning_stream",
+      "chat_cancel",
+      "runtime_history",
+      "runtime_memory",
+      "current_attachments",
+      "trust_revoke_and_fresh_repair"
+    ],
+    "postV1": [
+      "ios",
+      "windows",
+      "dgx_os",
+      "intel_macos",
+      "additional_serving_backends",
+      "mcp",
+      "web_search",
+      "skills",
+      "workspaces",
+      "automations"
+    ]
+  },
+  "networkMatrix": {
+    "measurementUnit": "completed_authenticated_session_attempt",
+    "successGate": "supported_route_success_per_required_cell",
+    "directP2pReporting": "release_gate_for_required_success_cells_and_separate_kpi_for_other_attempt_cells",
+    "requiredCells": [
+      {
+        "id": "same_lan_ipv4_local_direct",
+        "relationship": "same_lan",
+        "networkCondition": "ipv4_unicast_and_local_discovery_available",
+        "p2pAttemptRequired": false,
+        "p2pExpectation": "not_applicable",
+        "authenticatedCompletionRoutes": [
+          "local_direct"
+        ]
+      },
+      {
+        "id": "unrelated_native_ipv6_p2p",
+        "relationship": "unrelated_networks",
+        "networkCondition": "native_ipv6_end_to_end_udp_available",
+        "p2pAttemptRequired": true,
+        "p2pExpectation": "required_success",
+        "authenticatedCompletionRoutes": [
+          "p2p_direct"
+        ]
+      },
+      {
+        "id": "unrelated_home_nat_ipv4",
+        "relationship": "unrelated_networks",
+        "networkCondition": "distinct_ipv4_home_nat_endpoints_udp_available",
+        "p2pAttemptRequired": true,
+        "p2pExpectation": "required_success",
+        "authenticatedCompletionRoutes": [
+          "p2p_direct",
+          "turn_relay",
+          "sealed_relay"
+        ]
+      },
+      {
+        "id": "unrelated_home_nat_to_cgnat",
+        "relationship": "unrelated_networks",
+        "networkCondition": "ipv4_home_nat_to_cgnat_udp_available",
+        "p2pAttemptRequired": true,
+        "p2pExpectation": "attempt_and_report",
+        "authenticatedCompletionRoutes": [
+          "p2p_direct",
+          "turn_relay",
+          "sealed_relay"
+        ]
+      },
+      {
+        "id": "unrelated_cgnat_to_cgnat",
+        "relationship": "unrelated_networks",
+        "networkCondition": "distinct_cgnat_endpoints_udp_available",
+        "p2pAttemptRequired": true,
+        "p2pExpectation": "attempt_and_report",
+        "authenticatedCompletionRoutes": [
+          "p2p_direct",
+          "turn_relay",
+          "sealed_relay"
+        ]
+      },
+      {
+        "id": "unrelated_nat64_to_ipv4",
+        "relationship": "unrelated_networks",
+        "networkCondition": "android_nat64_ipv6_to_macos_ipv4_nat",
+        "p2pAttemptRequired": true,
+        "p2pExpectation": "attempt_and_report",
+        "authenticatedCompletionRoutes": [
+          "p2p_direct",
+          "turn_relay",
+          "sealed_relay"
+        ]
+      },
+      {
+        "id": "unrelated_udp_blocked_tcp443",
+        "relationship": "unrelated_networks",
+        "networkCondition": "udp_blocked_outbound_tcp_443_available",
+        "p2pAttemptRequired": false,
+        "p2pExpectation": "not_applicable",
+        "authenticatedCompletionRoutes": [
+          "turn_tls_tcp_relay",
+          "sealed_relay"
+        ]
+      },
+      {
+        "id": "forced_turn_relay",
+        "relationship": "controlled_external_network",
+        "networkCondition": "direct_disabled_turn_path_forced",
+        "p2pAttemptRequired": false,
+        "p2pExpectation": "not_applicable",
+        "authenticatedCompletionRoutes": [
+          "turn_relay"
+        ]
+      },
+      {
+        "id": "forced_sealed_emergency_relay",
+        "relationship": "controlled_external_network",
+        "networkCondition": "direct_and_turn_disabled_sealed_path_forced",
+        "p2pAttemptRequired": false,
+        "p2pExpectation": "not_applicable",
+        "authenticatedCompletionRoutes": [
+          "sealed_relay"
+        ]
+      },
+      {
+        "id": "bidirectional_wifi_cellular_authenticated_handoff",
+        "relationship": "network_transition",
+        "networkCondition": "android_wifi_to_cellular_and_cellular_to_wifi_during_authenticated_sessions",
+        "p2pAttemptRequired": true,
+        "p2pExpectation": "attempt_and_report",
+        "authenticatedCompletionRoutes": [
+          "p2p_direct",
+          "turn_relay",
+          "sealed_relay"
+        ]
+      },
+      {
+        "id": "vpn_path_change_authenticated_recovery",
+        "relationship": "network_transition",
+        "networkCondition": "android_vpn_enable_disable_and_macos_vpn_route_change",
+        "p2pAttemptRequired": true,
+        "p2pExpectation": "attempt_and_report",
+        "authenticatedCompletionRoutes": [
+          "local_direct",
+          "p2p_direct",
+          "turn_relay",
+          "sealed_relay"
+        ]
+      },
+      {
+        "id": "suspend_resume_authenticated_reconnect",
+        "relationship": "lifecycle_transition",
+        "networkCondition": "macos_sleep_wake_and_android_background_resume_with_route_expiry_variants",
+        "p2pAttemptRequired": false,
+        "p2pExpectation": "not_applicable",
+        "authenticatedCompletionRoutes": [
+          "local_direct",
+          "p2p_direct",
+          "turn_relay",
+          "sealed_relay"
+        ]
+      }
+    ],
+    "requiredVariants": [
+      {
+        "id": "symmetric_nat_pair",
+        "appliesToCells": [
+          "unrelated_home_nat_ipv4",
+          "unrelated_cgnat_to_cgnat"
+        ],
+        "requiredOutcome": "supported_route_success_and_direct_p2p_result_reported"
+      },
+      {
+        "id": "consent_loss_and_recovery",
+        "appliesToCells": [
+          "unrelated_native_ipv6_p2p",
+          "unrelated_home_nat_ipv4",
+          "unrelated_home_nat_to_cgnat",
+          "unrelated_cgnat_to_cgnat"
+        ],
+        "requiredOutcome": "stale_path_closed_before_authenticated_recovery"
+      },
+      {
+        "id": "deliberate_p2p_failure",
+        "appliesToCells": [
+          "unrelated_home_nat_ipv4",
+          "unrelated_home_nat_to_cgnat"
+        ],
+        "requiredOutcome": "authenticated_fallback_without_plaintext_or_identity_downgrade"
+      },
+      {
+        "id": "required_turn_outage",
+        "appliesToCells": [
+          "forced_turn_relay",
+          "unrelated_udp_blocked_tcp443"
+        ],
+        "requiredOutcome": "sealed_fallback_or_fail_closed_then_authenticated_recovery"
+      },
+      {
+        "id": "required_sealed_relay_outage",
+        "appliesToCells": [
+          "forced_sealed_emergency_relay",
+          "unrelated_udp_blocked_tcp443"
+        ],
+        "requiredOutcome": "fail_closed_without_weaker_route_then_authenticated_recovery"
+      },
+      {
+        "id": "regional_relay_outage",
+        "appliesToCells": [
+          "forced_turn_relay",
+          "forced_sealed_emergency_relay"
+        ],
+        "requiredOutcome": "single_region_v1_fails_closed_then_recovers_after_service_restore"
+      }
+    ],
+    "applicabilityRules": {
+      "allRequiredCellsMustRunForGa": true,
+      "allRequiredVariantsMustRunForGa": true,
+      "cellOmissionAllowed": false,
+      "variantOmissionAllowed": false,
+      "routeNotApplicableDoesNotOmitCell": true,
+      "p2pDirectIsSeparateKpiWhereAttemptRequired": true,
+      "p2pRequiredSuccessCells": [
+        "unrelated_native_ipv6_p2p",
+        "unrelated_home_nat_ipv4"
+      ],
+      "bothProvidersCoveredInEveryCell": true,
+      "releasePlatformRowsCoveredAcrossEveryRouteClass": true,
+      "excludedAsUnsupported": [
+        "captive_portal_before_user_authentication",
+        "network_blocking_all_outbound_connectivity"
+      ]
+    }
+  },
+  "releasePolicy": {
+    "android": {
+      "currentApplicationId": "com.localagentbridge.android",
+      "productionApplicationId": null,
+      "channel": "google_play_closed_testing_then_staged_production",
+      "signing": "play_app_signing_with_separate_upload_key",
+      "artifact": "signed_aab",
+      "currentDebugDataMigration": "unsupported_clean_install_and_fresh_pair_required",
+      "rollback": "halt_rollout_then_forward_fix_with_higher_version_code"
+    },
+    "macos": {
+      "currentBundleId": "dev.aetherlink.companion",
+      "productionBundleId": null,
+      "channel": "direct_distribution",
+      "signing": "developer_id_application_hardened_runtime_notarization",
+      "artifact": "notarized_stapled_signed_dmg",
+      "updateModel": "manual_signed_update_for_v1",
+      "rollback": "retain_current_and_previous_signed_artifacts_subject_to_monotonic_state"
+    },
+    "versioning": {
+      "marketingVersion": "1.0.0",
+      "buildNumberRule": "strictly_monotonic_shared_release_ledger",
+      "androidVersionCodeRule": "strictly_increasing",
+      "macosBundleVersionRule": "strictly_increasing"
+    },
+    "compatibility": {
+      "wireAndService": "n_and_n_minus_1",
+      "databaseMigration": "forward_migration_with_tested_previous_release_read_path",
+      "monotonicSecurityState": "never_roll_back_pair_epoch_keyset_generation_or_revocation"
+    }
+  },
+  "securitySelections": {
+    "fallbackProfile": {
+      "profileId": "production_p2p_nat_v1_recommended",
+      "disposition": "retained_without_supersession",
+      "direct": "authenticated_encrypted_ice",
+      "ordinaryFallback": "bounded_turn",
+      "emergencyFallback": "relay_only_sealed_signaling",
+      "applicationReadiness": "transport_neutral_endpoint_identity_session"
+    },
+    "relayControlPlane": {
+      "selection": "tls_1_3_plus_signed_lease_capabilities",
+      "tlsTrust": "public_webpki_for_public_service_endpoints",
+      "serviceDomains": null,
+      "configurationTrust": "app_bundled_offline_aetherlink_root",
+      "leaseSigner": "offline_root_delegated_non_exportable_online_key",
+      "futureSplitCompatible": true,
+      "relayIsEndpointTrustTerminator": false
+    },
+    "pairRecovery": {
+      "selection": "monotonic_pair_epoch_state_machine",
+      "normalRenewal": "runtime_and_client_coauthorized",
+      "emergencyRevocation": "either_current_endpoint_deny_only",
+      "denyOnlyDosTradeoffAccepted": true,
+      "keyReplacement": "fresh_qr_and_incremented_pair_epoch",
+      "bindingFields": [
+        "pair_id",
+        "pair_epoch"
+      ],
+      "bindingTargets": [
+        "lease",
+        "registration",
+        "endpoint_transcript",
+        "route_refresh",
+        "application_authentication"
+      ],
+      "replacementRotatesEndpointTrafficSecret": true,
+      "replacementRotatesRouteTokenSeed": true,
+      "offlineReactivationRequiresCurrentSignedReceipt": true,
+      "statusReconciliation": "signed_read_only_pair_status",
+      "silentOneSidedKeyReplacementAllowed": false
+    },
+    "g1SuiteInput": {
+      "status": "candidate_requires_g1_ratification",
+      "profile": "platform_native_p256_hkdf_sha256_aes256gcm",
+      "exactTranscriptAndProviderSelectionFrozen": false
+    },
+    "routeAuthorization": {
+      "commonField": "route_authorization_kind_and_canonical_digest",
+      "localDirectServiceLeaseRequired": false,
+      "localDirectServiceCapabilityRequired": false,
+      "serviceMediatedP2pCandidatePublishCapabilityRequired": true,
+      "serviceMediatedP2pCandidateFetchCapabilityRequired": true,
+      "capabilityFreeRemoteP2pAllowed": false,
+      "sealedRelaySignedCapabilityRequired": true,
+      "turnSignedCapabilityRequired": true,
+      "crossKindDigestInterpretationAllowed": false
+    }
+  },
+  "operationsAndPrivacy": {
+    "operatorClass": "first_party",
+    "initialRegionCount": 1,
+    "serviceContentPolicy": "no_model_list_prompt_response_file_memory_provider_url_or_traffic_key",
+    "stablePairIdentifierInLogsAllowed": false,
+    "rawCandidateOrIpInLogsAllowed": false,
+    "aggregateOperationalMetricsRetentionDays": 30,
+    "sourceFreeSecurityEventRetentionDays": 7,
+    "sanitizedIncidentEvidenceRetentionDays": 90,
+    "contentFreeReleaseRecordRetentionDays": 365,
+    "capabilityMaximumLifetimeSeconds": 600,
+    "maximumClockSkewSeconds": 30,
+    "expiredAuthorizationStateDeletionSeconds": 30,
+    "offlineRootCustody": "offline_hsm_or_cold_custody_with_two_person_approval",
+    "onlineSignerCustody": "non_exportable_kms_or_hsm_with_overlap_rotation",
+    "emergencyRevocationSeparatedFromReleaseSigning": true
+  },
+  "qualityGates": {
+    "minimumCompletedNetworkSessions": 1200,
+    "minimumAttemptsPerRequiredTopologyCell": 100,
+    "minimumAttemptsPerRequiredVariant": 30,
+    "perCellObservedAuthenticatedSuccessMinimum": 0.99,
+    "perCellWilson95LowerBoundMinimum": 0.95,
+    "p2pRequiredCellObservedDirectSuccessMinimum": 0.95,
+    "p2pRequiredCellWilson95LowerBoundMinimum": 0.9,
+    "traversalSetupMilliseconds": {
+      "p50Maximum": 1500,
+      "p95Maximum": 5000,
+      "p99Maximum": 10000
+    },
+    "fullColdSetupMilliseconds": {
+      "p95Maximum": 8000,
+      "p99Maximum": 15000
+    },
+    "authenticatedReconnectP95Milliseconds": 5000,
+    "authenticatedHandoffP95Milliseconds": 10000,
+    "revocationClosureMilliseconds": {
+      "p95Maximum": 10000,
+      "p99Maximum": 30000,
+      "absoluteMaximum": 30000
+    },
+    "incrementalMemoryP95MiB": {
+      "androidMaximum": 24,
+      "macosMaximum": 24
+    },
+    "androidBatteryPercentPerHourMaximum": {
+      "idlePaired": 0.25,
+      "activeSession": 2.0
+    },
+    "closedBetaCrashFreeSessionMinimum": 0.995,
+    "closedBetaAnrFreeSessionMinimum": 0.995,
+    "rcSoakHoursMinimum": 24,
+    "falseAbuseRejectionMaximum": 0.001,
+    "rollbackSuccessMinimum": 1.0,
+    "securityHardStops": {
+      "prohibitedDestinationAttempts": 0,
+      "plaintextDowngrades": 0,
+      "falseIdentityAcceptance": 0,
+      "duplicateNonIdempotentRequests": 0,
+      "protectedDataLeaks": 0,
+      "rollbackFailures": 0,
+      "securityStateRollbacks": 0,
+      "trafficAfterConsentOrRevocation": 0,
+      "unauthorizedServiceAcceptance": 0,
+      "unauthorizedReleaseArtifactAcceptance": 0,
+      "releaseArtifactProvenanceFailures": 0,
+      "routeAuthorizationBypasses": 0,
+      "revocationClosureDeadlineMisses": 0
+    },
+    "capacityRule": "pass_at_two_times_the_approved_projected_peak_without_unbounded_growth_or_weaker_admission",
+    "measurementContracts": [
+      {
+        "id": "network_reliability_and_latency",
+        "targetFields": [
+          "minimumCompletedNetworkSessions",
+          "minimumAttemptsPerRequiredTopologyCell",
+          "minimumAttemptsPerRequiredVariant",
+          "perCellObservedAuthenticatedSuccessMinimum",
+          "perCellWilson95LowerBoundMinimum",
+          "p2pRequiredCellObservedDirectSuccessMinimum",
+          "p2pRequiredCellWilson95LowerBoundMinimum",
+          "traversalSetupMilliseconds",
+          "fullColdSetupMilliseconds",
+          "authenticatedReconnectP95Milliseconds",
+          "authenticatedHandoffP95Milliseconds",
+          "revocationClosureMilliseconds"
+        ],
+        "ownerRole": "release_network_qa_owner",
+        "measurementSource": "signed_rc_network_harness_and_content_free_service_metrics",
+        "sampleWindowRule": "one_versioned_rc_campaign_with_100_attempts_per_required_cell_30_attempts_per_required_variant_and_1200_completed_sessions_minimum",
+        "failureAction": "block_promotion_and_open_a_release_blocker_for_each_failed_cell"
+      },
+      {
+        "id": "endpoint_resource_and_stability",
+        "targetFields": [
+          "incrementalMemoryP95MiB",
+          "androidBatteryPercentPerHourMaximum",
+          "closedBetaCrashFreeSessionMinimum",
+          "closedBetaAnrFreeSessionMinimum",
+          "rcSoakHoursMinimum"
+        ],
+        "ownerRole": "release_performance_qa_owner",
+        "measurementSource": "signed_rc_device_telemetry_and_versioned_soak_harness",
+        "sampleWindowRule": "per_supported_release_device_row_plus_one_continuous_24_hour_rc_soak",
+        "failureAction": "block_promotion_until_a_new_rc_repeats_the_failed_measurement"
+      },
+      {
+        "id": "abuse_and_capacity",
+        "targetFields": [
+          "falseAbuseRejectionMaximum",
+          "capacityRule"
+        ],
+        "ownerRole": "service_operations_and_abuse_owner",
+        "measurementSource": "versioned_load_harness_and_content_free_admission_metrics",
+        "sampleWindowRule": "approved_peak_forecast_version_and_two_times_peak_load_campaign_per_rc",
+        "failureAction": "block_promotion_and_restore_the_last_approved_capacity_or_admission_profile"
+      },
+      {
+        "id": "security_hard_stops",
+        "targetFields": [
+          "securityHardStops",
+          "rollbackSuccessMinimum"
+        ],
+        "ownerRole": "product_security_owner",
+        "measurementSource": "signed_rc_negative_vectors_packet_tests_and_redacted_log_scans",
+        "sampleWindowRule": "all_required_security_cases_on_every_rc_with_no_sampling",
+        "failureAction": "stop_release_and_treat_any_nonzero_result_as_a_release_blocker"
+      }
+    ]
+  },
+  "ciTiers": [
+    "pr_fast",
+    "merge_full",
+    "nightly_product",
+    "controlled_network_nightly",
+    "weekly_resilience",
+    "release_candidate"
+  ],
+  "authority": {
+    "g0DocumentationAndStaticValidationAllowed": true,
+    "g1aNoNetworkImplementationAllowed": false,
+    "g1bLoopbackSocketAllowed": false,
+    "p2pSourceAcquisitionAllowed": false,
+    "p2pLibrarySelectionAllowed": false,
+    "p2pCompilerInvocationAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIoAllowed": false,
+    "externalTestNetworkAllowed": false,
+    "productionNetworkIoAllowed": false,
+    "productionKeyGenerationOrInjectionAllowed": false,
+    "signingOrNotarizationAllowed": false,
+    "storeUploadAllowed": false,
+    "productionDeploymentAllowed": false
+  },
+  "blockers": [
+    {
+      "id": "g0_assurance_artifacts_and_baseline_gate",
+      "ownerRole": "repository_quality_owner",
+      "requiredEvidence": "versioned_threat_protocol_dataflow_risk_release_observability_incident_rollback_artifacts_and_separately_authorized_full_no_device_and_release_compile_pass"
+    },
+    {
+      "id": "roadmap_and_g0_checkpoint_publication",
+      "ownerRole": "repository_owner",
+      "requiredEvidence": "explicitly_reviewed_commit_scope_and_published_checkpoint"
+    },
+    {
+      "id": "production_application_namespaces",
+      "ownerRole": "product_and_distribution_owner",
+      "requiredEvidence": "reserved_android_application_id_and_macos_bundle_id_in_owned_accounts"
+    },
+    {
+      "id": "distribution_account_and_key_owners",
+      "ownerRole": "release_owner",
+      "requiredEvidence": "named_google_play_and_apple_developer_account_owners_and_custody_runbook"
+    },
+    {
+      "id": "provider_compatibility_baseline",
+      "ownerRole": "runtime_provider_compatibility_owner",
+      "requiredEvidence": "named_owner_and_versioned_minimum_current_and_previous_ollama_and_lm_studio_compatibility_matrix"
+    },
+    {
+      "id": "service_domain_dns_and_webpki_owners",
+      "ownerRole": "service_identity_owner",
+      "requiredEvidence": "owned_service_domains_named_dns_change_owner_and_webpki_issue_renew_revoke_takeover_runbook"
+    },
+    {
+      "id": "service_root_and_online_signer_owners",
+      "ownerRole": "service_security_owner",
+      "requiredEvidence": "named_root_custodian_kms_or_hsm_owner_rotation_owner_and_emergency_revoker"
+    },
+    {
+      "id": "privacy_incident_and_retention_owners",
+      "ownerRole": "privacy_and_incident_owner",
+      "requiredEvidence": "named_approvers_for_retention_redaction_incident_and_deletion_policy"
+    },
+    {
+      "id": "quality_measurement_owners",
+      "ownerRole": "release_quality_owner",
+      "requiredEvidence": "named_owners_approved_measurement_sources_sample_windows_and_failure_actions_for_every_quality_contract"
+    },
+    {
+      "id": "relay_region_capacity_and_cost_budget",
+      "ownerRole": "service_operations_owner",
+      "requiredEvidence": "approved_initial_region_projected_peak_capacity_target_and_cost_ceiling"
+    }
+  ],
+  "sourceRecords": [
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/selection-profile.json",
+      "sha256": "8d71bd82dff5f9764a537e9c1cb57fb7a26cd1ea9b78ce9bdac11ddd2cbbb9d7"
+    },
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/selection-decision.json",
+      "sha256": "c87551296ca12d4ca8db68e13b45ad7b059ebd8354f8834a512ee218abd75b72"
+    },
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/pre-network/decision-v1.json",
+      "sha256": "2962c6f752ebbdfd4432364544b5fa436974701cf54471ed121521f40296108a"
+    },
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/pre-network/review-v1.json",
+      "sha256": "d3d7a39774610452babedc964ef57aa08d872c7fa9c8a0b5aaf35ca2b0f99802"
+    },
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/controlled-network-spike/decision-v6.json",
+      "sha256": "65095344cbdc13445ef171562b4f60d2b1005d6feaf128d94660f1204c931755"
+    },
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/implementation/handoff-v9.json",
+      "sha256": "d1e2649504de1661b3184ce21ebfacfd9c38eb590b00e32ff755b77a0d66341d"
+    },
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/controlled-network-spike/phase-a/progress-v8.json",
+      "sha256": "d83f81af28b03493ce47088e81a41a8ac73c722efd18e0f6b333b1b3c20f92a7"
+    },
+    {
+      "path": "docs/security-hardening/production-relay-v1/proposals/authenticated-allocation-control-plane.md",
+      "sha256": "84ac800ae1b64099a84b55e32ec0db8e4356f78780a8ff56392e4e3c390f5743"
+    },
+    {
+      "path": "docs/security-hardening/production-relay-v1/proposals/pair-epoch-recovery.md",
+      "sha256": "183481be411a9eebd03bd86797bcdf91f03ef0780f40fbb048262b9034fdaa69"
+    }
+  ],
+  "supersession": {
+    "supersedesExistingP2pProfile": false,
+    "supersedesSelectionDecision": false,
+    "supersedesPreNetworkDecisionV1": false,
+    "singlePlaneFallbackRequiresProfileAndSelectionDecisionSupersession": true,
+    "preNetworkDecisionSupersessionRequiredWhenSelectedPolicyChanges": true,
+    "newP2pCandidateRequiresFreshAuthorityChain": true,
+    "amendmentPolicy": "supersede_with_new_versioned_decision"
+  },
+  "nextGate": {
+    "gate": "g0_blocker_closure_then_g1a_authority_v1",
+    "g1aMayStartNow": false,
+    "reason": "g0_assurance_artifacts_baseline_gate_checkpoint_namespaces_provider_baseline_and_named_release_service_privacy_quality_operations_owners_are_not_closed"
+  }
+}

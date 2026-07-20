@@ -4,14 +4,16 @@ Last updated: 2026-07-20 KST.
 
 This is the canonical first document for the next Codex session. Read it before
 editing, staging, rebuilding, or making claims from older QA logs. It describes
-the current dirty worktree, the macOS QR recovery, the physical Android proof,
-the remaining proof boundaries, and the shortest safe path to resume work.
+the current V1 G0 worktree, the still-valid macOS QR recovery and physical
+Android proof, the remaining proof boundaries, and the shortest safe path to
+resume work.
 
 ## Contents
 
 - [Current truth versus historical evidence](#current-truth-versus-historical-evidence)
 - [Current handoff snapshot](#current-handoff-snapshot)
 - [First five minutes](#first-five-minutes)
+- [V1 G0 execution status](#v1-g0-execution-status)
 - [Current verified outcome](#current-verified-outcome)
 - [Root causes and final design](#root-causes-and-final-design)
 - [UI callback wiring matrix](#ui-callback-wiring-matrix)
@@ -47,26 +49,26 @@ the remaining proof boundaries, and the shortest safe path to resume work.
 
 - Repository: `/Users/hanchangha/Desktop/project`
 - Branch at handoff: `main`
-- Published baseline at this handoff refresh: `41e932e9`, with `main` and
-  `origin/main` aligned when checked. The earlier `df19c53a` 44-file snapshot
-  was subsequently published and is historical rather than the current dirty
-  baseline.
-- Worktree: intentionally dirty with 12 modified tracked files and no untracked
-  files after this refresh. They are the Android drawer/date optimization,
-  Android runtime session-summary linear merge and tests, three quality-gate
-  scripts, the documentation-handoff guard, and these four synchronized current
-  documents. Run `git status --short` again; live output is authoritative and
-  counts can change.
+- Published implementation baseline at this handoff refresh:
+  `d32c1846eead13ab1462619145fc4da1194cce7e`, with `main` and `origin/main`
+  aligned when checked. The former `41e932e9` plus 12-file dirty snapshot was
+  subsequently published and is historical.
+- Worktree: intentionally dirty with the canonical V1 roadmap, versioned G0
+  decision, versioned assurance packet, content-addressed local assurance
+  readback candidate, machine validators, no-device gate integration, and
+  synchronized current documentation. The candidate is neither published nor
+  owner-accepted. There is no V1 transport implementation in this scope. Run
+  `git status --short` again; live output is authoritative.
 - Android device state at handoff: disconnected by the user after physical QR
   pairing and reconnect verification. Do not assume ADB is available.
-- macOS state at handoff: the ad-hoc `dist/AetherLink.app` process was still
-  running and listening on TCP port 43170 when refreshed. QR visibility and
-  payload decode were not rerun in this optimization slice. Process and port
-  state are ephemeral; verify them again before making a live claim.
-- Git publication state: the QR recovery baseline is published through
-  `41e932e9`; the current 12-file optimization and documentation follow-up is
-  not committed or pushed. Do not reset, clean, stage, commit, or push it
-  without an explicit user request and reviewed file scope.
+- macOS state at handoff: the ad-hoc `dist/AetherLink.app` process was running
+  as PID 59809 and listening on TCP port 43170 when refreshed. QR visibility and
+  payload decode were not rerun in G0. Process and port state are ephemeral;
+  verify them again before making a live claim.
+- Git publication state: the implementation baseline is published through
+  `d32c1846`; the roadmap/G0 packet is not committed or pushed. Do not reset,
+  clean, stage, commit, or push it without an explicit user request and reviewed
+  file scope.
 - Subagent preference for this workstream: use GPT-5.6 Sol. Do not use
   GPT-5.3-Codex-Spark.
 
@@ -80,9 +82,11 @@ git branch --show-current
 git rev-parse --short HEAD
 git status --short
 sed -n '1,650p' docs/handoff.md
+sed -n '1,260p' docs/v1/g0/decision-v1.md
+sed -n '1,340p' docs/v1/g0/assurance-v1.md
 sed -n '1,90p' docs/progress.md
 sed -n '1,90p' docs/qa-evidence.md
-sed -n '1,75p' docs/roadmap.md
+sed -n '1,230p' docs/roadmap.md
 ```
 
 Then run the cheap integrity checks:
@@ -91,6 +95,10 @@ Then run the cheap integrity checks:
 python3 script/check_docs_hygiene.py
 python3 script/check_copy_hygiene.py
 python3 script/check_macos_localization.py
+python3 script/check_v1_g0_checkpoint.py
+python3 -m unittest script.test_v1_g0_checkpoint
+python3 script/check_v1_g0_decision.py
+python3 -m unittest script.test_v1_g0_decision
 python3 -m unittest script.test_build_and_run
 python3 -m unittest script.test_documentation_handoff_guards
 python3 script/check_p2p_nat_security_design.py
@@ -102,7 +110,85 @@ git diff --check
 ```
 
 Do not start with `git reset`, `git checkout --`, `git clean`, or blanket
-staging. The worktree contains several completed but unpublished workstreams.
+staging. The worktree contains one bounded, unpublished V1 G0 packet.
+
+## V1 G0 Execution Status
+
+The active goal is to execute the canonical G0-G7 V1 roadmap. The current
+bounded slice created
+[`docs/v1/g0/decision-v1.md`](v1/g0/decision-v1.md), its closed-schema
+machine record, and the versioned
+[`docs/v1/g0/assurance-v1.md`](v1/g0/assurance-v1.md) review companion and
+machine record. They confirm Android/macOS, the five launch locales, Ollama and
+LM Studio, P2P as a GA gate, Google Play plus direct notarized macOS distribution,
+clean-install/fresh-pair handling for Android development `0.1.0`, the retained
+TURN plus sealed-emergency-relay profile, TLS signed leases, monotonic pair
+epoch recovery, twelve required network cells, six non-omittable network/failure
+variants, release-blocking direct-P2P thresholds, four measurement contracts,
+and exact release targets. macOS V1 uses a signed DMG rather than leaving PKG
+certificate custody unresolved.
+
+The assurance record hash-pins 29 inputs and closes the static shapes for nine
+protocol units, sixteen data flows, 35 guarded protocol namespaces, inherited
+threats T001-T016 plus T017-T026, ten release risks, nine observability event
+classes, five release-record classes with decision-bound metric values,
+thresholds, signed raw-sample envelopes, evidence digests, and exact platform rows, the release
+checklist, seven incident classes, rollback, and fourteen unassigned approval
+roles. It also restores mandatory service-mediated P2P publish/fetch
+capabilities, pair-id/epoch recovery binding with secret rotation and a current
+signed receipt, the absolute 30-second revoked-state closure bound, rollback
+success 1.0, and thirteen zero-allowance security hard stops. Android and macOS
+build/sign/distribute/install/update or rollback trust boundaries are explicit
+without granting signing, upload, or deployment authority.
+
+The assurance record now has one machine-enforced G0 closure contract that
+crosswalks all ten blockers, nine checklist items, fourteen accountable roles,
+and exact gate-scoped evidence kinds. Owner receipts must bind the exact
+published checkpoint digest, containing commit, scoped blocker IDs, timestamp,
+and non-empty verified catalog evidence. Gate and publication receipts also
+require exact source commit/path/hash bindings, successful result domains, and
+ordered timestamps. The current checker accepts no receipt at all; a successor
+must first implement the independently anchored, factory-only validation context
+pinned by the activation policy. No receipt exists yet; the crosswalk does not
+close G0.
+
+`docs/v1/g0/assurance-checkpoint-readback-v1.json` is the separate local
+candidate for assurance hash and source readback. Its validator pins the
+candidate bytes, recomputes assurance raw/canonical hashes, and reads all 29
+declared inputs as exact repository-relative regular non-symlink files with a
+4 MiB per-file ceiling, same-descriptor hashing, and final path-identity
+readback. Its eleven mutation tests reject stale or reordered records, path/
+hash/symlink/identity drift, oversized sources or integers, non-finite numbers,
+fabricated owner acceptance or publication, blocker removal, and authority
+promotion. Status remains `candidate_observed_not_immutable`; this is not a
+reviewed commit, immutable publication root, owner acceptance, or G0 exit.
+
+G0 is `blocked_before_g1a`, not complete. Ten evidence-bearing blockers remain:
+
+1. assurance packet immutable checkpoint/readback and owner acceptance plus
+   separately authorized full no-device and release-compile passes;
+2. intentional publication of the roadmap/G0 checkpoint;
+3. production Android and macOS application namespaces;
+4. actual Google Play, Apple Developer, and release-key owners;
+5. a named provider-compatibility owner and versioned Ollama/LM Studio baseline;
+6. owned service domains plus DNS and WebPKI lifecycle owners;
+7. service-root, online-signer, rotation, and emergency-revoke owners;
+8. privacy, retention, and incident owners;
+9. named owners for the four quality measurement contracts;
+10. initial relay region, projected peak, capacity target, and cost ceiling.
+
+`script/check_v1_g0_decision.py` hash-pins the inherited security decisions,
+checks the current application/platform/locale baseline, and keeps G1a plus all
+source-acquisition, library, compiler, socket, network, production-key, signing,
+store-upload, and deployment authorities false. Its combined decision and
+assurance mutation suite contains 62 tests. Release metrics fail closed without
+an approved evidence signer and verifier, and percentile/scalar values are
+recomputed from bounded, canonical signed samples. Required network variants
+also bind one raw observation per attempt: affected plane/region, outage result
+and route, ordered restore/authenticated-recovery phases, and zero downgrade
+counts. Aggregate outcome fields are derived from those observations, so attempt
+counts or a result string alone cannot satisfy an outage gate. No P2P candidate was selected and
+no production key or credential was created.
 
 ## Current Verified Outcome
 
@@ -274,33 +360,46 @@ Development launch and static contracts:
 Current evidence and planning:
 
 - `docs/handoff.md`
+- `docs/v1/g0/decision-v1.md`
+- `docs/v1/g0/decision-v1.json`
+- `docs/v1/g0/assurance-checkpoint-readback-v1.json`
 - `docs/evidence/physical-qr-pairing-20260719.json`
 - `docs/progress.md`
 - `docs/qa-evidence.md`
 - `docs/roadmap.md`
+- `script/check_v1_g0_checkpoint.py`
+- `script/test_v1_g0_checkpoint.py`
+- `script/check_v1_g0_decision.py`
+- `script/test_v1_g0_decision.py`
 - `script/check_docs_hygiene.py`
 
 ## Dirty Worktree Map
 
 The earlier QR, persistence, and security-governance work is part of the
-published `41e932e9` baseline. The current unpublished scope is limited to:
+published `d32c1846` baseline. The optimization work is published there as well.
+The intended current unpublished scope is:
 
-- `apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt`
-- `apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt`
-- `apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt`
-- `apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt`
-- `script/check_copy_hygiene.py`
-- `script/check_macos_localization.py`
-- `script/check_no_device_quality.sh`
-- `script/test_documentation_handoff_guards.py`
+- `README.md`;
 - `docs/handoff.md`, `docs/progress.md`, `docs/qa-evidence.md`, and
-  `docs/roadmap.md`
+  `docs/roadmap.md`;
+- `docs/v1/g0/decision-v1.md` and `decision-v1.json`;
+- `docs/v1/g0/assurance-v1.md` and `assurance-v1.json`;
+- `docs/v1/g0/assurance-checkpoint-readback-v1.json`;
+- `script/check_v1_g0_checkpoint.py` and `script/test_v1_g0_checkpoint.py`;
+- `script/check_v1_g0_decision.py` and `script/test_v1_g0_decision.py`;
+- `script/check_no_device_quality.sh` integration.
 
-The source changes contain two low-risk optimizations: one-pass Android drawer
-date grouping plus linear runtime session-summary batch merge. The script
-changes remove duplicated guard execution, run the Swift suite once, align
-current macOS UI contracts, and repair the handoff fixture. The documentation
-files record only evidence from the current source.
+There are no Android, macOS, protocol, schema, transport, or relay
+implementation edits in this scope. The documentation records the G0 decision,
+its blockers, and current evidence; the scripts validate that record and keep
+every later authority closed.
+
+This publication review assumes an incremental commit to the already existing
+remote repository. The current added lines and new G0 files contain no actual
+local username, device serial, private LAN address, credential, or personal
+contact. If repository visibility changes or these full historical documents
+are exported to a new audience, run a separate history-wide redaction review;
+older tracked evidence contains environment-specific identifiers.
 
 Practical review rule:
 
@@ -314,6 +413,27 @@ Review and stage by explicit file list. Do not use a broad diff as evidence that
 all current changes form one atomic feature.
 
 ## Evidence Ledger
+
+### Current 2026-07-20 V1 G0 evidence
+
+- The integrated G0 checker passes against nine decision source hashes, 29
+  assurance source hashes, the live Android/macOS configuration and locale
+  baseline, and protocol-schema message/error parity.
+- Its 62 mutation tests pass and reject premature G1a/network/deployment
+  authority, nested unknown fields, security downgrades, missing hard stops,
+  fallback or platform drift, network-cell/variant/measurement-contract/blocker
+  removal, missing protocol/threat/user-loop inventory, forbidden observability
+  fields, invented approvals, evidence-free checklist passes, and weakened
+  human wording.
+- The non-socket static batch passes: copy hygiene across 92 user-facing files,
+  docs hygiene across 12 current documents, Android and macOS five-locale parity,
+  protocol schemas, the closed P2P/NAT and production-relay design validators,
+  21 documentation/launcher/Phase-A unit tests, shell syntax, and diff hygiene.
+- Shell syntax for the integrated no-device gate passes. The complete aggregate
+  has not yet been rerun on this G0 documentation/script scope, so no fresh full
+  Swift, Android, QR, or relay result is claimed here.
+- No Android device is attached; no production credential, signing identity,
+  store action, network service, or deployment was used.
 
 ### Current 2026-07-20 optimization evidence
 
@@ -573,23 +693,32 @@ Do not claim the following from the current evidence:
 Unless the user redirects the task, use this decision order:
 
 1. Re-read this handoff and refresh Git/device/process state.
-2. If the task is documentation or local regression, keep the phone detached
-   and use focused tests plus hygiene checks.
-3. If the task is physical QR UX, ask only whether the phone is connected, then
-   prioritize expiry/rotation, camera permission recovery, and TalkBack. Do not
-   repeat installation-only checks as pairing evidence.
-4. If the task is different-network pairing, stop before execution unless the
-   exact route, environment, and authority are clear. Same-Wi-Fi local QR proof
-   does not authorize a production relay or P2P workstream.
-5. If the task is commit/push, first partition the intended files from the other
-   dirty Android persistence and security-governance changes. Show the exact
-   scope; do not stage everything by default.
+2. Run the G0 validator and its mutation tests before trusting the decision
+   packet, including the separate local assurance readback candidate. Do not
+   confuse that candidate with publication or owner acceptance, and do not
+   start G1a because the machine authority remains false.
+3. If the user explicitly requests commit/push after reviewing scope, publish
+   the bounded roadmap/G0 packet without unrelated implementation. Blanket
+   staging is not the default.
+4. Read back the exact remote repository, commit object, checkpoint path, and
+   checkpoint digest. Only that verified identity may receive owner or
+   authorized-gate receipts.
+5. Obtain the actual account/owner/budget evidence and separately authorized
+   gate results, then record non-secret receipts in a successor versioned
+   checkpoint and derive all ten blocker states. Never put private keys,
+   credentials, account tokens, QR material, or personal owner contact data in
+   repository documents.
+6. Only after every blocker is closed, create and validate a separate G1a
+   no-network authority record. G1a may then cover dormant schema, canonical
+   vectors, pure state transitions, temporary-store crash tests, and first-party
+   compilation, while sockets and live services remain forbidden.
+7. If the task is different-network pairing or a new P2P candidate, stop before
+   execution unless its fresh versioned authority is explicit. Same-Wi-Fi local
+   QR proof and this G0 packet authorize neither workstream.
 
-Recommended next no-device slice: remove the full-input copy and repeated JSON
-literal allocations in `StrictJSONDocumentValidator` while leaving its existing
-Unicode/string decoder intact and proving exact behavior with a differential
-corpus. This stays separate because the validator protects protocol envelopes,
-relay admission/allocation, and durable memory recovery.
+The former strict-JSON allocation optimization remains a safe maintenance
+candidate, but it is not the V1 critical path and must not be mixed into the G0
+checkpoint.
 
 Recommended next device slice when hardware is attached: physical
 expired/rotated QR recovery, camera permission denial/regrant, TalkBack/VoiceOver

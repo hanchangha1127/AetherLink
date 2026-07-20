@@ -1,0 +1,297 @@
+{
+  "documentType": "aetherlink.v1-g0-assurance-checkpoint-readback",
+  "schemaVersion": "1.0",
+  "checkpointId": "aetherlink_v1_g0_assurance_checkpoint_readback_v1",
+  "recordedDate": "2026-07-20",
+  "status": "candidate_observed_not_immutable",
+  "evidenceClass": "static_no_device",
+  "baseline": {
+    "decisionId": "aetherlink_v1_g0_decision_v1",
+    "assuranceId": "aetherlink_v1_g0_assurance_v1",
+    "implementationRevision": "d32c1846eead13ab1462619145fc4da1194cce7e",
+    "branch": "main",
+    "checkpointPublicationState": "not_published"
+  },
+  "readbackMethod": {
+    "hashAlgorithm": "sha256",
+    "byteDefinition": "exact_file_bytes",
+    "sourcePathPolicy": "exact_repository_relative_regular_non_symlink_file_in_assurance_order",
+    "maximumSourceBytes": 4194304,
+    "canonicalizationProfile": "aetherlink-g0-json-canonical-sha256-v1",
+    "canonicalizationRules": {
+      "characterEncoding": "utf-8",
+      "parsePolicy": "reject_duplicate_names_nonfinite_numbers_and_integers_over_128_digits",
+      "maximumIntegerDigits": 128,
+      "objectKeyOrder": "ascending_unicode_scalar_value",
+      "ensureAscii": false,
+      "whitespace": "none",
+      "separators": "comma_and_colon",
+      "numberEncoding": "existing_check_v1_g0_decision_python_json_encoding"
+    },
+    "checkpointSelfHashLocation": "validator_constant_only_not_self_embedded"
+  },
+  "assuranceReadback": {
+    "path": "docs/v1/g0/assurance-v1.json",
+    "rawByteSha256": "64d7d48c1f82b43a33e860b45c769878cb654f0678e94bfd540f12c3d1a9a43d",
+    "canonicalizationProfile": "aetherlink-g0-json-canonical-sha256-v1",
+    "canonicalSha256": "7642029c307dd658b4e325f409deeef7f0b2addb82105270aa4c83cc588c4a11",
+    "result": "match"
+  },
+  "sourceHashReadback": {
+    "declaredBy": "docs/v1/g0/assurance-v1.json#sourceRecords",
+    "recordCount": 29,
+    "records": [
+      {
+        "path": "docs/v1/g0/decision-v1.json",
+        "role": "canonical_v1_g0_decision",
+        "declaredSha256": "44dd88a0de7e02fdb2b7c22e597496ffe4f00f9a67a54af6e9ace8afdcf9308a",
+        "observedByteSha256": "44dd88a0de7e02fdb2b7c22e597496ffe4f00f9a67a54af6e9ace8afdcf9308a",
+        "result": "match"
+      },
+      {
+        "path": "docs/security-hardening/production-p2p-nat-v1/selection-profile.json",
+        "role": "p2p_selection_profile",
+        "declaredSha256": "8d71bd82dff5f9764a537e9c1cb57fb7a26cd1ea9b78ce9bdac11ddd2cbbb9d7",
+        "observedByteSha256": "8d71bd82dff5f9764a537e9c1cb57fb7a26cd1ea9b78ce9bdac11ddd2cbbb9d7",
+        "result": "match"
+      },
+      {
+        "path": "docs/security-hardening/production-p2p-nat-v1/selection-decision.json",
+        "role": "p2p_selection_decision",
+        "declaredSha256": "c87551296ca12d4ca8db68e13b45ad7b059ebd8354f8834a512ee218abd75b72",
+        "observedByteSha256": "c87551296ca12d4ca8db68e13b45ad7b059ebd8354f8834a512ee218abd75b72",
+        "result": "match"
+      },
+      {
+        "path": "docs/security-hardening/production-p2p-nat-v1/pre-network/decision-v1.json",
+        "role": "immutable_pre_network_decision",
+        "declaredSha256": "2962c6f752ebbdfd4432364544b5fa436974701cf54471ed121521f40296108a",
+        "observedByteSha256": "2962c6f752ebbdfd4432364544b5fa436974701cf54471ed121521f40296108a",
+        "result": "match"
+      },
+      {
+        "path": "docs/security-hardening/production-p2p-nat-v1/pre-network/review-v1.json",
+        "role": "selected_contract_source",
+        "declaredSha256": "d3d7a39774610452babedc964ef57aa08d872c7fa9c8a0b5aaf35ca2b0f99802",
+        "observedByteSha256": "d3d7a39774610452babedc964ef57aa08d872c7fa9c8a0b5aaf35ca2b0f99802",
+        "result": "match"
+      },
+      {
+        "path": "docs/security-hardening/production-p2p-nat-v1/controlled-network-spike/decision-v6.json",
+        "role": "controlled_network_authority",
+        "declaredSha256": "65095344cbdc13445ef171562b4f60d2b1005d6feaf128d94660f1204c931755",
+        "observedByteSha256": "65095344cbdc13445ef171562b4f60d2b1005d6feaf128d94660f1204c931755",
+        "result": "match"
+      },
+      {
+        "path": "docs/security-hardening/production-p2p-nat-v1/implementation/handoff-v9.json",
+        "role": "implementation_authority_history",
+        "declaredSha256": "d1e2649504de1661b3184ce21ebfacfd9c38eb590b00e32ff755b77a0d66341d",
+        "observedByteSha256": "d1e2649504de1661b3184ce21ebfacfd9c38eb590b00e32ff755b77a0d66341d",
+        "result": "match"
+      },
+      {
+        "path": "docs/security-hardening/production-p2p-nat-v1/controlled-network-spike/phase-a/progress-v8.json",
+        "role": "phase_a_evidence_boundary",
+        "declaredSha256": "d83f81af28b03493ce47088e81a41a8ac73c722efd18e0f6b333b1b3c20f92a7",
+        "observedByteSha256": "d83f81af28b03493ce47088e81a41a8ac73c722efd18e0f6b333b1b3c20f92a7",
+        "result": "match"
+      },
+      {
+        "path": "docs/security-hardening/production-relay-v1/proposals/authenticated-allocation-control-plane.md",
+        "role": "signed_lease_invariants",
+        "declaredSha256": "84ac800ae1b64099a84b55e32ec0db8e4356f78780a8ff56392e4e3c390f5743",
+        "observedByteSha256": "84ac800ae1b64099a84b55e32ec0db8e4356f78780a8ff56392e4e3c390f5743",
+        "result": "match"
+      },
+      {
+        "path": "docs/security-hardening/production-relay-v1/proposals/pair-epoch-recovery.md",
+        "role": "pair_epoch_invariants",
+        "declaredSha256": "183481be411a9eebd03bd86797bcdf91f03ef0780f40fbb048262b9034fdaa69",
+        "observedByteSha256": "183481be411a9eebd03bd86797bcdf91f03ef0780f40fbb048262b9034fdaa69",
+        "result": "match"
+      },
+      {
+        "path": "docs/architecture.md",
+        "role": "product_and_data_boundary",
+        "declaredSha256": "cf59f8dd69344d3a3ff742fb229092b9a1197dd0ac052a93eabdbf0540201ac0",
+        "observedByteSha256": "cf59f8dd69344d3a3ff742fb229092b9a1197dd0ac052a93eabdbf0540201ac0",
+        "result": "match"
+      },
+      {
+        "path": "docs/protocol.md",
+        "role": "current_protocol_contract",
+        "declaredSha256": "aad345519c53e0124e377e0e42a4d5cd14bc33b1cdd573ba38ec35edfa99cfef",
+        "observedByteSha256": "aad345519c53e0124e377e0e42a4d5cd14bc33b1cdd573ba38ec35edfa99cfef",
+        "result": "match"
+      },
+      {
+        "path": "docs/connection-overlay.md",
+        "role": "selected_connection_target",
+        "declaredSha256": "845af8d40f0a137682c81bde3261e76d04ce7f84d156a6ad3508bb13986f2f53",
+        "observedByteSha256": "845af8d40f0a137682c81bde3261e76d04ce7f84d156a6ad3508bb13986f2f53",
+        "result": "match"
+      },
+      {
+        "path": "docs/security.md",
+        "role": "current_security_baseline",
+        "declaredSha256": "c1ffd4f596c6754dde00916b2735a765b0640cc53b19f62b646922ae148bd7af",
+        "observedByteSha256": "c1ffd4f596c6754dde00916b2735a765b0640cc53b19f62b646922ae148bd7af",
+        "result": "match"
+      },
+      {
+        "path": "docs/security-hardening/production-p2p-nat-v1/threat-model.md",
+        "role": "p2p_threat_model",
+        "declaredSha256": "8913b8d32c66399e0426cf08b7a12ee9e6de446644501e842a9c2a0de68259e8",
+        "observedByteSha256": "8913b8d32c66399e0426cf08b7a12ee9e6de446644501e842a9c2a0de68259e8",
+        "result": "match"
+      },
+      {
+        "path": "docs/security-hardening/production-p2p-nat-v1/hardening.json",
+        "role": "p2p_hardening_manifest",
+        "declaredSha256": "69b3a9080dd3ab1caba2dfd67099643c727be99f5d39000675fe429507df6ceb",
+        "observedByteSha256": "69b3a9080dd3ab1caba2dfd67099643c727be99f5d39000675fe429507df6ceb",
+        "result": "match"
+      },
+      {
+        "path": "docs/security-hardening/production-relay-v1/hardening.json",
+        "role": "relay_hardening_manifest",
+        "declaredSha256": "6635ce4ef9aeb19e389ab8ac72c634389b717ea6aaf9c477230985acfae4d172",
+        "observedByteSha256": "6635ce4ef9aeb19e389ab8ac72c634389b717ea6aaf9c477230985acfae4d172",
+        "result": "match"
+      },
+      {
+        "path": "packages/protocol-schema/protocol.schema.json",
+        "role": "runtime_envelope_schema",
+        "declaredSha256": "daff66787cade9f4b23c8a7df48a7a1ff850ebb967418939c2ee8d9bc9329e60",
+        "observedByteSha256": "daff66787cade9f4b23c8a7df48a7a1ff850ebb967418939c2ee8d9bc9329e60",
+        "result": "match"
+      },
+      {
+        "path": "packages/protocol-schema/pairing-qr.schema.json",
+        "role": "pairing_qr_schema",
+        "declaredSha256": "f6ec04a8ca80ee08a26e67bd4ac1695b618d8923fe1dd6ce9a3a35a5206bf3df",
+        "observedByteSha256": "f6ec04a8ca80ee08a26e67bd4ac1695b618d8923fe1dd6ce9a3a35a5206bf3df",
+        "result": "match"
+      },
+      {
+        "path": "apps/macos/Protocol/Sources/ProtocolEnvelope.swift",
+        "role": "macos_protocol_model",
+        "declaredSha256": "4ac0a1029b70799cd3814f9457153525745e494961bbcf0cf09b4d122683436b",
+        "observedByteSha256": "4ac0a1029b70799cd3814f9457153525745e494961bbcf0cf09b4d122683436b",
+        "result": "match"
+      },
+      {
+        "path": "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt",
+        "role": "android_protocol_model",
+        "declaredSha256": "40be264c9881d024f168857189595ea9fcc3c1023b05d00a90e924523633b3bd",
+        "observedByteSha256": "40be264c9881d024f168857189595ea9fcc3c1023b05d00a90e924523633b3bd",
+        "result": "match"
+      },
+      {
+        "path": "apps/macos/Pairing/Sources/PairingCoordinator.swift",
+        "role": "macos_pairing_session_and_qr_source",
+        "declaredSha256": "605e859555f40371d3a656fb5e1aadef823bfaa1b68055efef669b97ec28ecd1",
+        "observedByteSha256": "605e859555f40371d3a656fb5e1aadef823bfaa1b68055efef669b97ec28ecd1",
+        "result": "match"
+      },
+      {
+        "path": "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/RuntimePairingPayload.kt",
+        "role": "android_pairing_payload_parser",
+        "declaredSha256": "7dfc0cc1fdbb5731d47350ea0c3fa02a70947d363474958e7f3d0d05ccb81957",
+        "observedByteSha256": "7dfc0cc1fdbb5731d47350ea0c3fa02a70947d363474958e7f3d0d05ccb81957",
+        "result": "match"
+      },
+      {
+        "path": "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt",
+        "role": "android_trusted_pair_and_route_store",
+        "declaredSha256": "13632d07054f2dec9c8675fd921a6635910ab8b2f3b5eb152a9933328088aa6e",
+        "observedByteSha256": "13632d07054f2dec9c8675fd921a6635910ab8b2f3b5eb152a9933328088aa6e",
+        "result": "match"
+      },
+      {
+        "path": "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift",
+        "role": "macos_runtime_protocol_router",
+        "declaredSha256": "5adf544488061731cb1610010eef7c8fb005a702cf26ce91fb1135fb53b3f1ad",
+        "observedByteSha256": "5adf544488061731cb1610010eef7c8fb005a702cf26ce91fb1135fb53b3f1ad",
+        "result": "match"
+      },
+      {
+        "path": "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt",
+        "role": "android_runtime_protocol_router",
+        "declaredSha256": "211f8d5e493ced62cca7771e20e6f409b5ff2a150b187c737557f32d1c7caabf",
+        "observedByteSha256": "211f8d5e493ced62cca7771e20e6f409b5ff2a150b187c737557f32d1c7caabf",
+        "result": "match"
+      },
+      {
+        "path": "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt",
+        "role": "android_local_data_boundary",
+        "declaredSha256": "a35faa25c6e6a5a8e0d2b54deb349befe801722df825f0a2bd92bfa7c28537fa",
+        "observedByteSha256": "a35faa25c6e6a5a8e0d2b54deb349befe801722df825f0a2bd92bfa7c28537fa",
+        "result": "match"
+      },
+      {
+        "path": "apps/macos/Pairing/Sources/RuntimeIdentityKeyStore.swift",
+        "role": "macos_identity_store_boundary",
+        "declaredSha256": "85339f42999b302207c01f4b67771e8c8bd981be166994a4954a94f45cd17a45",
+        "observedByteSha256": "85339f42999b302207c01f4b67771e8c8bd981be166994a4954a94f45cd17a45",
+        "result": "match"
+      },
+      {
+        "path": "apps/macos/CompanionCore/Sources/RuntimeChatEventStore.swift",
+        "role": "macos_chat_store_boundary",
+        "declaredSha256": "423429bd8db283494225e61b5d8e88cd86e3faf732e4af949fdab6415ceeb734",
+        "observedByteSha256": "423429bd8db283494225e61b5d8e88cd86e3faf732e4af949fdab6415ceeb734",
+        "result": "match"
+      }
+    ],
+    "result": "all_match"
+  },
+  "evidenceDisposition": {
+    "canonicalAssuranceHash": "candidate_observed_not_immutable",
+    "sourceHashReadback": "candidate_observed_not_immutable",
+    "ownerAcceptance": "absent",
+    "publishedCheckpoint": "absent",
+    "fullNoDeviceAggregate": "not_run_requires_separate_socket_authority",
+    "androidReleaseCompilation": "not_run",
+    "macosReleaseCompilation": "not_run",
+    "g0AssurancePacketStatus": "blocked",
+    "remainingBlockerIds": [
+      "g0_assurance_artifacts_and_baseline_gate",
+      "roadmap_and_g0_checkpoint_publication",
+      "production_application_namespaces",
+      "distribution_account_and_key_owners",
+      "provider_compatibility_baseline",
+      "service_domain_dns_and_webpki_owners",
+      "service_root_and_online_signer_owners",
+      "privacy_incident_and_retention_owners",
+      "quality_measurement_owners",
+      "relay_region_capacity_and_cost_budget"
+    ],
+    "g0AssuranceBlockerClosed": false,
+    "g0ExitComplete": false,
+    "g1aMayStartNow": false
+  },
+  "authority": {
+    "g0DocumentationAndStaticValidationAllowed": true,
+    "g1aNoNetworkImplementationAllowed": false,
+    "g1bLoopbackSocketAllowed": false,
+    "p2pSourceAcquisitionAllowed": false,
+    "p2pLibrarySelectionAllowed": false,
+    "p2pCompilerInvocationAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIoAllowed": false,
+    "externalTestNetworkAllowed": false,
+    "productionNetworkIoAllowed": false,
+    "productionKeyGenerationOrInjectionAllowed": false,
+    "signingOrNotarizationAllowed": false,
+    "storeUploadAllowed": false,
+    "productionDeploymentAllowed": false
+  },
+  "immutability": {
+    "recordState": "content_addressed_local_candidate_not_publication",
+    "amendmentPolicy": "supersede_with_new_versioned_candidate",
+    "externalPublicationRootRequired": true,
+    "publicationRoot": "absent"
+  }
+}

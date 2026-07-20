@@ -2,9 +2,28 @@
 
 AetherLink is a local-first client-to-runtime AI companion. A paired runtime host owns the AI runtime and backend adapters; the AetherLink device app is the controller for chat, model selection, and generation control. The current implementation has mobile-client and desktop-runtime targets, but the product architecture is intentionally OS-neutral.
 
-For continuation in a new Codex session, read [`docs/handoff.md`](docs/handoff.md) first. It records the live dirty-worktree map, latest QR recovery evidence, proof boundaries, verification commands, and next-session decision flow; older progress entries remain historical unless that handoff promotes them as current.
+For continuation in a new Codex session, read [`docs/handoff.md`](docs/handoff.md)
+first. The [canonical V1 roadmap](docs/roadmap.md#canonical-v1-delivery-roadmap)
+is now active, and the versioned [G0 decision](docs/v1/g0/decision-v1.md)
+records the selected support, distribution, security, quality, blocker, and
+authority baseline. The [G0 assurance packet](docs/v1/g0/assurance-v1.md)
+hash-pins its protocol/data-flow inventory, threat and risk refresh,
+observability schema, release checklist, and incident/rollback runbooks. G0 is
+still `blocked_before_g1a`. A separate
+[local assurance readback candidate](docs/v1/g0/assurance-checkpoint-readback-v1.json)
+recomputes the assurance raw/canonical hashes and all 29 declared source hashes,
+but is neither owner acceptance nor a published immutable checkpoint. None of
+these records authorizes transport implementation, networking, signing, or
+deployment.
+The machine record also crosswalks all ten blockers to nine G0 checks, fourteen
+accountable roles, and gate-scoped evidence. This makes future G2-G6 evidence
+distinct from evidence required to leave G0; the crosswalk itself closes no
+blocker.
+Older progress entries remain historical unless the handoff promotes them as
+current.
 
-v0.1 is intentionally narrow. It proves one product loop:
+The current implementation baseline remains v0.1 and is intentionally narrow.
+It proves one product loop:
 
 1. Start AetherLink Runtime on the runtime host.
 2. Configure eligible remote route material and show a production pairing QR on the runtime host.

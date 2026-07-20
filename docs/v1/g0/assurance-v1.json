@@ -1,0 +1,2331 @@
+{
+  "documentType": "aetherlink.v1-g0-assurance",
+  "schemaVersion": "1.0",
+  "assuranceId": "aetherlink_v1_g0_assurance_v1",
+  "recordedDate": "2026-07-20",
+  "status": "blocked_before_g1a",
+  "baseline": {
+    "decisionId": "aetherlink_v1_g0_decision_v1",
+    "decisionCanonicalSha256": "b72db086b4ac7bf0e5eff8b71a28917231822cebedf742b85e596eb025e55ae2",
+    "decisionByteSha256": "44dd88a0de7e02fdb2b7c22e597496ffe4f00f9a67a54af6e9ace8afdcf9308a",
+    "implementationRevision": "d32c1846eead13ab1462619145fc4da1194cce7e",
+    "branch": "main",
+    "evidenceBoundary": "static_inventory_only_no_new_device_network_socket_signing_or_release_execution"
+  },
+  "sourceRecords": [
+    {
+      "path": "docs/v1/g0/decision-v1.json",
+      "sha256": "44dd88a0de7e02fdb2b7c22e597496ffe4f00f9a67a54af6e9ace8afdcf9308a",
+      "role": "canonical_v1_g0_decision"
+    },
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/selection-profile.json",
+      "sha256": "8d71bd82dff5f9764a537e9c1cb57fb7a26cd1ea9b78ce9bdac11ddd2cbbb9d7",
+      "role": "p2p_selection_profile"
+    },
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/selection-decision.json",
+      "sha256": "c87551296ca12d4ca8db68e13b45ad7b059ebd8354f8834a512ee218abd75b72",
+      "role": "p2p_selection_decision"
+    },
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/pre-network/decision-v1.json",
+      "sha256": "2962c6f752ebbdfd4432364544b5fa436974701cf54471ed121521f40296108a",
+      "role": "immutable_pre_network_decision"
+    },
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/pre-network/review-v1.json",
+      "sha256": "d3d7a39774610452babedc964ef57aa08d872c7fa9c8a0b5aaf35ca2b0f99802",
+      "role": "selected_contract_source"
+    },
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/controlled-network-spike/decision-v6.json",
+      "sha256": "65095344cbdc13445ef171562b4f60d2b1005d6feaf128d94660f1204c931755",
+      "role": "controlled_network_authority"
+    },
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/implementation/handoff-v9.json",
+      "sha256": "d1e2649504de1661b3184ce21ebfacfd9c38eb590b00e32ff755b77a0d66341d",
+      "role": "implementation_authority_history"
+    },
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/controlled-network-spike/phase-a/progress-v8.json",
+      "sha256": "d83f81af28b03493ce47088e81a41a8ac73c722efd18e0f6b333b1b3c20f92a7",
+      "role": "phase_a_evidence_boundary"
+    },
+    {
+      "path": "docs/security-hardening/production-relay-v1/proposals/authenticated-allocation-control-plane.md",
+      "sha256": "84ac800ae1b64099a84b55e32ec0db8e4356f78780a8ff56392e4e3c390f5743",
+      "role": "signed_lease_invariants"
+    },
+    {
+      "path": "docs/security-hardening/production-relay-v1/proposals/pair-epoch-recovery.md",
+      "sha256": "183481be411a9eebd03bd86797bcdf91f03ef0780f40fbb048262b9034fdaa69",
+      "role": "pair_epoch_invariants"
+    },
+    {
+      "path": "docs/architecture.md",
+      "sha256": "cf59f8dd69344d3a3ff742fb229092b9a1197dd0ac052a93eabdbf0540201ac0",
+      "role": "product_and_data_boundary"
+    },
+    {
+      "path": "docs/protocol.md",
+      "sha256": "aad345519c53e0124e377e0e42a4d5cd14bc33b1cdd573ba38ec35edfa99cfef",
+      "role": "current_protocol_contract"
+    },
+    {
+      "path": "docs/connection-overlay.md",
+      "sha256": "845af8d40f0a137682c81bde3261e76d04ce7f84d156a6ad3508bb13986f2f53",
+      "role": "selected_connection_target"
+    },
+    {
+      "path": "docs/security.md",
+      "sha256": "c1ffd4f596c6754dde00916b2735a765b0640cc53b19f62b646922ae148bd7af",
+      "role": "current_security_baseline"
+    },
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/threat-model.md",
+      "sha256": "8913b8d32c66399e0426cf08b7a12ee9e6de446644501e842a9c2a0de68259e8",
+      "role": "p2p_threat_model"
+    },
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/hardening.json",
+      "sha256": "69b3a9080dd3ab1caba2dfd67099643c727be99f5d39000675fe429507df6ceb",
+      "role": "p2p_hardening_manifest"
+    },
+    {
+      "path": "docs/security-hardening/production-relay-v1/hardening.json",
+      "sha256": "6635ce4ef9aeb19e389ab8ac72c634389b717ea6aaf9c477230985acfae4d172",
+      "role": "relay_hardening_manifest"
+    },
+    {
+      "path": "packages/protocol-schema/protocol.schema.json",
+      "sha256": "daff66787cade9f4b23c8a7df48a7a1ff850ebb967418939c2ee8d9bc9329e60",
+      "role": "runtime_envelope_schema"
+    },
+    {
+      "path": "packages/protocol-schema/pairing-qr.schema.json",
+      "sha256": "f6ec04a8ca80ee08a26e67bd4ac1695b618d8923fe1dd6ce9a3a35a5206bf3df",
+      "role": "pairing_qr_schema"
+    },
+    {
+      "path": "apps/macos/Protocol/Sources/ProtocolEnvelope.swift",
+      "sha256": "4ac0a1029b70799cd3814f9457153525745e494961bbcf0cf09b4d122683436b",
+      "role": "macos_protocol_model"
+    },
+    {
+      "path": "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt",
+      "sha256": "40be264c9881d024f168857189595ea9fcc3c1023b05d00a90e924523633b3bd",
+      "role": "android_protocol_model"
+    },
+    {
+      "path": "apps/macos/Pairing/Sources/PairingCoordinator.swift",
+      "sha256": "605e859555f40371d3a656fb5e1aadef823bfaa1b68055efef669b97ec28ecd1",
+      "role": "macos_pairing_session_and_qr_source"
+    },
+    {
+      "path": "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/RuntimePairingPayload.kt",
+      "sha256": "7dfc0cc1fdbb5731d47350ea0c3fa02a70947d363474958e7f3d0d05ccb81957",
+      "role": "android_pairing_payload_parser"
+    },
+    {
+      "path": "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt",
+      "sha256": "13632d07054f2dec9c8675fd921a6635910ab8b2f3b5eb152a9933328088aa6e",
+      "role": "android_trusted_pair_and_route_store"
+    },
+    {
+      "path": "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift",
+      "sha256": "5adf544488061731cb1610010eef7c8fb005a702cf26ce91fb1135fb53b3f1ad",
+      "role": "macos_runtime_protocol_router"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt",
+      "sha256": "211f8d5e493ced62cca7771e20e6f409b5ff2a150b187c737557f32d1c7caabf",
+      "role": "android_runtime_protocol_router"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt",
+      "sha256": "a35faa25c6e6a5a8e0d2b54deb349befe801722df825f0a2bd92bfa7c28537fa",
+      "role": "android_local_data_boundary"
+    },
+    {
+      "path": "apps/macos/Pairing/Sources/RuntimeIdentityKeyStore.swift",
+      "sha256": "85339f42999b302207c01f4b67771e8c8bd981be166994a4954a94f45cd17a45",
+      "role": "macos_identity_store_boundary"
+    },
+    {
+      "path": "apps/macos/CompanionCore/Sources/RuntimeChatEventStore.swift",
+      "sha256": "423429bd8db283494225e61b5d8e88cd86e3faf732e4af949fdab6415ceeb734",
+      "role": "macos_chat_store_boundary"
+    }
+  ],
+  "protocolInventory": {
+    "activeSchemaId": "https://aetherlink.dev/schema/protocol.v1.json",
+    "pairingQrSchemaId": "https://aetherlink.dev/schema/pairing-qr.v1.json",
+    "activeMessageTypes": [
+      "hello",
+      "auth.challenge",
+      "auth.response",
+      "pairing.request",
+      "pairing.result",
+      "runtime.health",
+      "models.list",
+      "models.pull",
+      "models.result",
+      "route.refresh",
+      "relay.allocation.challenge",
+      "relay.allocation.authorization",
+      "chat.send",
+      "chat.delta",
+      "chat.done",
+      "chat.source_attribution.resolve",
+      "chat.cancel",
+      "chat.sessions.list",
+      "chat.messages.list",
+      "chat.title.request",
+      "chat.title.result",
+      "chat.session.rename",
+      "chat.session.archive",
+      "chat.session.restore",
+      "chat.session.delete",
+      "index.documents.list",
+      "retrieval.query",
+      "citation.resolve",
+      "source_anchor.resolve",
+      "trusted_source.approve",
+      "trusted_source.dismiss",
+      "trusted_source.list",
+      "trusted_source.revoke",
+      "research.brief.create",
+      "research.notebooks.list",
+      "memory.list",
+      "memory.upsert",
+      "memory.delete",
+      "memory.duplicate_suggestions.list",
+      "memory.semantic_duplicate_suggestions.list",
+      "memory.semantic_duplicate_clusters.list",
+      "memory.summary.drafts.list",
+      "memory.summary.draft.generate",
+      "memory.summary.draft.approve",
+      "memory.summary.draft.dismiss",
+      "error"
+    ],
+    "activeErrorCodes": [
+      "unknown_message_type",
+      "unexpected_message_direction",
+      "invalid_payload",
+      "not_connected",
+      "pairing_required",
+      "authentication_required",
+      "authentication_failed",
+      "backend_unavailable",
+      "bad_backend_response",
+      "no_models",
+      "model_not_found",
+      "model_not_installed",
+      "model_pull_approval_required",
+      "generation_not_found",
+      "generation_cancelled",
+      "route_refresh_unavailable",
+      "unsupported_operation",
+      "unsupported_attachment",
+      "unreadable_attachment",
+      "chat_session_not_found",
+      "chat_session_must_be_archived_before_delete",
+      "chat_session_must_be_restored_before_send",
+      "chat_store_unavailable",
+      "chat_context_window_exceeded",
+      "document_index_unavailable",
+      "source_anchor_not_found",
+      "citation_not_found",
+      "chat_source_attribution_not_found",
+      "trusted_source_review_not_found",
+      "trusted_source_review_expired",
+      "trusted_source_review_stale",
+      "trusted_source_not_found",
+      "research_notebook_store_unavailable",
+      "runtime_prompt_skill_unavailable",
+      "memory_store_unavailable",
+      "memory_summary_draft_unavailable",
+      "memory_summary_draft_stale",
+      "memory_summary_draft_generation_failed",
+      "transport_error",
+      "internal_error"
+    ],
+    "guardedNamespacePrefixes": [
+      "skills.",
+      "mcp.",
+      "web_search.",
+      "python.",
+      "projects.",
+      "automation.",
+      "permission.",
+      "approval.",
+      "audit.",
+      "file.",
+      "terminal.",
+      "network.",
+      "backend.",
+      "embeddings.",
+      "retrieval.",
+      "index.",
+      "research.",
+      "citation.",
+      "source_anchor.",
+      "trusted_source.",
+      "source_control.",
+      "p2p.",
+      "rendezvous.",
+      "bootstrap.",
+      "dht.",
+      "nat.",
+      "stun.",
+      "turn.",
+      "session.",
+      "key_exchange.",
+      "encrypted_session.",
+      "anti_replay.",
+      "transport.",
+      "crypto.",
+      "route."
+    ],
+    "namespaceActiveExceptions": {
+      "retrieval.": ["retrieval.query"],
+      "index.": ["index.documents.list"],
+      "research.": ["research.brief.create", "research.notebooks.list"],
+      "citation.": ["citation.resolve"],
+      "source_anchor.": ["source_anchor.resolve"],
+      "trusted_source.": ["trusted_source.approve", "trusted_source.dismiss", "trusted_source.list", "trusted_source.revoke"],
+      "route.": ["route.refresh"]
+    },
+    "selectedNotImplemented": [
+      "authenticated_encrypted_ice",
+      "bounded_turn",
+      "sealed_relay_only_emergency_fallback",
+      "transport_neutral_endpoint_identity_session",
+      "tls_1_3_signed_lease_capabilities",
+      "monotonic_pair_epoch",
+      "pair.status"
+    ],
+    "cryptoSuiteStatus": "candidate_requires_g1_ratification",
+    "routeAuthorization": {
+      "localDirectServiceCapabilityRequired": false,
+      "serviceMediatedP2pCandidatePublishCapabilityRequired": true,
+      "serviceMediatedP2pCandidateFetchCapabilityRequired": true,
+      "turnSignedCapabilityRequired": true,
+      "sealedRelaySignedCapabilityRequired": true,
+      "capabilityFreeRemoteP2pAllowed": false,
+      "crossKindDigestInterpretationAllowed": false
+    },
+    "pairRecoveryContract": {
+      "bindingFields": ["pair_id", "pair_epoch"],
+      "bindingTargets": ["lease", "registration", "endpoint_transcript", "route_refresh", "application_authentication"],
+      "replacementRequiresFreshQrAndHigherEpoch": true,
+      "replacementRotatesEndpointTrafficSecret": true,
+      "replacementRotatesRouteTokenSeed": true,
+      "offlineReactivationRequiresCurrentSignedReceipt": true,
+      "pairStatusMayMutateState": false
+    },
+    "units": [
+      {
+        "id": "pairing_qr_v1",
+        "state": "active_current",
+        "version": "1",
+        "schemaRefs": ["packages/protocol-schema/pairing-qr.schema.json"],
+        "swiftRefs": ["apps/macos/Pairing/Sources/PairingCoordinator.swift"],
+        "androidRefs": ["apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/RuntimePairingPayload.kt"],
+        "documentationRefs": ["docs/protocol.md#qr-pairing-data"],
+        "ownerRole": "product_security_owner",
+        "acceptanceMethod": "decode_rendered_qr_and_validate_canonical_active_route_and_pairing_session"
+      },
+      {
+        "id": "runtime_envelope_v1",
+        "state": "active_current",
+        "version": "1",
+        "schemaRefs": ["packages/protocol-schema/protocol.schema.json"],
+        "swiftRefs": ["apps/macos/Protocol/Sources/ProtocolEnvelope.swift"],
+        "androidRefs": ["apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt"],
+        "documentationRefs": ["docs/protocol.md"],
+        "ownerRole": "repository_quality_owner",
+        "acceptanceMethod": "schema_swift_kotlin_type_direction_and_payload_parity"
+      },
+      {
+        "id": "pairing_and_auth",
+        "state": "active_current",
+        "version": "1",
+        "schemaRefs": ["hello", "auth.challenge", "auth.response", "pairing.request", "pairing.result"],
+        "swiftRefs": ["apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"],
+        "androidRefs": ["apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"],
+        "documentationRefs": ["docs/protocol.md#connection-lifecycle"],
+        "ownerRole": "product_security_owner",
+        "acceptanceMethod": "negative_vectors_then_identity_auth_health_and_trusted_reconnect"
+      },
+      {
+        "id": "route_refresh_and_relay_allocation",
+        "state": "active_current",
+        "version": "1",
+        "schemaRefs": ["route.refresh", "relay.allocation.challenge", "relay.allocation.authorization"],
+        "swiftRefs": ["apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"],
+        "androidRefs": ["apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"],
+        "documentationRefs": ["docs/protocol.md#connection-metadata-and-relay-boundaries"],
+        "ownerRole": "product_security_owner",
+        "acceptanceMethod": "development_routes_remain_non_production_and_release_downgrade_is_rejected"
+      },
+      {
+        "id": "runtime_health_and_models",
+        "state": "active_current",
+        "version": "1",
+        "schemaRefs": ["runtime.health", "models.list", "models.pull", "models.result"],
+        "swiftRefs": ["apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"],
+        "androidRefs": ["apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"],
+        "documentationRefs": ["docs/protocol.md#runtimehealth"],
+        "ownerRole": "runtime_provider_compatibility_owner",
+        "acceptanceMethod": "supported_provider_matrix_health_list_pull_and_sanitized_error_results"
+      },
+      {
+        "id": "chat_stream_cancel_history",
+        "state": "active_current",
+        "version": "1",
+        "schemaRefs": ["chat.send", "chat.delta", "chat.done", "chat.cancel", "chat.sessions.list", "chat.messages.list"],
+        "swiftRefs": ["apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"],
+        "androidRefs": ["apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"],
+        "documentationRefs": ["docs/protocol.md#chatsend"],
+        "ownerRole": "release_quality_owner",
+        "acceptanceMethod": "stream_cancel_history_attachment_and_duplicate_request_regressions"
+      },
+      {
+        "id": "memory_and_retrieval",
+        "state": "active_current",
+        "version": "1",
+        "schemaRefs": ["index.documents.list", "retrieval.query", "citation.resolve", "source_anchor.resolve", "research.brief.create", "memory.list", "memory.upsert", "memory.delete"],
+        "swiftRefs": ["apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"],
+        "androidRefs": ["apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"],
+        "documentationRefs": ["docs/protocol.md#runtime-memory-messages"],
+        "ownerRole": "privacy_and_incident_owner",
+        "acceptanceMethod": "runtime_owned_data_authority_mutation_and_stale_cache_replacement_regressions"
+      },
+      {
+        "id": "error_taxonomy",
+        "state": "active_current",
+        "version": "1",
+        "schemaRefs": ["packages/protocol-schema/protocol.schema.json#/$defs/errorPayload"],
+        "swiftRefs": ["apps/macos/Protocol/Sources/ProtocolEnvelope.swift"],
+        "androidRefs": ["apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt"],
+        "documentationRefs": ["docs/protocol.md#error"],
+        "ownerRole": "repository_quality_owner",
+        "acceptanceMethod": "closed_error_enum_parity_and_unknown_code_fail_closed"
+      },
+      {
+        "id": "reserved_namespaces",
+        "state": "selected_not_implemented",
+        "version": "g1_pending",
+        "schemaRefs": [],
+        "swiftRefs": [],
+        "androidRefs": [],
+        "documentationRefs": ["docs/protocol.md#future-extension-points"],
+        "ownerRole": "product_security_owner",
+        "acceptanceMethod": "reserved_names_remain_absent_from_active_schema_and_routers_until_separate_g1_authority"
+      }
+    ]
+  },
+  "dataFlowInventory": [
+    {
+      "id": "qr_pairing_to_trusted_state",
+      "state": "active_current",
+      "source": "macos_pairing_session_or_approved_deeplink_source",
+      "destination": "android_pairing_parser_then_authenticated_runtime_pairing",
+      "transport": "rendered_qr_or_canonical_aetherlink_pair_deeplink_then_runtime_transport",
+      "dataClasses": ["runtime_identity", "pairing_nonce_or_code", "route_bootstrap", "client_public_identity"],
+      "trustBoundaries": ["user_presence_qr_ceremony", "android_external_input", "runtime_pairing_boundary"],
+      "authorizationGate": "canonical_payload_active_pairing_session_and_runtime_identity_proof",
+      "persistentStores": ["android_datastore_pair_metadata", "android_keystore_secret_reference", "macos_trusted_device_store"],
+      "serviceVisibleData": [],
+      "forbiddenData": ["qr_payload_log", "pairing_secret_log", "raw_route_material_log"],
+      "retentionRule": "one_time_pairing_material_expires_and_trusted_secret_is_keystore_backed",
+      "failureMode": "reject_payload_keep_untrusted_and_require_fresh_qr_when_state_is_stale",
+      "sourceRefs": ["packages/protocol-schema/pairing-qr.schema.json", "docs/protocol.md"],
+      "ownerRole": "product_security_owner",
+      "acceptanceMethod": "render_decode_route_session_and_trust_store_round_trip",
+      "userLoopIds": ["physical_qr_pairing", "trust_revoke_and_fresh_repair"]
+    },
+    {
+      "id": "route_to_authenticated_runtime_session",
+      "state": "active_current_and_selected_not_implemented_paths",
+      "source": "android_route_candidate",
+      "destination": "macos_authenticated_runtime_router",
+      "transport": "local_direct_current_or_future_authenticated_p2p_turn_or_sealed_relay",
+      "dataClasses": ["endpoint_identity", "route_authorization_digest", "auth_transcript", "encrypted_runtime_frames"],
+      "trustBoundaries": ["route_selection", "untrusted_network", "transport_neutral_endpoint_identity"],
+      "authorizationGate": "hello_challenge_response_key_confirmation_before_application_ready",
+      "persistentStores": ["android_trusted_route_state", "macos_runtime_identity_keychain", "macos_trusted_device_store"],
+      "serviceVisibleData": ["ciphertext_size", "timing", "expiry", "bounded_route_class"],
+      "forbiddenData": ["ai_plaintext", "traffic_key", "stable_pair_identifier", "raw_candidate_log"],
+      "retentionRule": "route_authorization_state_expires_plus_30_seconds_and_revocation_closes_within_30_seconds_absolute",
+      "failureMode": "fail_closed_without_plaintext_or_legacy_downgrade",
+      "sourceRefs": ["docs/connection-overlay.md", "docs/security-hardening/production-p2p-nat-v1/threat-model.md"],
+      "ownerRole": "product_security_owner",
+      "acceptanceMethod": "per_route_identity_auth_key_confirmation_reconnect_and_negative_vectors",
+      "userLoopIds": ["trusted_reconnect"]
+    },
+    {
+      "id": "authenticated_route_refresh",
+      "state": "active_current",
+      "source": "authenticated_android_client",
+      "destination": "runtime_route_authority_then_android_secure_route_store",
+      "transport": "runtime_envelope_v1",
+      "dataClasses": ["route_class", "opaque_route_material", "expiry", "runtime_identity_binding"],
+      "trustBoundaries": ["authenticated_runtime_message_router", "android_secure_storage"],
+      "authorizationGate": "authenticated_session_exact_route_shape_identity_binding_and_freshness",
+      "persistentStores": ["android_datastore_route_metadata", "android_keystore_secret_reference"],
+      "serviceVisibleData": [],
+      "forbiddenData": ["route_secret_log", "capability_log", "stale_or_cross_identity_route"],
+      "retentionRule": "replace_atomically_and_delete_expired_or_rejected_material",
+      "failureMode": "preserve_last_valid_state_or_require_fresh_qr_without_partial_acceptance",
+      "sourceRefs": ["docs/protocol.md", "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt", "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt"],
+      "ownerRole": "product_security_owner",
+      "acceptanceMethod": "authenticated_refresh_canonicality_expiry_identity_and_stale_replay_regressions",
+      "userLoopIds": ["trusted_reconnect", "trust_revoke_and_fresh_repair"]
+    },
+    {
+      "id": "runtime_health_and_provider_access",
+      "state": "active_current",
+      "source": "authenticated_android_client",
+      "destination": "macos_runtime_router_then_local_ollama_or_lm_studio",
+      "transport": "runtime_envelope_v1_then_loopback_provider_adapter",
+      "dataClasses": ["health_status", "installed_model_metadata", "model_pull_approval", "provider_error"],
+      "trustBoundaries": ["authenticated_runtime_router", "local_provider_adapter"],
+      "authorizationGate": "paired_authenticated_runtime_session_and_operation_policy",
+      "persistentStores": ["runtime_configuration", "android_sanitized_continuity_cache"],
+      "serviceVisibleData": [],
+      "forbiddenData": ["direct_android_provider_url", "provider_credential_to_android", "provider_url_in_service_metrics"],
+      "retentionRule": "provider_state_is_runtime_owned_and_client_cache_is_replaceable",
+      "failureMode": "sanitized_backend_unavailable_or_unsupported_error",
+      "sourceRefs": ["docs/architecture.md", "docs/protocol.md"],
+      "ownerRole": "runtime_provider_compatibility_owner",
+      "acceptanceMethod": "minimum_current_previous_provider_matrix_health_list_and_pull",
+      "userLoopIds": ["runtime_health", "installed_model_list"]
+    },
+    {
+      "id": "chat_stream_cancel_and_history",
+      "state": "active_current",
+      "source": "authenticated_android_chat_composer",
+      "destination": "macos_runtime_ingestion_provider_adapter_and_runtime_chat_store",
+      "transport": "runtime_envelope_v1_and_local_provider_stream",
+      "dataClasses": ["prompt", "attachments", "runtime_memory_context", "reasoning_delta", "answer_delta", "citations", "chat_history"],
+      "trustBoundaries": ["android_attachment_ingest", "authenticated_runtime_router", "local_provider", "runtime_chat_store"],
+      "authorizationGate": "authenticated_session_session_state_attachment_bounds_and_request_idempotency",
+      "persistentStores": ["macos_chat_sqlite", "legacy_jsonl_migration_input", "android_sanitized_continuity_cache"],
+      "serviceVisibleData": [],
+      "forbiddenData": ["ai_content_in_connectivity_service", "provider_credential", "unbounded_attachment"],
+      "retentionRule": "runtime_is_authority_and_android_cache_is_sanitized_replaceable_continuity_state",
+      "failureMode": "bounded_error_cancel_terminal_event_or_store_unavailable_without_duplicate_execution",
+      "sourceRefs": ["docs/architecture.md", "apps/macos/CompanionCore/Sources/RuntimeChatEventStore.swift", "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt"],
+      "ownerRole": "privacy_and_incident_owner",
+      "acceptanceMethod": "stream_cancel_history_attachment_compaction_and_duplicate_request_regressions",
+      "userLoopIds": ["chat_reasoning_stream", "chat_cancel", "runtime_history", "current_attachments"]
+    },
+    {
+      "id": "runtime_memory_retrieval_and_research",
+      "state": "active_current",
+      "source": "authenticated_android_client_or_runtime_chat_pipeline",
+      "destination": "macos_runtime_owned_memory_retrieval_research_and_trusted_source_stores",
+      "transport": "runtime_envelope_v1_and_local_store_calls",
+      "dataClasses": ["memory_entry", "summary_draft", "retrieval_result", "citation", "source_anchor", "trusted_source_review", "research_brief"],
+      "trustBoundaries": ["authenticated_runtime_router", "runtime_owned_data_stores"],
+      "authorizationGate": "authenticated_message_type_payload_and_runtime_authority_checks",
+      "persistentStores": ["macos_memory_jsonl", "macos_semantic_cache_sqlite", "runtime_research_and_trusted_source_stores", "android_sanitized_cache"],
+      "serviceVisibleData": [],
+      "forbiddenData": ["memory_or_source_content_in_connectivity_service", "stale_client_cache_as_authority"],
+      "retentionRule": "runtime_policy_controls_mutation_deletion_and_cache_replacement",
+      "failureMode": "typed_not_found_stale_or_store_unavailable_error_without_client_side_authority",
+      "sourceRefs": ["docs/architecture.md", "docs/protocol.md", "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt"],
+      "ownerRole": "privacy_and_incident_owner",
+      "acceptanceMethod": "runtime_authority_crud_stale_cache_duplicate_and_citation_binding_regressions",
+      "userLoopIds": ["runtime_memory"]
+    },
+    {
+      "id": "content_free_assurance_observability",
+      "state": "selected_not_implemented",
+      "source": "endpoint_release_harness_and_connectivity_services",
+      "destination": "bounded_first_party_metrics_incident_and_release_evidence_stores",
+      "transport": "schema_validated_content_free_events",
+      "dataClasses": ["aggregate_operational_metric", "source_free_security_event", "sanitized_incident_evidence", "content_free_release_record"],
+      "trustBoundaries": ["event_allowlist", "retention_store", "incident_and_release_review"],
+      "authorizationGate": "closed_event_kind_and_field_allowlist_unknown_field_rejection",
+      "persistentStores": ["bounded_metrics_store", "sanitized_incident_store", "release_evidence_store"],
+      "serviceVisibleData": ["allowed_content_free_fields_only"],
+      "forbiddenData": ["prompt", "response", "file", "memory", "provider_url", "secret", "raw_candidate", "raw_ip", "stable_identifier"],
+      "retentionRule": "7_30_90_or_365_day_class_maximum_with_deletion_trigger",
+      "failureMode": "reject_unknown_or_forbidden_event_and_raise_security_hard_stop_on_leak",
+      "sourceRefs": ["docs/v1/g0/decision-v1.json", "docs/security-hardening/production-p2p-nat-v1/threat-model.md"],
+      "ownerRole": "privacy_and_incident_owner",
+      "acceptanceMethod": "negative_log_scan_unknown_field_rejection_retention_and_deletion_audit",
+      "userLoopIds": []
+    },
+    {
+      "id": "endpoint_to_rendezvous_candidate",
+      "state": "selected_not_implemented",
+      "source": "paired_android_or_macos_endpoint",
+      "destination": "first_party_rendezvous_service",
+      "transport": "tls_1_3_plus_pair_scoped_capability_and_e2e_candidate_envelope",
+      "dataClasses": ["candidate_publish_or_fetch_capability", "encrypted_candidate_record", "generation", "expiry"],
+      "trustBoundaries": ["endpoint_identity", "public_service_channel", "rendezvous_sealed_record_store"],
+      "authorizationGate": "exact_candidate_publish_or_candidate_fetch_capability_bound_to_pair_role_generation_service_and_kind",
+      "persistentStores": ["bounded_sealed_candidate_records", "revocation_tombstones"],
+      "serviceVisibleData": ["ciphertext_size", "timing", "expiry", "capability_kind"],
+      "forbiddenData": ["candidate_plaintext", "stable_pair_identifier", "traffic_key", "ai_payload"],
+      "retentionRule": "expiry_plus_30_seconds_and_absolute_revocation_closure_within_30_seconds",
+      "failureMode": "reject_missing_stale_cross_pair_cross_role_cross_generation_or_wrong_kind_capability",
+      "sourceRefs": ["docs/security-hardening/production-p2p-nat-v1/threat-model.md", "docs/security-hardening/production-p2p-nat-v1/pre-network/review-v1.json"],
+      "ownerRole": "service_security_owner",
+      "acceptanceMethod": "publish_fetch_replay_expiry_rotation_revocation_and_retention_vectors",
+      "userLoopIds": []
+    },
+    {
+      "id": "endpoint_to_stun",
+      "state": "selected_not_implemented",
+      "source": "paired_endpoint_ice_agent",
+      "destination": "approved_stun_service",
+      "transport": "bounded_stun_binding_exchange",
+      "dataClasses": ["transaction_id", "observed_transport_address", "address_family"],
+      "trustBoundaries": ["endpoint_destination_policy", "untrusted_stun_service"],
+      "authorizationGate": "signed_service_configuration_destination_allowlist_and_bounded_request_budget",
+      "persistentStores": [],
+      "serviceVisibleData": ["source_transport_address", "timing", "packet_size"],
+      "forbiddenData": ["endpoint_identity_key", "pair_identifier", "candidate_log", "ai_payload"],
+      "retentionRule": "no_application_persistence_and_no_raw_address_observability",
+      "failureMode": "stun_result_never_establishes_endpoint_trust_and_failure_preserves_authenticated_fallback_policy",
+      "sourceRefs": ["docs/security-hardening/production-p2p-nat-v1/threat-model.md", "docs/connection-overlay.md"],
+      "ownerRole": "product_security_owner",
+      "acceptanceMethod": "destination_policy_transaction_spoofing_timeout_and_resource_bound_vectors",
+      "userLoopIds": []
+    },
+    {
+      "id": "endpoint_to_approved_candidate_target",
+      "state": "selected_not_implemented",
+      "source": "paired_endpoint_ice_agent",
+      "destination": "policy_approved_remote_candidate_target",
+      "transport": "bounded_ice_connectivity_checks_before_secure_session",
+      "dataClasses": ["candidate_pair", "transaction_id", "consent_state"],
+      "trustBoundaries": ["destination_policy", "untrusted_network_candidate", "secure_session_gate"],
+      "authorizationGate": "candidate_decryption_scope_validation_destination_policy_generation_and_consent",
+      "persistentStores": [],
+      "serviceVisibleData": [],
+      "forbiddenData": ["application_frame_before_identity_session", "prohibited_destination_io", "candidate_log"],
+      "retentionRule": "ephemeral_check_state_with_time_count_byte_and_concurrency_bounds",
+      "failureMode": "reject_prohibited_or_stale_candidate_and_stop_traffic_on_consent_loss",
+      "sourceRefs": ["docs/security-hardening/production-p2p-nat-v1/threat-model.md", "docs/connection-overlay.md"],
+      "ownerRole": "product_security_owner",
+      "acceptanceMethod": "pre_io_destination_consent_loss_nomination_and_no_early_application_data_vectors",
+      "userLoopIds": []
+    },
+    {
+      "id": "endpoint_to_turn_or_sealed_relay",
+      "state": "selected_not_implemented",
+      "source": "paired_android_or_macos_endpoint",
+      "destination": "approved_turn_or_sealed_relay_plane",
+      "transport": "signed_capability_plus_opaque_end_to_end_encrypted_packets",
+      "dataClasses": ["turn_allocate_or_sealed_lease_capability", "allocation_context", "opaque_encrypted_packet"],
+      "trustBoundaries": ["service_identity", "relay_admission", "endpoint_traffic_encryption"],
+      "authorizationGate": "exact_signed_capability_lease_route_digest_pair_epoch_and_endpoint_identity_session",
+      "persistentStores": ["bounded_allocation_state", "active_and_waiting_room_index", "revocation_tombstones"],
+      "serviceVisibleData": ["source_transport_address", "ciphertext_size", "timing", "expiry", "quota", "region"],
+      "forbiddenData": ["traffic_key", "ai_plaintext", "provider_metadata", "stable_pair_identifier"],
+      "retentionRule": "lease_expiry_plus_30_seconds_and_revocation_closes_active_and_waiting_state_within_30_seconds",
+      "failureMode": "use_only_approved_authenticated_alternate_plane_or_fail_closed",
+      "sourceRefs": ["docs/security-hardening/production-p2p-nat-v1/threat-model.md", "docs/security-hardening/production-relay-v1/proposals/authenticated-allocation-control-plane.md"],
+      "ownerRole": "service_operations_owner",
+      "acceptanceMethod": "allocation_scope_quota_replay_revocation_outage_and_ciphertext_only_vectors",
+      "userLoopIds": []
+    },
+    {
+      "id": "endpoint_to_allocation_authority",
+      "state": "selected_not_implemented",
+      "source": "paired_endpoint_requesting_production_allocation",
+      "destination": "first_party_allocation_authority",
+      "transport": "webpki_tls_1_3_with_explicit_route_trust_source",
+      "dataClasses": ["allocation_credential", "route_token", "endpoint_identity_proof", "requested_protocol_suite", "pair_epoch_generation_and_relay_context"],
+      "trustBoundaries": ["endpoint_identity", "public_webpki_channel", "allocation_authority_admission"],
+      "authorizationGate": "authenticate_intended_service_before_disclosing_credentials_then_verify_exact_route_pair_epoch_generation_endpoint_and_request_scope",
+      "persistentStores": ["idempotent_allocation_request_state", "bounded_authorization_tombstones"],
+      "serviceVisibleData": ["pair_binding_digest", "endpoint_role", "requested_region", "protocol_suite", "generation", "quota_request"],
+      "forbiddenData": ["endpoint_traffic_secret", "endpoint_private_key", "prompt", "response", "file", "memory", "provider_url"],
+      "retentionRule": "request_state_is_idempotent_bounded_and_deleted_with_authorization_expiry_plus_30_seconds",
+      "failureMode": "reject_unauthenticated_service_wrong_scope_replay_stale_epoch_or_identity_proof_before_allocation",
+      "sourceRefs": ["docs/security-hardening/production-relay-v1/proposals/authenticated-allocation-control-plane.md", "docs/v1/g0/decision-v1.json"],
+      "ownerRole": "service_security_owner",
+      "acceptanceMethod": "server_identity_pre_disclosure_scope_replay_epoch_generation_and_credential_confidentiality_vectors",
+      "userLoopIds": []
+    },
+    {
+      "id": "endpoint_to_pair_state_authority",
+      "state": "selected_not_implemented",
+      "source": "current_surviving_or_replacement_endpoint",
+      "destination": "first_party_pair_state_authority",
+      "transport": "webpki_tls_1_3_plus_endpoint_signed_canonical_transition_or_status_request",
+      "dataClasses": ["pair_id", "pair_epoch", "revocation_counter", "transition_id", "canonical_request_digest", "signed_revoke_replace_or_status_request", "fresh_qr_replacement_proof"],
+      "trustBoundaries": ["endpoint_identity", "public_webpki_channel", "monotonic_pair_authority_store", "relay_revocation_fanout"],
+      "authorizationGate": "status_is_authenticated_read_only_revoke_is_current_key_deny_only_replace_requires_fresh_qr_and_required_endpoint_proofs_and_all_mutations_are_idempotent",
+      "persistentStores": ["highest_monotonic_pair_state", "signed_transition_receipts", "revocation_tombstones"],
+      "serviceVisibleData": ["pair_binding_digest", "endpoint_role", "transition_kind", "pair_epoch", "revocation_counter", "lease_generation"],
+      "forbiddenData": ["endpoint_traffic_secret", "route_token_seed", "qr_pairing_secret", "endpoint_private_key", "ai_payload"],
+      "retentionRule": "bounded_live_pair_state_signed_receipts_and_revocation_tombstones_without_content_or_stable_log_identifiers",
+      "failureMode": "reject_lower_state_conflicting_transition_id_status_mutation_silent_replacement_or_offline_reactivation_without_current_receipt",
+      "sourceRefs": ["docs/security-hardening/production-relay-v1/proposals/pair-epoch-recovery.md", "docs/v1/g0/decision-v1.json"],
+      "ownerRole": "product_security_owner",
+      "acceptanceMethod": "deny_only_revoke_fresh_qr_replace_status_read_only_idempotency_response_loss_and_offline_reactivation_vectors",
+      "userLoopIds": []
+    },
+    {
+      "id": "allocation_authority_to_endpoint_and_relay",
+      "state": "selected_not_implemented",
+      "source": "first_party_allocation_authority",
+      "destination": "paired_endpoints_and_approved_relay_planes",
+      "transport": "webpki_tls_1_3_and_offline_root_authorized_signed_objects",
+      "dataClasses": ["service_configuration", "keyset", "signed_lease_capability", "revocation_state", "signed_pair_state_receipt"],
+      "trustBoundaries": ["public_webpki_channel", "offline_root", "delegated_online_signer", "endpoint_monotonic_store", "relay_admission"],
+      "authorizationGate": "signature_hostname_expiry_service_digest_keyset_version_pair_id_pair_epoch_generation_and_revocation_counter",
+      "persistentStores": ["versioned_service_configuration", "overlap_keyset", "idempotent_transition_state", "revocation_tombstones"],
+      "serviceVisibleData": ["pair_binding_digest", "endpoint_role", "generation", "expiry", "quota", "nonce"],
+      "forbiddenData": ["traffic_secret", "endpoint_private_key", "prompt", "response", "file", "memory", "provider_url"],
+      "retentionRule": "bounded_live_authorization_state_and_signed_receipt_policy_without_stable_log_identifier",
+      "failureMode": "reject_unsigned_expired_wrong_service_or_lower_version_state_without_legacy_fallback",
+      "sourceRefs": ["docs/security-hardening/production-relay-v1/proposals/authenticated-allocation-control-plane.md", "docs/security-hardening/production-relay-v1/proposals/pair-epoch-recovery.md"],
+      "ownerRole": "service_security_owner",
+      "acceptanceMethod": "signature_rotation_revocation_rollback_idempotency_and_offline_receipt_vectors",
+      "userLoopIds": []
+    },
+    {
+      "id": "android_release_build_to_play_install_update_and_forward_fix",
+      "state": "selected_not_implemented",
+      "source": "authorized_versioned_release_source_and_ci",
+      "destination": "google_play_app_signing_store_and_supported_android_installations",
+      "transport": "provenance_bound_aab_play_app_signing_and_verified_platform_install_update_channel",
+      "dataClasses": ["source_revision", "application_namespace", "version_code", "version_name", "artifact_digest", "signing_certificate_identity", "provenance_attestation", "store_readback", "rollout_cohort", "install_update_or_forward_fix_outcome"],
+      "trustBoundaries": ["source_to_release_ci", "release_ci_to_play_app_signing", "play_distribution", "android_package_installer_and_update_lineage"],
+      "authorizationGate": "owned_namespace_named_account_and_key_custody_reproducible_provenance_signature_lineage_and_store_readback",
+      "persistentStores": ["immutable_ci_provenance", "play_signing_and_release_records", "content_free_install_update_and_forward_fix_evidence"],
+      "serviceVisibleData": ["namespace", "version", "artifact_digest", "signing_certificate_digest", "rollout_cohort", "gate_outcome"],
+      "forbiddenData": ["release_private_key", "account_credential", "user_content", "pairing_secret", "traffic_secret", "provider_credential"],
+      "retentionRule": "content_free_release_provenance_and_readback_maximum_365_days_under_owned_account_policy",
+      "failureMode": "reject_wrong_namespace_unsigned_counterfeit_non_provenanced_or_broken_lineage_artifact_and_halt_rollout",
+      "sourceRefs": ["docs/v1/g0/decision-v1.json"],
+      "ownerRole": "release_owner",
+      "acceptanceMethod": "signed_aab_provenance_play_readback_clean_install_update_lineage_and_higher_version_forward_fix_drill",
+      "userLoopIds": []
+    },
+    {
+      "id": "macos_release_build_to_notarized_dmg_install_update_and_rollback",
+      "state": "selected_not_implemented",
+      "source": "authorized_versioned_release_source_and_ci",
+      "destination": "developer_id_notary_direct_distribution_and_supported_macos_installations",
+      "transport": "provenance_bound_developer_id_signed_notarized_stapled_dmg_and_verified_direct_download",
+      "dataClasses": ["source_revision", "bundle_identifier", "bundle_version", "artifact_digest", "developer_id_identity", "notary_ticket", "staple_readback", "provenance_attestation", "install_update_or_rollback_outcome"],
+      "trustBoundaries": ["source_to_release_ci", "release_ci_to_developer_id_signing", "apple_notary_service", "direct_distribution", "gatekeeper_installer_and_update_lineage"],
+      "authorizationGate": "owned_bundle_id_named_certificate_custody_provenance_signature_notarization_staple_and_download_readback",
+      "persistentStores": ["immutable_ci_provenance", "notary_and_staple_receipts", "content_free_install_update_and_rollback_evidence"],
+      "serviceVisibleData": ["bundle_identifier", "version", "artifact_digest", "developer_id_certificate_digest", "notary_status", "gate_outcome"],
+      "forbiddenData": ["developer_id_private_key", "apple_account_credential", "user_content", "pairing_secret", "traffic_secret", "provider_credential"],
+      "retentionRule": "content_free_release_provenance_and_readback_maximum_365_days_under_owned_account_policy",
+      "failureMode": "reject_wrong_bundle_id_unsigned_unnotarized_unstapled_non_provenanced_or_substituted_dmg_and_halt_distribution",
+      "sourceRefs": ["docs/v1/g0/decision-v1.json"],
+      "ownerRole": "release_owner",
+      "acceptanceMethod": "developer_id_signature_notary_staple_provenance_download_readback_clean_install_update_and_monotonic_state_rollback_drill",
+      "userLoopIds": []
+    }
+  ],
+  "threatModelRefresh": {
+    "sourceThreatModelId": "production_p2p_nat_v1_threat_model",
+    "inheritedThreatIds": [
+      "T001",
+      "T002",
+      "T003",
+      "T004",
+      "T005",
+      "T006",
+      "T007",
+      "T008",
+      "T009",
+      "T010",
+      "T011",
+      "T012",
+      "T013",
+      "T014",
+      "T015",
+      "T016"
+    ],
+    "assets": [
+      "long_term_device_keys",
+      "pair_and_route_authority",
+      "ice_credentials_and_generation",
+      "candidate_material",
+      "turn_allocations",
+      "secure_session_transcript_and_traffic_keys",
+      "application_payload",
+      "resource_budgets",
+      "diagnostic_metadata",
+      "application_identity",
+      "release_artifacts",
+      "release_provenance",
+      "distribution_accounts_and_signing_authorities",
+      "update_lineage"
+    ],
+    "actors": [
+      "android_controller",
+      "macos_runtime",
+      "rendezvous_service",
+      "stun_service",
+      "turn_service",
+      "network_attacker",
+      "unauthorized_internet_client",
+      "compromised_paired_endpoint",
+      "operator_tooling",
+      "release_ci",
+      "google_play_and_play_app_signing",
+      "apple_developer_id_and_notary",
+      "distribution_account_attacker",
+      "artifact_supply_chain_attacker"
+    ],
+    "trustBoundaries": [
+      "qr_user_presence",
+      "android_external_input",
+      "endpoint_secure_storage",
+      "untrusted_network",
+      "first_party_allocation_authority",
+      "rendezvous_and_relay_services",
+      "transport_neutral_endpoint_identity_session",
+      "runtime_provider_and_data_stores",
+      "observability_allowlist",
+      "source_to_release_ci",
+      "release_ci_to_signing_authority",
+      "signed_artifact_to_store_notary_or_direct_distribution",
+      "distribution_to_platform_installer_and_update_lineage"
+    ],
+    "newThreats": [
+      {
+        "threatId": "T017",
+        "title": "allocation_service_impersonation_or_unsigned_lease_substitution",
+        "control": "webpki_channel_plus_offline_root_signed_config_and_delegated_non_exportable_online_signer",
+        "hardStop": "unauthorizedServiceAcceptance",
+        "sourceRefs": ["docs/security-hardening/production-relay-v1/proposals/authenticated-allocation-control-plane.md"]
+      },
+      {
+        "threatId": "T018",
+        "title": "online_signer_compromise_or_keyset_config_rollback",
+        "control": "versioned_keyset_config_overlap_rotation_revocation_and_monotonic_floor",
+        "hardStop": "securityStateRollbacks",
+        "sourceRefs": ["docs/security-hardening/production-relay-v1/proposals/authenticated-allocation-control-plane.md"]
+      },
+      {
+        "threatId": "T019",
+        "title": "pair_epoch_revocation_counter_or_backup_rollback",
+        "control": "atomically_persist_highest_monotonic_state_before_activation",
+        "hardStop": "securityStateRollbacks",
+        "sourceRefs": ["docs/security-hardening/production-relay-v1/proposals/pair-epoch-recovery.md"]
+      },
+      {
+        "threatId": "T020",
+        "title": "silent_one_sided_replacement_key_installation",
+        "control": "deny_only_emergency_revoke_then_fresh_qr_and_higher_pair_epoch",
+        "hardStop": "falseIdentityAcceptance",
+        "sourceRefs": ["docs/security-hardening/production-relay-v1/proposals/pair-epoch-recovery.md"]
+      },
+      {
+        "threatId": "T021",
+        "title": "revocation_fanout_failure_or_duplicate_transition_after_lost_response",
+        "control": "idempotent_signed_transition_receipt_pair_status_read_only_reconciliation_and_absolute_closure_bound",
+        "hardStop": "revocationClosureDeadlineMisses",
+        "sourceRefs": ["docs/security-hardening/production-relay-v1/proposals/pair-epoch-recovery.md"]
+      },
+      {
+        "threatId": "T022",
+        "title": "pair_candidate_or_route_correlation_through_operational_logs",
+        "control": "closed_content_free_event_schema_no_stable_identifier_and_bounded_retention",
+        "hardStop": "protectedDataLeaks",
+        "sourceRefs": ["docs/v1/g0/decision-v1.json", "docs/security-hardening/production-p2p-nat-v1/threat-model.md"]
+      },
+      {
+        "threatId": "T023",
+        "title": "service_mediated_candidate_publish_or_fetch_without_capability",
+        "control": "pair_role_generation_service_kind_bound_capabilities_for_publish_and_fetch",
+        "hardStop": "routeAuthorizationBypasses",
+        "sourceRefs": ["docs/security-hardening/production-p2p-nat-v1/pre-network/review-v1.json"]
+      },
+      {
+        "threatId": "T024",
+        "title": "android_namespace_signing_lineage_or_play_artifact_substitution",
+        "control": "owned_namespace_named_play_account_and_key_custody_provenance_signature_lineage_and_store_readback",
+        "hardStop": "unauthorizedReleaseArtifactAcceptance",
+        "sourceRefs": ["docs/v1/g0/decision-v1.json"]
+      },
+      {
+        "threatId": "T025",
+        "title": "macos_bundle_developer_id_notary_or_dmg_substitution",
+        "control": "owned_bundle_id_named_certificate_custody_provenance_developer_id_signature_notarization_staple_and_download_readback",
+        "hardStop": "unauthorizedReleaseArtifactAcceptance",
+        "sourceRefs": ["docs/v1/g0/decision-v1.json"]
+      },
+      {
+        "threatId": "T026",
+        "title": "release_ci_provenance_update_lineage_or_rollback_artifact_tampering",
+        "control": "immutable_source_artifact_provenance_signed_readback_monotonic_security_state_and_platform_specific_forward_fix_or_rollback_drill",
+        "hardStop": "releaseArtifactProvenanceFailures",
+        "sourceRefs": ["docs/v1/g0/decision-v1.json"]
+      }
+    ],
+    "failClosedInvariants": [
+      "route_material_is_complete_fresh_generation_bound_and_canonical_before_use",
+      "destination_policy_runs_before_any_candidate_io",
+      "direct_turn_and_sealed_paths_share_endpoint_identity_authentication",
+      "stale_credentials_keys_epochs_keysets_and_receipts_are_never_reactivated",
+      "consent_loss_stops_application_traffic",
+      "all_state_has_count_byte_time_and_concurrency_bounds",
+      "revocation_denies_new_operations_immediately_and_closes_retained_state_within_30000_milliseconds_absolute",
+      "every_lease_registration_endpoint_transcript_route_refresh_and_application_authentication_binds_pair_id_and_pair_epoch",
+      "replacement_requires_fresh_qr_higher_pair_epoch_fresh_endpoint_traffic_secret_and_rotated_route_token_seed",
+      "offline_reactivation_requires_a_current_signed_state_receipt",
+      "android_install_update_and_forward_fix_accept_only_owned_namespace_play_lineage_and_verified_aab_provenance",
+      "macos_install_update_and_rollback_accept_only_owned_bundle_id_developer_id_notarized_stapled_dmg_provenance",
+      "release_private_keys_and_distribution_credentials_never_enter_artifacts_logs_or_assurance_records",
+      "production_failure_never_enables_plaintext_anonymous_or_legacy_downgrade"
+    ],
+    "residualRiskIds": [
+      "R004_pair_recovery_deny_only_dos",
+      "R005_relay_capacity_and_outage",
+      "R006_provider_compatibility",
+      "R009_evidence_matrix_gap"
+    ]
+  },
+  "riskRegister": [
+    {
+      "riskId": "R001_protocol_schema_code_drift",
+      "sourceThreatIds": [],
+      "description": "Schema Swift Kotlin routers or documentation diverge and accept incompatible messages.",
+      "affectedAssets": ["application_payload", "pair_and_route_authority"],
+      "likelihood": "medium",
+      "impact": "high",
+      "treatment": "closed enums exact parity validator negative vectors and source hash pins",
+      "residualRisk": "future_changes_can_drift_after_this_baseline",
+      "ownerRole": "repository_quality_owner",
+      "acceptanceStatus": "blocked_unassigned",
+      "requiredEvidence": [
+        {"evidenceKind": "versioned_protocol_parity_gate", "requiredByGate": "g0"},
+        {"evidenceKind": "reviewed_checkpoint", "requiredByGate": "g0"}
+      ],
+      "releaseBlocking": true,
+      "blockerIds": ["g0_assurance_artifacts_and_baseline_gate", "roadmap_and_g0_checkpoint_publication"]
+    },
+    {
+      "riskId": "R002_production_namespace_signing_and_distribution_custody",
+      "sourceThreatIds": ["T024", "T025", "T026"],
+      "description": "Unowned identifiers or signing custody break update lineage or allow counterfeit distribution.",
+      "affectedAssets": ["application_identity", "release_artifacts", "user_trust"],
+      "likelihood": "medium",
+      "impact": "critical",
+      "treatment": "reserve_owned_namespaces_name_account_and_key_owners_and_verify_signed_artifact_readback",
+      "residualRisk": "account_or_key_compromise_requires_external_operational_controls",
+      "ownerRole": "release_owner",
+      "acceptanceStatus": "blocked_unassigned",
+      "requiredEvidence": [
+        {"evidenceKind": "namespace_reservation", "requiredByGate": "g0"},
+        {"evidenceKind": "custody_runbook", "requiredByGate": "g0"},
+        {"evidenceKind": "signed_aab_and_dmg_readback", "requiredByGate": "g5"}
+      ],
+      "releaseBlocking": true,
+      "blockerIds": ["production_application_namespaces", "distribution_account_and_key_owners"]
+    },
+    {
+      "riskId": "R003_service_dns_webpki_root_and_signer_compromise",
+      "sourceThreatIds": ["T017", "T018"],
+      "description": "Service identity or signing compromise authorizes attacker-controlled routing material.",
+      "affectedAssets": ["pair_and_route_authority", "candidate_material", "turn_allocations"],
+      "likelihood": "medium",
+      "impact": "critical",
+      "treatment": "owned_domains_webpki_offline_root_non_exportable_signer_rotation_revocation_and_monotonic_versions",
+      "residualRisk": "first_party_control_plane_is_a_high_value_target",
+      "ownerRole": "service_security_owner",
+      "acceptanceStatus": "blocked_unassigned",
+      "requiredEvidence": [
+        {"evidenceKind": "domain_and_dns_ownership", "requiredByGate": "g0"},
+        {"evidenceKind": "webpki_runbook", "requiredByGate": "g0"},
+        {"evidenceKind": "root_and_signer_custody_drill", "requiredByGate": "g2"}
+      ],
+      "releaseBlocking": true,
+      "blockerIds": ["service_domain_dns_and_webpki_owners", "service_root_and_online_signer_owners"]
+    },
+    {
+      "riskId": "R004_pair_recovery_deny_only_dos",
+      "sourceThreatIds": ["T019", "T020", "T021"],
+      "description": "Revocation or lost transition responses cause denial of service or stale trust state.",
+      "affectedAssets": ["pair_and_route_authority", "long_term_device_keys"],
+      "likelihood": "medium",
+      "impact": "high",
+      "treatment": "deny_only_revoke_fresh_qr_higher_epoch_signed_receipts_and_read_only_reconciliation",
+      "residualRisk": "a_current_endpoint_can_intentionally_force_repair",
+      "ownerRole": "product_security_owner",
+      "acceptanceStatus": "blocked_unassigned",
+      "requiredEvidence": [
+        {"evidenceKind": "concurrent_revoke_rotate_reconcile_vectors", "requiredByGate": "g4"},
+        {"evidenceKind": "absolute_30_second_closure_measurement", "requiredByGate": "g4"}
+      ],
+      "releaseBlocking": true,
+      "blockerIds": ["g0_assurance_artifacts_and_baseline_gate"]
+    },
+    {
+      "riskId": "R005_relay_capacity_and_outage",
+      "sourceThreatIds": ["T010", "T014"],
+      "description": "Relay abuse capacity exhaustion regional outage or cost growth removes the mandatory fallback plane.",
+      "affectedAssets": ["availability", "resource_budgets", "turn_allocations"],
+      "likelihood": "high",
+      "impact": "high",
+      "treatment": "bounded_admission_two_times_peak_capacity_outage_drills_and_approved_alternate_plane_or_fail_closed",
+      "residualRisk": "single_initial_region_can_remain_an_availability_limit",
+      "ownerRole": "service_operations_owner",
+      "acceptanceStatus": "blocked_unassigned",
+      "requiredEvidence": [
+        {"evidenceKind": "region_and_cost_approval", "requiredByGate": "g0"},
+        {"evidenceKind": "two_times_peak_load_result", "requiredByGate": "g6"},
+        {"evidenceKind": "turn_and_sealed_relay_outage_drills", "requiredByGate": "g6"}
+      ],
+      "releaseBlocking": true,
+      "blockerIds": ["relay_region_capacity_and_cost_budget"]
+    },
+    {
+      "riskId": "R006_provider_compatibility",
+      "sourceThreatIds": [],
+      "description": "Ollama or LM Studio version drift breaks health model listing or chat behavior.",
+      "affectedAssets": ["required_user_loop", "application_payload"],
+      "likelihood": "high",
+      "impact": "high",
+      "treatment": "named_minimum_current_previous_matrix_with_sanitized_failure_and_rc_freeze",
+      "residualRisk": "provider_changes_outside_aetherlink_release_control",
+      "ownerRole": "runtime_provider_compatibility_owner",
+      "acceptanceStatus": "blocked_unassigned",
+      "requiredEvidence": [
+        {"evidenceKind": "approved_provider_matrix", "requiredByGate": "g0"},
+        {"evidenceKind": "versioned_health_model_chat_results", "requiredByGate": "g5"}
+      ],
+      "releaseBlocking": true,
+      "blockerIds": ["provider_compatibility_baseline"]
+    },
+    {
+      "riskId": "R007_privacy_logging_and_retention",
+      "sourceThreatIds": ["T013", "T022"],
+      "description": "Content secrets raw network material or stable identifiers enter telemetry or outlive policy.",
+      "affectedAssets": ["application_payload", "diagnostic_metadata", "long_term_device_keys"],
+      "likelihood": "medium",
+      "impact": "critical",
+      "treatment": "closed_allowlist_forbidden_classes_negative_log_scan_and_bounded_deletion",
+      "residualRisk": "sanitized_incident_evidence_requires_human_review",
+      "ownerRole": "privacy_and_incident_owner",
+      "acceptanceStatus": "blocked_unassigned",
+      "requiredEvidence": [
+        {"evidenceKind": "privacy_approval", "requiredByGate": "g0"},
+        {"evidenceKind": "negative_log_scan", "requiredByGate": "g6"},
+        {"evidenceKind": "retention_and_deletion_audit", "requiredByGate": "g6"}
+      ],
+      "releaseBlocking": true,
+      "blockerIds": ["privacy_incident_and_retention_owners"]
+    },
+    {
+      "riskId": "R008_local_store_corruption_or_stale_cache",
+      "sourceThreatIds": ["T019"],
+      "description": "Corrupt local state or a stale Android cache reactivates obsolete trust or data.",
+      "affectedAssets": ["pair_and_route_authority", "runtime_history", "runtime_memory"],
+      "likelihood": "medium",
+      "impact": "high",
+      "treatment": "keystore_keychain_atomic_monotonic_state_sanitized_cache_and_runtime_authority",
+      "residualRisk": "storage_failure_can_require_fresh_pairing_or_local_data_recovery",
+      "ownerRole": "product_security_owner",
+      "acceptanceStatus": "blocked_unassigned",
+      "requiredEvidence": [
+        {"evidenceKind": "corruption_and_stale_cache_regressions", "requiredByGate": "g4"},
+        {"evidenceKind": "monotonic_state_persistence_tests", "requiredByGate": "g4"}
+      ],
+      "releaseBlocking": true,
+      "blockerIds": ["g0_assurance_artifacts_and_baseline_gate"]
+    },
+    {
+      "riskId": "R009_evidence_matrix_gap",
+      "sourceThreatIds": [],
+      "description": "No-device same-LAN or aggregate success is misreported as unsupported device network provider or production proof.",
+      "affectedAssets": ["release_confidence", "required_user_loop"],
+      "likelihood": "high",
+      "impact": "high",
+      "treatment": "separate_evidence_classes_per_cell_thresholds_required_variants_and_signed_rc_provenance",
+      "residualRisk": "required_external_devices_and_networks_may_be_unavailable",
+      "ownerRole": "release_quality_owner",
+      "acceptanceStatus": "blocked_unassigned",
+      "requiredEvidence": [
+        {"evidenceKind": "full_no_device_gate", "requiredByGate": "g0"},
+        {"evidenceKind": "physical_device_matrix", "requiredByGate": "g5"},
+        {"evidenceKind": "controlled_network_matrix", "requiredByGate": "g6"},
+        {"evidenceKind": "signed_rc_campaign", "requiredByGate": "g6"}
+      ],
+      "releaseBlocking": true,
+      "blockerIds": ["g0_assurance_artifacts_and_baseline_gate", "quality_measurement_owners"]
+    },
+    {
+      "riskId": "R010_rollback_monotonicity",
+      "sourceThreatIds": ["T018", "T019", "T026"],
+      "description": "Release rollback restores an older protocol keyset epoch revocation counter or lease generation.",
+      "affectedAssets": ["pair_and_route_authority", "release_artifacts", "user_trust"],
+      "likelihood": "medium",
+      "impact": "critical",
+      "treatment": "forward_fix_android_signed_artifact_macos_rollback_and_never_decrease_monotonic_security_state",
+      "residualRisk": "bad_release_recovery_can_require_service_disablement_or_fresh_pairing",
+      "ownerRole": "release_owner",
+      "acceptanceStatus": "blocked_unassigned",
+      "requiredEvidence": [
+        {"evidenceKind": "100_percent_rollback_drill", "requiredByGate": "g6"},
+        {"evidenceKind": "security_state_non_regression_readback", "requiredByGate": "g6"}
+      ],
+      "releaseBlocking": true,
+      "blockerIds": ["distribution_account_and_key_owners", "quality_measurement_owners"]
+    }
+  ],
+  "g0ClosureContract": {
+    "schemaVersion": 1,
+    "sourceBindings": {
+      "blockers": "docs/v1/g0/decision-v1.json#/blockers",
+      "g0ExitChecks": "#/releaseChecklist/g0Exit",
+      "approvals": "#/approvals",
+      "measurementContracts": "docs/v1/g0/decision-v1.json#/qualityGates/measurementContracts"
+    },
+    "approvalReceiptProfile": {
+      "exactFields": [
+        "role",
+        "ownerIdentityRef",
+        "status",
+        "acceptedRevision",
+        "acceptedPublicationCommit",
+        "acceptedBlockerIds",
+        "acceptedAt",
+        "acceptanceEvidenceRefs"
+      ],
+      "statusDomain": ["blocked_unassigned", "accepted"],
+      "ownerIdentityRefPolicy": "nonempty_opaque_non_secret_accountable_identity_reference",
+      "acceptedRevisionPolicy": "lowercase_sha256_of_exact_published_checkpoint_bytes",
+      "acceptedPublicationCommitPolicy": "exact_lowercase_git_commit_object_id_containing_the_accepted_checkpoint",
+      "acceptedBlockerIdsPolicy": "ordered_unique_nonempty_subset_of_blocker_requirements_for_this_role_when_accepted",
+      "acceptedAtPolicy": "rfc3339_utc",
+      "acceptanceEvidenceRefsPolicy": "ordered_unique_nonempty_verified_evidence_catalog_ids_when_accepted",
+      "blockedUnassignedStatePolicy": "owner_identity_revision_publication_commit_and_timestamp_null_with_empty_blocker_and_evidence_lists",
+      "acceptedStatePolicy": "owner_identity_revision_publication_commit_timestamp_blocker_ids_and_evidence_refs_all_nonempty",
+      "publicationBindingPolicy": "accepted_revision_equals_verified_publication_checkpoint_sha256_and_accepted_publication_commit_equals_verified_publication_commit_object_id"
+    },
+    "evidenceCatalogRecordProfile": {
+      "exactFields": [
+        "evidenceId",
+        "evidenceKind",
+        "evidenceClass",
+        "subjectImplementationRevision",
+        "subjectCheckpointSha256",
+        "artifactPath",
+        "artifactSha256",
+        "verificationMethod",
+        "verifiedAt",
+        "verificationResult"
+      ],
+      "evidenceIdPattern": "^g0-evidence-[a-z0-9_-]{1,96}$",
+      "sha256Pattern": "^[0-9a-f]{64}$",
+      "artifactPathPolicy": "exact_repository_relative_regular_non_symlink_sanitized_receipt",
+      "verifiedAtPolicy": "rfc3339_utc",
+      "verificationResultDomain": ["verified"],
+      "sensitiveDataPolicy": "no_credentials_keys_tokens_personal_contacts_pairing_material_or_private_account_data"
+    },
+    "gateReceiptProfile": {
+      "exactFields": [
+        "checkId",
+        "authorizationRef",
+        "sourcePublicationCommit",
+        "commandProfileId",
+        "startedAt",
+        "completedAt",
+        "exitCode",
+        "result",
+        "sanitizedLogSha256"
+      ],
+      "checkIdPolicy": "exact_g0_exit_check_id",
+      "authorizationRefPattern": "^g0-authority-[a-z0-9][a-z0-9_-]{0,95}-v[1-9][0-9]*$",
+      "authorizationRefPolicy": "nonempty_versioned_authority_reference_authorizing_the_exact_command_profile_and_side_effects",
+      "sourcePublicationCommitPolicy": "exact_verified_publication_commit_object_id",
+      "commandProfileIdPattern": "^g0-command-profile-[a-z0-9][a-z0-9_-]{0,95}-v[1-9][0-9]*$",
+      "commandProfileIdPolicy": "nonempty_immutable_versioned_command_profile_id",
+      "timestampPolicy": "rfc3339_utc_started_at_not_after_completed_at",
+      "exitCodePolicy": "exact_integer_zero",
+      "resultDomain": ["passed"],
+      "sanitizedLogSha256Policy": "lowercase_sha256_of_exact_sanitized_log_bytes",
+      "sourceTreePolicy": "command_executes_from_the_exact_source_publication_commit"
+    },
+    "publicationReceiptProfile": {
+      "exactFields": [
+        "repositoryRef",
+        "commitObjectId",
+        "checkpointPath",
+        "checkpointSha256",
+        "remoteReadbackAt",
+        "remoteReadbackSha256",
+        "result"
+      ],
+      "repositoryRefPolicy": "nonempty_opaque_non_secret_repository_identity_equal_to_the_expected_publication_target",
+      "commitObjectIdPattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "checkpointPathPattern": "^docs/v1/g0/assurance-checkpoint-readback-v[1-9][0-9]*\\.json$",
+      "sha256Pattern": "^[0-9a-f]{64}$",
+      "remoteReadbackAtPolicy": "rfc3339_utc",
+      "resultDomain": ["verified"],
+      "commitContainmentPolicy": "resolved_commit_tree_checkpoint_path_exact_bytes_hash_to_checkpoint_sha256",
+      "remoteEqualityPolicy": "remote_readback_sha256_equals_checkpoint_sha256",
+      "expectedIdentityPolicy": "repository_commit_path_and_checkpoint_sha256_equal_the_explicitly_reviewed_publication_target"
+    },
+    "receiptActivationPolicy": {
+      "currentCandidateState": "all_receipts_absent_all_approvals_blocked_unassigned_and_no_receipt_validation_api_active",
+      "receiptDerivedTrustAnchorsAllowed": false,
+      "successorValidatorRequired": true,
+      "validationContextPolicy": "module_owned_factory_only_opaque_deep_immutable_and_built_only_from_canonical_contracts_independent_verifier_outputs_and_exact_artifact_bytes",
+      "successorActivationPrerequisites": [
+        "canonical_closure_digest_and_version_with_internally_derived_roles_role_blocker_scopes_blocker_checks_evidence_kinds_and_exact_check_set",
+        "one_reviewed_publication_target_with_actual_commit_tree_checkpoint_bytes_and_independently_acquired_remote_checkpoint_bytes_all_hash_equal",
+        "verified_evidence_catalog_records_with_authenticated_provenance_subject_revision_checkpoint_binding_safe_paths_actual_artifact_byte_hashes_result_time_and_blocker_relevance",
+        "one_nonambiguous_versioned_authority_binding_per_check_with_exact_command_argv_environment_cwd_digest_allowed_side_effects_source_commit_validity_revocation_and_provenance",
+        "trusted_runner_attestation_per_gate_binding_source_commit_exact_command_digest_ordered_times_exit_result_and_actual_sanitized_log_bytes_hash",
+        "trusted_owner_identity_or_key_and_authenticated_acceptance_covering_every_approval_receipt_field",
+        "exact_final_coverage_of_every_required_role_blocker_pair_check_and_evidence_kind_with_duplicate_ambiguity_and_partial_bundle_rejection"
+      ],
+      "partialBundleAcceptanceAllowed": false,
+      "receiptActivationBeforePrerequisitesAllowed": false
+    },
+    "derivedEvidenceKinds": {
+      "owner_acceptance": "all_required_owner_roles_have_accepted_the_exact_checkpoint_publication_and_scoped_blocker_ids",
+      "quality_measurement_contract_owner_approvals": "release_quality_owner_and_all_four_exact_measurement_contract_owner_roles_have_accepted_quality_measurement_owners"
+    },
+    "blockerRequirements": [
+      {
+        "blockerId": "g0_assurance_artifacts_and_baseline_gate",
+        "requiredCheckIds": [
+          "g0_assurance_packet",
+          "full_no_device_aggregate",
+          "android_and_macos_release_compilation"
+        ],
+        "requiredOwnerRoles": ["repository_quality_owner", "release_quality_owner"],
+        "requiredEvidenceKinds": [
+          "canonical_assurance_hash",
+          "source_hash_readback",
+          "owner_acceptance",
+          "separately_authorized_full_gate_result",
+          "android_release_compile_result",
+          "macos_release_compile_result"
+        ]
+      },
+      {
+        "blockerId": "roadmap_and_g0_checkpoint_publication",
+        "requiredCheckIds": ["roadmap_and_g0_checkpoint_publication"],
+        "requiredOwnerRoles": ["repository_owner"],
+        "requiredEvidenceKinds": ["reviewed_commit_scope", "published_checkpoint"]
+      },
+      {
+        "blockerId": "production_application_namespaces",
+        "requiredCheckIds": ["production_namespaces_distribution_and_key_custody"],
+        "requiredOwnerRoles": ["product_and_distribution_owner"],
+        "requiredEvidenceKinds": ["owned_application_ids"]
+      },
+      {
+        "blockerId": "distribution_account_and_key_owners",
+        "requiredCheckIds": ["production_namespaces_distribution_and_key_custody"],
+        "requiredOwnerRoles": ["release_owner"],
+        "requiredEvidenceKinds": ["distribution_accounts", "key_custody_runbook"]
+      },
+      {
+        "blockerId": "provider_compatibility_baseline",
+        "requiredCheckIds": ["provider_compatibility_baseline"],
+        "requiredOwnerRoles": ["runtime_provider_compatibility_owner"],
+        "requiredEvidenceKinds": ["approved_minimum_current_previous_matrix"]
+      },
+      {
+        "blockerId": "service_domain_dns_and_webpki_owners",
+        "requiredCheckIds": ["service_identity_and_signer_custody"],
+        "requiredOwnerRoles": ["service_identity_owner"],
+        "requiredEvidenceKinds": ["domain_dns_webpki_owners"]
+      },
+      {
+        "blockerId": "service_root_and_online_signer_owners",
+        "requiredCheckIds": ["service_identity_and_signer_custody"],
+        "requiredOwnerRoles": ["service_security_owner"],
+        "requiredEvidenceKinds": ["root_signer_rotation_and_revocation_owners"]
+      },
+      {
+        "blockerId": "privacy_incident_and_retention_owners",
+        "requiredCheckIds": ["privacy_incident_quality_and_operations_ownership"],
+        "requiredOwnerRoles": ["privacy_and_incident_owner"],
+        "requiredEvidenceKinds": ["privacy_incident_and_retention_owner_approval"]
+      },
+      {
+        "blockerId": "quality_measurement_owners",
+        "requiredCheckIds": ["privacy_incident_quality_and_operations_ownership"],
+        "requiredOwnerRoles": [
+          "release_quality_owner",
+          "release_network_qa_owner",
+          "release_performance_qa_owner",
+          "service_operations_and_abuse_owner",
+          "product_security_owner"
+        ],
+        "requiredEvidenceKinds": ["quality_measurement_contract_owner_approvals"]
+      },
+      {
+        "blockerId": "relay_region_capacity_and_cost_budget",
+        "requiredCheckIds": ["relay_region_capacity_and_cost"],
+        "requiredOwnerRoles": ["service_operations_owner"],
+        "requiredEvidenceKinds": ["approved_region_peak_capacity_and_cost_ceiling"]
+      }
+    ],
+    "derivationRules": {
+      "blockerClosed": "all_required_evidence_kinds_verified_and_all_required_owner_roles_accepted_exact_revision_publication_and_blocker_scope",
+      "checkPassed": "all_blockers_referencing_check_id_closed_and_all_existing_check_required_evidence_satisfied",
+      "allOwnersNamed": "every_required_owner_role_has_one_nonempty_unique_owner_identity_ref",
+      "allApprovalsAccepted": "every_required_owner_role_has_one_accepted_receipt",
+      "remainingBlockerIds": "decision_blocker_order_filtered_to_not_closed",
+      "g0AssuranceBlockerClosed": "g0_assurance_artifacts_and_baseline_gate_is_closed",
+      "g0ExitComplete": "remaining_blocker_ids_empty_and_all_nine_g0_exit_checks_passed",
+      "g1aMayStartNow": "always_false_until_separate_versioned_g1a_authority_record"
+    }
+  },
+  "observabilitySchema": {
+    "unknownFieldPolicy": "reject_event",
+    "serviceEventAllowedFields": [
+      "schema_version",
+      "event_kind",
+      "reason_code",
+      "outcome",
+      "route_class",
+      "candidate_class",
+      "address_family",
+      "region",
+      "protocol_version",
+      "service_config_version",
+      "keyset_version",
+      "latency_bucket",
+      "attempt_count",
+      "success_count",
+      "rejection_count",
+      "byte_count",
+      "packet_count",
+      "occupancy_count"
+    ],
+    "releaseRecordAllowedFields": [
+      "record_kind",
+      "campaign_id",
+      "evidence_sha256",
+      "evidence_ref",
+      "app_build",
+      "app_version",
+      "platform",
+      "device_class",
+      "region",
+      "measurement_contract",
+      "metric_name",
+      "metric_value",
+      "threshold_operator",
+      "threshold_value",
+      "sample_count",
+      "successful_sample_count",
+      "window_hours",
+      "provider_adapter",
+      "network_cell",
+      "network_variant",
+      "selected_route",
+      "direct_outcome",
+      "fallback_outcome",
+      "variant_outcome",
+      "latency_milliseconds",
+      "memory_mib",
+      "battery_percent_per_hour",
+      "revocation_closure_milliseconds",
+      "peak_forecast_id",
+      "projected_peak_units",
+      "offered_load_units",
+      "unbounded_growth_event_count",
+      "admission_policy_weakening_event_count",
+      "false_rejection_count",
+      "gate_result"
+    ],
+    "fieldDefinitions": {
+      "schema_version": {"type": "integer", "enum": [1]},
+      "event_kind": {"type": "string", "enum": ["route_attempt_outcome", "authenticated_session_outcome", "p2p_direct_outcome", "fallback_transition", "revocation_closure", "service_capacity", "security_hard_stop", "release_gate_result", "incident_state_transition"]},
+      "reason_code": {"type": "string", "enum": ["none", "policy_rejected", "authentication_failed", "route_unavailable", "timeout", "consent_lost", "revoked", "capacity_rejected", "protocol_rejected", "security_hard_stop", "incident_contained", "incident_recovered", "gate_failed", "gate_passed"]},
+      "outcome": {"type": "string", "enum": ["success", "failure", "rejected", "timeout", "cancelled", "unavailable", "opened", "contained", "recovered"]},
+      "route_class": {"type": "string", "enum": ["local_direct", "p2p_direct", "turn", "sealed_relay", "none"]},
+      "candidate_class": {"type": "string", "enum": ["host", "server_reflexive", "peer_reflexive", "relay", "none"]},
+      "address_family": {"type": "string", "enum": ["ipv4", "ipv6", "nat64", "none"]},
+      "region": {"type": "string", "registry": "approved_release_region_registry", "maximumBytes": 32, "activationGate": "relay_region_capacity_and_cost_budget"},
+      "protocol_version": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+      "service_config_version": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+      "keyset_version": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+      "latency_bucket": {"type": "string", "enum": ["lt_100ms", "100_to_499ms", "500_to_1499ms", "1500_to_4999ms", "5000_to_9999ms", "gte_10000ms", "not_applicable"]},
+      "attempt_count": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+      "success_count": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+      "rejection_count": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+      "byte_count": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+      "packet_count": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+      "occupancy_count": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+      "record_kind": {"type": "string", "enum": ["network_measurement_result", "endpoint_resource_and_stability_result", "abuse_and_capacity_result", "security_hard_stop_result", "rollback_drill_result"]},
+      "campaign_id": {"type": "string", "pattern": "^rc-[0-9]{8}-[a-z0-9]{8}$", "maximumBytes": 20},
+      "evidence_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "maximumBytes": 64},
+      "evidence_ref": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$", "maximumBytes": 71},
+      "app_build": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+      "app_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$", "maximumBytes": 32},
+      "platform": {"type": "string", "enum": ["android", "macos", "service"]},
+      "device_class": {"type": "string", "enum": ["android_emulator_api26_arm64", "android_emulator_api30_arm64", "android_emulator_api33_arm64", "android_emulator_api36_arm64", "android_physical_api26_arm64_phone", "android_physical_pixel_current_supported_release", "android_physical_galaxy_s_android16_api36", "macos14_arm64", "macos15_arm64", "macos26_arm64", "service_control_plane"]},
+      "measurement_contract": {"type": "string", "enum": ["network_reliability_and_latency", "endpoint_resource_and_stability", "abuse_and_capacity", "security_hard_stops"]},
+      "metric_name": {"type": "string", "enum": ["minimum_completed_network_sessions", "attempts_per_required_topology_cell", "attempts_per_required_variant", "per_cell_observed_authenticated_success", "per_cell_wilson95_lower_bound", "p2p_required_cell_observed_direct_success", "p2p_required_cell_wilson95_lower_bound", "traversal_setup_p50_milliseconds", "traversal_setup_p95_milliseconds", "traversal_setup_p99_milliseconds", "full_cold_setup_p95_milliseconds", "full_cold_setup_p99_milliseconds", "authenticated_reconnect_p95_milliseconds", "authenticated_handoff_p95_milliseconds", "revocation_closure_p95_milliseconds", "revocation_closure_p99_milliseconds", "revocation_closure_absolute_milliseconds", "incremental_memory_p95_mib", "android_idle_paired_battery_percent_per_hour", "android_active_session_battery_percent_per_hour", "closed_beta_crash_free_session_rate", "closed_beta_anr_free_session_rate", "rc_soak_hours", "false_abuse_rejection_rate", "capacity_load_multiplier", "unbounded_growth_events", "admission_policy_weakening_events", "prohibited_destination_attempts", "plaintext_downgrades", "false_identity_acceptance", "duplicate_non_idempotent_requests", "protected_data_leaks", "rollback_failures", "security_state_rollbacks", "traffic_after_consent_or_revocation", "unauthorized_service_acceptance", "unauthorized_release_artifact_acceptance", "release_artifact_provenance_failures", "route_authorization_bypasses", "revocation_closure_deadline_misses", "rollback_success_rate"]},
+      "metric_value": {"type": "number", "minimum": 0, "maximum": 1000000000000},
+      "threshold_operator": {"type": "string", "enum": ["minimum", "maximum", "equal"]},
+      "threshold_value": {"type": "number", "minimum": 0, "maximum": 1000000000000},
+      "sample_count": {"type": "integer", "minimum": 1, "maximum": 100000},
+      "successful_sample_count": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+      "window_hours": {"type": "number", "minimum": 0, "maximum": 8760},
+      "provider_adapter": {"type": "string", "enum": ["ollama", "lm_studio", "not_applicable"]},
+      "network_cell": {"type": "string", "enum": ["same_lan_ipv4_local_direct", "unrelated_native_ipv6_p2p", "unrelated_home_nat_ipv4", "unrelated_home_nat_to_cgnat", "unrelated_cgnat_to_cgnat", "unrelated_nat64_to_ipv4", "unrelated_udp_blocked_tcp443", "forced_turn_relay", "forced_sealed_emergency_relay", "bidirectional_wifi_cellular_authenticated_handoff", "vpn_path_change_authenticated_recovery", "suspend_resume_authenticated_reconnect"]},
+      "network_variant": {"type": "string", "enum": ["none", "symmetric_nat_pair", "consent_loss_and_recovery", "deliberate_p2p_failure", "required_turn_outage", "required_sealed_relay_outage", "regional_relay_outage"]},
+      "selected_route": {"type": "string", "enum": ["local_direct", "p2p_direct", "turn_relay", "turn_tls_tcp_relay", "sealed_relay", "none"]},
+      "direct_outcome": {"type": "string", "enum": ["success", "failure", "not_attempted"]},
+      "fallback_outcome": {"type": "string", "enum": ["success", "failure", "not_attempted"]},
+      "variant_outcome": {"type": "string", "enum": ["not_applicable", "supported_route_success_and_direct_p2p_result_reported", "stale_path_closed_before_authenticated_recovery", "authenticated_fallback_without_plaintext_or_identity_downgrade", "sealed_fallback_or_fail_closed_then_authenticated_recovery", "fail_closed_without_weaker_route_then_authenticated_recovery", "single_region_v1_fails_closed_then_recovers_after_service_restore"]},
+      "latency_milliseconds": {"type": "integer", "minimum": 0, "maximum": 120000},
+      "memory_mib": {"type": "number", "minimum": 0, "maximum": 65536},
+      "battery_percent_per_hour": {"type": "number", "minimum": 0, "maximum": 100},
+      "revocation_closure_milliseconds": {"type": "integer", "minimum": 0, "maximum": 30000},
+      "peak_forecast_id": {"type": "string", "pattern": "^peak-[0-9]{8}-[a-z0-9]{8}$", "maximumBytes": 22},
+      "projected_peak_units": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+      "offered_load_units": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+      "unbounded_growth_event_count": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+      "admission_policy_weakening_event_count": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+      "false_rejection_count": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+      "gate_result": {"type": "string", "enum": ["passed", "failed"]}
+    },
+    "supportedPlatformRows": {
+      "android": ["android_emulator_api26_arm64", "android_emulator_api30_arm64", "android_emulator_api33_arm64", "android_emulator_api36_arm64", "android_physical_api26_arm64_phone", "android_physical_pixel_current_supported_release", "android_physical_galaxy_s_android16_api36"],
+      "macos": ["macos14_arm64", "macos15_arm64", "macos26_arm64"],
+      "service": ["service_control_plane"]
+    },
+    "qualityTargetBindings": [
+      {"metricName": "minimum_completed_network_sessions", "measurementContract": "network_reliability_and_latency", "decisionPath": "qualityGates.minimumCompletedNetworkSessions", "thresholdOperator": "minimum", "thresholdValue": 1200},
+      {"metricName": "attempts_per_required_topology_cell", "measurementContract": "network_reliability_and_latency", "decisionPath": "qualityGates.minimumAttemptsPerRequiredTopologyCell", "thresholdOperator": "minimum", "thresholdValue": 100},
+      {"metricName": "attempts_per_required_variant", "measurementContract": "network_reliability_and_latency", "decisionPath": "qualityGates.minimumAttemptsPerRequiredVariant", "thresholdOperator": "minimum", "thresholdValue": 30},
+      {"metricName": "per_cell_observed_authenticated_success", "measurementContract": "network_reliability_and_latency", "decisionPath": "qualityGates.perCellObservedAuthenticatedSuccessMinimum", "thresholdOperator": "minimum", "thresholdValue": 0.99},
+      {"metricName": "per_cell_wilson95_lower_bound", "measurementContract": "network_reliability_and_latency", "decisionPath": "qualityGates.perCellWilson95LowerBoundMinimum", "thresholdOperator": "minimum", "thresholdValue": 0.95},
+      {"metricName": "p2p_required_cell_observed_direct_success", "measurementContract": "network_reliability_and_latency", "decisionPath": "qualityGates.p2pRequiredCellObservedDirectSuccessMinimum", "thresholdOperator": "minimum", "thresholdValue": 0.95},
+      {"metricName": "p2p_required_cell_wilson95_lower_bound", "measurementContract": "network_reliability_and_latency", "decisionPath": "qualityGates.p2pRequiredCellWilson95LowerBoundMinimum", "thresholdOperator": "minimum", "thresholdValue": 0.9},
+      {"metricName": "traversal_setup_p50_milliseconds", "measurementContract": "network_reliability_and_latency", "decisionPath": "qualityGates.traversalSetupMilliseconds.p50Maximum", "thresholdOperator": "maximum", "thresholdValue": 1500},
+      {"metricName": "traversal_setup_p95_milliseconds", "measurementContract": "network_reliability_and_latency", "decisionPath": "qualityGates.traversalSetupMilliseconds.p95Maximum", "thresholdOperator": "maximum", "thresholdValue": 5000},
+      {"metricName": "traversal_setup_p99_milliseconds", "measurementContract": "network_reliability_and_latency", "decisionPath": "qualityGates.traversalSetupMilliseconds.p99Maximum", "thresholdOperator": "maximum", "thresholdValue": 10000},
+      {"metricName": "full_cold_setup_p95_milliseconds", "measurementContract": "network_reliability_and_latency", "decisionPath": "qualityGates.fullColdSetupMilliseconds.p95Maximum", "thresholdOperator": "maximum", "thresholdValue": 8000},
+      {"metricName": "full_cold_setup_p99_milliseconds", "measurementContract": "network_reliability_and_latency", "decisionPath": "qualityGates.fullColdSetupMilliseconds.p99Maximum", "thresholdOperator": "maximum", "thresholdValue": 15000},
+      {"metricName": "authenticated_reconnect_p95_milliseconds", "measurementContract": "network_reliability_and_latency", "decisionPath": "qualityGates.authenticatedReconnectP95Milliseconds", "thresholdOperator": "maximum", "thresholdValue": 5000},
+      {"metricName": "authenticated_handoff_p95_milliseconds", "measurementContract": "network_reliability_and_latency", "decisionPath": "qualityGates.authenticatedHandoffP95Milliseconds", "thresholdOperator": "maximum", "thresholdValue": 10000},
+      {"metricName": "revocation_closure_p95_milliseconds", "measurementContract": "network_reliability_and_latency", "decisionPath": "qualityGates.revocationClosureMilliseconds.p95Maximum", "thresholdOperator": "maximum", "thresholdValue": 10000},
+      {"metricName": "revocation_closure_p99_milliseconds", "measurementContract": "network_reliability_and_latency", "decisionPath": "qualityGates.revocationClosureMilliseconds.p99Maximum", "thresholdOperator": "maximum", "thresholdValue": 30000},
+      {"metricName": "revocation_closure_absolute_milliseconds", "measurementContract": "network_reliability_and_latency", "decisionPath": "qualityGates.revocationClosureMilliseconds.absoluteMaximum", "thresholdOperator": "maximum", "thresholdValue": 30000},
+      {"metricName": "incremental_memory_p95_mib", "measurementContract": "endpoint_resource_and_stability", "decisionPath": "qualityGates.incrementalMemoryP95MiB[platform]", "thresholdOperator": "maximum", "thresholdValue": 24},
+      {"metricName": "android_idle_paired_battery_percent_per_hour", "measurementContract": "endpoint_resource_and_stability", "decisionPath": "qualityGates.androidBatteryPercentPerHourMaximum.idlePaired", "thresholdOperator": "maximum", "thresholdValue": 0.25},
+      {"metricName": "android_active_session_battery_percent_per_hour", "measurementContract": "endpoint_resource_and_stability", "decisionPath": "qualityGates.androidBatteryPercentPerHourMaximum.activeSession", "thresholdOperator": "maximum", "thresholdValue": 2.0},
+      {"metricName": "closed_beta_crash_free_session_rate", "measurementContract": "endpoint_resource_and_stability", "decisionPath": "qualityGates.closedBetaCrashFreeSessionMinimum", "thresholdOperator": "minimum", "thresholdValue": 0.995},
+      {"metricName": "closed_beta_anr_free_session_rate", "measurementContract": "endpoint_resource_and_stability", "decisionPath": "qualityGates.closedBetaAnrFreeSessionMinimum", "thresholdOperator": "minimum", "thresholdValue": 0.995},
+      {"metricName": "rc_soak_hours", "measurementContract": "endpoint_resource_and_stability", "decisionPath": "qualityGates.rcSoakHoursMinimum", "thresholdOperator": "minimum", "thresholdValue": 24},
+      {"metricName": "false_abuse_rejection_rate", "measurementContract": "abuse_and_capacity", "decisionPath": "qualityGates.falseAbuseRejectionMaximum", "thresholdOperator": "maximum", "thresholdValue": 0.001},
+      {"metricName": "capacity_load_multiplier", "measurementContract": "abuse_and_capacity", "decisionPath": "qualityGates.capacityRule.twoTimesApprovedProjectedPeak", "thresholdOperator": "minimum", "thresholdValue": 2.0},
+      {"metricName": "unbounded_growth_events", "measurementContract": "abuse_and_capacity", "decisionPath": "qualityGates.capacityRule.withoutUnboundedGrowth", "thresholdOperator": "equal", "thresholdValue": 0},
+      {"metricName": "admission_policy_weakening_events", "measurementContract": "abuse_and_capacity", "decisionPath": "qualityGates.capacityRule.withoutWeakerAdmission", "thresholdOperator": "equal", "thresholdValue": 0},
+      {"metricName": "prohibited_destination_attempts", "measurementContract": "security_hard_stops", "decisionPath": "qualityGates.securityHardStops.prohibitedDestinationAttempts", "thresholdOperator": "equal", "thresholdValue": 0},
+      {"metricName": "plaintext_downgrades", "measurementContract": "security_hard_stops", "decisionPath": "qualityGates.securityHardStops.plaintextDowngrades", "thresholdOperator": "equal", "thresholdValue": 0},
+      {"metricName": "false_identity_acceptance", "measurementContract": "security_hard_stops", "decisionPath": "qualityGates.securityHardStops.falseIdentityAcceptance", "thresholdOperator": "equal", "thresholdValue": 0},
+      {"metricName": "duplicate_non_idempotent_requests", "measurementContract": "security_hard_stops", "decisionPath": "qualityGates.securityHardStops.duplicateNonIdempotentRequests", "thresholdOperator": "equal", "thresholdValue": 0},
+      {"metricName": "protected_data_leaks", "measurementContract": "security_hard_stops", "decisionPath": "qualityGates.securityHardStops.protectedDataLeaks", "thresholdOperator": "equal", "thresholdValue": 0},
+      {"metricName": "rollback_failures", "measurementContract": "security_hard_stops", "decisionPath": "qualityGates.securityHardStops.rollbackFailures", "thresholdOperator": "equal", "thresholdValue": 0},
+      {"metricName": "security_state_rollbacks", "measurementContract": "security_hard_stops", "decisionPath": "qualityGates.securityHardStops.securityStateRollbacks", "thresholdOperator": "equal", "thresholdValue": 0},
+      {"metricName": "traffic_after_consent_or_revocation", "measurementContract": "security_hard_stops", "decisionPath": "qualityGates.securityHardStops.trafficAfterConsentOrRevocation", "thresholdOperator": "equal", "thresholdValue": 0},
+      {"metricName": "unauthorized_service_acceptance", "measurementContract": "security_hard_stops", "decisionPath": "qualityGates.securityHardStops.unauthorizedServiceAcceptance", "thresholdOperator": "equal", "thresholdValue": 0},
+      {"metricName": "unauthorized_release_artifact_acceptance", "measurementContract": "security_hard_stops", "decisionPath": "qualityGates.securityHardStops.unauthorizedReleaseArtifactAcceptance", "thresholdOperator": "equal", "thresholdValue": 0},
+      {"metricName": "release_artifact_provenance_failures", "measurementContract": "security_hard_stops", "decisionPath": "qualityGates.securityHardStops.releaseArtifactProvenanceFailures", "thresholdOperator": "equal", "thresholdValue": 0},
+      {"metricName": "route_authorization_bypasses", "measurementContract": "security_hard_stops", "decisionPath": "qualityGates.securityHardStops.routeAuthorizationBypasses", "thresholdOperator": "equal", "thresholdValue": 0},
+      {"metricName": "revocation_closure_deadline_misses", "measurementContract": "security_hard_stops", "decisionPath": "qualityGates.securityHardStops.revocationClosureDeadlineMisses", "thresholdOperator": "equal", "thresholdValue": 0},
+      {"metricName": "rollback_success_rate", "measurementContract": "security_hard_stops", "decisionPath": "qualityGates.rollbackSuccessMinimum", "thresholdOperator": "minimum", "thresholdValue": 1.0}
+    ],
+    "metricEvidenceProfiles": [
+      {"profileId": "campaign_session_count", "metricNames": ["minimum_completed_network_sessions"], "requiredFields": [], "minimumSampleCount": 1200, "applicablePlatforms": ["service"], "campaignCoverage": "once_per_campaign"},
+      {"profileId": "topology_attempt_count", "metricNames": ["attempts_per_required_topology_cell"], "requiredFields": ["network_cell", "network_variant", "provider_adapter", "selected_route"], "minimumSampleCount": 100, "applicablePlatforms": ["android", "macos"], "campaignCoverage": "every_network_cell_provider"},
+      {"profileId": "variant_attempt_count", "metricNames": ["attempts_per_required_variant"], "requiredFields": ["network_cell", "network_variant", "provider_adapter", "selected_route", "direct_outcome", "fallback_outcome", "variant_outcome"], "minimumSampleCount": 30, "applicablePlatforms": ["android", "macos"], "campaignCoverage": "every_required_variant_cell_provider"},
+      {"profileId": "cell_authenticated_rates", "metricNames": ["per_cell_observed_authenticated_success", "per_cell_wilson95_lower_bound"], "requiredFields": ["network_cell", "network_variant", "provider_adapter", "selected_route", "successful_sample_count"], "minimumSampleCount": 100, "applicablePlatforms": ["android", "macos"], "campaignCoverage": "every_network_cell_provider"},
+      {"profileId": "p2p_direct_rates", "metricNames": ["p2p_required_cell_observed_direct_success", "p2p_required_cell_wilson95_lower_bound"], "requiredFields": ["network_cell", "network_variant", "provider_adapter", "selected_route", "successful_sample_count"], "minimumSampleCount": 100, "applicablePlatforms": ["android", "macos"], "campaignCoverage": "every_p2p_required_cell_provider"},
+      {"profileId": "traversal_latency", "metricNames": ["traversal_setup_p50_milliseconds", "traversal_setup_p95_milliseconds", "traversal_setup_p99_milliseconds"], "requiredFields": ["network_cell", "network_variant", "provider_adapter", "selected_route", "latency_milliseconds"], "minimumSampleCount": 100, "applicablePlatforms": ["android", "macos"], "campaignCoverage": "every_p2p_attempt_cell_provider"},
+      {"profileId": "cold_and_reconnect_latency", "metricNames": ["full_cold_setup_p95_milliseconds", "full_cold_setup_p99_milliseconds", "authenticated_reconnect_p95_milliseconds"], "requiredFields": ["network_cell", "network_variant", "provider_adapter", "selected_route", "latency_milliseconds"], "minimumSampleCount": 100, "applicablePlatforms": ["android", "macos"], "campaignCoverage": "every_network_cell_provider"},
+      {"profileId": "handoff_latency", "metricNames": ["authenticated_handoff_p95_milliseconds"], "requiredFields": ["network_cell", "network_variant", "provider_adapter", "selected_route", "latency_milliseconds"], "minimumSampleCount": 100, "applicablePlatforms": ["android", "macos"], "campaignCoverage": "handoff_cell_provider"},
+      {"profileId": "revocation_latency", "metricNames": ["revocation_closure_p95_milliseconds", "revocation_closure_p99_milliseconds", "revocation_closure_absolute_milliseconds"], "requiredFields": ["network_cell", "network_variant", "provider_adapter", "selected_route", "revocation_closure_milliseconds"], "minimumSampleCount": 30, "applicablePlatforms": ["android", "macos"], "campaignCoverage": "every_app_platform_row"},
+      {"profileId": "endpoint_memory", "metricNames": ["incremental_memory_p95_mib"], "requiredFields": ["memory_mib"], "minimumSampleCount": 1, "applicablePlatforms": ["android", "macos"], "campaignCoverage": "every_app_platform_row"},
+      {"profileId": "android_battery", "metricNames": ["android_idle_paired_battery_percent_per_hour", "android_active_session_battery_percent_per_hour"], "requiredFields": ["battery_percent_per_hour", "window_hours"], "minimumSampleCount": 1, "applicablePlatforms": ["android"], "campaignCoverage": "every_android_platform_row"},
+      {"profileId": "crash_stability", "metricNames": ["closed_beta_crash_free_session_rate"], "requiredFields": ["successful_sample_count", "window_hours"], "minimumSampleCount": 1, "applicablePlatforms": ["android", "macos"], "campaignCoverage": "every_app_platform_row"},
+      {"profileId": "anr_stability", "metricNames": ["closed_beta_anr_free_session_rate"], "requiredFields": ["successful_sample_count", "window_hours"], "minimumSampleCount": 1, "applicablePlatforms": ["android"], "campaignCoverage": "every_android_platform_row"},
+      {"profileId": "rc_soak", "metricNames": ["rc_soak_hours"], "requiredFields": ["window_hours"], "minimumSampleCount": 1, "applicablePlatforms": ["android", "macos"], "campaignCoverage": "every_app_platform_row"},
+      {"profileId": "false_abuse_rejection", "metricNames": ["false_abuse_rejection_rate"], "requiredFields": ["region", "false_rejection_count"], "minimumSampleCount": 1, "applicablePlatforms": ["service"], "campaignCoverage": "every_service_region"},
+      {"profileId": "capacity_integrity", "metricNames": ["capacity_load_multiplier", "unbounded_growth_events", "admission_policy_weakening_events"], "requiredFields": ["region", "peak_forecast_id", "projected_peak_units", "offered_load_units", "unbounded_growth_event_count", "admission_policy_weakening_event_count"], "minimumSampleCount": 1, "applicablePlatforms": ["service"], "campaignCoverage": "every_service_region"},
+      {"profileId": "security_hard_stops", "metricNames": ["prohibited_destination_attempts", "plaintext_downgrades", "false_identity_acceptance", "duplicate_non_idempotent_requests", "protected_data_leaks", "rollback_failures", "security_state_rollbacks", "traffic_after_consent_or_revocation", "unauthorized_service_acceptance", "unauthorized_release_artifact_acceptance", "release_artifact_provenance_failures", "route_authorization_bypasses", "revocation_closure_deadline_misses"], "requiredFields": [], "minimumSampleCount": 1, "applicablePlatforms": ["android", "macos", "service"], "campaignCoverage": "every_app_and_service_platform"},
+      {"profileId": "rollback_success", "metricNames": ["rollback_success_rate"], "requiredFields": ["selected_route", "successful_sample_count"], "minimumSampleCount": 1, "applicablePlatforms": ["android", "macos"], "campaignCoverage": "every_app_platform_row"}
+    ],
+    "evidenceEnvelopeSchema": {
+      "documentType": "aetherlink.v1-release-metric-evidence",
+      "schemaVersion": 1,
+      "evidenceKind": "signed_rc_metric_samples",
+      "signatureAlgorithm": "ed25519",
+      "signatureEncoding": "base64url_no_padding_64_bytes",
+      "signatureCanonicalityRule": "strict_decode_exactly_64_bytes_reencode_without_padding_must_equal_input",
+      "signerIdPattern": "^release-evidence-[a-z0-9_-]{1,64}$",
+      "signerIdRegistryRule": "exact_case_sensitive_registry_key_match_after_pattern_validation",
+      "signerRegistry": "approved_release_evidence_signer_registry",
+      "activationGate": "quality_measurement_owners",
+      "signatureCanonicalization": {
+        "profile": "aetherlink-release-evidence-canonical-json-v1",
+        "characterEncoding": "utf-8",
+        "signatureInput": "payload_object_only",
+        "objectKeyOrder": "ascending_unicode_scalar_value",
+        "whitespace": "none",
+        "stringEscaping": "json_minimal_control_escapes_forward_slash_unescaped_non_ascii_utf8",
+        "numberGrammar": "nonnegative_base10_no_leading_zero_no_exponent_max_16_integer_digits_max_6_fractional_digits_canonical_trailing_zeros_removed_negative_zero_rejected",
+        "literalEncoding": "lowercase_true_false_null"
+      },
+      "resourceBounds": {
+        "maximumEvidenceBytes": 4194304,
+        "maximumSampleCount": 100000,
+        "maximumIntegerDigits": 16,
+        "maximumFractionalDigits": 6
+      },
+      "canonicalizationTestVector": {
+        "inputJson": "{\"z\":[2.0,0.001,null,\"é\"],\"a\":\"line\\nslash/\"}",
+        "canonicalUtf8": "{\"a\":\"line\\nslash/\",\"z\":[2,0.001,null,\"é\"]}",
+        "sha256": "0a5db88c2939cb0b17f82c252171f5793b8d6bf1f08c154e5f28bd8be3a76b79"
+      },
+      "envelopeExactFields": ["payload", "signer_id", "signature_algorithm", "signature"],
+      "payloadExactFields": ["schema_version", "evidence_kind", "campaign_id", "app_build", "app_version", "record_kind", "measurement_contract", "metric_name", "threshold_operator", "threshold_value", "platform", "device_class", "context", "samples", "variant_observations"],
+      "contextExactFields": ["network_cell", "network_variant", "provider_adapter", "selected_route", "direct_outcome", "fallback_outcome", "variant_outcome", "region", "window_hours", "peak_forecast_id", "projected_peak_units", "offered_load_units", "unbounded_growth_event_count", "admission_policy_weakening_event_count", "false_rejection_count"],
+      "variantObservationExactFields": ["attempt_index", "affected_scope", "affected_region", "direct_outcome", "fallback_outcome", "outage_connection_outcome", "outage_authentication_outcome", "outage_route", "recovery_route", "recovery_connection_outcome", "recovery_authentication_outcome", "condition_activated_offset_milliseconds", "condition_result_offset_milliseconds", "service_restored_offset_milliseconds", "recovery_authenticated_offset_milliseconds", "plaintext_downgrade_event_count", "identity_downgrade_event_count", "weaker_route_event_count", "post_consent_loss_traffic_event_count"],
+      "variantObservationIndexing": {
+        "base": 1,
+        "arrayOrder": "attempt_index_strictly_increases_by_one",
+        "coverage": "exactly_1_through_sample_count"
+      },
+      "variantObservationTiming": {
+        "type": "json_integer",
+        "unit": "milliseconds_from_variant_attempt_start",
+        "minimumInclusive": 0,
+        "maximumInclusive": 120000,
+        "conditionOrder": "condition_activated_before_condition_result",
+        "recoveryOrder": "condition_result_before_service_restored_before_authenticated_recovery"
+      },
+      "variantAggregateRule": "one_homogeneous_outcome_route_cohort_per_record_all_observation_direct_fallback_and_aggregate_route_source_values_equal_record_fields_mixed_valid_combinations_require_separate_records",
+      "variantObservationRule": "one_signed_exact_observation_per_sample_one_based_index_and_bounded_ordered_offsets_nullable_nonrecovery_fields_all_downgrade_and_post_consent_counts_zero_homogeneous_record_aggregate",
+      "sampleRule": "bounded_finite_nonnegative_canonical_numeric_array_length_equals_sample_count_metric_recomputed_from_samples",
+      "unknownFieldPolicy": "reject_envelope"
+    },
+    "variantOutcomeRules": [
+      {
+        "variantId": "symmetric_nat_pair",
+        "requiredOutcome": "supported_route_success_and_direct_p2p_result_reported",
+        "affectedScope": "symmetric_nat",
+        "regionBinding": "not_applicable",
+        "requiresRestoreAndAuthenticatedRecovery": false,
+        "aggregateRouteSource": "outage_route",
+        "allowedCombinations": [
+          {"directOutcome": "success", "fallbackOutcome": "not_attempted", "selectedRoutes": ["p2p_direct"]},
+          {"directOutcome": "failure", "fallbackOutcome": "success", "selectedRoutes": ["turn_relay", "turn_tls_tcp_relay", "sealed_relay"]}
+        ],
+        "outageObservationCombinations": [
+          {"connectionOutcome": "success", "authenticationOutcome": "success", "allowedRoutes": ["p2p_direct", "turn_relay", "turn_tls_tcp_relay", "sealed_relay"]}
+        ],
+        "allowedRecoveryRoutes": ["none"]
+      },
+      {
+        "variantId": "consent_loss_and_recovery",
+        "requiredOutcome": "stale_path_closed_before_authenticated_recovery",
+        "affectedScope": "consent_loss",
+        "regionBinding": "not_applicable",
+        "requiresRestoreAndAuthenticatedRecovery": true,
+        "aggregateRouteSource": "recovery_route",
+        "allowedCombinations": [
+          {"directOutcome": "failure", "fallbackOutcome": "success", "selectedRoutes": ["p2p_direct", "turn_relay", "turn_tls_tcp_relay", "sealed_relay"]},
+          {"directOutcome": "not_attempted", "fallbackOutcome": "success", "selectedRoutes": ["p2p_direct", "turn_relay", "turn_tls_tcp_relay", "sealed_relay"]}
+        ],
+        "outageObservationCombinations": [
+          {"connectionOutcome": "rejected", "authenticationOutcome": "not_established", "allowedRoutes": ["none"]}
+        ],
+        "allowedRecoveryRoutes": ["p2p_direct", "turn_relay", "turn_tls_tcp_relay", "sealed_relay"]
+      },
+      {
+        "variantId": "deliberate_p2p_failure",
+        "requiredOutcome": "authenticated_fallback_without_plaintext_or_identity_downgrade",
+        "affectedScope": "p2p_direct",
+        "regionBinding": "not_applicable",
+        "requiresRestoreAndAuthenticatedRecovery": false,
+        "aggregateRouteSource": "outage_route",
+        "allowedCombinations": [
+          {"directOutcome": "failure", "fallbackOutcome": "success", "selectedRoutes": ["turn_relay", "turn_tls_tcp_relay", "sealed_relay"]}
+        ],
+        "outageObservationCombinations": [
+          {"connectionOutcome": "success", "authenticationOutcome": "success", "allowedRoutes": ["turn_relay", "turn_tls_tcp_relay", "sealed_relay"]}
+        ],
+        "allowedRecoveryRoutes": ["none"]
+      },
+      {
+        "variantId": "required_turn_outage",
+        "requiredOutcome": "sealed_fallback_or_fail_closed_then_authenticated_recovery",
+        "affectedScope": "turn",
+        "regionBinding": "not_applicable",
+        "requiresRestoreAndAuthenticatedRecovery": true,
+        "aggregateRouteSource": "recovery_route",
+        "allowedCombinations": [
+          {"directOutcome": "not_attempted", "fallbackOutcome": "success", "selectedRoutes": ["turn_relay", "turn_tls_tcp_relay"]}
+        ],
+        "outageObservationCombinations": [
+          {"connectionOutcome": "success", "authenticationOutcome": "success", "allowedRoutes": ["sealed_relay"]},
+          {"connectionOutcome": "rejected", "authenticationOutcome": "not_established", "allowedRoutes": ["none"]}
+        ],
+        "allowedRecoveryRoutes": ["turn_relay", "turn_tls_tcp_relay"]
+      },
+      {
+        "variantId": "required_sealed_relay_outage",
+        "requiredOutcome": "fail_closed_without_weaker_route_then_authenticated_recovery",
+        "affectedScope": "sealed_relay",
+        "regionBinding": "not_applicable",
+        "requiresRestoreAndAuthenticatedRecovery": true,
+        "aggregateRouteSource": "recovery_route",
+        "allowedCombinations": [
+          {"directOutcome": "not_attempted", "fallbackOutcome": "success", "selectedRoutes": ["sealed_relay"]}
+        ],
+        "outageObservationCombinations": [
+          {"connectionOutcome": "rejected", "authenticationOutcome": "not_established", "allowedRoutes": ["none"]}
+        ],
+        "allowedRecoveryRoutes": ["sealed_relay"]
+      },
+      {
+        "variantId": "regional_relay_outage",
+        "requiredOutcome": "single_region_v1_fails_closed_then_recovers_after_service_restore",
+        "affectedScope": "region",
+        "regionBinding": "record_region",
+        "requiresRestoreAndAuthenticatedRecovery": true,
+        "aggregateRouteSource": "recovery_route",
+        "allowedCombinations": [
+          {"directOutcome": "not_attempted", "fallbackOutcome": "success", "selectedRoutes": ["turn_relay", "turn_tls_tcp_relay", "sealed_relay"]}
+        ],
+        "outageObservationCombinations": [
+          {"connectionOutcome": "rejected", "authenticationOutcome": "not_established", "allowedRoutes": ["none"]}
+        ],
+        "allowedRecoveryRoutes": ["turn_relay", "turn_tls_tcp_relay", "sealed_relay"]
+      }
+    ],
+    "forbiddenDataClasses": [
+      "prompt",
+      "response",
+      "model_list",
+      "file_body_or_snippet",
+      "memory",
+      "provider_or_backend_url",
+      "provider_or_backend_credential",
+      "traffic_secret_or_private_key",
+      "pairing_code_nonce_or_qr_payload",
+      "route_token_capability_turn_credential_or_relay_secret",
+      "raw_candidate_ip_hostname_or_port",
+      "raw_envelope_packet_or_signed_blob",
+      "device_id_name_or_fingerprint",
+      "stable_pair_session_or_request_identifier",
+      "source_path",
+      "personal_owner_contact"
+    ],
+    "retentionClasses": {
+      "aggregate_operational_metrics": "maximum_30_days",
+      "source_free_security_event": "maximum_7_days",
+      "sanitized_incident_evidence": "maximum_90_days",
+      "content_free_release_record": "maximum_365_days",
+      "live_authorization_state": "expiry_plus_30_seconds"
+    },
+    "eventClasses": [
+      {
+        "eventKind": "route_attempt_outcome",
+        "requiredFields": ["schema_version", "event_kind", "reason_code", "outcome", "route_class", "candidate_class", "address_family"],
+        "allowedFields": ["schema_version", "event_kind", "reason_code", "outcome", "route_class", "candidate_class", "address_family", "region", "protocol_version", "latency_bucket", "attempt_count", "success_count", "rejection_count"],
+        "retentionClass": "aggregate_operational_metrics",
+        "deletionTrigger": "30_day_maximum_or_campaign_deletion",
+        "maximumFields": 13,
+        "maximumStringBytes": 128,
+        "ownerRole": "service_operations_owner"
+      },
+      {
+        "eventKind": "authenticated_session_outcome",
+        "requiredFields": ["schema_version", "event_kind", "reason_code", "outcome", "route_class", "protocol_version"],
+        "allowedFields": ["schema_version", "event_kind", "reason_code", "outcome", "route_class", "protocol_version", "latency_bucket", "attempt_count", "success_count", "rejection_count"],
+        "retentionClass": "aggregate_operational_metrics",
+        "deletionTrigger": "30_day_maximum_or_campaign_deletion",
+        "maximumFields": 10,
+        "maximumStringBytes": 128,
+        "ownerRole": "service_operations_owner"
+      },
+      {
+        "eventKind": "p2p_direct_outcome",
+        "requiredFields": ["schema_version", "event_kind", "reason_code", "outcome", "candidate_class", "address_family"],
+        "allowedFields": ["schema_version", "event_kind", "reason_code", "outcome", "candidate_class", "address_family", "region", "latency_bucket", "attempt_count", "success_count", "rejection_count"],
+        "retentionClass": "aggregate_operational_metrics",
+        "deletionTrigger": "30_day_maximum_or_campaign_deletion",
+        "maximumFields": 11,
+        "maximumStringBytes": 128,
+        "ownerRole": "service_operations_owner"
+      },
+      {
+        "eventKind": "fallback_transition",
+        "requiredFields": ["schema_version", "event_kind", "reason_code", "outcome", "route_class"],
+        "allowedFields": ["schema_version", "event_kind", "reason_code", "outcome", "route_class", "region", "protocol_version", "attempt_count", "success_count", "rejection_count"],
+        "retentionClass": "aggregate_operational_metrics",
+        "deletionTrigger": "30_day_maximum_or_campaign_deletion",
+        "maximumFields": 10,
+        "maximumStringBytes": 128,
+        "ownerRole": "service_operations_owner"
+      },
+      {
+        "eventKind": "revocation_closure",
+        "requiredFields": ["schema_version", "event_kind", "reason_code", "outcome", "route_class", "latency_bucket"],
+        "allowedFields": ["schema_version", "event_kind", "reason_code", "outcome", "route_class", "region", "protocol_version", "latency_bucket", "attempt_count", "success_count", "rejection_count"],
+        "retentionClass": "source_free_security_event",
+        "deletionTrigger": "7_day_maximum_after_closure",
+        "maximumFields": 11,
+        "maximumStringBytes": 128,
+        "ownerRole": "privacy_and_incident_owner"
+      },
+      {
+        "eventKind": "service_capacity",
+        "requiredFields": ["schema_version", "event_kind", "reason_code", "outcome", "route_class", "region"],
+        "allowedFields": ["schema_version", "event_kind", "reason_code", "outcome", "route_class", "region", "byte_count", "packet_count", "occupancy_count", "rejection_count"],
+        "retentionClass": "aggregate_operational_metrics",
+        "deletionTrigger": "30_day_maximum_or_capacity_campaign_deletion",
+        "maximumFields": 10,
+        "maximumStringBytes": 128,
+        "ownerRole": "service_operations_owner"
+      },
+      {
+        "eventKind": "security_hard_stop",
+        "requiredFields": ["schema_version", "event_kind", "reason_code", "outcome"],
+        "allowedFields": ["schema_version", "event_kind", "reason_code", "outcome", "route_class", "candidate_class", "address_family", "region", "protocol_version", "service_config_version", "keyset_version", "rejection_count"],
+        "retentionClass": "source_free_security_event",
+        "deletionTrigger": "7_day_maximum_or_sanitized_incident_promotion",
+        "maximumFields": 12,
+        "maximumStringBytes": 128,
+        "ownerRole": "privacy_and_incident_owner"
+      },
+      {
+        "eventKind": "release_gate_result",
+        "requiredFields": ["schema_version", "event_kind", "reason_code", "outcome", "protocol_version"],
+        "allowedFields": ["schema_version", "event_kind", "reason_code", "outcome", "protocol_version", "service_config_version", "keyset_version"],
+        "retentionClass": "content_free_release_record",
+        "deletionTrigger": "365_day_maximum",
+        "maximumFields": 7,
+        "maximumStringBytes": 128,
+        "ownerRole": "release_quality_owner"
+      },
+      {
+        "eventKind": "incident_state_transition",
+        "requiredFields": ["schema_version", "event_kind", "reason_code", "outcome"],
+        "allowedFields": ["schema_version", "event_kind", "reason_code", "outcome", "route_class", "region", "protocol_version", "service_config_version", "keyset_version"],
+        "retentionClass": "sanitized_incident_evidence",
+        "deletionTrigger": "90_day_maximum_or_incident_deletion",
+        "maximumFields": 9,
+        "maximumStringBytes": 128,
+        "ownerRole": "privacy_and_incident_owner"
+      }
+    ],
+    "releaseRecordClasses": [
+      {
+        "recordKind": "network_measurement_result",
+        "measurementContract": "network_reliability_and_latency",
+        "permittedMetricNames": ["minimum_completed_network_sessions", "attempts_per_required_topology_cell", "attempts_per_required_variant", "per_cell_observed_authenticated_success", "per_cell_wilson95_lower_bound", "p2p_required_cell_observed_direct_success", "p2p_required_cell_wilson95_lower_bound", "traversal_setup_p50_milliseconds", "traversal_setup_p95_milliseconds", "traversal_setup_p99_milliseconds", "full_cold_setup_p95_milliseconds", "full_cold_setup_p99_milliseconds", "authenticated_reconnect_p95_milliseconds", "authenticated_handoff_p95_milliseconds", "revocation_closure_p95_milliseconds", "revocation_closure_p99_milliseconds", "revocation_closure_absolute_milliseconds"],
+        "requiredFields": ["record_kind", "campaign_id", "evidence_sha256", "evidence_ref", "app_build", "app_version", "platform", "device_class", "measurement_contract", "metric_name", "metric_value", "threshold_operator", "threshold_value", "sample_count", "gate_result"],
+        "allowedFields": ["record_kind", "campaign_id", "evidence_sha256", "evidence_ref", "app_build", "app_version", "platform", "device_class", "region", "measurement_contract", "metric_name", "metric_value", "threshold_operator", "threshold_value", "sample_count", "successful_sample_count", "gate_result", "window_hours", "provider_adapter", "network_cell", "network_variant", "selected_route", "direct_outcome", "fallback_outcome", "variant_outcome", "latency_milliseconds", "revocation_closure_milliseconds"],
+        "retentionClass": "content_free_release_record",
+        "deletionTrigger": "365_day_maximum",
+        "maximumFields": 27,
+        "ownerRole": "release_network_qa_owner"
+      },
+      {
+        "recordKind": "endpoint_resource_and_stability_result",
+        "measurementContract": "endpoint_resource_and_stability",
+        "permittedMetricNames": ["incremental_memory_p95_mib", "android_idle_paired_battery_percent_per_hour", "android_active_session_battery_percent_per_hour", "closed_beta_crash_free_session_rate", "closed_beta_anr_free_session_rate", "rc_soak_hours"],
+        "requiredFields": ["record_kind", "campaign_id", "evidence_sha256", "evidence_ref", "app_build", "app_version", "platform", "device_class", "measurement_contract", "metric_name", "metric_value", "threshold_operator", "threshold_value", "sample_count", "gate_result"],
+        "allowedFields": ["record_kind", "campaign_id", "evidence_sha256", "evidence_ref", "app_build", "app_version", "platform", "device_class", "measurement_contract", "metric_name", "metric_value", "threshold_operator", "threshold_value", "sample_count", "successful_sample_count", "gate_result", "window_hours", "provider_adapter", "memory_mib", "battery_percent_per_hour"],
+        "retentionClass": "content_free_release_record",
+        "deletionTrigger": "365_day_maximum",
+        "maximumFields": 20,
+        "ownerRole": "release_performance_qa_owner"
+      },
+      {
+        "recordKind": "abuse_and_capacity_result",
+        "measurementContract": "abuse_and_capacity",
+        "permittedMetricNames": ["false_abuse_rejection_rate", "capacity_load_multiplier", "unbounded_growth_events", "admission_policy_weakening_events"],
+        "requiredFields": ["record_kind", "campaign_id", "evidence_sha256", "evidence_ref", "app_build", "app_version", "platform", "device_class", "region", "measurement_contract", "metric_name", "metric_value", "threshold_operator", "threshold_value", "sample_count", "gate_result"],
+        "allowedFields": ["record_kind", "campaign_id", "evidence_sha256", "evidence_ref", "app_build", "app_version", "platform", "device_class", "region", "measurement_contract", "metric_name", "metric_value", "threshold_operator", "threshold_value", "sample_count", "window_hours", "peak_forecast_id", "projected_peak_units", "offered_load_units", "unbounded_growth_event_count", "admission_policy_weakening_event_count", "false_rejection_count", "gate_result"],
+        "retentionClass": "content_free_release_record",
+        "deletionTrigger": "365_day_maximum",
+        "maximumFields": 23,
+        "ownerRole": "service_operations_and_abuse_owner"
+      },
+      {
+        "recordKind": "security_hard_stop_result",
+        "measurementContract": "security_hard_stops",
+        "permittedMetricNames": ["prohibited_destination_attempts", "plaintext_downgrades", "false_identity_acceptance", "duplicate_non_idempotent_requests", "protected_data_leaks", "rollback_failures", "security_state_rollbacks", "traffic_after_consent_or_revocation", "unauthorized_service_acceptance", "unauthorized_release_artifact_acceptance", "release_artifact_provenance_failures", "route_authorization_bypasses", "revocation_closure_deadline_misses"],
+        "requiredFields": ["record_kind", "campaign_id", "evidence_sha256", "evidence_ref", "app_build", "app_version", "platform", "device_class", "measurement_contract", "metric_name", "metric_value", "threshold_operator", "threshold_value", "sample_count", "gate_result"],
+        "allowedFields": ["record_kind", "campaign_id", "evidence_sha256", "evidence_ref", "app_build", "app_version", "platform", "device_class", "measurement_contract", "metric_name", "metric_value", "threshold_operator", "threshold_value", "sample_count", "gate_result", "network_cell", "network_variant", "selected_route", "revocation_closure_milliseconds"],
+        "retentionClass": "content_free_release_record",
+        "deletionTrigger": "365_day_maximum",
+        "maximumFields": 19,
+        "ownerRole": "product_security_owner"
+      },
+      {
+        "recordKind": "rollback_drill_result",
+        "measurementContract": "security_hard_stops",
+        "permittedMetricNames": ["rollback_success_rate"],
+        "requiredFields": ["record_kind", "campaign_id", "evidence_sha256", "evidence_ref", "app_build", "app_version", "platform", "device_class", "measurement_contract", "metric_name", "metric_value", "threshold_operator", "threshold_value", "sample_count", "gate_result"],
+        "allowedFields": ["record_kind", "campaign_id", "evidence_sha256", "evidence_ref", "app_build", "app_version", "platform", "device_class", "measurement_contract", "metric_name", "metric_value", "threshold_operator", "threshold_value", "sample_count", "successful_sample_count", "gate_result", "selected_route", "network_cell", "network_variant"],
+        "retentionClass": "content_free_release_record",
+        "deletionTrigger": "365_day_maximum",
+        "maximumFields": 19,
+        "ownerRole": "release_owner"
+      }
+    ],
+    "acceptanceMethods": [
+      "unknown_event_kind_or_field_is_rejected",
+      "forbidden_data_negative_log_scan_has_zero_matches",
+      "required_fields_types_closed_enums_patterns_numeric_ranges_and_cardinality_are_enforced",
+      "retention_and_deletion_readback_is_versioned",
+      "release_harness_records_use_their_separate_closed_record_classes",
+      "every_quality_target_and_supported_platform_row_has_an_exact_metric_value_threshold_sample_count_and_immutable_evidence_digest",
+      "each_release_record_reads_back_content_addressed_evidence_and_recomputes_rates_wilson_bounds_capacity_and_gate_outcome",
+      "closed_evidence_envelope_requires_an_approved_signer_and_ed25519_verification_over_canonical_payload_samples",
+      "evidence_bytes_sample_count_numeric_grammar_and_signature_canonicalization_are_bounded_and_test_vector_pinned",
+      "required_network_variants_bind_one_signed_raw_observation_per_attempt_with_affected_scope_outage_result_route_restore_order_authenticated_recovery_and_zero_downgrade_counts",
+      "campaign_validation_rejects_any_missing_metric_cell_variant_provider_platform_row_route_class_or_service_region",
+      "privacy_negative_values_are_rejected_even_when_the_field_name_is_allowed"
+    ]
+  },
+  "releaseChecklist": {
+    "status": "blocked",
+    "evidenceClassSeparation": [
+      "static_no_device",
+      "physical_device",
+      "same_wifi_debug",
+      "controlled_external_network",
+      "signed_release_candidate",
+      "production_rollout"
+    ],
+    "g0Exit": [
+      {
+        "checkId": "g0_assurance_packet",
+        "phase": "g0",
+        "ownerRole": "repository_quality_owner",
+        "status": "blocked",
+        "requiredEvidence": ["canonical_assurance_hash", "source_hash_readback", "owner_acceptance"],
+        "evidenceRefs": [],
+        "blocksPromotion": true,
+        "waiverRef": null
+      },
+      {
+        "checkId": "full_no_device_aggregate",
+        "phase": "g0",
+        "ownerRole": "repository_quality_owner",
+        "status": "not_run",
+        "requiredEvidence": ["separately_authorized_full_gate_result"],
+        "evidenceRefs": [],
+        "blocksPromotion": true,
+        "waiverRef": null
+      },
+      {
+        "checkId": "android_and_macos_release_compilation",
+        "phase": "g0",
+        "ownerRole": "release_quality_owner",
+        "status": "not_run",
+        "requiredEvidence": ["android_release_compile_result", "macos_release_compile_result"],
+        "evidenceRefs": [],
+        "blocksPromotion": true,
+        "waiverRef": null
+      },
+      {
+        "checkId": "roadmap_and_g0_checkpoint_publication",
+        "phase": "g0",
+        "ownerRole": "repository_owner",
+        "status": "blocked",
+        "requiredEvidence": ["reviewed_commit_scope", "published_checkpoint"],
+        "evidenceRefs": [],
+        "blocksPromotion": true,
+        "waiverRef": null
+      },
+      {
+        "checkId": "production_namespaces_distribution_and_key_custody",
+        "phase": "g0",
+        "ownerRole": "release_owner",
+        "status": "blocked",
+        "requiredEvidence": ["owned_application_ids", "distribution_accounts", "key_custody_runbook"],
+        "evidenceRefs": [],
+        "blocksPromotion": true,
+        "waiverRef": null
+      },
+      {
+        "checkId": "provider_compatibility_baseline",
+        "phase": "g0",
+        "ownerRole": "runtime_provider_compatibility_owner",
+        "status": "blocked",
+        "requiredEvidence": ["approved_minimum_current_previous_matrix"],
+        "evidenceRefs": [],
+        "blocksPromotion": true,
+        "waiverRef": null
+      },
+      {
+        "checkId": "service_identity_and_signer_custody",
+        "phase": "g0",
+        "ownerRole": "service_security_owner",
+        "status": "blocked",
+        "requiredEvidence": ["domain_dns_webpki_owners", "root_signer_rotation_and_revocation_owners"],
+        "evidenceRefs": [],
+        "blocksPromotion": true,
+        "waiverRef": null
+      },
+      {
+        "checkId": "privacy_incident_quality_and_operations_ownership",
+        "phase": "g0",
+        "ownerRole": "privacy_and_incident_owner",
+        "status": "blocked",
+        "requiredEvidence": [
+          "privacy_incident_and_retention_owner_approval",
+          "quality_measurement_contract_owner_approvals"
+        ],
+        "evidenceRefs": [],
+        "blocksPromotion": true,
+        "waiverRef": null
+      },
+      {
+        "checkId": "relay_region_capacity_and_cost",
+        "phase": "g0",
+        "ownerRole": "service_operations_owner",
+        "status": "blocked",
+        "requiredEvidence": ["approved_region_peak_capacity_and_cost_ceiling"],
+        "evidenceRefs": [],
+        "blocksPromotion": true,
+        "waiverRef": null
+      }
+    ],
+    "futureReleasePromotion": [
+      {
+        "checkId": "g1_wire_crypto_and_negative_vectors",
+        "phase": "g1",
+        "ownerRole": "product_security_owner",
+        "status": "not_run",
+        "requiredEvidence": ["ratified_wire_crypto_profile", "cross_platform_vectors"],
+        "evidenceRefs": [],
+        "blocksPromotion": true,
+        "waiverRef": null
+      },
+      {
+        "checkId": "g2_service_identity_and_control_plane",
+        "phase": "g2",
+        "ownerRole": "service_security_owner",
+        "status": "not_run",
+        "requiredEvidence": ["signed_config_keyset_lease_and_revocation_results"],
+        "evidenceRefs": [],
+        "blocksPromotion": true,
+        "waiverRef": null
+      },
+      {
+        "checkId": "g3_authenticated_p2p_turn_and_sealed_fallback",
+        "phase": "g3",
+        "ownerRole": "release_network_qa_owner",
+        "status": "not_run",
+        "requiredEvidence": ["per_cell_direct_and_fallback_results"],
+        "evidenceRefs": [],
+        "blocksPromotion": true,
+        "waiverRef": null
+      },
+      {
+        "checkId": "g4_monotonic_pair_recovery",
+        "phase": "g4",
+        "ownerRole": "product_security_owner",
+        "status": "not_run",
+        "requiredEvidence": ["epoch_revoke_reconcile_and_absolute_closure_results"],
+        "evidenceRefs": [],
+        "blocksPromotion": true,
+        "waiverRef": null
+      },
+      {
+        "checkId": "g5_signed_artifacts_and_device_provider_matrix",
+        "phase": "g5",
+        "ownerRole": "release_quality_owner",
+        "status": "not_run",
+        "requiredEvidence": ["signed_aab_and_dmg", "device_locale_accessibility_provider_results"],
+        "evidenceRefs": [],
+        "blocksPromotion": true,
+        "waiverRef": null
+      },
+      {
+        "checkId": "g6_controlled_network_and_resilience_matrix",
+        "phase": "g6",
+        "ownerRole": "release_network_qa_owner",
+        "status": "not_run",
+        "requiredEvidence": ["twelve_cells_six_variants_soak_capacity_and_outage_results"],
+        "evidenceRefs": [],
+        "blocksPromotion": true,
+        "waiverRef": null
+      },
+      {
+        "checkId": "g6_security_privacy_and_incident_drill",
+        "phase": "g6",
+        "ownerRole": "privacy_and_incident_owner",
+        "status": "not_run",
+        "requiredEvidence": ["all_hard_stops_zero", "negative_log_scan", "incident_and_rollback_drill"],
+        "evidenceRefs": [],
+        "blocksPromotion": true,
+        "waiverRef": null
+      },
+      {
+        "checkId": "g7_provenance_staged_rollout_and_readback",
+        "phase": "g7",
+        "ownerRole": "release_owner",
+        "status": "not_run",
+        "requiredEvidence": ["artifact_provenance", "staged_rollout", "store_and_service_readback"],
+        "evidenceRefs": [],
+        "blocksPromotion": true,
+        "waiverRef": null
+      }
+    ]
+  },
+  "incidentRunbook": [
+    {
+      "incidentClass": "endpoint_loss_or_key_compromise",
+      "triggers": ["lost_endpoint", "identity_key_compromise", "false_identity_acceptance"],
+      "severity": "critical",
+      "incidentCommanderRole": "privacy_and_incident_owner",
+      "containment": ["deny_new_operations", "revoke_current_pair_epoch", "close_retained_state_within_30_seconds"],
+      "failClosedAction": "disable_affected_pair_without_silent_replacement",
+      "credentialOrStateRotation": ["fresh_qr", "higher_pair_epoch", "fresh_endpoint_traffic_secret", "rotated_route_token_seed", "new_endpoint_identity_if_compromised"],
+      "evidencePreservation": "sanitized_source_free_incident_record_maximum_90_days",
+      "recoveryCriteria": ["new_identity_authenticated", "old_epoch_rejected", "reconnect_and_revocation_smoke_pass"],
+      "communicationOwnerRole": "release_owner",
+      "drillEvidence": []
+    },
+    {
+      "incidentClass": "dns_webpki_service_root_or_signer_compromise",
+      "triggers": ["hostname_or_certificate_failure", "config_signature_failure", "keyset_rollback", "signer_compromise"],
+      "severity": "critical",
+      "incidentCommanderRole": "service_security_owner",
+      "containment": ["stop_new_leases", "revoke_affected_keyset", "disable_affected_service_configuration"],
+      "failClosedAction": "no_plaintext_anonymous_or_legacy_service_fallback",
+      "credentialOrStateRotation": ["webpki_certificate", "delegated_online_signer", "higher_keyset_and_config_versions"],
+      "evidencePreservation": "sanitized_signature_version_and_reason_evidence_maximum_90_days",
+      "recoveryCriteria": ["root_validated_new_keyset", "monotonic_version_readback", "unauthorized_service_acceptance_zero"],
+      "communicationOwnerRole": "service_identity_owner",
+      "drillEvidence": []
+    },
+    {
+      "incidentClass": "relay_abuse_capacity_or_regional_outage",
+      "triggers": ["quota_bypass", "unbounded_growth", "capacity_saturation", "regional_outage"],
+      "severity": "high",
+      "incidentCommanderRole": "service_operations_owner",
+      "containment": ["preserve_admission_bounds", "stop_affected_allocations", "activate_only_approved_alternate_plane"],
+      "failClosedAction": "return_unavailable_if_no_approved_authenticated_plane_exists",
+      "credentialOrStateRotation": ["affected_capabilities_and_allocations"],
+      "evidencePreservation": "content_free_capacity_and_outcome_evidence",
+      "recoveryCriteria": ["two_times_peak_capacity_pass", "normal_admission_restored", "outage_matrix_pass"],
+      "communicationOwnerRole": "release_owner",
+      "drillEvidence": []
+    },
+    {
+      "incidentClass": "protected_data_or_log_leakage",
+      "triggers": ["forbidden_field_detected", "raw_candidate_or_ip_logged", "secret_or_ai_content_exposed"],
+      "severity": "critical",
+      "incidentCommanderRole": "privacy_and_incident_owner",
+      "containment": ["stop_event_ingestion", "quarantine_affected_sink", "delete_forbidden_records_where_safe"],
+      "failClosedAction": "reject_non_allowlisted_events_and_stop_release",
+      "credentialOrStateRotation": ["any_exposed_pair_route_provider_or_traffic_credential"],
+      "evidencePreservation": "sanitized_metadata_only_without_recopying_protected_content",
+      "recoveryCriteria": ["negative_log_scan_zero", "deletion_readback", "affected_credentials_rotated"],
+      "communicationOwnerRole": "privacy_and_incident_owner",
+      "drillEvidence": []
+    },
+    {
+      "incidentClass": "provider_compatibility_regression",
+      "triggers": ["health_failure", "model_list_drift", "chat_stream_contract_break", "provider_outage"],
+      "severity": "high",
+      "incidentCommanderRole": "runtime_provider_compatibility_owner",
+      "containment": ["stop_affected_release_cohort", "surface_sanitized_unavailable_state", "preserve_runtime_data"],
+      "failClosedAction": "do_not_route_android_directly_to_provider",
+      "credentialOrStateRotation": [],
+      "evidencePreservation": "provider_version_adapter_and_content_free_failure_reason",
+      "recoveryCriteria": ["minimum_current_previous_matrix_pass", "health_model_chat_smoke_pass"],
+      "communicationOwnerRole": "release_owner",
+      "drillEvidence": []
+    },
+    {
+      "incidentClass": "bad_android_or_macos_release",
+      "triggers": ["crash_or_anr_budget_failure", "security_hard_stop", "required_user_loop_regression", "signature_or_notarization_failure"],
+      "severity": "critical",
+      "incidentCommanderRole": "release_owner",
+      "containment": ["halt_rollout", "disable_incompatible_service_or_route_features", "retain_last_approved_artifacts"],
+      "failClosedAction": "no_unsigned_or_lower_security_artifact_fallback",
+      "credentialOrStateRotation": ["only_if_release_exposed_or_corrupted_credentials"],
+      "evidencePreservation": "content_free_release_and_sanitized_incident_record",
+      "recoveryCriteria": ["new_rc_all_required_gates_pass", "rollback_or_forward_fix_drill_pass", "artifact_readback_pass"],
+      "communicationOwnerRole": "release_owner",
+      "drillEvidence": []
+    },
+    {
+      "incidentClass": "pair_epoch_or_revocation_divergence",
+      "triggers": ["stale_epoch_accepted", "duplicate_transition", "lost_transition_response", "closure_deadline_miss"],
+      "severity": "critical",
+      "incidentCommanderRole": "product_security_owner",
+      "containment": ["deny_new_operations", "close_rooms_and_frames", "preserve_highest_monotonic_state"],
+      "failClosedAction": "pair_status_is_read_only_and_cannot_mutate_epoch_generation_counter_or_expiry",
+      "credentialOrStateRotation": ["fresh_qr_and_higher_epoch_when_replacement_is_required", "fresh_endpoint_traffic_secret", "rotated_route_token_seed"],
+      "evidencePreservation": "source_free_transition_reason_receipt_digest_and_version_only",
+      "recoveryCriteria": ["both_endpoints_agree_on_highest_state", "old_state_rejected", "absolute_closure_and_repair_smoke_pass"],
+      "communicationOwnerRole": "privacy_and_incident_owner",
+      "drillEvidence": []
+    }
+  ],
+  "rollbackRunbook": {
+    "rollbackSuccessMinimum": 1.0,
+    "revocationClosureAbsoluteMaximumMilliseconds": 30000,
+    "hardStops": {
+      "prohibitedDestinationAttempts": 0,
+      "plaintextDowngrades": 0,
+      "falseIdentityAcceptance": 0,
+      "duplicateNonIdempotentRequests": 0,
+      "protectedDataLeaks": 0,
+      "rollbackFailures": 0,
+      "securityStateRollbacks": 0,
+      "trafficAfterConsentOrRevocation": 0,
+      "unauthorizedServiceAcceptance": 0,
+      "unauthorizedReleaseArtifactAcceptance": 0,
+      "releaseArtifactProvenanceFailures": 0,
+      "routeAuthorizationBypasses": 0,
+      "revocationClosureDeadlineMisses": 0
+    },
+    "monotonicState": [
+      "protocol_floor",
+      "service_config_version",
+      "keyset_version",
+      "pair_epoch",
+      "revocation_counter",
+      "lease_generation"
+    ],
+    "universalRules": [
+      "stop_issuing_affected_route_or_release_before_recovery",
+      "never_restore_revoked_expired_or_lower_monotonic_security_state",
+      "never_fallback_to_plaintext_anonymous_unsigned_or_legacy_production_transport",
+      "use_only_an_approved_authenticated_alternate_plane_or_fail_closed",
+      "rotate_exposed_credentials_and_preserve_sanitized_evidence"
+    ],
+    "android": {
+      "strategy": "halt_rollout_then_forward_fix",
+      "artifactRule": "new_signed_aab_with_higher_version_code",
+      "forbidden": "reinstall_or_publish_lower_version_code_as_rollback"
+    },
+    "macos": {
+      "strategy": "restore_previous_approved_signed_artifact_when_compatible",
+      "artifactRule": "current_or_previous_notarized_stapled_signed_dmg_only",
+      "forbidden": "unsigned_artifact_or_security_state_snapshot_rollback"
+    },
+    "postRecoveryChecks": [
+      "artifact_signature_and_provenance",
+      "runtime_identity_and_authentication",
+      "runtime_health_and_installed_models",
+      "chat_stream_and_cancel",
+      "trusted_reconnect",
+      "revocation_and_fresh_repair",
+      "monotonic_state_readback",
+      "all_security_hard_stops_zero"
+    ]
+  },
+  "approvals": [
+    {
+      "role": "repository_owner",
+      "ownerIdentityRef": null,
+      "status": "blocked_unassigned",
+      "acceptedRevision": null,
+      "acceptedPublicationCommit": null,
+      "acceptedBlockerIds": [],
+      "acceptedAt": null,
+      "acceptanceEvidenceRefs": []
+    },
+    {
+      "role": "repository_quality_owner",
+      "ownerIdentityRef": null,
+      "status": "blocked_unassigned",
+      "acceptedRevision": null,
+      "acceptedPublicationCommit": null,
+      "acceptedBlockerIds": [],
+      "acceptedAt": null,
+      "acceptanceEvidenceRefs": []
+    },
+    {
+      "role": "product_and_distribution_owner",
+      "ownerIdentityRef": null,
+      "status": "blocked_unassigned",
+      "acceptedRevision": null,
+      "acceptedPublicationCommit": null,
+      "acceptedBlockerIds": [],
+      "acceptedAt": null,
+      "acceptanceEvidenceRefs": []
+    },
+    {
+      "role": "product_security_owner",
+      "ownerIdentityRef": null,
+      "status": "blocked_unassigned",
+      "acceptedRevision": null,
+      "acceptedPublicationCommit": null,
+      "acceptedBlockerIds": [],
+      "acceptedAt": null,
+      "acceptanceEvidenceRefs": []
+    },
+    {
+      "role": "release_owner",
+      "ownerIdentityRef": null,
+      "status": "blocked_unassigned",
+      "acceptedRevision": null,
+      "acceptedPublicationCommit": null,
+      "acceptedBlockerIds": [],
+      "acceptedAt": null,
+      "acceptanceEvidenceRefs": []
+    },
+    {
+      "role": "release_quality_owner",
+      "ownerIdentityRef": null,
+      "status": "blocked_unassigned",
+      "acceptedRevision": null,
+      "acceptedPublicationCommit": null,
+      "acceptedBlockerIds": [],
+      "acceptedAt": null,
+      "acceptanceEvidenceRefs": []
+    },
+    {
+      "role": "release_network_qa_owner",
+      "ownerIdentityRef": null,
+      "status": "blocked_unassigned",
+      "acceptedRevision": null,
+      "acceptedPublicationCommit": null,
+      "acceptedBlockerIds": [],
+      "acceptedAt": null,
+      "acceptanceEvidenceRefs": []
+    },
+    {
+      "role": "release_performance_qa_owner",
+      "ownerIdentityRef": null,
+      "status": "blocked_unassigned",
+      "acceptedRevision": null,
+      "acceptedPublicationCommit": null,
+      "acceptedBlockerIds": [],
+      "acceptedAt": null,
+      "acceptanceEvidenceRefs": []
+    },
+    {
+      "role": "runtime_provider_compatibility_owner",
+      "ownerIdentityRef": null,
+      "status": "blocked_unassigned",
+      "acceptedRevision": null,
+      "acceptedPublicationCommit": null,
+      "acceptedBlockerIds": [],
+      "acceptedAt": null,
+      "acceptanceEvidenceRefs": []
+    },
+    {
+      "role": "service_identity_owner",
+      "ownerIdentityRef": null,
+      "status": "blocked_unassigned",
+      "acceptedRevision": null,
+      "acceptedPublicationCommit": null,
+      "acceptedBlockerIds": [],
+      "acceptedAt": null,
+      "acceptanceEvidenceRefs": []
+    },
+    {
+      "role": "service_security_owner",
+      "ownerIdentityRef": null,
+      "status": "blocked_unassigned",
+      "acceptedRevision": null,
+      "acceptedPublicationCommit": null,
+      "acceptedBlockerIds": [],
+      "acceptedAt": null,
+      "acceptanceEvidenceRefs": []
+    },
+    {
+      "role": "service_operations_owner",
+      "ownerIdentityRef": null,
+      "status": "blocked_unassigned",
+      "acceptedRevision": null,
+      "acceptedPublicationCommit": null,
+      "acceptedBlockerIds": [],
+      "acceptedAt": null,
+      "acceptanceEvidenceRefs": []
+    },
+    {
+      "role": "service_operations_and_abuse_owner",
+      "ownerIdentityRef": null,
+      "status": "blocked_unassigned",
+      "acceptedRevision": null,
+      "acceptedPublicationCommit": null,
+      "acceptedBlockerIds": [],
+      "acceptedAt": null,
+      "acceptanceEvidenceRefs": []
+    },
+    {
+      "role": "privacy_and_incident_owner",
+      "ownerIdentityRef": null,
+      "status": "blocked_unassigned",
+      "acceptedRevision": null,
+      "acceptedPublicationCommit": null,
+      "acceptedBlockerIds": [],
+      "acceptedAt": null,
+      "acceptanceEvidenceRefs": []
+    }
+  ],
+  "authority": {
+    "g0DocumentationAndStaticValidationAllowed": true,
+    "g1aNoNetworkImplementationAllowed": false,
+    "g1bLoopbackSocketAllowed": false,
+    "p2pSourceAcquisitionAllowed": false,
+    "p2pLibrarySelectionAllowed": false,
+    "p2pCompilerInvocationAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIoAllowed": false,
+    "externalTestNetworkAllowed": false,
+    "productionNetworkIoAllowed": false,
+    "productionKeyGenerationOrInjectionAllowed": false,
+    "signingOrNotarizationAllowed": false,
+    "storeUploadAllowed": false,
+    "productionDeploymentAllowed": false
+  },
+  "acceptance": {
+    "contradictions": [],
+    "missingHardStops": [],
+    "sourceHashesExpectedToPassStaticChecker": true,
+    "protocolAndDataFlowInventoryCompleteForBaseline": true,
+    "threatRiskObservabilityAndRunbookSectionsCompleteForBaseline": true,
+    "fullNoDeviceAggregate": "not_run_requires_separate_socket_authority",
+    "androidReleaseCompilation": "not_run",
+    "macosReleaseCompilation": "not_run",
+    "allOwnersNamed": false,
+    "allApprovalsAccepted": false,
+    "remainingBlockerIds": [
+      "g0_assurance_artifacts_and_baseline_gate",
+      "roadmap_and_g0_checkpoint_publication",
+      "production_application_namespaces",
+      "distribution_account_and_key_owners",
+      "provider_compatibility_baseline",
+      "service_domain_dns_and_webpki_owners",
+      "service_root_and_online_signer_owners",
+      "privacy_incident_and_retention_owners",
+      "quality_measurement_owners",
+      "relay_region_capacity_and_cost_budget"
+    ],
+    "g0AssuranceBlockerClosed": false,
+    "g0ExitComplete": false,
+    "g1aMayStartNow": false
+  }
+}

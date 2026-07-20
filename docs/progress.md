@@ -4,6 +4,136 @@ Last updated: 2026-07-20 KST.
 
 This document records what has been implemented so far and what should happen next. It is intentionally broader than the original v0.1 MVP because recent work has moved the prototype toward a more complete product shape.
 
+## 2026-07-20 V1 G0 Decision, Assurance, And Authority Baseline
+
+- Goal and result: execution of the canonical V1 roadmap has started with G0.
+  `docs/v1/g0/decision-v1.{md,json}` now records one versioned product, support,
+  distribution, security, privacy, quality, evidence, and authority baseline
+  against published implementation revision `d32c1846`.
+  `docs/v1/g0/assurance-v1.{md,json}` adds the hash-pinned protocol/data-flow
+  inventory, threat/risk refresh, closed observability schema, release
+  checklist, and incident/rollback runbooks. This is static G0 assurance work,
+  not transport implementation.
+- Product decision: V1 is Android API 26 through target/compile 36 on arm64
+  phones plus macOS 14 or newer on Apple Silicon, with the existing English,
+  Korean, Japanese, Simplified Chinese, and French locales and runtime-mediated
+  Ollama/LM Studio. P2P remains a GA gate; Intel macOS and the previously named
+  platform/backend/tool expansions remain Post-V1.
+- Release decision: Android uses Google Play closed testing followed by staged
+  production and Play App Signing. macOS uses Developer ID direct distribution,
+  hardened runtime, notarization, and a stapled signed DMG, with manual signed V1
+  updates. Android debug `0.1.0` is non-migratable and requires clean install plus
+  fresh pairing. Final production application IDs remain unresolved rather than
+  being invented from current development identifiers.
+- Security decision: the existing TURN plus sealed-emergency-relay profile is
+  retained without supersession. G0 selects TLS 1.3 plus signed lease
+  capabilities and monotonic pair-epoch recovery with one-sided deny-only
+  revocation, fresh-QR replacement, and signed status reconciliation. The
+  existing platform-native P-256/HKDF-SHA-256/AES-256-GCM result remains only a
+  G1 ratification input. Service-mediated P2P candidate publication and fetch
+  require exact signed capabilities; revoked retained state has an absolute
+  30-second closure maximum; rollback must succeed 100%; and thirteen
+  security-hard-stop classes each allow zero failures.
+- Measurement decision: the record fixes per-cell sample/success/confidence,
+  traversal/cold-setup/reconnect/handoff/revoke latency, memory, battery,
+  crash/ANR, soak, abuse, security-zero-tolerance, and capacity formulas. They
+  are release targets and not current product claims. Twelve non-omittable
+  network cells now name local, IPv6, home-NAT, CGNAT, NAT64, UDP-blocked,
+  forced-TURN, forced-sealed-relay, handoff, VPN, and suspend/resume coverage.
+  Six required variants add symmetric NAT, consent loss, deliberate P2P
+  failure, TURN/sealed-relay outage, and regional outage. Native-IPv6 and home-
+  NAT cells have a separate release-blocking direct-P2P threshold. Four
+  measurement contracts bind
+  every target to an owner role, source, sample/window rule, and failure action;
+  actual named owners remain blockers.
+- Assurance result: the versioned machine record pins 29 source files and
+  closes nine protocol units, sixteen data flows, 35 guarded protocol
+  namespaces, inherited T001-T016 plus T017-T026, ten release-blocking risks,
+  nine event classes, five decision-bound release-record classes, seven incident
+  classes, rollback
+  invariants, and fourteen explicit unassigned approval roles.
+- G0 closure derivation: a closed machine contract maps all ten blockers to all
+  nine G0 checks, all fourteen accountable roles, and exact evidence kinds.
+  Risk evidence is tagged by its required gate so later G2/G4/G5/G6 obligations
+  cannot be confused with G0 prerequisites. Acceptance must bind the published
+  checkpoint digest, containing commit, scoped blocker IDs, and catalog evidence;
+  accepted receipts require non-empty verified references. The current checker
+  accepts no receipt. Its activation policy requires a successor to build an
+  opaque, independently anchored validation context covering actual commit-tree,
+  remote, evidence-artifact and sanitized-log bytes, authenticated owner and
+  runner attestations, authority/command bindings, and complete non-ambiguous
+  closure coverage before any receipt can participate. No such context or
+  receipt exists yet.
+- Release-evidence boundary: a content hash alone cannot satisfy a release
+  metric. The exact evidence envelope must carry the complete raw sample array,
+  bind campaign/build/metric/threshold/platform/context, name an approved
+  release-evidence signer, and pass injected Ed25519 verification over its
+  canonical payload. Rates, Wilson bounds, counts, nearest-rank percentiles,
+  maxima, capacity invariants, and gate outcomes are derived from those signed
+  samples. The signer registry remains unavailable until the quality owners are
+  named, so real campaigns currently fail closed.
+- Evidence resource and interoperability boundary: the canonical signature
+  profile pins UTF-8 ordering, escaping, literals, non-exponent decimal grammar,
+  and one exact byte/SHA-256 vector. Envelopes stop at 4 MiB and 100,000 samples
+  before signature verification or sorting. Decimal bytes are assembled exactly
+  without ambient precision/trap dependence. Signer IDs use one pinned
+  case-sensitive registry-key pattern, and 64-byte unpadded base64url signatures
+  must round-trip to identical text before verifier dispatch. Baseline network
+  cells require the `none` variant, while each required variant signs one exact
+  raw observation per attempt. One-based attempt order, a 120,000ms timing
+  ceiling, homogeneous per-record direct/fallback/rule-selected routes, affected
+  plane/region, outage result, ordered restore and authenticated recovery, plus
+  zero downgrade/post-consent counters drive the aggregate outcome; attempt
+  count or a result string alone cannot represent successful fail-closed
+  recovery.
+- Assurance readback candidate: `docs/v1/g0/assurance-checkpoint-readback-v1.json`
+  now records the exact assurance raw-byte and canonical SHA-256 values and an
+  ordered readback of all 29 declared source records. Its standalone validator
+  rehashes every exact repository-relative regular non-symlink file rather than
+  trusting recorded `match` strings; eleven mutation tests reject checkpoint-
+  byte, assurance-byte/canonical, exponent-overflow, over-128-digit integers,
+  recursive type-confusion, source count/order/path/role/hash, the 4 MiB source
+  ceiling, symlink, same-descriptor and final-path identity, owner, publication,
+  blocker, status, and authority drift. The candidate explicitly
+  remains `candidate_observed_not_immutable`: it is not owner acceptance, a
+  reviewed commit, publication provenance, or G0 exit evidence.
+- Guard evidence: `script/check_v1_g0_decision.py` passes after verifying exact
+  canonical decision/assurance content, nine decision source hashes, 29
+  assurance source hashes, current Android/macOS configuration and locales,
+  active protocol message/error parity, all ten blockers, and every false
+  authority. Its 62 mutation tests reject nested unknown fields, security
+  downgrades, missing hard stops, protocol/threat/user-loop removal, forbidden
+  observability fields, invented approvals, arbitrary or unsigned evidence,
+  forged percentile scalars, oversized or noncanonical evidence, ambient-
+  Decimal precision collisions, malformed signer IDs, noncanonical base64url
+  terminal bits, zero-based/late/mixed network-variant observations, unbound
+  network-variant outcomes, and evidence-free checklist passes. The G0 checker
+  now also requires the candidate readback validator; its separate eleven-test
+  mutation suite and checker are included in the default no-device gate, for 73
+  focused G0 mutation tests in total.
+- Current non-socket static verification also passes copy hygiene across 92
+  user-facing files, docs hygiene across 12 current documents, Android/macOS
+  five-locale parity, both protocol schemas, closed P2P/NAT and production-relay
+  design validators, 21 documentation/launcher/Phase-A tests, shell syntax, and
+  diff hygiene. This is not the full no-device aggregate.
+- G0 status: `blocked_before_g1a`. Assurance content now exists, but immutable
+  publication-root readback, owner acceptance, and separately authorized full
+  baseline/release-compile gates are incomplete. The local content-addressed
+  candidate proves only current-byte reproducibility. Checkpoint
+  publication, production namespaces, distribution account/key owners, provider
+  compatibility baseline, service domain/DNS/WebPKI owners, service root/signer
+  owners, privacy/incident owners, quality-measurement owners, and relay
+  region/capacity/cost also remain unresolved. G1a, source acquisition, P2P
+  selection or compile, sockets, network I/O, production keys, signing, upload,
+  and deployment remain closed.
+- Live evidence boundary: no Android device is attached. The existing ad-hoc
+  arm64 macOS app was observed running on port 43170, but QR decode, provider
+  traffic, physical UI, unrelated networks, and production behavior were not
+  rerun. Independent GPT-5.6 Sol product/release, security/authority, and
+  evidence-conformance audits informed G0; the final product and evidence-
+  conformance re-reviews report no remaining P0-P3 finding.
+  GPT-5.3-Codex-Spark was not used.
+
 ## 2026-07-20 Android Runtime Session Summary Linear Merge
 
 - Goal and result: the authoritative Android runtime-history batch merge now builds the deleted-session set, first-wins persisted-session index, local-only collision set, and incoming-summary deduplication set once. It no longer rebuilds suppressions or linearly searches every persisted session for every incoming summary, reducing merge lookup work from `O(summary * (persisted + suppressed))` to `O(summary + persisted + suppressed)` without changing UI, protocol, ordering, or trust behavior.

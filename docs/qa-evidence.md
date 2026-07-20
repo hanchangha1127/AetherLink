@@ -2,6 +2,118 @@
 
 This document separates current verification evidence from historical captures.
 
+## 2026-07-20 V1 G0 Decision And Assurance No-Network Checklist
+
+- [x] `docs/v1/g0/decision-v1.json` is a closed, duplicate-key-rejecting source
+  for the G0 status, baseline, product scope, release policy, security selection,
+  privacy/operations floors, quality gates, CI tiers, blockers, source records,
+  supersession rules, and next gate.
+- [x] `docs/v1/g0/assurance-v1.json` and its human review companion pin 29
+  source inputs and close the static protocol/data-flow inventory, T001-T026
+  threat refresh, ten-risk register, nine-event observability allowlist, five
+  decision-bound release-record classes, release checklist, seven incident
+  classes, rollback runbook, and fourteen
+  unassigned approval roles without opening implementation authority.
+- [x] Its `g0ClosureContract` crosswalks all ten blockers to all nine G0 checks,
+  all fourteen accountable roles, and exact gate-scoped evidence kinds. Owner,
+  gate, evidence-catalog, and publication receipt fields and conditional
+  bindings are closed. Receipt-derived trust anchors, partial bundles, and
+  activation before a factory-only independently verified trust context are
+  forbidden and mutation-pinned. The current checker exposes no receipt-
+  acceptance API; every current receipt remains absent and every blocker remains
+  open.
+- [x] `docs/v1/g0/assurance-checkpoint-readback-v1.json` captures the current
+  assurance raw and canonical hashes plus an ordered 29-record source readback.
+  `script/check_v1_g0_checkpoint.py` independently rehashes every exact regular
+  non-symlink source with a 4 MiB ceiling, same-descriptor stability, and final
+  path-identity recheck. It hash-checks the decision before parsing, bounds JSON
+  integers to 128 digits, and pins the candidate bytes outside the record while
+  retaining `candidate_observed_not_immutable`, absent owner acceptance and
+  publication, all ten blockers, and false G1a/network/signing/deployment
+  authority.
+- [x] The human decision preserves Android/macOS and runtime-mediated
+  Ollama/LM Studio, freezes the five launch locales, keeps P2P as a GA gate,
+  retains TURN plus sealed emergency fallback, and moves Intel macOS and broad
+  platform/backend/tool expansion to Post-V1.
+- [x] Distribution is explicit without pretending credentials exist: Google
+  Play closed-to-staged production with Play App Signing for Android, and direct
+  Developer ID/hardened-runtime/notarized distribution for macOS. Production app
+  IDs, account owners, certificates, and keys remain absent blockers.
+- [x] Relay TLS signed leases, pair-epoch recovery, deny-only emergency revoke,
+  fresh-QR replacement, typed route-authorization digests, privacy retention,
+  and per-cell release measurements are selected as future requirements rather
+  than current wire or production claims. Service-mediated candidate publish/
+  fetch capabilities are mandatory, revoked retained state has an absolute
+  30-second maximum, rollback success is 1.0, and thirteen failure classes are
+  zero-allowance hard stops.
+- [x] The release matrix names twelve non-omittable network cells, including
+  immutable VPN and suspend/resume cohorts, plus six required variants for
+  symmetric NAT, consent loss, deliberate P2P failure, fallback outages, and a
+  regional outage. Native-IPv6 and home-NAT cells have a separate direct-P2P
+  release threshold. Four measurement contracts bind targets to owner/source/
+  sample/failure policy. Provider minimum versions, service domains, and named
+  measurement owners remain explicit G0 blockers rather than inferred facts.
+- [x] macOS V1 distribution is narrowed to a stapled signed DMG; PKG and its
+  separate Developer ID Installer custody are not silently left as an option.
+- [x] `python3 script/check_v1_g0_decision.py` passes and hash-verifies nine
+  governing decision inputs plus 29 assurance inputs while confirming Android API,
+  version, application ID, backup policy, camera permission, macOS minimum,
+  development bundle ID/signature, both five-locale sets, the entire canonical
+  G0 records, active protocol message/error parity, and closed nested schemas.
+- [x] `python3 -m unittest script.test_v1_g0_decision` passes 62 tests. Mutations
+  reject duplicate keys, non-finite or overflowed numbers, over-128-digit
+  integers, closure-crosswalk drift, risk-gate promotion, local-path leakage,
+  nested unknown authority, premature
+  G1a, socket/deployment permission, security-profile downgrades, hard-stop
+  renaming, single-plane fallback drift, local service-lease dependency,
+  one-sided trust replacement, missing blockers/network cells/network variants/
+  measurement contracts, a disabled direct-P2P gate, source hash drift,
+  platform expansion, missing protocol/threat/user-loop inventory, forbidden
+  observability fields, missing assurance hard stops, invented approvals or
+  weakened receipt-activation prerequisites,
+  evidence-free checklist passes, arbitrary or unsigned evidence, absent or
+  unapproved signers, forged percentile scalars, oversized/noncanonical
+  envelopes, unsigned required-variant outcomes, invalid direct/fallback/route
+  combinations, missing or reordered outage/restore/recovery observations,
+  same-failed-plane success, zero-based attempt indices, over-120,000ms
+  observations, mixed outcome-route cohorts, missing regional binding,
+  baseline/variant coverage reuse, ambient-Decimal precision collisions,
+  undeclared signer IDs, noncanonical base64url terminal bits, and weakened
+  human wording.
+- [x] `python3 -m unittest script.test_v1_g0_checkpoint` passes 11 tests.
+  Mutations reject any checkpoint-byte change, duplicate/non-finite JSON
+  including exponent overflow and over-128-digit integers, recursive boolean/
+  integer type confusion,
+  assurance raw/canonical drift, omitted/reordered/duplicated/self-referential
+  source records, path/role/declared/observed hash drift, live source mismatch,
+  absolute/parent/symlink/non-file paths, oversized sources, same-descriptor and
+  final-path identity drift, fabricated owner acceptance or publication,
+  blocker removal, gate promotion, and every authority expansion.
+- [x] The two focused G0 mutation suites therefore contain 73 passing tests;
+  this count does not represent the unrun full no-device aggregate.
+- [x] The current non-socket static batch passes copy hygiene across 92
+  user-facing files, docs hygiene across 12 current documents, Android and macOS
+  five-locale parity, both protocol schemas, the closed P2P/NAT and
+  production-relay design validators, 21 documentation/launcher/Phase-A unit
+  tests, shell syntax, and `git diff --check`.
+- [x] `bash -n script/check_no_device_quality.sh` passes syntax only after both
+  G0 checkers, both mutation suites, and an explicit local-candidate versus
+  immutable-publication boundary marker were added to the aggregate. The full
+  aggregate is not claimed until it finishes on the integrated source.
+- Agent state: independent GPT-5.6 Sol product/release, security/authority, and
+  evidence-conformance audits were used. The final product and
+  evidence-conformance re-reviews report no remaining P0-P3 finding.
+  GPT-5.3-Codex-Spark was not used.
+- Proof boundary: this is local documentation, source hashing, configuration
+  inspection, and Python mutation evidence. It does not implement G1a, create a
+  key, sign an artifact, select or compile a P2P dependency, open a socket, use
+  an Android device, access an external network, deploy a service, or prove V1.
+- Remaining G0 gate: the assurance content is present and statically validated,
+  and its local candidate hashes/readback are reproducible. Immutable published
+  readback, accountable owner acceptance, the full no-device aggregate, and
+  Android/macOS release compilation are not claimed by this checklist and keep
+  the first blocker open.
+
 ## 2026-07-20 Android Runtime Session Summary Linear Merge No-Device Checklist
 
 - [x] `PersistedRuntimeData.withRuntimeChatSessionSummaries` builds deleted ids once, creates one first-wins existing-session index, collects local-only rows and collision ids in the same persisted-session pass, and deduplicates incoming summaries once.
