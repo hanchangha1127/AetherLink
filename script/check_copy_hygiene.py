@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
@@ -402,10 +403,10 @@ def macos_pairing_callback_wiring_failures(
         ),
         (
             status_text,
-            "private struct StatusQuickActions: View",
+            "private func performRuntimeOverviewAction(",
             "onGenerateRelayQRCode?()",
             "onGenerateRemoteRelayQRCode?()",
-            "StatusView Quick Actions must invoke only the generic callback.",
+            "StatusView overview pairing action must invoke only the generic callback.",
         ),
         (
             app_text,
@@ -774,8 +775,8 @@ def route_diagnostics_guard_failures() -> list[str]:
             "decision-v6.json",
             "handoff-v9.json",
             "`--verify` does not establish listener readiness",
-            "Do not assume every modified line belongs to QR recovery.",
-            "Recommended next product-quality slice: physical expired/rotated QR recovery",
+            "The earlier QR, persistence, and security-governance work is part of the",
+            "Recommended next device slice when hardware is attached: physical",
         ),
     }
     for path, snippets in required_doc_snippets.items():
@@ -7342,9 +7343,9 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "connectionStatusRouteNoticeListTestTag",
         "RUNTIME_ROUTE_NOTICE_TEST_TAG",
         "RUNTIME_ROUTE_NOTICE_RECOVERY_TEST_TAG",
-        'assertBoundsInside("$languageTag ${layoutCase.name} route notice action", actionBounds, columnBounds)',
+        '"$languageTag ${layoutCase.name} connection hero action"',
         "boundsOverlap(titleBounds, statusBounds)",
-        "boundsOverlap(recoveryBounds, actionBounds)",
+        "hasTestTag(RUNTIME_ROUTE_NOTICE_TEST_TAG) and hasClickAction()",
         "RouteNoticePrimaryAction.Connect ->",
         "RouteNoticePrimaryAction.ScanLatestQr ->",
     ):
@@ -10849,9 +10850,9 @@ def android_chat_model_menu_guard_failures() -> list[str]:
         "settingsPreferenceRowsExposeSelectedStateToAccessibility",
         "settingsAppearanceAndLanguagePreferenceRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
         "settingsPreferenceRowsNarrowRootTestTag",
-        "appearancePreferenceOptionRowTestTag(RuntimeAppTheme.System)",
+        "appearancePreferenceOptionRowTestTag(theme)",
         "languagePreferenceOptionRowTestTag(APP_LANGUAGE_SOURCE_SYSTEM)",
-        "languagePreferenceOptionLabelTestTag(languageTag)",
+        "languagePreferenceOptionLabelTestTag(language.languageTag)",
         "assertFalse(\n                \"$languageTag $label radio should not overlap label.\"",
         "settingsPreferenceGroupLabelsExposeHeadingSemanticsAcrossSupportedLanguages",
         "embeddingModelMenuModelsKeepsOnlyRuntimeHostLocalEmbeddingModels",
@@ -11514,6 +11515,7 @@ def android_composer_draft_persistence_guard_failures() -> list[str]:
         "Android runtime transcript loading compact layout",
         "Android runtime transcript lifecycle mutation lockout",
         "Covered Android bounded volatile persistence addendum",
+        "Covered Android runtime session-summary linear merge addendum",
     )
     for snippet in required_no_device_snippets:
         if snippet not in no_device_text:
@@ -11743,9 +11745,10 @@ def android_chat_search_no_results_live_region_guard_failures() -> list[str]:
     required_drawer_group_snippets = (
         "chatSessionDrawerGroups(",
         "DrawerHistoryGroupLabel(text = stringResource(group.labelRes))",
-        "updatedAtMillis = session.updatedAtMillis",
-        "nowMillis = nowMillis",
-        "localDayStartMillis(nowMillis, daysOffset = -7)",
+        "val boundaries = chatSessionDrawerDateBoundaries(nowMillis, timeZone)",
+        "val sessionsByLabel = sessions.groupBy { session ->",
+        "chatSessionDrawerGroupLabelRes(session.updatedAtMillis, boundaries)",
+        "previousSevenDaysStartMillis = localDayStartMillis(daysOffset = -7)",
     )
     for snippet in required_drawer_group_snippets:
         if snippet not in main_text:
@@ -11757,6 +11760,7 @@ def android_chat_search_no_results_live_region_guard_failures() -> list[str]:
         "navigationDrawerGroupsPreviousChatsByLocalDateAcrossSupportedLanguages",
         "chatSessionDrawerGroupLabelUsesLocalCalendarDays",
         "chatSessionDrawerGroupsUseStableBucketOrderAndPreserveOrderInsideBuckets",
+        "chatSessionDrawerGroupsPreserveBucketsAcrossDstMidnightFutureAndBoundaries",
     )
     for snippet in required_drawer_group_test_snippets:
         if snippet not in compose_test_text and snippet not in app_navigation_test_text:
@@ -12969,11 +12973,11 @@ def android_haptic_guard_failures() -> list[str]:
             "Generic error technical diagnostics must redact backend endpoints and route secrets.",
         ),
         (
-            "runtimeRouteNotice(state, state.trustedRuntime)?.action == RouteNoticePrimaryAction.ScanLatestQr",
+            "routeAvailabilityAction = routeAvailabilityError?.let { routeNoticePrimaryAction(state) }",
             "Settings trusted-runtime primary action must follow route-refresh QR guidance before stale endpoints.",
         ),
         (
-            "RouteNoticePrimaryAction.ScanLatestQr -> onScanLatestQr()",
+            "RouteNoticePrimaryAction.ScanLatestQr -> onScanLatestQr",
             "Settings trusted-runtime primary action must open the latest-QR scanner when route refresh is required.",
         ),
         (
@@ -13865,7 +13869,8 @@ def android_haptic_guard_failures() -> list[str]:
         "CHAT_RUNTIME_ERROR_TECHNICAL_PANEL_TEST_TAG",
         "CHAT_RUNTIME_ERROR_TECHNICAL_REPORT_TEST_TAG",
         "assertBoundsInside(\"$nextLanguageTag generic error banner\", bannerBounds, rootBounds)",
-        "assertBoundsInside(\"$nextLanguageTag generic error technical report\", reportBounds, panelBounds)",
+        '"$nextLanguageTag generic error technical report after scrolling"',
+        "reportBounds,\n                reportNoticeAreaBounds",
         "boundsOverlap(toggleLabelBounds, toggleIconBounds)",
         "chatScreenGenericErrorBannerExposesAccessibilitySummaryAndRedactsUnsafeDetail",
         "chatScreenTechnicalDiagnosticsAreCollapsedAndRedactUnsafeRuntimeDetails",
@@ -14745,7 +14750,6 @@ def android_heading_accessibility_guard_failures() -> list[str]:
         "settingsExpandableSectionTitleTestTag(title)",
         "settingsExpandableSectionSubtitleTestTag(title)",
         "settingsExpandableSectionActionTestTag(title)",
-        "maxLines = 1,\n                    overflow = TextOverflow.Ellipsis,\n                    modifier = Modifier.testTag(settingsExpandableSectionTitleTestTag(title))",
         "text = stringResource(R.string.preferences_title)",
         "text = stringResource(R.string.embedding_model_title),\n                        style = MaterialTheme.typography.titleMedium,\n                        fontWeight = FontWeight.SemiBold,\n                        modifier = Modifier.semantics {\n                            heading()\n                        }",
         "text = stringResource(R.string.memory_title),\n                style = MaterialTheme.typography.titleMedium,\n                fontWeight = FontWeight.SemiBold,\n                modifier = Modifier.semantics {\n                    heading()\n                }",
@@ -24769,8 +24773,26 @@ def runtime_history_storage_guard_failures() -> list[str]:
         (
             android_store_text,
             android_store_path,
-            ".filterNot { it.sessionId in localOnlySessionIds }",
+            "sessionId in localOnlySessionIds ||",
             "Android runtime summary sync must not replace a local-only identity collision.",
+        ),
+        (
+            android_store_text,
+            android_store_path,
+            "val deletedSessionIds = deletedRuntimeSessionIds()",
+            "Android runtime summary batch sync must build the deleted-session set once.",
+        ),
+        (
+            android_store_text,
+            android_store_path,
+            "if (session.id !in existingSessionsById)",
+            "Android runtime summary batch sync must preserve first-wins persisted session lookup.",
+        ),
+        (
+            android_store_text,
+            android_store_path,
+            "existing = existingSessionsById[sessionId]",
+            "Android runtime summary batch sync must use its precomputed session index.",
         ),
         (
             android_viewmodel_text,
@@ -24841,6 +24863,11 @@ def runtime_history_storage_guard_failures() -> list[str]:
         "MessageType.MemorySummaryDraftDismiss",
         "assertTrue(fixture.localStore.data.memoryEntries.isEmpty())",
         "runtimeSessionSummariesClampNegativeMessageCounts",
+        "runtimeSessionSummaryBatchMergeReadsPersistedStateLinearlyAndPreservesFirstWinsState",
+        "assertTrue(existingSessions.readCount <= existingSessions.size + 1)",
+        "assertTrue(suppressedSessions.readCount <= suppressedSessions.size * 2 + 2)",
+        'assertEquals("Manual first", duplicate.title)',
+        'assertTrue(merged.sessions.none { it.id == "blocked-runtime" })',
         "assertEquals(0, merged.sessions.first { it.id == \"runtime-existing\" }.runtimeMessageCount)",
         "assertEquals(0, runtimeChatSessions(stalePersistedData).single().messageCount)",
         "runtimeMessagesDoNotResurrectSessionMissingFromLatestRuntimeSummary",
@@ -28151,9 +28178,10 @@ def macos_pairing_qr_accessibility_guard_failures() -> list[str]:
             failures.append(f"{content_relative}: Missing Pairing QR generation action accessibility contract {snippet}.")
 
     required_status_snippets = (
-        "let pairingQRActionHint = pairingQRGenerationActionAccessibilityHint(",
-        "hasAction: onGenerateRelayQRCode != nil",
-        ".accessibilityHint(Text(pairingQRActionHint))",
+        "struct RuntimeOverviewPrimaryActionPresentation: Equatable",
+        "accessibilityHint: pairingQRGenerationActionAccessibilityHint(",
+        "hasAction: hasPairingAction",
+        ".accessibilityHint(Text(primaryAction.accessibilityHint))",
     )
     for snippet in required_status_snippets:
         if snippet not in status_text:
@@ -28308,7 +28336,22 @@ def macos_quick_action_accessibility_guard_failures() -> list[str]:
                 f"{status_path.relative_to(ROOT)}: Missing macOS compact quick-action layout {snippet}."
             )
 
-    required_action_snippets = (
+    required_status_presentation_snippets = (
+        "accessibilityValue: modelProviderCheckActionAccessibilityValue()",
+        "accessibilityHint: modelProviderCheckActionAccessibilityHint()",
+        "accessibilityValue: modelListLoadActionAccessibilityValue()",
+        "accessibilityHint: modelListLoadActionAccessibilityHint()",
+        ".help(primaryAction.accessibilityHint)",
+        ".accessibilityValue(Text(primaryAction.accessibilityValue))",
+        ".accessibilityHint(Text(primaryAction.accessibilityHint))",
+    )
+    for snippet in required_status_presentation_snippets:
+        if snippet not in status_text:
+            failures.append(
+                f"{status_path.relative_to(ROOT)}: Missing macOS quick action accessibility presentation {snippet}."
+            )
+
+    required_content_action_snippets = (
         ".help(modelProviderCheckActionAccessibilityHint())",
         ".accessibilityValue(Text(modelProviderCheckActionAccessibilityValue()))",
         ".accessibilityHint(Text(modelProviderCheckActionAccessibilityHint()))",
@@ -28316,12 +28359,11 @@ def macos_quick_action_accessibility_guard_failures() -> list[str]:
         ".accessibilityValue(Text(modelListLoadActionAccessibilityValue()))",
         ".accessibilityHint(Text(modelListLoadActionAccessibilityHint()))",
     )
-    for path, text in ((status_path, status_text), (content_path, content_text)):
-        for snippet in required_action_snippets:
-            if snippet not in text:
-                failures.append(
-                    f"{path.relative_to(ROOT)}: Missing macOS quick action accessibility wiring {snippet}."
-                )
+    for snippet in required_content_action_snippets:
+        if snippet not in content_text:
+            failures.append(
+                f"{content_path.relative_to(ROOT)}: Missing macOS quick action accessibility wiring {snippet}."
+            )
 
     required_status_action_snippets = (
         "Button {\n                model.refreshModelResidencyStatus()\n            }",
@@ -28595,7 +28637,7 @@ def macos_empty_state_accessibility_guard_failures() -> list[str]:
 
     required_screen_snippets = (
         (status_path, "emptyModelsTitle", "emptyModelsDescription"),
-        (pairing_path, "emptyPairingTitle", "emptyPairingDescription"),
+        (pairing_path, "private struct PairingEmptyStateCard: View", "description: detail"),
         (trusted_path, "emptyTrustedDevicesTitle", "emptyTrustedDevicesDescription"),
         (logs_path, "emptyActivityTitle", "emptyActivityDescription"),
     )
@@ -35599,7 +35641,7 @@ let afterQuotedRaw = 2
         (
             "apps/macos/LocalAgentBridgeApp/Sources/PairingView.swift",
             "private struct ActivePairingCard: View {",
-            "private struct PairingRouteNotice {",
+            "struct PairingRouteNotice {",
             (
                 "@StateObject private var qrImageCache: PairingQRCodeImageCache",
                 "_qrImageCache = StateObject(",
@@ -36106,10 +36148,12 @@ let afterQuotedRaw = 2
         "script/check_no_device_quality.sh": (
             "ProtocolCodecTests/testRelayFrameCipherDerivesEpochMaterialOncePerDirectionAndEpoch",
             "Suite-subsumed named evidence is kept visible for contract guards",
-            "SWIFT_TEST_BATCH_MAX_FILTER_CHARS=12000",
-            "queue_swift_test_filter()",
-            "flush_swift_test_batch()",
+            "SWIFT_FULL_SUITE_COMPLETED=0",
+            "SWIFT_SUBSUMED_FILTER_COUNT=0",
             '"$1" == "swift" && "$2" == "test" && "$3" == "--filter"',
+            "Swift filter reached before the full Swift suite completed",
+            "run swift test",
+            "Reviewed Swift filters subsumed by full suite",
             "script/test_no_adb_external_relay_pairing_smoke.py",
             "script/test_android_usb_install.py",
             "LocalRuntimeMessageRouterTests/testRequestAdmissionDisconnectCancellationReleasesExactlyOnce",
@@ -36533,7 +36577,7 @@ def frontend_readiness_design_guard_failures() -> list[str]:
         (
             "apps/macos/LocalAgentBridgeApp/Sources/PairingView.swift",
             "private struct ActivePairingCard: View {",
-            "private struct PairingRouteNotice {",
+            "struct PairingRouteNotice {",
             (
                 "private func regularContent(",
                 "private func compactContent(",
@@ -36558,14 +36602,15 @@ def frontend_readiness_design_guard_failures() -> list[str]:
         ),
         (
             "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt",
-            "private fun PairingConnectButton(",
+            "private fun ConnectionJourneyPrimaryAction(",
             "private fun pairingConnectButtonStateDescription(",
             (
                 "val (actionIcon, actionIconTag) = when (action)",
                 "RouteNoticePrimaryAction.ScanLatestQr ->\n"
                 "            Icons.Filled.QrCodeScanner to SETTINGS_PAIRING_PRIMARY_QR_ICON_TEST_TAG",
-                "RouteNoticePrimaryAction.Connect,\n"
-                "        null -> Icons.Filled.Link to SETTINGS_PAIRING_PRIMARY_CONNECT_ICON_TEST_TAG",
+                "RouteNoticePrimaryAction.Connect ->\n"
+                "            Icons.Filled.Link to SETTINGS_PAIRING_PRIMARY_CONNECT_ICON_TEST_TAG",
+                ".testTag(actionTestTag)",
                 "modifier = Modifier.testTag(actionIconTag)",
             ),
             "Android trusted-route primary icon mapping",
@@ -36685,7 +36730,8 @@ def frontend_readiness_design_guard_failures() -> list[str]:
             "decodedPayloads.contains(expectedPayload)",
         ),
         "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt": (
-            ".testTag(SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG)",
+            "primaryActionTestTag = SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG",
+            ".testTag(actionTestTag)",
             ".testTag(actionIconTag)",
             "SETTINGS_PAIRING_PRIMARY_QR_ICON_TEST_TAG",
             "SETTINGS_PAIRING_PRIMARY_CONNECT_ICON_TEST_TAG",
@@ -36728,7 +36774,7 @@ def frontend_readiness_design_guard_failures() -> list[str]:
             pending_region_path.read_text(encoding="utf-8", errors="replace")
         )
         start = source.find("private fun PendingPairingRouteStatus(")
-        end = source.find("private fun PairingConnectButton(", start + 1) if start >= 0 else -1
+        end = source.find("private fun ConnectionJourneyPrimaryAction(", start + 1) if start >= 0 else -1
         if start < 0 or end < 0:
             failures.append("Android pending pairing route status region is missing.")
         elif "RoundedCornerShape(16.dp)" in source[start:end]:
@@ -55991,24 +56037,30 @@ def runtime_python_sandbox_review_guard_failures() -> list[str]:
         failures.append(
             "check_no_device_quality.sh: runtime Python validation, tests, and marker order is invalid."
         )
-    expected_run_batch_branch = '''run() {
+    expected_run_subsumed_branch = '''run() {
   if [[ "$#" -eq 4 && "$1" == "swift" && "$2" == "test" && "$3" == "--filter" ]]; then
-    queue_swift_test_filter "$4"
+    if (( SWIFT_FULL_SUITE_COMPLETED != 1 )); then
+      echo "Swift filter reached before the full Swift suite completed: $4" >&2
+      return 1
+    fi
+    ((SWIFT_SUBSUMED_FILTER_COUNT += 1))
     return
   fi
 '''
-    expected_run_execution_tail = '''  flush_swift_test_batch
-  echo
+    expected_run_execution_tail = '''  echo
   echo "==> $*"
   "$@"
+  if [[ "$#" -eq 2 && "$1" == "swift" && "$2" == "test" ]]; then
+    SWIFT_FULL_SUITE_COMPLETED=1
+  fi
 }'''
     if (
-        texts["no_device"].count(expected_run_batch_branch) != 1
+        texts["no_device"].count(expected_run_subsumed_branch) != 1
         or texts["no_device"].count(expected_run_execution_tail) != 1
     ):
         failures.append(
-            "check_no_device_quality.sh: run() must batch only exact Swift filters and execute "
-            "every other gate command exactly after flushing the batch."
+            "check_no_device_quality.sh: run() must fail closed before the full Swift suite, "
+            "then subsume only exact reviewed Swift filters and execute every other gate command."
         )
     expected_python_gate_prefix = """#!/usr/bin/env bash
 set -euo pipefail
@@ -58897,164 +58949,78 @@ def android_runtime_health_current_request_authority_guard_failures() -> list[st
     return failures
 
 
+def report_guard_failures(
+    label: str,
+    check: Callable[[], list[str]],
+) -> bool:
+    failures = check()
+    if not failures:
+        return False
+    print(label, file=sys.stderr)
+    for failure in failures:
+        print(f" - {failure}", file=sys.stderr)
+    return True
+
+
 def main() -> int:
-    authenticated_read_authority_failures = (
-        android_authenticated_read_authority_guard_failures()
-    )
-    if authenticated_read_authority_failures:
-        print("Android authenticated read authority guard failed:", file=sys.stderr)
-        for failure in authenticated_read_authority_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android authenticated read authority guard failed:", android_authenticated_read_authority_guard_failures):
         return 1
 
-    authenticated_read_rollover_authority_failures = (
-        android_authenticated_read_rollover_authority_guard_failures()
-    )
-    if authenticated_read_rollover_authority_failures:
-        print(
-            "Android authenticated read rollover authority guard failed:",
-            file=sys.stderr,
-        )
-        for failure in authenticated_read_rollover_authority_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android authenticated read rollover authority guard failed:", android_authenticated_read_rollover_authority_guard_failures):
         return 1
 
-    bulk_terminal_authority_failures = (
-        android_chat_sessions_bulk_terminal_authority_guard_failures()
-    )
-    if bulk_terminal_authority_failures:
-        print(
-            "Android chat sessions bulk terminal authority guard failed:",
-            file=sys.stderr,
-        )
-        for failure in bulk_terminal_authority_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android chat sessions bulk terminal authority guard failed:", android_chat_sessions_bulk_terminal_authority_guard_failures):
         return 1
 
-    memory_mutation_authority_failures = (
-        android_persistent_memory_mutation_authority_guard_failures()
-    )
-    if memory_mutation_authority_failures:
-        print(
-            "Android persistent-memory mutation current-request authority guard failed:",
-            file=sys.stderr,
-        )
-        for failure in memory_mutation_authority_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android persistent-memory mutation current-request authority guard failed:", android_persistent_memory_mutation_authority_guard_failures):
         return 1
 
-    runtime_health_authority_failures = (
-        android_runtime_health_current_request_authority_guard_failures()
-    )
-    if runtime_health_authority_failures:
-        print("Android runtime.health current-request authority guard failed:", file=sys.stderr)
-        for failure in runtime_health_authority_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android runtime.health current-request authority guard failed:", android_runtime_health_current_request_authority_guard_failures):
         return 1
 
-    provider_catalog_failures = provider_model_catalog_context_window_guard_failures()
-    if provider_catalog_failures:
-        print("Provider model-catalog/context-window trust guard failed:", file=sys.stderr)
-        for failure in provider_catalog_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Provider model-catalog/context-window trust guard failed:", provider_model_catalog_context_window_guard_failures):
         return 1
 
-    runtime_python_sandbox_failures = runtime_python_sandbox_review_guard_failures()
-    if runtime_python_sandbox_failures:
-        print("Runtime Python sandbox review guard failed:", file=sys.stderr)
-        for failure in runtime_python_sandbox_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Runtime Python sandbox review guard failed:", runtime_python_sandbox_review_guard_failures):
         return 1
 
-    runtime_permission_policy_failures = runtime_permission_policy_registry_guard_failures()
-    if runtime_permission_policy_failures:
-        print("Runtime permission policy registry guard failed:", file=sys.stderr)
-        for failure in runtime_permission_policy_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Runtime permission policy registry guard failed:", runtime_permission_policy_registry_guard_failures):
         return 1
 
-    runtime_prompt_skill_failures = runtime_prompt_skill_registry_guard_failures()
-    if runtime_prompt_skill_failures:
-        print("Runtime prompt-skill registry guard failed:", file=sys.stderr)
-        for failure in runtime_prompt_skill_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Runtime prompt-skill registry guard failed:", runtime_prompt_skill_registry_guard_failures):
         return 1
 
-    runtime_chat_retention_failures = runtime_chat_retention_production_ownership_guard_failures()
-    if runtime_chat_retention_failures:
-        print("Runtime chat retention production ownership guard failed:", file=sys.stderr)
-        for failure in runtime_chat_retention_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Runtime chat retention production ownership guard failed:", runtime_chat_retention_production_ownership_guard_failures):
         return 1
 
-    macos_connection_manager_failures = macos_runtime_connection_manager_guard_failures()
-    if macos_connection_manager_failures:
-        print("macOS runtime connection-manager guard failed:", file=sys.stderr)
-        for failure in macos_connection_manager_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS runtime connection-manager guard failed:", macos_runtime_connection_manager_guard_failures):
         return 1
 
-    relay_abuse_controls_failures = relay_abuse_controls_guard_failures()
-    if relay_abuse_controls_failures:
-        print("Relay abuse-control foundation guard failed:", file=sys.stderr)
-        for failure in relay_abuse_controls_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Relay abuse-control foundation guard failed:", relay_abuse_controls_guard_failures):
         return 1
 
-    relay_source_rate_limits_failures = relay_source_rate_limits_guard_failures()
-    if relay_source_rate_limits_failures:
-        print("Relay source-rate-limit guard failed:", file=sys.stderr)
-        for failure in relay_source_rate_limits_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Relay source-rate-limit guard failed:", relay_source_rate_limits_guard_failures):
         return 1
 
-    relay_source_peer_quotas_failures = relay_source_peer_quotas_guard_failures()
-    if relay_source_peer_quotas_failures:
-        print("Relay source-peer-quota guard failed:", file=sys.stderr)
-        for failure in relay_source_peer_quotas_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Relay source-peer-quota guard failed:", relay_source_peer_quotas_guard_failures):
         return 1
 
-    relay_waiting_peer_policy_failures = relay_waiting_peer_policy_guard_failures()
-    if relay_waiting_peer_policy_failures:
-        print("Relay waiting-peer-policy guard failed:", file=sys.stderr)
-        for failure in relay_waiting_peer_policy_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Relay waiting-peer-policy guard failed:", relay_waiting_peer_policy_guard_failures):
         return 1
 
-    p2p_nat_security_design_failures = p2p_nat_security_design_guard_failures()
-    if p2p_nat_security_design_failures:
-        print("P2P/NAT security design guard failed:", file=sys.stderr)
-        for failure in p2p_nat_security_design_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("P2P/NAT security design guard failed:", p2p_nat_security_design_guard_failures):
         return 1
 
-    bounded_script_hardening_failures = bounded_script_hardening_guard_failures()
-    if bounded_script_hardening_failures:
-        print("Bounded script hardening guard failed:", file=sys.stderr)
-        for failure in bounded_script_hardening_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Bounded script hardening guard failed:", bounded_script_hardening_guard_failures):
         return 1
 
-    production_relay_security_design_failures = production_relay_security_design_guard_failures()
-    if production_relay_security_design_failures:
-        print("Production relay security design guard failed:", file=sys.stderr)
-        for failure in production_relay_security_design_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Production relay security design guard failed:", production_relay_security_design_guard_failures):
         return 1
 
-    paired_relay_failures = paired_relay_allocation_authorization_guard_failures()
-    if paired_relay_failures:
-        print("Paired relay allocation authorization guard failed:", file=sys.stderr)
-        for failure in paired_relay_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Paired relay allocation authorization guard failed:", paired_relay_allocation_authorization_guard_failures):
         return 1
 
-    initial_pairing_failures = initial_pairing_mutual_proof_guard_failures()
-    if initial_pairing_failures:
-        print("Initial pairing mutual proof guard failed:", file=sys.stderr)
-        for failure in initial_pairing_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Initial pairing mutual proof guard failed:", initial_pairing_mutual_proof_guard_failures):
         return 1
     failures: list[str] = []
 
@@ -59071,620 +59037,262 @@ def main() -> int:
             print(f" - {failure}", file=sys.stderr)
         return 1
 
-    cloud_model_source_failures = cloud_model_source_copy_guard_failures()
-    if cloud_model_source_failures:
-        print("Cloud model-source copy guard failed:", file=sys.stderr)
-        for failure in cloud_model_source_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Cloud model-source copy guard failed:", cloud_model_source_copy_guard_failures):
         return 1
 
-    no_device_gate_failures = no_device_quality_gate_guard_failures()
-    if no_device_gate_failures:
-        print("No-device quality gate guard failed:", file=sys.stderr)
-        for failure in no_device_gate_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("No-device quality gate guard failed:", no_device_quality_gate_guard_failures):
         return 1
 
-    memory_duplicate_suggestion_failures = review_only_memory_duplicate_suggestions_guard_failures()
-    if memory_duplicate_suggestion_failures:
-        print("Review-only memory duplicate suggestion guard failed:", file=sys.stderr)
-        for failure in memory_duplicate_suggestion_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Review-only memory duplicate suggestion guard failed:", review_only_memory_duplicate_suggestions_guard_failures):
         return 1
 
-    memory_semantic_duplicate_suggestion_failures = (
-        review_only_memory_semantic_duplicate_suggestions_guard_failures()
-    )
-    if memory_semantic_duplicate_suggestion_failures:
-        print("Review-only semantic memory duplicate suggestion guard failed:", file=sys.stderr)
-        for failure in memory_semantic_duplicate_suggestion_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Review-only semantic memory duplicate suggestion guard failed:", review_only_memory_semantic_duplicate_suggestions_guard_failures):
         return 1
 
-    memory_semantic_duplicate_cluster_failures = (
-        review_only_memory_semantic_duplicate_clusters_guard_failures()
-    )
-    if memory_semantic_duplicate_cluster_failures:
-        print("Review-only semantic memory duplicate cluster guard failed:", file=sys.stderr)
-        for failure in memory_semantic_duplicate_cluster_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Review-only semantic memory duplicate cluster guard failed:", review_only_memory_semantic_duplicate_clusters_guard_failures):
         return 1
 
-    runtime_key_bound_relay_admission_failures = runtime_key_bound_relay_admission_guard_failures()
-    if runtime_key_bound_relay_admission_failures:
-        print("Runtime-key relay admission foundation guard failed:", file=sys.stderr)
-        for failure in runtime_key_bound_relay_admission_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Runtime-key relay admission foundation guard failed:", runtime_key_bound_relay_admission_guard_failures):
         return 1
 
-    strict_relay_transport_binding_failures = strict_relay_transport_binding_guard_failures()
-    if strict_relay_transport_binding_failures:
-        print("Strict relay transport-binding guard failed:", file=sys.stderr)
-        for failure in strict_relay_transport_binding_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Strict relay transport-binding guard failed:", strict_relay_transport_binding_guard_failures):
         return 1
 
-    macos_bonjour_txt_metadata_boundary_failures = macos_bonjour_txt_metadata_boundary_guard_failures()
-    if macos_bonjour_txt_metadata_boundary_failures:
-        print("macOS Bonjour TXT metadata boundary guard failed:", file=sys.stderr)
-        for failure in macos_bonjour_txt_metadata_boundary_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS Bonjour TXT metadata boundary guard failed:", macos_bonjour_txt_metadata_boundary_guard_failures):
         return 1
 
-    app_icon_readability_failures = app_icon_readability_guard_failures()
-    if app_icon_readability_failures:
-        print("App icon readability guard failed:", file=sys.stderr)
-        for failure in app_icon_readability_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("App icon readability guard failed:", app_icon_readability_guard_failures):
         return 1
 
-    suggested_questions_removed_failures = suggested_questions_removed_guard_failures()
-    if suggested_questions_removed_failures:
-        print("Suggested-question tombstone guard failed:", file=sys.stderr)
-        for failure in suggested_questions_removed_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Suggested-question tombstone guard failed:", suggested_questions_removed_guard_failures):
         return 1
 
-    runtime_research_notebook_failures = runtime_research_notebook_guard_failures()
-    if runtime_research_notebook_failures:
-        print("Runtime research notebook guard failed:", file=sys.stderr)
-        for failure in runtime_research_notebook_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Runtime research notebook guard failed:", runtime_research_notebook_guard_failures):
         return 1
 
-    protocol_reserved_namespace_failures = protocol_reserved_namespace_guard_failures()
-    if protocol_reserved_namespace_failures:
-        print("Protocol reserved namespace guard failed:", file=sys.stderr)
-        for failure in protocol_reserved_namespace_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Protocol reserved namespace guard failed:", protocol_reserved_namespace_guard_failures):
         return 1
 
-    macos_protocol_envelope_decode_failures = macos_protocol_envelope_decode_guard_failures()
-    if macos_protocol_envelope_decode_failures:
-        print("macOS protocol envelope decode guard failed:", file=sys.stderr)
-        for failure in macos_protocol_envelope_decode_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS protocol envelope decode guard failed:", macos_protocol_envelope_decode_guard_failures):
         return 1
 
-    macos_protocol_model_metadata_failures = macos_protocol_model_metadata_guard_failures()
-    if macos_protocol_model_metadata_failures:
-        print("macOS protocol model metadata guard failed:", file=sys.stderr)
-        for failure in macos_protocol_model_metadata_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS protocol model metadata guard failed:", macos_protocol_model_metadata_guard_failures):
         return 1
 
-    android_protocol_model_metadata_failures = android_protocol_model_metadata_guard_failures()
-    if android_protocol_model_metadata_failures:
-        print("Android protocol model metadata guard failed:", file=sys.stderr)
-        for failure in android_protocol_model_metadata_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android protocol model metadata guard failed:", android_protocol_model_metadata_guard_failures):
         return 1
 
-    android_document_retrieval_payload_failures = android_protocol_document_retrieval_payload_guard_failures()
-    if android_document_retrieval_payload_failures:
-        print("Android document/retrieval payload guard failed:", file=sys.stderr)
-        for failure in android_document_retrieval_payload_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android document/retrieval payload guard failed:", android_protocol_document_retrieval_payload_guard_failures):
         return 1
 
-    android_document_retrieval_viewmodel_failures = android_document_retrieval_viewmodel_guard_failures()
-    if android_document_retrieval_viewmodel_failures:
-        print("Android document/retrieval ViewModel guard failed:", file=sys.stderr)
-        for failure in android_document_retrieval_viewmodel_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android document/retrieval ViewModel guard failed:", android_document_retrieval_viewmodel_guard_failures):
         return 1
 
-    android_document_retrieval_compose_ui_failures = android_document_retrieval_compose_ui_guard_failures()
-    if android_document_retrieval_compose_ui_failures:
-        print("Android document/retrieval Compose UI guard failed:", file=sys.stderr)
-        for failure in android_document_retrieval_compose_ui_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android document/retrieval Compose UI guard failed:", android_document_retrieval_compose_ui_guard_failures):
         return 1
 
-    android_document_retrieval_relay_integration_failures = (
-        android_document_retrieval_relay_integration_guard_failures()
-    )
-    if android_document_retrieval_relay_integration_failures:
-        print("Android document/retrieval relay integration guard failed:", file=sys.stderr)
-        for failure in android_document_retrieval_relay_integration_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android document/retrieval relay integration guard failed:", android_document_retrieval_relay_integration_guard_failures):
         return 1
 
-    document_retrieval_source_anchor_failures = document_retrieval_source_anchor_guard_failures()
-    if document_retrieval_source_anchor_failures:
-        print("Document retrieval source anchor guard failed:", file=sys.stderr)
-        for failure in document_retrieval_source_anchor_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Document retrieval source anchor guard failed:", document_retrieval_source_anchor_guard_failures):
         return 1
 
-    runtime_document_source_governance_failures = runtime_document_source_governance_guard_failures()
-    if runtime_document_source_governance_failures:
-        print("Runtime document source governance guard failed:", file=sys.stderr)
-        for failure in runtime_document_source_governance_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Runtime document source governance guard failed:", runtime_document_source_governance_guard_failures):
         return 1
 
-    android_protocol_envelope_decode_failures = android_protocol_envelope_decode_guard_failures()
-    if android_protocol_envelope_decode_failures:
-        print("Android protocol envelope decode guard failed:", file=sys.stderr)
-        for failure in android_protocol_envelope_decode_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android protocol envelope decode guard failed:", android_protocol_envelope_decode_guard_failures):
         return 1
 
-    owned_process_supervisor_failures = owned_process_supervisor_guard_failures()
-    if owned_process_supervisor_failures:
-        print("Owned-process supervisor guard failed:", file=sys.stderr)
-        for failure in owned_process_supervisor_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Owned-process supervisor guard failed:", owned_process_supervisor_guard_failures):
         return 1
 
-    relay_exposed_bind_token_failures = relay_exposed_bind_token_guard_failures()
-    if relay_exposed_bind_token_failures:
-        print("Relay exposed-bind allocation-token guard failed:", file=sys.stderr)
-        for failure in relay_exposed_bind_token_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Relay exposed-bind allocation-token guard failed:", relay_exposed_bind_token_guard_failures):
         return 1
 
-    endpoint_owned_relay_secret_allocation_failures = (
-        endpoint_owned_relay_secret_allocation_guard_failures()
-    )
-    if endpoint_owned_relay_secret_allocation_failures:
-        print("Endpoint-owned relay secret allocation guard failed:", file=sys.stderr)
-        for failure in endpoint_owned_relay_secret_allocation_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Endpoint-owned relay secret allocation guard failed:", endpoint_owned_relay_secret_allocation_guard_failures):
         return 1
 
-    relay_allocation_token_authorization_failures = relay_allocation_token_authorization_guard_failures()
-    if relay_allocation_token_authorization_failures:
-        print("Relay allocation-token authorization guard failed:", file=sys.stderr)
-        for failure in relay_allocation_token_authorization_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Relay allocation-token authorization guard failed:", relay_allocation_token_authorization_guard_failures):
         return 1
 
-    relay_opaque_id_failures = relay_opaque_id_guard_failures()
-    if relay_opaque_id_failures:
-        print("Relay opaque-id allocation guard failed:", file=sys.stderr)
-        for failure in relay_opaque_id_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Relay opaque-id allocation guard failed:", relay_opaque_id_guard_failures):
         return 1
 
-    relay_allocation_renewal_failures = relay_allocation_renewal_guard_failures()
-    if relay_allocation_renewal_failures:
-        print("Relay allocation renewal guard failed:", file=sys.stderr)
-        for failure in relay_allocation_renewal_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Relay allocation renewal guard failed:", relay_allocation_renewal_guard_failures):
         return 1
 
-    relay_control_line_relay_id_canonicality_failures = relay_control_line_relay_id_canonicality_guard_failures()
-    if relay_control_line_relay_id_canonicality_failures:
-        print("Relay control-line relay-id canonicality guard failed:", file=sys.stderr)
-        for failure in relay_control_line_relay_id_canonicality_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Relay control-line relay-id canonicality guard failed:", relay_control_line_relay_id_canonicality_guard_failures):
         return 1
 
-    swift_relay_allocation_relay_id_canonicality_failures = (
-        swift_relay_allocation_relay_id_canonicality_guard_failures()
-    )
-    if swift_relay_allocation_relay_id_canonicality_failures:
-        print("Swift relay allocation relay-id canonicality guard failed:", file=sys.stderr)
-        for failure in swift_relay_allocation_relay_id_canonicality_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Swift relay allocation relay-id canonicality guard failed:", swift_relay_allocation_relay_id_canonicality_guard_failures):
         return 1
 
-    route_refresh_relay_scope_failures = route_refresh_relay_scope_guard_failures()
-    if route_refresh_relay_scope_failures:
-        print("route.refresh relay-scope guard failed:", file=sys.stderr)
-        for failure in route_refresh_relay_scope_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("route.refresh relay-scope guard failed:", route_refresh_relay_scope_guard_failures):
         return 1
 
-    runtime_mock_history_memory_smoke_failures = runtime_mock_history_memory_smoke_guard_failures()
-    if runtime_mock_history_memory_smoke_failures:
-        print("RuntimeDevServer history/title/session lifecycle/memory smoke guard failed:", file=sys.stderr)
-        for failure in runtime_mock_history_memory_smoke_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("RuntimeDevServer history/title/session lifecycle/memory smoke guard failed:", runtime_mock_history_memory_smoke_guard_failures):
         return 1
 
-    runtime_mock_model_residency_smoke_failures = runtime_mock_model_residency_smoke_guard_failures()
-    if runtime_mock_model_residency_smoke_failures:
-        print("RuntimeDevServer model-residency smoke guard failed:", file=sys.stderr)
-        for failure in runtime_mock_model_residency_smoke_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("RuntimeDevServer model-residency smoke guard failed:", runtime_mock_model_residency_smoke_guard_failures):
         return 1
 
-    runtime_health_model_residency_contract_failures = runtime_health_model_residency_contract_guard_failures()
-    if runtime_health_model_residency_contract_failures:
-        print("runtime.health model-residency contract guard failed:", file=sys.stderr)
-        for failure in runtime_health_model_residency_contract_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("runtime.health model-residency contract guard failed:", runtime_health_model_residency_contract_guard_failures):
         return 1
 
-    model_residency_user_surfaces_failures = model_residency_user_surfaces_guard_failures()
-    if model_residency_user_surfaces_failures:
-        print("model-residency user-surface guard failed:", file=sys.stderr)
-        for failure in model_residency_user_surfaces_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("model-residency user-surface guard failed:", model_residency_user_surfaces_guard_failures):
         return 1
 
-    runtime_model_idle_unload_policy_control_failures = (
-        runtime_model_idle_unload_policy_control_guard_failures()
-    )
-    if runtime_model_idle_unload_policy_control_failures:
-        print("runtime model idle-unload policy control guard failed:", file=sys.stderr)
-        for failure in runtime_model_idle_unload_policy_control_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("runtime model idle-unload policy control guard failed:", runtime_model_idle_unload_policy_control_guard_failures):
         return 1
 
-    provider_confirmed_model_unload_failures = (
-        provider_confirmed_runtime_model_unload_state_guard_failures()
-    )
-    if provider_confirmed_model_unload_failures:
-        print("provider-confirmed runtime model unload state guard failed:", file=sys.stderr)
-        for failure in provider_confirmed_model_unload_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("provider-confirmed runtime model unload state guard failed:", provider_confirmed_runtime_model_unload_state_guard_failures):
         return 1
 
-    macos_runtime_memory_source_review_failures = macos_runtime_memory_source_review_guard_failures()
-    if macos_runtime_memory_source_review_failures:
-        print("macOS runtime-memory source review guard failed:", file=sys.stderr)
-        for failure in macos_runtime_memory_source_review_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS runtime-memory source review guard failed:", macos_runtime_memory_source_review_guard_failures):
         return 1
 
-    runtime_auth_domain_separation_failures = runtime_auth_domain_separation_guard_failures()
-    if runtime_auth_domain_separation_failures:
-        print("Runtime auth domain-separation guard failed:", file=sys.stderr)
-        for failure in runtime_auth_domain_separation_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Runtime auth domain-separation guard failed:", runtime_auth_domain_separation_guard_failures):
         return 1
 
-    macos_render_smoke_failures = macos_render_smoke_guard_failures()
-    if macos_render_smoke_failures:
-        print("macOS render smoke guard failed:", file=sys.stderr)
-        for failure in macos_render_smoke_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS render smoke guard failed:", macos_render_smoke_guard_failures):
         return 1
 
-    no_device_suite_subsumed_rerun_failures = no_device_suite_subsumed_rerun_guard_failures()
-    if no_device_suite_subsumed_rerun_failures:
-        print("No-device suite-subsumed rerun guard failed:", file=sys.stderr)
-        for failure in no_device_suite_subsumed_rerun_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("No-device suite-subsumed rerun guard failed:", no_device_suite_subsumed_rerun_guard_failures):
         return 1
 
-    cross_codebase_optimization_failures = cross_codebase_optimization_guard_failures()
-    if cross_codebase_optimization_failures:
-        print("Cross-codebase optimization guard failed:", file=sys.stderr)
-        for failure in cross_codebase_optimization_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Cross-codebase optimization guard failed:", cross_codebase_optimization_guard_failures):
         return 1
 
-    frontend_readiness_design_failures = frontend_readiness_design_guard_failures()
-    if frontend_readiness_design_failures:
-        print("Frontend readiness design guard failed:", file=sys.stderr)
-        for failure in frontend_readiness_design_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Frontend readiness design guard failed:", frontend_readiness_design_guard_failures):
         return 1
 
-    android_string_parity_failures = android_string_parity_guard_failures()
-    if android_string_parity_failures:
-        print("Android string parity guard failed:", file=sys.stderr)
-        for failure in android_string_parity_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android string parity guard failed:", android_string_parity_guard_failures):
         return 1
 
-    macos_localization_script_failures = macos_localization_script_guard_failures()
-    if macos_localization_script_failures:
-        print("macOS localization script guard failed:", file=sys.stderr)
-        for failure in macos_localization_script_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS localization script guard failed:", macos_localization_script_guard_failures):
         return 1
 
-    platform_os_copy_failures = platform_specific_os_copy_guard_failures()
-    if platform_os_copy_failures:
-        print("Platform-specific OS copy guard failed:", file=sys.stderr)
-        for failure in platform_os_copy_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Platform-specific OS copy guard failed:", platform_specific_os_copy_guard_failures):
         return 1
 
-    macos_product_copy_failures = macos_product_copy_guard_failures()
-    if macos_product_copy_failures:
-        print("macOS product copy guard failed:", file=sys.stderr)
-        for failure in macos_product_copy_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS product copy guard failed:", macos_product_copy_guard_failures):
         return 1
 
-    macos_model_visibility_failures = macos_model_visibility_guard_failures()
-    if macos_model_visibility_failures:
-        print("macOS model visibility guard failed:", file=sys.stderr)
-        for failure in macos_model_visibility_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS model visibility guard failed:", macos_model_visibility_guard_failures):
         return 1
 
-    macos_runtime_local_chat_routing_failures = macos_runtime_local_chat_routing_guard_failures()
-    if macos_runtime_local_chat_routing_failures:
-        print("macOS runtime-local chat routing guard failed:", file=sys.stderr)
-        for failure in macos_runtime_local_chat_routing_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS runtime-local chat routing guard failed:", macos_runtime_local_chat_routing_guard_failures):
         return 1
 
-    macos_runtime_data_summary_failures = macos_runtime_data_summary_guard_failures()
-    if macos_runtime_data_summary_failures:
-        print("macOS runtime data summary guard failed:", file=sys.stderr)
-        for failure in macos_runtime_data_summary_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS runtime data summary guard failed:", macos_runtime_data_summary_guard_failures):
         return 1
 
-    macos_remote_qr_lease_failures = macos_remote_qr_lease_guard_failures()
-    if macos_remote_qr_lease_failures:
-        print("macOS remote QR lease guard failed:", file=sys.stderr)
-        for failure in macos_remote_qr_lease_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS remote QR lease guard failed:", macos_remote_qr_lease_guard_failures):
         return 1
 
-    macos_relay_secret_store_failures = macos_relay_secret_store_guard_failures()
-    if macos_relay_secret_store_failures:
-        print("macOS relay secret-store guard failed:", file=sys.stderr)
-        for failure in macos_relay_secret_store_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS relay secret-store guard failed:", macos_relay_secret_store_guard_failures):
         return 1
 
-    macos_route_diagnostic_redaction_failures = macos_route_diagnostic_redaction_guard_failures()
-    if macos_route_diagnostic_redaction_failures:
-        print("macOS route diagnostic redaction guard failed:", file=sys.stderr)
-        for failure in macos_route_diagnostic_redaction_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS route diagnostic redaction guard failed:", macos_route_diagnostic_redaction_guard_failures):
         return 1
 
-    macos_pairing_qr_accessibility_failures = macos_pairing_qr_accessibility_guard_failures()
-    if macos_pairing_qr_accessibility_failures:
-        print("macOS Pairing QR accessibility guard failed:", file=sys.stderr)
-        for failure in macos_pairing_qr_accessibility_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS Pairing QR accessibility guard failed:", macos_pairing_qr_accessibility_guard_failures):
         return 1
 
-    macos_quick_action_accessibility_failures = macos_quick_action_accessibility_guard_failures()
-    if macos_quick_action_accessibility_failures:
-        print("macOS quick action accessibility guard failed:", file=sys.stderr)
-        for failure in macos_quick_action_accessibility_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS quick action accessibility guard failed:", macos_quick_action_accessibility_guard_failures):
         return 1
 
-    macos_sidebar_brand_accessibility_failures = macos_sidebar_brand_accessibility_guard_failures()
-    if macos_sidebar_brand_accessibility_failures:
-        print("macOS sidebar brand accessibility guard failed:", file=sys.stderr)
-        for failure in macos_sidebar_brand_accessibility_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS sidebar brand accessibility guard failed:", macos_sidebar_brand_accessibility_guard_failures):
         return 1
 
-    macos_page_header_accessibility_failures = macos_page_header_accessibility_guard_failures()
-    if macos_page_header_accessibility_failures:
-        print("macOS page header accessibility guard failed:", file=sys.stderr)
-        for failure in macos_page_header_accessibility_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS page header accessibility guard failed:", macos_page_header_accessibility_guard_failures):
         return 1
 
-    macos_panel_header_accessibility_failures = macos_panel_header_accessibility_guard_failures()
-    if macos_panel_header_accessibility_failures:
-        print("macOS panel header accessibility guard failed:", file=sys.stderr)
-        for failure in macos_panel_header_accessibility_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS panel header accessibility guard failed:", macos_panel_header_accessibility_guard_failures):
         return 1
 
-    macos_empty_state_accessibility_failures = macos_empty_state_accessibility_guard_failures()
-    if macos_empty_state_accessibility_failures:
-        print("macOS empty-state accessibility guard failed:", file=sys.stderr)
-        for failure in macos_empty_state_accessibility_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS empty-state accessibility guard failed:", macos_empty_state_accessibility_guard_failures):
         return 1
 
-    macos_sidebar_preference_accessibility_failures = macos_sidebar_preference_accessibility_guard_failures()
-    if macos_sidebar_preference_accessibility_failures:
-        print("macOS sidebar preference accessibility guard failed:", file=sys.stderr)
-        for failure in macos_sidebar_preference_accessibility_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS sidebar preference accessibility guard failed:", macos_sidebar_preference_accessibility_guard_failures):
         return 1
 
-    macos_chat_store_corruption_failures = macos_chat_store_corruption_guard_failures()
-    if macos_chat_store_corruption_failures:
-        print("macOS chat-store corruption guard failed:", file=sys.stderr)
-        for failure in macos_chat_store_corruption_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS chat-store corruption guard failed:", macos_chat_store_corruption_guard_failures):
         return 1
 
-    macos_memory_store_corruption_failures = macos_memory_store_corruption_guard_failures()
-    if macos_memory_store_corruption_failures:
-        print("macOS memory-store corruption guard failed:", file=sys.stderr)
-        for failure in macos_memory_store_corruption_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS memory-store corruption guard failed:", macos_memory_store_corruption_guard_failures):
         return 1
 
-    macos_runtime_compaction_failures = macos_runtime_compaction_guard_failures()
-    if macos_runtime_compaction_failures:
-        print("macOS runtime compaction guard failed:", file=sys.stderr)
-        for failure in macos_runtime_compaction_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS runtime compaction guard failed:", macos_runtime_compaction_guard_failures):
         return 1
 
-    macos_runtime_reasoning_search_failures = macos_runtime_reasoning_search_guard_failures()
-    if macos_runtime_reasoning_search_failures:
-        print("macOS runtime reasoning search guard failed:", file=sys.stderr)
-        for failure in macos_runtime_reasoning_search_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS runtime reasoning search guard failed:", macos_runtime_reasoning_search_guard_failures):
         return 1
 
-    macos_runtime_archive_polish_failures = macos_runtime_archive_polish_guard_failures()
-    if macos_runtime_archive_polish_failures:
-        print("macOS runtime archive-polish guard failed:", file=sys.stderr)
-        for failure in macos_runtime_archive_polish_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("macOS runtime archive-polish guard failed:", macos_runtime_archive_polish_guard_failures):
         return 1
 
-    route_failures = route_diagnostics_guard_failures()
-    if route_failures:
-        print("Route Diagnostics guard check failed:", file=sys.stderr)
-        for failure in route_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Route Diagnostics guard check failed:", route_diagnostics_guard_failures):
         return 1
 
-    android_troubleshooting_failures = android_troubleshooting_guard_failures()
-    if android_troubleshooting_failures:
-        print("Android troubleshooting guard check failed:", file=sys.stderr)
-        for failure in android_troubleshooting_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android troubleshooting guard check failed:", android_troubleshooting_guard_failures):
         return 1
 
-    android_runtime_boundary_matcher_failures = android_runtime_boundary_matcher_self_test_failures()
-    if android_runtime_boundary_matcher_failures:
-        print("Android runtime boundary matcher self-test failed:", file=sys.stderr)
-        for failure in android_runtime_boundary_matcher_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android runtime boundary matcher self-test failed:", android_runtime_boundary_matcher_self_test_failures):
         return 1
 
-    android_client_ui_copy_failures = android_client_ui_resource_copy_guard_failures()
-    if android_client_ui_copy_failures:
-        print("Android client UI resource copy guard failed:", file=sys.stderr)
-        for failure in android_client_ui_copy_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android client UI resource copy guard failed:", android_client_ui_resource_copy_guard_failures):
         return 1
 
-    android_runtime_boundary_failures = android_runtime_boundary_guard_failures()
-    if android_runtime_boundary_failures:
-        print("Android runtime boundary guard failed:", file=sys.stderr)
-        for failure in android_runtime_boundary_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android runtime boundary guard failed:", android_runtime_boundary_guard_failures):
         return 1
 
-    android_chat_history_failures = android_chat_history_danger_guard_failures()
-    if android_chat_history_failures:
-        print("Android chat-history danger guard failed:", file=sys.stderr)
-        for failure in android_chat_history_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android chat-history danger guard failed:", android_chat_history_danger_guard_failures):
         return 1
 
-    android_chat_model_menu_failures = android_chat_model_menu_guard_failures()
-    if android_chat_model_menu_failures:
-        print("Android chat model-menu guard failed:", file=sys.stderr)
-        for failure in android_chat_model_menu_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android chat model-menu guard failed:", android_chat_model_menu_guard_failures):
         return 1
 
-    android_chat_navigation_failures = android_chat_navigation_guard_failures()
-    if android_chat_navigation_failures:
-        print("Android chat navigation guard failed:", file=sys.stderr)
-        for failure in android_chat_navigation_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android chat navigation guard failed:", android_chat_navigation_guard_failures):
         return 1
 
-    android_regenerate_response_failures = android_regenerate_response_guard_failures()
-    if android_regenerate_response_failures:
-        print("Android regenerate-response guard failed:", file=sys.stderr)
-        for failure in android_regenerate_response_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android regenerate-response guard failed:", android_regenerate_response_guard_failures):
         return 1
 
-    android_composer_draft_persistence_failures = android_composer_draft_persistence_guard_failures()
-    if android_composer_draft_persistence_failures:
-        print("Android composer-draft persistence guard failed:", file=sys.stderr)
-        for failure in android_composer_draft_persistence_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android composer-draft persistence guard failed:", android_composer_draft_persistence_guard_failures):
         return 1
 
-    android_reasoning_accessibility_failures = android_reasoning_accessibility_guard_failures()
-    if android_reasoning_accessibility_failures:
-        print("Android reasoning accessibility guard failed:", file=sys.stderr)
-        for failure in android_reasoning_accessibility_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android reasoning accessibility guard failed:", android_reasoning_accessibility_guard_failures):
         return 1
 
-    android_streaming_assistant_live_region_failures = android_streaming_assistant_live_region_guard_failures()
-    if android_streaming_assistant_live_region_failures:
-        print("Android streaming assistant live-region guard failed:", file=sys.stderr)
-        for failure in android_streaming_assistant_live_region_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android streaming assistant live-region guard failed:", android_streaming_assistant_live_region_guard_failures):
         return 1
 
-    android_chat_search_no_results_live_region_failures = android_chat_search_no_results_live_region_guard_failures()
-    if android_chat_search_no_results_live_region_failures:
-        print("Android chat search no-results live-region guard failed:", file=sys.stderr)
-        for failure in android_chat_search_no_results_live_region_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android chat search no-results live-region guard failed:", android_chat_search_no_results_live_region_guard_failures):
         return 1
 
-    android_chat_pairing_empty_state_failures = android_chat_pairing_empty_state_guard_failures()
-    if android_chat_pairing_empty_state_failures:
-        print("Android chat pairing empty-state guard failed:", file=sys.stderr)
-        for failure in android_chat_pairing_empty_state_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android chat pairing empty-state guard failed:", android_chat_pairing_empty_state_guard_failures):
         return 1
 
-    android_trusted_runtime_forget_failures = android_trusted_runtime_forget_guard_failures()
-    if android_trusted_runtime_forget_failures:
-        print("Android trusted-runtime forget guard failed:", file=sys.stderr)
-        for failure in android_trusted_runtime_forget_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android trusted-runtime forget guard failed:", android_trusted_runtime_forget_guard_failures):
         return 1
 
-    android_haptic_failures = android_haptic_guard_failures()
-    if android_haptic_failures:
-        print("Android haptic guard failed:", file=sys.stderr)
-        for failure in android_haptic_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android haptic guard failed:", android_haptic_guard_failures):
         return 1
 
-    android_heading_accessibility_failures = android_heading_accessibility_guard_failures()
-    if android_heading_accessibility_failures:
-        print("Android heading accessibility guard failed:", file=sys.stderr)
-        for failure in android_heading_accessibility_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android heading accessibility guard failed:", android_heading_accessibility_guard_failures):
         return 1
 
-    docs_hygiene_latest_qa_evidence_failures = docs_hygiene_latest_qa_evidence_guard_failures()
-    if docs_hygiene_latest_qa_evidence_failures:
-        print("Docs hygiene latest QA evidence guard failed:", file=sys.stderr)
-        for failure in docs_hygiene_latest_qa_evidence_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Docs hygiene latest QA evidence guard failed:", docs_hygiene_latest_qa_evidence_guard_failures):
         return 1
 
-    android_physical_chat_smoke_failures = android_physical_chat_smoke_guard_failures()
-    if android_physical_chat_smoke_failures:
-        print("Android physical chat/cancel smoke guard failed:", file=sys.stderr)
-        for failure in android_physical_chat_smoke_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Android physical chat/cancel smoke guard failed:", android_physical_chat_smoke_guard_failures):
         return 1
 
-    attachment_ingestion_failures = attachment_ingestion_guard_failures()
-    if attachment_ingestion_failures:
-        print("Attachment ingestion guard failed:", file=sys.stderr)
-        for failure in attachment_ingestion_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Attachment ingestion guard failed:", attachment_ingestion_guard_failures):
         return 1
 
-    runtime_history_storage_failures = runtime_history_storage_guard_failures()
-    if runtime_history_storage_failures:
-        print("Runtime history storage guard failed:", file=sys.stderr)
-        for failure in runtime_history_storage_failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_guard_failures("Runtime history storage guard failed:", runtime_history_storage_guard_failures):
         return 1
 
     print(f"Copy hygiene OK across {len(target_files())} user-facing source/resource file(s).")

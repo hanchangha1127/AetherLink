@@ -473,52 +473,24 @@ if [[ "${AETHERLINK_OWNED_PROCESS_CLEANUP_SELF_TEST:-0}" == "1" ]]; then
   exit 0
 fi
 
-SWIFT_TEST_BATCH_FILTER=""
-SWIFT_TEST_BATCH_SELECTOR_COUNT=0
-SWIFT_TEST_BATCH_MAX_FILTER_CHARS=12000
-
-flush_swift_test_batch() {
-  if [[ -z "$SWIFT_TEST_BATCH_FILTER" ]]; then
-    return
-  fi
-
-  echo
-  echo "==> swift test --filter $SWIFT_TEST_BATCH_FILTER"
-  echo "    batched selectors: $SWIFT_TEST_BATCH_SELECTOR_COUNT"
-  swift test --filter "$SWIFT_TEST_BATCH_FILTER"
-  SWIFT_TEST_BATCH_FILTER=""
-  SWIFT_TEST_BATCH_SELECTOR_COUNT=0
-}
-
-queue_swift_test_filter() {
-  local filter="$1"
-  local wrapped_filter="($filter)"
-  local separator_chars=0
-  if [[ -n "$SWIFT_TEST_BATCH_FILTER" ]]; then
-    separator_chars=1
-  fi
-  if [[ -n "$SWIFT_TEST_BATCH_FILTER" ]] &&
-      (( ${#SWIFT_TEST_BATCH_FILTER} + separator_chars + ${#wrapped_filter} > SWIFT_TEST_BATCH_MAX_FILTER_CHARS )); then
-    flush_swift_test_batch
-  fi
-
-  if [[ -z "$SWIFT_TEST_BATCH_FILTER" ]]; then
-    SWIFT_TEST_BATCH_FILTER="$wrapped_filter"
-  else
-    SWIFT_TEST_BATCH_FILTER="$SWIFT_TEST_BATCH_FILTER|$wrapped_filter"
-  fi
-  ((SWIFT_TEST_BATCH_SELECTOR_COUNT += 1))
-}
+SWIFT_FULL_SUITE_COMPLETED=0
+SWIFT_SUBSUMED_FILTER_COUNT=0
 
 run() {
   if [[ "$#" -eq 4 && "$1" == "swift" && "$2" == "test" && "$3" == "--filter" ]]; then
-    queue_swift_test_filter "$4"
+    if (( SWIFT_FULL_SUITE_COMPLETED != 1 )); then
+      echo "Swift filter reached before the full Swift suite completed: $4" >&2
+      return 1
+    fi
+    ((SWIFT_SUBSUMED_FILTER_COUNT += 1))
     return
   fi
-  flush_swift_test_batch
   echo
   echo "==> $*"
   "$@"
+  if [[ "$#" -eq 2 && "$1" == "swift" && "$2" == "test" ]]; then
+    SWIFT_FULL_SUITE_COMPLETED=1
+  fi
 }
 
 check_python_syntax() {
@@ -4442,6 +4414,7 @@ run ./gradlew --no-daemon \
 	  --tests 'com.localagentbridge.android.core.protocol.p2pnat.*' \
 	  --tests 'com.localagentbridge.android.core.transport.p2pnat.*' \
 	  -Pkotlin.incremental=false
+run swift test
 run swift test --filter 'P2PNATContractsTests|P2PNATSharedVectorTests|P2PNATConformanceTests'
 run python3 script/check_copy_hygiene.py
 run python3 script/check_docs_hygiene.py
@@ -6257,7 +6230,11 @@ run swift test --filter 'RelayPeerClientTests/testRelayPeerClientRetireKeepsCurr
 	run swift test --filter 'SQLiteRuntimeChatEventStoreTests/testSQLiteStorePreservesRuntimeCompactionMetadataWithoutIndexingIt|SQLiteRuntimeChatEventStoreTests/testSQLiteStorePreservesAndRevalidatesAdaptiveV3SourceFingerprint|SQLiteRuntimeChatEventStoreTests/testJSONLStoreRevalidatesAdaptiveV3SourceFingerprintAfterReopen|SQLiteRuntimeChatEventStoreTests/testSQLiteStoreRejectsInvalidOrMismatchedAdaptiveV3SourceFingerprint|SQLiteRuntimeChatEventStoreTests/testStoresRejectInvalidCompactionResolutionShapes|SQLiteRuntimeChatEventStoreTests/testStoresBindCompactionResolutionToAdaptiveV3RequestAccounting|SQLiteRuntimeChatEventStoreTests/testStoresRejectMismatchedCompactionResolutionAfterReopen|SQLiteRuntimeChatEventStoreTests/testSQLiteStoreImportsLegacyCompactionMetadataWithoutStructuralAccounting|SQLiteRuntimeChatEventStoreTests/testSQLiteStoreRejectsInvalidRuntimeCompactionMetadata'
 run swift test --filter 'SQLiteRuntimeChatEventStoreTests/testSQLiteRetentionPrunesDeletedSessionsByOwnerScopeAndCutoff|SQLiteRuntimeChatEventStoreTests/testSQLiteRetentionTombstonePreventsLegacyBackfillResurrection|SQLiteRuntimeChatEventStoreTests/testProductionRuntimeChatRetentionPolicyPrunesOnlyExpiredDeletedSessions|SQLiteRuntimeChatEventStoreTests/testSQLiteAllOwnerRetentionUsesGlobalLimitAndDeterministicOwnerTieBreak|SQLiteRuntimeChatEventStoreTests/testSQLiteAllOwnerRetentionUsesBoundedMetadataQueryAndTargetedFTSDeletion|SQLiteRuntimeChatEventStoreTests/testProductionAllOwnerMaintenanceOverloadPrunesAcrossOwnersWithOneLimit|SQLiteRuntimeChatEventStoreTests/testProductionRetentionCompactsLegacyJSONLOnlyAfterCommitAndPreservesAppendBackfill|SQLiteRuntimeChatEventStoreTests/testLegacyCompactionCoordinatesConcurrentCrossInstanceAppendWithoutDataLoss|SQLiteRuntimeChatEventStoreTests/testProductionRetentionDefersLegacyCompactionUntilFinalBatchDrain'
 run swift test --filter RuntimeLongInactivityMemorySummarizationPolicyTests
-flush_swift_test_batch
+if (( SWIFT_FULL_SUITE_COMPLETED != 1 )); then
+  echo "Full Swift suite did not complete." >&2
+  exit 1
+fi
+echo "Reviewed Swift filters subsumed by full suite: $SWIFT_SUBSUMED_FILTER_COUNT"
 
 echo
 echo "No-device quality checks passed."
@@ -6682,6 +6659,7 @@ echo "Covered Android route.refresh runtime identity canonicality addendum: auth
 echo "Covered Android route.refresh malformed allowed-field retry addendum: authenticated route.refresh responses with allowed keys but invalid JSON types keep the current trusted route and retry inside the active lease before trusted storage changes."
 echo "Covered Android layout addendum: Android ChatGPT-like chat surface narrow-phone layout regression, Android representative populated chat surface compact layout, Android populated Settings history and Memory narrow-phone render, Android drawer chat row compact layout, Android drawer overflow menu compact layout, Android drawer empty-history compact layout, Android drawer chat-search no-results compact layout, Android drawer runtime summary compact layout, Android provider status compact diagnostic layout, Android connection status panel compact layout, Android Connection Status route notice compact layout, Android Settings QR pairing panel compact first-run layout, Android Settings pending pairing route compact layout, Android Settings route-refresh saved notice compact layout, Android Settings companion-only compact layout, Android Settings discovery actions compact layout, Android Settings developer diagnostics toggle compact layout, Android Settings memory compact long-content actions layout, Android Settings memory approved-source compact layout, Android Settings memory add controls compact layout, Android Settings memory empty-state compact layout, Android Settings chat-history search-refresh header compact layout, Android Settings chat-history compact row actions, Android Settings chat-history bulk action compact layout, Android memory summary draft compact review layout, Android assistant reasoning compact layout, Android read-only attachment chip wrapping, Android pending attachment chip wrapping, Android text-only draft composer controls compact layout, Android streaming cancel composer controls compact layout, Android streaming assistant progress decorative compact layout, Android composer readiness status compact layout, Android chat route availability notice compact layout, Android route-refresh saved notice compact layout, Android QR recovery diagnostics compact layout, Android chat empty-state compact layout, Android markdown table and code block compact layout, Android Settings memory saved/paused summary localization, Android markdown message rendering, Android assistant response regenerate action, Android latest user-message draft reuse action, Android latest message action localized states, Android latest message action wrapping, Android transcript role-change spacing rhythm, Android chat top-bar active-title compact layout, Android chat top-bar streaming-disabled model picker compact layout, Android model picker general row compact layout, Android model picker vision recovery compact row layout, Android model picker search no-results compact layout, Android model picker refresh compact row layout, Android localized clipboard payload labels, Android composer clear-draft action, Android composer clear-draft localized state, Android clear-draft attachment cleanup, Android composer draft persistence, Android session-scoped composer draft switching, Android transient attachment cleanup on chat switching, Android transient attachment cleanup on chat lifecycle exits, Android runtime transcript loading state, Android runtime transcript loading compact layout, Android runtime transcript lifecycle mutation lockout, Android empty-state latest-QR composer alignment."
 echo "Covered Android bounded volatile persistence addendum: composer typing and active chat.delta use one fixed 250ms latest-state window; terminal, malformed/error, rejected-send, cancel, lifecycle, clear, settings, session, and pairing-secret barriers use confirmed durable writes; secret-bound pending and trusted handles use compensation plus current-safe retryable cleanup journals and skip unchanged secret rewrites; single-task intent routing prevents ordinary duplicate Activity writers."
+echo "Covered Android runtime session-summary linear merge addendum: batch sync builds deleted ids, first-wins persisted-session lookup, local-only collision ids, and input deduplication state once, with deterministic 1,000-row access-count proof."
 echo "Covered Android large-font chat addendum: Android large-font multilingual Chat render."
 echo "Covered Android TalkBack-order proxy addendum: Android Chat transcript, latest message actions, jump-to-latest, send composer, and cancel composer controls keep localized semantics and bounds order at large font."
 echo "Covered Android large-font layout addendum: Android large-font multilingual Settings render."

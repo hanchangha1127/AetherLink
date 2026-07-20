@@ -1,6 +1,6 @@
 # AetherLink Session Handoff
 
-Last updated: 2026-07-19 KST.
+Last updated: 2026-07-20 KST.
 
 This is the canonical first document for the next Codex session. Read it before
 editing, staging, rebuilding, or making claims from older QA logs. It describes
@@ -32,7 +32,7 @@ the remaining proof boundaries, and the shortest safe path to resume work.
   evidence matrix, proof boundaries, and next-session flow take precedence over
   older chronological entries in `docs/progress.md`, `docs/qa-evidence.md`, and
   `docs/roadmap.md`.
-- The top 2026-07-19 sections in those three documents are synchronized current
+- The top 2026-07-20 sections in those three documents are synchronized current
   summaries. Sections explicitly labeled historical or superseded record what
   was true at that checkpoint; they do not override this handoff.
 - `docs/evidence/physical-qr-pairing-20260719.json` is a sanitized observation
@@ -47,23 +47,26 @@ the remaining proof boundaries, and the shortest safe path to resume work.
 
 - Repository: `/Users/hanchangha/Desktop/project`
 - Branch at handoff: `main`
-- HEAD at the start of this handoff refresh: `df19c53a`
-- Worktree: intentionally dirty with many tracked modifications. At 2026-07-19
-  15:13 KST, before the sanitized evidence manifest was added, the snapshot
-  contained 44 modified tracked files and zero untracked files. At completion
-  of this refresh the expected baseline is 44 modified tracked files plus two
-  untracked files: `docs/evidence/physical-qr-pairing-20260719.json` and
-  `script/test_documentation_handoff_guards.py`. Run
-  `git status --short` again; live output is authoritative and counts can
-  change.
+- Published baseline at this handoff refresh: `41e932e9`, with `main` and
+  `origin/main` aligned when checked. The earlier `df19c53a` 44-file snapshot
+  was subsequently published and is historical rather than the current dirty
+  baseline.
+- Worktree: intentionally dirty with 12 modified tracked files and no untracked
+  files after this refresh. They are the Android drawer/date optimization,
+  Android runtime session-summary linear merge and tests, three quality-gate
+  scripts, the documentation-handoff guard, and these four synchronized current
+  documents. Run `git status --short` again; live output is authoritative and
+  counts can change.
 - Android device state at handoff: disconnected by the user after physical QR
   pairing and reconnect verification. Do not assume ADB is available.
-- macOS state at handoff: the verified ad-hoc `dist/AetherLink.app` was running,
-  listening on TCP port 43170, and displaying a decodable local-diagnostic QR.
-  This is an ephemeral process state; verify it again in the next session.
-- Git publication state: no commit or push was created for the QR recovery or
-  this handoff refresh. Do not reset, clean, stage, commit, or push unrelated
-  dirty changes without an explicit user request and a reviewed file scope.
+- macOS state at handoff: the ad-hoc `dist/AetherLink.app` process was still
+  running and listening on TCP port 43170 when refreshed. QR visibility and
+  payload decode were not rerun in this optimization slice. Process and port
+  state are ephemeral; verify them again before making a live claim.
+- Git publication state: the QR recovery baseline is published through
+  `41e932e9`; the current 12-file optimization and documentation follow-up is
+  not committed or pushed. Do not reset, clean, stage, commit, or push it
+  without an explicit user request and reviewed file scope.
 - Subagent preference for this workstream: use GPT-5.6 Sol. Do not use
   GPT-5.3-Codex-Spark.
 
@@ -279,22 +282,25 @@ Current evidence and planning:
 
 ## Dirty Worktree Map
 
-Do not assume every modified line belongs to QR recovery. The current tree also
-contains substantial earlier unpublished work.
+The earlier QR, persistence, and security-governance work is part of the
+published `41e932e9` baseline. The current unpublished scope is limited to:
 
-Latest QR/handoff-related areas are the files listed above. Other major dirty
-areas include:
+- `apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt`
+- `apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt`
+- `apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt`
+- `apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt`
+- `script/check_copy_hygiene.py`
+- `script/check_macos_localization.py`
+- `script/check_no_device_quality.sh`
+- `script/test_documentation_handoff_guards.py`
+- `docs/handoff.md`, `docs/progress.md`, `docs/qa-evidence.md`, and
+  `docs/roadmap.md`
 
-- Android bounded volatile-persistence work in `AndroidManifest.xml`,
-  `RuntimeClientViewModel.kt`, `RuntimeLocalStore.kt`, `PairingStore.kt`, and
-  their larger test suites.
-- Android pairing-secret durability, cleanup-journal, lifecycle, and single
-  Activity/ViewModel ownership regressions.
-- Existing no-device gate and copy-contract changes in
-  `script/check_no_device_quality.sh` and `script/check_copy_hygiene.py`.
-- Production P2P/NAT and production-relay governance documents, hashes, and
-  validators. Those are authority records, not evidence that production
-  networking has been implemented or enabled.
+The source changes contain two low-risk optimizations: one-pass Android drawer
+date grouping plus linear runtime session-summary batch merge. The script
+changes remove duplicated guard execution, run the Swift suite once, align
+current macOS UI contracts, and repair the handoff fixture. The documentation
+files record only evidence from the current source.
 
 Practical review rule:
 
@@ -308,6 +314,28 @@ Review and stage by explicit file list. Do not use a broad diff as evidence that
 all current changes form one atomic feature.
 
 ## Evidence Ledger
+
+### Current 2026-07-20 optimization evidence
+
+- Android runtime session-summary merge lookup is linear in incoming summaries,
+  persisted sessions, and deletion suppressions. A deterministic counting-list
+  regression uses 1,003 persisted rows and 1,001 suppression rows while also
+  proving first-wins legacy state, local collision, and deletion behavior.
+- Three focused merge regressions and all 634 `RuntimeClientViewModelTest` tests
+  pass. `build/qa/android-session-summary-linear-full-20260720.log` records the
+  broad Android run and debug assembly succeeding in 30 seconds; the refreshed
+  JUnit XML reports contain 1,141 app, 162 protocol, 95 transport, and 130
+  pairing JVM tests with no skips or failures.
+- The standalone documentation-handoff guard passes 11/11 after its Status
+  fixture was aligned with `performRuntimeOverviewAction`. Copy/docs hygiene,
+  macOS localization parity, shell syntax, and `git diff --check` pass.
+- `build/qa/check-no-device-quality-session-summary-linear-final-20260720.log`
+  exits zero across 8,806 lines in 580.459 seconds. It records the overall
+  success marker and session-summary linear-merge marker once each, 1,809 Swift
+  tests with two explicit environment-dependent skips and zero failures, the
+  complete Android ViewModel selection, authenticated direct/relay smokes, and
+  both Swift product builds. None of this local evidence is physical-device or
+  external-network proof.
 
 ### Physical Android evidence completed
 
@@ -557,10 +585,17 @@ Unless the user redirects the task, use this decision order:
    dirty Android persistence and security-governance changes. Show the exact
    scope; do not stage everything by default.
 
-Recommended next product-quality slice: physical expired/rotated QR recovery,
-camera permission denial/regrant, and TalkBack/VoiceOver verification. These are
-the closest remaining gaps to the now-proven same-Wi-Fi optical pairing path and
-do not require expanding production network authority.
+Recommended next no-device slice: remove the full-input copy and repeated JSON
+literal allocations in `StrictJSONDocumentValidator` while leaving its existing
+Unicode/string decoder intact and proving exact behavior with a differential
+corpus. This stays separate because the validator protects protocol envelopes,
+relay admission/allocation, and durable memory recovery.
+
+Recommended next device slice when hardware is attached: physical
+expired/rotated QR recovery, camera permission denial/regrant, TalkBack/VoiceOver
+verification, and process-kill persistence. These are the closest remaining
+gaps to the proven same-Wi-Fi optical pairing path and do not by themselves
+expand production network authority.
 
 ### Revalidation Triggers
 

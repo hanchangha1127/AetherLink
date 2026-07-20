@@ -51,13 +51,19 @@ if shouldShowRouteDiagnosticsPanel(model: model) {
     )
 }
 
-private struct StatusQuickActions: View {
-    var body: some View {
-        Button {
+private func performRuntimeOverviewAction(
+    _ action: StatusRuntimeOverviewAction,
+    scrollProxy: ScrollViewProxy
+) {
+    switch action {
+    case .pairing:
             onGenerateRelayQRCode?()
-        } label: {
-            Text("Pair")
-        }
+    case .refreshProviders:
+        break
+    case .loadModels:
+        break
+    case .connectionRecovery:
+        break
     }
 }
 """
@@ -140,7 +146,7 @@ private func generatePairingQR() {{
         failures = self.failures(status=status)
 
         self.assertTrue(any("Connection Recovery" in failure for failure in failures))
-        self.assertTrue(any("Quick Actions" in failure for failure in failures))
+        self.assertTrue(any("overview pairing action" in failure for failure in failures))
 
     def test_toolbar_and_menu_remote_calls_are_rejected(self) -> None:
         case_anchor = "case .pairingQR:"

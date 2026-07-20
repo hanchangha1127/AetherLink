@@ -173,6 +173,7 @@ import com.localagentbridge.android.ui.runtimeProviderDisplayName
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -3210,24 +3211,21 @@ internal data class ChatSessionDrawerGroup(
 internal fun chatSessionDrawerGroups(
     sessions: List<RuntimeChatSession>,
     nowMillis: Long = System.currentTimeMillis(),
+    timeZone: TimeZone = TimeZone.getDefault(),
 ): List<ChatSessionDrawerGroup> {
-    val orderedBuckets = listOf(
+    if (sessions.isEmpty()) return emptyList()
+    val boundaries = chatSessionDrawerDateBoundaries(nowMillis, timeZone)
+    val sessionsByLabel = sessions.groupBy { session ->
+        chatSessionDrawerGroupLabelRes(session.updatedAtMillis, boundaries)
+    }
+    return listOf(
         R.string.chat_history_group_today,
         R.string.chat_history_group_yesterday,
         R.string.chat_history_group_previous_7_days,
         R.string.chat_history_group_older,
-    )
-    return orderedBuckets.mapNotNull { labelRes ->
-        val groupedSessions = sessions.filter { session ->
-            chatSessionDrawerGroupLabelRes(
-                updatedAtMillis = session.updatedAtMillis,
-                nowMillis = nowMillis,
-            ) == labelRes
-        }
-        if (groupedSessions.isEmpty()) {
-            null
-        } else {
-            ChatSessionDrawerGroup(labelRes = labelRes, sessions = groupedSessions)
+    ).mapNotNull { labelRes ->
+        sessionsByLabel[labelRes]?.let { groupedSessions ->
+            ChatSessionDrawerGroup(labelRes, groupedSessions)
         }
     }
 }
@@ -3236,28 +3234,52 @@ internal fun chatSessionDrawerGroups(
 internal fun chatSessionDrawerGroupLabelRes(
     updatedAtMillis: Long,
     nowMillis: Long,
+    timeZone: TimeZone = TimeZone.getDefault(),
+): Int = chatSessionDrawerGroupLabelRes(
+    updatedAtMillis = updatedAtMillis,
+    boundaries = chatSessionDrawerDateBoundaries(nowMillis, timeZone),
+)
+
+@StringRes
+private fun chatSessionDrawerGroupLabelRes(
+    updatedAtMillis: Long,
+    boundaries: ChatSessionDrawerDateBoundaries,
 ): Int {
     if (updatedAtMillis <= 0L) return R.string.chat_history_group_older
-    val todayStart = localDayStartMillis(nowMillis)
-    val yesterdayStart = localDayStartMillis(nowMillis, daysOffset = -1)
-    val previousSevenDaysStart = localDayStartMillis(nowMillis, daysOffset = -7)
     return when {
-        updatedAtMillis >= todayStart -> R.string.chat_history_group_today
-        updatedAtMillis >= yesterdayStart -> R.string.chat_history_group_yesterday
-        updatedAtMillis >= previousSevenDaysStart -> R.string.chat_history_group_previous_7_days
+        updatedAtMillis >= boundaries.todayStartMillis -> R.string.chat_history_group_today
+        updatedAtMillis >= boundaries.yesterdayStartMillis -> R.string.chat_history_group_yesterday
+        updatedAtMillis >= boundaries.previousSevenDaysStartMillis ->
+            R.string.chat_history_group_previous_7_days
         else -> R.string.chat_history_group_older
     }
 }
 
-private fun localDayStartMillis(timeMillis: Long, daysOffset: Int = 0): Long {
-    return Calendar.getInstance().apply {
-        timeInMillis = timeMillis
+private data class ChatSessionDrawerDateBoundaries(
+    val todayStartMillis: Long,
+    val yesterdayStartMillis: Long,
+    val previousSevenDaysStartMillis: Long,
+)
+
+private fun chatSessionDrawerDateBoundaries(
+    nowMillis: Long,
+    timeZone: TimeZone,
+): ChatSessionDrawerDateBoundaries {
+    val calendar = Calendar.getInstance(timeZone)
+    fun localDayStartMillis(daysOffset: Int): Long = calendar.run {
+        timeInMillis = nowMillis
         add(Calendar.DATE, daysOffset)
         set(Calendar.HOUR_OF_DAY, 0)
         set(Calendar.MINUTE, 0)
         set(Calendar.SECOND, 0)
         set(Calendar.MILLISECOND, 0)
-    }.timeInMillis
+        timeInMillis
+    }
+    return ChatSessionDrawerDateBoundaries(
+        todayStartMillis = localDayStartMillis(daysOffset = 0),
+        yesterdayStartMillis = localDayStartMillis(daysOffset = -1),
+        previousSevenDaysStartMillis = localDayStartMillis(daysOffset = -7),
+    )
 }
 
 @Composable

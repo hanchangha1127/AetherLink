@@ -1192,21 +1192,39 @@ internal fun PersistedRuntimeData.withRuntimeChatSessionSummaries(
     sessions: List<ChatSessionSummaryPayload>,
     nowMillis: Long,
 ): PersistedRuntimeData {
-    val runtimeSummaries = sessions
-        .filter { it.sessionId.isNotBlank() }
-        .filterNot { it.sessionId in deletedRuntimeSessionIds() }
-        .distinctBy { it.sessionId }
-    val localOnlySessions = this.sessions.filterNot { it.runtimeOwned }
-    val localOnlySessionIds = localOnlySessions.mapTo(mutableSetOf(), PersistedChatSession::id)
-    val mergedRuntimeSessions = runtimeSummaries
-        .filterNot { it.sessionId in localOnlySessionIds }
-        .map { summary ->
-            runtimeChatSession(
-                summary = summary,
-                nowMillis = nowMillis,
-                includeSearchMetadata = true,
-            )
+    val deletedSessionIds = deletedRuntimeSessionIds()
+    val existingSessionsById = LinkedHashMap<String, PersistedChatSession>(this.sessions.size)
+    val localOnlySessions = ArrayList<PersistedChatSession>()
+    val localOnlySessionIds = HashSet<String>()
+    this.sessions.forEach { session ->
+        if (session.id !in existingSessionsById) {
+            existingSessionsById[session.id] = session
         }
+        if (!session.runtimeOwned) {
+            localOnlySessions += session
+            localOnlySessionIds += session.id
+        }
+    }
+
+    val seenRuntimeSessionIds = HashSet<String>()
+    val mergedRuntimeSessions = ArrayList<PersistedChatSession>(sessions.size)
+    sessions.forEach { summary ->
+        val sessionId = summary.sessionId
+        if (
+            sessionId.isBlank() ||
+            sessionId in deletedSessionIds ||
+            sessionId in localOnlySessionIds ||
+            !seenRuntimeSessionIds.add(sessionId)
+        ) {
+            return@forEach
+        }
+        mergedRuntimeSessions += runtimeChatSession(
+            summary = summary,
+            nowMillis = nowMillis,
+            includeSearchMetadata = true,
+            existing = existingSessionsById[sessionId],
+        )
+    }
     return copy(
         sessions = mergedRuntimeSessions + localOnlySessions,
     ).sanitized()
@@ -1223,18 +1241,19 @@ internal fun PersistedRuntimeData.withRuntimeChatSessionSummary(
         summary = summary,
         nowMillis = nowMillis,
         includeSearchMetadata = false,
+        existing = sessions.firstOrNull { it.id == sessionId },
     )
     return copy(
         sessions = listOf(merged) + sessions.filterNot { it.id == sessionId },
     ).sanitized()
 }
 
-private fun PersistedRuntimeData.runtimeChatSession(
+private fun runtimeChatSession(
     summary: ChatSessionSummaryPayload,
     nowMillis: Long,
     includeSearchMetadata: Boolean,
+    existing: PersistedChatSession?,
 ): PersistedChatSession {
-    val existing = sessions.firstOrNull { it.id == summary.sessionId }
     val updatedAt = parseTimestampMillis(summary.lastActivityAt) ?: existing?.updatedAtMillis ?: nowMillis
     val modelId = summary.model.trim().takeIf(String::isNotBlank) ?: existing?.modelId
     val cleanMessageCount = summary.messageCount.coerceAtLeast(0)

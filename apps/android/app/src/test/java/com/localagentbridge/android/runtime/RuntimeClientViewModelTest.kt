@@ -195,6 +195,21 @@ import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
+private class CountingReadList<T>(
+    private val values: List<T>,
+) : AbstractList<T>() {
+    var readCount: Int = 0
+        private set
+
+    override val size: Int
+        get() = values.size
+
+    override fun get(index: Int): T {
+        readCount += 1
+        return values[index]
+    }
+}
+
 class RuntimeClientViewModelTest {
     @Test
     fun trustedRuntimeConnectionTargetDropsTrustedLastKnownEndpoint() {
@@ -32274,6 +32289,166 @@ class RuntimeClientViewModelTest {
         assertNull(savedRedaction.runtimeSearchRank)
         assertNull(savedRedaction.runtimeSearchSnippet)
         assertTrue(savedRedaction.runtimeSearchMatchedFields.isEmpty())
+    }
+
+    @Test
+    fun runtimeSessionSummaryBatchMergeReadsPersistedStateLinearlyAndPreservesFirstWinsState() {
+        val runtimeSessionCount = 1_000
+        val existingSessions = CountingReadList(
+            buildList {
+                repeat(runtimeSessionCount) { index ->
+                    add(
+                        PersistedChatSession(
+                            id = "runtime-$index",
+                            title = "Existing $index",
+                            createdAtMillis = index.toLong(),
+                            updatedAtMillis = index.toLong(),
+                            runtimeOwned = true,
+                        )
+                    )
+                }
+                add(
+                    PersistedChatSession(
+                        id = "legacy-duplicate",
+                        title = "Manual first",
+                        composerDraft = "first draft",
+                        createdAtMillis = 2_000L,
+                        updatedAtMillis = 2_000L,
+                        titleManuallyEdited = true,
+                        runtimeOwned = true,
+                        messages = listOf(
+                            PersistedChatMessage(
+                                id = "first-message",
+                                role = "user",
+                                content = "Keep first state",
+                                createdAtMillis = 2_000L,
+                            )
+                        ),
+                    )
+                )
+                add(
+                    PersistedChatSession(
+                        id = "legacy-duplicate",
+                        title = "Manual second",
+                        composerDraft = "second draft",
+                        createdAtMillis = 3_000L,
+                        updatedAtMillis = 3_000L,
+                        titleManuallyEdited = true,
+                        runtimeOwned = true,
+                    )
+                )
+                add(
+                    PersistedChatSession(
+                        id = "local-collision",
+                        title = "Keep local",
+                        composerDraft = "local draft",
+                        createdAtMillis = 4_000L,
+                        updatedAtMillis = 4_000L,
+                    )
+                )
+            }
+        )
+        val suppressedSessions = CountingReadList(
+            buildList {
+                repeat(runtimeSessionCount) { index ->
+                    add(
+                        PersistedSuppressedRuntimeSession(
+                            sessionId = "deleted-$index",
+                            reason = "deleted",
+                            updatedAtMillis = index.toLong(),
+                        )
+                    )
+                }
+                add(
+                    PersistedSuppressedRuntimeSession(
+                        sessionId = "blocked-runtime",
+                        reason = "deleted",
+                        updatedAtMillis = 5_000L,
+                    )
+                )
+            }
+        )
+        val summaries = buildList {
+            repeat(runtimeSessionCount) { index ->
+                add(
+                    ChatSessionSummaryPayload(
+                        sessionId = "runtime-$index",
+                        title = "Runtime $index",
+                        model = "ollama:model-$index",
+                        lastActivityAt = "2026-06-23T09:02:05Z",
+                        messageCount = index,
+                    )
+                )
+            }
+            add(
+                ChatSessionSummaryPayload(
+                    sessionId = "legacy-duplicate",
+                    title = "Server replacement",
+                    model = "ollama:replacement",
+                    lastActivityAt = "2026-06-23T09:02:05Z",
+                    messageCount = 2,
+                    search = ChatSessionSearchPayload(
+                        rank = 3,
+                        snippet = " first duplicate ",
+                        matchedFields = listOf("title", " title ", "transcript"),
+                    ),
+                )
+            )
+            add(
+                ChatSessionSummaryPayload(
+                    sessionId = "legacy-duplicate",
+                    title = "Ignored duplicate summary",
+                    model = "ollama:ignored",
+                    lastActivityAt = "2026-06-23T09:02:05Z",
+                    messageCount = 99,
+                )
+            )
+            add(
+                ChatSessionSummaryPayload(
+                    sessionId = "local-collision",
+                    title = "Must not replace local",
+                    model = "ollama:ignored",
+                    lastActivityAt = "2026-06-23T09:02:05Z",
+                    messageCount = 1,
+                )
+            )
+            add(
+                ChatSessionSummaryPayload(
+                    sessionId = "blocked-runtime",
+                    title = "Must remain deleted",
+                    model = "ollama:ignored",
+                    lastActivityAt = "2026-06-23T09:02:05Z",
+                    messageCount = 1,
+                )
+            )
+        }
+        val data = PersistedRuntimeData(
+            sessions = existingSessions,
+            suppressedRuntimeSessions = suppressedSessions,
+        )
+
+        val merged = data.withRuntimeChatSessionSummaries(
+            sessions = summaries,
+            nowMillis = 10_000L,
+        )
+
+        assertTrue(existingSessions.readCount <= existingSessions.size + 1)
+        assertTrue(suppressedSessions.readCount <= suppressedSessions.size * 2 + 2)
+        assertEquals(runtimeSessionCount + 2, merged.sessions.size)
+        assertTrue(merged.sessions.none { it.id == "blocked-runtime" })
+        val localCollision = merged.sessions.single { it.id == "local-collision" }
+        assertFalse(localCollision.runtimeOwned)
+        assertEquals("Keep local", localCollision.title)
+        assertEquals("local draft", localCollision.composerDraft)
+        val duplicate = merged.sessions.single { it.id == "legacy-duplicate" }
+        assertEquals("Manual first", duplicate.title)
+        assertEquals("first draft", duplicate.composerDraft)
+        assertEquals(listOf("Keep first state"), duplicate.messages.map { it.content })
+        assertEquals("ollama:replacement", duplicate.modelId)
+        assertEquals(2, duplicate.runtimeMessageCount)
+        assertEquals(3, duplicate.runtimeSearchRank)
+        assertEquals("first duplicate", duplicate.runtimeSearchSnippet)
+        assertEquals(listOf("title", "transcript"), duplicate.runtimeSearchMatchedFields)
     }
 
     @Test

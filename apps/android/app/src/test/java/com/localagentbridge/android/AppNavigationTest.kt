@@ -118,6 +118,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.util.Calendar
+import java.util.TimeZone
 
 @RunWith(RobolectricTestRunner::class)
 class AppNavigationTest {
@@ -2065,6 +2066,55 @@ class AppNavigationTest {
     }
 
     @Test
+    fun chatSessionDrawerGroupsPreserveBucketsAcrossDstMidnightFutureAndBoundaries() {
+        val cases = listOf(
+            DrawerGroupingTimeCase("America/New_York", 2026, Calendar.MARCH, 9),
+            DrawerGroupingTimeCase("America/New_York", 2026, Calendar.NOVEMBER, 2),
+            DrawerGroupingTimeCase("Asia/Seoul", 2026, Calendar.JUNE, 29),
+        )
+
+        cases.forEach { case ->
+            val timeZone = TimeZone.getTimeZone(case.timeZoneId)
+            val now = testLocalMillis(
+                year = case.year,
+                month = case.month,
+                dayOfMonth = case.dayOfMonth,
+                hourOfDay = 0,
+                timeZone = timeZone,
+            )
+            val todayStart = testLocalDayStartMillis(now, daysOffset = 0, timeZone = timeZone)
+            val yesterdayStart = testLocalDayStartMillis(now, daysOffset = -1, timeZone = timeZone)
+            val previousSevenDaysStart = testLocalDayStartMillis(now, daysOffset = -7, timeZone = timeZone)
+            val sessions = listOf(
+                drawerGroupingSession("future", todayStart + 48 * 60 * 60 * 1_000L),
+                drawerGroupingSession("today-boundary", todayStart),
+                drawerGroupingSession("before-today", todayStart - 1L),
+                drawerGroupingSession("yesterday-boundary", yesterdayStart),
+                drawerGroupingSession("before-yesterday", yesterdayStart - 1L),
+                drawerGroupingSession("previous-seven-days-boundary", previousSevenDaysStart),
+                drawerGroupingSession("before-previous-seven-days", previousSevenDaysStart - 1L),
+                drawerGroupingSession("non-positive", 0L),
+            )
+
+            assertEquals(
+                case.timeZoneId,
+                listOf(
+                    R.string.chat_history_group_today to listOf("future", "today-boundary"),
+                    R.string.chat_history_group_yesterday to listOf("before-today", "yesterday-boundary"),
+                    R.string.chat_history_group_previous_7_days to
+                        listOf("before-yesterday", "previous-seven-days-boundary"),
+                    R.string.chat_history_group_older to listOf("before-previous-seven-days", "non-positive"),
+                ),
+                chatSessionDrawerGroups(
+                    sessions = sessions,
+                    nowMillis = now,
+                    timeZone = timeZone,
+                ).toComparableDrawerGroups(),
+            )
+        }
+    }
+
+    @Test
     fun chatHistorySearchMatchesTitleModelAndRuntimeMetadata() {
         val sessions = listOf(
             RuntimeChatSession(
@@ -2168,12 +2218,48 @@ class AppNavigationTest {
         month: Int,
         dayOfMonth: Int,
         hourOfDay: Int,
+        timeZone: TimeZone = TimeZone.getDefault(),
     ): Long {
-        return Calendar.getInstance().apply {
+        return Calendar.getInstance(timeZone).apply {
             clear()
             set(year, month, dayOfMonth, hourOfDay, 0, 0)
         }.timeInMillis
     }
+
+    private fun drawerGroupingSession(id: String, updatedAtMillis: Long): RuntimeChatSession {
+        return RuntimeChatSession(
+            id = id,
+            title = id,
+            updatedAtMillis = updatedAtMillis,
+            messageCount = 1,
+        )
+    }
+
+    private fun testLocalDayStartMillis(
+        timeMillis: Long,
+        daysOffset: Int,
+        timeZone: TimeZone,
+    ): Long {
+        return Calendar.getInstance(timeZone).apply {
+            timeInMillis = timeMillis
+            add(Calendar.DATE, daysOffset)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+
+    private fun List<ChatSessionDrawerGroup>.toComparableDrawerGroups(): List<Pair<Int, List<String>>> {
+        return map { group -> group.labelRes to group.sessions.map(RuntimeChatSession::id) }
+    }
+
+    private data class DrawerGroupingTimeCase(
+        val timeZoneId: String,
+        val year: Int,
+        val month: Int,
+        val dayOfMonth: Int,
+    )
 
     @Test
     fun chatHistorySearchMatchesResolvedModelDisplayName() {
