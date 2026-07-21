@@ -20,9 +20,9 @@ This document separates current verification evidence from historical captures.
   bindings are closed. Receipt-derived trust anchors, partial bundles, and
   activation before a factory-only independently verified trust context are
   forbidden and mutation-pinned. The current checker exposes no receipt-
-  acceptance API. A local dormant publication receipt candidate now exists
-  outside the immutable V1/V2/V3 bytes, but every owner/gate/activation state
-  and every blocker remains open.
+  acceptance API. A tracked dormant publication receipt candidate is published
+  in successor `70350f5e` outside the immutable V1/V2/V3 bytes, but every
+  owner/gate/activation state and every blocker remains open.
 - [x] `docs/v1/g0/assurance-checkpoint-readback-v1.json` captures the current
   assurance raw and canonical hashes plus an ordered 29-record source readback.
   `script/check_v1_g0_checkpoint.py` independently rehashes every exact regular
@@ -101,7 +101,7 @@ This document separates current verification evidence from historical captures.
   every explicitly supplied receipt bundle. The exact synthetic matching
   fixture still returns `dormant_non_authorizing` and changes no acceptance or
   authority state.
-- [x] `python3 -m unittest script.test_v1_g0_receipt_bundle` passes 11 V3
+- [x] `python3 -m unittest script.test_v1_g0_receipt_bundle` passes 13 V3
   lineage, complete-bundle, publication-sidecar, and sparse-intake candidate
   tests. They preserve the V1/V2 bytes,
   reconstruct effective V3 from one immutable snapshot of six exact blobs,
@@ -125,7 +125,15 @@ This document separates current verification evidence from historical captures.
   mutations, and proves even a populated structural
   candidate remains `draft_unverified_non_authorizing`. It does not inspect or
   certify the contents of separately referenced candidate artifacts.
-- [x] The four focused G0 mutation suites therefore contain 93 passing tests;
+  The public `compile_dormant_owner_catalog_input_preview` helper now snapshots
+  and strictly parses bounded proposal-request bytes before interpretation,
+  derives and canonicalizes all references from the pinned V3 graph, rejects
+  oversized or duplicate-key requests, unknown/duplicate/derived selectors,
+  non-integer versions, impossible session dates, and caller-buffer mutation,
+  then requires exact dormant validator round-trip before returning bytes and
+  SHA-256. It performs no file, network, or process I/O or state transition and
+  cannot accept a receipt or close a blocker.
+- [x] The four focused G0 mutation suites therefore contain 95 passing tests;
   this count does not represent the unrun full no-device aggregate.
 - [x] The committed `assurance-v1.json` and
   `assurance-checkpoint-readback-v1.json` remain byte-identical to `929fda5f`.
@@ -146,8 +154,9 @@ This document separates current verification evidence from historical captures.
   thirteen allowlisted operations, and pins effective assurance/closure
   digests plus a separate V3 checkpoint. Its six-artifact publication profile
   and complete-bundle profiles remove caller-supplied result/activation fields.
-  Exact publication bytes are externally observed and recorded only by the local
-  dormant sidecar. The separate local sparse intake packet has no responses and
+  Exact parent publication bytes are externally observed and recorded by the
+  dormant sidecar. The sidecar and separate sparse intake packet are tracked in
+  successor `70350f5e`; the intake packet still has no responses and
   every state flag false. Independent registry/revocation/runner/artifact trust,
   authenticated owner input, receipt activation, G0 exit, and G1a all remain
   absent or false.
@@ -168,8 +177,8 @@ This document separates current verification evidence from historical captures.
   production-relay design validators, 21 documentation/launcher/Phase-A unit
   tests, shell syntax, and `git diff --check`.
 - [x] `bash -n script/check_no_device_quality.sh` passes syntax only after all
-  three G0 checkers, all four mutation suites, and an explicit local-candidate versus
-  immutable-publication boundary marker were added to the aggregate. The full
+  three G0 checkers, all four mutation suites, and an explicit dormant-candidate
+  versus immutable-publication boundary marker were added to the aggregate. The full
   aggregate is not claimed until it finishes on the integrated source.
 - [x] Every active Gradle command in the aggregate uses `--offline`. This does
   not itself prove zero egress: an authorized run must also preseed and hash-
@@ -182,16 +191,28 @@ This document separates current verification evidence from historical captures.
   evidence-conformance audits were used. The final product and
   evidence-conformance re-reviews report no remaining P0-P3 finding.
   GPT-5.3-Codex-Spark was not used.
-- Proof boundary: this checklist includes one bounded GitHub publication/ref and
-  exact-byte readback of `12c38154`. It does not include product/runtime
+- Proof boundary: this checklist includes bounded GitHub publication/ref and
+  exact-byte readback of the 18-file `12c38154` lineage packet plus the nine-file
+  `70350f5e` receipt/intake successor. It does not include product/runtime
   external-network behavior, implement G1a, create a key, sign an artifact,
   select or compile a P2P dependency, open a product socket, use an Android
   device, deploy a service, or prove V1.
+- [x] A distinct fresh no-alternates HTTPS fetch matched all nine
+  `70350f5e9e5e39d1b793862c1e58d09edf637405` successor bytes from
+  `2026-07-20T13:54:08Z` through `13:54:12Z`. The ordered remote file-manifest
+  SHA-256 is `feffe729aba826c4692fb408f9e4b4f42f7f4823f92dc6325587c0aac7a8dd46`.
+  The exact parent is `12c38154`; the receipt and intake file SHA-256 values remain
+  `d9d6c43713a4550f88080306a0150a6a7325f7575e369b2d80cd18902b272856`
+  and `fa8037c975e76c64c7a3e6e33274c6ac7a91f49c49b5ec35e0133477972d35a0`.
+  The canonical handoff records all nine blob hashes and the exact manifest
+  serialization, so the digest is reproducible from `70350f5e`. It does not
+  persist a standalone transcript capable of replaying the separate HTTPS
+  acquisition, no-alternates check, timestamps, or remote comparisons.
 - Remaining G0 gate: immutable publication and exact remote-byte observation are
-  complete for this session. A local dormant receipt sidecar encodes the
+  complete for both bounded packets in this session. The tracked dormant receipt sidecar encodes the
   target/checkpoint/hash/time candidate but does not persist or independently
-  reproduce the acquisition provenance. The sidecar is not committed or pushed
-  and is not activation-capable. Accountable owner acceptance, evidence catalog,
+  reproduce the parent acquisition provenance and is not activation-capable.
+  Accountable owner acceptance, evidence catalog,
   authorized full no-device/release-compilation gates, complete-bundle trust, G0
   exit, and G1a remain unclaimed.
 

@@ -166,8 +166,8 @@ This document records what has been implemented so far and what should happen ne
   network-variant outcomes, and evidence-free checklist passes. The G0 checker
   now also requires the candidate readback validator. Its separate eleven-test
   mutation suite, the dormant publication candidate's eight-test suite, and
-  the V3 lineage/bundle and sparse-intake candidate's eleven-test suite are
-  included in the default no-device gate, for 93 focused G0 mutation tests in
+  the V3 lineage/bundle and sparse-intake candidate's thirteen-test suite are
+  included in the default no-device gate, for 95 focused G0 mutation tests in
   total.
 - Offline gate hardening: all five Gradle invocations inside
   `script/check_no_device_quality.sh` now include `--offline`. Future authorized
@@ -188,17 +188,37 @@ This document records what has been implemented so far and what should happen ne
   `2026-07-20T12:05:21Z` through `12:05:44Z`, yielding 4,692 bytes at SHA-256
   `37462cd8303ce61742bc480d0f7d37e0ccb380ec12375cc8c8d10169aebf4dc5`.
   V1/V2/V3 lineage bytes remain unchanged.
-- Publication-receipt status: the local exact 13-field sidecar encodes the
+- Receipt/intake successor publication: the exact nine-file successor is
+  published at `70350f5e9e5e39d1b793862c1e58d09edf637405`. A distinct fresh
+  no-alternates HTTPS fetch matched all nine remote bytes from
+  `2026-07-20T13:54:08Z` through `13:54:12Z`; the ordered remote file-manifest
+  SHA-256 is `feffe729aba826c4692fb408f9e4b4f42f7f4823f92dc6325587c0aac7a8dd46`.
+  The generic immutable commit subject does not define scope; the canonical
+  handoff records the path-order serialization and nine individual blob hashes.
+  That manifest is reproducible from the commit, but no standalone HTTPS
+  acquisition transcript persists the separate no-alternates/readback session.
+- Publication-receipt status: the tracked exact 13-field sidecar encodes the
   observed target/checkpoint/hash/time only as a dormant candidate. It does not
-  persist or independently reproduce the acquisition provenance, is not
-  committed or pushed, is not consumed by an activation-capable independent
+  persist or independently reproduce the parent acquisition provenance and is
+  not consumed by an activation-capable independent
   trust adapter, and establishes no owner, authority, runner, gate, approval,
   G0-exit, or G1a state.
-- Owner/catalog-input status: the local packet is empty, content-addressed, and
-  uncommitted/unpushed. Structural validation proves only that later non-secret
+- Owner/catalog-input status: the tracked packet is empty and content-addressed.
+  Structural validation proves only that later reference-only
   proposals would be bound to the canonical target and graph; it does not
   authenticate an owner, verify an artifact, accept a disposition, activate a
   receipt, or close any of the ten blockers.
+- Reference-only proposal preparation: the receipt-bundle module now exports
+  one dormant preview compiler. It snapshots and strictly parses bounded JSON
+  selector-request bytes, derives canonical blocker/role/evidence references
+  and safe optional artifact paths from the exact V3 graph, normalizes order,
+  keeps all state false, and returns deterministic bytes plus SHA-256 only after
+  dormant validator round-trip. It performs no file, network, or process I/O,
+  authentication, acceptance, or activation.
+- Post-publication worktree status: the only new local scope is synchronized
+  current-state wording in the four canonical documents and no-device status
+  copy, plus the preview compiler and its tests. These seven files are not
+  committed or pushed.
 - Remaining boundary: accountable owner acceptance, catalog artifacts,
   authorized aggregate/release-compile evidence, namespaces/accounts/custody,
   provider/service/privacy/quality/capacity ownership, and all later execution

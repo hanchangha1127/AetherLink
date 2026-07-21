@@ -6,6 +6,7 @@ from __future__ import annotations
 import copy
 from datetime import datetime, timezone
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -202,6 +203,26 @@ OWNER_CATALOG_REQUIREMENT_DISPOSITIONS = (
     "proposed_with_changes",
     "not_available",
 )
+OWNER_CATALOG_PREVIEW_REQUEST_FIELDS = (
+    "documentType",
+    "schemaVersion",
+    "proposals",
+)
+OWNER_CATALOG_PREVIEW_PROPOSAL_FIELDS = (
+    "blockerId",
+    "requirementDisposition",
+    "ownerCandidates",
+    "evidenceCandidates",
+    "changeRequestCandidateVersion",
+    "inputSessionDate",
+    "inputSessionItem",
+)
+OWNER_CATALOG_PREVIEW_OWNER_FIELDS = ("role", "candidateVersion")
+OWNER_CATALOG_PREVIEW_EVIDENCE_FIELDS = (
+    "evidenceKind",
+    "candidateVersion",
+    "supportingArtifactPresent",
+)
 OWNER_BINDING_FIELDS = (
     "ownerBindingRef",
     "role",
@@ -321,7 +342,7 @@ _CHANGE_REQUEST_REF_CANDIDATE_PATTERN = re.compile(
     r"^change-request-candidate:([a-z][a-z0-9-]{0,127}):v([1-9][0-9]{0,8})$"
 )
 _INPUT_SOURCE_REF_CANDIDATE_PATTERN = re.compile(
-    r"^user-input:session-[0-9]{8}:item-[1-9][0-9]{0,2}$"
+    r"^user-input:session-([0-9]{8}):item-([1-9][0-9]{0,2})$"
 )
 
 
@@ -345,25 +366,41 @@ def _bounded_snapshot(
     maximum_bytes: int,
     failures: list[str],
 ) -> bytes | None:
-    if not isinstance(value, (bytes, bytearray, memoryview)):
+    if type(value) not in (bytes, bytearray, memoryview):
         failures.append(f"{label} must be bytes")
         return None
-    try:
-        observed_size = value.nbytes if isinstance(value, memoryview) else len(value)
-    except (BufferError, TypeError, ValueError):
-        failures.append(f"{label} is not a readable byte buffer")
-        return None
-    if observed_size == 0:
+    if type(value) is bytes:
+        snapshot = value
+    else:
+        try:
+            pinned = memoryview(value)
+        except (BufferError, TypeError, ValueError):
+            failures.append(f"{label} is not a readable byte buffer")
+            return None
+        try:
+            observed_size = pinned.nbytes
+            if observed_size == 0:
+                failures.append(f"{label} must not be empty")
+                return None
+            if observed_size > maximum_bytes:
+                failures.append(f"{label} exceeds {maximum_bytes} bytes")
+                return None
+            snapshot = pinned.tobytes()
+        except (BufferError, MemoryError, TypeError, ValueError):
+            failures.append(f"{label} is not a readable byte buffer")
+            return None
+        finally:
+            pinned.release()
+        if len(snapshot) != observed_size:
+            failures.append(f"{label} changed size while being snapshotted")
+            return None
+    if len(snapshot) == 0:
         failures.append(f"{label} must not be empty")
         return None
-    if observed_size > maximum_bytes:
+    if len(snapshot) > maximum_bytes:
         failures.append(f"{label} exceeds {maximum_bytes} bytes")
         return None
-    try:
-        return bytes(value)
-    except (BufferError, TypeError, ValueError):
-        failures.append(f"{label} is not a readable byte buffer")
-        return None
+    return snapshot
 
 
 def _parse_object(
@@ -422,14 +459,17 @@ def _parse_canonical_utc(
         failures.append(f"{label} must be canonical RFC3339 UTC")
         return None
     try:
-        parsed = datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(
-            tzinfo=timezone.utc
+        parsed = datetime(
+            int(value[0:4]),
+            int(value[5:7]),
+            int(value[8:10]),
+            int(value[11:13]),
+            int(value[14:16]),
+            int(value[17:19]),
+            tzinfo=timezone.utc,
         )
     except ValueError:
         failures.append(f"{label} must be a real canonical UTC timestamp")
-        return None
-    if parsed.strftime("%Y-%m-%dT%H:%M:%SZ") != value:
-        failures.append(f"{label} is not canonical UTC")
         return None
     return parsed
 
@@ -525,6 +565,24 @@ def _safe_supporting_artifact_candidate(
         f"{evidence_kind.replace('_', '-')}-candidate-v{candidate_version}.json"
     )
     return value == expected and _safe_artifact_path(value)
+
+
+def _valid_input_source_ref_candidate(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    match = _INPUT_SOURCE_REF_CANDIDATE_PATTERN.fullmatch(value)
+    if match is None:
+        return False
+    session_date = match.group(1)
+    try:
+        datetime(
+            int(session_date[0:4]),
+            int(session_date[4:6]),
+            int(session_date[6:8]),
+        )
+    except ValueError:
+        return False
+    return True
 
 
 def _exact_zero(value: object) -> bool:
@@ -828,6 +886,43 @@ def _derive_contract_sets(
         profile_by_check,
         executable_checks,
     )
+
+
+def _derive_owner_catalog_graph(
+    effective_v3: dict[str, object],
+    failures: list[str],
+) -> tuple[
+    tuple[str, ...],
+    dict[str, tuple[str, ...]],
+    dict[str, tuple[str, ...]],
+]:
+    """Derive the reference-only intake graph from the effective V3 record."""
+
+    _derive_contract_sets(effective_v3, failures)
+    closure = effective_v3.get("g0ClosureContract")
+    if failures or not isinstance(closure, dict):
+        return (), {}, {}
+    derived = closure.get("derivedEvidenceKinds")
+    blockers = closure.get("blockerRequirements")
+    if not isinstance(derived, dict) or not isinstance(blockers, list):
+        return (), {}, {}
+
+    canonical_blockers = tuple(blocker for blocker in blockers if isinstance(blocker, dict))
+    derived_kinds = set(derived)
+    blocker_order = tuple(blocker["blockerId"] for blocker in canonical_blockers)
+    blocker_roles = {
+        blocker["blockerId"]: tuple(blocker["requiredOwnerRoles"])
+        for blocker in canonical_blockers
+    }
+    blocker_evidence = {
+        blocker["blockerId"]: tuple(
+            kind
+            for kind in blocker["requiredEvidenceKinds"]
+            if kind not in derived_kinds
+        )
+        for blocker in canonical_blockers
+    }
+    return blocker_order, blocker_roles, blocker_evidence
 
 
 def _apply_v3_operations(
@@ -1254,6 +1349,256 @@ def _finish_owner_catalog_input_failures(failures: list[str]) -> tuple[str, ...]
     return tuple(failures)
 
 
+def compile_dormant_owner_catalog_input_preview(
+    request_bytes: object,
+    *,
+    lineage_blobs: tuple[object, ...],
+) -> tuple[bytes, str]:
+    """Compile a bounded selector request without authenticating or activating it."""
+
+    failures: list[str] = []
+    request_raw = _bounded_snapshot(
+        request_bytes,
+        "G0 owner/catalog preview request",
+        MAX_OWNER_CATALOG_INPUT_BYTES,
+        failures,
+    )
+    request = (
+        _parse_object(request_raw, "G0 owner/catalog preview request", failures)
+        if request_raw is not None
+        else None
+    )
+    if request is not None:
+        _validate_json_resources(
+            request,
+            failures,
+            root_label="G0 owner/catalog preview request",
+        )
+        request = _exact_ordered_object(
+            request,
+            OWNER_CATALOG_PREVIEW_REQUEST_FIELDS,
+            "owner/catalog preview request",
+            failures,
+        )
+        _require_equal(
+            request.get("documentType"),
+            "aetherlink.v1-g0-owner-catalog-preview-request",
+            "owner/catalog preview request documentType",
+            failures,
+        )
+        _require_equal(
+            request.get("schemaVersion"),
+            1,
+            "owner/catalog preview request schemaVersion",
+            failures,
+        )
+    if failures or request is None:
+        raise ValueError("owner/catalog preview request is invalid: " + "; ".join(failures))
+    proposal_snapshot = request.get("proposals")
+    if not isinstance(proposal_snapshot, list):
+        raise ValueError("owner/catalog preview request proposals must be a list")
+
+    immutable_lineage = _snapshot_validated_v3_lineage(
+        lineage_blobs,
+        label="G0 owner/catalog preview lineage",
+        failures=failures,
+    )
+    if immutable_lineage is None:
+        raise ValueError("owner/catalog preview lineage is invalid: " + "; ".join(failures))
+
+    effective_v3 = _materialize_effective_v3(immutable_lineage, failures)
+    if effective_v3 is None:
+        raise ValueError("owner/catalog preview lineage is invalid: " + "; ".join(failures))
+    (
+        blocker_order,
+        blocker_roles,
+        blocker_evidence,
+    ) = _derive_owner_catalog_graph(effective_v3, failures)
+    if failures:
+        raise ValueError("owner/catalog preview graph is invalid: " + "; ".join(failures))
+
+    if len(proposal_snapshot) > len(blocker_order):
+        raise ValueError("owner/catalog preview proposals must be a list of at most ten items")
+
+    def exact_object(value: object, fields: tuple[str, ...], label: str) -> dict[str, object]:
+        if not isinstance(value, dict) or set(value) != set(fields):
+            raise ValueError(f"{label} fields are not exact")
+        return value
+
+    def candidate_ref(
+        identifier: str,
+        value: object,
+        prefix: str,
+        pattern: re.Pattern[str],
+        label: str,
+    ) -> tuple[str, int]:
+        if type(value) is not int or not 1 <= value <= 999_999_999:
+            raise ValueError(f"{label} is invalid")
+        reference = f"{prefix}:{identifier.replace('_', '-')}:v{value}"
+        version = _canonical_candidate_version(reference, pattern, identifier)
+        if version is None or version != value:
+            raise ValueError(f"{label} is invalid")
+        return reference, version
+
+    def compile_selections(
+        value: object,
+        fields: tuple[str, ...],
+        identifier_field: str,
+        allowed: tuple[str, ...],
+        prefix: str,
+        pattern: re.Pattern[str],
+        label: str,
+        seen: set[str],
+    ) -> list[tuple[str, str, int, dict[str, object]]]:
+        if not isinstance(value, list):
+            raise ValueError(f"{label} must be a list")
+        compiled: list[tuple[str, str, int, dict[str, object]]] = []
+        for index, raw_entry in enumerate(value):
+            entry_label = f"{label}[{index}]"
+            entry = exact_object(raw_entry, fields, entry_label)
+            identifier = entry[identifier_field]
+            if not isinstance(identifier, str) or identifier not in allowed:
+                raise ValueError(f"{entry_label}.{identifier_field} is unknown or forbidden")
+            if identifier in seen:
+                raise ValueError(f"{entry_label}.{identifier_field} is duplicated")
+            seen.add(identifier)
+            reference, version = candidate_ref(
+                identifier,
+                entry["candidateVersion"],
+                prefix,
+                pattern,
+                f"{entry_label}.candidateVersion",
+            )
+            compiled.append((identifier, reference, version, entry))
+        return sorted(compiled, key=lambda entry: allowed.index(entry[0]))
+
+    compiled_responses: list[dict[str, object]] = []
+    seen_blockers: set[str] = set()
+    seen_evidence_kinds: set[str] = set()
+    for proposal_index, raw_proposal in enumerate(proposal_snapshot):
+        label = f"owner/catalog preview proposal {proposal_index}"
+        proposal = exact_object(raw_proposal, OWNER_CATALOG_PREVIEW_PROPOSAL_FIELDS, label)
+        blocker_id = proposal["blockerId"]
+        if not isinstance(blocker_id, str) or blocker_id not in blocker_roles:
+            raise ValueError(f"{label}.blockerId is unknown")
+        if blocker_id in seen_blockers:
+            raise ValueError(f"{label}.blockerId is duplicated")
+        seen_blockers.add(blocker_id)
+
+        owner_selections = compile_selections(
+            proposal["ownerCandidates"],
+            OWNER_CATALOG_PREVIEW_OWNER_FIELDS,
+            "role",
+            blocker_roles[blocker_id],
+            "owner-candidate",
+            _OWNER_BINDING_REF_CANDIDATE_PATTERN,
+            f"{label}.ownerCandidates",
+            set(),
+        )
+        compiled_owners = [
+            {"role": role, "ownerBindingRefCandidate": reference}
+            for role, reference, _, _ in owner_selections
+        ]
+
+        evidence_selections = compile_selections(
+            proposal["evidenceCandidates"],
+            OWNER_CATALOG_PREVIEW_EVIDENCE_FIELDS,
+            "evidenceKind",
+            blocker_evidence[blocker_id],
+            "evidence-input-candidate",
+            _EVIDENCE_INPUT_REF_CANDIDATE_PATTERN,
+            f"{label}.evidenceCandidates",
+            seen_evidence_kinds,
+        )
+        compiled_evidence: list[dict[str, object]] = []
+        for evidence_kind, evidence_ref, version, evidence in evidence_selections:
+            artifact_present = evidence["supportingArtifactPresent"]
+            if not isinstance(artifact_present, bool):
+                raise ValueError(
+                    f"{label} evidence {evidence_kind!r} artifact flag must be boolean"
+                )
+            slug = evidence_kind.replace("_", "-")
+            compiled_evidence.append(
+                {
+                    "evidenceKind": evidence_kind,
+                    "evidenceInputRefCandidate": evidence_ref,
+                    "supportingArtifactRefCandidate": (
+                        f"docs/evidence/g0-{slug}-candidate-v{version}.json"
+                        if artifact_present
+                        else None
+                    ),
+                }
+            )
+
+        change_version = proposal["changeRequestCandidateVersion"]
+        change_request_ref = None
+        if change_version is not None:
+            change_request_ref, _ = candidate_ref(
+                blocker_id,
+                change_version,
+                "change-request-candidate",
+                _CHANGE_REQUEST_REF_CANDIDATE_PATTERN,
+                f"{label}.changeRequestCandidateVersion",
+            )
+        session_date = proposal["inputSessionDate"]
+        session_item = proposal["inputSessionItem"]
+        if (
+            not isinstance(session_date, str)
+            or not isinstance(session_item, int)
+            or isinstance(session_item, bool)
+        ):
+            raise ValueError(f"{label} input session selector types are invalid")
+        source_ref = (
+            f"user-input:session-{session_date}:item-{session_item}"
+        )
+        if not _valid_input_source_ref_candidate(source_ref):
+            raise ValueError(f"{label} input session must be a real YYYYMMDD date and item 1..999")
+        compiled_responses.append(
+            {
+                "blockerId": blocker_id,
+                "requirementDisposition": proposal["requirementDisposition"],
+                "ownerCandidates": compiled_owners,
+                "evidenceCandidates": compiled_evidence,
+                "changeRequestRefCandidate": change_request_ref,
+                "inputSourceRefCandidate": source_ref,
+            }
+        )
+    compiled_responses.sort(
+        key=lambda response: blocker_order.index(response["blockerId"])
+    )
+
+    candidate = {
+        "documentType": "aetherlink.v1-g0-owner-catalog-input-candidate",
+        "schemaVersion": 1,
+        "status": "draft_unverified_non_authorizing",
+        "contractBinding": {
+            "repositoryRef": EXPECTED_RECORDED_REPOSITORY_REF,
+            "publicationCommitObjectId": EXPECTED_RECORDED_COMMIT_OBJECT_ID,
+            "publicationCheckpointSha256": LINEAGE_RAW_SHA256[-1],
+            "effectiveAssuranceCanonicalSha256": EXPECTED_EFFECTIVE_V3_SHA256,
+            "effectiveClosureCanonicalSha256": EXPECTED_CLOSURE_V3_SHA256,
+        },
+        "responses": compiled_responses,
+        "state": {field: False for field in OWNER_CATALOG_STATE_FIELDS},
+    }
+    canonical_bytes = json.dumps(
+        candidate,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    round_trip_failures = _collect_owner_catalog_input_candidate_failures(
+        canonical_bytes,
+        lineage_blobs=immutable_lineage,
+    )
+    if round_trip_failures != (OWNER_CATALOG_INPUT_DORMANT_MESSAGE,):
+        raise ValueError(
+            "compiled owner/catalog preview failed dormant round-trip validation: "
+            + "; ".join(round_trip_failures)
+        )
+    return canonical_bytes, _sha256(canonical_bytes)
+
+
 def _collect_recorded_publication_receipt_candidate_failures(
     receipt_bytes: object,
     *,
@@ -1379,40 +1724,11 @@ def _collect_owner_catalog_input_candidate_failures(
     effective_v3 = _materialize_effective_v3(immutable_lineage, failures)
     if effective_v3 is None:
         return _finish_owner_catalog_input_failures(failures)
-    closure = effective_v3.get("g0ClosureContract")
-    if not isinstance(closure, dict):
-        failures.append("effective V3 g0ClosureContract must be an object")
-        return _finish_owner_catalog_input_failures(failures)
-    roles, evidence_kinds, _, _, _ = _derive_contract_sets(effective_v3, failures)
-    derived = closure.get("derivedEvidenceKinds")
-    derived_evidence_kinds = set(derived) if isinstance(derived, dict) else set()
-    blockers = closure.get("blockerRequirements")
-    if not isinstance(blockers, list):
-        failures.append("effective V3 blockerRequirements must be a list")
-        blockers = []
-    blocker_order: list[str] = []
-    blocker_roles: dict[str, tuple[str, ...]] = {}
-    blocker_evidence: dict[str, tuple[str, ...]] = {}
-    for raw_blocker in blockers:
-        if not isinstance(raw_blocker, dict):
-            continue
-        blocker_id = raw_blocker.get("blockerId")
-        required_roles = raw_blocker.get("requiredOwnerRoles")
-        required_evidence = raw_blocker.get("requiredEvidenceKinds")
-        if (
-            isinstance(blocker_id, str)
-            and isinstance(required_roles, list)
-            and isinstance(required_evidence, list)
-        ):
-            blocker_order.append(blocker_id)
-            blocker_roles[blocker_id] = tuple(
-                role for role in required_roles if isinstance(role, str)
-            )
-            blocker_evidence[blocker_id] = tuple(
-                kind
-                for kind in required_evidence
-                if isinstance(kind, str) and kind not in derived_evidence_kinds
-            )
+    (
+        blocker_order,
+        blocker_roles,
+        blocker_evidence,
+    ) = _derive_owner_catalog_graph(effective_v3, failures)
 
     responses = root.get("responses")
     if not isinstance(responses, list) or len(responses) > len(blocker_order):
@@ -1472,7 +1788,7 @@ def _collect_owner_catalog_input_candidate_failures(
             )
             role = owner.get("role")
             owner_ref = owner.get("ownerBindingRefCandidate")
-            if not isinstance(role, str) or role not in required_roles or role not in roles:
+            if not isinstance(role, str) or role not in required_roles:
                 failures.append(
                     f"owner/catalog response {response_index} owner {owner_index}.role is invalid"
                 )
@@ -1523,7 +1839,6 @@ def _collect_owner_catalog_input_candidate_failures(
             if (
                 not isinstance(evidence_kind, str)
                 or evidence_kind not in allowed_evidence
-                or evidence_kind not in evidence_kinds
             ):
                 failures.append(
                     f"owner/catalog response {response_index} evidence "
@@ -1592,10 +1907,7 @@ def _collect_owner_catalog_input_candidate_failures(
                     "must not include owner, evidence, or change candidates"
                 )
         input_source_ref = response.get("inputSourceRefCandidate")
-        if (
-            not isinstance(input_source_ref, str)
-            or _INPUT_SOURCE_REF_CANDIDATE_PATTERN.fullmatch(input_source_ref) is None
-        ):
+        if not _valid_input_source_ref_candidate(input_source_ref):
             failures.append(
                 f"owner/catalog response {response_index}.inputSourceRefCandidate is invalid"
             )
@@ -2317,7 +2629,7 @@ def main() -> int:
     return 0
 
 
-__all__: list[str] = []
+__all__ = ["compile_dormant_owner_catalog_input_preview"]
 
 
 if __name__ == "__main__":

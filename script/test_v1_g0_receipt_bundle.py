@@ -59,6 +59,80 @@ class V1G0ReceiptBundleContractTests(unittest.TestCase):
             separators=(",", ":"),
         ).encode("utf-8")
 
+    @staticmethod
+    def make_owner_catalog_preview_proposals() -> list[dict[str, object]]:
+        def proposal(
+            blocker_id: str,
+            disposition: str,
+            owners: list[tuple[str, int]],
+            evidence: list[tuple[str, int, bool]],
+            change_version: int | None,
+            item: int,
+        ) -> dict[str, object]:
+            return {
+                "blockerId": blocker_id,
+                "requirementDisposition": disposition,
+                "ownerCandidates": [
+                    {"role": role, "candidateVersion": version}
+                    for role, version in owners
+                ],
+                "evidenceCandidates": [
+                    {
+                        "evidenceKind": kind,
+                        "candidateVersion": version,
+                        "supportingArtifactPresent": artifact_present,
+                    }
+                    for kind, version, artifact_present in evidence
+                ],
+                "changeRequestCandidateVersion": change_version,
+                "inputSessionDate": "20260720",
+                "inputSessionItem": item,
+            }
+
+        return [
+            proposal(
+                "g0_assurance_artifacts_and_baseline_gate",
+                "proposed_as_written",
+                [("repository_quality_owner", 1), ("release_quality_owner", 2)],
+                [
+                    ("canonical_assurance_hash", 1, False),
+                    ("source_hash_readback", 2, True),
+                ],
+                None,
+                1,
+            ),
+            proposal("roadmap_and_g0_checkpoint_publication", "not_available", [], [], None, 2),
+            proposal(
+                "quality_measurement_owners",
+                "proposed_as_written",
+                [("release_quality_owner", 2)],
+                [],
+                None,
+                3,
+            ),
+            proposal(
+                "relay_region_capacity_and_cost_budget",
+                "proposed_with_changes",
+                [("service_operations_owner", 4)],
+                [("approved_region_peak_capacity_and_cost_ceiling", 3, True)],
+                5,
+                4,
+            ),
+        ]
+
+    @classmethod
+    def owner_catalog_preview_request_bytes(
+        cls,
+        proposals: list[dict[str, object]],
+    ) -> bytes:
+        return cls.encoded(
+            {
+                "documentType": "aetherlink.v1-g0-owner-catalog-preview-request",
+                "schemaVersion": 1,
+                "proposals": proposals,
+            }
+        )
+
     def make_complete_bundle(self) -> dict[str, object]:
         repository_ref = "repository:aetherlink-reviewed"
         commit_object_id = "a" * 40
@@ -288,7 +362,10 @@ class V1G0ReceiptBundleContractTests(unittest.TestCase):
             receipt_bundle._collect_v3_lineage_failures(*self.raw_blobs),
             (),
         )
-        self.assertEqual(receipt_bundle.__all__, [])
+        self.assertEqual(
+            receipt_bundle.__all__,
+            ["compile_dormant_owner_catalog_input_preview"],
+        )
         self.assertEqual(
             self.documents[0]["assuranceId"],
             "aetherlink_v1_g0_assurance_v1",
@@ -1162,6 +1239,228 @@ class V1G0ReceiptBundleContractTests(unittest.TestCase):
                 "non-authorizing result",
                 receipt_bundle._collect_worktree_failures(ROOT),
             )
+
+    def test_owner_catalog_preview_compiles_canonical_dormant_bytes(self) -> None:
+        proposals = self.make_owner_catalog_preview_proposals()
+        request_buffer = bytearray(
+            self.owner_catalog_preview_request_bytes(proposals)
+        )
+        mutable_lineage = tuple(bytearray(raw) for raw in self.raw_blobs)
+        original_validator = (
+            receipt_bundle._collect_owner_catalog_input_candidate_failures
+        )
+
+        def mutate_sources_then_validate(
+            candidate_bytes: object,
+            *,
+            lineage_blobs: tuple[object, ...],
+        ) -> tuple[str, ...]:
+            self.assertTrue(all(isinstance(blob, bytes) for blob in lineage_blobs))
+            request_buffer.extend(b" ")
+            mutable_lineage[0].extend(b" ")
+            return original_validator(candidate_bytes, lineage_blobs=lineage_blobs)
+
+        with mock.patch.object(
+            receipt_bundle,
+            "_collect_owner_catalog_input_candidate_failures",
+            side_effect=mutate_sources_then_validate,
+        ):
+            preview_bytes, preview_sha256 = (
+                receipt_bundle.compile_dormant_owner_catalog_input_preview(
+                    request_buffer,
+                    lineage_blobs=mutable_lineage,
+                )
+            )
+
+        preview = json.loads(preview_bytes)
+        self.assertIn(
+            "compile_dormant_owner_catalog_input_preview",
+            receipt_bundle.__all__,
+        )
+        self.assertEqual(preview_bytes, self.encoded(preview))
+        self.assertEqual(preview_sha256, hashlib.sha256(preview_bytes).hexdigest())
+        self.assertTrue(all(value is False for value in preview["state"].values()))
+        self.assertEqual(
+            preview["responses"][0]["ownerCandidates"][1][
+                "ownerBindingRefCandidate"
+            ],
+            "owner-candidate:release-quality-owner:v2",
+        )
+        self.assertEqual(
+            preview["responses"][0]["evidenceCandidates"][1][
+                "supportingArtifactRefCandidate"
+            ],
+            "docs/evidence/g0-source-hash-readback-candidate-v2.json",
+        )
+        self.assertEqual(
+            preview["responses"][3]["changeRequestRefCandidate"],
+            "change-request-candidate:relay-region-capacity-and-cost-budget:v5",
+        )
+        self.assertEqual(
+            tuple(response["requirementDisposition"] for response in preview["responses"]),
+            (
+                "proposed_as_written",
+                "not_available",
+                "proposed_as_written",
+                "proposed_with_changes",
+            ),
+        )
+        self.assertEqual(
+            original_validator(preview_bytes, lineage_blobs=self.raw_blobs),
+            (receipt_bundle.OWNER_CATALOG_INPUT_DORMANT_MESSAGE,),
+        )
+
+        reordered = self.make_owner_catalog_preview_proposals()
+        reordered.reverse()
+        reordered[-1]["ownerCandidates"].reverse()
+        reordered[-1]["evidenceCandidates"].reverse()
+        reordered_bytes, reordered_sha256 = (
+            receipt_bundle.compile_dormant_owner_catalog_input_preview(
+                self.owner_catalog_preview_request_bytes(reordered),
+                lineage_blobs=self.raw_blobs,
+            )
+        )
+        self.assertEqual(reordered_bytes, preview_bytes)
+        self.assertEqual(reordered_sha256, preview_sha256)
+
+        mutated_preview = json.loads(preview_bytes)
+        mutated_preview["state"]["g0ExitComplete"] = True
+        self.assertFalse(json.loads(preview_bytes)["state"]["g0ExitComplete"])
+
+    def test_owner_catalog_preview_rejects_noncanonical_or_unsafe_selectors(self) -> None:
+        def assert_invalid(mutate: object) -> None:
+            proposals = self.make_owner_catalog_preview_proposals()
+            mutate(proposals)
+            with self.assertRaises(ValueError):
+                receipt_bundle.compile_dormant_owner_catalog_input_preview(
+                    self.owner_catalog_preview_request_bytes(proposals),
+                    lineage_blobs=self.raw_blobs,
+                )
+
+        mutations = (
+            lambda values: values[0].__setitem__("blockerId", "unknown_blocker"),
+            lambda values: values[0]["ownerCandidates"][0].__setitem__(
+                "role", "unknown_owner"
+            ),
+            lambda values: values[0]["evidenceCandidates"][0].__setitem__(
+                "evidenceKind", "unknown_evidence"
+            ),
+            lambda values: values[2]["evidenceCandidates"].append(
+                {
+                    "evidenceKind": "quality_measurement_contract_owner_approvals",
+                    "candidateVersion": 1,
+                    "supportingArtifactPresent": False,
+                }
+            ),
+            lambda values: values[0].__setitem__("inputSessionDate", "20260230"),
+            lambda values: values.insert(1, copy.deepcopy(values[0])),
+            lambda values: values[0]["ownerCandidates"].append(
+                copy.deepcopy(values[0]["ownerCandidates"][0])
+            ),
+            lambda values: values[0]["evidenceCandidates"].append(
+                copy.deepcopy(values[0]["evidenceCandidates"][0])
+            ),
+            lambda values: values[2]["ownerCandidates"][0].__setitem__(
+                "candidateVersion", 3
+            ),
+        )
+        for index, mutation in enumerate(mutations):
+            with self.subTest(mutation=index):
+                assert_invalid(mutation)
+
+        for invalid_version in (
+            False,
+            0,
+            1_000_000_000,
+            "1",
+            1.0,
+        ):
+            with self.subTest(candidate_version=invalid_version):
+                assert_invalid(
+                    lambda values, version=invalid_version: values[0][
+                        "ownerCandidates"
+                    ][0].__setitem__("candidateVersion", version)
+                )
+
+        with self.assertRaises(ValueError):
+            receipt_bundle.compile_dormant_owner_catalog_input_preview(
+                b"x" * (receipt_bundle.MAX_OWNER_CATALOG_INPUT_BYTES + 1),
+                lineage_blobs=self.raw_blobs,
+            )
+
+        duplicate_key_request = (
+            b'{"documentType":"aetherlink.v1-g0-owner-catalog-preview-request",'
+            b'"schemaVersion":1,"schemaVersion":1,"proposals":[]}'
+        )
+        with self.assertRaises(ValueError):
+            receipt_bundle.compile_dormant_owner_catalog_input_preview(
+                duplicate_key_request,
+                lineage_blobs=self.raw_blobs,
+            )
+
+        valid_request = self.owner_catalog_preview_request_bytes(
+            self.make_owner_catalog_preview_proposals()
+        )
+
+        class LyingBytes(bytes):
+            def __len__(self) -> int:
+                return 1
+
+            def __bytes__(self) -> bytes:
+                return (
+                    valid_request
+                    + b" " * receipt_bundle.MAX_OWNER_CATALOG_INPUT_BYTES
+                )
+
+        class LyingBytearray(bytearray):
+            def __len__(self) -> int:
+                return 1
+
+            def __bytes__(self) -> bytes:
+                return valid_request
+
+        for hooked_buffer in (LyingBytes(b"x"), LyingBytearray(b"x")):
+            with self.subTest(buffer_type=type(hooked_buffer).__name__):
+                with self.assertRaises(ValueError):
+                    receipt_bundle.compile_dormant_owner_catalog_input_preview(
+                        hooked_buffer,
+                        lineage_blobs=self.raw_blobs,
+                    )
+
+        self.assertTrue(
+            receipt_bundle._valid_input_source_ref_candidate(
+                "user-input:session-20240229:item-1"
+            )
+        )
+        for invalid_source in (
+            "user-input:session-20230229:item-1",
+            "user-input:session-00000101:item-1",
+        ):
+            with self.subTest(input_source=invalid_source):
+                self.assertFalse(
+                    receipt_bundle._valid_input_source_ref_candidate(invalid_source)
+                )
+
+        impossible_date = copy.deepcopy(self.owner_catalog_input)
+        impossible_date["responses"] = [
+            {
+                "blockerId": "roadmap_and_g0_checkpoint_publication",
+                "requirementDisposition": "not_available",
+                "ownerCandidates": [],
+                "evidenceCandidates": [],
+                "changeRequestRefCandidate": None,
+                "inputSourceRefCandidate": "user-input:session-20260230:item-1",
+            }
+        ]
+        self.assertTrue(
+            any(
+                "inputSourceRefCandidate is invalid" in failure
+                for failure in receipt_bundle._collect_owner_catalog_input_candidate_failures(
+                    self.encoded(impossible_date),
+                    lineage_blobs=self.raw_blobs,
+                )
+            )
+        )
 
     def test_exact_complete_bundle_fixture_is_structural_only_and_dormant(self) -> None:
         failures = receipt_bundle._collect_complete_bundle_candidate_failures(
