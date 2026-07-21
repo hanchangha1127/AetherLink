@@ -1,0 +1,453 @@
+{
+  "documentType": "aetherlink.v1-g0-evidence-supporting-artifact-candidate-profile",
+  "schemaVersion": 1,
+  "profileId": "aetherlink_v1_g0_evidence_supporting_artifact_candidate_profile_v1",
+  "status": "draft_unverified_non_authorizing",
+  "contractBinding": {
+    "repositoryRef": "github:hanchangha1127/AetherLink",
+    "blockerId": "roadmap_and_g0_checkpoint_publication",
+    "publicationCommitObjectId": "12c381547935b96d383ac39976261ea6c3ce6a5b",
+    "publicationCheckpointPath": "docs/v1/g0/assurance-closure-amendment-checkpoint-v3.json",
+    "publicationCheckpointRawSha256": "37462cd8303ce61742bc480d0f7d37e0ccb380ec12375cc8c8d10169aebf4dc5",
+    "effectiveAssuranceCanonicalSha256": "e8f661094a678a2ac0966d8b35de46824316883a845eb9ae8c6e9f76df18ad4b",
+    "effectiveClosureCanonicalSha256": "79b0d7275bcf371e8b9ab5a6b123969474bfbc86b1d7e78fcb28ed7256e3a93c",
+    "requiredEvidenceKinds": [
+      "reviewed_commit_scope",
+      "published_checkpoint"
+    ]
+  },
+  "artifactPaths": [
+    {
+      "evidenceKind": "reviewed_commit_scope",
+      "candidateVersion": 1,
+      "path": "docs/evidence/g0-reviewed-commit-scope-candidate-v1.json"
+    },
+    {
+      "evidenceKind": "published_checkpoint",
+      "candidateVersion": 1,
+      "path": "docs/evidence/g0-published-checkpoint-candidate-v1.json"
+    }
+  ],
+  "selectorSnapshotBinding": {
+    "ownerCatalogInputCandidatePath": "docs/v1/g0/owner-catalog-input-candidate-v1.json",
+    "ownerCatalogInputCandidateRawSha256": "0221d2d49e4bcccfd34fb6905102117fbf5632e27d3d2f2e23d53e29f47752bc",
+    "responseIndex": 0,
+    "blockerId": "roadmap_and_g0_checkpoint_publication",
+    "inputSourceRefCandidate": "user-input:session-20260721:item-2",
+    "ownerBindingRefCandidate": "owner-candidate:repository-owner:v1",
+    "evidenceSelectors": [
+      {
+        "evidenceKind": "reviewed_commit_scope",
+        "evidenceSelectorIndex": 0,
+        "candidateVersion": 1,
+        "evidenceInputRefCandidate": "evidence-input-candidate:reviewed-commit-scope:v1",
+        "supportingArtifactPresent": false,
+        "supportingArtifactRefCandidate": null,
+        "reservedArtifactPath": "docs/evidence/g0-reviewed-commit-scope-candidate-v1.json"
+      },
+      {
+        "evidenceKind": "published_checkpoint",
+        "evidenceSelectorIndex": 1,
+        "candidateVersion": 1,
+        "evidenceInputRefCandidate": "evidence-input-candidate:published-checkpoint:v1",
+        "supportingArtifactPresent": false,
+        "supportingArtifactRefCandidate": null,
+        "reservedArtifactPath": "docs/evidence/g0-published-checkpoint-candidate-v1.json"
+      }
+    ],
+    "artifactInstancePolicy": "forbidden_in_repository_while_selector_supporting_artifact_reference_is_null_new_profile_required_after_any_selector_change"
+  },
+  "commonEnvelopeProfile": {
+    "exactFields": [
+      "documentType",
+      "schemaVersion",
+      "artifactId",
+      "evidenceKind",
+      "status",
+      "profileRef",
+      "contractBinding",
+      "selectorBinding",
+      "payload",
+      "trustBoundary",
+      "state"
+    ],
+    "fixedValues": {
+      "documentType": "aetherlink.v1-g0-evidence-supporting-artifact-candidate",
+      "schemaVersion": 1,
+      "status": "session_observation_unverified_non_authorizing"
+    },
+    "profileRefExactFields": [
+      "path",
+      "profileId",
+      "rawSha256"
+    ],
+    "profileRefPolicy": "exact_profile_path_id_and_validator_pinned_raw_sha256",
+    "contractBindingExactFields": [
+      "repositoryRef",
+      "blockerId",
+      "publicationCommitObjectId",
+      "publicationCheckpointPath",
+      "publicationCheckpointRawSha256",
+      "effectiveAssuranceCanonicalSha256",
+      "effectiveClosureCanonicalSha256"
+    ],
+    "contractBindingPolicy": "equals_profile_contract_binding_without_requiredEvidenceKinds",
+    "selectorBindingExactFields": [
+      "ownerCatalogInputCandidatePath",
+      "ownerCatalogInputCandidateRawSha256",
+      "responseIndex",
+      "blockerId",
+      "inputSourceRefCandidate",
+      "ownerBindingRefCandidate",
+      "evidenceSelectorIndex",
+      "candidateVersion",
+      "evidenceInputRefCandidate",
+      "supportingArtifactPresent",
+      "supportingArtifactRefCandidate",
+      "reservedArtifactPath"
+    ],
+    "selectorBindingPolicy": "exact_per_kind_projection_of_profile_selector_snapshot_with_false_null_artifact_state",
+    "trustBoundaryExactFields": [
+      "observationClass",
+      "independentInputsPresent",
+      "requiredIndependentInputsAbsent",
+      "catalogRecordDerivable",
+      "authorityDerivable"
+    ],
+    "trustBoundaryFixedValues": {
+      "observationClass": "session_observation_only",
+      "independentInputsPresent": [],
+      "catalogRecordDerivable": false,
+      "authorityDerivable": false
+    },
+    "stateExactFields": [
+      "ownerIdentityAuthenticated",
+      "evidenceCatalogVerified",
+      "approvalReceiptsAccepted",
+      "blockerClosureDerived",
+      "receiptActivationAllowed",
+      "g0ExitComplete",
+      "g1aMayStartNow"
+    ],
+    "stateFixedValues": {
+      "ownerIdentityAuthenticated": false,
+      "evidenceCatalogVerified": false,
+      "approvalReceiptsAccepted": false,
+      "blockerClosureDerived": false,
+      "receiptActivationAllowed": false,
+      "g0ExitComplete": false,
+      "g1aMayStartNow": false
+    },
+    "canonicalEncoding": "utf8_compact_json_exact_field_order_no_bom_no_trailing_newline"
+  },
+  "reviewedCommitScopePayloadProfile": {
+    "evidenceKind": "reviewed_commit_scope",
+    "artifactId": "g0-reviewed-commit-scope-candidate-v1",
+    "exactPayloadFields": [
+      "baseCommitObjectId",
+      "baseTreeObjectId",
+      "publicationTreeObjectId",
+      "scopeEntryCount",
+      "scopeEntries",
+      "scopeEntriesCanonicalSha256",
+      "reviewClaim"
+    ],
+    "fixedSubject": {
+      "baseCommitObjectId": "929fda5f2c01cd7d53325a036071b6a684ecaa1f",
+      "baseTreeObjectId": "63bb7d2644321b5bfd006a7ebd82ddee1765e89d",
+      "publicationTreeObjectId": "fcdf392d47ab5591e6c1085dcc4e71935f115704",
+      "scopeEntryCount": 18
+    },
+    "scopeEntryExactFields": [
+      "path",
+      "changeType",
+      "fileMode",
+      "blobObjectId",
+      "byteLength",
+      "rawSha256"
+    ],
+    "expectedScopeEntries": [
+      {
+        "path": "docs/handoff.md",
+        "changeType": "modified",
+        "fileMode": "100644",
+        "blobObjectId": "05f6b732c4e096c90fd1ed62d02cfc874d40cb56",
+        "byteLength": 44415,
+        "rawSha256": "54b30dc2f09790b96baa07ff67ebb0b0d3ad2c39d614a6fb3bbbe38ff08049df"
+      },
+      {
+        "path": "docs/progress.md",
+        "changeType": "modified",
+        "fileMode": "100644",
+        "blobObjectId": "b19cf4dc15cabb176189327b004133b139ea7b3a",
+        "byteLength": 3765704,
+        "rawSha256": "924ce014c6b9ef1e642908034b0fc421ca4a1cbf01f193cd28afd69f3b23f226"
+      },
+      {
+        "path": "docs/qa-evidence.md",
+        "changeType": "modified",
+        "fileMode": "100644",
+        "blobObjectId": "11cfd68ae341e763bf1c0e6bdfa23e2d7b787e4e",
+        "byteLength": 2665966,
+        "rawSha256": "c235366bde117a0601af1a6b224c9c3d9846942d0317ec80fc32e27bff70ad57"
+      },
+      {
+        "path": "docs/roadmap.md",
+        "changeType": "modified",
+        "fileMode": "100644",
+        "blobObjectId": "b4a9af903bc25e1e348f0ff9aca0e601f196cd3e",
+        "byteLength": 665051,
+        "rawSha256": "5ba2ac7d076b2258e04c48287d0d62cedbf5e8e9f3aceadd0ecbbbd6ffb86dcd"
+      },
+      {
+        "path": "docs/v1/g0/assurance-closure-amendment-checkpoint-v2.json",
+        "changeType": "added",
+        "fileMode": "100644",
+        "blobObjectId": "49b1b0c7a43ca741fecc00e0d8babac6d6dee8f1",
+        "byteLength": 3066,
+        "rawSha256": "b12bf8d1f6e782f57b9012728f5b7dada1008d9885f4263782fafa0c256cdc0c"
+      },
+      {
+        "path": "docs/v1/g0/assurance-closure-amendment-checkpoint-v3.json",
+        "changeType": "added",
+        "fileMode": "100644",
+        "blobObjectId": "c91cd84cfe2ba5fa69221b5643b5810a36ec7316",
+        "byteLength": 4692,
+        "rawSha256": "37462cd8303ce61742bc480d0f7d37e0ccb380ec12375cc8c8d10169aebf4dc5"
+      },
+      {
+        "path": "docs/v1/g0/assurance-closure-amendment-v2.json",
+        "changeType": "added",
+        "fileMode": "100644",
+        "blobObjectId": "b525d66dd3f661c67b6d33135e1679e3e130b334",
+        "byteLength": 17546,
+        "rawSha256": "b04204e86c9af4291e8b7112c14e420877a54d2688b5b5d967432949b8f7aea6"
+      },
+      {
+        "path": "docs/v1/g0/assurance-closure-amendment-v2.md",
+        "changeType": "added",
+        "fileMode": "100644",
+        "blobObjectId": "36cd11933dff3d3825c49e5a4b8d78bfcb397877",
+        "byteLength": 4748,
+        "rawSha256": "845453a780be0d02255c8c3e2793ff6bcd7ca339c64ac51e5bc0061a254f59fd"
+      },
+      {
+        "path": "docs/v1/g0/assurance-closure-amendment-v3.json",
+        "changeType": "added",
+        "fileMode": "100644",
+        "blobObjectId": "811ca7b669221d25787a9c49a32be3f49a6cfff2",
+        "byteLength": 20670,
+        "rawSha256": "f8314bcb37f98d0877e8d2a5279b2702fa6a5883f7efb4fcd91af5508eb126bc"
+      },
+      {
+        "path": "docs/v1/g0/assurance-closure-amendment-v3.md",
+        "changeType": "added",
+        "fileMode": "100644",
+        "blobObjectId": "1f3cf59ed635c54b0c4db1421aa6eb168d86e2f4",
+        "byteLength": 4253,
+        "rawSha256": "8224f64770adaa00ad2dba1ff895e132e6b0b7b982cfe2390af5b0e18ca16903"
+      },
+      {
+        "path": "script/check_copy_hygiene.py",
+        "changeType": "modified",
+        "fileMode": "100755",
+        "blobObjectId": "b9db75ab2b7a6462653e31481561ab43202fe488",
+        "byteLength": 3057603,
+        "rawSha256": "abdf95dbc7bd9b522fa1e7ac66ad1013508e606f11e1bbcbcb77bb934d151e09"
+      },
+      {
+        "path": "script/check_no_device_quality.sh",
+        "changeType": "modified",
+        "fileMode": "100755",
+        "blobObjectId": "f1f0ad9969445b67df1b72ef19f188f7c07c68be",
+        "byteLength": 618196,
+        "rawSha256": "6cb65c23856468ee52355da7bf72902ee1c5c8c98834ad94e5abf5361cf6a9d5"
+      },
+      {
+        "path": "script/check_v1_g0_decision.py",
+        "changeType": "modified",
+        "fileMode": "100644",
+        "blobObjectId": "b440d20f2cdf59d59414886b02dd65b702897f11",
+        "byteLength": 244062,
+        "rawSha256": "04d9ba5ac0431d93332cc1ec835e5e936d4d022e84dff375c550eaf6d9570cad"
+      },
+      {
+        "path": "script/check_v1_g0_publication_receipt.py",
+        "changeType": "added",
+        "fileMode": "100644",
+        "blobObjectId": "5f1827a2e547d036d68476d6a8516121929bfbc4",
+        "byteLength": 25134,
+        "rawSha256": "ed6dbdcfc68b9926afdc05b57c3ca1183d864a635679201aa06229fdbe64a672"
+      },
+      {
+        "path": "script/check_v1_g0_receipt_bundle.py",
+        "changeType": "added",
+        "fileMode": "100644",
+        "blobObjectId": "927f2b864cb05c7609654247580593c6664f26ec",
+        "byteLength": 66469,
+        "rawSha256": "bfef48296ae86838dd3bfabef85d3716b776405c1e681a2a670b75d1d24c9129"
+      },
+      {
+        "path": "script/test_v1_g0_decision.py",
+        "changeType": "modified",
+        "fileMode": "100644",
+        "blobObjectId": "f53aaa4d54db974404a50aecff50c75f0b91a167",
+        "byteLength": 79347,
+        "rawSha256": "c5c6a2e0df081581cfbaaa026a9c334d8a5480d2f7b64bfb32dba08e883c928f"
+      },
+      {
+        "path": "script/test_v1_g0_publication_receipt.py",
+        "changeType": "added",
+        "fileMode": "100644",
+        "blobObjectId": "cd72dfc9ce4a00f828488243e0c2fc0ddd7817ed",
+        "byteLength": 15100,
+        "rawSha256": "9483eee10cd5c6998864da68b7ffb121fdd39fc6d637309eed9ec491ee8afce7"
+      },
+      {
+        "path": "script/test_v1_g0_receipt_bundle.py",
+        "changeType": "added",
+        "fileMode": "100644",
+        "blobObjectId": "db3bb4a282d437c097f324aae88dd5ef41fb609d",
+        "byteLength": 27973,
+        "rawSha256": "2ed7f40b55f461316e174e1a1ce4d8dc9fd659ef9661f8ad8f1c61db1e1380e0"
+      }
+    ],
+    "scopeEntriesCanonicalization": "utf8_compact_json_scope_entry_field_order_v1",
+    "expectedScopeEntriesCanonicalSha256": "8e04479d4ab4941976061e066ff4a43e25b09111111c8ed96643a5ec3ee53138",
+    "reviewClaimExactFields": [
+      "disposition",
+      "ownerBindingRefCandidate",
+      "inputSourceRefCandidate",
+      "claimedReviewRecordedAt"
+    ],
+    "reviewClaimDisposition": "explicit_exact_scope_review_claim_unverified",
+    "ownerBindingRefCandidatePattern": "^owner-candidate:repository-owner:v1$",
+    "inputSourceRefCandidatePattern": "^user-input:session-[0-9]{8}:item-[1-9][0-9]{0,2}$",
+    "claimedReviewRecordedAtPolicy": "canonical_rfc3339_utc_user_claim_not_trusted_time",
+    "requiredIndependentInputsAbsent": [
+      "authenticated_reviewer_identity",
+      "independent_exact_scope_review_attestation",
+      "trusted_review_time"
+    ]
+  },
+  "publishedCheckpointPayloadProfile": {
+    "evidenceKind": "published_checkpoint",
+    "artifactId": "g0-published-checkpoint-candidate-v1",
+    "exactPayloadFields": [
+      "remoteRef",
+      "checkpointPath",
+      "checkpointBlobObjectId",
+      "checkpointByteLength",
+      "commitCheckpointRawSha256",
+      "observedRemoteCheckpointRawSha256",
+      "observationMethod",
+      "observationStartedAt",
+      "observationCompletedAt",
+      "publicationReceiptCandidatePath",
+      "publicationReceiptCandidateRawSha256",
+      "standaloneAcquisitionTranscriptRef"
+    ],
+    "fixedValues": {
+      "remoteRef": "refs/heads/main",
+      "checkpointPath": "docs/v1/g0/assurance-closure-amendment-checkpoint-v3.json",
+      "checkpointBlobObjectId": "c91cd84cfe2ba5fa69221b5643b5810a36ec7316",
+      "checkpointByteLength": 4692,
+      "commitCheckpointRawSha256": "37462cd8303ce61742bc480d0f7d37e0ccb380ec12375cc8c8d10169aebf4dc5",
+      "observedRemoteCheckpointRawSha256": "37462cd8303ce61742bc480d0f7d37e0ccb380ec12375cc8c8d10169aebf4dc5",
+      "observationMethod": "fresh_https_no_object_alternates_exact_byte_readback",
+      "observationStartedAt": "2026-07-20T12:05:21Z",
+      "observationCompletedAt": "2026-07-20T12:05:44Z",
+      "publicationReceiptCandidatePath": "docs/v1/g0/assurance-closure-publication-receipt-candidate-v3.json",
+      "publicationReceiptCandidateRawSha256": "d9d6c43713a4550f88080306a0150a6a7325f7575e369b2d80cd18902b272856",
+      "standaloneAcquisitionTranscriptRef": null
+    },
+    "requiredIndependentInputsAbsent": [
+      "independent_remote_checkpoint_bytes",
+      "authenticated_acquisition_provenance",
+      "verifier_identity",
+      "trusted_observation_time"
+    ]
+  },
+  "resourceBounds": {
+    "artifactMaximumBytes": 131072,
+    "jsonMaximumDepth": 8,
+    "arrayMaximumItems": 32,
+    "stringMaximumUtf8Bytes": 4096,
+    "integerMaximumDigits": 128,
+    "scopeEntryCount": 18,
+    "referencedSourceMaximumBytes": 4194304,
+    "parsePolicy": "reject_duplicate_names_nonfinite_numbers_and_integers_over_128_digits",
+    "integerPolicy": "bool_is_not_integer",
+    "pathPolicy": "canonical_repository_relative_regular_non_symlink_when_independently_acquired",
+    "canonicalEncoding": "utf8_compact_json_exact_field_order_no_bom_no_trailing_newline"
+  },
+  "sensitiveDataPolicy": {
+    "allowedVariableInputs": [
+      "reviewClaim.ownerBindingRefCandidate",
+      "reviewClaim.inputSourceRefCandidate",
+      "reviewClaim.claimedReviewRecordedAt"
+    ],
+    "forbiddenMaterial": [
+      "credentials",
+      "private_keys",
+      "access_tokens",
+      "pairing_secrets",
+      "private_account_data",
+      "personal_contact_data",
+      "http_headers",
+      "arbitrary_logs"
+    ],
+    "arbitraryFreeFormFieldsAllowed": false,
+    "standaloneAcquisitionTranscriptPolicy": "must_be_null_in_v1_candidate"
+  },
+  "authorizationBoundary": {
+    "catalogRecordReservedFields": [
+      "evidenceId",
+      "evidenceKind",
+      "evidenceClass",
+      "subjectImplementationRevision",
+      "subjectCheckpointSha256",
+      "artifactPath",
+      "artifactByteLength",
+      "artifactSha256",
+      "verificationMethod",
+      "verifierIdentityRef",
+      "verifiedAt",
+      "provenanceRef"
+    ],
+    "artifactForbiddenFields": [
+      "evidenceId",
+      "evidenceClass",
+      "artifactByteLength",
+      "artifactSha256",
+      "verificationMethod",
+      "verifierIdentityRef",
+      "verifiedAt",
+      "provenanceRef",
+      "verificationResult",
+      "acceptedRevision",
+      "acceptedPublicationCommit",
+      "acceptedBlockerIds",
+      "acceptedAt",
+      "acceptanceEvidenceRefs",
+      "result",
+      "activated"
+    ],
+    "catalogRecordPolicy": "separate_private_independent_validator_recomputes_exact_artifact_bytes_and_never_mutates_candidate",
+    "ownerAuthenticationDerivable": false,
+    "evidenceVerificationDerivable": false,
+    "receiptAcceptanceDerivable": false,
+    "blockerClosureDerivable": false,
+    "receiptActivationDerivable": false,
+    "selectorTransitionDerivable": false,
+    "g0ExitDerivable": false,
+    "g1aAuthorityDerivable": false
+  },
+  "supersessionPolicy": {
+    "mutateInPlaceAllowed": false,
+    "verifiedStateMutationAllowed": false,
+    "candidateToCatalogRecordMutationAllowed": false,
+    "replacementPolicy": "new_versioned_profile_and_new_candidate_artifact_only",
+    "nextProfilePathPattern": "^docs/v1/g0/evidence-supporting-artifact-candidate-profile-v[2-9][0-9]*[.]json$"
+  }
+}

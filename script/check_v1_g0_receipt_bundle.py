@@ -32,11 +32,22 @@ RECORDED_PUBLICATION_RECEIPT_PATH = (
     "docs/v1/g0/assurance-closure-publication-receipt-candidate-v3.json"
 )
 OWNER_CATALOG_INPUT_PATH = "docs/v1/g0/owner-catalog-input-candidate-v1.json"
+EVIDENCE_SUPPORTING_ARTIFACT_PROFILE_PATH = (
+    "docs/v1/g0/evidence-supporting-artifact-candidate-profile-v1.json"
+)
+EVIDENCE_SUPPORTING_ARTIFACT_CANDIDATE_PATHS = (
+    "docs/evidence/g0-reviewed-commit-scope-candidate-v1.json",
+    "docs/evidence/g0-published-checkpoint-candidate-v1.json",
+)
 
 MAX_V3_AMENDMENT_BYTES = 262_144
 MAX_V3_CHECKPOINT_BYTES = 131_072
 MAX_RECORDED_PUBLICATION_RECEIPT_BYTES = 65_536
 MAX_OWNER_CATALOG_INPUT_BYTES = 262_144
+MAX_EVIDENCE_SUPPORTING_ARTIFACT_BYTES = 131_072
+MAX_EVIDENCE_SUPPORTING_ARTIFACT_DEPTH = 8
+MAX_EVIDENCE_SUPPORTING_ARTIFACT_ARRAY_ITEMS = 32
+MAX_EVIDENCE_SUPPORTING_ARTIFACT_STRING_BYTES = 4_096
 
 EXPECTED_RECORDED_PUBLICATION_RECEIPT_RAW_SHA256 = (
     "d9d6c43713a4550f88080306a0150a6a7325f7575e369b2d80cd18902b272856"
@@ -47,7 +58,10 @@ EXPECTED_RECORDED_COMMIT_OBJECT_ID = (
 )
 EXPECTED_RECORDED_REMOTE_READBACK_AT = "2026-07-20T12:05:44Z"
 EXPECTED_OWNER_CATALOG_INPUT_RAW_SHA256 = (
-    "fa8037c975e76c64c7a3e6e33274c6ac7a91f49c49b5ec35e0133477972d35a0"
+    "0221d2d49e4bcccfd34fb6905102117fbf5632e27d3d2f2e23d53e29f47752bc"
+)
+EXPECTED_EVIDENCE_SUPPORTING_ARTIFACT_PROFILE_RAW_SHA256 = (
+    "f8ad6742fcb569f408b5f4087b20f11f32cb497a8f9eec2fc3f255d8b22c226f"
 )
 
 LINEAGE_PATHS = (
@@ -131,6 +145,11 @@ RECORDED_PUBLICATION_RECEIPT_DORMANT_MESSAGE = (
 OWNER_CATALOG_INPUT_DORMANT_MESSAGE = (
     "G0 V3 owner/catalog input candidate is draft_unverified_non_authorizing; "
     "it cannot authenticate owners, verify evidence, accept receipts, close G0, or authorize G1a"
+)
+EVIDENCE_SUPPORTING_ARTIFACT_DORMANT_MESSAGE = (
+    "G0 evidence supporting artifact candidate is "
+    "session_observation_unverified_non_authorizing; it cannot verify evidence, "
+    "establish provenance, accept receipts, close G0, or authorize G1a"
 )
 COMPLETE_BUNDLE_FIELDS = (
     "documentType",
@@ -222,6 +241,141 @@ OWNER_CATALOG_PREVIEW_EVIDENCE_FIELDS = (
     "evidenceKind",
     "candidateVersion",
     "supportingArtifactPresent",
+)
+EVIDENCE_SUPPORTING_ARTIFACT_PROFILE_FIELDS = (
+    "documentType",
+    "schemaVersion",
+    "profileId",
+    "status",
+    "contractBinding",
+    "artifactPaths",
+    "selectorSnapshotBinding",
+    "commonEnvelopeProfile",
+    "reviewedCommitScopePayloadProfile",
+    "publishedCheckpointPayloadProfile",
+    "resourceBounds",
+    "sensitiveDataPolicy",
+    "authorizationBoundary",
+    "supersessionPolicy",
+)
+EVIDENCE_SUPPORTING_ARTIFACT_PROFILE_CONTRACT_FIELDS = (
+    "repositoryRef",
+    "blockerId",
+    "publicationCommitObjectId",
+    "publicationCheckpointPath",
+    "publicationCheckpointRawSha256",
+    "effectiveAssuranceCanonicalSha256",
+    "effectiveClosureCanonicalSha256",
+    "requiredEvidenceKinds",
+)
+EVIDENCE_SUPPORTING_ARTIFACT_PATH_FIELDS = (
+    "evidenceKind",
+    "candidateVersion",
+    "path",
+)
+EVIDENCE_SELECTOR_SNAPSHOT_FIELDS = (
+    "ownerCatalogInputCandidatePath",
+    "ownerCatalogInputCandidateRawSha256",
+    "responseIndex",
+    "blockerId",
+    "inputSourceRefCandidate",
+    "ownerBindingRefCandidate",
+    "evidenceSelectors",
+    "artifactInstancePolicy",
+)
+EVIDENCE_SELECTOR_SNAPSHOT_ENTRY_FIELDS = (
+    "evidenceKind",
+    "evidenceSelectorIndex",
+    "candidateVersion",
+    "evidenceInputRefCandidate",
+    "supportingArtifactPresent",
+    "supportingArtifactRefCandidate",
+    "reservedArtifactPath",
+)
+EVIDENCE_SUPPORTING_ARTIFACT_FIELDS = (
+    "documentType",
+    "schemaVersion",
+    "artifactId",
+    "evidenceKind",
+    "status",
+    "profileRef",
+    "contractBinding",
+    "selectorBinding",
+    "payload",
+    "trustBoundary",
+    "state",
+)
+EVIDENCE_SUPPORTING_ARTIFACT_PROFILE_REF_FIELDS = (
+    "path",
+    "profileId",
+    "rawSha256",
+)
+EVIDENCE_SUPPORTING_ARTIFACT_CONTRACT_FIELDS = (
+    "repositoryRef",
+    "blockerId",
+    "publicationCommitObjectId",
+    "publicationCheckpointPath",
+    "publicationCheckpointRawSha256",
+    "effectiveAssuranceCanonicalSha256",
+    "effectiveClosureCanonicalSha256",
+)
+EVIDENCE_SUPPORTING_ARTIFACT_SELECTOR_BINDING_FIELDS = (
+    "ownerCatalogInputCandidatePath",
+    "ownerCatalogInputCandidateRawSha256",
+    "responseIndex",
+    "blockerId",
+    "inputSourceRefCandidate",
+    "ownerBindingRefCandidate",
+    "evidenceSelectorIndex",
+    "candidateVersion",
+    "evidenceInputRefCandidate",
+    "supportingArtifactPresent",
+    "supportingArtifactRefCandidate",
+    "reservedArtifactPath",
+)
+EVIDENCE_SUPPORTING_ARTIFACT_TRUST_FIELDS = (
+    "observationClass",
+    "independentInputsPresent",
+    "requiredIndependentInputsAbsent",
+    "catalogRecordDerivable",
+    "authorityDerivable",
+)
+REVIEWED_COMMIT_SCOPE_PAYLOAD_FIELDS = (
+    "baseCommitObjectId",
+    "baseTreeObjectId",
+    "publicationTreeObjectId",
+    "scopeEntryCount",
+    "scopeEntries",
+    "scopeEntriesCanonicalSha256",
+    "reviewClaim",
+)
+REVIEWED_COMMIT_SCOPE_ENTRY_FIELDS = (
+    "path",
+    "changeType",
+    "fileMode",
+    "blobObjectId",
+    "byteLength",
+    "rawSha256",
+)
+REVIEWED_COMMIT_SCOPE_CLAIM_FIELDS = (
+    "disposition",
+    "ownerBindingRefCandidate",
+    "inputSourceRefCandidate",
+    "claimedReviewRecordedAt",
+)
+PUBLISHED_CHECKPOINT_PAYLOAD_FIELDS = (
+    "remoteRef",
+    "checkpointPath",
+    "checkpointBlobObjectId",
+    "checkpointByteLength",
+    "commitCheckpointRawSha256",
+    "observedRemoteCheckpointRawSha256",
+    "observationMethod",
+    "observationStartedAt",
+    "observationCompletedAt",
+    "publicationReceiptCandidatePath",
+    "publicationReceiptCandidateRawSha256",
+    "standaloneAcquisitionTranscriptRef",
 )
 OWNER_BINDING_FIELDS = (
     "ownerBindingRef",
@@ -360,6 +514,16 @@ def _require_equal(
         failures.append(f"{label} does not match the canonical V3 candidate")
 
 
+def _require_exact(
+    actual: object,
+    expected: object,
+    label: str,
+    failures: list[str],
+) -> None:
+    if not decision.exactly_equal(actual, expected):
+        failures.append(f"{label} is not exact")
+
+
 def _bounded_snapshot(
     value: object,
     label: str,
@@ -479,13 +643,16 @@ def _validate_json_resources(
     failures: list[str],
     *,
     root_label: str,
+    maximum_depth: int = MAX_COMPLETE_BUNDLE_DEPTH,
+    maximum_items: int = MAX_COMPLETE_BUNDLE_ARRAY_ITEMS,
+    maximum_string_bytes: int = MAX_COMPLETE_BUNDLE_STRING_BYTES,
 ) -> None:
     stack: list[tuple[object, int, str]] = [(value, 1, root_label)]
     while stack:
         current, depth, label = stack.pop()
-        if depth > MAX_COMPLETE_BUNDLE_DEPTH:
+        if depth > maximum_depth:
             failures.append(
-                f"{label} exceeds maximum JSON depth {MAX_COMPLETE_BUNDLE_DEPTH}"
+                f"{label} exceeds maximum JSON depth {maximum_depth}"
             )
             continue
         if isinstance(current, str):
@@ -494,23 +661,23 @@ def _validate_json_resources(
             except UnicodeEncodeError:
                 failures.append(f"{label} contains a non-UTF-8 Unicode scalar")
                 continue
-            if len(encoded) > MAX_COMPLETE_BUNDLE_STRING_BYTES:
+            if len(encoded) > maximum_string_bytes:
                 failures.append(
-                    f"{label} exceeds {MAX_COMPLETE_BUNDLE_STRING_BYTES} UTF-8 bytes"
+                    f"{label} exceeds {maximum_string_bytes} UTF-8 bytes"
                 )
         elif isinstance(current, list):
-            if len(current) > MAX_COMPLETE_BUNDLE_ARRAY_ITEMS:
+            if len(current) > maximum_items:
                 failures.append(
-                    f"{label} exceeds {MAX_COMPLETE_BUNDLE_ARRAY_ITEMS} array items"
+                    f"{label} exceeds {maximum_items} array items"
                 )
                 continue
             for index, child in enumerate(reversed(current)):
                 actual_index = len(current) - index - 1
                 stack.append((child, depth + 1, f"{label}[{actual_index}]"))
         elif isinstance(current, dict):
-            if len(current) > MAX_COMPLETE_BUNDLE_ARRAY_ITEMS:
+            if len(current) > maximum_items:
                 failures.append(
-                    f"{label} exceeds {MAX_COMPLETE_BUNDLE_ARRAY_ITEMS} object fields"
+                    f"{label} exceeds {maximum_items} object fields"
                 )
                 continue
             for key, child in reversed(tuple(current.items())):
@@ -519,9 +686,9 @@ def _validate_json_resources(
                 except UnicodeEncodeError:
                     failures.append(f"{label} key contains a non-UTF-8 Unicode scalar")
                     continue
-                if len(encoded_key) > MAX_COMPLETE_BUNDLE_STRING_BYTES:
+                if len(encoded_key) > maximum_string_bytes:
                     failures.append(
-                        f"{label} key exceeds {MAX_COMPLETE_BUNDLE_STRING_BYTES} UTF-8 bytes"
+                        f"{label} key exceeds {maximum_string_bytes} UTF-8 bytes"
                     )
                 stack.append((child, depth + 1, f"{label}.{key}"))
 
@@ -1349,6 +1516,14 @@ def _finish_owner_catalog_input_failures(failures: list[str]) -> tuple[str, ...]
     return tuple(failures)
 
 
+def _finish_evidence_supporting_artifact_failures(
+    failures: list[str],
+) -> tuple[str, ...]:
+    if EVIDENCE_SUPPORTING_ARTIFACT_DORMANT_MESSAGE not in failures:
+        failures.append(EVIDENCE_SUPPORTING_ARTIFACT_DORMANT_MESSAGE)
+    return tuple(failures)
+
+
 def compile_dormant_owner_catalog_input_preview(
     request_bytes: object,
     *,
@@ -1597,6 +1772,1037 @@ def compile_dormant_owner_catalog_input_preview(
             + "; ".join(round_trip_failures)
         )
     return canonical_bytes, _sha256(canonical_bytes)
+
+
+def _expected_evidence_selector_snapshot_binding() -> dict[str, object]:
+    evidence_kinds = ("reviewed_commit_scope", "published_checkpoint")
+    evidence_refs = (
+        "evidence-input-candidate:reviewed-commit-scope:v1",
+        "evidence-input-candidate:published-checkpoint:v1",
+    )
+    return {
+        "ownerCatalogInputCandidatePath": OWNER_CATALOG_INPUT_PATH,
+        "ownerCatalogInputCandidateRawSha256": (
+            EXPECTED_OWNER_CATALOG_INPUT_RAW_SHA256
+        ),
+        "responseIndex": 0,
+        "blockerId": "roadmap_and_g0_checkpoint_publication",
+        "inputSourceRefCandidate": "user-input:session-20260721:item-2",
+        "ownerBindingRefCandidate": "owner-candidate:repository-owner:v1",
+        "evidenceSelectors": [
+            {
+                "evidenceKind": evidence_kind,
+                "evidenceSelectorIndex": index,
+                "candidateVersion": 1,
+                "evidenceInputRefCandidate": evidence_ref,
+                "supportingArtifactPresent": False,
+                "supportingArtifactRefCandidate": None,
+                "reservedArtifactPath": artifact_path,
+            }
+            for index, (evidence_kind, evidence_ref, artifact_path) in enumerate(
+                zip(
+                    evidence_kinds,
+                    evidence_refs,
+                    EVIDENCE_SUPPORTING_ARTIFACT_CANDIDATE_PATHS,
+                )
+            )
+        ],
+        "artifactInstancePolicy": (
+            "forbidden_in_repository_while_selector_supporting_artifact_reference_"
+            "is_null_new_profile_required_after_any_selector_change"
+        ),
+    }
+
+
+def _collect_evidence_supporting_artifact_profile_failures(
+    profile_bytes: object,
+    *,
+    owner_catalog_input_bytes: object,
+) -> tuple[str, ...]:
+    """Validate the versioned non-authorizing artifact profile from supplied bytes."""
+
+    failures: list[str] = []
+    raw = _bounded_snapshot(
+        profile_bytes,
+        "G0 evidence supporting artifact profile",
+        MAX_EVIDENCE_SUPPORTING_ARTIFACT_BYTES,
+        failures,
+    )
+    owner_input_raw = _bounded_snapshot(
+        owner_catalog_input_bytes,
+        "G0 owner/catalog selector snapshot",
+        MAX_OWNER_CATALOG_INPUT_BYTES,
+        failures,
+    )
+    if raw is None or owner_input_raw is None:
+        return tuple(failures)
+    _require_exact(
+        _sha256(raw),
+        EXPECTED_EVIDENCE_SUPPORTING_ARTIFACT_PROFILE_RAW_SHA256,
+        "evidence supporting artifact profile raw SHA-256",
+        failures,
+    )
+    _require_exact(
+        _sha256(owner_input_raw),
+        EXPECTED_OWNER_CATALOG_INPUT_RAW_SHA256,
+        "owner/catalog selector snapshot raw SHA-256",
+        failures,
+    )
+    document = _parse_object(raw, "G0 evidence supporting artifact profile", failures)
+    owner_input = _parse_object(
+        owner_input_raw,
+        "G0 owner/catalog selector snapshot",
+        failures,
+    )
+    if document is None or owner_input is None:
+        return tuple(failures)
+    _validate_json_resources(
+        document,
+        failures,
+        root_label="G0 evidence supporting artifact profile",
+        maximum_depth=MAX_EVIDENCE_SUPPORTING_ARTIFACT_DEPTH,
+        maximum_items=MAX_EVIDENCE_SUPPORTING_ARTIFACT_ARRAY_ITEMS,
+        maximum_string_bytes=MAX_EVIDENCE_SUPPORTING_ARTIFACT_STRING_BYTES,
+    )
+    _validate_json_resources(
+        owner_input,
+        failures,
+        root_label="G0 owner/catalog selector snapshot",
+    )
+    root = _exact_ordered_object(
+        document,
+        EVIDENCE_SUPPORTING_ARTIFACT_PROFILE_FIELDS,
+        "evidence supporting artifact profile",
+        failures,
+    )
+    for field, expected in (
+        (
+            "documentType",
+            "aetherlink.v1-g0-evidence-supporting-artifact-candidate-profile",
+        ),
+        ("schemaVersion", 1),
+        (
+            "profileId",
+            "aetherlink_v1_g0_evidence_supporting_artifact_candidate_profile_v1",
+        ),
+        ("status", "draft_unverified_non_authorizing"),
+    ):
+        _require_exact(root.get(field), expected, f"artifact profile {field}", failures)
+
+    expected_contract = {
+        "repositoryRef": EXPECTED_RECORDED_REPOSITORY_REF,
+        "blockerId": "roadmap_and_g0_checkpoint_publication",
+        "publicationCommitObjectId": EXPECTED_RECORDED_COMMIT_OBJECT_ID,
+        "publicationCheckpointPath": V3_CHECKPOINT_PATH,
+        "publicationCheckpointRawSha256": LINEAGE_RAW_SHA256[-1],
+        "effectiveAssuranceCanonicalSha256": EXPECTED_EFFECTIVE_V3_SHA256,
+        "effectiveClosureCanonicalSha256": EXPECTED_CLOSURE_V3_SHA256,
+        "requiredEvidenceKinds": ["reviewed_commit_scope", "published_checkpoint"],
+    }
+    contract = _exact_ordered_object(
+        root.get("contractBinding"),
+        EVIDENCE_SUPPORTING_ARTIFACT_PROFILE_CONTRACT_FIELDS,
+        "artifact profile contractBinding",
+        failures,
+    )
+    _require_exact(
+        contract,
+        expected_contract,
+        "artifact profile contractBinding",
+        failures,
+    )
+
+    expected_paths = [
+        {
+            "evidenceKind": kind,
+            "candidateVersion": 1,
+            "path": path,
+        }
+        for kind, path in zip(
+            expected_contract["requiredEvidenceKinds"],
+            EVIDENCE_SUPPORTING_ARTIFACT_CANDIDATE_PATHS,
+        )
+    ]
+    artifact_paths = root.get("artifactPaths")
+    if not isinstance(artifact_paths, list):
+        failures.append("artifact profile artifactPaths must be a list")
+    else:
+        for index, entry in enumerate(artifact_paths):
+            _exact_ordered_object(
+                entry,
+                EVIDENCE_SUPPORTING_ARTIFACT_PATH_FIELDS,
+                f"artifact profile artifactPaths[{index}]",
+                failures,
+            )
+        _require_exact(
+            artifact_paths,
+            expected_paths,
+            "artifact profile artifactPaths",
+            failures,
+        )
+
+    expected_selector_snapshot = _expected_evidence_selector_snapshot_binding()
+    selector_snapshot = _exact_ordered_object(
+        root.get("selectorSnapshotBinding"),
+        EVIDENCE_SELECTOR_SNAPSHOT_FIELDS,
+        "artifact profile selectorSnapshotBinding",
+        failures,
+    )
+    selector_entries = selector_snapshot.get("evidenceSelectors")
+    if not isinstance(selector_entries, list):
+        failures.append("artifact profile evidenceSelectors must be a list")
+    else:
+        for index, entry in enumerate(selector_entries):
+            _exact_ordered_object(
+                entry,
+                EVIDENCE_SELECTOR_SNAPSHOT_ENTRY_FIELDS,
+                f"artifact profile evidenceSelectors[{index}]",
+                failures,
+            )
+    _require_exact(
+        selector_snapshot,
+        expected_selector_snapshot,
+        "artifact profile selectorSnapshotBinding",
+        failures,
+    )
+
+    owner_root = _exact_ordered_object(
+        owner_input,
+        OWNER_CATALOG_INPUT_FIELDS,
+        "owner/catalog selector snapshot",
+        failures,
+    )
+    owner_responses = owner_root.get("responses")
+    if not isinstance(owner_responses, list) or len(owner_responses) != 1:
+        failures.append("owner/catalog selector snapshot must contain exactly one response")
+    else:
+        owner_response = _exact_ordered_object(
+            owner_responses[0],
+            OWNER_CATALOG_RESPONSE_FIELDS,
+            "owner/catalog selector snapshot response 0",
+            failures,
+        )
+        expected_selector_response = {
+            "blockerId": expected_selector_snapshot["blockerId"],
+            "requirementDisposition": "proposed_as_written",
+            "ownerCandidates": [
+                {
+                    "role": "repository_owner",
+                    "ownerBindingRefCandidate": expected_selector_snapshot[
+                        "ownerBindingRefCandidate"
+                    ],
+                }
+            ],
+            "evidenceCandidates": [
+                {
+                    "evidenceKind": entry["evidenceKind"],
+                    "evidenceInputRefCandidate": entry[
+                        "evidenceInputRefCandidate"
+                    ],
+                    "supportingArtifactRefCandidate": entry[
+                        "supportingArtifactRefCandidate"
+                    ],
+                }
+                for entry in expected_selector_snapshot["evidenceSelectors"]
+            ],
+            "changeRequestRefCandidate": None,
+            "inputSourceRefCandidate": expected_selector_snapshot[
+                "inputSourceRefCandidate"
+            ],
+        }
+        _require_exact(
+            owner_response,
+            expected_selector_response,
+            "owner/catalog selector snapshot response 0",
+            failures,
+        )
+    owner_state = _exact_ordered_object(
+        owner_root.get("state"),
+        OWNER_CATALOG_STATE_FIELDS,
+        "owner/catalog selector snapshot state",
+        failures,
+    )
+    _require_exact(
+        owner_state,
+        {field: False for field in OWNER_CATALOG_STATE_FIELDS},
+        "owner/catalog selector snapshot state",
+        failures,
+    )
+
+    common = _exact_ordered_object(
+        root.get("commonEnvelopeProfile"),
+        (
+            "exactFields",
+            "fixedValues",
+            "profileRefExactFields",
+            "profileRefPolicy",
+            "contractBindingExactFields",
+            "contractBindingPolicy",
+            "selectorBindingExactFields",
+            "selectorBindingPolicy",
+            "trustBoundaryExactFields",
+            "trustBoundaryFixedValues",
+            "stateExactFields",
+            "stateFixedValues",
+            "canonicalEncoding",
+        ),
+        "artifact profile commonEnvelopeProfile",
+        failures,
+    )
+    _require_exact(
+        common.get("exactFields"),
+        list(EVIDENCE_SUPPORTING_ARTIFACT_FIELDS),
+        "artifact profile common exactFields",
+        failures,
+    )
+    _require_exact(
+        common.get("fixedValues"),
+        {
+            "documentType": "aetherlink.v1-g0-evidence-supporting-artifact-candidate",
+            "schemaVersion": 1,
+            "status": "session_observation_unverified_non_authorizing",
+        },
+        "artifact profile common fixedValues",
+        failures,
+    )
+    for field, expected in (
+        ("profileRefExactFields", list(EVIDENCE_SUPPORTING_ARTIFACT_PROFILE_REF_FIELDS)),
+        (
+            "contractBindingExactFields",
+            list(EVIDENCE_SUPPORTING_ARTIFACT_CONTRACT_FIELDS),
+        ),
+        (
+            "selectorBindingExactFields",
+            list(EVIDENCE_SUPPORTING_ARTIFACT_SELECTOR_BINDING_FIELDS),
+        ),
+        ("trustBoundaryExactFields", list(EVIDENCE_SUPPORTING_ARTIFACT_TRUST_FIELDS)),
+        ("stateExactFields", list(OWNER_CATALOG_STATE_FIELDS)),
+        (
+            "stateFixedValues",
+            {field: False for field in OWNER_CATALOG_STATE_FIELDS},
+        ),
+        (
+            "canonicalEncoding",
+            "utf8_compact_json_exact_field_order_no_bom_no_trailing_newline",
+        ),
+    ):
+        _require_exact(
+            common.get(field),
+            expected,
+            f"artifact profile common {field}",
+            failures,
+        )
+    for field, expected in (
+        (
+            "profileRefPolicy",
+            "exact_profile_path_id_and_validator_pinned_raw_sha256",
+        ),
+        (
+            "contractBindingPolicy",
+            "equals_profile_contract_binding_without_requiredEvidenceKinds",
+        ),
+        (
+            "selectorBindingPolicy",
+            "exact_per_kind_projection_of_profile_selector_snapshot_with_false_"
+            "null_artifact_state",
+        ),
+    ):
+        _require_exact(
+            common.get(field),
+            expected,
+            f"artifact profile common {field}",
+            failures,
+        )
+    _require_exact(
+        common.get("trustBoundaryFixedValues"),
+        {
+            "observationClass": "session_observation_only",
+            "independentInputsPresent": [],
+            "catalogRecordDerivable": False,
+            "authorityDerivable": False,
+        },
+        "artifact profile common trustBoundaryFixedValues",
+        failures,
+    )
+
+    reviewed = _exact_ordered_object(
+        root.get("reviewedCommitScopePayloadProfile"),
+        (
+            "evidenceKind",
+            "artifactId",
+            "exactPayloadFields",
+            "fixedSubject",
+            "scopeEntryExactFields",
+            "expectedScopeEntries",
+            "scopeEntriesCanonicalization",
+            "expectedScopeEntriesCanonicalSha256",
+            "reviewClaimExactFields",
+            "reviewClaimDisposition",
+            "ownerBindingRefCandidatePattern",
+            "inputSourceRefCandidatePattern",
+            "claimedReviewRecordedAtPolicy",
+            "requiredIndependentInputsAbsent",
+        ),
+        "artifact profile reviewedCommitScopePayloadProfile",
+        failures,
+    )
+    for field, expected in (
+        ("evidenceKind", "reviewed_commit_scope"),
+        ("artifactId", "g0-reviewed-commit-scope-candidate-v1"),
+        ("exactPayloadFields", list(REVIEWED_COMMIT_SCOPE_PAYLOAD_FIELDS)),
+        ("scopeEntryExactFields", list(REVIEWED_COMMIT_SCOPE_ENTRY_FIELDS)),
+        ("reviewClaimExactFields", list(REVIEWED_COMMIT_SCOPE_CLAIM_FIELDS)),
+        (
+            "reviewClaimDisposition",
+            "explicit_exact_scope_review_claim_unverified",
+        ),
+    ):
+        _require_exact(
+            reviewed.get(field),
+            expected,
+            f"reviewed-commit profile {field}",
+            failures,
+        )
+    _require_exact(
+        reviewed.get("fixedSubject"),
+        {
+            "baseCommitObjectId": "929fda5f2c01cd7d53325a036071b6a684ecaa1f",
+            "baseTreeObjectId": "63bb7d2644321b5bfd006a7ebd82ddee1765e89d",
+            "publicationTreeObjectId": "fcdf392d47ab5591e6c1085dcc4e71935f115704",
+            "scopeEntryCount": 18,
+        },
+        "reviewed-commit profile fixedSubject",
+        failures,
+    )
+    scope_entries = reviewed.get("expectedScopeEntries")
+    if not isinstance(scope_entries, list) or len(scope_entries) != 18:
+        failures.append("reviewed-commit profile must contain exactly eighteen scope entries")
+        scope_entries = []
+    previous_path = ""
+    for index, raw_entry in enumerate(scope_entries):
+        entry = _exact_ordered_object(
+            raw_entry,
+            REVIEWED_COMMIT_SCOPE_ENTRY_FIELDS,
+            f"reviewed-commit profile scope entry {index}",
+            failures,
+        )
+        path = entry.get("path")
+        if not _safe_artifact_path(path):
+            failures.append(f"reviewed-commit profile scope entry {index}.path is invalid")
+        elif isinstance(path, str):
+            if path <= previous_path:
+                failures.append("reviewed-commit profile scope paths are not canonical")
+            previous_path = path
+        change_type = entry.get("changeType")
+        if not isinstance(change_type, str) or change_type not in (
+            "added",
+            "modified",
+        ):
+            failures.append(
+                f"reviewed-commit profile scope entry {index}.changeType is invalid"
+            )
+        file_mode = entry.get("fileMode")
+        if not isinstance(file_mode, str) or file_mode not in ("100644", "100755"):
+            failures.append(
+                f"reviewed-commit profile scope entry {index}.fileMode is invalid"
+            )
+        if (
+            not isinstance(entry.get("blobObjectId"), str)
+            or re.fullmatch(r"[0-9a-f]{40}", entry["blobObjectId"]) is None
+        ):
+            failures.append(
+                f"reviewed-commit profile scope entry {index}.blobObjectId is invalid"
+            )
+        byte_length = entry.get("byteLength")
+        if (
+            type(byte_length) is not int
+            or not 0 < byte_length <= MAX_REFERENCED_ARTIFACT_BYTES
+        ):
+            failures.append(
+                f"reviewed-commit profile scope entry {index}.byteLength is invalid"
+            )
+        if (
+            not isinstance(entry.get("rawSha256"), str)
+            or _SHA256_PATTERN.fullmatch(entry["rawSha256"]) is None
+        ):
+            failures.append(
+                f"reviewed-commit profile scope entry {index}.rawSha256 is invalid"
+            )
+    scope_entries_sha256 = _sha256(
+        json.dumps(
+            scope_entries,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    )
+    for field, expected in (
+        (
+            "scopeEntriesCanonicalization",
+            "utf8_compact_json_scope_entry_field_order_v1",
+        ),
+        (
+            "expectedScopeEntriesCanonicalSha256",
+            "8e04479d4ab4941976061e066ff4a43e25b09111111c8ed96643a5ec3ee53138",
+        ),
+    ):
+        _require_exact(
+            reviewed.get(field),
+            expected,
+            f"reviewed-commit profile {field}",
+            failures,
+        )
+    _require_exact(
+        scope_entries_sha256,
+        reviewed.get("expectedScopeEntriesCanonicalSha256"),
+        "reviewed-commit profile scope entries digest",
+        failures,
+    )
+
+    published = _exact_ordered_object(
+        root.get("publishedCheckpointPayloadProfile"),
+        (
+            "evidenceKind",
+            "artifactId",
+            "exactPayloadFields",
+            "fixedValues",
+            "requiredIndependentInputsAbsent",
+        ),
+        "artifact profile publishedCheckpointPayloadProfile",
+        failures,
+    )
+    _require_exact(
+        published.get("evidenceKind"),
+        "published_checkpoint",
+        "published-checkpoint profile evidenceKind",
+        failures,
+    )
+    _require_exact(
+        published.get("artifactId"),
+        "g0-published-checkpoint-candidate-v1",
+        "published-checkpoint profile artifactId",
+        failures,
+    )
+    _require_exact(
+        published.get("exactPayloadFields"),
+        list(PUBLISHED_CHECKPOINT_PAYLOAD_FIELDS),
+        "published-checkpoint profile exactPayloadFields",
+        failures,
+    )
+    fixed_published = _exact_ordered_object(
+        published.get("fixedValues"),
+        PUBLISHED_CHECKPOINT_PAYLOAD_FIELDS,
+        "published-checkpoint profile fixedValues",
+        failures,
+    )
+    expected_published = {
+        "remoteRef": "refs/heads/main",
+        "checkpointPath": V3_CHECKPOINT_PATH,
+        "checkpointBlobObjectId": "c91cd84cfe2ba5fa69221b5643b5810a36ec7316",
+        "checkpointByteLength": 4692,
+        "commitCheckpointRawSha256": LINEAGE_RAW_SHA256[-1],
+        "observedRemoteCheckpointRawSha256": LINEAGE_RAW_SHA256[-1],
+        "observationMethod": "fresh_https_no_object_alternates_exact_byte_readback",
+        "observationStartedAt": "2026-07-20T12:05:21Z",
+        "observationCompletedAt": EXPECTED_RECORDED_REMOTE_READBACK_AT,
+        "publicationReceiptCandidatePath": RECORDED_PUBLICATION_RECEIPT_PATH,
+        "publicationReceiptCandidateRawSha256": (
+            EXPECTED_RECORDED_PUBLICATION_RECEIPT_RAW_SHA256
+        ),
+        "standaloneAcquisitionTranscriptRef": None,
+    }
+    _require_exact(
+        fixed_published,
+        expected_published,
+        "published-checkpoint profile fixedValues",
+        failures,
+    )
+    started_at = _parse_canonical_utc(
+        fixed_published.get("observationStartedAt"),
+        "published-checkpoint profile observationStartedAt",
+        failures,
+    )
+    completed_at = _parse_canonical_utc(
+        fixed_published.get("observationCompletedAt"),
+        "published-checkpoint profile observationCompletedAt",
+        failures,
+    )
+    if started_at is not None and completed_at is not None and started_at >= completed_at:
+        failures.append("published-checkpoint profile observation interval is invalid")
+
+    bounds = _exact_ordered_object(
+        root.get("resourceBounds"),
+        (
+            "artifactMaximumBytes",
+            "jsonMaximumDepth",
+            "arrayMaximumItems",
+            "stringMaximumUtf8Bytes",
+            "integerMaximumDigits",
+            "scopeEntryCount",
+            "referencedSourceMaximumBytes",
+            "parsePolicy",
+            "integerPolicy",
+            "pathPolicy",
+            "canonicalEncoding",
+        ),
+        "artifact profile resourceBounds",
+        failures,
+    )
+    for field, expected in (
+        ("artifactMaximumBytes", MAX_EVIDENCE_SUPPORTING_ARTIFACT_BYTES),
+        ("jsonMaximumDepth", MAX_EVIDENCE_SUPPORTING_ARTIFACT_DEPTH),
+        ("arrayMaximumItems", MAX_EVIDENCE_SUPPORTING_ARTIFACT_ARRAY_ITEMS),
+        ("stringMaximumUtf8Bytes", MAX_EVIDENCE_SUPPORTING_ARTIFACT_STRING_BYTES),
+        ("integerMaximumDigits", 128),
+        ("scopeEntryCount", 18),
+        ("referencedSourceMaximumBytes", MAX_REFERENCED_ARTIFACT_BYTES),
+    ):
+        _require_exact(
+            bounds.get(field),
+            expected,
+            f"artifact profile resourceBounds.{field}",
+            failures,
+        )
+
+    sensitive = _exact_ordered_object(
+        root.get("sensitiveDataPolicy"),
+        (
+            "allowedVariableInputs",
+            "forbiddenMaterial",
+            "arbitraryFreeFormFieldsAllowed",
+            "standaloneAcquisitionTranscriptPolicy",
+        ),
+        "artifact profile sensitiveDataPolicy",
+        failures,
+    )
+    _require_exact(
+        sensitive.get("arbitraryFreeFormFieldsAllowed"),
+        False,
+        "artifact profile arbitraryFreeFormFieldsAllowed",
+        failures,
+    )
+    forbidden_material = sensitive.get("forbiddenMaterial")
+    required_forbidden_material = {
+        "credentials",
+        "private_keys",
+        "access_tokens",
+        "pairing_secrets",
+        "private_account_data",
+        "personal_contact_data",
+    }
+    if (
+        not isinstance(forbidden_material, list)
+        or not all(isinstance(value, str) for value in forbidden_material)
+        or not required_forbidden_material.issubset(set(forbidden_material))
+    ):
+        failures.append("artifact profile sensitive material exclusions are incomplete")
+
+    authority = _exact_ordered_object(
+        root.get("authorizationBoundary"),
+        (
+            "catalogRecordReservedFields",
+            "artifactForbiddenFields",
+            "catalogRecordPolicy",
+            "ownerAuthenticationDerivable",
+            "evidenceVerificationDerivable",
+            "receiptAcceptanceDerivable",
+            "blockerClosureDerivable",
+            "receiptActivationDerivable",
+            "selectorTransitionDerivable",
+            "g0ExitDerivable",
+            "g1aAuthorityDerivable",
+        ),
+        "artifact profile authorizationBoundary",
+        failures,
+    )
+    _require_exact(
+        authority.get("catalogRecordReservedFields"),
+        list(EVIDENCE_RECORD_FIELDS),
+        "artifact profile catalogRecordReservedFields",
+        failures,
+    )
+    for field in (
+        "ownerAuthenticationDerivable",
+        "evidenceVerificationDerivable",
+        "receiptAcceptanceDerivable",
+        "blockerClosureDerivable",
+        "receiptActivationDerivable",
+        "selectorTransitionDerivable",
+        "g0ExitDerivable",
+        "g1aAuthorityDerivable",
+    ):
+        _require_exact(
+            authority.get(field),
+            False,
+            f"artifact profile authorizationBoundary.{field}",
+            failures,
+        )
+
+    supersession = _exact_ordered_object(
+        root.get("supersessionPolicy"),
+        (
+            "mutateInPlaceAllowed",
+            "verifiedStateMutationAllowed",
+            "candidateToCatalogRecordMutationAllowed",
+            "replacementPolicy",
+            "nextProfilePathPattern",
+        ),
+        "artifact profile supersessionPolicy",
+        failures,
+    )
+    for field in (
+        "mutateInPlaceAllowed",
+        "verifiedStateMutationAllowed",
+        "candidateToCatalogRecordMutationAllowed",
+    ):
+        _require_exact(
+            supersession.get(field),
+            False,
+            f"artifact profile supersessionPolicy.{field}",
+            failures,
+        )
+    return tuple(failures)
+
+
+def _collect_evidence_supporting_artifact_candidate_failures(
+    artifact_bytes: object,
+    *,
+    profile_bytes: object,
+    owner_catalog_input_bytes: object,
+) -> tuple[str, ...]:
+    """Inspect a future artifact from supplied bytes without verifying or authorizing it."""
+
+    failures: list[str] = []
+    raw = _bounded_snapshot(
+        artifact_bytes,
+        "G0 evidence supporting artifact candidate",
+        MAX_EVIDENCE_SUPPORTING_ARTIFACT_BYTES,
+        failures,
+    )
+    profile_raw = _bounded_snapshot(
+        profile_bytes,
+        "G0 evidence supporting artifact profile",
+        MAX_EVIDENCE_SUPPORTING_ARTIFACT_BYTES,
+        failures,
+    )
+    if raw is None or profile_raw is None:
+        return _finish_evidence_supporting_artifact_failures(failures)
+    profile_failures = _collect_evidence_supporting_artifact_profile_failures(
+        profile_raw,
+        owner_catalog_input_bytes=owner_catalog_input_bytes,
+    )
+    if profile_failures:
+        failures.extend(profile_failures)
+        return _finish_evidence_supporting_artifact_failures(failures)
+    profile = _parse_object(
+        profile_raw,
+        "G0 evidence supporting artifact profile",
+        failures,
+    )
+    document = _parse_object(
+        raw,
+        "G0 evidence supporting artifact candidate",
+        failures,
+    )
+    if profile is None or document is None:
+        return _finish_evidence_supporting_artifact_failures(failures)
+    _validate_json_resources(
+        document,
+        failures,
+        root_label="G0 evidence supporting artifact candidate",
+        maximum_depth=MAX_EVIDENCE_SUPPORTING_ARTIFACT_DEPTH,
+        maximum_items=MAX_EVIDENCE_SUPPORTING_ARTIFACT_ARRAY_ITEMS,
+        maximum_string_bytes=MAX_EVIDENCE_SUPPORTING_ARTIFACT_STRING_BYTES,
+    )
+    try:
+        canonical_raw = json.dumps(
+            document,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError, UnicodeEncodeError) as error:
+        failures.append(f"artifact candidate cannot be canonicalized: {error}")
+        canonical_raw = b""
+    if raw != canonical_raw:
+        failures.append(
+            "artifact candidate bytes are not exact compact UTF-8 JSON without a trailing newline"
+        )
+
+    common = profile["commonEnvelopeProfile"]
+    root = _exact_ordered_object(
+        document,
+        EVIDENCE_SUPPORTING_ARTIFACT_FIELDS,
+        "evidence supporting artifact candidate",
+        failures,
+    )
+    for field, expected in common["fixedValues"].items():
+        _require_exact(
+            root.get(field),
+            expected,
+            f"artifact candidate {field}",
+            failures,
+        )
+    evidence_kind = root.get("evidenceKind")
+    if evidence_kind not in profile["contractBinding"]["requiredEvidenceKinds"]:
+        failures.append("artifact candidate evidenceKind is unsupported")
+        kind_profile: dict[str, object] = {}
+    elif evidence_kind == "reviewed_commit_scope":
+        kind_profile = profile["reviewedCommitScopePayloadProfile"]
+    else:
+        kind_profile = profile["publishedCheckpointPayloadProfile"]
+    _require_exact(
+        root.get("artifactId"),
+        kind_profile.get("artifactId"),
+        "artifact candidate artifactId",
+        failures,
+    )
+
+    profile_ref = _exact_ordered_object(
+        root.get("profileRef"),
+        EVIDENCE_SUPPORTING_ARTIFACT_PROFILE_REF_FIELDS,
+        "artifact candidate profileRef",
+        failures,
+    )
+    _require_exact(
+        profile_ref,
+        {
+            "path": EVIDENCE_SUPPORTING_ARTIFACT_PROFILE_PATH,
+            "profileId": profile["profileId"],
+            "rawSha256": EXPECTED_EVIDENCE_SUPPORTING_ARTIFACT_PROFILE_RAW_SHA256,
+        },
+        "artifact candidate profileRef",
+        failures,
+    )
+    contract = _exact_ordered_object(
+        root.get("contractBinding"),
+        EVIDENCE_SUPPORTING_ARTIFACT_CONTRACT_FIELDS,
+        "artifact candidate contractBinding",
+        failures,
+    )
+    expected_artifact_contract = {
+        field: profile["contractBinding"][field]
+        for field in EVIDENCE_SUPPORTING_ARTIFACT_CONTRACT_FIELDS
+    }
+    _require_exact(
+        contract,
+        expected_artifact_contract,
+        "artifact candidate contractBinding",
+        failures,
+    )
+
+    selector_snapshot = profile["selectorSnapshotBinding"]
+    selector_entry: dict[str, object] = {}
+    for entry in selector_snapshot["evidenceSelectors"]:
+        if entry["evidenceKind"] == evidence_kind:
+            selector_entry = entry
+            break
+    selector_binding = _exact_ordered_object(
+        root.get("selectorBinding"),
+        EVIDENCE_SUPPORTING_ARTIFACT_SELECTOR_BINDING_FIELDS,
+        "artifact candidate selectorBinding",
+        failures,
+    )
+    expected_selector_binding = {
+        "ownerCatalogInputCandidatePath": selector_snapshot[
+            "ownerCatalogInputCandidatePath"
+        ],
+        "ownerCatalogInputCandidateRawSha256": selector_snapshot[
+            "ownerCatalogInputCandidateRawSha256"
+        ],
+        "responseIndex": selector_snapshot["responseIndex"],
+        "blockerId": selector_snapshot["blockerId"],
+        "inputSourceRefCandidate": selector_snapshot["inputSourceRefCandidate"],
+        "ownerBindingRefCandidate": selector_snapshot[
+            "ownerBindingRefCandidate"
+        ],
+        "evidenceSelectorIndex": selector_entry.get("evidenceSelectorIndex"),
+        "candidateVersion": selector_entry.get("candidateVersion"),
+        "evidenceInputRefCandidate": selector_entry.get(
+            "evidenceInputRefCandidate"
+        ),
+        "supportingArtifactPresent": selector_entry.get(
+            "supportingArtifactPresent"
+        ),
+        "supportingArtifactRefCandidate": selector_entry.get(
+            "supportingArtifactRefCandidate"
+        ),
+        "reservedArtifactPath": selector_entry.get("reservedArtifactPath"),
+    }
+    _require_exact(
+        selector_binding,
+        expected_selector_binding,
+        "artifact candidate selectorBinding",
+        failures,
+    )
+
+    payload = root.get("payload")
+    if evidence_kind == "reviewed_commit_scope":
+        payload_object = _exact_ordered_object(
+            payload,
+            REVIEWED_COMMIT_SCOPE_PAYLOAD_FIELDS,
+            "reviewed-commit artifact payload",
+            failures,
+        )
+        fixed_subject = kind_profile.get("fixedSubject", {})
+        for field in (
+            "baseCommitObjectId",
+            "baseTreeObjectId",
+            "publicationTreeObjectId",
+            "scopeEntryCount",
+        ):
+            _require_exact(
+                payload_object.get(field),
+                fixed_subject.get(field),
+                f"reviewed-commit artifact payload.{field}",
+                failures,
+            )
+        expected_entries = kind_profile.get("expectedScopeEntries")
+        observed_entries = payload_object.get("scopeEntries")
+        _require_exact(
+            observed_entries,
+            expected_entries,
+            "reviewed-commit artifact scopeEntries",
+            failures,
+        )
+        if isinstance(observed_entries, list):
+            entries_sha256 = _sha256(
+                json.dumps(
+                    observed_entries,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ).encode("utf-8")
+            )
+        else:
+            entries_sha256 = ""
+        _require_exact(
+            payload_object.get("scopeEntriesCanonicalSha256"),
+            kind_profile.get("expectedScopeEntriesCanonicalSha256"),
+            "reviewed-commit artifact scopeEntriesCanonicalSha256",
+            failures,
+        )
+        _require_exact(
+            entries_sha256,
+            kind_profile.get("expectedScopeEntriesCanonicalSha256"),
+            "reviewed-commit artifact calculated scope digest",
+            failures,
+        )
+        claim = _exact_ordered_object(
+            payload_object.get("reviewClaim"),
+            REVIEWED_COMMIT_SCOPE_CLAIM_FIELDS,
+            "reviewed-commit artifact reviewClaim",
+            failures,
+        )
+        _require_exact(
+            claim.get("disposition"),
+            kind_profile.get("reviewClaimDisposition"),
+            "reviewed-commit artifact reviewClaim.disposition",
+            failures,
+        )
+        if (
+            _canonical_candidate_version(
+                claim.get("ownerBindingRefCandidate"),
+                _OWNER_BINDING_REF_CANDIDATE_PATTERN,
+                "repository_owner",
+            )
+            != 1
+        ):
+            failures.append(
+                "reviewed-commit artifact reviewClaim owner candidate is invalid"
+            )
+        if not _valid_input_source_ref_candidate(claim.get("inputSourceRefCandidate")):
+            failures.append(
+                "reviewed-commit artifact reviewClaim input source is invalid"
+            )
+        _require_exact(
+            claim.get("ownerBindingRefCandidate"),
+            selector_binding.get("ownerBindingRefCandidate"),
+            "reviewed-commit artifact reviewClaim owner selector binding",
+            failures,
+        )
+        _require_exact(
+            claim.get("inputSourceRefCandidate"),
+            selector_binding.get("inputSourceRefCandidate"),
+            "reviewed-commit artifact reviewClaim source selector binding",
+            failures,
+        )
+        _parse_canonical_utc(
+            claim.get("claimedReviewRecordedAt"),
+            "reviewed-commit artifact reviewClaim.claimedReviewRecordedAt",
+            failures,
+        )
+    elif evidence_kind == "published_checkpoint":
+        payload_object = _exact_ordered_object(
+            payload,
+            PUBLISHED_CHECKPOINT_PAYLOAD_FIELDS,
+            "published-checkpoint artifact payload",
+            failures,
+        )
+        _require_exact(
+            payload_object,
+            kind_profile.get("fixedValues"),
+            "published-checkpoint artifact payload",
+            failures,
+        )
+        started_at = _parse_canonical_utc(
+            payload_object.get("observationStartedAt"),
+            "published-checkpoint artifact observationStartedAt",
+            failures,
+        )
+        completed_at = _parse_canonical_utc(
+            payload_object.get("observationCompletedAt"),
+            "published-checkpoint artifact observationCompletedAt",
+            failures,
+        )
+        if started_at is not None and completed_at is not None and started_at >= completed_at:
+            failures.append("published-checkpoint artifact observation interval is invalid")
+
+    trust_boundary = _exact_ordered_object(
+        root.get("trustBoundary"),
+        EVIDENCE_SUPPORTING_ARTIFACT_TRUST_FIELDS,
+        "artifact candidate trustBoundary",
+        failures,
+    )
+    _require_exact(
+        trust_boundary,
+        {
+            "observationClass": "session_observation_only",
+            "independentInputsPresent": [],
+            "requiredIndependentInputsAbsent": kind_profile.get(
+                "requiredIndependentInputsAbsent"
+            ),
+            "catalogRecordDerivable": False,
+            "authorityDerivable": False,
+        },
+        "artifact candidate trustBoundary",
+        failures,
+    )
+    state = _exact_ordered_object(
+        root.get("state"),
+        OWNER_CATALOG_STATE_FIELDS,
+        "artifact candidate state",
+        failures,
+    )
+    _require_exact(
+        state,
+        common.get("stateFixedValues"),
+        "artifact candidate state",
+        failures,
+    )
+
+    forbidden_fields = set(profile["authorizationBoundary"]["artifactForbiddenFields"])
+    stack: list[object] = [document]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, dict):
+            for key, value in current.items():
+                if key in forbidden_fields:
+                    failures.append(f"artifact candidate forbidden field {key!r} is present")
+                stack.append(value)
+        elif isinstance(current, list):
+            stack.extend(current)
+    return _finish_evidence_supporting_artifact_failures(failures)
 
 
 def _collect_recorded_publication_receipt_candidate_failures(
@@ -2507,6 +3713,22 @@ def _consume_exact_dormant_result(
         )
 
 
+def _collect_absent_evidence_artifact_failures(root: Path) -> tuple[str, ...]:
+    failures: list[str] = []
+    for path in EVIDENCE_SUPPORTING_ARTIFACT_CANDIDATE_PATHS:
+        try:
+            (root / path).lstat()
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            failures.append(f"could not confirm absent evidence artifact {path}: {error}")
+        else:
+            failures.append(
+                f"evidence artifact {path} must be absent while its selector reference is null"
+            )
+    return tuple(failures)
+
+
 def _collect_worktree_failures(root: Path = ROOT) -> tuple[str, ...]:
     failures: list[str] = []
     snapshots: list[bytes] = []
@@ -2540,6 +3762,15 @@ def _collect_worktree_failures(root: Path = ROOT) -> tuple[str, ...]:
     except checkpoint.CheckpointValidationError as error:
         return (str(error),)
     try:
+        profile_raw, profile_identity = decision.read_g0_content_addressed_snapshot(
+            root,
+            EVIDENCE_SUPPORTING_ARTIFACT_PROFILE_PATH,
+            "G0 evidence supporting artifact profile",
+            MAX_EVIDENCE_SUPPORTING_ARTIFACT_BYTES,
+        )
+    except checkpoint.CheckpointValidationError as error:
+        return (str(error),)
+    try:
         input_raw, input_identity = decision.read_g0_content_addressed_snapshot(
             root,
             OWNER_CATALOG_INPUT_PATH,
@@ -2558,6 +3789,13 @@ def _collect_worktree_failures(root: Path = ROOT) -> tuple[str, ...]:
         label="recorded publication receipt",
         failures=failures,
     )
+    failures.extend(
+        _collect_evidence_supporting_artifact_profile_failures(
+            profile_raw,
+            owner_catalog_input_bytes=input_raw,
+        )
+    )
+    failures.extend(_collect_absent_evidence_artifact_failures(root))
     _require_equal(
         _sha256(input_raw),
         EXPECTED_OWNER_CATALOG_INPUT_RAW_SHA256,
@@ -2611,6 +3849,17 @@ def _collect_worktree_failures(root: Path = ROOT) -> tuple[str, ...]:
             EXPECTED_OWNER_CATALOG_INPUT_RAW_SHA256,
         )
     )
+    failures.extend(
+        decision.collect_g0_final_snapshot_failures(
+            root,
+            EVIDENCE_SUPPORTING_ARTIFACT_PROFILE_PATH,
+            "G0 evidence supporting artifact profile",
+            MAX_EVIDENCE_SUPPORTING_ARTIFACT_BYTES,
+            profile_identity,
+            EXPECTED_EVIDENCE_SUPPORTING_ARTIFACT_PROFILE_RAW_SHA256,
+        )
+    )
+    failures.extend(_collect_absent_evidence_artifact_failures(root))
     return tuple(failures)
 
 
@@ -2621,10 +3870,12 @@ def main() -> int:
             print(f"V1 G0 V3 receipt-bundle contract validation failed: {failure}", file=sys.stderr)
         return 1
     print(
-        "V1 G0 effective V3 contract, published-target receipt candidate, and empty "
-        "owner/catalog intake envelope were reconstructed from six lineage blobs; both "
-        "candidates remain dormant, and owner authentication, evidence verification, "
-        "activation, command execution, G0 exit, and G1a remain closed."
+        "V1 G0 effective V3 contract, published-target receipt candidate, one explicit "
+        "owner/catalog proposal with two null artifact references, and the exact "
+        "selector-snapshot-bound non-authorizing supporting-artifact profile were "
+        "reconstructed; no supporting artifact instance exists, and owner "
+        "authentication, evidence verification, activation, command execution, G0 "
+        "exit, and G1a remain closed."
     )
     return 0
 

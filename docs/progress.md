@@ -1,10 +1,10 @@
 # AetherLink Progress And Forward Plan
 
-Last updated: 2026-07-20 KST.
+Last updated: 2026-07-21 KST.
 
 This document records what has been implemented so far and what should happen next. It is intentionally broader than the original v0.1 MVP because recent work has moved the prototype toward a more complete product shape.
 
-## 2026-07-20 V1 G0 Decision, Assurance, And Authority Baseline
+## 2026-07-21 V1 G0 Publication Follow-Up And Authority Baseline
 
 - Goal and result: execution of the canonical V1 roadmap has started with G0.
   `docs/v1/g0/decision-v1.{md,json}` now records one versioned product, support,
@@ -63,11 +63,14 @@ This document records what has been implemented so far and what should happen ne
   remote, evidence-artifact and sanitized-log bytes, authenticated owner and
   runner attestations, authority/command bindings, and complete non-ambiguous
   closure coverage before any receipt can participate. A non-authorizing
-  candidate context can verify supplied commit and remote bytes. The local
+  candidate context can compare supplied commit and remote bytes. A separate
+  factory-only seven-input candidate-context core now also cross-binds supplied
+  owner, authority, runner, artifact/log/manifest, and trusted-time
+  observations, but fabricates no adapter result and always remains dormant. The local
   sidecar encodes repository/commit/checkpoint/hash/time values drawn from the
   actual session observation but does not persist its acquisition provenance or
   independently reproduce it. The canonical checker still accepts no receipt,
-  and no activation-capable context exists.
+  and no independently anchored activation-capable context exists.
 - V2 closure amendment: the committed V1 assurance and checkpoint bytes remain
   unchanged. `assurance-closure-amendment-v2.json` binds their raw/canonical
   hashes, defines eleven exact ordered JSON Pointer operations, advances the
@@ -110,15 +113,87 @@ This document records what has been implemented so far and what should happen ne
   no independent trust adapter, activation path, or G1a authority was added.
 - Sparse owner/catalog intake: the separate content-addressed
   `owner-catalog-input-candidate-v1.json` binds the published target and effective
-  V3 digests but starts with `responses: []` and all state flags false. Its
-  checker derives the ten-blocker role/evidence graph from effective V3, admits
-  only canonically ordered sparse proposals whose references are mechanically
-  bound to exact role/evidence-kind/blocker slugs and versions, rejects free-form
-  catalog values, mismatched or unsafe paths, contradictory dispositions, and
+  V3 digests. Its published `70350f5e` form starts with `responses: []` and all
+  state flags false. After explicit user input on 2026-07-21, the public dormant
+  compiler produced the current exact 1,452-byte candidate at raw
+  SHA-256
+  `0221d2d49e4bcccfd34fb6905102117fbf5632e27d3d2f2e23d53e29f47752bc`.
+  It contains only the `roadmap_and_g0_checkpoint_publication`
+  `proposed_as_written` response, `owner-candidate:repository-owner:v1`, and
+  `user-input:session-20260721:item-2`; the ordered `reviewed_commit_scope:v1`
+  and `published_checkpoint:v1` evidence references are present, both supporting
+  artifact paths are null because their selectors are false, the change request
+  is null, and every state remains false. Its checker derives the
+  ten-blocker role/evidence graph from effective V3, admits only canonically
+  ordered sparse proposals whose references are mechanically bound to exact
+  role/evidence-kind/blocker slugs and versions, rejects free-form catalog
+  values, mismatched or unsafe paths, contradictory dispositions, and
   non-derived-evidence violations, and always returns
-  `draft_unverified_non_authorizing`. The packet currently contains no owner
-  identity, catalog value, approval, credential, or blocker-closing input;
-  actual candidate artifact bytes require separate typed review.
+  `draft_unverified_non_authorizing`. The packet contains no owner identity,
+  catalog value, accepted decision, approval, credential, verified evidence, or
+  blocker-closing input; actual candidate artifact bytes require separate typed
+  review.
+- Non-authorizing evidence payload profile:
+  `evidence-supporting-artifact-candidate-profile-v1.json` is one versioned
+  custom profile, not an artifact instance. Its exact 17,353 bytes are pinned at
+  SHA-256
+  `f8ad6742fcb569f408b5f4087b20f11f32cb497a8f9eec2fc3f255d8b22c226f`.
+  It defines the closed common envelope, subject binding, resource bounds,
+  sensitive-data exclusions, missing independent inputs, and immutable false
+  authority state for both future artifacts. The reviewed-scope branch binds
+  the exact `12c38154` parent/tree and all 18 ordered path/mode/blob/byte/hash
+  entries; the checkpoint branch binds the exact 4,692-byte V3 checkpoint and
+  bounded remote-readback observation while keeping the standalone acquisition
+  transcript null. It also hash-binds the exact item-2 owner/catalog selector
+  bytes and projects the blocker, source, owner/evidence reference, candidate
+  version, selector index, reserved path, and false/null artifact state into
+  each envelope. Any selector change requires a new profile, and repository
+  artifact instances remain forbidden while the snapshot references are null.
+  The pure supplied-bytes validator performs no artifact-directed filesystem,
+  Git, network, process, or clock access, rejects selector drift, and always
+  returns the non-authorizing sentinel. Both reserved `docs/evidence` instances
+  remain absent while the selectors are false.
+- Baseline-gate evidence readiness: the separate exact 19,697-byte
+  `baseline-gate-evidence-readiness-profile-v1.json` is pinned at SHA-256
+  `a0c8f45167e9a8f3a4fccbba65afbb928b29b88df2ea2090cc96043ba960af17`.
+  It derives the five non-derived evidence kinds for
+  `g0_assurance_artifacts_and_baseline_gate` from effective V3, cross-binds the
+  three execution-result shapes to the exact two command-profile and three step
+  digests, and defines bounded common envelope, ordered manifest, result,
+  sensitive-data, and supersession contracts. The pure compiler emits the exact
+  3,640-byte dormant plan at SHA-256
+  `ce679bbb4ebf01e4f838726d4c8f224e48cdd8170b3b205e89a4a54ce2d32227`
+  only in memory. Both commands stay `not_authorized`; authority and runner
+  candidate refs in the plan are null, execution/acquisition and every state
+  transition are false, and all five reserved evidence artifacts remain absent.
+  The supplied-bytes static compiler deterministically returns the 5,763-byte
+  canonical-assurance candidate at SHA-256
+  `2d193cb2f3bddf4d202129b4a746a3bd3cbba05f1a879e748f8001eb5c138db4`
+  and the 10,771-byte source-readback candidate at SHA-256
+  `5df6ba51f3177424407078424fcff90dc2faa8d1c1d4e80e79e96486c3a54fc6`.
+  The exact pair remains dormant and creates no artifact file. Twenty-two
+  mutation tests cover all five shapes, rehash all 29 actual supplied source
+  blobs and every ordered synthetic execution-manifest blob, bind the
+  single canonical egress/process observation manifest digest, cross-bind
+  command/step/session/time/log/output digests, require the full-gate success
+  marker exactly once, reject duplicate/noncompact/oversized JSON and mutable
+  pair re-snapshot, and preserve a no-file/process/socket/clock-I/O pure
+  boundary. Even an exact synthetic candidate returns only the final dormant
+  sentinel and cannot create a catalog record or receipt.
+- Independent-validation candidate context: the new private module derives the
+  exact seven trust-input kinds from effective V3 and accepts only factory-owned,
+  opaque, deep-immutable result snapshots with one exact target binding. It
+  cross-checks all six lineage bytes, the independent V3 checkpoint and
+  readback time, owner/approval, authority, runner/gate, fifteen artifact bytes,
+  two runners' manifest/log bytes, and the trusted validation-time ceiling.
+  Nine mutation tests reject missing/reordered/duplicate/ambiguous inputs,
+  target or remote drift, mutable/released/oversized buffers, material
+  missing/extra/hash/length drift, coherent self-asserted candidate changes,
+  late events, and I/O or clock use. Exact synthetic input returns only the
+  distinct dormant sentinel. The module exports no acceptance or activation
+  API and implements no real registry, revocation, owner, authority, runner, or
+  artifact verifier; no consumed-bundle ledger, G0 exit, or G1a authority was
+  added.
 - Release-evidence boundary: a content hash alone cannot satisfy a release
   metric. The exact evidence envelope must carry the complete raw sample array,
   bind campaign/build/metric/threshold/platform/context, name an approved
@@ -166,9 +241,37 @@ This document records what has been implemented so far and what should happen ne
   network-variant outcomes, and evidence-free checklist passes. The G0 checker
   now also requires the candidate readback validator. Its separate eleven-test
   mutation suite, the dormant publication candidate's eight-test suite, and
-  the V3 lineage/bundle and sparse-intake candidate's thirteen-test suite are
-  included in the default no-device gate, for 95 focused G0 mutation tests in
-  total.
+  the V3 lineage/bundle, sparse-intake, and evidence-profile candidate's
+  seventeen-test suite form the earlier 99-test subtotal. The baseline-evidence
+  readiness suite contributes 22 more tests, forming the previous 121-test
+  subtotal. The independent-context suite contributes 9 more to form 130, and
+  the repository/remote-source suite contributes 8, so the seven focused G0
+  suites now contain 138 tests in total and are included in the default
+  no-device gate.
+- Repository/remote source boundary: the new default checker reconstructs the
+  exact 18-entry `929fda5f -> 12c38154` scope directly from Git objects and
+  matches its pinned digest, exact parent/tree, and all six lineage blobs while
+  ignoring HEAD, index, and worktree document bytes. It rejects replace,
+  alternate, graft, shallow, and promisor/lazy-fetch state both before and
+  after bounded streaming object reads. Evidence collection therefore requires
+  one normal checkout with a complete local object store; shallow clones and
+  linked worktrees are intentionally unsupported and fail closed. The remote half is deliberately only a
+  pure matcher for supplied unauthenticated bytes and contains no socket client;
+  it records remote-ref reachability, TLS peer authentication, and collector
+  authentication as false. Eight tests pass, including worktree/network I/O
+  absence and rejection of the two mechanical identities as a 2/7 context.
+  This reduces adapter implementation work but closes none of the ten G0
+  blockers and creates no trusted adapter, evidence, receipt, or authority.
+- Consumed-bundle ledger stop boundary: a caller-selected host-local directory
+  with same-UID marker files is not the external irreversible ledger required by
+  V3. Different directories, directory replacement, snapshot rollback, or an
+  unauthenticated early claim can defeat global one-shot semantics or cause
+  permanent denial of service. A future activation design must instead pin one
+  versioned namespace under an authenticated sole writer/coordinator, serialize
+  every host, resist or reconcile storage rollback and backup restore, bind the
+  canonical validated target/bundle from the 7/7 context, and durably verify the
+  parent entry before success. No local ledger substitute was retained and no
+  activation state was added.
 - Offline gate hardening: all five Gradle invocations inside
   `script/check_no_device_quality.sh` now include `--offline`. Future authorized
   execution must additionally use a runner-level egress deny and preseeded,
@@ -197,38 +300,71 @@ This document records what has been implemented so far and what should happen ne
   handoff records the path-order serialization and nine individual blob hashes.
   That manifest is reproducible from the commit, but no standalone HTTPS
   acquisition transcript persists the separate no-alternates/readback session.
+- Truth-sync/compiler successor publication: the exact seven-file successor is
+  published at `025a4ef5e6c3e52c46a6b79ee3a06a6eb47de4e0`, with parent
+  `70350f5e` and tree `e1272bdf`. A fresh no-alternates HTTPS `blob:none`
+  partial clone matched remote `main`, the ordered changed-path set, modes, blob
+  IDs, byte counts, and seven raw blob hashes from `2026-07-21T01:15:22Z`
+  through `01:15:28Z`. The canonical seven-line manifest SHA-256 is
+  `d534e068f412bed2ea4926f5eb206b6a4343fa4ed8d04f87c11193bc4a5cdb25`.
+  This session observation is not a trusted receipt and grants no G0 authority.
 - Publication-receipt status: the tracked exact 13-field sidecar encodes the
   observed target/checkpoint/hash/time only as a dormant candidate. It does not
   persist or independently reproduce the parent acquisition provenance and is
-  not consumed by an activation-capable independent
-  trust adapter, and establishes no owner, authority, runner, gate, approval,
+  not consumed by an independently anchored activation-capable trust adapter.
+  The new candidate context core does not change that fact and establishes no
+  owner, authority, runner, gate, approval,
   G0-exit, or G1a state.
-- Owner/catalog-input status: the tracked packet is empty and content-addressed.
-  Structural validation proves only that later reference-only
-  proposals would be bound to the canonical target and graph; it does not
-  authenticate an owner, verify an artifact, accept a disposition, activate a
-  receipt, or close any of the ten blockers.
+- Owner/catalog-input status: the tracked working-copy packet is content-addressed
+  and contains exactly one explicit publication proposal with the repository
+  owner candidate plus two evidence candidates whose artifact references are
+  null.
+  Structural validation proves only that this proposal is bound to the canonical
+  target and graph; it does not authenticate the proposed owner, verify an
+  artifact, accept the disposition, activate a receipt, or close any of the ten
+  blockers. The empty packet remains the historical published `70350f5e` blob.
 - Reference-only proposal preparation: the receipt-bundle module now exports
   one dormant preview compiler. It snapshots and strictly parses bounded JSON
   selector-request bytes, derives canonical blocker/role/evidence references
   and safe optional artifact paths from the exact V3 graph, normalizes order,
   keeps all state false, and returns deterministic bytes plus SHA-256 only after
   dormant validator round-trip. It performs no file, network, or process I/O,
-  authentication, acceptance, or activation.
-- Post-publication worktree status: the only new local scope is synchronized
-  current-state wording in the four canonical documents and no-device status
-  copy, plus the preview compiler and its tests. These seven files are not
-  committed or pushed.
+  authentication, acceptance, or activation. The approved selector for the
+  publication blocker now replay-compiles to the tracked bytes and pinned
+  SHA-256 exactly.
+- Post-publication worktree status: the preview compiler, its tests, and the
+  preceding truth-sync are published in `025a4ef5`. The only new local scope is
+  the exact sixteen-file selector, non-authorizing-readiness, candidate
+  independent-context, and mechanical repository/remote-source successor: four
+  canonical documents, the candidate, two
+  new profiles, the existing receipt-bundle checker/test, the readiness
+  checker/test, the independent-context checker/test, the repository/remote
+  source checker/test, and the aggregate marker.
+  It is not staged, committed, or pushed.
 - Remaining boundary: accountable owner acceptance, catalog artifacts,
   authorized aggregate/release-compile evidence, namespaces/accounts/custody,
   provider/service/privacy/quality/capacity ownership, and all later execution
   authorities remain unresolved or false. G1a, source acquisition, P2P selection
   or compile, sockets, network I/O, production keys, signing, upload, and
-  deployment remain closed.
-- Live evidence boundary: no Android device is attached. The existing ad-hoc
-  arm64 macOS app was observed running on port 43170, but QR decode, provider
-  traffic, physical UI, unrelated networks, and production behavior were not
-  rerun. Independent GPT-5.6 Sol product/release, security/authority, and
+  deployment remain closed. The user-directed local development diagnostics
+  below do not satisfy or alter those canonical command-authority gates.
+- Live Android evidence boundary: an authorized USB `SM-S936N` on Android 16/API
+  36 was used. The current debug APK rebuilt successfully and `adb install -r`
+  preserved data. Cold launches completed in 632 ms and 612 ms; force-stop
+  removed the process, relaunch changed the PID, and the saved trusted-runtime,
+  latest-QR-required, and auto-reconnect state remained visible. Three
+  ADB-deeplink/local-development-relay smokes passed: pairing plus saved-route
+  reconnect; physical UI send/delta/cancel/done plus complete chat/model/drawer/
+  settings/launcher PNG/XML capture; and send/three-delta/natural-done plus
+  reconnect. App-screen UI XML had no enabled unlabeled click target or
+  out-of-screen bound. CAMERA revoke reached the Android 16 permission dialog;
+  denial-after-dialog recovery was not completed, and the cleanup trap restored
+  `granted=true`. Early USB capture briefly re-enumerated and recovered; final
+  state had one authorized device, a focused app process, zero adb reverse
+  mappings, and no scoped crash/ANR marker. Optical QR, real TalkBack, live
+  provider, external relay, real different-network, production encryption, and
+  production readiness remain unverified. macOS process/port state was not
+  refreshed. Independent GPT-5.6 Sol product/release, security/authority, and
   evidence-conformance audits informed G0; the final product and evidence-
   conformance re-reviews report no remaining P0-P3 finding.
   GPT-5.3-Codex-Spark was not used.

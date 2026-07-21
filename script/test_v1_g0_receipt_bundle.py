@@ -31,6 +31,12 @@ class V1G0ReceiptBundleContractTests(unittest.TestCase):
             ROOT / receipt_bundle.OWNER_CATALOG_INPUT_PATH
         ).read_bytes()
         cls.owner_catalog_input = json.loads(cls.owner_catalog_input_raw)
+        cls.evidence_artifact_profile_raw = (
+            ROOT / receipt_bundle.EVIDENCE_SUPPORTING_ARTIFACT_PROFILE_PATH
+        ).read_bytes()
+        cls.evidence_artifact_profile = json.loads(
+            cls.evidence_artifact_profile_raw
+        )
         cls.documents = tuple(json.loads(raw) for raw in cls.raw_blobs)
         cls.effective_v2 = decision.apply_assurance_amendment_operations(
             cls.documents[0],
@@ -132,6 +138,97 @@ class V1G0ReceiptBundleContractTests(unittest.TestCase):
                 "proposals": proposals,
             }
         )
+
+    @classmethod
+    def make_evidence_artifact_candidate(
+        cls,
+        evidence_kind: str,
+    ) -> dict[str, object]:
+        profile = cls.evidence_artifact_profile
+        common = profile["commonEnvelopeProfile"]
+        if evidence_kind == "reviewed_commit_scope":
+            kind_profile = profile["reviewedCommitScopePayloadProfile"]
+            payload = {
+                **kind_profile["fixedSubject"],
+                "scopeEntries": copy.deepcopy(kind_profile["expectedScopeEntries"]),
+                "scopeEntriesCanonicalSha256": (
+                    kind_profile["expectedScopeEntriesCanonicalSha256"]
+                ),
+                "reviewClaim": {
+                    "disposition": kind_profile["reviewClaimDisposition"],
+                    "ownerBindingRefCandidate": "owner-candidate:repository-owner:v1",
+                    "inputSourceRefCandidate": "user-input:session-20260721:item-2",
+                    "claimedReviewRecordedAt": "2026-07-21T02:00:00Z",
+                },
+            }
+        elif evidence_kind == "published_checkpoint":
+            kind_profile = profile["publishedCheckpointPayloadProfile"]
+            payload = copy.deepcopy(kind_profile["fixedValues"])
+        else:
+            raise ValueError(f"unsupported fixture evidence kind: {evidence_kind}")
+        selector_snapshot = profile["selectorSnapshotBinding"]
+        selector_entry = next(
+            entry
+            for entry in selector_snapshot["evidenceSelectors"]
+            if entry["evidenceKind"] == evidence_kind
+        )
+        return {
+            "documentType": common["fixedValues"]["documentType"],
+            "schemaVersion": common["fixedValues"]["schemaVersion"],
+            "artifactId": kind_profile["artifactId"],
+            "evidenceKind": evidence_kind,
+            "status": common["fixedValues"]["status"],
+            "profileRef": {
+                "path": receipt_bundle.EVIDENCE_SUPPORTING_ARTIFACT_PROFILE_PATH,
+                "profileId": profile["profileId"],
+                "rawSha256": (
+                    receipt_bundle.EXPECTED_EVIDENCE_SUPPORTING_ARTIFACT_PROFILE_RAW_SHA256
+                ),
+            },
+            "contractBinding": {
+                field: profile["contractBinding"][field]
+                for field in receipt_bundle.EVIDENCE_SUPPORTING_ARTIFACT_CONTRACT_FIELDS
+            },
+            "selectorBinding": {
+                "ownerCatalogInputCandidatePath": selector_snapshot[
+                    "ownerCatalogInputCandidatePath"
+                ],
+                "ownerCatalogInputCandidateRawSha256": selector_snapshot[
+                    "ownerCatalogInputCandidateRawSha256"
+                ],
+                "responseIndex": selector_snapshot["responseIndex"],
+                "blockerId": selector_snapshot["blockerId"],
+                "inputSourceRefCandidate": selector_snapshot[
+                    "inputSourceRefCandidate"
+                ],
+                "ownerBindingRefCandidate": selector_snapshot[
+                    "ownerBindingRefCandidate"
+                ],
+                "evidenceSelectorIndex": selector_entry["evidenceSelectorIndex"],
+                "candidateVersion": selector_entry["candidateVersion"],
+                "evidenceInputRefCandidate": selector_entry[
+                    "evidenceInputRefCandidate"
+                ],
+                "supportingArtifactPresent": selector_entry[
+                    "supportingArtifactPresent"
+                ],
+                "supportingArtifactRefCandidate": selector_entry[
+                    "supportingArtifactRefCandidate"
+                ],
+                "reservedArtifactPath": selector_entry["reservedArtifactPath"],
+            },
+            "payload": payload,
+            "trustBoundary": {
+                "observationClass": "session_observation_only",
+                "independentInputsPresent": [],
+                "requiredIndependentInputsAbsent": copy.deepcopy(
+                    kind_profile["requiredIndependentInputsAbsent"]
+                ),
+                "catalogRecordDerivable": False,
+                "authorityDerivable": False,
+            },
+            "state": copy.deepcopy(common["stateFixedValues"]),
+        }
 
     def make_complete_bundle(self) -> dict[str, object]:
         repository_ref = "repository:aetherlink-reviewed"
@@ -853,9 +950,82 @@ class V1G0ReceiptBundleContractTests(unittest.TestCase):
             hashlib.sha256(self.owner_catalog_input_raw).hexdigest(),
             receipt_bundle.EXPECTED_OWNER_CATALOG_INPUT_RAW_SHA256,
         )
-        self.assertEqual(self.owner_catalog_input["responses"], [])
+        self.assertEqual(
+            self.owner_catalog_input["responses"],
+            [
+                {
+                    "blockerId": "roadmap_and_g0_checkpoint_publication",
+                    "requirementDisposition": "proposed_as_written",
+                    "ownerCandidates": [
+                        {
+                            "role": "repository_owner",
+                            "ownerBindingRefCandidate": (
+                                "owner-candidate:repository-owner:v1"
+                            ),
+                        }
+                    ],
+                    "evidenceCandidates": [
+                        {
+                            "evidenceKind": "reviewed_commit_scope",
+                            "evidenceInputRefCandidate": (
+                                "evidence-input-candidate:reviewed-commit-scope:v1"
+                            ),
+                            "supportingArtifactRefCandidate": None,
+                        },
+                        {
+                            "evidenceKind": "published_checkpoint",
+                            "evidenceInputRefCandidate": (
+                                "evidence-input-candidate:published-checkpoint:v1"
+                            ),
+                            "supportingArtifactRefCandidate": None,
+                        },
+                    ],
+                    "changeRequestRefCandidate": None,
+                    "inputSourceRefCandidate": (
+                        "user-input:session-20260721:item-2"
+                    ),
+                }
+            ],
+        )
         self.assertTrue(
             all(value is False for value in self.owner_catalog_input["state"].values())
+        )
+        explicit_preview_request = self.owner_catalog_preview_request_bytes(
+            [
+                {
+                    "blockerId": "roadmap_and_g0_checkpoint_publication",
+                    "requirementDisposition": "proposed_as_written",
+                    "ownerCandidates": [
+                        {"role": "repository_owner", "candidateVersion": 1}
+                    ],
+                    "evidenceCandidates": [
+                        {
+                            "evidenceKind": "reviewed_commit_scope",
+                            "candidateVersion": 1,
+                            "supportingArtifactPresent": False,
+                        },
+                        {
+                            "evidenceKind": "published_checkpoint",
+                            "candidateVersion": 1,
+                            "supportingArtifactPresent": False,
+                        },
+                    ],
+                    "changeRequestCandidateVersion": None,
+                    "inputSessionDate": "20260721",
+                    "inputSessionItem": 2,
+                }
+            ]
+        )
+        preview_bytes, preview_sha256 = (
+            receipt_bundle.compile_dormant_owner_catalog_input_preview(
+                explicit_preview_request,
+                lineage_blobs=self.raw_blobs,
+            )
+        )
+        self.assertEqual(preview_bytes, self.owner_catalog_input_raw)
+        self.assertEqual(
+            preview_sha256,
+            receipt_bundle.EXPECTED_OWNER_CATALOG_INPUT_RAW_SHA256,
         )
         self.assertEqual(
             receipt_bundle._collect_owner_catalog_input_candidate_failures(
@@ -1648,6 +1818,371 @@ class V1G0ReceiptBundleContractTests(unittest.TestCase):
             receipt_bundle.COMPLETE_BUNDLE_DORMANT_MESSAGE,
         )
 
+    def test_evidence_supporting_artifact_profile_is_exact_and_instances_absent(
+        self,
+    ) -> None:
+        self.assertEqual(
+            hashlib.sha256(self.evidence_artifact_profile_raw).hexdigest(),
+            receipt_bundle.EXPECTED_EVIDENCE_SUPPORTING_ARTIFACT_PROFILE_RAW_SHA256,
+        )
+        self.assertEqual(
+            receipt_bundle._collect_evidence_supporting_artifact_profile_failures(
+                self.evidence_artifact_profile_raw,
+                owner_catalog_input_bytes=self.owner_catalog_input_raw,
+            ),
+            (),
+        )
+        reviewed = self.evidence_artifact_profile[
+            "reviewedCommitScopePayloadProfile"
+        ]
+        self.assertEqual(len(reviewed["expectedScopeEntries"]), 18)
+        self.assertEqual(
+            {entry["fileMode"] for entry in reviewed["expectedScopeEntries"]},
+            {"100644", "100755"},
+        )
+        self.assertEqual(
+            receipt_bundle._collect_absent_evidence_artifact_failures(ROOT),
+            (),
+        )
+        evidence_candidates = self.owner_catalog_input["responses"][0][
+            "evidenceCandidates"
+        ]
+        self.assertEqual(
+            [candidate["evidenceKind"] for candidate in evidence_candidates],
+            ["reviewed_commit_scope", "published_checkpoint"],
+        )
+        self.assertTrue(
+            all(
+                candidate["supportingArtifactRefCandidate"] is None
+                for candidate in evidence_candidates
+            )
+        )
+        selector_snapshot = self.evidence_artifact_profile[
+            "selectorSnapshotBinding"
+        ]
+        self.assertEqual(
+            selector_snapshot["ownerCatalogInputCandidateRawSha256"],
+            receipt_bundle.EXPECTED_OWNER_CATALOG_INPUT_RAW_SHA256,
+        )
+        self.assertEqual(
+            selector_snapshot["inputSourceRefCandidate"],
+            "user-input:session-20260721:item-2",
+        )
+        self.assertEqual(
+            [
+                entry["evidenceInputRefCandidate"]
+                for entry in selector_snapshot["evidenceSelectors"]
+            ],
+            [candidate["evidenceInputRefCandidate"] for candidate in evidence_candidates],
+        )
+        self.assertTrue(
+            all(
+                entry["supportingArtifactPresent"] is False
+                and entry["supportingArtifactRefCandidate"] is None
+                for entry in selector_snapshot["evidenceSelectors"]
+            )
+        )
+
+        mutated_owner_input = copy.deepcopy(self.owner_catalog_input)
+        mutated_owner_input["responses"][0]["inputSourceRefCandidate"] = (
+            "user-input:session-20260721:item-3"
+        )
+        selector_drift_failures = (
+            receipt_bundle._collect_evidence_supporting_artifact_profile_failures(
+                self.evidence_artifact_profile_raw,
+                owner_catalog_input_bytes=self.encoded(mutated_owner_input),
+            )
+        )
+        self.assertTrue(
+            any("selector snapshot" in failure for failure in selector_drift_failures),
+            selector_drift_failures,
+        )
+
+        mutated_profile = copy.deepcopy(self.evidence_artifact_profile)
+        mutated_profile["authorizationBoundary"]["g0ExitDerivable"] = True
+        self.assertTrue(
+            receipt_bundle._collect_evidence_supporting_artifact_profile_failures(
+                self.encoded(mutated_profile),
+                owner_catalog_input_bytes=self.owner_catalog_input_raw,
+            )
+        )
+        mutated_selector_profile = copy.deepcopy(self.evidence_artifact_profile)
+        mutated_selector_profile["selectorSnapshotBinding"][
+            "inputSourceRefCandidate"
+        ] = "user-input:session-20260721:item-3"
+        mutated_selector_failures = (
+            receipt_bundle._collect_evidence_supporting_artifact_profile_failures(
+                self.encoded(mutated_selector_profile),
+                owner_catalog_input_bytes=self.owner_catalog_input_raw,
+            )
+        )
+        self.assertTrue(
+            any(
+                "selectorSnapshotBinding" in failure
+                for failure in mutated_selector_failures
+            ),
+            mutated_selector_failures,
+        )
+        malformed_profile_mutations: list[tuple[str, dict[str, object], str]] = []
+        for field in ("changeType", "fileMode"):
+            malformed_scope_profile = copy.deepcopy(self.evidence_artifact_profile)
+            malformed_scope_profile["reviewedCommitScopePayloadProfile"][
+                "expectedScopeEntries"
+            ][0][field] = []
+            malformed_profile_mutations.append(
+                (field, malformed_scope_profile, f".{field} is invalid")
+            )
+        malformed_forbidden_material = copy.deepcopy(self.evidence_artifact_profile)
+        malformed_forbidden_material["sensitiveDataPolicy"]["forbiddenMaterial"] = [
+            {}
+        ]
+        malformed_profile_mutations.append(
+            (
+                "forbiddenMaterial",
+                malformed_forbidden_material,
+                "sensitive material exclusions are incomplete",
+            )
+        )
+        for label, malformed_profile, expected_failure in malformed_profile_mutations:
+            with self.subTest(malformed_profile=label):
+                failures = (
+                    receipt_bundle._collect_evidence_supporting_artifact_profile_failures(
+                        self.encoded(malformed_profile),
+                        owner_catalog_input_bytes=self.owner_catalog_input_raw,
+                    )
+                )
+                self.assertTrue(
+                    any(expected_failure in failure for failure in failures),
+                    failures,
+                )
+        released = memoryview(self.evidence_artifact_profile_raw)
+        released.release()
+        self.assertTrue(
+            receipt_bundle._collect_evidence_supporting_artifact_profile_failures(
+                released,
+                owner_catalog_input_bytes=self.owner_catalog_input_raw,
+            )
+        )
+
+        with mock.patch.object(Path, "lstat", return_value=mock.Mock()):
+            present_failures = (
+                receipt_bundle._collect_absent_evidence_artifact_failures(ROOT)
+            )
+        self.assertEqual(len(present_failures), 2)
+        self.assertTrue(
+            all("selector reference is null" in failure for failure in present_failures)
+        )
+
+    def test_evidence_supporting_artifact_fixtures_are_always_non_authorizing(
+        self,
+    ) -> None:
+        for evidence_kind in ("reviewed_commit_scope", "published_checkpoint"):
+            with self.subTest(evidence_kind=evidence_kind):
+                candidate = self.make_evidence_artifact_candidate(evidence_kind)
+                raw = self.encoded(candidate)
+                with mock.patch.object(
+                    Path,
+                    "read_bytes",
+                    side_effect=AssertionError("artifact inspection attempted file I/O"),
+                ), mock.patch.object(
+                    receipt_bundle.decision,
+                    "read_g0_content_addressed_snapshot",
+                    side_effect=AssertionError("artifact inspection attempted repository I/O"),
+                ):
+                    failures = (
+                        receipt_bundle._collect_evidence_supporting_artifact_candidate_failures(
+                            raw,
+                            profile_bytes=self.evidence_artifact_profile_raw,
+                            owner_catalog_input_bytes=self.owner_catalog_input_raw,
+                        )
+                    )
+                self.assertEqual(
+                    failures,
+                    (receipt_bundle.EVIDENCE_SUPPORTING_ARTIFACT_DORMANT_MESSAGE,),
+                )
+                self.assertTrue(all(value is False for value in candidate["state"].values()))
+                self.assertFalse(candidate["trustBoundary"]["catalogRecordDerivable"])
+                self.assertFalse(candidate["trustBoundary"]["authorityDerivable"])
+
+    def test_evidence_supporting_artifact_rejects_drift_and_authority_claims(
+        self,
+    ) -> None:
+        mutations: list[tuple[str, dict[str, object]]] = []
+
+        wrong_subject = self.make_evidence_artifact_candidate("reviewed_commit_scope")
+        wrong_subject["payload"]["baseCommitObjectId"] = (
+            "70350f5e9e5e39d1b793862c1e58d09edf637405"
+        )
+        mutations.append(("followup-as-subject", wrong_subject))
+
+        reordered_scope = self.make_evidence_artifact_candidate("reviewed_commit_scope")
+        reordered_scope["payload"]["scopeEntries"].reverse()
+        mutations.append(("scope-order", reordered_scope))
+
+        traversal_scope = self.make_evidence_artifact_candidate("reviewed_commit_scope")
+        traversal_scope["payload"]["scopeEntries"][0]["path"] = "../docs/handoff.md"
+        mutations.append(("scope-path", traversal_scope))
+
+        boolean_count = self.make_evidence_artifact_candidate("reviewed_commit_scope")
+        boolean_count["payload"]["scopeEntryCount"] = True
+        mutations.append(("boolean-count", boolean_count))
+
+        owner_v2 = self.make_evidence_artifact_candidate("reviewed_commit_scope")
+        owner_v2["payload"]["reviewClaim"][
+            "ownerBindingRefCandidate"
+        ] = "owner-candidate:repository-owner:v2"
+        mutations.append(("owner-version", owner_v2))
+
+        transcript_claim = self.make_evidence_artifact_candidate("published_checkpoint")
+        transcript_claim["payload"]["standaloneAcquisitionTranscriptRef"] = (
+            "session-transcript:self-asserted"
+        )
+        mutations.append(("self-asserted-transcript", transcript_claim))
+
+        followup_checkpoint = self.make_evidence_artifact_candidate(
+            "published_checkpoint"
+        )
+        followup_checkpoint["payload"]["commitCheckpointRawSha256"] = "0" * 64
+        mutations.append(("checkpoint-drift", followup_checkpoint))
+
+        reversed_time = self.make_evidence_artifact_candidate("published_checkpoint")
+        reversed_time["payload"]["observationStartedAt"] = "2026-07-20T12:06:00Z"
+        mutations.append(("time-order", reversed_time))
+
+        promoted_state = self.make_evidence_artifact_candidate("published_checkpoint")
+        promoted_state["state"]["evidenceCatalogVerified"] = True
+        mutations.append(("state-promotion", promoted_state))
+
+        false_provenance = self.make_evidence_artifact_candidate("published_checkpoint")
+        false_provenance["trustBoundary"]["independentInputsPresent"] = [
+            "verifier_identity"
+        ]
+        mutations.append(("false-provenance", false_provenance))
+
+        wrong_profile = self.make_evidence_artifact_candidate("published_checkpoint")
+        wrong_profile["profileRef"]["rawSha256"] = "0" * 64
+        mutations.append(("profile-drift", wrong_profile))
+
+        selector_source = self.make_evidence_artifact_candidate("published_checkpoint")
+        selector_source["selectorBinding"]["inputSourceRefCandidate"] = (
+            "user-input:session-20260721:item-3"
+        )
+        mutations.append(("selector-source", selector_source))
+
+        selector_ref = self.make_evidence_artifact_candidate("published_checkpoint")
+        selector_ref["selectorBinding"]["evidenceInputRefCandidate"] = (
+            "evidence-input-candidate:published-checkpoint:v2"
+        )
+        mutations.append(("selector-reference", selector_ref))
+
+        selector_version = self.make_evidence_artifact_candidate("published_checkpoint")
+        selector_version["selectorBinding"]["candidateVersion"] = 2
+        mutations.append(("selector-version", selector_version))
+
+        selector_path = self.make_evidence_artifact_candidate("published_checkpoint")
+        selector_path["selectorBinding"]["reservedArtifactPath"] = (
+            "docs/evidence/g0-reviewed-commit-scope-candidate-v1.json"
+        )
+        mutations.append(("selector-path", selector_path))
+
+        selector_presence = self.make_evidence_artifact_candidate("published_checkpoint")
+        selector_presence["selectorBinding"]["supportingArtifactPresent"] = True
+        selector_presence["selectorBinding"]["supportingArtifactRefCandidate"] = (
+            "docs/evidence/g0-published-checkpoint-candidate-v1.json"
+        )
+        mutations.append(("selector-presence", selector_presence))
+
+        authority_field = self.make_evidence_artifact_candidate("published_checkpoint")
+        authority_field["verifierIdentityRef"] = "verifier:self-asserted"
+        mutations.append(("authority-field", authority_field))
+
+        for label, mutation in mutations:
+            with self.subTest(mutation=label):
+                failures = (
+                    receipt_bundle._collect_evidence_supporting_artifact_candidate_failures(
+                        self.encoded(mutation),
+                        profile_bytes=self.evidence_artifact_profile_raw,
+                        owner_catalog_input_bytes=self.owner_catalog_input_raw,
+                    )
+                )
+                self.assertGreater(len(failures), 1)
+                self.assertEqual(
+                    failures[-1],
+                    receipt_bundle.EVIDENCE_SUPPORTING_ARTIFACT_DORMANT_MESSAGE,
+                )
+
+    def test_evidence_supporting_artifact_parser_is_bounded_and_snapshotted(
+        self,
+    ) -> None:
+        candidate = self.make_evidence_artifact_candidate("reviewed_commit_scope")
+        valid_raw = self.encoded(candidate)
+        invalid_raws = (
+            valid_raw + b"\n",
+            valid_raw.replace(
+                b'"schemaVersion":1,',
+                b'"schemaVersion":1,"schemaVersion":1,',
+                1,
+            ),
+            self.encoded(dict(reversed(tuple(candidate.items())))),
+            memoryview(
+                bytearray(receipt_bundle.MAX_EVIDENCE_SUPPORTING_ARTIFACT_BYTES + 1)
+            ),
+        )
+        for index, raw in enumerate(invalid_raws):
+            with self.subTest(invalid=index):
+                failures = (
+                    receipt_bundle._collect_evidence_supporting_artifact_candidate_failures(
+                        raw,
+                        profile_bytes=self.evidence_artifact_profile_raw,
+                        owner_catalog_input_bytes=self.owner_catalog_input_raw,
+                    )
+                )
+                self.assertGreater(len(failures), 1)
+                self.assertEqual(
+                    failures[-1],
+                    receipt_bundle.EVIDENCE_SUPPORTING_ARTIFACT_DORMANT_MESSAGE,
+                )
+
+        released = memoryview(valid_raw)
+        released.release()
+        self.assertEqual(
+            receipt_bundle._collect_evidence_supporting_artifact_candidate_failures(
+                released,
+                profile_bytes=self.evidence_artifact_profile_raw,
+                owner_catalog_input_bytes=self.owner_catalog_input_raw,
+            )[-1],
+            receipt_bundle.EVIDENCE_SUPPORTING_ARTIFACT_DORMANT_MESSAGE,
+        )
+
+        mutable_artifact = bytearray(valid_raw)
+        mutable_profile = bytearray(self.evidence_artifact_profile_raw)
+        mutable_owner_input = bytearray(self.owner_catalog_input_raw)
+        original_parser = receipt_bundle._parse_object
+
+        def mutate_callers_after_snapshot(
+            raw: bytes,
+            label: str,
+            failures: list[str],
+        ) -> dict[str, object] | None:
+            self.assertIsInstance(raw, bytes)
+            mutable_artifact.extend(b" ")
+            mutable_profile.extend(b" ")
+            mutable_owner_input.extend(b" ")
+            return original_parser(raw, label, failures)
+
+        with mock.patch.object(
+            receipt_bundle,
+            "_parse_object",
+            side_effect=mutate_callers_after_snapshot,
+        ):
+            self.assertEqual(
+                receipt_bundle._collect_evidence_supporting_artifact_candidate_failures(
+                    mutable_artifact,
+                    profile_bytes=mutable_profile,
+                    owner_catalog_input_bytes=mutable_owner_input,
+                ),
+                (receipt_bundle.EVIDENCE_SUPPORTING_ARTIFACT_DORMANT_MESSAGE,),
+            )
 
 if __name__ == "__main__":
     unittest.main()

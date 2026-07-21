@@ -1,0 +1,507 @@
+{
+  "documentType": "aetherlink.v1-g0-baseline-gate-evidence-readiness-profile",
+  "schemaVersion": 1,
+  "profileId": "aetherlink_v1_g0_baseline_gate_evidence_readiness_profile_v1",
+  "status": "draft_prepared_unverified_non_authorizing",
+  "contractBinding": {
+    "repositoryRef": "github:hanchangha1127/AetherLink",
+    "blockerId": "g0_assurance_artifacts_and_baseline_gate",
+    "publicationCommitObjectId": "12c381547935b96d383ac39976261ea6c3ce6a5b",
+    "publicationCheckpointPath": "docs/v1/g0/assurance-closure-amendment-checkpoint-v3.json",
+    "publicationCheckpointRawSha256": "37462cd8303ce61742bc480d0f7d37e0ccb380ec12375cc8c8d10169aebf4dc5",
+    "effectiveAssuranceCanonicalSha256": "e8f661094a678a2ac0966d8b35de46824316883a845eb9ae8c6e9f76df18ad4b",
+    "effectiveClosureCanonicalSha256": "79b0d7275bcf371e8b9ab5a6b123969474bfbc86b1d7e78fcb28ed7256e3a93c",
+    "requiredCheckIds": [
+      "g0_assurance_packet",
+      "full_no_device_aggregate",
+      "android_and_macos_release_compilation"
+    ],
+    "requiredOwnerRoles": [
+      "repository_quality_owner",
+      "release_quality_owner"
+    ],
+    "requiredEvidenceKinds": [
+      "canonical_assurance_hash",
+      "source_hash_readback",
+      "separately_authorized_full_gate_result",
+      "android_release_compile_result",
+      "macos_release_compile_result"
+    ]
+  },
+  "artifactPaths": [
+    {
+      "evidenceKind": "canonical_assurance_hash",
+      "candidateVersion": 1,
+      "path": "docs/evidence/g0-canonical-assurance-hash-candidate-v1.json"
+    },
+    {
+      "evidenceKind": "source_hash_readback",
+      "candidateVersion": 1,
+      "path": "docs/evidence/g0-source-hash-readback-candidate-v1.json"
+    },
+    {
+      "evidenceKind": "separately_authorized_full_gate_result",
+      "candidateVersion": 1,
+      "path": "docs/evidence/g0-separately-authorized-full-gate-result-candidate-v1.json"
+    },
+    {
+      "evidenceKind": "android_release_compile_result",
+      "candidateVersion": 1,
+      "path": "docs/evidence/g0-android-release-compile-result-candidate-v1.json"
+    },
+    {
+      "evidenceKind": "macos_release_compile_result",
+      "candidateVersion": 1,
+      "path": "docs/evidence/g0-macos-release-compile-result-candidate-v1.json"
+    }
+  ],
+  "commandProfileBindings": [
+    {
+      "checkId": "full_no_device_aggregate",
+      "commandProfileId": "g0-command-profile-full-no-device-aggregate-v1",
+      "canonicalProfileSha256": "6e60c1f17812a16a6b24bd172ad95e9d3e9b91a793c56ca332467e8961c84f78",
+      "currentAuthorizationState": "not_authorized",
+      "orderedStepsCanonicalSha256": "f80ae6ea2007f924a888e337cfab68bcd5a783f158622d28944bf8caa8140f75",
+      "environmentRequirementsCanonicalSha256": "d979ff3658b0e8f2cd53d1fc16fa596629faf562f7ff847507949fe2d5e59389",
+      "toolchainRequirementsCanonicalSha256": "4e485912c6a5c9d19f8c57455b2d1aeecacc6b3e12517781e9b5484ed3768e58",
+      "allowedSideEffectsCanonicalSha256": "bf0fa7c5c0fc7cad47c52a85b7561007e89a3a5582c3432913a23a0eb0cff645",
+      "forbiddenSideEffectsCanonicalSha256": "2139a99574f0f5bb77720472db8f243b0449f421ddc81a499a465ac22400ea98",
+      "requiredPreconditionsCanonicalSha256": "840b814496ae97c214894aee7d1a0eb007249a026838b71db88da70a584be59b",
+      "orderedSteps": [
+        {
+          "stepIndex": 0,
+          "stepId": "full_no_device_quality",
+          "argvCanonicalSha256": "a31ac5bc127eb5eb32c947e041cbe688938756beee7d0a8470b2d25bf771c64a"
+        }
+      ],
+      "requiredEvidenceKinds": [
+        "separately_authorized_full_gate_result"
+      ]
+    },
+    {
+      "checkId": "android_and_macos_release_compilation",
+      "commandProfileId": "g0-command-profile-android-macos-release-compilation-v1",
+      "canonicalProfileSha256": "3c64524bf371c27412e29fe75f1be52b36d31b2bc25791320e67a12381bacc68",
+      "currentAuthorizationState": "not_authorized",
+      "orderedStepsCanonicalSha256": "06084a300153e268dbaf8a14932b0cf867e50af920eed0f6662664141660c856",
+      "environmentRequirementsCanonicalSha256": "d979ff3658b0e8f2cd53d1fc16fa596629faf562f7ff847507949fe2d5e59389",
+      "toolchainRequirementsCanonicalSha256": "5521f1f39c9012cd0ad95ecab505fb3a7f8e214a3e7ef87b1f8456c9102397b4",
+      "allowedSideEffectsCanonicalSha256": "0ef0673a8ed856debfaa512e177283bc10c741c352102557a288e13a023be0ad",
+      "forbiddenSideEffectsCanonicalSha256": "2139a99574f0f5bb77720472db8f243b0449f421ddc81a499a465ac22400ea98",
+      "requiredPreconditionsCanonicalSha256": "840b814496ae97c214894aee7d1a0eb007249a026838b71db88da70a584be59b",
+      "orderedSteps": [
+        {
+          "stepIndex": 0,
+          "stepId": "android_release_compilation",
+          "argvCanonicalSha256": "8a63f9038a265a847f6dd4231f0d75e8008e48d2737945de21120b7eb8a335a2"
+        },
+        {
+          "stepIndex": 1,
+          "stepId": "macos_release_compilation",
+          "argvCanonicalSha256": "7c3f77f8b69bcbc358a5e8b232b928e7c31aa6bad9a3def90e303a945d3a0aaf"
+        }
+      ],
+      "requiredEvidenceKinds": [
+        "android_release_compile_result",
+        "macos_release_compile_result"
+      ]
+    }
+  ],
+  "evidencePlans": [
+    {
+      "evidenceKind": "canonical_assurance_hash",
+      "validationClass": "static_lineage_observation",
+      "checkId": "g0_assurance_packet",
+      "commandProfileId": null,
+      "commandProfileSha256": null,
+      "commandArgvSha256": null,
+      "allowedSideEffectsSha256": null,
+      "commandStepIndex": null,
+      "commandStepId": null,
+      "commandStepArgvSha256": null,
+      "requiredManifestRoles": [
+        "v1_parent_assurance",
+        "v1_parent_checkpoint",
+        "v2_parent_amendment",
+        "v2_parent_checkpoint",
+        "v3_amendment",
+        "v3_checkpoint"
+      ]
+    },
+    {
+      "evidenceKind": "source_hash_readback",
+      "validationClass": "static_source_observation",
+      "checkId": "g0_assurance_packet",
+      "commandProfileId": null,
+      "commandProfileSha256": null,
+      "commandArgvSha256": null,
+      "allowedSideEffectsSha256": null,
+      "commandStepIndex": null,
+      "commandStepId": null,
+      "commandStepArgvSha256": null,
+      "requiredManifestRoles": [
+        "effective_v3_source_records_in_exact_order"
+      ]
+    },
+    {
+      "evidenceKind": "separately_authorized_full_gate_result",
+      "validationClass": "execution_result_observation",
+      "checkId": "full_no_device_aggregate",
+      "commandProfileId": "g0-command-profile-full-no-device-aggregate-v1",
+      "commandProfileSha256": "6e60c1f17812a16a6b24bd172ad95e9d3e9b91a793c56ca332467e8961c84f78",
+      "commandArgvSha256": "f80ae6ea2007f924a888e337cfab68bcd5a783f158622d28944bf8caa8140f75",
+      "allowedSideEffectsSha256": "bf0fa7c5c0fc7cad47c52a85b7561007e89a3a5582c3432913a23a0eb0cff645",
+      "commandStepIndex": 0,
+      "commandStepId": "full_no_device_quality",
+      "commandStepArgvSha256": "a31ac5bc127eb5eb32c947e041cbe688938756beee7d0a8470b2d25bf771c64a",
+      "requiredManifestRoles": [
+        "sanitized_ordered_stdout_stderr",
+        "working_directory",
+        "environment",
+        "toolchain",
+        "dependencies",
+        "egress_process_observation_manifest",
+        "output_manifest"
+      ]
+    },
+    {
+      "evidenceKind": "android_release_compile_result",
+      "validationClass": "execution_result_observation",
+      "checkId": "android_and_macos_release_compilation",
+      "commandProfileId": "g0-command-profile-android-macos-release-compilation-v1",
+      "commandProfileSha256": "3c64524bf371c27412e29fe75f1be52b36d31b2bc25791320e67a12381bacc68",
+      "commandArgvSha256": "06084a300153e268dbaf8a14932b0cf867e50af920eed0f6662664141660c856",
+      "allowedSideEffectsSha256": "0ef0673a8ed856debfaa512e177283bc10c741c352102557a288e13a023be0ad",
+      "commandStepIndex": 0,
+      "commandStepId": "android_release_compilation",
+      "commandStepArgvSha256": "8a63f9038a265a847f6dd4231f0d75e8008e48d2737945de21120b7eb8a335a2",
+      "requiredManifestRoles": [
+        "sanitized_ordered_stdout_stderr",
+        "working_directory",
+        "environment",
+        "toolchain",
+        "dependencies",
+        "egress_process_observation_manifest",
+        "unsigned_android_release_output_manifest"
+      ]
+    },
+    {
+      "evidenceKind": "macos_release_compile_result",
+      "validationClass": "execution_result_observation",
+      "checkId": "android_and_macos_release_compilation",
+      "commandProfileId": "g0-command-profile-android-macos-release-compilation-v1",
+      "commandProfileSha256": "3c64524bf371c27412e29fe75f1be52b36d31b2bc25791320e67a12381bacc68",
+      "commandArgvSha256": "06084a300153e268dbaf8a14932b0cf867e50af920eed0f6662664141660c856",
+      "allowedSideEffectsSha256": "0ef0673a8ed856debfaa512e177283bc10c741c352102557a288e13a023be0ad",
+      "commandStepIndex": 1,
+      "commandStepId": "macos_release_compilation",
+      "commandStepArgvSha256": "7c3f77f8b69bcbc358a5e8b232b928e7c31aa6bad9a3def90e303a945d3a0aaf",
+      "requiredManifestRoles": [
+        "sanitized_ordered_stdout_stderr",
+        "working_directory",
+        "environment",
+        "toolchain",
+        "dependencies",
+        "egress_process_observation_manifest",
+        "unsigned_macos_release_output_manifest"
+      ]
+    }
+  ],
+  "commonEnvelopeProfile": {
+    "exactFields": [
+      "documentType",
+      "schemaVersion",
+      "artifactId",
+      "evidenceKind",
+      "status",
+      "profileRef",
+      "contractBinding",
+      "plan",
+      "manifest",
+      "result",
+      "trustBoundary",
+      "state"
+    ],
+    "fixedValues": {
+      "documentType": "aetherlink.v1-g0-baseline-evidence-candidate",
+      "schemaVersion": 1,
+      "status": "prepared_unverified_non_authorizing"
+    },
+    "artifactIdPattern": "^g0-[a-z0-9][a-z0-9-]{0,126}-candidate-v1$",
+    "profileRefExactFields": [
+      "path",
+      "profileId",
+      "rawSha256"
+    ],
+    "contractBindingPolicy": "exact_profile_contract_binding",
+    "planExactFields": [
+      "checkId",
+      "validationClass",
+      "commandProfileId",
+      "commandProfileSha256",
+      "commandArgvSha256",
+      "allowedSideEffectsSha256",
+      "commandStepIndex",
+      "commandStepId",
+      "commandStepArgvSha256",
+      "requiredManifestRoles"
+    ],
+    "trustBoundaryExactFields": [
+      "observationClass",
+      "independentInputsPresent",
+      "requiredIndependentInputsAbsent",
+      "catalogRecordDerivable",
+      "authorityDerivable",
+      "runnerAttestationDerivable",
+      "gateReceiptDerivable"
+    ],
+    "trustBoundaryFixedValues": {
+      "observationClass": "synthetic_fixture_or_unverified_session_observation_only",
+      "independentInputsPresent": [],
+      "requiredIndependentInputsAbsent": [
+        "authenticated_provenance",
+        "trusted_authority_and_runner_attestation",
+        "independent_artifact_byte_verification"
+      ],
+      "catalogRecordDerivable": false,
+      "authorityDerivable": false,
+      "runnerAttestationDerivable": false,
+      "gateReceiptDerivable": false
+    },
+    "stateExactFields": [
+      "executionAuthorized",
+      "evidenceVerified",
+      "ownerAcceptanceDerived",
+      "blockerClosureDerived",
+      "receiptActivationAllowed",
+      "g0ExitComplete",
+      "g1aMayStartNow"
+    ],
+    "stateFixedValues": {
+      "executionAuthorized": false,
+      "evidenceVerified": false,
+      "ownerAcceptanceDerived": false,
+      "blockerClosureDerived": false,
+      "receiptActivationAllowed": false,
+      "g0ExitComplete": false,
+      "g1aMayStartNow": false
+    },
+    "canonicalEncoding": "utf8_compact_json_exact_field_order_no_bom_no_trailing_newline"
+  },
+  "manifestProfile": {
+    "exactFields": [
+      "serialization",
+      "entries",
+      "entriesCanonicalSha256"
+    ],
+    "serialization": "utf8_compact_json_manifest_entry_field_order_v1",
+    "entryExactFields": [
+      "inputRole",
+      "sourceRef",
+      "contentType",
+      "byteLength",
+      "rawSha256",
+      "canonicalSha256"
+    ],
+    "sourceRefPolicy": "exact_lineage_or_source_path_or_role_derived_observation_label_not_dereferenced_by_candidate_validator",
+    "contentTypeValues": [
+      "application/json",
+      "application/octet-stream",
+      "text/plain"
+    ],
+    "hashPolicy": "raw_sha256_required_canonical_sha256_null_or_lowercase_sha256",
+    "entryPolicy": "ordered_unique_required_roles_with_no_unknown_or_omitted_entry",
+    "blobBindingPolicy": "each_entry_byte_length_and_raw_sha256_recomputed_from_the_same_ordered_supplied_blob_snapshot",
+    "staticSourcePolicy": "all_twenty_nine_source_blobs_supplied_in_effective_v3_order_and_rehashed",
+    "executionPolicy": "all_required_manifest_role_blobs_supplied_in_plan_order_and_payload_digests_cross_bound_to_role_hashes_including_one_egress_process_observation_manifest_blob",
+    "fullGateMarkerPolicy": "sanitized_ordered_stdout_stderr_contains_exactly_one_no_device_quality_checks_passed_marker"
+  },
+  "resultProfiles": [
+    {
+      "evidenceKind": "canonical_assurance_hash",
+      "resultClass": "static_lineage_digest_observation",
+      "exactPayloadFields": [
+        "lineageRawSha256",
+        "lineageCanonicalSha256",
+        "effectiveAssuranceCanonicalSha256",
+        "effectiveClosureCanonicalSha256"
+      ],
+      "fixedResultPolicy": "six_exact_supplied_lineage_hashes_and_reconstructed_effective_v3_hashes"
+    },
+    {
+      "evidenceKind": "source_hash_readback",
+      "resultClass": "static_source_digest_observation",
+      "exactPayloadFields": [
+        "sourceRecordCount",
+        "sourceRecordsCanonicalSha256",
+        "mismatchCount"
+      ],
+      "fixedResultPolicy": "twenty_nine_effective_v3_source_blobs_rehashed_in_exact_order_with_zero_mismatch_while_provenance_remains_unverified"
+    },
+    {
+      "evidenceKind": "separately_authorized_full_gate_result",
+      "resultClass": "execution_result_observation",
+      "exactPayloadFields": [
+        "executionSessionRefCandidate",
+        "authorizationRefCandidate",
+        "sourcePublicationCommit",
+        "commandProfileId",
+        "commandProfileSha256",
+        "commandArgvSha256",
+        "workingDirectorySha256",
+        "environmentSha256",
+        "allowedSideEffectsSha256",
+        "stepIndex",
+        "stepId",
+        "stepArgvSha256",
+        "toolchainManifestSha256",
+        "dependencyManifestSha256",
+        "observationManifestSha256",
+        "sanitizedLogSha256",
+        "outputManifestSha256"
+      ],
+      "successPolicy": "exit_zero_and_exact_no_device_quality_checks_passed_marker_once_in_supplied_sanitized_log_bytes_remains_unverified_until_private_independent_validation"
+    },
+    {
+      "evidenceKind": "android_release_compile_result",
+      "resultClass": "execution_result_observation",
+      "exactPayloadFields": [
+        "executionSessionRefCandidate",
+        "authorizationRefCandidate",
+        "sourcePublicationCommit",
+        "commandProfileId",
+        "commandProfileSha256",
+        "commandArgvSha256",
+        "workingDirectorySha256",
+        "environmentSha256",
+        "allowedSideEffectsSha256",
+        "stepIndex",
+        "stepId",
+        "stepArgvSha256",
+        "toolchainManifestSha256",
+        "dependencyManifestSha256",
+        "observationManifestSha256",
+        "sanitizedLogSha256",
+        "outputManifestSha256"
+      ],
+      "successPolicy": "exact_android_step_exit_zero_and_supplied_unsigned_output_manifest_hash_remains_unverified_until_private_independent_artifact_validation"
+    },
+    {
+      "evidenceKind": "macos_release_compile_result",
+      "resultClass": "execution_result_observation",
+      "exactPayloadFields": [
+        "executionSessionRefCandidate",
+        "authorizationRefCandidate",
+        "sourcePublicationCommit",
+        "commandProfileId",
+        "commandProfileSha256",
+        "commandArgvSha256",
+        "workingDirectorySha256",
+        "environmentSha256",
+        "allowedSideEffectsSha256",
+        "stepIndex",
+        "stepId",
+        "stepArgvSha256",
+        "toolchainManifestSha256",
+        "dependencyManifestSha256",
+        "observationManifestSha256",
+        "sanitizedLogSha256",
+        "outputManifestSha256"
+      ],
+      "successPolicy": "exact_macos_step_exit_zero_and_supplied_unsigned_output_manifest_hash_remains_unverified_until_private_independent_artifact_validation"
+    }
+  ],
+  "resourceBounds": {
+    "profileMaximumBytes": 262144,
+    "candidateMaximumBytes": 262144,
+    "jsonMaximumDepth": 16,
+    "arrayMaximumItems": 256,
+    "manifestMaximumEntries": 64,
+    "manifestBlobMaximumBytes": 4194304,
+    "manifestTotalMaximumBytes": 62914560,
+    "stringMaximumUtf8Bytes": 4096,
+    "integerMaximumDigits": 128,
+    "parsePolicy": "reject_duplicate_names_nonfinite_numbers_and_integers_over_128_digits",
+    "integerPolicy": "bool_is_not_integer",
+    "canonicalEncoding": "utf8_compact_json_exact_field_order_no_bom_no_trailing_newline"
+  },
+  "sensitiveDataPolicy": {
+    "allowedVariableInputs": [
+      "artifactId",
+      "manifest.entries.byteLength",
+      "manifest.entries.rawSha256",
+      "manifest.entries.canonicalSha256",
+      "result.startedAt",
+      "result.completedAt",
+      "result.payload.executionSessionRefCandidate",
+      "result.payload.authorizationRefCandidate",
+      "result.payload.workingDirectorySha256",
+      "result.payload.environmentSha256",
+      "result.payload.toolchainManifestSha256",
+      "result.payload.dependencyManifestSha256",
+      "result.payload.observationManifestSha256",
+      "result.payload.sanitizedLogSha256",
+      "result.payload.outputManifestSha256"
+    ],
+    "forbiddenMaterial": [
+      "credentials",
+      "private_keys",
+      "access_tokens",
+      "pairing_secrets",
+      "private_account_data",
+      "personal_contact_data",
+      "http_headers",
+      "unsanitized_logs",
+      "artifact_bytes"
+    ],
+    "arbitraryFreeFormFieldsAllowed": false
+  },
+  "authorizationBoundary": {
+    "candidateForbiddenFields": [
+      "evidenceId",
+      "evidenceClass",
+      "subjectImplementationRevision",
+      "subjectCheckpointSha256",
+      "artifactPath",
+      "artifactByteLength",
+      "artifactSha256",
+      "verificationMethod",
+      "verifierIdentityRef",
+      "verifiedAt",
+      "provenanceRef",
+      "runnerAttestationRef",
+      "gateReceipt",
+      "approvalReceipt",
+      "ownerAcceptance",
+      "verificationResult",
+      "resultStatus",
+      "acceptedRevision",
+      "acceptedPublicationCommit",
+      "acceptedAt",
+      "activated"
+    ],
+    "derivedEvidenceKindsForbidden": [
+      "owner_acceptance",
+      "quality_measurement_contract_owner_approvals"
+    ],
+    "commandProfilesRemainNotAuthorized": true,
+    "candidateValidationMayExecuteCommands": false,
+    "candidateValidationMayReadFiles": false,
+    "candidateValidationMayAuthenticateAuthority": false,
+    "candidateValidationMayAuthenticateRunner": false,
+    "candidateValidationMayCreateCatalogRecords": false,
+    "candidateValidationMayCreateReceipts": false,
+    "candidateValidationMayCloseBlocker": false,
+    "candidateValidationMayActivateReceipts": false,
+    "candidateValidationMayCompleteG0": false,
+    "candidateValidationMayAuthorizeG1a": false,
+    "artifactInstancePolicy": "all_five_reserved_candidate_paths_remain_absent_until_a_new_selector_and_separately_authorized_acquisition_profile_is_published"
+  },
+  "supersessionPolicy": {
+    "mutateInPlaceAllowed": false,
+    "verifiedStateMutationAllowed": false,
+    "candidateToCatalogRecordMutationAllowed": false,
+    "replacementPolicy": "new_versioned_profile_and_new_candidate_artifact_only",
+    "nextProfilePathPattern": "^docs/v1/g0/baseline-gate-evidence-readiness-profile-v[2-9][0-9]*[.]json$"
+  }
+}
