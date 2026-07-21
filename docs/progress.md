@@ -244,10 +244,11 @@ This document records what has been implemented so far and what should happen ne
   the V3 lineage/bundle, sparse-intake, and evidence-profile candidate's
   seventeen-test suite form the earlier 99-test subtotal. The baseline-evidence
   readiness suite contributes 22 more tests, forming the previous 121-test
-  subtotal. The independent-context suite contributes 9 more to form 130, and
-  the repository/remote-source suite contributes 8, so the seven focused G0
-  suites now contain 138 tests in total and are included in the default
-  no-device gate.
+  subtotal. The independent-context suite contributes 9 more to form 130, the
+  repository/remote-source suite contributes 8 to form 138, the owner-trust-
+  bootstrap suite contributes 11 to form 149, and the external-evidence
+  readiness suite contributes 11, so the nine focused G0 suites now contain
+  160 tests in total and are included in the default no-device gate.
 - Repository/remote source boundary: the new default checker reconstructs the
   exact 18-entry `929fda5f -> 12c38154` scope directly from Git objects and
   matches its pinned digest, exact parent/tree, and all six lineage blobs while
@@ -308,6 +309,21 @@ This document records what has been implemented so far and what should happen ne
   through `01:15:28Z`. The canonical seven-line manifest SHA-256 is
   `d534e068f412bed2ea4926f5eb206b6a4343fa4ed8d04f87c11193bc4a5cdb25`.
   This session observation is not a trusted receipt and grants no G0 authority.
+- Evidence-readiness/source successor publication: the exact sixteen-file
+  successor is published at `b24c5ecb77067539c185d88f0c2fbbc2cb119c15`,
+  with parent `025a4ef5` and tree `c8aa9e69`. A strict fresh HTTPS `blob:none`
+  partial clone with isolated Git configuration and no alternates, grafts,
+  replacement refs, linked worktree, or shallow state observed remote `main`
+  from `2026-07-21T07:55:12Z` through `07:55:22Z`. All sixteen target blobs
+  were initially absent, then matched the exact commit-object bytes, lengths,
+  raw SHA-256 values, and recomputed Git object IDs; commit, parent, and root
+  tree bytes also matched. The canonical 1,706-byte manifest SHA-256 is
+  `1b91a321de9a39faf9fb519b47ffa6e82ce85dd48595f092a63581875c9d4a37`.
+  The ephemeral 9,265-byte command transcript SHA-256 was
+  `98d08c6bd76289c4d89218d689d50e788cc8b4167b559cb618ddd7c9ae886690`,
+  but its bytes were not persisted or signed. This is a bounded session
+  observation independent only of the existing worktree/local object database,
+  not an authenticated collector receipt or G0 authority.
 - Publication-receipt status: the tracked exact 13-field sidecar encodes the
   observed target/checkpoint/hash/time only as a dormant candidate. It does not
   persist or independently reproduce the parent acquisition provenance and is
@@ -315,7 +331,7 @@ This document records what has been implemented so far and what should happen ne
   The new candidate context core does not change that fact and establishes no
   owner, authority, runner, gate, approval,
   G0-exit, or G1a state.
-- Owner/catalog-input status: the tracked working-copy packet is content-addressed
+- Owner/catalog-input status: the packet published at `b24c5ecb` is content-addressed
   and contains exactly one explicit publication proposal with the repository
   owner candidate plus two evidence candidates whose artifact references are
   null.
@@ -323,6 +339,51 @@ This document records what has been implemented so far and what should happen ne
   target and graph; it does not authenticate the proposed owner, verify an
   artifact, accept the disposition, activate a receipt, or close any of the ten
   blockers. The empty packet remains the historical published `70350f5e` blob.
+- Owner trust-adapter readiness audit: effective V3 already machine-pins the
+  exact ten-field owner binding and eight-field approval receipt, including
+  role, validity, evidence, and opaque revocation/provenance references; the
+  separate publication receipt supplies bundle-level repository/commit/checkpoint
+  binding. Neither the current checker nor the generic independent-context
+  factory authenticates an external registry snapshot, caller-supplied source,
+  or provenance. The remaining gap is not another generic owner schema: no
+  external owner identity registry/trust anchor, credential and proof-of-control
+  mechanism, registry/revocation acquisition and rollback policy, exact adapter
+  output/context contract, or trusted-time/skew policy has been selected. The new
+  provider-neutral owner-trust-bootstrap profile records that gap without filling
+  it. The user has now declared one sole human project owner. V3 does not require
+  fourteen different people: it requires fourteen unique opaque role-scoped
+  `ownerIdentityRef` values. The profile therefore binds the exact canonical
+  fourteen-role digest to one human principal while preserving the V3 requirement
+  for one future binding and one separately authenticated receipt per role. This
+  interpretation requires no V4
+  closure amendment. The external registry must later prove that all fourteen
+  role aliases resolve to the same authenticated principal. All ten trust
+  selection references remain null, all eleven state flags remain false, and the
+  adapter projection remains `not_implemented`. Its supplied-byte-only checker
+  reuses the existing V3 owner-binding/approval-receipt definitions and never
+  constructs an adapter result. A signature profile and any detached replay
+  challenge remain conditional choices, not implicit V3 receipt fields. No
+  adapter, selector, evidence, receipt, blocker, G0-exit, or G1a state was created.
+- Owner trust-bootstrap static verification: the profile raw SHA-256 is
+  `229120fcaf7a03b0920b67466ef281a6e739146da72ffab34c10a1f6ed49542b`.
+  Eleven focused mutation tests pass. Its earlier complete default no-device
+  aggregate exited zero, but that run predates the external-evidence addendum and
+  is not used as evidence for the expanded gate. These are no-device
+  static/build/smoke results, not external owner or trust proof.
+- External-evidence typed readiness: the 25,082-byte
+  `docs/v1/g0/external-evidence-candidate-profile-v1.json` is pinned at raw
+  SHA-256 `e5233e7b52369299aa50f07adb726ec57c0ea5e4ffe138e0b2725b8d5f87b371`.
+  It revalidates and content-addresses the existing five-kind baseline and
+  two-kind supporting profiles, subtracts those exact seven kinds from the
+  effective V3 set of fifteen, and derives the remaining eight kinds plus their
+  seven blockers, five non-executable checks, and seven owner roles. Typed
+  readiness is therefore 15/15, while eight candidate artifacts remain absent.
+  All candidate selectors remain null/false, all trust and authority states
+  remain false, and candidate references carry only allowlisted class, SHA-256,
+  and version data. Eleven focused mutation tests and the combined nine-suite
+  160-test G0 run pass; all nine G0 checkers also pass. This creates no public
+  value, account, owner authentication, evidence verification, approval,
+  receipt, blocker closure, G0 exit, or G1a authority.
 - Reference-only proposal preparation: the receipt-bundle module now exports
   one dormant preview compiler. It snapshots and strictly parses bounded JSON
   selector-request bytes, derives canonical blocker/role/evidence references
@@ -332,15 +393,16 @@ This document records what has been implemented so far and what should happen ne
   authentication, acceptance, or activation. The approved selector for the
   publication blocker now replay-compiles to the tracked bytes and pinned
   SHA-256 exactly.
-- Post-publication worktree status: the preview compiler, its tests, and the
-  preceding truth-sync are published in `025a4ef5`. The only new local scope is
-  the exact sixteen-file selector, non-authorizing-readiness, candidate
-  independent-context, and mechanical repository/remote-source successor: four
-  canonical documents, the candidate, two
-  new profiles, the existing receipt-bundle checker/test, the readiness
-  checker/test, the independent-context checker/test, the repository/remote
-  source checker/test, and the aggregate marker.
-  It is not staged, committed, or pushed.
+- Post-publication worktree status: the preview compiler and preceding
+  truth-sync are published in `025a4ef5`; the exact sixteen-file selector,
+  non-authorizing-readiness, candidate independent-context, and mechanical
+  repository/remote-source successor is published and read back at `b24c5ecb`.
+  `main` and `origin/main` were clean and aligned before the current twelve-path
+  local scope: four canonical truth-sync documents, the owner-trust-bootstrap
+  profile/checker/tests, the external-evidence candidate profile/checker/tests,
+  and the no-device plus copy-hygiene registrations. None is staged, committed,
+  or pushed. The assistant performs only edits and verification; the sole owner
+  retains staging, commit, and push control after review.
 - Remaining boundary: accountable owner acceptance, catalog artifacts,
   authorized aggregate/release-compile evidence, namespaces/accounts/custody,
   provider/service/privacy/quality/capacity ownership, and all later execution

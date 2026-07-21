@@ -34,7 +34,7 @@ resume work.
   evidence matrix, proof boundaries, and next-session flow take precedence over
   older chronological entries in `docs/progress.md`, `docs/qa-evidence.md`, and
   `docs/roadmap.md`.
-- The top 2026-07-20 sections in those three documents are synchronized current
+- The top 2026-07-21 sections in those three documents are synchronized current
   summaries. Sections explicitly labeled historical or superseded record what
   was true at that checkpoint; they do not override this handoff.
 - `docs/evidence/physical-qr-pairing-20260719.json` is a sanitized observation
@@ -58,8 +58,11 @@ resume work.
   `12c381547935b96d383ac39976261ea6c3ce6a5b`. Published receipt/intake successor:
   `70350f5e9e5e39d1b793862c1e58d09edf637405`. Published truth-sync and dormant
   preview-compiler successor:
-  `025a4ef5e6c3e52c46a6b79ee3a06a6eb47de4e0`, with `main` and the independently
-  fetched remote target aligned when refreshed.
+  `025a4ef5e6c3e52c46a6b79ee3a06a6eb47de4e0`. The subsequent sixteen-file
+  observation, two-selector, non-authorizing evidence-readiness, candidate
+  independent-context, and mechanical repository/remote-source successor is
+  published at `b24c5ecb77067539c185d88f0c2fbbc2cb119c15`, with `main` and
+  `origin/main` aligned when refreshed.
 - Publication readback: a fresh repository with no object alternates fetched
   the exact target and directly matched all 18 approved raw files. The remote
   V3 checkpoint readback ran from `2026-07-20T12:05:21Z` through `12:05:44Z`,
@@ -76,17 +79,22 @@ resume work.
   requested; their modes, blob IDs, byte counts, and raw SHA-256 values matched
   the local commit. The exact parent is `70350f5e`, tree is `e1272bdf`, and the
   ordered seven-line manifest SHA-256 is recorded below.
-- Worktree: it was clean at `025a4ef5` before this publication readback. The
-  current worktree is intentionally dirty for exactly sixteen files: the four
-  canonical observation documents, the owner/catalog input candidate, two new
-  non-authorizing evidence profiles, the existing receipt-bundle checker and
-  mutation test, the new readiness checker and mutation test, the new
-  independent-context checker and mutation test, the new repository/remote
-  source checker and mutation test, and the aggregate's status marker. This
-  local slice records one explicit proposal
-  with two false/null evidence selectors, their schema profile, and a separate
-  five-kind baseline-readiness schema. It is not staged, committed, or pushed.
-  Run `git status --short` again; live output is authoritative.
+- Latest successor readback: a fourth strict fresh HTTPS `blob:none` partial
+  clone observed remote `main@b24c5ecb` from `2026-07-21T07:55:12Z` through
+  `07:55:22Z`. The clone used an exact allowlisted environment, isolated Git
+  configuration, an empty template, TLS verification, no credentials, no
+  alternates, grafts, replacement refs, linked worktree, or shallow state. All
+  sixteen target blobs were absent before lazy fetch and then matched the exact
+  local commit-object bytes, lengths, raw SHA-256 values, and recomputed Git
+  object IDs. Commit, parent, and root-tree raw bytes also matched. The exact
+  parent is `025a4ef5`, tree is `c8aa9e69`, and the ordered sixteen-line
+  manifest SHA-256 is recorded below.
+- Worktree: `main` and `origin/main` were clean and aligned at `b24c5ecb` after
+  that readback. The current worktree is intentionally dirty only for the eight-
+  path unpublished scope: four canonical truth-sync documents plus the owner-trust-
+  bootstrap profile, checker, tests, and no-device aggregate registration. None
+  is staged, committed, or pushed. Run `git status --short` again because live
+  output is authoritative.
 - Android device state at handoff: disconnected; the latest `adb devices -l`
   refresh returned no attached device. Immediately before disconnect, one
   authorized USB `SM-S936N` on Android 16/API 36 had the current debug APK
@@ -103,18 +111,22 @@ resume work.
 - Git publication state: the bounded G0 V2/V3 packet is published and freshly
   read back at `12c38154`; its nine-file receipt/intake successor is published and
   freshly read back at `70350f5e`; the seven-file truth-sync/compiler successor
-  is published and freshly read back at `025a4ef5`. The tracked receipt sidecar still intentionally
+  is published and freshly read back at `025a4ef5`; the sixteen-file successor
+  is published and freshly read back at `b24c5ecb`. The tracked receipt sidecar still intentionally
   encodes the reviewed parent target/checkpoint/hash/time candidate and does not persist
   fresh-clone/no-alternates or 18-file acquisition provenance and cannot
   independently reproduce that observation. It is not a trusted or accepted
   receipt. The owner/catalog input candidate published at `70350f5e` contains no
-  responses. Its current local successor contains exactly one mechanically
+  responses. Its published `b24c5ecb` successor contains exactly one mechanically
   compiled `roadmap_and_g0_checkpoint_publication` proposal naming only
   `owner-candidate:repository-owner:v1`; every state flag remains false.
   Neither the proposal nor any publication changed owner identity, evidence,
   acceptance, activation, G0-exit, or G1a state. Owner authentication and
-  acceptance remain absent. Do not reset, clean, stage, commit, or push the
-  current sixteen-file successor without a new explicit user request and review.
+  acceptance remain absent. The current unpublished scope is eight paths: the
+  four canonical truth-sync documents plus the owner-trust-bootstrap profile,
+  checker, tests, and no-device aggregate registration. Do not reset or clean
+  them. The assistant performs edits and verification only; the sole project
+  owner retains staging, commit, and push control after review.
 - Subagent preference for this workstream: use GPT-5.6 Sol. Do not use
   GPT-5.3-Codex-Spark.
 
@@ -166,12 +178,13 @@ git diff --check
 
 Do not start with `git reset`, `git checkout --`, `git clean`, or blanket
 staging. The receipt and empty owner/catalog candidate are tracked at
-`70350f5e`, and their bounded truth-sync plus dormant preview compiler/tests are
-tracked at `025a4ef5`. The current worktree contains exactly the sixteen-file
-observation, two-selector, non-authorizing evidence-readiness, candidate
-independent-context, and mechanical repository/remote-source successor
-described above, which must remain uncommitted and unpushed unless separately
-reviewed and authorized.
+`70350f5e`, their bounded truth-sync plus dormant preview compiler/tests are
+tracked at `025a4ef5`, and the sixteen-file successor is tracked at `b24c5ecb`.
+The current working copy contains only the eight-path local scope described
+above: four canonical truth-sync documents plus the owner-trust-bootstrap
+profile, checker, tests, and no-device aggregate registration. The assistant
+must leave it unstaged and uncommitted; the sole owner may commit and push it
+after review.
 
 ## V1 G0 Execution Status
 
@@ -312,9 +325,12 @@ role-bound owner or kind-bound evidence reference and forbids a change request;
 `proposed_with_changes` requires the blocker-bound change-request reference;
 `not_available` requires all owner, evidence, and change candidates to be empty.
 Every response still requires one canonical session-item source reference.
-Whether one authenticated identity may hold multiple accountable roles is a
-later owner-registry and approval-policy decision; this identity-free intake
-envelope neither permits nor rejects that relationship.
+The user has now declared one sole human project owner. V3 requires fourteen
+unique opaque `ownerIdentityRef` values, not fourteen different people, so the
+same principal may be represented by fourteen registry-authenticated role-scoped
+references while all role-specific bindings and receipts remain separate. This
+identity-free intake envelope still does not authenticate that declaration or
+store the future aliases.
 
 The module's sole public helper,
 `compile_dormant_owner_catalog_input_preview`, snapshots and strictly parses a
@@ -452,8 +468,9 @@ V1 checkpoint suite contains 11, the dormant publication suite contains 8, and
 the V3 lineage/bundle, sparse-intake, and evidence-profile suite contains 17,
 forming the earlier 99-test subtotal. The baseline-evidence readiness suite adds
 22 tests to form the previous 121-test subtotal; the independent-context suite
-adds 9 to form 130, and the repository/remote-source suite adds 8, so the current
-seven focused G0 suites contain 138 tests total. Release
+adds 9 to form 130, the repository/remote-source suite adds 8 to form 138, and
+the owner-trust-bootstrap suite adds 11, so the current eight focused G0 suites
+contain 149 tests total. Release
 metrics fail closed without
 an approved evidence signer and verifier, and percentile/scalar values are
 recomputed from bounded, canonical signed samples. Required network variants
@@ -715,13 +732,53 @@ byte counts and raw SHA-256 values. This remains a session observation rather
 than a persisted independent trust receipt and changes no owner, evidence,
 activation, G0-exit, or G1a state.
 
-The immutable `70350f5e` commit subject is generic and does not describe its
-G0-only scope; the exact parent and reproducible nine-file manifest above are
-the canonical commit-scope record, while both remote readbacks remain bounded
-session observations. The only current unpublished successor is the exact
-sixteen-file observation, two-selector, non-authorizing evidence-readiness,
-candidate independent-context, and mechanical repository/remote-source scope
-named in the snapshot.
+The subsequent exact sixteen-file successor is published at
+`b24c5ecb77067539c185d88f0c2fbbc2cb119c15`, with parent
+`025a4ef5e6c3e52c46a6b79ee3a06a6eb47de4e0` and tree
+`c8aa9e69cbbe7f72374a33713f11902e6f2e21bb`. It uses the same canonical
+manifest serialization:
+
+```text
+870aa81cb8e4ec9a726e20aebe4eb21e158691be85fc3917a0152c5afaf0df7e  docs/handoff.md
+4197d7cb11a1dd8d55fb6a991c3d63db024b95d79847fb79911ccec00cf117f6  docs/progress.md
+ac23780ad750bc412267a14717af8787655ccd72be08d2ba5cdd3a539af66c95  docs/qa-evidence.md
+2ee2897ba41a5e0685c6254d74d367feb6b54e26e94943fc41c798d5231cbbad  docs/roadmap.md
+a0c8f45167e9a8f3a4fccbba65afbb928b29b88df2ea2090cc96043ba960af17  docs/v1/g0/baseline-gate-evidence-readiness-profile-v1.json
+f8ad6742fcb569f408b5f4087b20f11f32cb497a8f9eec2fc3f255d8b22c226f  docs/v1/g0/evidence-supporting-artifact-candidate-profile-v1.json
+0221d2d49e4bcccfd34fb6905102117fbf5632e27d3d2f2e23d53e29f47752bc  docs/v1/g0/owner-catalog-input-candidate-v1.json
+dff40a2aa6f53f7cbefb1c2b3eedcdb182c45170c447fbe4d298c73ab1561baa  script/check_no_device_quality.sh
+f32e233512af265b2dd0c0c0a4df570c7a798773ae095326bb37f1c9b0910414  script/check_v1_g0_baseline_evidence_readiness.py
+2ef51168b62baedf28cb3d0456dcc30d1ee4b88bbbfa81c912ccb73d5745d50f  script/check_v1_g0_independent_validation_context.py
+afc1c3776486053cb4886b80c7121e0e6927138ba048bf8709b22d60de6d43cc  script/check_v1_g0_receipt_bundle.py
+89f518312cafe24db094e8af8774cb53a9786b0ab300803ad8c27e0d5bd888f4  script/check_v1_g0_repository_remote_sources.py
+f78a7d35cc97e3fd5b7d9088c137faa2116704bcf5bcab5064f18c6c48950dd5  script/test_v1_g0_baseline_evidence_readiness.py
+d217a2b533d374c499000b70314f471a11fdfb31ac4ac644456383b13d636a81  script/test_v1_g0_independent_validation_context.py
+2a3bc9dd36a6df85f0340e95f268886036b2d79d97c384a2191fd45775b558a0  script/test_v1_g0_receipt_bundle.py
+7f25e5fd825b5d05e8147832b9ded74157747b5d39fb1500a7a79a411228d807  script/test_v1_g0_repository_remote_sources.py
+```
+
+Those 1,706 manifest bytes produce SHA-256
+`1b91a321de9a39faf9fb519b47ffa6e82ce85dd48595f092a63581875c9d4a37`.
+A strict fresh HTTPS `blob:none` clone observed remote `main` at that exact
+commit from `2026-07-21T07:55:12Z` through `07:55:22Z`. All sixteen target
+blobs were absent with lazy fetch disabled before acquisition; after explicit
+readback, every blob byte count, raw SHA-256, and recomputed Git object ID
+matched the local exact-OID object. The 274-byte commit, 297-byte parent commit,
+and 787-byte root tree also matched their local raw bytes and recomputed object
+IDs. The in-session 9,265-byte canonical command transcript had SHA-256
+`98d08c6bd76289c4d89218d689d50e788cc8b4167b559cb618ddd7c9ae886690`,
+but its bytes were not persisted or signed. Therefore this is independently
+acquired only with respect to the existing worktree and local object database;
+it is a bounded session observation, not an authenticated independent collector
+receipt, owner acceptance, evidence verification, receipt activation, G0 exit,
+or G1a authority.
+
+The immutable `70350f5e` commit subject and later generic `b24c5ecb` subject do
+not describe their G0-only scopes; the exact parents and reproducible manifests
+above are the canonical commit-scope records. All four remote readbacks remain
+bounded session observations. The only current unpublished scope is the eight-
+path local scope named in the snapshot: four canonical truth-sync documents plus
+the owner-trust-bootstrap profile, checker, tests, and aggregate registration.
 
 There are no Android, macOS, runtime-protocol, transport, or relay implementation
 edits in this scope. The sidecar, one-response dormant intake envelope, profile,
@@ -767,8 +824,9 @@ all current changes form one atomic feature.
   The receipt-bundle suite passes 17 tests, the earlier four focused G0 suites
   form a 99-test subtotal, the 22-test baseline-evidence readiness suite forms
   the previous 121-test subtotal, the 9-test independent-context suite forms
-  130, and the 8-test repository/remote-source suite brings the current
-  seven-suite total to 138, with the tracked receipt sidecar
+  130, the 8-test repository/remote-source suite forms 138, and the 11-test
+  owner-trust-bootstrap suite brings the current eight-suite total to 149, with
+  the tracked receipt sidecar
   remaining exactly `dormant_non_authorizing` and the current one-response sparse intake
   envelope remaining exactly `draft_unverified_non_authorizing`; neither
   authenticates an owner, verifies catalog evidence, accepts the proposed
@@ -796,9 +854,11 @@ all current changes form one atomic feature.
   docs hygiene across 12 current documents, Android and macOS five-locale parity,
   protocol schemas, the closed P2P/NAT and production-relay design validators,
   21 documentation/launcher/Phase-A unit tests, shell syntax, and diff hygiene.
-- Shell syntax for the integrated no-device gate passes. The complete aggregate
-  has not yet been rerun on this G0 documentation/script scope, so no fresh full
-  Swift, Android, QR, or relay result is claimed here.
+- The complete integrated no-device aggregate was rerun on the current G0 scope
+  and exited zero with its final `No-device quality checks passed.` marker after
+  the full Swift, Android, QR, and local-development relay checks. Its interactive
+  output was not persisted or signed, so this remains bounded session evidence
+  and does not authenticate an owner, authorize execution, or close G0/G1a.
 - On the connected `SM-S936N`/Android 16 device, `:app:assembleDebug` completed
   92 tasks successfully, `adb install -r` preserved app data, and cold launches
   completed in 632 ms and 612 ms. The unpaired and Settings views rendered at
@@ -1078,22 +1138,52 @@ Unless the user redirects the task, use this decision order:
    with independent trust, owner authentication, acceptance, activation, or G1a
    authority.
 3. Preserve the published seven-file `025a4ef5` truth-sync/compiler successor
-   and its completed 7/7 partial-clone readback. Keep the current sixteen-file
-   observation, two-selector, non-authorizing evidence-readiness, candidate
-   independent-context, and mechanical repository/remote-source successor local
-   until separately
-   reviewed and authorized; blanket staging is not the default.
+   and its completed 7/7 partial-clone readback, plus the published sixteen-file
+   `b24c5ecb` successor and its completed 16/16 strict readback. Keep only the
+   current eight-path local scope—four canonical truth-sync documents plus the
+   owner-trust-bootstrap profile, checker, tests, and aggregate registration—
+   until separately reviewed and authorized; blanket staging is not the default.
 4. Do not repeat publication as a prerequisite: exact remote bytes for
    `12c38154`, the nine-file `70350f5e` successor, and the seven-file
-   `025a4ef5` successor were freshly observed. Repeat readback only for drift or
-   a new target.
+   `025a4ef5` successor plus the sixteen-file `b24c5ecb` successor were freshly
+   observed. Repeat readback only for drift or a new target.
 5. Preserve the exact publication proposal compiled from
    `user-input:session-20260721:item-2` and its two null artifact references.
-   Preserve the profile, but do not create either artifact instance until its
-   selector is explicitly changed to true. Independently authenticate the
-   proposed repository owner and separately acquire and verify
+   Preserve the immutable v1 profile and keep both selectors false. First
+   independently authenticate the proposed repository owner. Only after an
+   authenticated selector decision may a new versioned profile set a selector
+   true; then separately create or acquire, independently anchor, and verify
    `reviewed_commit_scope` and `published_checkpoint` evidence before any
-   acceptance is considered. For
+   acceptance is considered. V3 already pins the exact ten-field owner binding
+   and eight-field approval receipt, so do not create duplicate owner or
+   approval schemas. The local
+   `docs/v1/g0/owner-trust-bootstrap-profile-v1.json` now freezes every provider,
+   registry, trust-anchor, credential, snapshot, trusted-time, and detached-
+   envelope selection reference at null and every authority state at false. Its
+   ownership model records the user's unverified sole-human-owner declaration,
+   hash-binds the canonical fourteen-role order, retains the V3 requirements for
+   fourteen future unique role-scoped identity references and fourteen separate
+   receipts, and requires the selected registry revision to authenticate every
+   alias as a role of the same principal. Raw-ref uniqueness therefore remains
+   V3-compatible and no V4
+   closure amendment is needed. Its supplied-byte-only checker re-derives those
+   V3 projections and cannot construct an adapter result; this is a planning/
+   validation boundary, not owner authentication or provider selection. Before
+   implementing the missing trust adapter, obtain an
+   explicit external selection for the owner identity registry and independent
+   trust anchor; the credential mechanism and proof-of-control binding among
+   `ownerIdentityRef`, `credentialRef`, and the registry revision; authentication
+   of the exact canonical eight-field approval receipt; authenticated registry/
+   revocation snapshot acquisition, provenance, freshness, rollback, and
+   `acceptedAt` validity rules; trusted time and clock-skew policy; and the exact
+   bounded adapter-result/context handoff. If a signature-based credential is
+   selected, separately pin its algorithm, encoding, key usage, key or
+   certificate digest reference, and fail-closed validation. Any challenge or
+   nonce belongs in a separately versioned detached envelope, not the exact
+   eight-field receipt, and its replay relationship to the future consumed-
+   bundle ledger must be decided explicitly. The release-evidence Ed25519
+   envelope is a different contract and must not be reused implicitly. Never
+   place a private key, raw credential, or secret in the repository. For
    other blockers, ask the user or authenticated external owner only for
    candidate versions, requirement dispositions, session-item references, and
    optional evidence artifact presence. Derive owner, evidence-input,

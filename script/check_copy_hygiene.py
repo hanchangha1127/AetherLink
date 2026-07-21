@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from collections import Counter
+import ast
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -58949,6 +58950,196 @@ def android_runtime_health_current_request_authority_guard_failures() -> list[st
     return failures
 
 
+def g0_external_evidence_readiness_guard_failures() -> list[str]:
+    failures: list[str] = []
+    paths = {
+        "profile": ROOT / "docs/v1/g0/external-evidence-candidate-profile-v1.json",
+        "checker": ROOT / "script/check_v1_g0_external_evidence_readiness.py",
+        "tests": ROOT / "script/test_v1_g0_external_evidence_readiness.py",
+        "gate": ROOT / "script/check_no_device_quality.sh",
+        "roadmap": ROOT / "docs/roadmap.md",
+        "progress": ROOT / "docs/progress.md",
+        "qa": ROOT / "docs/qa-evidence.md",
+        "handoff": ROOT / "docs/handoff.md",
+    }
+    missing = [str(path.relative_to(ROOT)) for path in paths.values() if not path.is_file()]
+    if missing:
+        return [f"missing required external-evidence readiness file: {path}" for path in missing]
+
+    expected_kinds = (
+        "owned_application_ids",
+        "distribution_accounts",
+        "key_custody_runbook",
+        "approved_minimum_current_previous_matrix",
+        "domain_dns_webpki_owners",
+        "root_signer_rotation_and_revocation_owners",
+        "privacy_incident_and_retention_owner_approval",
+        "approved_region_peak_capacity_and_cost_ceiling",
+    )
+    expected_hashes = {
+        "effectiveV3NonDerivedKindsCanonicalSha256": "f94b99d98af42052e37b73074b2d67be8155cdb3da3a8ba37d04f69923fa4ee4",
+        "existingTypedKindsCanonicalSha256": "65e119092dee2e27baba3f4dd37a3bf39cb3618d6dcefaafd97147bbe8846a7f",
+        "remainingKindsCanonicalSha256": "cafe2e1a02a2beac873dfc93933a8a7187d8e3a30b99cc12f244666dadde48c9",
+    }
+    profile_raw = paths["profile"].read_bytes()
+    try:
+        profile = json.loads(profile_raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        return [f"external-evidence profile is invalid JSON: {error}"]
+    contract = profile.get("contractBinding")
+    coverage = profile.get("coverageDerivation")
+    common = profile.get("commonEnvelopeProfile")
+    boundary = profile.get("authorizationBoundary")
+    sensitive = profile.get("sensitiveDataPolicy")
+    if not all(isinstance(item, dict) for item in (contract, coverage, common, boundary, sensitive)):
+        return ["external-evidence profile core sections are unavailable"]
+    if tuple(contract.get("requiredEvidenceKinds", ())) != expected_kinds:
+        failures.append("external-evidence profile must preserve the canonical eight-kind order")
+    for field, expected in (("totalNonDerivedEvidenceKindCount", 15),):
+        if contract.get(field) != expected:
+            failures.append(f"external-evidence profile contract {field} drifted")
+    for field, expected in expected_hashes.items():
+        if coverage.get(field) != expected:
+            failures.append(f"external-evidence profile coverage digest {field} drifted")
+    for count_field, expected in (
+        ("coveredBlockerIds", 7),
+        ("requiredCheckIds", 5),
+        ("requiredOwnerRoles", 7),
+        ("existingTypedEvidenceKinds", 7),
+    ):
+        value = contract.get(count_field)
+        if not isinstance(value, list) or len(value) != expected or len(value) != len(set(value)):
+            failures.append(f"external-evidence profile {count_field} must contain {expected} unique entries")
+    state = common.get("stateFixedValues")
+    trust = common.get("trustBoundaryFixedValues")
+    intake = common.get("intakeBindingFixedValues")
+    if not isinstance(state, dict) or not state or any(value is not False for value in state.values()):
+        failures.append("external-evidence profile state must remain all false")
+    if not isinstance(trust, dict) or any(
+        trust.get(field) is not False
+        for field in (
+            "ownerIdentityAuthenticated",
+            "externalFactsVerified",
+            "catalogRecordDerivable",
+            "approvalReceiptDerivable",
+            "authorityDerivable",
+        )
+    ):
+        failures.append("external-evidence trust boundary must remain non-authorizing")
+    if not isinstance(intake, dict) or any(
+        intake.get(field) is not None
+        for field in (
+            "ownerBindingRefCandidate",
+            "evidenceInputRefCandidate",
+            "supportingArtifactRefCandidate",
+        )
+    ) or intake.get("supportingArtifactPresent") is not False:
+        failures.append("external-evidence v1 intake selectors must remain null/false")
+
+    catalog_fields = (
+        "evidenceId",
+        "evidenceKind",
+        "evidenceClass",
+        "subjectImplementationRevision",
+        "subjectCheckpointSha256",
+        "artifactPath",
+        "artifactByteLength",
+        "artifactSha256",
+        "verificationMethod",
+        "verifierIdentityRef",
+        "verifiedAt",
+        "provenanceRef",
+    )
+    if tuple(boundary.get("catalogRecordReservedFields", ())) != catalog_fields:
+        failures.append("external-evidence profile must reserve the exact V3 catalog fields")
+    forbidden = set(sensitive.get("forbiddenMaterial", ()))
+    for required in (
+        "private_keys",
+        "credentials",
+        "access_tokens",
+        "private_account_data",
+        "personal_contact_data",
+        "http_headers",
+        "unsanitized_logs",
+        "artifact_bytes",
+        "qr_pairing_or_route_secrets",
+    ):
+        if required not in forbidden:
+            failures.append(f"external-evidence sensitive policy is missing {required}")
+
+    profile_sha = hashlib.sha256(profile_raw).hexdigest()
+    checker_text = paths["checker"].read_text(encoding="utf-8")
+    test_text = paths["tests"].read_text(encoding="utf-8")
+    gate_text = paths["gate"].read_text(encoding="utf-8")
+    if profile_sha not in checker_text:
+        failures.append("external-evidence checker does not pin the exact profile raw SHA-256")
+    for snippet in (
+        "EXPECTED_REMAINING_EVIDENCE_COUNT = 8",
+        "remaining external evidence must map to five canonical non-executable checks",
+        "all_eight_remaining_kinds_have_no_v1_intake_selector",
+        "REFERENCE_CLASSES",
+        "):sha256:[0-9a-f]{64}",
+        "failures.extend(_collect_absent_candidate_failures(root))",
+    ):
+        if snippet not in checker_text:
+            failures.append(f"external-evidence checker is missing {snippet!r}")
+    if "PENDING" in checker_text:
+        failures.append("external-evidence checker contains a pending hash or length")
+    if checker_text.count("failures.extend(_collect_absent_candidate_failures(root))") != 2:
+        failures.append("external-evidence checker must test artifact absence before and after final readback")
+
+    try:
+        tree = ast.parse(test_text)
+    except SyntaxError as error:
+        failures.append(f"external-evidence tests do not parse: {error}")
+        test_methods: set[str] = set()
+    else:
+        test_methods = {
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("test_")
+        }
+    for method in (
+        "test_exact_profile_derives_eight_after_content_addressed_five_plus_two",
+        "test_all_eight_synthetic_candidates_are_exactly_dormant",
+        "test_digest_only_reference_allowlist_rejects_secret_pii_and_actual_record_fields",
+        "test_mutable_inputs_are_snapshotted_and_pure_validator_uses_no_io",
+        "test_worktree_rejects_any_reserved_path_and_absent_to_present_race",
+    ):
+        if method not in test_methods:
+            failures.append(f"external-evidence tests are missing {method}")
+
+    checker_relative = "script/check_v1_g0_external_evidence_readiness.py"
+    test_relative = "script/test_v1_g0_external_evidence_readiness.py"
+    if gate_text.count(checker_relative) != 2:
+        failures.append("no-device gate must select the external-evidence checker exactly twice")
+    if gate_text.count(test_relative) != 2:
+        failures.append("no-device gate must select the external-evidence tests exactly twice")
+    marker = "Covered V1 G0 external-evidence readiness addendum:"
+    if gate_text.count(marker) != 1:
+        failures.append("no-device gate must emit the external-evidence marker exactly once")
+
+    for path_entry in profile.get("artifactPaths", ()):
+        if not isinstance(path_entry, dict) or not isinstance(path_entry.get("path"), str):
+            failures.append("external-evidence artifact path entry is malformed")
+            continue
+        if (ROOT / path_entry["path"]).exists() or (ROOT / path_entry["path"]).is_symlink():
+            failures.append(f"reserved external-evidence artifact exists: {path_entry['path']}")
+
+    for label in ("roadmap", "progress", "qa", "handoff"):
+        text = paths[label].read_text(encoding="utf-8")
+        for snippet in (
+            "external-evidence-candidate-profile-v1.json",
+            profile_sha,
+            "15/15",
+            "eight candidate artifacts remain absent",
+        ):
+            if snippet not in text:
+                failures.append(f"{paths[label].relative_to(ROOT)} is missing {snippet!r}")
+    return failures
+
+
 def report_guard_failures(
     label: str,
     check: Callable[[], list[str]],
@@ -59041,6 +59232,12 @@ def main() -> int:
         return 1
 
     if report_guard_failures("No-device quality gate guard failed:", no_device_quality_gate_guard_failures):
+        return 1
+
+    if report_guard_failures(
+        "G0 external evidence readiness guard failed:",
+        g0_external_evidence_readiness_guard_failures,
+    ):
         return 1
 
     if report_guard_failures("Review-only memory duplicate suggestion guard failed:", review_only_memory_duplicate_suggestions_guard_failures):

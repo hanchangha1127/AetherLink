@@ -1,0 +1,84 @@
+{
+  "documentType": "aetherlink.v1-g0-owner-trust-bootstrap-profile",
+  "schemaVersion": 1,
+  "profileId": "aetherlink_v1_g0_owner_trust_bootstrap_profile_v1",
+  "status": "draft_solo_owner_declared_unselected_non_authorizing",
+  "contractBinding": {
+    "repositoryRef": "github:hanchangha1127/AetherLink",
+    "publicationCommitObjectId": "12c381547935b96d383ac39976261ea6c3ce6a5b",
+    "publicationCheckpointPath": "docs/v1/g0/assurance-closure-amendment-checkpoint-v3.json",
+    "publicationCheckpointRawSha256": "37462cd8303ce61742bc480d0f7d37e0ccb380ec12375cc8c8d10169aebf4dc5",
+    "effectiveAssuranceCanonicalSha256": "e8f661094a678a2ac0966d8b35de46824316883a845eb9ae8c6e9f76df18ad4b",
+    "effectiveClosureCanonicalSha256": "79b0d7275bcf371e8b9ab5a6b123969474bfbc86b1d7e78fcb28ed7256e3a93c"
+  },
+  "v3Reuse": {
+    "ownerRole": "repository_owner",
+    "blockerId": "roadmap_and_g0_checkpoint_publication",
+    "requiredEvidenceKinds": [
+      "reviewed_commit_scope",
+      "published_checkpoint"
+    ],
+    "ownerBindingProfilePointer": "/g0ClosureContract/ownerBindingProfile",
+    "approvalReceiptProfilePointer": "/g0ClosureContract/approvalReceiptProfile",
+    "independentTrustInput": "trusted_owner_identity_registry_and_revocation_snapshot"
+  },
+  "ownershipModel": {
+    "model": "single_human_principal_with_role_scoped_identity_refs",
+    "declarationStatus": "user_declared_unverified_non_authorizing",
+    "humanPrincipalCount": 1,
+    "canonicalRoleCount": 14,
+    "canonicalRoleOrderSha256": "51db62b86bfa80ebb7640808b6996f9fc79b27571d50f178a564842ceedd3861",
+    "ownerBindingRefPolicy": "fourteen_unique_role_specific_binding_refs_in_canonical_v3_role_order",
+    "ownerIdentityRefPolicy": "fourteen_unique_nonsecret_role_scoped_opaque_refs_independently_mapped_by_one_registry_revision_to_the_same_authenticated_human_principal",
+    "credentialPolicy": "same_or_role_specific_credential_refs_allowed_only_when_each_exact_binding_is_independently_authenticated_valid_and_nonrevoked",
+    "approvalReceiptPolicy": "fourteen_distinct_exact_eight_field_role_receipts_each_authenticated_against_its_corresponding_role_binding",
+    "v3CompatibilityPolicy": "preserves_v3_raw_owner_identity_ref_uniqueness_without_requiring_distinct_human_principals",
+    "authorizationEffect": "none"
+  },
+  "selection": {
+    "providerProfileRef": null,
+    "identityRegistryRef": null,
+    "trustAnchorRef": null,
+    "credentialMechanismRef": null,
+    "proofOfControlProfileRef": null,
+    "receiptAuthenticationProfileRef": null,
+    "registrySnapshotProfileRef": null,
+    "revocationSnapshotProfileRef": null,
+    "trustedTimeProfileRef": null,
+    "detachedEnvelopeProfileRef": null
+  },
+  "conditionalPolicies": {
+    "selectionChangePolicy": "new_versioned_profile_required_before_any_selection_reference_is_non_null",
+    "successorTrustAdapterPolicy": "successor_profile_must_pin_one_human_principal_fourteen_unique_role_scoped_owner_identity_refs_owner_identity_credential_registry_revision_proof_of_control_authenticated_registry_and_revocation_snapshot_acquisition_provenance_freshness_rollback_accepted_at_validity_revocation_evaluation_trusted_time_clock_skew_and_exact_bounded_module_owned_adapter_result_context_handoff",
+    "signatureMechanismPolicy": "if_selected_mechanism_is_signature_based_the_successor_profile_must_pin_algorithm_encoding_key_usage_key_or_certificate_digest_and_fail_closed_verification",
+    "detachedEnvelopePolicy": "any_challenge_or_nonce_belongs_only_to_a_separately_versioned_detached_bootstrap_envelope_and_must_not_change_the_exact_eight_field_approval_receipt",
+    "replayPolicy": "successor_profile_must_define_challenge_consumption_and_external_consumed_bundle_ledger_relationship_before_stateful_activation",
+    "sensitiveMaterialPolicy": "private_keys_tokens_raw_credentials_and_signature_bytes_are_forbidden_in_this_profile",
+    "releaseEvidenceSeparationPolicy": "release_evidence_ed25519_keys_registry_and_envelope_contracts_must_not_be_reused_implicitly",
+    "selectorTransitionPolicy": "authenticated_owner_authenticated_selector_decision_and_a_reviewed_successor_profile_are_required_before_any_selector_or_authority_state_can_change"
+  },
+  "adapterProjection": {
+    "independentTrustInput": "trusted_owner_identity_registry_and_revocation_snapshot",
+    "verifiedSubjectFields": [
+      "targetBinding",
+      "ownerBindings",
+      "approvalReceipts"
+    ],
+    "integrationStatus": "not_implemented",
+    "genericCandidateFactoryMaySubstitute": false,
+    "mayCreateAdapterResult": false
+  },
+  "state": {
+    "providerSelected": false,
+    "trustAnchorSelected": false,
+    "credentialMechanismSelected": false,
+    "ownerIdentityAuthenticated": false,
+    "selectorDecisionAuthenticated": false,
+    "reviewedAdapterResultAvailable": false,
+    "evidenceSelectorsMayChange": false,
+    "approvalReceiptAccepted": false,
+    "receiptActivationAllowed": false,
+    "g0ExitComplete": false,
+    "g1aMayStartNow": false
+  }
+}

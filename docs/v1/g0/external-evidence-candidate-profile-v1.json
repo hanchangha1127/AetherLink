@@ -1,0 +1,663 @@
+{
+  "documentType": "aetherlink.v1-g0-external-evidence-candidate-profile",
+  "schemaVersion": 1,
+  "profileId": "aetherlink_v1_g0_external_evidence_candidate_profile_v1",
+  "status": "draft_prepared_unselected_unverified_non_authorizing",
+  "contractBinding": {
+    "repositoryRef": "github:hanchangha1127/AetherLink",
+    "publicationCommitObjectId": "12c381547935b96d383ac39976261ea6c3ce6a5b",
+    "publicationCheckpointPath": "docs/v1/g0/assurance-closure-amendment-checkpoint-v3.json",
+    "publicationCheckpointRawSha256": "37462cd8303ce61742bc480d0f7d37e0ccb380ec12375cc8c8d10169aebf4dc5",
+    "effectiveAssuranceCanonicalSha256": "e8f661094a678a2ac0966d8b35de46824316883a845eb9ae8c6e9f76df18ad4b",
+    "effectiveClosureCanonicalSha256": "79b0d7275bcf371e8b9ab5a6b123969474bfbc86b1d7e78fcb28ed7256e3a93c",
+    "decisionId": "aetherlink_v1_g0_decision_v1",
+    "decisionCanonicalSha256": "b72db086b4ac7bf0e5eff8b71a28917231822cebedf742b85e596eb025e55ae2",
+    "coveredBlockerIds": [
+      "production_application_namespaces",
+      "distribution_account_and_key_owners",
+      "provider_compatibility_baseline",
+      "service_domain_dns_and_webpki_owners",
+      "service_root_and_online_signer_owners",
+      "privacy_incident_and_retention_owners",
+      "relay_region_capacity_and_cost_budget"
+    ],
+    "requiredCheckIds": [
+      "production_namespaces_distribution_and_key_custody",
+      "provider_compatibility_baseline",
+      "service_identity_and_signer_custody",
+      "privacy_incident_quality_and_operations_ownership",
+      "relay_region_capacity_and_cost"
+    ],
+    "requiredOwnerRoles": [
+      "product_and_distribution_owner",
+      "release_owner",
+      "runtime_provider_compatibility_owner",
+      "service_identity_owner",
+      "service_security_owner",
+      "privacy_and_incident_owner",
+      "service_operations_owner"
+    ],
+    "requiredEvidenceKinds": [
+      "owned_application_ids",
+      "distribution_accounts",
+      "key_custody_runbook",
+      "approved_minimum_current_previous_matrix",
+      "domain_dns_webpki_owners",
+      "root_signer_rotation_and_revocation_owners",
+      "privacy_incident_and_retention_owner_approval",
+      "approved_region_peak_capacity_and_cost_ceiling"
+    ],
+    "existingTypedEvidenceKinds": [
+      "canonical_assurance_hash",
+      "source_hash_readback",
+      "separately_authorized_full_gate_result",
+      "android_release_compile_result",
+      "macos_release_compile_result",
+      "reviewed_commit_scope",
+      "published_checkpoint"
+    ],
+    "totalNonDerivedEvidenceKindCount": 15
+  },
+  "coverageDerivation": {
+    "decisionRef": {
+      "path": "docs/v1/g0/decision-v1.json",
+      "rawSha256": "44dd88a0de7e02fdb2b7c22e597496ffe4f00f9a67a54af6e9ace8afdcf9308a",
+      "canonicalSha256": "b72db086b4ac7bf0e5eff8b71a28917231822cebedf742b85e596eb025e55ae2"
+    },
+    "baselineProfileRef": {
+      "path": "docs/v1/g0/baseline-gate-evidence-readiness-profile-v1.json",
+      "rawSha256": "a0c8f45167e9a8f3a4fccbba65afbb928b29b88df2ea2090cc96043ba960af17",
+      "coveredEvidenceKinds": [
+        "canonical_assurance_hash",
+        "source_hash_readback",
+        "separately_authorized_full_gate_result",
+        "android_release_compile_result",
+        "macos_release_compile_result"
+      ]
+    },
+    "supportingProfileRef": {
+      "path": "docs/v1/g0/evidence-supporting-artifact-candidate-profile-v1.json",
+      "rawSha256": "f8ad6742fcb569f408b5f4087b20f11f32cb497a8f9eec2fc3f255d8b22c226f",
+      "coveredEvidenceKinds": [
+        "reviewed_commit_scope",
+        "published_checkpoint"
+      ]
+    },
+    "ownerCatalogInputRef": {
+      "path": "docs/v1/g0/owner-catalog-input-candidate-v1.json",
+      "rawSha256": "0221d2d49e4bcccfd34fb6905102117fbf5632e27d3d2f2e23d53e29f47752bc"
+    },
+    "effectiveV3NonDerivedKindsCanonicalSha256": "f94b99d98af42052e37b73074b2d67be8155cdb3da3a8ba37d04f69923fa4ee4",
+    "existingTypedKindsCanonicalSha256": "65e119092dee2e27baba3f4dd37a3bf39cb3618d6dcefaafd97147bbe8846a7f",
+    "remainingKindsCanonicalSha256": "cafe2e1a02a2beac873dfc93933a8a7187d8e3a30b99cc12f244666dadde48c9",
+    "subtractionPolicy": "effective_v3_non_derived_order_minus_content_addressed_baseline_five_and_supporting_two_profiles_exactly_once",
+    "ownerCatalogSelectionPolicy": "all_eight_remaining_kinds_have_no_v1_intake_selector_and_require_a_new_versioned_profile_after_selection"
+  },
+  "artifactPaths": [
+    {
+      "evidenceKind": "owned_application_ids",
+      "candidateVersion": 1,
+      "path": "docs/evidence/g0-owned-application-ids-candidate-v1.json"
+    },
+    {
+      "evidenceKind": "distribution_accounts",
+      "candidateVersion": 1,
+      "path": "docs/evidence/g0-distribution-accounts-candidate-v1.json"
+    },
+    {
+      "evidenceKind": "key_custody_runbook",
+      "candidateVersion": 1,
+      "path": "docs/evidence/g0-key-custody-runbook-candidate-v1.json"
+    },
+    {
+      "evidenceKind": "approved_minimum_current_previous_matrix",
+      "candidateVersion": 1,
+      "path": "docs/evidence/g0-approved-minimum-current-previous-matrix-candidate-v1.json"
+    },
+    {
+      "evidenceKind": "domain_dns_webpki_owners",
+      "candidateVersion": 1,
+      "path": "docs/evidence/g0-domain-dns-webpki-owners-candidate-v1.json"
+    },
+    {
+      "evidenceKind": "root_signer_rotation_and_revocation_owners",
+      "candidateVersion": 1,
+      "path": "docs/evidence/g0-root-signer-rotation-and-revocation-owners-candidate-v1.json"
+    },
+    {
+      "evidenceKind": "privacy_incident_and_retention_owner_approval",
+      "candidateVersion": 1,
+      "path": "docs/evidence/g0-privacy-incident-and-retention-owner-approval-candidate-v1.json"
+    },
+    {
+      "evidenceKind": "approved_region_peak_capacity_and_cost_ceiling",
+      "candidateVersion": 1,
+      "path": "docs/evidence/g0-approved-region-peak-capacity-and-cost-ceiling-candidate-v1.json"
+    }
+  ],
+  "evidenceProfiles": [
+    {
+      "evidenceKind": "owned_application_ids",
+      "blockerId": "production_application_namespaces",
+      "requiredCheckIds": [
+        "production_namespaces_distribution_and_key_custody"
+      ],
+      "requiredOwnerRoles": [
+        "product_and_distribution_owner"
+      ],
+      "artifactId": "g0-owned-application-ids-candidate-v1",
+      "candidatePath": "docs/evidence/g0-owned-application-ids-candidate-v1.json",
+      "exactPayloadFields": [
+        "applicationIds",
+        "versionPolicyRefCandidate",
+        "migrationPolicyRefCandidate"
+      ],
+      "nestedFieldProfiles": [
+        {
+          "field": "applicationIds",
+          "entryExactFields": [
+            "platform",
+            "identifier",
+            "distributionChannel",
+            "ownershipRecordRefCandidate"
+          ],
+          "cardinalityPolicy": "exactly_android_then_macos",
+          "valuePolicy": "valid_production_identifier_exact_selected_channel_and_versioned_ownership_record_ref"
+        }
+      ],
+      "validationPolicy": "production_ids_must_differ_from_current_debug_ids_and_bind_selected_channels",
+      "requiredIndependentInputsAbsent": [
+        "authenticated_owner_binding_and_approval_receipt",
+        "independent_external_source_provenance",
+        "independent_exact_artifact_verification",
+        "trusted_validation_time"
+      ]
+    },
+    {
+      "evidenceKind": "distribution_accounts",
+      "blockerId": "distribution_account_and_key_owners",
+      "requiredCheckIds": [
+        "production_namespaces_distribution_and_key_custody"
+      ],
+      "requiredOwnerRoles": [
+        "release_owner"
+      ],
+      "artifactId": "g0-distribution-accounts-candidate-v1",
+      "candidatePath": "docs/evidence/g0-distribution-accounts-candidate-v1.json",
+      "exactPayloadFields": [
+        "accounts",
+        "accessControlRunbookRefCandidate",
+        "recoveryRunbookRefCandidate"
+      ],
+      "nestedFieldProfiles": [
+        {
+          "field": "accounts",
+          "entryExactFields": [
+            "platform",
+            "distributionChannel",
+            "accountOrganizationRefCandidate",
+            "accountControlEvidenceRefCandidate"
+          ],
+          "cardinalityPolicy": "exactly_android_then_macos",
+          "valuePolicy": "exact_selected_channel_and_versioned_nonpersonal_organization_and_control_refs"
+        }
+      ],
+      "validationPolicy": "opaque_nonpersonal_account_refs_only_no_tokens_emails_or_account_credentials",
+      "requiredIndependentInputsAbsent": [
+        "authenticated_owner_binding_and_approval_receipt",
+        "independent_external_source_provenance",
+        "independent_exact_artifact_verification",
+        "trusted_validation_time"
+      ]
+    },
+    {
+      "evidenceKind": "key_custody_runbook",
+      "blockerId": "distribution_account_and_key_owners",
+      "requiredCheckIds": [
+        "production_namespaces_distribution_and_key_custody"
+      ],
+      "requiredOwnerRoles": [
+        "release_owner"
+      ],
+      "artifactId": "g0-key-custody-runbook-candidate-v1",
+      "candidatePath": "docs/evidence/g0-key-custody-runbook-candidate-v1.json",
+      "exactPayloadFields": [
+        "keyClasses",
+        "custodyRunbookRefCandidate",
+        "separationOfDutiesPolicyRefCandidate"
+      ],
+      "nestedFieldProfiles": [
+        {
+          "field": "keyClasses",
+          "entryExactFields": [
+            "keyPurpose",
+            "custodyClass",
+            "custodyProviderRefCandidate",
+            "accessPolicyRefCandidate",
+            "rotationPolicyRefCandidate",
+            "recoveryPolicyRefCandidate",
+            "emergencyRevocationRefCandidate"
+          ],
+          "cardinalityPolicy": "exactly_four_required_key_purposes_in_canonical_order",
+          "valuePolicy": "closed_custody_class_and_versioned_policy_refs_no_key_bytes_or_signatures"
+        }
+      ],
+      "validationPolicy": "all_distribution_key_purposes_require_custody_access_rotation_recovery_and_revocation_refs",
+      "requiredIndependentInputsAbsent": [
+        "authenticated_owner_binding_and_approval_receipt",
+        "independent_external_source_provenance",
+        "independent_exact_artifact_verification",
+        "trusted_validation_time"
+      ]
+    },
+    {
+      "evidenceKind": "approved_minimum_current_previous_matrix",
+      "blockerId": "provider_compatibility_baseline",
+      "requiredCheckIds": [
+        "provider_compatibility_baseline"
+      ],
+      "requiredOwnerRoles": [
+        "runtime_provider_compatibility_owner"
+      ],
+      "artifactId": "g0-approved-minimum-current-previous-matrix-candidate-v1",
+      "candidatePath": "docs/evidence/g0-approved-minimum-current-previous-matrix-candidate-v1.json",
+      "exactPayloadFields": [
+        "matrixRevisionRefCandidate",
+        "providers",
+        "testPolicyRefCandidate"
+      ],
+      "nestedFieldProfiles": [
+        {
+          "field": "providers",
+          "entryExactFields": [
+            "providerId",
+            "minimumCandidateVersion",
+            "currentCandidateVersion",
+            "previousCandidateVersion",
+            "compatibilityProfileRefCandidate",
+            "evidenceRefCandidates"
+          ],
+          "cardinalityPolicy": "exactly_ollama_then_lm_studio",
+          "valuePolicy": "three_bounded_versions_per_provider_and_at_least_two_versioned_evidence_refs"
+        }
+      ],
+      "validationPolicy": "both_runtime_host_providers_require_minimum_current_previous_versions_and_evidence",
+      "requiredIndependentInputsAbsent": [
+        "authenticated_owner_binding_and_approval_receipt",
+        "independent_external_source_provenance",
+        "independent_exact_artifact_verification",
+        "trusted_validation_time"
+      ]
+    },
+    {
+      "evidenceKind": "domain_dns_webpki_owners",
+      "blockerId": "service_domain_dns_and_webpki_owners",
+      "requiredCheckIds": [
+        "service_identity_and_signer_custody"
+      ],
+      "requiredOwnerRoles": [
+        "service_identity_owner"
+      ],
+      "artifactId": "g0-domain-dns-webpki-owners-candidate-v1",
+      "candidatePath": "docs/evidence/g0-domain-dns-webpki-owners-candidate-v1.json",
+      "exactPayloadFields": [
+        "services",
+        "lifecycleRunbookRefCandidate"
+      ],
+      "nestedFieldProfiles": [
+        {
+          "field": "services",
+          "entryExactFields": [
+            "serviceRole",
+            "domainName",
+            "domainOwnershipRecordRefCandidate",
+            "dnsControlEvidenceRefCandidate",
+            "webpkiLifecycleRefCandidate",
+            "renewalMonitoringRefCandidate"
+          ],
+          "cardinalityPolicy": "exactly_allocation_api_signaling_turn_sealed_relay_in_order",
+          "valuePolicy": "lowercase_dns_name_and_versioned_ownership_dns_webpki_monitoring_refs"
+        }
+      ],
+      "validationPolicy": "all_production_service_roles_require_domain_dns_webpki_and_renewal_lifecycle_refs",
+      "requiredIndependentInputsAbsent": [
+        "authenticated_owner_binding_and_approval_receipt",
+        "independent_external_source_provenance",
+        "independent_exact_artifact_verification",
+        "trusted_validation_time"
+      ]
+    },
+    {
+      "evidenceKind": "root_signer_rotation_and_revocation_owners",
+      "blockerId": "service_root_and_online_signer_owners",
+      "requiredCheckIds": [
+        "service_identity_and_signer_custody"
+      ],
+      "requiredOwnerRoles": [
+        "service_security_owner"
+      ],
+      "artifactId": "g0-root-signer-rotation-and-revocation-owners-candidate-v1",
+      "candidatePath": "docs/evidence/g0-root-signer-rotation-and-revocation-owners-candidate-v1.json",
+      "exactPayloadFields": [
+        "custodyAssignments",
+        "rotationOverlapSeconds",
+        "rotationPolicyRefCandidate",
+        "keyCeremonyRunbookRefCandidate",
+        "separationOfDutiesPolicyRefCandidate"
+      ],
+      "nestedFieldProfiles": [
+        {
+          "field": "custodyAssignments",
+          "entryExactFields": [
+            "responsibility",
+            "assignmentRecordRefCandidate",
+            "custodyProfileRefCandidate"
+          ],
+          "cardinalityPolicy": "exactly_offline_root_online_signer_emergency_revocation_in_order",
+          "valuePolicy": "versioned_assignment_and_custody_refs_without_owner_identity_or_key_material"
+        }
+      ],
+      "validationPolicy": "offline_root_online_signer_and_emergency_revocation_assignments_remain_reference_only",
+      "requiredIndependentInputsAbsent": [
+        "authenticated_owner_binding_and_approval_receipt",
+        "independent_external_source_provenance",
+        "independent_exact_artifact_verification",
+        "trusted_validation_time"
+      ]
+    },
+    {
+      "evidenceKind": "privacy_incident_and_retention_owner_approval",
+      "blockerId": "privacy_incident_and_retention_owners",
+      "requiredCheckIds": [
+        "privacy_incident_quality_and_operations_ownership"
+      ],
+      "requiredOwnerRoles": [
+        "privacy_and_incident_owner"
+      ],
+      "artifactId": "g0-privacy-incident-and-retention-owner-approval-candidate-v1",
+      "candidatePath": "docs/evidence/g0-privacy-incident-and-retention-owner-approval-candidate-v1.json",
+      "exactPayloadFields": [
+        "privacyPolicyRefCandidate",
+        "retentionSchedule",
+        "dataDeletionRunbookRefCandidate",
+        "incidentResponseRunbookRefCandidate",
+        "notificationPolicyRefCandidate",
+        "policyReviewRecordRefCandidate"
+      ],
+      "nestedFieldProfiles": [
+        {
+          "field": "retentionSchedule",
+          "entryExactFields": [
+            "aggregateOperationalMetricsDays",
+            "sourceFreeSecurityEventsDays",
+            "sanitizedIncidentEvidenceDays",
+            "contentFreeReleaseRecordsDays"
+          ],
+          "cardinalityPolicy": "one_exact_object",
+          "valuePolicy": "exact_decision_v1_retention_days"
+        }
+      ],
+      "validationPolicy": "decision_v1_retention_values_and_all_policy_runbook_review_refs_are_required",
+      "requiredIndependentInputsAbsent": [
+        "authenticated_owner_binding_and_approval_receipt",
+        "independent_external_source_provenance",
+        "independent_exact_artifact_verification",
+        "trusted_validation_time"
+      ]
+    },
+    {
+      "evidenceKind": "approved_region_peak_capacity_and_cost_ceiling",
+      "blockerId": "relay_region_capacity_and_cost_budget",
+      "requiredCheckIds": [
+        "relay_region_capacity_and_cost"
+      ],
+      "requiredOwnerRoles": [
+        "service_operations_owner"
+      ],
+      "artifactId": "g0-approved-region-peak-capacity-and-cost-ceiling-candidate-v1",
+      "candidatePath": "docs/evidence/g0-approved-region-peak-capacity-and-cost-ceiling-candidate-v1.json",
+      "exactPayloadFields": [
+        "regions",
+        "projectedPeakConcurrentSessions",
+        "requiredCapacityMultiplierBasisPoints",
+        "monthlyCostCeilingMinorUnits",
+        "currency",
+        "capacityForecastRefCandidate",
+        "loadModelRefCandidate",
+        "budgetReviewRecordRefCandidate"
+      ],
+      "nestedFieldProfiles": [
+        {
+          "field": "regions",
+          "entryExactFields": [
+            "regionCode",
+            "providerRegionRefCandidate"
+          ],
+          "cardinalityPolicy": "exactly_one_initial_region",
+          "valuePolicy": "bounded_region_code_and_versioned_provider_region_ref"
+        }
+      ],
+      "validationPolicy": "one_initial_region_positive_peak_two_x_capacity_basis_and_positive_iso4217_cost_ceiling_required",
+      "requiredIndependentInputsAbsent": [
+        "authenticated_owner_binding_and_approval_receipt",
+        "independent_external_source_provenance",
+        "independent_exact_artifact_verification",
+        "trusted_validation_time"
+      ]
+    }
+  ],
+  "commonEnvelopeProfile": {
+    "exactFields": [
+      "documentType",
+      "schemaVersion",
+      "artifactId",
+      "evidenceKind",
+      "status",
+      "profileRef",
+      "contractBinding",
+      "intakeBinding",
+      "payload",
+      "trustBoundary",
+      "state"
+    ],
+    "fixedValues": {
+      "documentType": "aetherlink.v1-g0-external-evidence-candidate",
+      "schemaVersion": 1,
+      "status": "synthetic_fixture_unverified_non_authorizing"
+    },
+    "profileRefExactFields": [
+      "path",
+      "profileId",
+      "rawSha256"
+    ],
+    "contractBindingExactFields": [
+      "repositoryRef",
+      "publicationCommitObjectId",
+      "publicationCheckpointPath",
+      "publicationCheckpointRawSha256",
+      "effectiveAssuranceCanonicalSha256",
+      "effectiveClosureCanonicalSha256",
+      "decisionId",
+      "decisionCanonicalSha256",
+      "blockerId",
+      "requiredCheckIds",
+      "requiredOwnerRoles",
+      "evidenceKind"
+    ],
+    "intakeBindingExactFields": [
+      "candidateVersion",
+      "reservedArtifactPath",
+      "selectorState",
+      "ownerBindingRefCandidate",
+      "evidenceInputRefCandidate",
+      "supportingArtifactPresent",
+      "supportingArtifactRefCandidate"
+    ],
+    "intakeBindingFixedValues": {
+      "candidateVersion": 1,
+      "selectorState": "not_selected",
+      "ownerBindingRefCandidate": null,
+      "evidenceInputRefCandidate": null,
+      "supportingArtifactPresent": false,
+      "supportingArtifactRefCandidate": null
+    },
+    "trustBoundaryExactFields": [
+      "observationClass",
+      "independentInputsPresent",
+      "requiredIndependentInputsAbsent",
+      "ownerIdentityAuthenticated",
+      "externalFactsVerified",
+      "catalogRecordDerivable",
+      "approvalReceiptDerivable",
+      "authorityDerivable"
+    ],
+    "trustBoundaryFixedValues": {
+      "observationClass": "synthetic_fixture_unverified",
+      "independentInputsPresent": [],
+      "requiredIndependentInputsAbsent": [
+        "authenticated_owner_binding_and_approval_receipt",
+        "independent_external_source_provenance",
+        "independent_exact_artifact_verification",
+        "trusted_validation_time"
+      ],
+      "ownerIdentityAuthenticated": false,
+      "externalFactsVerified": false,
+      "catalogRecordDerivable": false,
+      "approvalReceiptDerivable": false,
+      "authorityDerivable": false
+    },
+    "stateExactFields": [
+      "ownerIdentityAuthenticated",
+      "evidenceVerified",
+      "approvalReceiptAccepted",
+      "blockerClosureDerived",
+      "receiptActivationAllowed",
+      "g0ExitComplete",
+      "g1aMayStartNow"
+    ],
+    "stateFixedValues": {
+      "ownerIdentityAuthenticated": false,
+      "evidenceVerified": false,
+      "approvalReceiptAccepted": false,
+      "blockerClosureDerived": false,
+      "receiptActivationAllowed": false,
+      "g0ExitComplete": false,
+      "g1aMayStartNow": false
+    },
+    "canonicalEncoding": "compact_utf8_json_no_trailing_newline_preserve_declared_field_order"
+  },
+  "readinessPlanProfile": {
+    "documentType": "aetherlink.v1-g0-external-evidence-readiness-plan",
+    "schemaVersion": 1,
+    "planId": "aetherlink_v1_g0_external_evidence_readiness_plan_v1",
+    "status": "prepared_unselected_unverified_non_authorizing",
+    "reservationExactFields": [
+      "evidenceKind",
+      "blockerId",
+      "requiredOwnerRoles",
+      "path",
+      "artifactPresent",
+      "externalValuesSelected",
+      "acquisitionAuthorized"
+    ],
+    "artifactInstancePolicy": "all_eight_reserved_candidate_paths_must_remain_absent_until_public_values_are_separately_selected_and_reviewed",
+    "authorizationEffect": "none"
+  },
+  "resourceBounds": {
+    "profileMaximumBytes": 262144,
+    "candidateMaximumBytes": 131072,
+    "jsonMaximumDepth": 16,
+    "arrayMaximumItems": 128,
+    "stringMaximumUtf8Bytes": 512,
+    "integerMaximumDigits": 12,
+    "parsePolicy": "strict_utf8_json_reject_duplicate_keys_nonfinite_numbers_unknown_or_reordered_fields",
+    "integerPolicy": "exact_json_integers_only_no_boolean_aliases",
+    "pathPolicy": "fixed_repository_relative_candidate_paths_no_symlink_or_existing_instance_in_default_check",
+    "canonicalEncoding": "compact_utf8_json_no_trailing_newline_preserve_declared_field_order"
+  },
+  "sensitiveDataPolicy": {
+    "allowedVariableInputs": [
+      "public_production_application_identifiers",
+      "opaque_versioned_public_record_and_policy_refs",
+      "bounded_provider_versions",
+      "public_service_dns_names",
+      "bounded_public_region_capacity_and_cost_values"
+    ],
+    "forbiddenMaterial": [
+      "private_keys",
+      "raw_public_or_private_key_bytes",
+      "certificate_bytes",
+      "signatures",
+      "credentials",
+      "access_tokens",
+      "account_tokens",
+      "passwords",
+      "recovery_codes",
+      "private_account_data",
+      "personal_contact_data",
+      "personal_names_emails_phone_numbers_or_addresses",
+      "http_headers",
+      "dns_api_secrets",
+      "unsanitized_logs",
+      "arbitrary_logs",
+      "artifact_bytes",
+      "qr_pairing_or_route_secrets",
+      "provider_urls_with_credentials"
+    ],
+    "arbitraryFreeFormFieldsAllowed": false,
+    "referencePolicy": "all_refs_use_an_allowlisted_class_plus_literal_sha256_lowercase_digest_and_version_with_no_raw_identifier_or_secret_material",
+    "publicValueReviewPolicy": "candidate_values_must_be_separately_reviewed_before_any_artifact_is_written_or_cataloged"
+  },
+  "authorizationBoundary": {
+    "catalogRecordReservedFields": [
+      "evidenceId",
+      "evidenceKind",
+      "evidenceClass",
+      "subjectImplementationRevision",
+      "subjectCheckpointSha256",
+      "artifactPath",
+      "artifactByteLength",
+      "artifactSha256",
+      "verificationMethod",
+      "verifierIdentityRef",
+      "verifiedAt",
+      "provenanceRef"
+    ],
+    "candidateForbiddenFields": [
+      "verifiedAt",
+      "verifierIdentityRef",
+      "provenanceRef",
+      "ownerBinding",
+      "approvalReceipt",
+      "evidenceCatalogRecord",
+      "authorityBinding",
+      "runnerAttestation",
+      "gateReceipt",
+      "receiptActivation",
+      "g0ExitAuthority",
+      "g1aAuthority"
+    ],
+    "derivedEvidenceKindsForbidden": [
+      "owner_acceptance",
+      "quality_measurement_contract_owner_approvals"
+    ],
+    "candidateValidationMayReadFiles": false,
+    "candidateValidationMayUseNetwork": false,
+    "candidateValidationMayAuthenticateOwner": false,
+    "candidateValidationMayVerifyEvidence": false,
+    "candidateValidationMayCreateCatalogRecords": false,
+    "candidateValidationMayCreateApprovalReceipts": false,
+    "candidateValidationMayCloseBlocker": false,
+    "candidateValidationMayActivateReceipts": false,
+    "candidateValidationMayCompleteG0": false,
+    "candidateValidationMayAuthorizeG1a": false,
+    "artifactInstancePolicy": "profile_and_plan_only_no_candidate_instance_exists_now"
+  },
+  "supersessionPolicy": {
+    "mutateInPlaceAllowed": false,
+    "verifiedStateMutationAllowed": false,
+    "candidateToCatalogRecordMutationAllowed": false,
+    "replacementPolicy": "new_versioned_profile_and_candidate_required_for_any_schema_or_value_change",
+    "nextProfilePathPattern": "^docs/v1/g0/external-evidence-candidate-profile-v[2-9][0-9]*\\.json$"
+  }
+}

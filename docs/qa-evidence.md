@@ -219,8 +219,10 @@ This document separates current verification evidence from historical captures.
   validated target/bundle binding, and durable parent-entry semantics. No local
   ledger code, marker artifact, receipt activation, G0 exit, or G1a authority
   was retained.
-- [x] The seven focused G0 mutation suites therefore contain 138 passing tests;
-  this count does not represent the unrun full no-device aggregate.
+- [x] The nine focused G0 mutation suites therefore contain 160 passing tests.
+  The most recent complete default no-device aggregate predates the new
+  external-evidence suite; it is retained as earlier evidence and is not used to
+  claim integrated coverage for the expanded gate until that gate is rerun.
 - [x] The committed `assurance-v1.json` and
   `assurance-checkpoint-readback-v1.json` remain byte-identical to `929fda5f`.
   The V2 closure amendment binds both parent raw/canonical digests, permits only
@@ -243,7 +245,7 @@ This document separates current verification evidence from historical captures.
   Exact parent publication bytes are externally observed and recorded by the
   dormant sidecar. The sidecar and separate sparse intake packet are tracked in
   successor `70350f5e`; that published intake blob has no responses and every
-  state flag false. The current uncommitted successor contains exactly one
+  state flag false. The published `b24c5ecb` successor contains exactly one
   explicit role-bound publication proposal plus two evidence-kind references
   with null supporting-artifact references while retaining all seven false
   states. Independent registry/revocation/runner/artifact trust, authenticated
@@ -266,9 +268,10 @@ This document separates current verification evidence from historical captures.
   production-relay design validators, 21 documentation/launcher/Phase-A unit
   tests, shell syntax, and `git diff --check`.
 - [x] `bash -n script/check_no_device_quality.sh` passes syntax only after all
-  five G0 checkers, all six mutation suites, and an explicit dormant-candidate
-  versus immutable-publication boundary marker were added to the aggregate. The full
-  aggregate is not claimed until it finishes on the integrated source.
+  nine G0 checker/test source pairs, nine mutation suites, eight direct checker
+  invocations, and the explicit dormant-candidate versus immutable-publication
+  boundary markers were added to the aggregate. The full aggregate is not
+  claimed until it finishes on the integrated source.
 - [x] Every active Gradle command in the aggregate uses `--offline`. This does
   not itself prove zero egress: an authorized run must also preseed and hash-
   attest the Gradle wrapper, plugins, dependencies, Android SDK components, and
@@ -283,7 +286,8 @@ This document separates current verification evidence from historical captures.
 - Proof boundary: the G0 portion of this checklist includes bounded GitHub publication/ref and
   exact-byte readback of the 18-file `12c38154` lineage packet plus the nine-file
   `70350f5e` receipt/intake successor and the seven-file `025a4ef5`
-  truth-sync/compiler successor. The physical supplement below is a separate
+  truth-sync/compiler successor, followed by the sixteen-file `b24c5ecb`
+  evidence-readiness/source successor. The physical supplement below is a separate
   user-directed debug/local-development observation; it is not G0 catalog or
   authorized gate evidence. Neither portion implements G1a, creates a production
   key, signs a release artifact, selects or compiles a P2P dependency, deploys a
@@ -310,8 +314,62 @@ This document separates current verification evidence from historical captures.
   `d534e068f412bed2ea4926f5eb206b6a4343fa4ed8d04f87c11193bc4a5cdb25`.
   This readback is a bounded session observation, not owner authentication,
   evidence verification, receipt activation, G0 exit, or G1a authority.
-- Remaining G0 gate: immutable publication and exact remote-byte observation are
-  complete for all three bounded publication steps in this session. The tracked dormant receipt sidecar encodes the
+- [x] A fourth strict fresh HTTPS `blob:none` partial clone with an exact
+  allowlisted environment, isolated Git configuration, empty template, TLS
+  verification, and no credentials, alternates, grafts, replacement refs,
+  linked worktree, or shallow state resolved remote `main` to
+  `b24c5ecb77067539c185d88f0c2fbbc2cb119c15`, parent `025a4ef5`, and tree
+  `c8aa9e69` from `2026-07-21T07:55:12Z` through `07:55:22Z`. All sixteen
+  target blobs were missing with lazy fetch disabled before acquisition and
+  available afterward. Their exact bytes, lengths, raw SHA-256 values, and
+  recomputed Git object IDs matched the local exact-OID objects; commit, parent,
+  root-tree, and NUL-safe changed-path bytes matched too. The canonical 1,706-byte
+  manifest SHA-256 is
+  `1b91a321de9a39faf9fb519b47ffa6e82ce85dd48595f092a63581875c9d4a37`.
+  The ephemeral 9,265-byte canonical command transcript SHA-256 was
+  `98d08c6bd76289c4d89218d689d50e788cc8b4167b559cb618ddd7c9ae886690`,
+  but its bytes were not persisted or signed. The observation is independent of
+  the existing worktree/local object database only; it does not establish an
+  authenticated collector, trusted time, owner acceptance, evidence
+  verification, receipt activation, G0 exit, or G1a authority.
+- [x] The local provider-neutral owner-trust-bootstrap profile is pinned at raw
+  SHA-256 `229120fcaf7a03b0920b67466ef281a6e739146da72ffab34c10a1f6ed49542b`.
+  It reuses, rather than copies, the V3 ten-field owner binding and eight-field
+  approval receipt. The user-declared sole-human-owner model is bound to the
+  canonical fourteen-role-order SHA-256
+  `51db62b86bfa80ebb7640808b6996f9fc79b27571d50f178a564842ceedd3861`:
+  fourteen unique role-scoped opaque identity references remain required, but
+  an external registry may authenticate all of them as roles of one principal.
+  This does not require a V4 closure amendment and does not authenticate the
+  declaration. All selection references remain null, all authority states remain
+  false, and no adapter result can be created. Eleven focused mutation tests
+  pass. Its earlier default no-device aggregate result predates the
+  external-evidence addendum and remains bounded to that earlier source. This is
+  supplied-byte/no-device static/build/smoke evidence only; it does not select a
+  provider, authenticate an owner or selector decision, verify a signature, or
+  close G0.
+- [x] The 25,082-byte
+  `docs/v1/g0/external-evidence-candidate-profile-v1.json` is pinned at raw
+  SHA-256 `e5233e7b52369299aa50f07adb726ec57c0ea5e4ffe138e0b2725b8d5f87b371`.
+  Its supplied-byte checker independently validates the exact baseline five-kind
+  and supporting two-kind profile bytes, the owner/catalog input sentinel, and
+  all six V1/V2/V3 lineage blobs before deriving the remaining eight
+  non-derived evidence kinds from effective V3. The resulting typed readiness
+  coverage is 15/15; eight candidate artifacts remain absent. Digest-only
+  allowlisted candidate references, null/false selectors, exact reserved catalog
+  fields, and all-false trust/authority states prevent the profile from carrying
+  credentials, personal data, real account identifiers, artifacts, approvals,
+  or activation state. Eleven focused tests cover every payload kind, profile and
+  lineage drift, secret/PII rejection, resource bounds, mutable inputs, pure-I/O
+  isolation, reserved-path files/directories/symlinks, and the final absence
+  readback race. The nine-suite focused G0 run passes 160 tests and all nine
+  standalone G0 checker files pass. This is schema/readiness evidence only, not
+  an external fact, owner authentication, catalog verification, receipt,
+  blocker closure, G0 exit, or G1a authority.
+- Remaining G0 gate: bounded remote-byte observation is complete for the fixed
+  G0 target and three successor scopes in this session. This does not prove
+  permanent remote reachability, branch protection, repository-account control,
+  signed provenance, or a persistent immutable publication. The tracked dormant receipt sidecar encodes the
   target/checkpoint/hash/time candidate but does not persist or independently
   reproduce the parent acquisition provenance and is not activation-capable.
   The current one-response intake candidate is only a reference proposal; its
