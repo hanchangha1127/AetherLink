@@ -219,10 +219,19 @@ This document separates current verification evidence from historical captures.
   validated target/bundle binding, and durable parent-entry semantics. No local
   ledger code, marker artifact, receipt activation, G0 exit, or G1a authority
   was retained.
-- [x] The nine focused G0 mutation suites therefore contain 160 passing tests.
-  The most recent complete default no-device aggregate predates the new
-  external-evidence suite; it is retained as earlier evidence and is not used to
-  claim integrated coverage for the expanded gate until that gate is rerun.
+- [x] The ten focused G0 mutation suites contain 185 passing tests, including
+  twenty-five owner-trust-bootstrap v2 fail-closed tests.
+  The pre-final-hardening aggregate exited zero with a 207-test initial Python
+  batch, 1,809 Swift tests with two environment-dependent skips and zero
+  failures, 23 macOS render smokes, selected offline Android suites/build tasks,
+  and both Swift products. Its temporary stdout was deleted because it contained
+  ephemeral pairing material and was neither persisted nor signed.
+  The final post-hardening complete aggregate also exited zero on the current
+  25-test v2 bytes with an initial 217-test Python batch. Its full-Swift
+  completion assertion, render-smoke, selected offline Android, Swift-product,
+  copy/docs, and final success-marker stages passed. The temporary stdout was
+  deleted because it contained ephemeral pairing material and was neither
+  persisted nor signed.
 - [x] The committed `assurance-v1.json` and
   `assurance-checkpoint-readback-v1.json` remain byte-identical to `929fda5f`.
   The V2 closure amendment binds both parent raw/canonical digests, permits only
@@ -267,11 +276,14 @@ This document separates current verification evidence from historical captures.
   five-locale parity, both protocol schemas, the closed P2P/NAT and
   production-relay design validators, 21 documentation/launcher/Phase-A unit
   tests, shell syntax, and `git diff --check`.
-- [x] `bash -n script/check_no_device_quality.sh` passes syntax only after all
-  nine G0 checker/test source pairs, nine mutation suites, eight direct checker
+- [x] `bash -n script/check_no_device_quality.sh` passes syntax after all ten G0
+  checker/test source pairs, ten mutation suites, nine direct checker
   invocations, and the explicit dormant-candidate versus immutable-publication
-  boundary markers were added to the aggregate. The full aggregate is not
-  claimed until it finishes on the integrated source.
+  boundary markers were registered. The earlier pre-v2 complete aggregate
+  exited zero: its initial Python batch ran 192 tests, all 1,809 Swift tests
+  finished with two environment-dependent skips and zero failures, all 23 macOS
+  render smokes passed, the selected offline Android suites/build tasks passed,
+  and both Swift products built.
 - [x] Every active Gradle command in the aggregate uses `--offline`. This does
   not itself prove zero egress: an authorized run must also preseed and hash-
   attest the Gradle wrapper, plugins, dependencies, Android SDK components, and
@@ -332,7 +344,20 @@ This document separates current verification evidence from historical captures.
   the existing worktree/local object database only; it does not establish an
   authenticated collector, trusted time, owner acceptance, evidence
   verification, receipt activation, G0 exit, or G1a authority.
-- [x] The local provider-neutral owner-trust-bootstrap profile is pinned at raw
+- [x] The subsequent twelve-file owner-trust-bootstrap/external-readiness slice
+  is published and independently read back at
+  `4227204b450372fcee55e0ef970c401f10b6c98c`, with parent `b24c5ecb` and tree
+  `c321c33e`. Fresh public HTTPS GitHub commit/tree APIs, raw content, and
+  `git ls-remote` matched remote `main` and all 12 path statuses, modes, blob
+  IDs, lengths, raw SHA-256 values, and bytes from `2026-07-21T12:34:24Z`
+  through `12:34:32Z`. The unpersisted, unsigned 1,857-byte manifest SHA-256 is
+  `267be3ca8f56fe353fbb856f95c6f634e98afbc3f204b589a9935be0fe5b0a15`.
+  This is remote-source evidence only, not owner authentication, acceptance,
+  activation, G0 exit, or G1a authority. The current unstaged twelve-path
+  follow-up consists of the four canonical truth-sync documents, the external-
+  evidence candidate profile/checker/tests, copy-hygiene registration, owner-
+  trust-bootstrap v2 profile/checker/tests, and no-device aggregate registration.
+- [x] The immutable provider-neutral owner-trust-bootstrap v1 predecessor is pinned at raw
   SHA-256 `229120fcaf7a03b0920b67466ef281a6e739146da72ffab34c10a1f6ed49542b`.
   It reuses, rather than copies, the V3 ten-field owner binding and eight-field
   approval receipt. The user-declared sole-human-owner model is bound to the
@@ -343,31 +368,67 @@ This document separates current verification evidence from historical captures.
   This does not require a V4 closure amendment and does not authenticate the
   declaration. All selection references remain null, all authority states remain
   false, and no adapter result can be created. Eleven focused mutation tests
-  pass. Its earlier default no-device aggregate result predates the
-  external-evidence addendum and remains bounded to that earlier source. This is
-  supplied-byte/no-device static/build/smoke evidence only; it does not select a
+  pass, and the earlier complete expanded default no-device aggregate predates
+  the local v2 successor. This is supplied-byte/no-device static/build/smoke
+  evidence only; it does not select a
   provider, authenticate an owner or selector decision, verify a signature, or
   close G0.
-- [x] The 25,082-byte
+- [x] `docs/v1/g0/owner-trust-bootstrap-profile-v2.json` is pinned at raw SHA-256
+  `13a3b3a5097b443620f049ad69663c486810945436e1c484f3a79cc8635c53f3`.
+  It records the user-selected but unverified account-control principal
+  `github:hanchangha1127` / GitHub subject ID `243786110`, maps all fourteen
+  canonical roles through unique binding, opaque identity, and receipt refs,
+  and fixes a software `ssh-ed25519` SSHSIG candidate without a credential,
+  public-key digest, or trust anchor. Exact raw/canonical receipt binding,
+  independent challenges, canonical 70-character/LF OpenSSH armor and exact
+  Ed25519 SSHSIG wire structure, one-way revocation-to-registry digest binding,
+  exact status-reference closure, null external root selectors, paired registry/
+  revocation high-watermarks, JCS manifest encoding, RFC 3161 time evidence,
+  external atomic replay consumption, and authenticated successor transitions are required by
+  dormant profile/checker shapes; no registry, revocation, TSA, replay, or
+  signature system executes, and structural SSHSIG parsing is not cryptographic
+  verification. Twenty-five mutation tests pass. All operational selection references
+  and authority states remain null/false, adapter integration is not implemented,
+  and no owner-bootstrap SSH private-key path or signing operation exists.
+- Supplemental GitHub public-key observation:
+
+  A repeated, non-authorizing GitHub public-key observation on 2026-07-22 read
+  `https://github.com/hanchangha1127.keys` twice with matching bytes. The mutable
+  endpoint returned one `ssh-ed25519` line: 81 response bytes at SHA-256
+  `18932433bb8a1ea9219ec94f677a17d7e695f286f5ab9e1145d708db6326048e`,
+  containing a 51-byte OpenSSH public-key wire blob at SHA-256
+  `6ba489f21ff7d6ca504f74ff8cf8af656016adb8307fe4b2faeb08af8e7edca8`
+  and fingerprint `SHA256:a6SJ8h/31spQT3T/jPivZWAWrbgwf+Sy+usIr45+3Kg`.
+  The response and public-key bytes were not persisted. This mutable endpoint
+  observation is supplemental provenance only: `credentialRefCandidate`,
+  `publicKeyBlobSha256`, `openSshPublicKeyFingerprint`, and `trustAnchorRef`
+  remain null, and it is not an authenticated selector, proof of control, trust
+  anchor, owner authentication, receipt acceptance, G0 exit, or G1a authority.
+- [x] The 25,552-byte
   `docs/v1/g0/external-evidence-candidate-profile-v1.json` is pinned at raw
-  SHA-256 `e5233e7b52369299aa50f07adb726ec57c0ea5e4ffe138e0b2725b8d5f87b371`.
+  SHA-256 `8670a9c5a948b5c0e89ffd3fcd6561f4dcb51776a6d5c174f6a12c5a587c9848`.
   Its supplied-byte checker independently validates the exact baseline five-kind
   and supporting two-kind profile bytes, the owner/catalog input sentinel, and
   all six V1/V2/V3 lineage blobs before deriving the remaining eight
   non-derived evidence kinds from effective V3. The resulting typed readiness
-  coverage is 15/15; eight candidate artifacts remain absent. Digest-only
-  allowlisted candidate references, null/false selectors, exact reserved catalog
+  coverage is 15/15; eight candidate artifacts remain absent. Field-specific
+  digest-only candidate-reference classes, null/false selectors, exact reserved catalog
   fields, and all-false trust/authority states prevent the profile from carrying
   credentials, personal data, real account identifiers, artifacts, approvals,
   or activation state. Eleven focused tests cover every payload kind, profile and
   lineage drift, secret/PII rejection, resource bounds, mutable inputs, pure-I/O
-  isolation, reserved-path files/directories/symlinks, and the final absence
-  readback race. The nine-suite focused G0 run passes 160 tests and all nine
-  standalone G0 checker files pass. This is schema/readiness evidence only, not
+  isolation, decision-derived custody and deletion constraints, emergency versus
+  release-signing separation, current/previous provider-version separation,
+  the synthetic v1 `KRW` fixture plus mandatory v2 real-currency selection,
+  reserved-path files/directories/symlinks, and the final absence
+  readback race. The ten-suite focused G0 run passes 185 tests, and nine direct
+  checker invocations pass. The publication-receipt checker/test source pair is
+  exercised through its suite and intentionally has no executable
+  `main`. This is schema/readiness evidence only, not
   an external fact, owner authentication, catalog verification, receipt,
   blocker closure, G0 exit, or G1a authority.
-- Remaining G0 gate: bounded remote-byte observation is complete for the fixed
-  G0 target and three successor scopes in this session. This does not prove
+- Remaining G0 gate: bounded remote-byte observation is recorded for the fixed
+  G0 target and four successor scopes across the recorded sessions. This does not prove
   permanent remote reachability, branch protection, repository-account control,
   signed provenance, or a persistent immutable publication. The tracked dormant receipt sidecar encodes the
   target/checkpoint/hash/time candidate but does not persist or independently

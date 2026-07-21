@@ -340,6 +340,10 @@
       "candidatePath": "docs/evidence/g0-root-signer-rotation-and-revocation-owners-candidate-v1.json",
       "exactPayloadFields": [
         "custodyAssignments",
+        "offlineRootCustodyPolicy",
+        "onlineSignerCustodyPolicy",
+        "emergencyRevocationSeparatedFromReleaseSigning",
+        "releaseSigningAssignmentRefCandidate",
         "rotationOverlapSeconds",
         "rotationPolicyRefCandidate",
         "keyCeremonyRunbookRefCandidate",
@@ -354,10 +358,10 @@
             "custodyProfileRefCandidate"
           ],
           "cardinalityPolicy": "exactly_offline_root_online_signer_emergency_revocation_in_order",
-          "valuePolicy": "versioned_assignment_and_custody_refs_without_owner_identity_or_key_material"
+          "valuePolicy": "unique_role_scoped_assignment_and_custody_refs_with_exact_decision_custody_policies_and_emergency_release_signing_separation"
         }
       ],
-      "validationPolicy": "offline_root_online_signer_and_emergency_revocation_assignments_remain_reference_only",
+      "validationPolicy": "exact_decision_custody_policies_unique_role_scoped_assignments_and_emergency_release_signing_separation_remain_reference_only",
       "requiredIndependentInputsAbsent": [
         "authenticated_owner_binding_and_approval_receipt",
         "independent_external_source_provenance",
@@ -391,13 +395,14 @@
             "aggregateOperationalMetricsDays",
             "sourceFreeSecurityEventsDays",
             "sanitizedIncidentEvidenceDays",
-            "contentFreeReleaseRecordsDays"
+            "contentFreeReleaseRecordsDays",
+            "expiredAuthorizationStateDeletionSeconds"
           ],
           "cardinalityPolicy": "one_exact_object",
-          "valuePolicy": "exact_decision_v1_retention_days"
+          "valuePolicy": "exact_decision_v1_retention_days_and_expired_authorization_deletion_seconds"
         }
       ],
-      "validationPolicy": "decision_v1_retention_values_and_all_policy_runbook_review_refs_are_required",
+      "validationPolicy": "decision_v1_retention_and_expired_authorization_deletion_values_plus_all_policy_runbook_review_refs_are_required",
       "requiredIndependentInputsAbsent": [
         "authenticated_owner_binding_and_approval_receipt",
         "independent_external_source_provenance",
@@ -437,7 +442,7 @@
           "valuePolicy": "bounded_region_code_and_versioned_provider_region_ref"
         }
       ],
-      "validationPolicy": "one_initial_region_positive_peak_two_x_capacity_basis_and_positive_iso4217_cost_ceiling_required",
+      "validationPolicy": "one_initial_region_positive_peak_two_x_capacity_basis_and_positive_synthetic_profile_v1_krw_cost_ceiling_required_real_currency_selection_requires_v2",
       "requiredIndependentInputsAbsent": [
         "authenticated_owner_binding_and_approval_receipt",
         "independent_external_source_provenance",
@@ -605,7 +610,7 @@
       "provider_urls_with_credentials"
     ],
     "arbitraryFreeFormFieldsAllowed": false,
-    "referencePolicy": "all_refs_use_an_allowlisted_class_plus_literal_sha256_lowercase_digest_and_version_with_no_raw_identifier_or_secret_material",
+    "referencePolicy": "every_ref_field_uses_its_exact_allowlisted_class_plus_literal_sha256_lowercase_digest_and_version_with_no_raw_identifier_or_secret_material",
     "publicValueReviewPolicy": "candidate_values_must_be_separately_reviewed_before_any_artifact_is_written_or_cataloged"
   },
   "authorizationBoundary": {

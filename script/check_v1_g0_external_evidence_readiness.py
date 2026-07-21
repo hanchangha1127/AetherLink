@@ -36,10 +36,10 @@ EXPECTED_DECISION_RAW_SHA256 = (
     "44dd88a0de7e02fdb2b7c22e597496ffe4f00f9a67a54af6e9ace8afdcf9308a"
 )
 EXPECTED_PROFILE_RAW_SHA256 = (
-    "e5233e7b52369299aa50f07adb726ec57c0ea5e4ffe138e0b2725b8d5f87b371"
+    "8670a9c5a948b5c0e89ffd3fcd6561f4dcb51776a6d5c174f6a12c5a587c9848"
 )
 EXPECTED_PLAN_RAW_SHA256 = (
-    "a40914504f5ffde47a84d0745d4ffe1976fecf0e47a57bd876b390de6081183b"
+    "4764c79d1497c231f4edb920b13bb6b3343addbdccc5d6e8ac0499185022e4fd"
 )
 EXPECTED_PLAN_BYTE_LENGTH = 5_179
 
@@ -331,6 +331,10 @@ SERVICE_DOMAIN_ENTRY_FIELDS = (
 )
 ROOT_SIGNER_PAYLOAD_FIELDS = (
     "custodyAssignments",
+    "offlineRootCustodyPolicy",
+    "onlineSignerCustodyPolicy",
+    "emergencyRevocationSeparatedFromReleaseSigning",
+    "releaseSigningAssignmentRefCandidate",
     "rotationOverlapSeconds",
     "rotationPolicyRefCandidate",
     "keyCeremonyRunbookRefCandidate",
@@ -354,6 +358,7 @@ RETENTION_SCHEDULE_FIELDS = (
     "sourceFreeSecurityEventsDays",
     "sanitizedIncidentEvidenceDays",
     "contentFreeReleaseRecordsDays",
+    "expiredAuthorizationStateDeletionSeconds",
 )
 RELAY_BUDGET_PAYLOAD_FIELDS = (
     "regions",
@@ -385,7 +390,6 @@ ARTIFACT_PATHS = {
 }
 
 REFERENCE_CLASSES = (
-    "public-record",
     "policy",
     "runbook",
     "ownership-record",
@@ -419,7 +423,7 @@ DOMAIN_PATTERN = re.compile(
     r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$"
 )
 REGION_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{1,31}$")
-CURRENCY_PATTERN = re.compile(r"^[A-Z]{3}$")
+PROFILE_V1_SYNTHETIC_BUDGET_CURRENCY_CODES = frozenset(("KRW",))
 
 KEY_PURPOSES = (
     "android_play_app_signing",
@@ -462,9 +466,22 @@ def _require_exact(
         failures.append(f"{label} is not exact")
 
 
-def _require_reference(value: object, label: str, failures: list[str]) -> None:
-    if not isinstance(value, str) or REFERENCE_PATTERN.fullmatch(value) is None:
-        failures.append(f"{label} must be a bounded versioned nonsecret reference")
+def _require_reference(
+    value: object,
+    expected_class: str,
+    label: str,
+    failures: list[str],
+) -> None:
+    match = REFERENCE_PATTERN.fullmatch(value) if isinstance(value, str) else None
+    if (
+        expected_class not in REFERENCE_CLASSES
+        or match is None
+        or not value.startswith(f"{expected_class}:sha256:")
+    ):
+        failures.append(
+            f"{label} must use the exact {expected_class} class as a bounded "
+            "versioned nonsecret reference"
+        )
 
 
 def _require_pattern(
@@ -524,13 +541,13 @@ def _expected_nested_profiles(kind: str) -> list[dict[str, object]]:
             "custodyAssignments",
             CUSTODY_ASSIGNMENT_ENTRY_FIELDS,
             "exactly_offline_root_online_signer_emergency_revocation_in_order",
-            "versioned_assignment_and_custody_refs_without_owner_identity_or_key_material",
+            "unique_role_scoped_assignment_and_custody_refs_with_exact_decision_custody_policies_and_emergency_release_signing_separation",
         ),
         "privacy_incident_and_retention_owner_approval": (
             "retentionSchedule",
             RETENTION_SCHEDULE_FIELDS,
             "one_exact_object",
-            "exact_decision_v1_retention_days",
+            "exact_decision_v1_retention_days_and_expired_authorization_deletion_seconds",
         ),
         "approved_region_peak_capacity_and_cost_ceiling": (
             "regions",
@@ -557,9 +574,9 @@ def _expected_validation_policy(kind: str) -> str:
         "key_custody_runbook": "all_distribution_key_purposes_require_custody_access_rotation_recovery_and_revocation_refs",
         "approved_minimum_current_previous_matrix": "both_runtime_host_providers_require_minimum_current_previous_versions_and_evidence",
         "domain_dns_webpki_owners": "all_production_service_roles_require_domain_dns_webpki_and_renewal_lifecycle_refs",
-        "root_signer_rotation_and_revocation_owners": "offline_root_online_signer_and_emergency_revocation_assignments_remain_reference_only",
-        "privacy_incident_and_retention_owner_approval": "decision_v1_retention_values_and_all_policy_runbook_review_refs_are_required",
-        "approved_region_peak_capacity_and_cost_ceiling": "one_initial_region_positive_peak_two_x_capacity_basis_and_positive_iso4217_cost_ceiling_required",
+        "root_signer_rotation_and_revocation_owners": "exact_decision_custody_policies_unique_role_scoped_assignments_and_emergency_release_signing_separation_remain_reference_only",
+        "privacy_incident_and_retention_owner_approval": "decision_v1_retention_and_expired_authorization_deletion_values_plus_all_policy_runbook_review_refs_are_required",
+        "approved_region_peak_capacity_and_cost_ceiling": "one_initial_region_positive_peak_two_x_capacity_basis_and_positive_synthetic_profile_v1_krw_cost_ceiling_required_real_currency_selection_requires_v2",
     }
     return policies[kind]
 
@@ -595,6 +612,10 @@ def _derive_contract(
 
     baseline_kinds = covered_kinds(baseline_profile, "baseline profile")
     supporting_kinds = covered_kinds(supporting_profile, "supporting profile")
+    if len(baseline_kinds) != 5:
+        failures.append("baseline profile must cover exactly five evidence kinds")
+    if len(supporting_kinds) != 2:
+        failures.append("supporting profile must cover exactly two evidence kinds")
     overlap = set(baseline_kinds).intersection(supporting_kinds)
     if overlap:
         failures.append("existing typed evidence profile coverage overlaps")
@@ -855,7 +876,7 @@ def _expected_sensitive_policy() -> dict[str, object]:
             "provider_urls_with_credentials",
         ],
         "arbitraryFreeFormFieldsAllowed": False,
-        "referencePolicy": "all_refs_use_an_allowlisted_class_plus_literal_sha256_lowercase_digest_and_version_with_no_raw_identifier_or_secret_material",
+        "referencePolicy": "every_ref_field_uses_its_exact_allowlisted_class_plus_literal_sha256_lowercase_digest_and_version_with_no_raw_identifier_or_secret_material",
         "publicValueReviewPolicy": "candidate_values_must_be_separately_reviewed_before_any_artifact_is_written_or_cataloged",
     }
 
@@ -987,7 +1008,15 @@ def _validated_decision_constraints(
             "contentFreeReleaseRecordsDays": operations.get(
                 "contentFreeReleaseRecordRetentionDays"
             ),
+            "expiredAuthorizationStateDeletionSeconds": operations.get(
+                "expiredAuthorizationStateDeletionSeconds"
+            ),
         },
+        "offlineRootCustodyPolicy": operations.get("offlineRootCustody"),
+        "onlineSignerCustodyPolicy": operations.get("onlineSignerCustody"),
+        "emergencyRevocationSeparatedFromReleaseSigning": operations.get(
+            "emergencyRevocationSeparatedFromReleaseSigning"
+        ),
         "initialRegionCount": operations.get("initialRegionCount"),
         "capacityMultiplierBasisPoints": 20_000,
     }
@@ -1372,6 +1401,7 @@ def compile_dormant_external_evidence_readiness_plan(
 
 def _validate_reference_list(
     value: object,
+    expected_class: str,
     label: str,
     failures: list[str],
     *,
@@ -1384,7 +1414,7 @@ def _validate_reference_list(
     if len(value) != len(set(item for item in value if isinstance(item, str))):
         failures.append(f"{label} references must be unique")
     for index, item in enumerate(value):
-        _require_reference(item, f"{label}[{index}]", failures)
+        _require_reference(item, expected_class, f"{label}[{index}]", failures)
 
 
 def _validate_application_ids(
@@ -1416,9 +1446,9 @@ def _validate_application_ids(
         _require_pattern(entry.get("identifier"), APPLICATION_ID_PATTERN, f"application ID entry {index}.identifier", failures)
         if entry.get("identifier") == current_ids[platform]:
             failures.append(f"application ID entry {index}.identifier must be a distinct production identifier")
-        _require_reference(entry.get("ownershipRecordRefCandidate"), f"application ID entry {index}.ownershipRecordRefCandidate", failures)
-    _require_reference(payload.get("versionPolicyRefCandidate"), "owned application IDs versionPolicyRefCandidate", failures)
-    _require_reference(payload.get("migrationPolicyRefCandidate"), "owned application IDs migrationPolicyRefCandidate", failures)
+        _require_reference(entry.get("ownershipRecordRefCandidate"), "ownership-record", f"application ID entry {index}.ownershipRecordRefCandidate", failures)
+    _require_reference(payload.get("versionPolicyRefCandidate"), "policy", "owned application IDs versionPolicyRefCandidate", failures)
+    _require_reference(payload.get("migrationPolicyRefCandidate"), "policy", "owned application IDs migrationPolicyRefCandidate", failures)
 
 
 def _validate_distribution_accounts(
@@ -1443,10 +1473,10 @@ def _validate_distribution_accounts(
         )
         _require_exact(entry.get("platform"), platform, f"distribution account entry {index}.platform", failures)
         _require_exact(entry.get("distributionChannel"), channel, f"distribution account entry {index}.distributionChannel", failures)
-        _require_reference(entry.get("accountOrganizationRefCandidate"), f"distribution account entry {index}.accountOrganizationRefCandidate", failures)
-        _require_reference(entry.get("accountControlEvidenceRefCandidate"), f"distribution account entry {index}.accountControlEvidenceRefCandidate", failures)
-    _require_reference(payload.get("accessControlRunbookRefCandidate"), "distribution accounts accessControlRunbookRefCandidate", failures)
-    _require_reference(payload.get("recoveryRunbookRefCandidate"), "distribution accounts recoveryRunbookRefCandidate", failures)
+        _require_reference(entry.get("accountOrganizationRefCandidate"), "account-organization", f"distribution account entry {index}.accountOrganizationRefCandidate", failures)
+        _require_reference(entry.get("accountControlEvidenceRefCandidate"), "account-control-evidence", f"distribution account entry {index}.accountControlEvidenceRefCandidate", failures)
+    _require_reference(payload.get("accessControlRunbookRefCandidate"), "runbook", "distribution accounts accessControlRunbookRefCandidate", failures)
+    _require_reference(payload.get("recoveryRunbookRefCandidate"), "runbook", "distribution accounts recoveryRunbookRefCandidate", failures)
 
 
 def _validate_key_custody(
@@ -1469,10 +1499,16 @@ def _validate_key_custody(
         _require_exact(entry.get("keyPurpose"), purpose, f"key class entry {index}.keyPurpose", failures)
         if entry.get("custodyClass") not in CUSTODY_CLASSES:
             failures.append(f"key class entry {index}.custodyClass is not in the closed set")
-        for field in KEY_CLASS_ENTRY_FIELDS[2:]:
-            _require_reference(entry.get(field), f"key class entry {index}.{field}", failures)
-    _require_reference(payload.get("custodyRunbookRefCandidate"), "key custody custodyRunbookRefCandidate", failures)
-    _require_reference(payload.get("separationOfDutiesPolicyRefCandidate"), "key custody separationOfDutiesPolicyRefCandidate", failures)
+        for field, reference_class in (
+            ("custodyProviderRefCandidate", "custody-provider"),
+            ("accessPolicyRefCandidate", "policy"),
+            ("rotationPolicyRefCandidate", "policy"),
+            ("recoveryPolicyRefCandidate", "policy"),
+            ("emergencyRevocationRefCandidate", "runbook"),
+        ):
+            _require_reference(entry.get(field), reference_class, f"key class entry {index}.{field}", failures)
+    _require_reference(payload.get("custodyRunbookRefCandidate"), "runbook", "key custody custodyRunbookRefCandidate", failures)
+    _require_reference(payload.get("separationOfDutiesPolicyRefCandidate"), "policy", "key custody separationOfDutiesPolicyRefCandidate", failures)
 
 
 def _validate_provider_matrix(
@@ -1480,7 +1516,7 @@ def _validate_provider_matrix(
     constraints: dict[str, object],
     failures: list[str],
 ) -> None:
-    _require_reference(payload.get("matrixRevisionRefCandidate"), "provider matrix matrixRevisionRefCandidate", failures)
+    _require_reference(payload.get("matrixRevisionRefCandidate"), "matrix", "provider matrix matrixRevisionRefCandidate", failures)
     provider_ids = constraints.get("providerIds")
     if not isinstance(provider_ids, tuple):
         failures.append("decision-derived provider order is unavailable")
@@ -1503,11 +1539,11 @@ def _validate_provider_matrix(
             _require_pattern(value, VERSION_PATTERN, f"provider matrix entry {index}.{field}", failures)
             if isinstance(value, str):
                 versions.append(value)
-        if len(versions) == 3 and len(set(versions)) != 3:
-            failures.append(f"provider matrix entry {index} versions must be distinct")
-        _require_reference(entry.get("compatibilityProfileRefCandidate"), f"provider matrix entry {index}.compatibilityProfileRefCandidate", failures)
-        _validate_reference_list(entry.get("evidenceRefCandidates"), f"provider matrix entry {index}.evidenceRefCandidates", failures, minimum=2)
-    _require_reference(payload.get("testPolicyRefCandidate"), "provider matrix testPolicyRefCandidate", failures)
+        if len(versions) == 3 and versions[1] == versions[2]:
+            failures.append(f"provider matrix entry {index} current and previous versions must be distinct")
+        _require_reference(entry.get("compatibilityProfileRefCandidate"), "compatibility-profile", f"provider matrix entry {index}.compatibilityProfileRefCandidate", failures)
+        _validate_reference_list(entry.get("evidenceRefCandidates"), "evidence-record", f"provider matrix entry {index}.evidenceRefCandidates", failures, minimum=2)
+    _require_reference(payload.get("testPolicyRefCandidate"), "policy", "provider matrix testPolicyRefCandidate", failures)
 
 
 def _validate_service_domains(
@@ -1529,9 +1565,14 @@ def _validate_service_domains(
         )
         _require_exact(entry.get("serviceRole"), service_role, f"service domain entry {index}.serviceRole", failures)
         _require_pattern(entry.get("domainName"), DOMAIN_PATTERN, f"service domain entry {index}.domainName", failures)
-        for field in SERVICE_DOMAIN_ENTRY_FIELDS[2:]:
-            _require_reference(entry.get(field), f"service domain entry {index}.{field}", failures)
-    _require_reference(payload.get("lifecycleRunbookRefCandidate"), "service domains lifecycleRunbookRefCandidate", failures)
+        for field, reference_class in (
+            ("domainOwnershipRecordRefCandidate", "domain-ownership"),
+            ("dnsControlEvidenceRefCandidate", "dns-control"),
+            ("webpkiLifecycleRefCandidate", "webpki-lifecycle"),
+            ("renewalMonitoringRefCandidate", "renewal-monitoring"),
+        ):
+            _require_reference(entry.get(field), reference_class, f"service domain entry {index}.{field}", failures)
+    _require_reference(payload.get("lifecycleRunbookRefCandidate"), "runbook", "service domains lifecycleRunbookRefCandidate", failures)
 
 
 def _validate_root_signer(
@@ -1539,11 +1580,12 @@ def _validate_root_signer(
     constraints: dict[str, object],
     failures: list[str],
 ) -> None:
-    _ = constraints
     entries = payload.get("custodyAssignments")
     if not isinstance(entries, list) or len(entries) != len(CUSTODY_RESPONSIBILITIES):
         failures.append("root signer evidence must contain three custody responsibilities")
         entries = []
+    assignment_refs: list[str] = []
+    custody_refs: list[str] = []
     for index, responsibility in enumerate(CUSTODY_RESPONSIBILITIES):
         entry = receipt._exact_ordered_object(
             entries[index] if index < len(entries) else None,
@@ -1552,11 +1594,64 @@ def _validate_root_signer(
             failures,
         )
         _require_exact(entry.get("responsibility"), responsibility, f"custody assignment entry {index}.responsibility", failures)
-        _require_reference(entry.get("assignmentRecordRefCandidate"), f"custody assignment entry {index}.assignmentRecordRefCandidate", failures)
-        _require_reference(entry.get("custodyProfileRefCandidate"), f"custody assignment entry {index}.custodyProfileRefCandidate", failures)
+        assignment_ref = entry.get("assignmentRecordRefCandidate")
+        custody_ref = entry.get("custodyProfileRefCandidate")
+        _require_reference(assignment_ref, "assignment-record", f"custody assignment entry {index}.assignmentRecordRefCandidate", failures)
+        _require_reference(custody_ref, "custody-profile", f"custody assignment entry {index}.custodyProfileRefCandidate", failures)
+        if isinstance(assignment_ref, str):
+            assignment_refs.append(assignment_ref)
+        if isinstance(custody_ref, str):
+            custody_refs.append(custody_ref)
+    if len(assignment_refs) == len(CUSTODY_RESPONSIBILITIES) and len(set(assignment_refs)) != len(assignment_refs):
+        failures.append("root signer responsibility assignment references must be unique")
+    if len(custody_refs) == len(CUSTODY_RESPONSIBILITIES) and len(set(custody_refs)) != len(custody_refs):
+        failures.append("root signer responsibility custody profiles must be unique")
+    _require_exact(
+        payload.get("offlineRootCustodyPolicy"),
+        constraints.get("offlineRootCustodyPolicy"),
+        "root signer offlineRootCustodyPolicy",
+        failures,
+    )
+    _require_exact(
+        payload.get("onlineSignerCustodyPolicy"),
+        constraints.get("onlineSignerCustodyPolicy"),
+        "root signer onlineSignerCustodyPolicy",
+        failures,
+    )
+    _require_exact(
+        payload.get("emergencyRevocationSeparatedFromReleaseSigning"),
+        True,
+        "root signer emergencyRevocationSeparatedFromReleaseSigning",
+        failures,
+    )
+    _require_exact(
+        constraints.get("emergencyRevocationSeparatedFromReleaseSigning"),
+        True,
+        "decision-derived emergency revocation separation",
+        failures,
+    )
+    release_assignment = payload.get("releaseSigningAssignmentRefCandidate")
+    _require_reference(
+        release_assignment,
+        "assignment-record",
+        "root signer releaseSigningAssignmentRefCandidate",
+        failures,
+    )
+    if (
+        len(assignment_refs) == len(CUSTODY_RESPONSIBILITIES)
+        and isinstance(release_assignment, str)
+        and release_assignment in assignment_refs
+    ):
+        failures.append(
+            "root signer release-signing assignment must be distinct from every service custody responsibility"
+        )
     _require_int(payload.get("rotationOverlapSeconds"), 1, 31_536_000, "root signer rotationOverlapSeconds", failures)
-    for field in ROOT_SIGNER_PAYLOAD_FIELDS[2:]:
-        _require_reference(payload.get(field), f"root signer {field}", failures)
+    for field, reference_class in (
+        ("rotationPolicyRefCandidate", "policy"),
+        ("keyCeremonyRunbookRefCandidate", "runbook"),
+        ("separationOfDutiesPolicyRefCandidate", "policy"),
+    ):
+        _require_reference(payload.get(field), reference_class, f"root signer {field}", failures)
 
 
 def _validate_privacy(
@@ -1564,7 +1659,7 @@ def _validate_privacy(
     constraints: dict[str, object],
     failures: list[str],
 ) -> None:
-    _require_reference(payload.get("privacyPolicyRefCandidate"), "privacy privacyPolicyRefCandidate", failures)
+    _require_reference(payload.get("privacyPolicyRefCandidate"), "policy", "privacy privacyPolicyRefCandidate", failures)
     retention = receipt._exact_ordered_object(
         payload.get("retentionSchedule"),
         RETENTION_SCHEDULE_FIELDS,
@@ -1577,8 +1672,13 @@ def _validate_privacy(
         "privacy retentionSchedule",
         failures,
     )
-    for field in PRIVACY_PAYLOAD_FIELDS[2:]:
-        _require_reference(payload.get(field), f"privacy {field}", failures)
+    for field, reference_class in (
+        ("dataDeletionRunbookRefCandidate", "runbook"),
+        ("incidentResponseRunbookRefCandidate", "runbook"),
+        ("notificationPolicyRefCandidate", "policy"),
+        ("policyReviewRecordRefCandidate", "review-record"),
+    ):
+        _require_reference(payload.get(field), reference_class, f"privacy {field}", failures)
 
 
 def _validate_relay_budget(
@@ -1601,7 +1701,7 @@ def _validate_relay_budget(
         failures,
     )
     _require_pattern(entry.get("regionCode"), REGION_PATTERN, "relay region entry 0.regionCode", failures)
-    _require_reference(entry.get("providerRegionRefCandidate"), "relay region entry 0.providerRegionRefCandidate", failures)
+    _require_reference(entry.get("providerRegionRefCandidate"), "provider-region", "relay region entry 0.providerRegionRefCandidate", failures)
     _require_int(payload.get("projectedPeakConcurrentSessions"), 1, 1_000_000_000, "relay projectedPeakConcurrentSessions", failures)
     _require_exact(
         payload.get("requiredCapacityMultiplierBasisPoints"),
@@ -1610,9 +1710,21 @@ def _validate_relay_budget(
         failures,
     )
     _require_int(payload.get("monthlyCostCeilingMinorUnits"), 1, 999_999_999_999, "relay monthlyCostCeilingMinorUnits", failures)
-    _require_pattern(payload.get("currency"), CURRENCY_PATTERN, "relay currency", failures)
-    for field in RELAY_BUDGET_PAYLOAD_FIELDS[5:]:
-        _require_reference(payload.get(field), f"relay {field}", failures)
+    currency = payload.get("currency")
+    if (
+        not isinstance(currency, str)
+        or currency not in PROFILE_V1_SYNTHETIC_BUDGET_CURRENCY_CODES
+    ):
+        failures.append(
+            "relay currency must use the synthetic profile-v1 KRW fixture; "
+            "real currency selection requires a new versioned profile"
+        )
+    for field, reference_class in (
+        ("capacityForecastRefCandidate", "capacity-forecast"),
+        ("loadModelRefCandidate", "load-model"),
+        ("budgetReviewRecordRefCandidate", "review-record"),
+    ):
+        _require_reference(payload.get(field), reference_class, f"relay {field}", failures)
 
 
 PAYLOAD_VALIDATORS = {

@@ -4304,6 +4304,8 @@ run check_python_syntax \
   script/test_v1_g0_independent_validation_context.py \
   script/check_v1_g0_owner_trust_bootstrap.py \
   script/test_v1_g0_owner_trust_bootstrap.py \
+  script/check_v1_g0_owner_trust_bootstrap_v2.py \
+  script/test_v1_g0_owner_trust_bootstrap_v2.py \
   script/check_v1_g0_external_evidence_readiness.py \
   script/test_v1_g0_external_evidence_readiness.py \
   script/check_v1_g0_repository_remote_sources.py \
@@ -4397,6 +4399,7 @@ run python3 -m unittest \
   script/test_v1_g0_baseline_evidence_readiness.py \
   script/test_v1_g0_independent_validation_context.py \
   script/test_v1_g0_owner_trust_bootstrap.py \
+  script/test_v1_g0_owner_trust_bootstrap_v2.py \
   script/test_v1_g0_external_evidence_readiness.py \
   script/test_v1_g0_repository_remote_sources.py \
   script/test_production_relay_security_design.py \
@@ -4412,6 +4415,7 @@ run python3 script/check_v1_g0_receipt_bundle.py
 run python3 script/check_v1_g0_baseline_evidence_readiness.py
 run python3 script/check_v1_g0_independent_validation_context.py
 run python3 script/check_v1_g0_owner_trust_bootstrap.py
+run python3 script/check_v1_g0_owner_trust_bootstrap_v2.py
 run python3 script/check_v1_g0_external_evidence_readiness.py
 run python3 script/check_v1_g0_repository_remote_sources.py
 run python3 script/check_android_string_parity.py
@@ -6279,6 +6283,7 @@ echo "Covered V1 G0 baseline-evidence readiness addendum: the exact versioned pr
 echo "Covered V1 G0 external-evidence readiness addendum: the content-addressed profile validates effective V3, the exact baseline-five and supporting-two profiles, the pinned G0 decision, and the dormant owner/catalog input before deriving the remaining eight non-derived evidence kinds in canonical order. Their seven blockers, five non-executable checks, seven owner roles, fixed absent intake selectors, digest-only candidate references, closed payload shapes, and eight absent reserved paths complete typed readiness for 15/15 non-derived kinds without creating an artifact instance. Synthetic fixtures remain unverified and non-authorizing; no external value, credential, private account data, owner authentication, provenance, catalog record, approval receipt, authority, blocker closure, activation, G0 exit, or G1a transition is created."
 echo "Covered V1 G0 independent-validation context addendum: the exact seven effective-V3 trust-input kinds enter only through factory-owned opaque deep-immutable candidate identities; exact lineage, remote checkpoint, target, owner, authority, runner, artifact/log/manifest, and trusted-time bytes are cross-bound with one bounded snapshot per supplied buffer. Missing, reordered, ambiguous, orphan, forged, mutable, oversized, late, or coherently self-asserted drift fails closed. The pure matcher exports no acceptance or activation API, fabricates no real trust adapter result, performs no file, process, socket, network, or clock I/O, and exact synthetic input still returns only the distinct dormant non-authorizing sentinel."
 echo "Covered V1 G0 closure-contract addendum: all ten blockers crosswalk to all nine G0 checks, fourteen accountable roles, and gate-scoped evidence. Any future owner, gate, and accepted publication receipts must bind the exact reviewed repository, commit, checkpoint path and SHA-256, commit-tree and remote readback, authorized command profile, successful result, ordered UTC timestamps, role-scoped blocker ids, and non-empty verified evidence references. The exact 13-field recorded receipt sidecar is statically validated but always dormant. The sparse input validator derives its blocker/role/evidence graph from effective V3, mechanically binds candidate references to exact role/evidence-kind/blocker slugs and versions instead of accepting free-form catalog values, rejects unknown, reordered, derived, contradictory, misbound, unsafe, or state-promoting input, and remains draft_unverified_non_authorizing even for a structurally valid proposal. The current checker accepts no receipt, the candidate context always remains dormant, and activation still requires reviewed independent trust adapters, an external consumed-bundle ledger, separate G1a authority, and complete non-ambiguous bundle coverage."
+echo "Covered V1 G0 owner-trust-bootstrap v2 addendum: the content-addressed non-authorizing profile records github:hanchangha1127 and GitHub subject ID 243786110 as one unverified account-control principal across fourteen unique role-scoped binding, identity, and receipt references; software ssh-ed25519 SSHSIG, exact raw and canonical receipt digests, role credential/public-key binding, independent challenges, canonical 70-character LF-only OpenSSH armor and exact Ed25519 SSHSIG wire structure, one-way revocation-to-registry digest binding, exact statusRef closure, null external root selectors, RFC 8785 JCS envelope and manifest bytes, paired registry/revocation high-watermarks, RFC 3161 time evidence, and external atomic replay consumption are dormant fail-closed candidates covered by a 25-test suite. Structural SSHSIG parsing is not cryptographic verification. Credential, public-key digest, trust anchor, registry/time/ledger adapters, all operational selectors, all authority state, receipt activation, G0 exit, and G1a authority remain absent; this G0 owner-bootstrap SSH credential profile, checker, and gate create, discover, store, or invoke no private key."
 echo "Covered cross-platform readiness UI addendum: one primary pairing task before trust, compact macOS QR renewal, and Android pairing/chat-entry hierarchy"
 echo "Covered cross-codebase optimization addendum: relay epoch material cache, exact-payload Pairing QR cache, exact-buffer Android frame reads, affected-session chat FTS, localized Bundle cache, direct relay raw-buffer forwarding, single-pass Android disk projection, relay-only split frame writes, and source-validated deduplicated no-device suites"
 echo "Covered v0.4 addendum: Android runtime-mediated model capability display"

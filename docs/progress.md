@@ -247,8 +247,9 @@ This document records what has been implemented so far and what should happen ne
   subtotal. The independent-context suite contributes 9 more to form 130, the
   repository/remote-source suite contributes 8 to form 138, the owner-trust-
   bootstrap suite contributes 11 to form 149, and the external-evidence
-  readiness suite contributes 11, so the nine focused G0 suites now contain
-  160 tests in total and are included in the default no-device gate.
+  readiness suite contributes 11 to form 160. The owner-trust-bootstrap v2
+  suite contributes 25, so the ten focused G0 suites now contain 185 tests in
+  total and are included in the default no-device gate.
 - Repository/remote source boundary: the new default checker reconstructs the
   exact 18-entry `929fda5f -> 12c38154` scope directly from Git objects and
   matches its pinned digest, exact parent/tree, and all six lineage blobs while
@@ -346,11 +347,11 @@ This document records what has been implemented so far and what should happen ne
   binding. Neither the current checker nor the generic independent-context
   factory authenticates an external registry snapshot, caller-supplied source,
   or provenance. The remaining gap is not another generic owner schema: no
-  external owner identity registry/trust anchor, credential and proof-of-control
-  mechanism, registry/revocation acquisition and rollback policy, exact adapter
-  output/context contract, or trusted-time/skew policy has been selected. The new
-  provider-neutral owner-trust-bootstrap profile records that gap without filling
-  it. The user has now declared one sole human project owner. V3 does not require
+  operational credential, independently pinned public key or trust anchor,
+  proof of control, authenticated selector decision, registry/revocation/time
+  adapter, external ledger, or adapter output exists. The immutable provider-
+  neutral owner-trust-bootstrap v1 profile records the generic gap without
+  filling it. The user has now declared one sole human project owner. V3 does not require
   fourteen different people: it requires fourteen unique opaque role-scoped
   `ownerIdentityRef` values. The profile therefore binds the exact canonical
   fourteen-role digest to one human principal while preserving the V3 requirement
@@ -361,27 +362,86 @@ This document records what has been implemented so far and what should happen ne
   selection references remain null, all eleven state flags remain false, and the
   adapter projection remains `not_implemented`. Its supplied-byte-only checker
   reuses the existing V3 owner-binding/approval-receipt definitions and never
-  constructs an adapter result. A signature profile and any detached replay
-  challenge remain conditional choices, not implicit V3 receipt fields. No
-  adapter, selector, evidence, receipt, blocker, G0-exit, or G1a state was created.
+  constructs an adapter result. The immutable v1 profile left signature
+  selection conditional. Its v2 successor now records a software `ssh-ed25519`
+  SSHSIG candidate and detached-envelope contract, but credential, public-key,
+  and trust-anchor references remain null and no signature verifier or adapter
+  exists. No adapter, selector, evidence, receipt, blocker, G0-exit, or G1a state
+  was created.
 - Owner trust-bootstrap static verification: the profile raw SHA-256 is
   `229120fcaf7a03b0920b67466ef281a6e739146da72ffab34c10a1f6ed49542b`.
-  Eleven focused mutation tests pass. Its earlier complete default no-device
-  aggregate exited zero, but that run predates the external-evidence addendum and
-  is not used as evidence for the expanded gate. These are no-device
-  static/build/smoke results, not external owner or trust proof.
-- External-evidence typed readiness: the 25,082-byte
+  Eleven focused mutation tests pass. The earlier pre-v2 complete expanded
+  default no-device aggregate also exited zero after the then-final profile/
+  checker/test bytes and before its evidence-only wording correction: its
+  initial Python batch ran 192 tests, all 1,809 Swift tests completed with two
+  skips and zero failures, all 23 macOS render smokes passed, selected offline
+  Android suites/build tasks passed, and both Swift products built. The
+  aggregate stdout was not persisted or signed. Fresh copy/docs/diff guards,
+  not that aggregate, cover the current document bytes. These
+  remain no-device static/build/smoke results, not external owner or trust proof.
+  A later v2-inclusive but pre-final-hardening complete aggregate also exited
+  zero with a 207-test initial Python batch, the same 1,809 Swift tests with two
+  skips and zero failures, 23 render smokes, selected offline Android tasks, and
+  both Swift products. It covered the earlier 15-test v2 suite but not the ten
+  later registry/type/SSHSIG hardening tests; its temporary stdout was deleted
+  because it contained ephemeral pairing material and was not signed.
+  The final post-hardening complete aggregate then exited zero on the current
+  bytes with an initial 217-test Python batch; the full-Swift completion
+  assertion, render-smoke, selected offline Android, Swift-product, copy/docs,
+  and final success-marker stages also passed. Its temporary stdout was deleted
+  because it contained ephemeral pairing material and was not signed.
+- Owner trust-bootstrap v2 candidate:
+  `docs/v1/g0/owner-trust-bootstrap-profile-v2.json` has raw SHA-256
+  `13a3b3a5097b443620f049ad69663c486810945436e1c484f3a79cc8635c53f3`.
+  It records `github:hanchangha1127` with GitHub numeric subject ID `243786110`
+  as one unverified account-control principal, reserves fourteen unique role-
+  scoped binding/identity/receipt references, and records software
+  `ssh-ed25519` SSHSIG as the user-selected candidate. Exact raw and canonical
+  receipt digests, role credential/public-key binding, independent challenges,
+  canonical 70-character/LF OpenSSH armor and exact Ed25519 SSHSIG wire structure,
+  one-way revocation-to-registry digest binding, exact status-reference closure,
+  null external root selectors, paired registry/revocation high-watermarks, JCS
+  manifest encoding, RFC 3161 time evidence, and atomic replay consumption are
+  dormant fail-closed static requirements; structural parsing is not cryptographic
+  verification. This G0 owner-bootstrap SSH
+  credential profile, checker, and gate cannot create, discover, load, store,
+  or invoke its private key. All operational selectors remain null,
+  adapter integration remains `not_implemented`, and all authority state stays
+  false. Twenty-five focused mutation tests pass; this is not owner authentication
+  or an active trust adapter.
+- Supplemental GitHub public-key observation:
+
+  A repeated, non-authorizing GitHub public-key observation on 2026-07-22 read
+  `https://github.com/hanchangha1127.keys` twice with matching bytes. The mutable
+  endpoint returned one `ssh-ed25519` line: 81 response bytes at SHA-256
+  `18932433bb8a1ea9219ec94f677a17d7e695f286f5ab9e1145d708db6326048e`,
+  containing a 51-byte OpenSSH public-key wire blob at SHA-256
+  `6ba489f21ff7d6ca504f74ff8cf8af656016adb8307fe4b2faeb08af8e7edca8`
+  and fingerprint `SHA256:a6SJ8h/31spQT3T/jPivZWAWrbgwf+Sy+usIr45+3Kg`.
+  The response and public-key bytes were not persisted. This mutable endpoint
+  observation is supplemental provenance only: `credentialRefCandidate`,
+  `publicKeyBlobSha256`, `openSshPublicKeyFingerprint`, and `trustAnchorRef`
+  remain null, and it is not an authenticated selector, proof of control, trust
+  anchor, owner authentication, receipt acceptance, G0 exit, or G1a authority.
+- External-evidence typed readiness: the 25,552-byte
   `docs/v1/g0/external-evidence-candidate-profile-v1.json` is pinned at raw
-  SHA-256 `e5233e7b52369299aa50f07adb726ec57c0ea5e4ffe138e0b2725b8d5f87b371`.
+  SHA-256 `8670a9c5a948b5c0e89ffd3fcd6561f4dcb51776a6d5c174f6a12c5a587c9848`.
   It revalidates and content-addresses the existing five-kind baseline and
   two-kind supporting profiles, subtracts those exact seven kinds from the
   effective V3 set of fifteen, and derives the remaining eight kinds plus their
   seven blockers, five non-executable checks, and seven owner roles. Typed
   readiness is therefore 15/15, while eight candidate artifacts remain absent.
   All candidate selectors remain null/false, all trust and authority states
-  remain false, and candidate references carry only allowlisted class, SHA-256,
-  and version data. Eleven focused mutation tests and the combined nine-suite
-  160-test G0 run pass; all nine G0 checkers also pass. This creates no public
+  remain false, and every candidate-reference field requires its own exact class
+  plus SHA-256 and version data. Root/signer payloads project both decision
+  custody policies and keep emergency revocation distinct from release signing;
+  privacy projects the 30-second expired-authorization deletion SLA; provider
+  minimum may equal previous while current must differ from previous; and cost
+  currency remains the synthetic v1 `KRW` fixture and any real selection requires
+  a new v2 profile. Eleven focused mutation tests and the combined ten-suite
+  185-test G0 run pass; nine direct checker invocations also pass. The
+  publication-receipt checker/test source pair is exercised through its suite
+  and intentionally has no executable `main`. This creates no public
   value, account, owner authentication, evidence verification, approval,
   receipt, blocker closure, G0 exit, or G1a authority.
 - Reference-only proposal preparation: the receipt-bundle module now exports
@@ -397,11 +457,21 @@ This document records what has been implemented so far and what should happen ne
   truth-sync are published in `025a4ef5`; the exact sixteen-file selector,
   non-authorizing-readiness, candidate independent-context, and mechanical
   repository/remote-source successor is published and read back at `b24c5ecb`.
-  `main` and `origin/main` were clean and aligned before the current twelve-path
-  local scope: four canonical truth-sync documents, the owner-trust-bootstrap
-  profile/checker/tests, the external-evidence candidate profile/checker/tests,
-  and the no-device plus copy-hygiene registrations. None is staged, committed,
-  or pushed. The assistant performs only edits and verification; the sole owner
+  The twelve-file owner-trust-bootstrap/external-readiness successor is published
+  and independently read back at
+  `4227204b450372fcee55e0ef970c401f10b6c98c`, with parent `b24c5ecb` and tree
+  `c321c33e`. From `2026-07-21T12:34:24Z` through `12:34:32Z`, fresh public
+  HTTPS GitHub commit/tree APIs, raw content, and `git ls-remote` matched remote
+  `main` and all 12 path statuses, modes, blob IDs, lengths, raw SHA-256 values,
+  and bytes. The unpersisted, unsigned 1,857-byte manifest SHA-256 is
+  `267be3ca8f56fe353fbb856f95c6f634e98afbc3f204b589a9935be0fe5b0a15`.
+  This readback authenticates no owner and changes no acceptance, activation,
+  G0-exit, or G1a state. The current twelve-path local scope contains four
+  canonical truth-sync documents, the external-evidence candidate profile/
+  checker/tests, copy-hygiene registration, owner-trust-bootstrap v2 profile/
+  checker/tests, and no-device aggregate registration. It is unstaged and
+  uncommitted. The assistant performs
+  only edits and verification; the sole owner
   retains staging, commit, and push control after review.
 - Remaining boundary: accountable owner acceptance, catalog artifacts,
   authorized aggregate/release-compile evidence, namespaces/accounts/custody,

@@ -58950,6 +58950,441 @@ def android_runtime_health_current_request_authority_guard_failures() -> list[st
     return failures
 
 
+def g0_owner_trust_bootstrap_v2_guard_failures() -> list[str]:
+    failures: list[str] = []
+    paths = {
+        "profile": ROOT / "docs/v1/g0/owner-trust-bootstrap-profile-v2.json",
+        "checker": ROOT / "script/check_v1_g0_owner_trust_bootstrap_v2.py",
+        "tests": ROOT / "script/test_v1_g0_owner_trust_bootstrap_v2.py",
+        "gate": ROOT / "script/check_no_device_quality.sh",
+        "roadmap": ROOT / "docs/roadmap.md",
+        "progress": ROOT / "docs/progress.md",
+        "qa": ROOT / "docs/qa-evidence.md",
+        "handoff": ROOT / "docs/handoff.md",
+    }
+    missing = [str(path.relative_to(ROOT)) for path in paths.values() if not path.is_file()]
+    if missing:
+        return [f"missing required owner-trust-bootstrap v2 file: {path}" for path in missing]
+
+    profile_raw = paths["profile"].read_bytes()
+    expected_profile_sha = (
+        "13a3b3a5097b443620f049ad69663c486810945436e1c484f3a79cc8635c53f3"
+    )
+    if hashlib.sha256(profile_raw).hexdigest() != expected_profile_sha:
+        failures.append("owner-trust-bootstrap v2 profile raw SHA-256 drifted")
+    try:
+        profile = json.loads(profile_raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        return [f"owner-trust-bootstrap v2 profile is invalid JSON: {error}"]
+
+    principal = profile.get("principalCandidate")
+    source_decision = profile.get("sourceDecision")
+    mappings = profile.get("roleIdentityCandidates")
+    mechanism = profile.get("signatureMechanismCandidate")
+    wire = profile.get("sshsigWireContract")
+    envelope = profile.get("detachedEnvelopeContract")
+    manifest = profile.get("bundleManifestContract")
+    registry = profile.get("registryAndRevocationContract")
+    trusted_time = profile.get("trustedTimeContract")
+    replay = profile.get("replayContract")
+    transition = profile.get("successorTransitionPolicy")
+    selection = profile.get("selection")
+    adapter = profile.get("adapterProjection")
+    state = profile.get("state")
+    required_objects = (
+        principal,
+        source_decision,
+        mechanism,
+        wire,
+        envelope,
+        manifest,
+        registry,
+        trusted_time,
+        replay,
+        transition,
+        selection,
+        adapter,
+        state,
+    )
+    if not all(isinstance(item, dict) for item in required_objects):
+        return ["owner-trust-bootstrap v2 core sections are unavailable"]
+
+    if (
+        principal.get("declaredPrincipal") != "github:hanchangha1127"
+        or principal.get("immutableUserId") != "243786110"
+        or principal.get("humanPrincipalCount") != 1
+        or principal.get("status") != "user_selected_unverified_non_authorizing"
+    ):
+        failures.append("owner-trust-bootstrap v2 sole principal candidate drifted")
+    if (
+        source_decision.get("credentialPathSelectionStatus")
+        != "user_selected_software_ssh_ed25519_candidate"
+        or source_decision.get("authorizationEffect") != "none"
+    ):
+        failures.append("owner-trust-bootstrap v2 source decision drifted")
+    if not isinstance(mappings, list) or len(mappings) != 14:
+        failures.append("owner-trust-bootstrap v2 must retain fourteen role mappings")
+    else:
+        for field in (
+            "role",
+            "ownerBindingRefCandidate",
+            "ownerIdentityRefCandidate",
+            "receiptRefCandidate",
+        ):
+            values = [item.get(field) for item in mappings if isinstance(item, dict)]
+            if len(values) != 14 or not all(isinstance(value, str) for value in values):
+                failures.append(f"owner-trust-bootstrap v2 mappings have malformed {field}")
+            elif len(set(values)) != 14:
+                failures.append(f"owner-trust-bootstrap v2 mappings do not uniquely bind {field}")
+        if any(
+            not isinstance(item, dict)
+            or item.get("principalRef") != principal.get("principalRef")
+            or item.get("credentialRefCandidate") is not None
+            for item in mappings
+        ):
+            failures.append("owner-trust-bootstrap v2 mappings must share one uncredentialed principal")
+
+    for field, expected in (
+        ("protocol", "openssh_sshsig"),
+        ("keyAlgorithm", "ssh-ed25519"),
+        ("messageHashAlgorithm", "sha512"),
+        ("namespace", "aetherlink-owner-bootstrap-v1"),
+        ("canonicalEnvelopeEncoding", "rfc8785_jcs_utf8"),
+    ):
+        if mechanism.get(field) != expected:
+            failures.append(f"owner-trust-bootstrap v2 mechanism {field} drifted")
+    for field in (
+        "automaticCredentialFallbackAllowed",
+        "privateKeyPathAccepted",
+        "callerSuppliedPrivateKeyMaterialAllowed",
+        "sshAgentEnumerationAllowed",
+        "sshAgentUseAllowed",
+        "environmentCredentialLookupAllowed",
+        "keychainCredentialLookupAllowed",
+        "projectDrivenSigningInvocationAllowed",
+        "releaseEvidenceKeyReuseAllowed",
+    ):
+        if mechanism.get(field) is not False:
+            failures.append(f"owner-trust-bootstrap v2 must keep {field} false")
+    for field in (
+        "credentialRefCandidate",
+        "publicKeyBlobSha256",
+        "openSshPublicKeyFingerprint",
+        "trustAnchorRef",
+    ):
+        if mechanism.get(field) is not None:
+            failures.append(f"owner-trust-bootstrap v2 must keep {field} null")
+
+    if (
+        wire.get("magic") != "SSHSIG"
+        or wire.get("version") != 1
+        or wire.get("reservedFieldPolicy") != "exactly_empty"
+        or wire.get("outerPublicKeyAlgorithm") != "ssh-ed25519"
+        or wire.get("embeddedPublicKeyPolicy")
+        != "exact_role_credential_registry_wire_blob"
+        or wire.get("signatureAlgorithm") != "ssh-ed25519"
+        or wire.get("signatureLengthBytes") != 64
+        or wire.get("hashAlgorithm") != "sha512"
+        or wire.get("namespace") != "aetherlink-owner-bootstrap-v1"
+        or wire.get("armorPolicy")
+        != "canonical_single_block_no_leading_or_trailing_bytes"
+        or wire.get("armorLineLengthCharacters") != 70
+        or wire.get("armorNewlinePolicy") != "lf_only_final_newline_required"
+    ):
+        failures.append("owner-trust-bootstrap v2 SSHSIG wire contract drifted")
+    envelope_fields = envelope.get("exactFields")
+    manifest_fields = manifest.get("roleEntryExactFields")
+    if not isinstance(envelope_fields, list) or any(
+        not isinstance(field, str) for field in envelope_fields
+    ):
+        failures.append("owner-trust-bootstrap v2 envelope field list is malformed")
+        envelope_fields = []
+    if not isinstance(manifest_fields, list) or any(
+        not isinstance(field, str) for field in manifest_fields
+    ):
+        failures.append("owner-trust-bootstrap v2 manifest field list is malformed")
+        manifest_fields = []
+    for field in (
+        "credentialRef",
+        "keyEpoch",
+        "publicKeyBlobSha256",
+        "receiptRef",
+        "receiptRawSha256",
+        "receiptCanonicalSha256",
+        "challengeIssuerRef",
+        "challengeId",
+        "nonceBase64Url",
+    ):
+        if field not in envelope_fields:
+            failures.append(f"owner-trust-bootstrap v2 envelope is missing {field}")
+    for field in (
+        "credentialRef",
+        "keyEpoch",
+        "publicKeyBlobSha256",
+        "receiptRef",
+        "receiptRawSha256",
+        "receiptCanonicalSha256",
+        "envelopeSha256",
+        "signatureSha256",
+    ):
+        if field not in manifest_fields:
+            failures.append(f"owner-trust-bootstrap v2 manifest is missing {field}")
+    if manifest.get("roleCardinality") != 14:
+        failures.append("owner-trust-bootstrap v2 manifest must cover fourteen roles")
+    registry_snapshot = registry.get("registrySnapshotContract")
+    revocation_snapshot = registry.get("revocationSnapshotContract")
+    root_statement = registry.get("offlineRootSignatureStatementContract")
+    root_selectors = registry.get("offlineRootSelectors")
+    private_root = registry.get("privateRootBoundary")
+    if not all(
+        isinstance(item, dict)
+        for item in (
+            registry_snapshot,
+            revocation_snapshot,
+            root_statement,
+            root_selectors,
+            private_root,
+        )
+    ):
+        failures.append("owner-trust-bootstrap v2 registry contracts are unavailable")
+    else:
+        if registry_snapshot.get("exactFields") != [
+            "documentType",
+            "schemaVersion",
+            "registrySnapshotRef",
+            "registryId",
+            "revision",
+            "previousRegistrySnapshotSha256",
+            "issuedAt",
+            "expiresAt",
+            "principalMappings",
+            "credentialRecords",
+        ]:
+            failures.append("owner-trust-bootstrap v2 registry snapshot fields drifted")
+        if registry_snapshot.get("principalMappingCount") != 14:
+            failures.append("owner-trust-bootstrap v2 registry must map fourteen roles")
+        if revocation_snapshot.get("exactFields") != [
+            "documentType",
+            "schemaVersion",
+            "revocationSnapshotRef",
+            "registryId",
+            "registryRevision",
+            "registrySnapshotSha256",
+            "revision",
+            "previousRevocationSnapshotSha256",
+            "issuedAt",
+            "expiresAt",
+            "credentialStatuses",
+        ]:
+            failures.append("owner-trust-bootstrap v2 revocation snapshot fields drifted")
+        if revocation_snapshot.get("credentialStatusExactFields") != [
+            "statusRef",
+            "credentialRef",
+            "publicKeyBlobSha256",
+            "keyEpoch",
+            "status",
+            "effectiveAt",
+            "compromiseAt",
+            "reason",
+        ]:
+            failures.append("owner-trust-bootstrap v2 credential status fields drifted")
+        if (
+            revocation_snapshot.get("statusOrderPolicy")
+            != "exact_registry_credential_record_order"
+            or revocation_snapshot.get("registryDigestBackReferenceAllowed") is not True
+        ):
+            failures.append("owner-trust-bootstrap v2 revocation binding drifted")
+        if root_statement.get("currentSelectorPolicy") != (
+            "all_root_selector_fields_null_so_no_signature_can_be_verified_now"
+        ):
+            failures.append("owner-trust-bootstrap v2 root statement boundary drifted")
+        if not root_selectors or any(value is not None for value in root_selectors.values()):
+            failures.append("owner-trust-bootstrap v2 root selectors must remain all null")
+        if not private_root or any(value is not False for value in private_root.values()):
+            failures.append("owner-trust-bootstrap v2 private-root boundary must remain all false")
+    if registry.get("pairBindingPolicy") != (
+        "revocation_snapshot_one_way_commits_registry_ref_revision_and_digest_"
+        "registry_never_commits_revocation_id_or_digest"
+    ):
+        failures.append("owner-trust-bootstrap v2 one-way registry binding drifted")
+    if registry.get("highWatermarkPolicy") != (
+        "independent_ledger_atomically_rejects_lower_revision_same_revision_fork_"
+        "broken_previous_digest_and_pair_rollback"
+    ):
+        failures.append("owner-trust-bootstrap v2 pair high-watermark boundary drifted")
+    if trusted_time.get("standard") != "rfc3161":
+        failures.append("owner-trust-bootstrap v2 trusted time must remain RFC 3161")
+    if (
+        replay.get("ledgerStatus") != "not_implemented"
+        or replay.get("externalConsumedBundleLedgerRequiredBeforeActivation") is not True
+        or replay.get("atomicRoleCoverageCount") != 14
+        or replay.get("atomicCompareAndSetPolicy")
+        != "consume_complete_bundle_and_advance_registry_and_revocation_pair_high_watermarks_in_one_transaction"
+        or replay.get("backupRestorePolicy")
+        != "restored_ledger_below_either_external_registry_or_revocation_high_watermark_or_at_an_unobserved_pair_is_rejected"
+    ):
+        failures.append("owner-trust-bootstrap v2 replay boundary drifted")
+    for field in (
+        "currentCandidateMayAuthenticate",
+        "currentCandidateMaySelectOperationalSelectors",
+        "selfAssertedTrustAnchorAllowed",
+        "githubPublishedKeyAsSoleTrustAnchorAllowed",
+        "cachedRegistryOrLocalClockFallbackAllowed",
+    ):
+        if transition.get(field) is not False:
+            failures.append(f"owner-trust-bootstrap v2 transition must keep {field} false")
+    if any(value is not None for value in selection.values()):
+        failures.append("owner-trust-bootstrap v2 operational selection must remain all null")
+    if any(value is not False for value in state.values()):
+        failures.append("owner-trust-bootstrap v2 authority state must remain all false")
+    if (
+        adapter.get("integrationStatus") != "not_implemented"
+        or adapter.get("mayCreateAdapterResult") is not False
+        or adapter.get("genericCandidateFactoryMaySubstitute") is not False
+    ):
+        failures.append("owner-trust-bootstrap v2 adapter must remain unimplemented")
+    sidecar_fields = adapter.get("dormantSidecarExactFields")
+    if not isinstance(sidecar_fields, list) or any(
+        field not in sidecar_fields
+        for field in (
+            "registrySnapshotSha256",
+            "registryRevision",
+            "committedRevocationSnapshotSha256",
+            "committedRevocationRevision",
+            "evaluatedLatestRevocationSnapshotSha256",
+            "evaluatedLatestRevocationRevision",
+        )
+    ):
+        failures.append("owner-trust-bootstrap v2 dormant sidecar pair binding drifted")
+
+    checker_text = paths["checker"].read_text(encoding="utf-8")
+    test_text = paths["tests"].read_text(encoding="utf-8")
+    gate_text = paths["gate"].read_text(encoding="utf-8")
+    if expected_profile_sha not in checker_text:
+        failures.append("owner-trust-bootstrap v2 checker does not pin the profile hash")
+    if test_text.count(expected_profile_sha) < 2:
+        failures.append("owner-trust-bootstrap v2 tests do not independently pin the profile hash")
+    try:
+        tree = ast.parse(test_text)
+    except SyntaxError as error:
+        failures.append(f"owner-trust-bootstrap v2 tests do not parse: {error}")
+        test_methods: set[str] = set()
+    else:
+        test_methods = {
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("test_")
+        }
+    if len(test_methods) != 25:
+        failures.append("owner-trust-bootstrap v2 suite must retain exactly twenty-five tests")
+    for method in (
+        "test_fourteen_role_candidates_are_exact_unique_and_v3_ordered",
+        "test_software_sshsig_candidate_is_exact_and_cannot_self_enroll",
+        "test_sshsig_wire_manifest_and_transition_contracts_fail_closed",
+        "test_dormant_payload_exact_pair_is_only_structural",
+        "test_registry_schema_revision_bounds_and_no_back_reference_fail_closed",
+        "test_principal_mapping_and_credential_resolution_fail_closed",
+        "test_credential_wire_digest_epoch_and_private_material_fail_closed",
+        "test_status_reference_and_active_revoked_conditions_fail_closed",
+        "test_root_statements_are_canonical_null_and_algorithm_neutral",
+        "test_role_epoch_digest_manifest_and_cross_role_swap_fail_closed",
+        "test_sidecar_exact_pair_and_role_digests_fail_closed",
+        "test_payload_json_type_confusion_is_dormant_fail_closed",
+        "test_sshsig_armor_and_wire_structure_fail_closed",
+        "test_checker_import_surface_has_no_private_key_channels",
+        "test_worktree_reader_rejects_symlink_and_mid_validation_replacement",
+    ):
+        if method not in test_methods:
+            failures.append(f"owner-trust-bootstrap v2 tests are missing {method}")
+    for snippet in (
+        "def _parse_ed25519_sshsig(",
+        "_SSHSIG_ARMOR_LINE_BYTES = 70",
+        "embedded public key does not equal the role credential",
+        "payload_json_type_confusion",
+    ):
+        if snippet not in checker_text and snippet not in test_text:
+            failures.append(f"owner-trust-bootstrap v2 hardening is missing {snippet!r}")
+
+    checker_relative = "script/check_v1_g0_owner_trust_bootstrap_v2.py"
+    test_relative = "script/test_v1_g0_owner_trust_bootstrap_v2.py"
+    if gate_text.count(checker_relative) != 2:
+        failures.append("no-device gate must select the owner-trust-bootstrap v2 checker twice")
+    if gate_text.count(test_relative) != 2:
+        failures.append("no-device gate must select the owner-trust-bootstrap v2 tests twice")
+    marker = "Covered V1 G0 owner-trust-bootstrap v2 addendum:"
+    if gate_text.count(marker) != 1:
+        failures.append("no-device gate must emit the owner-trust-bootstrap v2 marker once")
+
+    for label in ("roadmap", "progress", "qa", "handoff"):
+        text = paths[label].read_text(encoding="utf-8")
+        for snippet in (
+            "owner-trust-bootstrap-profile-v2.json",
+            expected_profile_sha,
+            "github:hanchangha1127",
+            "243786110",
+            "twelve-path",
+        ):
+            if snippet not in text:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)} is missing owner v2 fact {snippet!r}"
+                )
+    required_owner_v2_count_phrases = {
+        "handoff": (
+            "owner-trust-bootstrap v2 suite adds 25,\n"
+            "so the current ten focused G0 suites contain 185 tests total."
+        ),
+        "progress": (
+            "suite contributes 25, so the ten focused G0 suites now contain 185 tests"
+        ),
+        "qa": (
+            "ten focused G0 mutation suites contain 185 passing tests, including\n"
+            "  twenty-five owner-trust-bootstrap v2 fail-closed tests."
+        ),
+        "roadmap": (
+            "Twenty-five v2\n"
+            "mutation tests and the combined ten-suite, 185-test focused G0 run pass"
+        ),
+    }
+    for label, phrase in required_owner_v2_count_phrases.items():
+        text = paths[label].read_text(encoding="utf-8")
+        if phrase not in text:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)} is missing exact owner v2 25/185 count"
+            )
+    required_final_aggregate_phrases = {
+        "handoff": "initial 217-test Python batch passed",
+        "progress": "initial 217-test Python batch; the full-Swift",
+        "qa": "initial 217-test Python batch. Its full-Swift",
+        "roadmap": "25-test v2 bytes with an initial 217-test Python batch",
+    }
+    for label, phrase in required_final_aggregate_phrases.items():
+        text = paths[label].read_text(encoding="utf-8")
+        if phrase not in text:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)} is missing final owner v2 aggregate evidence"
+            )
+    supplemental_public_key_observation = (
+        "https://github.com/hanchangha1127.keys",
+        "81 response bytes",
+        "18932433bb8a1ea9219ec94f677a17d7e695f286f5ab9e1145d708db6326048e",
+        "51-byte OpenSSH public-key wire blob",
+        "6ba489f21ff7d6ca504f74ff8cf8af656016adb8307fe4b2faeb08af8e7edca8",
+        "SHA256:a6SJ8h/31spQT3T/jPivZWAWrbgwf+Sy+usIr45+3Kg",
+        "The response and public-key bytes were not persisted",
+        "observation is supplemental provenance only",
+        "not an authenticated selector, proof of control, trust",
+    )
+    for label in ("roadmap", "progress", "qa", "handoff"):
+        text = paths[label].read_text(encoding="utf-8")
+        for fact in supplemental_public_key_observation:
+            if fact not in text:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)} is missing supplemental owner public-key fact {fact!r}"
+                )
+    return failures
+
+
 def g0_external_evidence_readiness_guard_failures() -> list[str]:
     failures: list[str] = []
     paths = {
@@ -59079,6 +59514,12 @@ def g0_external_evidence_readiness_guard_failures() -> list[str]:
         "all_eight_remaining_kinds_have_no_v1_intake_selector",
         "REFERENCE_CLASSES",
         "):sha256:[0-9a-f]{64}",
+        "expected_class: str",
+        "root signer responsibility assignment references must be unique",
+        "releaseSigningAssignmentRefCandidate",
+        "expiredAuthorizationStateDeletionSeconds",
+        "PROFILE_V1_SYNTHETIC_BUDGET_CURRENCY_CODES",
+        "current and previous versions must be distinct",
         "failures.extend(_collect_absent_candidate_failures(root))",
     ):
         if snippet not in checker_text:
@@ -59087,6 +59528,32 @@ def g0_external_evidence_readiness_guard_failures() -> list[str]:
         failures.append("external-evidence checker contains a pending hash or length")
     if checker_text.count("failures.extend(_collect_absent_candidate_failures(root))") != 2:
         failures.append("external-evidence checker must test artifact absence before and after final readback")
+    for snippet in (
+        "EXPECTED_PROFILE_RAW_SHA256_LITERAL",
+        "EXPECTED_PLAN_RAW_SHA256_LITERAL",
+        "reference_fields",
+        "decision_mutations",
+        "insert_after_last_readback",
+        "EXPECTED_KEY_PURPOSES",
+        "EXPECTED_CUSTODY_CLASSES",
+        "EXPECTED_SERVICE_ROLES",
+        "EXPECTED_CUSTODY_RESPONSIBILITIES",
+        "EXPECTED_SYNTHETIC_BUDGET_CURRENCY_CODES",
+        "sys.addaudithook",
+        "sys.setprofile",
+        "forbidden_nondeterministic_import_roots",
+        "forbidden_nondeterministic_attributes",
+        "expect_profile_blocked",
+        'mock.patch.object(time, "time_ns"',
+        'mock.patch.object(random, "SystemRandom"',
+        'mock.patch.object(secrets, "randbelow"',
+        'mock.patch.object(secrets, "choice"',
+        'mock.patch.object(secrets, "SystemRandom"',
+    ):
+        if snippet not in test_text:
+            failures.append(f"external-evidence tests are missing independent guard {snippet!r}")
+    if profile_sha not in test_text:
+        failures.append("external-evidence tests do not independently pin the exact profile raw SHA-256")
 
     try:
         tree = ast.parse(test_text)
@@ -59127,6 +59594,23 @@ def g0_external_evidence_readiness_guard_failures() -> list[str]:
         if (ROOT / path_entry["path"]).exists() or (ROOT / path_entry["path"]).is_symlink():
             failures.append(f"reserved external-evidence artifact exists: {path_entry['path']}")
 
+    current_successor = "4227204b450372fcee55e0ef970c401f10b6c98c"
+    current_successor_readback_manifest_sha = (
+        "267be3ca8f56fe353fbb856f95c6f634e98afbc3f204b589a9935be0fe5b0a15"
+    )
+    stale_current_scope_phrases = (
+        "current eight-path",
+        "current eight-\npath",
+        "current unpublished scope is eight",
+        "only current unpublished scope is the eight",
+    )
+    stale_current_readback_phrases = (
+        "no fresh independent remote-byte readback",
+        "not a fresh independent remote-byte readback",
+        "without a fresh independent remote-byte readback",
+        "without treating cached `origin/main` alignment as independent",
+        "locally observed through aligned `HEAD`",
+    )
     for label in ("roadmap", "progress", "qa", "handoff"):
         text = paths[label].read_text(encoding="utf-8")
         for snippet in (
@@ -59134,9 +59618,77 @@ def g0_external_evidence_readiness_guard_failures() -> list[str]:
             profile_sha,
             "15/15",
             "eight candidate artifacts remain absent",
+            current_successor,
+            current_successor_readback_manifest_sha,
+            "2026-07-21T12:34:24Z",
+            "twelve-path",
         ):
             if snippet not in text:
                 failures.append(f"{paths[label].relative_to(ROOT)} is missing {snippet!r}")
+        for phrase in stale_current_scope_phrases:
+            if phrase in text:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)} retains stale current-scope wording {phrase!r}"
+                )
+        for phrase in stale_current_readback_phrases:
+            if phrase in text:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)} retains stale successor-readback wording {phrase!r}"
+                )
+
+    progress_text = paths["progress"].read_text(encoding="utf-8")
+    qa_text = paths["qa"].read_text(encoding="utf-8")
+    handoff_text = paths["handoff"].read_text(encoding="utf-8")
+    first_minutes_match = re.search(
+        r"^## First Five Minutes\n(?P<section>.*?)(?=^## )",
+        handoff_text,
+        re.MULTILINE | re.DOTALL,
+    )
+    if first_minutes_match is None:
+        failures.append("docs/handoff.md is missing the First Five Minutes section")
+    else:
+        first_minutes = first_minutes_match.group("section")
+        required_first_minutes_commands = (
+            "sed -n '1,530p;/^## Not Yet Proven$/,/^## Handoff Maintenance Rule$/p' docs/handoff.md",
+            "python3 script/check_v1_g0_repository_remote_sources.py",
+            "python3 -m unittest script.test_v1_g0_repository_remote_sources",
+        )
+        for command in required_first_minutes_commands:
+            if first_minutes.count(command) != 1:
+                failures.append(
+                    "docs/handoff.md First Five Minutes must contain exactly one "
+                    f"{command!r}"
+                )
+        if "sed -n '1,650p' docs/handoff.md" in first_minutes:
+            failures.append(
+                "docs/handoff.md First Five Minutes retains the partial handoff read"
+            )
+    if "nine direct checker invocations" not in progress_text:
+        failures.append("docs/progress.md must distinguish nine direct checker invocations")
+    if "nine direct\n  checker invocations" not in qa_text:
+        failures.append("docs/qa-evidence.md must distinguish nine direct checker invocations")
+    if (
+        "bounded remote-byte observation is recorded for the fixed\n"
+        "  G0 target and four successor scopes across the recorded sessions"
+        not in qa_text
+    ):
+        failures.append(
+            "docs/qa-evidence.md must record the fixed G0 target plus four successor readbacks"
+        )
+    if "three successor scopes" in qa_text:
+        failures.append("docs/qa-evidence.md retains the stale three-successor count")
+    if "nine directly executable G0 checker" not in handoff_text:
+        failures.append("docs/handoff.md must distinguish nine directly executable G0 checkers")
+    for label, text in (("progress", progress_text), ("qa", qa_text), ("handoff", handoff_text)):
+        for stale_claim in (
+            "all ten G0 checkers",
+            "all ten standalone G0 checker",
+            "ten standalone G0 checker files pass",
+        ):
+            if stale_claim in text:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)} overclaims direct checker execution with {stale_claim!r}"
+                )
     return failures
 
 
@@ -59232,6 +59784,12 @@ def main() -> int:
         return 1
 
     if report_guard_failures("No-device quality gate guard failed:", no_device_quality_gate_guard_failures):
+        return 1
+
+    if report_guard_failures(
+        "G0 owner-trust-bootstrap v2 guard failed:",
+        g0_owner_trust_bootstrap_v2_guard_failures,
+    ):
         return 1
 
     if report_guard_failures(

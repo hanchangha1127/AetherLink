@@ -60,7 +60,7 @@ but cannot independently satisfy the V1 release gate.
 | P2P authority | `libjuice` and `libnice` were rejected before compile; no networking library is selected and all compile/socket/runtime-network authority is closed. | A new candidate and version must start a new staged authority chain. No rejected decision or consumed authority may be reused. |
 | Relay security | Bounded leases, identity challenges, strict JSON, encrypted frame bodies, quotas, and development lifecycle controls exist. | Allocation TLS, service-signed lease capabilities, peer-verifiable KEX, pair epoch recovery, immediate revocation, signer rotation, multi-instance operations, and deployment remain open. |
 | Distribution | Android is version `0.1.0` with no production signing configuration; the macOS development bundle is ad-hoc signed. | Production application identity, signing custody, channel validation such as direct-distribution notarization or App Store review, install/update/rollback, artifact provenance, and staged distribution are required. |
-| Repository state | The implementation baseline remains `d32c1846`. The bounded G0 V2/V3 lineage packet is published and read back at `main@12c38154`; the nine-file receipt/intake successor at `main@70350f5e`; the seven-file truth-sync/compiler successor at `main@025a4ef5`; and the sixteen-file observation, two-selector, non-authorizing evidence-readiness, candidate independent-context, and mechanical repository/remote-source successor at `main@b24c5ecb77067539c185d88f0c2fbbc2cb119c15`. The latest strict fresh HTTPS `blob:none` clone matched parent `025a4ef5`, tree `c8aa9e69`, all sixteen target blob bytes/lengths/raw hashes/recomputed object IDs, commit/parent/tree raw objects, and manifest SHA-256 `1b91a321de9a39faf9fb519b47ffa6e82ce85dd48595f092a63581875c9d4a37` from `2026-07-21T07:55:12Z` through `07:55:22Z`. Its 9,265-byte transcript digest is recorded, but the transcript bytes were not persisted or signed. V1/V2/V3 lineage bytes remain unchanged. The only new local scope is the twelve-path set of four canonical truth-sync documents, the owner-trust-bootstrap profile/checker/tests, the external-evidence candidate profile/checker/tests, and the no-device plus copy-hygiene registrations. | The published `70350f5e` intake blob remains empty. The published `b24c5ecb` successor contains exactly one mechanically compiled `roadmap_and_g0_checkpoint_publication` proposal at raw SHA-256 `0221d2d49e4bcccfd34fb6905102117fbf5632e27d3d2f2e23d53e29f47752bc`; its `reviewed_commit_scope` and `published_checkpoint` references both have null supporting-artifact references because both selectors are false. The separate supporting-artifact and baseline-readiness profiles define but do not instantiate any evidence artifact. The independent-context boundary consumes only factory-owned immutable candidate adapter results and cannot substitute for missing reviewed adapters; the source checker remains fixed to the G0 V3 target and proves only local Git mechanics plus supplied-byte matching. Every state flag remains false. Neither publication/readback, preview/readiness compilation, profile validation, candidate context matching, source matching, nor debug-device observations authenticate an owner, authorize a command, verify evidence, accept a disposition, activate the parent-targeted receipt, close G0, or grant G1a. Any new follow-up commit or push requires separate explicit review and direction. |
+| Repository state | The implementation baseline remains `d32c1846`. The bounded G0 V2/V3 lineage packet is published and read back at `main@12c38154`; the nine-file receipt/intake successor at `main@70350f5e`; the seven-file truth-sync/compiler successor at `main@025a4ef5`; and the sixteen-file observation, two-selector, non-authorizing evidence-readiness, candidate independent-context, and mechanical repository/remote-source successor at `main@b24c5ecb77067539c185d88f0c2fbbc2cb119c15`. The latest strict fresh HTTPS `blob:none` clone matched parent `025a4ef5`, tree `c8aa9e69`, all sixteen target blob bytes/lengths/raw hashes/recomputed object IDs, commit/parent/tree raw objects, and manifest SHA-256 `1b91a321de9a39faf9fb519b47ffa6e82ce85dd48595f092a63581875c9d4a37` from `2026-07-21T07:55:12Z` through `07:55:22Z`. Its 9,265-byte transcript digest is recorded, but the transcript bytes were not persisted or signed. V1/V2/V3 lineage bytes remain unchanged. The twelve-file owner-trust-bootstrap/external-readiness successor is published and independently read back at `main@4227204b450372fcee55e0ef970c401f10b6c98c`, with parent `b24c5ecb` and tree `c321c33e`. Fresh public HTTPS GitHub commit/tree APIs, raw content, and `git ls-remote` matched remote `main` and all 12 path statuses, modes, blob IDs, lengths, raw SHA-256 values, and bytes from `2026-07-21T12:34:24Z` through `12:34:32Z`; the unpersisted, unsigned 1,857-byte manifest SHA-256 is `267be3ca8f56fe353fbb856f95c6f634e98afbc3f204b589a9935be0fe5b0a15`. The only new local scope is the twelve-path set of four canonical truth-sync documents, the external-evidence candidate profile/checker/tests, the copy-hygiene registration, the owner-trust-bootstrap v2 profile/checker/tests, and the no-device aggregate registration. | The published `70350f5e` intake blob remains empty. The published `b24c5ecb` successor contains exactly one mechanically compiled `roadmap_and_g0_checkpoint_publication` proposal at raw SHA-256 `0221d2d49e4bcccfd34fb6905102117fbf5632e27d3d2f2e23d53e29f47752bc`; its `reviewed_commit_scope` and `published_checkpoint` references both have null supporting-artifact references because both selectors are false. The separate supporting-artifact and baseline-readiness profiles define but do not instantiate any evidence artifact. The independent-context boundary consumes only factory-owned immutable candidate adapter results and cannot substitute for missing reviewed adapters; the source checker remains fixed to the G0 V3 target and proves only local Git mechanics plus supplied-byte matching. Every state flag remains false. Neither publication/readback, preview/readiness compilation, profile validation, candidate context matching, source matching, nor debug-device observations authenticate an owner, authorize a command, verify evidence, accept a disposition, activate the parent-targeted receipt, close G0, or grant G1a. Any new follow-up commit or push requires separate explicit review and direction. |
 
 ### Governing Source Records
 
@@ -358,17 +358,76 @@ close and a separate G1a authority record is approved, G1a, source acquisition,
 library selection or compilation, sockets including loopback, network I/O,
 production keys, signing, store upload, and deployment remain closed.
 
+The local owner-trust-bootstrap v2 successor,
+`docs/v1/g0/owner-trust-bootstrap-profile-v2.json`, records the user's exact
+candidate decision without authenticating it: sole account-control principal
+`github:hanchangha1127`, GitHub numeric subject ID `243786110`, fourteen unique
+role-scoped owner-binding/opaque-identity/receipt references, and software
+`ssh-ed25519` OpenSSH SSHSIG. Its raw SHA-256 is
+`13a3b3a5097b443620f049ad69663c486810945436e1c484f3a79cc8635c53f3`.
+The static contract binds exact raw and canonical receipt digests, role
+credential/public-key identity, independently issued challenges, canonical
+70-character/LF OpenSSH armor and exact Ed25519 SSHSIG wire structure, one-way
+revocation-to-registry digest binding, exact status-reference closure, null
+external root selectors, paired registry/revocation high-watermarks, JCS envelope
+and fourteen-role manifest bytes, RFC 3161 time evidence, and external atomic
+replay consumption. Structural SSHSIG parsing is not cryptographic verification.
+This G0 owner-bootstrap SSH credential path forbids private-key
+generation, discovery, loading, storage, agent/environment/Keychain lookup, and
+signing invocation. All
+operational selectors remain null, all authority state remains false, and the
+adapter is not implemented. Independent root/public-key enrollment, proof of
+control, authenticated selector decision, registry/revocation/time adapters, and
+the external consumed-bundle ledger remain external prerequisites. Twenty-five v2
+mutation tests and the combined ten-suite, 185-test focused G0 run pass; nine
+checker entry points pass directly while publication receipt remains suite-only
+without an executable `main`. This is supplied-byte static evidence only.
+
+A repeated, non-authorizing GitHub public-key observation on 2026-07-22 read
+`https://github.com/hanchangha1127.keys` twice with matching bytes. The mutable
+endpoint returned one `ssh-ed25519` line: 81 response bytes at SHA-256
+`18932433bb8a1ea9219ec94f677a17d7e695f286f5ab9e1145d708db6326048e`,
+containing a 51-byte OpenSSH public-key wire blob at SHA-256
+`6ba489f21ff7d6ca504f74ff8cf8af656016adb8307fe4b2faeb08af8e7edca8`
+and fingerprint `SHA256:a6SJ8h/31spQT3T/jPivZWAWrbgwf+Sy+usIr45+3Kg`.
+The response and public-key bytes were not persisted. This mutable endpoint
+observation is supplemental provenance only: `credentialRefCandidate`,
+`publicKeyBlobSha256`, `openSshPublicKeyFingerprint`, and `trustAnchorRef`
+remain null, and it is not an authenticated selector, proof of control, trust
+anchor, owner authentication, receipt acceptance, G0 exit, or G1a authority.
+
 The local readiness-only addendum
 `docs/v1/g0/external-evidence-candidate-profile-v1.json` is pinned at raw
-SHA-256 `e5233e7b52369299aa50f07adb726ec57c0ea5e4ffe138e0b2725b8d5f87b371`.
+SHA-256 `8670a9c5a948b5c0e89ffd3fcd6561f4dcb51776a6d5c174f6a12c5a587c9848`.
 It content-addresses the existing five-kind baseline and two-kind supporting
 profiles, then derives the remaining eight non-derived V3 evidence kinds in
 canonical order. This brings typed candidate readiness to 15/15 kinds without
 creating any candidate instance: eight candidate artifacts remain absent. Its
-null selectors, false trust/authority states, digest-only candidate references,
-and supplied-byte validator do not provide external values, authenticate an
+null selectors, false trust/authority states, field-specific digest-only
+candidate reference classes, exact offline-root/online-signer policy projection,
+emergency-versus-release-signing assignment separation, the 30-second expired-
+authorization deletion SLA, current-versus-previous provider-version separation,
+and the synthetic v1 `KRW` fixture are enforced; selecting a real billing
+currency requires a new v2 profile. The supplied-byte validator
+does not provide external values, authenticate an
 owner, verify evidence, accept a receipt, close a blocker, exit G0, or grant
-G1a.
+G1a. The earlier pre-v2 complete expanded default no-device aggregate exited zero
+after the then-final profile/checker/test bytes were present and before its
+evidence-only wording correction. It included a 192-test initial Python batch,
+all 1,809 Swift
+tests with two environment-dependent skips, 23 macOS render smokes, selected
+offline Android suites/build tasks, and both Swift products. Its stdout was not
+persisted or signed. Fresh copy/docs/diff guards, not that aggregate, cover the
+current document bytes. A later v2-inclusive but pre-final-hardening complete
+aggregate also exited zero with a 207-test initial Python batch and the same
+Swift/render/Android/build stages. It covered the earlier 15-test v2 suite, not
+the ten later registry/type/SSHSIG hardening tests; its temporary stdout was
+deleted because it contained ephemeral pairing material and was not signed.
+The final post-hardening complete aggregate also exited zero on the current
+25-test v2 bytes with an initial 217-test Python batch; its full-Swift completion
+assertion, render-smoke, selected offline Android, Swift-product, copy/docs, and
+final success-marker stages passed. The temporary stdout was deleted because it
+contained ephemeral pairing material and was not signed.
 
 ### G0 - Freeze The V1 Contract And Publish A Baseline
 
@@ -387,11 +446,14 @@ Work packages:
   at `025a4ef5` and its exact remote readback. Preserve the published sixteen-file
   observation, two-selector, non-authorizing evidence-readiness, candidate
   independent-context, and mechanical repository/remote-source successor
-  at `b24c5ecb` and its exact 16/16 remote readback. Keep only the current twelve-
-  path local scope—four canonical truth-sync documents, the owner-trust-bootstrap
-  profile/checker/tests, the external-evidence candidate profile/checker/tests,
-  and the no-device plus copy-hygiene registrations—unless separately reviewed
-  and authorized.
+  at `b24c5ecb` and its exact 16/16 remote readback. Preserve the twelve-file
+  owner-trust-bootstrap/external-readiness successor at `4227204` and its exact
+  12/12 public HTTPS API/raw-content remote-byte readback. Keep only the current
+  twelve-path local scope—four canonical truth-sync documents, the external-
+  evidence candidate profile/checker/tests, copy-hygiene registration, owner-
+  trust-bootstrap v2 profile/checker/tests, and no-device aggregate registration—
+  unless separately
+  reviewed and authorized.
 - Approve the V1 definition in this section, including whether P2P is a GA gate.
   Under this canonical plan it is required for eligible networks; a relay-only
   build must remain a pre-V1 beta unless an explicit versioned product decision
@@ -891,7 +953,7 @@ content.
 | Physical evidence is too narrow | One debug Samsung/same-Wi-Fi run is the current optical proof. | Maintain the G5/G6 device and network matrix; preserve no-device versus physical versus production labels. |
 | Release pipeline is absent | Ad-hoc macOS signing, no Android production signing, and no repository CI workflows. | Begin signing/provenance/CI work during G1-G3 rather than after networking completes. |
 | Advanced features displace launch work | The repository already contains broad memory, research, permission, and future-platform plans. | Treat them as maintenance-only unless required for compatibility or a release blocker; keep the canonical critical path above. |
-| Historical docs or mixed work obscure truth | The implementation baseline, bounded G0 V2/V3 packet, nine-file receipt/intake successor, seven-file truth-sync/compiler successor, and sixteen-file evidence-readiness/source successor are published with fresh exact remote-byte readback for `12c38154`, `70350f5e`, `025a4ef5`, and `b24c5ecb`; the only current unpublished scope is the same twelve-path canonical-docs, owner-bootstrap, external-evidence-readiness, and two-guard set, while older version labels describe historical feature themes. | Keep G0 isolated from transport implementation, synchronize the handoff/progress/QA current entries, and let this section govern shipping order while the handoff governs evidence. |
+| Historical docs or mixed work obscure truth | The implementation baseline, bounded G0 V2/V3 packet, nine-file receipt/intake successor, seven-file truth-sync/compiler successor, sixteen-file evidence-readiness/source successor, and twelve-file owner-bootstrap/external-readiness successor are published with fresh exact remote-byte readback for `12c38154`, `70350f5e`, `025a4ef5`, `b24c5ecb`, and `4227204`. The latest 12/12 readback manifest SHA-256 is `267be3ca8f56fe353fbb856f95c6f634e98afbc3f204b589a9935be0fe5b0a15`; it remains an unsigned remote-source observation, not owner authentication or G0 authority. The current unpublished scope is the twelve-path canonical-docs, external-evidence-readiness, copy-hygiene, owner-trust-bootstrap v2, and no-device gate registration set, while older version labels describe historical feature themes. | Keep G0 isolated from transport implementation, synchronize the handoff/progress/QA current entries, and let this section govern shipping order while the handoff governs evidence. |
 
 ### V1 Definition Of Done
 
@@ -935,11 +997,14 @@ V1 is complete only when all of the following are true:
    7/7 `blob:none` partial-clone readback. Preserve the exact sixteen-file
    observation, two-selector, non-authorizing evidence-profile, candidate
    independent-context, and mechanical repository/remote-source successor
-   published at `b24c5ecb` and its completed 16/16 strict readback. Keep only the
+   published at `b24c5ecb` and its completed 16/16 strict readback. Preserve the
+   twelve-file owner-trust-bootstrap/external-readiness successor at `4227204`
+   and its completed 12/12 public HTTPS API/raw-content readback. Keep only the
    current twelve-path local scope—four canonical truth-sync documents, the
-   owner-trust-bootstrap profile/checker/tests, the external-evidence candidate
-   profile/checker/tests, and the no-device plus copy-hygiene registrations—
-   unless separately reviewed and authorized. Preserve the
+   external-evidence candidate profile/checker/tests, copy-hygiene registration,
+   owner-trust-bootstrap v2 profile/checker/tests, and no-device aggregate
+   registration—unless separately
+   reviewed and authorized. Preserve the
    approved publication selector and obtain only candidate versions,
    requirement dispositions, session-item references, and optional evidence-
    artifact presence; derive every
@@ -955,26 +1020,26 @@ V1 is complete only when all of the following are true:
    `reviewed_commit_scope` plus `published_checkpoint` evidence. Accountable
    acceptance and separately authorized gate evidence remain later steps. V3
    already pins the exact owner-binding and approval-receipt fields; do not
-   duplicate those schemas. The local provider-neutral bootstrap profile now
-   records one user-declared sole human owner. V3's fourteen unique opaque
+   duplicate those schemas. The immutable v1 bootstrap profile records the
+   user-declared sole-human-owner model. V3's fourteen unique opaque
    `ownerIdentityRef` values are role-scoped references, not a requirement for
-   fourteen different people: the future registry may authenticate all fourteen
-   aliases as roles of the same principal while preserving the V3 requirement for
-   one future binding and one receipt per role. The profile hash-binds that
-   canonical role order, requires no
-   V4 closure amendment, fixes every selection reference at null, keeps every
-   authority state false, and leaves adapter integration at `not_implemented`;
-   its supplied-byte checker creates no adapter result. Before implementing an
-   owner trust adapter, obtain
-   an explicit external decision for the identity registry and independent trust
-   anchor; credential and proof-of-control mechanism; authentication of the exact
-   eight-field approval receipt; registry/revocation acquisition, provenance,
-   freshness, rollback, and validity policy; trusted-time/skew policy; and exact
-   bounded adapter output/context contract. Signature validation and any detached
-   challenge envelope are conditional on the selected credential mechanism and
-   must not alter the exact receipt fields. Do not implicitly reuse the unrelated
-   release-evidence Ed25519 envelope or store private credential material in the
-   repository.
+   fourteen different people: an external registry may authenticate all fourteen
+   aliases as roles of the same principal while preserving one future binding and
+   one separately authenticated receipt per role. The v2 successor records the
+   selected-but-unverified `github:hanchangha1127` / GitHub user ID `243786110`
+   principal and software `ssh-ed25519` SSHSIG candidate. It fixes SSHSIG wire,
+   detached-envelope, fourteen-role manifest, registry/revocation, RFC 3161 time,
+   replay-ledger, and successor-transition contracts while keeping every
+   operational selector null, every authority state false, and adapter integration
+   `not_implemented`. Before implementing an owner trust adapter, obtain an
+   independently pinned registry root and public-key fingerprint, externally held
+   credential plus SSHSIG proof of control, authenticated selector decision,
+   authenticated monotonic registry/revocation state, trusted-time provider and
+   anchor, independently issued pending challenge, external atomic consumed-bundle
+   ledger, and fourteen role bindings plus fourteen authenticated approval
+   receipts. Signature validation must not alter the exact receipt fields. Do not
+   reuse the unrelated release-evidence Ed25519 envelope or generate, discover,
+   store, or invoke private credential material from the project.
    The separate local external-evidence profile covers the other eight
    non-derived V3 kinds only as synthetic, unverified, non-authorizing payload
    contracts. It derives blocker/check/role mappings from the exact V3 bytes,
@@ -1012,11 +1077,11 @@ V1 is complete only when all of the following are true:
 
 ## Canonical Session Continuation Baseline
 
-- Priority and status: the selected implementation baseline remains `d32c1846`; the bounded G0 V2/V3 packet is published and read back at `main@12c38154`, the exact nine-file dormant receipt/intake successor at `main@70350f5e`, the exact seven-file truth-sync/compiler successor at `main@025a4ef5`, and the exact sixteen-file evidence-readiness/source successor at `main@b24c5ecb`. The latest 16/16 strict HTTPS `blob:none` readback ran from `2026-07-21T07:55:12Z` through `07:55:22Z` and produced manifest SHA-256 `1b91a321de9a39faf9fb519b47ffa6e82ce85dd48595f092a63581875c9d4a37`; its transcript bytes were not persisted or signed. Publication grants no owner acceptance, independent trust, evidence verification, receipt activation, G0 exit, or G1a authority. The receipt remains bound to parent `12c38154` and does not persist enough parent-acquisition provenance for independent reproduction. The published `70350f5e` intake blob remains empty; the published `b24c5ecb` candidate contains exactly one explicit proposal, two false/null evidence selectors, and all state flags false. The current local scope is the twelve-path set of four canonical truth-sync documents, the owner-trust-bootstrap profile/checker/tests, the external-evidence candidate profile/checker/tests, and the no-device plus copy-hygiene registrations. The next session must still refresh branch, HEAD, Git status, device attachment, and runtime process state instead of inheriting stale assumptions.
+- Priority and status: the selected implementation baseline remains `d32c1846`; the bounded G0 V2/V3 packet is published and read back at `main@12c38154`, the exact nine-file dormant receipt/intake successor at `main@70350f5e`, the exact seven-file truth-sync/compiler successor at `main@025a4ef5`, the exact sixteen-file evidence-readiness/source successor at `main@b24c5ecb`, and the twelve-file owner-trust-bootstrap/external-readiness successor at `main@4227204b450372fcee55e0ef970c401f10b6c98c`. The latest 16/16 strict HTTPS `blob:none` readback ran from `2026-07-21T07:55:12Z` through `07:55:22Z` and produced manifest SHA-256 `1b91a321de9a39faf9fb519b47ffa6e82ce85dd48595f092a63581875c9d4a37`; its transcript bytes were not persisted or signed. The 12/12 public HTTPS commit/tree API, raw-content, and `git ls-remote` readback for `4227204` ran from `2026-07-21T12:34:24Z` through `12:34:32Z`, matched parent `b24c5ecb`, tree `c321c33e`, every target mode/blob/length/hash/byte, and produced the unpersisted, unsigned 1,857-byte manifest SHA-256 `267be3ca8f56fe353fbb856f95c6f634e98afbc3f204b589a9935be0fe5b0a15`. Publication and readback grant no owner acceptance, independent trust, evidence verification, receipt activation, G0 exit, or G1a authority. The receipt remains bound to parent `12c38154` and does not persist enough parent-acquisition provenance for independent reproduction. The published `70350f5e` intake blob remains empty; the published `b24c5ecb` candidate contains exactly one explicit proposal, two false/null evidence selectors, and all state flags false. The current local scope is the twelve-path set of four canonical truth-sync documents, the external-evidence candidate profile/checker/tests, the copy-hygiene registration, the owner-trust-bootstrap v2 profile/checker/tests, and the no-device aggregate registration. The next session must still refresh branch, HEAD, Git status, device attachment, and runtime process state instead of inheriting stale assumptions.
 - Current product checkpoint: one earlier same-Wi-Fi debug QR was decoded from the real macOS screen and paired through a physical `SM-S936N` camera. On 2026-07-21 the connected authorized device also passed a preserved-data debug APK rebuild/install, cold launch, force-stop/relaunch, ADB-injected development pairing and trusted-route reconnect, mock chat cancel and natural completion, and bounded chat/model/drawer/settings UI inspection. CAMERA revoke reached the Android system permission dialog and was restored to granted; actual denial selection and post-denial recovery were not completed. These are debug/local-development observations, not G0 evidence or production proof. Optical QR in this pass, actual TalkBack/VoiceOver traversal, haptic feel, live providers, external relay, different-network behavior, release binaries, and production crypto remain unverified.
 - Default next bounded slice: preserve both tracked candidates without activation and preserve the exact user-approved publication selector plus non-authorizing evidence profile. The profile now hash-binds and exactly projects the current item-2 selector snapshot; both supporting-artifact selectors remain false, so neither reserved artifact exists and any selector transition requires a new profile. Preserve the declared single-human/role-scoped-reference model, then independently authenticate the sole owner and the registry mapping from all fourteen unique role aliases to that principal before changing either selector. Next independently anchor, create, and verify the separately typed `reviewed_commit_scope` and `published_checkpoint` payloads before collecting separately authorized gate results or considering a G1a authority record. Preview compilation and profile validation perform no file, network, or process I/O, authentication, acceptance, activation, or blocker closure. Camera denial/regrant completion, expired/rotated optical QR recovery, TalkBack/VoiceOver traversal, and device process-death persistence remain G5/G6 evidence gaps rather than a substitute for G0.
 - Conditional next slice: different-network pairing may begin only after the exact reachable route, environment, and execution authority are established. Same-Wi-Fi `local_diagnostic` evidence is not a relay, P2P/NAT, Phase B, production-capacity, deployment, or readiness result.
-- Publication rule: `12c38154`, its nine-file `70350f5e` successor, the seven-file `025a4ef5` successor, and the sixteen-file `b24c5ecb` successor have intentional publication and fresh exact remote-byte readback evidence. The tracked V3 receipt sidecar encodes the parent target/checkpoint/hash/time candidate but not the acquisition provenance needed for independent reproduction; the published sparse intake candidate contains one proposal and two false/null evidence references while every state flag remains false. All evidence profiles are non-authorizing and are not artifact instances. The new context core remains candidate-only and dormant without real independent adapters; the source checker adds only non-consumable mechanical observations. The assistant leaves the current twelve-path canonical-docs, owner-bootstrap, external-evidence-readiness, and two-guard scope unstaged and uncommitted; the sole owner performs any commit or push after explicit review.
+- Publication rule: `12c38154`, its nine-file `70350f5e` successor, the seven-file `025a4ef5` successor, the sixteen-file `b24c5ecb` successor, and the twelve-file `4227204` successor have intentional publication and fresh exact remote-byte readback evidence. The `4227204` readback is a bounded unsigned GitHub API/raw-source observation with manifest SHA-256 `267be3ca8f56fe353fbb856f95c6f634e98afbc3f204b589a9935be0fe5b0a15`, not an authenticated collector receipt. The tracked V3 receipt sidecar encodes the parent target/checkpoint/hash/time candidate but not the acquisition provenance needed for independent reproduction; the published sparse intake candidate contains one proposal and two false/null evidence references while every state flag remains false. All evidence profiles are non-authorizing and are not artifact instances. The new context core remains candidate-only and dormant without real independent adapters; the source checker adds only non-consumable mechanical observations. The assistant leaves the current twelve-path canonical-docs, external-evidence-readiness, copy-hygiene, owner-trust-bootstrap v2, and no-device gate registration scope unstaged and uncommitted; the sole owner performs any commit or push after explicit review.
 - Continuity rule: update the existing canonical handoff after future substantial work and synchronize current progress, QA, and roadmap facts. GPT-5.6 Sol is the requested subagent model; GPT-5.3-Codex-Spark remains excluded for this workstream.
 - Reading rule: `docs/handoff.md` and the current sections at the top of this roadmap are authoritative. Sections marked Historical Checkpoint or Superseded preserve at-checkpoint evidence only and cannot override the current Debug/Release matrix, physical observation manifest, or authority boundary.
 - Authority freshness: the QR-modified P2P/NAT source snapshot is synchronized at 13-artifact collection SHA-256 `6e6dfbfc0cdb70370c30f54222584b69042a6e22b6df04c7f3e65043c38522bd`; its validator and seven Phase A progress tests pass. This does not select a library or open compiler, socket, runtime-network, Phase B, production, or deployment authority.
