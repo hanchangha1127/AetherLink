@@ -1,0 +1,38 @@
+{
+  "documentType": "aetherlink.g2-pion-restricted-fork-evidence-manifest",
+  "schemaVersion": "1.0",
+  "profileId": "pion_ice_v4_3_0_aetherlink_restricted_fork_v1",
+  "recordedDate": "2026-07-23",
+  "orderingRule": "ascending_evidence_id",
+  "collectionDigestAlgorithm": "sha256_utf8_lf_of_evidence_id_tab_sha256_tab_repo_relative_path_newline",
+  "artifactCount": 4,
+  "artifacts": [
+    {
+      "evidenceId": "G2E001",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-requirements-review-v1.md",
+      "sha256": "1874e43121997023b64b9f370c1782f46f8409630b6096ec8175009b300c246b",
+      "role": "exact_pion_v4_3_0_as_is_rejection_and_pre_acquisition_boundary"
+    },
+    {
+      "evidenceId": "G2E002",
+      "path": "docs/v1/g0/decision-v1.md",
+      "sha256": "ec22b033746083712909f58aa56d9ec72cae5131363a90ee36e6e797ea87c0fb",
+      "role": "v1_platform_matrix_and_local_first_product_boundary"
+    },
+    {
+      "evidenceId": "G2E003",
+      "path": "docs/roadmap.md",
+      "sha256": "2fcb2e60b39d6ea843179d84c29bb57ac5219d20b2b2454c0165e420e1c462a5",
+      "role": "current_sequential_g2_scope_and_progressive_gate_boundary"
+    },
+    {
+      "evidenceId": "G2E004",
+      "path": "docs/handoff.md",
+      "sha256": "f3f43bd602660bc01d5fcbde54550423abcc72ae73ce705021d1ef3b4f4fd2d4",
+      "role": "current_personal_project_boundary_and_handoff_state"
+    }
+  ],
+  "collectionSha256": "9e395c4c4f7f61a4810d47cf96ff57b47c1908c73ea459181f1c06f26a35d704",
+  "externalIdentityProofRequired": false,
+  "userActionRequired": false
+}

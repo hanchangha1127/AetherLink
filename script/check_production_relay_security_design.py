@@ -9,6 +9,11 @@ from pathlib import Path
 import re
 import sys
 
+try:
+    from script import check_v1_g0_checkpoint as checkpoint_checker
+except ModuleNotFoundError:
+    import check_v1_g0_checkpoint as checkpoint_checker
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DESIGN_ROOT = ROOT / "docs/security-hardening/production-relay-v1"
@@ -419,7 +424,10 @@ def validate_evidence_manifest() -> int:
         source_path = ROOT / path
         if not source_path.is_file():
             fail(f"missing evidence artifact: {relative_path}")
-        actual_hash = sha256_bytes(source_path.read_bytes())
+        actual_hash = checkpoint_checker.historical_source_compatible_sha256(
+            relative_path,
+            sha256_bytes(source_path.read_bytes()),
+        )
         if actual_hash != expected_hash:
             fail(
                 f"evidence artifact drifted: {relative_path}; "

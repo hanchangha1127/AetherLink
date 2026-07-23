@@ -423,7 +423,7 @@ object P2pNatCanonicalCodec {
             P2pNatRejectionClass.INVALID_VALUE,
             "P-256 coordinate is outside the field",
         )
-        val left = y.modPow(BigInteger.TWO, P256_FIELD)
+        val left = y.modPow(BigInteger.valueOf(2L), P256_FIELD)
         val right = x.modPow(BigInteger.valueOf(3), P256_FIELD)
             .subtract(x.multiply(BigInteger.valueOf(3)))
             .add(P256_B)

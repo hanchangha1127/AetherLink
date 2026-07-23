@@ -28,23 +28,48 @@ internal data class P2pNatJcaAlgorithms(
 
 internal class P2pNatSessionEphemeralKey private constructor(
     publicKeyX963: ByteArray,
-    private val privateKey: PrivateKey,
-) {
+    privateKey: PrivateKey,
+) : AutoCloseable {
     private val publicKeyX963Bytes = publicKeyX963.copyOf()
+    private var privateKey: PrivateKey? = privateKey
     private var sharedSecretConsumed = false
     val publicKeyX963: ByteArray get() = publicKeyX963Bytes.copyOf()
+
+    @get:Synchronized
+    val isConsumedOrClosed: Boolean get() = sharedSecretConsumed
 
     @Synchronized
     fun sharedSecret(peerPublicKeyX963: ByteArray, algorithms: P2pNatJcaAlgorithms): ByteArray {
         check(!sharedSecretConsumed) { "P2P/NAT ephemeral key was already used" }
         sharedSecretConsumed = true
+        val claimedPrivateKey = checkNotNull(privateKey) {
+            "P2P/NAT ephemeral key was already closed"
+        }
+        privateKey = null
         val agreement = KeyAgreement.getInstance(algorithms.keyAgreement)
-        agreement.init(privateKey)
-        agreement.doPhase(decodePublicKey(peerPublicKeyX963), true)
-        val generated = agreement.generateSecret()
-        require(generated.size <= P256_FIELD_BYTES) { "P2P/NAT ECDH secret is invalid" }
-        return ByteArray(P256_FIELD_BYTES).also {
-            generated.copyInto(it, destinationOffset = it.size - generated.size)
+        return try {
+            agreement.init(claimedPrivateKey)
+            agreement.doPhase(decodePublicKey(peerPublicKeyX963), true)
+            val generated = agreement.generateSecret()
+            try {
+                require(generated.size <= P256_FIELD_BYTES) { "P2P/NAT ECDH secret is invalid" }
+                ByteArray(P256_FIELD_BYTES).also {
+                    generated.copyInto(it, destinationOffset = it.size - generated.size)
+                }
+            } finally {
+                generated.fill(0)
+            }
+        } finally {
+            runCatching { claimedPrivateKey.destroy() }
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        sharedSecretConsumed = true
+        privateKey?.let { claimedPrivateKey ->
+            privateKey = null
+            runCatching { claimedPrivateKey.destroy() }
         }
     }
 

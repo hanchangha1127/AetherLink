@@ -1,0 +1,51 @@
+{
+  "documentType": "aetherlink.g2-pion-rung2-source-acquisition-evidence-manifest",
+  "schemaVersion": "1.0",
+  "decisionId": "g2-pion-ice-v4.3.0-source-acquisition-decision-v1",
+  "recordedDate": "2026-07-23",
+  "orderingRule": "ascending_evidence_id",
+  "collectionDigestAlgorithm": "sha256_utf8_lf_of_evidence_id_tab_sha256_tab_repo_relative_path_newline",
+  "artifactCount": 6,
+  "artifacts": [
+    {
+      "evidenceId": "G2R2E001",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/restricted-fork-profile.json",
+      "sha256": "10e9436ae9b8f24c4447d12f8087b4f121810841ae33526e08fcc3d862d60a0f",
+      "role": "immutable_rung_one_profile_predecessor"
+    },
+    {
+      "evidenceId": "G2R2E002",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/evidence-manifest-v1.json",
+      "sha256": "98e0e53955e21a833fe19852ce00f64df2dc808506bdb222c9b8a20bc8006d00",
+      "role": "immutable_rung_one_evidence_predecessor"
+    },
+    {
+      "evidenceId": "G2R2E003",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/provenance-observation-v1.json",
+      "sha256": "6b0b55023849480c0a7ea05449b98cc2e27d9fd1d704c794aace9e04d0afe4f0",
+      "role": "signed_sumdb_tree_and_record_inclusion_provenance"
+    },
+    {
+      "evidenceId": "G2R2E004",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/source-acquisition-decision-v1.json",
+      "sha256": "8a7ec91354b27ffc4cdf8dcce2f6baa93a10dfadfd7c896266ce42b1ae854c10",
+      "role": "one_use_exact_archive_acquisition_decision"
+    },
+    {
+      "evidenceId": "G2R2E005",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/source-acquisition-decision-v1.md",
+      "sha256": "1c14cfd54cb0e4c5cec647b9cb42a9f9352e8809556e74a7a27c163e047ebb72",
+      "role": "human_readable_rung_two_decision"
+    },
+    {
+      "evidenceId": "G2R2E006",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/source-acquisition-progress-v1.json",
+      "sha256": "25b00486c80a6a769be0ab25ad8a7d2e5f27652f5799682892de0561a10ca2cd",
+      "role": "authorized_not_consumed_zero_request_progress"
+    }
+  ],
+  "collectionSha256": "cf0a8773a7b78f6f41be7c6b475660136f376d0f39524a1d5fc11eb72f7397ee",
+  "sourceAcquisitionExecuted": false,
+  "externalIdentityProofRequired": false,
+  "userActionRequired": false
+}

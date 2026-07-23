@@ -1,0 +1,637 @@
+{
+  "documentType": "aetherlink.g2-pion-restricted-fork-profile",
+  "schemaVersion": "1.1",
+  "profileId": "pion_ice_v4_3_0_aetherlink_restricted_fork_v1",
+  "recordedDate": "2026-07-23",
+  "status": "rung1_profile_complete_candidate_not_selected",
+  "implementationStatus": "not_implemented",
+  "verificationStatus": "design_validator_passed_runtime_not_executed",
+  "sourceReview": {
+    "path": "../g2-requirements-review-v1.md",
+    "sha256": "1874e43121997023b64b9f370c1782f46f8409630b6096ec8175009b300c246b",
+    "evidenceManifestPath": "evidence-manifest-v1.json",
+    "evidenceManifestSha256": "98e0e53955e21a833fe19852ce00f64df2dc808506bdb222c9b8a20bc8006d00",
+    "evidenceCollectionSha256": "9e395c4c4f7f61a4810d47cf96ff57b47c1908c73ea459181f1c06f26a35d704",
+    "disposition": "pion_v4_3_0_rejected_as_is",
+    "sourceAcquired": false,
+    "sourceCompiled": false,
+    "sourceExecuted": false
+  },
+  "upstreamBaseline": {
+    "repositoryUrl": "https://github.com/pion/ice",
+    "modulePath": "github.com/pion/ice/v4",
+    "version": "v4.3.0",
+    "tag": "v4.3.0",
+    "commit": "1e8716372f2bb52e45bf2a7172e4fb1004251c46",
+    "goDirective": "1.24.0",
+    "license": "MIT",
+    "releaseDate": "2026-07-13",
+    "observedDate": "2026-07-23",
+    "sourceRetentionStatus": "not_retained",
+    "reviewStatus": "official_public_pages_only_pre_acquisition",
+    "asIsDisposition": "rejected_at_official_source_preflight_as_is",
+    "observedDirectDependencies": [
+      "github.com/google/uuid@v1.6.0",
+      "github.com/pion/dtls/v3@v3.1.5",
+      "github.com/pion/logging@v0.2.4",
+      "github.com/pion/mdns/v2@v2.1.0",
+      "github.com/pion/randutil@v0.1.0",
+      "github.com/pion/stun/v3@v3.1.6",
+      "github.com/pion/transport/v4@v4.0.2",
+      "github.com/pion/turn/v5@v5.0.12",
+      "github.com/stretchr/testify@v1.11.1",
+      "golang.org/x/net@v0.49.0"
+    ]
+  },
+  "forkGovernance": {
+    "maintainer": "aetherlink_project",
+    "patchSeriesId": "aetherlink-pion-ice-v4.3.0-restriction-v1",
+    "upstreamMergePolicy": "no_automatic_merge_exact_base_and_reviewed_patch_series_only",
+    "compatibilityPolicy": "upstream_api_compatibility_is_not_a_security_goal_minimal_aetherlink_abi_wins",
+    "minimumPatchOrder": [
+      "split_egress_capability_and_ingress_admission_boundaries",
+      "remove_secret_bearing_diagnostics",
+      "replace_callbacks_with_bounded_pull_events_and_sticky_terminal_latch",
+      "deadline_bounded_shutdown",
+      "disable_nonprofile_network_paths",
+      "inject_bounded_resolver_interface_and_turn_tls_identity_inputs",
+      "add_one_use_pre_auth_path_and_exact_secure_session_promotion"
+    ],
+    "patchDriftRule": "every_upstream_change_restarts_rung2_identity_and_rung3_offline_review",
+    "rollbackRule": "remove_the_candidate_and_retain_relay_only_sealed_fallback_without_protocol_downgrade"
+  },
+  "featureProfile": {
+    "allowed": [
+      "full_ice_both_endpoints",
+      "regular_nomination_single_component",
+      "udp4_udp6_connectivity_checks",
+      "server_reflexive_candidates",
+      "peer_reflexive_candidates",
+      "relay_candidates",
+      "ordered_generation_scoped_trickle",
+      "stun_binding_through_egress_and_ingress_policy",
+      "turn_udp_tcp_tls_through_egress_and_ingress_policy",
+      "consent_freshness_on_exact_nominated_tuple"
+    ],
+    "conditional": [
+      "host_candidates_disabled_by_default_private_same_link_only_with_explicit_per_session_capability",
+      "system_dns_never_used_internally_only_injected_bounded_resolver_results",
+      "pre_auth_datagrams_only_for_bounded_aetherlink_secure_session_confirmation",
+      "application_records_only_after_exact_endpoint_confirmation_and_path_capability_promotion"
+    ],
+    "disabled": [
+      "ice_lite",
+      "aggressive_nomination",
+      "active_ice_tcp_candidates",
+      "passive_ice_tcp_candidates",
+      "socks_proxy",
+      "http_connect_proxy",
+      "udp_mux",
+      "tcp_mux",
+      "mdns",
+      "automatic_redirect_or_alternate_server",
+      "implicit_system_resolver",
+      "automatic_upnp_nat_pmp_or_pcp",
+      "telemetry_or_hidden_bootstrap"
+    ]
+  },
+  "networkPolicyBoundary": {
+    "model": "egress_capability_before_io_and_ingress_admission_before_state_mutation",
+    "commonBindingInputs": [
+      "session_id_digest",
+      "candidate_generation",
+      "operation_purpose",
+      "transport",
+      "address_family",
+      "interface_index",
+      "scope_class",
+      "service_config_digest",
+      "service_identity_digest",
+      "candidate_capability_digest",
+      "resolution_provenance",
+      "exact_tuple_digest"
+    ],
+    "egressCapability": {
+      "enforcement": "after_resolution_and_immediately_before_socket_create_bind_connect_handshake_or_write",
+      "operationSpecificInputs": [
+        "local_numeric_ip",
+        "local_port",
+        "remote_numeric_ip_or_null_for_bind",
+        "remote_port_or_null_for_bind",
+        "socket_capability_digest",
+        "credential_class_or_none"
+      ],
+      "allowedOperationOrder": [
+        "injected_resolver_answer_admission",
+        "local_interface_candidate_admission",
+        "udp_socket_create",
+        "udp_per_interface_bind",
+        "udp_bounded_read_loop_arm",
+        "stun_udp_write",
+        "turn_udp_write",
+        "turn_tcp_socket_create",
+        "turn_tcp_connect",
+        "turn_tls_socket_create",
+        "turn_tls_tcp_connect",
+        "turn_tls_sni_alpn_handshake",
+        "turn_authenticated_credential_write",
+        "turn_permission_write",
+        "turn_channel_bind_write",
+        "turn_relay_data_write",
+        "direct_udp_connectivity_check_write",
+        "direct_udp_consent_write",
+        "nominated_direct_pre_auth_handshake_write",
+        "nominated_relay_pre_auth_handshake_write",
+        "nominated_direct_authenticated_record_fragment_write",
+        "nominated_relay_authenticated_record_fragment_write"
+      ],
+      "capabilityLifetime": "single_io_attempt_exact_generation_purpose_transport_local_and_remote_tuple",
+      "capabilityReuseAllowed": false,
+      "wildcardBindAllowed": false,
+      "redirectCountMaximum": 0,
+      "policyUnavailableRule": "deny_before_io"
+    },
+    "ingressAdmission": {
+      "enforcement": "fixed_size_read_then_bounded_header_parse_then_source_transaction_integrity_and_capability_admission_before_state_mutation_or_payload_delivery",
+      "allowedIngressPathOrder": [
+        "udp_datagram_fixed_buffer_read",
+        "stun_binding_request_admission",
+        "stun_binding_response_admission",
+        "ice_connectivity_check_request_admission",
+        "ice_connectivity_check_response_admission",
+        "consent_request_admission",
+        "consent_response_admission",
+        "turn_udp_response_admission",
+        "turn_tcp_bounded_frame_admission",
+        "turn_tls_authenticated_frame_admission",
+        "turn_data_indication_admission",
+        "turn_channel_data_admission",
+        "peer_reflexive_remote_tuple_admission",
+        "nominated_direct_pre_auth_handshake_admission",
+        "nominated_relay_pre_auth_handshake_admission",
+        "nominated_direct_authenticated_record_fragment_admission",
+        "nominated_relay_authenticated_record_fragment_admission"
+      ],
+      "preStateMutationChecks": [
+        "bound_socket_capability_is_current",
+        "source_numeric_tuple_and_interface_are_allowed",
+        "message_class_and_length_are_within_profile",
+        "stun_or_turn_transaction_is_expected",
+        "message_integrity_and_fingerprint_are_valid_when_required",
+        "turn_allocation_permission_or_channel_is_current",
+        "candidate_generation_and_nominated_tuple_are_current",
+        "pre_auth_or_authenticated_path_capability_matches_content_class"
+      ],
+      "unknownOrInvalidInputRule": "drop_before_state_mutation_increment_only_saturating_reason_counter",
+      "partialStreamFrameRule": "bounded_buffer_until_exact_declared_length_or_deadline_then_close_generation",
+      "consumerDeliveryRule": "deliver_only_after_ingress_admission_and_exact_capability_check"
+    },
+    "disabledPathOrder": [
+      "active_ice_tcp",
+      "passive_ice_tcp",
+      "socks_proxy",
+      "http_connect_proxy",
+      "udp_mux",
+      "tcp_mux",
+      "mdns",
+      "automatic_redirect_or_alternate_server",
+      "implicit_system_resolver",
+      "automatic_upnp_nat_pmp_or_pcp"
+    ],
+    "mixedAnswerPolicy": "evaluate_each_numeric_answer_independently_and_reject_the_set_if_no_answer_is_allowed",
+    "dnsRebindingPolicy": "never_reuse_an_egress_capability_after_reresolution_or_tuple_change",
+    "responseSourceRule": "authenticate_expected_transaction_integrity_and_exact_allowed_source_before_state_change"
+  },
+  "turnTlsServiceIdentity": {
+    "implementationStatus": "not_implemented",
+    "verificationStatus": "not_executed",
+    "configurationSource": "g1_trust_source_and_signed_service_config",
+    "requiredSignedConfigurationFields": [
+      "turn_service_id",
+      "server_name_ascii",
+      "port",
+      "transport",
+      "trust_anchor_set_digest",
+      "spki_sha256_allowlist",
+      "credential_scope_digest",
+      "expires_at",
+      "configuration_digest"
+    ],
+    "tlsMinimumVersion": "1.3",
+    "requiredAlpn": "stun.turn",
+    "sniRule": "exact_server_name_ascii_from_signed_service_config",
+    "certificateIdentityRule": "rfc9525_dns_id_exact_no_wildcard_with_optional_signed_spki_pin",
+    "maximumSpkiPins": 4,
+    "handshakeDeadlineMilliseconds": 5000,
+    "credentialWriteRule": "send_no_turn_username_password_or_rest_credential_until_tls_identity_and_alpn_succeed",
+    "insecureSkipVerifyAllowed": false,
+    "ambientProxyAllowed": false,
+    "ambientTrustStoreWithoutSignedTrustDigestAllowed": false
+  },
+  "secureSessionPromotion": {
+    "implementationStatus": "not_implemented",
+    "verificationStatus": "not_executed",
+    "stateOrder": [
+      "nominated_path_unclaimed",
+      "pre_auth_raw_path_claimed",
+      "endpoint_confirmation_in_progress",
+      "endpoint_confirmation_verified",
+      "authenticated_application_record_capability_issued"
+    ],
+    "terminalFromEveryState": [
+      "revoked",
+      "expired",
+      "closed",
+      "failed"
+    ],
+    "revocationEvents": [
+      "consent_loss",
+      "path_change",
+      "candidate_restart",
+      "capability_expiry",
+      "verification_failure",
+      "session_close"
+    ],
+    "revocationRule": "atomically_revoke_pre_auth_and_application_capabilities_before_any_further_io_state_mutation_event_or_payload_delivery",
+    "preAuthCapability": {
+      "name": "one_use_pre_auth_raw_path_capability",
+      "bindingFields": [
+        "session_id_digest",
+        "candidate_generation",
+        "transport",
+        "local_numeric_tuple",
+        "remote_numeric_tuple",
+        "nominated_path_receipt_digest",
+        "candidate_capability_digest",
+        "expires_at"
+      ],
+      "allowedContent": "aetherlink_secure_session_confirmation_and_carrier_negotiation_only",
+      "maximumLifetimeMilliseconds": 15000,
+      "maximumDatagrams": 64,
+      "maximumBytes": 65536,
+      "applicationRecordAllowed": false
+    },
+    "promotionRequiredInputs": [
+      "verified_production_secure_session_transcript_digest",
+      "local_key_confirmation_digest",
+      "peer_key_confirmation_digest",
+      "exact_pre_auth_capability_digest",
+      "exact_nominated_path_receipt_digest",
+      "candidate_generation",
+      "local_role",
+      "peer_role"
+    ],
+    "promotionRule": "one_shot_atomic_consume_pre_auth_and_issue_exact_generation_tuple_bound_application_record_capability",
+    "postAuthCapability": {
+      "name": "authenticated_application_record_capability",
+      "bindingFields": [
+        "session_id_digest",
+        "secure_session_binding_digest",
+        "candidate_generation",
+        "transport",
+        "local_numeric_tuple",
+        "remote_numeric_tuple",
+        "nominated_path_receipt_digest",
+        "record_profile"
+      ],
+      "allowedContent": "aetherlink_production_secure_session_record_fragments_only",
+      "plaintextOrLegacyFallbackAllowed": false
+    },
+    "carrierBoundary": {
+      "pionOutput": "unordered_unreliable_datagram_path_only",
+      "runtimeRequiredInput": "ordered_reliable_runtime_raw_frame_body_channel",
+      "reliableCarrierSelected": false,
+      "recordFragmentationFormatDefined": false,
+      "maximumCanonicalSecureRecordBytes": 1048576,
+      "rule": "do_not_attach_to_runtime_raw_frame_body_channel_until_reliable_ordered_carrier_and_bounded_fragmentation_reassembly_are_selected_and_verified"
+    },
+    "pionOrIceMayAuthenticateEndpoint": false
+  },
+  "resourceLimits": {
+    "scopeRule": "per_session_limits_include_current_and_draining_and_closing_generations",
+    "processAggregateRule": "process_totals_include_all_active_draining_and_closing_sessions_and_must_not_exceed_the_exact_process_ceilings",
+    "maximumConcurrentSessionsPerProcess": 2,
+    "maximumOverlappingGenerationsPerSession": 2,
+    "maximumNetworkInterfaces": 16,
+    "maximumCandidatesPerEndpoint": 32,
+    "maximumCandidatePairs": 1024,
+    "maximumTrickleBatchCandidates": 8,
+    "maximumCandidateAttributeBytes": 2048,
+    "maximumStunServers": 4,
+    "maximumTurnServers": 4,
+    "maximumTurnAllocationsPerSession": 2,
+    "maximumTurnPermissionsPerSession": 32,
+    "maximumTurnChannelsPerSession": 32,
+    "maximumResolverRequestsPerGeneration": 8,
+    "maximumResolverResponseBytes": 4096,
+    "maximumNumericAnswersPerHostname": 8,
+    "maximumDatagramBytes": 65535,
+    "maximumStunMessageBytes": 4096,
+    "maximumTurnControlMessageBytes": 4096,
+    "maximumStunAttributes": 64,
+    "maximumTurnAttributes": 64,
+    "maximumIngressDatagramsPerSecondPerSession": 2048,
+    "maximumEgressDatagramsPerSecondPerSession": 2048,
+    "maximumIngressBytesPerSecondPerSession": 16777216,
+    "maximumEgressBytesPerSecondPerSession": 16777216,
+    "maximumIngressDatagramsPerSecondPerProcess": 4096,
+    "maximumEgressDatagramsPerSecondPerProcess": 4096,
+    "maximumIngressBytesPerSecondPerProcess": 33554432,
+    "maximumEgressBytesPerSecondPerProcess": 33554432,
+    "maximumOutstandingTransactionsPerSession": 128,
+    "maximumRetransmissionsPerTransaction": 7,
+    "maximumTimersPerSession": 128,
+    "maximumInternalTasksPerSession": 64,
+    "maximumInternalTasksPerProcess": 128,
+    "maximumGoroutinesPerSession": 96,
+    "maximumGoroutinesPerProcess": 192,
+    "maximumOwnedSocketsPerSession": 24,
+    "maximumOwnedSocketsPerProcess": 48,
+    "maximumPendingEventsPerSession": 64,
+    "maximumEventBytes": 4096,
+    "maximumPendingEventBytesPerSession": 262144,
+    "stickyTerminalLatchSlotsPerSession": 1,
+    "eventOverflowRule": "atomically_set_separate_sticky_terminal_latch_drop_nonterminal_queue_contents_and_close_generation",
+    "maximumReassemblyRecordsPerSession": 2,
+    "maximumReassemblyBytesPerSession": 2097152,
+    "maximumFragmentsPerRecord": 1024,
+    "allocationRule": "reject_length_count_rate_and_process_total_overflow_before_untrusted_size_allocation_or_state_insertion",
+    "consentIntervalSeconds": 5,
+    "consentIntervalJitter": "0.8_to_1.2",
+    "consentExpirySeconds": 30
+  },
+  "loggingPolicy": {
+    "implementationStatus": "not_implemented",
+    "verificationStatus": "not_executed",
+    "mode": "closed_allowlist_source_free_reason_codes_and_saturating_counts",
+    "allowedEventCodes": [
+      "gather_state",
+      "candidate_count",
+      "checklist_state",
+      "nomination_state",
+      "consent_state",
+      "turn_allocation_state",
+      "egress_policy_denial_code",
+      "ingress_admission_denial_code",
+      "resource_limit_code",
+      "secure_session_promotion_state",
+      "shutdown_state"
+    ],
+    "forbiddenFields": [
+      "local_ice_username_fragment",
+      "local_ice_password",
+      "remote_ice_username_fragment",
+      "remote_ice_password",
+      "turn_username",
+      "turn_password",
+      "turn_rest_secret",
+      "raw_candidate",
+      "raw_ip_address",
+      "hostname",
+      "certificate_subject",
+      "stable_device_identifier",
+      "pair_identifier",
+      "session_identifier",
+      "application_payload",
+      "backend_credential",
+      "traffic_key"
+    ],
+    "maximumEventsPerMinutePerSession": 120,
+    "counterSaturationMaximum": 65535,
+    "remoteIcePasswordLogRemovalRequired": true,
+    "candidateRedactionRequired": true
+  },
+  "shutdownPolicy": {
+    "implementationStatus": "not_implemented",
+    "verificationStatus": "not_executed",
+    "newWorkAdmissionClosureMilliseconds": 50,
+    "socketCloseInitiationMilliseconds": 100,
+    "internalDrainDeadlineMilliseconds": 2000,
+    "totalCloseDeadlineMilliseconds": 2500,
+    "callbackModel": "bounded_pull_events_no_library_invocation_of_untrusted_callbacks",
+    "consumerWaitRule": "close_never_waits_for_an_event_consumer",
+    "closeOrder": [
+      "reject_new_work",
+      "cancel_contexts_and_timers",
+      "close_all_owned_sockets",
+      "invalidate_egress_ingress_pre_auth_and_application_capabilities",
+      "set_sticky_terminal_latch_and_drop_nonterminal_event_queue",
+      "join_only_internal_deadline_bound_workers",
+      "return_terminal_result_by_total_deadline"
+    ],
+    "deadlineFailureRule": "return_terminal_shutdown_timeout_after_forced_resource_revocation_without_plaintext_fallback",
+    "finalizerRelianceAllowed": false
+  },
+  "buildAndSupplyChain": {
+    "futureCompileOnlyTargets": [
+      "android_api_26_through_36_arm64_v8a",
+      "macos_14_or_newer_arm64"
+    ],
+    "postV1Targets": [
+      "android_x86_64_emulator",
+      "macos_x86_64"
+    ],
+    "toolchainPins": {
+      "go": "go1.24.0",
+      "xMobileRevision": null,
+      "gomobileRevision": null,
+      "gobindRevision": null,
+      "androidNdkVersion": null,
+      "xcodeVersion": null,
+      "status": "unresolved_must_pin_before_compile_rung"
+    },
+    "minimalBridgeOperations": [
+      "create_agent_from_closed_profile",
+      "supply_signed_service_configuration_and_turn_tls_identity",
+      "supply_bounded_interface_inventory",
+      "supply_bounded_resolver_result",
+      "supply_remote_candidate_batch",
+      "start_or_restart_generation",
+      "poll_bounded_event_batch_and_terminal_latch",
+      "claim_nominated_pre_auth_raw_path",
+      "send_pre_auth_handshake_datagram",
+      "receive_pre_auth_handshake_datagram",
+      "promote_exact_path_after_endpoint_confirmation",
+      "send_authenticated_record_fragment",
+      "receive_authenticated_record_fragment",
+      "close_with_deadline"
+    ],
+    "requiredArtifacts": [
+      "source_manifest_with_sha256",
+      "complete_go_module_graph",
+      "spdx_2_3_json_sbom",
+      "license_inventory",
+      "reviewed_patch_series_manifest",
+      "egress_and_ingress_path_coverage_manifest",
+      "turn_tls_identity_conformance_report",
+      "secure_session_promotion_conformance_report",
+      "reliable_ordered_carrier_and_fragmentation_decision",
+      "android_aar_arm64_v8a",
+      "macos_xcframework_arm64",
+      "exported_symbol_allowlist",
+      "two_build_reproducibility_digest_report"
+    ],
+    "reproducibilityRule": "two_clean_isolated_builds_with_exact_toolchains_environment_flags_inputs_and_source_date_epoch_must_match",
+    "dependencyRule": "vendor_exact_complete_module_closure_and_reject_network_dependency_resolution_during_build",
+    "symbolRule": "export_only_the_reviewed_minimal_bridge_operations"
+  },
+  "maintenancePolicy": {
+    "upstreamReleaseReviewCadenceDays": 30,
+    "dependencyAdvisoryReviewCadenceDays": 14,
+    "criticalAdvisoryTriageBusinessDays": 2,
+    "criticalFixOrMitigationCalendarDays": 7,
+    "highFixOrMitigationCalendarDays": 30,
+    "unsupportedUpstreamPolicy": "aetherlink_owns_response_no_unverified_upstream_support_claim",
+    "updateRule": "one_exact_baseline_at_a_time_with_full_patch_rebase_and_rung2_plus_rung3_revalidation",
+    "emergencyRule": "disable_direct_traversal_and_use_the_existing_authenticated_sealed_relay_fallback",
+    "releaseBlockRule": "known_unmitigated_critical_or_profile_bypass_blocks_release"
+  },
+  "verificationMatrix": [
+    {
+      "id": "g2-r3-egress-path-coverage",
+      "rung": 3,
+      "status": "not_executed",
+      "requiredChecks": [
+        "every_socket_create_bind_connect_tls_handshake_and_write_uses_one_exact_egress_capability",
+        "every_disabled_path_fails_before_io",
+        "single_use_capabilities_reject_tuple_purpose_generation_transport_and_credential_class_reuse"
+      ]
+    },
+    {
+      "id": "g2-r3-ingress-path-coverage",
+      "rung": 3,
+      "status": "not_executed",
+      "requiredChecks": [
+        "every_udp_and_turn_stream_read_is_bounded_before_parse",
+        "every_ingress_class_checks_source_transaction_integrity_generation_and_capability_before_state_mutation",
+        "invalid_input_reaches_no_callback_event_payload_or_application_channel"
+      ]
+    },
+    {
+      "id": "g2-r3-address-and-resolution-adversarial",
+      "rung": 3,
+      "status": "not_executed",
+      "requiredChecks": [
+        "mixed_allowed_and_forbidden_dns_answers",
+        "dns_rebinding_and_stale_resolution",
+        "loopback_link_local_multicast_unspecified_ipv4_mapped_ipv6_and_redirect_rejection"
+      ]
+    },
+    {
+      "id": "g2-r3-turn-tls-service-identity",
+      "rung": 3,
+      "status": "not_executed",
+      "requiredChecks": [
+        "tls13_sni_stun_turn_alpn_dns_id_trust_digest_and_optional_spki_pin_match",
+        "credential_bytes_are_absent_before_authenticated_tls_completion",
+        "wrong_name_anchor_pin_alpn_expiry_proxy_and_insecure_skip_verify_fail_closed"
+      ]
+    },
+    {
+      "id": "g2-r3-secure-session-promotion",
+      "rung": 3,
+      "status": "not_executed",
+      "requiredChecks": [
+        "pre_auth_capability_carries_only_bounded_confirmation_and_carrier_negotiation",
+        "application_records_fail_before_exact_endpoint_confirmation_and_atomic_promotion",
+        "generation_tuple_receipt_role_transcript_and_confirmation_mutation_fail_closed",
+        "consent_loss_path_change_candidate_restart_capability_expiry_verification_failure_and_session_close_atomically_revoke_pre_auth_and_application_capabilities"
+      ]
+    },
+    {
+      "id": "g2-r3-resource-and-event-bounds",
+      "rung": 3,
+      "status": "not_executed",
+      "requiredChecks": [
+        "all_packet_attribute_rate_task_goroutine_socket_turn_generation_and_reassembly_limits_reject_before_allocation",
+        "two_session_process_aggregate_limits_hold_with_active_draining_and_closing_generations",
+        "event_overflow_sets_the_independent_sticky_terminal_latch_and_cannot_wait_for_a_consumer"
+      ]
+    },
+    {
+      "id": "g2-r3-secret-free-diagnostics",
+      "rung": 3,
+      "status": "not_executed",
+      "requiredChecks": [
+        "remote_ice_password_log_is_absent",
+        "all_forbidden_fields_are_absent_at_every_log_level",
+        "rate_limits_and_counter_saturation_are_fail_safe"
+      ]
+    },
+    {
+      "id": "g2-r3-deadline-shutdown",
+      "rung": 3,
+      "status": "not_executed",
+      "requiredChecks": [
+        "blocked_resolver_stun_turn_tls_datagram_reassembly_and_event_consumer",
+        "close_during_every_state_transition",
+        "total_close_returns_by_2500_milliseconds_without_waiting_for_consumers"
+      ]
+    },
+    {
+      "id": "g2-r4-supply-chain-and-reproducibility",
+      "rung": 4,
+      "status": "not_executed",
+      "requiredChecks": [
+        "complete_dependency_license_and_sbom_closure",
+        "patch_series_applies_to_the_exact_base_without_fuzz",
+        "two_clean_build_input_manifests_and_output_digests_match"
+      ]
+    },
+    {
+      "id": "g2-r5-declared-platform-compile",
+      "rung": 5,
+      "status": "not_executed",
+      "requiredChecks": [
+        "android_api_26_through_36_arm64_v8a_compile_only",
+        "macos_14_or_newer_arm64_compile_only",
+        "exported_symbols_equal_the_closed_allowlist"
+      ]
+    },
+    {
+      "id": "g2-r6-no-network-conformance",
+      "rung": 6,
+      "status": "not_executed",
+      "requiredChecks": [
+        "fuzz_and_malformed_input_suites",
+        "race_sanitizer_and_lifetime_suites",
+        "deterministic_shutdown_and_zero_socket_no_network_witness"
+      ]
+    }
+  ],
+  "technicalDecision": {
+    "currentRung": 1,
+    "currentResult": "rung1_profile_complete_candidate_not_selected",
+    "recommendedNextAction": "prepare_versioned_rung2_source_identity_and_acquisition_decision",
+    "profileDesignRecorded": true,
+    "rung2DecisionRecorded": false,
+    "candidateSelected": false,
+    "librarySelected": false,
+    "sourceAcquisitionAllowed": false,
+    "dependencyInstallationAllowed": false,
+    "compilerInvocationAllowed": false,
+    "codeLoadingAllowed": false,
+    "socketCreationAllowed": false,
+    "networkIoAllowed": false,
+    "deviceExecutionAllowed": false,
+    "productionDeploymentAllowed": false,
+    "gitOperationAllowed": false,
+    "externalIdentityProofRequired": false,
+    "userActionRequired": false
+  },
+  "disposition": {
+    "result": "pion_restricted_fork_profile_ready_for_rung2_decision_only",
+    "candidateSelected": false,
+    "nextAction": "prepare_versioned_rung2_source_identity_and_acquisition_decision",
+    "openBlockers": [
+      "official_source_archive_digest_and_signature_provenance_not_recorded",
+      "complete_go_dependency_closure_not_independently_verified",
+      "x_mobile_gomobile_and_gobind_revisions_not_pinned",
+      "fork_patch_series_not_implemented_or_offline_reviewed",
+      "turn_tls_service_identity_not_implemented_or_verified",
+      "pre_auth_to_application_capability_promotion_not_implemented_or_verified",
+      "reliable_ordered_carrier_and_record_fragmentation_reassembly_not_selected",
+      "no_compile_abi_runtime_socket_network_or_device_evidence"
+    ]
+  }
+}

@@ -3,8 +3,9 @@ import BridgeProtocol
 import CryptoKit
 import Foundation
 import Pairing
+import P2PNATContracts
 import Transport
-import TrustedDevices
+@_spi(TrustedDeviceTesting) import TrustedDevices
 import XCTest
 
 final class PairedRuntimeRouteRefreshTests: XCTestCase {
@@ -71,11 +72,13 @@ final class PairedRuntimeRouteRefreshTests: XCTestCase {
         let pairedPrivateOverlay = RecordingPrivateOverlayTransport(
             onStart: { lifecycle.record("overlay-start") }
         )
+        let trustedStore = try await makeTrustedDeviceStore(for: [authorizationContext])
         let model = fixture.makeModel(
             allocator: allocator,
             relayClient: relayClient,
             pairedRelayClient: pairedRelayClient,
-            pairedPrivateOverlayTransport: pairedPrivateOverlay
+            pairedPrivateOverlayTransport: pairedPrivateOverlay,
+            trustedDeviceStore: trustedStore
         )
 
         let refreshedResult = try await model.refreshRuntimeRoute(
@@ -160,6 +163,46 @@ final class PairedRuntimeRouteRefreshTests: XCTestCase {
         )
         XCTAssertNil(fixture.savedTicketGeneration)
         XCTAssertNil(model.relayConfigurationRequestState)
+    }
+
+    @MainActor
+    func testActivePairScopedRouteDoesNotStartLegacyTransportsWithoutMatchingTrust() async throws {
+        let fixture = try makeFixture(ticketGeneration: 7)
+        let authorizationContext = try makeAuthorizationContext(
+            requestID: "paired-refresh-untrusted-active"
+        )
+        let pairedRelayID = RelayAllocationIdentityChallenge.pairedRelayID(
+            routeToken: fixture.routeToken,
+            runtimeKeyFingerprint: fixture.runtimeIdentity.fingerprint,
+            clientKeyFingerprint: authorizationContext.trustedClientKeyFingerprint
+        )
+        let allocator = RecordingPairedRelayAllocator(renewalAllocation: RelayServiceRouteAllocation(
+            host: fixture.host,
+            port: fixture.port,
+            relayID: pairedRelayID,
+            relayExpiresAtEpochMillis: fixture.currentExpiry + 60_000,
+            relayNonce: "nonce-generation-8",
+            runtimeKeyFingerprint: fixture.runtimeIdentity.fingerprint,
+            ticketGeneration: 8
+        ))
+        let pairedRelay = RecordingRelayTransport()
+        let privateOverlay = RecordingPrivateOverlayTransport()
+        let model = fixture.makeModel(
+            allocator: allocator,
+            relayClient: RecordingRelayTransport(),
+            pairedRelayClient: pairedRelay,
+            pairedPrivateOverlayTransport: privateOverlay
+        )
+
+        let refreshResult = try await model.refreshRuntimeRoute(
+            authorizationContext: authorizationContext
+        )
+        let result = try XCTUnwrap(refreshResult)
+        await model.activateRuntimeRouteRefresh(result)
+
+        XCTAssertTrue(privateOverlay.startedFingerprints.isEmpty)
+        XCTAssertTrue(pairedRelay.startedConfigurations.isEmpty)
+        XCTAssertTrue(model.logs.contains("Legacy pair-scoped transport start rejected"))
     }
 
     @MainActor
@@ -253,15 +296,19 @@ final class PairedRuntimeRouteRefreshTests: XCTestCase {
         let privateOverlay = RecordingPrivateOverlayTransport(
             onStart: { lifecycle.record("overlay-start") }
         )
+        let trustedStore = try await makeTrustedDeviceStore(for: [authorizationContext])
         let restoredModel = fixture.makeModel(
             allocator: RecordingPairedRelayAllocator(),
             relayClient: RecordingRelayTransport(),
             pairedRelayClient: pairedRelay,
-            pairedPrivateOverlayTransport: privateOverlay
+            pairedPrivateOverlayTransport: privateOverlay,
+            trustedDeviceStore: trustedStore
         )
 
         restoredModel.start(port: 43213)
 
+        let didStartRestoredPair = await waitForPairStartCount(pairedRelay, count: 1)
+        XCTAssertTrue(didStartRestoredPair)
         XCTAssertEqual(privateOverlay.startedFingerprints, [
             authorizationContext.trustedClientKeyFingerprint,
         ])
@@ -272,6 +319,54 @@ final class PairedRuntimeRouteRefreshTests: XCTestCase {
 
         XCTAssertEqual(privateOverlay.stopCount, 1)
         XCTAssertEqual(pairedRelay.stopCount, 1)
+    }
+
+    @MainActor
+    func testRestoredProductionPairDoesNotDowngradeToLegacyTransports() async throws {
+        let fixture = try makeFixture(ticketGeneration: 11)
+        let authorizationContext = try makeAuthorizationContext(
+            requestID: "paired-refresh-production-restore"
+        )
+        let pairedRelayID = RelayAllocationIdentityChallenge.pairedRelayID(
+            routeToken: fixture.routeToken,
+            runtimeKeyFingerprint: fixture.runtimeIdentity.fingerprint,
+            clientKeyFingerprint: authorizationContext.trustedClientKeyFingerprint
+        )
+        let allocator = RecordingPairedRelayAllocator(renewalAllocation: RelayServiceRouteAllocation(
+            host: fixture.host,
+            port: fixture.port,
+            relayID: pairedRelayID,
+            relayExpiresAtEpochMillis: fixture.currentExpiry + 60_000,
+            relayNonce: "nonce-generation-12",
+            runtimeKeyFingerprint: fixture.runtimeIdentity.fingerprint,
+            ticketGeneration: 12
+        ))
+        let initialModel = fixture.makeModel(
+            allocator: allocator,
+            relayClient: RecordingRelayTransport()
+        )
+        _ = try await initialModel.refreshRuntimeRoute(authorizationContext: authorizationContext)
+
+        let trustedStore = try await makeTrustedDeviceStore(
+            for: [authorizationContext],
+            productionFingerprints: [authorizationContext.trustedClientKeyFingerprint]
+        )
+        let pairedRelay = RecordingRelayTransport()
+        let privateOverlay = RecordingPrivateOverlayTransport()
+        let restoredModel = fixture.makeModel(
+            allocator: RecordingPairedRelayAllocator(),
+            relayClient: RecordingRelayTransport(),
+            pairedRelayClient: pairedRelay,
+            pairedPrivateOverlayTransport: privateOverlay,
+            trustedDeviceStore: trustedStore
+        )
+
+        restoredModel.start(port: 43216)
+
+        let didRejectLegacyStart = await waitForLegacyPairStartDecision(on: restoredModel)
+        XCTAssertTrue(didRejectLegacyStart)
+        XCTAssertTrue(privateOverlay.startedFingerprints.isEmpty)
+        XCTAssertTrue(pairedRelay.startedConfigurations.isEmpty)
     }
 
     @MainActor
@@ -411,11 +506,13 @@ final class PairedRuntimeRouteRefreshTests: XCTestCase {
         let allocator = SequencedSuspendedPairedRelayAllocator()
         let pairedRelay = RecordingRelayTransport()
         let privateOverlay = RecordingPrivateOverlayTransport()
+        let trustedStore = try await makeTrustedDeviceStore(for: [firstContext])
         let model = fixture.makeModel(
             allocator: allocator,
             relayClient: RecordingRelayTransport(),
             pairedRelayClient: pairedRelay,
-            pairedPrivateOverlayTransport: privateOverlay
+            pairedPrivateOverlayTransport: privateOverlay,
+            trustedDeviceStore: trustedStore
         )
 
         let firstTask = Task { @MainActor in
@@ -456,6 +553,8 @@ final class PairedRuntimeRouteRefreshTests: XCTestCase {
             XCTAssertEqual(error, .clientAuthorizationRejected)
         }
 
+        let didStartCommittedPair = await waitForPairStartCount(pairedRelay, count: 1)
+        XCTAssertTrue(didStartCommittedPair)
         XCTAssertEqual(privateOverlay.startedFingerprints, [
             firstContext.trustedClientKeyFingerprint,
         ])
@@ -484,11 +583,13 @@ final class PairedRuntimeRouteRefreshTests: XCTestCase {
         let allocator = SequencedSuspendedPairedRelayAllocator()
         let pairedRelay = RecordingRelayTransport()
         let privateOverlay = RecordingPrivateOverlayTransport()
+        let trustedStore = try await makeTrustedDeviceStore(for: [firstContext])
         let model = fixture.makeModel(
             allocator: allocator,
             relayClient: RecordingRelayTransport(),
             pairedRelayClient: pairedRelay,
-            pairedPrivateOverlayTransport: privateOverlay
+            pairedPrivateOverlayTransport: privateOverlay,
+            trustedDeviceStore: trustedStore
         )
 
         let firstTask = Task { @MainActor in
@@ -580,11 +681,13 @@ final class PairedRuntimeRouteRefreshTests: XCTestCase {
         }
         let pairedRelay = RecordingRelayTransport()
         let privateOverlay = RecordingPrivateOverlayTransport()
+        let trustedStore = try await makeTrustedDeviceStore(for: [firstContext, secondContext])
         let model = fixture.makeModel(
             allocator: PerPairAdvancingRelayAllocator(),
             relayClient: RecordingRelayTransport(),
             pairedRelayClient: pairedRelay,
-            pairedPrivateOverlayTransport: privateOverlay
+            pairedPrivateOverlayTransport: privateOverlay,
+            trustedDeviceStore: trustedStore
         )
 
         let firstRefresh = try await model.refreshRuntimeRoute(authorizationContext: firstContext)
@@ -617,6 +720,78 @@ private func waitForRelayConfigurationCompletion(
         try? await Task.sleep(nanoseconds: 1_000_000)
     }
     return false
+}
+
+@MainActor
+private func waitForPairStartCount(
+    _ relay: RecordingRelayTransport,
+    count: Int
+) async -> Bool {
+    for _ in 0..<1_000 {
+        if relay.startedConfigurations.count == count {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: 1_000_000)
+    }
+    return false
+}
+
+@MainActor
+private func waitForLegacyPairStartDecision(on model: CompanionAppModel) async -> Bool {
+    for _ in 0..<1_000 {
+        if model.logs.contains("Legacy pair-scoped transport start rejected") {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: 1_000_000)
+    }
+    return false
+}
+
+private func makeTrustedDeviceStore(
+    for contexts: [RuntimePairedRelayAuthorizationContext],
+    productionFingerprints: Set<String> = []
+) async throws -> TrustedDeviceStore {
+    let storeURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("aetherlink-paired-route-trust", isDirectory: true)
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        .appendingPathComponent("trusted-devices.json", isDirectory: false)
+    let store = TrustedDeviceStore(fileURL: storeURL)
+    for (index, context) in contexts.enumerated() {
+        let device = TrustedDevice(
+            id: "paired-route-client-\(index)",
+            name: "Paired Route Client \(index)",
+            publicKeyBase64: context.trustedClientPublicKeyBase64
+        )
+        try await store.trust(device)
+        if productionFingerprints.contains(context.trustedClientKeyFingerprint) {
+            let runtimeFingerprint = context.trustedClientKeyFingerprint == String(
+                repeating: "f",
+                count: 64
+            ) ? String(repeating: "e", count: 64) : String(repeating: "f", count: 64)
+            let authority = try ProductionPairAuthorityState(
+                pairBindingDigest: String(repeating: "1", count: 64),
+                pairEpoch: 1,
+                clientIdentityFingerprint: context.trustedClientKeyFingerprint,
+                runtimeIdentityFingerprint: runtimeFingerprint,
+                generation: 1,
+                serviceConfigVersion: 1,
+                keysetVersion: 1,
+                revocationCounter: 0,
+                protocolFloor: 1,
+                status: .active,
+                transitionId: String(repeating: "2", count: 64),
+                transitionRequestDigest: String(repeating: "3", count: 64),
+                acceptedReceiptDigest: String(repeating: "4", count: 64),
+                authorityRevision: 1
+            )
+            _ = try await store.installProductionPairStateForTesting(
+                deviceID: device.id,
+                expectedPublicKeyBase64: device.publicKeyBase64,
+                authority: authority
+            )
+        }
+    }
+    return store
 }
 
 private struct PairedRouteFixture {

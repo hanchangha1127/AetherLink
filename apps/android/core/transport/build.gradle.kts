@@ -13,8 +13,10 @@ android {
 
 dependencies {
     implementation(project(":core:protocol"))
+    implementation(project(":core:pairing"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

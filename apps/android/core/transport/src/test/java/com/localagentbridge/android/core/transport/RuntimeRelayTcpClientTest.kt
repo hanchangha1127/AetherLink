@@ -7,10 +7,12 @@ import com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationC
 import com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationProof
 import com.localagentbridge.android.core.protocol.ProtocolCodec
 import com.localagentbridge.android.core.protocol.ProtocolEnvelope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -35,7 +37,9 @@ import java.security.spec.ECParameterSpec
 import java.security.spec.ECPrivateKeySpec
 import java.security.spec.X509EncodedKeySpec
 import java.util.Base64
+import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
@@ -155,6 +159,119 @@ class RuntimeRelayTcpClientTest {
             assertEquals(0, output.bytes.size())
             assertEquals(emptyList<Int>(), output.writeLengths)
         }
+    }
+
+    @Test
+    fun rawRelayBodyLimitReservesStrictFrameAuthenticationTag() {
+        assertEquals(
+            ProtocolCodec.MAX_FRAME_BYTES,
+            maximumRelayRawFrameBodyBytes(usesFrameCryptor = false),
+        )
+        assertEquals(
+            ProtocolCodec.MAX_FRAME_BYTES - RELAY_FRAME_AUTHENTICATION_TAG_BYTES,
+            maximumRelayRawFrameBodyBytes(usesFrameCryptor = true),
+        )
+
+        requireRelayRawFrameBodyLength(
+            ProtocolCodec.MAX_FRAME_BYTES - RELAY_FRAME_AUTHENTICATION_TAG_BYTES,
+            usesFrameCryptor = true,
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            requireRelayRawFrameBodyLength(
+                ProtocolCodec.MAX_FRAME_BYTES - RELAY_FRAME_AUTHENTICATION_TAG_BYTES + 1,
+                usesFrameCryptor = true,
+            )
+        }
+    }
+
+    @Test
+    fun plaintextRawRelayPreservesFrameBodiesAndFlushCompletion() = runBlocking {
+        val codec = ProtocolCodec()
+        val inboundBody = byteArrayOf(0x41, 0x4c, 0x53, 0x31, 0xff.toByte())
+        val outboundBody = byteArrayOf(0x41, 0x4c, 0x53, 0x31, 42)
+        val socket = RecordingReadyRelaySocket(codec.encodeFrameBody(inboundBody))
+        val channel = RuntimeRelayTcpClient(
+            socketFactory = RuntimeRelaySocketFactory { _, _ -> socket },
+        ).connectRaw(legacyRoute(443), timeoutMillis = 1_000)
+
+        channel.sendFrameBody(outboundBody)
+
+        val expected = "AETHERLINK_RELAY client relay-legacy\n".encodeToByteArray() +
+            codec.encodeFrameBody(outboundBody)
+        assertArrayEquals(expected, socket.bytes.toByteArray())
+        assertEquals(2, socket.flushCalls)
+        assertArrayEquals(inboundBody, channel.receiveFrameBody())
+        assertFalse(socket.isClosed)
+    }
+
+    @Test
+    fun cancellingBlockedRawRelaySendClosesSocketAndReleasesWriterBoundedly() = runBlocking {
+        val socket = BlockingReadyRelaySocket()
+        val channel = RuntimeRelayTcpClient(
+            socketFactory = RuntimeRelaySocketFactory { _, _ -> socket },
+        ).connectRaw(legacyRoute(443), timeoutMillis = 1_000)
+        val sending = async(start = CoroutineStart.UNDISPATCHED) {
+            channel.sendFrameBody(byteArrayOf(0x41, 0x4c, 0x53, 0x31, 30))
+        }
+        assertTrue(socket.writeStarted.await(2, TimeUnit.SECONDS))
+
+        sending.cancel()
+        assertTrue(
+            runCatching {
+                withTimeout(2_000) { sending.await() }
+            }.exceptionOrNull() is CancellationException,
+        )
+        assertTrue(socket.isClosed)
+        assertFalse(channel.isConnected)
+    }
+
+    @Test
+    fun cancellingBlockedRawRelayReceiveClosesSocketAndReleasesReaderBoundedly() = runBlocking {
+        val socket = BlockingReadyRelayReadSocket()
+        val channel = RuntimeRelayTcpClient(
+            socketFactory = RuntimeRelaySocketFactory { _, _ -> socket },
+        ).connectRaw(legacyRoute(443), timeoutMillis = 1_000)
+        val receiving = async(start = CoroutineStart.UNDISPATCHED) {
+            channel.receiveFrameBody()
+        }
+        assertTrue(socket.readStarted.await(2, TimeUnit.SECONDS))
+
+        receiving.cancel()
+        assertTrue(
+            runCatching {
+                withTimeout(2_000) { receiving.await() }
+            }.exceptionOrNull() is CancellationException,
+        )
+        assertTrue(socket.isClosed)
+        assertFalse(channel.isConnected)
+    }
+
+    @Test
+    fun rawRelayRejectsProtocolModeMixingAndInvalidLengthsFailClosed() = runBlocking {
+        val mixedSocket = RecordingReadyRelaySocket()
+        val mixedChannel = RuntimeRelayTcpClient(
+            socketFactory = RuntimeRelaySocketFactory { _, _ -> mixedSocket },
+        ).connectRaw(legacyRoute(443), timeoutMillis = 1_000)
+
+        val modeFailure = runCatching {
+            (mixedChannel as RuntimeProtocolChannel).send(
+                ProtocolEnvelope(type = MessageType.RuntimeHealth),
+            )
+        }.exceptionOrNull()
+
+        assertTrue(modeFailure is IllegalStateException)
+        assertTrue(mixedSocket.isClosed)
+
+        val invalidSocket = RecordingReadyRelaySocket()
+        val invalidChannel = RuntimeRelayTcpClient(
+            socketFactory = RuntimeRelaySocketFactory { _, _ -> invalidSocket },
+        ).connectRaw(legacyRoute(443), timeoutMillis = 1_000)
+        val lengthFailure = runCatching {
+            invalidChannel.sendFrameBody(ByteArray(0))
+        }.exceptionOrNull()
+
+        assertTrue(lengthFailure is IllegalArgumentException)
+        assertTrue(invalidSocket.isClosed)
     }
 
     @Test
@@ -864,6 +981,128 @@ class RuntimeRelayTcpClientTest {
 
         override fun close() {
             closed = true
+        }
+    }
+
+    private class RecordingReadyRelaySocket(
+        inboundFrame: ByteArray = ByteArray(0),
+    ) : Socket() {
+        private val input = ByteArrayInputStream(
+            "AETHERLINK_RELAY ready\n".encodeToByteArray() + inboundFrame,
+        )
+        val bytes = ByteArrayOutputStream()
+        var flushCalls = 0
+            private set
+        private var closed = false
+
+        override fun isConnected(): Boolean = true
+
+        override fun isClosed(): Boolean = closed
+
+        override fun getInputStream(): InputStream = input
+
+        override fun getOutputStream(): OutputStream = object : OutputStream() {
+            override fun write(value: Int) {
+                bytes.write(value)
+            }
+
+            override fun write(buffer: ByteArray, offset: Int, length: Int) {
+                bytes.write(buffer, offset, length)
+            }
+
+            override fun flush() {
+                flushCalls += 1
+            }
+        }
+
+        override fun close() {
+            closed = true
+        }
+    }
+
+    private class BlockingReadyRelaySocket : Socket() {
+        private val input = ByteArrayInputStream(
+            "AETHERLINK_RELAY ready\n".encodeToByteArray(),
+        )
+        private val closedLatch = CountDownLatch(1)
+        val writeStarted = CountDownLatch(1)
+        private var arrayWriteCount = 0
+        @Volatile private var closed = false
+
+        override fun isConnected(): Boolean = true
+
+        override fun isClosed(): Boolean = closed
+
+        override fun getInputStream(): InputStream = input
+
+        override fun getOutputStream(): OutputStream = object : OutputStream() {
+            override fun write(value: Int) {
+                throw IOException("Unexpected single-byte relay write")
+            }
+
+            override fun write(buffer: ByteArray, offset: Int, length: Int) {
+                arrayWriteCount += 1
+                if (arrayWriteCount == 1) return // Initial relay registration line.
+                writeStarted.countDown()
+                if (!closedLatch.await(2, TimeUnit.SECONDS)) {
+                    throw IOException("Timed out waiting for blocked relay send close")
+                }
+                throw IOException("Blocked relay send was closed")
+            }
+        }
+
+        override fun close() {
+            closed = true
+            closedLatch.countDown()
+        }
+    }
+
+    private class BlockingReadyRelayReadSocket : Socket() {
+        private val ready = "AETHERLINK_RELAY ready\n".encodeToByteArray()
+        private val closedLatch = CountDownLatch(1)
+        val readStarted = CountDownLatch(1)
+        private var readyOffset = 0
+        @Volatile private var closed = false
+
+        override fun isConnected(): Boolean = true
+
+        override fun isClosed(): Boolean = closed
+
+        override fun getInputStream(): InputStream = object : InputStream() {
+            override fun read(): Int {
+                if (readyOffset < ready.size) {
+                    return ready[readyOffset++].toInt() and 0xff
+                }
+                return awaitClose()
+            }
+
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                if (readyOffset < ready.size) {
+                    val count = minOf(length, ready.size - readyOffset)
+                    ready.copyInto(buffer, offset, readyOffset, readyOffset + count)
+                    readyOffset += count
+                    return count
+                }
+                return awaitClose()
+            }
+
+            private fun awaitClose(): Nothing {
+                readStarted.countDown()
+                if (!closedLatch.await(2, TimeUnit.SECONDS)) {
+                    throw IOException("Timed out waiting for blocked relay receive close")
+                }
+                throw IOException("Blocked relay receive was closed")
+            }
+        }
+
+        override fun getOutputStream(): OutputStream = object : OutputStream() {
+            override fun write(value: Int) = Unit
+            override fun write(buffer: ByteArray, offset: Int, length: Int) = Unit
+        }
+
+        override fun close() {
+            closed = true
+            closedLatch.countDown()
         }
     }
 

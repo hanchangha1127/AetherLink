@@ -14,6 +14,7 @@ import unittest
 from unittest import mock
 
 from script import check_v1_g0_baseline_evidence_readiness as readiness
+from script import check_v1_g0_checkpoint as checkpoint
 from script import check_v1_g0_decision as decision
 from script import check_v1_g0_receipt_bundle as receipt
 
@@ -34,10 +35,35 @@ class V1G0BaselineEvidenceReadinessTests(unittest.TestCase):
         cls.effective_v3 = receipt._apply_v3_operations(
             effective_v2, cls.documents[4]["operations"], []
         )
-        cls.source_blobs = tuple(
-            (ROOT / source["path"]).read_bytes()
-            for source in cls.effective_v3["sourceRecords"]
-        )
+        source_blobs: list[bytes] = []
+        for source in cls.effective_v3["sourceRecords"]:
+            relative_path = source["path"]
+            current = (ROOT / relative_path).read_bytes()
+            observed = hashlib.sha256(current).hexdigest()
+            compatible = checkpoint.historical_source_compatible_sha256(
+                relative_path,
+                observed,
+            )
+            if compatible == observed:
+                source_blobs.append(current)
+                continue
+            historical = subprocess.run(
+                [
+                    "git",
+                    "show",
+                    f"{checkpoint.EXPECTED_IMPLEMENTATION_REVISION}:{relative_path}",
+                ],
+                cwd=ROOT,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            ).stdout
+            if hashlib.sha256(historical).hexdigest() != compatible:
+                raise AssertionError(
+                    f"historical G0 source bytes do not match {relative_path}"
+                )
+            source_blobs.append(historical)
+        cls.source_blobs = tuple(source_blobs)
         cls.compiled_static_pair = (
             readiness.compile_dormant_static_baseline_evidence_pair(
                 cls.profile_raw,

@@ -1,0 +1,672 @@
+{
+  "documentType": "codex-security.hardening-analysis",
+  "schemaVersion": "1.1",
+  "analysisId": "g2_pion_restricted_fork_v1",
+  "implementationStatus": "not_implemented",
+  "runtimeVerificationStatus": "not_executed",
+  "sourceEvidence": {
+    "kind": "ordered_document_collection",
+    "label": "G2 Pion v4.3.0 restricted-fork rung-one evidence",
+    "manifestPath": "evidence-manifest-v1.json",
+    "manifestSha256": "98e0e53955e21a833fe19852ce00f64df2dc808506bdb222c9b8a20bc8006d00",
+    "collectionDigestAlgorithm": "sha256_utf8_lf_of_evidence_id_tab_sha256_tab_repo_relative_path_newline",
+    "collectionSha256": "9e395c4c4f7f61a4810d47cf96ff57b47c1908c73ea459181f1c06f26a35d704",
+    "artifactCount": 4,
+    "orderedEvidenceIds": [
+      "G2E001",
+      "G2E002",
+      "G2E003",
+      "G2E004"
+    ],
+    "artifacts": [
+      {
+        "evidenceId": "G2E001",
+        "title": "G2 new-stack requirements and Pion v4.3.0 as-is rejection",
+        "path": "docs/security-hardening/production-p2p-nat-v1/g2-requirements-review-v1.md",
+        "sha256": "1874e43121997023b64b9f370c1782f46f8409630b6096ec8175009b300c246b",
+        "role": "exact_pion_v4_3_0_as_is_rejection_and_pre_acquisition_boundary"
+      },
+      {
+        "evidenceId": "G2E002",
+        "title": "AetherLink V1 G0 decision",
+        "path": "docs/v1/g0/decision-v1.md",
+        "sha256": "ec22b033746083712909f58aa56d9ec72cae5131363a90ee36e6e797ea87c0fb",
+        "role": "v1_platform_matrix_and_local_first_product_boundary"
+      },
+      {
+        "evidenceId": "G2E003",
+        "title": "Canonical V1 roadmap",
+        "path": "docs/roadmap.md",
+        "sha256": "2fcb2e60b39d6ea843179d84c29bb57ac5219d20b2b2454c0165e420e1c462a5",
+        "role": "current_sequential_g2_scope_and_progressive_gate_boundary"
+      },
+      {
+        "evidenceId": "G2E004",
+        "title": "Canonical session handoff",
+        "path": "docs/handoff.md",
+        "sha256": "f3f43bd602660bc01d5fcbde54550423abcc72ae73ce705021d1ef3b4f4fd2d4",
+        "role": "current_personal_project_boundary_and_handoff_state"
+      }
+    ],
+    "placeholderStatus": "none_all_evidence_hashes_finalized",
+    "sourceDrift": "none",
+    "sourceAcquired": false,
+    "sourceCompiled": false,
+    "sourceLoaded": false,
+    "sourceExecuted": false
+  },
+  "governanceBoundary": {
+    "projectMode": "personal_single_owner",
+    "externalIdentityProofRequired": false,
+    "userActionRequired": false,
+    "repositoryOwnerAuthenticationRequired": false,
+    "productEndpointAuthenticationRequired": true,
+    "rule": "repository_owner_identity_proof_is_not_a_prerequisite_but_aetherlink_endpoint_authentication_remains_mandatory"
+  },
+  "assessment": {
+    "outcome": "opportunities_identified",
+    "comparisonScope": "three_reviewed_pion_ice_v4_3_0_shapes",
+    "summary": "Among unmodified Pion ICE v4.3.0, a wrapper-only gateway, and an exact-base restricted fork, only the restricted-fork shape is suitable for a separate rung-two provenance and acquisition decision; nothing is implemented, selected, acquired, or runtime-verified."
+  },
+  "constraints": {
+    "profile": "balanced",
+    "changeHorizons": [
+      "pre_acquisition",
+      "offline_source_review",
+      "compile_only",
+      "no_network_conformance"
+    ],
+    "nonNegotiables": [
+      "Egress authorization is single-use and occurs after resolution immediately before every socket create, bind, connect, TURN TLS handshake, credential write, protocol write, or application-fragment write.",
+      "Ingress uses a fixed-size read and bounded minimal parse, then validates exact source, transaction, integrity, generation, TURN state, and content capability before state mutation, event creation, forwarding, or payload delivery.",
+      "TURN TLS authenticates the signed service identity and TLS profile before any TURN credential is sent.",
+      "Nomination yields only a one-use bounded pre-auth raw-path capability; exact AetherLink transcript confirmation atomically promotes that exact path to application-record use.",
+      "ICE reachability, Pion state, and TURN service authentication never authenticate an AetherLink endpoint.",
+      "Packet, protocol, rate, transaction, retransmit, task, goroutine, socket, TURN, generation, reassembly, event, and two-session process totals all have exact fail-before-allocation ceilings.",
+      "Event overflow sets an independent sticky terminal latch, discards nonterminal events, and closes without waiting for a consumer.",
+      "The Runtime channel cannot attach until a reliable ordered carrier and bounded fragmentation and reassembly format are selected and verified.",
+      "Secrets, raw candidates, addresses, certificate subjects, stable identities, and application data never enter diagnostics.",
+      "This analysis selects no library and authorizes no source acquisition, dependency installation, compilation, loading, socket, network, device, deployment, or Git action."
+    ],
+    "assumptions": [
+      "No measured performance, memory, battery, NAT, or interoperability result is available.",
+      "The V1 release targets remain Android arm64-v8a API 26 through 36 and macOS 14 or newer on arm64.",
+      "The authenticated sealed relay remains the rollback path if direct traversal is unavailable.",
+      "The roadmap and handoff bytes are finalized in the ordered manifest and collection digest for this portfolio revision."
+    ]
+  },
+  "opportunities": [
+    {
+      "opportunityId": "pion-ice-policy-owned-restriction",
+      "title": "Make bidirectional network, secure-session transition, resource, diagnostic, and lifetime ownership structural in a restricted Pion fork",
+      "summary": "Replace caller-convention controls with separate egress and ingress enforcement, authenticated TURN TLS identity, one-use pre-auth promotion, exact resource ceilings, a sticky terminal latch, secret-free diagnostics, and deadline shutdown.",
+      "diagnosis": "The reviewed upstream candidate exposes useful configuration, but internally owned socket, read-loop, diagnostic, callback, and shutdown paths prevent a wrapper from proving AetherLink's bidirectional policy, endpoint-transition, resource, and lifetime invariants.",
+      "evidence": [
+        {
+          "claimType": "observed",
+          "sourceKind": "document",
+          "evidenceId": "G2E001",
+          "path": "docs/security-hardening/production-p2p-nat-v1/g2-requirements-review-v1.md",
+          "claim": "Pion ICE v4.3.0 commit 1e8716372f2bb52e45bf2a7172e4fb1004251c46 is rejected as-is because not all network paths share one immediate pre-I/O policy boundary, a remote ICE password enters diagnostics, callback queues lack a declared bound, and graceful close can wait indefinitely."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "document",
+          "evidenceId": "G2E002",
+          "path": "docs/v1/g0/decision-v1.md",
+          "claim": "The V1 route model keeps endpoint identity and secure-session readiness above ICE and requires signed capability or lease context for service-mediated routes while preserving strict privacy floors."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "document",
+          "evidenceId": "G2E003",
+          "path": "docs/roadmap.md",
+          "claim": "The current G2 ladder separates requirements, source identity, static review, dependency closure, compile, no-network conformance, loopback, and controlled-network scopes; repository-owner authentication is not part of that technical ladder."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "document",
+          "evidenceId": "G2E004",
+          "path": "docs/handoff.md",
+          "claim": "Current handoff state confirms a personal-project boundary and no retained, compiled, loaded, or executed Pion source, no selected library, and no opened socket or network rung."
+        },
+        {
+          "claimType": "inferred",
+          "sourceKind": "document",
+          "evidenceId": "G2E001",
+          "path": "docs/security-hardening/production-p2p-nat-v1/g2-requirements-review-v1.md",
+          "claim": "Because unsafe paths are internally owned, wrapper-only configuration cannot make egress, ingress, event, diagnostic, and shutdown invariants non-bypassable."
+        }
+      ],
+      "desiredInvariants": [
+        "Every egress side effect consumes one exact generation-purpose-transport-local-and-remote-tuple capability immediately before I/O.",
+        "Every UDP or TURN stream ingress path performs bounded read and parse, then admission before state mutation or delivery.",
+        "Inbound ICE Binding requests, TURN Data Indication and ChannelData, peer-reflexive tuples, consent, and selected-pair payloads are all covered by ingress admission.",
+        "TURN TLS validates the G1 trust source, signed service configuration, exact SNI and DNS-ID, trust digest, optional SPKI pin, TLS 1.3, stun.turn ALPN, expiry, and deadline before credential transmission.",
+        "A one-use pre-auth raw-path capability permits only bounded secure-session confirmation and carrier negotiation; exact transcript and both key confirmations atomically promote the exact path.",
+        "Consent loss, path change, restart, expiry, failure, or close revokes pre-auth and application capabilities.",
+        "All per-session limits include current, draining, and closing generations, and process totals include both possible sessions.",
+        "The normal event queue has an independent sticky terminal latch and can neither block close nor exceed its declared bound on overflow.",
+        "Pion remains an unordered unreliable datagram provider; Runtime attachment is blocked until reliable ordering and bounded fragmentation and reassembly are selected and verified.",
+        "Close revokes all resources and returns success or a terminal timeout within 2,500 milliseconds without waiting for consumer code.",
+        "Diagnostics expose only closed reason codes and saturating counts and contain no credentials, candidates, addresses, identities, payloads, certificate subjects, or keys.",
+        "Only the closed full-ICE UDP plus policy-gated TURN profile is available to the future bridge."
+      ],
+      "proposedContract": {
+        "implementationStatus": "not_implemented",
+        "runtimeVerificationStatus": "not_executed",
+        "networkBoundary": {
+          "implementationStatus": "not_implemented",
+          "runtimeVerificationStatus": "not_executed",
+          "model": "egress_capability_before_io_and_ingress_admission_before_state_mutation",
+          "egressEnforcement": "after_resolution_immediately_before_socket_create_bind_connect_tls_handshake_credential_write_or_datagram_write",
+          "ingressEnforcement": "fixed_size_read_then_bounded_parse_then_source_transaction_integrity_turn_state_generation_tuple_and_content_capability_checks_before_state_mutation_or_delivery",
+          "ingressClasses": [
+            "stun_binding_request_and_response",
+            "ice_connectivity_check_request_and_response",
+            "consent_request_and_response",
+            "turn_udp_response",
+            "turn_tcp_bounded_frame",
+            "turn_tls_authenticated_frame",
+            "turn_data_indication",
+            "turn_channel_data",
+            "peer_reflexive_remote_tuple",
+            "nominated_direct_or_relay_pre_auth_handshake",
+            "nominated_direct_or_relay_authenticated_record_fragment"
+          ],
+          "invalidIngressRule": "drop_before_state_mutation_increment_only_saturating_reason_counter"
+        },
+        "turnTlsServiceIdentity": {
+          "implementationStatus": "not_implemented",
+          "runtimeVerificationStatus": "not_executed",
+          "configurationSource": "g1_trust_source_and_signed_service_config",
+          "requiredSignedConfigurationFields": [
+            "turn_service_id",
+            "server_name_ascii",
+            "port",
+            "transport",
+            "trust_anchor_set_digest",
+            "spki_sha256_allowlist",
+            "credential_scope_digest",
+            "expires_at",
+            "configuration_digest"
+          ],
+          "tlsMinimumVersion": "1.3",
+          "requiredAlpn": "stun.turn",
+          "sniRule": "exact_signed_ascii_server_name",
+          "certificateIdentityRule": "exact_dns_id_no_wildcard_plus_optional_signed_spki_sha256_pin",
+          "handshakeDeadlineMilliseconds": 5000,
+          "credentialWriteRule": "no_turn_credential_before_all_identity_checks_succeed",
+          "insecureSkipVerifyAllowed": false,
+          "ambientProxyAllowed": false,
+          "ambientTrustStoreWithoutSignedTrustDigestAllowed": false
+        },
+        "secureSessionPromotion": {
+          "implementationStatus": "not_implemented",
+          "runtimeVerificationStatus": "not_executed",
+          "preAuthCapability": "one_use_exact_generation_tuple_path_receipt_bound_raw_path_capability",
+          "maximumLifetimeMilliseconds": 15000,
+          "maximumDatagrams": 64,
+          "maximumBytes": 65536,
+          "allowedContent": "aetherlink_secure_session_confirmation_and_carrier_negotiation_only",
+          "promotionRule": "atomically_consume_after_exact_transcript_both_key_confirmations_path_receipt_generation_and_roles_match",
+          "revocationEvents": [
+            "consent_loss",
+            "path_change",
+            "candidate_restart",
+            "capability_expiry",
+            "verification_failure",
+            "session_close"
+          ],
+          "revocationRule": "atomically_revoke_pre_auth_and_application_capabilities_before_any_further_io_state_mutation_event_or_payload_delivery",
+          "pionOrIceMayAuthenticateEndpoint": false
+        },
+        "carrierBoundary": {
+          "implementationStatus": "not_implemented",
+          "runtimeVerificationStatus": "not_executed",
+          "pionOutput": "unordered_unreliable_datagram_path_only",
+          "runtimeRequiredInput": "ordered_reliable_runtime_raw_frame_body_channel",
+          "maximumCanonicalSecureRecordBytes": 1048576,
+          "reliableCarrierSelected": false,
+          "fragmentationReassemblySelected": false,
+          "attachmentBlocked": true
+        },
+        "resourceLimits": {
+          "implementationStatus": "not_implemented",
+          "runtimeVerificationStatus": "not_executed",
+          "maximumConcurrentSessionsPerProcess": 2,
+          "maximumOverlappingGenerationsPerSession": 2,
+          "maximumNetworkInterfaces": 16,
+          "maximumCandidatesPerEndpoint": 32,
+          "maximumCandidatePairs": 1024,
+          "maximumTrickleBatchCandidates": 8,
+          "maximumCandidateAttributeBytes": 2048,
+          "maximumStunServers": 4,
+          "maximumTurnServers": 4,
+          "maximumTurnAllocationsPerSession": 2,
+          "maximumTurnPermissionsPerSession": 32,
+          "maximumTurnChannelsPerSession": 32,
+          "maximumResolverRequestsPerGeneration": 8,
+          "maximumResolverResponseBytes": 4096,
+          "maximumNumericAnswersPerHostname": 8,
+          "maximumDatagramBytes": 65535,
+          "maximumStunMessageBytes": 4096,
+          "maximumTurnControlMessageBytes": 4096,
+          "maximumStunAttributes": 64,
+          "maximumTurnAttributes": 64,
+          "maximumIngressDatagramsPerSecondPerSession": 2048,
+          "maximumEgressDatagramsPerSecondPerSession": 2048,
+          "maximumIngressBytesPerSecondPerSession": 16777216,
+          "maximumEgressBytesPerSecondPerSession": 16777216,
+          "maximumIngressDatagramsPerSecondPerProcess": 4096,
+          "maximumEgressDatagramsPerSecondPerProcess": 4096,
+          "maximumIngressBytesPerSecondPerProcess": 33554432,
+          "maximumEgressBytesPerSecondPerProcess": 33554432,
+          "maximumOutstandingTransactionsPerSession": 128,
+          "maximumRetransmissionsPerTransaction": 7,
+          "maximumTimersPerSession": 128,
+          "maximumInternalTasksPerSession": 64,
+          "maximumInternalTasksPerProcess": 128,
+          "maximumGoroutinesPerSession": 96,
+          "maximumGoroutinesPerProcess": 192,
+          "maximumOwnedSocketsPerSession": 24,
+          "maximumOwnedSocketsPerProcess": 48,
+          "maximumPendingEventsPerSession": 64,
+          "maximumEventBytes": 4096,
+          "maximumPendingEventBytesPerSession": 262144,
+          "stickyTerminalLatchSlotsPerSession": 1,
+          "maximumReassemblyRecordsPerSession": 2,
+          "maximumReassemblyBytesPerSession": 2097152,
+          "maximumFragmentsPerRecord": 1024,
+          "eventOverflowRule": "atomically_set_separate_sticky_terminal_latch_drop_nonterminal_queue_contents_and_close_generation",
+          "eventOverflowConsumerWaitAllowed": false,
+          "allocationRule": "reject_length_count_rate_and_process_total_overflow_before_allocation_or_state_insertion"
+        }
+      },
+      "proposalPath": "proposals/pion-ice-policy-owned-restriction.md",
+      "options": [
+        {
+          "optionId": "upstream-as-is",
+          "title": "Retain unmodified Pion ICE v4.3.0",
+          "kind": "baseline",
+          "implementationStatus": "not_implemented",
+          "runtimeVerificationStatus": "not_executed",
+          "summary": "Use upstream configuration and filters without source changes.",
+          "diagramPaths": {
+            "before": "diagrams/pion-ice-policy-owned-restriction-before.mmd",
+            "after": "diagrams/pion-ice-policy-owned-restriction-upstream-as-is-after.mmd"
+          },
+          "evidenceCoverage": [
+            {
+              "evidenceId": "G2E001",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "The exact observed internal I/O, diagnostic, event, and shutdown gaps remain."
+            },
+            {
+              "evidenceId": "G2E002",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "Reachability still lacks the exact AetherLink pre-auth-to-application promotion and TURN service-identity contract."
+            },
+            {
+              "evidenceId": "G2E003",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "The roadmap's bounded G2 candidate requirements are not satisfied by the as-is shape."
+            },
+            {
+              "evidenceId": "G2E004",
+              "effect": "unaffected",
+              "tacticalFixRequired": false,
+              "rationale": "The current no-source, no-selection, and no-runtime state remains unchanged."
+            }
+          ],
+          "tradeoffs": [
+            {
+              "dimension": "security",
+              "direction": "neutral",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "The bidirectional policy, TURN TLS, promotion, diagnostics, and resource gaps remain.",
+              "validationPlan": "Repeat offline source review against the pinned commit; any unchanged gap keeps this option rejected."
+            },
+            {
+              "dimension": "performance",
+              "direction": "neutral",
+              "confidence": "low",
+              "basis": "hypothetical",
+              "assessment": "No new policy hop is introduced, but no candidate was compiled or measured.",
+              "validationPlan": "Do not benchmark unless the security blockers are first removed."
+            },
+            {
+              "dimension": "memory",
+              "direction": "unknown",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Queues and aggregate resources lack the closed ceilings required for a finite claim.",
+              "validationPlan": "Require explicit queue, task, goroutine, socket, TURN, generation, and process bounds before testing."
+            },
+            {
+              "dimension": "reliability",
+              "direction": "regresses",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Blocked callbacks can prevent deterministic shutdown.",
+              "validationPlan": "Close under a permanently blocked consumer must return within 2,500 milliseconds."
+            },
+            {
+              "dimension": "operability",
+              "direction": "neutral",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "Upstream tracking is simpler, but diagnostics cannot meet the product secrecy boundary.",
+              "validationPlan": "Scan every log level with sentinel credentials, candidates, service identities, and certificate subjects."
+            },
+            {
+              "dimension": "migration",
+              "direction": "improves",
+              "confidence": "medium",
+              "basis": "hypothetical",
+              "assessment": "Using upstream unchanged minimizes patch work but remains inadmissible.",
+              "validationPlan": "No migration proceeds while this option remains rejected."
+            }
+          ],
+          "residualRisks": [
+            "Internal egress and ingress paths remain outside a single owned policy boundary.",
+            "TURN credentials and endpoint-transition state lack the required structural gates.",
+            "Credentials can enter diagnostics and resource growth and shutdown remain unbounded."
+          ],
+          "implementationReadiness": {
+            "status": "rejected_before_acquisition",
+            "affectedComponents": [
+              "third-party Pion ICE source",
+              "future AetherLink bridge"
+            ],
+            "workPackages": [
+              "None; this option remains a baseline comparison."
+            ],
+            "acceptanceCriteria": [
+              "Not applicable while the source-derived blockers remain."
+            ],
+            "migrationNotes": [],
+            "rollback": "Retain no Pion dependency and keep the authenticated sealed relay design."
+          }
+        },
+        {
+          "optionId": "wrapper-only-gateway",
+          "title": "Add a policy wrapper around unmodified upstream",
+          "kind": "incremental",
+          "implementationStatus": "not_implemented",
+          "runtimeVerificationStatus": "not_executed",
+          "summary": "Restrict configuration, outbound adapters, and public callbacks without changing upstream internals.",
+          "diagramPaths": {
+            "before": "diagrams/pion-ice-policy-owned-restriction-before.mmd",
+            "after": "diagrams/pion-ice-policy-owned-restriction-wrapper-only-gateway-after.mmd"
+          },
+          "evidenceCoverage": [
+            {
+              "evidenceId": "G2E001",
+              "effect": "mitigates",
+              "tacticalFixRequired": true,
+              "rationale": "A wrapper narrows normal configuration but cannot own upstream-internal egress, ingress, queues, diagnostics, or close waits."
+            },
+            {
+              "evidenceId": "G2E002",
+              "effect": "mitigates",
+              "tacticalFixRequired": true,
+              "rationale": "Outer route binding can reduce misuse, but cannot atomically promote an internally owned exact path."
+            },
+            {
+              "evidenceId": "G2E003",
+              "effect": "mitigates",
+              "tacticalFixRequired": true,
+              "rationale": "Some feature and destination controls narrow, but the roadmap's structural and bounded requirements remain unproven."
+            },
+            {
+              "evidenceId": "G2E004",
+              "effect": "unaffected",
+              "tacticalFixRequired": false,
+              "rationale": "The current no-source, no-selection, and no-runtime state remains unchanged."
+            }
+          ],
+          "tradeoffs": [
+            {
+              "dimension": "security",
+              "direction": "improves",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Configuration misuse narrows, but internal egress, ingress, TURN TLS, and event bypasses remain reachable.",
+              "validationPlan": "Trace every create, bind, connect, write, read-loop, callback, diagnostic, and shutdown path from exact source."
+            },
+            {
+              "dimension": "performance",
+              "direction": "neutral",
+              "confidence": "low",
+              "basis": "hypothetical",
+              "assessment": "Outer checks add bounded work, but no build or benchmark exists.",
+              "validationPlan": "Measure only after full internal path ownership is demonstrated."
+            },
+            {
+              "dimension": "memory",
+              "direction": "unknown",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "A bounded outer queue cannot bound upstream queues, tasks, goroutines, sockets, TURN state, or reassembly.",
+              "validationPlan": "Flood every inner producer and inspect all aggregate ceilings while the outer consumer is blocked."
+            },
+            {
+              "dimension": "reliability",
+              "direction": "neutral",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "An outer deadline can stop a caller wait but cannot prove internal resource revocation.",
+              "validationPlan": "Inspect live workers, sockets, capabilities, and TURN state after wrapper timeout."
+            },
+            {
+              "dimension": "operability",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "Two policy and lifetime layers complicate incident reasoning.",
+              "validationPlan": "Audit whether every failure code identifies the real owner without secret context."
+            },
+            {
+              "dimension": "migration",
+              "direction": "improves",
+              "confidence": "medium",
+              "basis": "hypothetical",
+              "assessment": "A wrapper reduces patch drift but cannot satisfy the acceptance gate.",
+              "validationPlan": "Keep this as a rejected comparison unless a future exact upstream closes every inner gap."
+            }
+          ],
+          "residualRisks": [
+            "Internally created and bound network paths can bypass the outer egress gateway.",
+            "Upstream read loops can mutate state before any outer ingress check.",
+            "The inner callback queue, secret diagnostics, TURN identity timing, and close wait remain outside wrapper ownership."
+          ],
+          "implementationReadiness": {
+            "status": "rejected_comparison_only",
+            "affectedComponents": [
+              "future AetherLink Go bridge"
+            ],
+            "workPackages": [
+              "None; preserve this option only as a regression comparison."
+            ],
+            "acceptanceCriteria": [
+              "Every internal blocker must disappear in a newly reviewed exact upstream version before reconsideration."
+            ],
+            "migrationNotes": [],
+            "rollback": "Remove the wrapper and retain no networking candidate."
+          }
+        },
+        {
+          "optionId": "restricted-fork-policy-owned",
+          "title": "Maintain a minimal policy-owned restricted fork",
+          "kind": "structural",
+          "implementationStatus": "not_implemented",
+          "runtimeVerificationStatus": "not_executed",
+          "summary": "Require the exact base to place every network side effect, ingress mutation, path promotion, event, diagnostic, resource, and shutdown transition behind the closed AetherLink profile.",
+          "diagramPaths": {
+            "before": "diagrams/pion-ice-policy-owned-restriction-before.mmd",
+            "after": "diagrams/pion-ice-policy-owned-restriction-restricted-fork-policy-owned-after.mmd"
+          },
+          "evidenceCoverage": [
+            {
+              "evidenceId": "G2E001",
+              "effect": "addresses",
+              "tacticalFixRequired": true,
+              "rationale": "The proposed patch shape would directly own the reported egress, ingress, diagnostic, event, and shutdown paths; implementation and validation remain future work."
+            },
+            {
+              "evidenceId": "G2E002",
+              "effect": "addresses",
+              "tacticalFixRequired": true,
+              "rationale": "The proposed one-use pre-auth and exact transcript promotion preserves the V1 endpoint-identity and route-authorization boundary."
+            },
+            {
+              "evidenceId": "G2E003",
+              "effect": "addresses",
+              "tacticalFixRequired": true,
+              "rationale": "The closed feature, resource, build, and progressive verification requirements map to the roadmap's G2 candidate gates."
+            },
+            {
+              "evidenceId": "G2E004",
+              "effect": "unaffected",
+              "tacticalFixRequired": false,
+              "rationale": "The proposal deliberately leaves the current no-source, no-selection, no-runtime state unchanged."
+            }
+          ],
+          "tradeoffs": [
+            {
+              "dimension": "security",
+              "direction": "improves",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Bidirectional policy, TURN identity, endpoint promotion, and lifetime invariants become structural review points.",
+              "validationPlan": "Offline path enumeration and mutation tests must prove every allowed and forbidden egress, ingress, promotion, and revocation path."
+            },
+            {
+              "dimension": "performance",
+              "direction": "regresses",
+              "confidence": "low",
+              "basis": "hypothetical",
+              "assessment": "Every I/O adds bounded policy work, and a reliable carrier plus fragmentation will add overhead; no cost is measured.",
+              "validationPlan": "Measure nomination, consent, record throughput, reassembly, latency, and battery only after safety rungs pass."
+            },
+            {
+              "dimension": "memory",
+              "direction": "improves",
+              "confidence": "medium",
+              "basis": "hypothetical",
+              "assessment": "Closed packet, state, worker, socket, TURN, generation, reassembly, event, and process ceilings create a finite target.",
+              "validationPlan": "Exercise every per-session and two-session aggregate ceiling concurrently and verify rejection before allocation."
+            },
+            {
+              "dimension": "reliability",
+              "direction": "improves",
+              "confidence": "medium",
+              "basis": "hypothetical",
+              "assessment": "The sticky terminal latch and deadline close avoid dependence on consumer progress.",
+              "validationPlan": "Block resolver, STUN, TURN TLS, ingress, carrier/reassembly, and consumers while asserting atomic revocation and the 2,500 ms total bound."
+            },
+            {
+              "dimension": "operability",
+              "direction": "regresses",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "The project assumes fork rebases, advisory triage, SBOM, reproducibility, carrier, and incident ownership.",
+              "validationPlan": "Perform an upstream-update rehearsal and emergency direct-traversal disable drill before release."
+            },
+            {
+              "dimension": "migration",
+              "direction": "regresses",
+              "confidence": "high",
+              "basis": "hypothetical",
+              "assessment": "A narrow bridge, seven patch areas, and an additional reliable carrier contract require substantial gated work.",
+              "validationPlan": "Keep upstream types out of the bridge and prove complete removal returns to sealed relay without protocol downgrade."
+            }
+          ],
+          "residualRisks": [
+            "A missed internal create, bind, read, parse, or write path could still bypass policy until exhaustive source coverage proves completeness.",
+            "TURN TLS configuration or pre-auth promotion could be implemented inconsistently across direct and relay paths.",
+            "Reliable carrier and bounded fragmentation and reassembly are not selected and block Runtime attachment.",
+            "Go and gomobile toolchain drift can undermine reproducibility or ABI stability.",
+            "Fork maintenance can lag upstream security fixes.",
+            "No real NAT, performance, battery, socket, device, or interoperability behavior is known."
+          ],
+          "implementationReadiness": {
+            "status": "rung1_profile_complete_candidate_not_selected",
+            "affectedComponents": [
+              "future vendored Pion ICE restricted fork",
+              "future AetherLink Go mobile bridge",
+              "future reliable ordered carrier and fragmentation layer",
+              "Android native packaging",
+              "macOS native packaging",
+              "G2 validators and evidence"
+            ],
+            "workPackages": [
+              "Prepare a rung-two exact source identity and acquisition decision.",
+              "If separately permitted, acquire only the exact archive and record complete provenance.",
+              "Implement separate egress and ingress policy ownership across every source path.",
+              "Implement TURN TLS service identity and one-use pre-auth-to-application promotion.",
+              "Implement resource ceilings, sticky terminal latch, diagnostics, and deadline shutdown.",
+              "Select and validate the reliable ordered carrier and bounded fragmentation and reassembly contract.",
+              "Close dependency, license, SBOM, patch, symbol, and reproducibility evidence before compile-only integration."
+            ],
+            "acceptanceCriteria": [
+              "All create, bind, connect, TLS, credential, and write operations consume the exact egress capability immediately before I/O.",
+              "All UDP and TURN stream reads pass bounded ingress admission before mutation, events, forwarding, or payload delivery.",
+              "TURN TLS sends no credential until the exact signed service identity and TLS profile pass.",
+              "Application records fail before exact AetherLink transcript confirmation and atomic one-use path promotion.",
+              "Consent loss, path change, restart, expiry, failure, and close revoke every path capability.",
+              "Every per-session and two-session aggregate limit rejects before allocation or insertion.",
+              "Event overflow sets the independent sticky terminal latch and never blocks or exceeds the declared queue bound.",
+              "Sentinel secrets, addresses, certificate subjects, and identities are absent from diagnostics.",
+              "Close returns by 2,500 milliseconds under every blocked dependency without waiting for a consumer.",
+              "Runtime attachment remains impossible until reliable carrier and bounded fragmentation and reassembly pass.",
+              "The two declared V1 architecture builds are reproducible with an exact minimal symbol surface."
+            ],
+            "migrationNotes": [
+              "Do not expose upstream Pion types across the AetherLink bridge.",
+              "Keep direct traversal disabled until every G2 rung through the intended execution scope passes.",
+              "Do not interpret proposal text as implemented code or runtime evidence."
+            ],
+            "rollback": "Disable and remove the unselected candidate, preserve the secure-session floor, and route through the authenticated sealed relay fallback."
+          }
+        }
+      ],
+      "recommendedOptionId": "restricted-fork-policy-owned",
+      "recommendationScope": "among_the_three_reviewed_pion_ice_v4_3_0_shapes",
+      "result": "pion_restricted_fork_profile_ready_for_rung2_decision_only",
+      "nextAction": "prepare_versioned_rung2_source_identity_and_acquisition_decision",
+      "recommendation": "Prepare the restricted-fork shape only as the candidate input to a separate rung-two provenance and acquisition decision; do not select, acquire, implement, compile, load, or execute it from this analysis."
+    }
+  ],
+  "openQuestions": [
+    "Which exact official archive and signature or checksum chain would bind rung two?",
+    "Which G1 trust-root and signed-service-configuration bytes would bind TURN TLS identity?",
+    "Which reliable ordered carrier and bounded record-fragmentation and reassembly format can bridge Pion datagrams to RuntimeRawFrameBodyChannel?",
+    "Which exact x/mobile, gomobile, gobind, Android NDK, and Xcode revisions produce the closed V1 ABI?",
+    "How large is the exact fork diff after egress, ingress, TURN TLS, promotion, resource, event, diagnostic, and shutdown ownership are implemented?",
+    "Do later measured policy, carrier, reassembly, memory, latency, and battery costs fit the product budgets?"
+  ],
+  "technicalBoundary": {
+    "status": "rung1_profile_complete_candidate_not_selected",
+    "result": "pion_restricted_fork_profile_ready_for_rung2_decision_only",
+    "nextAction": "prepare_versioned_rung2_source_identity_and_acquisition_decision",
+    "librarySelected": false,
+    "candidateSelected": false,
+    "sourceAcquisitionAllowed": false,
+    "dependencyInstallationAllowed": false,
+    "compilerInvocationAllowed": false,
+    "codeLoadingAllowed": false,
+    "socketCreationAllowed": false,
+    "networkIoAllowed": false,
+    "deviceExecutionAllowed": false,
+    "productionDeploymentAllowed": false,
+    "gitOperationAllowed": false,
+    "externalIdentityProofRequired": false,
+    "userActionRequired": false
+  }
+}

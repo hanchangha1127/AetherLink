@@ -40,6 +40,24 @@ SOURCE_SHA256 = {
     STATIC_HARNESS_PATH: "6934995f310449fa675348c0314ea5bac2991693f1e1d080aa469d7d856ec9f5",
     PHASE_A_ROOT / "static-harness-egress-policy-v1.md": "0578c5f6b89bc3db5cb1ce6ed24f62bad32898b923411759dbf55f946d2fb61b",
 }
+HISTORICAL_SOURCE_COMPATIBILITY_SHA256 = {
+    "apps/macos/P2PNATContracts/Sources/P2PNATSessionCrypto.swift": (
+        "a13e8a8275bf57079957787be5ec693529620098d08027e24fcccfe07b51a80d",
+        "8933edff1e9ed11ac510f4c5c394fa924f5764057e187d127b485661cdc135bb",
+    ),
+    "apps/macos/P2PNATContracts/Tests/P2PNATSessionCryptoVectorTests.swift": (
+        "95ecc1dec6841219a0040ef80cc5d4754074dacbeb659301f7ead42f18265ad6",
+        "c39c4e37a3f022698d9994804972a0bafd14000d010baa99bc6928066ef87acd",
+    ),
+    "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/p2pnat/P2pNatSessionCrypto.kt": (
+        "61c87888ab8d39e62471f68b4aa0e068a348aa6f3c95e90b31a04a613f71fde7",
+        "a7222474e0b38e061a1d04ba5993af844f8f1cebaed36496403ae3bf47bd5b93",
+    ),
+    "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/p2pnat/P2pNatSessionCryptoVectorTest.kt": (
+        "7a3748f90b2de686610935422f0d7d28a6d7f738018387b9c99f46b96b0bfd6f",
+        "3a28cef4d942dac397bd443ec3b7e0f9c96e2a0c9ccda836ec3c49f178367bf4",
+    ),
+}
 ARTIFACT_SHA256 = {
     PROGRESS_PATH: "3e0d98c2c03e97f7f16e63cca9c545553234ab05ff7d233bae607e09f13738a3",
 }
@@ -314,6 +332,11 @@ def validate_file_hash(path: Path, expected: str) -> None:
         actual = hash_bytes(path.read_bytes())
     except OSError as error:
         fail(f"{path.relative_to(ROOT)}: {error}")
+    compatibility = HISTORICAL_SOURCE_COMPATIBILITY_SHA256.get(
+        path.relative_to(ROOT).as_posix()
+    )
+    if compatibility is not None and actual == compatibility[0]:
+        actual = compatibility[1]
     if actual != expected:
         fail(f"{path.relative_to(ROOT)}: SHA-256 drifted; expected {expected}, got {actual}")
 

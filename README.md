@@ -4,21 +4,290 @@ AetherLink is a local-first client-to-runtime AI companion. A paired runtime hos
 
 For continuation in a new Codex session, read [`docs/handoff.md`](docs/handoff.md)
 first. The [canonical V1 roadmap](docs/roadmap.md#canonical-v1-delivery-roadmap)
-is now active, and the versioned [G0 decision](docs/v1/g0/decision-v1.md)
-records the selected support, distribution, security, quality, blocker, and
-authority baseline. The [G0 assurance packet](docs/v1/g0/assurance-v1.md)
-hash-pins its protocol/data-flow inventory, threat and risk refresh,
-observability schema, release checklist, and incident/rollback runbooks. G0 is
-still `blocked_before_g1a`. A separate
-[local assurance readback candidate](docs/v1/g0/assurance-checkpoint-readback-v1.json)
-recomputes the assurance raw/canonical hashes and all 29 declared source hashes,
-but is neither owner acceptance nor a published immutable checkpoint. None of
-these records authorizes transport implementation, networking, signing, or
-deployment.
-The machine record also crosswalks all ten blockers to nine G0 checks, fourteen
-accountable roles, and gate-scoped evidence. This makes future G2-G6 evidence
-distinct from evidence required to leave G0; the crosswalk itself closes no
-blocker.
+is active.
+
+This is a personal, single-owner project. Owner identity authentication is not
+required for this personal project. Direct user instruction is sufficient for
+repository reads, edits, builds, tests, and G1a no-network implementation. SSH
+or GPG proof of control, fourteen role-scoped approval receipts, an owner TSA,
+and an external owner-governance ledger are not current prerequisites. The user
+normally handles staging, commits, and pushes unless they explicitly request
+otherwise.
+
+The versioned [G0 decision](docs/v1/g0/decision-v1.md),
+[G0 assurance packet](docs/v1/g0/assurance-v1.md), owner-trust profiles, and
+related checkers are preserved as historical enterprise-assurance records. Their
+embedded `blocked_before_g1a` and owner-authentication state does not govern or
+block current personal-project work. Product security is unchanged: QR pairing,
+paired-device authentication, endpoint session encryption, replay and downgrade
+protection, pair-epoch recovery, revocation, and route-capability validation
+remain required. Socket or external-network work, production signing, store
+upload, and deployment remain separate technical scopes; they require current
+user direction and applicable technical safeguards, not proof of repository
+ownership.
+
+G1a-A now includes one socket-free `ALS1` canonical contract shared by Swift
+and Kotlin for six route authorizations and a 21-field endpoint secure-session
+transcript. Shared vectors pin exact bytes and digests. This foundation is not
+yet an active wire message, derived session key, encrypted record path, or
+network connector.
+
+G1a-B adds byte-identical Swift/Kotlin `ALS1` authority-state and local-snapshot
+contracts, monotonic verified transitions, a 20-entry lifetime transition
+history, bounded replay tombstones, and durable admission. Epoch advancement is
+denied unless a signed fresh-pair proof verifies. Android persists and
+projects the canonical state into a production-session-required connection
+target; because the verified exact-bound coordinator is not connected to the
+app or a transport yet, it rejects every legacy-only route before connector
+invocation. macOS reloads the locked atomic
+trusted-device store before active or restored pair transport start and rejects
+missing, ambiguous, corrupt, or production-state-bearing legacy starts. The
+older pre-connector test seams remain internal and dormant; no non-test
+production session exists yet.
+Key derivation, encrypted records, sockets, and network execution remain later
+work.
+
+G1a-C now adds root-pinned service keysets; signed pair-status, fresh-pair,
+route-capability, candidate-capability, endpoint-proof, and post-commit receipt
+verification; and exact unsigned object-25 evidence/object-26 authorization
+projection in both Swift and Kotlin. The four candidate operations must use one
+canonical keyset and one adjacent durable ledger chain, and the candidate
+session transcript binds the exact SHA-256 digest of object 26 rather than the
+generic object-4 authorization. macOS atomically persists the pair snapshot,
+endpoint ledger, and chained marker and rereads their exact bytes under one
+exclusive lock before issuing a live durability token. Generic P2P admission is
+closed, and Android verified wrappers can only be minted by the verifier. Both
+platform stores now cache one exact-bound no-network coordinator. It accepts
+only the verifier-minted binding plus an APPLIED durable compound token,
+strictly revalidates the current last entry and marker at admit, before start,
+and after start, and fences replay, cancellation, revocation, authority advance,
+expiry, and late completion with the store-owned clock. Explicit operation-
+scoped callback context prevents detached start/abort reentry from waiting on
+its own cleanup. A fence during an in-flight start may invoke the generation-
+scoped idempotent abort immediately and again after start returns so a late-
+published resource is removed; an active fence invokes it once. Cleanup retains
+the pair reservation until it finishes, and Android additionally quarantines a
+failed cleanup for explicit retry. Android uses cancellation-safe handle/lease
+handoff ownership; Swift preserves cooperative cancellation and the same late-
+publication fence. Historical readback and `AlreadyCommitted` results cannot
+authorize this path. A bounded optional caller bridge can now reach the
+coordinator, but the normal app's real upstream production inputs remain
+unwired and this path creates no socket. This remains
+`synthetic_contract_readiness_only` with
+`productionDurabilityClaim=false`. Detecting rollback to an older internally
+valid whole-store image still requires an external monotonic head.
+
+G1a-D adds the socket-free production secure-session cryptographic core on both
+platforms. A verifier-minted exact object-7/object-26 binding is the only KDF
+input; one-use P-256 ECDH, HKDF-SHA-256, role-separated object-29 confirmation,
+and ordered object-30 AES-256-GCM records share one pinned fixture and an
+independent Python oracle. The state machines enforce monotonic time, exact
+sequence and epoch transitions, replay rejection, key-update reservation,
+bounded epoch/session use, terminal key wiping, and authentication-failure
+counter stability. This core is not app- or transport-wired and opens no socket,
+so it proves deterministic no-device interoperability rather than an active
+production session, network route, physical device, deployment, or release.
+
+That core is now coupled to the exact-bound authority lease on both platforms
+through a store-owned, process-local publication gate. Start, confirmation,
+activation, seal, and open hold a read permit across pre/post lease and live-
+resource fences. A durable authority writer blocks new readers, drains current
+publications, commits, then fences the coordinator and wipes the old crypto
+state before reopening publication. Pure precommit rejection and macOS
+pre-rename failure preserve the old session. Once an Android DataStore edit is
+enqueued, cancellation or ambiguous persistence failure instead fences and
+wipes the old authority; macOS post-rename directory-sync uncertainty does the
+same. Cancellation and terminal crypto failure also invalidate the session and
+close its lease. When a Swift post-fence rejects a produced confirmation, seal,
+or open result, its owner-backed result storage is explicitly zeroized before
+the read permit is released; small-ciphertext plus confirmation/seal/open
+retained-owner and result-copy regressions cover this backing storage behavior.
+An independent `Data` snapshot already
+extracted by a caller is a separate copy and is not retroactively zeroized. This
+guarantee applies only to one single-process store/coordinator graph. Bounded
+no-network app/service caller bridges now reach the implemented transport seam,
+which keeps encrypted publication inside the authority-bound channel. They do
+not by themselves authorize or prove a real production route.
+
+The dormant G1a-D transport composition seam is now concrete on both platforms.
+Android `core:transport` gives a composer only a manager-owned one-use raw-route
+lease, never a raw-channel alias or caller-provided scope. The lease validates
+the exact authority capability/session and creates
+`ProductionRuntimeSecureChannelAdapter` with a manager-owned execution scope;
+construction failure cancels that owned scope, and the adapter is registered
+before handshake suspension. Under `stateLock`, `UNDISPATCHED` acquisition
+linearizes the transition with physical connector entry: cleanup that wins
+first prevents connector invocation, while an entered connector that has not
+returned a handle still depends on connector timeout/interruption and closes
+any late handle when it returns. Detached composition has a saturating raw-route
+timeout plus a fixed 15-second handshake budget. The adapter's internal
+deadline is separate from the manager timeout, whose `IOException` is
+classified as `ProductionSessionSecurityRejected`. The adapter's internal
+deadline uses a single `PENDING` to `COMPLETED`/`TIMED_OUT` CAS and an
+`UNDISPATCHED` watchdog. When timeout wins, its `IOException` dominates and
+suppresses the losing error/cancellation; when completion wins, the exact
+external or composer `CancellationException` is preserved. Canonical
+`resume(value, onCancellation)` handoff closes only undelivered values:
+pre-delivery cancellation closes once without retry, while a successfully
+transferred channel survives later acquisition `Job` cancellation. There is no
+permanent caller-`Job` binding or `InternalCoroutinesApi`. Immediately before
+the one-use receipt commit, the manager rechecks the exact P2P session,
+object-7/object-26 binding, route kind, manager-owned connection generation,
+and route expiry, and rejects admission-to-commit wall-clock rollback. Failure
+cleanup runs in `NonCancellable`. Even when raw ignores close until it returns,
+the managed raw wrapper checks open before and after send, fails closed after
+close, and the test observes actual late body-byte zeroization. Production relay
+remains fail closed because no verifier-derived
+exact relay route binding exists. Focused Android evidence is 79/79 (49/49
+manager plus 30/30 adapter). The root independently reran full
+`core:transport --tests '*'`: 10 suites pass 163/163 with zero failures, errors,
+or skips; app `compileDebugKotlin` plus `compileDebugUnitTestKotlin` also
+succeed. An independent iterative audit found and fixed six P3 availability/
+lifetime races in total; a final fresh re-audit reports no P0-P3 finding. The
+current root-independent full Swift rerun passes 2,003 tests with two declared
+skips and zero failures in 313.440 seconds. Those focused/full-module reruns
+alone were not a completed full no-device gate run; the current full no-device
+gate exits zero. On
+macOS the manager owns the exact one-use attachment, generation cleanup,
+cancellation/late-result close, raw-handler admission, and terminal mailbox
+drain before removal or replacement;
+terminal teardown synchronously invalidates an available/claimed capability
+before replacement, with asynchronous abandon/close outside registry locks.
+There is no plaintext fallback. Focused macOS evidence is 39/39 (17/17
+composition plus 22/22 secure-channel) and 34/34 (6/6 production-pair-
+coordinator plus 28/28 manager); the release build passes. The audit-found
+cancellation/replacement P2 is fixed with a deterministic delayed-abandon
+regression; final independent re-audit reports no P0-P3 finding.
+The bounded no-network caller bridge is now concrete on both platforms. The
+Android ViewModel's optional dependency-injection path owns one renewable
+`AndroidProductionRuntimeActivationSlot` shared by route preparation and start-
+material claim. The slot holds at most one verifier-derived, one-use
+`AndroidProductionRuntimeActivationPlan` per attempt, requires the exact same
+`PairingStore` provider, compares the manager-selected exact route object and
+prepared-session reference before claim, and hands composition only the
+manager-owned raw-route lease. After claim, the slot retains a generation-bound
+claimed entry until PairingStore transfer starts. If close or replacement wins,
+the slot discards the key; if transfer wins, ownership moves exactly once to
+the transfer object. Cancellation and duplicate or concurrent completion fail
+closed, and the transfer callback runs at most once. Expiry, slot close, and
+ViewModel clear also discard still-pending key material, while a fresh plan can
+serve a later reconnect attempt. macOS exposes
+`MacRuntimeProductionAcceptedSessionService`, fixes one exact
+`TrustedDeviceStore` for its lifetime, validates a verifier-derived exact
+accepted-route descriptor, transfers the endpoint through a one-shot claim, and
+attaches it through the manager. A service-owned pre-attachment generation
+remains registered while authority creation is suspended. Targeted `stop` and
+`stopAll` invalidate it before attachment; `stopAll` also rotates a service
+epoch, so a late authority return is abandoned without disturbing a fresh same-
+ID generation. The service and store handoff close untransferred keys on every
+failure path. Focused Android evidence passes 16/16 composer plus 1/1 ViewModel-
+clear tests; the full app suite passes 1,174, and complete core protocol,
+pairing, and transport suites pass 232/232, 200/200, and 163/163. Focused macOS
+evidence passes 9/9 service tests and 54/54 manager + service + composition
+tests (28 + 9 + 17); the release build succeeds.
+
+G1b-A now connects the normal Android dependency graph to an app-scoped
+`AndroidProductionRuntimeActivationController` that shares the exact
+`PairingStore` and trusted clock with the ViewModel graph. The controller is
+deliberately empty in production today: it publishes no route until a future
+upstream verifier and P2P stack hand it one verified activation attempt plus an
+already-connected one-use endpoint. Injected real-fixture tests exercise both
+`RuntimeConnectionManager` and the full ViewModel connection path through the
+authority-bound secure channel, reject every legacy fallback, complete the
+handshake, and exchange an application record without opening an OS socket.
+Publication generations are assigned before durable admission, so a delayed
+older admission cannot replace a newer attempt. Close, cancellation, or
+supersession reclaims the attempt-owned key and endpoint, including while
+admission is suspended, and all displaced publication cleanup runs outside
+controller locks. The 12/12 focused controller tests pass, and an independent
+final audit reports no P0-P3 finding.
+
+macOS G1b-A also exposes a concrete accepted-raw primitive through
+`LocalPeerServer.startAcceptedRaw`. Its listener policy is fixed to IPv4
+loopback `127.0.0.1`; one bounded authorization is consumed by one accepted
+session, receive delivery starts only after handler installation, and malformed,
+expired, stopped, or unclaimed sessions fail closed. The focused tests use
+injected connection I/O and do not start the listener or execute a socket.
+`CompanionAppModel` does not call this path yet.
+
+This is still no live socket, network, physical-device, or production-release
+evidence. The upstream verifier/candidate/secret producer and actual P2P
+endpoint stack remain absent, the macOS accepted-raw primitive remains
+`CompanionAppModel`-unwired, and actual socket close interruption remains
+unproven. The eventual production send path must keep `seal + channel.send`
+inside the same read-permit closure.
+
+The current G2 official-source preflight selects no networking library.
+Unmodified Pion ICE v4.3.0 at exact commit
+`1e8716372f2bb52e45bf2a7172e4fb1004251c46` is
+`rejected_at_official_source_preflight_as_is` for non-uniform destination-policy
+enforcement, remote ICE password logging, unbounded callback queues, and
+shutdown that can wait indefinitely on a blocked callback. No Pion source was
+retained, compiled, loaded, or executed, and no socket or network rung was
+opened. This technical result requires no repository-owner, GitHub, SSH, or GPG
+authentication; product pairing and endpoint secure-session requirements remain
+separate and unchanged.
+
+The follow-up [G2 restricted-fork rung-one portfolio](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/hardening.md)
+and its exact [machine profile](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/restricted-fork-profile.md)
+compare unmodified upstream, a wrapper-only gateway, and a minimal
+AetherLink-maintained fork. Only the restricted-fork shape may proceed to
+preparation of a separate rung-two official-source identity and acquisition
+decision; Pion and every networking library remain unselected. Its schema 1.1
+design requires separate egress capability and ingress admission boundaries,
+authenticated TURN TLS service identity, exact AetherLink endpoint-confirmed
+pre-auth promotion, bounded session/process resources with a sticky terminal
+latch, secret-free diagnostics, and a 2,500 ms close deadline. Those controls
+are not implemented or runtime-verified. The future compile-only matrix remains
+Android `arm64-v8a` and macOS `arm64`, followed by later SBOM, license, patch,
+symbol, and reproducibility evidence. The validator and all 17 mutation tests
+pass, but no actual backend, reliable ordered carrier, or
+fragmentation/reassembly implementation has been selected or built.
+
+G2 restricted-fork rung-one status contract:
+`status=rung1_profile_complete_candidate_not_selected`,
+`result=pion_restricted_fork_profile_ready_for_rung2_decision_only`, and
+`nextAction=prepare_versioned_rung2_source_identity_and_acquisition_decision`.
+Rung one completes only the design, validator, and 17 mutation tests;
+`implementationStatus=not_implemented`, `candidateSelected=false`,
+`librarySelected=false`, `sourceAcquisitionAllowed=false`,
+`dependencyInstallationAllowed=false`, `compilerInvocationAllowed=false`,
+`codeLoadingAllowed=false`, `socketCreationAllowed=false`,
+`networkIoAllowed=false`, `deviceExecutionAllowed=false`,
+`productionDeploymentAllowed=false`, and `gitOperationAllowed=false`. Schema 1.1
+remains a not-yet-implemented and not-runtime-verified design. It
+requires a separate single-use egress capability after resolution immediately
+before socket create, bind, connect, TLS handshake, or write, plus fixed-size
+bounded ingress read/parse/admission before state mutation or payload delivery.
+It requires authenticated TURN TLS service identity before any credential
+transmission and a bounded one-use pre-auth path whose atomic promotion occurs
+only after exact AetherLink endpoint confirmation. Consent loss, path change,
+candidate restart, capability expiry, verification failure, and session close
+each atomically revoke both pre-auth and application capabilities before further
+I/O, state mutation, event, or payload delivery. Exact per-session and process
+bounds cover current, active, draining, and closing state, and event overflow
+requires an independent sticky terminal latch. Secret-free diagnostics and a
+2,500 ms total close deadline are requirements, not completed implementation or
+runtime-verified behavior. The actual
+backend, reliable ordered carrier, and fragmentation/reassembly remain unselected
+and unimplemented. Only stack-neutral wiring may continue. Repository-owner,
+GitHub, SSH, GPG, or
+public-key identity proof is neither a prerequisite nor a future G2 rung;
+`externalIdentityProofRequired=false` and `userActionRequired=false`. Product
+pairing and endpoint authentication remain mandatory and separate.
+
+The previous complete default no-device aggregate snapshot exits zero with
+`No-device quality checks passed.` It records the initial Python batch at
+182/182, 1,946 Swift tests with two declared skips and zero failures, every
+Android Gradle invocation as `BUILD SUCCESSFUL`, copy hygiene across 94 files,
+docs hygiene across 12 files, direct and development-relay local mock smokes,
+relay freshness across 56 connections, 905 encrypted frame bodies at the
+ciphertext boundary, and the final G1a-D authority-lifecycle marker. This is
+no-device local evidence, not physical-device, external-network, production-
+transport, or production app/service activation proof. The transport-
+composition and G1b-A focused tests are newer than those snapshot counts; the
+prior aggregate was not refreshed for these seams.
+
 Older progress entries remain historical unless the handoff promotes them as
 current.
 

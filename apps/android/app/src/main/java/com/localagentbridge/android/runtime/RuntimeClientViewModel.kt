@@ -115,6 +115,7 @@ import com.localagentbridge.android.core.pairing.PairedRelayAllocationAuthorizat
 import com.localagentbridge.android.core.pairing.RuntimePairingPayload
 import com.localagentbridge.android.core.pairing.RuntimePairingPayloadParser
 import com.localagentbridge.android.core.pairing.PairingStore
+import com.localagentbridge.android.core.pairing.ProductionPairStateLoadState
 import com.localagentbridge.android.core.pairing.RuntimeIdentityProofVerifier
 import com.localagentbridge.android.core.pairing.TrustedRuntime
 import com.localagentbridge.android.core.pairing.isCanonicalOpaqueRouteValue
@@ -137,6 +138,7 @@ import com.localagentbridge.android.core.transport.RuntimeRelayTcpClient
 import com.localagentbridge.android.core.transport.RuntimeRouteCandidate
 import com.localagentbridge.android.core.transport.RuntimeRouteCapability
 import com.localagentbridge.android.core.transport.RuntimeRouteResolver
+import com.localagentbridge.android.core.transport.RuntimeRemoteRoutePreparer
 import com.localagentbridge.android.core.transport.RuntimeRouteRejectionReason
 import com.localagentbridge.android.core.transport.RuntimeRouteSource
 import com.localagentbridge.android.core.transport.RuntimeTransportConnector
@@ -187,6 +189,11 @@ internal interface RuntimeTrustedRuntimeStore {
     val trustedRuntime: Flow<TrustedRuntime?>
     suspend fun trustRuntime(runtime: TrustedRuntime)
     suspend fun forgetRuntime()
+}
+
+/** Internal ownership proof for the exact PairingStore graph used by trusted runtime state. */
+internal interface RuntimeProductionPairingStoreProvider {
+    fun pairingStoreForProductionComposition(): PairingStore
 }
 
 internal interface RuntimeDeviceIdentityProvider {
@@ -810,8 +817,30 @@ internal data class RuntimeClientViewModelDependencies(
     val memorySummaryGenerationRequestTimeoutMillis: Long? = null,
     val volatileStatePersistenceCoalesceMillis: Long = 0L,
     val currentTimeMillis: () -> Long = { System.currentTimeMillis() },
+    val productionActivationController: AndroidProductionRuntimeActivationController? = null,
 ) {
     init {
+        require(
+            productionActivationController == null ||
+                trustedRuntimeStore is RuntimeProductionPairingStoreProvider,
+        ) {
+            "Production composition requires the trusted store's exact PairingStore owner"
+        }
+        require(
+            productionActivationController == null ||
+                productionActivationController.usesClock(currentTimeMillis),
+        ) {
+            "Production activation controller must use the dependency graph's exact trusted clock"
+        }
+        require(
+            productionActivationController == null ||
+                productionActivationController.usesPairingStore(
+                    (trustedRuntimeStore as RuntimeProductionPairingStoreProvider)
+                        .pairingStoreForProductionComposition(),
+                ),
+        ) {
+            "Production activation controller must use the trusted store's exact PairingStore"
+        }
         require(
             memoryMutationRequestTimeoutMillis == null ||
                 memoryMutationRequestTimeoutMillis > 0L
@@ -846,6 +875,12 @@ internal data class RuntimeClientViewModelDependencies(
             val json = runtimeClientJson()
             val transportClient = RuntimeTransportClient()
             val deviceIdentityProvider = AndroidDeviceIdentityProvider(DeviceIdentityStore(application))
+            val pairingStore = PairingStore(application)
+            val currentTimeMillis = { System.currentTimeMillis() }
+            val productionActivationController = AndroidProductionRuntimeActivationController(
+                pairingStore = pairingStore,
+                currentTimeMillis = currentTimeMillis,
+            )
             return RuntimeClientViewModelDependencies(
                 json = json,
                 transportClient = transportClient,
@@ -858,7 +893,7 @@ internal data class RuntimeClientViewModelDependencies(
                     ),
                 ),
                 discovery = AndroidRuntimeDiscoverySource(BonjourDiscovery(application)),
-                trustedRuntimeStore = AndroidTrustedRuntimeStore(PairingStore(application)),
+                trustedRuntimeStore = AndroidTrustedRuntimeStore(pairingStore),
                 deviceIdentityProvider = deviceIdentityProvider,
                 localDataStore = AndroidRuntimeLocalDataStore(RuntimeLocalStore(application, json)),
                 lifecycleCallbacksRegistrar = AndroidRuntimeLifecycleCallbacksRegistrar,
@@ -876,6 +911,8 @@ internal data class RuntimeClientViewModelDependencies(
                     MEMORY_SUMMARY_GENERATION_REQUEST_TIMEOUT_MS,
                 volatileStatePersistenceCoalesceMillis =
                     VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS,
+                currentTimeMillis = currentTimeMillis,
+                productionActivationController = productionActivationController,
             )
         }
     }
@@ -984,9 +1021,9 @@ private fun java.io.InputStream.readAsciiLine(maxBytes: Int): String {
     error("Relay probe response was not a complete line")
 }
 
-private class AndroidTrustedRuntimeStore(
+internal class AndroidTrustedRuntimeStore(
     private val store: PairingStore,
-) : RuntimeTrustedRuntimeStore {
+) : RuntimeTrustedRuntimeStore, RuntimeProductionPairingStoreProvider {
     override val trustedRuntime: Flow<TrustedRuntime?> = store.trustedRuntime
 
     override suspend fun trustRuntime(runtime: TrustedRuntime) {
@@ -996,6 +1033,8 @@ private class AndroidTrustedRuntimeStore(
     override suspend fun forgetRuntime() {
         store.forgetRuntime()
     }
+
+    override fun pairingStoreForProductionComposition(): PairingStore = store
 }
 
 private class AndroidDeviceIdentityProvider(
@@ -2131,25 +2170,52 @@ class RuntimeClientViewModel internal constructor(
         nowEpochMillis = dependencies.currentTimeMillis,
         allowDebugUsbReverseRoutes = dependencies.allowDebugUsbReverseRoutes,
     )
-    private val connectionManager = RuntimeConnectionManager(
-        connector = dependencies.transportConnector,
-        routeResolver = RuntimeRouteResolver { target ->
-            runtimeRouteCandidates(
-                state = state.value,
-                target = target,
-                includeUsbReverseFallback = shouldIncludeDebugUsbReverseFallback(target),
-                suppressDirectRoutes = pendingPairingPayload
-                    ?.takeIf { payload ->
-                        target.identity?.let { identity -> payload.matchesIdentity(identity) } == true
-                    }
-                    ?.hasRemoteRoute() == true,
-            )
-        },
-        remoteRoutePreparer = remoteRoutePlanner,
-        peerToPeerConnector = dependencies.peerToPeerConnector,
-        relayConnector = dependencies.relayConnector,
-        currentTimeMillis = dependencies.currentTimeMillis,
-    )
+    private val combinedRemoteRoutePreparer = RuntimeRemoteRoutePreparer { identity ->
+        dependencies.productionActivationController
+            ?.prepareRemoteRoutes(identity)
+            .orEmpty() + remoteRoutePlanner.prepareRemoteRoutes(identity)
+    }
+    private val runtimeRouteResolver = RuntimeRouteResolver { target ->
+        runtimeRouteCandidates(
+            state = state.value,
+            target = target,
+            includeUsbReverseFallback = shouldIncludeDebugUsbReverseFallback(target),
+            suppressDirectRoutes = pendingPairingPayload
+                ?.takeIf { payload ->
+                    target.identity?.let { identity -> payload.matchesIdentity(identity) } == true
+                }
+                ?.hasRemoteRoute() == true,
+        )
+    }
+    private val connectionManager = if (dependencies.productionActivationController != null) {
+        val productionComposer = AndroidProductionRuntimeChannelComposer(
+            pairingStore =
+                (dependencies.trustedRuntimeStore as RuntimeProductionPairingStoreProvider)
+                    .pairingStoreForProductionComposition(),
+            claimSource = requireNotNull(
+                dependencies.productionActivationController,
+            ),
+        )
+        RuntimeConnectionManager(
+            connector = dependencies.transportConnector,
+            routeResolver = runtimeRouteResolver,
+            remoteRoutePreparer = combinedRemoteRoutePreparer,
+            peerToPeerConnector = dependencies.peerToPeerConnector,
+            relayConnector = dependencies.relayConnector,
+            productionRawRouteConnector = dependencies.productionActivationController,
+            productionChannelComposer = productionComposer,
+            currentTimeMillis = dependencies.currentTimeMillis,
+        )
+    } else {
+        RuntimeConnectionManager(
+            connector = dependencies.transportConnector,
+            routeResolver = runtimeRouteResolver,
+            remoteRoutePreparer = combinedRemoteRoutePreparer,
+            peerToPeerConnector = dependencies.peerToPeerConnector,
+            relayConnector = dependencies.relayConnector,
+            currentTimeMillis = dependencies.currentTimeMillis,
+        )
+    }
     private val discovery = dependencies.discovery
     private val pairingStore = dependencies.trustedRuntimeStore
     private val deviceIdentityStore = dependencies.deviceIdentityProvider
@@ -13554,12 +13620,32 @@ class RuntimeClientViewModel internal constructor(
     }
 
     override fun onCleared() {
-        statePersistence.flush()
-        dependencies.lifecycleCallbacksRegistrar.unregister(getApplication(), lifecycleCallbacks)
-        stopDiscoveryInternal()
-        closeRuntimeConnection()
-        viewModelScope.cancel()
-        super.onCleared()
+        var teardownFailureCount = 0
+        fun teardown(action: () -> Unit) {
+            runCatching(action).exceptionOrNull()?.let {
+                teardownFailureCount += 1
+            }
+        }
+
+        teardown { statePersistence.flush() }
+        teardown {
+            dependencies.lifecycleCallbacksRegistrar.unregister(
+                getApplication(),
+                lifecycleCallbacks,
+            )
+        }
+        teardown { dependencies.productionActivationController?.close() }
+        teardown { stopDiscoveryInternal() }
+        teardown { closeRuntimeConnection() }
+        teardown { viewModelScope.cancel() }
+        teardown { super.onCleared() }
+        if (teardownFailureCount > 0) {
+            Log.e(
+                TAG,
+                "Runtime client teardown completed with cleanup failure count=" +
+                    teardownFailureCount,
+            )
+        }
     }
 
     private companion object {
@@ -14076,7 +14162,8 @@ internal fun trustedRuntimeConnectionTarget(state: RuntimeUiState): RuntimeConne
         ),
         endpointHint = trustedRuntime.endpointHint
             ?.takeUnless { trustedRuntime.hasRemoteRoute() }
-            ?.takeUnless { it.source == RuntimeEndpointSource.TrustedLastKnown }
+            ?.takeUnless { it.source == RuntimeEndpointSource.TrustedLastKnown },
+        requiresProductionSession = trustedRuntime.productionPairStateLoadState.requiresProductionSession,
     )
 }
 
@@ -14314,6 +14401,8 @@ internal fun RuntimeConnectionFailure.toRuntimeUiError(): RuntimeUiError {
                 diagnosticCode = diagnosticCode,
             )
         }
+        RuntimeConnectionFailureReason.ProductionSessionSecurityRejected ->
+            runtimeUiError("connection_failed", message)
     }
 }
 
@@ -14461,7 +14550,7 @@ private fun TrustedRuntime.lastKnownEndpointHintOrNull(): RuntimeEndpointHint? {
     )
 }
 
-private fun TrustedRuntime.toConnectionTarget(): RuntimeConnectionTarget {
+internal fun TrustedRuntime.toConnectionTarget(): RuntimeConnectionTarget {
     return RuntimeConnectionTarget(
         identity = PairedRuntimeIdentity(
             deviceId = deviceId,
@@ -14471,6 +14560,7 @@ private fun TrustedRuntime.toConnectionTarget(): RuntimeConnectionTarget {
             routeToken = routeToken,
         ),
         endpointHint = lastKnownEndpointHintOrNull(),
+        requiresProductionSession = productionPairStateLoadState.requiresProductionSession,
     )
 }
 
@@ -14566,7 +14656,7 @@ private fun RuntimeTrustedRuntime.withoutInvalidatedRemoteRoute(error: RuntimeUi
     }
 }
 
-private fun RuntimeTrustedRuntime.toTrustedRuntimeOrNull(): TrustedRuntime? {
+internal fun RuntimeTrustedRuntime.toTrustedRuntimeOrNull(): TrustedRuntime? {
     val cleanFingerprint = fingerprint?.takeIf(String::isNotBlank) ?: return null
     return TrustedRuntime(
         deviceId = deviceId,
@@ -14590,6 +14680,7 @@ private fun RuntimeTrustedRuntime.toTrustedRuntimeOrNull(): TrustedRuntime? {
         p2pExpiresAtEpochMillis = p2pExpiresAtEpochMillis,
         p2pAntiReplayNonce = p2pAntiReplayNonce,
         p2pProtocolVersion = p2pProtocolVersion,
+        productionPairStateLoadState = productionPairStateLoadState,
     )
 }
 
@@ -14827,6 +14918,7 @@ internal fun trustedRuntimeFromRouteRefreshQr(
         p2pExpiresAtEpochMillis = if (hasPeerToPeerRoute) payload.p2pExpiresAtEpochMillis else null,
         p2pAntiReplayNonce = if (hasPeerToPeerRoute) payload.p2pAntiReplayNonce else null,
         p2pProtocolVersion = if (hasPeerToPeerRoute) payload.p2pProtocolVersion else null,
+        productionPairStateLoadState = current.productionPairStateLoadState,
     )
 }
 
@@ -14899,6 +14991,7 @@ internal fun trustedRuntimeFromRouteRefreshPayload(
         p2pExpiresAtEpochMillis = if (hasPeerToPeerMaterial) payload.p2pExpiresAtEpochMillis else null,
         p2pAntiReplayNonce = if (hasPeerToPeerMaterial) payload.p2pAntiReplayNonce else null,
         p2pProtocolVersion = if (hasPeerToPeerMaterial) payload.p2pProtocolVersion else null,
+        productionPairStateLoadState = current.productionPairStateLoadState,
     )
     if (hasRelayMaterial && !candidateRuntime.hasRelayRoute(nowEpochMillis)) return null
     if (hasPeerToPeerMaterial && !candidateRuntime.hasPeerToPeerRoute(nowEpochMillis)) return null
@@ -14925,6 +15018,7 @@ internal fun trustedRuntimeFromRouteRefreshPayload(
         p2pExpiresAtEpochMillis = if (hasPeerToPeerMaterial) payload.p2pExpiresAtEpochMillis else null,
         p2pAntiReplayNonce = if (hasPeerToPeerMaterial) payload.p2pAntiReplayNonce else null,
         p2pProtocolVersion = if (hasPeerToPeerMaterial) payload.p2pProtocolVersion else null,
+        productionPairStateLoadState = current.productionPairStateLoadState,
     )
 }
 
@@ -15106,7 +15200,7 @@ internal fun pairingQrParseUiError(error: Throwable): RuntimeUiError {
     }
 }
 
-private fun TrustedRuntime.toRuntimeTrustedRuntime(): RuntimeTrustedRuntime {
+internal fun TrustedRuntime.toRuntimeTrustedRuntime(): RuntimeTrustedRuntime {
     return RuntimeTrustedRuntime(
         deviceId = deviceId,
         name = name,
@@ -15128,6 +15222,7 @@ private fun TrustedRuntime.toRuntimeTrustedRuntime(): RuntimeTrustedRuntime {
         p2pExpiresAtEpochMillis = p2pExpiresAtEpochMillis,
         p2pAntiReplayNonce = p2pAntiReplayNonce,
         p2pProtocolVersion = p2pProtocolVersion,
+        productionPairStateLoadState = productionPairStateLoadState,
     )
 }
 

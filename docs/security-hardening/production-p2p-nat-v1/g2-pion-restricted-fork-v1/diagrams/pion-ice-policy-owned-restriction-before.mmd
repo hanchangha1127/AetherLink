@@ -1,0 +1,15 @@
+flowchart LR
+  CFG["AetherLink configuration, resolver, interface, and service inputs"] --> ICE["Unmodified Pion ICE v4.3.0"]
+  PEER["Untrusted peer, STUN, and TURN inputs"] --> IO["Network sockets and I/O"]
+  ICE --> OUT["Injected outbound transport paths"]
+  ICE -. "internally owned egress paths" .-> BYPASS["ICE-TCP, proxy, mux, mDNS, and final sends"]
+  OUT --> IO
+  BYPASS --> IO
+  IO --> IN["UDP and TURN read loops"]
+  IN --> ICE
+  ICE --> SESSION["Nominated datagram path without exact AetherLink promotion boundary"]
+  ICE --> LOG["Upstream diagnostics, including secret-bearing debug path"]
+  ICE --> QUEUE["Growing callback queues"]
+  QUEUE --> CALLBACK["Caller callback and application consumer"]
+  CALLBACK -. "may block close" .-> CLOSE["Graceful close"]
+

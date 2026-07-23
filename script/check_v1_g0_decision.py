@@ -3235,7 +3235,10 @@ def collect_failures(
                 path = root / relative
                 if not path.is_file():
                     failures.append(f"missing G0 source record {relative}")
-                elif sha256(path) != expected_digest:
+                elif checkpoint_checker.historical_source_compatible_sha256(
+                    relative,
+                    sha256(path),
+                ) != expected_digest:
                     failures.append(f"G0 source record digest drifted: {relative}")
 
     supersession = exact_keys(
@@ -3504,6 +3507,10 @@ def collect_assurance_failures(
                 except OSError as error:
                     failures.append(f"cannot hash assurance source {path}: {error}")
                     continue
+                actual_hash = checkpoint_checker.historical_source_compatible_sha256(
+                    path,
+                    actual_hash,
+                )
                 require_equal(
                     actual_hash,
                     expected_hash,

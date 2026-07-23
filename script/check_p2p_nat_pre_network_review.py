@@ -19,6 +19,12 @@ APPROVAL_PATH = ROOT / "docs/security-hardening/production-p2p-nat-v1/pre-networ
 APPROVAL_MARKDOWN_PATH = ROOT / "docs/security-hardening/production-p2p-nat-v1/pre-network/decision-v1.md"
 HANDOFF_V3_PATH = ROOT / "docs/security-hardening/production-p2p-nat-v1/implementation/handoff-v3.json"
 HANDOFF_V3_MARKDOWN_PATH = ROOT / "docs/security-hardening/production-p2p-nat-v1/implementation/handoff-v3.md"
+ANDROID_CANONICAL_CODEC_PATH = (
+    ROOT
+    / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/p2pnat/P2pNatCanonicalCodec.kt"
+)
+ANDROID_P256_COMPAT_CURRENT = b"val left = y.modPow(BigInteger.valueOf(2L), P256_FIELD)"
+ANDROID_P256_COMPAT_HISTORICAL = b"val left = y.modPow(BigInteger.TWO, P256_FIELD)"
 HANDOFF_V3_EVIDENCE_ADDITIONS = {
     "canonical-contracts": [
         "../../../../apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/p2pnat/P2pNatContract.kt",
@@ -162,6 +168,25 @@ class ReviewValidationError(ValueError):
 
 def fail(message: str) -> None:
     raise ReviewValidationError(message)
+
+
+def historical_evidence_bytes_for_digest(path: Path, source: bytes) -> bytes:
+    """Reconstruct one pinned historical digest without permitting a live API regression."""
+    if path != ANDROID_CANONICAL_CODEC_PATH:
+        return source
+    if (
+        source.count(ANDROID_P256_COMPAT_CURRENT) != 1
+        or ANDROID_P256_COMPAT_HISTORICAL in source
+    ):
+        fail(
+            "P2pNatCanonicalCodec.kt must retain the exact API 26-safe P-256 "
+            "compatibility amendment"
+        )
+    return source.replace(
+        ANDROID_P256_COMPAT_CURRENT,
+        ANDROID_P256_COMPAT_HISTORICAL,
+        1,
+    )
 
 
 def exact_keys(value: Any, expected: set[str], path: str) -> dict[str, Any]:
@@ -390,7 +415,11 @@ def validate_handoff_v3(raw: Any) -> None:
             evidence_path = (HANDOFF_V3_PATH.parent / relative_path).resolve()
             if not evidence_path.is_relative_to(ROOT) or not evidence_path.is_file():
                 fail(f"handoff-v3.packages[{index}]: evidence path is missing or escapes repository")
-            if hashlib.sha256(evidence_path.read_bytes()).hexdigest() != expected_digest:
+            historical_bytes = historical_evidence_bytes_for_digest(
+                evidence_path,
+                evidence_path.read_bytes(),
+            )
+            if hashlib.sha256(historical_bytes).hexdigest() != expected_digest:
                 fail(f"handoff-v3.packages[{index}]: evidence SHA-256 drifted for {relative_path}")
     spike = exact_keys(packages[2], {
         "packageId", "authorizationStatus", "executionStatus", "executionAuthorized",

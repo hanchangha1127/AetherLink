@@ -74,6 +74,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
@@ -439,11 +440,10 @@ class ClientScreensNoDeviceComposeTest {
                 LocalizedTestContent(languageTag = currentLanguage.value, fontScale = 1.45f) {
                     key(currentLanguage.value) {
                         val snackbarHostState = remember { SnackbarHostState() }
-                        val context = LocalContext.current
-                        LaunchedEffect(snackbarRequestId.value) {
+                        val archiveMessage = stringResource(R.string.chat_archived_snackbar)
+                        val undoAction = stringResource(R.string.undo)
+                        LaunchedEffect(snackbarRequestId.value, archiveMessage, undoAction) {
                             if (snackbarRequestId.value == 0) return@LaunchedEffect
-                            val archiveMessage = context.getString(R.string.chat_archived_snackbar)
-                            val undoAction = context.getString(R.string.undo)
                             snackbarHostState.showSnackbar(
                                 message = archiveMessage,
                                 actionLabel = undoAction,

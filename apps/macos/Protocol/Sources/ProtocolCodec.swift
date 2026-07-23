@@ -95,7 +95,10 @@ public struct ProtocolCodec: Sendable {
 }
 
 private struct JSONDuplicateKeyValidator {
-    private static let maximumNestingDepth = 512
+    // Keep the pre-decode resource boundary identical to Android. A secure
+    // session must not make the same canonical envelope acceptable on one
+    // endpoint but reject it on the other solely because of parser depth.
+    private static let maximumNestingDepth = 128
 
     private let bytes: [UInt8]
     private var index = 0

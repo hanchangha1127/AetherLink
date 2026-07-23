@@ -1,0 +1,87 @@
+{
+  "documentType": "aetherlink.g2-rung2-source-acquisition-progress",
+  "schemaVersion": "1.0",
+  "progressId": "g2-pion-ice-v4.3.0-source-acquisition-progress-v1",
+  "recordedDate": "2026-07-23",
+  "status": "authorized_not_consumed",
+  "result": null,
+  "nextAction": "execute_bounded_source_acquisition_once_and_record_receipt",
+  "decisionBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/source-acquisition-decision-v1.json",
+    "sha256": "8a7ec91354b27ffc4cdf8dcce2f6baa93a10dfadfd7c896266ce42b1ae854c10",
+    "status": "bound"
+  },
+  "provenanceBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/provenance-observation-v1.json",
+    "sha256": "6b0b55023849480c0a7ea05449b98cc2e27d9fd1d704c794aace9e04d0afe4f0",
+    "status": "bound"
+  },
+  "expectedArchive": {
+    "modulePath": "github.com/pion/ice/v4",
+    "version": "v4.3.0",
+    "url": "https://proxy.golang.org/github.com/pion/ice/v4/@v/v4.3.0.zip",
+    "contentLengthBytes": 293023,
+    "maximumResponseBytes": 524288,
+    "rawSha256": "f95ef3ce2e0063c13925f478bf8d188833725b2f0a7ecb1e695dee8ab61ef63c",
+    "moduleH1": "h1:X8l4s9zV2HeTKX33nulWAFXAEo5KhIVzOsY62/3t/LM=",
+    "goModH1": "h1:obAyD+J+Hzs7QA7Y8YXHp5uIn6gb7z87pKedXZkrcFU=",
+    "outputPath": "build/offline-source/pion-ice-v4.3.0/original/github.com-pion-ice-v4@v4.3.0.zip"
+  },
+  "permitState": {
+    "authorized": true,
+    "consumed": false,
+    "atomicClaimCreated": false,
+    "maximumRequestCount": 1,
+    "requestCount": 0,
+    "totalDeadlineMilliseconds": 30000
+  },
+  "requestObservation": {
+    "started": false,
+    "completed": false,
+    "startedAt": null,
+    "completedAt": null,
+    "requestedUrl": null,
+    "finalUrl": null,
+    "httpStatus": null,
+    "redirectCount": null,
+    "observedContentLengthBytes": null,
+    "receivedBytes": null,
+    "observedEtag": null,
+    "failureReason": null
+  },
+  "verificationObservation": {
+    "rawSha256": null,
+    "rawSha256Matches": false,
+    "moduleH1": null,
+    "moduleH1Matches": false,
+    "goModH1": null,
+    "goModH1Matches": false,
+    "sumdbSignatureVerified": false,
+    "sumdbInclusionProofVerified": false,
+    "allRequiredChecksPassed": false
+  },
+  "artifactObservation": {
+    "outputFileExists": false,
+    "outputPath": null,
+    "sourceAcquired": false,
+    "sourceRetained": false,
+    "archiveExtracted": false,
+    "sourceExecuted": false,
+    "quarantined": false,
+    "removedAfterFailure": false
+  },
+  "executionBoundary": {
+    "candidateSelected": false,
+    "librarySelected": false,
+    "dependencyInstallationAllowed": false,
+    "compilerInvocationAllowed": false,
+    "codeLoadingAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIoAllowed": false,
+    "deviceExecutionAllowed": false,
+    "productionDeploymentAllowed": false,
+    "gitOperationAllowed": false,
+    "externalIdentityProofRequired": false,
+    "userActionRequired": false
+  }
+}

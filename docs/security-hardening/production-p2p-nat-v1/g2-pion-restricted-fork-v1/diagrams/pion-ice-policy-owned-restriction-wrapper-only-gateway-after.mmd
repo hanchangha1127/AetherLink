@@ -1,0 +1,18 @@
+flowchart LR
+  CFG["Closed AetherLink configuration, resolver, interface, and service inputs"] --> WRAP["Outer wrapper"]
+  PEER["Untrusted peer, STUN, and TURN inputs"] --> IO["Network sockets and I/O"]
+  WRAP --> ICE["Unmodified Pion ICE v4.3.0"]
+  ICE --> OUT["Injected outbound transport adapter"]
+  OUT --> GATE["Outer egress policy"]
+  GATE --> IO
+  ICE -. "internal egress bypass remains" .-> BYPASS["ICE-TCP, proxy, mux, mDNS, or final send"]
+  BYPASS --> IO
+  IO --> IN["Upstream UDP and TURN read loops without common ingress admission"]
+  IN --> ICE
+  ICE --> SESSION["Nominated datagram path without atomic AetherLink promotion"]
+  ICE --> LOG["Upstream secret-bearing diagnostics remain"]
+  ICE --> INNERQ["Unbounded upstream callback queue"]
+  INNERQ --> OUTERQ["Bounded outer event queue"]
+  OUTERQ --> CALLBACK["Application consumer"]
+  INNERQ -. "can still block shutdown" .-> CLOSE["Wrapper close deadline"]
+

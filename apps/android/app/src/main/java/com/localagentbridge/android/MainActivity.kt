@@ -15,6 +15,7 @@ import android.provider.Settings
 import androidx.annotation.StringRes
 import androidx.activity.SystemBarStyle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -22,6 +23,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -477,7 +479,6 @@ private fun LocalAgentBridgeApp(
             color = MaterialTheme.colorScheme.background,
         ) {
             LocalizedContent(languageTag = state.selectedLanguageTag) {
-            val context = LocalContext.current
             val configuration = LocalConfiguration.current
             val hapticFeedback = LocalHapticFeedback.current
             val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -508,6 +509,11 @@ private fun LocalAgentBridgeApp(
             val chatArchivedSnackbar = stringResource(R.string.chat_archived_snackbar)
             val qrScanCanceledSnackbar = stringResource(R.string.qr_scan_canceled_snackbar)
             val undoAction = stringResource(R.string.undo)
+            val sharedDraftConfirmationMessage = if (sharedChatDraft != null) {
+                stringResource(sharedChatDraftConfirmationMessageRes(sharedChatDraft))
+            } else {
+                null
+            }
             val snackbarHostBottomPadding = if (effectiveDestination == AppDestination.Chat) {
                 SHARED_CHAT_DRAFT_SNACKBAR_CHAT_BOTTOM_PADDING
             } else {
@@ -565,7 +571,7 @@ private fun LocalAgentBridgeApp(
                 onPairingUriConsumed()
             }
 
-            LaunchedEffect(sharedChatDraft, context) {
+            LaunchedEffect(sharedChatDraft, sharedDraftConfirmationMessage) {
                 val draft = sharedChatDraft ?: return@LaunchedEffect
                 val updatedText = sharedChatDraftComposerText(
                     currentText = state.chatInput,
@@ -577,7 +583,7 @@ private fun LocalAgentBridgeApp(
                 handlePickedAttachments(draft.attachmentUris, viewModel::addAttachments)
                 destination = AppDestination.Chat
                 hapticFeedback.performAetherLinkFeedback(sharedChatDraftConfirmationFeedback())
-                val confirmationMessage = context.getString(sharedChatDraftConfirmationMessageRes(draft))
+                val confirmationMessage = sharedDraftConfirmationMessage ?: return@LaunchedEffect
                 sharedDraftAnnouncementMessage = null
                 withFrameNanos { }
                 sharedDraftAnnouncementMessage = confirmationMessage
@@ -3792,7 +3798,7 @@ internal fun AetherLinkTheme(theme: RuntimeAppTheme, content: @Composable () -> 
 
 @Composable
 private fun ApplySystemBars(colorScheme: ColorScheme, darkTheme: Boolean) {
-    val activity = LocalContext.current as? ComponentActivity ?: return
+    val activity = LocalActivity.current as? ComponentActivity ?: return
     val statusBarColor = colorScheme.background.toArgb()
     val navigationBarColor = colorScheme.surface.toArgb()
 
@@ -4254,6 +4260,7 @@ internal const val PAIRING_QR_SCANNER_PERMISSION_CANCEL_BUTTON_TEST_TAG =
     "pairing_qr_scanner_permission_cancel_button"
 
 @Composable
+@androidx.annotation.OptIn(ExperimentalGetImage::class)
 private fun PairingQrCameraPreview(
     onResult: (String) -> Unit,
     onFailure: (String?) -> Unit,

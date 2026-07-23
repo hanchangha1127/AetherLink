@@ -42,19 +42,27 @@ def process_parent_pid(pid: int) -> Optional[int]:
     return int(value) if value.isdigit() else None
 
 
-def wait_for_process_command(
+def wait_for_process_executable(
     pid: int,
-    command_fragment: str,
+    expected_executable: str,
     timeout: float = 5.0,
 ) -> str:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        identity = process_identity(pid)
-        if identity is not None and command_fragment in identity:
-            return identity
+        result = subprocess.run(
+            ["ps", "-o", "comm=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+        if result.stdout.strip() == expected_executable:
+            identity = process_identity(pid)
+            if identity is not None:
+                return identity
         time.sleep(0.02)
     raise AssertionError(
-        f"Timed out waiting for process {pid} command containing {command_fragment!r}"
+        f"Timed out waiting for process {pid} executable {expected_executable!r}"
     )
 
 
@@ -381,7 +389,7 @@ wait "$supervisor_pid"
                         supervisor_pid = int(wait_for_file(supervisor_pid_path))
                         child_pid = int(wait_for_file(child_pid_path))
                         supervisor_identity = process_identity(supervisor_pid)
-                        child_identity = wait_for_process_command(child_pid, "/bin/sleep 30")
+                        child_identity = wait_for_process_executable(child_pid, "/bin/sleep")
                         self.assertIsNotNone(supervisor_identity)
                         self.assertIsNotNone(child_identity)
                         self.assertEqual(process_parent_pid(child_pid), supervisor_pid)

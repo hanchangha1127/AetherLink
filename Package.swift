@@ -33,6 +33,7 @@ let package = Package(
         ),
         .target(
             name: "TrustedDevices",
+            dependencies: ["P2PNATContracts"],
             path: "apps/macos/TrustedDevices/Sources"
         ),
         .target(
@@ -61,6 +62,7 @@ let package = Package(
         .target(
             name: "CompanionCore",
             dependencies: [
+                "P2PNATContracts",
                 "BridgeProtocol",
                 "TrustedDevices",
                 "Pairing",
@@ -96,7 +98,7 @@ let package = Package(
         ),
         .testTarget(
             name: "P2PNATContractsTests",
-            dependencies: ["P2PNATContracts"],
+            dependencies: ["P2PNATContracts", "TrustedDevices"],
             path: "apps/macos/P2PNATContracts/Tests"
         ),
         .testTarget(
@@ -116,7 +118,7 @@ let package = Package(
         ),
         .testTarget(
             name: "TrustedDevicesTests",
-            dependencies: ["TrustedDevices"],
+            dependencies: ["TrustedDevices", "P2PNATContracts"],
             path: "apps/macos/TrustedDevices/Tests"
         ),
         .testTarget(
@@ -141,7 +143,12 @@ let package = Package(
         ),
         .testTarget(
             name: "CompanionCoreTests",
-            dependencies: ["CompanionCore"],
+            dependencies: [
+                "CompanionCore",
+                "P2PNATContracts",
+                "BridgeProtocol",
+                "Transport"
+            ],
             path: "apps/macos/CompanionCore/Tests"
         ),
         .testTarget(

@@ -7,7 +7,9 @@ import com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationA
 import com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationChallenge
 import com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationProof
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.OutputStream
@@ -16,6 +18,8 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.security.MessageDigest
 import java.security.SecureRandom
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class RuntimeRelayTcpClient(
     private val codec: ProtocolCodec = ProtocolCodec(),
@@ -25,7 +29,18 @@ class RuntimeRelayTcpClient(
     override suspend fun connect(
         route: PreparedRemoteRuntimeRoute.Relay,
         timeoutMillis: Int,
-    ): RuntimeProtocolChannel = withContext(Dispatchers.IO) {
+    ): RuntimeProtocolChannel = connectWithMode(route, timeoutMillis, RuntimeFrameBodyMode.ProtocolEnvelope)
+
+    suspend fun connectRaw(
+        route: PreparedRemoteRuntimeRoute.Relay,
+        timeoutMillis: Int,
+    ): RuntimeRawFrameBodyChannel = connectWithMode(route, timeoutMillis, RuntimeFrameBodyMode.Raw)
+
+    private suspend fun connectWithMode(
+        route: PreparedRemoteRuntimeRoute.Relay,
+        timeoutMillis: Int,
+        mode: RuntimeFrameBodyMode,
+    ): RelayProtocolChannel = withContext(Dispatchers.IO) {
         val relayFrameSecret = route.relayFrameSecret?.takeIf { it.isNotBlank() }
         val clientSessionNonce = relayFrameSecret?.let { generateSessionNonce() }
         val clientEphemeralKeyPair = relayFrameSecret?.let { RelayEphemeralKeyPair.generate() }
@@ -39,6 +54,7 @@ class RuntimeRelayTcpClient(
                 clientSessionNonce = clientSessionNonce,
                 clientEphemeralKeyPair = clientEphemeralKeyPair,
                 clientRegistrationAuthorizer = clientRegistrationAuthorizer,
+                mode = mode,
             )
             channel.sendHandshake(route.relayId)
             channel.awaitReady(route)
@@ -57,8 +73,10 @@ class RuntimeRelayTcpClient(
         private val clientSessionNonce: String?,
         private val clientEphemeralKeyPair: RelayEphemeralKeyPair?,
         private val clientRegistrationAuthorizer: RelayClientRegistrationAuthorizer?,
-    ) : RuntimeProtocolChannel {
+        private val mode: RuntimeFrameBodyMode,
+    ) : RuntimeProtocolChannel, RuntimeRawFrameBodyChannel {
         private val sendMutex = Mutex()
+        private val sendAdmission = Semaphore(64)
         private val receiveMutex = Mutex()
         private var frameCryptor: RelayFrameBodyCryptor? = null
         private var confirmedTransportSecurityContext: TransportSecurityContext? = null
@@ -160,29 +178,100 @@ class RuntimeRelayTcpClient(
         }
 
         override suspend fun send(envelope: ProtocolEnvelope) = withContext(Dispatchers.IO) {
+            requireMode(RuntimeFrameBodyMode.ProtocolEnvelope)
             val body = codec.encodeBody(envelope)
-            sendMutex.withLock {
-                try {
-                    val framedBody = frameCryptor?.encryptClientFrameBody(body) ?: body
-                    socket.outputStream.writeProtocolFrameBody(framedBody)
-                    socket.outputStream.flush()
-                } catch (failure: Throwable) {
-                    close()
-                    throw failure
+            sendBody(body)
+        }
+
+        override suspend fun sendFrameBody(body: ByteArray) = withContext(Dispatchers.IO) {
+            requireMode(RuntimeFrameBodyMode.Raw)
+            try {
+                requireRelayRawFrameBodyLength(body.size, frameCryptor != null)
+            } catch (failure: Throwable) {
+                close()
+                throw failure
+            }
+            sendBody(body)
+        }
+
+        private suspend fun sendBody(body: ByteArray) {
+            if (!sendAdmission.tryAcquire()) {
+                close()
+                error("Relay transport send backlog exceeded")
+            }
+            try {
+                sendMutex.withLock {
+                    suspendCancellableCoroutine { continuation ->
+                        // Closing the socket is the only bounded way to interrupt a
+                        // blocking Java write/flush when the enclosing authority-bound
+                        // secure-session publication is cancelled or times out.
+                        continuation.invokeOnCancellation {
+                            runCatching { close() }
+                        }
+                        if (!continuation.isActive) return@suspendCancellableCoroutine
+                        try {
+                            val framedBody = frameCryptor?.encryptClientFrameBody(body) ?: body
+                            socket.outputStream.writeProtocolFrameBody(framedBody)
+                            socket.outputStream.flush()
+                            continuation.resume(Unit) { _, _, _ ->
+                                runCatching { close() }
+                            }
+                        } catch (failure: Throwable) {
+                            runCatching { close() }
+                            if (continuation.isActive) {
+                                continuation.resumeWithException(failure)
+                            }
+                        }
+                    }
                 }
+            } finally {
+                sendAdmission.release()
             }
         }
 
         override suspend fun receive(): ProtocolEnvelope = withContext(Dispatchers.IO) {
-            receiveMutex.withLock {
-                val body = try {
-                    val framedBody = codec.readFrameBody(socket.inputStream)
-                    frameCryptor?.decryptRuntimeFrameBody(framedBody) ?: framedBody
-                } catch (failure: Throwable) {
-                    close()
-                    throw failure
+            requireMode(RuntimeFrameBodyMode.ProtocolEnvelope)
+            codec.decode(receiveBody())
+        }
+
+        override suspend fun receiveFrameBody(): ByteArray = withContext(Dispatchers.IO) {
+            requireMode(RuntimeFrameBodyMode.Raw)
+            receiveBody()
+        }
+
+        private suspend fun receiveBody(): ByteArray {
+            return receiveMutex.withLock {
+                suspendCancellableCoroutine { continuation ->
+                    // Relay reads use the same blocking Java socket surface as
+                    // writes. Cancellation must close it so a stopped adapter
+                    // cannot leave an IO worker or handshake suspended forever.
+                    continuation.invokeOnCancellation {
+                        runCatching { close() }
+                    }
+                    if (!continuation.isActive) return@suspendCancellableCoroutine
+                    try {
+                        val framedBody = codec.readFrameBody(socket.inputStream)
+                        val body = frameCryptor?.decryptRuntimeFrameBody(framedBody) ?: framedBody
+                        require(body.size in 1..ProtocolCodec.MAX_FRAME_BYTES) {
+                            "Invalid raw frame body length: ${body.size}"
+                        }
+                        continuation.resume(body) { _, _, _ ->
+                            runCatching { close() }
+                        }
+                    } catch (failure: Throwable) {
+                        runCatching { close() }
+                        if (continuation.isActive) {
+                            continuation.resumeWithException(failure)
+                        }
+                    }
                 }
-                codec.decode(body)
+            }
+        }
+
+        private fun requireMode(expected: RuntimeFrameBodyMode) {
+            if (mode != expected) {
+                close()
+                error("Relay transport frame-body mode mismatch")
             }
         }
 
@@ -251,6 +340,18 @@ internal fun OutputStream.writeProtocolFrameBody(body: ByteArray) {
         ),
     )
     write(body)
+}
+
+internal const val RELAY_FRAME_AUTHENTICATION_TAG_BYTES = 16
+
+internal fun maximumRelayRawFrameBodyBytes(usesFrameCryptor: Boolean): Int =
+    ProtocolCodec.MAX_FRAME_BYTES - if (usesFrameCryptor) RELAY_FRAME_AUTHENTICATION_TAG_BYTES else 0
+
+internal fun requireRelayRawFrameBodyLength(byteCount: Int, usesFrameCryptor: Boolean) {
+    val maximum = maximumRelayRawFrameBodyBytes(usesFrameCryptor)
+    require(byteCount in 1..maximum) {
+        "Invalid raw relay frame body length: $byteCount (maximum $maximum)"
+    }
 }
 
 fun interface RelayClientRegistrationAuthorizer {

@@ -1,0 +1,125 @@
+{
+  "documentType": "aetherlink.g2-rung2-source-provenance-observation",
+  "schemaVersion": "1.0",
+  "observationId": "g2-pion-ice-v4.3.0-rung2-provenance-observation-v1",
+  "recordedDate": "2026-07-23",
+  "status": "provenance_signature_and_inclusion_proof_locally_verified_acquisition_not_executed",
+  "evidenceClass": "public_read_only_provenance_observation_not_acquisition_receipt",
+  "parentRungOne": {
+    "profilePath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/restricted-fork-profile.json",
+    "profileSha256": "10e9436ae9b8f24c4447d12f8087b4f121810841ae33526e08fcc3d862d60a0f",
+    "profileSemanticSha256": "9c929d186eedb10cc890d5540597724d6df1d719f174ed1965c79e4d50324be6",
+    "evidenceManifestPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/evidence-manifest-v1.json",
+    "evidenceManifestSha256": "98e0e53955e21a833fe19852ce00f64df2dc808506bdb222c9b8a20bc8006d00",
+    "evidenceCollectionSha256": "9e395c4c4f7f61a4810d47cf96ff57b47c1908c73ea459181f1c06f26a35d704",
+    "status": "rung1_profile_complete_candidate_not_selected",
+    "result": "pion_restricted_fork_profile_ready_for_rung2_decision_only",
+    "nextAction": "prepare_versioned_rung2_source_identity_and_acquisition_decision"
+  },
+  "upstreamIdentity": {
+    "repositoryUrl": "https://github.com/pion/ice",
+    "modulePath": "github.com/pion/ice/v4",
+    "version": "v4.3.0",
+    "tag": "v4.3.0",
+    "tagType": "lightweight",
+    "commitObjectIdAlgorithm": "git-sha1",
+    "commit": "1e8716372f2bb52e45bf2a7172e4fb1004251c46",
+    "treeObjectIdAlgorithm": "git-sha1",
+    "tree": "df59c87a634cfea261582cd9932554663112a975",
+    "sourceRole": "upstream_base_for_not_yet_implemented_restricted_fork"
+  },
+  "githubCommitSignatureObservation": {
+    "status": "valid_observed_only",
+    "signedObject": "git_commit_object",
+    "keyFingerprint": "686e6e5f8d157de2b8dfa974a8cd240651db01b6",
+    "proxyZipAuthenticatedByThisObservation": false,
+    "localReverificationStatus": "not_executed"
+  },
+  "goProxyZipObservation": {
+    "url": "https://proxy.golang.org/github.com/pion/ice/v4/@v/v4.3.0.zip",
+    "scheme": "https",
+    "host": "proxy.golang.org",
+    "contentLengthBytes": 293023,
+    "etagOrRawSha256Candidate": "f95ef3ce2e0063c13925f478bf8d188833725b2f0a7ecb1e695dee8ab61ef63c",
+    "rawBytesRetained": false,
+    "localRawSha256RecomputationStatus": "not_executed"
+  },
+  "goChecksumObservation": {
+    "moduleVersion": "github.com/pion/ice/v4@v4.3.0",
+    "moduleH1": "h1:X8l4s9zV2HeTKX33nulWAFXAEo5KhIVzOsY62/3t/LM=",
+    "goModH1": "h1:obAyD+J+Hzs7QA7Y8YXHp5uIn6gb7z87pKedXZkrcFU=",
+    "localModuleH1RecomputationStatus": "not_executed"
+  },
+  "checksumDatabaseObservation": {
+    "name": "sum.golang.org",
+    "verifierKey": "sum.golang.org+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ux18htTTAD8OuAn8",
+    "lookupRawSha256": "7b445772a66ae3e1615210a65f1bf3495080c833e96afe0c29cd9f2b115e4d82",
+    "recordNumber": 57312466,
+    "recordHashBase64": "gJpj337cdtVFcrcLfZnDSqUzErcx0jdwOvIdZPZqDOw=",
+    "signedTree": {
+      "treeSize": 57871495,
+      "rootHashBase64": "CXAe1gevwtmEqZ3aCCTvv6+nJY5F29T4UGHfB73rJTo=",
+      "signatureBase64": "Az3grl3EvFerct68O5eNpkq2v5oVwQN6i7f9wO42XflhUmA6BqeLeAxOBU8DSuxB3yTRtGL8ithf0vSqbu5PqDWnYAs=",
+      "signedTreeTextSha256": "5192e92f2cbd4744e25a15c8617b86057400f8828d32b27e9efcf1b90bc65b45"
+    },
+    "inclusionProof": {
+      "recordNumber": 57312466,
+      "treeSize": 57871495,
+      "proofHashesBase64": [
+        "L+NX+4qSMqg1+q8muzC/hWpq1Jpdko1lzSLl612/yYU=",
+        "tYid1Pn2v9boyKU4MjU1uXUyorpRyzr3Uu69DITtO+s=",
+        "ABjnob2ubvbTGRerWej9CM3pJXjO4uepJnDm2NORtvM=",
+        "Ab0HI3vdwSmi+Y0s5n3jg7Kp2+fyPkEZzkwT2yIDSuE=",
+        "iIvLUfr5bCnnoXPVFBOPXRO62sGX0rUpKOOblnlqcAM=",
+        "I4OcOrC8Pp2WDCTSqRoksJqj7y/ikAiSNPYWiPRPD2I=",
+        "4+JUp5Kv9xsT3KvCeABbnEDKPwfeyQWBL1C0pxsJuC8=",
+        "IMjWpkUJx9oEtj6xyhgzKaHEXq2N2P08ywG4wxnoP28=",
+        "f7lAYgqN7pSi4+VDqFwu/rg6W+8Szmhi/eK9RzKS/B8=",
+        "gW6QXpc11Da0NNzBvqzHF/UqPLeksPNJfJFPWQvJ5vk=",
+        "+9pG9x5K3o9luhA4GSVlOjFG9ID1FW25OgOMFIgDACY=",
+        "q19wOLLTrEg4BW5uNNynr/YpZoNZvWFQTKAk+Ntm0Lg=",
+        "u+VvCLgbbMjZz3oyKaweqB5iEgfwdGVkByEyAb9ADPA=",
+        "FVMovOCUXY9BsXPCPeTJ/y13WqNEelYIouZkD52vpck=",
+        "rfYdNMYv5uoDxj+RyZU2qSqrToaRFeWFrpvoN5gGObQ=",
+        "B6xJaIkEYUYbugei5I+TUBK5X8S23FXaSkdIcZAgQIk=",
+        "0LxyTNMWsXqU7f/ygSNupzZdxDMYuW+JERR7IpqgoM8=",
+        "PM5vc9kDwcOiT02PjJiDT/txhBj2uxTdxwi5+o7GmCA=",
+        "wu/2o1h2uNoO297hbBEcYncVUQTrm72dxSTZR13wrhU=",
+        "fLj94zcTaoLsVQBcoGXsMURIFHwGceB0c3RqfiMG+Lc=",
+        "UiRHagkkycwKNWKgzS/O1q+XfvTMTljmO9ofayrVSaM=",
+        "LgyRrxZo3S1S3sLhzKhejMSvW8vgH/dFb3g1Z6BBO4o=",
+        "MdOpnRMfUoL32HLkVBWTCaT4Zo6BT5bFmNeOGpopF5o=",
+        "/WnQtddEqG03mbcU1XID1iws1nlKHVkJcaREWknCOiE=",
+        "xJ20xXM4QItt5vxFOtolZ5l18p7ej1+RimNkgWmoRFM="
+      ]
+    },
+    "localVerification": {
+      "verifierKeyHashRecomputed": true,
+      "ed25519SignedTreeVerified": true,
+      "recordHashRecomputed": true,
+      "rfc6962InclusionProofVerified": true,
+      "verificationUsesOnlyRecordedPublicInputs": true
+    },
+    "status": "signed_tree_and_record_inclusion_locally_verified"
+  },
+  "executionBoundary": {
+    "sourceAcquisitionExecuted": false,
+    "sourceRetained": false,
+    "archiveExtracted": false,
+    "sourceExecuted": false,
+    "compilerInvocationAllowed": false,
+    "codeLoadingAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIoAllowed": false,
+    "deviceExecutionAllowed": false,
+    "productionDeploymentAllowed": false,
+    "gitOperationAllowed": false,
+    "externalIdentityProofRequired": false,
+    "userActionRequired": false
+  },
+  "crossFileHashBindings": {
+    "prospectiveSourceAcquisitionDecisionPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/source-acquisition-decision-v1.json",
+    "prospectiveSourceAcquisitionDecisionId": "g2-pion-ice-v4.3.0-source-acquisition-decision-v1",
+    "status": "forward_identity_only_no_cyclic_hash_claim"
+  }
+}

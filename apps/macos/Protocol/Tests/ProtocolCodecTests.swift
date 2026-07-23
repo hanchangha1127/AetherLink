@@ -343,6 +343,25 @@ final class ProtocolCodecTests: XCTestCase {
         }
     }
 
+    func testStrictJSONNestingBoundaryMatchesAndroid() throws {
+        func nestedArray(depth: Int) -> Data {
+            Data((
+                String(repeating: "[", count: depth)
+                    + "0"
+                    + String(repeating: "]", count: depth)
+            ).utf8)
+        }
+
+        XCTAssertNoThrow(
+            try StrictJSONDocumentValidator.validate(nestedArray(depth: 128))
+        )
+        XCTAssertThrowsError(
+            try StrictJSONDocumentValidator.validate(nestedArray(depth: 129))
+        ) { error in
+            XCTAssertEqual(error as? ProtocolCodecError, .invalidJSON)
+        }
+    }
+
     func testProtocolEnvelopeDecodeAcceptsNormalResearchEnvelope() throws {
         let codec = ProtocolCodec()
         let json = #"{"version":1,"type":"research.brief.create","request_id":"research-create","timestamp":"2026-07-14T00:00:00Z","payload":{"notebook_id":"research_notebook_0123456789abcdef0123456789abcdef","session_id":"session-1","topic":"Topic","model":"model-1","trusted_source_grant_ids":["trusted_source_0123456789abcdef0123456789abcdef"]}}"#

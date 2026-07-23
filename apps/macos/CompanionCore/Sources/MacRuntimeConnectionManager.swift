@@ -103,6 +103,8 @@ public final class MacRuntimeConnectionManager {
         @Sendable () -> any MacRuntimePrivateOverlayTransport
     )?
     private let onDisconnect: @Sendable (UUID) -> Void
+    let productionRawSessionAttachments =
+        MacRuntimeProductionRawSessionAttachments()
 
     private var activeLocalPort: UInt16?
     private var localMessageLease: MacRuntimeCallbackLease?
@@ -282,6 +284,8 @@ public final class MacRuntimeConnectionManager {
         }
     }
 
+    /// Starts the existing development/legacy relay path without production admission.
+    /// The exact-bound production coordinator remains unavailable until G1a-C.
     public func startPair(
         fingerprint: String,
         configuration: RelayPeerConfiguration,
@@ -338,6 +342,23 @@ public final class MacRuntimeConnectionManager {
         )
     }
 
+    #if DEBUG
+    func startAdmittedProductionPairRelay(
+        _ admittedStart: MacRuntimeAdmittedProductionPairRelayStart,
+        onStatusChange: StatusHandler? = nil,
+        onMessage: @escaping LocalPeerMessageHandler
+    ) {
+        startPair(
+            fingerprint: admittedStart.clientKeyFingerprint,
+            configuration: admittedStart.configuration,
+            onStatusChange: onStatusChange,
+            onMessage: onMessage
+        )
+    }
+    #endif
+
+    /// Starts the existing development/legacy private-overlay path without production admission.
+    /// The exact-bound production coordinator remains unavailable until G1a-C.
     @discardableResult
     public func startPairPrivateOverlay(
         fingerprint: String,
@@ -412,6 +433,7 @@ public final class MacRuntimeConnectionManager {
     }
 
     public func stopAll() {
+        productionRawSessionAttachments.closeAll()
         stopLocalOwnership()
 
         var transports: [any RelayPeerTransport] = []

@@ -1494,10 +1494,10 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "contentPadding = PaddingValues(horizontal = 8.dp)",
         "actionOnNewLine = true",
         "Text(snackbarData.visuals.message)",
-        "LaunchedEffect(sharedChatDraft, context)",
+        "LaunchedEffect(sharedChatDraft, sharedDraftConfirmationMessage)",
         "handlePickedAttachments(draft.attachmentUris, viewModel::addAttachments)",
         "hapticFeedback.performAetherLinkFeedback(sharedChatDraftConfirmationFeedback())",
-        "context.getString(sharedChatDraftConfirmationMessageRes(draft))",
+        "stringResource(sharedChatDraftConfirmationMessageRes(sharedChatDraft))",
         "snackbarHostState.showSnackbar(confirmationMessage)",
         "val snackbarHostBottomPadding = if (effectiveDestination == AppDestination.Chat)",
         ".padding(bottom = snackbarHostBottomPadding)",
@@ -11337,7 +11337,8 @@ def android_composer_draft_persistence_guard_failures() -> list[str]:
         "override fun onActivityPaused(activity: Activity) {\n            statePersistence.flush()",
         "override fun onActivityStopped(activity: Activity) {\n            statePersistence.flush()",
         "override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {\n            statePersistence.flush()",
-        "override fun onCleared() {\n        statePersistence.flush()",
+        "override fun onCleared() {\n        var teardownFailureCount = 0",
+        "teardown { statePersistence.flush() }",
         "private fun showError(code: String, detail: String? = null) {\n        statePersistence.flush()",
     )
     for snippet in required_runtime_snippets:
@@ -25779,7 +25780,7 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Trusted-device mutations must publish complete snapshots with an atomic rename.",
         ),
         (
-            "guard syncDescriptor(directory.descriptor) else",
+            "syncDescriptor(directory.descriptor) else",
             "Trusted-device mutations must persist the replacement directory entry before success.",
         ),
         (
@@ -36871,6 +36872,7 @@ def no_device_suite_subsumed_rerun_guard_failures() -> list[str]:
         "com.localagentbridge.android.core.protocol.ProtocolCodecTest": ":core:protocol:testDebugUnitTest",
         "com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest": ":core:transport:testDebugUnitTest",
         "com.localagentbridge.android.core.transport.RuntimeTransportClientTest": ":core:transport:testDebugUnitTest",
+        "com.localagentbridge.android.runtime.AndroidProductionRuntimeChannelComposerTest": ":app:testDebugUnitTest",
         "com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest": ":app:testDebugUnitTest",
         "com.localagentbridge.android.runtime.RuntimeClientViewModelTest": ":app:testDebugUnitTest",
         "com.localagentbridge.android.runtime.RuntimeLocalStoreTest": ":app:testDebugUnitTest",
@@ -36885,7 +36887,7 @@ def no_device_suite_subsumed_rerun_guard_failures() -> list[str]:
         "com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest": 17,
         "com.localagentbridge.android.core.transport.RuntimeTransportClientTest": 1,
         "com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest": 2,
-        "com.localagentbridge.android.runtime.RuntimeClientViewModelTest": 445,
+        "com.localagentbridge.android.runtime.RuntimeClientViewModelTest": 448,
         "com.localagentbridge.android.runtime.RuntimeLocalStoreTest": 6,
         "com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest": 155,
     }
@@ -36975,6 +36977,33 @@ def no_device_suite_subsumed_rerun_guard_failures() -> list[str]:
         ),
         "p2pnat/P2pNatSharedVectorTest.kt": (
             "com.localagentbridge.android.core.protocol.p2pnat.P2pNatSharedVectorTest"
+        ),
+        "p2pnat/ProductionG1aCContractsTest.kt": (
+            "com.localagentbridge.android.core.protocol.p2pnat.ProductionG1aCContractsTest"
+        ),
+        "p2pnat/ProductionG1aCSharedVectorTest.kt": (
+            "com.localagentbridge.android.core.protocol.p2pnat.ProductionG1aCSharedVectorTest"
+        ),
+        "p2pnat/ProductionG1aCCandidateContractsTest.kt": (
+            "com.localagentbridge.android.core.protocol.p2pnat.ProductionG1aCCandidateContractsTest"
+        ),
+        "p2pnat/ProductionG1aCCandidateEndpointAdmissionTest.kt": (
+            "com.localagentbridge.android.core.protocol.p2pnat.ProductionG1aCCandidateEndpointAdmissionTest"
+        ),
+        "p2pnat/ProductionG1aCCandidateOperationReceiptsTest.kt": (
+            "com.localagentbridge.android.core.protocol.p2pnat.ProductionG1aCCandidateOperationReceiptsTest"
+        ),
+        "p2pnat/ProductionG1aCCandidateGrantsTest.kt": (
+            "com.localagentbridge.android.core.protocol.p2pnat.ProductionG1aCCandidateGrantsTest"
+        ),
+        "p2pnat/ProductionG1aCCandidateSharedVectorTest.kt": (
+            "com.localagentbridge.android.core.protocol.p2pnat.ProductionG1aCCandidateSharedVectorTest"
+        ),
+        "p2pnat/ProductionSecureSessionSharedVectorTest.kt": (
+            "com.localagentbridge.android.core.protocol.p2pnat.ProductionSecureSessionSharedVectorTest"
+        ),
+        "p2pnat/ProductionPairStateSharedVectorTest.kt": (
+            "com.localagentbridge.android.core.protocol.p2pnat.ProductionPairStateSharedVectorTest"
         ),
     }
     observed_protocol_files = {
@@ -37070,7 +37099,7 @@ def no_device_suite_subsumed_rerun_guard_failures() -> list[str]:
     if covered_protocol_inventory != set(expected_protocol_inventory.values()):
         failures.append(
             f"{no_device_path.relative_to(ROOT)}: active protocol selectors do not preserve the "
-            "complete five-class test inventory."
+            "complete reviewed test inventory."
         )
 
     for full_class, task in android_full_class_tasks.items():
@@ -37130,7 +37159,7 @@ def no_device_suite_subsumed_rerun_guard_failures() -> list[str]:
             f"contains duplicates: {duplicate_evidence_selectors}."
         )
     evidence_digest = hashlib.sha256("\n".join(evidence_selectors).encode("utf-8")).hexdigest()
-    expected_evidence_digest = "35c7e9dacae084999edec3d57211178807dd4121227e85145c36d1151f83ff3d"
+    expected_evidence_digest = "4d6e88f2277a02948005363af6d1e7dbebe0980e0239d4ce2691da27b34506ba"
     if evidence_digest != expected_evidence_digest:
         failures.append(
             f"{no_device_path.relative_to(ROOT)}: Android suite-subsumed named-selector evidence "
@@ -38054,6 +38083,11 @@ def is_allowed_match(path: Path, line: str, rule_name: str) -> bool:
     # Shell scripts are developer diagnostics; they can name concrete platforms
     # where commands such as adb or local dev-server launch instructions require it.
     if rule_name == "platform-specific-os-copy" and relative.startswith("script/"):
+        return True
+
+    # Source comments may compare platform-internal behavior; they are not
+    # user-visible product copy.
+    if rule_name == "platform-specific-os-copy" and line.lstrip().startswith(("//", "/*", "*")):
         return True
 
     if rule_name == "direct-model-url-copy" and (
@@ -49957,6 +49991,10 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
         "contract_validator": ROOT / "script/check_p2p_nat_contract_vectors.py",
         "pre_network_validator": ROOT / "script/check_p2p_nat_pre_network_review.py",
         "pre_network_tests": ROOT / "script/test_p2p_nat_pre_network_review.py",
+        "android_canonical_codec": (
+            ROOT
+            / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/p2pnat/P2pNatCanonicalCodec.kt"
+        ),
         "spike_review_validator": ROOT / "script/check_p2p_nat_controlled_spike_review.py",
         "spike_review_tests": ROOT / "script/test_p2p_nat_controlled_spike_review.py",
         "progress_validator": ROOT / "script/check_p2p_nat_phase_a_progress.py",
@@ -50112,8 +50150,11 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "7 recommendations approved; handoff-v3 closed; network gate closed",
             "validate_approval",
             "validate_handoff_v3",
+            "historical_evidence_bytes_for_digest",
+            "ANDROID_P256_COMPAT_CURRENT",
         ),
         "pre_network_tests": (
+            "test_android_p256_compat_amendment_preserves_historical_digest",
             "test_missing_duplicate_unknown_and_reordered_decisions_fail",
             "test_unauthorized_state_transitions_fail",
             "test_weakened_security_floors_fail",
@@ -50122,6 +50163,9 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "test_approval_recommendation_source_and_authorization_fail",
             "test_handoff_resolution_and_closed_gates_fail",
             "test_security_design_parser_rejects_duplicate_names",
+        ),
+        "android_canonical_codec": (
+            "y.modPow(BigInteger.valueOf(2L), P256_FIELD)",
         ),
         "spike_review_validator": (
             "production_p2p_nat_v1_controlled_network_spike_review_v1",
@@ -50386,7 +50430,8 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "com.localagentbridge.android.core.protocol.p2pnat.*",
             "com.localagentbridge.android.core.transport.p2pnat.*",
             "P2PNATContractsTests|P2PNATSharedVectorTests|P2PNATConformanceTests",
-            "15-test mutation suite",
+            "16-test mutation suite",
+            "API-26-safe BigInteger.valueOf(2L)",
             "handoff-v3 hash-pins Android P2pNatContract.kt",
             "the security-design validator directly verifies canonical handoff closure",
             "10-test mutation suite",
@@ -51271,6 +51316,1677 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
                 failures.append(
                     f"{paths[name].relative_to(ROOT)} section {heading!r} is missing {snippet!r}."
                 )
+    return failures
+
+
+def production_secure_session_crypto_guard_failures() -> list[str]:
+    failures: list[str] = []
+    paths = {
+        "fixture": ROOT / "shared/protocol/fixtures/production-secure-session-crypto-v1-vectors.json",
+        "checker": ROOT / "script/check_production_secure_session_crypto_vectors.py",
+        "tests": ROOT / "script/test_production_secure_session_crypto_vectors.py",
+        "gate": ROOT / "script/check_no_device_quality.sh",
+    }
+    for path in paths.values():
+        if not path.is_file():
+            failures.append(f"{path.relative_to(ROOT)}: production secure-session crypto evidence is missing.")
+    if failures:
+        return failures
+
+    expected_fixture_sha256 = "d45fd920e22652d790c742de995d87a8cbfb64bb22aca3b829cbad5b23485448"
+    actual_fixture_sha256 = hashlib.sha256(paths["fixture"].read_bytes()).hexdigest()
+    if actual_fixture_sha256 != expected_fixture_sha256:
+        failures.append(
+            f"{paths['fixture'].relative_to(ROOT)}: exact fixture bytes drifted; "
+            "review the crypto contract and refresh its pinned SHA-256 deliberately."
+        )
+
+    texts = {
+        name: path.read_text(encoding="utf-8", errors="replace")
+        for name, path in paths.items()
+        if name != "fixture"
+    }
+    required_snippets = {
+        "checker": (
+            "Production secure-session crypto vectors passed.",
+            "reject_duplicate_names",
+            "source fixture SHA-256",
+            "role-reflected confirmations unexpectedly match",
+            "modified GCM tag was accepted",
+            "modified ciphertext was accepted",
+            "maximum encrypted-record wire size drifted",
+        ),
+        "tests": (
+            "EXPECTED_FIXTURE_SHA256",
+            "test_checked_in_fixture_is_byte_exact_and_valid",
+            "test_default_validation_is_read_only_and_has_no_rewrite_mode",
+            "test_duplicate_json_name_is_rejected",
+            "test_fixture_and_source_hash_drift_are_detected",
+            "test_object29_proofs_reject_role_reflection_and_bit_flip",
+            "test_record_tag_and_ciphertext_bit_flips_are_rejected",
+            "test_record_max_plus_one_and_exact_max_wire_size",
+            "test_negative_inventory_is_complete_ordered_and_platform_exact",
+        ),
+        "gate": (
+            "script/check_production_secure_session_crypto_vectors.py",
+            "script/test_production_secure_session_crypto_vectors.py",
+            "run python3 script/check_production_secure_session_crypto_vectors.py",
+            "run python3 -m unittest script/test_production_secure_session_crypto_vectors.py",
+            "Covered G1a-D production secure-session crypto addendum:",
+            "verifier-minted exact object-7/object-26 binding",
+            "not app- or transport-wired",
+        ),
+    }
+    for name, snippets in required_snippets.items():
+        for snippet in snippets:
+            if snippet not in texts[name]:
+                failures.append(
+                    f"{paths[name].relative_to(ROOT)}: missing production secure-session "
+                    f"crypto evidence marker {snippet!r}."
+                )
+    return failures
+
+
+def production_authority_bound_secure_session_lifecycle_guard_failures() -> list[str]:
+    """Pin the no-network authority/crypto publication lifecycle boundary."""
+
+    failures: list[str] = []
+    paths = {
+        "mac_gate": ROOT / "apps/macos/TrustedDevices/Sources/ProductionC1AuthorityPublicationGate.swift",
+        "mac_session": ROOT / "apps/macos/TrustedDevices/Sources/ProductionC1ExactBoundSecureSession.swift",
+        "mac_crypto": ROOT / "apps/macos/P2PNATContracts/Sources/ProductionSecureSessionCrypto.swift",
+        "mac_lifecycle_tests": ROOT / "apps/macos/P2PNATContracts/Tests/ProductionG1aCCandidateCapabilityTests.swift",
+        "mac_coordinator": ROOT / "apps/macos/TrustedDevices/Sources/ProductionC1ExactBoundStartCoordinator.swift",
+        "mac_store": ROOT / "apps/macos/TrustedDevices/Sources/TrustedDevice.swift",
+        "mac_store_tests": ROOT / "apps/macos/TrustedDevices/Tests/ProductionC1ExactBoundStartCoordinatorTests.swift",
+        "android_gate": ROOT / "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/ProductionC1AuthorityPublicationGate.kt",
+        "android_session": ROOT / "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/ProductionC1AuthorityBoundSecureSession.kt",
+        "android_store": ROOT / "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt",
+        "android_store_tests": ROOT / "apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/PairingStoreTest.kt",
+        "gate": ROOT / "script/check_no_device_quality.sh",
+        "readme": ROOT / "README.md",
+        "protocol_readme": ROOT / "shared/protocol/README.md",
+        "handoff": ROOT / "docs/handoff.md",
+        "progress": ROOT / "docs/progress.md",
+        "qa": ROOT / "docs/qa-evidence.md",
+        "roadmap": ROOT / "docs/roadmap.md",
+    }
+    missing = [str(path.relative_to(ROOT)) for path in paths.values() if not path.is_file()]
+    if missing:
+        return [f"missing authority-bound secure-session lifecycle file: {path}" for path in missing]
+
+    texts = {
+        label: path.read_text(encoding="utf-8", errors="replace")
+        for label, path in paths.items()
+    }
+    required_source_snippets = {
+        "mac_gate": (
+            "actor ProductionC1AuthorityPublicationGate",
+            "FIFO writer admission prevents",
+            "func acquireRead() async",
+            "func acquireWrite() async",
+            "!waiters.contains(where:",
+        ),
+        "mac_session": (
+            "request.verifiedBinding.runtimeKeyScheduleBinding",
+            "let permit = try await coordinator.acquirePublicationRead()",
+            "try await coordinator.assertActive(lease)",
+            "try resources.assertLive()",
+            "if Task.isCancelled || Self.isTerminalCryptoError(error)",
+            "resources.invalidate()",
+            "try? await coordinator.cancel(lease)",
+            "private final class ProductionC1SensitiveResultData",
+            "discardSuppressedResult: { $0.discard() }",
+            "$0.discardSuppressedResultBytes()",
+            "The publication read permit remains held while the exact",
+            "discardSuppressedResult(&suppressedResult)",
+        ),
+        "mac_crypto": (
+            "@_spi(AuthorityLifecycle)",
+            "public mutating func discardSuppressedResultBytes()",
+            "sensitiveStorage.discard()",
+            "plaintextStorage.discard()",
+        ),
+        "mac_lifecycle_tests": (
+            "testExactBoundSecureSessionCloseDiscardsConcurrentSealBeforeComplete",
+            "testExactBoundSecureSessionPostFenceWipesRetainedConfirmationStorage",
+            "testExactBoundSecureSessionPostFenceWipesRetainedOpenStorage",
+            "`producedSeal` is a value copy retained before discard",
+        ),
+        "mac_coordinator": (
+            "private let publicationGate: ProductionC1AuthorityPublicationGate",
+            "func acquirePublicationRead()",
+            "func releasePublicationRead(",
+        ),
+        "mac_store": (
+            ".acquireWrite()",
+            "fenceDurabilityUncertainMutation(",
+            "durabilityUncertainAfterRename",
+            "All pre-rename failures deliberately leave the old session live.",
+            "await coordinator.fenceRevoked(",
+            "await coordinator.fenceAuthorityAdvance(",
+        ),
+        "mac_store_tests": (
+            "testDurabilityUncertainPairTransitionAndRemoveFenceOldSessions",
+            "testPreRenamePairTransitionFailureKeepsOldSessionPublished",
+        ),
+        "android_gate": (
+            "Process-local, bounded FIFO publication gate.",
+            "private val queuedWriterCount = AtomicInteger(0)",
+            "if (!writerActive && waiters.isEmpty())",
+            "withContext(NonCancellable)",
+            "suspend fun <Value> withRead(",
+            "suspend fun <Value> withWrite(",
+        ),
+        "android_session": (
+            "request.binding.keyScheduleBinding",
+            "publicationGate.withRead",
+            "coordinator.assertActive(lease)",
+            "lockBox.assertLive()",
+            "terminalizeLeaseAfterEngineFailure",
+            "withContext(NonCancellable)",
+        ),
+        "android_store": (
+            "productionAuthorityPublicationGate.withWrite",
+            "var persistenceAttempted = false",
+            "error is IOException",
+            "fenceExactBoundStartAfterAmbiguousAuthorityMutation(",
+            "coordinator.fenceAllUncertainAuthority()",
+            "fenceExactBoundStartAfterAuthorityMutation(",
+            "beginAuthorityBoundProductionSecureSession(",
+            "ProductionC1AuthorityBoundSecureSession.begin(",
+        ),
+        "android_store_tests": (
+            "cancelledAuthorityMutationAfterEnqueueStillCommitsAndFencesBeforeGateRelease",
+            "ambiguousAuthorityPersistenceIOExceptionFencesOldSessionFailClosed",
+            "postCommitPersistenceFailureKeepsNewBytesAndFencesOldSession",
+            "cancelledForgetAfterEnqueueStillWipesSessionBeforeReturning",
+            "invalidStoredIdentityCleanupUsesAuthorityWriterAndWipesLiveSession",
+        ),
+    }
+    for label, snippets in required_source_snippets.items():
+        for snippet in snippets:
+            if snippet not in texts[label]:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: missing authority-lifecycle "
+                    f"boundary {snippet!r}."
+                )
+    if texts["mac_crypto"].count(
+        "public mutating func discardSuppressedResultBytes()"
+    ) != 2:
+        failures.append(
+            "apps/macos/P2PNATContracts/Sources/ProductionSecureSessionCrypto.swift: "
+            "seal and open results must each expose one authority-lifecycle discard hook."
+        )
+
+    marker = "Covered G1a-D authority-bound secure-session lifecycle addendum:"
+    gate_text = texts["gate"]
+    if gate_text.count(marker) != 1:
+        failures.append("default no-device gate must emit the authority-lifecycle marker once")
+    marker_line = next((line for line in gate_text.splitlines() if marker in line), "")
+    for snippet in (
+        "process-local writer-preferred/FIFO publication gate",
+        "drain in-flight publications, commit",
+        "Once an Android DataStore edit is enqueued",
+        "ambiguous persistence failure fences/wipes the old authority",
+        "post-rename directory-sync uncertainty does the same",
+        "single-process and same-store/coordinator-graph only",
+        "seal + channel.send inside the same read-permit closure",
+        "Bounded no-network app/service caller bridges and the G1b-A Android controller/macOS loopback accepted-raw primitive are present",
+        "upstream Android P2P producer/endpoint stack, macOS CompanionAppModel wiring, and actual socket/network activation remain unwired",
+        "owner-backed confirmation, seal, and open result storage",
+        "small-ciphertext plus confirmation/seal/open retained-owner and result-copy regressions",
+        "87/87 complete Swift P2PNAT contract tests",
+        "independent Data snapshot already extracted by a caller",
+        "not retroactively zeroized",
+    ):
+        if snippet not in marker_line:
+            failures.append(f"authority-lifecycle no-device marker is missing {snippet!r}")
+
+    for label in ("readme", "protocol_readme", "handoff", "progress", "qa", "roadmap"):
+        normalized = " ".join(texts[label].split())
+        for snippet in (
+            "single-process",
+            "seal + channel.send",
+            "owner-backed",
+            "confirmation/seal/open retained-owner and result-copy",
+            "not retroactively zeroized",
+            "No-device quality checks passed.",
+            "182/182",
+            "1,946",
+            "two declared skips",
+            "zero failures",
+            "BUILD SUCCESSFUL",
+            "94",
+            "12",
+            "development-relay local mock smokes",
+            "56 connections",
+            "905 encrypted frame bodies",
+            "final G1a-D authority-lifecycle marker",
+            "external-network",
+            "production app/service activation",
+        ):
+            if snippet not in normalized:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: current authority-lifecycle "
+                    f"boundary is missing {snippet!r}."
+                )
+        for obsolete in (
+            "refreshed complete default no-device aggregate is still required",
+            "refreshed complete default no-device aggregate is still pending",
+            "refreshed complete default no-device aggregate remains pending",
+        ):
+            if obsolete in normalized.lower():
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: current authority-lifecycle "
+                    f"evidence retains obsolete aggregate state {obsolete!r}."
+                )
+
+    for label in ("handoff", "progress", "qa", "roadmap"):
+        current_window = "\n".join(texts[label].splitlines()[:1_100])
+        normalized = " ".join(current_window.split()).lower()
+        for snippet in (
+            "31/31",
+            "78/78",
+            "87/87",
+            "232/232",
+            "200/200",
+            "8/8",
+            "previous complete default no-device aggregate snapshot",
+        ):
+            if snippet.lower() not in normalized:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: current authority-lifecycle "
+                    f"evidence is missing {snippet!r}."
+                )
+    return failures
+
+
+def production_secure_channel_transport_composition_guard_failures() -> list[str]:
+    """Pin the manager-owned G1a-D transport and no-network caller boundaries."""
+
+    failures: list[str] = []
+    paths = {
+        "android_adapter": ROOT / "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/ProductionRuntimeSecureChannelAdapter.kt",
+        "android_manager": ROOT / "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeConnectionManager.kt",
+        "android_adapter_tests": ROOT / "apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/ProductionRuntimeSecureChannelAdapterTest.kt",
+        "android_manager_tests": ROOT / "apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/RuntimeConnectionManagerTest.kt",
+        "android_caller": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/AndroidProductionRuntimeChannelComposer.kt",
+        "android_caller_tests": ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/AndroidProductionRuntimeChannelComposerTest.kt",
+        "android_controller": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/AndroidProductionRuntimeActivationController.kt",
+        "android_controller_tests": ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/AndroidProductionRuntimeActivationControllerTest.kt",
+        "android_viewmodel": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt",
+        "android_viewmodel_tests": ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt",
+        "android_pairing_store": ROOT / "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt",
+        "android_pairing_store_tests": ROOT / "apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/PairingStoreTest.kt",
+        "mac_composition": ROOT / "apps/macos/CompanionCore/Sources/MacRuntimeProductionChannelComposition.swift",
+        "mac_channel": ROOT / "apps/macos/CompanionCore/Sources/MacRuntimeProductionSecureChannel.swift",
+        "mac_composition_tests": ROOT / "apps/macos/CompanionCore/Tests/MacRuntimeProductionChannelCompositionTests.swift",
+        "mac_channel_tests": ROOT / "apps/macos/CompanionCore/Tests/MacRuntimeProductionSecureChannelTests.swift",
+        "mac_pair_tests": ROOT / "apps/macos/CompanionCore/Tests/MacRuntimeProductionPairCoordinatorTests.swift",
+        "mac_service": ROOT / "apps/macos/CompanionCore/Sources/MacRuntimeProductionAcceptedSessionService.swift",
+        "mac_service_tests": ROOT / "apps/macos/CompanionCore/Tests/MacRuntimeProductionAcceptedSessionServiceTests.swift",
+        "mac_transport": ROOT / "apps/macos/Transport/Sources/RuntimeTransport.swift",
+        "mac_peer": ROOT / "apps/macos/Transport/Sources/LocalPeerServer.swift",
+        "mac_raw_seam_tests": ROOT / "apps/macos/Transport/Tests/RawFrameBodySeamTests.swift",
+        "g2_review": ROOT / "docs/security-hardening/production-p2p-nat-v1/g2-requirements-review-v1.md",
+        "g2_restricted_profile": ROOT / "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/restricted-fork-profile.json",
+        "g2_restricted_hardening": ROOT / "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/hardening.json",
+        "g2_restricted_validator": ROOT / "script/check_p2p_nat_g2_restricted_fork_profile.py",
+        "g2_restricted_tests": ROOT / "script/test_p2p_nat_g2_restricted_fork_profile.py",
+        "gate": ROOT / "script/check_no_device_quality.sh",
+        "readme": ROOT / "README.md",
+        "protocol_readme": ROOT / "shared/protocol/README.md",
+        "handoff": ROOT / "docs/handoff.md",
+        "progress": ROOT / "docs/progress.md",
+        "qa": ROOT / "docs/qa-evidence.md",
+        "roadmap": ROOT / "docs/roadmap.md",
+    }
+    missing = [str(path.relative_to(ROOT)) for path in paths.values() if not path.is_file()]
+    if missing:
+        return [f"missing production transport-composition file: {path}" for path in missing]
+
+    texts = {
+        label: path.read_text(encoding="utf-8", errors="replace")
+        for label, path in paths.items()
+    }
+    required_source_snippets = {
+        "android_adapter": (
+            "internal class ProductionRuntimeSecureChannelAdapter private constructor(",
+            "TERMINAL_DRAIN",
+            "private suspend fun terminate(original: Throwable) = withContext(NonCancellable)",
+            "private fun commitApplication(item: GenerationBoundEnvelope)",
+            "fun createOwned(",
+            "private fun createOwnedWithOperations(",
+            "scope = CoroutineScope(scopeJob + Dispatchers.IO)",
+            "scopeJob.cancel()",
+            "ownedScopeJob?.cancel()",
+            "DEFAULT_HANDSHAKE_TIMEOUT_MILLIS = 15_000L",
+            "private enum class TerminalDeadlineState",
+            "val deadlineState = AtomicReference(TerminalDeadlineState.PENDING)",
+            "TerminalDeadlineState.COMPLETED",
+            "TerminalDeadlineState.TIMED_OUT",
+            "timeoutFailure::addSuppressed",
+            "claimCompletionOrThrowTimeout",
+            "claimTimeoutAndTerminalize",
+            "scope.launch(start = CoroutineStart.UNDISPATCHED)",
+            "currentCoroutineContext().ensureActive()",
+        ),
+        "android_manager": (
+            "Manager-owned one-use composition surface. The raw endpoint never escapes this lease",
+            "interface RuntimeProductionRawRouteLease",
+            "ProductionRuntimeSecureChannelAdapter.createOwned(",
+            "val acquisition = synchronized(stateLock)",
+            "async(start = CoroutineStart.UNDISPATCHED)",
+            "beforePhysicalConnectorEntryForTesting?.invoke()",
+            "delegate.connect(request.route, request.timeoutMillis)",
+            "its own timeout/close contract remains responsible until it returns.",
+            "productionCompositionTimeoutMillis(",
+            "withTimeoutOrNull(compositionTimeoutMillis)",
+            "?: throw IOException(",
+            "RuntimeConnectionFailureReason.ProductionSessionSecurityRejected",
+            "catch (error: CancellationException)",
+            "request.session.expectedObject7Object26BindingId",
+            "request.session.expectedSessionId",
+            "receipt.connectionGeneration == request.connectionGeneration",
+            "receipt.claimOnce()",
+            "commitNowEpochMillis >= admissionNowEpochMillis",
+            "Production route clock moved backwards during secure-channel composition",
+            "route.preparedRemoteSecurityOrNull()?.isExpired(commitNowEpochMillis) == false",
+            "val channel = makeChannel(raw)",
+            "retainedCompositionChannel = channel",
+            "channel.start()",
+            "private class ManagedRuntimeRawFrameBodyChannel",
+            "checkOpen()",
+            "body.fill(0)",
+            "private suspend inline fun <Value> cancellationSafeHandoff(",
+            "suspendCancellableCoroutine { continuation ->",
+            "continuation.resume(value) { _, undelivered, _ ->",
+            "closeIfUndelivered(undelivered)",
+            "withContext(NonCancellable)",
+            "is RuntimeRouteCandidate.Relay -> false",
+        ),
+        "android_adapter_tests": (
+            "ownedExecutionScopeIsCancelledWhenAdapterConstructionFails",
+            "canceledExecutionScopeCannotCommitAnActiveProductionChannel",
+            "explicitHandshakeCancellationIsPreservedExactly",
+            "timeoutWinningAfterHandshakeOutcomeCannotReturnClosedChannelAsSuccess",
+            "timeoutWinnerDominatesLateHookCancellationAndError",
+            "timeoutWinnerDominatesExternalCancellationEscapingTimeoutScope",
+            "boundedMailboxOverflowIsTerminalAndNeverPublishesPlaintextFallback",
+            "cancelledReceiveAfterTerminalCommitRestoresExactlyOneDeliveryForNextReceive",
+            "lateTerminalObserverAndOldGenerationCannotAffectReplacementChannel",
+        ),
+        "android_manager_tests": (
+            "productionCompositionTimeoutUsesSaturatingAddition",
+            "productionComposerUsesOneRawRouteWithoutCallingLegacyConnectors",
+            "productionRelayWithoutVerifierDerivedExactRouteBindingIsRejectedBeforeComposition",
+            "productionRouteExpiryAfterCompositionFailsClosedAndCleansTransferredRaw",
+            "productionRouteClockRollbackAfterCompositionFailsClosed",
+            "publicProductionConnectionsUseStrictlyIncreasingManagerOwnedGenerations",
+            "cleanupBeforeAcquisitionTransitionPreventsRawConnectorInvocation",
+            "cleanupAfterTransitionCannotReturnBeforePhysicalConnectorEntry",
+            "arbitrarySelfReportedProductionChannelCannotReplaceTheRawBoundAdapter",
+            "productionComposerCancellationIsSecurityTerminalAndDoesNotRetry",
+            "callerCancellationClosesLeaseWhileComposerBlocksNonCooperativelyAfterCompose",
+            "cancellationAfterCommitBeforePublicDeliveryClosesCommittedChannelForBothApis",
+            "successfulPublicDeliverySurvivesLaterAcquisitionJobCancellationForBothApis",
+            "productionCompositionDeadlineClosesLeaseWhileComposerBlocksAfterCompose",
+            "deadlineRetainsAndClosesAdapterDuringNonCooperativeHandshake",
+            "assertTrue(raw.lateBody.all { it == 0.toByte() })",
+            "productionComposerCannotInvokeBoundRawConnectorTwice",
+            "productionComposerCannotSubstituteAPlaintextChannelForTheCoreAdapter",
+            "requiredProductionSessionRejectsEveryLegacyRouteBeforeConnectorInvocation",
+        ),
+        "android_caller": (
+            "private enum class State { AVAILABLE, TRANSFERRING, COMPLETING, TRANSFERRED, DISCARDED }",
+            "internal fun beginTransfer(",
+            "internal suspend fun <Value> completeTransfer(",
+            "state = State.COMPLETING",
+            "check(state == State.COMPLETING)",
+            "internal class AndroidProductionRuntimeActivationClaim internal constructor(",
+            "internal val generation: Long",
+            "owner.beginPairingStoreTransfer(",
+            "context = currentCoroutineContext()",
+            "internal class AndroidProductionRuntimeActivationSlot(",
+            "private data class ClaimedEntry(",
+            "private fun installEntry(entry: AndroidProductionRuntimeActivationSlotEntry)",
+            "pending?.discard(this)",
+            "claimed?.entry?.discard(this)",
+            "Validity.EXPIRED -> {",
+            "active.generation == claim.generation",
+            "context.ensureActiveOrDiscard(active)",
+            "return handoffOrDiscard(active)",
+            "active.entry.beginPairingStoreTransfer(this, active.request)",
+            "override fun close()",
+            "claimedEntry?.discard(this)",
+            "internal class AndroidProductionRuntimeActivationPlan(",
+            "PreparedProductionSecureSession.fromVerifiedCandidate(binding)",
+            "private enum class State { FRESH, INSTALLED, CLAIMED, TRANSFERRED, DISCARDED }",
+            "localEphemeralKey.publicKeyX963.contentEquals(",
+            "binding.transcript.clientEphemeralPublicKey,",
+            "state = State.CLAIMED",
+            "internal fun beginPairingStoreTransfer(",
+            "internal class AndroidProductionRuntimeChannelComposer(",
+            "claim.prepareAuthorityBoundStart(pairingStore)",
+            "pairingStore.prepareAuthorityBoundProductionSecureSessionStart(",
+            "pairingStore.beginAuthorityBoundProductionSecureSession(startCapability)",
+            "rawLease.compose(requireNotNull(capability))",
+            "withContext(NonCancellable)",
+        ),
+        "android_caller_tests": (
+            "activationPlanCannotAcceptCallerSelectedPreparedRoute",
+            "ephemeralLeaseDiscardsKeyWhenPairingPrepareFails",
+            "ephemeralLeaseRejectsMismatchedTranscriptKeyAndDiscards",
+            "ephemeralTransferRejectsSequentialDuplicateBeforeCallback",
+            "ephemeralTransferConcurrentCompleteInvokesCallbackExactlyOnce",
+            "claimedBeforeTransferCancellationDiscardsSlotOwnedKey",
+            "activationSlotReplacementSynchronouslyDiscardsOldPendingMaterial",
+            "activationSlotSuppressesNotYetValidAndDiscardsAtExpiry",
+            "activationSlotCloseDiscardsPendingAndRejectsAndDiscardsLaterInstall",
+            "claimedThenCloseDiscardsKeyAndMakesTransferFailClosed",
+            "claimedThenReplacementDiscardsOldKeyAndKeepsFreshPlan",
+            "transferFirstMakesCloseLeaveHandedOffKeyAlone",
+            "activationSlotClaimsOnlyExpectedEntryAndAcceptsFreshPlanAfterTransfer",
+            "closeAndTransferRaceHasExactlyOneLinearizedKeyOwner",
+            "replacementAndTransferRacePreservesFreshPlanAndOneOldKeyOwner",
+            "activationSlotTestClaimSurfaceCannotReturnProductionMaterial",
+        ),
+        "android_controller": (
+            "private val startedPublicationAttempts =",
+            "private val waitingPublications =",
+            "private var inFlightPublication: InFlightPublication? = null",
+            "private var latestStartedPublicationGeneration = 0L",
+            "val generation = beginPublicationAttempt(attempt)",
+            "registerWaitingPublication(generation, attempt, publication)",
+            "closeStartedPublicationAttempts(snapshot.startedAttempts)",
+            "val displacedFailure = closePublication(publication.displaced)",
+            "publication.completion.complete(Unit)",
+            "Production activation publication was superseded",
+        ),
+        "android_controller_tests": (
+            "closedControllerRejectsBeforeDurableEndpointAdmission",
+            "closeRevokesOwnedResourcesWhileDurableAdmissionIsSuspended",
+            "olderAdmissionCannotReplaceNewerPublishedGeneration",
+            "displacedEndpointCloseCanWaitForControllerCloseWithoutDeadlock",
+            "failingDisplacedCloseKeepsReplacementPrivateAndLeavesNoRoute",
+            "injectedRawTransferDoesNotHoldControllerStateLock",
+            "managerComposesRealProductionActivationWithoutLegacyFallback",
+            "viewModelClearCompletesAfterThrowingControllerCloseWithoutLoggingThrowable",
+            "viewModelUsesRealProductionActivationWithoutCallingLegacyConnectors",
+        ),
+        "android_viewmodel": (
+            "internal interface RuntimeProductionPairingStoreProvider",
+            "fun pairingStoreForProductionComposition(): PairingStore",
+            "val productionActivationController: AndroidProductionRuntimeActivationController? = null",
+            "trustedRuntimeStore is RuntimeProductionPairingStoreProvider",
+            "Production activation controller must use the dependency graph's exact trusted clock",
+            "Production activation controller must use the trusted store's exact PairingStore",
+            ") : RuntimeTrustedRuntimeStore, RuntimeProductionPairingStoreProvider",
+            "dependencies.productionActivationController",
+            "val productionComposer = AndroidProductionRuntimeChannelComposer(",
+            ".pairingStoreForProductionComposition()",
+            "dependencies.productionActivationController,",
+            "productionChannelComposer = productionComposer",
+            "dependencies.productionActivationController?.close()",
+            "Runtime client teardown completed with cleanup failure count=",
+        ),
+        "android_viewmodel_tests": (
+            "productionCompositionRejectsTrustedStoreWithoutExactPairingStoreOwnership",
+            "androidTrustedStoreProvidesItsExactPairingStoreForProductionComposition",
+            "assertSame(pairingStore, trustedStore.pairingStoreForProductionComposition())",
+            "viewModelClearClosesProductionActivationController",
+            "assertTrue(controller.isClosedForTesting)",
+        ),
+        "android_pairing_store": (
+            "suspend fun beginAuthorityBoundProductionSecureSession(",
+            "val material = capability.claim(this)",
+            "material.localEphemeralKey.close()",
+        ),
+        "android_pairing_store_tests": (
+            "publicBeginDiscardsClaimedEphemeralKeyWhenEngineDerivationFails",
+            "assertTrue(localEphemeralKey.isConsumedOrClosed)",
+        ),
+        "mac_composition": (
+            "func claimInvalidation() -> Abandon?",
+            "let abandon = authorityCapability.claimInvalidation()",
+            "await abandon?()",
+            "func closeAllForTesting(",
+            "afterTerminalClaimsBeforeCleanup",
+            "func attachAcceptedProductionRawSession(",
+            "guard productionRawSessionAttachments.commitActive(",
+            "guard endpointClaim.installRawFrameBodyHandler",
+            "guard productionRawSessionAttachments.isActive(",
+            "endpointClaim.transferRawSinkToChannel()",
+        ),
+        "mac_channel": (
+            "func installAttachmentTerminalObserver(",
+            "shouldDrainMailbox = !state.mailbox.isEmpty || state.mailboxInFlight != nil",
+            "Raw/session closure starts only after that mailbox claim drains.",
+            "finishTerminalCloseIfReady(expectedGenerationID:",
+        ),
+        "mac_composition_tests": (
+            "testAuthorityCapabilityIsOneUseAndNeverFallsBackToLegacy",
+            "testTerminalClaimInvalidatesCapabilityBeforeDelayedAbandonRuns",
+            "productionRawSessionAttachments.closeAllForTesting",
+            "testLateChannelFromNoncooperativeComposerIsClosedWithoutInstallation",
+            "testHandlerRejectionRollsBackGenerationForReplacement",
+            "testTerminalDeliveryBlocksReplacementUntilFinalRouteReturns",
+        ),
+        "mac_channel_tests": (
+            "testCallerCancellationBeforeQueueClaimIsFailClosed",
+            "testObserverBeforeCommitSuppressesButAfterCommitDrains",
+            "testObserverAfterDequeueClaimCannotSuppressCommittedDelivery",
+            "testStaleGenerationIsIgnoredAndTerminalObserverClosesExactlyOnce",
+        ),
+        "mac_pair_tests": (
+            "testAdmissionOccursExactlyOnceBeforeFactoryAndStart",
+            "testStopAllDuringAdmissionPreventsLateStart",
+        ),
+        "mac_service": (
+            "struct MacRuntimeProductionExpectedRouteDescriptor: Equatable, Sendable",
+            "verifiedBinding.connectorInput.commitmentDigest",
+            "func matches(_ descriptor: RuntimeAcceptedRawRouteDescriptor) -> Bool",
+            "public final class MacRuntimeProductionAcceptedSessionService",
+            "private let trustedDeviceStore: TrustedDeviceStore",
+            "self.trustedDeviceStore = trustedDeviceStore",
+            "defer { localEphemeralKey.close() }",
+            ".prepareAcceptedProductionRawSession(",
+            ".beginProductionC1TransportSecureSession(",
+            "MacRuntimeProductionChannelAuthorityCapability",
+            "defer { localEphemeralKey?.close() }",
+            "localEphemeralKey?.close()",
+            "private var preAttachmentEpoch = UUID()",
+            "private var preAttachmentAttempts:",
+            "preAttachmentAttempts.removeValue(",
+            "preAttachmentAttempts.removeAll(keepingCapacity: false)",
+            "preAttachmentEpoch = UUID()",
+            "attempts.forEach { $0.invalidate() }",
+            "attempt.serviceEpoch == preAttachmentEpoch",
+            "current === attempt",
+            "current.generationID == attempt.generationID",
+            ".attachPreparedProductionRawSession(",
+        ),
+        "mac_service_tests": (
+            "testServiceAttachesAcceptedRawSessionAndRoutesThroughComposedChannel",
+            "testAuthorityStartFailureClosesAcceptedEndpointWithoutInstallingHandler",
+            "testRouteDescriptorMismatchClosesBeforeAuthorityStart",
+            "testCancellationClosesPreparedEndpointAndUntransferredKeyPromptly",
+            "testTargetedStopInvalidatesSuspendedAuthorityBeforeAttachment",
+            "testStopAllRejectsLateAuthorityWithoutDisturbingFreshGeneration",
+            "testExpectedRouteDescriptorRejectsEveryFieldMismatch",
+            "testDuplicateConnectionFailsClosedWithoutDisplacingActiveGeneration",
+            "testStopClaimsOldGenerationBeforeSameConnectionReplacement",
+        ),
+        "mac_transport": (
+            "public struct RuntimeAcceptedRawRouteDescriptor: Equatable, Sendable",
+            "public final class RuntimeAcceptedRawEndpointClaim: @unchecked Sendable",
+            "private var rawSinkTransferred = false",
+            "public func transferRawSinkToChannel()",
+            "guard !closed, !rawSinkTransferred else { return nil }",
+            "public protocol RuntimeAcceptedRawSession: AnyObject, Sendable",
+            "func takeRawEndpointClaim() -> RuntimeAcceptedRawEndpointClaim?",
+        ),
+        "mac_peer": (
+            "RuntimeAcceptedRawSessionTransport, RuntimeDisconnectReporting",
+            "public func startAcceptedRaw(",
+            "let loopback = IPv4Address(\"127.0.0.1\")!",
+            "parameters.requiredLocalEndpoint = .hostPort(",
+        ),
+        "mac_raw_seam_tests": (
+            "final class RawFrameBodySeamTests: XCTestCase",
+            "testProductionAcceptedRawSessionDoesNotReceiveUntilInstallAndSerializesBodies",
+            "testProductionAcceptedRawListenerPolicyRequiresIPv4Loopback",
+            "testProductionStopBeforeAcceptedDeliverySuppressesLateCallback",
+            "testProductionExternalStopWaitsForAcceptedCallbackToReturn",
+            "testProductionAcceptedCallbackMayStopReentrantlyAndFailsClosed",
+        ),
+        "g2_review": (
+            "Disposition: `rejected_at_official_source_preflight_as_is`.",
+            "1e8716372f2bb52e45bf2a7172e4fb1004251c46",
+            "remote ICE password",
+            "graceful shutdown may wait indefinitely",
+            "No repository-owner identity proof, GitHub authentication, SSH/GPG signature",
+            "This document does not acquire source",
+        ),
+        "g2_restricted_profile": (
+            '"status": "rung1_profile_complete_candidate_not_selected"',
+            '"implementationStatus": "not_implemented"',
+            '"commit": "1e8716372f2bb52e45bf2a7172e4fb1004251c46"',
+            '"model": "egress_capability_before_io_and_ingress_admission_before_state_mutation"',
+            '"enforcement": "after_resolution_and_immediately_before_socket_create_bind_connect_handshake_or_write"',
+            '"enforcement": "fixed_size_read_then_bounded_header_parse_then_source_transaction_integrity_and_capability_admission_before_state_mutation_or_payload_delivery"',
+            '"configurationSource": "g1_trust_source_and_signed_service_config"',
+            '"credentialWriteRule": "send_no_turn_username_password_or_rest_credential_until_tls_identity_and_alpn_succeed"',
+            '"promotionRule": "one_shot_atomic_consume_pre_auth_and_issue_exact_generation_tuple_bound_application_record_capability"',
+            '"revocationRule": "atomically_revoke_pre_auth_and_application_capabilities_before_any_further_io_state_mutation_event_or_payload_delivery"',
+            '"pionOrIceMayAuthenticateEndpoint": false',
+            '"scopeRule": "per_session_limits_include_current_and_draining_and_closing_generations"',
+            '"processAggregateRule": "process_totals_include_all_active_draining_and_closing_sessions_and_must_not_exceed_the_exact_process_ceilings"',
+            '"maximumPendingEventsPerSession": 64',
+            '"maximumPendingEventBytesPerSession": 262144',
+            '"stickyTerminalLatchSlotsPerSession": 1',
+            '"eventOverflowRule": "atomically_set_separate_sticky_terminal_latch_drop_nonterminal_queue_contents_and_close_generation"',
+            '"callbackModel": "bounded_pull_events_no_library_invocation_of_untrusted_callbacks"',
+            '"totalCloseDeadlineMilliseconds": 2500',
+            '"android_api_26_through_36_arm64_v8a"',
+            '"macos_14_or_newer_arm64"',
+            '"sourceAcquisitionAllowed": false',
+            '"networkIoAllowed": false',
+            '"externalIdentityProofRequired": false',
+            '"userActionRequired": false',
+            '"result": "pion_restricted_fork_profile_ready_for_rung2_decision_only"',
+            '"nextAction": "prepare_versioned_rung2_source_identity_and_acquisition_decision"',
+        ),
+        "g2_restricted_hardening": (
+            '"documentType": "codex-security.hardening-analysis"',
+            '"optionId": "upstream-as-is"',
+            '"optionId": "wrapper-only-gateway"',
+            '"optionId": "restricted-fork-policy-owned"',
+            '"recommendedOptionId": "restricted-fork-policy-owned"',
+            '"revocationEvents": [',
+            '"consent_loss"',
+            '"path_change"',
+            '"candidate_restart"',
+            '"capability_expiry"',
+            '"verification_failure"',
+            '"session_close"',
+        ),
+        "g2_restricted_validator": (
+            "SOURCE_REVIEW_SHA256 =",
+            "ARTIFACT_SHA256 = {",
+            "object_pairs_hook=reject_duplicate_names",
+            "def validate_profile_document(",
+            "def validate_hardening_document(",
+            "EXECUTION_FALSE_FIELDS",
+            "validate_artifact_hashes()",
+        ),
+        "g2_restricted_tests": (
+            "class G2RestrictedForkMutationTests(unittest.TestCase):",
+            "test_01_duplicate_root_and_nested_json_names_fail",
+            "test_06_egress_capability_mutations_fail",
+            "test_07_ingress_admission_mutations_fail",
+            "test_08_turn_tls_identity_mutations_fail",
+            "test_09_pre_auth_promotion_mutations_fail",
+            "test_10_reliable_carrier_blocker_mutations_fail",
+            "test_11_resource_and_sticky_terminal_latch_mutations_fail",
+            "test_12_logging_and_shutdown_state_mutations_fail",
+            "test_15_all_execution_external_identity_and_user_action_flags_stay_false",
+            "test_17_recursive_claim_manifest_markdown_and_byte_hash_guards",
+        ),
+    }
+    for label, snippets in required_source_snippets.items():
+        for snippet in snippets:
+            if snippet not in texts[label]:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: missing production "
+                    f"transport-composition boundary {snippet!r}."
+                )
+
+    expected_g2_review_sha256 = "1874e43121997023b64b9f370c1782f46f8409630b6096ec8175009b300c246b"
+    actual_g2_review_sha256 = hashlib.sha256(paths["g2_review"].read_bytes()).hexdigest()
+    if actual_g2_review_sha256 != expected_g2_review_sha256:
+        failures.append(
+            f"{paths['g2_review'].relative_to(ROOT)}: G2 official-source preflight bytes drifted; "
+            "review the candidate disposition and refresh the pin deliberately."
+        )
+
+    g2_restricted_test_count = len(
+        re.findall(r"(?m)^\s+def\s+test_", texts["g2_restricted_tests"])
+    )
+    if g2_restricted_test_count != 17:
+        failures.append(
+            f"{paths['g2_restricted_tests'].relative_to(ROOT)}: expected 17 "
+            f"focused mutation tests, found {g2_restricted_test_count}"
+        )
+
+    accepted_session_protocol_start = texts["mac_transport"].find(
+        "public protocol RuntimeAcceptedRawSession: AnyObject, Sendable"
+    )
+    accepted_session_protocol_end = texts["mac_transport"].find(
+        "public protocol RuntimeAdvertiser",
+        accepted_session_protocol_start,
+    )
+    if accepted_session_protocol_start < 0 or accepted_session_protocol_end < 0:
+        failures.append("macOS accepted raw-session protocol block is unavailable")
+    elif "rawSink" in texts["mac_transport"][
+        accepted_session_protocol_start:accepted_session_protocol_end
+    ]:
+        failures.append(
+            "macOS accepted raw-session protocol must not expose a raw-sink alias"
+        )
+
+    lease_start = texts["android_manager"].find("interface RuntimeProductionRawRouteLease")
+    lease_end = texts["android_manager"].find("/** A production composition", lease_start)
+    if lease_start < 0 or lease_end < 0:
+        failures.append("Android production raw-route lease interface block is unavailable")
+    elif "scope:" in texts["android_manager"][lease_start:lease_end]:
+        failures.append("Android public production raw-route lease must not accept caller scope")
+
+    registration_markers = (
+        "val channel = makeChannel(raw)",
+        "retainedCompositionChannel = channel",
+        "channel.start()",
+    )
+    registration_positions = tuple(
+        texts["android_manager"].find(marker) for marker in registration_markers
+    )
+    if any(position < 0 for position in registration_positions) or tuple(
+        sorted(registration_positions)
+    ) != registration_positions:
+        failures.append(
+            "Android production adapter must be retained before handshake suspension"
+        )
+
+    connector_entry_markers = (
+        "val acquisition = synchronized(stateLock)",
+        "async(start = CoroutineStart.UNDISPATCHED)",
+        "beforePhysicalConnectorEntryForTesting?.invoke()",
+        "delegate.connect(request.route, request.timeoutMillis)",
+    )
+    connector_entry_positions = tuple(
+        texts["android_manager"].find(marker) for marker in connector_entry_markers
+    )
+    if any(position < 0 for position in connector_entry_positions) or tuple(
+        sorted(connector_entry_positions)
+    ) != connector_entry_positions:
+        failures.append(
+            "Android connector entry must remain state-locked and UNDISPATCHED"
+        )
+
+    deadline_markers = (
+        "val deadlineState = AtomicReference(TerminalDeadlineState.PENDING)",
+        "val watchdog = scope.launch(start = CoroutineStart.UNDISPATCHED)",
+        "withTimeoutOrNull(timeoutMillis)",
+    )
+    deadline_positions = tuple(
+        texts["android_adapter"].find(marker) for marker in deadline_markers
+    )
+    if any(position < 0 for position in deadline_positions) or tuple(
+        sorted(deadline_positions)
+    ) != deadline_positions:
+        failures.append(
+            "Android adapter watchdog must register before the terminal timeout body"
+        )
+
+    for forbidden in ("InternalCoroutinesApi", "invokeOnCompletion"):
+        if forbidden in texts["android_manager"]:
+            failures.append(
+                "Android public channel handoff must not use "
+                f"permanent caller-Job binding marker {forbidden!r}"
+            )
+
+    expected_test_counts = {
+        "android_manager_tests": 49,
+        "android_adapter_tests": 30,
+        "android_caller_tests": 16,
+        "android_controller_tests": 12,
+    }
+    for label, expected_count in expected_test_counts.items():
+        actual_count = len(
+            re.findall(r"(?m)^\s*@Test\s*\n\s*fun\s+", texts[label])
+        )
+        if actual_count != expected_count:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)}: expected {expected_count} "
+                f"focused tests, found {actual_count}"
+            )
+
+    mac_service_test_count = len(
+        re.findall(r"(?m)^\s*func\s+test", texts["mac_service_tests"])
+    )
+    if mac_service_test_count != 9:
+        failures.append(
+            f"{paths['mac_service_tests'].relative_to(ROOT)}: expected 9 focused "
+            f"tests, found {mac_service_test_count}"
+        )
+
+    marker = "Covered G1a-D production secure-channel transport-composition seam addendum:"
+    gate_text = texts["gate"]
+    if gate_text.count(marker) != 1:
+        failures.append("default no-device gate must emit the transport-composition marker once")
+    marker_line = next((line for line in gate_text.splitlines() if marker in line), "")
+    for snippet in (
+        "manager-owned one-use raw-route lease",
+        "composer receives no raw-channel alias or caller-provided scope",
+        "creates ProductionRuntimeSecureChannelAdapter with a manager-owned execution scope",
+        "Owned-scope construction failure cancels the scope",
+        "adapter is registered before handshake suspension",
+        "Under stateLock, UNDISPATCHED acquisition linearizes the transition with physical connector entry",
+        "cleanup-first prevents connector invocation",
+        "after connector entry but before handle return, the residual depends on connector timeout/interruption",
+        "any late handle closes when returned",
+        "saturating raw-route timeout addition plus a fixed 15-second handshake budget",
+        "adapter internal deadline uses one PENDING to COMPLETED/TIMED_OUT CAS plus an UNDISPATCHED watchdog",
+        "timeout-winning IOException dominates and suppresses the losing error/cancellation",
+        "completion-winning external or composer CancellationException preserves the exact object",
+        "Canonical resume(value, onCancellation) handoff closes only undelivered values",
+        "pre-delivery cancellation closes once without retry",
+        "successfully transferred channel survives later acquisition Job cancellation",
+        "no permanent caller-Job binding or InternalCoroutinesApi",
+        "exact session, object-7/object-26 binding, route kind, and manager-owned connection generation",
+        "route expiry is rechecked immediately before one-use receipt commit",
+        "admission-to-commit wall-clock rollback fails closed",
+        "failure cleanup runs in NonCancellable",
+        "Even when raw ignores close until it returns",
+        "managed raw wrapper checks open before and after send",
+        "regression observes actual late body-byte zeroization",
+        "Production relay fails closed",
+        "79/79",
+        "49/49 manager",
+        "30/30 adapter",
+        "10 suites at 163/163",
+        "zero failures, errors, or skips",
+        "compileDebugKotlin plus compileDebugUnitTestKotlin succeed",
+        "independent iterative audit found and fixed six P3 availability/lifetime races in total",
+        "final fresh re-audit reports no P0-P3 finding",
+        "2,003 tests with two declared skips, zero failures, in 313.440 seconds",
+        "exact one-use attachment",
+        "cancellation/late-result close",
+        "raw-handler admission",
+        "terminal mailbox drain before removal or replacement",
+        "synchronously invalidates an available/claimed capability before replacement",
+        "asynchronous abandon/close outside registry locks",
+        "no plaintext fallback",
+        "bounded Android PairingStore app caller bridge",
+        "bounded macOS accepted-session service bridge",
+        "17/17 composition",
+        "22/22 secure-channel",
+        "39/39",
+        "34/34",
+        "6/6 production-pair-coordinator",
+        "28/28 manager",
+        "release build passes",
+        "final independent re-audit reports no P0-P3 finding",
+        "connector entered before handle return still depends on connector timeout/interruption",
+        "actual socket execution/close-interrupt proof remains open",
+        "normal Android graph now owns an empty activation controller and injected fixture manager/ViewModel E2E",
+        "macOS now exposes the loopback-only accepted-raw primitive",
+        "Android upstream verifier/candidate/secret producer and actual P2P endpoint stack",
+        "actual socket execution and close-interrupt behavior",
+        "no live socket, network, physical-device, or production-release evidence",
+    ):
+        if snippet not in marker_line:
+            failures.append(f"transport-composition no-device marker is missing {snippet!r}")
+
+    caller_marker = "Covered G1a-D no-network production caller-activation bridge addendum:"
+    if gate_text.count(caller_marker) != 1:
+        failures.append(
+            "default no-device gate must emit the caller-activation bridge marker once"
+        )
+    caller_marker_line = next(
+        (line for line in gate_text.splitlines() if caller_marker in line),
+        "",
+    )
+    for snippet in (
+        "renewable thread-safe per-attempt activation slot/source",
+        "one binding-derived plan at a time",
+        "synchronously discards replaced, expired, or ViewModel-cleared pending key material",
+        "generation-bound claimed entry remains slot-owned until atomic beginPairingStoreTransfer",
+        "close or replacement before transfer discards the key while transfer-first relinquishes slot ownership",
+        "COMPLETING one-shot rejects sequential and concurrent duplicate completion",
+        "32-round close/transfer and replacement/transfer races linearize exactly one key owner",
+        "same exact PairingStore",
+        "transcript-matching ephemeral key once",
+        "closes an unconsumed key on preparation or begin failure",
+        "manager-owned raw-route lease",
+        "one exact TrustedDeviceStore",
+        "exact-compares the accepted route descriptor",
+        "one one-shot claim",
+        "no raw-sink alias",
+        "no plaintext fallback",
+        "macOS closes an untransferred ephemeral key on descriptor, authority-start, or cancellation failure",
+        "macOS tracks preAttachmentAttempts under an epoch and exact current-generation checks",
+        "targeted stop invalidates suspended authority and stopAll rejects a late return without disturbing a fresh generation",
+        "Focused caller coverage is 16/16 Android and 9/9 macOS",
+        "normal Android controller graph, injected manager/ViewModel activation, and macOS loopback-only accepted-raw primitive are now present",
+        "Android upstream verifier/candidate/secret producer and actual P2P endpoint stack",
+        "macOS CompanionAppModel call site",
+        "actual socket execution and close-interrupt behavior",
+        "live network, and physical device remain later G1b residuals",
+        "repository-owner authentication is never a prerequisite",
+    ):
+        if snippet not in caller_marker_line:
+            failures.append(
+                f"caller-activation no-device marker is missing {snippet!r}"
+            )
+
+    g1b_marker = "Covered G1b-A no-network activation and loopback accepted-raw primitive addendum:"
+    if gate_text.count(g1b_marker) != 1:
+        failures.append("default no-device gate must emit the G1b-A activation marker once")
+    g1b_marker_line = next(
+        (line for line in gate_text.splitlines() if g1b_marker in line),
+        "",
+    )
+    for snippet in (
+        "normal Android factory creates one empty AndroidProductionRuntimeActivationController",
+        "exact PairingStore and trusted clock",
+        "injected real-fixture manager and ViewModel tests",
+        "Publication generations are assigned before durable admission",
+        "started key and endpoint ownership is revocable during suspended admission",
+        "displaced cleanup runs outside controller locks",
+        "pass 12/12 with a final independent P0-P3-free audit",
+        "LocalPeerServer.startAcceptedRaw requires 127.0.0.1",
+        "RawFrameBodySeamTests pass 20/20",
+        "Android upstream verifier/candidate/secret producer and actual P2P endpoint stack",
+        "macOS CompanionAppModel wiring",
+        "No repository-owner authentication, live network/socket execution, device action, or Git operation",
+    ):
+        if snippet not in g1b_marker_line:
+            failures.append(f"G1b-A no-device marker is missing {snippet!r}")
+
+    g2_marker = "Covered G2 Pion v4.3.0 official-source preflight rejection addendum:"
+    if gate_text.count(g2_marker) != 1:
+        failures.append("default no-device gate must emit the G2 Pion rejection marker once")
+    g2_marker_line = next(
+        (line for line in gate_text.splitlines() if g2_marker in line),
+        "",
+    )
+    for snippet in (
+        "1e8716372f2bb52e45bf2a7172e4fb1004251c46",
+        "rejected as-is before acquisition or compilation",
+        "non-bypassable post-resolution pre-I/O destination policy",
+        "remote ICE password",
+        "callback queues are unbounded",
+        "graceful shutdown can wait indefinitely",
+        "No Pion source was retained, compiled, loaded, or executed",
+        "no library is selected",
+        "Repository-owner, GitHub, SSH, GPG, and public-key identity authentication are never prerequisites or future G2 rungs",
+    ):
+        if snippet not in g2_marker_line:
+            failures.append(f"G2 Pion no-device marker is missing {snippet!r}")
+
+    g2_restricted_marker = "Covered G2 Pion v4.3.0 restricted-fork rung-one design addendum:"
+    if gate_text.count(g2_restricted_marker) != 1:
+        failures.append(
+            "default no-device gate must emit the G2 restricted-fork marker once"
+        )
+    g2_restricted_marker_line = next(
+        (line for line in gate_text.splitlines() if g2_restricted_marker in line),
+        "",
+    )
+    for snippet in (
+        "status=rung1_profile_complete_candidate_not_selected",
+        "result=pion_restricted_fork_profile_ready_for_rung2_decision_only",
+        "nextAction=prepare_versioned_rung2_source_identity_and_acquisition_decision",
+        "hash-pinned portfolio compares unmodified upstream, a wrapper-only gateway",
+        "minimal AetherLink-maintained restricted fork",
+        "Pion and every networking library remain unselected",
+        "Rung one completes only the design, validator, and 17 mutation tests",
+        "Schema 1.1 remains a not-yet-implemented and not-runtime-verified design",
+        "separate single-use egress capability after resolution immediately before socket create, bind, connect, TLS handshake, or write",
+        "fixed-size bounded ingress read/parse/admission before state mutation or payload delivery",
+        "authenticated TURN TLS service identity before any credential transmission",
+        "bounded one-use pre-auth path whose atomic promotion occurs only after exact AetherLink endpoint confirmation",
+        "Consent loss, path change, candidate restart, capability expiry, verification failure, and session close each atomically revoke both pre-auth and application capabilities before further I/O, state mutation, event, or payload delivery",
+        "Exact per-session and process bounds cover current, active, draining, and closing state",
+        "independent sticky terminal latch",
+        "Secret-free diagnostics and a 2,500 ms total close deadline are requirements, not completed implementation or runtime-verified behavior",
+        "Non-profile paths are required to fail before I/O",
+        "Android API 26 through 36 arm64-v8a and macOS 14+ arm64 form only a future compile-only matrix",
+        "SPDX SBOM",
+        "two-build reproducibility evidence",
+        "implementationStatus=not_implemented",
+        "candidateSelected=false",
+        "librarySelected=false",
+        "sourceAcquisitionAllowed=false",
+        "dependencyInstallationAllowed=false",
+        "compilerInvocationAllowed=false",
+        "codeLoadingAllowed=false",
+        "socketCreationAllowed=false",
+        "networkIoAllowed=false",
+        "deviceExecutionAllowed=false",
+        "productionDeploymentAllowed=false",
+        "gitOperationAllowed=false",
+        "actual backend, reliable ordered carrier, and fragmentation/reassembly remain unselected and unimplemented",
+        "Only stack-neutral wiring may continue",
+        "externalIdentityProofRequired=false and userActionRequired=false",
+        "Product pairing and endpoint authentication remain mandatory and separate",
+    ):
+        if snippet not in g2_restricted_marker_line:
+            failures.append(
+                f"G2 restricted-fork no-device marker is missing {snippet!r}"
+            )
+
+    for selector in (
+        "--tests com.localagentbridge.android.runtime.AndroidProductionRuntimeActivationControllerTest",
+        "run swift test --filter RawFrameBodySeamTests",
+        "run python3 script/check_p2p_nat_g2_restricted_fork_profile.py",
+        "run python3 -m unittest script/test_p2p_nat_g2_restricted_fork_profile.py",
+    ):
+        if selector not in gate_text:
+            failures.append(f"default no-device gate is missing focused G1b-A/G2 selector {selector!r}")
+
+    for stale_marker_fact in (
+        "no actual Android PairingStore capability producer/app composer caller",
+        "no actual macOS accepted-raw-session/service caller",
+        "actual Android verifier-derived activation-plan producer, actual production raw-route connector",
+        "macOS concrete acceptor/listener and CompanionAppModel call site",
+    ):
+        if stale_marker_fact in gate_text:
+            failures.append(
+                f"default no-device gate retains stale caller fact {stale_marker_fact!r}"
+            )
+
+    for label in ("readme", "protocol_readme", "handoff", "progress", "qa", "roadmap"):
+        normalized = re.sub(r"-\s+", "-", " ".join(texts[label].split())).lower()
+        normalized = re.sub(r"\s*/\s*", "/", normalized)
+        for snippet in (
+            "manager-owned one-use raw-route lease",
+            "raw-channel alias",
+            "caller-provided scope",
+            "ProductionRuntimeSecureChannelAdapter",
+            "manager-owned execution scope",
+            "construction failure cancels",
+            "registered before handshake suspension",
+            "stateLock",
+            "UNDISPATCHED",
+            "physical connector entry",
+            "cleanup that wins first prevents connector invocation",
+            "connector timeout/interruption",
+            "late handle when it returns",
+            "saturating raw-route timeout",
+            "fixed 15-second handshake",
+            "IOException",
+            "ProductionSessionSecurityRejected",
+            "PENDING",
+            "COMPLETED",
+            "TIMED_OUT",
+            "watchdog",
+            "dominates",
+            "losing error",
+            "suppress",
+            "CancellationException",
+            "preserv",
+            "resume(value, onCancellation)",
+            "closes only undelivered values",
+            "pre-delivery cancellation closes once without retry",
+            "survives later acquisition",
+            "permanent caller",
+            "InternalCoroutinesApi",
+            "object-7/object-26 binding",
+            "manager-owned",
+            "generation",
+            "admission-to-commit wall-clock rollback",
+            "raw ignores close until it returns",
+            "actual late body-byte zeroization",
+            "Production relay",
+            "fail closed",
+            "NonCancellable",
+            "79/79",
+            "49/49 manager",
+            "30/30 adapter",
+            "10 suites pass 163/163",
+            "zero failures, errors, or skips",
+            "compileDebugKotlin",
+            "compileDebugUnitTestKotlin",
+            "six P3 availability/lifetime races",
+            "final fresh re-audit reports no P0-P3 finding",
+            "2,003 tests",
+            "313.440 seconds",
+            "not a completed full no-device gate run",
+            "one-use attachment",
+            "cancellation/late-result close",
+            "raw-handler admission",
+            "terminal mailbox drain before removal or replacement",
+            "synchronously invalidates an available/claimed capability before replacement",
+            "asynchronous abandon/close outside registry locks",
+            "no plaintext fallback",
+            "17/17 composition",
+            "22/22 secure-channel",
+            "39/39",
+            "34/34",
+            "6/6 production-pair-coordinator",
+            "28/28 manager",
+            "release build passes",
+            "final independent re-audit reports no P0-P3 finding",
+            "entered connector",
+            "connector timeout/interruption",
+            "actual socket",
+            "physical-device",
+            "production-release",
+            "previous complete default no-device aggregate snapshot",
+            "not refreshed",
+        ):
+            if snippet.lower() not in normalized:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: current production "
+                    f"transport-composition truth is missing {snippet!r}."
+                )
+
+    stale_facts = (
+        "71/71",
+        "45/45 manager",
+        "26/26 adapter",
+        "155/155",
+        "Android audit is pending",
+    )
+    for label in (
+        "gate",
+        "readme",
+        "protocol_readme",
+        "handoff",
+        "progress",
+        "qa",
+        "roadmap",
+    ):
+        for stale_fact in stale_facts:
+            if stale_fact in texts[label]:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: stale transport-composition "
+                    f"fact remains {stale_fact!r}."
+                )
+    return failures
+
+
+def g2_restricted_fork_rung_one_integration_guard_failures() -> list[str]:
+    """Pin the G2 rung-one portfolio and its non-authorizing current-doc contract."""
+
+    failures: list[str] = []
+    design_root = (
+        ROOT
+        / "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1"
+    )
+    portfolio_paths = (
+        design_root / "context.md",
+        design_root / "hardening.json",
+        design_root / "hardening.md",
+        design_root / "evidence-manifest-v1.json",
+        design_root / "restricted-fork-profile.json",
+        design_root / "restricted-fork-profile.md",
+        design_root / "proposals/pion-ice-policy-owned-restriction.md",
+        design_root / "diagrams/pion-ice-policy-owned-restriction-before.mmd",
+        design_root
+        / "diagrams/pion-ice-policy-owned-restriction-upstream-as-is-after.mmd",
+        design_root
+        / "diagrams/pion-ice-policy-owned-restriction-wrapper-only-gateway-after.mmd",
+        design_root
+        / "diagrams/pion-ice-policy-owned-restriction-restricted-fork-policy-owned-after.mmd",
+    )
+    validator_path = ROOT / "script/check_p2p_nat_g2_restricted_fork_profile.py"
+    mutation_test_path = ROOT / "script/test_p2p_nat_g2_restricted_fork_profile.py"
+    gate_path = ROOT / "script/check_no_device_quality.sh"
+    document_paths = {
+        "readme": ROOT / "README.md",
+        "protocol_readme": ROOT / "shared/protocol/README.md",
+        "roadmap": ROOT / "docs/roadmap.md",
+        "handoff": ROOT / "docs/handoff.md",
+        "progress": ROOT / "docs/progress.md",
+        "qa": ROOT / "docs/qa-evidence.md",
+    }
+    required_paths = portfolio_paths + (
+        validator_path,
+        mutation_test_path,
+        gate_path,
+        *document_paths.values(),
+    )
+    missing = [
+        str(path.relative_to(ROOT)) for path in required_paths if not path.is_file()
+    ]
+    if missing:
+        return [f"missing G2 restricted-fork integration file: {path}" for path in missing]
+
+    profile_text = (design_root / "restricted-fork-profile.json").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    for snippet in (
+        '"status": "rung1_profile_complete_candidate_not_selected"',
+        '"implementationStatus": "not_implemented"',
+        '"result": "pion_restricted_fork_profile_ready_for_rung2_decision_only"',
+        '"nextAction": "prepare_versioned_rung2_source_identity_and_acquisition_decision"',
+        '"candidateSelected": false',
+        '"librarySelected": false',
+        '"sourceAcquisitionAllowed": false',
+        '"dependencyInstallationAllowed": false',
+        '"compilerInvocationAllowed": false',
+        '"codeLoadingAllowed": false',
+        '"socketCreationAllowed": false',
+        '"networkIoAllowed": false',
+        '"deviceExecutionAllowed": false',
+        '"productionDeploymentAllowed": false',
+        '"gitOperationAllowed": false',
+        '"externalIdentityProofRequired": false',
+        '"userActionRequired": false',
+        '"model": "egress_capability_before_io_and_ingress_admission_before_state_mutation"',
+        '"enforcement": "after_resolution_and_immediately_before_socket_create_bind_connect_handshake_or_write"',
+        '"enforcement": "fixed_size_read_then_bounded_header_parse_then_source_transaction_integrity_and_capability_admission_before_state_mutation_or_payload_delivery"',
+        '"configurationSource": "g1_trust_source_and_signed_service_config"',
+        '"credentialWriteRule": "send_no_turn_username_password_or_rest_credential_until_tls_identity_and_alpn_succeed"',
+        '"promotionRule": "one_shot_atomic_consume_pre_auth_and_issue_exact_generation_tuple_bound_application_record_capability"',
+        '"pionOrIceMayAuthenticateEndpoint": false',
+        '"revocationEvents": [',
+        '"consent_loss"',
+        '"path_change"',
+        '"candidate_restart"',
+        '"capability_expiry"',
+        '"verification_failure"',
+        '"session_close"',
+        '"revocationRule": "atomically_revoke_pre_auth_and_application_capabilities_before_any_further_io_state_mutation_event_or_payload_delivery"',
+        '"scopeRule": "per_session_limits_include_current_and_draining_and_closing_generations"',
+        '"processAggregateRule": "process_totals_include_all_active_draining_and_closing_sessions_and_must_not_exceed_the_exact_process_ceilings"',
+        '"stickyTerminalLatchSlotsPerSession": 1',
+        '"eventOverflowRule": "atomically_set_separate_sticky_terminal_latch_drop_nonterminal_queue_contents_and_close_generation"',
+        '"reliable_ordered_carrier_and_record_fragmentation_reassembly_not_selected"',
+    ):
+        if snippet not in profile_text:
+            failures.append(
+                "docs/security-hardening/production-p2p-nat-v1/"
+                "g2-pion-restricted-fork-v1/restricted-fork-profile.json: "
+                f"missing exact rung-one boundary {snippet!r}."
+            )
+
+    validator_text = validator_path.read_text(encoding="utf-8", errors="replace")
+    for snippet in (
+        "ARTIFACT_SHA256 = {",
+        "validate_artifact_hashes()",
+        "context.md",
+        "hardening.json",
+        "hardening.md",
+        "evidence-manifest-v1.json",
+        "restricted-fork-profile.json",
+        "restricted-fork-profile.md",
+        "pion-ice-policy-owned-restriction.md",
+        "pion-ice-policy-owned-restriction-before.mmd",
+        "pion-ice-policy-owned-restriction-upstream-as-is-after.mmd",
+        "pion-ice-policy-owned-restriction-wrapper-only-gateway-after.mmd",
+        "pion-ice-policy-owned-restriction-restricted-fork-policy-owned-after.mmd",
+    ):
+        if snippet not in validator_text:
+            failures.append(
+                f"{validator_path.relative_to(ROOT)}: portfolio inventory is missing {snippet!r}."
+            )
+
+    mutation_test_text = mutation_test_path.read_text(
+        encoding="utf-8", errors="replace"
+    )
+    mutation_test_count = len(
+        re.findall(r"(?m)^\s+def\s+test_", mutation_test_text)
+    )
+    if mutation_test_count != 17:
+        failures.append(
+            f"{mutation_test_path.relative_to(ROOT)}: expected exactly 17 rung-one "
+            f"mutation tests, found {mutation_test_count}."
+        )
+    for required_test_name in (
+        "test_07_ingress_admission_mutations_fail",
+        "test_08_turn_tls_identity_mutations_fail",
+        "test_09_pre_auth_promotion_mutations_fail",
+        "test_11_resource_and_sticky_terminal_latch_mutations_fail",
+    ):
+        if required_test_name not in mutation_test_text:
+            failures.append(
+                f"{mutation_test_path.relative_to(ROOT)}: missing schema 1.1 mutation "
+                f"coverage {required_test_name!r}."
+            )
+
+    gate_text = gate_path.read_text(encoding="utf-8", errors="replace")
+    gate_commands = (
+        "run python3 script/check_p2p_nat_g2_restricted_fork_profile.py",
+        "run python3 -m unittest script/test_p2p_nat_g2_restricted_fork_profile.py",
+    )
+    for command in gate_commands:
+        if gate_text.count(command) != 1:
+            failures.append(
+                f"{gate_path.relative_to(ROOT)}: expected exactly one active G2 command {command!r}."
+            )
+    marker = "Covered G2 Pion v4.3.0 restricted-fork rung-one design addendum:"
+    if gate_text.count(marker) != 1:
+        failures.append(
+            f"{gate_path.relative_to(ROOT)}: expected exactly one G2 rung-one marker."
+        )
+    marker_line = next(
+        (line for line in gate_text.splitlines() if marker in line),
+        "",
+    )
+    for snippet in (
+        "Schema 1.1 remains a not-yet-implemented and not-runtime-verified design",
+        "separate single-use egress capability after resolution immediately before socket create, bind, connect, TLS handshake, or write",
+        "fixed-size bounded ingress read/parse/admission before state mutation or payload delivery",
+        "authenticated TURN TLS service identity before any credential transmission",
+        "bounded one-use pre-auth path whose atomic promotion occurs only after exact AetherLink endpoint confirmation",
+        "Consent loss, path change, candidate restart, capability expiry, verification failure, and session close each atomically revoke both pre-auth and application capabilities before further I/O, state mutation, event, or payload delivery",
+        "Exact per-session and process bounds cover current, active, draining, and closing state",
+        "independent sticky terminal latch",
+        "Secret-free diagnostics and a 2,500 ms total close deadline are requirements, not completed implementation or runtime-verified behavior",
+        "Product pairing and endpoint authentication remain mandatory and separate",
+    ):
+        if snippet not in marker_line:
+            failures.append(
+                f"{gate_path.relative_to(ROOT)}: G2 rung-one marker is missing "
+                f"schema 1.1 boundary {snippet!r}."
+            )
+    if "repository-owner-authentication rung is opened" in gate_text:
+        failures.append(
+            f"{gate_path.relative_to(ROOT)}: owner authentication must not be modeled as a future rung."
+        )
+
+    contract_marker = "G2 restricted-fork rung-one status contract:"
+    required_contract_snippets = (
+        "status=rung1_profile_complete_candidate_not_selected",
+        "result=pion_restricted_fork_profile_ready_for_rung2_decision_only",
+        "nextAction=prepare_versioned_rung2_source_identity_and_acquisition_decision",
+        "Rung one completes only the design, validator, and 17 mutation tests",
+        "implementationStatus=not_implemented",
+        "candidateSelected=false",
+        "librarySelected=false",
+        "sourceAcquisitionAllowed=false",
+        "dependencyInstallationAllowed=false",
+        "compilerInvocationAllowed=false",
+        "codeLoadingAllowed=false",
+        "socketCreationAllowed=false",
+        "networkIoAllowed=false",
+        "deviceExecutionAllowed=false",
+        "productionDeploymentAllowed=false",
+        "gitOperationAllowed=false",
+        "actual backend, reliable ordered carrier, and fragmentation/reassembly remain unselected and unimplemented",
+        "Only stack-neutral wiring may continue",
+        "Schema 1.1 remains a not-yet-implemented and not-runtime-verified design",
+        "separate single-use egress capability after resolution immediately before socket create, bind, connect, TLS handshake, or write",
+        "fixed-size bounded ingress read/parse/admission before state mutation or payload delivery",
+        "authenticated TURN TLS service identity before any credential transmission",
+        "bounded one-use pre-auth path whose atomic promotion occurs only after exact AetherLink endpoint confirmation",
+        "Consent loss, path change, candidate restart, capability expiry, verification failure, and session close each atomically revoke both pre-auth and application capabilities before further I/O, state mutation, event, or payload delivery",
+        "Exact per-session and process bounds cover current, active, draining, and closing state",
+        "independent sticky terminal latch",
+        "Secret-free diagnostics and a 2,500 ms total close deadline are requirements, not completed implementation or runtime-verified behavior",
+        "Repository-owner, GitHub, SSH, GPG, or public-key identity proof is neither a prerequisite nor a future G2 rung",
+        "externalIdentityProofRequired=false",
+        "userActionRequired=false",
+        "Product pairing and endpoint authentication remain mandatory and separate",
+    )
+    forbidden_contract_snippets = (
+        "eligible_to_prepare_rung2_official_source_identity_and_acquisition_decision",
+        "candidateSelected=true",
+        "librarySelected=true",
+        "sourceAcquisitionAllowed=true",
+        "dependencyInstallationAllowed=true",
+        "compilerInvocationAllowed=true",
+        "codeLoadingAllowed=true",
+        "socketCreationAllowed=true",
+        "networkIoAllowed=true",
+        "deviceExecutionAllowed=true",
+        "productionDeploymentAllowed=true",
+        "gitOperationAllowed=true",
+        "externalIdentityProofRequired=true",
+        "userActionRequired=true",
+        "one post-resolution immediate pre-I/O gateway",
+        "common immediate pre-I/O gateway",
+        "one single-use immediate pre-I/O gateway",
+        "one single-use post-resolution immediate pre-I/O gateway",
+        "one single-use post-resolution immediate pre-I/O destination gateway",
+        "closes all resolver/STUN/TURN/direct/consent/final-send paths behind one",
+        "removes the remote ICE-password log",
+        "removes secret-bearing diagnostics",
+        "exposes only 64 bounded pull events",
+        "makes Close return",
+        "caps pull events",
+        "fixes a 2,500 ms close deadline",
+    )
+    for label, path in document_paths.items():
+        document_text = path.read_text(encoding="utf-8", errors="replace")
+        if document_text.count(contract_marker) != 1:
+            failures.append(
+                f"{path.relative_to(ROOT)}: expected exactly one current G2 rung-one status contract."
+            )
+            continue
+        start = document_text.index(contract_marker)
+        end = document_text.find("\n\n", start)
+        if end < 0:
+            end = len(document_text)
+        contract = re.sub(r"\s+", " ", document_text[start:end]).replace("`", "")
+        for snippet in required_contract_snippets:
+            if snippet not in contract:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: current G2 contract is missing {snippet!r}."
+                )
+        for snippet in forbidden_contract_snippets:
+            if snippet in contract:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: current G2 contract contains forbidden promotion {snippet!r}."
+                )
+
+    stale_completed_schema_summaries = (
+        "one post-resolution immediate pre-I/O gateway",
+        "common immediate pre-I/O gateway",
+        "one single-use immediate pre-I/O gateway",
+        "one single-use post-resolution immediate pre-I/O gateway",
+        "one single-use post-resolution immediate pre-I/O destination gateway",
+        "closes all resolver/STUN/TURN/direct/consent/final-send paths behind one",
+        "removes the remote ICE-password log",
+        "removes secret-bearing diagnostics",
+        "exposes only 64 bounded pull events",
+        "makes Close return",
+        "caps pull events",
+        "fixes a 2,500 ms close deadline",
+    )
+    for path in (*document_paths.values(), gate_path):
+        current_text = path.read_text(encoding="utf-8", errors="replace")
+        for stale in stale_completed_schema_summaries:
+            if stale in current_text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: stale completed-sounding schema 1.1 "
+                    f"summary remains {stale!r}."
+                )
+
+    roadmap_text = document_paths["roadmap"].read_text(
+        encoding="utf-8", errors="replace"
+    )
+    for stale in (
+        "Review a new exact candidate/version or a separately maintained restriction/fork proposal",
+        "Next implement the actual upstream P2P endpoint stack",
+        "- Current authority: [progress-v8.json]",
+        "- Next roadmap decision: a different networking library requires",
+    ):
+        if stale in roadmap_text:
+            failures.append(
+                f"{document_paths['roadmap'].relative_to(ROOT)}: stale current G2 text remains {stale!r}."
+            )
+
+    handoff_text = document_paths["handoff"].read_text(
+        encoding="utf-8", errors="replace"
+    )
+    for command in (
+        "python3 script/check_p2p_nat_g2_restricted_fork_profile.py",
+        "python3 -m unittest script.test_p2p_nat_g2_restricted_fork_profile",
+    ):
+        if handoff_text.count(command) != 1:
+            failures.append(
+                f"{document_paths['handoff'].relative_to(ROOT)}: cheap checks must list {command!r} once."
+            )
+    if "explicit user decision; rejected authority" in handoff_text:
+        failures.append(
+            f"{document_paths['handoff'].relative_to(ROOT)}: stale explicit-user-decision prerequisite remains."
+        )
+
+    return failures
+
+
+def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
+    """Pin G2 rung-two provenance without opening execution or user-auth gates."""
+
+    failures: list[str] = []
+    rung_two_root = (
+        ROOT
+        / "docs/security-hardening/production-p2p-nat-v1"
+        / "g2-pion-restricted-fork-v1/rung-two"
+    )
+    paths = {
+        "provenance": rung_two_root / "provenance-observation-v1.json",
+        "decision": rung_two_root / "source-acquisition-decision-v1.json",
+        "markdown": rung_two_root / "source-acquisition-decision-v1.md",
+        "progress": rung_two_root / "source-acquisition-progress-v1.json",
+        "manifest": rung_two_root / "evidence-manifest-v2.json",
+        "validator": ROOT / "script/check_p2p_nat_g2_pion_rung2_acquisition_authority.py",
+        "tests": ROOT / "script/test_p2p_nat_g2_pion_rung2_acquisition_authority.py",
+        "runner": ROOT / "script/acquire_p2p_nat_g2_pion_source_once.py",
+        "runner_tests": ROOT / "script/test_acquire_p2p_nat_g2_pion_source_once.py",
+        "gate": ROOT / "script/check_no_device_quality.sh",
+    }
+    missing = [
+        str(path.relative_to(ROOT)) for path in paths.values() if not path.is_file()
+    ]
+    if missing:
+        return [f"missing G2 Pion rung-two integration file: {path}" for path in missing]
+
+    texts = {
+        label: path.read_text(encoding="utf-8", errors="replace")
+        for label, path in paths.items()
+    }
+    required_snippets = {
+        "provenance": (
+            '"status": "provenance_signature_and_inclusion_proof_locally_verified_acquisition_not_executed"',
+            '"ed25519SignedTreeVerified": true',
+            '"rfc6962InclusionProofVerified": true',
+            '"sourceAcquisitionExecuted": false',
+            '"externalIdentityProofRequired": false',
+            '"userActionRequired": false',
+        ),
+        "decision": (
+            '"status": "rung2_source_identity_decision_recorded_acquisition_not_executed"',
+            '"maximumRequestCount": 1',
+            '"atomicPermitClaimRequired": true',
+            '"existingOutputOrClaimRule": "fail_closed_before_network_io"',
+            '"tlsCertificateValidationRequired": true',
+            '"tlsHostnameValidationRequired": true',
+            '"goModH1MatchRequired": true',
+            '"candidateSelected": false',
+            '"librarySelected": false',
+            '"repositoryOwnerAuthenticationRequired": false',
+            '"externalIdentityProofRequired": false',
+            '"userActionRequired": false',
+        ),
+        "progress": (
+            '"status": "authorized_not_consumed"',
+            '"atomicClaimCreated": false',
+            '"requestCount": 0',
+            '"goModH1Matches": false',
+            '"allRequiredChecksPassed": false',
+            '"sourceAcquired": false',
+        ),
+        "manifest": (
+            '"artifactCount": 6',
+            '"sourceAcquisitionExecuted": false',
+            '"externalIdentityProofRequired": false',
+            '"userActionRequired": false',
+        ),
+        "validator": (
+            "object_pairs_hook=reject_duplicate_names",
+            "parse_constant=reject_non_finite_constant",
+            "def verify_ed25519(",
+            "def verify_rfc6962_inclusion(",
+            "def verify_sumdb_evidence(",
+            "def validate_evidence_manifest(",
+            "no user or owner authentication required",
+        ),
+        "tests": (
+            "class G2PionRungTwoMutationTests(unittest.TestCase):",
+            "test_01_duplicate_root_and_nested_json_names_fail",
+            "test_11_sumdb_key_and_signed_tree_mutations_fail_crypto",
+            "test_12_record_hash_and_inclusion_proof_mutations_fail",
+            "test_18_execution_and_user_auth_boundary_escalations_fail",
+            "test_20_baseline_passes_and_fabricated_markdown_claims_fail",
+        ),
+        "runner": (
+            'mode.add_argument("--execute-exact-once", action="store_true")',
+            "ProxyHandler({})",
+            "RejectRedirects()",
+            "claim_persists_after_any_network_attempt_and_blocks_retry",
+            "def create_atomic_claim(",
+            "os.fsync(next_fd)",
+            "def directory_entry_matches_open_file(",
+            "def validate_local_headers(",
+            "def decode_zip_entry_exact(",
+            "info.compress_size != info.file_size",
+            "decompressor.unused_data",
+            "zlib.crc32(decoded)",
+            "def inspect_module_zip(",
+            "if info.volume != 0:",
+            "folded_file_paths",
+            "def verify_and_publish_claimed_acquisition(",
+            "with wall_clock_deadline(TOTAL_DEADLINE_SECONDS):",
+            "PublishedArchiveStateError",
+            "def rename_no_replace(",
+            "rename_exclusive = 0x00000004",
+        ),
+        "runner_tests": (
+            "class G2PionSourceAcquisitionRunnerTests(unittest.TestCase):",
+            "test_02_exact_opener_disables_proxy_and_redirects_and_requires_tls",
+            "test_09_exact_duplicate_and_casefold_collision_fail",
+            "test_10_symlink_and_unsupported_compression_fail",
+            "lower_declared_uncompressed_size",
+            "hidden-tail.bin",
+            "test_16_exclusive_publish_never_replaces_an_existing_final_file",
+        ),
+    }
+    for label, snippets in required_snippets.items():
+        for snippet in snippets:
+            if snippet not in texts[label]:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: missing G2 rung-two boundary "
+                    f"{snippet!r}."
+                )
+
+    test_count = len(re.findall(r"(?m)^\s+def\s+test_", texts["tests"]))
+    if test_count != 20:
+        failures.append(
+            f"{paths['tests'].relative_to(ROOT)}: expected exactly 20 rung-two "
+            f"mutation tests, found {test_count}."
+        )
+    runner_test_count = len(
+        re.findall(r"(?m)^\s+def\s+test_", texts["runner_tests"])
+    )
+    if runner_test_count != 16:
+        failures.append(
+            f"{paths['runner_tests'].relative_to(ROOT)}: expected exactly 16 "
+            f"offline runner tests, found {runner_test_count}."
+        )
+
+    gate_commands = (
+        "run python3 script/check_p2p_nat_g2_pion_rung2_acquisition_authority.py",
+        "run python3 -m unittest script/test_p2p_nat_g2_pion_rung2_acquisition_authority.py",
+        "run python3 -m unittest script/test_acquire_p2p_nat_g2_pion_source_once.py",
+    )
+    for command in gate_commands:
+        if texts["gate"].count(command) != 1:
+            failures.append(
+                f"{paths['gate'].relative_to(ROOT)}: expected exactly one active "
+                f"rung-two command {command!r}."
+            )
+    marker = "Covered G2 Pion v4.3.0 rung-two acquisition-authority addendum:"
+    if texts["gate"].count(marker) != 1:
+        failures.append(
+            f"{paths['gate'].relative_to(ROOT)}: expected exactly one rung-two marker."
+        )
+    marker_line = next(
+        (line for line in texts["gate"].splitlines() if marker in line), ""
+    )
+    for snippet in (
+        "acquisition_not_executed",
+        "permit=authorized_not_consumed",
+        "requestCount=0",
+        "20 mutation tests",
+        "Raw SHA-256 is a reproducibility pin rather than an independent upstream authentication root",
+        "repositoryOwnerAuthenticationRequired=false",
+        "externalIdentityProofRequired=false",
+        "userActionRequired=false",
+        "Product endpoint authentication remains mandatory and separate",
+    ):
+        if snippet not in marker_line:
+            failures.append(
+                f"{paths['gate'].relative_to(ROOT)}: rung-two marker is missing {snippet!r}."
+            )
+
+    markdown_normalized = re.sub(r"\s+", " ", texts["markdown"])
+    for snippet in (
+        "Repository-owner authentication, external identity proof, and user action are not required.",
+        "Product endpoint authentication remains mandatory and separate.",
+        "it does not implicitly open that rung.",
+    ):
+        if snippet not in markdown_normalized:
+            failures.append(
+                f"{paths['markdown'].relative_to(ROOT)}: missing non-authentication "
+                f"boundary {snippet!r}."
+            )
     return failures
 
 
@@ -55938,7 +57654,7 @@ def runtime_python_sandbox_review_guard_failures() -> list[str]:
         "threat": "24e63f129095b9ee57a4fd8e0a896dabe6b668397383bb274ef4b9f433435ef1",
         "standards": "3c43ed9fc2aa63e7d4eee8f6a19392c97d1eca3a814a4c79b5fd91e9618cdbdd",
         "manifest": "5d306ba9e53824a5934fc4e77ea767fdc43a644ef0c24dbd3dd943b99cebb6f6",
-        "validator": "47103ff36c7a4122ce83a56b5e1a2b1072f9d15597d73ab9409b09b85859cb32",
+        "validator": "d9cab4acd98b9788bd649202c23972610a21c24e2c972ddd4e12a1ee5e2ac862",
         "tests": "3bc1af16952520d474efa40bd81d47230e6747ff99ef97ca18ac8409c8ba30b0",
     }
     for label, expected in expected_hashes.items():
@@ -58950,6 +60666,721 @@ def android_runtime_health_current_request_authority_guard_failures() -> list[st
     return failures
 
 
+def personal_single_owner_governance_guard_failures() -> list[str]:
+    """Keep personal-project work free of repository-owner authentication gates."""
+
+    failures: list[str] = []
+    paths = {
+        "readme": ROOT / "README.md",
+        "roadmap": ROOT / "docs/roadmap.md",
+        "handoff": ROOT / "docs/handoff.md",
+        "progress": ROOT / "docs/progress.md",
+        "qa": ROOT / "docs/qa-evidence.md",
+        "gate": ROOT / "script/check_no_device_quality.sh",
+        "android_app": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt",
+        "android_pairing_identity": ROOT / "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/DeviceIdentity.kt",
+        "android_pairing_store": ROOT / "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt",
+        "android_exact_bound": ROOT / "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/ProductionC1ExactBoundStartCoordinator.kt",
+        "android_pairing_tests": ROOT / "apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/PairingStoreTest.kt",
+        "android_endpoint_compound": ROOT / "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/ProductionG1aCEndpointCompoundPersistence.kt",
+        "android_candidate_endpoint": ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/p2pnat/ProductionG1aCCandidateEndpointAdmission.kt",
+        "android_pair_state_contract": ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/p2pnat/ProductionPairStateContracts.kt",
+        "android_transport": ROOT / "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeConnectionManager.kt",
+        "mac_model": ROOT / "apps/macos/CompanionCore/Sources/CompanionAppModel.swift",
+        "mac_manager": ROOT / "apps/macos/CompanionCore/Sources/MacRuntimeConnectionManager.swift",
+        "mac_production_authorization": ROOT / "apps/macos/CompanionCore/Sources/MacRuntimeProductionPairAuthorization.swift",
+        "mac_production_coordinator": ROOT / "apps/macos/CompanionCore/Sources/MacRuntimeProductionPairCoordinator.swift",
+        "mac_production_coordinator_tests": ROOT / "apps/macos/CompanionCore/Tests/MacRuntimeProductionPairCoordinatorTests.swift",
+        "mac_pair_state_contract": ROOT / "apps/macos/P2PNATContracts/Sources/ProductionPairStateContracts.swift",
+        "mac_candidate_endpoint": ROOT / "apps/macos/P2PNATContracts/Sources/ProductionG1aCCandidateCapabilities.swift",
+        "mac_endpoint_ledger_codec": ROOT / "apps/macos/P2PNATContracts/Sources/ProductionG1aCEndpointLedgerPersistenceCodec.swift",
+        "mac_trusted_store": ROOT / "apps/macos/TrustedDevices/Sources/TrustedDevice.swift",
+        "mac_exact_bound": ROOT / "apps/macos/TrustedDevices/Sources/ProductionC1ExactBoundStartCoordinator.swift",
+        "mac_exact_bound_tests": ROOT / "apps/macos/TrustedDevices/Tests/ProductionC1ExactBoundStartCoordinatorTests.swift",
+    }
+    missing = [str(path.relative_to(ROOT)) for path in paths.values() if not path.is_file()]
+    if missing:
+        return [f"missing personal-project governance file: {path}" for path in missing]
+
+    texts = {label: path.read_text(encoding="utf-8") for label, path in paths.items()}
+    current_sentence = (
+        "Owner identity authentication is not required for this personal project."
+    )
+    for label in ("readme", "roadmap", "handoff", "progress", "qa", "gate"):
+        if current_sentence not in " ".join(texts[label].split()):
+            failures.append(
+                f"{paths[label].relative_to(ROOT)} is missing the active personal-project rule"
+            )
+
+    for label in ("roadmap", "handoff", "progress", "qa"):
+        current_prefix = texts[label][:8_000]
+        if "G1a no-network" not in current_prefix:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)} current section is missing 'G1a no-network'"
+            )
+        if "product security" not in current_prefix.lower():
+            failures.append(
+                f"{paths[label].relative_to(ROOT)} current section is missing product security"
+            )
+
+    gate_text = texts["gate"]
+    for inactive_path in (
+        "script/check_v1_g0_owner_trust_bootstrap.py",
+        "script/test_v1_g0_owner_trust_bootstrap.py",
+        "script/check_v1_g0_owner_trust_bootstrap_v2.py",
+        "script/test_v1_g0_owner_trust_bootstrap_v2.py",
+    ):
+        if inactive_path in gate_text:
+            failures.append(
+                f"default no-device gate must not execute historical owner-auth file {inactive_path}"
+            )
+    for historical_live_checker in (
+        "script/check_v1_g0_checkpoint.py",
+        "script/check_v1_g0_decision.py",
+    ):
+        if re.search(
+            rf"^run python3 {re.escape(historical_live_checker)}$",
+            gate_text,
+            re.MULTILINE,
+        ):
+            failures.append(
+                "default no-device gate must not run historical G0 live-worktree "
+                f"checker {historical_live_checker}"
+            )
+    current_marker = "Current personal single-owner governance:"
+    historical_marker = "Historical V1 G0 owner-trust-bootstrap v2 integrity:"
+    g1ab_marker = "Covered G1a-B production pair-state admission addendum:"
+    g1ac_marker = "Covered G1a-C candidate capability, receipt, and grant readiness addendum:"
+    exact_bound_marker = "Covered G1a-C exact-bound start coordinator addendum:"
+    if gate_text.count(current_marker) != 1:
+        failures.append("no-device gate must emit the current personal-project marker once")
+    if gate_text.count(historical_marker) != 1:
+        failures.append("no-device gate must label owner-trust-bootstrap v2 as historical once")
+    if gate_text.count(g1ab_marker) != 1:
+        failures.append("no-device gate must emit the G1a-B pair-state marker once")
+    if gate_text.count(g1ac_marker) != 1:
+        failures.append("no-device gate must emit the G1a-C candidate readiness marker once")
+    if gate_text.count(exact_bound_marker) != 1:
+        failures.append("no-device gate must emit the G1a-C exact-bound marker once")
+    g1ab_summary = gate_text[gate_text.find(g1ab_marker):]
+    for required in (
+        "20 prior transition ID/request-digest entries",
+        "signed fresh-pair proof",
+        "opaque admission permit",
+        "internal and dormant",
+        "completed exact-bound no-network coordinator",
+        "not app- or transport-wired",
+    ):
+        if required not in g1ab_summary:
+            failures.append(f"G1a-B no-device marker is missing {required!r}")
+
+    g1ac_summary = next(
+        (line for line in gate_text.splitlines() if g1ac_marker in line),
+        "",
+    )
+    for required in (
+        "c25c0f4d74b0029f060bcedf31b19ef95c57a0a0e6708a741175c8cedeb611f3",
+        "e6bc666dbf9fded82d5681fdcfdc2c4c9cd5fa197135fc0673569d35656236af",
+        "object 27",
+        "object 23/24",
+        "object 28",
+        "object 25",
+        "object 26",
+        "object 7",
+        "same exclusive lock",
+        "external monotonic head",
+        "productionDurabilityClaim=false",
+        "synthetic_contract_readiness_only",
+        "no activation, KDF, encrypted records, socket or network execution",
+    ):
+        if required not in g1ac_summary:
+            failures.append(f"G1a-C no-device marker is missing {required!r}")
+
+    exact_bound_summary = next(
+        (line for line in gate_text.splitlines() if exact_bound_marker in line),
+        "",
+    )
+    for required in (
+        "verifier-minted candidate binding",
+        "APPLIED durable compound token",
+        "latest ledger entry and latest marker",
+        "object-4 route and object-26 grant authorization digests",
+        "at admit, immediately before start, and immediately after start",
+        "Historical readback, AlreadyCommitted output, and caller-supplied time are ineligible",
+        "64-entry per-pair tombstones",
+        "generation-scoped idempotent cleanup",
+        "operation-scoped callback reentry",
+        "cleanup quarantine until successful retry",
+        "cancellation-safe handle/lease handoff",
+        "STARTING fences abort immediately and again after start returns",
+        "ACTIVE fences abort once",
+        "Swift cancellation remains cooperative",
+        "durable-mutation fencing",
+        "not app- or transport-wired",
+        "no active session, KDF, encrypted record, socket or network operation",
+    ):
+        if required not in exact_bound_summary:
+            failures.append(f"G1a-C exact-bound marker is missing {required!r}")
+
+    g1ac_fixture_hashes = {
+        "shared/protocol/fixtures/production-g1a-c-v1-vectors.json": (
+            "c25c0f4d74b0029f060bcedf31b19ef95c57a0a0e6708a741175c8cedeb611f3"
+        ),
+        "shared/protocol/fixtures/production-g1a-c-candidate-v1-vectors.json": (
+            "e6bc666dbf9fded82d5681fdcfdc2c4c9cd5fa197135fc0673569d35656236af"
+        ),
+    }
+    for relative_path, expected_hash in g1ac_fixture_hashes.items():
+        path = ROOT / relative_path
+        if not path.is_file():
+            failures.append(f"missing G1a-C shared fixture: {relative_path}")
+            continue
+        observed_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        if observed_hash != expected_hash:
+            failures.append(
+                f"{relative_path}: expected pinned SHA-256 {expected_hash}, found {observed_hash}"
+            )
+
+    for relative_path in (
+        "script/check_production_g1a_c_vectors.py",
+        "script/test_production_g1a_c_vectors.py",
+        "script/check_production_g1a_c_candidate_vectors.py",
+        "script/test_production_g1a_c_candidate_vectors.py",
+        "apps/macos/P2PNATContracts/Tests/ProductionG1aCCandidateSharedVectorTests.swift",
+        "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/p2pnat/ProductionG1aCCandidateSharedVectorTest.kt",
+    ):
+        if not (ROOT / relative_path).is_file():
+            failures.append(f"missing G1a-C no-device oracle or shared-vector test: {relative_path}")
+
+    for oracle_path in (
+        "script/check_production_g1a_c_vectors.py",
+        "script/test_production_g1a_c_vectors.py",
+        "script/check_production_g1a_c_candidate_vectors.py",
+        "script/test_production_g1a_c_candidate_vectors.py",
+    ):
+        if gate_text.count(oracle_path) != 2:
+            failures.append(
+                f"default no-device gate must syntax-check and execute {oracle_path} exactly once"
+            )
+
+    android_app = texts["android_app"]
+    if "AndroidRuntimeProductionSessionAdmissionGate" in android_app:
+        failures.append("Android production app must not inject the incomplete admission bridge")
+    if "productionSessionAdmissionGate =" in android_app:
+        failures.append("Android production app must not configure the dormant admission gate")
+    if android_app.count(
+        "requiresProductionSession = productionPairStateLoadState.requiresProductionSession"
+    ) != 1:
+        failures.append("Android persisted trusted-runtime target must require a production session")
+    if android_app.count(
+        "requiresProductionSession = trustedRuntime.productionPairStateLoadState.requiresProductionSession"
+    ) != 1:
+        failures.append("Android projected trusted-runtime target must require a production session")
+    if "productionPairState != null" in android_app:
+        failures.append("Android production target must not infer persisted-state absence from decoded nullable state")
+
+    android_pairing_identity = texts["android_pairing_identity"]
+    for required in (
+        "sealed interface ProductionPairStateLoadState",
+        "data object Absent : ProductionPairStateLoadState",
+        "data class Valid(",
+        "data object InvalidPresent : ProductionPairStateLoadState",
+        "get() = this !is Absent",
+    ):
+        if required not in android_pairing_identity:
+            failures.append(f"Android persisted production pair-state projection is missing {required!r}")
+
+    android_pairing_store = texts["android_pairing_store"]
+    for required in (
+        "productionPairStateLoadStateForProjection(",
+        "ProductionPairStateLoadState.Absent",
+        "ProductionPairStateLoadState.Valid(snapshot)",
+        "ProductionPairStateLoadState.InvalidPresent",
+        "incomingState: ProductionPairStateLoadState",
+        "check(incomingState is ProductionPairStateLoadState.Absent)",
+    ):
+        if required not in android_pairing_store:
+            failures.append(f"Android PairingStore production pair-state projection is missing {required!r}")
+
+    android_pair_state_contract = texts["android_pair_state_contract"]
+    for required in (
+        "class ProductionPairAdmissionPreparation internal constructor(",
+        "object ProductionPairStateAdmission",
+        "): ProductionPairAdmissionPreparation",
+        "val bindingDigest: String",
+        "val pairAuthorityDigest: String",
+        "val routeAuthorizationDigest: String",
+    ):
+        if required not in android_pair_state_contract:
+            failures.append(f"Android G1a-B non-authorizing preparation is missing {required!r}")
+    for forbidden in (
+        "class ProductionPairAdmissionPermit",
+        "typealias ProductionPairStateAdmissionPermit",
+    ):
+        if forbidden in android_pair_state_contract:
+            failures.append(f"Android protocol contract retains live legacy permit {forbidden!r}")
+
+    for required in (
+        "private val productionPairAdmissionPermitMint = Any()",
+        "internal class ProductionPairAdmissionPermit internal constructor(",
+        "private val verifiedProductionC1AdmissionPermitMint = Any()",
+        "class VerifiedProductionC1AdmissionPermit internal constructor(",
+        "internal suspend fun admitProductionSecureSession(",
+        "suspend fun admitVerifiedProductionC1SecureSession(",
+        "Production secure-session exact readback mismatch",
+        "Verified production C1 secure-session exact readback mismatch",
+        "val tokenNowMs = productionTrustedClock.nowMs()",
+    ):
+        if required not in android_pairing_store:
+            failures.append(f"Android durable admission boundary is missing {required!r}")
+
+    android_exact_bound = texts["android_exact_bound"]
+    for required in (
+        "internal class ProductionC1ExactBoundStartOperationContext internal constructor(",
+        "internal class ProductionC1ExactBoundStartOperation(",
+        "internal class ProductionC1ExactBoundStartCoordinator private constructor(",
+        "operation: ProductionC1ExactBoundStartOperation",
+        "operation.abort(operationContext, originOperationId)",
+        "originOperationId == pending.abortOperationId",
+        "retryPendingAbortsFromOperation(operationId)",
+        "pendingAbortTicket(handle, originOperationId)",
+        "pendingAbortTicket(lease, originOperationId)",
+        "reentrantFirstAttempt",
+        "firstAttempt.await()",
+        "cancellationSafeHandoff",
+        "onCancelling = true",
+        "handleCancellationToken",
+        "leaseCancellationToken",
+        "pendingAbortsByPairAuthority",
+        "PAIR_CLEANUP_PENDING",
+        "recordsByMarker.isNotEmpty()",
+        "withContext(NonCancellable)",
+        "ProductionC1ExactBoundStartValidator(store::validateProductionC1ExactBoundStart)",
+        "MAXIMUM_TERMINAL_TOMBSTONES_PER_PAIR_SCOPE = 64",
+        "tombstonesByPairAuthority",
+        "runAbortPreserving",
+        "shouldAbort = false",
+    ):
+        if required not in android_exact_bound:
+            failures.append(f"Android exact-bound start coordinator is missing {required!r}")
+    if android_exact_bound.count("val postStartValidation = validate()") != 1:
+        failures.append("Android exact-bound start must perform one post-start exact validation")
+    if "operation: ProductionC1ExactBoundStartOperation =" in android_exact_bound:
+        failures.append("Android production exact-bound start operation must have no default")
+    for forbidden in (
+        "ProductionC1EndpointGrantCommitReadback",
+        "ProductionC1EndpointGrantCommitOutcome.AlreadyCommitted",
+    ):
+        if forbidden in android_exact_bound:
+            failures.append(
+                f"Android exact-bound start coordinator must not accept historical authority {forbidden!r}"
+            )
+
+    for required in (
+        "private val productionC1ExactBoundStartCoordinator = lazy(LazyThreadSafetyMode.SYNCHRONIZED)",
+        "entries.lastOrNull()",
+        "markers.lastOrNull()",
+        "val nowMs = productionTrustedClock.nowMs()",
+        "private fun initializedExactBoundStartCoordinator()",
+        "fenceExactBoundStartAfterAuthorityMutation(previousAuthorityDigest, snapshot)",
+        "val coordinator = initializedExactBoundStartCoordinator() ?: return@withContext",
+        "coordinator.fenceRevoked(previous)",
+        "coordinator.retryPendingAborts()",
+    ):
+        if required not in android_pairing_store:
+            failures.append(f"Android exact-bound store integration is missing {required!r}")
+
+    android_pairing_tests = texts["android_pairing_tests"]
+    for required in (
+        "exactBoundStartValidatorAcceptsOnlyCurrentLiveCommitAndTrustedWindow",
+        "exactBoundStoreAuthorityAdvanceAndForgetAbortActiveResource",
+        "exactBoundCoordinatorRevalidatesThreeTimesAndFencesReplayAndFailure",
+        "exactBoundCoordinatorCancellationAndConcurrentBeginCannotReviveLateStart",
+        "exactBoundCoordinatorActiveRevokeAndExpiryAbortExactlyOnce",
+        "exactBoundCoordinatorRetains64TerminalMarkersPerPairAndRejectsOverflow",
+        "exactBoundStoreConcurrentIdempotentMutationWaitsForInFlightCleanupResult",
+        "exactBoundCoordinatorRejectsDifferentAuthorityWhileValidationIsLive",
+        "exactBoundCoordinatorAbortCallbackCanReenterItsOwnFenceWithoutDeadlock",
+        "exactBoundCoordinatorAbortCallbackCanRetryOwnPendingAbortWithoutDeadlock",
+        "exactBoundCoordinatorStartCanReenterFenceAndClosesLatePublication",
+        "exactBoundCoordinatorStartCanRetryItsDeferredAbortWithoutDeadlock",
+        "exactBoundCoordinatorCancellationCannotLosePreinstalledDeferredAbortLatch",
+        "exactBoundCoordinatorStartReentryDoesNotWaitOnExternalInFlightFence",
+        "exactBoundCoordinatorRetainsFailedDeferredLateCleanupUntilRetry",
+        "exactBoundCoordinatorDeliveredLeaseOutlivesProducerJob",
+        "exactBoundCoordinatorHandleTransferRejectsStaleOwnerCancellation",
+        "exactBoundCoordinatorCancellationAfterInnerHandoffCannotLoseHandleOrLease",
+        "exactBoundStartOperationSkipsStartAfterAbortWinsPreStartRace",
+        "exactBoundCoordinatorQuarantinesPairUntilSlowOrFailedAbortFinishes",
+        "exactBoundCoordinatorRealCoroutineCancellationCannotLeaveStartedResourceLive",
+        "exactBoundCoordinatorCancellationSafeHandoffClosesAdmittedAndActiveWindows",
+        "exactBoundCoordinatorCancelledExpiryFenceStillRunsClaimedAbort",
+        "partialStartAborts",
+        "lateResourceRemainedOpen",
+        "completionAborts",
+    ):
+        if required not in android_pairing_tests:
+            failures.append(f"Android exact-bound regression coverage is missing {required!r}")
+
+    android_endpoint_compound = texts["android_endpoint_compound"]
+    for required in (
+        "val sessionId: String",
+        "val routeAuthorizationDigest: String",
+        "val grantAuthorizationDigest: String",
+        "val pairAuthorityDigest: String",
+        "marker.sessionId == entry.sessionId",
+        "marker.routeAuthorizationDigest == entry.routeAuthorizationDigest",
+        "marker.grantAuthorizationDigest == entry.grantAuthorizationDigest",
+        "marker.pairAuthorityDigest == reconstructedLedger.pairAuthorityDigest",
+        "AetherLink C1 endpoint grant entry marker v2 object4+object26",
+    ):
+        if required not in android_endpoint_compound:
+            failures.append(f"Android endpoint compound binding is missing {required!r}")
+
+    android_candidate_endpoint = texts["android_candidate_endpoint"]
+    for required in (
+        "Generic final P2P_DIRECT authorization digest (object 4).",
+        "Grant authorization digest (object 26).",
+        "AetherLink G1a-C endpoint grant admission binding v2 object4+object26",
+        "AetherLink G1a-C endpoint grant ledger snapshot v2 object4+object26",
+        'private val magic = "ALC1EGL1"',
+        "const val VERSION: UInt = 2u",
+        "transcript.routeAuthorizationDigest == grantAuthorizationDigest",
+        "existing.routeAuthorizationDigest == routeDigest",
+        "existing.grantAuthorizationDigest == grantAuthorizationDigest",
+    ):
+        if required not in android_candidate_endpoint:
+            failures.append(
+                f"Android endpoint object-4/object-26 split is missing {required!r}"
+            )
+
+    android_transport = texts["android_transport"]
+    for required in (
+        "class PreparedProductionSecureSession internal constructor(",
+        "interface RuntimeProductionRawRouteLease",
+        "fun interface RuntimeProductionChannelComposer",
+        "class RuntimeConnectionManager internal constructor(",
+        "RuntimeRouteRejectionReason.ProductionSessionRequired",
+    ):
+        if required not in android_transport:
+            failures.append(f"Android dormant production bridge is missing {required!r}")
+
+    mac_model = texts["mac_model"]
+    for required in (
+        "matchingTrustedDevices.count == 1",
+        "matchingTrustedDevices[0].productionPairState == nil",
+        "reloadTrustedDevicesForPairScopedTransportStart()",
+        'log("Legacy pair-scoped transport start rejected")',
+    ):
+        if required not in mac_model:
+            failures.append(f"macOS legacy-downgrade guard is missing {required!r}")
+
+    mac_manager = texts["mac_manager"]
+    for removed_method in ("startProductionPairRelay", "startProductionPairPrivateOverlay"):
+        if removed_method in mac_manager:
+            failures.append(
+                f"macOS removed raw production bridge {removed_method} must stay absent"
+            )
+    admitted_start = "func startAdmittedProductionPairRelay("
+    if mac_manager.count(admitted_start) != 1:
+        failures.append("macOS admitted production relay bridge must exist exactly once")
+    if f"public {admitted_start}" in mac_manager:
+        failures.append("macOS admitted production relay bridge must remain internal")
+    for legacy_start in ("public func startPair(", "public func startPairPrivateOverlay("):
+        if mac_manager.count(legacy_start) != 1:
+            failures.append(
+                f"macOS public legacy connection start drifted: {legacy_start!r}"
+            )
+
+    mac_pair_state_contract = texts["mac_pair_state_contract"]
+    for required in (
+        "package struct ProductionPairAdmissionPreparation: Equatable, Sendable",
+        "package enum ProductionPairStateAdmission",
+        "package static func prepare(",
+        "package let pairAuthorityDigest: String",
+        "package let routeAuthorizationDigest: String",
+    ):
+        if required not in mac_pair_state_contract:
+            failures.append(f"macOS G1a-B non-authorizing preparation is missing {required!r}")
+    for forbidden in (
+        "struct ProductionPairAdmissionPermit",
+        "typealias ProductionPairStateAdmissionPermit",
+    ):
+        if forbidden in mac_pair_state_contract:
+            failures.append(f"macOS protocol contract retains live legacy permit {forbidden!r}")
+
+    mac_trusted_store = texts["mac_trusted_store"]
+    for required in (
+        "public struct ProductionPairAdmissionPermit: Equatable, Sendable",
+        "init(confirmed preparation: ProductionPairAdmissionPreparation)",
+        "public struct VerifiedProductionC1AdmissionPermit: Equatable, Sendable",
+        "init(confirmed preparation: ProductionC1AdmissionPreparation)",
+        "func admitProductionSecureSession(",
+        "public func admitVerifiedProductionC1SecureSession(",
+        "productionC1AdmissionReadbackMismatch",
+        "public let sessionID: String",
+        "public let routeAuthorizationDigest: String",
+        "public let grantAuthorizationDigest: String",
+        "public let pairAuthorityDigest: String",
+        "marker.routeAuthorizationDigest == entry.routeAuthorizationDigest",
+        "marker.grantAuthorizationDigest == entry.grantAuthorizationDigest",
+        "AetherLink C1 endpoint grant entry marker v2 object4+object26",
+    ):
+        if required not in mac_trusted_store:
+            failures.append(f"macOS durable admission boundary is missing {required!r}")
+    for forbidden in (
+        "public init(confirmed preparation: ProductionPairAdmissionPreparation)",
+        "public init(confirmed preparation: ProductionC1AdmissionPreparation)",
+        "public func admitProductionSecureSession(",
+    ):
+        if forbidden in mac_trusted_store:
+            failures.append(f"macOS durable admission boundary exposes raw mint {forbidden!r}")
+
+    mac_exact_bound = texts["mac_exact_bound"]
+    for required in (
+        "struct ProductionC1ExactBoundStartOperationContext: Sendable",
+        "fileprivate let operationID: UUID",
+        "typealias StartOperation = @Sendable (",
+        "typealias AbortOperation = @Sendable (",
+        "private actor DeferredAbortCompletion",
+        "private actor FirstAbortAttemptCompletion",
+        "private struct DeferredAbortState",
+        "firstAttemptCompletion: FirstAbortAttemptCompletion()",
+        "await deferredAbortState.firstAttemptCompletion.wait()",
+        "await deferredAbortState.completion.finish()",
+        "await deferredCompletion.installFinishAction {",
+        "OperationInvocationContext.$current.withValue(",
+        "terminatingReservationByPairAuthority",
+        "maximumTerminalTombstonesPerPairScope = 64",
+    ):
+        if required not in mac_exact_bound:
+            failures.append(f"macOS exact-bound start coordinator is missing {required!r}")
+    if mac_exact_bound.count("postStartValidation = try await validate()") != 1:
+        failures.append("macOS exact-bound start must perform one post-start exact validation")
+    if "public struct ProductionC1ExactBoundStartOperationContext" in mac_exact_bound:
+        failures.append("macOS exact-bound operation context must remain module-internal")
+    for forbidden in (
+        "ProductionC1EndpointGrantCommitReadback",
+        "ProductionC1EndpointGrantCommitOutcome.alreadyCommitted",
+    ):
+        if forbidden in mac_exact_bound:
+            failures.append(
+                f"macOS exact-bound start coordinator must not accept historical authority {forbidden!r}"
+            )
+
+    for required in (
+        "private var productionC1ExactBoundStartCoordinatorCache:",
+        "func productionC1ExactBoundStartCoordinator()",
+        "productionC1ExactBoundStartCoordinatorCache = coordinator",
+        "await coordinator.fenceRevoked(",
+        "await coordinator.fenceAuthorityAdvance(",
+    ):
+        if required not in mac_trusted_store:
+            failures.append(f"macOS exact-bound store integration is missing {required!r}")
+
+    mac_exact_bound_tests = texts["mac_exact_bound_tests"]
+    for required in (
+        "testDetachedStartSelfFenceDefersLateAbortAndRetainsPairReservation",
+        "testCancellationDuringDelayedFirstSelfAbortCleansLatePublication",
+        "testDetachedStartSelfCancelUsesContextAndReleasesReservation",
+        "testExternalFenceFirstAllowsDetachedStartReentryAndLateAbort",
+        "testDetachedAbortReentryDoesNotWaitForItsOwnCleanup",
+        "testDetachedAbortContextCancelRejectsTerminalHandleAndReleasesPair",
+        "testTaskCancellationAfterLateStartSuccessStillAbortsExactlyOnce",
+        "testCompleteCancelRaceTransfersAbortOwnershipAtMostOnce",
+        "testActiveRevokeAndExpiryEachAbortExactlyOnce",
+        "testActiveCancelAbortsExactlyOnce",
+        "testSlowAbortKeepsPairReservedUntilExactAbortClaimCompletes",
+        "testCancellationAfterFinalCheckPreservesSuccessfulTaskValue",
+        "testTerminalTombstonesAreSecretFreeAndBoundedTo64",
+        "testOtherPairRetentionCannotEvictReplayFence",
+    ):
+        if required not in mac_exact_bound_tests:
+            failures.append(f"macOS exact-bound regression coverage is missing {required!r}")
+
+    current_document_windows = {
+        "handoff": "\n".join(texts["handoff"].splitlines()[:500]),
+        "progress": "\n".join(texts["progress"].splitlines()[:400]),
+        "qa": "\n".join(texts["qa"].splitlines()[:360]),
+        "roadmap": "\n".join(texts["roadmap"].splitlines()[:1_200]),
+    }
+    for label, current_window in current_document_windows.items():
+        for required in (
+            "31/31",
+            "78/78",
+            "9/9",
+            "87/87",
+            "7/7",
+            "232/232",
+            "200/200",
+            "8/8",
+            "d45fd920e22652d790c742de995d87a8cbfb64bb22aca3b829cbad5b23485448",
+        ):
+            if required not in current_window:
+                failures.append(
+                    f"{label} current exact-bound evidence is missing {required!r}"
+                )
+        for obsolete in (
+            "full Swift suite at 1,885",
+            "passes 1,885 tests",
+            "focused Swift reruns pass 17/17",
+            "passes 218/218",
+            "Continue with one exact-bound active admission/start/revoke coordinator",
+            "future start operation",
+            "A future start supplies",
+        ):
+            if obsolete in current_window:
+                failures.append(
+                    f"{label} current exact-bound evidence retains obsolete text {obsolete!r}"
+                )
+
+    mac_candidate_endpoint = texts["mac_candidate_endpoint"]
+    for required in (
+        "AetherLink G1a-C endpoint grant admission binding v2 object4+object26",
+        "AetherLink G1a-C endpoint grant ledger snapshot v2 object4+object26",
+        "transcript.routeAuthDigest == grantAuthorizationDigest",
+        "existing.routeAuthorizationDigest == routeDigest",
+        "existing.grantAuthorizationDigest == grantAuthorizationDigest",
+    ):
+        if required not in mac_candidate_endpoint:
+            failures.append(
+                f"macOS endpoint object-4/object-26 split is missing {required!r}"
+            )
+
+    mac_endpoint_ledger_codec = texts["mac_endpoint_ledger_codec"]
+    for required in (
+        'public static let version: UInt32 = 2',
+        'Data("ALC1EGL1".utf8)',
+    ):
+        if required not in mac_endpoint_ledger_codec:
+            failures.append(
+                f"macOS endpoint ledger cross-platform codec is missing {required!r}"
+            )
+    if 'ALC1EGL2' in mac_endpoint_ledger_codec:
+        failures.append("macOS endpoint ledger must not drift from shared ALC1EGL1 magic")
+
+    mac_authorization = texts["mac_production_authorization"]
+    if not (
+        mac_authorization.lstrip().startswith("#if DEBUG")
+        and mac_authorization.rstrip().endswith("#endif")
+    ):
+        failures.append("macOS legacy production authorizer must be absent from release builds")
+    for required in (
+        "struct MacRuntimeProductionPairConnectorAttempt: Equatable, Sendable",
+        "protocol MacRuntimeProductionPairAuthorizing: Sendable",
+    ):
+        if required not in mac_authorization:
+            failures.append(
+                f"macOS dormant production authorizer is missing {required!r}"
+            )
+    for forbidden in (
+        "extension TrustedDeviceStore: MacRuntimeProductionPairAuthorizing",
+        "try admitProductionSecureSession(",
+    ):
+        if forbidden in mac_authorization:
+            failures.append(
+                f"macOS dormant production authorizer retains raw store bridge {forbidden!r}"
+            )
+
+    mac_coordinator = texts["mac_production_coordinator"]
+    coordinator_is_debug_only = (
+        mac_coordinator.lstrip().startswith("#if DEBUG")
+        and mac_coordinator.rstrip().endswith("#endif")
+    )
+    if not coordinator_is_debug_only:
+        failures.append("macOS legacy production coordinator must be absent from release builds")
+    for required in (
+        "struct MacRuntimeVerifiedProductionRelayStartPlan: Equatable, Sendable",
+        "fileprivate init(",
+        "#if DEBUG",
+        "static func testing(",
+        "struct MacRuntimeAdmittedProductionPairRelayStart: Sendable",
+        "fileprivate let permit: ProductionPairAdmissionPermit",
+        "enum MacRuntimeProductionPairCoordinatorState: Equatable, Sendable",
+        "case pending(generationID: UUID, sessionID: String)",
+        "case active(generationID: UUID, sessionID: String, transcriptDigest: String)",
+        "case blocked(generationID: UUID)",
+        "final class MacRuntimeProductionPairCoordinator",
+        "private var states: [String: MacRuntimeProductionPairCoordinatorState] = [:]",
+        "try await authorizer.authorizeProductionPairConnector(plan.attempt)",
+        "try Task.checkCancellation()",
+        "connectionManager.startAdmittedProductionPairRelay(",
+        "func stopPair(fingerprint: String)",
+        "func revokePair(fingerprint: String)",
+        "func authorityDidAdvance(fingerprint: String)",
+        "func stopAll()",
+    ):
+        if required not in mac_coordinator:
+            failures.append(f"macOS production coordinator is missing {required!r}")
+    for forbidden in (
+        "public struct MacRuntimeVerifiedProductionRelayStartPlan",
+        "public final class MacRuntimeProductionPairCoordinator",
+        "public func startRelay(",
+    ):
+        if forbidden in mac_coordinator:
+            failures.append(
+                f"macOS dormant production coordinator exposed release surface {forbidden!r}"
+            )
+    if mac_coordinator.count(
+        "try await authorizer.authorizeProductionPairConnector(plan.attempt)"
+    ) != 1:
+        failures.append("macOS production coordinator must admit each start exactly once")
+    if mac_coordinator.count("connectionManager.startAdmittedProductionPairRelay(") != 1:
+        failures.append("macOS production coordinator admitted handoff must occur exactly once")
+
+    release_coordinator = "" if coordinator_is_debug_only else re.sub(
+        r"(?ms)^\s*#if DEBUG\s*$.*?^\s*#endif\s*$",
+        "",
+        mac_coordinator,
+    )
+    plan_release_section = release_coordinator.split(
+        "struct MacRuntimeAdmittedProductionPairRelayStart", 1
+    )[0]
+    if "static func " in plan_release_section:
+        failures.append("macOS opaque production plan must have no release factory")
+    if "MacRuntimeVerifiedProductionRelayStartPlan(" in release_coordinator:
+        failures.append("macOS opaque production plan must not be constructed in release code")
+
+    coordinator_test_text = texts["mac_production_coordinator_tests"]
+    expected_coordinator_tests = {
+        "testAdmissionOccursExactlyOnceBeforeFactoryAndStart",
+        "testAdmissionFailureBlocksWithoutFactoryOrStart",
+        "testCancellationAfterDurableAdmissionBlocksBeforeFactory",
+        "testRevokeDuringAdmissionPreventsLateStart",
+        "testAuthorityAdvanceStopsActiveTransportAndInvalidatesMessageCallback",
+        "testStopAllDuringAdmissionPreventsLateStart",
+    }
+    actual_coordinator_tests = set(
+        re.findall(r"\bfunc\s+(test[A-Za-z0-9_]+)\s*\(", coordinator_test_text)
+    )
+    if actual_coordinator_tests != expected_coordinator_tests:
+        failures.append(
+            "macOS production coordinator must retain the exact six focused race tests"
+        )
+    if "MacRuntimeProductionPairCoordinator" in mac_model:
+        failures.append("macOS dormant production coordinator must not be app-wired")
+
+    roadmap_queue = re.search(
+        r"^### Immediate Execution Queue\n(?P<section>.*?)(?=^## )",
+        texts["roadmap"],
+        re.MULTILINE | re.DOTALL,
+    )
+    if roadmap_queue is None:
+        failures.append("docs/roadmap.md is missing the immediate execution queue")
+    else:
+        section = roadmap_queue.group("section")
+        for forbidden in (
+            "authenticate the proposed repository owner",
+            "fourteen authenticated approval receipts",
+            "Only after every G0 check and blocker is closed",
+        ):
+            if forbidden in section:
+                failures.append(
+                    f"docs/roadmap.md immediate queue retains inactive owner gate {forbidden!r}"
+                )
+    return failures
+
+
 def g0_owner_trust_bootstrap_v2_guard_failures() -> list[str]:
     failures: list[str] = []
     paths = {
@@ -59308,13 +61739,13 @@ def g0_owner_trust_bootstrap_v2_guard_failures() -> list[str]:
 
     checker_relative = "script/check_v1_g0_owner_trust_bootstrap_v2.py"
     test_relative = "script/test_v1_g0_owner_trust_bootstrap_v2.py"
-    if gate_text.count(checker_relative) != 2:
-        failures.append("no-device gate must select the owner-trust-bootstrap v2 checker twice")
-    if gate_text.count(test_relative) != 2:
-        failures.append("no-device gate must select the owner-trust-bootstrap v2 tests twice")
-    marker = "Covered V1 G0 owner-trust-bootstrap v2 addendum:"
+    if checker_relative in gate_text:
+        failures.append("default no-device gate must not run historical owner v2 checker")
+    if test_relative in gate_text:
+        failures.append("default no-device gate must not run historical owner v2 tests")
+    marker = "Historical V1 G0 owner-trust-bootstrap v2 integrity:"
     if gate_text.count(marker) != 1:
-        failures.append("no-device gate must emit the owner-trust-bootstrap v2 marker once")
+        failures.append("no-device gate must emit the historical owner v2 marker once")
 
     for label in ("roadmap", "progress", "qa", "handoff"):
         text = paths[label].read_text(encoding="utf-8")
@@ -59754,6 +62185,36 @@ def main() -> int:
     if report_guard_failures("P2P/NAT security design guard failed:", p2p_nat_security_design_guard_failures):
         return 1
 
+    if report_guard_failures(
+        "Production secure-session crypto guard failed:",
+        production_secure_session_crypto_guard_failures,
+    ):
+        return 1
+
+    if report_guard_failures(
+        "Production authority-bound secure-session lifecycle guard failed:",
+        production_authority_bound_secure_session_lifecycle_guard_failures,
+    ):
+        return 1
+
+    if report_guard_failures(
+        "Production secure-channel transport-composition guard failed:",
+        production_secure_channel_transport_composition_guard_failures,
+    ):
+        return 1
+
+    if report_guard_failures(
+        "G2 restricted-fork rung-one integration guard failed:",
+        g2_restricted_fork_rung_one_integration_guard_failures,
+    ):
+        return 1
+
+    if report_guard_failures(
+        "G2 Pion rung-two acquisition-authority guard failed:",
+        g2_pion_rung_two_acquisition_authority_guard_failures,
+    ):
+        return 1
+
     if report_guard_failures("Bounded script hardening guard failed:", bounded_script_hardening_guard_failures):
         return 1
 
@@ -59787,7 +62248,13 @@ def main() -> int:
         return 1
 
     if report_guard_failures(
-        "G0 owner-trust-bootstrap v2 guard failed:",
+        "Personal single-owner governance guard failed:",
+        personal_single_owner_governance_guard_failures,
+    ):
+        return 1
+
+    if report_guard_failures(
+        "Historical G0 owner-trust-bootstrap v2 integrity guard failed:",
         g0_owner_trust_bootstrap_v2_guard_failures,
     ):
         return 1

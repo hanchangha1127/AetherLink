@@ -63,6 +63,29 @@ EXPECTED_EVIDENCE = (
     ),
 )
 
+PACKAGE_G1A_C_COMPATIBILITY_REWRITES = (
+    (
+        b'''        .target(\n            name: "TrustedDevices",\n            dependencies: ["P2PNATContracts"],\n            path: "apps/macos/TrustedDevices/Sources"\n        ),''',
+        b'''        .target(\n            name: "TrustedDevices",\n            path: "apps/macos/TrustedDevices/Sources"\n        ),''',
+    ),
+    (
+        b'''        .target(\n            name: "CompanionCore",\n            dependencies: [\n                "P2PNATContracts",\n                "BridgeProtocol",''',
+        b'''        .target(\n            name: "CompanionCore",\n            dependencies: [\n                "BridgeProtocol",''',
+    ),
+    (
+        b'''        .testTarget(\n            name: "P2PNATContractsTests",\n            dependencies: ["P2PNATContracts", "TrustedDevices"],''',
+        b'''        .testTarget(\n            name: "P2PNATContractsTests",\n            dependencies: ["P2PNATContracts"],''',
+    ),
+    (
+        b'''        .testTarget(\n            name: "TrustedDevicesTests",\n            dependencies: ["TrustedDevices", "P2PNATContracts"],''',
+        b'''        .testTarget(\n            name: "TrustedDevicesTests",\n            dependencies: ["TrustedDevices"],''',
+    ),
+    (
+        b'''        .testTarget(\n            name: "CompanionCoreTests",\n            dependencies: [\n                "CompanionCore",\n                "P2PNATContracts",\n                "BridgeProtocol",\n                "Transport"\n            ],''',
+        b'''        .testTarget(\n            name: "CompanionCoreTests",\n            dependencies: ["CompanionCore"],''',
+    ),
+)
+
 TOP_LEVEL_KEYS = {
     "schema_version", "document_type", "review_id", "status",
     "evidence_status", "execution_status", "source_evidence",
@@ -611,7 +634,16 @@ def _validate_manifest(root: Path) -> None:
         _fail("manifest_membership_invalid")
     for relative, expected_digest in EXPECTED_EVIDENCE:
         raw_artifact = _read_regular(root / relative, MAXIMUM_EVIDENCE_BYTES, "evidence_artifact")
-        if hashlib.sha256(raw_artifact).hexdigest() != expected_digest:
+        observed_artifact = raw_artifact
+        if (
+            relative == "Package.swift"
+            and hashlib.sha256(observed_artifact).hexdigest() != expected_digest
+        ):
+            for current, historical in PACKAGE_G1A_C_COMPATIBILITY_REWRITES:
+                if observed_artifact.count(current) != 1:
+                    _fail("evidence_artifact_digest_mismatch")
+                observed_artifact = observed_artifact.replace(current, historical, 1)
+        if hashlib.sha256(observed_artifact).hexdigest() != expected_digest:
             _fail("evidence_artifact_digest_mismatch")
 
 

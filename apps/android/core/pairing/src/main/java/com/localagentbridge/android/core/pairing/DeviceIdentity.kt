@@ -1,5 +1,6 @@
 package com.localagentbridge.android.core.pairing
 
+import com.localagentbridge.android.core.protocol.p2pnat.ProductionPairStateSnapshot
 import com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationAuthorization
 import com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationChallenge
 import java.security.KeyPair
@@ -166,6 +167,22 @@ object RuntimeIdentityProofVerifier {
     private const val AUTHENTICATION_CHALLENGE_CONTEXT_V2 = "AetherLink runtime auth challenge v2"
 }
 
+sealed interface ProductionPairStateLoadState {
+    data object Absent : ProductionPairStateLoadState
+
+    data class Valid(
+        val snapshot: ProductionPairStateSnapshot,
+    ) : ProductionPairStateLoadState
+
+    data object InvalidPresent : ProductionPairStateLoadState
+
+    val snapshotOrNull: ProductionPairStateSnapshot?
+        get() = (this as? Valid)?.snapshot
+
+    val requiresProductionSession: Boolean
+        get() = this !is Absent
+}
+
 data class TrustedRuntime(
     val deviceId: String,
     val name: String,
@@ -188,4 +205,8 @@ data class TrustedRuntime(
     val p2pExpiresAtEpochMillis: Long? = null,
     val p2pAntiReplayNonce: String? = null,
     val p2pProtocolVersion: Int? = null,
-)
+    val productionPairStateLoadState: ProductionPairStateLoadState = ProductionPairStateLoadState.Absent,
+) {
+    val productionPairState: ProductionPairStateSnapshot?
+        get() = productionPairStateLoadState.snapshotOrNull
+}

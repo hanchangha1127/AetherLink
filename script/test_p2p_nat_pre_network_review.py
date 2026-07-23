@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -61,6 +62,30 @@ class PreNetworkReviewMutationTests(unittest.TestCase):
         CHECKER.validate_handoff_v3(copy.deepcopy(self.handoff_v3))
         for path, expected in CHECKER.GENERATED_ARTIFACT_SHA256.items():
             CHECKER.validate_file_hash(path, expected)
+
+    def test_android_p256_compat_amendment_preserves_historical_digest(self) -> None:
+        source = CHECKER.ANDROID_CANONICAL_CODEC_PATH.read_bytes()
+        historical = CHECKER.historical_evidence_bytes_for_digest(
+            CHECKER.ANDROID_CANONICAL_CODEC_PATH,
+            source,
+        )
+        self.assertIn(CHECKER.ANDROID_P256_COMPAT_CURRENT, source)
+        self.assertNotIn(CHECKER.ANDROID_P256_COMPAT_HISTORICAL, source)
+        self.assertIn(CHECKER.ANDROID_P256_COMPAT_HISTORICAL, historical)
+        expected = self.handoff_v3["packages"][0]["evidenceSha256"][
+            "../../../../apps/android/core/protocol/src/main/java/"
+            "com/localagentbridge/android/core/protocol/p2pnat/P2pNatCanonicalCodec.kt"
+        ]
+        self.assertEqual(hashlib.sha256(historical).hexdigest(), expected)
+
+        with self.assertRaises(CHECKER.ReviewValidationError):
+            CHECKER.historical_evidence_bytes_for_digest(
+                CHECKER.ANDROID_CANONICAL_CODEC_PATH,
+                source.replace(
+                    CHECKER.ANDROID_P256_COMPAT_CURRENT,
+                    CHECKER.ANDROID_P256_COMPAT_HISTORICAL,
+                ),
+            )
 
     def test_missing_and_unknown_fields_fail(self) -> None:
         self.assert_rejected(lambda value: value.pop("securityFloors"))

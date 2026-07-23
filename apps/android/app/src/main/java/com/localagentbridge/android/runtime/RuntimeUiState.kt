@@ -1,6 +1,8 @@
 package com.localagentbridge.android.runtime
 
 import com.localagentbridge.android.core.protocol.RetrievalMatchKind
+import com.localagentbridge.android.core.protocol.p2pnat.ProductionPairStateSnapshot
+import com.localagentbridge.android.core.pairing.ProductionPairStateLoadState
 import com.localagentbridge.android.core.transport.RuntimeEndpointHint
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import java.util.UUID
@@ -186,7 +188,11 @@ data class RuntimeTrustedRuntime(
     val p2pExpiresAtEpochMillis: Long? = null,
     val p2pAntiReplayNonce: String? = null,
     val p2pProtocolVersion: Int? = null,
+    val productionPairStateLoadState: ProductionPairStateLoadState = ProductionPairStateLoadState.Absent,
 ) {
+    val productionPairState: ProductionPairStateSnapshot?
+        get() = productionPairStateLoadState.snapshotOrNull
+
     val lastKnownEndpoint: RuntimeEndpointHint
         get() = requireNotNull(endpointHint) { "Trusted runtime endpoint hint is not available" }
 }

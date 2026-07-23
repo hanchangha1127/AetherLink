@@ -4,6 +4,7 @@ import Foundation
 public enum P2PNATSessionCryptoError: Error, Equatable {
     case invalidKey
     case ephemeralKeyAlreadyUsed
+    case ephemeralKeyClosed
     case roleMismatch
     case confirmationIncomplete
     case cipherAlreadyCreated
@@ -13,9 +14,15 @@ public enum P2PNATSessionCryptoError: Error, Equatable {
 }
 
 public final class P2PNATSessionEphemeralKey: @unchecked Sendable {
-    private let privateKey: P256.KeyAgreement.PrivateKey
+    private enum Lifecycle: Equatable {
+        case available
+        case consumed
+        case closed
+    }
+
+    private var privateKey: P256.KeyAgreement.PrivateKey?
     private let lock = NSLock()
-    private var sharedSecretConsumed = false
+    private var lifecycle = Lifecycle.available
     public let publicKeyX963: Data
 
     public init() {
@@ -36,11 +43,27 @@ public final class P2PNATSessionEphemeralKey: @unchecked Sendable {
 
     fileprivate func sharedSecret(peerPublicKeyX963: Data) throws -> Data {
         lock.lock()
-        defer { lock.unlock() }
-        guard !sharedSecretConsumed else {
+        switch lifecycle {
+        case .consumed:
+            lock.unlock()
             throw P2PNATSessionCryptoError.ephemeralKeyAlreadyUsed
+        case .closed:
+            lock.unlock()
+            throw P2PNATSessionCryptoError.ephemeralKeyClosed
+        case .available:
+            break
         }
-        sharedSecretConsumed = true
+        guard let privateKey else {
+            lifecycle = .closed
+            lock.unlock()
+            throw P2PNATSessionCryptoError.ephemeralKeyClosed
+        }
+        lifecycle = .consumed
+        // Ownership transfers atomically to this one ECDH operation. Drop the
+        // object's retained reference before releasing the lock; the local
+        // reference lives only until this call returns.
+        self.privateKey = nil
+        lock.unlock()
         do {
             let peer = try P256.KeyAgreement.PublicKey(x963Representation: peerPublicKeyX963)
             let secret = try privateKey.sharedSecretFromKeyAgreement(with: peer)
@@ -49,6 +72,60 @@ public final class P2PNATSessionEphemeralKey: @unchecked Sendable {
             throw P2PNATSessionCryptoError.invalidKey
         }
     }
+
+    /// Irreversibly abandons caller ownership of the one-use private key.
+    ///
+    /// Callers own a fresh key until handing it to a consuming API. The
+    /// receiving API must call `close()` on every success, failure, and
+    /// cancellation path. Closing is thread-safe and idempotent; if close wins
+    /// before ECDH begins, later derivation fails with `ephemeralKeyClosed`.
+    /// If ECDH already claimed ownership, close is a harmless no-op.
+    public func close() {
+        lock.lock()
+        guard lifecycle == .available else {
+            lock.unlock()
+            return
+        }
+        lifecycle = .closed
+        privateKey = nil
+        lock.unlock()
+    }
+
+    func productionSharedSecret(
+        binding: VerifiedProductionC1CandidateP2PKeyScheduleBinding
+    ) throws -> Data {
+        let transcript = binding.transcript
+        let expectedLocalKey = binding.localRole == .client
+            ? transcript.clientEphemeralPublicKey
+            : transcript.runtimeEphemeralPublicKey
+        guard publicKeyX963 == expectedLocalKey else {
+            throw P2PNATSessionCryptoError.roleMismatch
+        }
+        let peerKey = binding.localRole == .client
+            ? transcript.runtimeEphemeralPublicKey
+            : transcript.clientEphemeralPublicKey
+        return try sharedSecret(peerPublicKeyX963: peerKey)
+    }
+
+    #if DEBUG
+    var testOnlyRetainsPrivateKey: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return privateKey != nil
+    }
+
+    var testOnlyIsClosed: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return lifecycle == .closed
+    }
+
+    var testOnlyIsConsumed: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return lifecycle == .consumed
+    }
+    #endif
 }
 
 public struct P2PNATSealedPayload: Equatable, Sendable {
@@ -124,17 +201,19 @@ public enum P2PNATSessionCrypto {
             throw P2PNATSessionCryptoError.roleMismatch
         }
         let peerKey = localRole == .client ? transcript.runtimeKey : transcript.clientKey
-        let sharedSecret = try localEphemeralKey.sharedSecret(peerPublicKeyX963: peerKey)
+        var sharedSecret = try localEphemeralKey.sharedSecret(peerPublicKeyX963: peerKey)
+        defer { sharedSecret.p2pNatWipe() }
         guard sharedSecret.count == 32 else { throw P2PNATSessionCryptoError.invalidKey }
 
         let transcriptDigest = Data(SHA256.hash(data: transcript.canonicalBytes()))
         let info = keyInfoPrefix + transcriptDigest
-        let output = HKDF<SHA256>.deriveKey(
+        var output = HKDF<SHA256>.deriveKey(
             inputKeyMaterial: SymmetricKey(data: sharedSecret),
             salt: transcriptDigest,
             info: info,
             outputByteCount: 96
         ).bytes
+        defer { output.p2pNatWipe() }
 
         return P2PNATSessionKeys(
             transcriptDigest: transcriptDigest,
@@ -145,6 +224,8 @@ public enum P2PNATSessionCrypto {
         )
     }
 
+    #if DEBUG
+    // Test-vector exporter. Secret material is absent from optimized release builds.
     static func vectorMaterial(
         localRole: P2PNATRole,
         localEphemeralKey: P2PNATSessionEphemeralKey,
@@ -170,6 +251,7 @@ public enum P2PNATSessionCrypto {
         ).bytes
         return (sharedSecret, salt, info, prk, okm)
     }
+    #endif
 }
 
 public final class P2PNATSessionHandshake: @unchecked Sendable {
@@ -342,6 +424,12 @@ private func constantTimeEqual(_ lhs: Data, _ rhs: Data) -> Bool {
 
 private extension SymmetricKey {
     var bytes: Data { withUnsafeBytes { Data($0) } }
+}
+
+private extension Data {
+    mutating func p2pNatWipe() {
+        resetBytes(in: startIndex..<endIndex)
+    }
 }
 
 private extension UInt64 {

@@ -21,6 +21,26 @@ import org.junit.Test
 
 class P2pNatSessionCryptoVectorTest {
     @Test
+    fun closingUntransferredEphemeralKeyIrreversiblyRejectsAgreement() {
+        val fixture = loadFixture()
+        val agreement = fixture.obj("keyAgreement")
+        val clientKey = P2pNatSessionEphemeralKey.fromPrivateScalarForTest(
+            agreement.hex("clientPrivateScalarHex"),
+        )
+        val runtimeKey = P2pNatSessionEphemeralKey.fromPrivateScalarForTest(
+            agreement.hex("runtimePrivateScalarHex"),
+        )
+        val retainedPublicKey = clientKey.publicKeyX963
+
+        clientKey.close()
+
+        assertArrayEquals(retainedPublicKey, clientKey.publicKeyX963)
+        assertThrows(IllegalStateException::class.java) {
+            clientKey.sharedSecret(runtimeKey.publicKeyX963, P2pNatJcaAlgorithms())
+        }
+    }
+
+    @Test
     fun sharedSessionCryptoVectorsMatchOnDirectAndRelayTranscripts() {
         val fixture = loadFixture()
         val agreement = fixture.obj("keyAgreement")

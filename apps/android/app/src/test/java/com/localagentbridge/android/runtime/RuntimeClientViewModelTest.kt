@@ -91,6 +91,9 @@ import com.localagentbridge.android.core.protocol.RuntimeHealthPayload
 import com.localagentbridge.android.core.protocol.RUNTIME_CAPABILITY_NEGOTIATION_CAPABILITY
 import com.localagentbridge.android.core.protocol.RuntimeModelResidencyPayload
 import com.localagentbridge.android.core.protocol.RuntimeModelResidencyUnloadFailurePayload
+import com.localagentbridge.android.core.protocol.p2pnat.ProductionPairAuthorityState
+import com.localagentbridge.android.core.protocol.p2pnat.ProductionPairAuthorityStatus
+import com.localagentbridge.android.core.protocol.p2pnat.ProductionPairStateSnapshot
 import com.localagentbridge.android.core.pairing.DeviceIdentity
 import com.localagentbridge.android.core.pairing.INITIAL_PAIRING_PROOF_SCHEME
 import com.localagentbridge.android.core.pairing.InitialPairingAcceptedResult
@@ -99,6 +102,8 @@ import com.localagentbridge.android.core.pairing.InitialPairingProof
 import com.localagentbridge.android.core.pairing.OPAQUE_ROUTE_BODY_MAX_CHARS
 import com.localagentbridge.android.core.pairing.PairedRelayAllocationAuthorization
 import com.localagentbridge.android.core.pairing.PairedRelayAllocationAuthorizationProof
+import com.localagentbridge.android.core.pairing.PairingStore
+import com.localagentbridge.android.core.pairing.ProductionPairStateLoadState
 import com.localagentbridge.android.core.pairing.RelaySecretStore
 import com.localagentbridge.android.core.pairing.RuntimePairingPayload
 import com.localagentbridge.android.core.pairing.RuntimePairingPayloadParser
@@ -253,6 +258,77 @@ class RuntimeClientViewModelTest {
         assertEquals("AetherLink Runtime", target?.identity?.name)
         assertEquals("fingerprint", target?.identity?.fingerprint)
         assertNull(target?.endpointHint)
+    }
+
+    @Test
+    fun productionPairStateSurvivesTrustedRuntimeProjectionAndRequiresProductionSession() {
+        val runtimeFingerprint = "b".repeat(64)
+        val productionState = ProductionPairStateSnapshot(
+            authority = ProductionPairAuthorityState(
+                pairBindingDigest = "1".repeat(64),
+                pairEpoch = 1uL,
+                clientIdentityFingerprint = "a".repeat(64),
+                runtimeIdentityFingerprint = runtimeFingerprint,
+                generation = 1uL,
+                serviceConfigVersion = 1uL,
+                keysetVersion = 1uL,
+                revocationCounter = 0uL,
+                protocolFloor = 1u,
+                status = ProductionPairAuthorityStatus.ACTIVE,
+                transitionId = "c".repeat(64),
+                transitionRequestDigest = "d".repeat(64),
+                acceptedReceiptDigest = "e".repeat(64),
+                authorityRevision = 1uL,
+            ),
+            localRevision = 1uL,
+        )
+        val persisted = TrustedRuntime(
+            deviceId = "production-runtime",
+            name = "Production Runtime",
+            fingerprint = runtimeFingerprint,
+            productionPairStateLoadState = ProductionPairStateLoadState.Valid(productionState),
+        )
+
+        val projected = persisted.toRuntimeTrustedRuntime()
+        val restored = projected.toTrustedRuntimeOrNull()
+
+        assertEquals(productionState, projected.productionPairState)
+        assertEquals(productionState, restored?.productionPairState)
+        assertTrue(persisted.toConnectionTarget().requiresProductionSession)
+        assertTrue(
+            requireNotNull(
+                trustedRuntimeConnectionTarget(RuntimeUiState(trustedRuntime = projected))
+            ).requiresProductionSession
+        )
+    }
+
+    @Test
+    fun invalidPresentProductionPairStateSurvivesProjectionAndRequiresProductionSession() {
+        val persisted = TrustedRuntime(
+            deviceId = "production-runtime",
+            name = "Production Runtime",
+            fingerprint = "b".repeat(64),
+            productionPairStateLoadState = ProductionPairStateLoadState.InvalidPresent,
+        )
+
+        val projected = persisted.toRuntimeTrustedRuntime()
+        val restored = projected.toTrustedRuntimeOrNull()
+
+        assertEquals(
+            ProductionPairStateLoadState.InvalidPresent,
+            projected.productionPairStateLoadState,
+        )
+        assertEquals(
+            ProductionPairStateLoadState.InvalidPresent,
+            restored?.productionPairStateLoadState,
+        )
+        assertNull(projected.productionPairState)
+        assertTrue(persisted.toConnectionTarget().requiresProductionSession)
+        assertTrue(
+            requireNotNull(
+                trustedRuntimeConnectionTarget(RuntimeUiState(trustedRuntime = projected))
+            ).requiresProductionSession
+        )
     }
 
     @Test
@@ -8173,6 +8249,7 @@ class RuntimeClientViewModelTest {
             relayExpiresAtEpochMillis = 2_000L,
             relayNonce = "old-nonce",
             relayScope = "remote",
+            productionPairStateLoadState = ProductionPairStateLoadState.InvalidPresent,
         )
 
         val refreshed = trustedRuntimeFromRouteRefreshPayload(
@@ -8204,6 +8281,11 @@ class RuntimeClientViewModelTest {
         assertEquals(4_102_444_800_000L, refreshed.relayExpiresAtEpochMillis)
         assertEquals("fresh-nonce", refreshed.relayNonce)
         assertEquals("remote", refreshed.relayScope)
+        assertEquals(
+            ProductionPairStateLoadState.InvalidPresent,
+            refreshed.productionPairStateLoadState,
+        )
+        assertTrue(refreshed.toConnectionTarget().requiresProductionSession)
     }
 
     @Test
@@ -10203,6 +10285,17 @@ class RuntimeClientViewModelTest {
                 )
             ),
         ).toRuntimeUiError()
+        val productionSessionRejected = RuntimeConnectionFailure(
+            reason = RuntimeConnectionFailureReason.ProductionSessionSecurityRejected,
+            target = identityOnlyTarget,
+            routes = listOf(preparedPeerToPeerRoute),
+            attemptFailures = listOf(
+                RuntimeRouteAttemptFailure(
+                    route = preparedPeerToPeerRoute,
+                    cause = IllegalStateException("Production pair state is stale"),
+                )
+            ),
+        ).toRuntimeUiError()
         val expiredRemoteRoute = RuntimeConnectionFailure(
             reason = RuntimeConnectionFailureReason.NoConnectableRoute,
             target = identityOnlyTarget,
@@ -10285,6 +10378,13 @@ class RuntimeClientViewModelTest {
             "route_diagnostic_p2p_failed_relay_pending",
             peerToPeerFailedWithoutRelay.diagnosticCode,
         )
+        assertNull(productionSessionRejected.detail)
+        assertEquals(
+            "Production runtime route failed secure-session composition",
+            productionSessionRejected.technicalDetail,
+        )
+        assertEquals("connection_failed", productionSessionRejected.code)
+        assertNull(productionSessionRejected.diagnosticCode)
         assertNull(expiredRemoteRoute.detail)
         assertEquals("No connectable runtime route resolved for target", expiredRemoteRoute.technicalDetail)
         assertEquals("remote_route_expired", expiredRemoteRoute.code)
@@ -44035,6 +44135,82 @@ class RuntimeClientViewModelTest {
             assertTrue(fixture.viewModel.state.value.isScanningMemorySemanticDuplicateClusters)
             assertNull(fixture.viewModel.state.value.error)
         } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun productionCompositionRejectsTrustedStoreWithoutExactPairingStoreOwnership() {
+        val clock = { 150L }
+        val controller = AndroidProductionRuntimeActivationController(
+            pairingStore = PairingStore(Application()),
+            currentTimeMillis = clock,
+        )
+        try {
+            assertThrows(IllegalArgumentException::class.java) {
+                RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ -> error("unused") },
+                    relayConnector = RuntimeRelayConnector { _, _ -> error("unused") },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = FakeEmittingTrustedRuntimeStore(
+                        trustedRuntimeForViewModelTests(),
+                    ),
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = FakeRuntimeLocalDataStore(),
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    currentTimeMillis = clock,
+                    productionActivationController = controller,
+                )
+            }
+        } finally {
+            controller.close()
+        }
+    }
+
+    @Test
+    fun androidTrustedStoreProvidesItsExactPairingStoreForProductionComposition() {
+        val pairingStore = PairingStore(Application())
+        val trustedStore = AndroidTrustedRuntimeStore(pairingStore)
+
+        assertSame(pairingStore, trustedStore.pairingStoreForProductionComposition())
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun viewModelClearClosesProductionActivationController() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        var viewModel: RuntimeClientViewModel? = null
+        try {
+            val application = Application()
+            val pairingStore = PairingStore(application)
+            val clock = { 150L }
+            val controller = AndroidProductionRuntimeActivationController(pairingStore, clock)
+            viewModel = RuntimeClientViewModel(
+                application = application,
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ -> error("unused") },
+                    relayConnector = RuntimeRelayConnector { _, _ -> error("unused") },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = AndroidTrustedRuntimeStore(pairingStore),
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = FakeRuntimeLocalDataStore(),
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    currentTimeMillis = clock,
+                    productionActivationController = controller,
+                ),
+            )
+
+            viewModel.clearForTest()
+            viewModel = null
+
+            assertTrue(controller.isClosedForTesting)
+        } finally {
+            viewModel?.clearForTest()
             Dispatchers.resetMain()
         }
     }

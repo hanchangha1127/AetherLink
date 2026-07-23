@@ -1,0 +1,21 @@
+flowchart LR
+  CFG["Signed config, bounded resolver/interface input, and TURN TLS identity"] --> FORK["Exact-base restricted Pion fork"]
+  PEER["Untrusted peer, STUN, and TURN inputs"] --> IO["Capability-owned deadline-bound sockets"]
+  FORK --> OUT["All socket create, bind, connect, TLS, and write operations"]
+  OUT --> EGRESS["Single-use egress capability immediately before I/O"]
+  EGRESS --> IO
+  IO --> READ["Fixed-size UDP or bounded TURN stream read"]
+  READ --> INGRESS["Source, transaction, integrity, generation, and capability ingress admission"]
+  INGRESS --> FORK
+  FORK --> PREAUTH["One-use nominated pre-auth raw-path capability"]
+  PREAUTH --> CONFIRM["AetherLink endpoint transcript and both key confirmations"]
+  CONFIRM --> APP["Exact generation-and-tuple application-record capability"]
+  APP --> CARRIER["Still-unselected reliable ordered carrier and bounded reassembly"]
+  FORK --> LOG["Required closed source-free diagnostic allowlist"]
+  FORK --> EVENTS["64-event pull queue plus sticky terminal latch"]
+  EVENTS --> CONSUMER["Application consumer"]
+  CLOSE["Required 2,500 ms total close deadline"] --> FORK
+  CLOSE --> IO
+  CLOSE --> EVENTS
+  DISABLED["ICE-TCP, proxy, mux, mDNS, redirects, hidden DNS"] -. "reject before I/O" .-> EGRESS
+

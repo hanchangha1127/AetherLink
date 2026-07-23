@@ -121,6 +121,82 @@ final class P2PNATSessionCryptoVectorTests: XCTestCase {
         )
     }
 
+    func testExplicitEphemeralKeyCloseDropsPrivateKeyAndRejectsReplay() throws {
+        let fixture = try loadFixture()
+        let key = try P2PNATSessionEphemeralKey(
+            testPrivateScalar: Data(hex: fixture.keyAgreement.clientPrivateScalarHex)
+        )
+        let transcript = try makeTranscript(fixture.cases[0].transcriptInput)
+        XCTAssertTrue(key.testOnlyRetainsPrivateKey)
+
+        key.close()
+        key.close()
+
+        XCTAssertFalse(key.testOnlyRetainsPrivateKey)
+        XCTAssertTrue(key.testOnlyIsClosed)
+        XCTAssertThrowsError(
+            try P2PNATSessionCrypto.deriveKeys(
+                localRole: .client,
+                localEphemeralKey: key,
+                transcript: transcript
+            )
+        ) {
+            XCTAssertEqual(
+                $0 as? P2PNATSessionCryptoError,
+                .ephemeralKeyClosed
+            )
+        }
+    }
+
+    func testConcurrentCloseAndDeriveHaveOneLinearizedTerminalState() throws {
+        let fixture = try loadFixture()
+        let transcript = try makeTranscript(fixture.cases[0].transcriptInput)
+
+        for _ in 0..<64 {
+            let key = try P2PNATSessionEphemeralKey(
+                testPrivateScalar: Data(
+                    hex: fixture.keyAgreement.clientPrivateScalarHex
+                )
+            )
+            let resultLock = NSLock()
+            var derivationSuccesses = 0
+            var derivationErrors: [Error] = []
+
+            DispatchQueue.concurrentPerform(iterations: 2) { index in
+                if index == 0 {
+                    key.close()
+                    return
+                }
+                do {
+                    _ = try P2PNATSessionCrypto.deriveKeys(
+                        localRole: .client,
+                        localEphemeralKey: key,
+                        transcript: transcript
+                    )
+                    resultLock.withLock { derivationSuccesses += 1 }
+                } catch {
+                    resultLock.withLock { derivationErrors.append(error) }
+                }
+            }
+
+            XCTAssertFalse(key.testOnlyRetainsPrivateKey)
+            if derivationSuccesses == 1 {
+                XCTAssertTrue(derivationErrors.isEmpty)
+                XCTAssertTrue(key.testOnlyIsConsumed)
+                XCTAssertFalse(key.testOnlyIsClosed)
+            } else {
+                XCTAssertEqual(derivationSuccesses, 0)
+                XCTAssertEqual(derivationErrors.count, 1)
+                XCTAssertEqual(
+                    derivationErrors.first as? P2PNATSessionCryptoError,
+                    .ephemeralKeyClosed
+                )
+                XCTAssertTrue(key.testOnlyIsClosed)
+                XCTAssertFalse(key.testOnlyIsConsumed)
+            }
+        }
+    }
+
     func testConfirmationReflectionTamperingReplayAndTranscriptSubstitutionFailClosed() throws {
         let fixture = try loadFixture()
         XCTAssertEqual(Set(fixture.negativeVectors.map(\.id)), Set([

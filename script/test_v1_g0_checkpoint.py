@@ -202,6 +202,71 @@ class V1G0CheckpointTests(unittest.TestCase):
             ):
                 CHECKER.validate_document(self.mutated())
 
+    def test_personal_g1a_compatibility_is_exact_hash_allowlisted(self) -> None:
+        for relative_path, (
+            reviewed_current_sha256,
+            preserved_g0_sha256,
+        ) in CHECKER.PERSONAL_G1A_HISTORICAL_SOURCE_COMPATIBILITY.items():
+            self.assertEqual(
+                CHECKER.historical_source_compatible_sha256(
+                    relative_path,
+                    reviewed_current_sha256,
+                ),
+                preserved_g0_sha256,
+            )
+            self.assertEqual(
+                CHECKER.historical_source_compatible_sha256(
+                    relative_path,
+                    "0" * 64,
+                ),
+                "0" * 64,
+            )
+        self.assertEqual(
+            CHECKER.historical_source_compatible_sha256(
+                "unreviewed/source.kt",
+                "1" * 64,
+            ),
+            "1" * 64,
+        )
+
+    def test_pairing_store_personal_g1a_allowlist_rejects_one_byte_drift(self) -> None:
+        relative_path = (
+            "apps/android/core/pairing/src/main/java/"
+            "com/localagentbridge/android/core/pairing/PairingStore.kt"
+        )
+        raw = (CHECKER.ROOT / relative_path).read_bytes()
+        current_sha256 = hashlib.sha256(raw).hexdigest()
+        reviewed_current_sha256, _ = (
+            CHECKER.PERSONAL_G1A_HISTORICAL_SOURCE_COMPATIBILITY[relative_path]
+        )
+        self.assertEqual(current_sha256, reviewed_current_sha256)
+
+        drifted_sha256 = hashlib.sha256(raw + b"\n").hexdigest()
+        self.assertEqual(
+            CHECKER.historical_source_compatible_sha256(
+                relative_path,
+                drifted_sha256,
+            ),
+            drifted_sha256,
+        )
+        real_hasher = CHECKER.sha256_repository_file
+
+        def drifted_hasher(root: Path, candidate: object, label: str) -> str:
+            if str(candidate) == relative_path:
+                return drifted_sha256
+            return real_hasher(root, candidate, label)
+
+        with mock.patch.object(
+            CHECKER,
+            "sha256_repository_file",
+            side_effect=drifted_hasher,
+        ):
+            with self.assertRaisesRegex(
+                CHECKER.CheckpointValidationError,
+                r"sourceRecords\[23\] current byte sha256",
+            ):
+                CHECKER.validate_document(self.mutated())
+
     def test_path_policy_rejects_escape_missing_directory_and_symlink(self) -> None:
         def open_and_close(root: Path, value: object) -> None:
             file_descriptor = CHECKER.open_repository_file(

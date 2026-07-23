@@ -34,6 +34,138 @@ import org.junit.Test
 
 class RuntimeTransportClientTest {
     @Test
+    fun rawSendWritesOneCompleteLengthPrefixedBodyAndFlushes() = runBlocking {
+        val codec = ProtocolCodec()
+        val body = byteArrayOf(0x41, 0x4c, 0x53, 0x31, 29)
+        val socket = ImmediateConnectRecordingSocket()
+        val client = RuntimeTransportClient(codec = codec, ioDispatcher = Dispatchers.Unconfined)
+        client.replaceSocketFactoryForTest { socket }
+        val channel = client.connectRaw("127.0.0.1", 43170)
+
+        channel.sendFrameBody(body)
+
+        assertArrayEquals(codec.encodeFrameBody(body), socket.bytes.toByteArray())
+        assertEquals(1, socket.flushCalls)
+    }
+
+    @Test
+    fun rawReceiveReturnsBodyBeforeJsonDecode() = runBlocking {
+        val codec = ProtocolCodec()
+        val body = byteArrayOf(0x41, 0x4c, 0x53, 0x31, 30, 0xff.toByte())
+        val socket = ImmediateConnectRecordingSocket(codec.encodeFrameBody(body))
+        val client = RuntimeTransportClient(codec = codec, ioDispatcher = Dispatchers.Unconfined)
+        client.replaceSocketFactoryForTest { socket }
+        val channel = client.connectRaw("127.0.0.1", 43170)
+
+        assertArrayEquals(body, channel.receiveFrameBody())
+        assertFalse(socket.isClosed)
+    }
+
+    @Test
+    fun rawConnectionRejectsProtocolApiAndClosesTheSocket() = runBlocking {
+        val rawSocket = ImmediateConnectRecordingSocket()
+        val rawClient = RuntimeTransportClient(ioDispatcher = Dispatchers.Unconfined)
+        rawClient.replaceSocketFactoryForTest { rawSocket }
+        val rawChannel = rawClient.connectRaw("127.0.0.1", 43170)
+
+        val protocolOnRawFailure = runCatching {
+            rawClient.send(ProtocolEnvelope(type = "runtime.health"))
+        }.exceptionOrNull()
+        assertTrue(protocolOnRawFailure is IllegalStateException)
+        assertTrue(rawSocket.isClosed)
+        assertFalse(rawChannel.isConnected)
+    }
+
+    @Test
+    fun invalidRawBodyLengthFailsClosedBeforeWriting() = runBlocking {
+        listOf(ByteArray(0), ByteArray(ProtocolCodec.MAX_FRAME_BYTES + 1)).forEach { body ->
+            val socket = ImmediateConnectRecordingSocket()
+            val client = RuntimeTransportClient(ioDispatcher = Dispatchers.Unconfined)
+            client.replaceSocketFactoryForTest { socket }
+            val channel = client.connectRaw("127.0.0.1", 43170)
+
+            val failure = runCatching { channel.sendFrameBody(body) }.exceptionOrNull()
+
+            assertTrue(failure is IllegalArgumentException)
+            assertEquals(0, socket.bytes.size())
+            assertTrue(socket.isClosed)
+        }
+    }
+
+    @Test
+    fun rawSendBacklogOverflowFailsClosedAndReleasesBlockedSender() = runBlocking {
+        val socket = BlockingWriteSocket()
+        val client = RuntimeTransportClient(
+            ioDispatcher = Dispatchers.IO,
+            maximumOutstandingSends = 1,
+        )
+        client.replaceSocketFactoryForTest { socket }
+        val channel = client.connectRaw("127.0.0.1", 43170)
+        val first = async(start = CoroutineStart.UNDISPATCHED) {
+            runCatching { channel.sendFrameBody(byteArrayOf(1)) }.exceptionOrNull()
+        }
+        assertTrue(socket.writeStarted.await(TEST_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+
+        val overflow = runCatching {
+            channel.sendFrameBody(byteArrayOf(2))
+        }.exceptionOrNull()
+
+        assertTrue(overflow is IllegalStateException)
+        assertTrue(socket.isClosed)
+        assertTrue(withTimeout(TEST_TIMEOUT_MILLIS) { first.await() } is IOException)
+        assertFalse(client.isConnected)
+    }
+
+    @Test
+    fun cancellingBlockedRawSendClosesSocketAndReleasesWriterBoundedly() = runBlocking {
+        val socket = BlockingWriteSocket()
+        val client = RuntimeTransportClient(ioDispatcher = Dispatchers.IO)
+        client.replaceSocketFactoryForTest { socket }
+        val channel = client.connectRaw("127.0.0.1", 43170)
+        val sending = async(start = CoroutineStart.UNDISPATCHED) {
+            channel.sendFrameBody(byteArrayOf(1))
+        }
+        assertTrue(socket.writeStarted.await(TEST_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+
+        sending.cancel()
+        assertTrue(
+            runCatching {
+                withTimeout(TEST_TIMEOUT_MILLIS) { sending.await() }
+            }.exceptionOrNull() is CancellationException,
+        )
+        assertTrue(socket.isClosed)
+        assertFalse(channel.isConnected)
+    }
+
+    @Test
+    fun oldRawHandleCannotSendReceiveOrCloseReplacementGeneration() = runBlocking {
+        val firstSocket = ImmediateConnectRecordingSocket()
+        val replacementSocket = ImmediateConnectRecordingSocket()
+        val sockets = ArrayDeque<Socket>().apply {
+            addLast(firstSocket)
+            addLast(replacementSocket)
+        }
+        val client = RuntimeTransportClient(ioDispatcher = Dispatchers.Unconfined)
+        client.replaceSocketFactoryForTest {
+            synchronized(sockets) { sockets.removeFirst() }
+        }
+
+        val oldHandle = client.connectRaw("127.0.0.1", 43170)
+        val replacementHandle = client.connectRaw("127.0.0.1", 43171)
+
+        assertFalse(oldHandle.isConnected)
+        assertTrue(replacementHandle.isConnected)
+        assertTrue(runCatching { oldHandle.sendFrameBody(byteArrayOf(1)) }.exceptionOrNull() is IllegalStateException)
+        assertTrue(runCatching { oldHandle.receiveFrameBody() }.exceptionOrNull() is IllegalStateException)
+        oldHandle.close()
+
+        assertFalse(replacementSocket.isClosed)
+        assertTrue(replacementHandle.isConnected)
+        replacementHandle.sendFrameBody(byteArrayOf(2))
+        assertArrayEquals(ProtocolCodec().encodeFrameBody(byteArrayOf(2)), replacementSocket.bytes.toByteArray())
+    }
+
+    @Test
     fun sendWritesOneCompleteProtocolFrame() = runBlocking {
         val codec = ProtocolCodec()
         val envelope = ProtocolEnvelope(type = "runtime.health", requestId = "single-frame")
@@ -232,14 +364,20 @@ class RuntimeTransportClientTest {
         assertTrue(client.isConnected)
     }
 
-    private fun RuntimeTransportClient.replaceSocketForTest(socket: Socket) {
+    private fun RuntimeTransportClient.replaceSocketForTest(
+        socket: Socket,
+        mode: RuntimeFrameBodyMode = RuntimeFrameBodyMode.ProtocolEnvelope,
+    ) {
         val lockField = RuntimeTransportClient::class.java.getDeclaredField("stateLock")
         lockField.isAccessible = true
         val lock = requireNotNull(lockField.get(this))
         val socketField = RuntimeTransportClient::class.java.getDeclaredField("socket")
         socketField.isAccessible = true
+        val modeField = RuntimeTransportClient::class.java.getDeclaredField("socketMode")
+        modeField.isAccessible = true
         synchronized(lock) {
             socketField.set(this, socket)
+            modeField.set(this, mode)
         }
     }
 
@@ -278,6 +416,8 @@ class RuntimeTransportClientTest {
         val bytes = ByteArrayOutputStream()
         val writeLengths = mutableListOf<Int>()
         private var closed = false
+        var flushCalls = 0
+            private set
 
         override fun isConnected(): Boolean = true
 
@@ -295,10 +435,48 @@ class RuntimeTransportClientTest {
                 writeLengths += length
                 bytes.write(buffer, offset, length)
             }
+
+            override fun flush() {
+                flushCalls += 1
+            }
         }
 
         override fun close() {
             closed = true
+        }
+    }
+
+    private class BlockingWriteSocket : Socket() {
+        val writeStarted = CountDownLatch(1)
+        private val closedLatch = CountDownLatch(1)
+        @Volatile
+        private var closed = false
+
+        @Volatile
+        private var connected = false
+
+        override fun setTcpNoDelay(on: Boolean) = Unit
+        override fun connect(endpoint: SocketAddress, timeout: Int) {
+            connected = true
+        }
+        override fun isConnected(): Boolean = connected
+        override fun isClosed(): Boolean = closed
+        override fun getOutputStream(): OutputStream = object : OutputStream() {
+            override fun write(value: Int) = awaitClose()
+            override fun write(buffer: ByteArray, offset: Int, length: Int) = awaitClose()
+
+            private fun awaitClose(): Nothing {
+                writeStarted.countDown()
+                if (!closedLatch.await(TEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                    throw IOException("Timed out waiting for fake raw send close")
+                }
+                throw IOException("Fake raw send closed")
+            }
+        }
+
+        override fun close() {
+            closed = true
+            closedLatch.countDown()
         }
     }
 
@@ -406,6 +584,43 @@ class RuntimeTransportClientTest {
 
         override fun isClosed(): Boolean = closed
 
+        override fun close() {
+            closed = true
+        }
+    }
+
+    private class ImmediateConnectRecordingSocket(
+        inputFrame: ByteArray = ByteArray(0),
+    ) : Socket() {
+        val bytes = ByteArrayOutputStream()
+        private val input = ByteArrayInputStream(inputFrame)
+        var flushCalls = 0
+            private set
+        @Volatile
+        private var connected = false
+        @Volatile
+        private var closed = false
+
+        override fun setTcpNoDelay(on: Boolean) = Unit
+        override fun connect(endpoint: SocketAddress, timeout: Int) {
+            connected = true
+        }
+        override fun isConnected(): Boolean = connected
+        override fun isClosed(): Boolean = closed
+        override fun getOutputStream(): OutputStream = object : OutputStream() {
+            override fun write(value: Int) {
+                bytes.write(value)
+            }
+
+            override fun write(buffer: ByteArray, offset: Int, length: Int) {
+                bytes.write(buffer, offset, length)
+            }
+
+            override fun flush() {
+                flushCalls += 1
+            }
+        }
+        override fun getInputStream(): InputStream = input
         override fun close() {
             closed = true
         }

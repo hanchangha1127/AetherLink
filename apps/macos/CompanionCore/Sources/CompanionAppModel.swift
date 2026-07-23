@@ -1307,7 +1307,6 @@ public final class CompanionAppModel: ObservableObject {
         case .none:
             startRelayClientIfConfigured()
         }
-        startRestoredPairScopedTransports()
         transportState = Self.transportStatus(from: localStatus)
         refreshTransportStatusText()
         switch transportState.state {
@@ -1324,8 +1323,11 @@ public final class CompanionAppModel: ObservableObject {
             transportStatus = "Stopped"
             log("AetherLink runtime stopped")
         }
+        let startedRuntimeLifecycleGeneration = runtimeLifecycleGeneration
         Task {
-            await refreshTrustedDevices()
+            await startRestoredPairScopedTransports(
+                expectedRuntimeLifecycleGeneration: startedRuntimeLifecycleGeneration
+            )
             await refreshBackendStatus()
         }
         if !hasScheduledRuntimeChatRetentionMaintenance {
@@ -3364,10 +3366,17 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     public func refreshTrustedDevices() async {
+        _ = await reloadTrustedDevicesForPairScopedTransportStart()
+    }
+
+    private func reloadTrustedDevicesForPairScopedTransportStart() async -> [TrustedDevice]? {
         do {
-            trustedDevices = try await trustedDeviceStore.load()
+            let loadedTrustedDevices = try await trustedDeviceStore.load()
+            trustedDevices = loadedTrustedDevices
+            return loadedTrustedDevices
         } catch {
             log("Trusted device load failed: \(error.localizedDescription)")
+            return nil
         }
     }
 
@@ -3414,8 +3423,24 @@ public final class CompanionAppModel: ObservableObject {
 
     private func startPairScopedTransports(
         clientKeyFingerprint: String,
-        configuration: RelayPeerConfiguration
-    ) {
+        configuration: RelayPeerConfiguration,
+        trustedDevices: [TrustedDevice]
+    ) -> Bool {
+        let matchingTrustedDevices = trustedDevices.filter { device in
+            guard let fingerprint = try? PairedRelayAllocationAuthorization.publicKeyFingerprint(
+                publicKeyBase64: device.publicKeyBase64
+            ) else {
+                return false
+            }
+            return fingerprint == clientKeyFingerprint
+        }
+        guard matchingTrustedDevices.count == 1,
+              matchingTrustedDevices[0].productionPairState == nil
+        else {
+            log("Legacy pair-scoped transport start rejected")
+            return false
+        }
+
         let router = runtimeRouter!
         runtimeConnectionManager.startPairPrivateOverlay(
             fingerprint: clientKeyFingerprint,
@@ -3452,7 +3477,7 @@ public final class CompanionAppModel: ObservableObject {
             )
         } catch {
             log("Pair-scoped remote route could not start")
-            return
+            return false
         }
 
         runtimeConnectionManager.startPair(
@@ -3474,6 +3499,7 @@ public final class CompanionAppModel: ObservableObject {
             }
             router.handle(envelope, sink: sink)
         }
+        return true
     }
 
     private func beginPairLifecycleRefresh(
@@ -3492,7 +3518,9 @@ public final class CompanionAppModel: ObservableObject {
         if inFlightPairRefreshSequences[fingerprint]?.isEmpty == true {
             inFlightPairRefreshSequences.removeValue(forKey: fingerprint)
         }
-        reconcilePendingPairActivation(fingerprint: fingerprint)
+        Task { [weak self] in
+            await self?.reconcilePendingPairActivation(fingerprint: fingerprint)
+        }
     }
 
     private func invalidatePairLifecycle(fingerprint: String) {
@@ -3501,7 +3529,7 @@ public final class CompanionAppModel: ObservableObject {
         pendingPairedRelayActivations.removeValue(forKey: fingerprint)
     }
 
-    private func reconcilePendingPairActivation(fingerprint: String) {
+    private func reconcilePendingPairActivation(fingerprint: String) async {
         guard let pendingActivation = pendingPairedRelayActivations[fingerprint],
               pendingActivation.activationRequested,
               !(inFlightPairRefreshSequences[fingerprint] ?? []).contains(where: {
@@ -3530,23 +3558,49 @@ public final class CompanionAppModel: ObservableObject {
             return
         }
         pendingPairedRelayActivations.removeValue(forKey: fingerprint)
-        startPairScopedTransports(
+
+        guard let loadedTrustedDevices = await reloadTrustedDevicesForPairScopedTransportStart(),
+              runtimeLifecycleGeneration == pendingActivation.runtimeLifecycleGeneration,
+              pairLifecycleGenerations[fingerprint] == pendingActivation.pairLifecycleGeneration,
+              pairScopedRelayRoutes[fingerprint] == storedRoute
+        else {
+            return
+        }
+        guard startPairScopedTransports(
             clientKeyFingerprint: fingerprint,
-            configuration: pairScopedRelayConfiguration(storedRoute)
-        )
+            configuration: pairScopedRelayConfiguration(storedRoute),
+            trustedDevices: loadedTrustedDevices
+        ) else {
+            return
+        }
         if pendingActivation.rotatesBootstrapRoute {
             rotateBootstrapRouteAfterPairClaim()
         }
     }
 
-    private func startRestoredPairScopedTransports(now: Date = Date()) {
+    private func startRestoredPairScopedTransports(
+        now: Date = Date(),
+        expectedRuntimeLifecycleGeneration: UUID
+    ) async {
+        guard let loadedTrustedDevices = await reloadTrustedDevicesForPairScopedTransportStart(),
+              isRuntimeStarted,
+              runtimeLifecycleGeneration == expectedRuntimeLifecycleGeneration
+        else {
+            return
+        }
         let nowEpochMillis = Int64((now.timeIntervalSince1970 * 1_000).rounded())
         for route in pairScopedRelayRoutes.values.sorted(by: {
             $0.clientKeyFingerprint < $1.clientKeyFingerprint
         }) where route.relayExpiresAtEpochMillis > nowEpochMillis {
-            startPairScopedTransports(
+            guard pairScopedRelayRoutes[route.clientKeyFingerprint] == route,
+                  runtimeLifecycleGeneration == expectedRuntimeLifecycleGeneration
+            else {
+                continue
+            }
+            _ = startPairScopedTransports(
                 clientKeyFingerprint: route.clientKeyFingerprint,
-                configuration: pairScopedRelayConfiguration(route)
+                configuration: pairScopedRelayConfiguration(route),
+                trustedDevices: loadedTrustedDevices
             )
         }
     }
@@ -4729,7 +4783,9 @@ extension CompanionAppModel: RuntimeRouteRefreshing {
         }
         pendingPairedRelayActivations[pendingActivation.clientKeyFingerprint]?
             .activationRequested = true
-        reconcilePendingPairActivation(fingerprint: pendingActivation.clientKeyFingerprint)
+        await reconcilePendingPairActivation(
+            fingerprint: pendingActivation.clientKeyFingerprint
+        )
     }
 
     public func refreshRuntimeChatCompactionCalibrationReport() async {

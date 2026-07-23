@@ -1,0 +1,390 @@
+{
+  "schema": "aetherlink-production-secure-session-crypto-v1-vectors",
+  "version": 1,
+  "sourceFixture": {
+    "path": "shared/protocol/fixtures/production-g1a-c-candidate-v1-vectors.json",
+    "sha256": "e6bc666dbf9fded82d5681fdcfdc2c4c9cd5fa197135fc0673569d35656236af"
+  },
+  "contract": {
+    "suite": "aetherlink-secure-session-v1",
+    "profile": "p256_hkdf_sha256_aes256gcm_v1",
+    "objectTypes": {
+      "confirmation": 29,
+      "encryptedRecord": 30
+    },
+    "limits": {
+      "maximumConfirmationBytes": 384,
+      "maximumEncryptedRecordBytes": 1048576,
+      "maximumPlaintextBytes": 1048448,
+      "maximumEpoch": 15,
+      "maximumRecordsPerEpoch": 1048576,
+      "maximumPlaintextBytesPerEpoch": 1073741824,
+      "maximumRecordsPerSession": 16777216,
+      "maximumPlaintextBytesPerSession": 17179869184
+    },
+    "domains": {
+      "binding": "AetherLink production secure-session object7+object26 binding v1",
+      "hkdfRoot": "AetherLink production secure-session HKDF root v1",
+      "trafficKey": "AetherLink production secure-session traffic key v1",
+      "trafficIv": "AetherLink production secure-session traffic iv v1",
+      "trafficUpdate": "AetherLink production secure-session traffic update v1",
+      "confirmation": "AetherLink production secure-session key confirmation v1",
+      "recordAad": "AetherLink production secure-session record AAD v1"
+    },
+    "roleBytes": {
+      "client": 1,
+      "runtime": 2
+    },
+    "contentTypes": {
+      "application": 1,
+      "keyUpdate": 2
+    }
+  },
+  "inputs": {
+    "transcriptObjectKey": "candidateSecureSessionTranscript",
+    "grantAuthorizationObjectKey": "p2pGrantAuthorization",
+    "clientEphemeralKey": "clientEphemeral",
+    "runtimeEphemeralKey": "runtimeEphemeral",
+    "sessionId": "986a528fb45038fab8bd23626bbb7e45"
+  },
+  "expected": {
+    "transcriptSha256Hex": "cf4aa9aec657407cd0cb931109506d021ead0e39b28395e7d3fe7b92c81eb2d3",
+    "grantAuthorizationSha256Hex": "d6c2ebfbec1a13e65e5f43e230a6c8731f1b2ab5fad94d06a8c4dafa61b6d099",
+    "bindingHashHex": "8be7d84879e5b6758654e445083ed30cf5ad7772a1a6fd81614bc06f74189de6",
+    "sharedSecretHex": "d9e04fe67fc3b24bf821e5438d0ca3bfe69db902715393f99842a547569a729b",
+    "hkdfSaltHex": "8be7d84879e5b6758654e445083ed30cf5ad7772a1a6fd81614bc06f74189de6",
+    "hkdfPrkHex": "62f9301b5264d863de6d601df42237a37832a9880d7a0660fc5a4a373f6a5867",
+    "hkdfRootInfoHex": "4165746865724c696e6b2070726f64756374696f6e207365637572652d73657373696f6e20484b444620726f6f7420763100000000208be7d84879e5b6758654e445083ed30cf5ad7772a1a6fd81614bc06f74189de6",
+    "hkdfOkmHex": "550594e08f9d6aa33eb1bff701a5663cb1b64ae90c7f865661deda1071ae29e938956f382b202372f9f6c3017272afe8dbbab08898ef5808a46aedd79ba664f225d4932b83dbb1da4a870ac9956ae2107cb805603309ea0e7c6036083bed81e4c0515e058640a888362eba9f6f28efc4e0211251d6fba66591c20683ac6a9d5c",
+    "keys": {
+      "clientConfirmationKeyHex": "550594e08f9d6aa33eb1bff701a5663cb1b64ae90c7f865661deda1071ae29e9",
+      "runtimeConfirmationKeyHex": "38956f382b202372f9f6c3017272afe8dbbab08898ef5808a46aedd79ba664f2",
+      "clientEpoch0SecretHex": "25d4932b83dbb1da4a870ac9956ae2107cb805603309ea0e7c6036083bed81e4",
+      "runtimeEpoch0SecretHex": "c0515e058640a888362eba9f6f28efc4e0211251d6fba66591c20683ac6a9d5c"
+    },
+    "epochMaterial": {
+      "client": {
+        "epoch0KeyHex": "4d1166317e2ced1a2f49089d5d1b39365d482318550b7e15097e852670fa1df7",
+        "epoch0IvHex": "ca64fb283cdd34dbdccd842b",
+        "epoch1SecretHex": "82d5e38b73976fcf082b06005ea5ead681bb7996ab2d1ad5d6e1e0c81c2c3aad",
+        "epoch1KeyHex": "dbeed8973e754f051b7731cd63f63290b983a56855ed136c3fe8e3ff94854a95",
+        "epoch1IvHex": "fbb638834f925eabbe723584"
+      },
+      "runtime": {
+        "epoch0KeyHex": "80e4ddfce47aeaac8f399188ea8c4f90a67c98af207e4126b56ed3c967636b6b",
+        "epoch0IvHex": "13dc383f147b7cd0e3933d17",
+        "epoch1SecretHex": "72337c884a096f91227066ffc12f6d38297dfde5170b99e5495a45afc9c0307b",
+        "epoch1KeyHex": "b61d499ecc7573bea05bf6c811b5f1c16741811f2d1820d8dc27c44e431d05fd",
+        "epoch1IvHex": "a21cbe80aba875da0a4f60a3"
+      }
+    },
+    "confirmations": {
+      "client": {
+        "prefixHex": "414c53311d01010000001c6165746865726c696e6b2d7365637572652d73657373696f6e2d7631020000001d703235365f686b64665f7368613235365f61657332353667636d5f7631030000002039383661353238666234353033386661623862643233363236626262376534350400000040636634616139616563363537343037636430636239333131303935303664303231656164306533396232383339356537643366653762393263383165623264330500000040643663326562666265633161313365363565356634336532333061366338373331663162326162356661643934643036613863346461666136316236643039390600000006636c69656e74070000000400000000",
+        "proofHex": "438e38a03c09feeefcd48ad7ae54ecf3e44a56bedf0862151580c15102f5ac2e",
+        "canonicalHex": "414c53311d01010000001c6165746865726c696e6b2d7365637572652d73657373696f6e2d7631020000001d703235365f686b64665f7368613235365f61657332353667636d5f7631030000002039383661353238666234353033386661623862643233363236626262376534350400000040636634616139616563363537343037636430636239333131303935303664303231656164306533396232383339356537643366653762393263383165623264330500000040643663326562666265633161313365363565356634336532333061366338373331663162326162356661643934643036613863346461666136316236643039390600000006636c69656e740700000004000000000800000020438e38a03c09feeefcd48ad7ae54ecf3e44a56bedf0862151580c15102f5ac2e",
+        "sha256Hex": "6a9472b249f5dddde7153e3917b0abfd3bcf3ed1b2102795d1d4bf0174b1bbd6"
+      },
+      "runtime": {
+        "prefixHex": "414c53311d01010000001c6165746865726c696e6b2d7365637572652d73657373696f6e2d7631020000001d703235365f686b64665f7368613235365f61657332353667636d5f763103000000203938366135323866623435303338666162386264323336323662626237653435040000004063663461613961656336353734303763643063623933313130393530366430323165616430653339623238333935653764336665376239326338316562326433050000004064366332656266626563316131336536356535663433653233306136633837333166316232616235666164393464303661386334646166613631623664303939060000000772756e74696d65070000000400000000",
+        "proofHex": "09db7ceaa031958cc84711007db807fc675427081a1b1cc52d094268538db4c9",
+        "canonicalHex": "414c53311d01010000001c6165746865726c696e6b2d7365637572652d73657373696f6e2d7631020000001d703235365f686b64665f7368613235365f61657332353667636d5f763103000000203938366135323866623435303338666162386264323336323662626237653435040000004063663461613961656336353734303763643063623933313130393530366430323165616430653339623238333935653764336665376239326338316562326433050000004064366332656266626563316131336536356535663433653233306136633837333166316232616235666164393464303661386334646166613631623664303939060000000772756e74696d65070000000400000000080000002009db7ceaa031958cc84711007db807fc675427081a1b1cc52d094268538db4c9",
+        "sha256Hex": "62061f5a7e2685080de2dff43365d619202016896610b5630b9140d33abf8ecf"
+      }
+    },
+    "records": {
+      "clientApplication0": {
+        "role": "client",
+        "epoch": 0,
+        "sequence": 0,
+        "contentType": "application",
+        "plaintextHex": "636c69656e74206170706c69636174696f6e207265636f7264",
+        "prefixHex": "414c53311e010100000020393836613532386662343530333866616238626432333632366262623765343502000000010103000000040000000004000000080000000000000000050000000101",
+        "aadHex": "4165746865724c696e6b2070726f64756374696f6e207365637572652d73657373696f6e207265636f72642041414420763100000000758be7d84879e5b6758654e445083ed30cf5ad7772a1a6fd81614bc06f74189de60000004d414c53311e01010000002039383661353238666234353033386661623862643233363236626262376534350200000001010300000004000000000400000008000000000000000005000000010100000019",
+        "nonceHex": "ca64fb283cdd34dbdccd842b",
+        "ciphertextHex": "ffa75feba66279a0f078768ecf8dc76fca3c238f2ea7846b2a",
+        "tagHex": "7f58274bffb745bb608be34245194840",
+        "canonicalHex": "414c53311e0101000000203938366135323866623435303338666162386264323336323662626237653435020000000101030000000400000000040000000800000000000000000500000001010600000019ffa75feba66279a0f078768ecf8dc76fca3c238f2ea7846b2a07000000107f58274bffb745bb608be34245194840",
+        "sha256Hex": "5c6eeb4fc110f4ea805fc47c6d6a1119cb295fe6021eacb65cc725db3b29b4c1"
+      },
+      "runtimeApplication0": {
+        "role": "runtime",
+        "epoch": 0,
+        "sequence": 0,
+        "contentType": "application",
+        "plaintextHex": "72756e74696d65206170706c69636174696f6e207265636f7264",
+        "prefixHex": "414c53311e010100000020393836613532386662343530333866616238626432333632366262623765343502000000010203000000040000000004000000080000000000000000050000000101",
+        "aadHex": "4165746865724c696e6b2070726f64756374696f6e207365637572652d73657373696f6e207265636f72642041414420763100000000758be7d84879e5b6758654e445083ed30cf5ad7772a1a6fd81614bc06f74189de60000004d414c53311e0101000000203938366135323866623435303338666162386264323336323662626237653435020000000102030000000400000000040000000800000000000000000500000001010000001a",
+        "nonceHex": "13dc383f147b7cd0e3933d17",
+        "ciphertextHex": "ae61b14f46e88e75dd3c6c8b35cc268d6f98825abfd91d533ad5",
+        "tagHex": "42ab6ace350cff552eb846c2c7d28aa7",
+        "canonicalHex": "414c53311e010100000020393836613532386662343530333866616238626432333632366262623765343502000000010203000000040000000004000000080000000000000000050000000101060000001aae61b14f46e88e75dd3c6c8b35cc268d6f98825abfd91d533ad5070000001042ab6ace350cff552eb846c2c7d28aa7",
+        "sha256Hex": "73adfc3ae0c782e7d7f78c6b5b42e673206b746cf4da39bc355a671a9aa19741"
+      },
+      "clientKeyUpdate1": {
+        "role": "client",
+        "epoch": 0,
+        "sequence": 1,
+        "contentType": "key_update",
+        "plaintextHex": "00000001",
+        "prefixHex": "414c53311e010100000020393836613532386662343530333866616238626432333632366262623765343502000000010103000000040000000004000000080000000000000001050000000102",
+        "aadHex": "4165746865724c696e6b2070726f64756374696f6e207365637572652d73657373696f6e207265636f72642041414420763100000000758be7d84879e5b6758654e445083ed30cf5ad7772a1a6fd81614bc06f74189de60000004d414c53311e01010000002039383661353238666234353033386661623862643233363236626262376534350200000001010300000004000000000400000008000000000000000105000000010200000004",
+        "nonceHex": "ca64fb283cdd34dbdccd842a",
+        "ciphertextHex": "b428ea95",
+        "tagHex": "eb7aa9e1ae7b5b95d85b068ea6922a6b",
+        "canonicalHex": "414c53311e0101000000203938366135323866623435303338666162386264323336323662626237653435020000000101030000000400000000040000000800000000000000010500000001020600000004b428ea950700000010eb7aa9e1ae7b5b95d85b068ea6922a6b",
+        "sha256Hex": "cedb82bea83f88aacb6eadf9a7302dd50cfce8be249e57bcfe4405615d452dee"
+      },
+      "clientEpoch1Application0": {
+        "role": "client",
+        "epoch": 1,
+        "sequence": 0,
+        "contentType": "application",
+        "plaintextHex": "636c69656e742065706f6368206f6e65207265636f7264",
+        "prefixHex": "414c53311e010100000020393836613532386662343530333866616238626432333632366262623765343502000000010103000000040000000104000000080000000000000000050000000101",
+        "aadHex": "4165746865724c696e6b2070726f64756374696f6e207365637572652d73657373696f6e207265636f72642041414420763100000000758be7d84879e5b6758654e445083ed30cf5ad7772a1a6fd81614bc06f74189de60000004d414c53311e01010000002039383661353238666234353033386661623862643233363236626262376534350200000001010300000004000000010400000008000000000000000005000000010100000017",
+        "nonceHex": "fbb638834f925eabbe723584",
+        "ciphertextHex": "537a356b67cab8ebf8af37860783a323ec0b1f5dec3f9b",
+        "tagHex": "c62a7ffb883578859524ab2e6840da04",
+        "canonicalHex": "414c53311e0101000000203938366135323866623435303338666162386264323336323662626237653435020000000101030000000400000001040000000800000000000000000500000001010600000017537a356b67cab8ebf8af37860783a323ec0b1f5dec3f9b0700000010c62a7ffb883578859524ab2e6840da04",
+        "sha256Hex": "1f535bcb16470312862714beb45e5a78707a4a8ec61819b9c51abf6a78d326f3"
+      }
+    }
+  },
+  "negativeVectors": [
+    {
+      "id": "object7_object26_substitution",
+      "operation": "derive",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "local_private_public_mismatch",
+      "operation": "derive",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "ephemeral_handle_reuse",
+      "operation": "derive",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "role_reflection_confirmation",
+      "operation": "accept_confirmation",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "confirmation_proof_bit_flip",
+      "operation": "accept_confirmation",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "confirmation_before_activation",
+      "operation": "make_cipher",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "record_wrong_session",
+      "operation": "open",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "record_wrong_role",
+      "operation": "open",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "record_replay",
+      "operation": "open",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "record_gap",
+      "operation": "open",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "record_future_epoch",
+      "operation": "open",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "record_tag_bit_flip",
+      "operation": "open",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "record_ciphertext_bit_flip",
+      "operation": "open",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "authentication_failure_no_receive_advance",
+      "operation": "open",
+      "expectedResult": "reject_without_counter_advance",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "key_update_skip",
+      "operation": "open",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "key_update_duplicate",
+      "operation": "open",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "key_update_epoch_15",
+      "operation": "seal_key_update",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "record_max_plus_one",
+      "operation": "seal",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "epoch_record_limit",
+      "operation": "seal",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "epoch_plaintext_limit",
+      "operation": "seal",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "session_record_limit",
+      "operation": "seal",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "session_plaintext_limit",
+      "operation": "seal",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "expiry_boundary",
+      "operation": "lifecycle",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "clock_regression",
+      "operation": "lifecycle",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "authority_invalidation",
+      "operation": "lifecycle",
+      "expectedResult": "reject_fail_closed",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    },
+    {
+      "id": "concurrent_seal_unique_sequence",
+      "operation": "concurrency",
+      "expectedResult": "unique_ordered_sequences",
+      "platforms": [
+        "swift",
+        "android"
+      ]
+    }
+  ]
+}
