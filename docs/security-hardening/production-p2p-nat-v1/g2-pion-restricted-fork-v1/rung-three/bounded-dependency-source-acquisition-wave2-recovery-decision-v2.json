@@ -1,0 +1,296 @@
+{
+  "authority": {
+    "compilerAuthorized": false,
+    "dependencySourceAcquisitionAuthorized": false,
+    "deploymentAuthorized": false,
+    "deviceAuthorized": false,
+    "gitWriteAuthorized": false,
+    "networkAuthorized": false,
+    "packageManagerAuthorized": false,
+    "recoveryDesignRecorded": true,
+    "runtimeOrProductNetworkAuthorized": false,
+    "shellOrSubprocessAuthorized": false,
+    "sourceExtractionAuthorized": false,
+    "sourceLoadOrExecutionAuthorized": false,
+    "v3CheckerAndTestsAuthorized": true,
+    "v3ExecutionPermitPreparationAuthorized": true,
+    "v3RunnerImplementationAuthorized": true
+  },
+  "closure": {
+    "candidateSelected": false,
+    "dependencyClosureComplete": false,
+    "dependencySourceReviewed": false,
+    "findingsClosedByRecoveryDecision": 0,
+    "graphFixedPointReached": false,
+    "librarySelected": false,
+    "openFindingCount": 19,
+    "rungThreeComplete": false,
+    "semanticClosureComplete": false,
+    "wave2Acquired": false
+  },
+  "contentBinding": {
+    "algorithm": "sha256",
+    "canonicalization": "utf8_ascii_escaped_sorted_keys_compact_single_lf",
+    "scope": "decision_without_contentBinding",
+    "sha256": "0e8c05ed9abf4c3c6ee624009565e54789be7b79d9722b931f5d96a34ce819b5"
+  },
+  "decisionId": "g2-pion-ice-v4.3.0-rung3-dependency-wave2-recovery-decision-v2",
+  "documentType": "aetherlink.g2-pion-dependency-wave2-recovery-decision",
+  "failureInterpretation": {
+    "acceptedFinalSetRetained": false,
+    "actualCompressionRatioRecorded": false,
+    "authenticationRelated": false,
+    "credentialRelated": false,
+    "failedModule": "github.com/pion/dtls/v3",
+    "failedVersion": "v3.1.4",
+    "observedOneUseArtifactCount": 2,
+    "ownerProofRelated": false,
+    "safeNumericObservations": {},
+    "stagingRetained": false,
+    "terminalStateSchemaValid": true,
+    "v2PreflightTerminalState": "consumed_failure_recovery_required"
+  },
+  "independentReadbackContract": {
+    "compressionTelemetryIsNonGating": true,
+    "exactRetainedResourceCount": 30,
+    "minimumStableFullReadPassCount": 2,
+    "networkAllowed": false,
+    "recheckEmbeddedModParityWhenPresent": true,
+    "recheckExactInventoryModeLinkCountAndStableIdentity": true,
+    "recomputeCompressionTelemetryExactly": true,
+    "recomputeGoModH1": true,
+    "recomputeModuleZipH1": true,
+    "recomputeRawSha256": true,
+    "requiredAfterAcquisitionSuccess": true,
+    "runnerSelfCheckQualifiesAsIndependentReadback": false,
+    "sourceExtractionAllowed": false,
+    "sourceLoadOrExecutionAllowed": false
+  },
+  "nextAction": "prepare_separate_wave2_v3_runner_readback_tests_and_execution_permit",
+  "nonClaims": [
+    "v2_failure_does_not_record_an_actual_compression_ratio",
+    "v3_does_not_reuse_any_v2_response_or_staging",
+    "non_gating_compression_telemetry_does_not_remove_absolute_or_structural_zip_limits",
+    "recovery_decision_is_not_v3_execution_authority",
+    "no_dependency_source_set_was_retained_by_v2",
+    "no_repository_authentication_owner_proof_or_user_action_is_required"
+  ],
+  "personalProjectBoundary": {
+    "accountLoginRequired": false,
+    "credentialsAllowed": false,
+    "externalAuthenticationRequired": false,
+    "passwordRequired": false,
+    "privateKeyRequired": false,
+    "productEndpointAuthenticationIsSeparateRuntimeInvariant": true,
+    "projectOwnership": "personal_single_owner",
+    "repositoryOwnerIdentityProofRequired": false,
+    "signatureRequired": false,
+    "tokenRequired": false,
+    "userActionRequired": false
+  },
+  "predecessorBindings": {
+    "wave2Decision": {
+      "contentSha256": "1368918d79f629e2a07ec324201963b9558434aebeca2ef38261ebf62d180bc5",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave2-v1.json",
+      "rawSha256": "e10a4b41f0dc9ab9bc13b07f6b9e238e146316a7a4846af5b22f3a57fe0cd1a1"
+    },
+    "wave2RecoveryDecisionV1": {
+      "contentSha256": "9dae2cec0af345138ba58bd679f71f79c74a496ab5edc63385f8dff32e8ee4d6",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-recovery-decision-v1.json",
+      "rawSha256": "97be9c7a3aa5e7ab58ea4eada5f5f5d6193a14cc0fb71208bafdf16ba4e7523f"
+    },
+    "wave2V2Common": {
+      "path": "script/p2p_nat_g2_pion_dependency_wave2_common_v2.py",
+      "rawSha256": "a877fc159e8abee773e1517f559266d97655aafac653398b76c91c724bd94316"
+    },
+    "wave2V2ExecutionPermit": {
+      "contentSha256": "83c8e13dd03e4403102351736a82f37c054703deb3f45185d562cc528dfe6cb3",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-execution-permit-v2.json",
+      "permitId": "g2-pion-ice-v4.3.0-rung3-dependency-wave2-execution-permit-v2",
+      "rawSha256": "5565ea080f2db3f59b64a0daec41c61adff851820bc981a684f7c1c0c374fa5d"
+    },
+    "wave2V2ExecutionPermitReader": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-execution-permit-v2.md",
+      "rawSha256": "ef840350f192f9e0887e4f8f1284d1cc25cbdf7f43b6ff84326ffebc5f4ed357"
+    },
+    "wave2V2PermitChecker": {
+      "path": "script/check_p2p_nat_g2_pion_dependency_wave2_execution_permit_v2.py",
+      "rawSha256": "8e4093d636308720f5fe216e8b22923b44b2b41e3e325b61d85c7ead55645147"
+    },
+    "wave2V2PermitCheckerTests": {
+      "path": "script/test_p2p_nat_g2_pion_dependency_wave2_execution_permit_v2.py",
+      "rawSha256": "0024f17c8abee7d3e0b4f06b170223ee1500a561f1f007638899e59f2fd285a3"
+    },
+    "wave2V2Readback": {
+      "path": "script/check_p2p_nat_g2_pion_dependency_wave2_success_v2.py",
+      "rawSha256": "71df0bab0d85da5b6972d5668d939275d2cd833db4040bf4dce2d71910d00d0e"
+    },
+    "wave2V2ReadbackTests": {
+      "path": "script/test_p2p_nat_g2_pion_dependency_wave2_success_v2.py",
+      "rawSha256": "fe54d0b48b07ee5b5bbd4e71d1366d51720edcc7b0a6f447a1836bc0f7c4fe53"
+    },
+    "wave2V2Runner": {
+      "path": "script/acquire_p2p_nat_g2_pion_dependency_wave2_v2_once.py",
+      "rawSha256": "b73113a99c94d00cee428efd621c4b0e43afdeed6f85c4f279b8976b4f1313dd"
+    },
+    "wave2V2RunnerTests": {
+      "path": "script/test_acquire_p2p_nat_g2_pion_dependency_wave2_v2_once.py",
+      "rawSha256": "ea55d06de4fb4d7d81c707f8a984a11e9a8c2d3b763001c2f7778d394c09c11f"
+    }
+  },
+  "recordedDate": "2026-07-24",
+  "result": "v2_consumed_after_four_responses_no_final_set_v3_non_gating_bounded_compression_telemetry_selected",
+  "rootCause": {
+    "actualRatioUnknownFromTerminalReceipt": true,
+    "authenticationRelated": false,
+    "classification": "uncalibrated_compression_ratio_rejection_after_complete_structural_validation",
+    "historicalMaximumCompressionRatio": 200,
+    "networkIdentityRelated": false,
+    "newHigherCompressionRatioSelected": false,
+    "ratioWasAppliedByPostInspectionWrapper": true,
+    "zipStructureCrcModuleH1AndAbsoluteBoundsRemainRequired": true
+  },
+  "schemaVersion": "2.0",
+  "selectedV3Policy": {
+    "absoluteLimits": {
+      "maximumAggregateEntries": 300000,
+      "maximumAggregateResponseBytes": 67108864,
+      "maximumAggregateUncompressedBytes": 1073741824,
+      "maximumCentralDirectoryBytesPerArchive": 8388608,
+      "maximumComponentBytes": 255,
+      "maximumEntriesPerArchive": 20000,
+      "maximumJsonReceiptOrFailureBytes": 2097152,
+      "maximumModResponseBytesPerTuple": 1048576,
+      "maximumPathBytes": 1024,
+      "maximumPathComponents": 64,
+      "maximumSingleFileBytes": 134217728,
+      "maximumUncompressedBytesPerArchive": 134217728,
+      "maximumZipResponseBytesPerTuple": 16777216,
+      "perRequestDeadlineMilliseconds": 30000,
+      "wholeWaveDeadlineMilliseconds": 600000
+    },
+    "compressionTelemetry": {
+      "divisionOrFloatingPointAllowed": false,
+      "entryNameOrBodyRecorded": false,
+      "exactIntegerComparisonRequired": true,
+      "historicalV2ComparisonRatio": 200,
+      "maximumRatioEntryCompressedBytesRequired": true,
+      "maximumRatioEntryOrdinalRequired": true,
+      "maximumRatioEntryUncompressedBytesRequired": true,
+      "maximumRatioExceededHistoricalV2LimitRequired": true,
+      "policy": "non_gating_bounded_telemetry",
+      "ratioUsedAsRejectionGate": false
+    },
+    "expectedSuccessRequestCount": 30,
+    "failureContract": {
+      "automaticRetryAllowed": false,
+      "claimAndFailureReceiptRetained": true,
+      "firstMismatchStopsWave": true,
+      "newRecoveryDecisionRequired": true,
+      "partialAcceptedSetAllowed": false,
+      "partialStagingRemoved": true
+    },
+    "fullFreshTupleCountRequired": 15,
+    "maximumRequestCount": 30,
+    "resourceCountPerTuple": 2,
+    "resourceOrderPerTuple": [
+      "mod",
+      "zip"
+    ],
+    "selectionStatus": "selected_for_v3_implementation_not_execution",
+    "sequentialOrderRequired": true,
+    "successContract": {
+      "allResourcesReopenedReparsedAndRehashedBeforePublication": true,
+      "independentReadbackRequired": true,
+      "manifestWrittenLast": true,
+      "retainedModCount": 15,
+      "retainedResourceCount": 30,
+      "retainedZipCount": 15,
+      "successReceiptWrittenBeforeManifest": true
+    },
+    "v2PartialResumeAllowed": false,
+    "v2ResponseOrStagingReuseAllowed": false,
+    "zipValidation": {
+      "allEntriesStreamedToEof": true,
+      "allowedCompressionMethods": [
+        "stored",
+        "deflated"
+      ],
+      "centralAndLocalHeaderConsistencyRequired": true,
+      "crcRequired": true,
+      "duplicateOrCasefoldCollisionAllowed": false,
+      "embeddedRootGoModMustMatchExternalModWhenPresent": true,
+      "embeddedRootGoModRequired": false,
+      "encryptionAllowed": false,
+      "exactEofRequired": true,
+      "exactModulePrefixRequired": true,
+      "explicitDirectoryEntriesAllowed": false,
+      "filesystemExtractionAllowed": false,
+      "moduleZipH1Required": true,
+      "symlinkOrSpecialFileAllowed": false,
+      "validUtf8AndNfcPathsRequired": true,
+      "zip64Allowed": false
+    }
+  },
+  "status": "wave2_v2_compression_ratio_gate_failure_read_back_v3_recovery_selected_execution_not_authorized",
+  "terminalFailureBindings": {
+    "claimV2": {
+      "automaticRetryAllowed": false,
+      "byteSize": 755,
+      "linkCount": 1,
+      "mode": "0600",
+      "path": "build/offline-source/pion-ice-v4.3.0/dependencies/.wave-2-v2.claim",
+      "rawSha256": "0f2139813180b158428cb0c92ebdc2cd7035d4c0d5841058452f084db23c7d63",
+      "retained": true
+    },
+    "failureReceiptV2": {
+      "acceptedArtifactCount": 0,
+      "acceptedTupleCount": 0,
+      "automaticRetryAllowed": false,
+      "byteSize": 1408,
+      "failedRequestOrdinal": 4,
+      "failedResourceKind": "zip",
+      "failedTupleId": "wave2-002-fb2873f66a36",
+      "failedTupleOrder": 2,
+      "failureCode": "E_ZIP_COMPRESSION_RATIO",
+      "finalSetPublished": false,
+      "linkCount": 1,
+      "mode": "0600",
+      "networkRequestAttemptCount": 4,
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-failure-v2.json",
+      "phase": "zip",
+      "rawSha256": "602757ccea4ad7d4b7534355762d8c95fe246750860b6ca3c815d1084e55068b",
+      "responseBodyCompletedCount": 4,
+      "result": "no_wave2_dependency_source_set_accepted",
+      "status": "wave2_v2_acquisition_failed_permit_consumed",
+      "validatedAndStagedResourceCount": 3,
+      "validatedAndStagedTupleCount": 1,
+      "validatedModResourceCount": 2,
+      "validatedZipResourceCount": 1
+    }
+  },
+  "v1AndV2PreservationContract": {
+    "v1RetryAllowed": false,
+    "v1RevocationSentinelRetained": true,
+    "v2AutomaticRetryAllowed": false,
+    "v2ClaimDeletionAllowed": false,
+    "v2FailureReceiptDeletionAllowed": false,
+    "v2PermitReuseAllowed": false,
+    "v2RunnerExecuteAllowed": false,
+    "v2StagingResumeAllowed": false
+  },
+  "v3NamespaceContract": {
+    "claimPath": "build/offline-source/pion-ice-v4.3.0/dependencies/.wave-2-v3.claim",
+    "failureReceiptPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-failure-v3.json",
+    "finalDirectoryPath": "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v3/accepted",
+    "fullFreshTupleCountRequired": 15,
+    "manifestPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-manifest-v3.json",
+    "readbackManifestPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-readback-manifest-v3.json",
+    "readbackReceiptPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-readback-v3.json",
+    "resumeFromV2StagingAllowed": false,
+    "sourceV2OrderedResourceSetSha256": "014e37747510d7b49482a3cbc0401f70d8760cd1ed660a2eb71993a157124a7f",
+    "stagingDirectoryPrefix": ".wave-2-v3-staging-",
+    "successReceiptPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-receipt-v3.json",
+    "v3OrderedResourceSetSha256": "a2476fb8d0e37a2e3411b02186ea25647c1e4b40fc1f8353d383304e906594ee"
+  }
+}

@@ -1,0 +1,1089 @@
+{
+  "absoluteResourceLimits": {
+    "acquisitionSuccessRegularFileCount": 33,
+    "maximumAggregateEntries": 300000,
+    "maximumAggregateResponseBytes": 67108864,
+    "maximumAggregateUncompressedBytes": 1073741824,
+    "maximumCentralDirectoryBytesPerArchive": 8388608,
+    "maximumComponentBytes": 255,
+    "maximumCompressionRatio": 200,
+    "maximumEntriesPerArchive": 20000,
+    "maximumJsonReceiptOrFailureBytes": 2097152,
+    "maximumModResponseBytesPerTuple": 1048576,
+    "maximumPathBytes": 1024,
+    "maximumPathComponents": 64,
+    "maximumRequestCount": 30,
+    "maximumSingleFileBytes": 134217728,
+    "maximumTupleCount": 15,
+    "maximumUncompressedBytesPerArchive": 134217728,
+    "maximumZipResponseBytesPerTuple": 16777216,
+    "perRequestDeadlineMilliseconds": 30000,
+    "postReadbackRegularFileCount": 35,
+    "wholeWaveDeadlineMilliseconds": 600000
+  },
+  "closure": {
+    "candidateSelected": false,
+    "dependencyClosureComplete": false,
+    "dependencySourceReviewed": false,
+    "findingsClosedByPermit": 0,
+    "graphFixedPointReached": false,
+    "librarySelected": false,
+    "openFindingCount": 19,
+    "rungThreeComplete": false,
+    "semanticClosureComplete": false,
+    "waveAcquired": false
+  },
+  "contentBinding": {
+    "algorithm": "sha256",
+    "canonicalization": "utf8_ascii_escaped_sorted_keys_compact_single_lf",
+    "scope": "permit_without_contentBinding",
+    "sha256": "83c8e13dd03e4403102351736a82f37c054703deb3f45185d562cc528dfe6cb3"
+  },
+  "counterContract": {
+    "counterNames": [
+      "networkRequestAttemptCount",
+      "responseBodyCompletedCount",
+      "validatedAndStagedResourceCount",
+      "validatedModResourceCount",
+      "validatedZipResourceCount",
+      "validatedAndStagedTupleCount"
+    ],
+    "failureRequestContextNullableBeforeRequest": true,
+    "failureRequestContextRequiredAfterRequestAttempt": true,
+    "safeNumericObservationsOnly": true,
+    "successValues": {
+      "acceptedArtifactCount": 30,
+      "acceptedTupleCount": 15,
+      "networkRequestAttemptCount": 30,
+      "responseBodyCompletedCount": 30,
+      "validatedAndStagedResourceCount": 30,
+      "validatedAndStagedTupleCount": 15,
+      "validatedModResourceCount": 15,
+      "validatedZipResourceCount": 15
+    }
+  },
+  "decisionBinding": {
+    "contentSha256": "1368918d79f629e2a07ec324201963b9558434aebeca2ef38261ebf62d180bc5",
+    "decisionId": "g2-pion-ice-v4.3.0-rung3-bounded-dependency-source-identity-and-acquisition-decision-wave2-v1",
+    "orderedResourceSetSha256": "014e37747510d7b49482a3cbc0401f70d8760cd1ed660a2eb71993a157124a7f",
+    "orderedTupleSetSha256": "2fbc9a5b8a20ca66d8df4769547d4b25b87e9e6c4795916945f760010f77a3bd",
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave2-v1.json",
+    "rawSha256": "e10a4b41f0dc9ab9bc13b07f6b9e238e146316a7a4846af5b22f3a57fe0cd1a1",
+    "requiredStatus": "wave2_local_checksum_identity_and_30_resource_contract_prepared_future_bytes_unverified_acquisition_not_authorized",
+    "resourceProjectionRule": "replace_only_exact_wave2_v1_output_prefix_with_wave2_v2",
+    "sourceOrderedResourceSetSha256": "4b988bbd59d6488e273566b7761f5e2ca533b5667f1c6a7b6044eaaad3bac0aa",
+    "sourceOutputPathPrefix": "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v1/accepted/",
+    "targetOutputPathPrefix": "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/"
+  },
+  "documentType": "aetherlink.g2-pion-rung3-dependency-wave2-execution-permit",
+  "execution": {
+    "acceptedArtifactCount": 0,
+    "acceptedTupleCount": 0,
+    "claimCreated": false,
+    "failureReceiptCreated": false,
+    "independentReadbackPassed": false,
+    "manifestCreated": false,
+    "networkRequestAttemptCount": 0,
+    "networkUsed": false,
+    "permitConsumed": false,
+    "permitRecorded": true,
+    "responseBodyCompletedCount": 0,
+    "successReceiptCreated": false,
+    "validatedAndStagedResourceCount": 0,
+    "validatedAndStagedTupleCount": 0,
+    "validatedModResourceCount": 0,
+    "validatedZipResourceCount": 0
+  },
+  "filesystemWriteAuthority": {
+    "acceptedModWriteAuthorized": true,
+    "acceptedZipWriteAuthorized": true,
+    "atomicNoReplaceFinalDirectoryPublicationRequired": true,
+    "claimWriteAuthorized": true,
+    "failedStagingCleanupAuthorized": true,
+    "failureReceiptWriteAuthorized": true,
+    "manifestWriteAuthorized": true,
+    "newDirectoryMode": "0700",
+    "newFileMode": "0600",
+    "otherRepositoryWritesAuthorized": false,
+    "readbackReceiptAndManifestWritesAuthorizedOnlyByBoundChecker": true,
+    "sourceExtractionAuthorized": false,
+    "sourceModificationAuthorized": false,
+    "stagingWriteAuthorized": true,
+    "successReceiptWriteAuthorized": true,
+    "wave1ArtifactModificationAuthorized": false
+  },
+  "independentReadbackContract": {
+    "checkerPath": "script/check_p2p_nat_g2_pion_dependency_wave2_success_v2.py",
+    "checkerTestsPath": "script/test_p2p_nat_g2_pion_dependency_wave2_success_v2.py",
+    "exactRetainedResourceCount": 30,
+    "fixedPointGraphRerunRequiredAfterReadback": true,
+    "manifestPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-readback-manifest-v2.json",
+    "manifestWrittenLast": true,
+    "minimumStableFullReadPassCount": 2,
+    "networkAllowed": false,
+    "receiptAndManifestWritesOnly": true,
+    "receiptPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-readback-v2.json",
+    "recheckArchiveStructureAndCompressionRatio": true,
+    "recheckEmbeddedModParityWhenPresent": true,
+    "recheckExactInventoryModeLinkCountAndStableIdentity": true,
+    "recomputeGoModH1": true,
+    "recomputeModuleZipH1": true,
+    "recomputeRawSha256": true,
+    "requiredAfterAcquisitionSuccess": true,
+    "runnerSelfCheckQualifiesAsIndependentReadback": false,
+    "sourceExtractionAllowed": false,
+    "sourceLoadOrExecutionAllowed": false
+  },
+  "interpreterIsolationContract": {
+    "bytecodeWritesAllowed": false,
+    "cliOverridesAllowed": false,
+    "environmentOverridesAllowed": false,
+    "isolatedInterpreterRequired": true,
+    "permitCheckerPreflightCommand": [
+      "python3",
+      "-I",
+      "-B",
+      "-S",
+      "script/check_p2p_nat_g2_pion_dependency_wave2_execution_permit_v2.py",
+      "--preflight"
+    ],
+    "processUmask": "077",
+    "pythonPathAllowed": false,
+    "readbackCheckCommand": [
+      "python3",
+      "-I",
+      "-B",
+      "-S",
+      "script/check_p2p_nat_g2_pion_dependency_wave2_success_v2.py",
+      "--check"
+    ],
+    "readbackRecordCommand": [
+      "python3",
+      "-I",
+      "-B",
+      "-S",
+      "script/check_p2p_nat_g2_pion_dependency_wave2_success_v2.py",
+      "--record"
+    ],
+    "runnerExecuteCommand": [
+      "python3",
+      "-I",
+      "-B",
+      "-S",
+      "script/acquire_p2p_nat_g2_pion_dependency_wave2_v2_once.py",
+      "--execute"
+    ],
+    "runnerPreflightCommand": [
+      "python3",
+      "-I",
+      "-B",
+      "-S",
+      "script/acquire_p2p_nat_g2_pion_dependency_wave2_v2_once.py",
+      "--preflight"
+    ],
+    "sitePackagesAllowed": false
+  },
+  "networkAuthority": {
+    "authorizedHost": "proxy.golang.org",
+    "authorizedPort": 443,
+    "authorizedRequestCount": 30,
+    "boundedSourceIntakeDnsAuthorized": true,
+    "boundedSourceIntakeHttpsAuthorized": true,
+    "boundedSourceIntakeTcpAuthorized": true,
+    "boundedSourceIntakeTlsAuthorized": true,
+    "productNetworkAuthorized": false,
+    "relayOrP2PNetworkAuthorized": false,
+    "runtimeNetworkAuthorized": false,
+    "runtimeSocketAuthorized": false,
+    "tlsCertificateAndHostnameVerificationRequired": true
+  },
+  "nextAction": "execute_bound_dependency_source_wave2_v2_once",
+  "nonClaims": [
+    "permit_is_not_execution_success_or_independent_readback_evidence",
+    "wave1_claims_outputs_and_namespaces_are_not_reused_or_changed",
+    "selected_false_version_specific_frontier_tuples_are_not_removed",
+    "held_go_sum_h1_is_not_fresh_checksum_database_inclusion_proof",
+    "module_zip_h1_go_mod_h1_and_raw_sha256_are_distinct_bindings",
+    "fifteen_frontier_sources_are_not_dependency_fixed_point_evidence",
+    "acquisition_is_not_source_license_security_or_semantic_review",
+    "runner_self_checks_are_not_independent_readback",
+    "readback_does_not_replace_combined_fixed_point_graph_rerun",
+    "permit_does_not_select_a_candidate_library_or_product_endpoint",
+    "no_repository_authentication_owner_proof_or_user_action_is_required",
+    "wave2_v1_preclaim_failure_does_not_authorize_v1_retry_or_backfill"
+  ],
+  "oneUseConsumption": {
+    "automaticRetryAllowed": false,
+    "claimContainsRandomAttemptId": true,
+    "claimCreatedExclusivelyBeforeNetwork": true,
+    "claimFsyncedBeforeNetwork": true,
+    "claimPath": "build/offline-source/pion-ice-v4.3.0/dependencies/.wave-2-v2.claim",
+    "claimPersistsAfterAnyNetworkAttempt": true,
+    "claimUncertaintyConsumesPermit": true,
+    "finalDirectoryPath": "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted",
+    "initialState": "authorized_not_consumed",
+    "partialResumeAllowed": false,
+    "preclaimFailureConsumesPermit": false,
+    "secondExecutionAllowed": false,
+    "stagingNamePrefix": ".wave-2-v2-staging-",
+    "stagingParentPath": "build/offline-source/pion-ice-v4.3.0/dependencies",
+    "wave1ArtifactReuseAllowed": false,
+    "wave2V1NamespaceReuseAllowed": false,
+    "wave2V1PermitReuseAllowed": false,
+    "v1RevocationSentinelRetainedThroughFinalBarrier": true,
+    "waveParentPath": "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2"
+  },
+  "permitId": "g2-pion-ice-v4.3.0-rung3-dependency-wave2-execution-permit-v2",
+  "personalProjectBoundary": {
+    "accountLoginRequired": false,
+    "externalAuthenticationRequired": false,
+    "passwordRequired": false,
+    "privateKeyRequired": false,
+    "productEndpointAuthenticationChanged": false,
+    "productEndpointAuthenticationIsSeparateRuntimeInvariant": true,
+    "projectOwnership": "personal_single_owner",
+    "repositoryOwnerIdentityProofRequired": false,
+    "signatureRequired": false,
+    "tokenRequired": false,
+    "userActionRequired": false
+  },
+  "readerDocumentBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-execution-permit-v2.md",
+    "rawSha256": "ef840350f192f9e0887e4f8f1284d1cc25cbdf7f43b6ff84326ffebc5f4ed357"
+  },
+  "recoveryDecisionBinding": {
+    "contentSha256": "9dae2cec0af345138ba58bd679f71f79c74a496ab5edc63385f8dff32e8ee4d6",
+    "decisionId": "g2-pion-ice-v4.3.0-rung3-dependency-wave2-recovery-decision-v1",
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-recovery-decision-v1.json",
+    "rawSha256": "97be9c7a3aa5e7ab58ea4eada5f5f5d6193a14cc0fb71208bafdf16ba4e7523f",
+    "requiredResult": "v1_abandoned_preclaim_zero_requests_v2_exact_root_identity_adapter_selected",
+    "requiredStatus": "wave2_v1_preclaim_root_identity_schema_mismatch_v2_recovery_selected_execution_not_authorized",
+    "v1ClaimCreated": false,
+    "v1Disposition": "abandoned_preclaim_do_not_reexecute",
+    "v1NetworkRequestAttemptCount": 0,
+    "v1PermitConsumed": false,
+    "v1RetryAuthorized": false,
+    "v1RevocationSentinelPath": "build/offline-source/pion-ice-v4.3.0/dependencies/.wave-2-v1-staging-revoked-by-recovery-v1",
+    "v1RevocationSentinelRawSha256": "4a45a0ebf75f5fda5bcfbfc7f6862030f23bca5ece0088c2d12b0ec11d2e081c",
+    "v1TechnicalExecutionBlocked": true
+  },
+  "receiptFailureManifestContract": {
+    "acceptedArtifactCountOnFailure": 0,
+    "acceptedArtifactCountOnSuccess": 30,
+    "acceptedTupleCountOnSuccess": 15,
+    "boundedFailureReasonCodesOnly": true,
+    "failureReceiptForbiddenAfterPublishAttempt": true,
+    "failureReceiptPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-failure-v2.json",
+    "failureReceiptWriteFailureMustBeReported": true,
+    "failureState": "wave2_v2_acquisition_failed_permit_consumed",
+    "independentReadbackRequired": true,
+    "manifestPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-manifest-v2.json",
+    "manifestWrittenLast": true,
+    "postPublishUncertainState": "consumed_terminal_state_uncertain",
+    "rawErrorsBodiesHeadersCertificatesPathsOrEntryNamesRecorded": false,
+    "runnerMayClaimIndependentReadback": false,
+    "successAndFailureMutuallyExclusive": true,
+    "successReceiptPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-receipt-v2.json",
+    "successState": "acquired_pending_independent_readback"
+  },
+  "recordedDate": "2026-07-24",
+  "repositoryRootIdentity": {
+    "device": 16777232,
+    "groupOrOtherWritableAllowed": false,
+    "inode": 2012435,
+    "mode": 493,
+    "realDirectoryRequired": true,
+    "stableIdentityBarrierRequired": true,
+    "uid": 501
+  },
+  "requestContract": {
+    "acceptedStatusCode": 200,
+    "alternateMirrorAllowed": false,
+    "ambientProxyAllowed": false,
+    "authenticationChallengeHandlingAllowed": false,
+    "authorizationHeaderAllowed": false,
+    "clientCertificateAllowed": false,
+    "cookieAllowed": false,
+    "credentialsAllowed": false,
+    "fragmentAllowed": false,
+    "host": "proxy.golang.org",
+    "identityContentEncodingRequired": true,
+    "method": "GET",
+    "orderedRequests": [
+      {
+        "allowedContentTypes": [
+          "text/plain",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:4Jbv+DJW3UT/LiOwJeYQe1efqtUx/iVham/4vfdArNI=",
+        "expectedH1Kind": "go_mod_h1",
+        "method": "GET",
+        "module": "github.com/kr/text",
+        "outputFileName": "001-21ba4abc86961659f24e.mod",
+        "requestOrdinal": 1,
+        "resourceKind": "mod",
+        "selectedByGraphAlgorithm": true,
+        "tupleId": "wave2-001-21ba4abc8696",
+        "tupleOrder": 1,
+        "url": "https://proxy.golang.org/github.com/kr/text/@v/v0.1.0.mod",
+        "version": "v0.1.0"
+      },
+      {
+        "allowedContentTypes": [
+          "application/zip",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:45sCR5RtlFHMR4UwH9sdQ5TC8v0qDQCHnXt+kaKSTVE=",
+        "expectedH1Kind": "module_zip_h1",
+        "method": "GET",
+        "module": "github.com/kr/text",
+        "outputFileName": "001-21ba4abc86961659f24e.zip",
+        "requestOrdinal": 2,
+        "resourceKind": "zip",
+        "selectedByGraphAlgorithm": true,
+        "tupleId": "wave2-001-21ba4abc8696",
+        "tupleOrder": 1,
+        "url": "https://proxy.golang.org/github.com/kr/text/@v/v0.1.0.zip",
+        "version": "v0.1.0"
+      },
+      {
+        "allowedContentTypes": [
+          "text/plain",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:cr/qotLISUw/9C1m83ZPNZtj9WnXkYLpfCptPqbkInc=",
+        "expectedH1Kind": "go_mod_h1",
+        "method": "GET",
+        "module": "github.com/pion/dtls/v3",
+        "outputFileName": "002-fb2873f66a366d2f9cc3.mod",
+        "requestOrdinal": 3,
+        "resourceKind": "mod",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-002-fb2873f66a36",
+        "tupleOrder": 2,
+        "url": "https://proxy.golang.org/github.com/pion/dtls/v3/@v/v3.1.4.mod",
+        "version": "v3.1.4"
+      },
+      {
+        "allowedContentTypes": [
+          "application/zip",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:QhvtMflMfu9Kf0RcDC5BJBle4caPskByrKQR6uuYqpY=",
+        "expectedH1Kind": "module_zip_h1",
+        "method": "GET",
+        "module": "github.com/pion/dtls/v3",
+        "outputFileName": "002-fb2873f66a366d2f9cc3.zip",
+        "requestOrdinal": 4,
+        "resourceKind": "zip",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-002-fb2873f66a36",
+        "tupleOrder": 2,
+        "url": "https://proxy.golang.org/github.com/pion/dtls/v3/@v/v3.1.4.zip",
+        "version": "v3.1.4"
+      },
+      {
+        "allowedContentTypes": [
+          "text/plain",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:+c2eewC5WJQHiAA46fkMMzoYZSuGzA/7E2FPrOYHctQ=",
+        "expectedH1Kind": "go_mod_h1",
+        "method": "GET",
+        "module": "github.com/pion/transport/v3",
+        "outputFileName": "003-e0aff155af83900b2a53.mod",
+        "requestOrdinal": 5,
+        "resourceKind": "mod",
+        "selectedByGraphAlgorithm": true,
+        "tupleId": "wave2-003-e0aff155af83",
+        "tupleOrder": 3,
+        "url": "https://proxy.golang.org/github.com/pion/transport/v3/@v/v3.1.1.mod",
+        "version": "v3.1.1"
+      },
+      {
+        "allowedContentTypes": [
+          "application/zip",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:Tr684+fnnKlhPceU+ICdrw6KKkTms+5qHMgw6bIkYOM=",
+        "expectedH1Kind": "module_zip_h1",
+        "method": "GET",
+        "module": "github.com/pion/transport/v3",
+        "outputFileName": "003-e0aff155af83900b2a53.zip",
+        "requestOrdinal": 6,
+        "resourceKind": "zip",
+        "selectedByGraphAlgorithm": true,
+        "tupleId": "wave2-003-e0aff155af83",
+        "tupleOrder": 3,
+        "url": "https://proxy.golang.org/github.com/pion/transport/v3/@v/v3.1.1.zip",
+        "version": "v3.1.1"
+      },
+      {
+        "allowedContentTypes": [
+          "text/plain",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:FRsXN1f5AsAjCGJKqEizvkpNtU+EGNCLh3NxZ/8L+MA=",
+        "expectedH1Kind": "go_mod_h1",
+        "method": "GET",
+        "module": "github.com/stretchr/objx",
+        "outputFileName": "004-c3669b75d72d114f8670.mod",
+        "requestOrdinal": 7,
+        "resourceKind": "mod",
+        "selectedByGraphAlgorithm": true,
+        "tupleId": "wave2-004-c3669b75d72d",
+        "tupleOrder": 4,
+        "url": "https://proxy.golang.org/github.com/stretchr/objx/@v/v0.5.2.mod",
+        "version": "v0.5.2"
+      },
+      {
+        "allowedContentTypes": [
+          "application/zip",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:xuMeJ0Sdp5ZMRXx/aWO6RZxdr3beISkG5/G/aIRr3pY=",
+        "expectedH1Kind": "module_zip_h1",
+        "method": "GET",
+        "module": "github.com/stretchr/objx",
+        "outputFileName": "004-c3669b75d72d114f8670.zip",
+        "requestOrdinal": 8,
+        "resourceKind": "zip",
+        "selectedByGraphAlgorithm": true,
+        "tupleId": "wave2-004-c3669b75d72d",
+        "tupleOrder": 4,
+        "url": "https://proxy.golang.org/github.com/stretchr/objx/@v/v0.5.2.zip",
+        "version": "v0.5.2"
+      },
+      {
+        "allowedContentTypes": [
+          "text/plain",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf8C91i36aY=",
+        "expectedH1Kind": "go_mod_h1",
+        "method": "GET",
+        "module": "github.com/stretchr/testify",
+        "outputFileName": "005-2edbe659c1adfd9d434a.mod",
+        "requestOrdinal": 9,
+        "resourceKind": "mod",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-005-2edbe659c1ad",
+        "tupleOrder": 5,
+        "url": "https://proxy.golang.org/github.com/stretchr/testify/@v/v1.10.0.mod",
+        "version": "v1.10.0"
+      },
+      {
+        "allowedContentTypes": [
+          "application/zip",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:Xv5erBjTwe/5IxqUQTdXv5kgmIvbHo3QQyRwhJsOfJA=",
+        "expectedH1Kind": "module_zip_h1",
+        "method": "GET",
+        "module": "github.com/stretchr/testify",
+        "outputFileName": "005-2edbe659c1adfd9d434a.zip",
+        "requestOrdinal": 10,
+        "resourceKind": "zip",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-005-2edbe659c1ad",
+        "tupleOrder": 5,
+        "url": "https://proxy.golang.org/github.com/stretchr/testify/@v/v1.10.0.zip",
+        "version": "v1.10.0"
+      },
+      {
+        "allowedContentTypes": [
+          "text/plain",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:ff3Y9VzzKbwSSEzWqJsJVBnWmRwRSHt/6Op5n9bQc4A=",
+        "expectedH1Kind": "go_mod_h1",
+        "method": "GET",
+        "module": "golang.org/x/crypto",
+        "outputFileName": "006-1fd44bd82021235300d8.mod",
+        "requestOrdinal": 11,
+        "resourceKind": "mod",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-006-1fd44bd82021",
+        "tupleOrder": 6,
+        "url": "https://proxy.golang.org/golang.org/x/crypto/@v/v0.47.0.mod",
+        "version": "v0.47.0"
+      },
+      {
+        "allowedContentTypes": [
+          "application/zip",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:V6e3FRj+n4dbpw86FJ8Fv7XVOql7TEwpHapKoMJ/GO8=",
+        "expectedH1Kind": "module_zip_h1",
+        "method": "GET",
+        "module": "golang.org/x/crypto",
+        "outputFileName": "006-1fd44bd82021235300d8.zip",
+        "requestOrdinal": 12,
+        "resourceKind": "zip",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-006-1fd44bd82021",
+        "tupleOrder": 6,
+        "url": "https://proxy.golang.org/golang.org/x/crypto/@v/v0.47.0.zip",
+        "version": "v0.47.0"
+      },
+      {
+        "allowedContentTypes": [
+          "text/plain",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:di0qlW3YNM5oh6GqDGQr92MyTozJPmybPK4Ev/Gm31k=",
+        "expectedH1Kind": "go_mod_h1",
+        "method": "GET",
+        "module": "golang.org/x/net",
+        "outputFileName": "007-770312f60fe3a1c468b5.mod",
+        "requestOrdinal": 13,
+        "resourceKind": "mod",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-007-770312f60fe3",
+        "tupleOrder": 7,
+        "url": "https://proxy.golang.org/golang.org/x/net/@v/v0.34.0.mod",
+        "version": "v0.34.0"
+      },
+      {
+        "allowedContentTypes": [
+          "application/zip",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:Mb7Mrk043xzHgnRM88suvJFwzVrRfHEHJEl5/71CKw0=",
+        "expectedH1Kind": "module_zip_h1",
+        "method": "GET",
+        "module": "golang.org/x/net",
+        "outputFileName": "007-770312f60fe3a1c468b5.zip",
+        "requestOrdinal": 14,
+        "resourceKind": "zip",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-007-770312f60fe3",
+        "tupleOrder": 7,
+        "url": "https://proxy.golang.org/golang.org/x/net/@v/v0.34.0.zip",
+        "version": "v0.34.0"
+      },
+      {
+        "allowedContentTypes": [
+          "text/plain",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:EglIi67kWsHKlRzzVMUD93VMSWGFOMSZgxFjparz1Qk=",
+        "expectedH1Kind": "go_mod_h1",
+        "method": "GET",
+        "module": "golang.org/x/net",
+        "outputFileName": "008-fd16fa18192f80e759e5.mod",
+        "requestOrdinal": 15,
+        "resourceKind": "mod",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-008-fd16fa18192f",
+        "tupleOrder": 8,
+        "url": "https://proxy.golang.org/golang.org/x/net/@v/v0.35.0.mod",
+        "version": "v0.35.0"
+      },
+      {
+        "allowedContentTypes": [
+          "application/zip",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:T5GQRQb2y08kTAByq9L4/bz8cipCdA8FbRTXewonqY8=",
+        "expectedH1Kind": "module_zip_h1",
+        "method": "GET",
+        "module": "golang.org/x/net",
+        "outputFileName": "008-fd16fa18192f80e759e5.zip",
+        "requestOrdinal": 16,
+        "resourceKind": "zip",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-008-fd16fa18192f",
+        "tupleOrder": 8,
+        "url": "https://proxy.golang.org/golang.org/x/net/@v/v0.35.0.zip",
+        "version": "v0.35.0"
+      },
+      {
+        "allowedContentTypes": [
+          "text/plain",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=",
+        "expectedH1Kind": "go_mod_h1",
+        "method": "GET",
+        "module": "golang.org/x/sys",
+        "outputFileName": "009-71839443fe0e180dd242.mod",
+        "requestOrdinal": 17,
+        "resourceKind": "mod",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-009-71839443fe0e",
+        "tupleOrder": 9,
+        "url": "https://proxy.golang.org/golang.org/x/sys/@v/v0.30.0.mod",
+        "version": "v0.30.0"
+      },
+      {
+        "allowedContentTypes": [
+          "application/zip",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:QjkSwP/36a20jFYWkSue1YwXzLmsV5Gfq7Eiy72C1uc=",
+        "expectedH1Kind": "module_zip_h1",
+        "method": "GET",
+        "module": "golang.org/x/sys",
+        "outputFileName": "009-71839443fe0e180dd242.zip",
+        "requestOrdinal": 18,
+        "resourceKind": "zip",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-009-71839443fe0e",
+        "tupleOrder": 9,
+        "url": "https://proxy.golang.org/golang.org/x/sys/@v/v0.30.0.zip",
+        "version": "v0.30.0"
+      },
+      {
+        "allowedContentTypes": [
+          "text/plain",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:OgkHotnGiDImocRcuBABYBEXf8A9a87e/uXjp9XT3ks=",
+        "expectedH1Kind": "go_mod_h1",
+        "method": "GET",
+        "module": "golang.org/x/sys",
+        "outputFileName": "010-ab27621c1feaf572f9b6.mod",
+        "requestOrdinal": 19,
+        "resourceKind": "mod",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-010-ab27621c1fea",
+        "tupleOrder": 10,
+        "url": "https://proxy.golang.org/golang.org/x/sys/@v/v0.40.0.mod",
+        "version": "v0.40.0"
+      },
+      {
+        "allowedContentTypes": [
+          "application/zip",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:DBZZqJ2Rkml6QMQsZywtnjnnGvHza6BTfYFWY9kjEWQ=",
+        "expectedH1Kind": "module_zip_h1",
+        "method": "GET",
+        "module": "golang.org/x/sys",
+        "outputFileName": "010-ab27621c1feaf572f9b6.zip",
+        "requestOrdinal": 20,
+        "resourceKind": "zip",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-010-ab27621c1fea",
+        "tupleOrder": 10,
+        "url": "https://proxy.golang.org/golang.org/x/sys/@v/v0.40.0.zip",
+        "version": "v0.40.0"
+      },
+      {
+        "allowedContentTypes": [
+          "text/plain",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:yxzUCTP/U+FzoxfdKmLaA0RV1WgE0VY7hXBwKtY/4ww=",
+        "expectedH1Kind": "go_mod_h1",
+        "method": "GET",
+        "module": "golang.org/x/term",
+        "outputFileName": "011-238ff1314cd589d00da2.mod",
+        "requestOrdinal": 21,
+        "resourceKind": "mod",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-011-238ff1314cd5",
+        "tupleOrder": 11,
+        "url": "https://proxy.golang.org/golang.org/x/term/@v/v0.39.0.mod",
+        "version": "v0.39.0"
+      },
+      {
+        "allowedContentTypes": [
+          "application/zip",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:RclSuaJf32jOqZz74CkPA9qFuVTX7vhLlpfj/IGWlqY=",
+        "expectedH1Kind": "module_zip_h1",
+        "method": "GET",
+        "module": "golang.org/x/term",
+        "outputFileName": "011-238ff1314cd589d00da2.zip",
+        "requestOrdinal": 22,
+        "resourceKind": "zip",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-011-238ff1314cd5",
+        "tupleOrder": 11,
+        "url": "https://proxy.golang.org/golang.org/x/term/@v/v0.39.0.zip",
+        "version": "v0.39.0"
+      },
+      {
+        "allowedContentTypes": [
+          "text/plain",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:w2P8uVp06p2iyKKuvXIm7N/y0UCRt3UfJTfZ7oOpglM=",
+        "expectedH1Kind": "go_mod_h1",
+        "method": "GET",
+        "module": "golang.org/x/term",
+        "outputFileName": "012-64a4db71fd3f0a5a00c3.mod",
+        "requestOrdinal": 23,
+        "resourceKind": "mod",
+        "selectedByGraphAlgorithm": true,
+        "tupleId": "wave2-012-64a4db71fd3f",
+        "tupleOrder": 12,
+        "url": "https://proxy.golang.org/golang.org/x/term/@v/v0.40.0.mod",
+        "version": "v0.40.0"
+      },
+      {
+        "allowedContentTypes": [
+          "application/zip",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:36e4zGLqU4yhjlmxEaagx2KuYbJq3EwY8K943ZsHcvg=",
+        "expectedH1Kind": "module_zip_h1",
+        "method": "GET",
+        "module": "golang.org/x/term",
+        "outputFileName": "012-64a4db71fd3f0a5a00c3.zip",
+        "requestOrdinal": 24,
+        "resourceKind": "zip",
+        "selectedByGraphAlgorithm": true,
+        "tupleId": "wave2-012-64a4db71fd3f",
+        "tupleOrder": 12,
+        "url": "https://proxy.golang.org/golang.org/x/term/@v/v0.40.0.zip",
+        "version": "v0.40.0"
+      },
+      {
+        "allowedContentTypes": [
+          "text/plain",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:LuMebE6+rBincTi9+xWTY8TztLzKHc/9C1uBCG27+q8=",
+        "expectedH1Kind": "go_mod_h1",
+        "method": "GET",
+        "module": "golang.org/x/text",
+        "outputFileName": "013-85c01ed25b57967f8db6.mod",
+        "requestOrdinal": 25,
+        "resourceKind": "mod",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-013-85c01ed25b57",
+        "tupleOrder": 13,
+        "url": "https://proxy.golang.org/golang.org/x/text/@v/v0.33.0.mod",
+        "version": "v0.33.0"
+      },
+      {
+        "allowedContentTypes": [
+          "application/zip",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:B3njUFyqtHDUI5jMn1YIr5B0IE2U0qck04r6d4KPAxE=",
+        "expectedH1Kind": "module_zip_h1",
+        "method": "GET",
+        "module": "golang.org/x/text",
+        "outputFileName": "013-85c01ed25b57967f8db6.zip",
+        "requestOrdinal": 26,
+        "resourceKind": "zip",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-013-85c01ed25b57",
+        "tupleOrder": 13,
+        "url": "https://proxy.golang.org/golang.org/x/text/@v/v0.33.0.zip",
+        "version": "v0.33.0"
+      },
+      {
+        "allowedContentTypes": [
+          "text/plain",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:homfLqTYRFyVYemLBFl5GgL/DWEiH5wcsQ5gSh1yziA=",
+        "expectedH1Kind": "go_mod_h1",
+        "method": "GET",
+        "module": "golang.org/x/text",
+        "outputFileName": "014-f06eab5ab6e94b31fef8.mod",
+        "requestOrdinal": 27,
+        "resourceKind": "mod",
+        "selectedByGraphAlgorithm": true,
+        "tupleId": "wave2-014-f06eab5ab6e9",
+        "tupleOrder": 14,
+        "url": "https://proxy.golang.org/golang.org/x/text/@v/v0.34.0.mod",
+        "version": "v0.34.0"
+      },
+      {
+        "allowedContentTypes": [
+          "application/zip",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:oL/Qq0Kdaqxa1KbNeMKwQq0reLCCaFtqu2eNuSeNHbk=",
+        "expectedH1Kind": "module_zip_h1",
+        "method": "GET",
+        "module": "golang.org/x/text",
+        "outputFileName": "014-f06eab5ab6e94b31fef8.zip",
+        "requestOrdinal": 28,
+        "resourceKind": "zip",
+        "selectedByGraphAlgorithm": true,
+        "tupleId": "wave2-014-f06eab5ab6e9",
+        "tupleOrder": 14,
+        "url": "https://proxy.golang.org/golang.org/x/text/@v/v0.34.0.zip",
+        "version": "v0.34.0"
+      },
+      {
+        "allowedContentTypes": [
+          "text/plain",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=",
+        "expectedH1Kind": "go_mod_h1",
+        "method": "GET",
+        "module": "gopkg.in/check.v1",
+        "outputFileName": "015-900158fa98d4bc9e3b36.mod",
+        "requestOrdinal": 29,
+        "resourceKind": "mod",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-015-900158fa98d4",
+        "tupleOrder": 15,
+        "url": "https://proxy.golang.org/gopkg.in/check.v1/@v/v0.0.0-20161208181325-20d25e280405.mod",
+        "version": "v0.0.0-20161208181325-20d25e280405"
+      },
+      {
+        "allowedContentTypes": [
+          "application/zip",
+          "application/octet-stream"
+        ],
+        "expectedH1": "h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=",
+        "expectedH1Kind": "module_zip_h1",
+        "method": "GET",
+        "module": "gopkg.in/check.v1",
+        "outputFileName": "015-900158fa98d4bc9e3b36.zip",
+        "requestOrdinal": 30,
+        "resourceKind": "zip",
+        "selectedByGraphAlgorithm": false,
+        "tupleId": "wave2-015-900158fa98d4",
+        "tupleOrder": 15,
+        "url": "https://proxy.golang.org/gopkg.in/check.v1/@v/v0.0.0-20161208181325-20d25e280405.zip",
+        "version": "v0.0.0-20161208181325-20d25e280405"
+      }
+    ],
+    "port": 443,
+    "proxyAuthorizationHeaderAllowed": false,
+    "queryAllowed": false,
+    "rangeOrResumeAllowed": false,
+    "redirectAllowed": false,
+    "requestCount": 30,
+    "requestOrdinalRule": {
+      "mod": "two_times_tuple_order_minus_one",
+      "zip": "two_times_tuple_order"
+    },
+    "resourceOrderPerTuple": [
+      "mod",
+      "zip"
+    ],
+    "resourcesPerTuple": 2,
+    "retryAllowed": false,
+    "scheme": "https",
+    "tupleCount": 15,
+    "tupleOrder": "exact_wave2_decision_order_1_through_15_sequential"
+  },
+  "reservedRegularFilePaths": {
+    "acquisitionPublication": {
+      "count": 33,
+      "paths": [
+        "build/offline-source/pion-ice-v4.3.0/dependencies/.wave-2-v2.claim",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/001-21ba4abc86961659f24e.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/001-21ba4abc86961659f24e.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/002-fb2873f66a366d2f9cc3.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/002-fb2873f66a366d2f9cc3.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/003-e0aff155af83900b2a53.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/003-e0aff155af83900b2a53.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/004-c3669b75d72d114f8670.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/004-c3669b75d72d114f8670.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/005-2edbe659c1adfd9d434a.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/005-2edbe659c1adfd9d434a.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/006-1fd44bd82021235300d8.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/006-1fd44bd82021235300d8.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/007-770312f60fe3a1c468b5.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/007-770312f60fe3a1c468b5.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/008-fd16fa18192f80e759e5.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/008-fd16fa18192f80e759e5.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/009-71839443fe0e180dd242.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/009-71839443fe0e180dd242.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/010-ab27621c1feaf572f9b6.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/010-ab27621c1feaf572f9b6.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/011-238ff1314cd589d00da2.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/011-238ff1314cd589d00da2.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/012-64a4db71fd3f0a5a00c3.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/012-64a4db71fd3f0a5a00c3.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/013-85c01ed25b57967f8db6.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/013-85c01ed25b57967f8db6.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/014-f06eab5ab6e94b31fef8.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/014-f06eab5ab6e94b31fef8.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/015-900158fa98d4bc9e3b36.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/015-900158fa98d4bc9e3b36.zip",
+        "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-receipt-v2.json",
+        "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-manifest-v2.json"
+      ]
+    },
+    "failureReceiptPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-failure-v2.json",
+    "postReadbackPublication": {
+      "count": 35,
+      "paths": [
+        "build/offline-source/pion-ice-v4.3.0/dependencies/.wave-2-v2.claim",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/001-21ba4abc86961659f24e.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/001-21ba4abc86961659f24e.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/002-fb2873f66a366d2f9cc3.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/002-fb2873f66a366d2f9cc3.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/003-e0aff155af83900b2a53.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/003-e0aff155af83900b2a53.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/004-c3669b75d72d114f8670.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/004-c3669b75d72d114f8670.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/005-2edbe659c1adfd9d434a.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/005-2edbe659c1adfd9d434a.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/006-1fd44bd82021235300d8.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/006-1fd44bd82021235300d8.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/007-770312f60fe3a1c468b5.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/007-770312f60fe3a1c468b5.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/008-fd16fa18192f80e759e5.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/008-fd16fa18192f80e759e5.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/009-71839443fe0e180dd242.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/009-71839443fe0e180dd242.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/010-ab27621c1feaf572f9b6.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/010-ab27621c1feaf572f9b6.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/011-238ff1314cd589d00da2.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/011-238ff1314cd589d00da2.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/012-64a4db71fd3f0a5a00c3.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/012-64a4db71fd3f0a5a00c3.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/013-85c01ed25b57967f8db6.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/013-85c01ed25b57967f8db6.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/014-f06eab5ab6e94b31fef8.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/014-f06eab5ab6e94b31fef8.zip",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/015-900158fa98d4bc9e3b36.mod",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted/015-900158fa98d4bc9e3b36.zip",
+        "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-receipt-v2.json",
+        "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-manifest-v2.json",
+        "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-readback-v2.json",
+        "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-readback-manifest-v2.json"
+      ]
+    },
+    "regularFileCountMeaning": "exact_reserved_regular_file_path_set_not_recursive_directory_count",
+    "successAndFailureMutuallyExclusive": true
+  },
+  "resourceValidationContract": {
+    "allResourcesReopenedReparsedAndRehashedBeforePublication": true,
+    "heldGoSumH1IsFreshChecksumDatabaseProof": false,
+    "mod": {
+      "exactSingleModuleDirectiveRequired": true,
+      "goModH1Algorithm": "golang.org/x/mod/sumdb/dirhash.Hash1_v1_single_go_mod",
+      "goModH1Required": true,
+      "maximumBytesPerResponse": 1048576,
+      "nulByteForbidden": true,
+      "sourceBytes": "exact_mod_response_body",
+      "utf8Required": true
+    },
+    "openedDescriptorValidation": true,
+    "orderedSourceSetDigestRequired": true,
+    "streamedToOwnerOnlyTemporaryFiles": true,
+    "v2OrderedResourceSetDigestRequired": true,
+    "v2OrderedResourceSetSha256": "014e37747510d7b49482a3cbc0401f70d8760cd1ed660a2eb71993a157124a7f",
+    "zip": {
+      "allowedCompressionMethods": [
+        "stored",
+        "deflated"
+      ],
+      "centralAndLocalHeaderConsistencyRequired": true,
+      "compressionRatioMaximum": 200,
+      "compressionRatioUsesIntegerArithmetic": true,
+      "crcRequired": true,
+      "duplicateOrCasefoldCollisionAllowed": false,
+      "embeddedRootGoModMustMatchExternalModWhenPresent": true,
+      "embeddedRootGoModRequired": false,
+      "encryptionAllowed": false,
+      "exactEofRequired": true,
+      "exactModulePrefixRequired": true,
+      "explicitDirectoryEntriesAllowed": false,
+      "filesystemExtractionAllowed": false,
+      "maximumBytesPerResponse": 16777216,
+      "moduleZipH1Required": true,
+      "symlinkOrSpecialFileAllowed": false,
+      "validUtf8AndNfcPathsRequired": true,
+      "zip64Allowed": false
+    }
+  },
+  "result": "exact_15_public_proxy_mod_then_zip_pairs_v2_authorized_once_not_executed",
+  "schemaVersion": "1.0",
+  "scope": "single_fresh_exact_15_public_go_proxy_mod_then_zip_pair_source_intake_wave2_v2_only",
+  "status": "wave2_v2_dependency_source_acquisition_authorized_not_consumed",
+  "toolBindings": [
+    {
+      "path": "script/p2p_nat_g2_pion_dependency_wave2_common_v2.py",
+      "rawSha256": "a877fc159e8abee773e1517f559266d97655aafac653398b76c91c724bd94316",
+      "role": "wave2_common_fail_closed_primitives"
+    },
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave2-v1.md",
+      "rawSha256": "3f9615f2c7228014163f00b42cd0bb7cfed2283342399d39fbc94d7de0f6d023",
+      "role": "wave2_identity_decision_reader"
+    },
+    {
+      "path": "script/check_p2p_nat_g2_pion_rung3_dependency_wave2_decision_v1.py",
+      "rawSha256": "146b4d3d9b38c05c01303b0b81146c68388905d4010345c8bda3807a6881d062",
+      "role": "wave2_identity_decision_checker"
+    },
+    {
+      "path": "script/test_p2p_nat_g2_pion_rung3_dependency_wave2_decision_v1.py",
+      "rawSha256": "d5cb6adf7b7beb8e6d29f402ac05c69d7a706ad0f4baa1295c332727d799d299",
+      "role": "wave2_identity_decision_offline_regression_tests"
+    },
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-recovery-decision-v1.json",
+      "rawSha256": "97be9c7a3aa5e7ab58ea4eada5f5f5d6193a14cc0fb71208bafdf16ba4e7523f",
+      "role": "wave2_v1_preclaim_recovery_decision"
+    },
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-recovery-decision-v1.md",
+      "rawSha256": "2e4375b464b5a04aa25659c15be082f75b202a54afe6799d7896b553417e1eef",
+      "role": "wave2_v1_preclaim_recovery_reader"
+    },
+    {
+      "path": "script/check_p2p_nat_g2_pion_dependency_wave2_recovery_decision_v1.py",
+      "rawSha256": "34d2ee7086d6fe43bac8c7110b82ce6a491a3a6fa6e69155acc31dc4dbd7de2b",
+      "role": "wave2_v1_preclaim_recovery_checker"
+    },
+    {
+      "path": "script/test_p2p_nat_g2_pion_dependency_wave2_recovery_decision_v1.py",
+      "rawSha256": "8e685f584fcdfe46d303eb9840a465fab3c69221db7c2c3537e40b54ab13de9f",
+      "role": "wave2_v1_preclaim_recovery_offline_regression_tests"
+    },
+    {
+      "path": "script/acquire_p2p_nat_g2_pion_dependency_wave1_once.py",
+      "rawSha256": "571985e002c6b819bfbe7153bb445beef27fdcad239a289b492005435c2a0356",
+      "role": "immutable_wave1_v1_filesystem_and_zip_primitives"
+    },
+    {
+      "path": "script/acquire_p2p_nat_g2_pion_dependency_wave1_v3_once.py",
+      "rawSha256": "0855f7d7c14f1121ce74b678d5540d91ebbe482c5de306be84ecc6ddc910b5f1",
+      "role": "immutable_wave1_v3_mod_zip_validation_primitives"
+    },
+    {
+      "path": "script/acquire_p2p_nat_g2_pion_dependency_wave2_v2_once.py",
+      "rawSha256": "b73113a99c94d00cee428efd621c4b0e43afdeed6f85c4f279b8976b4f1313dd",
+      "role": "wave2_v2_runner"
+    },
+    {
+      "path": "script/test_acquire_p2p_nat_g2_pion_dependency_wave2_v2_once.py",
+      "rawSha256": "ea55d06de4fb4d7d81c707f8a984a11e9a8c2d3b763001c2f7778d394c09c11f",
+      "role": "wave2_v2_runner_offline_regression_tests"
+    },
+    {
+      "path": "script/check_p2p_nat_g2_pion_dependency_wave2_success_v2.py",
+      "rawSha256": "71df0bab0d85da5b6972d5668d939275d2cd833db4040bf4dce2d71910d00d0e",
+      "role": "wave2_v2_independent_readback_checker"
+    },
+    {
+      "path": "script/test_p2p_nat_g2_pion_dependency_wave2_success_v2.py",
+      "rawSha256": "fe54d0b48b07ee5b5bbd4e71d1366d51720edcc7b0a6f447a1836bc0f7c4fe53",
+      "role": "wave2_v2_independent_readback_offline_regression_tests"
+    },
+    {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-execution-permit-v2.md",
+      "rawSha256": "ef840350f192f9e0887e4f8f1284d1cc25cbdf7f43b6ff84326ffebc5f4ed357",
+      "role": "wave2_v2_execution_permit_reader_contract"
+    },
+    {
+      "path": "script/check_p2p_nat_g2_pion_dependency_wave2_execution_permit_v2.py",
+      "rawSha256": "8e4093d636308720f5fe216e8b22923b44b2b41e3e325b61d85c7ead55645147",
+      "role": "wave2_v2_execution_permit_checker"
+    },
+    {
+      "path": "script/test_p2p_nat_g2_pion_dependency_wave2_execution_permit_v2.py",
+      "rawSha256": "0024f17c8abee7d3e0b4f06b170223ee1500a561f1f007638899e59f2fd285a3",
+      "role": "wave2_v2_execution_permit_checker_offline_regression_tests"
+    }
+  ]
+}

@@ -291,8 +291,11 @@ This document records what has been implemented so far and what should happen ne
   checkpoint. The historical v3 permit completed that preparation and was
   consumed exactly once. Its 38 requests retained 19 verified `.mod`/`.zip`
   pairs; independent readback and fixed-hash post-verification now pass over
-  the 43-file set. V1/v2/v3 retry stays closed, and the current next action is
-  `prepare_separate_dependency_source_review_wave`.
+  the 43-file set. Source-review v1/v2 then failed closed without a partial
+  result; v3 and its independent readback recorded the exact 15-tuple
+  frontier. Wave2 decision v1 completed that preparation without acquisition,
+  and retry stays closed. The current
+  `nextAction=prepare_separate_versioned_wave2_checker_runner_tests_and_one_use_execution_permit`.
   Schema
   1.1 is a not-yet-implemented design requiring
   separate single-use egress authorization immediately before socket
@@ -513,10 +516,68 @@ This document records what has been implemented so far and what should happen ne
   plus its verification-only 9/9 suite close the raw-encoding, dispatch,
   TOCTOU, and typed-comparison gaps with
   `fixedHashEnforcedInsideHeldValidation=true`, `verificationOnly=true`, and
-  `recordModeExposed=false`. The current
-  `nextAction=prepare_separate_dependency_source_review_wave`. All 19 findings remain
-  open, no candidate or library is selected, and no credentials or user
-  action are involved.
+  `recordModeExposed=false`. That checkpoint recorded
+  `recordedNextActionAtThatCheckpoint=prepare_separate_dependency_source_review_wave`.
+  The
+  [dependency source-review wave-one decision v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-review-wave1-decision-v1.json)
+  then prepared the bounded review contract. It was followed by immutable v1
+  `E_HELD_SET` and v2
+  `E_ARCHIVE_STRUCTURE` failed-closed attempts, neither of which published a
+  partial result. The corrected one-use v3 review produced the
+  [result](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-review-wave1-result-v3.json)
+  and
+  [manifest](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-review-wave1-manifest-v3.json);
+  its separate
+  [readback receipt](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-review-wave1-readback-v3.json)
+  and
+  [readback manifest](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-review-wave1-readback-manifest-v3.json)
+  now record, at that checkpoint,
+  `status=dependency_source_review_wave1_readback_published_new_tuple_wave_required`
+  and
+  `result=independent_readback_receipt_published_then_manifest_written_last_new_tuple_wave_required`;
+  the recorded next action was
+  `nextAction=prepare_separate_versioned_dependency_wave2_identity_and_acquisition_decision`.
+  Graph SHA-256
+  `2c94906a07a40737e30ca832c215fa88d2233297c9fb0ea25755488d9a72408b`
+  binds 132 nodes/1,047 edges, 35 module nodes/86 module edges, 25 selected
+  versions, zero unmapped or unresolved declared external imports, and exactly
+  15 new tuples. Five are missing selected-version sources and ten are required
+  version-specific vertices; every row remains `acquisitionAuthorized=false`
+  and must not be collapsed or replaced by a higher version. The route is
+  `new_tuple_wave_required`. All 19 findings remain open; every dependency,
+  semantic, rung-three, candidate, library, and release closure remains open. This work
+  uses no owner proof, credentials, keys, signatures, tokens, passwords, or
+  user action.
+- Historical G2 wave2 preparation: the
+  [decision](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave2-v1.json)
+  and
+  [reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave2-v1.md)
+  pass their read-only preflight and 37/37 offline regression checks. They preserve all 15
+  exact graph vertices, verify every introducing parent `.mod` declaration,
+  and bind 30 ordered `.mod`/`.zip` H1 expectations from already-held
+  non-conflicting `go.sum` evidence. Its checkpoint status was
+  `status=wave2_local_checksum_identity_and_30_resource_contract_prepared_future_bytes_unverified_acquisition_not_authorized`;
+  result is
+  `result=exact_15_graph_frontier_tuples_30_mod_zip_requests_and_held_h1_expectations_prepared_future_bytes_unverified`;
+  and
+  `recordedNextActionAtThatCheckpoint=prepare_separate_versioned_wave2_checker_runner_tests_and_one_use_execution_permit`.
+- Current G2 wave2 one-use permit: the
+  [permit](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-execution-permit-v1.json)
+  and
+  [reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-execution-permit-v1.md)
+  record
+  `status=wave2_v1_dependency_source_acquisition_authorized_not_consumed`,
+  `result=exact_15_public_proxy_mod_then_zip_pairs_authorized_once_not_executed`,
+  and `nextAction=execute_bound_dependency_source_wave2_v1_once`. Focused
+  evidence passes 37/37 decision, 41/41 permit, 50/50 runner, and 39/39
+  readback checks. Both exact preflights pass for 15 tuples and 30 ordered
+  public Go proxy requests with the namespace empty, no network use, and no
+  file write. Response bytes remain unacquired and unverified. Only this
+  bounded one-use intake is authorized; extraction, source execution,
+  compilation, runtime/product network, Git, device, and deployment remain
+  closed. Repository authentication, account, owner proof, credential, key,
+  signature, token, and password are outside this workflow. Neither external
+  authentication nor user action is authorized or required.
 - The crypto fixture is pinned at SHA-256
   `d45fd920e22652d790c742de995d87a8cbfb64bb22aca3b829cbad5b23485448`
   and content-addresses the unchanged candidate fixture. Current focused proof
@@ -563,7 +624,8 @@ This document records what has been implemented so far and what should happen ne
   and production readiness remain open.
 - Git baseline at the start of this slice was clean `main` at
   `dee5d87791ceaddb094235fbf33f7997580ddb1e`, aligned with `origin/main`.
-  The assistant leaves changes unstaged and uncommitted for the user.
+  Read current publication state from Git; this workflow does not stage,
+  commit, or push unless the user separately requests it.
 
 ## Historical 2026-07-21 V1 G0 Publication Follow-Up And Authority Baseline
 

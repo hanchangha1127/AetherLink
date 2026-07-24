@@ -257,10 +257,71 @@ versioned recovery reader recorded the outputs once, and the
 plus its verification-only 9/9 suite close the discovered raw-encoding,
 dispatch, TOCTOU, and typed-comparison gaps with
 `fixedHashEnforcedInsideHeldValidation=true`, `verificationOnly=true`, and
-`recordModeExposed=false`. The current
-`nextAction=prepare_separate_dependency_source_review_wave`. All 19 findings remain open,
-no candidate or library is selected, and no credentials or user action are
-involved.
+`recordModeExposed=false`. That checkpoint recorded
+`recordedNextActionAtThatCheckpoint=prepare_separate_dependency_source_review_wave`.
+The
+[dependency source-review wave-one decision v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-review-wave1-decision-v1.json)
+then prepared the bounded review contract. It was followed by immutable v1
+`E_HELD_SET` and v2
+`E_ARCHIVE_STRUCTURE` failed-closed attempts, neither of which published a
+partial result. The corrected one-use v3 review produced the
+[result](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-review-wave1-result-v3.json)
+and
+[manifest](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-review-wave1-manifest-v3.json);
+its separate
+[readback receipt](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-review-wave1-readback-v3.json)
+and
+[readback manifest](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-review-wave1-readback-manifest-v3.json)
+now record, at that checkpoint,
+`status=dependency_source_review_wave1_readback_published_new_tuple_wave_required`
+and
+`result=independent_readback_receipt_published_then_manifest_written_last_new_tuple_wave_required`;
+the recorded next action was
+`nextAction=prepare_separate_versioned_dependency_wave2_identity_and_acquisition_decision`.
+Graph SHA-256
+`2c94906a07a40737e30ca832c215fa88d2233297c9fb0ea25755488d9a72408b`
+binds 132 nodes/1,047 edges, 35 module nodes/86 module edges, 25 selected
+versions, zero unmapped or unresolved declared external imports, and exactly
+15 new tuples. Five are missing selected-version sources and ten are required
+version-specific vertices; every row remains `acquisitionAuthorized=false`
+and must not be collapsed or replaced by a higher version. The route is
+`new_tuple_wave_required`. All 19 findings remain open; every dependency,
+semantic, rung-three, candidate, library, and release closure remains open. This work uses
+no owner proof, credentials, keys, signatures, tokens, passwords, or user
+action.
+
+That historical preparation action is recorded in the
+[wave2 identity/acquisition decision v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave2-v1.json)
+and
+[reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave2-v1.md).
+Its read-only checker and 37/37 offline regression checks bind the exact 15-version
+frontier, every introducing parent `.mod` declaration, and 30 ordered
+`.mod`-then-`.zip` H1 expectations from existing non-conflicting `go.sum`
+evidence. At that checkpoint,
+`status=wave2_local_checksum_identity_and_30_resource_contract_prepared_future_bytes_unverified_acquisition_not_authorized`;
+the result was
+`result=exact_15_graph_frontier_tuples_30_mod_zip_requests_and_held_h1_expectations_prepared_future_bytes_unverified`;
+and
+`recordedNextActionAtThatCheckpoint=prepare_separate_versioned_wave2_checker_runner_tests_and_one_use_execution_permit`.
+
+That action is complete in the
+[wave2 one-use execution permit v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-execution-permit-v1.json)
+and
+[reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-execution-permit-v1.md).
+Current status is
+`status=wave2_v1_dependency_source_acquisition_authorized_not_consumed`;
+current result is
+`result=exact_15_public_proxy_mod_then_zip_pairs_authorized_once_not_executed`;
+and `nextAction=execute_bound_dependency_source_wave2_v1_once`.
+The 41/41 permit, 50/50 runner, and 39/39 readback checks pass alongside the
+37/37 decision checks. Exact preflights retain an empty namespace and show no
+network or file write. The permit is limited to 15 tuples and 30 ordered public
+Go proxy requests; response bytes remain unacquired and unverified until it is
+consumed once. Extraction, source loading/execution, compilation,
+runtime/product network, Git, device, and deployment remain closed. Repository
+authentication, account, owner proof, credential, key, signature, token, and
+password are outside this workflow. Neither external authentication nor user
+action is authorized or required.
 
 The rung-two successor recorded, only `at_that_checkpoint`,
 `recordedNextActionAtThatCheckpoint=prepare_versioned_rung3_offline_source_review_decision`.
@@ -593,8 +654,12 @@ execution.
   The historical v3 permit completed that preparation and was consumed exactly
   once. Its bounded 38-request public-proxy intake retained 38 verified
   resources, and the fixed-hash post-verifier now confirms the 43-file
-  acquisition/readback set. The current next action is
-  `prepare_separate_dependency_source_review_wave`.
+  acquisition/readback set. Source-review v1/v2 then failed closed without a
+  partial result; v3 and its independent readback recorded the exact 15-tuple
+  frontier. Wave2 decision v1 now binds those exact versions, parent
+  declarations, and 30 held-H1 resource expectations without acquisition. The
+  current
+  `nextAction=prepare_separate_versioned_wave2_checker_runner_tests_and_one_use_execution_permit`.
 - Historical G2 restricted-fork rung-one status contract at_that_checkpoint:
   `status=rung1_profile_complete_candidate_not_selected`,
   `result=pion_restricted_fork_profile_ready_for_rung2_decision_only`, and
@@ -758,10 +823,9 @@ The later twelve-file owner-trust-bootstrap/external-readiness slice is tracked 
 `4227204`. That twelve-path set is a historical published checkpoint, not the
 current worktree inventory. The current working copy includes the completed G1a
 foundations, G1b-A Android normal-graph/injected-E2E work, the macOS loopback-only
-accepted-raw primitive, and the G2 Pion preflight plus restricted-fork rung-one
-design/checker portfolio listed in the snapshot. The
-assistant leaves it unstaged and uncommitted; the sole owner may commit and push
-it after review.
+accepted-raw primitive, and the G2 Pion preflight plus restricted-fork work
+listed in the snapshot. Read current publication state from Git. This workflow
+does not stage, commit, or push unless the user separately requests it.
 
 ## V1 G0 Execution Status
 
@@ -1883,9 +1947,13 @@ Unless the user redirects the task, use this decision order:
    exactly once: 38 requests and 38 bodies produced 19 verified `.mod`/`.zip`
    pairs. Independent readback is complete, and the verification-only v3
    checker confirms the fixed 43-file set without exposing record authority.
-   The exact next action is
-   `prepare_separate_dependency_source_review_wave`, without retrying v1, v2,
-   or v3.
+   Source-review v1/v2 then failed closed without a partial result; v3 and its
+   independent readback recorded the exact 15-tuple frontier. Wave2 decision
+   v1 completed that recorded preparation action: 15/15 parent declarations
+   and all 30 held-H1 expectations are exact, while future bytes remain
+   unacquired. Its exact
+   `nextAction=prepare_separate_versioned_wave2_checker_runner_tests_and_one_use_execution_permit`,
+   without retrying prior waves or asking for user authentication.
    Semantic
    review was performed, but semantic closure, dependency closure, rung-three
    completion, candidate selection, and library selection remain false. Android verified-endpoint handoff and macOS

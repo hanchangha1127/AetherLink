@@ -1,0 +1,191 @@
+{
+  "documentType": "aetherlink.g2-pion-dependency-wave2-recovery-decision",
+  "schemaVersion": "1.0",
+  "decisionId": "g2-pion-ice-v4.3.0-rung3-dependency-wave2-recovery-decision-v1",
+  "recordedDate": "2026-07-24",
+  "status": "wave2_v1_preclaim_root_identity_schema_mismatch_v2_recovery_selected_execution_not_authorized",
+  "result": "v1_abandoned_preclaim_zero_requests_v2_exact_root_identity_adapter_selected",
+  "nextAction": "prepare_separate_wave2_v2_runner_readback_tests_and_execution_permit",
+  "predecessorBindings": {
+    "wave2Decision": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave2-v1.json",
+      "rawSha256": "e10a4b41f0dc9ab9bc13b07f6b9e238e146316a7a4846af5b22f3a57fe0cd1a1",
+      "contentSha256": "1368918d79f629e2a07ec324201963b9558434aebeca2ef38261ebf62d180bc5"
+    },
+    "wave2V1Permit": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-execution-permit-v1.json",
+      "rawSha256": "a452c9df404e8e1d8c4049e1aa5a3307d8bf9dedf46ae58cfa570a9a89dde108",
+      "contentSha256": "9713aeed187cfa62d37894a3e7a437d415ce39e1a4cbb0bcfc36eff7acf7c8fe",
+      "permitId": "g2-pion-ice-v4.3.0-rung3-dependency-wave2-execution-permit-v1"
+    },
+    "wave2V1Common": {
+      "path": "script/p2p_nat_g2_pion_dependency_wave2_common_v1.py",
+      "rawSha256": "dc25ddd3a82789bddccbd6ec57a71edc389225e003d7a73e6d371a640937f8c1"
+    },
+    "wave2V1PermitChecker": {
+      "path": "script/check_p2p_nat_g2_pion_dependency_wave2_execution_permit_v1.py",
+      "rawSha256": "608cc5c067f1f48b95cfcfe69a5deb8a0a67c527bbfe8e2b844da47b048df7d4"
+    },
+    "wave2V1Runner": {
+      "path": "script/acquire_p2p_nat_g2_pion_dependency_wave2_v1_once.py",
+      "rawSha256": "4f321463cc8bc887524a4acfc43f3fbc5de6e5c02d3b79fcc34a3112a3e16f23"
+    },
+    "wave2V1Readback": {
+      "path": "script/check_p2p_nat_g2_pion_dependency_wave2_success_v1.py",
+      "rawSha256": "ba46de1f9392714887876eccca9f084a4efd8e0d495af3eb36945b4c542ced84"
+    }
+  },
+  "observedV1State": {
+    "attemptedCommand": [
+      "python3",
+      "-I",
+      "-B",
+      "-S",
+      "script/acquire_p2p_nat_g2_pion_dependency_wave2_v1_once.py",
+      "--execute"
+    ],
+    "reportedFailureCode": "E_INTERNAL",
+    "reportedPhase": "execution",
+    "claimCreated": false,
+    "networkRequestAttemptCount": 0,
+    "responseBodyCompletedCount": 0,
+    "validatedAndStagedResourceCount": 0,
+    "validatedAndStagedTupleCount": 0,
+    "failureReceiptCreated": false,
+    "successReceiptCreated": false,
+    "manifestCreated": false,
+    "finalDirectoryCreated": false,
+    "permitConsumed": false,
+    "v1Disposition": "abandoned_preclaim_do_not_reexecute",
+    "technicalExecutionBlocked": true,
+    "revocationSentinelCreated": true
+  },
+  "rootCause": {
+    "category": "repository_root_identity_schema_adapter_missing",
+    "permitCheckerSchema": [
+      "device",
+      "inode",
+      "uid",
+      "mode"
+    ],
+    "legacyPrimitiveSchema": [
+      "device",
+      "inode",
+      "ownerUid",
+      "mode"
+    ],
+    "runnerPassedProducerObjectWithoutAdapter": true,
+    "readbackHadSameLatentMismatch": true,
+    "authenticationRelated": false,
+    "networkRelated": false,
+    "sourceIdentityRelated": false
+  },
+  "selectedV2Policy": {
+    "tupleSetReusedExactly": true,
+    "tupleCount": 15,
+    "orderedRequestCount": 30,
+    "urlsAndHeldH1ExpectationsReusedExactly": true,
+    "freshNamespaceRequired": true,
+    "singleExactRootIdentityAdapterRequired": true,
+    "adapterInputExactKeys": [
+      "device",
+      "inode",
+      "uid",
+      "mode"
+    ],
+    "adapterOutputExactKeys": [
+      "device",
+      "inode",
+      "ownerUid",
+      "mode"
+    ],
+    "missingExtraBooleanUidAndModeDriftRejected": true,
+    "runnerAndReadbackMustUseAdapter": true,
+    "actualRootOpenCloseCompatibilityGateRequired": true,
+    "boundedLegacyRootFailureCodePreserved": true,
+    "v1RevocationSentinelRequiredAndRetained": true,
+    "v2AcquisitionAuthorizedByThisDecision": false
+  },
+  "v1PreservationContract": {
+    "v1DecisionModificationAllowed": false,
+    "v1PermitModificationAllowed": false,
+    "v1RunnerModificationAllowed": false,
+    "v1ReadbackModificationAllowed": false,
+    "v1ClaimOrFailureBackfillAllowed": false,
+    "v1RetryAllowed": false,
+    "v1NamespaceReuseAllowed": false
+  },
+  "v1RevocationContract": {
+    "path": "build/offline-source/pion-ice-v4.3.0/dependencies/.wave-2-v1-staging-revoked-by-recovery-v1",
+    "rawSha256": "4a45a0ebf75f5fda5bcfbfc7f6862030f23bca5ece0088c2d12b0ec11d2e081c",
+    "fileMode": "0600",
+    "linkCount": 1,
+    "v1StagingPrefixCollisionRequired": true,
+    "v1CleanPreflightMustFailWith": "E_NAMESPACE_STAGING",
+    "v1ClaimOrFailureArtifact": false,
+    "retainedByV2AuthorityInputs": true,
+    "automaticRetryAllowed": false
+  },
+  "v2NamespaceContract": {
+    "claimPath": "build/offline-source/pion-ice-v4.3.0/dependencies/.wave-2-v2.claim",
+    "stagingDirectoryPrefix": ".wave-2-v2-staging-",
+    "finalDirectoryPath": "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v2/accepted",
+    "successReceiptPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-receipt-v2.json",
+    "failureReceiptPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-failure-v2.json",
+    "manifestPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-manifest-v2.json",
+    "readbackReceiptPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-readback-v2.json",
+    "readbackManifestPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-readback-manifest-v2.json"
+  },
+  "authority": {
+    "filesystemPreparationAuthorized": true,
+    "offlineCheckerAndTestExecutionAuthorized": true,
+    "networkAcquisitionAuthorized": false,
+    "sourceExtractionAuthorized": false,
+    "sourceExecutionAuthorized": false,
+    "packageManagerAuthorized": false,
+    "compilationAuthorized": false,
+    "runtimeOrProductNetworkAuthorized": false,
+    "deviceWorkAuthorized": false,
+    "deploymentAuthorized": false,
+    "gitWriteAuthorized": false
+  },
+  "personalProjectBoundary": {
+    "projectOwnership": "personal_single_owner",
+    "repositoryOwnerIdentityProofRequired": false,
+    "externalAuthenticationRequired": false,
+    "credentialsAllowed": false,
+    "privateKeyRequired": false,
+    "signatureRequired": false,
+    "tokenRequired": false,
+    "passwordRequired": false,
+    "userActionRequired": false,
+    "productEndpointAuthenticationIsSeparateRuntimeInvariant": true
+  },
+  "closure": {
+    "openFindingCount": 19,
+    "findingsClosedByRecovery": 0,
+    "wave2Acquired": false,
+    "graphFixedPointReached": false,
+    "dependencySourceReviewed": false,
+    "dependencyClosureComplete": false,
+    "semanticClosureComplete": false,
+    "rungThreeComplete": false,
+    "candidateSelected": false,
+    "librarySelected": false
+  },
+  "nonClaims": [
+    "preclaim_failure_is_not_a_consumed_network_attempt",
+    "absence_of_v1_artifacts_does_not_authorize_v1_retry",
+    "v1_revocation_sentinel_is_not_a_claim_failure_or_success_artifact",
+    "recovery_design_is_not_v2_execution_authority",
+    "held_go_sum_h1_is_not_fresh_checksum_database_proof",
+    "one_additional_wave_is_not_dependency_fixed_point_evidence",
+    "no_repository_authentication_owner_proof_or_user_action_is_required"
+  ],
+  "contentBinding": {
+    "algorithm": "sha256",
+    "canonicalization": "utf8_ascii_escaped_sorted_keys_compact_single_lf",
+    "scope": "decision_without_contentBinding",
+    "sha256": "9dae2cec0af345138ba58bd679f71f79c74a496ab5edc63385f8dff32e8ee4d6"
+  }
+}

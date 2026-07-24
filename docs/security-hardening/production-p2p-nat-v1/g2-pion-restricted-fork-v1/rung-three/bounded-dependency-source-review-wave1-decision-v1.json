@@ -1,0 +1,269 @@
+{
+  "authority": {
+    "compilerAuthorized": false,
+    "decisionRecorded": true,
+    "deploymentAuthorized": false,
+    "deviceAuthorized": false,
+    "externalAuthenticationRequired": false,
+    "filesystemExtractionAuthorized": false,
+    "gitWriteAuthorized": false,
+    "inMemoryArchiveInspectionAuthorized": false,
+    "networkAuthorized": false,
+    "packageManagerAuthorized": false,
+    "repositoryOwnerIdentityProofRequired": false,
+    "reviewExecutionAuthorized": false,
+    "socketAuthorized": false,
+    "sourceExecutionAuthorized": false,
+    "sourceLoadAuthorized": false,
+    "sourceModificationAuthorized": false,
+    "subprocessAuthorized": false,
+    "userActionRequired": false
+  },
+  "classificationContract": {
+    "disagreementRule": "retain_unresolved_and_keep_closure_false",
+    "excludedClasses": [
+      "test_files",
+      "external_test_packages",
+      "examples",
+      "commands",
+      "tools",
+      "benchmarks",
+      "fuzz_entry_points"
+    ],
+    "productionProfiles": [
+      "android_api_26_through_36_arm64_v8a",
+      "macos_14_or_newer_arm64"
+    ],
+    "requiredOutputs": [
+      "source_inventory",
+      "profile_package_nodes",
+      "profile_import_edges",
+      "module_nodes",
+      "module_edges",
+      "new_tuple_frontier",
+      "license_notice_inventory",
+      "native_generated_build_script_inventory",
+      "ordered_node_edge_and_graph_digests",
+      "review_input_coverage"
+    ],
+    "separatelyClassifiedClasses": [
+      "generated_source",
+      "assembly",
+      "cgo",
+      "native_source",
+      "vendored_source",
+      "build_scripts",
+      "license_and_notice",
+      "checksum_only_context",
+      "replaced",
+      "excluded"
+    ]
+  },
+  "closure": {
+    "candidateSelected": false,
+    "dependencyClosureComplete": false,
+    "dependencySourceReviewed": false,
+    "findingsClosedByDecision": 0,
+    "graphFixedPointReached": false,
+    "librarySelected": false,
+    "openFindingCount": 19,
+    "patchRequiredFindingCount": 7,
+    "rungThreeComplete": false,
+    "semanticClosureComplete": false,
+    "unresolvedFindingCount": 12
+  },
+  "contentBinding": {
+    "algorithm": "sha256",
+    "canonicalization": "utf8_ascii_escaped_sorted_keys_compact_single_lf",
+    "scope": "decision_without_contentBinding",
+    "sha256": "bbad9b7e38554c841b91b5273f90c2e4f2450ab64c42dfc5cc1ed1e07d15d547"
+  },
+  "decisionChecker": {
+    "archiveInspectionPerformed": false,
+    "checkerPath": "script/check_p2p_nat_g2_pion_dependency_source_review_wave1_decision_v1.py",
+    "checkerTestsPath": "script/test_p2p_nat_g2_pion_dependency_source_review_wave1_decision_v1.py",
+    "fileWriteCount": 0,
+    "futureExecutionPermitMustBindCheckerAndTestsRawSha256": true,
+    "networkOperationCount": 0
+  },
+  "decisionId": "g2-pion-ice-v4.3.0-rung3-dependency-source-review-wave1-decision-v1",
+  "documentType": "aetherlink.g2-pion-bounded-dependency-source-review-wave1-decision",
+  "futureExecutionContract": {
+    "archiveMemberMaterializationAllowed": false,
+    "boundedInMemoryArchiveMemberDecodingAllowed": true,
+    "firstMismatchRule": "stop_publish_bounded_failure_no_partial_result_require_new_versioned_decision",
+    "goCommandAllowed": false,
+    "oneUsePermitRequired": true,
+    "orderedSteps": [
+      "revalidate_fixed_hash_v3_intake",
+      "read_root_and_19_dependency_archives_in_memory",
+      "classify_profile_reachable_files_and_imports",
+      "parse_exact_module_metadata",
+      "resolve_profile_union_package_and_module_edges",
+      "apply_minimum_version_selection_and_context_quarantine",
+      "record_new_tuple_frontier_and_ordered_graph_digests",
+      "record_license_native_generated_and_build_script_inventory",
+      "publish_result_then_manifest_last",
+      "run_separate_independent_readback"
+    ],
+    "runnerAndTestsMustBeByteBoundByPermit": true,
+    "socketOrNetworkAllowed": false,
+    "sourceOrGeneratorExecutionAllowed": false,
+    "sourceTextStaticInspectionAllowed": true,
+    "subprocessAllowed": false,
+    "testHookOrBuildScriptExecutionAllowed": false
+  },
+  "nextAction": "prepare_separate_dependency_source_review_wave1_runner_tests_and_execution_permit",
+  "nonClaims": {
+    "dependencyReviewSelectsCandidateOrLibrary": false,
+    "executionPermitAuthenticationRequired": false,
+    "oneWaveIsFixedPointEvidence": false,
+    "permitIsLocalContentBoundWorkflowControl": true,
+    "preparationIsReviewExecution": false,
+    "productEndpointAuthenticationEvaluatedByThisDecision": false,
+    "productEndpointAuthenticationIsSeparateRuntimeInvariant": true,
+    "productEndpointAuthenticationUserInputRequiredForThisDecision": false,
+    "repositoryIdentityProofRequired": false,
+    "sourceSetIsProductionReachabilityProof": false,
+    "staticReviewIsCompileEvidence": false,
+    "staticReviewIsRuntimeOrNetworkEvidence": false,
+    "userSuppliedCredentialOrTokenRequired": false,
+    "userSuppliedSignatureOrKeyMaterialRequired": false
+  },
+  "plannedArtifacts": {
+    "failurePath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-review-wave1-failure-v1.json",
+    "independentReadbackRequired": true,
+    "manifestPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-review-wave1-manifest-v1.json",
+    "manifestWrittenLast": true,
+    "partialResultAllowed": false,
+    "resultPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-review-wave1-result-v1.json"
+  },
+  "predecessorBindings": {
+    "acquisitionManifest": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-manifest-v3.json",
+      "rawSha256": "9763dd83e46a57404bbd3d4c18ecf2f151bdf4e1c17ba3131e4b726b32a54e6b"
+    },
+    "acquisitionReceipt": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-receipt-v3.json",
+      "rawSha256": "10d63291813d66c1d7c9edaf7108842113bccbc2a84f799ddafe3f02a820f3b3"
+    },
+    "implementationDecision": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/implementation-or-dependency-review-decision-v1.json",
+      "rawSha256": "6a14603c02c9aa9d9d78377b1c38a9f0d47391c0ac1ff8eea1769198ddc13ff8"
+    },
+    "postVerificationDecision": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-readback-post-verification-decision-v3.json",
+      "rawSha256": "9ad7b632782131c9ac9c327fc40942dab08eb3e6b308f582dbee1650ba8f76ba"
+    },
+    "postVerifier": {
+      "path": "script/check_p2p_nat_g2_pion_dependency_wave1_success_v3_post_verify_v3.py",
+      "rawSha256": "27b7ebbac46cd0e4a08b1dd87feabe1e1cd90c79d0c3a0ee1d5b5366f4a0d895"
+    },
+    "postVerifierTests": {
+      "path": "script/test_p2p_nat_g2_pion_dependency_wave1_success_v3_post_verify_v3.py",
+      "rawSha256": "5bdda8fae3229907b2c224a81a217a62c1899917fb3f64781add39101806a786"
+    },
+    "readbackManifest": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-readback-manifest-v1.json",
+      "rawSha256": "a62e1cc1508a127fa1f5cb4a5009cf7ddeae87ef40172d1c7327c51f8cbc3b96"
+    },
+    "readbackReceipt": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-readback-v1.json",
+      "rawSha256": "63c7db8fce4a1c5c26dba84c22be9ea79afda95afb76506a10457e1ac9e910e0"
+    },
+    "sourceIdentityDecision": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-v1.json",
+      "rawSha256": "03bd5cac4793d379160a9c316d726c9d30d7a4aa00384d5687b1659acfb8943e"
+    },
+    "stagedFixedPointPlan": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/implementation-or-dependency-review-decision-v1/implementation/staged-fixed-point-source-closure.md",
+      "rawSha256": "22d7cfbc2db9e34fab641167d227e650cb490dcfd9a402a4dff86e1f967234bc"
+    }
+  },
+  "profileBinding": {
+    "compilerConstraint": "gc",
+    "fixedPointRule": "zero_new_selected_tuples_and_two_independent_equal_node_edge_and_graph_digests",
+    "goVersion": "1.24.0",
+    "graphAlgorithm": "go1.24_mvs_profile_union_fixed_point_v1",
+    "profileIds": [
+      "android_api_26_through_36_arm64_v8a",
+      "macos_14_or_newer_arm64"
+    ],
+    "profileMode": "union_of_exact_android_and_macos_v1_profiles",
+    "sourceDecisionPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-v1.json",
+    "sourceDecisionRawSha256": "03bd5cac4793d379160a9c316d726c9d30d7a4aa00384d5687b1659acfb8943e"
+  },
+  "recordedDate": "2026-07-24",
+  "resourceLimits": {
+    "maximumAggregateCompressedBytes": 134217728,
+    "maximumAggregateEntries": 131072,
+    "maximumAggregateUncompressedBytes": 1073741824,
+    "maximumComponentBytes": 255,
+    "maximumDependencyResources": 38,
+    "maximumEntriesPerArchive": 16384,
+    "maximumGraphEdges": 4096,
+    "maximumGraphNodes": 512,
+    "maximumImportEdges": 262144,
+    "maximumInputArchives": 20,
+    "maximumLicenseNoticeFiles": 4096,
+    "maximumPackageNodes": 65536,
+    "maximumPathBytes": 1024,
+    "maximumPathComponents": 64,
+    "maximumResultOrFailureBytes": 8388608,
+    "maximumReviewInputFiles": 131072,
+    "maximumSingleFileBytes": 16777216
+  },
+  "result": "fixed_hash_v3_intake_bound_wp4_graph_frontier_review_contract_prepared",
+  "schemaVersion": "1.0",
+  "sourceSetBinding": {
+    "aggregateEntryCount": 2907,
+    "aggregateModRawByteSize": 3851,
+    "aggregateRawByteSize": 13178024,
+    "aggregateUncompressedByteCount": 31851201,
+    "aggregateZipRawByteSize": 13174173,
+    "dependencyDirectoryPath": "build/offline-source/pion-ice-v4.3.0/dependencies/wave-1-v3/accepted",
+    "dependencyTupleCount": 19,
+    "observedRegularFileCount": 43,
+    "orderedSourceSetSha256": "2b0176d6d2b800c9a2abd34bf06279403e6f008bd3475ff45970abf11e843246",
+    "resourceRowsBoundByAcquisitionReceipt": true,
+    "retainedModCount": 19,
+    "retainedResourceCount": 38,
+    "retainedZipCount": 19,
+    "rootArchivePath": "build/offline-source/pion-ice-v4.3.0/original/github.com-pion-ice-v4@v4.3.0.zip",
+    "rootArchiveRawSha256": "f95ef3ce2e0063c13925f478bf8d188833725b2f0a7ecb1e695dee8ab61ef63c",
+    "rootGoModRawSha256": "5044428710b5a718aad517eed5c08e1933378efa3d9b4245853cfb312560aca4",
+    "rootGoSumRawSha256": "b47d7d5f3bb8c8b85b3283585f97ea6bd0a8b97427b49068b9f5685ddd953887",
+    "rootModule": "github.com/pion/ice/v4",
+    "rootSourceTreeSha256": "b44b1277937432822d005632dc0ac77b0c733959c871d998fac5e3964ce39244",
+    "rootUpstreamCommit": "1e8716372f2bb52e45bf2a7172e4fb1004251c46",
+    "rootVersion": "v4.3.0",
+    "terminalV1V2V3EvidenceMustRemainImmutable": true
+  },
+  "status": "dependency_source_review_wave1_decision_recorded_execution_not_authorized",
+  "workPackage": {
+    "compilerRequired": false,
+    "executionUnit": "review_wave1_frontier_discovery_v1",
+    "filesystemExtractionRequired": false,
+    "inMemoryArchiveInspectionRequired": true,
+    "inputArchiveCount": 20,
+    "inputDependencyModuleCount": 19,
+    "inputModResourceCount": 19,
+    "inputRootModuleCount": 1,
+    "networkRequired": false,
+    "newSelectedTupleRequiresNewVersionedAcquisitionDecision": true,
+    "packageManagerRequired": false,
+    "planWorkPackage": "WP4_expand_exact_graph_to_fixed_point",
+    "rootPackageSeedsByProfile": {
+      "android_api_26_through_36_arm64_v8a": [
+        "github.com/pion/ice/v4"
+      ],
+      "macos_14_or_newer_arm64": [
+        "github.com/pion/ice/v4"
+      ]
+    },
+    "scope": "module_metadata_graph_candidate_license_native_inventory_only",
+    "sourceExecutionRequired": false,
+    "twoIndependentGraphReconstructionsRequired": true,
+    "zeroNewTupleAloneProvesFixedPoint": false
+  }
+}

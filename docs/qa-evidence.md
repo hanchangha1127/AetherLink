@@ -663,10 +663,72 @@ This document separates current verification evidence from historical captures.
   plus its verification-only 9/9 suite close the raw-encoding, dispatch,
   TOCTOU, and typed-comparison gaps with
   `fixedHashEnforcedInsideHeldValidation=true`, `verificationOnly=true`, and
-  `recordModeExposed=false`. The current
-  `nextAction=prepare_separate_dependency_source_review_wave`. No credentials or user
-  action are involved. All 19 findings remain open and no candidate or library
-  is selected.
+  `recordModeExposed=false`. That checkpoint recorded
+  `recordedNextActionAtThatCheckpoint=prepare_separate_dependency_source_review_wave`.
+  The
+  [dependency source-review wave-one decision v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-review-wave1-decision-v1.json)
+  then prepared the bounded review contract. It was followed by immutable v1
+  `E_HELD_SET` and v2
+  `E_ARCHIVE_STRUCTURE` failed-closed attempts, neither of which published a
+  partial result. The corrected one-use v3 review produced the
+  [result](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-review-wave1-result-v3.json)
+  and
+  [manifest](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-review-wave1-manifest-v3.json);
+  its separate
+  [readback receipt](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-review-wave1-readback-v3.json)
+  and
+  [readback manifest](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-review-wave1-readback-manifest-v3.json)
+  now record, at that checkpoint,
+  `status=dependency_source_review_wave1_readback_published_new_tuple_wave_required`
+  and
+  `result=independent_readback_receipt_published_then_manifest_written_last_new_tuple_wave_required`;
+  the recorded next action was
+  `nextAction=prepare_separate_versioned_dependency_wave2_identity_and_acquisition_decision`.
+  Graph SHA-256
+  `2c94906a07a40737e30ca832c215fa88d2233297c9fb0ea25755488d9a72408b`
+  binds 132 nodes/1,047 edges, 35 module nodes/86 module edges, 25 selected
+  versions, zero unmapped or unresolved declared external imports, and exactly
+  15 new tuples. Five are missing selected-version sources and ten are required
+  version-specific vertices; every row remains `acquisitionAuthorized=false`
+  and must not be collapsed or replaced by a higher version. The route is
+  `new_tuple_wave_required`. All 19 findings remain open; every dependency,
+  semantic, rung-three, candidate, library, and release closure remains open. This work
+  uses no owner proof, credentials, keys, signatures, tokens, passwords, or
+  user action.
+- [x] The
+  [wave2 identity/acquisition decision v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave2-v1.json)
+  and
+  [reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave2-v1.md)
+  complete that recorded preparation action. The isolated read-only checker
+  passes with the future namespace empty, and 37/37 offline regression checks pass.
+  Independent local inspection verifies all 15 parent declarations, 30/30 H1
+  identities, zero conflicting held H1 pairs, five selected vertices, and ten
+  non-selected version-specific vertices without deduplication. Its historical
+  checkpoint status was
+  `status=wave2_local_checksum_identity_and_30_resource_contract_prepared_future_bytes_unverified_acquisition_not_authorized`;
+  result was
+  `result=exact_15_graph_frontier_tuples_30_mod_zip_requests_and_held_h1_expectations_prepared_future_bytes_unverified`;
+  and
+  `recordedNextActionAtThatCheckpoint=prepare_separate_versioned_wave2_checker_runner_tests_and_one_use_execution_permit`.
+- [x] The
+  [wave2 one-use execution permit v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-execution-permit-v1.json)
+  and
+  [reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-execution-permit-v1.md)
+  pass 41/41 permit checks; the runner passes 50/50 and the independent
+  readback passes 39/39. Current status is
+  `status=wave2_v1_dependency_source_acquisition_authorized_not_consumed`;
+  current result is
+  `result=exact_15_public_proxy_mod_then_zip_pairs_authorized_once_not_executed`;
+  and `nextAction=execute_bound_dependency_source_wave2_v1_once`. Exact
+  preflights bind 15 tuples and 30 ordered public Go proxy requests while
+  observing an empty namespace, `networkUsed=false`, and no file write. Future
+  response bytes remain unacquired and unverified; held H1 evidence is not a
+  fresh checksum-database proof. Only the bounded one-use source intake is
+  authorized. Source loading/execution, package management, compilation,
+  runtime/product network, device, deployment, and Git remain closed.
+  Repository authentication, account, owner proof, credential, key, signature,
+  token, and password are outside this workflow. Neither external
+  authentication nor user action is authorized or required.
 - [x] This personal-project work required no owner, GitHub, SSH, or GPG
   authentication and performed no Git operation. That governance boundary does
   not weaken or replace product QR pairing, paired-device authentication, or
@@ -1207,9 +1269,12 @@ This document separates current verification evidence from historical captures.
   checkpoint. The historical v3 permit was consumed exactly once. Its 38
   requests retained 19 verified `.mod`/`.zip` pairs, and independent fixed-hash
   readback now validates the 43-file set with zero verification writes or
-  network operations. The current next action is
-  `prepare_separate_dependency_source_review_wave`; no credentials or user
-  action are involved.
+  network operations. Source-review v1/v2 then failed closed without a partial
+  result; v3 and its independent readback recorded the exact 15-tuple
+  frontier. Wave2 decision v1 now completes that recorded preparation with
+  15 parent-declaration and 30 held-H1 identities. The current
+  `nextAction=prepare_separate_versioned_wave2_checker_runner_tests_and_one_use_execution_permit`.
+  No credentials, authentication, or user action are involved.
 - [x] The QR-modified `CompanionAppModel.swift` hash and the 13-artifact P2P/NAT collection are synchronized at `6e6dfbfc0cdb70370c30f54222584b69042a6e22b6df04c7f3e65043c38522bd`. The security-design validator and all seven Phase A progress tests pass while the whole review, compiler, socket, runtime-network, Phase B, production, and deployment gates remain closed; this is integrity evidence, not new authority.
 - [x] Historical QR and readiness roadmap sections are marked superseded and use at-checkpoint wording, so their old no-device or remote-only state cannot override the current top sections.
 - [x] The next-session decision flow handles detached local work, conditional physical QA, separately authorized different-network work, and commit/push partitioning. The default next bounded slice is expiry/rotation plus camera-permission and screen-reader evidence.

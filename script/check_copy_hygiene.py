@@ -53014,6 +53014,112 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
         / "script/check_p2p_nat_g2_pion_dependency_wave1_success_v3_post_verify_v3.py",
         "rung3_dependency_wave1_post_verifier_tests_v3": ROOT
         / "script/test_p2p_nat_g2_pion_dependency_wave1_success_v3_post_verify_v3.py",
+        "rung3_dependency_source_review_wave1_decision_v1": rung_three_root
+        / "bounded-dependency-source-review-wave1-decision-v1.json",
+        "rung3_dependency_source_review_wave1_checker_v1": ROOT
+        / (
+            "script/"
+            "check_p2p_nat_g2_pion_dependency_source_review_wave1_decision_v1.py"
+        ),
+        "rung3_dependency_source_review_wave1_tests_v1": ROOT
+        / (
+            "script/"
+            "test_p2p_nat_g2_pion_dependency_source_review_wave1_decision_v1.py"
+        ),
+        "rung3_dependency_source_review_wave1_permit_v1": rung_three_root
+        / "bounded-dependency-source-review-wave1-execution-permit-v1.json",
+        "rung3_dependency_source_review_wave1_failure_v1": rung_three_root
+        / "bounded-dependency-source-review-wave1-failure-v1.json",
+        "rung3_dependency_source_review_wave1_recovery_v1": rung_three_root
+        / "bounded-dependency-source-review-wave1-recovery-decision-v1.json",
+        "rung3_dependency_source_review_wave1_permit_v2": rung_three_root
+        / "bounded-dependency-source-review-wave1-execution-permit-v2.json",
+        "rung3_dependency_source_review_wave1_failure_v2": rung_three_root
+        / "bounded-dependency-source-review-wave1-failure-v2.json",
+        "rung3_dependency_source_review_wave1_recovery_v2": rung_three_root
+        / "bounded-dependency-source-review-wave1-recovery-decision-v2.json",
+        "rung3_dependency_source_review_wave1_permit_v3": rung_three_root
+        / "bounded-dependency-source-review-wave1-execution-permit-v3.json",
+        "rung3_dependency_source_review_wave1_result_v3": rung_three_root
+        / "bounded-dependency-source-review-wave1-result-v3.json",
+        "rung3_dependency_source_review_wave1_manifest_v3": rung_three_root
+        / "bounded-dependency-source-review-wave1-manifest-v3.json",
+        "rung3_dependency_source_review_wave1_readback_v3": rung_three_root
+        / "bounded-dependency-source-review-wave1-readback-v3.json",
+        "rung3_dependency_source_review_wave1_readback_manifest_v3": rung_three_root
+        / "bounded-dependency-source-review-wave1-readback-manifest-v3.json",
+        "rung3_dependency_source_review_wave1_permit_checker_v1": ROOT
+        / (
+            "script/"
+            "check_p2p_nat_g2_pion_dependency_source_review_wave1_execution_permit_v1.py"
+        ),
+        "rung3_dependency_source_review_wave1_permit_tests_v1": ROOT
+        / (
+            "script/"
+            "test_p2p_nat_g2_pion_dependency_source_review_wave1_execution_permit_v1.py"
+        ),
+        "rung3_dependency_source_review_wave1_runner_v1": ROOT
+        / "script/run_p2p_nat_g2_pion_dependency_source_review_wave1_once.py",
+        "rung3_dependency_source_review_wave1_runner_tests_v1": ROOT
+        / "script/test_run_p2p_nat_g2_pion_dependency_source_review_wave1_once.py",
+        "rung3_dependency_source_review_wave1_readback_recorder_v1": ROOT
+        / (
+            "script/"
+            "record_p2p_nat_g2_pion_dependency_source_review_wave1_readback_v1.py"
+        ),
+        "rung3_dependency_source_review_wave1_readback_recorder_tests_v1": ROOT
+        / (
+            "script/"
+            "test_record_p2p_nat_g2_pion_dependency_source_review_wave1_readback_v1.py"
+        ),
+        "rung3_dependency_source_review_wave1_readback_checker_v1": ROOT
+        / (
+            "script/"
+            "check_p2p_nat_g2_pion_dependency_source_review_wave1_readback_v1.py"
+        ),
+        "rung3_dependency_source_review_wave1_readback_tests_v1": ROOT
+        / (
+            "script/"
+            "test_check_p2p_nat_g2_pion_dependency_source_review_wave1_readback_v1.py"
+        ),
+        "rung3_dependency_wave2_decision_v1": rung_three_root
+        / (
+            "bounded-dependency-source-identity-and-acquisition-"
+            "decision-wave2-v1.json"
+        ),
+        "rung3_dependency_wave2_reader_v1": rung_three_root
+        / (
+            "bounded-dependency-source-identity-and-acquisition-"
+            "decision-wave2-v1.md"
+        ),
+        "rung3_dependency_wave2_checker_v1": ROOT
+        / (
+            "script/"
+            "check_p2p_nat_g2_pion_rung3_dependency_wave2_decision_v1.py"
+        ),
+        "rung3_dependency_wave2_tests_v1": ROOT
+        / (
+            "script/"
+            "test_p2p_nat_g2_pion_rung3_dependency_wave2_decision_v1.py"
+        ),
+        "rung3_dependency_wave2_permit_v1": rung_three_root
+        / "bounded-dependency-source-acquisition-wave2-execution-permit-v1.json",
+        "rung3_dependency_wave2_permit_reader_v1": rung_three_root
+        / "bounded-dependency-source-acquisition-wave2-execution-permit-v1.md",
+        "rung3_dependency_wave2_common_v1": ROOT
+        / "script/p2p_nat_g2_pion_dependency_wave2_common_v1.py",
+        "rung3_dependency_wave2_permit_checker_v1": ROOT
+        / "script/check_p2p_nat_g2_pion_dependency_wave2_execution_permit_v1.py",
+        "rung3_dependency_wave2_permit_tests_v1": ROOT
+        / "script/test_p2p_nat_g2_pion_dependency_wave2_execution_permit_v1.py",
+        "rung3_dependency_wave2_runner_v1": ROOT
+        / "script/acquire_p2p_nat_g2_pion_dependency_wave2_v1_once.py",
+        "rung3_dependency_wave2_runner_tests_v1": ROOT
+        / "script/test_acquire_p2p_nat_g2_pion_dependency_wave2_v1_once.py",
+        "rung3_dependency_wave2_readback_v1": ROOT
+        / "script/check_p2p_nat_g2_pion_dependency_wave2_success_v1.py",
+        "rung3_dependency_wave2_readback_tests_v1": ROOT
+        / "script/test_p2p_nat_g2_pion_dependency_wave2_success_v1.py",
         "gate": ROOT / "script/check_no_device_quality.sh",
     }
     missing = [
@@ -54217,6 +54323,230 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
             "test_08_complete_readback_is_verified_without_writes",
             "test_09_post_verifier_has_no_record_surface_or_network_import",
         ),
+        "rung3_dependency_source_review_wave1_decision_v1": (
+            '"status": "dependency_source_review_wave1_decision_recorded_execution_not_authorized"',
+            '"result": "fixed_hash_v3_intake_bound_wp4_graph_frontier_review_contract_prepared"',
+            '"nextAction": "prepare_separate_dependency_source_review_wave1_runner_tests_and_execution_permit"',
+            '"reviewExecutionAuthorized": false',
+            '"inMemoryArchiveInspectionAuthorized": false',
+            '"dependencySourceReviewed": false',
+            '"graphFixedPointReached": false',
+            '"candidateSelected": false',
+            '"librarySelected": false',
+            '"retainedResourceCount": 38',
+            '"observedRegularFileCount": 43',
+            '"futureExecutionPermitMustBindCheckerAndTestsRawSha256": true',
+            '"externalAuthenticationRequired": false',
+            '"repositoryOwnerIdentityProofRequired": false',
+            '"userActionRequired": false',
+        ),
+        "rung3_dependency_source_review_wave1_checker_v1": (
+            "def read_held(",
+            "def expected_decision(",
+            "def validate_decision_document(",
+            "def validate_state(",
+            '"reviewExecutionAuthorized": False',
+            '"externalAuthenticationRequired": False',
+            '"repositoryOwnerIdentityProofRequired": False',
+            '"userActionRequired": False',
+        ),
+        "rung3_dependency_source_review_wave1_tests_v1": (
+            "class DependencySourceReviewWaveOneDecisionV1Tests(unittest.TestCase):",
+            "test_03_rebound_semantic_mutation_is_rejected",
+            "test_04_boolean_integer_confusion_is_rejected",
+            "test_10_live_preflight_is_read_only",
+            "test_13_held_read_rejects_links_and_relaxed_owner_mode",
+            "test_14_held_read_rejects_name_and_ancestor_replacement",
+        ),
+        "rung3_dependency_source_review_wave1_permit_v3": (
+            '"status":"dependency_source_review_wave1_execution_authorized_not_consumed"',
+            '"result":"bounded_wp4_graph_frontier_review_wave1_v3_authorized_once_not_executed"',
+            '"nextAction":"execute_bound_dependency_source_review_wave1_once"',
+            '"externalAuthenticationRequired":false',
+            '"repositoryOwnerIdentityProofRequired":false',
+            '"userActionRequired":false',
+        ),
+        "rung3_dependency_source_review_wave1_failure_v1": (
+            '"failureCode":"E_HELD_SET"',
+            '"partialResultPublished":false',
+            '"automaticRetryAllowed":false',
+        ),
+        "rung3_dependency_source_review_wave1_failure_v2": (
+            '"failureCode":"E_ARCHIVE_STRUCTURE"',
+            '"partialResultPublished":false',
+            '"automaticRetryAllowed":false',
+        ),
+        "rung3_dependency_source_review_wave1_recovery_v2": (
+            '"status":"dependency_source_review_wave1_v2_failure_read_back_v3_recovery_design_selected_execution_not_authorized"',
+            '"result":"v2_valid_go_module_zip_false_rejection_preserved_escape_aware_rune_and_review_failure_context_correction_selected"',
+            '"nextAction":"prepare_separate_dependency_source_review_wave1_execution_permit_v3"',
+        ),
+        "rung3_dependency_source_review_wave1_result_v3": (
+            '"status":"wave1_graph_discovery_complete_new_wave_required"',
+            '"result":"exact_wave1_module_metadata_source_surface_and_new_tuple_candidates_recorded"',
+            '"graphSha256":"2c94906a07a40737e30ca832c215fa88d2233297c9fb0ea25755488d9a72408b"',
+            '"graphNodeCount":132',
+            '"graphEdgeCount":1047',
+            '"moduleNodeCount":35',
+            '"moduleEdgeCount":86',
+            '"newTupleCount":15',
+            '"fixedPointReached":false',
+            '"independentReproductionPassed":true',
+        ),
+        "rung3_dependency_source_review_wave1_readback_v3": (
+            '"status":"dependency_source_review_wave1_readback_complete_new_tuple_wave_required_manifest_pending"',
+            '"result":"held_byte_and_graph_projection_readback_complete_new_tuple_wave_required"',
+            '"route":"new_tuple_wave_required"',
+            '"newTupleCount":15',
+            '"nextAction":"prepare_separate_versioned_dependency_wave2_identity_and_acquisition_decision"',
+            '"archiveOpenCount":0',
+            '"runnerInvocationCount":0',
+            '"networkOperationCount":0',
+        ),
+        "rung3_dependency_source_review_wave1_readback_manifest_v3": (
+            '"status":"dependency_source_review_wave1_readback_published_new_tuple_wave_required"',
+            '"result":"independent_readback_receipt_published_then_manifest_written_last_new_tuple_wave_required"',
+            '"nextAction":"prepare_separate_versioned_dependency_wave2_identity_and_acquisition_decision"',
+        ),
+        "rung3_dependency_source_review_wave1_permit_checker_v1": (
+            "def build_expected_permit(",
+            "def validate_repository(",
+            "def preflight_status(",
+        ),
+        "rung3_dependency_source_review_wave1_permit_tests_v1": (
+            "class DependencySourceReviewWaveOnePermitV1Tests(unittest.TestCase):",
+            "test_35_selected_v3_correction_is_exactly_bound",
+            "test_36_recovery_records_root_cause_without_rewriting_v2",
+            "test_37_recovery_v2_is_canonical_single_lf_json",
+        ),
+        "rung3_dependency_source_review_wave1_runner_v1": (
+            "def scan_go_quoted_literal(",
+            "def finalize_module_version_graph(",
+            "def finalize_module_version_graph_monotone(",
+            "def execute_with_authority(",
+        ),
+        "rung3_dependency_source_review_wave1_runner_tests_v1": (
+            "class DependencySourceReviewWaveOneRunnerTests(unittest.TestCase):",
+            "test_28_monotone_edge_mapping_mutation_fails_closed",
+            "test_32_v1_v2_history_does_not_block_clean_v3_namespace",
+        ),
+        "rung3_dependency_source_review_wave1_readback_recorder_v1": (
+            "def validate_graph(",
+            "def record_readback(",
+            "def build_readback_manifest(",
+        ),
+        "rung3_dependency_source_review_wave1_readback_recorder_tests_v1": (
+            "class ReadbackRecorderTests(unittest.TestCase):",
+            "test_17_final_parent_barrier_closes_post_file_barrier_aba_window",
+            "test_18_static_surface_has_no_archive_network_or_execution_api",
+        ),
+        "rung3_dependency_source_review_wave1_readback_checker_v1": (
+            "def graph_verification(",
+            "def validate_state(",
+            "def personal_boundary(",
+        ),
+        "rung3_dependency_source_review_wave1_readback_tests_v1": (
+            "class ReadbackVerificationTests(unittest.TestCase):",
+            "test_14_receipt_and_manifest_carry_recovery_history",
+            "test_15_permit_validation_matches_recorder_safety_contract",
+        ),
+        "rung3_dependency_wave2_decision_v1": (
+            '"status": "wave2_local_checksum_identity_and_30_resource_contract_prepared_future_bytes_unverified_acquisition_not_authorized"',
+            '"result": "exact_15_graph_frontier_tuples_30_mod_zip_requests_and_held_h1_expectations_prepared_future_bytes_unverified"',
+            '"nextAction": "prepare_separate_versioned_wave2_checker_runner_tests_and_one_use_execution_permit"',
+            '"tupleCount": 15',
+            '"resourceCount": 30',
+            '"selectedTupleCount": 5',
+            '"versionSpecificNonSelectedTupleCount": 10',
+            '"heldEvidenceIsFreshChecksumDatabaseProof": false',
+            '"externalAuthenticationRequired": false',
+            '"repositoryOwnerIdentityProofRequired": false',
+            '"userActionRequired": false',
+            '"acquisitionAuthorized": false',
+            '"networkUsed": false',
+            '"gitOperationPerformed": false',
+        ),
+        "rung3_dependency_wave2_reader_v1": (
+            "# G2 Pion dependency source wave2 identity decision v1",
+            "Every tuple has one non-conflicting `.mod` H1 and `.zip` H1",
+            "This is preparation only.",
+            "No repository account, owner proof, login, key, signature, token, password, or",
+        ),
+        "rung3_dependency_wave2_checker_v1": (
+            "def expected_decision_payload(",
+            "def verify_parent_declarations(",
+            "def verify_checksum_evidence(",
+            "def verify_namespace_empty(",
+            "require_namespace_preflight: bool = False",
+            '"externalAuthenticationRequired": False',
+            '"repositoryOwnerIdentityProofRequired": False',
+            '"userActionRequired": False',
+            '"acquisitionAuthorized": False',
+        ),
+        "rung3_dependency_wave2_tests_v1": (
+            "class DependencyWaveTwoDecisionTests(unittest.TestCase):",
+            "test_11_version_specific_tuple_deduplication_is_rejected",
+            "test_14_h1_drift_is_rejected",
+            "test_19_authentication_requirement_is_rejected",
+            "test_27_claim_namespace_collision_is_rejected",
+            "test_34_final_barrier_detects_mutation",
+            "test_37_checker_has_no_network_or_process_imports",
+        ),
+        "rung3_dependency_wave2_permit_v1": (
+            '"status": "wave2_v1_dependency_source_acquisition_authorized_not_consumed"',
+            '"result": "exact_15_public_proxy_mod_then_zip_pairs_authorized_once_not_executed"',
+            '"nextAction": "execute_bound_dependency_source_wave2_v1_once"',
+            '"maximumTupleCount": 15',
+            '"maximumRequestCount": 30',
+            '"externalAuthenticationRequired": false',
+            '"repositoryOwnerIdentityProofRequired": false',
+            '"userActionRequired": false',
+        ),
+        "rung3_dependency_wave2_permit_reader_v1": (
+            "# G2 Pion dependency source wave2 execution permit v1",
+            "exactly 30 requests to `proxy.golang.org:443`",
+            "retains all resource and directory descriptors",
+            "No repository account login",
+        ),
+        "rung3_dependency_wave2_common_v1": (
+            "class HeldInputSet:",
+            "def compression_ratio_allowed(",
+            "def require_clean_namespace(",
+            "def map_core_failure(",
+        ),
+        "rung3_dependency_wave2_permit_checker_v1": (
+            "def expected_permit(",
+            "def validate_runner_reverse_pins(",
+            "def validate_repository(",
+            "minimumStableFullReadPassCount",
+        ),
+        "rung3_dependency_wave2_permit_tests_v1": (
+            "class WaveTwoPermitTests(unittest.TestCase):",
+            "test_41_actual_permit_and_namespace_preflight",
+        ),
+        "rung3_dependency_wave2_runner_v1": (
+            "def validate_readback_terminal(",
+            "def verify_active_namespace(",
+            "def execute_once(",
+            "READBACK_RECEIPT_KEYS",
+            "READBACK_MANIFEST_KEYS",
+        ),
+        "rung3_dependency_wave2_runner_tests_v1": (
+            "class WaveTwoRunnerTests(unittest.TestCase):",
+            "test_44_exact_readback_terminal_is_accepted",
+            "test_47_acquisition_manifest_hash_drift_is_rejected",
+        ),
+        "rung3_dependency_wave2_readback_v1": (
+            "def revalidate_retained_resource_pass(",
+            "def validate_resource_pass(",
+            "def record(",
+            "retain_fds=publication_guard",
+        ),
+        "rung3_dependency_wave2_readback_tests_v1": (
+            "class WaveTwoReadbackTests(unittest.TestCase):",
+            "test_36_record_retains_resource_fds_through_publication",
+            "test_37_resource_guard_is_checked_after_manifest_write",
+        ),
     }
     for label, snippets in required_snippets.items():
         for snippet in snippets:
@@ -54432,6 +54762,57 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
             "expected exactly 34 dependency wave-one v3 readback tests, "
             f"found {rung3_dependency_wave1_readback_test_count_v3}."
         )
+    rung3_dependency_source_review_wave1_test_count_v1 = len(
+        re.findall(
+            r"(?m)^\s+def\s+test_",
+            texts["rung3_dependency_source_review_wave1_tests_v1"],
+        )
+    )
+    if rung3_dependency_source_review_wave1_test_count_v1 != 14:
+        failures.append(
+            f"{paths['rung3_dependency_source_review_wave1_tests_v1'].relative_to(ROOT)}: "
+            "expected exactly 14 dependency source-review wave-one decision tests, "
+            f"found {rung3_dependency_source_review_wave1_test_count_v1}."
+        )
+    dependency_source_review_test_counts = {
+        "rung3_dependency_source_review_wave1_permit_tests_v1": 37,
+        "rung3_dependency_source_review_wave1_runner_tests_v1": 32,
+        "rung3_dependency_source_review_wave1_readback_recorder_tests_v1": 18,
+        "rung3_dependency_source_review_wave1_readback_tests_v1": 15,
+    }
+    for label, expected_count in dependency_source_review_test_counts.items():
+        actual_count = len(re.findall(r"(?m)^\s+def\s+test_", texts[label]))
+        if actual_count != expected_count:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)}: expected exactly "
+                f"{expected_count} dependency source-review tests, found "
+                f"{actual_count}."
+            )
+    dependency_wave2_test_count = len(
+        re.findall(
+            r"(?m)^\s+def\s+test_",
+            texts["rung3_dependency_wave2_tests_v1"],
+        )
+    )
+    if dependency_wave2_test_count != 37:
+        failures.append(
+            f"{paths['rung3_dependency_wave2_tests_v1'].relative_to(ROOT)}: "
+            "expected exactly 37 dependency wave-two decision tests, found "
+            f"{dependency_wave2_test_count}."
+        )
+    dependency_wave2_execution_test_counts = {
+        "rung3_dependency_wave2_permit_tests_v1": 41,
+        "rung3_dependency_wave2_runner_tests_v1": 50,
+        "rung3_dependency_wave2_readback_tests_v1": 39,
+    }
+    for label, expected_count in dependency_wave2_execution_test_counts.items():
+        actual_count = len(re.findall(r"(?m)^\s+def\s+test_", texts[label]))
+        if actual_count != expected_count:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)}: expected exactly "
+                f"{expected_count} dependency wave-two execution/readback "
+                f"tests, found {actual_count}."
+            )
     expected_semantic_decision_artifact_sha256 = {
         "rung3_semantic_decision_v1": (
             "b65379bf0f97cd0558c93d818e5ecea14242a938ca5922796eb4a28f345e7cfc"
@@ -54769,6 +55150,138 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
                 f"{expected_sha256}, found {actual_sha256}."
             )
 
+    expected_dependency_source_review_wave1_decision_artifact_sha256 = {
+        "rung3_dependency_source_review_wave1_decision_v1": (
+            "071883a40adec734d87362a5781033fd18f83299177e886a92a04a0c3944dff7"
+        ),
+        "rung3_dependency_source_review_wave1_checker_v1": (
+            "a33d812fc704d54d57381795b45e7eff62e2c699e3ef01ddf052f735d181cdf0"
+        ),
+        "rung3_dependency_source_review_wave1_tests_v1": (
+            "260610f0280c678518cac463f6f66a0749adc02023c2c19eff6fa658102dc1d9"
+        ),
+        "rung3_dependency_source_review_wave1_permit_v1": (
+            "2f1f3e7a50ad7d84ff392638e91e33a62a2f0b386c7796851d65fcfc23d389ed"
+        ),
+        "rung3_dependency_source_review_wave1_failure_v1": (
+            "00d0a305d21d60f4cd058107d7e39c0c85724a66baa359ae46da8b4ac0ab7031"
+        ),
+        "rung3_dependency_source_review_wave1_recovery_v1": (
+            "1140a718344017895557c304ef24658af325a98b9334606eeb38e85e3e603272"
+        ),
+        "rung3_dependency_source_review_wave1_permit_v2": (
+            "88d1a05f61e77305e6dd91827da8901a9cd44ad8f85b27291dbdfb49e22f04f8"
+        ),
+        "rung3_dependency_source_review_wave1_failure_v2": (
+            "3aa2f172c805cda66935be8b9d96167eef23d3ac1eeeea9259300f15eee9435b"
+        ),
+        "rung3_dependency_source_review_wave1_recovery_v2": (
+            "07b695c05dd5e26fff47ed97c7a41992325709c6ed2736543889971250543c28"
+        ),
+        "rung3_dependency_source_review_wave1_permit_v3": (
+            "e9b92730e558fc128ab919f8b1e1da73625d2a14df8288f119a1802f269a63ef"
+        ),
+        "rung3_dependency_source_review_wave1_result_v3": (
+            "cd7bba257995bb98199a336d343bf98859e661a1abc0dbac5666c314d8fd519f"
+        ),
+        "rung3_dependency_source_review_wave1_manifest_v3": (
+            "4559c8fc207cad88b2d963e23b4132b7a053aeb77bfc7aa758fb58199c58b933"
+        ),
+        "rung3_dependency_source_review_wave1_readback_v3": (
+            "938ab9dc83e3580c6801c8d569a25389eae591c21b3a82df03980a06db812a5a"
+        ),
+        "rung3_dependency_source_review_wave1_readback_manifest_v3": (
+            "ad5a633713f45d273f905cb7f02a5b08f884b1b98e48eb1ba478e6bce59b479c"
+        ),
+        "rung3_dependency_source_review_wave1_permit_checker_v1": (
+            "075e30babe3beec89341834d13f4b42c75e1708cf8ea44b0428a40d25f570275"
+        ),
+        "rung3_dependency_source_review_wave1_permit_tests_v1": (
+            "d1b5be57679aa114b9eb4ca5204e5acbc70fcaffa77d5b14e908015ba400d0a0"
+        ),
+        "rung3_dependency_source_review_wave1_runner_v1": (
+            "3ee8a2dbb067b31a3f0cdd02f75413ef7de33a8279b97e2100189cdb576049d3"
+        ),
+        "rung3_dependency_source_review_wave1_runner_tests_v1": (
+            "f3b487a43d7c5eb5b6b03ed546ab57cc7a6fcf0272803bfb54f5486bc733190e"
+        ),
+        "rung3_dependency_source_review_wave1_readback_recorder_v1": (
+            "7c16d60bcdf859bc0fa23eb776195137de57e0a1a788062fc298542acb273d1b"
+        ),
+        "rung3_dependency_source_review_wave1_readback_recorder_tests_v1": (
+            "2453991d3e8809d7a41801c95708a32758676c1d8976fff1a083273b340b03e0"
+        ),
+        "rung3_dependency_source_review_wave1_readback_checker_v1": (
+            "75dfcfd4b81844d67deb3ecac9a60c834d820034afcac930a91624d5402be86a"
+        ),
+        "rung3_dependency_source_review_wave1_readback_tests_v1": (
+            "d9c57a9188f2ddd21b60676ffd3e642213534ddcdb79e59a615a320eefda62f1"
+        ),
+    }
+    for (
+        label,
+        expected_sha256,
+    ) in expected_dependency_source_review_wave1_decision_artifact_sha256.items():
+        actual_sha256 = hashlib.sha256(paths[label].read_bytes()).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)}: dependency source-review "
+                f"wave-one decision artifact SHA-256 drifted; expected "
+                f"{expected_sha256}, found {actual_sha256}."
+            )
+
+    expected_dependency_wave2_artifact_sha256 = {
+        "rung3_dependency_wave2_decision_v1": (
+            "e10a4b41f0dc9ab9bc13b07f6b9e238e146316a7a4846af5b22f3a57fe0cd1a1"
+        ),
+        "rung3_dependency_wave2_reader_v1": (
+            "3f9615f2c7228014163f00b42cd0bb7cfed2283342399d39fbc94d7de0f6d023"
+        ),
+        "rung3_dependency_wave2_checker_v1": (
+            "146b4d3d9b38c05c01303b0b81146c68388905d4010345c8bda3807a6881d062"
+        ),
+        "rung3_dependency_wave2_tests_v1": (
+            "d5cb6adf7b7beb8e6d29f402ac05c69d7a706ad0f4baa1295c332727d799d299"
+        ),
+        "rung3_dependency_wave2_permit_v1": (
+            "a452c9df404e8e1d8c4049e1aa5a3307d8bf9dedf46ae58cfa570a9a89dde108"
+        ),
+        "rung3_dependency_wave2_permit_reader_v1": (
+            "dc6c03c935c4ac6907d83506c967ba8547882bfc71f6919231ee11f9355b6f16"
+        ),
+        "rung3_dependency_wave2_common_v1": (
+            "dc25ddd3a82789bddccbd6ec57a71edc389225e003d7a73e6d371a640937f8c1"
+        ),
+        "rung3_dependency_wave2_permit_checker_v1": (
+            "608cc5c067f1f48b95cfcfe69a5deb8a0a67c527bbfe8e2b844da47b048df7d4"
+        ),
+        "rung3_dependency_wave2_permit_tests_v1": (
+            "86fb18e65fb4e94ba2b53b188766b17cc09c07d5374dd49f0b85215761591152"
+        ),
+        "rung3_dependency_wave2_runner_v1": (
+            "4f321463cc8bc887524a4acfc43f3fbc5de6e5c02d3b79fcc34a3112a3e16f23"
+        ),
+        "rung3_dependency_wave2_runner_tests_v1": (
+            "0c5198156288077793eac7cffb5633219b5707353ae1a39cf1b81928f02f4a14"
+        ),
+        "rung3_dependency_wave2_readback_v1": (
+            "ba46de1f9392714887876eccca9f084a4efd8e0d495af3eb36945b4c542ced84"
+        ),
+        "rung3_dependency_wave2_readback_tests_v1": (
+            "cb711e2ff0b87821da2eb60295bf4b6f733af4cd6752f165afc325f488ab2508"
+        ),
+    }
+    for label, expected_sha256 in (
+        expected_dependency_wave2_artifact_sha256.items()
+    ):
+        actual_sha256 = hashlib.sha256(paths[label].read_bytes()).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)}: dependency wave-two "
+                f"artifact SHA-256 drifted; expected "
+                f"{expected_sha256}, found {actual_sha256}."
+            )
+
     gate_commands = (
         "run python3 script/check_p2p_nat_g2_pion_rung2_acquisition_authority.py",
         "run python3 -m unittest script/test_p2p_nat_g2_pion_rung2_acquisition_authority.py",
@@ -54824,6 +55337,20 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
         "run python3 -I -B -S script/test_p2p_nat_g2_pion_dependency_wave1_success_v3_recovery_v2.py",
         "run python3 -I -B -S script/test_p2p_nat_g2_pion_dependency_wave1_success_v3_post_verify_v3.py",
         "run python3 -I -B -S script/check_p2p_nat_g2_pion_dependency_wave1_success_v3_post_verify_v3.py --preflight",
+        "run python3 -I -B -S script/test_p2p_nat_g2_pion_dependency_source_review_wave1_decision_v1.py",
+        "run python3 -I -B -S script/check_p2p_nat_g2_pion_dependency_source_review_wave1_decision_v1.py --preflight",
+        "run python3 -I -B -S script/test_run_p2p_nat_g2_pion_dependency_source_review_wave1_once.py",
+        "run python3 -I -B -S script/test_p2p_nat_g2_pion_dependency_source_review_wave1_execution_permit_v1.py",
+        "run python3 -I -B -S script/test_record_p2p_nat_g2_pion_dependency_source_review_wave1_readback_v1.py",
+        "run python3 -I -B -S script/test_check_p2p_nat_g2_pion_dependency_source_review_wave1_readback_v1.py",
+        "run python3 -I -B -S script/check_p2p_nat_g2_pion_dependency_source_review_wave1_readback_v1.py --preflight",
+        "run python3 -I -B -S script/test_p2p_nat_g2_pion_rung3_dependency_wave2_decision_v1.py",
+        "run python3 -I -B -S script/check_p2p_nat_g2_pion_rung3_dependency_wave2_decision_v1.py --preflight",
+        "run python3 -I -B -S script/test_p2p_nat_g2_pion_dependency_wave2_execution_permit_v1.py",
+        "run python3 -I -B -S script/test_acquire_p2p_nat_g2_pion_dependency_wave2_v1_once.py",
+        "run python3 -I -B -S script/test_p2p_nat_g2_pion_dependency_wave2_success_v1.py",
+        "run python3 -I -B -S script/check_p2p_nat_g2_pion_dependency_wave2_execution_permit_v1.py --preflight",
+        "run python3 -I -B -S script/acquire_p2p_nat_g2_pion_dependency_wave2_v1_once.py --preflight",
         "run python3 -I -B -S script/acquire_p2p_nat_g2_pion_dependency_wave1_v3_once.py --preflight",
     )
     gate_lines = texts["gate"].splitlines()
@@ -55364,12 +55891,12 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
             )
 
     dependency_wave1_permit_v3_marker = (
-        "Covered current G2 Pion v4.3.0 rung-three dependency wave-one "
+        "Covered historical predecessor G2 Pion v4.3.0 rung-three dependency wave-one "
         "v3 acquisition and fixed-hash readback addendum:"
     )
     if texts["gate"].count(dependency_wave1_permit_v3_marker) != 1:
         failures.append(
-            f"{paths['gate'].relative_to(ROOT)}: expected exactly one current "
+            f"{paths['gate'].relative_to(ROOT)}: expected exactly one historical "
             "dependency wave-one v3 execution-permit marker."
         )
     dependency_wave1_permit_v3_marker_line = next(
@@ -55385,7 +55912,7 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
         "receiptStatus=acquired_pending_independent_readback",
         "receiptResult=fresh_exact_19_dependency_zip_mod_pairs_acquired_and_hash_verified",
         "readbackStatus=independent_readback_complete",
-        "nextAction=prepare_separate_dependency_source_review_wave",
+        "recordedNextActionAtThatCheckpoint=prepare_separate_dependency_source_review_wave",
         "consumed_success",
         "networkRequestAttemptCount=38",
         "responseBodyCompletedCount=38",
@@ -55413,8 +55940,148 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
     ):
         if snippet not in dependency_wave1_permit_v3_marker_line:
             failures.append(
-                f"{paths['gate'].relative_to(ROOT)}: current dependency "
+                f"{paths['gate'].relative_to(ROOT)}: historical dependency "
                 f"wave-one v3 permit marker is missing {snippet!r}."
+            )
+
+    dependency_source_review_wave1_checkpoint_marker = (
+        "Covered historical G2 Pion v4.3.0 dependency source-review wave-one "
+        "v3 publication and independent-readback checkpoint:"
+    )
+    if texts["gate"].count(dependency_source_review_wave1_checkpoint_marker) != 1:
+        failures.append(
+            f"{paths['gate'].relative_to(ROOT)}: expected exactly one historical "
+            "dependency source-review wave-one v3 checkpoint marker."
+        )
+    dependency_source_review_wave1_checkpoint_marker_line = next(
+        (
+            line
+            for line in texts["gate"].splitlines()
+            if dependency_source_review_wave1_checkpoint_marker in line
+        ),
+        "",
+    )
+    for snippet in (
+        "status=dependency_source_review_wave1_readback_published_new_tuple_wave_required",
+        "result=independent_readback_receipt_published_then_manifest_written_last_new_tuple_wave_required",
+        "recordedNextActionAtThatCheckpoint=prepare_separate_versioned_dependency_wave2_identity_and_acquisition_decision",
+        "E_HELD_SET",
+        "E_ARCHIVE_STRUCTURE",
+        "no partial result",
+        "graphSha256=2c94906a07a40737e30ca832c215fa88d2233297c9fb0ea25755488d9a72408b",
+        "graphNodeCount=132",
+        "graphEdgeCount=1047",
+        "moduleNodeCount=35",
+        "moduleEdgeCount=86",
+        "selectedVersionCount=25",
+        "newTupleCount=15",
+        "unmappedExternalImportCount=0",
+        "unresolvedDeclaredExternalImportCount=0",
+        "route=new_tuple_wave_required",
+        "reopened no archive members",
+        "invoked no runner",
+        "acquisitionAuthorized=false",
+        "All 19 findings remain open",
+        "dependencySourceReviewed=false",
+        "graphFixedPointReached=false",
+        "dependencyClosureComplete=false",
+        "semanticClosureComplete=false",
+        "rungThreeComplete=false",
+        "candidateSelected=false",
+        "librarySelected=false",
+        "Credentials",
+        "owner proof",
+        "user action are not required",
+        "Git writes remain closed",
+    ):
+        if snippet not in dependency_source_review_wave1_checkpoint_marker_line:
+            failures.append(
+                f"{paths['gate'].relative_to(ROOT)}: historical dependency "
+                f"source-review wave-one v3 marker is missing {snippet!r}."
+            )
+
+    dependency_wave2_historical_marker = (
+        "Covered historical G2 Pion v4.3.0 dependency wave-two identity "
+        "preparation at_that_checkpoint:"
+    )
+    if texts["gate"].count(dependency_wave2_historical_marker) != 1:
+        failures.append(
+            f"{paths['gate'].relative_to(ROOT)}: expected exactly one historical "
+            "dependency wave-two identity-preparation marker."
+        )
+    dependency_wave2_historical_marker_line = next(
+        (
+            line
+            for line in texts["gate"].splitlines()
+            if dependency_wave2_historical_marker in line
+        ),
+        "",
+    )
+    for snippet in (
+        "status=wave2_local_checksum_identity_and_30_resource_contract_prepared_future_bytes_unverified_acquisition_not_authorized",
+        "result=exact_15_graph_frontier_tuples_30_mod_zip_requests_and_held_h1_expectations_prepared_future_bytes_unverified",
+        "recordedNextActionAtThatCheckpoint=prepare_separate_versioned_wave2_checker_runner_tests_and_one_use_execution_permit",
+        "37 offline regression checks",
+        "all 15 exact module/version vertices",
+        "five selected",
+        "ten non-selected version-specific",
+        "30 ordered .mod-then-.zip H1 expectations",
+        "20 already-held archives",
+        "no conflicting pair",
+        "not a fresh checksum-database proof",
+        "immutable history",
+        "recorded next action has been completed",
+    ):
+        if snippet not in dependency_wave2_historical_marker_line:
+            failures.append(
+                f"{paths['gate'].relative_to(ROOT)}: historical dependency "
+                f"wave-two marker is missing {snippet!r}."
+            )
+
+    dependency_wave2_current_marker = (
+        "Covered current G2 Pion v4.3.0 dependency wave-two one-use "
+        "acquisition permit:"
+    )
+    if texts["gate"].count(dependency_wave2_current_marker) != 1:
+        failures.append(
+            f"{paths['gate'].relative_to(ROOT)}: expected exactly one current "
+            "dependency wave-two one-use permit marker."
+        )
+    dependency_wave2_current_marker_line = next(
+        (
+            line
+            for line in texts["gate"].splitlines()
+            if dependency_wave2_current_marker in line
+        ),
+        "",
+    )
+    for snippet in (
+        "status=wave2_v1_dependency_source_acquisition_authorized_not_consumed",
+        "result=exact_15_public_proxy_mod_then_zip_pairs_authorized_once_not_executed",
+        "nextAction=execute_bound_dependency_source_wave2_v1_once",
+        "exact 15 tuples",
+        "30 ordered public proxy .mod-then-.zip requests",
+        "37/37 decision",
+        "41/41 permit",
+        "50/50 runner",
+        "39/39 readback",
+        "executionAuthorized=true",
+        "permitConsumptionState=authorized_not_consumed",
+        "networkUsed=false",
+        "fileWriteCount=0",
+        "empty wave-2-v1 namespace",
+        "unacquired and unverified",
+        "Only this bounded 30-request public Go proxy source intake is authorized",
+        "All 19 findings",
+        "Git writes remain closed",
+        "Repository authentication",
+        "owner proof",
+        "user action are not required",
+    ):
+        if snippet not in dependency_wave2_current_marker_line:
+            failures.append(
+                f"{paths['gate'].relative_to(ROOT)}: current dependency "
+                f"wave-two permit marker is missing {snippet!r}."
             )
 
     canonical_document_paths = (
@@ -55484,10 +56151,34 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
         "status=acquired_pending_independent_readback",
         "result=fresh_exact_19_dependency_zip_mod_pairs_acquired_and_hash_verified",
         "status=independent_readback_complete",
-        "nextAction=prepare_separate_dependency_source_review_wave",
+        "recordedNextActionAtThatCheckpoint=prepare_separate_dependency_source_review_wave",
         "fixedHashEnforcedInsideHeldValidation=true",
         "verificationOnly=true",
         "recordModeExposed=false",
+    )
+    current_dependency_required_tokens = (
+        "status=dependency_source_review_wave1_readback_published_new_tuple_wave_required",
+        "result=independent_readback_receipt_published_then_manifest_written_last_new_tuple_wave_required",
+        "nextAction=prepare_separate_versioned_dependency_wave2_identity_and_acquisition_decision",
+        "E_HELD_SET",
+        "E_ARCHIVE_STRUCTURE",
+        "2c94906a07a40737e30ca832c215fa88d2233297c9fb0ea25755488d9a72408b",
+        "acquisitionAuthorized=false",
+        "new_tuple_wave_required",
+    )
+    current_dependency_wave2_required_tokens = (
+        "bounded-dependency-source-identity-and-acquisition-decision-wave2-v1.json",
+        "status=wave2_local_checksum_identity_and_30_resource_contract_prepared_future_bytes_unverified_acquisition_not_authorized",
+        "result=exact_15_graph_frontier_tuples_30_mod_zip_requests_and_held_h1_expectations_prepared_future_bytes_unverified",
+        "prepare_separate_versioned_wave2_checker_runner_tests_and_one_use_execution_permit",
+        "37/37",
+        "bounded-dependency-source-acquisition-wave2-execution-permit-v1.json",
+        "status=wave2_v1_dependency_source_acquisition_authorized_not_consumed",
+        "result=exact_15_public_proxy_mod_then_zip_pairs_authorized_once_not_executed",
+        "nextAction=execute_bound_dependency_source_wave2_v1_once",
+        "41/41",
+        "50/50",
+        "39/39",
     )
     current_semantic_overclaim_patterns = (
         r"\bsemanticclosurecomplete\s*[:=]\s*true\b",
@@ -55698,6 +56389,18 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
                     "and current dependency wave-one "
                     f"token must appear exactly once: {token!r}."
                 )
+        for token in current_dependency_required_tokens:
+            if token not in current_section:
+                failures.append(
+                    f"{relative_path}: historical dependency source-review "
+                    f"v3/readback token is missing: {token!r}."
+                )
+        for token in current_dependency_wave2_required_tokens:
+            if token not in current_section:
+                failures.append(
+                    f"{relative_path}: dependency wave-two decision/permit "
+                    f"token is missing: {token!r}."
+                )
         for snippet in (
             current_semantic_status,
             current_semantic_result,
@@ -55832,10 +56535,10 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
             "status=acquired_pending_independent_readback",
             "result=fresh_exact_19_dependency_zip_mod_pairs_acquired_and_hash_verified",
             "status=independent_readback_complete",
-            "prepare_separate_dependency_source_review_wave",
+            "recordedNextActionAtThatCheckpoint=prepare_separate_dependency_source_review_wave",
             "38 accepted resources",
             "43 regular files",
-            "34/34",
+            "37/37",
             "9/9",
             "fixedHashEnforcedInsideHeldValidation=true",
             "verificationOnly=true",
@@ -55847,7 +56550,56 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
         ):
             if snippet not in current_section:
                 failures.append(
-                    f"{relative_path}: current dependency wave-one v3 acquisition/readback "
+                    f"{relative_path}: historical dependency wave-one v3 acquisition/readback "
+                    f"section is missing {snippet!r}."
+                )
+        for snippet in (
+            "status=dependency_source_review_wave1_readback_published_new_tuple_wave_required",
+            "result=independent_readback_receipt_published_then_manifest_written_last_new_tuple_wave_required",
+            "nextAction=prepare_separate_versioned_dependency_wave2_identity_and_acquisition_decision",
+            "E_HELD_SET",
+            "E_ARCHIVE_STRUCTURE",
+            "2c94906a07a40737e30ca832c215fa88d2233297c9fb0ea25755488d9a72408b",
+            "132",
+            "1,047",
+            "35",
+            "86",
+            "25 selected",
+            "15",
+            "acquisitionAuthorized=false",
+            "new_tuple_wave_required",
+            "closure remain",
+            "credentials",
+            "user action",
+        ):
+            if snippet not in current_section:
+                failures.append(
+                    f"{relative_path}: historical dependency source-review wave-one "
+                    f"v3/readback section is missing {snippet!r}."
+                )
+        for snippet in (
+            "bounded-dependency-source-identity-and-acquisition-decision-wave2-v1.json",
+            "status=wave2_local_checksum_identity_and_30_resource_contract_prepared_future_bytes_unverified_acquisition_not_authorized",
+            "result=exact_15_graph_frontier_tuples_30_mod_zip_requests_and_held_h1_expectations_prepared_future_bytes_unverified",
+            "prepare_separate_versioned_wave2_checker_runner_tests_and_one_use_execution_permit",
+            "37/37",
+            "bounded-dependency-source-acquisition-wave2-execution-permit-v1.json",
+            "status=wave2_v1_dependency_source_acquisition_authorized_not_consumed",
+            "result=exact_15_public_proxy_mod_then_zip_pairs_authorized_once_not_executed",
+            "nextAction=execute_bound_dependency_source_wave2_v1_once",
+            "41/41",
+            "50/50",
+            "39/39",
+            "15",
+            "30",
+            "H1",
+            "parent",
+            "owner proof",
+            "user action",
+        ):
+            if snippet not in current_section:
+                failures.append(
+                    f"{relative_path}: dependency wave-two decision/permit "
                     f"section is missing {snippet!r}."
                 )
         normalized_document = normalize_current_semantic_section(document_text)
@@ -64290,8 +65042,8 @@ def personal_single_owner_governance_guard_failures() -> list[str]:
         ]
 
     current_document_windows = {
-        "handoff": "\n".join(texts["handoff"].splitlines()[:650]),
-        "progress": "\n".join(texts["progress"].splitlines()[:550]),
+        "handoff": "\n".join(texts["handoff"].splitlines()[:700]),
+        "progress": "\n".join(texts["progress"].splitlines()[:600]),
         "qa": "\n".join(texts["qa"].splitlines()[:450]),
         "roadmap": roadmap_current_window,
     }
