@@ -1,10 +1,10 @@
 # QA Evidence
 
-Last updated: 2026-07-23 KST.
+Last updated: 2026-07-24 KST.
 
 This document separates current verification evidence from historical captures.
 
-## 2026-07-23 Personal Governance, G1b-A, And G2 Restricted-Fork Rung-One Checklist
+## 2026-07-24 Personal Governance, G1b-A, And G2 Dependency Wave-One Permit Checklist
 
 - [x] Owner identity authentication is not required for this personal project.
   Direct user instruction is sufficient for repository reads, edits, builds,
@@ -420,8 +420,8 @@ This document separates current verification evidence from historical captures.
   `rejected_at_official_source_preflight_as_is` for non-uniform destination-
   policy enforcement, remote ICE password logging, callback queues without a
   declared bound, and shutdown that can wait indefinitely on a blocked callback.
-  No Pion source was retained, compiled, loaded, or executed, and no socket or
-  network rung was opened.
+  At that preflight checkpoint no Pion source was retained, compiled, loaded,
+  or executed, and no socket or network rung was opened.
 - [x] The follow-up G2
   [restricted-fork rung-one portfolio](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/hardening.md)
   preserves that rejection and selects no library. It compares upstream as-is,
@@ -438,13 +438,13 @@ This document separates current verification evidence from historical captures.
   2,500 ms total close deadline; none is runtime-verified. It records only the future compile-only
   V1 architecture matrix and later dependency/SBOM/license/patch/symbol/
   reproducibility gates. The
-  hash-pinned validator passes all 17 mutation tests. Acquisition, dependency
-  installation, compile, load, socket, network, device, deployment, Git,
-  external identity proof, and user action remain closed.
-- [x] G2 restricted-fork rung-one status contract:
+  hash-pinned validator passes all 17 mutation tests. At that checkpoint,
+  acquisition, dependency installation, compile, load, socket, network, device,
+  deployment, Git write, external identity proof, and user action remained closed.
+- [x] Historical G2 restricted-fork rung-one status contract at_that_checkpoint:
   `status=rung1_profile_complete_candidate_not_selected`,
   `result=pion_restricted_fork_profile_ready_for_rung2_decision_only`, and
-  `nextAction=prepare_versioned_rung2_source_identity_and_acquisition_decision`.
+  `recordedNextActionAtThatCheckpoint=prepare_versioned_rung2_source_identity_and_acquisition_decision`.
   Rung one completes only the design, validator, and 17 mutation tests;
   `implementationStatus=not_implemented`, `candidateSelected=false`,
   `librarySelected=false`, `sourceAcquisitionAllowed=false`,
@@ -472,14 +472,201 @@ This document separates current verification evidence from historical captures.
   prerequisite nor a future G2 rung; `externalIdentityProofRequired=false` and
   `userActionRequired=false`.
   Product pairing and endpoint authentication remain mandatory and separate.
-- [ ] The rung-two official-source identity and acquisition decision has not
-  been recorded. Preparing that decision is the only next action; no archive,
-  signature provenance, dependency closure, source intake, or patch exists yet.
-- [ ] Rungs three through eight remain unexecuted. No offline source/dependency
-  review, SBOM/license closure, compile-only result, ABI/fuzz/sanitizer/no-network
-  conformance, loopback socket, controlled-network, device, deployment, actual
-  backend, reliable ordered carrier, or fragmentation/reassembly evidence is
-  claimed.
+- [x] The rung-two source identity, single-use decision, and bounded acquisition
+  are complete. Receipt-v1, progress-v2, and manifest-v3 bind exactly one GET,
+  the retained owner-only single-link 293,023-byte archive, raw SHA-256
+  `f95ef3ce2e0063c13925f478bf8d188833725b2f0a7ecb1e695dee8ab61ef63c`,
+  129 boundedly verified files, matching module/go.mod h1 values, and a retained
+  no-retry claim. At rung-two completion the archive was not extracted, reviewed,
+  or executed; v3 later opened it for bounded in-memory lexical inventory only.
+  The current checker passes and 12 mutation tests reject request/hash/state,
+  extraction, selection, permission, identity-proof, and rung-three-execution
+  drift.
+- [x] Rung-three v1/v2 consumed distinct permits and failed closed before
+  publication; their histories remain retained and non-retriable. The separate
+  v3 one-use path completed bounded lexical inventory and tracked readback at
+  its predecessor `rung3_v3_publication_read_back_complete` checkpoint, whose
+  recorded next action was
+  `prepare_separate_versioned_rung3_semantic_source_review_decision`. The tracked
+  [result-v3](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-result-v3.json),
+  [runtime-manifest-v3](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-runtime-manifest-v3.json),
+  and [execution-receipt-v3](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-execution-receipt-v3.json)
+  bind exact result/manifest SHA, size, status, and content readback. The
+  rung-two successor still records, only `at_that_checkpoint`,
+  `recordedNextActionAtThatCheckpoint=prepare_versioned_rung3_offline_source_review_decision`;
+  that historical preparation action is complete and is not current authority.
+- [x] The tracked historical
+  [semantic-review decision v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/semantic-source-review-decision-v1.json)
+  was consumed by two non-attesting GPT-5.6 Sol passes. The current
+  [classifications](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/semantic-source-review-classifications-v1.json),
+  [result](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/semantic-source-review-result-v1.json),
+  and atomic
+  [manifest](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/semantic-source-review-manifest-v1.json)
+  historically record
+  `status=rung3_semantic_source_review_v1_publication_read_back_complete_semantic_closure_blocked`,
+  `result=two_non_attesting_full_coverage_semantic_passes_published_and_independently_read_back_patch_and_dependency_gaps_remain`,
+  and
+  `recordedNextActionAtThatCheckpoint=prepare_versioned_rung3_patch_and_dependency_closure_decision`.
+- [x] V3 inventory covers 100 Go files, 1,077,591 source bytes, and 39,064
+  logical lines. Seven patch units and 19 rules found 4,701 hits, represented by
+  144 recorded locations at no more than eight per rule plus 4,557 omissions.
+  All 129 entries have creator system 0, accepted DOS attributes `00`, and
+  synthetic mode `100444`. Focused base/creator/aggregator/permit/runner suites
+  pass 19/19, 13/13, 14/14, 15/15,
+  and 18/18 (79/79); exact result-manifest readback passed. This focused evidence
+  is not a completed full no-device gate.
+- [x] Semantic-review v1 covered every one of the 100 Go source bodies and all
+  4,701 lexical observations in both passes. Its 29 candidates deduplicate to
+  19 findings: P0=0, P1=11, P2=3, P3=4, none=1; patch_required=7 and
+  unresolved=12. Disagreements remain unresolved, and the `one-use` zero-hit
+  remains a missing-required-mechanism gap rather than a vulnerability finding
+  by itself.
+- [x] The independent tracked-only checker and 25/25 mutation tests hold all
+  eight file descriptors plus every repository-path directory component through
+  two stable full-set readback passes and a final identity barrier. They
+  recompute the two candidate digests and 29-to-19 aggregation, validate the
+  manifest last, and observe the failure file plus four staging names absent
+  before and after readback. Same-UID concurrent mutation is not prevented, and
+  absence is not guaranteed after the final observation.
+- [ ] Semantic review was performed, but semantic closure, dependency closure,
+  rung-three completion, candidate selection, and library selection remain
+  false. No extraction,
+  materialization, dependency install, reviewed-source compile/execution,
+  ABI/fuzz/sanitizer/no-network conformance, socket, controlled network, device,
+  deployment, backend, carrier, or fragmentation/reassembly evidence is claimed.
+- [x] The historical preparation-only
+  [patch/dependency decision v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/patch-and-dependency-closure-decision-v1.json)
+  and [security-hardening portfolio](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/patch-and-dependency-closure-decision-v1/hardening.md)
+  record `status=prepared_options_unselected_dependency_closure_blocked`,
+  `result=four_structural_recommendations_and_eight_unselected_treatment_units_prepared_all_19_findings_remain_open`,
+  and
+  `recordedNextActionAtThatCheckpoint=prepare_separate_versioned_implementation_or_dependency_review_decision`.
+  All 19 canonical findings map to seven unselected root patch units and one
+  unselected dependency-review unit. The isolated read-only checker and 28/28
+  checker tests verify predecessor hashes, archive/root metadata, exact
+  treatments, reverse option mappings, the 19-requirement seed, 44 `go.sum`
+  records, four quarantined checksum-only tuples, the complete 19-file
+  portfolio, and the all-false authority, selection, implementation, and
+  closure boundary. Unexpected artifacts, reader-facing effect drift, and
+  replace-after-read drift are rejected.
+- [x] The historical
+  [implementation-or-dependency review decision v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/implementation-or-dependency-review-decision-v1.json)
+  and
+  [staged fixed-point review plan](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/implementation-or-dependency-review-decision-v1/implementation/staged-fixed-point-source-closure.md)
+  record
+  `status=dependency_review_selected_acquisition_not_authorized`,
+  `result=staged_fixed_point_dependency_review_selected_all_19_findings_remain_open`,
+  and
+  `recordedNextActionAtThatCheckpoint=prepare_separate_versioned_bounded_dependency_source_identity_and_acquisition_decision`.
+  Exactly one portfolio option, `staged-fixed-point-source-closure`, and one
+  treatment unit, `dependency_source_license_security_closure_review`, are
+  selected for the dependency-review plan. The other seven portfolio options,
+  all seven root patch units, and the other three structural recommendations
+  remain unselected. The isolated read-only checker and 36/36 checker tests
+  bind the exact predecessor, semantic triad, retained archive and root
+  metadata, complete 19-file portfolio bundle, and review plan, including raw,
+  selection, authority, finding, closure, contract, sequence, plan, inventory,
+  filesystem, and TOCTOU failure layers.
+- [x] The predecessor
+  [bounded source-identity and acquisition decision v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-v1.json)
+  and
+  [reader contract](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-v1.md)
+  record
+  `status=wave1_source_identity_and_request_contract_prepared_acquisition_not_authorized`,
+  `result=exact_19_root_requirement_source_identities_and_bounded_wave1_request_contract_prepared`,
+  and
+  `nextAction=prepare_separate_versioned_wave1_execution_permit_after_checker_runner_and_tests`.
+  They bind the exact 19 root requirements, four quarantined checksum-only
+  context tuples, Android arm64 and macOS arm64 V1 graph profiles, the planned
+  19-request ZIP wave, and strict resource/failure bounds. The isolated checker
+  and 56/56 mutation tests pass. The checker rehashes the retained root ZIP,
+  embedded `go.mod`/`go.sum`, and source tree; verifies claim/staging/final/
+  receipt/manifest absence through its final barrier; and binds exact H1 and
+  ordered source-set digest algorithms. No request was sent and acquisition, network,
+  extraction, package management, compilation, execution, sockets, deployment,
+  Git writes, and all closure fields remain false.
+- [ ] The selected dependency-review plan closes none of the 19 findings and
+  authorizes no dependency acquisition, patch series, source modification or
+  extraction, package manager, compiler, source load or execution, socket,
+  network, device, deployment, or Git write. Neither external authentication
+  nor user action is authorized or required. No repository-owner
+  authentication, external identity proof, execution-permit authentication or
+  document, or user action is required. Product endpoint authentication remains
+  a separate runtime requirement.
+- [x] The historical successor
+  [bounded dependency wave-one execution permit v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-execution-permit-v1.json)
+  and
+  [reader contract](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-execution-permit-v1.md)
+  recorded before execution
+  `status=wave1_dependency_source_acquisition_authorized_not_consumed`,
+  `result=exact_19_public_proxy_zip_requests_authorized_once_not_executed`,
+  and `recordedNextActionAtThatCheckpoint=execute_bound_dependency_source_wave1_once`.
+  Its runner still passes 44/44 tests. The permit suite recorded 38/38 at the
+  unconsumed checkpoint; the current gate reruns 36 state-independent cases.
+  The retained claim and failure receipt prove v1 was consumed exactly once
+  and cannot be retried.
+- [x] The historical
+  [wave-one recovery decision v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-recovery-decision-v1.json)
+  and [reader contract](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-recovery-decision-v1.md)
+  bind `E_ZIP_RATIO` during ordered tuple two after two response bodies, one
+  fully validated/staged tuple, zero accepted artifacts, and no final set.
+  The recovery checker and 31/31 mutation tests protect the split counters,
+  null historical `failedTupleId` versus derived tuple ID, immutable v1
+  artifacts, distinct v2 namespace, and absolute streaming/deadline bounds.
+  V2 uses non-gating exact-integer compression telemetry. At that checkpoint
+  the decision recorded
+  `status=wave1_v1_failure_read_back_recovery_v2_design_selected_execution_not_authorized`,
+  `result=v1_ratio_policy_rejected_tuple2_after_two_responses_no_final_set_v2_bounded_telemetry_policy_selected`,
+  and `recordedNextActionAtThatCheckpoint=prepare_separate_v2_runner_checker_tests_and_execution_permit`.
+- [x] The historical
+  [wave-one execution permit v2](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-execution-permit-v2.json)
+  and [reader contract](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-execution-permit-v2.md)
+  recorded, before execution,
+  `status=wave1_v2_dependency_source_acquisition_authorized_not_consumed`,
+  `result=exact_19_public_proxy_zip_requests_v2_authorized_once_not_executed`,
+  and `recordedNextActionAtThatCheckpoint=execute_bound_dependency_source_wave1_v2_once`.
+  The permit is now consumed and cannot be retried. Its retained claim and
+  failure receipt record `E_GO_MOD_MISSING` on tuple 11 after 11 completed ZIP
+  responses, 10 validated/staged tuples, zero accepted artifacts, and no final
+  set.
+- [x] The predecessor
+  [wave-one recovery decision v2](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-recovery-decision-v2.json)
+  and [reader contract](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-recovery-decision-v2.md)
+  record
+  `status=wave1_v2_failure_read_back_recovery_v3_design_selected_execution_not_authorized`,
+  `result=v2_conflated_zip_and_mod_resources_tuple11_after_eleven_responses_no_final_set_v3_zip_plus_mod_policy_selected`,
+  and
+  `recordedNextActionAtThatCheckpoint=prepare_separate_v3_runner_checker_tests_and_execution_permit`.
+  The checker and 39/39 mutation tests preserve both terminal generations and
+  select a fresh 19-pair `.mod`-then-`.zip` design. That preparation action is
+  complete.
+- [x] The historical
+  [wave-one execution permit v3](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-execution-permit-v3.json)
+  and [reader contract](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-execution-permit-v3.md)
+  recorded, before execution,
+  `status=wave1_v3_dependency_source_acquisition_authorized_not_consumed`,
+  `result=exact_19_public_proxy_mod_then_zip_pairs_v3_authorized_once_not_executed`,
+  and `nextAction=execute_bound_dependency_source_wave1_v3_once`. It is
+  consumed and cannot be retried. The immutable
+  [success receipt](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-receipt-v3.json)
+  and [manifest](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-manifest-v3.json)
+  record `status=acquired_pending_independent_readback`,
+  `result=fresh_exact_19_dependency_zip_mod_pairs_acquired_and_hash_verified`,
+  `networkRequestAttemptCount=38`, `responseBodyCompletedCount=38`, and 38
+  accepted resources across 19 exact `.mod`/`.zip` pairs. The
+  [readback receipt](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-readback-v1.json)
+  and [manifest](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-readback-manifest-v1.json)
+  validate `status=independent_readback_complete`, `retainedResourceCount=38`,
+  and `observedRegularFileCount=43` (43 regular files). The permit-bound 34/34 reader tests remain
+  immutable; a versioned recovery reader recorded the outputs once, and the
+  [fixed-hash post-verification decision v3](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-readback-post-verification-decision-v3.json)
+  plus its verification-only 9/9 suite close the raw-encoding, dispatch,
+  TOCTOU, and typed-comparison gaps with
+  `fixedHashEnforcedInsideHeldValidation=true`, `verificationOnly=true`, and
+  `recordModeExposed=false`. The current
+  `nextAction=prepare_separate_dependency_source_review_wave`. No credentials or user
+  action are involved. All 19 findings remain open and no candidate or library
+  is selected.
 - [x] This personal-project work required no owner, GitHub, SSH, or GPG
   authentication and performed no Git operation. That governance boundary does
   not weaken or replace product QR pairing, paired-device authentication, or
@@ -1001,9 +1188,28 @@ This document separates current verification evidence from historical captures.
   `progress-v8.json`, `decision-v6.json`, and `handoff-v9.json`; recorded both
   candidate rejections before compile, consumed one-shot acquisition authority,
   no selected library, and false implementation/compiler/socket/runtime-network
-  permissions; and required a new versioned review plus explicit user decision
-  for another candidate. The current restricted-fork rung-one profile supersedes
-  that next-step wording and requires no additional user or identity proof.
+  permissions; and required a new versioned review for another candidate. The
+  later restricted-fork profile supplied that review, rung two consumed its
+  exact one-use request, and rung-three v1/v2 failed closed before publication.
+  V3 has since completed bounded lexical inventory and tracked readback, and
+  semantic-review decision v1 has been executed through two full-coverage
+  non-attesting passes, and patch/dependency decision v1 completed that
+  preparation. The historical dependency-review decision selected only the
+  staged fixed-point source-closure plan and recorded its bounded
+  source-identity preparation next action. The predecessor wave-one decision
+  completed that action without acquisition and recorded
+  `nextAction=prepare_separate_versioned_wave1_execution_permit_after_checker_runner_and_tests`.
+  The v1 permit satisfied that action and was consumed by the terminal
+  ratio-policy failure. Recovery decision v1 completed the separate v2
+  preparation; v2 then failed closed at tuple-11 `E_GO_MOD_MISSING`. Recovery
+  decision v2 recorded
+  `prepare_separate_v3_runner_checker_tests_and_execution_permit` at its
+  checkpoint. The historical v3 permit was consumed exactly once. Its 38
+  requests retained 19 verified `.mod`/`.zip` pairs, and independent fixed-hash
+  readback now validates the 43-file set with zero verification writes or
+  network operations. The current next action is
+  `prepare_separate_dependency_source_review_wave`; no credentials or user
+  action are involved.
 - [x] The QR-modified `CompanionAppModel.swift` hash and the 13-artifact P2P/NAT collection are synchronized at `6e6dfbfc0cdb70370c30f54222584b69042a6e22b6df04c7f3e65043c38522bd`. The security-design validator and all seven Phase A progress tests pass while the whole review, compiler, socket, runtime-network, Phase B, production, and deployment gates remain closed; this is integrity evidence, not new authority.
 - [x] Historical QR and readiness roadmap sections are marked superseded and use at-checkpoint wording, so their old no-device or remote-only state cannot override the current top sections.
 - [x] The next-session decision flow handles detached local work, conditional physical QA, separately authorized different-network work, and commit/push partitioning. The default next bounded slice is expiry/rotation plus camera-permission and screen-reader evidence.
@@ -1140,7 +1346,7 @@ This document separates current verification evidence from historical captures.
 
 ## 2026-07-17 Production P2P/NAT libnice Source Audit Rejection No-Device Checklist
 
-- [x] Historical authority is pinned by [progress-v8.json](security-hardening/production-p2p-nat-v1/controlled-network-spike/phase-a/progress-v8.json), [decision-v6.json](security-hardening/production-p2p-nat-v1/controlled-network-spike/decision-v6.json), [handoff-v9.json](security-hardening/production-p2p-nat-v1/implementation/handoff-v9.json), and [libnice-source-audit-v1.json](security-hardening/production-p2p-nat-v1/controlled-network-spike/phase-a/libnice-source-audit-v1.json). Both libjuice and libnice are rejected before compilation, and no networking library is selected. The current restricted-fork rung-one profile supersedes this checkpoint as the active pre-acquisition direction.
+- [x] Historical authority is pinned by [progress-v8.json](security-hardening/production-p2p-nat-v1/controlled-network-spike/phase-a/progress-v8.json), [decision-v6.json](security-hardening/production-p2p-nat-v1/controlled-network-spike/decision-v6.json), [handoff-v9.json](security-hardening/production-p2p-nat-v1/implementation/handoff-v9.json), and [libnice-source-audit-v1.json](security-hardening/production-p2p-nat-v1/controlled-network-spike/phase-a/libnice-source-audit-v1.json). Both libjuice and libnice are rejected before compilation, and no networking library is selected. At the recorded `at_that_checkpoint`, the later restricted-fork rung-one profile superseded it as the pre-acquisition direction.
 - [x] `python3 script/check_p2p_nat_libnice_acquisition_authority.py` and its 8-test suite pass, pinning decision-v4/handoff-v7/progress-v4, the exact official libnice host and two artifacts, one-shot authority, no redirects or proxy/package fallback, and closed dependency/compile/runtime/Phase B/production gates.
 - [x] `python3 script/check_p2p_nat_glib_acquisition_authority.py` and its 6-test suite pass, pinning decision-v5/handoff-v8/progress-v6, the exact official GLib checksum/archive requests, and the explicit exclusion of OpenSSL or other dependency acquisition from that authority.
 - [x] `python3 script/record_p2p_nat_libnice_source_manifest.py --verify` read-only rehashes the official libnice archive SHA-256 `618fc4e8de393b719b1641c1d8eec01826d4d39d15ade92679d221c7f5e4e70d`, detached-signature bytes, exact 184-file tree SHA-256 `e594b0b2435e10a8df970304ba3dec24ea0353820f1eecb820a810ab56cd276a`, and committed manifest SHA-256 `bacd979c0c2e60f6f374c7034cddc9377bdcaf038a7a08786d390e9f48201f2f`.
@@ -1152,7 +1358,7 @@ This document separates current verification evidence from historical captures.
 - [x] `build/qa/check-no-device-quality-p2p-libnice-source-audit-rejection-final-20260717.log` exits 0 across 12,148 lines with exactly one `No-device quality checks passed.` marker, one exact-intake addendum, one libnice-rejection addendum, 88 existing local development-relay matches, and 905 encrypted frame bodies. That relay smoke is separate from P2P Phase A; it is not libnice execution or external-network proof.
 - [x] Post-gate `adb devices -l` lists no attached Android device, so no physical-device result is claimed.
 - [ ] Android/macOS compilation and ABI inspection are intentionally not run because `android_macos_compile_only_integration=not_run_candidate_rejected_before_compile`.
-- [ ] This checkpoint's former next step required a new versioned review. The current restricted-fork rung-one design supersedes it only for preparation of a separate rung-two technical decision. Further acquisition, inspection, source execution, compilation, sockets, runtime/harness networking, Phase B, and production authority remain closed; no additional user approval or external identity proof is required.
+- [ ] This checkpoint's former next step required a new versioned review. The later restricted-fork design supplied that review, rung two consumed its exact one-use request, and rung-three v1/v2 failed closed before publication. V3 then completed bounded lexical inventory and tracked readback; semantic-review decision v1 has now been executed through two full-coverage non-attesting passes and independent publication readback, patch/dependency decision v1 completed the preparation step, and the historical dependency-review decision selected the staged fixed-point source-closure plan. The predecessor wave-one decision completed its source-identity/request-contract action; v1 was consumed by the terminal ratio-policy failure and v2 by tuple-11 `E_GO_MOD_MISSING`. Recovery decision v2 selected the fresh v3 pair-resource design; its separate permit has now been consumed exactly once, and independent fixed-hash readback verifies 38 retained resources across 43 files. Semantic closure, dependency closure, compilation/execution, runtime/harness networking, Phase B, production authority, Git, and device work remain closed; no user authentication or action is required.
 - Proof boundary: these are exact-artifact, no-device static source-audit checks. They do not establish signature trust, ABI compatibility, runtime ICE/STUN/TURN, NAT traversal, physical Android behavior, live-network behavior, performance, deployment, or production readiness.
 
 ## Historical 2026-07-17 Production P2P/NAT libjuice Source Audit Rejection No-Device Checklist

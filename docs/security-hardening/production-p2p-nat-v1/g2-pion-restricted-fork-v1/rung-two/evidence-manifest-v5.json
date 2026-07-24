@@ -1,0 +1,76 @@
+{
+  "documentType": "aetherlink.g2-pion-rung2-canonical-document-sync-evidence-manifest",
+  "schemaVersion": "1.0",
+  "manifestId": "g2-pion-ice-v4.3.0-rung2-canonical-document-sync-evidence-manifest-v5",
+  "recordedDate": "2026-07-23",
+  "status": "rung2_acquisition_complete_canonical_docs_semantically_unambiguous",
+  "result": "historical_current_wording_scoped_to_at_that_checkpoint_and_current_next_action_fixed_to_rung3_preparation",
+  "nextAction": "prepare_versioned_rung3_offline_source_review_decision",
+  "predecessorManifestBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/evidence-manifest-v4.json",
+    "sha256": "eb2352de7623706095b6208edcc58b9550e1a1501ed2482739f89525c74da022",
+    "collectionSha256": "a2f2ab09307a5b1408d65699b3746782f8e6de6ece8e98891241dc350bc4cae3"
+  },
+  "artifactScope": "post_v4_canonical_semantic_correction_delta_only",
+  "orderingRule": "ascending_evidence_id",
+  "collectionDigestAlgorithm": "sha256_utf8_lf_of_evidence_id_tab_sha256_tab_repo_relative_path_newline",
+  "artifactCount": 7,
+  "artifacts": [
+    {
+      "evidenceId": "G2R2E019",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/canonical-document-supersession-v2.json",
+      "sha256": "3a2b74ecde45b69204b9687904a4f88d731dfc532046e472ec22a4873765309a",
+      "role": "semantic_current_step_canonical_document_supersession"
+    },
+    {
+      "evidenceId": "G2R2E020",
+      "path": "docs/roadmap.md",
+      "sha256": "067fe008fb7be9c73883cf50bd9f9d44764025fb8197e18fbe46d79bf1ef110e",
+      "role": "semantically_unambiguous_current_canonical_v1_delivery_roadmap"
+    },
+    {
+      "evidenceId": "G2R2E021",
+      "path": "docs/progress.md",
+      "sha256": "10d878b77bdfee4ebd0d0a104bdb3aa7ae80bfaf2130b293852b4fb04c50c1c4",
+      "role": "semantically_unambiguous_current_progress_status"
+    },
+    {
+      "evidenceId": "G2R2E022",
+      "path": "docs/qa-evidence.md",
+      "sha256": "fe7b7535c3aa4d27b1e079d3be4fcfa5a13f1dba32c9a528b739a082fa348832",
+      "role": "semantically_unambiguous_current_qa_checklist"
+    },
+    {
+      "evidenceId": "G2R2E023",
+      "path": "docs/handoff.md",
+      "sha256": "8117a2eea69f9fc2241145fec833700da1076f3e387b3b8a8a09ab725c207ae8",
+      "role": "semantically_unambiguous_current_session_handoff"
+    },
+    {
+      "evidenceId": "G2R2E024",
+      "path": "README.md",
+      "sha256": "aca5762ff01056401e8e6824d96a548c589493a9dd28d7d4c07524913b41fdfc",
+      "role": "semantically_unambiguous_current_root_project_status"
+    },
+    {
+      "evidenceId": "G2R2E025",
+      "path": "shared/protocol/README.md",
+      "sha256": "50e6337bf9685a3b3e064f954a7bb25dc129a19cf79a7ec536d990c60c73df40",
+      "role": "semantically_unambiguous_current_shared_protocol_status"
+    }
+  ],
+  "collectionSha256": "adb1fbce766b0750e186285024156abea290d80763eea142420192aa8261d0a8",
+  "sourceAcquisitionExecuted": true,
+  "requestCount": 1,
+  "permitConsumed": true,
+  "archiveRetained": true,
+  "archiveExtracted": false,
+  "sourceReviewPerformed": false,
+  "candidateSelected": false,
+  "librarySelected": false,
+  "externalIdentityProofRequired": false,
+  "userActionRequired": false,
+  "repositoryOwnerAuthenticationRequired": false,
+  "rungThreeOfflineReviewDecisionPreparationAllowed": true,
+  "rungThreeOfflineReviewExecutionAllowed": false
+}

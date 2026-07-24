@@ -1,0 +1,77 @@
+{
+  "documentType": "aetherlink.g2-canonical-document-supersession",
+  "schemaVersion": "1.0",
+  "supersessionId": "g2-pion-rung2-canonical-document-supersession-v1",
+  "recordedDate": "2026-07-23",
+  "status": "historical_rung1_bytes_git_preserved_current_docs_advanced_to_rung2_receipt",
+  "reason": "roadmap_and_handoff_are_living_canonical_documents_and_must_advance_without_rewriting_the_rung1_snapshot",
+  "predecessorManifestBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/evidence-manifest-v1.json",
+    "sha256": "98e0e53955e21a833fe19852ce00f64df2dc808506bdb222c9b8a20bc8006d00",
+    "collectionSha256": "9e395c4c4f7f61a4810d47cf96ff57b47c1908c73ea459181f1c06f26a35d704"
+  },
+  "historicalGitSnapshot": {
+    "commit": "3bf9615024a3959f61d4bb749f8930dd07ea4385",
+    "tree": "a0640a2484e2ec249a5cfb0180ab26e8a0493d98",
+    "objectReadMode": "exact_commit_tree_blob_read_only_no_checkout",
+    "readOnlyGitObjectVerificationRequired": true,
+    "documents": [
+      {
+        "evidenceId": "G2E003",
+        "path": "docs/roadmap.md",
+        "sha256": "2fcb2e60b39d6ea843179d84c29bb57ac5219d20b2b2454c0165e420e1c462a5",
+        "role": "historical_rung1_canonical_roadmap_snapshot"
+      },
+      {
+        "evidenceId": "G2E004",
+        "path": "docs/handoff.md",
+        "sha256": "f3f43bd602660bc01d5fcbde54550423abcc72ae73ce705021d1ef3b4f4fd2d4",
+        "role": "historical_rung1_canonical_handoff_snapshot"
+      }
+    ]
+  },
+  "currentDocumentState": {
+    "status": "synchronized_to_acquisition_complete_archive_retained_not_extracted",
+    "nextAction": "prepare_versioned_rung3_offline_source_review_decision",
+    "documents": [
+      {
+        "path": "docs/roadmap.md",
+        "sha256": "b4a78169161f9a72788cc5c4dc7e55fe53ac720ec65095e9fe4562ce5c47d45d",
+        "role": "current_canonical_v1_delivery_roadmap"
+      },
+      {
+        "path": "docs/handoff.md",
+        "sha256": "e4b659e737402e359ec3e99d1a7b871176cdb1ea53ec986da5f9884089858987",
+        "role": "current_canonical_session_handoff"
+      }
+    ]
+  },
+  "currentEvidenceBinding": {
+    "receiptPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/source-acquisition-receipt-v1.json",
+    "receiptSha256": "3faa5d1d12b7d52b9c2f74a68a2bd83d2bbd459342e56fe6a20caf1ac61409f6",
+    "progressPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/source-acquisition-progress-v2.json",
+    "progressSha256": "df1ad52bc6fff294b9bb54fd94a8eaacd76d9ff2b179be4a6752a867d229196f",
+    "manifestPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/evidence-manifest-v3.json",
+    "manifestSha256": "8ed1a2667153f77270531d7c373f5f61ed9eb9080bceab7c804c9b686259537e"
+  },
+  "executionBoundary": {
+    "historicalDecisionRewritten": false,
+    "historicalReceiptRewritten": false,
+    "archiveExtracted": false,
+    "sourceReviewPerformed": false,
+    "candidateSelected": false,
+    "librarySelected": false,
+    "compilerInvocationAllowed": false,
+    "codeLoadingAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIoAllowed": false,
+    "deviceExecutionAllowed": false,
+    "productionDeploymentAllowed": false,
+    "gitWriteOperationAllowed": false,
+    "externalIdentityProofRequired": false,
+    "userActionRequired": false,
+    "repositoryOwnerAuthenticationRequired": false,
+    "rungThreeOfflineReviewDecisionPreparationAllowed": true,
+    "rungThreeOfflineReviewExecutionAllowed": false
+  }
+}

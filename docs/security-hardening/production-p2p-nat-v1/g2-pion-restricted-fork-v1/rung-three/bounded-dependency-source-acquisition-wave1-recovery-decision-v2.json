@@ -1,0 +1,343 @@
+{
+  "documentType": "aetherlink.g2-pion-dependency-wave1-recovery-decision",
+  "schemaVersion": "2.0",
+  "decisionId": "g2-pion-ice-v4.3.0-rung3-dependency-wave1-recovery-decision-v2",
+  "recordedDate": "2026-07-24",
+  "status": "wave1_v2_failure_read_back_recovery_v3_design_selected_execution_not_authorized",
+  "result": "v2_conflated_zip_and_mod_resources_tuple11_after_eleven_responses_no_final_set_v3_zip_plus_mod_policy_selected",
+  "nextAction": "prepare_separate_v3_runner_checker_tests_and_execution_permit",
+  "predecessorBindings": {
+    "sourceIdentityDecision": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-v1.json",
+      "rawSha256": "03bd5cac4793d379160a9c316d726c9d30d7a4aa00384d5687b1659acfb8943e",
+      "contentSha256": "13571495b1533d62073d25aed5abc342391a4cc147d26f1e6df375e6a2b33201"
+    },
+    "recoveryDecisionV1": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-recovery-decision-v1.json",
+      "rawSha256": "313e548e8d538ccc582f4d1c74618823d31b45915b4a5124378bc0d8b98315c2",
+      "contentSha256": "8cdcccbea4318d41f44da78000f3e4161251a5ad9542543c2962d4767ed1e968"
+    },
+    "executionPermitV2": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-execution-permit-v2.json",
+      "rawSha256": "80867396723efcc3a1f0d3c3beca94b3634883058224382231ddcbb141328e1c",
+      "contentSha256": "44fe9460f2c4fc746b0b8d9389874644371640f23409178a0d00b0667ab93bd1"
+    },
+    "runnerV2": {
+      "path": "script/acquire_p2p_nat_g2_pion_dependency_wave1_v2_once.py",
+      "rawSha256": "9dcbd6e70e6a7904b468042ee116f04f014a4299f30ea32c41c4f850af53b823"
+    },
+    "runnerTestsV2": {
+      "path": "script/test_acquire_p2p_nat_g2_pion_dependency_wave1_v2_once.py",
+      "rawSha256": "103586cafd5a92dc8851d36a13a759747e1eb6089425a47ef3cbbf4a0dce90e9",
+      "testCount": 28
+    },
+    "permitCheckerV2": {
+      "path": "script/check_p2p_nat_g2_pion_dependency_wave1_execution_permit_v2.py",
+      "rawSha256": "35ac6152731f16e84c5ac3e4f6ddfdc04c109b51c01967ef63cc53557f1c2139"
+    },
+    "permitCheckerTestsV2": {
+      "path": "script/test_p2p_nat_g2_pion_dependency_wave1_execution_permit_v2.py",
+      "rawSha256": "8dbd52d521f6f1693b7c110106724579e0ffdecd4a4f6ddd2d303541aad5deb9",
+      "testCount": 20
+    }
+  },
+  "terminalFailureBindings": {
+    "claimV2": {
+      "path": "build/offline-source/pion-ice-v4.3.0/dependencies/.wave-1-v2.claim",
+      "rawSha256": "d9902cec698026035f9d4e8937114e09d990e868a272ce7d1ec19679a1b2ef77",
+      "byteSize": 482,
+      "mode": "0600",
+      "linkCount": 1,
+      "retained": true,
+      "automaticRetryAllowed": false
+    },
+    "failureReceiptV2": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-failure-v2.json",
+      "rawSha256": "e04e7224ef6288e964f36087170c2ce888f398bb967475d144508ceda0ef44dc",
+      "byteSize": 1174,
+      "mode": "0600",
+      "linkCount": 1,
+      "status": "wave1_v2_acquisition_failed_permit_consumed",
+      "result": "no_dependency_source_set_accepted",
+      "failureCode": "E_GO_MOD_MISSING",
+      "phase": "zip",
+      "failedTupleId": "wave1-011-466356e1ed29",
+      "failedTupleOrder": 11,
+      "networkRequestAttemptCount": 11,
+      "responseBodyCompletedCount": 11,
+      "validatedAndStagedTupleCount": 10,
+      "acceptedArtifactCount": 0,
+      "finalSetPublished": false,
+      "automaticRetryAllowed": false
+    }
+  },
+  "failureInterpretation": {
+    "failedTupleId": "wave1-011-466356e1ed29",
+    "failedTupleOrder": 11,
+    "failedModule": "github.com/davecgh/go-spew",
+    "failedVersion": "v1.1.1",
+    "expectedModuleZipH1": "h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=",
+    "expectedGoModH1": "h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=",
+    "networkRequestAttemptCount": 11,
+    "responseBodyCompletedCount": 11,
+    "validatedAndStagedTupleCount": 10,
+    "safeNumericObservations": {
+      "entryOrdinal": 18,
+      "entryUncompressedBytes": 57466,
+      "entryCompressedBytes": 7119
+    },
+    "stagingRetained": false,
+    "acceptedFinalSetRetained": false,
+    "v2PreflightTerminalState": "consumed_failed_recovery_required",
+    "terminalStateSchemaValid": true,
+    "observedOneUseArtifactCount": 2
+  },
+  "rootCause": {
+    "classification": "go_proxy_zip_and_mod_resources_conflated",
+    "v2RequiredEmbeddedRootGoMod": true,
+    "goProxyZipMayLegitimatelyOmitRootGoMod": true,
+    "goProxyModEndpointSuppliesCanonicalModResource": true,
+    "moduleZipH1AndGoModH1AreDistinctIdentities": true,
+    "v2ModuleZipH1MismatchObserved": false,
+    "v2GoModH1MismatchObserved": false,
+    "authenticationRelated": false,
+    "credentialRelated": false,
+    "ownerProofRelated": false
+  },
+  "selectedV3Policy": {
+    "selectionStatus": "selected_for_v3_implementation_not_execution",
+    "resourceModel": "fresh_exact_mod_then_zip_pair_for_each_tuple",
+    "fullFreshTupleCountRequired": 19,
+    "resourceCountPerTuple": 2,
+    "maximumRequestCount": 38,
+    "expectedSuccessRequestCount": 38,
+    "sequentialOrderRequired": true,
+    "resourceOrderPerTuple": [
+      "mod",
+      "zip"
+    ],
+    "requestOrdinalRule": {
+      "mod": "two_times_tuple_order_minus_one",
+      "zip": "two_times_tuple_order"
+    },
+    "zipResource": {
+      "urlSource": "source_identity_decision_wave_tuple_url",
+      "requiredSuffix": ".zip",
+      "allowedContentTypes": [
+        "application/zip",
+        "application/octet-stream"
+      ],
+      "moduleZipH1MatchRequired": true,
+      "embeddedRootGoModRequired": false,
+      "embeddedRootGoModMustMatchExternalModWhenPresent": true,
+      "zipStructureAndPrefixValidationRequired": true,
+      "compressionRatioPolicy": "non_gating_bounded_telemetry"
+    },
+    "modResource": {
+      "urlDerivation": "replace_exact_terminal_dot_zip_with_dot_mod",
+      "requiredSuffix": ".mod",
+      "allowedContentTypes": [
+        "text/plain",
+        "application/octet-stream"
+      ],
+      "goModH1MatchRequired": true,
+      "goModH1Algorithm": "golang.org/x/mod/sumdb/dirhash.Hash1_v1_single_go_mod",
+      "canonicalFileName": "go.mod",
+      "sourceBytes": "exact_mod_response_body",
+      "utf8Required": true,
+      "nulByteForbidden": true,
+      "exactModuleDirectiveRequired": true
+    },
+    "absoluteLimits": {
+      "maximumZipResponseBytesPerTuple": 16777216,
+      "maximumAggregateZipResponseBytes": 134217728,
+      "maximumModResponseBytesPerTuple": 1048576,
+      "maximumAggregateModResponseBytes": 8388608,
+      "maximumAggregateResponseBytes": 142606336,
+      "maximumRetainedBytes": 142606336,
+      "maximumEntriesPerArchive": 16384,
+      "maximumAggregateEntries": 131072,
+      "maximumCentralDirectoryBytesPerArchive": 8388608,
+      "maximumSingleFileBytes": 16777216,
+      "maximumUncompressedBytesPerArchive": 268435456,
+      "maximumAggregateUncompressedBytes": 1073741824,
+      "maximumPathBytes": 1024,
+      "maximumPathComponents": 64,
+      "maximumComponentBytes": 255,
+      "maximumJsonReceiptOrFailureBytes": 2097152,
+      "perRequestDeadlineMilliseconds": 30000,
+      "wholeWaveDeadlineMilliseconds": 600000
+    },
+    "requestPolicy": {
+      "scheme": "https",
+      "allowedHost": "proxy.golang.org",
+      "successStatusCode": 200,
+      "tlsCertificateValidationRequired": true,
+      "tlsHostnameValidationRequired": true,
+      "ambientProxyAllowed": false,
+      "redirectsAllowed": false,
+      "credentialsAllowed": false,
+      "authenticationChallengeAllowed": false,
+      "urlQueryAllowed": false,
+      "urlFragmentAllowed": false,
+      "automaticRetryAllowed": false,
+      "alternateMirrorAllowed": false
+    },
+    "requiredCounterSchema": {
+      "networkRequestAttemptCount": true,
+      "responseBodyCompletedCount": true,
+      "validatedAndStagedResourceCount": true,
+      "validatedModResourceCount": true,
+      "validatedZipResourceCount": true,
+      "validatedAndStagedTupleCount": true,
+      "successValues": {
+        "networkRequestAttemptCount": 38,
+        "responseBodyCompletedCount": 38,
+        "validatedAndStagedResourceCount": 38,
+        "validatedModResourceCount": 19,
+        "validatedZipResourceCount": 19,
+        "validatedAndStagedTupleCount": 19,
+        "acceptedArtifactCount": 38
+      },
+      "legacyCompletedRequestCountForbidden": true
+    },
+    "failureContract": {
+      "firstMismatchStopsWave": true,
+      "claimAndFailureReceiptRetained": true,
+      "partialStagingRemoved": true,
+      "partialAcceptedSetAllowed": false,
+      "finalSetPublished": false,
+      "automaticRetryAllowed": false,
+      "newRecoveryDecisionRequired": true,
+      "failureTupleAndResourceKindRequired": true,
+      "responseBodiesOrCredentialsRecorded": false
+    },
+    "successContract": {
+      "retainedZipCount": 19,
+      "retainedModCount": 19,
+      "retainedResourceCount": 38,
+      "acquisitionNamespaceRegularFileCount": 41,
+      "orderedRowsContainSeparateZipAndModByteSizeAndSha256": true,
+      "orderedRowsContainModuleZipH1AndGoModH1": true,
+      "stableNoFollowIndependentReopenRequiredBeforePublication": true,
+      "allResourcesReparsedAndRehashedBeforePublication": true,
+      "successReceiptWrittenBeforeManifest": true,
+      "manifestWrittenLast": true,
+      "postPublishRetryForbidden": true
+    },
+    "forbiddenOperations": {
+      "packageManager": true,
+      "goCommand": true,
+      "gitCommand": true,
+      "shellOrSubprocess": true,
+      "compiler": true,
+      "sourceExtraction": true,
+      "sourceLoadOrExecution": true,
+      "runtimeOrProductNetwork": true,
+      "device": true,
+      "deployment": true
+    }
+  },
+  "v1AndV2PreservationContract": {
+    "v1ClaimDeletionAllowed": false,
+    "v1FailureReceiptDeletionAllowed": false,
+    "v1PermitReuseAllowed": false,
+    "v1RunnerExecuteAllowed": false,
+    "v2ClaimDeletionAllowed": false,
+    "v2FailureReceiptDeletionAllowed": false,
+    "v2PermitReuseAllowed": false,
+    "v2RunnerExecuteAllowed": false,
+    "v1OrV2AutomaticRetryAllowed": false,
+    "v1OrV2StagingResumeAllowed": false
+  },
+  "v3NamespaceContract": {
+    "claimPath": "build/offline-source/pion-ice-v4.3.0/dependencies/.wave-1-v3.claim",
+    "stagingParentPath": "build/offline-source/pion-ice-v4.3.0/dependencies",
+    "stagingNamePrefix": ".wave-1-v3-staging-",
+    "finalDirectoryPath": "build/offline-source/pion-ice-v4.3.0/dependencies/wave-1-v3/accepted",
+    "successReceiptPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-receipt-v3.json",
+    "failureReceiptPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-failure-v3.json",
+    "manifestPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-manifest-v3.json",
+    "zipOutputNamePattern": "{order:03d}-{tuple_sha256_prefix20}.zip",
+    "modOutputNamePattern": "{order:03d}-{tuple_sha256_prefix20}.mod",
+    "fullFreshTupleCountRequired": 19,
+    "resumeFromV1OrV2StagingAllowed": false
+  },
+  "independentReadbackContract": {
+    "requiredAfterAcquisitionSuccess": true,
+    "runnerSelfCheckQualifiesAsIndependentReadback": false,
+    "checkerPath": "script/check_p2p_nat_g2_pion_dependency_wave1_success_v3.py",
+    "checkerTestsPath": "script/test_p2p_nat_g2_pion_dependency_wave1_success_v3.py",
+    "receiptPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-readback-v1.json",
+    "manifestPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-readback-manifest-v1.json",
+    "exactRetainedResourceCount": 38,
+    "recomputeRawSha256": true,
+    "recomputeModuleZipH1": true,
+    "recomputeGoModH1": true,
+    "recheckEmbeddedModParityWhenPresent": true,
+    "recheckExactInventoryModeLinkCountAndStableIdentity": true,
+    "regularFileCountMeaning": "exact_reserved_regular_file_path_set_not_recursive_directory_count",
+    "acquisitionSuccessRegularFileCount": 41,
+    "postReadbackRegularFileCount": 43,
+    "networkAllowed": false,
+    "sourceExtractionAllowed": false,
+    "sourceLoadOrExecutionAllowed": false,
+    "receiptAndManifestWritesOnly": true,
+    "manifestWrittenLast": true
+  },
+  "authority": {
+    "recoveryDesignRecorded": true,
+    "v3RunnerImplementationAuthorized": true,
+    "v3CheckerAndTestsAuthorized": true,
+    "v3ExecutionPermitPreparationAuthorized": true,
+    "networkAuthorized": false,
+    "dependencySourceAcquisitionAuthorized": false,
+    "sourceExtractionAuthorized": false,
+    "packageManagerAuthorized": false,
+    "shellOrSubprocessAuthorized": false,
+    "compilerAuthorized": false,
+    "sourceLoadOrExecutionAuthorized": false,
+    "runtimeOrProductNetworkAuthorized": false,
+    "deviceAuthorized": false,
+    "deploymentAuthorized": false,
+    "gitWriteAuthorized": false
+  },
+  "personalProjectBoundary": {
+    "repositoryOwnerIdentityProofRequired": false,
+    "externalAuthenticationRequired": false,
+    "privateKeyRequired": false,
+    "tokenRequired": false,
+    "passwordRequired": false,
+    "signatureRequired": false,
+    "userActionRequired": false,
+    "productEndpointAuthenticationChanged": false
+  },
+  "closure": {
+    "openFindingCount": 19,
+    "findingsClosedByRecoveryDecision": 0,
+    "waveAcquired": false,
+    "graphFixedPointReached": false,
+    "dependencySourceReviewed": false,
+    "dependencyClosureComplete": false,
+    "semanticClosureComplete": false,
+    "rungThreeComplete": false,
+    "candidateSelected": false,
+    "librarySelected": false
+  },
+  "nonClaims": [
+    "the_v2_failure_does_not_establish_a_zip_or_mod_checksum_mismatch",
+    "a_missing_embedded_go_mod_is_not_an_authentication_failure",
+    "the_v3_design_does_not_reuse_any_v1_or_v2_network_response_or_staging",
+    "separate_mod_validation_does_not_remove_zip_structure_or_absolute_resource_bounds",
+    "the_recovery_decision_is_not_a_v3_execution_permit",
+    "no_dependency_source_set_was_retained_by_v1_or_v2",
+    "no_finding_dependency_or_semantic_gap_is_closed",
+    "no_candidate_or_library_is_selected"
+  ],
+  "contentBinding": {
+    "algorithm": "sha256",
+    "canonicalization": "utf8_ascii_escaped_sorted_keys_compact_single_lf",
+    "scope": "decision_without_contentBinding",
+    "sha256": "5a41d5bcf7dccb25bb5e558d892620748ea72e12e9f90244242ffdb44e092a93"
+  }
+}

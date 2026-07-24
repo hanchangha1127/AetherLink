@@ -1,0 +1,499 @@
+{
+  "documentType": "codex-security.hardening-analysis",
+  "schemaVersion": "1.1",
+  "analysisId": "g2_pion_rung3_patch_dependency_closure_decision_v1",
+  "implementationStatus": "not_implemented",
+  "runtimeVerificationStatus": "not_executed",
+  "sourceEvidence": {
+    "kind": "ordered_document_and_source_collection",
+    "label": "Pion ICE v4.3.0 rung-three semantic review and retained source",
+    "collectionDigestAlgorithm": "sha256_utf8_lf_of_evidence_id_tab_raw_sha256_tab_repo_relative_path_newline",
+    "collectionSha256": "853bec14073a55c21980a306b748bc52aa58ec00d94da11e3a65df2533cb4a1f",
+    "artifactCount": 6,
+    "sourceDrift": "none",
+    "artifacts": [
+      {
+        "evidenceId": "G2PD001",
+        "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/semantic-source-review-classifications-v1.json",
+        "rawSha256": "e76e8c9fa0a78c8c5c4beae1ebfd4c4f8144b411689a3a8bd5f8804ebf61c8c9",
+        "role": "canonical_19_finding_set"
+      },
+      {
+        "evidenceId": "G2PD002",
+        "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/semantic-source-review-result-v1.json",
+        "rawSha256": "a01b3518f1354d438542ae77c06aa92d8f0936d516b4070d19c5bf27791e8a98",
+        "role": "semantic_review_result_and_closure_boundary"
+      },
+      {
+        "evidenceId": "G2PD003",
+        "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/semantic-source-review-manifest-v1.json",
+        "rawSha256": "300da97505b4715576d665846b23dd8363b36d416ed5d24ed4a7d4e77f098e6f",
+        "role": "semantic_review_atomic_marker"
+      },
+      {
+        "evidenceId": "G2PD004",
+        "path": "script/check_p2p_nat_g2_pion_rung3_semantic_review_result_v1.py",
+        "rawSha256": "45c6380301aa7d5efeb590eb4bca4c4ef1065187c4651a67c4445a5fa3db9ace",
+        "role": "independent_read_only_post_run_checker"
+      },
+      {
+        "evidenceId": "G2PD005",
+        "path": "script/test_p2p_nat_g2_pion_rung3_semantic_review_result_v1.py",
+        "rawSha256": "7aecf66c94b358a88213d01f0bebb2c4a847be391540e36a65cb1ff92d396e21",
+        "role": "post_run_checker_mutation_and_race_tests"
+      },
+      {
+        "evidenceId": "G2PD006",
+        "path": "build/offline-source/pion-ice-v4.3.0/original/github.com-pion-ice-v4@v4.3.0.zip",
+        "rawSha256": "f95ef3ce2e0063c13925f478bf8d188833725b2f0a7ecb1e695dee8ab61ef63c",
+        "role": "retained_read_only_pion_source_archive"
+      }
+    ],
+    "target": {
+      "module": "github.com/pion/ice/v4",
+      "version": "v4.3.0",
+      "upstreamCommit": "1e8716372f2bb52e45bf2a7172e4fb1004251c46",
+      "sourceTreeSha256": "b44b1277937432822d005632dc0ac77b0c733959c871d998fac5e3964ce39244"
+    },
+    "sourceExtracted": false,
+    "sourceCompiled": false,
+    "sourceLoaded": false,
+    "sourceExecuted": false
+  },
+  "assessment": {
+    "outcome": "opportunities_identified",
+    "summary": "Four structural opportunities organize all 19 canonical findings into network/session authority, resource lifetime, diagnostics, and fixed-point dependency closure; the analysis recommends but selects and implements nothing."
+  },
+  "constraints": {
+    "profile": "balanced",
+    "changeHorizons": [
+      "versioned_restricted_fork_patch",
+      "staged_dependency_source_review",
+      "pre_compile",
+      "no_network_execution"
+    ],
+    "nonNegotiables": [
+      "Every egress side effect consumes one exact generation-purpose-transport-local-and-remote-tuple capability immediately before I/O.",
+      "Every ingress path performs a bounded read and parse, then exact admission before state mutation, event creation, forwarding, or application delivery.",
+      "ICE reachability, selected-pair state, and TURN service authentication never authenticate an AetherLink endpoint.",
+      "Nomination yields only a bounded one-use pre-auth capability; exact transcript and both key confirmations atomically promote the exact path.",
+      "TURN credentials are not sent until exact service identity and TLS policy checks pass.",
+      "Candidate, pair, request, task, worker, event, byte, generation, session, and process totals fail before allocation at exact ceilings.",
+      "Shutdown uses one total 2500 millisecond budget and cannot wait indefinitely for consumer code.",
+      "Diagnostics contain only allowlisted reason codes and saturating counts, never credentials, addresses, candidates, identities, certificate subjects, keys, or payloads.",
+      "Dependency closure requires a complete immutable graph, retained source, license closure, an SPDX 2.3 SBOM, two-pass review, and independent manifest-last readback.",
+      "This analysis grants no source modification, dependency acquisition, package-manager, compiler, load, execution, socket, network, device, deployment, Git, external-authentication, or user-action authority."
+    ],
+    "assumptions": [
+      "No measured latency, memory, battery, NAT, or interoperability budget was supplied.",
+      "The authenticated sealed relay remains the rollback path when direct traversal is unavailable.",
+      "The root go.mod has 19 requirements and root go.sum has 44 records, but neither proves a complete transitive graph.",
+      "Recommendations are not selections and do not close any canonical finding."
+    ]
+  },
+  "opportunities": [
+    {
+      "opportunityId": "capability-gated-network-boundary",
+      "title": "Own ingress, egress, path restriction, and secure-session promotion in one capability boundary",
+      "summary": "Replace dispersed caller checks with either strengthened sink guards or a typed admission and promotion state machine backed by an immutable restricted network profile.",
+      "diagnosis": "The reviewed source owns receive loops, liveness mutation, pair selection, ambient resolution, dial/listen/write sinks, TURN setup, and application transport in separate paths; caller configuration cannot make one-use authority and atomic promotion non-bypassable.",
+      "evidence": [
+        {
+          "claimType": "observed",
+          "sourceKind": "finding",
+          "findingId": "G2SR1-F-b077f40a5a605032af05",
+          "path": "agent.go",
+          "claim": "Pre-auth ingress can reach application buffering without the combined source, generation, rate, size, and promoted-session gate."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "finding",
+          "findingId": "G2SR1-F-263f18372976e5bfaa73",
+          "path": "candidate_base.go",
+          "claim": "Production dial, listen, and write paths lack an exact one-attempt egress capability."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "finding",
+          "findingId": "G2SR1-F-9b119ebd5dad38048abc",
+          "path": "agent.go",
+          "claim": "Selected-pair publication does not atomically consume a one-use pre-auth capability and create a promoted session epoch."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "finding",
+          "findingId": "G2SR1-F-7d678ddf77ac89e04ae4",
+          "path": "gather.go",
+          "claim": "TURN TLS service identity is insufficiently constrained before credentials can be used."
+        },
+        {
+          "claimType": "inferred",
+          "sourceKind": "source",
+          "path": "agent.go",
+          "claim": "Because policy-sensitive mutations and I/O are owned by several internal paths, configuration-only enforcement remains vulnerable to drift and consume/promote races."
+        }
+      ],
+      "desiredInvariants": [
+        "Only admitted, generation-bound ingress may mutate liveness or protocol state.",
+        "Only a promoted exact session epoch may deliver or write application bytes.",
+        "Every network side effect consumes a purpose- and tuple-bound one-use capability immediately before the sink.",
+        "mDNS, active TCP, mux, proxy, ambient resolution, and nonprofile candidate paths are unconstructible in the restricted profile.",
+        "TURN identity, trust, expiry, ALPN, SNI, and optional pin checks complete before credential transmission.",
+        "Path change, consent loss, restart, expiry, failure, or close revokes all affected capabilities atomically."
+      ],
+      "proposalPath": "proposals/capability-gated-network-boundary.md",
+      "options": [
+        {
+          "optionId": "distributed-sink-guards",
+          "title": "Strengthen guards at every existing mutation and I/O sink",
+          "kind": "baseline",
+          "summary": "Keep the current ownership shape while adding exact checks to each known receive, selection, resolver, dial, listen, TURN, and application path.",
+          "diagramPaths": {
+            "before": "diagrams/capability-gated-network-boundary-before.mmd",
+            "after": "diagrams/capability-gated-network-boundary-distributed-sink-guards-after.mmd"
+          },
+          "findingCoverage": [
+            {"findingId": "G2SR1-F-8a09ee9cfc2ec2968e9c", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Adds admission before the known liveness sink."},
+            {"findingId": "G2SR1-F-2eef005a63ea93252f5d", "effect": "mitigates", "tacticalFixRequired": false, "rationale": "Preserves existing bounded receive and STUN checks."},
+            {"findingId": "G2SR1-F-bfc6cef606dab975ede3", "effect": "mitigates", "tacticalFixRequired": false, "rationale": "Preserves existing dispersed controls."},
+            {"findingId": "G2SR1-F-263f18372976e5bfaa73", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Adds checks to known egress sinks."},
+            {"findingId": "G2SR1-F-b077f40a5a605032af05", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Adds combined checks before known application delivery."},
+            {"findingId": "G2SR1-F-4189417f18abce71d56a", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Disables known nonprofile constructors."},
+            {"findingId": "G2SR1-F-29bea0297021e485b7b0", "effect": "mitigates", "tacticalFixRequired": true, "rationale": "Introduces a local one-use representation but leaves cross-path ownership risk."},
+            {"findingId": "G2SR1-F-9b119ebd5dad38048abc", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Adds consume and promote logic to pair selection."},
+            {"findingId": "G2SR1-F-9650aac47015cf5758c9", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Adds promoted-session checks before application writes."},
+            {"findingId": "G2SR1-F-7e744b8ee19e7de9b7c3", "effect": "mitigates", "tacticalFixRequired": true, "rationale": "Wraps known resolver paths; dependency internals remain unresolved."},
+            {"findingId": "G2SR1-F-7d678ddf77ac89e04ae4", "effect": "mitigates", "tacticalFixRequired": true, "rationale": "Adds exact checks at known TURN setup paths; dependency behavior remains unresolved."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "Known sinks gain exact checks, but future internal paths can omit them.", "validationPlan": "Enumerate every mutation and I/O sink and run adversarial bypass and race tests."},
+            {"dimension": "performance", "direction": "neutral", "confidence": "low", "basis": "hypothetical", "assessment": "Local checks add branches and small key comparisons without a new hop.", "validationPlan": "Compare packet and nomination latency at the same candidate workload; reject a material p95 regression."},
+            {"dimension": "memory", "direction": "neutral", "confidence": "medium", "basis": "source-derived", "assessment": "Capability tokens add bounded per-path state only.", "validationPlan": "Measure peak retained bytes for two sessions and two generations."},
+            {"dimension": "reliability", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "Invalid paths fail earlier, but inconsistent local checks can disagree.", "validationPlan": "Exercise restart, consent loss, path change, expiry, and concurrent close."},
+            {"dimension": "operability", "direction": "neutral", "confidence": "low", "basis": "hypothetical", "assessment": "No new component exists, but many guard-specific failure codes require support discipline.", "validationPlan": "Review the proposed reason-code surface and incident workflow."},
+            {"dimension": "migration", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "The current API and ownership shape can largely remain.", "validationPlan": "Run existing Pion compatibility coverage plus restricted-profile compile checks after selection."}
+          ],
+          "residualRisks": [
+            "Guard coverage can drift as new sinks are added.",
+            "Atomic consume and promotion remain spread across concurrency owners.",
+            "Dependency-owned resolution, socket, and TLS behavior remains unresolved."
+          ],
+          "implementationReadiness": {
+            "affectedComponents": ["agent.go", "candidate_base.go", "candidatepair.go", "transport.go", "gather.go", "net.go", "agent_config.go"],
+            "workPackages": ["Patch every known ingress and egress sink.", "Add local consume, promotion, and revocation checks.", "Disable known nonprofile constructors."],
+            "acceptanceCriteria": ["No known sink executes without an exact admitted or one-use capability.", "All restricted-profile negative-path tests fail before mutation or I/O."],
+            "migrationNotes": ["Treat this option as a time-bounded migration layer if the structural option follows."],
+            "rollback": "Revert the focused sink guards and keep direct traversal disabled so sealed relay remains available."
+          }
+        },
+        {
+          "optionId": "typed-capability-state-machine",
+          "title": "Introduce one typed admission, promotion, and restricted-network authority owner",
+          "kind": "structural",
+          "summary": "Route all ingress mutation, egress I/O, pair promotion, revocation, resolution, and TURN identity through one state machine whose types encode exact authority.",
+          "diagramPaths": {
+            "before": "diagrams/capability-gated-network-boundary-before.mmd",
+            "after": "diagrams/capability-gated-network-boundary-typed-capability-state-machine-after.mmd"
+          },
+          "findingCoverage": [
+            {"findingId": "G2SR1-F-8a09ee9cfc2ec2968e9c", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Only admitted events can mutate liveness."},
+            {"findingId": "G2SR1-F-2eef005a63ea93252f5d", "effect": "mitigates", "tacticalFixRequired": false, "rationale": "Existing bounded parsing becomes the first gate stage."},
+            {"findingId": "G2SR1-F-bfc6cef606dab975ede3", "effect": "mitigates", "tacticalFixRequired": false, "rationale": "Useful source and integrity checks are preserved inside the owner."},
+            {"findingId": "G2SR1-F-263f18372976e5bfaa73", "effect": "addresses", "tacticalFixRequired": true, "rationale": "All I/O requires a consumed exact capability."},
+            {"findingId": "G2SR1-F-b077f40a5a605032af05", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Application delivery accepts promoted session epochs only."},
+            {"findingId": "G2SR1-F-4189417f18abce71d56a", "effect": "addresses", "tacticalFixRequired": true, "rationale": "The immutable profile cannot construct forbidden paths."},
+            {"findingId": "G2SR1-F-29bea0297021e485b7b0", "effect": "addresses", "tacticalFixRequired": true, "rationale": "The state machine supplies an explicit one-use mechanism."},
+            {"findingId": "G2SR1-F-9b119ebd5dad38048abc", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Consume and promotion are one atomic transition."},
+            {"findingId": "G2SR1-F-9650aac47015cf5758c9", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Application writes require a promoted epoch value."},
+            {"findingId": "G2SR1-F-7e744b8ee19e7de9b7c3", "effect": "mitigates", "tacticalFixRequired": true, "rationale": "A capability-typed resolver narrows ambient behavior; dependency review is still required."},
+            {"findingId": "G2SR1-F-7d678ddf77ac89e04ae4", "effect": "mitigates", "tacticalFixRequired": true, "rationale": "TURN secrets require a verified service-identity capability; dependency review is still required."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "One owner can make bypass and double-consume states structurally invalid across known paths.", "validationPlan": "Prove sink dominance statically and run replay, race, revocation, source-spoofing, and profile-bypass tests."},
+            {"dimension": "performance", "direction": "regresses", "confidence": "low", "basis": "hypothetical", "assessment": "Central transitions may add synchronization and key comparisons on packet and write paths.", "validationPlan": "Benchmark p50/p95 packet, nomination, and application-write latency against the unpatched archive under equal load."},
+            {"dimension": "memory", "direction": "regresses", "confidence": "low", "basis": "hypothetical", "assessment": "Typed epochs, capability ledgers, and revocation state retain bounded metadata per generation.", "validationPlan": "Measure peak RSS and object counts at declared two-session and two-generation maxima."},
+            {"dimension": "reliability", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "One transition owner removes contradictory state changes, while a bug in that owner has wider impact.", "validationPlan": "Model and fuzz every state transition, including failure injection at each atomic boundary."},
+            {"dimension": "operability", "direction": "improves", "confidence": "medium", "basis": "hypothetical", "assessment": "Closed transition reasons provide a coherent diagnostic surface but require new runbook mapping.", "validationPlan": "Review reason-code completeness and simulate direct-path disable and relay fallback incidents."},
+            {"dimension": "migration", "direction": "regresses", "confidence": "high", "basis": "source-derived", "assessment": "Pair selection, transport, resolver, network, and TURN APIs must change together.", "validationPlan": "Compile all call sites behind a feature-disabled bridge and verify relay rollback before enabling any direct path."}
+          ],
+          "residualRisks": [
+            "Cryptographic transcript and replay semantics still require a separate exact protocol design.",
+            "A central authority owner becomes security-critical and needs state-machine and race validation.",
+            "Dependency internals can still resolve, log, queue, or open sockets until dependency closure completes."
+          ],
+          "implementationReadiness": {
+            "affectedComponents": ["agent.go", "candidate_base.go", "candidatepair.go", "transport.go", "gather.go", "net.go", "agent_config.go", "agent_options.go"],
+            "workPackages": ["Define immutable restricted profile and capability types.", "Implement admission, promotion, consumption, and revocation state machine.", "Route all source-reviewed sinks through the owner.", "Add adversarial transition and bypass coverage."],
+            "acceptanceCriteria": ["Every reviewed sink is dominated by the owner.", "No capability is reusable, cross-generation, cross-purpose, or valid after revocation.", "TURN credentials cannot be written before exact service authentication."],
+            "migrationNotes": ["Introduce behind a disabled restricted-fork bridge and retain sealed relay rollback."],
+            "rollback": "Disable the direct restricted-fork bridge and return routing to the authenticated sealed relay."
+          }
+        }
+      ],
+      "recommendedOptionId": "typed-capability-state-machine",
+      "recommendation": "Prefer the typed owner under the exact-boundary requirements; use distributed guards only when API compatibility is temporarily dominant and a migration deadline is recorded."
+    },
+    {
+      "opportunityId": "bounded-resource-lifecycle",
+      "title": "Give one owner all resource ceilings, event backpressure, and shutdown time",
+      "summary": "Choose between independent local caps and one per-agent supervisor that owns aggregate counts, byte budgets, a sticky terminal latch, and one total shutdown deadline.",
+      "diagnosis": "Candidate, pair, pending-request, task, worker, and callback collections grow under separate owners, while close waits on task-loop, callback, gather, and socket paths without consuming one shared deadline.",
+      "evidence": [
+        {"claimType": "observed", "sourceKind": "finding", "findingId": "G2SR1-F-04b73f19b3e2520c5c13", "path": "agent_handlers.go", "claim": "Push callback queues append without a declared capacity and graceful close waits on handlers."},
+        {"claimType": "observed", "sourceKind": "finding", "findingId": "G2SR1-F-9206ffd24b3357f7cda5", "path": "agent.go", "claim": "Remote candidate processing lacks exact aggregate candidate, pair, request, task, worker, and process ceilings."},
+        {"claimType": "observed", "sourceKind": "finding", "findingId": "G2SR1-F-9c7a12eced69a28176a4", "path": "agent.go", "claim": "Shutdown has no single total deadline across owned work."},
+        {"claimType": "inferred", "sourceKind": "source", "path": "agent_handlers.go", "claim": "Independent owners cannot prove one fail-before-allocation process total or one bounded shutdown outcome."}
+      ],
+      "desiredInvariants": [
+        "Every resource reservation fails before allocation when its per-session or two-session process ceiling would be exceeded.",
+        "Current, draining, and closing generations all count against the same declared totals.",
+        "Event overflow sets a sticky terminal latch, discards nonterminal events, and never waits for a consumer.",
+        "Close consumes one 2500 millisecond deadline across tasks, callbacks, gathers, sockets, and writes.",
+        "Existing socket close, deadline setters, and blocked-write abort controls remain available."
+      ],
+      "proposalPath": "proposals/bounded-resource-lifecycle.md",
+      "options": [
+        {
+          "optionId": "independent-local-ceilings",
+          "title": "Add independent caps and timeouts to existing owners",
+          "kind": "baseline",
+          "summary": "Keep existing queues and lifecycle owners while adding local capacities, overflow rules, and per-component timeouts.",
+          "diagramPaths": {"before": "diagrams/bounded-resource-lifecycle-before.mmd", "after": "diagrams/bounded-resource-lifecycle-independent-local-ceilings-after.mmd"},
+          "findingCoverage": [
+            {"findingId": "G2SR1-F-964c63e397f00eeecc36", "effect": "mitigates", "tacticalFixRequired": false, "rationale": "Preserves current abort controls."},
+            {"findingId": "G2SR1-F-04b73f19b3e2520c5c13", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Caps known notifier queues and adds overflow behavior."},
+            {"findingId": "G2SR1-F-9206ffd24b3357f7cda5", "effect": "mitigates", "tacticalFixRequired": true, "rationale": "Adds local ceilings but cannot prove aggregate totals as cleanly."},
+            {"findingId": "G2SR1-F-9c7a12eced69a28176a4", "effect": "mitigates", "tacticalFixRequired": true, "rationale": "Adds timeouts per owner without one total budget."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "Known unbounded collections become finite, but aggregate amplification can cross local owners.", "validationPlan": "Drive all local ceilings concurrently and compare aggregate allocations to the process maximum."},
+            {"dimension": "performance", "direction": "neutral", "confidence": "low", "basis": "hypothetical", "assessment": "Local counters and branches avoid a central contention point.", "validationPlan": "Measure packet and callback throughput at baseline and at each ceiling."},
+            {"dimension": "memory", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "Each named queue and collection receives a finite cap.", "validationPlan": "Measure peak retained bytes while every collection approaches its cap."},
+            {"dimension": "reliability", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "Local overload becomes deterministic, but independent overflow policies may conflict.", "validationPlan": "Inject simultaneous queue, request, candidate, and shutdown pressure."},
+            {"dimension": "operability", "direction": "regresses", "confidence": "low", "basis": "hypothetical", "assessment": "Several independent limit and timeout reasons must be interpreted together.", "validationPlan": "Review whether one incident can be reconstructed from bounded reason codes."},
+            {"dimension": "migration", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "Focused changes preserve callback and close APIs.", "validationPlan": "Run current handler and lifecycle compatibility tests with limit boundaries."}
+          ],
+          "residualRisks": ["Aggregate process totals can exceed intent when local caps overlap.", "Per-component timeouts can sum beyond 2500 milliseconds.", "Push callbacks still couple close to consumer behavior."],
+          "implementationReadiness": {
+            "affectedComponents": ["agent.go", "agent_handlers.go", "candidate_base.go", "gather.go", "internal/taskloop/taskloop.go"],
+            "workPackages": ["Cap each known collection.", "Define local overflow policy.", "Add per-owner timeouts and preserve abort controls."],
+            "acceptanceCriteria": ["Each known collection remains within its local cap.", "Every local timeout returns deterministically."],
+            "migrationNotes": ["Document that aggregate closure remains blocked until a supervisor or equivalent proof exists."],
+            "rollback": "Disable direct traversal and revert the local cap patch if compatibility fails."
+          }
+        },
+        {
+          "optionId": "owned-resource-supervisor",
+          "title": "Introduce one per-agent resource and lifetime supervisor",
+          "kind": "structural",
+          "summary": "One supervisor grants reservations, owns bounded pull events and terminal state, and spends one close deadline across all children.",
+          "diagramPaths": {"before": "diagrams/bounded-resource-lifecycle-before.mmd", "after": "diagrams/bounded-resource-lifecycle-owned-resource-supervisor-after.mmd"},
+          "findingCoverage": [
+            {"findingId": "G2SR1-F-964c63e397f00eeecc36", "effect": "mitigates", "tacticalFixRequired": false, "rationale": "Preserves abortIO as a supervisor-owned final action."},
+            {"findingId": "G2SR1-F-04b73f19b3e2520c5c13", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Replaces unbounded push queues with bounded pull events and a terminal latch."},
+            {"findingId": "G2SR1-F-9206ffd24b3357f7cda5", "effect": "addresses", "tacticalFixRequired": true, "rationale": "One reservation ledger owns aggregate session and process totals."},
+            {"findingId": "G2SR1-F-9c7a12eced69a28176a4", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Every shutdown step consumes the same absolute deadline."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "All reviewed allocations and waits can be dominated by one budget owner.", "validationPlan": "Prove reservation dominance and fuzz concurrent allocation, overflow, close, and release."},
+            {"dimension": "performance", "direction": "regresses", "confidence": "low", "basis": "hypothetical", "assessment": "A shared reservation path can add synchronization under heavy packet and candidate churn.", "validationPlan": "Benchmark reservation latency and packet throughput at one and two sessions; set a measured threshold before enablement."},
+            {"dimension": "memory", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "One ledger enforces exact aggregate count and byte ceilings before allocation.", "validationPlan": "Measure peak RSS and ledger accuracy at every declared maximum and during generation drain."},
+            {"dimension": "reliability", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "Sticky terminal state and one deadline make overload and close deterministic; a supervisor fault affects the entire agent.", "validationPlan": "Inject worker hangs, blocked consumers, socket stalls, and repeated overflow while checking a 2500 millisecond total."},
+            {"dimension": "operability", "direction": "improves", "confidence": "medium", "basis": "hypothetical", "assessment": "One bounded reason surface simplifies incidents but introduces supervisor-specific counters.", "validationPlan": "Review counter cardinality, saturation, and runbook mapping under synthetic incidents."},
+            {"dimension": "migration", "direction": "regresses", "confidence": "high", "basis": "source-derived", "assessment": "Push callbacks and independent lifecycle ownership must move to pull events and reservations.", "validationPlan": "Adapt consumers behind a feature-disabled bridge and verify terminal delivery and relay rollback."}
+          ],
+          "residualRisks": ["Dependency-owned queues and workers remain outside the ledger until dependency closure.", "Incorrect reservation release can cause leaks or premature reuse.", "Consumer expectations may depend on current callback ordering."],
+          "implementationReadiness": {
+            "affectedComponents": ["agent.go", "agent_handlers.go", "candidate_base.go", "gather.go", "internal/taskloop/taskloop.go", "tcp_mux.go", "tcp_packet_conn.go"],
+            "workPackages": ["Define resource kinds and exact ceilings.", "Replace push callbacks with bounded pull events and sticky terminal state.", "Route every allocation and worker through reservations.", "Thread one absolute close deadline through all children."],
+            "acceptanceCriteria": ["No reviewed allocation occurs without a reservation.", "Aggregate totals include current, draining, and closing generations.", "Close always succeeds or returns terminal timeout within 2500 milliseconds."],
+            "migrationNotes": ["Ship behind a disabled bridge and adapt event consumers before direct-path enablement."],
+            "rollback": "Disable the direct bridge and return to sealed relay; do not restore unbounded queues in an enabled direct path."
+          }
+        }
+      ],
+      "recommendedOptionId": "owned-resource-supervisor",
+      "recommendation": "Prefer one supervisor when exact totals and a total shutdown deadline are required; local ceilings are acceptable only as a transitional containment layer."
+    },
+    {
+      "opportunityId": "typed-secret-free-diagnostics",
+      "title": "Make sensitive diagnostic values unrepresentable",
+      "summary": "Choose between deleting the currently known sensitive log calls and replacing free-form upstream diagnostics with a typed, bounded, allowlisted sink.",
+      "diagnosis": "Remote credential fields and raw candidate or hostname values reach formatting and logger paths; deleting known calls does not prevent wrapped dependency errors or future format strings from reintroducing those values.",
+      "evidence": [
+        {"claimType": "observed", "sourceKind": "finding", "findingId": "G2SR1-F-6469763b45a8335ddef9", "path": "agent.go", "claim": "startConnectivityChecks logs remote credential fields."},
+        {"claimType": "observed", "sourceKind": "finding", "findingId": "G2SR1-F-0b0f647a603042ba5063", "path": "agent.go", "claim": "Candidate and hostname values reach diagnostics without an allowlist or rate ceiling."},
+        {"claimType": "inferred", "sourceKind": "source", "path": "agent.go", "claim": "A free-form logger API keeps sensitive-value policy at each call site and permits recurrence."}
+      ],
+      "desiredInvariants": [
+        "Diagnostics encode only allowlisted reason codes, bounded public enums, and saturating counts.",
+        "Credentials, candidates, addresses, hostnames, identities, certificate subjects, keys, payloads, and raw wrapped errors are not representable.",
+        "Diagnostic cardinality, byte size, and rate have exact ceilings.",
+        "Dependency diagnostics are disabled or adapted through the same typed boundary before enablement."
+      ],
+      "proposalPath": "proposals/typed-secret-free-diagnostics.md",
+      "options": [
+        {
+          "optionId": "delete-current-sensitive-logs",
+          "title": "Delete the currently identified sensitive log calls",
+          "kind": "baseline",
+          "summary": "Remove credential, candidate, and hostname formatting at the known source locations and add source-level regression searches.",
+          "diagramPaths": {"before": "diagrams/typed-secret-free-diagnostics-before.mmd", "after": "diagrams/typed-secret-free-diagnostics-delete-current-sensitive-logs-after.mmd"},
+          "findingCoverage": [
+            {"findingId": "G2SR1-F-0b0f647a603042ba5063", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Removes known raw candidate and hostname sinks."},
+            {"findingId": "G2SR1-F-6469763b45a8335ddef9", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Removes the known remote credential sink."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "Known sensitive values no longer reach those calls, but free-form recurrence remains possible.", "validationPlan": "Run secret/candidate/address sink searches and instrument diagnostic payload tests."},
+            {"dimension": "performance", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "Removed formatting and logging eliminate work on those paths.", "validationPlan": "Compare debug-enabled connection-check CPU and allocation profiles."},
+            {"dimension": "memory", "direction": "improves", "confidence": "low", "basis": "source-derived", "assessment": "Fewer formatted strings are allocated, though the effect is likely small.", "validationPlan": "Measure allocation counts in candidate and connectivity-check diagnostics."},
+            {"dimension": "reliability", "direction": "neutral", "confidence": "medium", "basis": "source-derived", "assessment": "Protocol behavior is unchanged, but debugging context is reduced.", "validationPlan": "Verify failures still expose stable non-sensitive reason codes."},
+            {"dimension": "operability", "direction": "regresses", "confidence": "medium", "basis": "source-derived", "assessment": "Deleting context can make field diagnosis less specific.", "validationPlan": "Have the local support workflow diagnose synthetic failures using the remaining output."},
+            {"dimension": "migration", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "Focused deletions do not require a new diagnostic API.", "validationPlan": "Run existing logger and connection-flow compatibility tests."}
+          ],
+          "residualRisks": ["Future call sites can format sensitive values.", "Wrapped dependency errors can carry addresses or identities.", "No structural cardinality or rate bound exists."],
+          "implementationReadiness": {
+            "affectedComponents": ["agent.go", "gather.go"],
+            "workPackages": ["Delete known sensitive formatting.", "Add static sink searches and redaction regression tests."],
+            "acceptanceCriteria": ["Known credentials, candidates, and hostnames never enter captured diagnostics."],
+            "migrationNotes": ["Preserve stable non-sensitive reason codes before deleting context."],
+            "rollback": "Restore only typed non-sensitive reasons; never restore credential-bearing output."
+          }
+        },
+        {
+          "optionId": "typed-diagnostic-sink",
+          "title": "Replace free-form diagnostics with a typed bounded adapter",
+          "kind": "structural",
+          "summary": "Expose closed reason enums and saturating counters through an adapter whose types cannot carry sensitive strings or raw errors.",
+          "diagramPaths": {"before": "diagrams/typed-secret-free-diagnostics-before.mmd", "after": "diagrams/typed-secret-free-diagnostics-typed-diagnostic-sink-after.mmd"},
+          "findingCoverage": [
+            {"findingId": "G2SR1-F-0b0f647a603042ba5063", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Candidate and hostname values are not representable at the sink."},
+            {"findingId": "G2SR1-F-6469763b45a8335ddef9", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Credential fields are not representable at the sink."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "The exported type surface excludes sensitive strings and raw errors across known paths.", "validationPlan": "Compile negative type tests, fuzz adapters, and capture all diagnostics under secret-bearing inputs."},
+            {"dimension": "performance", "direction": "improves", "confidence": "low", "basis": "hypothetical", "assessment": "Enum and counter updates should avoid formatting, though adapter synchronization can add cost.", "validationPlan": "Benchmark diagnostic-disabled and diagnostic-heavy connection checks against baseline."},
+            {"dimension": "memory", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "Bounded enums and saturating counters replace variable strings and high-cardinality keys.", "validationPlan": "Measure retained diagnostic bytes under adversarial candidate churn."},
+            {"dimension": "reliability", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "Stable typed reasons avoid formatter failures and cardinality blowups; incomplete mapping can hide detail.", "validationPlan": "Exercise every failure branch and require a documented fallback reason."},
+            {"dimension": "operability", "direction": "improves", "confidence": "medium", "basis": "hypothetical", "assessment": "Stable reasons improve aggregation and runbooks, at the cost of maintaining the enum registry.", "validationPlan": "Review incident queries and ensure each actionable class remains distinguishable."},
+            {"dimension": "migration", "direction": "regresses", "confidence": "high", "basis": "source-derived", "assessment": "Upstream logger calls and consumers must move to the adapter or be disabled.", "validationPlan": "Compile all logger call sites and consumer mappings behind a feature-disabled bridge."}
+          ],
+          "residualRisks": ["Dependency-owned logging remains a risk until dependency closure and adapter routing are proven.", "A catch-all adapter that accepts raw error strings would defeat the design.", "Reason-code omissions can reduce diagnosis quality."],
+          "implementationReadiness": {
+            "affectedComponents": ["agent.go", "gather.go", "logger adapter and bridge code"],
+            "workPackages": ["Define closed diagnostic enums and bounded counters.", "Adapt or disable every upstream logger path.", "Add forbidden-value and bounded-cardinality tests."],
+            "acceptanceCriteria": ["No exported diagnostic type accepts arbitrary strings or raw errors.", "Captured diagnostics contain no forbidden value under adversarial inputs.", "Rates, sizes, and cardinality remain within exact ceilings."],
+            "migrationNotes": ["Run old and typed diagnostics only in tests; never duplicate sensitive production output."],
+            "rollback": "Disable upstream diagnostics while retaining terminal typed reasons; do not restore free-form sensitive output."
+          }
+        }
+      ],
+      "recommendedOptionId": "typed-diagnostic-sink",
+      "recommendation": "Prefer the typed sink because it makes recurrence harder; focused deletion remains a necessary immediate patch during migration."
+    },
+    {
+      "opportunityId": "fixed-point-dependency-closure",
+      "title": "Close dependency source, license, and behavior over an immutable fixed-point graph",
+      "summary": "Choose between reviewing one root inventory wave and a staged versioned process that expands, retains, reviews, and independently reads back the exact graph until no new tuple appears.",
+      "diagnosis": "The root archive contains go.mod and go.sum metadata but no retained dependency source; 19 requirements and 44 checksum records cannot establish the transitive graph, production reachability, license closure, resolver behavior, TURN TLS behavior, or native/generated-code bounds.",
+      "evidence": [
+        {"claimType": "observed", "sourceKind": "finding", "findingId": "G2SR1-F-65bdab86ddd0720af770", "path": "go.mod", "claim": "Nineteen required modules and forty-four checksum records have no bound dependency source review."},
+        {"claimType": "observed", "sourceKind": "finding", "findingId": "G2SR1-F-7e744b8ee19e7de9b7c3", "path": "gather.go", "claim": "Ambient resolver behavior remains dependency-blocked."},
+        {"claimType": "observed", "sourceKind": "finding", "findingId": "G2SR1-F-7d678ddf77ac89e04ae4", "path": "gather.go", "claim": "TURN TLS service identity remains dependency-blocked."},
+        {"claimType": "observed", "sourceKind": "finding", "findingId": "G2SR1-F-c9dd2e9b3fa55e3ad43b", "path": "semantic-source-review-classifications-v1.json", "claim": "Lexical observations are candidate locations, not vulnerability counts or closure evidence."},
+        {"claimType": "inferred", "sourceKind": "document", "evidenceId": "G2PD001", "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/semantic-source-review-classifications-v1.json", "claim": "A source-retained fixed-point graph is necessary before dependency-owned network, logging, lifecycle, license, and initialization behavior can be closed."}
+      ],
+      "desiredInvariants": [
+        "Every selected module/version tuple has exact provenance, source archive and tree identity, checksum, license evidence, and graph edges.",
+        "New tuples never enter an existing decision; they create a new immutable version and bounded acquisition wave.",
+        "Checksum-only tuples remain quarantined context unless the fixed-point graph selects them.",
+        "Two independent source-review passes cover production-reachable packages and declared Android/macOS build profiles.",
+        "Closure requires a complete source manifest, SPDX 2.3 SBOM, no unresolved license or security blocker, and manifest-last independent readback.",
+        "Dependency review cannot select the library, authorize compile, or close root patch findings by itself."
+      ],
+      "proposalPath": "proposals/fixed-point-dependency-closure.md",
+      "options": [
+        {
+          "optionId": "single-wave-inventory-review",
+          "title": "Acquire and review only the root requirement inventory in one wave",
+          "kind": "baseline",
+          "summary": "Use the 19 root requirements as one bounded source set, review those archives, and defer any newly discovered transitive tuple to a later decision.",
+          "diagramPaths": {"before": "diagrams/fixed-point-dependency-closure-before.mmd", "after": "diagrams/fixed-point-dependency-closure-single-wave-inventory-review-after.mmd"},
+          "findingCoverage": [
+            {"findingId": "G2SR1-F-65bdab86ddd0720af770", "effect": "mitigates", "tacticalFixRequired": true, "rationale": "Reviews root requirements but cannot prove a fixed-point graph."},
+            {"findingId": "G2SR1-F-7e744b8ee19e7de9b7c3", "effect": "unknown", "tacticalFixRequired": true, "rationale": "Resolver ownership may live in newly discovered transitive source."},
+            {"findingId": "G2SR1-F-7d678ddf77ac89e04ae4", "effect": "unknown", "tacticalFixRequired": true, "rationale": "TURN TLS behavior may depend on newly discovered transitive source."},
+            {"findingId": "G2SR1-F-c9dd2e9b3fa55e3ad43b", "effect": "mitigates", "tacticalFixRequired": false, "rationale": "Uses semantic review rather than treating lexical hits as findings."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "Root dependencies become inspectable, but unseen transitive behavior prevents closure.", "validationPlan": "Compare acquired module metadata to the root inventory and record every newly discovered tuple."},
+            {"dimension": "performance", "direction": "neutral", "confidence": "low", "basis": "hypothetical", "assessment": "This is an offline review workflow and does not change runtime performance.", "validationPlan": "No runtime benchmark is relevant until a selected graph can compile; track review throughput only."},
+            {"dimension": "memory", "direction": "neutral", "confidence": "low", "basis": "hypothetical", "assessment": "Retained source consumes bounded storage but no runtime memory.", "validationPlan": "Record archive, tree, and manifest bytes against predeclared limits."},
+            {"dimension": "reliability", "direction": "regresses", "confidence": "medium", "basis": "source-derived", "assessment": "Repeated deferral can fragment evidence and leave graph drift between waves.", "validationPlan": "Verify each wave stops on a new tuple and never mutates prior manifests."},
+            {"dimension": "operability", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "One wave is easy to inspect, but several disconnected follow-ups are harder to reconcile.", "validationPlan": "Audit whether a reader can reconstruct all graph edges from versioned manifests alone."},
+            {"dimension": "migration", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "The first review set is small and does not require a fixed-point orchestrator.", "validationPlan": "Dry-run the inventory schema without acquisition, network, or filesystem materialization."}
+          ],
+          "residualRisks": ["The selected build graph remains unknown.", "Checksum-only context can be mistaken for selected dependencies.", "Resolver, TURN, logging, queue, native, build-tag, and initialization behavior can remain unseen."],
+          "implementationReadiness": {
+            "affectedComponents": ["dependency review artifacts only"],
+            "workPackages": ["Create an immutable 19-tuple acquisition decision.", "Review one bounded wave.", "Record all new tuples as blockers."],
+            "acceptanceCriteria": ["Every root requirement has retained verified source and license evidence.", "No new tuple is silently added to the wave."],
+            "migrationNotes": ["This option cannot set dependencyClosureComplete true."],
+            "rollback": "Discard an unaccepted staging set while retaining immutable decision and failure evidence."
+          }
+        },
+        {
+          "optionId": "staged-fixed-point-source-closure",
+          "title": "Use immutable acquisition waves until the exact source graph reaches a fixed point",
+          "kind": "structural",
+          "summary": "Predeclare each bounded tuple wave, verify retained source and metadata, expand graph edges into a new version, then review the fixed graph twice and publish an SBOM and manifest-last readback.",
+          "diagramPaths": {"before": "diagrams/fixed-point-dependency-closure-before.mmd", "after": "diagrams/fixed-point-dependency-closure-staged-fixed-point-source-closure-after.mmd"},
+          "findingCoverage": [
+            {"findingId": "G2SR1-F-65bdab86ddd0720af770", "effect": "addresses", "tacticalFixRequired": true, "rationale": "The workflow can establish complete source, graph, license, and review coverage."},
+            {"findingId": "G2SR1-F-7e744b8ee19e7de9b7c3", "effect": "mitigates", "tacticalFixRequired": true, "rationale": "Dependency resolver behavior becomes reviewable; the root patch remains necessary."},
+            {"findingId": "G2SR1-F-7d678ddf77ac89e04ae4", "effect": "mitigates", "tacticalFixRequired": true, "rationale": "Dependency TLS behavior becomes reviewable; exact root integration remains necessary."},
+            {"findingId": "G2SR1-F-c9dd2e9b3fa55e3ad43b", "effect": "mitigates", "tacticalFixRequired": false, "rationale": "Two semantic passes classify exact source rather than equating lexical hits with vulnerabilities."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "A fixed-point graph and retained source can expose dependency-owned network, logging, TLS, lifetime, native, and initialization behavior.", "validationPlan": "Require complete graph edges, two-pass coverage, zero unresolved blockers, SBOM, and independent readback."},
+            {"dimension": "performance", "direction": "neutral", "confidence": "low", "basis": "hypothetical", "assessment": "The review workflow itself does not alter runtime performance; later patches may.", "validationPlan": "Defer runtime benchmarks until an exact selected and compile-authorized graph exists."},
+            {"dimension": "memory", "direction": "neutral", "confidence": "low", "basis": "hypothetical", "assessment": "Source retention consumes bounded disk, not runtime memory.", "validationPlan": "Enforce per-archive, aggregate archive, entry, tree, and manifest byte limits in every wave."},
+            {"dimension": "reliability", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "Immutable waves and fixed-point stopping prevent silent graph drift, though more stages create more explicit stop points.", "validationPlan": "Mutation-test hash, tuple, edge, license, and manifest drift and require no-overwrite failure artifacts."},
+            {"dimension": "operability", "direction": "regresses", "confidence": "medium", "basis": "source-derived", "assessment": "Versioned waves, review records, SBOM, and readback add artifact-management work.", "validationPlan": "Have an independent reader reconstruct the graph and all stop decisions from repository artifacts."},
+            {"dimension": "migration", "direction": "regresses", "confidence": "medium", "basis": "source-derived", "assessment": "The project must prepare separate acquisition decisions and cannot use an ambient package-manager fetch.", "validationPlan": "Dry-run schemas and stop conditions locally before any future network authority is considered."}
+          ],
+          "residualRisks": ["Source review cannot prove runtime reachability without later compile and build-profile evidence.", "A new module, build tag, generated file, native component, or license ambiguity forces a new version and keeps closure false.", "Dependency closure does not fix or select the root restricted fork."],
+          "implementationReadiness": {
+            "affectedComponents": ["dependency decision, acquisition, graph, review, SBOM, and readback artifacts"],
+            "workPackages": ["Normalize the 19 root tuples and 4 checksum-only context tuples.", "Prepare a separate bounded source-identity and acquisition decision.", "Acquire immutable waves only under later authority.", "Expand graph to fixed point.", "Run two semantic passes and license/SBOM closure.", "Publish manifest last and independently read back bytes."],
+            "acceptanceCriteria": ["Every selected graph tuple has retained verified source and license evidence.", "No graph expansion or unresolved dependency security finding remains.", "SPDX 2.3 SBOM and source manifest cover the same fixed graph.", "Independent readback validates exact final bytes."],
+            "migrationNotes": ["Keep compile, library selection, and network rungs closed throughout dependency review."],
+            "rollback": "Stop the current wave on first mismatch, retain its immutable decision and failure evidence, and prepare a new version only after diagnosis."
+          }
+        }
+      ],
+      "recommendedOptionId": "staged-fixed-point-source-closure",
+      "recommendation": "Prefer staged fixed-point closure because a root-only inventory cannot establish the graph or dependency-owned behavior; no acquisition is authorized by this recommendation."
+    }
+  ],
+  "openQuestions": [
+    "What measured packet-path latency and synchronization budget should the capability owner satisfy?",
+    "Which exact count and byte ceilings should be frozen before resource-supervisor implementation?",
+    "Which diagnostic reason set is sufficient for local incident diagnosis without raw values?",
+    "What per-module and aggregate source archive limits should a future acquisition decision use?",
+    "Which Android and macOS build tags define production-reachable dependency packages for the two-pass review?"
+  ],
+  "selection": {
+    "anyOptionSelected": false,
+    "selectedOptionIds": [],
+    "implementationPlanCreated": false
+  },
+  "closure": {
+    "findingsClosedByAnalysis": 0,
+    "semanticClosureComplete": false,
+    "dependencyClosureComplete": false,
+    "rungThreeComplete": false,
+    "candidateSelected": false,
+    "librarySelected": false
+  }
+}

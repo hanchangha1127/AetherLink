@@ -1,0 +1,82 @@
+{
+  "documentType": "aetherlink.g2-pion-rung3-preparation-evidence-manifest",
+  "schemaVersion": "1.0",
+  "manifestId": "g2-pion-ice-v4.3.0-rung3-decision-evidence-manifest-v1",
+  "recordedDate": "2026-07-23",
+  "status": "rung3_review_plan_recorded_execution_not_authorized",
+  "result": "retained_archive_metadata_bound_preparation_only",
+  "nextAction": "prepare_separate_versioned_rung3_review_execution_permit",
+  "predecessorManifestBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/evidence-manifest-v5.json",
+    "sha256": "203e88cf73ad358fd6c73d8bb8d988efa966ffa67573d6e7dda9c03a2fe01f89",
+    "semanticSha256": "fd738ae8de9909adf6d9dd915d4d861998c06bde97b10cb9e87c4cc9adea9d80",
+    "collectionSha256": "adb1fbce766b0750e186285024156abea290d80763eea142420192aa8261d0a8"
+  },
+  "artifactScope": "rung3_preparation_delta_only_no_archive_or_source_artifacts",
+  "orderingRule": "ascending_evidence_id",
+  "collectionDigestAlgorithm": "sha256_utf8_lf_of_evidence_id_tab_sha256_tab_repo_relative_path_newline",
+  "artifactCount": 7,
+  "artifacts": [
+    {
+      "evidenceId": "G2R3E001",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-decision-v1.json",
+      "sha256": "8e2c60b977ee139644c372581e066bfa720d4c5bf1c1809d34b142917abdfa16",
+      "role": "metadata_only_offline_source_review_decision"
+    },
+    {
+      "evidenceId": "G2R3E002",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/preparation-sandbox-policy-v1.json",
+      "sha256": "c615da9fb80d7af0162077503b55663cf428aaee434cef61a67807c234ea3558",
+      "role": "preparation_only_archive_capability_absent_policy"
+    },
+    {
+      "evidenceId": "G2R3E003",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-progress-v1.json",
+      "sha256": "651f8145ae91f7861b21565394db28b1608657c9bffd9a3e921aeafbff1fbabf",
+      "role": "zero_execution_progress_and_next_permit_boundary"
+    },
+    {
+      "evidenceId": "G2R3E004",
+      "path": "script/prepare_p2p_nat_g2_pion_rung3_review_decision.py",
+      "sha256": "1a1641355182178c23526f568fa1e5fbe429745acc82ffcb59ccbe9f2bc9855b",
+      "role": "closed_constants_stdout_only_decision_preparer"
+    },
+    {
+      "evidenceId": "G2R3E005",
+      "path": "script/test_prepare_p2p_nat_g2_pion_rung3_review_decision.py",
+      "sha256": "cc443da3f3d970b445b8578a911ba518336a7b971ce6b83977ea5375948fc408",
+      "role": "decision_preparer_isolation_and_schema_tests"
+    },
+    {
+      "evidenceId": "G2R3E006",
+      "path": "script/check_p2p_nat_g2_pion_rung3_review_decision.py",
+      "sha256": "a8a1167ec1b472da326d495a26718975222b45609968812dc81436a2c8981f36",
+      "role": "strict_tracked_preparation_evidence_checker"
+    },
+    {
+      "evidenceId": "G2R3E007",
+      "path": "script/test_p2p_nat_g2_pion_rung3_review_decision.py",
+      "sha256": "d69e4f1d9dfb47507626617f5e6242503b86722904cf2f6b4f509888b481ac0b",
+      "role": "checker_mutation_and_safe_read_tests"
+    }
+  ],
+  "collectionSha256": "a999e692f02151010e2a3f194da4eb158282e4c3a85d01dc0f6188b7a52c0e05",
+  "evidenceBasis": "static_contract_and_synthetic_tests_not_os_attestation",
+  "archiveRetained": true,
+  "archiveReadByRungThree": false,
+  "archiveMaterializedByRungThree": false,
+  "sourceReviewPerformed": false,
+  "reviewExecutionAuthorized": false,
+  "candidateSelected": false,
+  "librarySelected": false,
+  "dependencyInstalled": false,
+  "compilerInvoked": false,
+  "socketCreated": false,
+  "networkUsed": false,
+  "gitOperationPerformed": false,
+  "deviceOperationPerformed": false,
+  "externalIdentityProofRequired": false,
+  "userActionRequired": false,
+  "repositoryOwnerAuthenticationRequired": false,
+  "productEndpointAuthenticationRequired": true
+}

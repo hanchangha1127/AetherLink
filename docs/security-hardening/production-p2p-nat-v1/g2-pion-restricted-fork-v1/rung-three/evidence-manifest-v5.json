@@ -1,0 +1,76 @@
+{
+  "documentType": "aetherlink.g2-pion-rung3-execution-failure-evidence-manifest",
+  "schemaVersion": "1.0",
+  "manifestId": "g2-pion-ice-v4.3.0-rung3-execution-failure-evidence-manifest-v5",
+  "recordedDate": "2026-07-23",
+  "status": "rung3_bounded_static_inventory_permit_v1_consumed_failed_closed",
+  "result": "archive_rejected_before_source_decode_missing_auditable_unix_mode_metadata",
+  "nextAction": "prepare_separate_versioned_rung3_static_inventory_execution_permit_v2_with_exact_non_unix_creator_policy",
+  "artifactScope": "immutable_failed_closed_execution_evidence_with_claim_only_runtime_read",
+  "predecessorManifestBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/execution-permit-checker-manifest-v4.json",
+    "rawSha256": "437fc1faa7d0f406cc932be316897fc011f3428f408521f5578cdf476d4934e9",
+    "semanticSha256": "e95c34affc20acbf912c9a081e0f52fa0e631ad26add3063ea73ae64f07c6d47",
+    "collectionSha256": "a19c61ca6a017159b62df238711e4de28903c670a1286b7e44b2f514f6c4741b"
+  },
+  "artifactCount": 5,
+  "orderingRule": "ascending_evidence_id",
+  "collectionDigestAlgorithm": "sha256_utf8_lf_of_evidence_id_tab_sha256_tab_repo_relative_path_newline",
+  "collectionSha256": "6b15cd7e339b3a6be43b834733fc0ff9faf868910a9bf5ee35fe5597b0d1f91b",
+  "artifacts": [
+    {
+      "evidenceId": "G2R3E023",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-execution-failure-v1.json",
+      "sha256": "ec1883c9ca264e79120bf24a1624e661254beade219280122895ce05cbe1ec05",
+      "role": "immutable_consumed_permit_v1_failed_closed_execution_record"
+    },
+    {
+      "evidenceId": "G2R3E024",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-progress-v2.json",
+      "sha256": "a58e491f19707c0d4fef4401aa27ff74fdcf473f71d79025e794e4ca538ddd65",
+      "role": "current_failed_closed_rung3_progress"
+    },
+    {
+      "evidenceId": "G2R3E025",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/canonical-document-supersession-v2.json",
+      "sha256": "d224fb87352447ff30bcf33e3498ae37fc68a2c9fd8380a167efb2f7552e7750",
+      "role": "canonical_failed_closed_state_supersession"
+    },
+    {
+      "evidenceId": "G2R3E026",
+      "path": "script/check_p2p_nat_g2_pion_rung3_execution_failure.py",
+      "sha256": "2a06d59f5c77d0a9eb443c6cdbd8ce0ea0f7a81168a6c98b22a5c707bbc8fd0e",
+      "role": "strict_claim_only_no_archive_failure_evidence_checker"
+    },
+    {
+      "evidenceId": "G2R3E027",
+      "path": "script/test_p2p_nat_g2_pion_rung3_execution_failure.py",
+      "sha256": "fefa372f69b76300d985c8b96f048c89e17f985f2ade78dee7a362ff980ccf5a",
+      "role": "failure_evidence_schema_runtime_and_mutation_tests"
+    }
+  ],
+  "failureBoundary": {
+    "permitVersionOneConsumed": true,
+    "automaticRetryAllowed": false,
+    "completed": false,
+    "archiveRejectedBeforeSourceDecode": true,
+    "sourceObservationCount": 0,
+    "reportPublicationCount": 0,
+    "rungThreeComplete": false,
+    "candidateSelected": false,
+    "librarySelected": false
+  },
+  "trustBoundary": {
+    "invokedCheckerBytesAreLocalTrustRoot": true,
+    "checkerSelfAuthenticationClaimed": false,
+    "exactClaimReadAllowed": true,
+    "exactFourReportNameAbsenceChecksAllowed": true,
+    "buildDirectoryEnumerationAllowed": false,
+    "archiveOpenByCheckerAllowed": false,
+    "archiveReadByCheckerAllowed": false,
+    "archiveStatByCheckerAllowed": false,
+    "networkAllowed": false,
+    "gitAllowed": false,
+    "deviceAllowed": false
+  }
+}

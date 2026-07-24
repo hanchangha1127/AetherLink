@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -21,6 +22,7 @@ HARDENING_MARKDOWN_PATH = DESIGN_ROOT / "hardening.md"
 CONTEXT_PATH = DESIGN_ROOT / "context.md"
 PROPOSAL_PATH = DESIGN_ROOT / "proposals/pion-ice-policy-owned-restriction.md"
 SOURCE_REVIEW_PATH = ROOT / "docs/security-hardening/production-p2p-nat-v1/g2-requirements-review-v1.md"
+RUNG_TWO_AUTHORITY_CHECKER_PATH = ROOT / "script/check_p2p_nat_g2_pion_rung2_acquisition_authority.py"
 
 DIAGRAM_PATHS = (
     DESIGN_ROOT / "diagrams/pion-ice-policy-owned-restriction-before.mmd",
@@ -88,6 +90,12 @@ EVIDENCE_MANIFEST_ARTIFACTS = (
         "current_personal_project_boundary_and_handoff_state",
     ),
 )
+HISTORICAL_EVIDENCE_SHA256 = {
+    "G2E001": SOURCE_REVIEW_SHA256,
+    "G2E002": "ec22b033746083712909f58aa56d9ec72cae5131363a90ee36e6e797ea87c0fb",
+    "G2E003": "2fcb2e60b39d6ea843179d84c29bb57ac5219d20b2b2454c0165e420e1c462a5",
+    "G2E004": "f3f43bd602660bc01d5fcbde54550423abcc72ae73ce705021d1ef3b4f4fd2d4",
+}
 
 # Semantic SHA-256 uses sorted-key, whitespace-free UTF-8 JSON. These independent
 # section pins keep require_canonical=False meaningful and make nested schemas
@@ -407,9 +415,25 @@ def evidence_collection_sha256(rows: Iterable[tuple[str, str, str]]) -> str:
 
 def current_evidence_rows() -> list[tuple[str, str, str]]:
     return [
-        (evidence_id, file_sha256(ROOT / relative_path), relative_path)
+        (evidence_id, HISTORICAL_EVIDENCE_SHA256[evidence_id], relative_path)
         for evidence_id, relative_path, _role in EVIDENCE_MANIFEST_ARTIFACTS
     ]
+
+
+def validate_canonical_document_supersession() -> None:
+    spec = importlib.util.spec_from_file_location(
+        "g2_pion_rung2_authority_for_rung1_snapshot",
+        RUNG_TWO_AUTHORITY_CHECKER_PATH,
+    )
+    if spec is None or spec.loader is None:
+        fail("unable to load the rung-two canonical-document supersession checker")
+    checker = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(checker)
+        checker.validate_canonical_document_supersession()
+        checker.validate_canonical_document_supersession_v2()
+    except Exception as error:
+        fail(f"canonical-document supersession validation failed: {error}")
 
 
 def validate_evidence_manifest(document: Any, *, require_complete: bool = True) -> None:
@@ -443,7 +467,11 @@ def validate_evidence_manifest(document: Any, *, require_complete: bool = True) 
         if require_complete:
             if digest.startswith("__"):
                 fail(f"$evidenceManifest.artifacts[{index}].sha256: placeholder remains")
-            require_exact(digest, file_sha256(ROOT / relative_path), f"$evidenceManifest.artifacts[{index}].sha256")
+            require_exact(
+                digest,
+                HISTORICAL_EVIDENCE_SHA256[evidence_id],
+                f"$evidenceManifest.artifacts[{index}].sha256",
+            )
         declared_rows.append((evidence_id, digest, relative_path))
     collection = root["collectionSha256"]
     if not isinstance(collection, str):
@@ -645,6 +673,13 @@ def validate_all() -> None:
     manifest = load_json(EVIDENCE_MANIFEST_PATH)
     validate_profile_document(profile)
     validate_evidence_manifest(manifest)
+    for evidence_id, relative_path, _role in EVIDENCE_MANIFEST_ARTIFACTS[:2]:
+        require_exact(
+            file_sha256(ROOT / relative_path),
+            HISTORICAL_EVIDENCE_SHA256[evidence_id],
+            f"$historicalEvidence.{evidence_id}.sha256",
+        )
+    validate_canonical_document_supersession()
     validate_profile_manifest_link(profile, manifest)
     hardening = load_json(HARDENING_PATH)
     validate_hardening_document(hardening)
@@ -670,8 +705,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"G2 restricted-fork profile validation failed: {error}", file=sys.stderr)
         return 1
     print(
-        "G2 restricted-fork profile validation passed: Pion v4.3.0 remains "
-        "unselected; only rung-two decision preparation is open."
+        "G2 historical restricted-fork rung-one profile validation passed: "
+        "Pion v4.3.0 remains unselected and the historical canonical-document "
+        "successor chain is verified; current preparation state is validated by "
+        "the rung-three checker."
     )
     return 0
 

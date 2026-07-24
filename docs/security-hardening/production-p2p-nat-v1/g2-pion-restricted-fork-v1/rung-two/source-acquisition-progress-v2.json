@@ -1,0 +1,75 @@
+{
+  "documentType": "aetherlink.g2-rung2-source-acquisition-progress",
+  "schemaVersion": "1.0",
+  "progressId": "g2-pion-ice-v4.3.0-source-acquisition-progress-v2",
+  "recordedDate": "2026-07-23",
+  "status": "acquisition_complete_archive_retained_not_extracted",
+  "result": "exact_archive_acquired_verified_rung3_decision_preparation_only",
+  "nextAction": "prepare_versioned_rung3_offline_source_review_decision",
+  "supersedes": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/source-acquisition-progress-v1.json",
+    "progressId": "g2-pion-ice-v4.3.0-source-acquisition-progress-v1",
+    "sha256": "25b00486c80a6a769be0ab25ad8a7d2e5f27652f5799682892de0561a10ca2cd",
+    "status": "authorized_not_consumed"
+  },
+  "decisionBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/source-acquisition-decision-v1.json",
+    "sha256": "8a7ec91354b27ffc4cdf8dcce2f6baa93a10dfadfd7c896266ce42b1ae854c10",
+    "status": "bound_and_consumed"
+  },
+  "provenanceBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/provenance-observation-v1.json",
+    "sha256": "6b0b55023849480c0a7ea05449b98cc2e27d9fd1d704c794aace9e04d0afe4f0",
+    "status": "bound"
+  },
+  "receiptBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/source-acquisition-receipt-v1.json",
+    "receiptId": "g2-pion-ice-v4.3.0-source-acquisition-receipt-v1",
+    "sha256": "3faa5d1d12b7d52b9c2f74a68a2bd83d2bbd459342e56fe6a20caf1ac61409f6",
+    "requiredStatus": "acquisition_succeeded_archive_retained_not_extracted"
+  },
+  "acquisitionSummary": {
+    "maximumRequestCount": 1,
+    "requestCount": 1,
+    "permitConsumed": true,
+    "claimRetained": true,
+    "archiveRetained": true,
+    "archiveBytes": 293023,
+    "archiveRawSha256": "f95ef3ce2e0063c13925f478bf8d188833725b2f0a7ecb1e695dee8ab61ef63c",
+    "archiveExtracted": false,
+    "fileCount": 129,
+    "moduleH1": "h1:X8l4s9zV2HeTKX33nulWAFXAEo5KhIVzOsY62/3t/LM=",
+    "goModH1": "h1:obAyD+J+Hzs7QA7Y8YXHp5uIn6gb7z87pKedXZkrcFU=",
+    "allRequiredChecksPassed": true
+  },
+  "executionBoundary": {
+    "additionalSourceAcquisitionAllowed": false,
+    "automaticRetryAllowed": false,
+    "candidateSelected": false,
+    "librarySelected": false,
+    "sourceReviewPerformed": false,
+    "archiveExtractionAllowed": false,
+    "sourceExecutionAllowed": false,
+    "dependencyInstallationAllowed": false,
+    "compilerInvocationAllowed": false,
+    "codeLoadingAllowed": false,
+    "productRuntimeSocketCreationAllowed": false,
+    "runtimeNetworkIoAllowed": false,
+    "deviceExecutionAllowed": false,
+    "productionDeploymentAllowed": false,
+    "gitOperationAllowed": false,
+    "externalIdentityProofRequired": false,
+    "userActionRequired": false,
+    "repositoryOwnerAuthenticationRequired": false,
+    "productEndpointAuthenticationRequired": true,
+    "rungThreeOfflineReviewDecisionPreparationAllowed": true,
+    "rungThreeOfflineReviewExecutionAllowed": false
+  },
+  "crossFileHashBindings": {
+    "manifestPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/evidence-manifest-v3.json",
+    "manifestId": "g2-pion-ice-v4.3.0-rung2-acquisition-evidence-manifest-v3",
+    "prospectiveRungThreeDecisionPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-decision-v1.json",
+    "prospectiveRungThreeDecisionId": "g2-pion-ice-v4.3.0-offline-source-review-decision-v1",
+    "status": "forward_identity_only_no_cyclic_hash_claim"
+  }
+}

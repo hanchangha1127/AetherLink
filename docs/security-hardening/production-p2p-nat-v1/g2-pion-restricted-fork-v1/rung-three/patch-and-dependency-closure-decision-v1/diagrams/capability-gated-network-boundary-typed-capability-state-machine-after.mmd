@@ -1,0 +1,12 @@
+flowchart LR
+  peer["Untrusted peer / service"] --> bounded["Bounded parse"]
+  bounded --> gate["Admission and promotion owner"]
+  policy["Immutable restricted profile"] --> gate
+  gate -->|"admitted generation-bound event"| state["Agent state and liveness"]
+  gate -->|"promoted session epoch only"| app["Application channel"]
+  profile["Capability-typed resolver / network"] --> gate
+  gate -->|"one-use exact I/O capability"| io["Resolve / dial / listen / write"]
+  gate -->|"verified service identity before secret"| turn["TURN TLS and credentials"]
+  revoke["Expiry / path change / consent loss / close"] --> gate
+  classDef control fill:#173f5f,color:#fff,stroke:#3ca0d3
+  class gate,policy,profile,revoke control

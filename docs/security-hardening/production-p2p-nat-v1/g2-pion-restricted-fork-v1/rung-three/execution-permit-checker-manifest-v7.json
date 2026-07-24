@@ -1,0 +1,58 @@
+{
+  "documentType": "aetherlink.g2-pion-rung3-execution-permit-checker-evidence-manifest",
+  "schemaVersion": "2.0",
+  "manifestId": "g2-pion-ice-v4.3.0-rung3-execution-permit-checker-evidence-manifest-v7",
+  "recordedDate": "2026-07-23",
+  "status": "rung3_bounded_static_inventory_v2_execution_authorized_not_consumed",
+  "result": "separate_single_use_bounded_static_candidate_location_inventory_v2_authorized_not_executed",
+  "nextAction": "execute_bound_rung3_static_candidate_location_inventory_v2_once",
+  "artifactScope": "observational_execution_toolchain_evidence_not_execution_authority",
+  "predecessorManifestBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/execution-permit-core-manifest-v6.json",
+    "rawSha256": "443c6d918b94329692f1ed57a989263ae38f939120752103c47e852c50f83e73",
+    "semanticSha256": "861c04832e845be2066632697f1a5b8eb3085157328351cde5fdc052c6c00240",
+    "collectionSha256": "cf53cf2b33ab07ec539a97a4f8f43cc84e32848e9fbfb2ae8669250529312f41"
+  },
+  "artifactCount": 4,
+  "orderingRule": "ascending_evidence_id",
+  "collectionDigestAlgorithm": "sha256_utf8_lf_of_evidence_id_tab_sha256_tab_repo_relative_path_newline",
+  "collectionSha256": "96bd129c1020591b8f4b19e6b9037631ee2801615cd07ef7581ba813bd5828e8",
+  "artifacts": [
+    {
+      "evidenceId": "G2R3E034",
+      "path": "script/run_p2p_nat_g2_pion_rung3_offline_review_v2_once.py",
+      "sha256": "938e44be1dc020e4f58175fe6d9190108ae70a38d307fc83ef093ce445f529e7",
+      "role": "observational_directly_invoked_v2_runner"
+    },
+    {
+      "evidenceId": "G2R3E035",
+      "path": "script/test_run_p2p_nat_g2_pion_rung3_offline_review_v2_once.py",
+      "sha256": "0bfbbc0ec2d65a1125a41a687d2fb026c4a0d03b65665d12ee65b7d36f71025e",
+      "role": "observational_v2_runner_synthetic_tests"
+    },
+    {
+      "evidenceId": "G2R3E036",
+      "path": "script/check_p2p_nat_g2_pion_rung3_execution_permit_v2.py",
+      "sha256": "df7f9567edfbb3c3ccbd4381e37390e09029281f658342434735618029629e97",
+      "role": "strict_no_archive_v2_execution_permit_checker"
+    },
+    {
+      "evidenceId": "G2R3E037",
+      "path": "script/test_p2p_nat_g2_pion_rung3_execution_permit_v2.py",
+      "sha256": "71cc91c70485893605e97e1b5b4ff32c6f9d955b1777234f9f335e591973e166",
+      "role": "v2_checker_schema_digest_loader_and_safe_read_tests"
+    }
+  ],
+  "trustBoundary": {
+    "executionAuthority": false,
+    "requiredForPermitValidation": false,
+    "requiredForPermitExecution": false,
+    "absenceOrDriftDoesNotInvalidatePermitCore": true,
+    "invokedRunnerIsLocalTrustRoot": true,
+    "runnerAuthenticatedBy": "direct_local_invocation",
+    "checkerAuthenticatedBy": "runner_embedded_raw_sha256",
+    "checkerSelfAuthenticationClaimed": false,
+    "checkerManifestSelfAuthenticationClaimed": false,
+    "artifactHashesAreObservational": true
+  }
+}

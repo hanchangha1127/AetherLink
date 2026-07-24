@@ -1,0 +1,14 @@
+flowchart LR
+  peer["Untrusted peer / service"] --> ingress["Candidate recv loops"]
+  ingress --> guards["Local admission checks"]
+  guards --> state["Agent state and liveness"]
+  guards --> app["Application buffer"]
+  config["Restricted configuration"] --> agent["Pion agent"]
+  agent --> resolve["Guarded resolver"]
+  agent --> io["Guarded dial / listen / write"]
+  agent --> turn["TURN identity checks"]
+  select["Pair selection checks"] --> appio["Application read / write checks"]
+  policy["AetherLink policy"] --> guards
+  policy --> agent
+  classDef control fill:#173f5f,color:#fff,stroke:#3ca0d3
+  class guards,policy control

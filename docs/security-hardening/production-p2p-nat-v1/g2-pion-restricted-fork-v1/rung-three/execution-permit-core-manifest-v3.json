@@ -1,0 +1,79 @@
+{
+  "documentType": "aetherlink.g2-pion-rung3-execution-permit-core-evidence-manifest",
+  "schemaVersion": "1.0",
+  "manifestId": "g2-pion-ice-v4.3.0-rung3-execution-permit-core-evidence-manifest-v3",
+  "recordedDate": "2026-07-23",
+  "status": "rung3_bounded_static_inventory_execution_authorized_not_consumed",
+  "result": "single_use_bounded_static_candidate_location_inventory_authorized_not_executed",
+  "nextAction": "execute_bound_rung3_static_candidate_location_inventory_once",
+  "artifactScope": "execution_permit_core_without_checker_self_hash_cycle",
+  "predecessorManifestBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/evidence-manifest-v2.json",
+    "rawSha256": "4098a043ff2ef5b897430c9207e62d475ebcfd3edfc8c9e1c95857f8c73a3525",
+    "semanticSha256": "d4d736f85a19070aa4b3e6ca49a8ee0cb03096e75174caf865af2659ed88386b",
+    "collectionSha256": "49b517e8f35b4db4537de193e0b68b3d6aa9dde173aa080edd8adb122af6567a"
+  },
+  "artifactCount": 6,
+  "orderingRule": "ascending_evidence_id",
+  "collectionDigestAlgorithm": "sha256_utf8_lf_of_evidence_id_tab_sha256_tab_repo_relative_path_newline",
+  "collectionSha256": "2073107b2cd994097270a28907ee8bbb562e8647ecba992f5e13b8c9b7adb2c0",
+  "artifacts": [
+    {
+      "evidenceId": "G2R3E015",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-execution-permit-v1.json",
+      "sha256": "13d1760477a07c32424f101fad98e85584c6a4335fb64e65992e099c750a756b",
+      "role": "single_use_bounded_static_candidate_location_inventory_execution_permit"
+    },
+    {
+      "evidenceId": "G2R3E016",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/review-execution-policy-v1.json",
+      "sha256": "bd96633f41e2a11164746c31645bc6c6d37737da6664151c3dd9072d07f2dfba",
+      "role": "bounded_static_candidate_location_inventory_execution_policy"
+    },
+    {
+      "evidenceId": "G2R3E017",
+      "path": "script/p2p_nat_g2_pion_offline_zip.py",
+      "sha256": "9daef717b30337191ee9902110bdf4455babacb261acab9124d37de72fa8988b",
+      "role": "pure_bounded_zip_validation_and_candidate_location_inventory_module"
+    },
+    {
+      "evidenceId": "G2R3E018",
+      "path": "script/test_p2p_nat_g2_pion_offline_zip.py",
+      "sha256": "49b4b99ec194186848fc127c10caa140e96260e7530830acc7781bfcb6a8a035",
+      "role": "pure_zip_module_synthetic_mutation_tests"
+    },
+    {
+      "evidenceId": "G2R3E019",
+      "path": "script/run_p2p_nat_g2_pion_rung3_offline_review_once.py",
+      "sha256": "592e5dfdbd6a2cb8cb373b7186d8c5c573501d0b026c522c94beccf5620ee0c5",
+      "role": "single_use_nofollow_bounded_candidate_inventory_runner"
+    },
+    {
+      "evidenceId": "G2R3E020",
+      "path": "script/test_run_p2p_nat_g2_pion_rung3_offline_review_once.py",
+      "sha256": "1796359bdbbccfe36b8ad6e8904836207b981486e99a477f5707d01772184d9e",
+      "role": "runner_claim_fd_and_no_replace_synthetic_tests"
+    }
+  ],
+  "executionBoundary": {
+    "boundedStaticCandidateInventoryExecutionAuthorized": true,
+    "permitConsumed": false,
+    "archiveReadPerformed": false,
+    "sourceReviewPerformed": false,
+    "candidateSelected": false,
+    "librarySelected": false,
+    "dependencyInstallationAllowed": false,
+    "reviewedSourceCompilerInvocationAllowed": false,
+    "verifiedPinnedReviewToolModuleLoadingAllowed": true,
+    "verifiedAuxiliaryToolModulePythonCompileAllowed": true,
+    "socketCreationAllowed": false,
+    "networkIoAllowed": false,
+    "gitOperationAllowed": false,
+    "deviceOperationAllowed": false,
+    "productionDeploymentAllowed": false,
+    "repositoryOwnerAuthenticationRequired": false,
+    "externalIdentityProofRequired": false,
+    "userActionRequired": false,
+    "productEndpointAuthenticationRequired": true
+  }
+}

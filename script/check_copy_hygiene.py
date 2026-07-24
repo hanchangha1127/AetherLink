@@ -52296,7 +52296,7 @@ def production_secure_channel_transport_composition_guard_failures() -> list[str
         if snippet not in g2_marker_line:
             failures.append(f"G2 Pion no-device marker is missing {snippet!r}")
 
-    g2_restricted_marker = "Covered G2 Pion v4.3.0 restricted-fork rung-one design addendum:"
+    g2_restricted_marker = "Covered historical G2 Pion v4.3.0 restricted-fork rung-one design addendum at_that_checkpoint:"
     if gate_text.count(g2_restricted_marker) != 1:
         failures.append(
             "default no-device gate must emit the G2 restricted-fork marker once"
@@ -52308,11 +52308,11 @@ def production_secure_channel_transport_composition_guard_failures() -> list[str
     for snippet in (
         "status=rung1_profile_complete_candidate_not_selected",
         "result=pion_restricted_fork_profile_ready_for_rung2_decision_only",
-        "nextAction=prepare_versioned_rung2_source_identity_and_acquisition_decision",
+        "recordedNextActionAtThatCheckpoint=prepare_versioned_rung2_source_identity_and_acquisition_decision",
         "hash-pinned portfolio compares unmodified upstream, a wrapper-only gateway",
         "minimal AetherLink-maintained restricted fork",
-        "Pion and every networking library remain unselected",
-        "Rung one completes only the design, validator, and 17 mutation tests",
+        "Pion and every networking library remained unselected at that checkpoint",
+        "Rung one completed only the design, validator, and 17 mutation tests",
         "Schema 1.1 remains a not-yet-implemented and not-runtime-verified design",
         "separate single-use egress capability after resolution immediately before socket create, bind, connect, TLS handshake, or write",
         "fixed-size bounded ingress read/parse/admission before state mutation or payload delivery",
@@ -52629,7 +52629,7 @@ def g2_restricted_fork_rung_one_integration_guard_failures() -> list[str]:
             failures.append(
                 f"{gate_path.relative_to(ROOT)}: expected exactly one active G2 command {command!r}."
             )
-    marker = "Covered G2 Pion v4.3.0 restricted-fork rung-one design addendum:"
+    marker = "Covered historical G2 Pion v4.3.0 restricted-fork rung-one design addendum at_that_checkpoint:"
     if gate_text.count(marker) != 1:
         failures.append(
             f"{gate_path.relative_to(ROOT)}: expected exactly one G2 rung-one marker."
@@ -52660,11 +52660,12 @@ def g2_restricted_fork_rung_one_integration_guard_failures() -> list[str]:
             f"{gate_path.relative_to(ROOT)}: owner authentication must not be modeled as a future rung."
         )
 
-    contract_marker = "G2 restricted-fork rung-one status contract:"
+    contract_marker = "Historical G2 restricted-fork rung-one status contract at_that_checkpoint:"
+    legacy_contract_marker = "G2 restricted-fork rung-one status contract:"
     required_contract_snippets = (
         "status=rung1_profile_complete_candidate_not_selected",
         "result=pion_restricted_fork_profile_ready_for_rung2_decision_only",
-        "nextAction=prepare_versioned_rung2_source_identity_and_acquisition_decision",
+        "recordedNextActionAtThatCheckpoint=prepare_versioned_rung2_source_identity_and_acquisition_decision",
         "Rung one completes only the design, validator, and 17 mutation tests",
         "implementationStatus=not_implemented",
         "candidateSelected=false",
@@ -52724,20 +52725,34 @@ def g2_restricted_fork_rung_one_integration_guard_failures() -> list[str]:
     )
     for label, path in document_paths.items():
         document_text = path.read_text(encoding="utf-8", errors="replace")
-        if document_text.count(contract_marker) != 1:
+        selected_marker = (
+            contract_marker
+            if document_text.count(contract_marker) == 1
+            else legacy_contract_marker
+        )
+        selected_contract_snippets = required_contract_snippets
+        if selected_marker == legacy_contract_marker:
+            selected_contract_snippets = tuple(
+                snippet.replace(
+                    "recordedNextActionAtThatCheckpoint=",
+                    "nextAction=",
+                )
+                for snippet in required_contract_snippets
+            )
+        if document_text.count(selected_marker) != 1:
             failures.append(
-                f"{path.relative_to(ROOT)}: expected exactly one current G2 rung-one status contract."
+                f"{path.relative_to(ROOT)}: expected exactly one G2 rung-one status contract."
             )
             continue
-        start = document_text.index(contract_marker)
+        start = document_text.index(selected_marker)
         end = document_text.find("\n\n", start)
         if end < 0:
             end = len(document_text)
         contract = re.sub(r"\s+", " ", document_text[start:end]).replace("`", "")
-        for snippet in required_contract_snippets:
+        for snippet in selected_contract_snippets:
             if snippet not in contract:
                 failures.append(
-                    f"{path.relative_to(ROOT)}: current G2 contract is missing {snippet!r}."
+                    f"{path.relative_to(ROOT)}: G2 contract is missing {snippet!r}."
                 )
         for snippet in forbidden_contract_snippets:
             if snippet in contract:
@@ -52810,6 +52825,7 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
         / "docs/security-hardening/production-p2p-nat-v1"
         / "g2-pion-restricted-fork-v1/rung-two"
     )
+    rung_three_root = rung_two_root.parent / "rung-three"
     paths = {
         "provenance": rung_two_root / "provenance-observation-v1.json",
         "decision": rung_two_root / "source-acquisition-decision-v1.json",
@@ -52820,6 +52836,184 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
         "tests": ROOT / "script/test_p2p_nat_g2_pion_rung2_acquisition_authority.py",
         "runner": ROOT / "script/acquire_p2p_nat_g2_pion_source_once.py",
         "runner_tests": ROOT / "script/test_acquire_p2p_nat_g2_pion_source_once.py",
+        "receipt": rung_two_root / "source-acquisition-receipt-v1.json",
+        "progress_v2": rung_two_root / "source-acquisition-progress-v2.json",
+        "manifest_v3": rung_two_root / "evidence-manifest-v3.json",
+        "canonical_supersession": rung_two_root / "canonical-document-supersession-v1.json",
+        "manifest_v4": rung_two_root / "evidence-manifest-v4.json",
+        "canonical_supersession_v2": rung_two_root / "canonical-document-supersession-v2.json",
+        "manifest_v5": rung_two_root / "evidence-manifest-v5.json",
+        "receipt_validator": ROOT / "script/check_p2p_nat_g2_pion_rung2_acquisition_receipt.py",
+        "receipt_tests": ROOT / "script/test_p2p_nat_g2_pion_rung2_acquisition_receipt.py",
+        "rung3_decision": rung_three_root / "offline-source-review-decision-v1.json",
+        "rung3_policy": rung_three_root / "preparation-sandbox-policy-v1.json",
+        "rung3_progress": rung_three_root / "offline-source-review-progress-v1.json",
+        "rung3_manifest_v1": rung_three_root / "evidence-manifest-v1.json",
+        "rung3_canonical_supersession": rung_three_root
+        / "canonical-document-supersession-v1.json",
+        "rung3_manifest_v2": rung_three_root / "evidence-manifest-v2.json",
+        "rung3_generator": ROOT
+        / "script/prepare_p2p_nat_g2_pion_rung3_review_decision.py",
+        "rung3_generator_tests": ROOT
+        / "script/test_prepare_p2p_nat_g2_pion_rung3_review_decision.py",
+        "rung3_checker": ROOT
+        / "script/check_p2p_nat_g2_pion_rung3_review_decision.py",
+        "rung3_checker_tests": ROOT
+        / "script/test_p2p_nat_g2_pion_rung3_review_decision.py",
+        "rung3_result_v3": rung_three_root
+        / "offline-source-review-result-v3.json",
+        "rung3_runtime_manifest_v3": rung_three_root
+        / "offline-source-review-runtime-manifest-v3.json",
+        "rung3_receipt_v3": rung_three_root
+        / "offline-source-review-execution-receipt-v3.json",
+        "rung3_progress_v4": rung_three_root
+        / "offline-source-review-progress-v4.json",
+        "rung3_supersession_v4": rung_three_root
+        / "canonical-document-supersession-v4.json",
+        "rung3_manifest_v11": rung_three_root / "evidence-manifest-v11.json",
+        "rung3_success_checker_v3": ROOT
+        / "script/check_p2p_nat_g2_pion_rung3_success_evidence_v3.py",
+        "rung3_success_checker_tests_v3": ROOT
+        / "script/test_p2p_nat_g2_pion_rung3_success_evidence_v3.py",
+        "rung3_semantic_decision_v1": rung_three_root
+        / "semantic-source-review-decision-v1.json",
+        "rung3_semantic_decision_checker_v1": ROOT
+        / "script/check_p2p_nat_g2_pion_rung3_semantic_review_decision_v1.py",
+        "rung3_semantic_decision_tests_v1": ROOT
+        / "script/test_p2p_nat_g2_pion_rung3_semantic_review_decision_v1.py",
+        "rung3_semantic_pass_input_v1": rung_three_root
+        / "semantic-source-review-pass-input-v1.json",
+        "rung3_semantic_primary_record_v1": rung_three_root
+        / "semantic-source-review-primary-pass-record-v1.json",
+        "rung3_semantic_independent_record_v1": rung_three_root
+        / "semantic-source-review-independent-pass-record-v1.json",
+        "rung3_semantic_classifications_v1": rung_three_root
+        / "semantic-source-review-classifications-v1.json",
+        "rung3_semantic_result_v1": rung_three_root
+        / "semantic-source-review-result-v1.json",
+        "rung3_semantic_manifest_v1": rung_three_root
+        / "semantic-source-review-manifest-v1.json",
+        "rung3_semantic_runner_v1": ROOT
+        / "script/run_p2p_nat_g2_pion_rung3_semantic_review_v1.py",
+        "rung3_semantic_result_checker_v1": ROOT
+        / "script/check_p2p_nat_g2_pion_rung3_semantic_review_result_v1.py",
+        "rung3_semantic_result_tests_v1": ROOT
+        / "script/test_p2p_nat_g2_pion_rung3_semantic_review_result_v1.py",
+        "rung3_patch_dependency_decision_v1": rung_three_root
+        / "patch-and-dependency-closure-decision-v1.json",
+        "rung3_patch_dependency_hardening_v1": rung_three_root
+        / "patch-and-dependency-closure-decision-v1/hardening.json",
+        "rung3_patch_dependency_portfolio_v1": rung_three_root
+        / "patch-and-dependency-closure-decision-v1/hardening.md",
+        "rung3_patch_dependency_checker_v1": ROOT
+        / "script/check_p2p_nat_g2_pion_rung3_patch_dependency_decision_v1.py",
+        "rung3_patch_dependency_tests_v1": ROOT
+        / "script/test_p2p_nat_g2_pion_rung3_patch_dependency_decision_v1.py",
+        "rung3_implementation_dependency_decision_v1": rung_three_root
+        / "implementation-or-dependency-review-decision-v1.json",
+        "rung3_implementation_dependency_plan_v1": rung_three_root
+        / (
+            "implementation-or-dependency-review-decision-v1/implementation/"
+            "staged-fixed-point-source-closure.md"
+        ),
+        "rung3_implementation_dependency_checker_v1": ROOT
+        / (
+            "script/"
+            "check_p2p_nat_g2_pion_rung3_implementation_dependency_review_decision_v1.py"
+        ),
+        "rung3_implementation_dependency_tests_v1": ROOT
+        / (
+            "script/"
+            "test_p2p_nat_g2_pion_rung3_implementation_dependency_review_decision_v1.py"
+        ),
+        "rung3_dependency_wave1_decision_v1": rung_three_root
+        / "bounded-dependency-source-identity-and-acquisition-decision-v1.json",
+        "rung3_dependency_wave1_reader_v1": rung_three_root
+        / "bounded-dependency-source-identity-and-acquisition-decision-v1.md",
+        "rung3_dependency_wave1_checker_v1": ROOT
+        / "script/check_p2p_nat_g2_pion_rung3_dependency_wave1_decision_v1.py",
+        "rung3_dependency_wave1_tests_v1": ROOT
+        / "script/test_p2p_nat_g2_pion_rung3_dependency_wave1_decision_v1.py",
+        "rung3_dependency_wave1_permit_v1": rung_three_root
+        / "bounded-dependency-source-acquisition-wave1-execution-permit-v1.json",
+        "rung3_dependency_wave1_permit_reader_v1": rung_three_root
+        / "bounded-dependency-source-acquisition-wave1-execution-permit-v1.md",
+        "rung3_dependency_wave1_runner_v1": ROOT
+        / "script/acquire_p2p_nat_g2_pion_dependency_wave1_once.py",
+        "rung3_dependency_wave1_runner_tests_v1": ROOT
+        / "script/test_acquire_p2p_nat_g2_pion_dependency_wave1_once.py",
+        "rung3_dependency_wave1_permit_checker_v1": ROOT
+        / "script/check_p2p_nat_g2_pion_dependency_wave1_execution_permit_v1.py",
+        "rung3_dependency_wave1_permit_tests_v1": ROOT
+        / "script/test_p2p_nat_g2_pion_dependency_wave1_execution_permit_v1.py",
+        "rung3_dependency_wave1_failure_v1": rung_three_root
+        / "bounded-dependency-source-acquisition-wave1-failure-v1.json",
+        "rung3_dependency_wave1_recovery_v1": rung_three_root
+        / "bounded-dependency-source-acquisition-wave1-recovery-decision-v1.json",
+        "rung3_dependency_wave1_recovery_reader_v1": rung_three_root
+        / "bounded-dependency-source-acquisition-wave1-recovery-decision-v1.md",
+        "rung3_dependency_wave1_recovery_checker_v1": ROOT
+        / "script/check_p2p_nat_g2_pion_dependency_wave1_recovery_decision_v1.py",
+        "rung3_dependency_wave1_recovery_tests_v1": ROOT
+        / "script/test_p2p_nat_g2_pion_dependency_wave1_recovery_decision_v1.py",
+        "rung3_dependency_wave1_permit_v2": rung_three_root
+        / "bounded-dependency-source-acquisition-wave1-execution-permit-v2.json",
+        "rung3_dependency_wave1_permit_reader_v2": rung_three_root
+        / "bounded-dependency-source-acquisition-wave1-execution-permit-v2.md",
+        "rung3_dependency_wave1_runner_v2": ROOT
+        / "script/acquire_p2p_nat_g2_pion_dependency_wave1_v2_once.py",
+        "rung3_dependency_wave1_runner_tests_v2": ROOT
+        / "script/test_acquire_p2p_nat_g2_pion_dependency_wave1_v2_once.py",
+        "rung3_dependency_wave1_permit_checker_v2": ROOT
+        / "script/check_p2p_nat_g2_pion_dependency_wave1_execution_permit_v2.py",
+        "rung3_dependency_wave1_permit_tests_v2": ROOT
+        / "script/test_p2p_nat_g2_pion_dependency_wave1_execution_permit_v2.py",
+        "rung3_dependency_wave1_failure_v2": rung_three_root
+        / "bounded-dependency-source-acquisition-wave1-failure-v2.json",
+        "rung3_dependency_wave1_recovery_v2": rung_three_root
+        / "bounded-dependency-source-acquisition-wave1-recovery-decision-v2.json",
+        "rung3_dependency_wave1_recovery_reader_v2": rung_three_root
+        / "bounded-dependency-source-acquisition-wave1-recovery-decision-v2.md",
+        "rung3_dependency_wave1_recovery_checker_v2": ROOT
+        / "script/check_p2p_nat_g2_pion_dependency_wave1_recovery_decision_v2.py",
+        "rung3_dependency_wave1_recovery_tests_v2": ROOT
+        / "script/test_p2p_nat_g2_pion_dependency_wave1_recovery_decision_v2.py",
+        "rung3_dependency_wave1_permit_v3": rung_three_root
+        / "bounded-dependency-source-acquisition-wave1-execution-permit-v3.json",
+        "rung3_dependency_wave1_permit_reader_v3": rung_three_root
+        / "bounded-dependency-source-acquisition-wave1-execution-permit-v3.md",
+        "rung3_dependency_wave1_runner_v3": ROOT
+        / "script/acquire_p2p_nat_g2_pion_dependency_wave1_v3_once.py",
+        "rung3_dependency_wave1_runner_tests_v3": ROOT
+        / "script/test_acquire_p2p_nat_g2_pion_dependency_wave1_v3_once.py",
+        "rung3_dependency_wave1_permit_checker_v3": ROOT
+        / "script/check_p2p_nat_g2_pion_dependency_wave1_execution_permit_v3.py",
+        "rung3_dependency_wave1_permit_tests_v3": ROOT
+        / "script/test_p2p_nat_g2_pion_dependency_wave1_execution_permit_v3.py",
+        "rung3_dependency_wave1_readback_checker_v3": ROOT
+        / "script/check_p2p_nat_g2_pion_dependency_wave1_success_v3.py",
+        "rung3_dependency_wave1_readback_tests_v3": ROOT
+        / "script/test_p2p_nat_g2_pion_dependency_wave1_success_v3.py",
+        "rung3_dependency_wave1_success_receipt_v3": rung_three_root
+        / "bounded-dependency-source-acquisition-wave1-receipt-v3.json",
+        "rung3_dependency_wave1_success_manifest_v3": rung_three_root
+        / "bounded-dependency-source-acquisition-wave1-manifest-v3.json",
+        "rung3_dependency_wave1_readback_receipt_v1": rung_three_root
+        / "bounded-dependency-source-acquisition-wave1-readback-v1.json",
+        "rung3_dependency_wave1_readback_manifest_v1": rung_three_root
+        / "bounded-dependency-source-acquisition-wave1-readback-manifest-v1.json",
+        "rung3_dependency_wave1_readback_recovery_decision_v2": rung_three_root
+        / "bounded-dependency-source-acquisition-wave1-readback-recovery-decision-v2.json",
+        "rung3_dependency_wave1_readback_recovery_checker_v2": ROOT
+        / "script/check_p2p_nat_g2_pion_dependency_wave1_success_v3_recovery_v2.py",
+        "rung3_dependency_wave1_readback_recovery_tests_v2": ROOT
+        / "script/test_p2p_nat_g2_pion_dependency_wave1_success_v3_recovery_v2.py",
+        "rung3_dependency_wave1_post_verification_decision_v3": rung_three_root
+        / "bounded-dependency-source-acquisition-wave1-readback-post-verification-decision-v3.json",
+        "rung3_dependency_wave1_post_verifier_v3": ROOT
+        / "script/check_p2p_nat_g2_pion_dependency_wave1_success_v3_post_verify_v3.py",
+        "rung3_dependency_wave1_post_verifier_tests_v3": ROOT
+        / "script/test_p2p_nat_g2_pion_dependency_wave1_success_v3_post_verify_v3.py",
         "gate": ROOT / "script/check_no_device_quality.sh",
     }
     missing = [
@@ -52876,6 +53070,12 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
             "def verify_rfc6962_inclusion(",
             "def verify_sumdb_evidence(",
             "def validate_evidence_manifest(",
+            "def read_exact_git_object(",
+            '"GIT_NO_LAZY_FETCH": "1"',
+            '"GIT_TERMINAL_PROMPT": "0"',
+            "def validate_canonical_document_supersession(",
+            "def validate_canonical_document_supersession_v2(",
+            "def validate_current_canonical_document_semantics(",
             "no user or owner authentication required",
         ),
         "tests": (
@@ -52885,6 +53085,9 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
             "test_12_record_hash_and_inclusion_proof_mutations_fail",
             "test_18_execution_and_user_auth_boundary_escalations_fail",
             "test_20_baseline_passes_and_fabricated_markdown_claims_fail",
+            "CHECKER.validate_canonical_document_supersession()",
+            "CHECKER.validate_canonical_document_supersession_v2()",
+            'environment["GIT_NO_LAZY_FETCH"]',
         ),
         "runner": (
             'mode.add_argument("--execute-exact-once", action="store_true")',
@@ -52917,6 +53120,1103 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
             "hidden-tail.bin",
             "test_16_exclusive_publish_never_replaces_an_existing_final_file",
         ),
+        "receipt": (
+            '"status": "acquisition_succeeded_archive_retained_not_extracted"',
+            '"requestCount": 1',
+            '"rawSha256Matches": true',
+            '"independentRetainedByteReadbackPassed": true',
+            '"filesystemExtracted": false',
+            '"sourceReviewPerformed": false',
+            '"permitConsumed": true',
+            '"repositoryOwnerAuthenticationRequired": false',
+            '"externalIdentityProofRequired": false',
+            '"userActionRequired": false',
+        ),
+        "progress_v2": (
+            '"status": "acquisition_complete_archive_retained_not_extracted"',
+            '"requestCount": 1',
+            '"permitConsumed": true',
+            '"rungThreeOfflineReviewDecisionPreparationAllowed": true',
+            '"rungThreeOfflineReviewExecutionAllowed": false',
+        ),
+        "manifest_v3": (
+            '"artifactScope": "post_v2_delta_only"',
+            '"artifactCount": 5',
+            '"sourceAcquisitionExecuted": true',
+            '"requestCount": 1',
+            '"archiveExtracted": false',
+        ),
+        "canonical_supersession": (
+            '"status": "historical_rung1_bytes_git_preserved_current_docs_advanced_to_rung2_receipt"',
+            '"commit": "3bf9615024a3959f61d4bb749f8930dd07ea4385"',
+            '"readOnlyGitObjectVerificationRequired": true',
+            '"status": "synchronized_to_acquisition_complete_archive_retained_not_extracted"',
+            '"historicalDecisionRewritten": false',
+            '"historicalReceiptRewritten": false',
+            '"rungThreeOfflineReviewExecutionAllowed": false',
+        ),
+        "manifest_v4": (
+            '"status": "rung2_acquisition_complete_canonical_docs_synchronized"',
+            '"artifactScope": "post_v3_canonical_document_sync_delta_only"',
+            '"artifactCount": 7',
+            '"archiveExtracted": false',
+            '"sourceReviewPerformed": false',
+            '"rungThreeOfflineReviewExecutionAllowed": false',
+        ),
+        "canonical_supersession_v2": (
+            '"status": "historical_v4_semantic_conflict_corrected_current_docs_advanced_to_unambiguous_rung3_preparation"',
+            '"requiredCurrentNextAction": "prepare_versioned_rung3_offline_source_review_decision"',
+            '"historicalCheckpointToken": "at_that_checkpoint"',
+            '"normalizationRule": "unicode_preserving_split_whitespace_join_single_ascii_space_then_lowercase"',
+            '"### Immediate Execution Queue"',
+            '"current restricted-fork rung-one"',
+            '"rungThreeOfflineReviewExecutionAllowed": false',
+        ),
+        "manifest_v5": (
+            '"status": "rung2_acquisition_complete_canonical_docs_semantically_unambiguous"',
+            '"artifactScope": "post_v4_canonical_semantic_correction_delta_only"',
+            '"artifactCount": 7',
+            '"collectionSha256": "adb1fbce766b0750e186285024156abea290d80763eea142420192aa8261d0a8"',
+            '"rungThreeOfflineReviewExecutionAllowed": false',
+        ),
+        "receipt_validator": (
+            "BASE.validate_repository()",
+            "BASE.secure_repo_file_descriptor(path)",
+            "RUNNER.inspect_module_zip(BASE.secure_read_bytes(ARCHIVE_PATH))",
+            "def validate_receipt_document(",
+            "def validate_progress_document(",
+            "def validate_manifest_document(",
+            "def validate_canonical_sync_manifest_document(",
+            "def validate_canonical_semantic_sync_manifest_document(",
+            "no user or owner authentication required",
+        ),
+        "receipt_tests": (
+            "class G2PionRungTwoAcquisitionReceiptTests(unittest.TestCase):",
+            "test_01_current_repository_receipt_passes_offline",
+            "test_05_receipt_extraction_selection_and_auth_escalation_fail",
+            "test_08_progress_authority_escalation_and_rung_three_execution_fail",
+            "test_12_duplicate_names_and_nonfinite_numbers_fail_strict_parsing",
+            "assert_canonical_sync_manifest_rejected",
+            "assert_canonical_semantic_sync_manifest_rejected",
+        ),
+        "rung3_decision": (
+            '"status":"rung3_review_plan_recorded_execution_not_authorized"',
+            '"result":"retained_archive_metadata_bound_preparation_only"',
+            '"nextAction":"prepare_separate_versioned_rung3_review_execution_permit"',
+            '"archivePathCopiedIntoDecision":false',
+            '"archiveReadByThisDecision":false',
+            '"archiveMaterializedByThisDecision":false',
+            '"sourceReviewedByThisDecision":false',
+            '"reviewExecutionAuthorized":false',
+            '"externalIdentityProofRequired":false',
+            '"userActionRequired":false',
+        ),
+        "rung3_policy": (
+            '"status": "preparation_only_archive_capability_absent"',
+            '"evidenceBasis": "static_contract_and_synthetic_tests_not_os_attestation"',
+            '"fileReadAllowlist": []',
+            '"fileWriteAllowlist": []',
+            '"archiveApiAllowed": false',
+            '"buildDirectoryReadAllowed": false',
+            '"reviewExecutionAuthorized": false',
+            '"repositoryOwnerAuthenticationRequired": false',
+        ),
+        "rung3_progress": (
+            '"status": "rung3_review_plan_recorded_execution_not_authorized"',
+            '"result": "retained_archive_metadata_bound_preparation_only"',
+            '"nextAction": "prepare_separate_versioned_rung3_review_execution_permit"',
+            '"archivePathCopiedIntoProgress": false',
+            '"archiveReadByRungThree": false',
+            '"archiveMaterializedByRungThree": false',
+            '"sourceReviewedByRungThree": false',
+            '"reviewExecutionAuthorized": false',
+        ),
+        "rung3_manifest_v1": (
+            '"artifactScope": "rung3_preparation_delta_only_no_archive_or_source_artifacts"',
+            '"artifactCount": 7',
+            '"archiveReadByRungThree": false',
+            '"sourceReviewPerformed": false',
+            '"reviewExecutionAuthorized": false',
+        ),
+        "rung3_canonical_supersession": (
+            '"status": "rung3_review_plan_recorded_execution_not_authorized"',
+            '"result": "retained_archive_metadata_bound_preparation_only"',
+            '"nextAction": "prepare_separate_versioned_rung3_review_execution_permit"',
+            '"historicalNextAction": "prepare_versioned_rung3_offline_source_review_decision"',
+            '"historicalNextActionOccurrencePerDocument": 1',
+            '"rungThreeOfflineReviewExecutionAllowed": false',
+        ),
+        "rung3_manifest_v2": (
+            '"status": "rung3_review_plan_recorded_execution_not_authorized"',
+            '"result": "retained_archive_metadata_bound_preparation_only"',
+            '"nextAction": "prepare_separate_versioned_rung3_review_execution_permit"',
+            '"artifactScope": "post_v1_canonical_document_sync_delta_only"',
+            '"artifactCount": 7',
+            '"collectionSha256": "49b517e8f35b4db4537de193e0b68b3d6aa9dde173aa080edd8adb122af6567a"',
+            '"semanticBindings": [',
+            '"evidenceBasis": "static_contract_and_synthetic_tests_not_os_attestation"',
+            '"archiveReadByRungThree": false',
+            '"archiveMaterializedByRungThree": false',
+            '"sourceReviewPerformed": false',
+            '"reviewExecutionAuthorized": false',
+            '"repositoryOwnerAuthenticationRequired": false',
+            '"userActionRequired": false',
+        ),
+        "rung3_generator": (
+            'mode.add_argument("--check", action="store_true")',
+            'mode.add_argument("--emit-decision", action="store_true")',
+            "ARCHIVE_METADATA",
+            "archivePathCopiedIntoDecision",
+            "reviewExecutionAuthorized",
+            '"repositoryOwnerAuthenticationRequired": False',
+            '"externalIdentityProofRequired": False',
+            '"productEndpointAuthenticationRequired": True',
+        ),
+        "rung3_generator_tests": (
+            "class G2PionRungThreeDecisionPreparationTests(unittest.TestCase):",
+            "test_01_source_surface_has_no_filesystem_archive_process_or_network_import",
+            "test_14_runtime_mock_hooks_observe_zero_file_archive_process_network_or_git_access",
+        ),
+        "rung3_checker": (
+            "class SafeTrackedReader:",
+            "PINNED_RAW_SHA256 = {",
+            "PINNED_SEMANTIC_SHA256 = {",
+            "PINNED_COLLECTION_SHA256 = {",
+            "def validate_pinned_identity(",
+            "def validate_policy(",
+            "def validate_decision(",
+            "def validate_progress(",
+            "def validate_manifest(",
+            "def validate_supersession(",
+            "enforce_pinned_identity: bool = True",
+            '"checkedTrackedFiles": len(reader._cache)',
+            '"productEndpointAuthenticationRequired": True',
+        ),
+        "rung3_checker_tests": (
+            "class G2PionRungThreePreparationCheckerTests(unittest.TestCase):",
+            "test_01_complete_fixture_passes_without_archive_or_build_artifact",
+            "test_03_reader_rejects_unlisted_traversal_absolute_build_and_archive_paths",
+            "test_26_current_repository_passes_with_pinned_identity_enforced",
+            "test_27_pinned_identity_rejects_coordinated_core_drift",
+        ),
+        "rung3_result_v3": (
+            '"entryCount":129',
+            '"msDosRegularFileCount":129',
+            '"unixEntryCount":0',
+            '"sourceFilesObserved":100',
+            '"sourceTotalBytes":1077591',
+            '"sourceLogicalLineCount":39064',
+            '"hitCount":4701',
+            '"recordedRepresentativeCount":144',
+            '"omittedHitCount":4557',
+            '"semanticSourceReviewPerformed":false',
+            '"candidateSelected":false',
+            '"librarySelected":false',
+        ),
+        "rung3_runtime_manifest_v3": (
+            '"nextAction":"prepare_separate_versioned_rung3_semantic_source_review_decision"',
+            '"semanticSourceReviewPerformed":false',
+            '"rungThreeComplete":false',
+        ),
+        "rung3_receipt_v3": (
+            '"status": "rung3_v3_publication_read_back_complete"',
+            '"result": "bounded_v3_exact_candidate_totals_digests_and_ranked_representatives_publication_committed_semantic_review_not_performed"',
+            '"nextAction": "prepare_separate_versioned_rung3_semantic_source_review_decision"',
+            '"goSourceFileCount": 100',
+            '"goSourceTotalBytes": 1077591',
+            '"goSourceLogicalLineCount": 39064',
+            '"totalHitCount": 4701',
+            '"recordedRepresentativeCount": 144',
+            '"omittedHitCount": 4557',
+            '"msDosCreatorEntryCount": 129',
+            '"unixCreatorEntryCount": 0',
+            '"semanticSourceReviewPerformed": false',
+            '"candidateSelected": false',
+            '"librarySelected": false',
+            '"repositoryOwnerAuthenticationRequired": false',
+            '"executionPermitAuthenticationRequired": false',
+            '"userActionRequired": false',
+        ),
+        "rung3_progress_v4": (
+            '"status": "rung3_v3_publication_read_back_complete"',
+            '"nextAction": "prepare_separate_versioned_rung3_semantic_source_review_decision"',
+            '"candidateTotalHitCount": 4701',
+            '"candidateRecordedRepresentativeCount": 144',
+            '"candidateOmittedHitCount": 4557',
+            '"semanticSourceReviewPerformed": false',
+            '"candidateSelected": false',
+            '"librarySelected": false',
+        ),
+        "rung3_supersession_v4": (
+            '"status": "rung3_v3_publication_read_back_complete"',
+            '"nextAction": "prepare_separate_versioned_rung3_semantic_source_review_decision"',
+            '"historicalEvidenceRewritten": false',
+            '"semanticSourceReviewPerformed": false',
+            '"candidateSelected": false',
+            '"librarySelected": false',
+        ),
+        "rung3_manifest_v11": (
+            '"status": "rung3_v3_publication_read_back_complete"',
+            '"nextAction": "prepare_separate_versioned_rung3_semantic_source_review_decision"',
+            '"artifactCount": 7',
+            '"collectionSha256": "d5f09ef15eeadda4308e948e27413e742390977f3a758dd6ca9ac7c552b9e227"',
+            '"checkerReadsTrackedFilesOnly": true',
+            '"runtimeOutputReadAllowed": false',
+            '"semanticSourceReviewPerformed": false',
+            '"candidateSelected": false',
+            '"librarySelected": false',
+        ),
+        "rung3_success_checker_v3": (
+            "require_isolated_interpreter()",
+            "class FixedTrackedReader:",
+            "def validate_repository(root: Path = ROOT)",
+            "EXPECTED_STATUS = \"rung3_v3_publication_read_back_complete\"",
+            'EXPECTED_NEXT_ACTION = "prepare_separate_versioned_rung3_semantic_source_review_decision"',
+            '"repositoryOwnerAuthenticationRequired": False',
+            '"userActionRequired": False',
+        ),
+        "rung3_success_checker_tests_v3": (
+            "class SuccessEvidenceV3Tests(unittest.TestCase):",
+            "test_repository_validation_passes_with_tracked_only_counters",
+            "test_allowlist_has_no_build_archive_or_runtime_path",
+            "test_manifest_rejects_runtime_read_or_auth_boundary",
+            "test_validation_uses_only_pure_postrun_functions",
+        ),
+        "rung3_semantic_decision_v1": (
+            '"status":"rung3_semantic_source_review_v1_decision_recorded_execution_not_started"',
+            '"result":"canonical_v3_evidence_bound_full_semantic_review_execution_contract_recorded"',
+            '"nextAction":"execute_rung3_semantic_source_review_v1"',
+            '"allGoSourceBodiesRequired":true',
+            '"allLexicalObservationsRequired":true',
+            '"reviewPassCount":2',
+            '"sourceClasses":{"example":4,"production":52,"test":44}',
+            '"recordedRepresentativeCount":144',
+            '"omittedHitCount":4557',
+            '"totalHitCount":4701',
+            '"missingRequiredMechanismGapRequired":true',
+            '"dependencyClosureComplete":false',
+            '"semanticSourceReviewPerformed":false',
+            '"candidateSelected":false',
+            '"librarySelected":false',
+            '"executionPermitAuthenticationRequired":false',
+            '"executionPermitDocumentRequired":false',
+            '"repositoryOwnerAuthenticationRequired":false',
+            '"externalIdentityProofRequired":false',
+            '"userActionRequired":false',
+        ),
+        "rung3_semantic_decision_checker_v1": (
+            "require_isolated_interpreter()",
+            "class FixedTrackedReader:",
+            "EXPECTED_STATUS = \"rung3_semantic_source_review_v1_decision_recorded_execution_not_started\"",
+            'EXPECTED_RESULT = "canonical_v3_evidence_bound_full_semantic_review_execution_contract_recorded"',
+            'EXPECTED_NEXT_ACTION = "execute_rung3_semantic_source_review_v1"',
+            "def validate_documents(",
+            "def validate_repository(",
+            '"mutable Markdown pin forbidden"',
+            '"repositoryOwnerAuthenticationRequired": False',
+            '"executionPermitDocumentRequired": False',
+            '"userActionRequired": False',
+        ),
+        "rung3_semantic_decision_tests_v1": (
+            "class SemanticReviewDecisionV1Tests(unittest.TestCase):",
+            "test_02_authentication_or_user_action_escalation_is_rejected",
+            "test_03_mutable_markdown_binding_is_rejected",
+            "test_04_representative_only_review_contract_is_rejected",
+            "test_06_example_source_misclassification_is_rejected",
+            "test_07_one_use_zero_hit_must_remain_a_missing_mechanism_gap",
+            "test_08_dependency_candidate_and_library_overclaims_are_rejected",
+            "test_09_forbidden_execution_operations_are_rejected",
+            "test_13_allowlist_rejects_build_archive_markdown_and_traversal",
+            "test_14_stable_reader_rejects_symlinked_tracked_file",
+            "test_15_raw_pin_and_self_hash_drift_fail_closed",
+        ),
+        "rung3_semantic_pass_input_v1": (
+            '"documentType":"aetherlink.g2-pion-rung3-semantic-source-review-pass-input"',
+            '"status":"two_completed_semantic_review_passes_recorded_for_prepublication_validation"',
+            '"lexicalObservationCount":4701',
+            '"dependencyClosureComplete":false',
+            '"repositoryOwnerAuthenticationRequired":false',
+            '"userActionRequired":false',
+            '"sha256":"7240a2386d7ada48cde93792110bbcc72474b834cc1cc4c5294f945baad605be"',
+        ),
+        "rung3_semantic_primary_record_v1": (
+            '"documentType":"aetherlink.g2-pion-rung3-semantic-source-review-primary-pass-record"',
+            '"status":"pass_completed_recorded_non_attesting"',
+            '"passId":"primary"',
+            '"candidateCount":14',
+            '"engineIdentityAttested":false',
+            '"recordIsAuthenticationAuthority":false',
+            '"sha256":"323699afbb0747ca90fc1aa5bf6e8ec20cbc319408b7e1156064e4d90799f97f"',
+        ),
+        "rung3_semantic_independent_record_v1": (
+            '"documentType":"aetherlink.g2-pion-rung3-semantic-source-review-independent-pass-record"',
+            '"status":"pass_completed_recorded_non_attesting"',
+            '"passId":"independent"',
+            '"candidateCount":15',
+            '"engineIdentityAttested":false',
+            '"recordIsAuthenticationAuthority":false',
+            '"sha256":"59d5e2c09c5a3ec08b1796807b97dccadd678b5a50fcaae6d699d3b0a86868cc"',
+        ),
+        "rung3_semantic_classifications_v1": (
+            '"documentType":"aetherlink.g2-pion-rung3-semantic-source-review-classifications"',
+            '"status":"two_pass_semantic_classification_validated"',
+            '"severityCounts":{"P0":0,"P1":11,"P2":3,"P3":4,"none":1}',
+            '"repositoryOwnerAuthenticationRequired":false',
+            '"userActionRequired":false',
+            '"sha256":"d7feed1bdd5a7a8ee0eead002c598157c01dafe2d429b7c1c012978d39a38886"',
+        ),
+        "rung3_semantic_result_v1": (
+            '"documentType":"aetherlink.g2-pion-rung3-semantic-source-review-result"',
+            '"status":"rung3_semantic_source_review_v1_executed_semantic_closure_blocked"',
+            '"result":"two_pass_100_file_4701_observation_review_recorded_findings_and_dependency_gaps_remain"',
+            '"nextAction":"prepare_versioned_rung3_patch_and_dependency_closure_decision"',
+            '"semanticSourceReviewPerformed":true',
+            '"semanticClosureComplete":false',
+            '"dependencyClosureComplete":false',
+            '"rungThreeComplete":false',
+            '"candidateSelected":false',
+            '"librarySelected":false',
+            '"sha256":"9a7eeae26ca7538b33f805f35ade421c528dd52745fd6c737fedb7c70acf6e97"',
+        ),
+        "rung3_semantic_manifest_v1": (
+            '"documentType":"aetherlink.g2-pion-rung3-semantic-source-review-manifest"',
+            '"status":"semantic_review_atomic_commit_marker_checker_pending"',
+            '"rawSha256":"e76e8c9fa0a78c8c5c4beae1ebfd4c4f8144b411689a3a8bd5f8804ebf61c8c9"',
+            '"rawSha256":"a01b3518f1354d438542ae77c06aa92d8f0936d516b4070d19c5bf27791e8a98"',
+            '"independentPostRunCheckerRequiredForFinalSuccessEvidence":true',
+            '"sha256":"3812c15c57b93b7d35dde44b4cdb3d4abff4f696b517fb6e7e216dab0b45671e"',
+        ),
+        "rung3_semantic_runner_v1": (
+            "require_isolated_interpreter()",
+            "EXPECTED_PASS_CANDIDATE_COUNTS = {\"primary\": 14, \"independent\": 15}",
+            "EXPECTED_OBSERVATION_COUNT = 4_701",
+            "def validate_pass_input(",
+            "def build_output_documents(",
+            "def assert_output_hygiene(",
+            '"repositoryOwnerAuthenticationRequired": False',
+            '"userActionRequired": False',
+        ),
+        "rung3_semantic_result_checker_v1": (
+            "require_isolated_interpreter()",
+            "class FixedTrackedReader:",
+            "def _open_directory_child(",
+            "def _validate_directory_chain(",
+            "def open_all_held(",
+            "def reread_held(",
+            "def final_identity_barrier(",
+            "def rebuild_findings(",
+            'EXPECTED_NEXT_ACTION = "prepare_versioned_rung3_patch_and_dependency_closure_decision"',
+            '"repositoryPathAncestryHeldAndRevalidated": True',
+            '"sameUidConcurrentMutationPrevented": False',
+            '"repositoryOwnerAuthenticationRequired": False',
+            '"userActionRequired": False',
+        ),
+        "rung3_semantic_result_tests_v1": (
+            "class FixedReadTests(unittest.TestCase):",
+            "class SemanticMutationTests(unittest.TestCase):",
+            "test_ancestor_directory_replacement_fails_final_identity_barrier",
+            "test_unsafe_directory_failure_closes_every_opened_descriptor",
+            "test_final_barrier_catches_interleaved_mutation_and_residue",
+            "test_manifest_validation_is_called_after_classifications_and_result",
+            "test_rebuild_finding_identity_disagreement_severity_and_order",
+        ),
+        "rung3_patch_dependency_decision_v1": (
+            '"status": "prepared_options_unselected_dependency_closure_blocked"',
+            '"count": 19',
+            '"patch_required": 7',
+            '"unresolved": 12',
+            '"anyOptionSelected": false',
+            '"dependencyAcquisitionAuthorized": false',
+            '"findingsClosedByPreparation": 0',
+            '"rootPatchComplete": false',
+            '"dependencyClosureComplete": false',
+            '"nextAction": "prepare_separate_versioned_implementation_or_dependency_review_decision"',
+            '"sha256": "b0bc1feb01546e3bcd261794f21b51d526de1b3d84fabc36d459699319a773ef"',
+        ),
+        "rung3_patch_dependency_hardening_v1": (
+            '"documentType": "codex-security.hardening-analysis"',
+            '"analysisId": "g2_pion_rung3_patch_dependency_closure_decision_v1"',
+            '"collectionSha256": "853bec14073a55c21980a306b748bc52aa58ec00d94da11e3a65df2533cb4a1f"',
+            '"opportunityId": "capability-gated-network-boundary"',
+            '"opportunityId": "bounded-resource-lifecycle"',
+            '"opportunityId": "typed-secret-free-diagnostics"',
+            '"opportunityId": "fixed-point-dependency-closure"',
+            '"anyOptionSelected": false',
+            '"findingsClosedByAnalysis": 0',
+        ),
+        "rung3_patch_dependency_portfolio_v1": (
+            "# Security Hardening Review: Pion ICE v4.3.0 Rung-Three Patch And Dependency Closure",
+            "## Evidence Basis",
+            "## Constraints",
+            "## Opportunity Portfolio",
+            "## Recommendation Summary",
+            "## Next Decisions",
+            "These are recommendations, not selections.",
+        ),
+        "rung3_patch_dependency_checker_v1": (
+            "require_isolated_interpreter()",
+            "def strict_equal(",
+            "def secure_read(",
+            "def verify_self_binding(",
+            "def validate_analysis(",
+            "def validate_archive(",
+            "def validate_decision(",
+            "def validate_context_summary(",
+            "single-link file required",
+            "hardening exact top-level schema drift",
+            "contradictory_effect",
+            "READER_FACING_OVERCLAIM_PATTERNS",
+            "although|however",
+            "ambiguous authentication or user-action mention",
+            'DEPENDENCY_OPTION = "dependency_source_license_security_closure_review"',
+            "no implementation, acquisition, network, Git, authentication, or user action",
+        ),
+        "rung3_patch_dependency_tests_v1": (
+            "class DecisionCheckerTests(unittest.TestCase):",
+            "test_01_baseline_passes",
+            "test_05_selected_option_is_rejected_even_when_rebound",
+            "test_09_treatment_mapping_drift_is_rejected_even_when_rebound",
+            "test_12_checksum_context_selection_is_rejected_even_when_rebound",
+            '("networkAuthorized", 0)',
+            '"networkAuthorized", True',
+            "portfolio-hardlink-alias.md",
+            "but actually **Addresses** the finding",
+            "Dependency acquisition has been authorized.",
+            "Network authority has been granted.",
+            " although it **Addresses** the finding",
+            "External authentication.",
+            "test_17_implementation_directory_is_rejected",
+            "test_19_dependency_step_execution_is_rejected_even_when_rebound",
+        ),
+        "rung3_implementation_dependency_decision_v1": (
+            '"status": "dependency_review_selected_acquisition_not_authorized"',
+            '"result": "staged_fixed_point_dependency_review_selected_all_19_findings_remain_open"',
+            '"nextAction": "prepare_separate_versioned_bounded_dependency_source_identity_and_acquisition_decision"',
+            '"selectedPortfolioOptionIds": [',
+            '"staged-fixed-point-source-closure"',
+            '"selectedTreatmentUnitIds": [',
+            '"dependency_source_license_security_closure_review"',
+            '"selectedPortfolioOptionCount": 1',
+            '"selectedTreatmentUnitCount": 1',
+            '"decisionCheckerPath": "script/check_p2p_nat_g2_pion_rung3_patch_dependency_decision_v1.py"',
+            '"decisionCheckerRawSha256": "9b8d92ddcfa93e10ab1a67718b709773b21a4ebd6429552a1a85cfee01a9b078"',
+            '"decisionCheckerTestsRawSha256": "9fee38580b8090f8a9c732203a0ba6a4fbe704385856341d3cfd820916da8f1d"',
+            '"dependencyAcquisitionAuthorized": false',
+            '"findingsClosedBySelection": 0',
+            '"rootPatchComplete": false',
+            '"semanticClosureComplete": false',
+            '"rungThreeComplete": false',
+            '"candidateSelected": false',
+            '"librarySelected": false',
+            '"sha256": "359e8e51ba3568f7f66bec4222149ef8b28162f35f4868f3d4a78ae4f4b5c7a6"',
+        ),
+        "rung3_implementation_dependency_plan_v1": (
+            "# Implementation Plan: Staged Fixed-Point Dependency Source Closure",
+            "status=dependency_review_selected_acquisition_not_authorized",
+            "result=staged_fixed_point_dependency_review_selected_all_19_findings_remain_open",
+            "selectedPortfolioOption=staged-fixed-point-source-closure",
+            "selectedTreatmentUnit=dependency_source_license_security_closure_review",
+            "selectedPortfolioOptionCount=1",
+            "selectedTreatmentUnitCount=1",
+            "findingsClosedBySelection=0",
+            "dependencyAcquisitionAuthorized=false",
+            "externalAuthenticationRequired=false",
+            "userActionRequired=false",
+            "nextAction=prepare_separate_versioned_bounded_dependency_source_identity_and_acquisition_decision",
+            "## Ordered Work Packages",
+            "## Tests And Security Validation",
+            "## Acceptance Criteria",
+            "All 19 findings remain open",
+        ),
+        "rung3_implementation_dependency_checker_v1": (
+            "require_isolated_interpreter()",
+            "def strict_equal(",
+            "def secure_read(",
+            "def verify_snapshot(",
+            "def inventory_tree(",
+            "def inventory_prefixed_siblings(",
+            "def validate_semantic_predecessor_records(",
+            "EXPECTED_SEMANTIC_CONTENT_SHA256",
+            "expected_scopes = {",
+            "forbidden_claim_patterns = (",
+            "ambiguous plan authentication or user-action mention",
+            "def validate_plan(",
+            "19 findings open; no acquisition, implementation, closure,",
+            "network, Git, external authentication, or user action",
+        ),
+        "rung3_implementation_dependency_tests_v1": (
+            "class DecisionCheckerTests(unittest.TestCase):",
+            "test_01_baseline_passes",
+            "test_05_second_portfolio_option_selection_reaches_selection_layer",
+            "test_10_boolean_to_integer_authority_drift_is_rejected",
+            "test_23_rebound_plan_contradiction_reaches_semantic_layer",
+            "Dependency acquisition has been authorized.",
+            "Dependency acquisition authority is granted.",
+            "Candidate selection is complete.",
+            "External authentication.",
+            "test_28_unexpected_file_and_prefixed_sibling_are_rejected",
+            '"networkAuthorized", True',
+            "E_PREDECESSOR_SCHEMA",
+            "semantic review bool-to-int",
+            "overwrite bool-to-int",
+            "test_35_stale_self_binding_and_scope_swap_are_rejected",
+            "PREDECESSOR_CHECKER",
+            "PREDECESSOR_TESTS",
+            "test_30_fifo_is_rejected_by_inventory",
+            "test_31_hardlinked_plan_is_rejected_by_inventory",
+            "test_32_replace_after_read_is_rejected_at_toctou_layer",
+            "test_36_boolean_to_integer_selection_drift_is_rejected",
+        ),
+        "rung3_dependency_wave1_decision_v1": (
+            '"status": "wave1_source_identity_and_request_contract_prepared_acquisition_not_authorized"',
+            '"result": "exact_19_root_requirement_source_identities_and_bounded_wave1_request_contract_prepared"',
+            '"nextAction": "prepare_separate_versioned_wave1_execution_permit_after_checker_runner_and_tests"',
+            '"selectedTupleCount": 19',
+            '"checksumOnlyContextTupleCount": 4',
+            '"profileId": "android_api_26_through_36_arm64_v8a"',
+            '"profileId": "macos_14_or_newer_arm64"',
+            '"graphProfileMode": "union_of_exact_android_and_macos_v1_profiles"',
+            '"status": "prepared_not_authorized"',
+            '"mode": "single_exact_19_archive_wave"',
+            '"sourceAcquisitionAllowed": false',
+            '"sourceAcquisitionNetworkIoAllowed": false',
+            '"redirectsAllowed": false',
+            '"automaticRetryAllowed": false',
+            '"dependencyAcquisitionAuthorized": false',
+            '"requestCount": 0',
+            '"acceptedArtifactCount": 0',
+            '"openFindingCount": 19',
+            '"candidateSelected": false',
+            '"librarySelected": false',
+            '"sourceIdentityDecisionIsAcquisitionAuthority": false',
+            '"archiveByteSize": 293023',
+            '"archiveEntryCount": 129',
+            '"archiveTotalUncompressedBytes": 1131286',
+            '"checkerVerification": "stable_no_follow_descriptor_raw_zip_embedded_go_mod_go_sum_and_source_tree_recompute"',
+            '"moduleZipH1Algorithm": "golang.org/x/mod/sumdb/dirhash.HashZip(Hash1)_v1"',
+            '"goModH1Algorithm": "golang.org/x/mod/sumdb/dirhash.Hash1_v1_single_go_mod"',
+            '"orderedSourceSetDigestAlgorithm": "sha256"',
+            '"schema": "aetherlink.g2-pion-dependency-source-set-digest.v1"',
+            '"sha256": "13571495b1533d62073d25aed5abc342391a4cc147d26f1e6df375e6a2b33201"',
+        ),
+        "rung3_dependency_wave1_reader_v1": (
+            "# G2 Rung-Three Bounded Dependency Source Identity And Acquisition Decision v1",
+            "exactly the 19 requirements recorded in the retained",
+            "four checksum-only context tuples remain quarantined",
+            "It does not authorize or claim any request",
+            "Android V1",
+            "macOS V1",
+            "A later execution permit may allow the runner to issue at most 19 requests",
+            "This preparation does not grant that authority",
+            "direct P2P remains disabled",
+            "No credential, private key, signature, token",
+            "prepare a separate versioned one-use execution permit",
+            "reads all 129 in-memory entries without filesystem extraction",
+            "wave claim, staging prefix,",
+            "golang.org/x/mod/sumdb/dirhash.HashZip(Hash1)",
+            "aetherlink.g2-pion-dependency-source-set-digest.v1",
+        ),
+        "rung3_dependency_wave1_checker_v1": (
+            "sys.flags.isolated",
+            "def strict_equal(",
+            "def secure_read(",
+            "def secure_absence(",
+            "def verify_snapshot(",
+            "def verify_absence_snapshot(",
+            "def inventory_prefixed_siblings(",
+            "def verify_no_prefixed_siblings(",
+            "def verify_source_archive(",
+            "def build_expected_wave(",
+            "def verify_reader(",
+            "def verify_content_binding(",
+            "EXPECTED_PROFILES",
+            "EXPECTED_IDENTITY_POLICY",
+            "EXPECTED_RESOURCE_LIMITS",
+            "EXPECTED_PLANNED_CONTRACT",
+            "EXPECTED_AUTHORITY",
+            "EXPECTED_EXECUTION",
+            "EXPECTED_CLOSURE",
+            "EXPECTED_NONCLAIMS",
+            "preparation bound; acquisition and network remain unauthorized",
+        ),
+        "rung3_dependency_wave1_tests_v1": (
+            "class DependencyWaveOneDecisionTests(unittest.TestCase):",
+            "test_01_baseline",
+            "test_02_duplicate_json_key_is_rejected",
+            "test_16_profile_drift_is_rejected",
+            "test_17_profile_build_tag_drift_is_rejected",
+            "test_21_checksum_context_promotion_is_rejected",
+            "test_22_wave_h1_drift_is_rejected",
+            "test_28_direct_sumdb_proof_overclaim_is_rejected",
+            "test_29_resource_bound_bool_is_rejected",
+            "test_31_preparation_cannot_enable_network",
+            "test_32_redirect_or_retry_cannot_be_enabled",
+            "test_37_authority_bool_int_confusion_is_rejected",
+            "test_43_decision_symlink_is_rejected",
+            "test_44_reader_hardlink_is_rejected",
+            "test_46_replace_after_read_is_rejected",
+            "test_47_in_place_mutation_after_read_is_rejected",
+            "test_48_final_inventory_insertion_is_rejected",
+            "test_49_missing_retained_source_archive_is_rejected",
+            "test_50_changed_retained_source_archive_is_rejected",
+            "test_51_premature_terminal_artifacts_are_rejected",
+            "test_52_premature_claim_and_final_directory_are_rejected",
+            "test_53_premature_staging_prefix_is_rejected",
+            "test_54_late_execution_artifact_is_rejected",
+            "test_55_module_h1_canonicalization_drift_is_rejected",
+            "test_56_source_set_digest_canonicalization_drift_is_rejected",
+        ),
+        "rung3_dependency_wave1_permit_v1": (
+            '"status": "wave1_dependency_source_acquisition_authorized_not_consumed"',
+            '"result": "exact_19_public_proxy_zip_requests_authorized_once_not_executed"',
+            '"nextAction": "execute_bound_dependency_source_wave1_once"',
+            '"repositoryOwnerIdentityProofRequired": false',
+            '"externalAuthenticationRequired": false',
+            '"userActionRequired": false',
+            '"requestCount": 19',
+            '"host": "proxy.golang.org"',
+            '"redirectsAllowed": false',
+            '"automaticRetriesAllowed": false',
+            '"boundedSourceIntakeHttpsAuthorized": true',
+            '"runtimeNetworkAuthorized": false',
+            '"acceptedArtifactCountOnSuccess": 19',
+            '"postPublishUncertainState": "consumed_terminal_state_uncertain"',
+            '"permitConsumed": false',
+            '"openFindingCount": 19',
+            '"candidateSelected": false',
+            '"librarySelected": false',
+            '"sha256": "99f6daf629a6d0424b3ee5aa4a8a774322c65fcde94f3f9ae76599bb1c7cc240"',
+        ),
+        "rung3_dependency_wave1_permit_reader_v1": (
+            "# G2 Pion dependency wave-one execution permit v1",
+            "wave1_dependency_source_acquisition_authorized_not_consumed",
+            "exact_19_public_proxy_zip_requests_authorized_once_not_executed",
+            "execute_bound_dependency_source_wave1_once",
+            "사용자 인증, 저장소 소유자 증명, 외부 계정 로그인, 개인 키, 토큰,",
+            "exactly 19 sequential `GET` requests",
+            "No `.mod` or",
+            "It performs no source extraction",
+            "`acquired_pending_independent_readback`",
+            "`POST_PUBLISH_UNCERTAIN`",
+            "`consumed_terminal_state_uncertain`",
+            "new versioned recovery decision",
+            "matching central/local headers and data descriptors",
+            "fail-closed DOS-or-Unix creator-system policy",
+            "repository-root device",
+            "verified descriptor",
+            "Darwin `SIGALRM`/`setitimer`",
+            "All 19 downloaded",
+            "one-use state",
+            "`renameatx_np(RENAME_EXCL)`",
+            "Both parent directories are fsynced",
+            "hard wall-clock deadline",
+            "pre-publication re-hash/fsync",
+            "It does not claim to",
+        ),
+        "rung3_dependency_wave1_runner_v1": (
+            'EXPECTED_CHECKER_RAW_SHA256 = "014eaf714c41753e328679f1cc4f2ff0fe644039dbc1156406ad547a9f22bbe5"',
+            "ProxyHandler({})",
+            "RejectRedirects()",
+            "def download_exact_once(",
+            "def inspect_module_zip(",
+            "def validate_local_header(",
+            "def set_response_io_timeout(",
+            'read_one = getattr(response, "read1", None)',
+            "def hard_wall_clock_request_deadline(",
+            "def restore_hard_deadline_state(",
+            "for _attempt in range(2):",
+            "if disarmed:",
+            "signal.setitimer(signal.ITIMER_REAL",
+            "threading.current_thread() is threading.main_thread()",
+            "def named_entry_matches_open_file(",
+            "def validate_held_output_inventory(",
+            "validate_held_output_inventory(published_fd, held_outputs)",
+            "verified_fd: int",
+            "entry.create_system in {0, 3}",
+            'authority.get("repositoryRootIdentity")',
+            "def inspect_one_use_state(",
+            "one_use_artifact_count(inspect_one_use_state(root_fd)) == 0",
+            '"blocked_one_use_state_present"',
+            'phase="zip"',
+            'phase="publication"',
+            "def exclusive_rename_directory(",
+            'renameatx = getattr(libc, "renameatx_np", None)',
+            "os.fsync(parent_fd)",
+            "def normalize_execution_failure(",
+            '"E_POST_PUBLISH_UNCERTAIN"',
+            '"E_REQUEST_DEADLINE"',
+            "previous_umask = os.umask(0o077)",
+            'mode.add_argument("--execute", action="store_true")',
+            '"externalAuthenticationRequired": False',
+        ),
+        "rung3_dependency_wave1_runner_tests_v1": (
+            "class DependencyWaveOneRunnerTests(unittest.TestCase):",
+            "test_31_download_streams_exact_bytes_without_proxy_or_retry_surface",
+            "test_36_claim_is_owner_only_durable_and_not_reusable",
+            "test_38_post_publish_failure_code_is_distinct_and_nonretryable",
+            "test_41_preflight_never_builds_network_opener",
+            "test_44_success_receipt_and_manifest_keep_readback_false",
+        ),
+        "rung3_dependency_wave1_permit_checker_v1": (
+            "def typed_equal(",
+            "class SafeReader:",
+            "def repository_root_identity(",
+            "def verify_root(self)",
+            "def validate_runner_source(",
+            "def validate_permit(",
+            "def validate_permit_reader(",
+            "def validate_repository(",
+            "wave1_dependency_source_acquisition_authorized_not_consumed",
+            "requests authorized once, not consumed; no user authentication required.",
+        ),
+        "rung3_dependency_wave1_permit_tests_v1": (
+            "class DependencyWaveOnePermitCheckerTests(unittest.TestCase):",
+            "test_07_personal_project_authentication_escalation_is_rejected",
+            "test_22_post_publish_uncertain_state_and_recovery_boundary_are_required",
+            "test_25_authority_bool_to_integer_drift_is_rejected",
+            "test_33_safe_reader_rejects_symlink_hardlink_and_group_write",
+            "test_35_permit_reader_states_no_auth_and_uncertain_boundary",
+            "test_38_checker_failure_output_does_not_emit_raw_exception_text",
+        ),
+        "rung3_dependency_wave1_failure_v1": (
+            '"status":"wave1_acquisition_failed_permit_consumed"',
+            '"failureCode":"E_ZIP_RATIO"',
+            '"attemptedRequestCount":2',
+            '"completedRequestCount":1',
+            '"acceptedArtifactCount":0',
+            '"finalSetPublished":false',
+            '"automaticRetryAllowed":false',
+            '"externalAuthenticationRequired":false',
+            '"userActionRequired":false',
+        ),
+        "rung3_dependency_wave1_recovery_v1": (
+            '"status": "wave1_v1_failure_read_back_recovery_v2_design_selected_execution_not_authorized"',
+            '"result": "v1_ratio_policy_rejected_tuple2_after_two_responses_no_final_set_v2_bounded_telemetry_policy_selected"',
+            '"nextAction": "prepare_separate_v2_runner_checker_tests_and_execution_permit"',
+            '"responseBodyCompletedCount": 2',
+            '"validatedAndStagedTupleCount": 1',
+            '"compressionRatioPolicy": "non_gating_bounded_telemetry"',
+            '"v1RunnerExecuteAllowed": false',
+            ".wave-1-v2.claim",
+            '"networkAuthorized": false',
+            '"externalAuthenticationRequired": false',
+            '"userActionRequired": false',
+            '"sha256": "8cdcccbea4318d41f44da78000f3e4161251a5ad9542543c2962d4767ed1e968"',
+        ),
+        "rung3_dependency_wave1_recovery_reader_v1": (
+            "# G2 Pion dependency wave-one recovery decision v1",
+            "No user authentication is required",
+            "200:1",
+            "response-body count is",
+            "non-gating, exact-integer telemetry",
+            "may not be deleted, reused, resumed",
+            "19 tuples",
+        ),
+        "rung3_dependency_wave1_recovery_checker_v1": (
+            "def validate_v1_terminal_namespace(",
+            "validate_v1_terminal_namespace(reader)",
+            "responseBodyCompletedCount",
+            "validatedAndStagedTupleCount",
+            "v1AutomaticRetryAllowed",
+            "v2ExecutionAuthorized",
+            "no user authentication required",
+        ),
+        "rung3_dependency_wave1_recovery_tests_v1": (
+            "class DependencyWaveOneRecoveryDecisionTests(unittest.TestCase):",
+            "test_14_ratio_policy_threshold_substitution_is_rejected",
+            "test_17_legacy_counter_reintroduction_is_rejected",
+            "test_24_v1_staging_residue_is_rejected",
+            "test_30_replace_after_read_is_rejected",
+            "test_31_late_v1_terminal_artifact_insertion_is_rejected",
+        ),
+        "rung3_dependency_wave1_permit_v2": (
+            '"status": "wave1_v2_dependency_source_acquisition_authorized_not_consumed"',
+            '"result": "exact_19_public_proxy_zip_requests_v2_authorized_once_not_executed"',
+            '"nextAction": "execute_bound_dependency_source_wave1_v2_once"',
+            '"compressionRatioRejectionAllowed": false',
+            '"compressionRatioPolicy": "non_gating_bounded_telemetry"',
+            '"legacyCompletedRequestCountForbidden": true',
+            '"networkRequestAttemptCount": 0',
+            '"responseBodyCompletedCount": 0',
+            '"validatedAndStagedTupleCount": 0',
+            '"boundedSourceIntakeHttpsAuthorized": true',
+            '"runtimeNetworkAuthorized": false',
+            '"externalAuthenticationRequired": false',
+            '"userActionRequired": false',
+            '"sha256": "44fe9460f2c4fc746b0b8d9389874644371640f23409178a0d00b0667ab93bd1"',
+        ),
+        "rung3_dependency_wave1_permit_reader_v2": (
+            "# G2 Pion dependency wave-one execution permit v2",
+            "No user authentication is required",
+            "exactly 19 fresh sequential",
+            "non-gating exact-integer telemetry",
+            "16 MiB per response",
+            "1 GiB aggregate uncompressed",
+            "separate v2 claim",
+            "independent readback",
+        ),
+        "rung3_dependency_wave1_runner_v2": (
+            'EXPECTED_CHECKER_RAW_SHA256 = "35ac6152731f16e84c5ac3e4f6ddfdc04c109b51c01967ef63cc53557f1c2139"',
+            'EXPECTED_LEGACY_RUNNER_RAW_SHA256 = "571985e002c6b819bfbe7153bb445beef27fdcad239a289b492005435c2a0356"',
+            "def collect_compression_telemetry(",
+            "def inspect_module_zip_v2(",
+            "historicalV1ComparisonRatio",
+            "maximumRatioEntryOrdinal",
+            "networkRequestAttemptCount",
+            "responseBodyCompletedCount",
+            "validatedAndStagedTupleCount",
+            "FAILURE_DOCUMENT_KEYS",
+            "SUCCESS_RECEIPT_KEYS",
+            "SUCCESS_MANIFEST_KEYS",
+            "def safe_failure_document_v2(",
+            "def validate_success_final_inventory(",
+            "def preflight_validation_passed(",
+            "def runner_error_document(",
+            '"consumed_terminal_state_uncertain"',
+            "def classify_preflight_state(",
+            "AttemptCountingOpener",
+            'mode.add_argument("--execute", action="store_true")',
+            '"externalAuthenticationRequired": False',
+        ),
+        "rung3_dependency_wave1_runner_tests_v2": (
+            "class DependencyWaveOneV2RunnerTests(unittest.TestCase):",
+            "test_01_ratio_above_200_is_non_gating_and_recorded",
+            "test_05_single_file_absolute_limit_still_rejects",
+            "test_08_h1_failure_keeps_tuple_context",
+            "test_11_counter_invariant_rejects_order_type_and_bounds",
+            "test_18_partial_mixed_and_invalid_states_are_blocked",
+            "test_20_legacy_failure_is_rewrapped_with_tuple_and_safe_values",
+            "test_21_failure_validation_rejects_forbidden_extra_field",
+            "test_23_success_schema_and_inventory_accept_exact_fixture",
+            "test_25_success_inventory_rejects_tampered_file",
+            "test_26_fchmod_failure_keeps_tuple_context",
+            "test_27_post_publish_error_is_explicitly_terminal",
+            "test_28_failure_preflight_cannot_pass_the_gate",
+        ),
+        "rung3_dependency_wave1_permit_checker_v2": (
+            "def load_recovery_checker(",
+            "def validate_runner_source(",
+            "def validate_permit(",
+            "def validate_repository(",
+            "ABSOLUTE_RESOURCE_LIMITS",
+            "compressionRatioRejectionAllowed",
+            "legacyCompletedRequestCountForbidden",
+            "v2ExecutionAuthorized",
+            "no user authentication required",
+        ),
+        "rung3_dependency_wave1_permit_tests_v2": (
+            "class DependencyWaveOneV2PermitCheckerTests(unittest.TestCase):",
+            "test_03_external_authentication_escalation_is_rejected",
+            "test_04_v1_retry_authorization_is_rejected",
+            "test_13_ratio_rejection_reintroduction_is_rejected",
+            "test_15_absolute_limit_weakening_is_rejected",
+            "test_20_symlinked_v2_runner_is_rejected",
+        ),
+        "rung3_dependency_wave1_failure_v2": (
+            '"status":"wave1_v2_acquisition_failed_permit_consumed"',
+            '"failureCode":"E_GO_MOD_MISSING"',
+            '"failedTupleId":"wave1-011-466356e1ed29"',
+            '"networkRequestAttemptCount":11',
+            '"responseBodyCompletedCount":11',
+            '"validatedAndStagedTupleCount":10',
+            '"acceptedArtifactCount":0',
+            '"automaticRetryAllowed":false',
+            '"externalAuthenticationRequired":false',
+            '"userActionRequired":false',
+        ),
+        "rung3_dependency_wave1_recovery_v2": (
+            '"status": "wave1_v2_failure_read_back_recovery_v3_design_selected_execution_not_authorized"',
+            '"result": "v2_conflated_zip_and_mod_resources_tuple11_after_eleven_responses_no_final_set_v3_zip_plus_mod_policy_selected"',
+            '"nextAction": "prepare_separate_v3_runner_checker_tests_and_execution_permit"',
+            '"resourceModel": "fresh_exact_mod_then_zip_pair_for_each_tuple"',
+            '"maximumRequestCount": 38',
+            '"maximumAggregateModResponseBytes": 8388608',
+            '"maximumAggregateZipResponseBytes": 134217728',
+            '"v2RunnerExecuteAllowed": false',
+            '"networkAuthorized": false',
+            '"externalAuthenticationRequired": false',
+            '"userActionRequired": false',
+            '"sha256": "5a41d5bcf7dccb25bb5e558d892620748ea72e12e9f90244242ffdb44e092a93"',
+        ),
+        "rung3_dependency_wave1_recovery_reader_v2": (
+            "# G2 Pion dependency wave-one v2 recovery decision",
+            "v2 must not be retried",
+            "compatibility error",
+            "19 ordered tuples",
+            "exactly 38 sequential HTTPS responses",
+            "No repository-owner proof",
+        ),
+        "rung3_dependency_wave1_recovery_checker_v2": (
+            "def validate_failure_v2(",
+            "def validate_recovery(",
+            "def validate_terminal_namespace(",
+            "fresh_exact_mod_then_zip_pair_for_each_tuple",
+            "runnerSelfCheckQualifiesAsIndependentReadback",
+            "v3ExecutionAuthorized",
+            "no authentication required",
+        ),
+        "rung3_dependency_wave1_recovery_tests_v2": (
+            "class DependencyWaveOneRecoveryDecisionV2Tests(unittest.TestCase):",
+            "test_11_resource_order_mutation_is_rejected",
+            "test_14_embedded_mod_parity_removal_is_rejected",
+            "test_21_success_counter_mutation_is_rejected",
+            "test_30_runner_self_readback_escalation_is_rejected",
+            "test_39_final_barrier_detects_mutation",
+        ),
+        "rung3_dependency_wave1_permit_v3": (
+            '"status": "wave1_v3_dependency_source_acquisition_authorized_not_consumed"',
+            '"result": "exact_19_public_proxy_mod_then_zip_pairs_v3_authorized_once_not_executed"',
+            '"nextAction": "execute_bound_dependency_source_wave1_v3_once"',
+            '"requestCount": 38',
+            '"resourceOrderPerTuple": [',
+            '"acquisitionSuccessRegularFileCount": 41',
+            '"postReadbackRegularFileCount": 43',
+            '"authenticationRequired": false',
+            '"externalAuthenticationRequired": false',
+            '"userActionRequired": false',
+            '"sha256": "89d6b8eba9e4b94a7ede09cd804d1474b2b13da8aae84cc3b3cdaf9824cf8e7c"',
+        ),
+        "rung3_dependency_wave1_permit_reader_v3": (
+            "# G2 Pion dependency wave-one execution permit v3",
+            "No account login, ownership proof, private key, token, password, signature, or",
+            "exactly 38 sequential unauthenticated HTTPS GET",
+            "The acquisition publication reserves exactly 41 regular-file paths",
+            "Independent readback adds",
+            "v3 runner and its 45 tests",
+            "reader contract's exact",
+            "strict permit checker and its 39 tests",
+            "checker and its 34 tests",
+        ),
+        "rung3_dependency_wave1_runner_v3": (
+            "EXPECTED_PERMIT_CHECKER_RAW_SHA256",
+            "def validate_mod_bytes(",
+            "def inspect_module_zip_v3(",
+            "def validate_held_output_inventory_v3(",
+            "def validate_terminal_state(",
+            "def preflight(",
+            "def execute_once(",
+            '"consumed_terminal_state_uncertain"',
+            '"externalAuthenticationRequired": False',
+        ),
+        "rung3_dependency_wave1_runner_tests_v3": (
+            "class DependencyWaveOneV3RunnerTests(unittest.TestCase):",
+            "test_35_zip_without_embedded_go_mod_passes",
+            "test_37_zip_with_mismatched_embedded_go_mod_is_rejected",
+            "test_41_mod_download_streams_exact_body_and_hash",
+            "test_44_download_request_has_no_credentials_or_cookies",
+            "test_45_empty_response_is_rejected",
+        ),
+        "rung3_dependency_wave1_permit_checker_v3": (
+            "def build_expected_permit(",
+            "def validate_tool_sources(",
+            "def inspect_v3_namespace(",
+            "def validate_repository(",
+            "expected_ordered_requests",
+            "expected_reserved_paths",
+            '"externalAuthenticationRequired": False',
+        ),
+        "rung3_dependency_wave1_permit_tests_v3": (
+            "class DependencyWaveOneV3PermitCheckerTests(unittest.TestCase):",
+            "test_06_authentication_escalation_is_rejected",
+            "test_17_runner_checker_hash_pin_drift_is_rejected",
+            "test_20_independent_readback_tests_drift_is_rejected",
+            "test_26_mod_then_zip_order_drift_is_rejected",
+            "test_35_final_identity_barrier_detects_mutation",
+            "test_36_coherent_terminal_namespace_is_left_to_runner",
+            "test_37_reader_contract_byte_drift_is_rejected",
+            "test_38_symlinked_reader_contract_is_rejected",
+            "test_39_reader_contract_final_barrier_detects_mutation",
+        ),
+        "rung3_dependency_wave1_readback_checker_v3": (
+            "def validate_receipt_and_resources(",
+            "def validate_acquisition_manifest(",
+            "def build_readback_receipt(",
+            "def validate_state(",
+            "def record_readback(",
+            '"authenticationRequired": False',
+        ),
+        "rung3_dependency_wave1_readback_tests_v3": (
+            "class DependencyWaveOneV3ReadbackTests(unittest.TestCase):",
+            "test_03_go_spew_without_embedded_go_mod_passes",
+            "test_04_record_writes_receipt_then_manifest_only",
+            "test_12_embedded_external_mod_mismatch_is_rejected",
+            "test_29_partial_readback_publication_is_rejected",
+            "test_34_preflight_never_requires_authentication",
+        ),
+        "rung3_dependency_wave1_success_receipt_v3": (
+            '"status":"acquired_pending_independent_readback"',
+            '"networkRequestAttemptCount":38',
+            '"responseBodyCompletedCount":38',
+            '"acceptedArtifactCount":38',
+            '"acceptedTupleCount":19',
+            '"orderedSourceSetSha256":"2b0176d6d2b800c9a2abd34bf06279403e6f008bd3475ff45970abf11e843246"',
+            '"externalAuthenticationRequired":false',
+            '"userActionRequired":false',
+        ),
+        "rung3_dependency_wave1_success_manifest_v3": (
+            '"status":"wave1_v3_acquisition_publication_complete_pending_independent_readback"',
+            '"successReceiptRawSha256":"10d63291813d66c1d7c9edaf7108842113bccbc2a84f799ddafe3f02a820f3b3"',
+            '"manifestWrittenLast":true',
+            '"independentReadbackPassed":false',
+        ),
+        "rung3_dependency_wave1_readback_receipt_v1": (
+            '"status":"wave1_v3_independent_readback_complete_manifest_pending"',
+            '"retainedResourceCount":38',
+            '"retainedZipCount":19',
+            '"retainedModCount":19',
+            '"twoStableFullSetReadbackPassesCompleted":true',
+            '"networkUsed":false',
+            '"externalAuthenticationRequired":false',
+        ),
+        "rung3_dependency_wave1_readback_manifest_v1": (
+            '"status":"wave1_v3_independent_readback_publication_complete"',
+            '"independentReadbackPassed":true',
+            '"postReadbackRegularFileCount":43',
+            '"manifestWrittenLast":true',
+            '"networkUsed":false',
+        ),
+        "rung3_dependency_wave1_readback_recovery_decision_v2": (
+            '"status":"wave1_v3_acquired_readback_v1_checker_contract_mismatch_recovery_authorized"',
+            '"recordReadbackAuthorized":true',
+            '"acquisitionRetryAuthorized":false',
+            '"checkerRawSha256":"c201733f8c87224dabdebb7392209014a10f089d62f6473b52349f511a223933"',
+            '"externalAuthenticationRequired":false',
+        ),
+        "rung3_dependency_wave1_readback_recovery_checker_v2": (
+            "def corrected_strict_json(",
+            "def validate_recovery_authority(",
+            "def record_readback(",
+            "ORIGINAL_CHECKER_RAW_SHA256",
+            "externalAuthenticationRequired",
+        ),
+        "rung3_dependency_wave1_readback_recovery_tests_v2": (
+            "class DependencyWaveOneV3ReadbackRecoveryV2Tests(unittest.TestCase):",
+            "test_03_raw_drift_duplicate_nonfinite_bom_and_lf_are_rejected",
+            "test_06_preflight_validates_the_complete_acquisition_read_only",
+        ),
+        "rung3_dependency_wave1_post_verification_decision_v3": (
+            '"status":"wave1_v3_readback_published_fixed_hash_post_verification_authorized"',
+            '"fixedHashEnforcedInsideHeldValidation":true',
+            '"verificationOnly":true',
+            '"recordModeExposed":false',
+            '"readbackRecordAuthorized":false',
+            '"externalAuthenticationRequired":false',
+        ),
+        "rung3_dependency_wave1_post_verifier_v3": (
+            "def hardened_strict_json(",
+            "def validate_decision_document(",
+            "def validate_post_verification_authority(",
+            "def validate_state(",
+            '"fixedHashEnforcedInsideHeldValidation"',
+            '"recordModeExposed"',
+        ),
+        "rung3_dependency_wave1_post_verifier_tests_v3": (
+            "class DependencyWaveOneV3PostVerificationV3Tests(unittest.TestCase):",
+            "test_03_canonicalized_predecessor_bypass_is_rejected",
+            "test_06_decision_validation_rejects_boolean_integer_confusion",
+            "test_08_complete_readback_is_verified_without_writes",
+            "test_09_post_verifier_has_no_record_surface_or_network_import",
+        ),
     }
     for label, snippets in required_snippets.items():
         for snippet in snippets:
@@ -52940,25 +54240,665 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
             f"{paths['runner_tests'].relative_to(ROOT)}: expected exactly 16 "
             f"offline runner tests, found {runner_test_count}."
         )
+    receipt_test_count = len(
+        re.findall(r"(?m)^\s+def\s+test_", texts["receipt_tests"])
+    )
+    if receipt_test_count != 12:
+        failures.append(
+            f"{paths['receipt_tests'].relative_to(ROOT)}: expected exactly 12 "
+            f"offline receipt tests, found {receipt_test_count}."
+        )
+    rung3_generator_test_count = len(
+        re.findall(r"(?m)^\s+def\s+test_", texts["rung3_generator_tests"])
+    )
+    if rung3_generator_test_count != 15:
+        failures.append(
+            f"{paths['rung3_generator_tests'].relative_to(ROOT)}: expected exactly "
+            f"15 preparation-generator tests, found {rung3_generator_test_count}."
+        )
+    rung3_checker_test_count = len(
+        re.findall(r"(?m)^\s+def\s+test_", texts["rung3_checker_tests"])
+    )
+    if rung3_checker_test_count != 27:
+        failures.append(
+            f"{paths['rung3_checker_tests'].relative_to(ROOT)}: expected exactly "
+            f"27 preparation-checker tests, found {rung3_checker_test_count}."
+        )
+    rung3_success_checker_test_count = len(
+        re.findall(r"(?m)^\s+def\s+test_", texts["rung3_success_checker_tests_v3"])
+    )
+    if rung3_success_checker_test_count != 17:
+        failures.append(
+            f"{paths['rung3_success_checker_tests_v3'].relative_to(ROOT)}: "
+            f"expected exactly 17 tracked-only success-evidence tests, found "
+            f"{rung3_success_checker_test_count}."
+        )
+    rung3_semantic_decision_test_count = len(
+        re.findall(r"(?m)^\s+def\s+test_", texts["rung3_semantic_decision_tests_v1"])
+    )
+    if rung3_semantic_decision_test_count != 15:
+        failures.append(
+            f"{paths['rung3_semantic_decision_tests_v1'].relative_to(ROOT)}: "
+            f"expected exactly 15 tracked-only semantic-review decision tests, "
+            f"found {rung3_semantic_decision_test_count}."
+        )
+    rung3_semantic_result_test_count = len(
+        re.findall(r"(?m)^\s+def\s+test_", texts["rung3_semantic_result_tests_v1"])
+    )
+    if rung3_semantic_result_test_count != 25:
+        failures.append(
+            f"{paths['rung3_semantic_result_tests_v1'].relative_to(ROOT)}: "
+            f"expected exactly 25 tracked-only semantic-review result tests, "
+            f"found {rung3_semantic_result_test_count}."
+        )
+    rung3_patch_dependency_test_count = len(
+        re.findall(r"(?m)^\s+def\s+test_", texts["rung3_patch_dependency_tests_v1"])
+    )
+    if rung3_patch_dependency_test_count != 28:
+        failures.append(
+            f"{paths['rung3_patch_dependency_tests_v1'].relative_to(ROOT)}: "
+            f"expected exactly 28 patch/dependency decision mutation tests, "
+            f"found {rung3_patch_dependency_test_count}."
+        )
+    rung3_implementation_dependency_test_count = len(
+        re.findall(
+            r"(?m)^\s+def\s+test_",
+            texts["rung3_implementation_dependency_tests_v1"],
+        )
+    )
+    if rung3_implementation_dependency_test_count != 36:
+        failures.append(
+            f"{paths['rung3_implementation_dependency_tests_v1'].relative_to(ROOT)}: "
+            "expected exactly 36 implementation/dependency-review decision "
+            f"mutation tests, found {rung3_implementation_dependency_test_count}."
+        )
+    rung3_dependency_wave1_test_count = len(
+        re.findall(
+            r"(?m)^\s+def\s+test_",
+            texts["rung3_dependency_wave1_tests_v1"],
+        )
+    )
+    if rung3_dependency_wave1_test_count != 56:
+        failures.append(
+            f"{paths['rung3_dependency_wave1_tests_v1'].relative_to(ROOT)}: "
+            "expected exactly 56 dependency wave-one decision mutation tests, "
+            f"found {rung3_dependency_wave1_test_count}."
+        )
+    rung3_dependency_wave1_runner_test_count = len(
+        re.findall(
+            r"(?m)^\s+def\s+test_",
+            texts["rung3_dependency_wave1_runner_tests_v1"],
+        )
+    )
+    if rung3_dependency_wave1_runner_test_count != 44:
+        failures.append(
+            f"{paths['rung3_dependency_wave1_runner_tests_v1'].relative_to(ROOT)}: "
+            "expected exactly 44 dependency wave-one runner tests, "
+            f"found {rung3_dependency_wave1_runner_test_count}."
+        )
+    rung3_dependency_wave1_permit_test_count = len(
+        re.findall(
+            r"(?m)^\s+def\s+test_",
+            texts["rung3_dependency_wave1_permit_tests_v1"],
+        )
+    )
+    if rung3_dependency_wave1_permit_test_count != 38:
+        failures.append(
+            f"{paths['rung3_dependency_wave1_permit_tests_v1'].relative_to(ROOT)}: "
+            "expected exactly 38 dependency wave-one execution-permit tests, "
+            f"found {rung3_dependency_wave1_permit_test_count}."
+        )
+    rung3_dependency_wave1_recovery_test_count = len(
+        re.findall(
+            r"(?m)^\s+def\s+test_",
+            texts["rung3_dependency_wave1_recovery_tests_v1"],
+        )
+    )
+    if rung3_dependency_wave1_recovery_test_count != 31:
+        failures.append(
+            f"{paths['rung3_dependency_wave1_recovery_tests_v1'].relative_to(ROOT)}: "
+            "expected exactly 31 dependency wave-one recovery tests, "
+            f"found {rung3_dependency_wave1_recovery_test_count}."
+        )
+    rung3_dependency_wave1_runner_test_count_v2 = len(
+        re.findall(
+            r"(?m)^\s+def\s+test_",
+            texts["rung3_dependency_wave1_runner_tests_v2"],
+        )
+    )
+    if rung3_dependency_wave1_runner_test_count_v2 != 28:
+        failures.append(
+            f"{paths['rung3_dependency_wave1_runner_tests_v2'].relative_to(ROOT)}: "
+            "expected exactly 28 dependency wave-one v2 runner tests, "
+            f"found {rung3_dependency_wave1_runner_test_count_v2}."
+        )
+    rung3_dependency_wave1_permit_test_count_v2 = len(
+        re.findall(
+            r"(?m)^\s+def\s+test_",
+            texts["rung3_dependency_wave1_permit_tests_v2"],
+        )
+    )
+    if rung3_dependency_wave1_permit_test_count_v2 != 20:
+        failures.append(
+            f"{paths['rung3_dependency_wave1_permit_tests_v2'].relative_to(ROOT)}: "
+            "expected exactly 20 dependency wave-one v2 permit tests, "
+            f"found {rung3_dependency_wave1_permit_test_count_v2}."
+        )
+    rung3_dependency_wave1_recovery_test_count_v2 = len(
+        re.findall(
+            r"(?m)^\s+def\s+test_",
+            texts["rung3_dependency_wave1_recovery_tests_v2"],
+        )
+    )
+    if rung3_dependency_wave1_recovery_test_count_v2 != 39:
+        failures.append(
+            f"{paths['rung3_dependency_wave1_recovery_tests_v2'].relative_to(ROOT)}: "
+            "expected exactly 39 dependency wave-one v2 recovery tests, "
+            f"found {rung3_dependency_wave1_recovery_test_count_v2}."
+        )
+    rung3_dependency_wave1_runner_test_count_v3 = len(
+        re.findall(
+            r"(?m)^\s+def\s+test_",
+            texts["rung3_dependency_wave1_runner_tests_v3"],
+        )
+    )
+    if rung3_dependency_wave1_runner_test_count_v3 != 45:
+        failures.append(
+            f"{paths['rung3_dependency_wave1_runner_tests_v3'].relative_to(ROOT)}: "
+            "expected exactly 45 dependency wave-one v3 runner tests, "
+            f"found {rung3_dependency_wave1_runner_test_count_v3}."
+        )
+    rung3_dependency_wave1_permit_test_count_v3 = len(
+        re.findall(
+            r"(?m)^\s+def\s+test_",
+            texts["rung3_dependency_wave1_permit_tests_v3"],
+        )
+    )
+    if rung3_dependency_wave1_permit_test_count_v3 != 39:
+        failures.append(
+            f"{paths['rung3_dependency_wave1_permit_tests_v3'].relative_to(ROOT)}: "
+            "expected exactly 39 dependency wave-one v3 permit tests, "
+            f"found {rung3_dependency_wave1_permit_test_count_v3}."
+        )
+    rung3_dependency_wave1_readback_test_count_v3 = len(
+        re.findall(
+            r"(?m)^\s+def\s+test_",
+            texts["rung3_dependency_wave1_readback_tests_v3"],
+        )
+    )
+    if rung3_dependency_wave1_readback_test_count_v3 != 34:
+        failures.append(
+            f"{paths['rung3_dependency_wave1_readback_tests_v3'].relative_to(ROOT)}: "
+            "expected exactly 34 dependency wave-one v3 readback tests, "
+            f"found {rung3_dependency_wave1_readback_test_count_v3}."
+        )
+    expected_semantic_decision_artifact_sha256 = {
+        "rung3_semantic_decision_v1": (
+            "b65379bf0f97cd0558c93d818e5ecea14242a938ca5922796eb4a28f345e7cfc"
+        ),
+        "rung3_semantic_decision_checker_v1": (
+            "23cf5d92335b941779b0e0bc3caed2b0396c49698c7d30c8ed6fa0f99ac5764d"
+        ),
+        "rung3_semantic_decision_tests_v1": (
+            "dfbbbaac183e5c63b5f6abce06bf098d13c35e898840365178d1b1c440d7604f"
+        ),
+    }
+    for label, expected_sha256 in expected_semantic_decision_artifact_sha256.items():
+        actual_sha256 = hashlib.sha256(paths[label].read_bytes()).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)}: semantic-review decision "
+                f"artifact SHA-256 drifted; expected {expected_sha256}, found "
+                f"{actual_sha256}."
+            )
+
+    expected_semantic_publication_artifact_sha256 = {
+        "rung3_semantic_pass_input_v1": (
+            "21a228b16d57addfef20d0ff53ec81a7ee5846462d60d8d8fbc4ffa25addf548"
+        ),
+        "rung3_semantic_primary_record_v1": (
+            "7d12f76bc38befc728b0f78bbda3c792e398e0984c98a86825124b3d457678fc"
+        ),
+        "rung3_semantic_independent_record_v1": (
+            "b45b7a80813bafc46a3cc0d0358b6738f408dd025b092dfd2d99a17eb8a92557"
+        ),
+        "rung3_semantic_classifications_v1": (
+            "e76e8c9fa0a78c8c5c4beae1ebfd4c4f8144b411689a3a8bd5f8804ebf61c8c9"
+        ),
+        "rung3_semantic_result_v1": (
+            "a01b3518f1354d438542ae77c06aa92d8f0936d516b4070d19c5bf27791e8a98"
+        ),
+        "rung3_semantic_manifest_v1": (
+            "300da97505b4715576d665846b23dd8363b36d416ed5d24ed4a7d4e77f098e6f"
+        ),
+        "rung3_semantic_runner_v1": (
+            "4537d71b3eb4583ea6d2bf62995439fe7a06a3704902c0b855fccf26786328f1"
+        ),
+        "rung3_semantic_result_checker_v1": (
+            "45c6380301aa7d5efeb590eb4bca4c4ef1065187c4651a67c4445a5fa3db9ace"
+        ),
+        "rung3_semantic_result_tests_v1": (
+            "7aecf66c94b358a88213d01f0bebb2c4a847be391540e36a65cb1ff92d396e21"
+        ),
+    }
+    for label, expected_sha256 in expected_semantic_publication_artifact_sha256.items():
+        actual_sha256 = hashlib.sha256(paths[label].read_bytes()).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)}: semantic-review publication "
+                f"artifact SHA-256 drifted; expected {expected_sha256}, found "
+                f"{actual_sha256}."
+            )
+
+    expected_patch_dependency_artifact_sha256 = {
+        "rung3_patch_dependency_decision_v1": (
+            "5ab3bfe60c617c58b88ae0885f2bdb6fba0c315c0478d6eacf526cdd935903ec"
+        ),
+        "rung3_patch_dependency_hardening_v1": (
+            "d426e363672e8d36155d37bad754e89ce775d37d16c3cbd0a8de8b6abd393866"
+        ),
+        "rung3_patch_dependency_portfolio_v1": (
+            "1d3dbc89ac20b7fa961e4f986d3a9002de6e51943306d9927fc3220b902bc606"
+        ),
+        "rung3_patch_dependency_checker_v1": (
+            "9b8d92ddcfa93e10ab1a67718b709773b21a4ebd6429552a1a85cfee01a9b078"
+        ),
+        "rung3_patch_dependency_tests_v1": (
+            "9fee38580b8090f8a9c732203a0ba6a4fbe704385856341d3cfd820916da8f1d"
+        ),
+    }
+    for label, expected_sha256 in expected_patch_dependency_artifact_sha256.items():
+        actual_sha256 = hashlib.sha256(paths[label].read_bytes()).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)}: patch/dependency decision "
+                f"artifact SHA-256 drifted; expected {expected_sha256}, found "
+                f"{actual_sha256}."
+            )
+
+    expected_implementation_dependency_artifact_sha256 = {
+        "rung3_implementation_dependency_decision_v1": (
+            "6a14603c02c9aa9d9d78377b1c38a9f0d47391c0ac1ff8eea1769198ddc13ff8"
+        ),
+        "rung3_implementation_dependency_plan_v1": (
+            "22d7cfbc2db9e34fab641167d227e650cb490dcfd9a402a4dff86e1f967234bc"
+        ),
+        "rung3_implementation_dependency_checker_v1": (
+            "ee96b53eac90dd65d53ac9b7484a65b07d1749cc585559764e3aa9f42251b1f9"
+        ),
+        "rung3_implementation_dependency_tests_v1": (
+            "558d53ab0f29c57815e6fa0f14e1743f942865a05e424a4bc8227be126187a5a"
+        ),
+    }
+    for (
+        label,
+        expected_sha256,
+    ) in expected_implementation_dependency_artifact_sha256.items():
+        actual_sha256 = hashlib.sha256(paths[label].read_bytes()).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)}: implementation/dependency-"
+                "review decision artifact SHA-256 drifted; expected "
+                f"{expected_sha256}, found {actual_sha256}."
+            )
+
+    expected_dependency_wave1_artifact_sha256 = {
+        "rung3_dependency_wave1_decision_v1": (
+            "03bd5cac4793d379160a9c316d726c9d30d7a4aa00384d5687b1659acfb8943e"
+        ),
+        "rung3_dependency_wave1_reader_v1": (
+            "aed39c3614f0237656f43aafabf45f125939cfb888ab9a5b76c4bcb8f26ce850"
+        ),
+        "rung3_dependency_wave1_checker_v1": (
+            "207775b8f0b2c22cf50bb5f62d7e64657cf1ed73cca540b46cac36ea2da5c74b"
+        ),
+        "rung3_dependency_wave1_tests_v1": (
+            "1fe982561a61d9f73e0d2eb2b3f9d35b07b080ea042835de57e78c2c6ab95249"
+        ),
+    }
+    for label, expected_sha256 in expected_dependency_wave1_artifact_sha256.items():
+        actual_sha256 = hashlib.sha256(paths[label].read_bytes()).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)}: dependency wave-one decision "
+                f"artifact SHA-256 drifted; expected {expected_sha256}, found "
+                f"{actual_sha256}."
+            )
+
+    expected_dependency_wave1_permit_artifact_sha256 = {
+        "rung3_dependency_wave1_permit_v1": (
+            "153e6ed84a8b8942d7420e9f5e184c03b105622b6a9b6d7f29e656e683058971"
+        ),
+        "rung3_dependency_wave1_permit_reader_v1": (
+            "e14f93a03cfccebbb68545710e61fd2101c023f98d4595253cbdee80554ae0d5"
+        ),
+        "rung3_dependency_wave1_runner_v1": (
+            "571985e002c6b819bfbe7153bb445beef27fdcad239a289b492005435c2a0356"
+        ),
+        "rung3_dependency_wave1_runner_tests_v1": (
+            "a46a882af332c287c2c34ad257f49a3d157186b663382567ddc64291fc0ccf60"
+        ),
+        "rung3_dependency_wave1_permit_checker_v1": (
+            "014eaf714c41753e328679f1cc4f2ff0fe644039dbc1156406ad547a9f22bbe5"
+        ),
+        "rung3_dependency_wave1_permit_tests_v1": (
+            "088189df0fc4c77bb91f152b437381910de6f5a2862b4550a27cd00da0fd6423"
+        ),
+    }
+    for (
+        label,
+        expected_sha256,
+    ) in expected_dependency_wave1_permit_artifact_sha256.items():
+        actual_sha256 = hashlib.sha256(paths[label].read_bytes()).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)}: dependency wave-one execution-"
+                f"permit artifact SHA-256 drifted; expected {expected_sha256}, "
+                f"found {actual_sha256}."
+            )
+
+    expected_dependency_wave1_recovery_artifact_sha256 = {
+        "rung3_dependency_wave1_failure_v1": (
+            "cdf4d75aeddb2accc4720c2ef8a606b22e333eac9aea2196a010f9383dc877fa"
+        ),
+        "rung3_dependency_wave1_recovery_v1": (
+            "313e548e8d538ccc582f4d1c74618823d31b45915b4a5124378bc0d8b98315c2"
+        ),
+        "rung3_dependency_wave1_recovery_reader_v1": (
+            "02fc75469af753bec9070b893b8755762b05262f1c4d1ced9da67645d1e127e9"
+        ),
+        "rung3_dependency_wave1_recovery_checker_v1": (
+            "33ea25abeac607eb2a11a4039c293ba4949adec850217a319d96dd0bcf69bbe4"
+        ),
+        "rung3_dependency_wave1_recovery_tests_v1": (
+            "e90551eeca4efdde87bcbc205d6550255375958908dac991e305716c8a5343e4"
+        ),
+    }
+    for (
+        label,
+        expected_sha256,
+    ) in expected_dependency_wave1_recovery_artifact_sha256.items():
+        actual_sha256 = hashlib.sha256(paths[label].read_bytes()).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)}: dependency wave-one recovery "
+                f"artifact SHA-256 drifted; expected {expected_sha256}, found "
+                f"{actual_sha256}."
+            )
+
+    expected_dependency_wave1_permit_v2_artifact_sha256 = {
+        "rung3_dependency_wave1_permit_v2": (
+            "80867396723efcc3a1f0d3c3beca94b3634883058224382231ddcbb141328e1c"
+        ),
+        "rung3_dependency_wave1_permit_reader_v2": (
+            "166b765bea7f5b25163d00dde2f2b5891d0b0e13b6677d5f3301259da572ccf5"
+        ),
+        "rung3_dependency_wave1_runner_v2": (
+            "9dcbd6e70e6a7904b468042ee116f04f014a4299f30ea32c41c4f850af53b823"
+        ),
+        "rung3_dependency_wave1_runner_tests_v2": (
+            "103586cafd5a92dc8851d36a13a759747e1eb6089425a47ef3cbbf4a0dce90e9"
+        ),
+        "rung3_dependency_wave1_permit_checker_v2": (
+            "35ac6152731f16e84c5ac3e4f6ddfdc04c109b51c01967ef63cc53557f1c2139"
+        ),
+        "rung3_dependency_wave1_permit_tests_v2": (
+            "8dbd52d521f6f1693b7c110106724579e0ffdecd4a4f6ddd2d303541aad5deb9"
+        ),
+    }
+    for (
+        label,
+        expected_sha256,
+    ) in expected_dependency_wave1_permit_v2_artifact_sha256.items():
+        actual_sha256 = hashlib.sha256(paths[label].read_bytes()).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)}: dependency wave-one v2 "
+                f"execution-permit artifact SHA-256 drifted; expected "
+                f"{expected_sha256}, found {actual_sha256}."
+            )
+
+    expected_dependency_wave1_recovery_v2_artifact_sha256 = {
+        "rung3_dependency_wave1_failure_v2": (
+            "e04e7224ef6288e964f36087170c2ce888f398bb967475d144508ceda0ef44dc"
+        ),
+        "rung3_dependency_wave1_recovery_v2": (
+            "c03ca34315226ad8a59d8857448657c3be2565b22c0583085eb93c6c65ad72fd"
+        ),
+        "rung3_dependency_wave1_recovery_reader_v2": (
+            "7681084a2bac8d8c07ef803c1b6db7cd2e82fdfc6c4588076d277f89d12daf6d"
+        ),
+        "rung3_dependency_wave1_recovery_checker_v2": (
+            "25e4f6f6f9d49424428bd9017afad688652467fa8a2c038233dacea1aed15cbc"
+        ),
+        "rung3_dependency_wave1_recovery_tests_v2": (
+            "48e6d457e84ab3731f8bfed83f0f7775505b97cfd503821485fe7982e86c6da1"
+        ),
+    }
+    for (
+        label,
+        expected_sha256,
+    ) in expected_dependency_wave1_recovery_v2_artifact_sha256.items():
+        actual_sha256 = hashlib.sha256(paths[label].read_bytes()).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)}: dependency wave-one v2 "
+                f"recovery artifact SHA-256 drifted; expected {expected_sha256}, "
+                f"found {actual_sha256}."
+            )
+
+    expected_dependency_wave1_permit_v3_artifact_sha256 = {
+        "rung3_dependency_wave1_permit_v3": (
+            "7687dc158ff796f5b1f1423fb7dce208d00ccd2de7d3e9e3b6cd2b7abfc83a40"
+        ),
+        "rung3_dependency_wave1_permit_reader_v3": (
+            "3dacb2da9085833e874e0e90966bbacddd8a370483ff81ce5434891f234bf327"
+        ),
+        "rung3_dependency_wave1_runner_v3": (
+            "0855f7d7c14f1121ce74b678d5540d91ebbe482c5de306be84ecc6ddc910b5f1"
+        ),
+        "rung3_dependency_wave1_runner_tests_v3": (
+            "77f0f2a4516c6ecc16aa22ba34da652c05e97301d760521db291c2c9861c1df4"
+        ),
+        "rung3_dependency_wave1_permit_checker_v3": (
+            "da8df9cbab7bd739b9471a43a909150479f197f94c6377dd2bae2267c2e13cb9"
+        ),
+        "rung3_dependency_wave1_permit_tests_v3": (
+            "611c07c2133642c91c66c735159ec827e413585698c3f72d329f3ec11177eff9"
+        ),
+        "rung3_dependency_wave1_readback_checker_v3": (
+            "f3015f91fac37bc6b139b68e7b663780c00b7b208cfecfeff67208f8b57586b6"
+        ),
+        "rung3_dependency_wave1_readback_tests_v3": (
+            "0c990d98bd7bdb9f62c35a5fbb5a18f0cf4082661e84f5dddfb3aa72dc4c6163"
+        ),
+    }
+    for (
+        label,
+        expected_sha256,
+    ) in expected_dependency_wave1_permit_v3_artifact_sha256.items():
+        actual_sha256 = hashlib.sha256(paths[label].read_bytes()).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)}: dependency wave-one v3 "
+                f"execution bundle SHA-256 drifted; expected {expected_sha256}, "
+                f"found {actual_sha256}."
+            )
+
+    expected_dependency_wave1_completed_readback_artifact_sha256 = {
+        "rung3_dependency_wave1_success_receipt_v3": (
+            "10d63291813d66c1d7c9edaf7108842113bccbc2a84f799ddafe3f02a820f3b3"
+        ),
+        "rung3_dependency_wave1_success_manifest_v3": (
+            "9763dd83e46a57404bbd3d4c18ecf2f151bdf4e1c17ba3131e4b726b32a54e6b"
+        ),
+        "rung3_dependency_wave1_readback_receipt_v1": (
+            "63c7db8fce4a1c5c26dba84c22be9ea79afda95afb76506a10457e1ac9e910e0"
+        ),
+        "rung3_dependency_wave1_readback_manifest_v1": (
+            "a62e1cc1508a127fa1f5cb4a5009cf7ddeae87ef40172d1c7327c51f8cbc3b96"
+        ),
+        "rung3_dependency_wave1_readback_recovery_decision_v2": (
+            "3f04fac4cae49d4e65669fcb2d09bb0852f9c5fe757e6981b8fd17fcb772e395"
+        ),
+        "rung3_dependency_wave1_readback_recovery_checker_v2": (
+            "c201733f8c87224dabdebb7392209014a10f089d62f6473b52349f511a223933"
+        ),
+        "rung3_dependency_wave1_readback_recovery_tests_v2": (
+            "854b3ab38f53d93c7b0a856bf5aa3fc5649f602d2d554a0bb84ab1a08e610dfe"
+        ),
+        "rung3_dependency_wave1_post_verification_decision_v3": (
+            "9ad7b632782131c9ac9c327fc40942dab08eb3e6b308f582dbee1650ba8f76ba"
+        ),
+        "rung3_dependency_wave1_post_verifier_v3": (
+            "27b7ebbac46cd0e4a08b1dd87feabe1e1cd90c79d0c3a0ee1d5b5366f4a0d895"
+        ),
+        "rung3_dependency_wave1_post_verifier_tests_v3": (
+            "5bdda8fae3229907b2c224a81a217a62c1899917fb3f64781add39101806a786"
+        ),
+    }
+    for (
+        label,
+        expected_sha256,
+    ) in expected_dependency_wave1_completed_readback_artifact_sha256.items():
+        actual_sha256 = hashlib.sha256(paths[label].read_bytes()).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)}: dependency wave-one v3 "
+                f"completed readback artifact SHA-256 drifted; expected "
+                f"{expected_sha256}, found {actual_sha256}."
+            )
 
     gate_commands = (
         "run python3 script/check_p2p_nat_g2_pion_rung2_acquisition_authority.py",
         "run python3 -m unittest script/test_p2p_nat_g2_pion_rung2_acquisition_authority.py",
         "run python3 -m unittest script/test_acquire_p2p_nat_g2_pion_source_once.py",
+        "run python3 -m unittest script/test_p2p_nat_g2_pion_rung2_acquisition_receipt.py",
+        "run python3 script/prepare_p2p_nat_g2_pion_rung3_review_decision.py --check",
+        "run python3 -m unittest script/test_prepare_p2p_nat_g2_pion_rung3_review_decision.py",
+        (
+            "run python3 -c 'import sys, unittest; from "
+            "script.test_p2p_nat_g2_pion_rung3_review_decision import "
+            "G2PionRungThreePreparationCheckerTests as Case; names = [name for "
+            "name in unittest.defaultTestLoader.getTestCaseNames(Case) if not "
+            'name.startswith("test_26_")]; result = '
+            "unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite(Case(name) "
+            "for name in names)); sys.exit(0 if result.wasSuccessful() and "
+            "result.testsRun == 26 else 1)'"
+        ),
+        "run python3 -I -B -S script/check_p2p_nat_g2_pion_rung3_success_evidence_v3.py",
+        "run python3 -I -B -S script/test_p2p_nat_g2_pion_rung3_success_evidence_v3.py",
+        "run python3 -I -B -S script/check_p2p_nat_g2_pion_rung3_semantic_review_decision_v1.py",
+        "run python3 -I -B -S script/test_p2p_nat_g2_pion_rung3_semantic_review_decision_v1.py",
+        "run python3 -I -B -S script/check_p2p_nat_g2_pion_rung3_semantic_review_result_v1.py",
+        "run python3 -I -B -S script/test_p2p_nat_g2_pion_rung3_semantic_review_result_v1.py",
+        "run python3 -I -B -S script/check_p2p_nat_g2_pion_rung3_patch_dependency_decision_v1.py",
+        "run python3 -I -B -S script/test_p2p_nat_g2_pion_rung3_patch_dependency_decision_v1.py",
+        "run python3 -I -B -S script/check_p2p_nat_g2_pion_rung3_implementation_dependency_review_decision_v1.py",
+        "run python3 -I -B -S script/test_p2p_nat_g2_pion_rung3_implementation_dependency_review_decision_v1.py",
+        "run python3 -I -B -S script/test_p2p_nat_g2_pion_rung3_dependency_wave1_decision_v1.py",
+        "run python3 -I -B -S script/test_acquire_p2p_nat_g2_pion_dependency_wave1_once.py",
+        (
+            "run python3 -I -B -S -c 'import runpy, sys, unittest; "
+            'namespace = runpy.run_path("script/test_p2p_nat_g2_pion_'
+            'dependency_wave1_execution_permit_v1.py", '
+            'run_name="wave1_v1_permit_historical_tests"); '
+            'Case = namespace["DependencyWaveOnePermitCheckerTests"]; '
+            'excluded = {"test_01_repository_baseline_passes_without_execution", '
+            '"test_37_main_success_output_requires_no_user_authentication"}; '
+            "names = [name for name in "
+            "unittest.defaultTestLoader.getTestCaseNames(Case) if name not in "
+            "excluded]; result = unittest.TextTestRunner(verbosity=2).run("
+            "unittest.TestSuite(Case(name) for name in names)); sys.exit(0 if "
+            "result.wasSuccessful() and result.testsRun == 36 else 1)'"
+        ),
+        "run python3 -I -B -S script/check_p2p_nat_g2_pion_dependency_wave1_recovery_decision_v1.py",
+        "run python3 -I -B -S script/test_p2p_nat_g2_pion_dependency_wave1_recovery_decision_v1.py",
+        "run python3 -I -B -S script/test_acquire_p2p_nat_g2_pion_dependency_wave1_v2_once.py",
+        "run python3 -I -B -S script/check_p2p_nat_g2_pion_dependency_wave1_execution_permit_v2.py",
+        "run python3 -I -B -S script/test_p2p_nat_g2_pion_dependency_wave1_execution_permit_v2.py",
+        "run python3 -I -B -S script/test_p2p_nat_g2_pion_dependency_wave1_recovery_decision_v2.py",
+        "run python3 -I -B -S script/test_acquire_p2p_nat_g2_pion_dependency_wave1_v3_once.py",
+        "run python3 -I -B -S script/test_p2p_nat_g2_pion_dependency_wave1_execution_permit_v3.py",
+        "run python3 -I -B -S script/test_p2p_nat_g2_pion_dependency_wave1_success_v3.py",
+        "run python3 -I -B -S script/test_p2p_nat_g2_pion_dependency_wave1_success_v3_recovery_v2.py",
+        "run python3 -I -B -S script/test_p2p_nat_g2_pion_dependency_wave1_success_v3_post_verify_v3.py",
+        "run python3 -I -B -S script/check_p2p_nat_g2_pion_dependency_wave1_success_v3_post_verify_v3.py --preflight",
+        "run python3 -I -B -S script/acquire_p2p_nat_g2_pion_dependency_wave1_v3_once.py --preflight",
+    )
+    gate_lines = texts["gate"].splitlines()
+    active_gate_lines = tuple(
+        line.strip()
+        for line in gate_lines
+        if line.lstrip().startswith("run ")
     )
     for command in gate_commands:
-        if texts["gate"].count(command) != 1:
+        if active_gate_lines.count(command) != 1:
             failures.append(
                 f"{paths['gate'].relative_to(ROOT)}: expected exactly one active "
                 f"rung-two command {command!r}."
             )
-    marker = "Covered G2 Pion v4.3.0 rung-two acquisition-authority addendum:"
-    if texts["gate"].count(marker) != 1:
+    consumed_wave1_runner_scripts = (
+        "script/acquire_p2p_nat_g2_pion_dependency_wave1_once.py",
+        "script/acquire_p2p_nat_g2_pion_dependency_wave1_v2_once.py",
+    )
+    wave1_runner_commands = tuple(
+        line
+        for line in active_gate_lines
+        if any(script in line for script in consumed_wave1_runner_scripts)
+    )
+    if wave1_runner_commands:
         failures.append(
-            f"{paths['gate'].relative_to(ROOT)}: expected exactly one rung-two marker."
+            f"{paths['gate'].relative_to(ROOT)}: consumed dependency wave-one "
+            "v1/v2 runners must not remain active current-state gate commands; "
+            f"found {wave1_runner_commands!r}."
         )
-    marker_line = next(
-        (line for line in texts["gate"].splitlines() if marker in line), ""
+    if "--execute" in texts["gate"]:
+        failures.append(
+            f"{paths['gate'].relative_to(ROOT)}: default no-device gate must not "
+            "contain any --execute flag."
+        )
+    copy_hygiene_command = "run python3 script/check_copy_hygiene.py"
+    if active_gate_lines.count(copy_hygiene_command) != 1:
+        failures.append(
+            f"{paths['gate'].relative_to(ROOT)}: expected exactly one early "
+            "copy-hygiene command."
+        )
+    try:
+        copy_hygiene_index = active_gate_lines.index(copy_hygiene_command)
+        wave1_recovery_index = active_gate_lines.index(
+            "run python3 -I -B -S "
+            "script/test_p2p_nat_g2_pion_dependency_wave1_recovery_decision_v2.py"
+        )
+    except ValueError:
+        pass
+    else:
+        if copy_hygiene_index >= wave1_recovery_index:
+            failures.append(
+                f"{paths['gate'].relative_to(ROOT)}: copy hygiene must run before "
+                "the dependency wave-one v2 recovery check."
+            )
+    forbidden_default_gate_scripts = (
+        "check_p2p_nat_g2_pion_rung2_acquisition_receipt.py",
+        "check_p2p_nat_g2_pion_rung3_review_decision.py",
+        "run_p2p_nat_g2_pion_rung3_offline_review_v3_once.py",
+        "check_p2p_nat_g2_pion_rung3_post_run_v3.py",
+        "run_p2p_nat_g2_pion_rung3_semantic_review_v1.py",
+        "test_p2p_nat_g2_pion_rung3_semantic_review_v1.py",
+    )
+    for forbidden_script in forbidden_default_gate_scripts:
+        if any(forbidden_script in line for line in active_gate_lines):
+            failures.append(
+                f"{paths['gate'].relative_to(ROOT)}: default no-device gate must "
+                f"not execute build/runtime-dependent {forbidden_script!r}."
+            )
+    historical_marker = "Covered historical G2 Pion v4.3.0 rung-two acquisition-authority checkpoint:"
+    if texts["gate"].count(historical_marker) != 1:
+        failures.append(
+            f"{paths['gate'].relative_to(ROOT)}: expected exactly one historical rung-two marker."
+        )
+    historical_marker_line = next(
+        (line for line in texts["gate"].splitlines() if historical_marker in line), ""
     )
     for snippet in (
         "acquisition_not_executed",
@@ -52966,15 +54906,1151 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
         "requestCount=0",
         "20 mutation tests",
         "Raw SHA-256 is a reproducibility pin rather than an independent upstream authentication root",
-        "repositoryOwnerAuthenticationRequired=false",
-        "externalIdentityProofRequired=false",
-        "userActionRequired=false",
-        "Product endpoint authentication remains mandatory and separate",
+        "not the current acquisition state",
     ):
-        if snippet not in marker_line:
+        if snippet not in historical_marker_line:
             failures.append(
-                f"{paths['gate'].relative_to(ROOT)}: rung-two marker is missing {snippet!r}."
+                f"{paths['gate'].relative_to(ROOT)}: historical rung-two marker is missing {snippet!r}."
             )
+    receipt_marker = (
+        "Covered historical G2 Pion v4.3.0 rung-two acquisition-receipt "
+        "addendum at_that_checkpoint:"
+    )
+    if texts["gate"].count(receipt_marker) != 1:
+        failures.append(
+            f"{paths['gate'].relative_to(ROOT)}: expected exactly one historical "
+            "rung-two receipt marker."
+        )
+    receipt_marker_line = next(
+        (line for line in texts["gate"].splitlines() if receipt_marker in line), ""
+    )
+    for snippet in (
+        "status=acquisition_complete_archive_retained_not_extracted",
+        "result=exact_archive_acquired_verified_rung3_decision_preparation_only",
+        "recordedNextActionAtThatCheckpoint=prepare_versioned_rung3_offline_source_review_decision",
+        "requestCount=1",
+        "one-use permit was consumed",
+        "293,023-byte ZIP",
+        "All 129 file entries",
+        "12 mutation tests",
+        "not reviewed or executed",
+        "no dependency install",
+        "no user action",
+        "manifest-v4",
+        "canonical-document-supersession-v2",
+        "manifest-v5",
+        "Git lazy fetch was disabled",
+        "whitespace-normalized semantic guard scoped the G2 roadmap and immediate execution queue",
+        "not the current G2 status",
+    ):
+        if snippet not in receipt_marker_line:
+            failures.append(
+                f"{paths['gate'].relative_to(ROOT)}: historical receipt marker is "
+                f"missing {snippet!r}."
+            )
+
+    historical_v3_marker = (
+        "Covered historical G2 Pion v4.3.0 rung-three v3 "
+        "publication-readback-complete addendum at_that_checkpoint:"
+    )
+    if texts["gate"].count(historical_v3_marker) != 1:
+        failures.append(
+            f"{paths['gate'].relative_to(ROOT)}: expected exactly one historical "
+            "rung-three v3 publication-readback marker."
+        )
+    historical_v3_marker_line = next(
+        (
+            line
+            for line in texts["gate"].splitlines()
+            if historical_v3_marker in line
+        ),
+        "",
+    )
+    for snippet in (
+        "status=rung3_v3_publication_read_back_complete",
+        "result=bounded_v3_exact_candidate_totals_digests_and_ranked_representatives_publication_committed_semantic_review_not_performed",
+        "recordedNextActionAtThatCheckpoint=prepare_separate_versioned_rung3_semantic_source_review_decision",
+        "exactly 17 unit tests",
+        "python3 -I -B -S",
+        "entryCount=129",
+        "creatorSystem=0 count=129",
+        "creatorSystem=3 Unix count=0",
+        "goSourceFileCount=100",
+        "goSourceTotalBytes=1077591",
+        "goSourceLogicalLineCount=39064",
+        "totalHitCount=4701=recordedRepresentativeCount=144+omittedHitCount=4557",
+        "Semantic source review was not performed",
+        "rungThreeComplete=false",
+        "candidateSelected=false",
+        "librarySelected=false",
+        "Repository-owner authentication, external identity proof, execution-permit authentication, and user action are not required",
+        "product endpoint authentication remains required and separate",
+    ):
+        if snippet not in historical_v3_marker_line:
+            failures.append(
+                f"{paths['gate'].relative_to(ROOT)}: historical rung-three v3 marker is "
+                f"missing {snippet!r}."
+            )
+
+    historical_semantic_decision_marker = (
+        "Covered historical G2 Pion v4.3.0 rung-three semantic-review "
+        "decision v1 addendum at_that_checkpoint:"
+    )
+    if texts["gate"].count(historical_semantic_decision_marker) != 1:
+        failures.append(
+            f"{paths['gate'].relative_to(ROOT)}: expected exactly one historical "
+            "rung-three semantic-review decision marker."
+        )
+    historical_semantic_decision_line = next(
+        (
+            line
+            for line in texts["gate"].splitlines()
+            if historical_semantic_decision_marker in line
+        ),
+        "",
+    )
+    for snippet in (
+        "status=rung3_semantic_source_review_v1_decision_recorded_execution_not_started",
+        "result=canonical_v3_evidence_bound_full_semantic_review_execution_contract_recorded",
+        "recordedNextActionAtThatCheckpoint=execute_rung3_semantic_source_review_v1",
+        "exactly 15 unit tests",
+        "two passes over all 100 Go source bodies and all 4,701 lexical observations",
+        "semanticSourceReviewPerformed=false",
+        "This immutable decision state is historical",
+        "recorded action has now been executed",
+    ):
+        if snippet not in historical_semantic_decision_line:
+            failures.append(
+                f"{paths['gate'].relative_to(ROOT)}: historical semantic-review "
+                f"decision marker is missing {snippet!r}."
+            )
+
+    historical_semantic_publication_marker = (
+        "Covered historical G2 Pion v4.3.0 rung-three semantic-review "
+        "publication-readback v1 addendum at_that_checkpoint:"
+    )
+    if texts["gate"].count(historical_semantic_publication_marker) != 1:
+        failures.append(
+            f"{paths['gate'].relative_to(ROOT)}: expected exactly one historical "
+            "rung-three semantic-review publication-readback marker."
+        )
+    historical_semantic_publication_line = next(
+        (
+            line
+            for line in texts["gate"].splitlines()
+            if historical_semantic_publication_marker in line
+        ),
+        "",
+    )
+    for snippet in (
+        "status=rung3_semantic_source_review_v1_publication_read_back_complete_semantic_closure_blocked",
+        "result=two_non_attesting_full_coverage_semantic_passes_published_and_independently_read_back_patch_and_dependency_gaps_remain",
+        "recordedNextActionAtThatCheckpoint=prepare_versioned_rung3_patch_and_dependency_closure_decision",
+        "all 100 Go files and 4,701 lexical observations",
+        "29 candidates and 19 exact deduplicated findings",
+        "severityCounts=P0:0,P1:11,P2:3,P3:4,none:1",
+        "dispositionCounts=patch_required:7,unresolved:12",
+        "exactly 25 mutation tests",
+        "all eight file descriptors plus every repository-path directory component",
+        "two stable full-set readback passes and a final identity barrier",
+        "255,402 bytes",
+        "29-to-19 finding aggregation",
+        "semanticSourceReviewPerformed=true",
+        "semanticClosureComplete=false",
+        "dependencyClosureComplete=false",
+        "rungThreeComplete=false",
+        "candidateSelected=false",
+        "librarySelected=false",
+        "prevent same-UID concurrent mutation",
+        "guarantee absence after its final observation",
+        "Repository-owner authentication, external identity proof, execution-permit authentication or document, and user action are not required",
+        "This checkpoint is immutable history",
+        "its recorded next action has been completed",
+    ):
+        if snippet not in historical_semantic_publication_line:
+            failures.append(
+                f"{paths['gate'].relative_to(ROOT)}: historical semantic-review "
+                f"publication-readback marker is missing {snippet!r}."
+            )
+
+    patch_dependency_marker = (
+        "Covered historical G2 Pion v4.3.0 rung-three patch-and-dependency "
+        "decision preparation v1 addendum at_that_checkpoint:"
+    )
+    if texts["gate"].count(patch_dependency_marker) != 1:
+        failures.append(
+            f"{paths['gate'].relative_to(ROOT)}: expected exactly one historical "
+            "patch/dependency decision preparation marker."
+        )
+    patch_dependency_marker_line = next(
+        (
+            line
+            for line in texts["gate"].splitlines()
+            if patch_dependency_marker in line
+        ),
+        "",
+    )
+    for snippet in (
+        "status=prepared_options_unselected_dependency_closure_blocked",
+        "result=four_structural_recommendations_and_eight_unselected_treatment_units_prepared_all_19_findings_remain_open",
+        "recordedNextActionAtThatCheckpoint=prepare_separate_versioned_implementation_or_dependency_review_decision",
+        "seven unselected root patch units and one unselected dependency source/license/security review unit",
+        "four checksum-only context tuples",
+        "exact 19 root requirements, 44 go.sum records, 23 module/version tuples, 21 source hashes, and 23 go.mod hashes",
+        "recommendationsAreSelections=false",
+        "complete 19-file portfolio is pinned by path, byte size, type, and SHA-256",
+        "exactly 28 checker tests",
+        "missing or unexpected portfolio artifact, reader-facing effect drift, and replace-after-read drift",
+        "findingsClosedByPreparation=0",
+        "rootPatchComplete=false",
+        "dependencySourceReviewed=false",
+        "dependencyClosureComplete=false",
+        "semanticClosureComplete=false",
+        "rungThreeComplete=false",
+        "candidateSelected=false",
+        "librarySelected=false",
+        "No implementation plan or patch series was created",
+        "no source modification or extraction",
+        "external authentication, or user action is authorized or required",
+        "This checkpoint is immutable history",
+        "its recorded next action has been completed",
+    ):
+        if snippet not in patch_dependency_marker_line:
+            failures.append(
+                f"{paths['gate'].relative_to(ROOT)}: historical patch/dependency "
+                f"decision marker is missing {snippet!r}."
+            )
+
+    implementation_dependency_marker = (
+        "Covered historical G2 Pion v4.3.0 rung-three "
+        "implementation-or-dependency review decision v1 addendum "
+        "at_that_checkpoint:"
+    )
+    if texts["gate"].count(implementation_dependency_marker) != 1:
+        failures.append(
+            f"{paths['gate'].relative_to(ROOT)}: expected exactly one historical "
+            "implementation/dependency-review decision marker."
+        )
+    implementation_dependency_marker_line = next(
+        (
+            line
+            for line in texts["gate"].splitlines()
+            if implementation_dependency_marker in line
+        ),
+        "",
+    )
+    for snippet in (
+        "status=dependency_review_selected_acquisition_not_authorized",
+        "result=staged_fixed_point_dependency_review_selected_all_19_findings_remain_open",
+        "recordedNextActionAtThatCheckpoint=prepare_separate_versioned_bounded_dependency_source_identity_and_acquisition_decision",
+        "staged-fixed-point-source-closure",
+        "dependency_source_license_security_closure_review",
+        "other seven portfolio options, all seven root patch units, and the other three structural recommendations remain unselected",
+        "19 files, 186,716 bytes",
+        "ordered bundle SHA-256 020fa0b627a85844d557323b5106e4179637fe3f14c578fec50e6a3e34e68f56",
+        "16,155-byte implementation handoff",
+        "exactly 36 baseline, runtime, and mutation checker tests",
+        "semantic mutations re-pin fixture-local raw bytes",
+        "selection, authority, finding, closure, contract, sequence, plan, inventory, filesystem, and TOCTOU failure layers",
+        "All 19 findings remain open",
+        "findingsClosedBySelection=0",
+        "rootPatchComplete=false",
+        "dependencySourceReviewed=false",
+        "dependencyClosureComplete=false",
+        "semanticClosureComplete=false",
+        "rungThreeComplete=false",
+        "candidateSelected=false",
+        "librarySelected=false",
+        "dependency acquisition",
+        "Git writes remain unauthorized",
+        "external authentication",
+        "user action are not required",
+        "Product endpoint authentication remains a separate later runtime invariant",
+        "This checkpoint is immutable history",
+        "its recorded next action has been completed",
+    ):
+        if snippet not in implementation_dependency_marker_line:
+            failures.append(
+                f"{paths['gate'].relative_to(ROOT)}: historical implementation/"
+                f"dependency-review marker is missing {snippet!r}."
+            )
+
+    dependency_wave1_marker = (
+        "Covered historical G2 Pion v4.3.0 rung-three dependency wave-one "
+        "preparation v1 addendum at_that_checkpoint:"
+    )
+    if texts["gate"].count(dependency_wave1_marker) != 1:
+        failures.append(
+            f"{paths['gate'].relative_to(ROOT)}: expected exactly one historical "
+            "dependency wave-one preparation marker."
+        )
+    dependency_wave1_marker_line = next(
+        (
+            line
+            for line in texts["gate"].splitlines()
+            if dependency_wave1_marker in line
+        ),
+        "",
+    )
+    for snippet in (
+        "status=wave1_source_identity_and_request_contract_prepared_acquisition_not_authorized",
+        "result=exact_19_root_requirement_source_identities_and_bounded_wave1_request_contract_prepared",
+        "recordedNextActionAtThatCheckpoint=prepare_separate_versioned_wave1_execution_permit_after_checker_runner_and_tests",
+        "exact 19-tuple source-intake seed",
+        "four quarantined checksum-only tuples",
+        "Android/macOS arm64 review profiles",
+        "fixed-point graph rules",
+        "request/output identities",
+        "finite bounds",
+        "action was completed by the now-consumed v1 permit",
+    ):
+        if snippet not in dependency_wave1_marker_line:
+            failures.append(
+                f"{paths['gate'].relative_to(ROOT)}: historical dependency wave-one "
+                f"marker is missing {snippet!r}."
+            )
+
+    dependency_wave1_permit_marker = (
+        "Covered historical G2 Pion v4.3.0 rung-three dependency wave-one "
+        "execution permit v1 addendum at_that_checkpoint:"
+    )
+    if texts["gate"].count(dependency_wave1_permit_marker) != 1:
+        failures.append(
+            f"{paths['gate'].relative_to(ROOT)}: expected exactly one historical "
+            "dependency wave-one execution-permit marker."
+        )
+    dependency_wave1_permit_marker_line = next(
+        (
+            line
+            for line in texts["gate"].splitlines()
+            if dependency_wave1_permit_marker in line
+        ),
+        "",
+    )
+    for snippet in (
+        "status=wave1_dependency_source_acquisition_authorized_not_consumed",
+        "result=exact_19_public_proxy_zip_requests_authorized_once_not_executed",
+        "recordedNextActionAtThatCheckpoint=execute_bound_dependency_source_wave1_once",
+        "44 tests",
+        "38 tests",
+        "consumed exactly once",
+        "may not be reused",
+        "direct checker and preflight are intentionally no longer current-state gate commands",
+    ):
+        if snippet not in dependency_wave1_permit_marker_line:
+            failures.append(
+                f"{paths['gate'].relative_to(ROOT)}: historical dependency wave-one "
+                f"execution-permit marker is missing {snippet!r}."
+            )
+
+    dependency_wave1_recovery_marker = (
+        "Covered historical G2 Pion v4.3.0 rung-three dependency wave-one "
+        "recovery decision v1 addendum at_that_checkpoint:"
+    )
+    if texts["gate"].count(dependency_wave1_recovery_marker) != 1:
+        failures.append(
+            f"{paths['gate'].relative_to(ROOT)}: expected exactly one historical "
+            "dependency wave-one recovery marker."
+        )
+    dependency_wave1_recovery_marker_line = next(
+        (
+            line
+            for line in texts["gate"].splitlines()
+            if dependency_wave1_recovery_marker in line
+        ),
+        "",
+    )
+    for snippet in (
+        "status=wave1_v1_failure_read_back_recovery_v2_design_selected_execution_not_authorized",
+        "result=v1_ratio_policy_rejected_tuple2_after_two_responses_no_final_set_v2_bounded_telemetry_policy_selected",
+        "recordedNextActionAtThatCheckpoint=prepare_separate_v2_runner_checker_tests_and_execution_permit",
+        "E_ZIP_RATIO",
+        "two response bodies",
+        "one fully validated/staged tuple",
+        "zero accepted artifacts",
+        "Exactly 31 recovery mutation tests",
+        "final namespace rescan",
+        "V1 deletion, reuse, retry, or staging resume is forbidden",
+        "preparation action has now been completed",
+        "external authentication",
+        "user action are not required",
+    ):
+        if snippet not in dependency_wave1_recovery_marker_line:
+            failures.append(
+                f"{paths['gate'].relative_to(ROOT)}: historical dependency "
+                f"wave-one recovery marker is missing {snippet!r}."
+            )
+
+    dependency_wave1_permit_v2_marker = (
+        "Covered historical G2 Pion v4.3.0 rung-three dependency wave-one "
+        "execution permit v2 addendum at_that_checkpoint:"
+    )
+    if texts["gate"].count(dependency_wave1_permit_v2_marker) != 1:
+        failures.append(
+            f"{paths['gate'].relative_to(ROOT)}: expected exactly one historical "
+            "dependency wave-one v2 execution-permit marker."
+        )
+    dependency_wave1_permit_v2_marker_line = next(
+        (
+            line
+            for line in texts["gate"].splitlines()
+            if dependency_wave1_permit_v2_marker in line
+        ),
+        "",
+    )
+    for snippet in (
+        "status=wave1_v2_dependency_source_acquisition_authorized_not_consumed",
+        "result=exact_19_public_proxy_zip_requests_v2_authorized_once_not_executed",
+        "recordedNextActionAtThatCheckpoint=execute_bound_dependency_source_wave1_v2_once",
+        "consumed exactly once",
+        "may not be reused",
+        "E_GO_MOD_MISSING",
+        "tuple 11",
+        "networkRequestAttemptCount=11",
+        "responseBodyCompletedCount=11",
+        "validatedAndStagedTupleCount=10",
+        "acceptedArtifactCount=0",
+        "no final set",
+        "no automatic retry",
+        "not by authentication",
+        "no longer a current-state gate command",
+        "external authentication",
+        "user action are not required",
+    ):
+        if snippet not in dependency_wave1_permit_v2_marker_line:
+            failures.append(
+                f"{paths['gate'].relative_to(ROOT)}: historical dependency "
+                f"wave-one v2 permit marker is missing {snippet!r}."
+            )
+
+    dependency_wave1_recovery_v2_marker = (
+        "Covered historical G2 Pion v4.3.0 rung-three dependency wave-one "
+        "recovery decision v2 addendum at_that_checkpoint:"
+    )
+    if texts["gate"].count(dependency_wave1_recovery_v2_marker) != 1:
+        failures.append(
+            f"{paths['gate'].relative_to(ROOT)}: expected exactly one historical "
+            "dependency wave-one v2 recovery marker."
+        )
+    dependency_wave1_recovery_v2_marker_line = next(
+        (
+            line
+            for line in texts["gate"].splitlines()
+            if dependency_wave1_recovery_v2_marker in line
+        ),
+        "",
+    )
+    for snippet in (
+        "status=wave1_v2_failure_read_back_recovery_v3_design_selected_execution_not_authorized",
+        "result=v2_conflated_zip_and_mod_resources_tuple11_after_eleven_responses_no_final_set_v3_zip_plus_mod_policy_selected",
+        "recordedNextActionAtThatCheckpoint=prepare_separate_v3_runner_checker_tests_and_execution_permit",
+        "Exactly 39 recovery mutation tests",
+        "19 mod-then-zip pairs",
+        "38 bounded sequential public-proxy resources",
+        "optional embedded-go.mod byte parity",
+        "41/43 reserved-file path-set semantics",
+        "separate independent readback",
+        "no-network authority at that checkpoint",
+        "preparation action has now been completed",
+        "All 19 findings remain open",
+        "candidateSelected=false/librarySelected=false",
+        "external authentication",
+        "user action are not required",
+    ):
+        if snippet not in dependency_wave1_recovery_v2_marker_line:
+            failures.append(
+                f"{paths['gate'].relative_to(ROOT)}: historical dependency "
+                f"wave-one v2 recovery marker is missing {snippet!r}."
+            )
+
+    dependency_wave1_permit_v3_marker = (
+        "Covered current G2 Pion v4.3.0 rung-three dependency wave-one "
+        "v3 acquisition and fixed-hash readback addendum:"
+    )
+    if texts["gate"].count(dependency_wave1_permit_v3_marker) != 1:
+        failures.append(
+            f"{paths['gate'].relative_to(ROOT)}: expected exactly one current "
+            "dependency wave-one v3 execution-permit marker."
+        )
+    dependency_wave1_permit_v3_marker_line = next(
+        (
+            line
+            for line in texts["gate"].splitlines()
+            if dependency_wave1_permit_v3_marker in line
+        ),
+        "",
+    )
+    for snippet in (
+        "historicalPermitStatus=wave1_v3_dependency_source_acquisition_authorized_not_consumed",
+        "receiptStatus=acquired_pending_independent_readback",
+        "receiptResult=fresh_exact_19_dependency_zip_mod_pairs_acquired_and_hash_verified",
+        "readbackStatus=independent_readback_complete",
+        "nextAction=prepare_separate_dependency_source_review_wave",
+        "consumed_success",
+        "networkRequestAttemptCount=38",
+        "responseBodyCompletedCount=38",
+        "acceptedArtifactCount=38",
+        "retainedResourceCount=38",
+        "retainedZipCount=19",
+        "retainedModCount=19",
+        "observedRegularFileCount=43",
+        "exactly 34 tests",
+        "recovery v2 retains 8 tests",
+        "passes exactly 9 tests",
+        "fixedHashEnforcedInsideHeldValidation=true",
+        "verificationOnly=true",
+        "recordModeExposed=false",
+        "networkOperationCount=0",
+        "fileWriteCount=0",
+        "63c7db8fce4a1c5c26dba84c22be9ea79afda95afb76506a10457e1ac9e910e0",
+        "a62e1cc1508a127fa1f5cb4a5009cf7ddeae87ef40172d1c7327c51f8cbc3b96",
+        "2b0176d6d2b800c9a2abd34bf06279403e6f008bd3475ff45970abf11e843246",
+        "V1/v2/v3 deletion, reuse, retry, or staging resume remains forbidden",
+        "runtime/product network",
+        "Git writes remain closed",
+        "No credentials",
+        "user action are involved",
+    ):
+        if snippet not in dependency_wave1_permit_v3_marker_line:
+            failures.append(
+                f"{paths['gate'].relative_to(ROOT)}: current dependency "
+                f"wave-one v3 permit marker is missing {snippet!r}."
+            )
+
+    canonical_document_paths = (
+        "docs/roadmap.md",
+        "docs/handoff.md",
+        "README.md",
+        "shared/protocol/README.md",
+        "docs/progress.md",
+        "docs/qa-evidence.md",
+    )
+    current_semantic_section_end_markers = {
+        "docs/roadmap.md": "\n### Active Personal-Project Governance",
+        "docs/handoff.md": "\nThe rung-two successor recorded",
+        "README.md": "\nThe previous complete default no-device aggregate snapshot",
+        "shared/protocol/README.md": (
+            "\nThe previous complete default no-device aggregate snapshot"
+        ),
+        "docs/progress.md": "\n- The crypto fixture is pinned",
+        "docs/qa-evidence.md": "\n- [x] This personal-project work required",
+    }
+    current_semantic_status = (
+        "status=rung3_semantic_source_review_v1_publication_read_back_complete_"
+        "semantic_closure_blocked"
+    )
+    current_semantic_result = (
+        "result=two_non_attesting_full_coverage_semantic_passes_published_and_"
+        "independently_read_back_patch_and_dependency_gaps_remain"
+    )
+    current_semantic_next_action = (
+        "recordedNextActionAtThatCheckpoint="
+        "prepare_versioned_rung3_patch_and_dependency_closure_decision"
+    )
+    current_semantic_false_boundary = (
+        "Semantic review was performed, but semantic closure, dependency closure, "
+        "rung-three completion, candidate selection, and library selection remain false."
+    )
+    current_semantic_auth_boundary = (
+        "No repository-owner authentication, external identity proof, "
+        "execution-permit authentication or document, or user action is required."
+    )
+    current_semantic_checker_boundary = (
+        "Same-UID concurrent mutation is not prevented, and absence is not "
+        "guaranteed after the final observation."
+    )
+    current_dependency_exact_tokens = (
+        "status=dependency_review_selected_acquisition_not_authorized",
+        "result=staged_fixed_point_dependency_review_selected_all_19_findings_remain_open",
+        "recordedNextActionAtThatCheckpoint=prepare_separate_versioned_bounded_dependency_source_identity_and_acquisition_decision",
+        "status=wave1_source_identity_and_request_contract_prepared_acquisition_not_authorized",
+        "result=exact_19_root_requirement_source_identities_and_bounded_wave1_request_contract_prepared",
+        "nextAction=prepare_separate_versioned_wave1_execution_permit_after_checker_runner_and_tests",
+        "status=wave1_dependency_source_acquisition_authorized_not_consumed",
+        "result=exact_19_public_proxy_zip_requests_authorized_once_not_executed",
+        "recordedNextActionAtThatCheckpoint=execute_bound_dependency_source_wave1_once",
+        "status=wave1_v1_failure_read_back_recovery_v2_design_selected_execution_not_authorized",
+        "result=v1_ratio_policy_rejected_tuple2_after_two_responses_no_final_set_v2_bounded_telemetry_policy_selected",
+        "recordedNextActionAtThatCheckpoint=prepare_separate_v2_runner_checker_tests_and_execution_permit",
+        "status=wave1_v2_dependency_source_acquisition_authorized_not_consumed",
+        "result=exact_19_public_proxy_zip_requests_v2_authorized_once_not_executed",
+        "recordedNextActionAtThatCheckpoint=execute_bound_dependency_source_wave1_v2_once",
+        "status=wave1_v2_failure_read_back_recovery_v3_design_selected_execution_not_authorized",
+        "result=v2_conflated_zip_and_mod_resources_tuple11_after_eleven_responses_no_final_set_v3_zip_plus_mod_policy_selected",
+        "recordedNextActionAtThatCheckpoint=prepare_separate_v3_runner_checker_tests_and_execution_permit",
+        "status=wave1_v3_dependency_source_acquisition_authorized_not_consumed",
+        "result=exact_19_public_proxy_mod_then_zip_pairs_v3_authorized_once_not_executed",
+        "nextAction=execute_bound_dependency_source_wave1_v3_once",
+        "status=acquired_pending_independent_readback",
+        "result=fresh_exact_19_dependency_zip_mod_pairs_acquired_and_hash_verified",
+        "status=independent_readback_complete",
+        "nextAction=prepare_separate_dependency_source_review_wave",
+        "fixedHashEnforcedInsideHeldValidation=true",
+        "verificationOnly=true",
+        "recordModeExposed=false",
+    )
+    current_semantic_overclaim_patterns = (
+        r"\bsemanticclosurecomplete\s*[:=]\s*true\b",
+        r"\bdependencyclosurecomplete\s*[:=]\s*true\b",
+        r"\brungthreecomplete\s*[:=]\s*true\b",
+        r"\bcandidateselected\s*[:=]\s*true\b",
+        r"\blibraryselected\s*[:=]\s*true\b",
+        (
+            r"\bsemantic (?:source )?review "
+            r"(?:(?:is|was) |has been )?(?:complete|completed)\b"
+        ),
+        (
+            r"\bsemantic (?:source )?closure "
+            r"(?:(?:is|was) |has been )?(?:complete|completed)\b"
+        ),
+        (
+            r"\bdependency closure "
+            r"(?:(?:is|was) |has been )?(?:complete|completed)\b"
+        ),
+        (
+            r"\brung[- ]three "
+            r"(?:(?:is|was) |has been )?(?:complete|completed)\b"
+        ),
+        r"\b(?:candidate|library) (?:is |was |has been )?selected\b",
+        (
+            r"\b(?:candidate|library) selection "
+            r"(?:(?:is|was) |has been )?(?:complete|completed)\b"
+        ),
+        (
+            r"\b(?:repository[- ]owner authentication|external identity proof|"
+            r"execution[- ]permit authentication|execution[- ]permit document|"
+            r"user action) (?:(?:is|was|are|were) )?required\b"
+        ),
+        (
+            r"\brequires (?:repository[- ]owner authentication|external identity "
+            r"proof|execution[- ]permit authentication|execution[- ]permit document|"
+            r"user action)\b"
+        ),
+    )
+
+    def normalize_current_semantic_section(value: str) -> str:
+        return re.sub(r"\s+", " ", value).replace("`", "").strip()
+
+    def current_semantic_overclaims(normalized_section: str) -> tuple[str, ...]:
+        scrubbed = normalized_section.casefold()
+        for negative_clause in (
+            current_semantic_auth_boundary.casefold(),
+            "no user action is required",
+            "no user action is requested or required",
+            "no user action is authorized or required",
+            "no library is selected",
+            "no candidate or library is selected",
+            "neither repository-owner identity proof, external authentication, nor user action is required",
+            "neither external authentication nor user action is required",
+            "neither external authentication nor user action is authorized or required",
+            "external authentication and user action are neither authorized nor required",
+            "external authentication, and user action remain unauthorized or unrequired",
+            "external authentication, or user action remain unauthorized or unrequired",
+        ):
+            scrubbed = scrubbed.replace(negative_clause, "")
+        return tuple(
+            pattern
+            for pattern in current_semantic_overclaim_patterns
+            if re.search(pattern, scrubbed)
+        )
+
+    current_dependency_overclaim_patterns = (
+        (
+            r"\bsource (?:modification|extraction)\b"
+            r".{0,100}\b(?:authorized|allowed|permitted)\b"
+        ),
+        (
+            r"\b(?:package manager|compiler|source load|source execution|socket|"
+            r"device|deployment|git writes?)\b"
+            r".{0,100}\b(?:authorized|allowed|permitted)\b"
+        ),
+        r"\bfindingsclosedbyselection\s*[:=]\s*[1-9][0-9]*\b",
+        r"\brootpatchcomplete\s*[:=]\s*true\b",
+        r"\bdependencysourcereviewed\s*[:=]\s*true\b",
+        r"\bdependencyclosurecomplete\s*[:=]\s*true\b",
+        r"\bsemanticclosurecomplete\s*[:=]\s*true\b",
+        r"\brungthreecomplete\s*[:=]\s*true\b",
+        r"\bcandidateselected\s*[:=]\s*true\b",
+        r"\blibraryselected\s*[:=]\s*true\b",
+        r"\b(?:all\s+)?19 findings\b.{0,80}\bclosed\b",
+        r"\b(?:candidate|library)\b.{0,60}\bselected\b",
+        r"\bexternal authentication\b.{0,80}\brequired\b",
+        r"\buser action\b.{0,80}\brequired\b",
+    )
+
+    def current_dependency_overclaims(
+        normalized_section: str,
+    ) -> tuple[str, ...]:
+        scrubbed = normalized_section.casefold()
+        for negative_clause in (
+            current_semantic_auth_boundary.casefold(),
+            "no user action is required",
+            "no user action is requested or required",
+            "no user action is authorized or required",
+            "no library is selected",
+            "no candidate or library is selected",
+            "neither repository-owner identity proof, external authentication, nor user action is required",
+            "neither external authentication nor user action is required",
+            "neither external authentication nor user action is authorized or required",
+            "external authentication and user action are neither authorized nor required",
+            "external authentication, and user action remain unauthorized or unrequired",
+            "external authentication, or user action remain unauthorized or unrequired",
+        ):
+            scrubbed = scrubbed.replace(negative_clause, "")
+        return tuple(
+            pattern
+            for pattern in current_dependency_overclaim_patterns
+            if re.search(pattern, scrubbed)
+        )
+
+    positive_overclaim_self_tests = (
+        "semantic review has been completed",
+        "semantic closure is complete",
+        "dependency closure is complete",
+        "rung-three completed",
+        "candidate selected",
+        "candidate selection completed",
+        "library selected",
+        "library selection is complete",
+        "repository-owner authentication is required",
+        "external identity proof is required",
+        "execution-permit authentication is required",
+        "execution-permit document is required",
+        "user action is required",
+    )
+    for fixture in positive_overclaim_self_tests:
+        if not current_semantic_overclaims(fixture):
+            failures.append(
+                "G2 current semantic-review overclaim matcher self-test failed "
+                f"for {fixture!r}."
+            )
+    negative_overclaim_self_test = normalize_current_semantic_section(
+        current_semantic_false_boundary
+        + " "
+        + current_semantic_checker_boundary
+        + " "
+        + current_semantic_auth_boundary
+    )
+    if current_semantic_overclaims(negative_overclaim_self_test):
+        failures.append(
+            "G2 current semantic-review overclaim matcher rejects the canonical "
+            "false/non-authentication boundary."
+        )
+    for fixture in (
+        "source extraction has been allowed",
+        "findingsClosedBySelection=1",
+        "rootPatchComplete=true",
+        "dependencySourceReviewed=true",
+        "all 19 findings are closed",
+        "candidate is selected",
+        "library selected",
+        "external authentication is required",
+        "user action is required",
+        "external authentication, or user action is authorized or required",
+    ):
+        if not current_dependency_overclaims(fixture):
+            failures.append(
+                "G2 current dependency-review overclaim matcher self-test failed "
+                f"for {fixture!r}."
+            )
+    dependency_negative_self_test = normalize_current_semantic_section(
+        "All 19 findings remain open. "
+        "Dependency acquisition and source extraction remain unauthorized. "
+        "rootPatchComplete=false; dependencySourceReviewed=false; "
+        "dependencyClosureComplete=false; semanticClosureComplete=false; "
+        "rungThreeComplete=false; candidateSelected=false; "
+        "librarySelected=false. "
+        "Neither external authentication nor user action is authorized or required."
+    )
+    if current_dependency_overclaims(dependency_negative_self_test):
+        failures.append(
+            "G2 current dependency-review overclaim matcher rejects the "
+            "canonical open/non-authorizing boundary."
+        )
+
+    for relative_path in canonical_document_paths:
+        document_text = (ROOT / relative_path).read_text(
+            encoding="utf-8", errors="strict"
+        )
+        status_offset = document_text.find(current_semantic_status)
+        section_start = document_text.rfind(
+            "semantic-review decision v1",
+            0,
+            status_offset,
+        )
+        section_end = document_text.find(
+            current_semantic_section_end_markers[relative_path],
+            status_offset,
+        )
+        if status_offset < 0 or section_start < 0 or section_end < 0:
+            failures.append(
+                f"{relative_path}: current semantic-review bounded section is "
+                "missing or malformed."
+            )
+            continue
+        current_section = normalize_current_semantic_section(
+            document_text[section_start:section_end]
+        )
+        for token in current_dependency_exact_tokens:
+            if current_section.count(token) != 1:
+                failures.append(
+                    f"{relative_path}: historical implementation/dependency-review "
+                    "and current dependency wave-one "
+                    f"token must appear exactly once: {token!r}."
+                )
+        for snippet in (
+            current_semantic_status,
+            current_semantic_result,
+            current_semantic_next_action,
+            current_semantic_false_boundary,
+            "25/25 mutation tests",
+            "every repository-path directory component",
+            current_semantic_checker_boundary,
+            current_semantic_auth_boundary,
+        ):
+            if snippet not in current_section:
+                failures.append(
+                    f"{relative_path}: current semantic-review bounded section "
+                    f"is missing {snippet!r}."
+                )
+        for pattern in current_semantic_overclaims(current_section):
+            failures.append(
+                f"{relative_path}: current semantic-review bounded section "
+                f"contains forbidden overclaim/authentication pattern {pattern!r}."
+            )
+        for pattern in current_dependency_overclaims(current_section):
+            failures.append(
+                f"{relative_path}: current implementation/dependency-review "
+                f"section contains forbidden authority/closure pattern {pattern!r}."
+            )
+        for snippet in (
+            "status=prepared_options_unselected_dependency_closure_blocked",
+            "result=four_structural_recommendations_and_eight_unselected_treatment_units_prepared_all_19_findings_remain_open",
+            "recordedNextActionAtThatCheckpoint=prepare_separate_versioned_implementation_or_dependency_review_decision",
+            "28/28 checker tests",
+            "complete 19-file portfolio",
+            "reader-facing effect drift",
+            "replace-after-read",
+            "unselected root patch units",
+            "external authentication",
+            "user action",
+        ):
+            if snippet not in current_section:
+                failures.append(
+                    f"{relative_path}: current patch/dependency preparation "
+                    f"section is missing {snippet!r}."
+                )
+        for snippet in (
+            "status=dependency_review_selected_acquisition_not_authorized",
+            "result=staged_fixed_point_dependency_review_selected_all_19_findings_remain_open",
+            "recordedNextActionAtThatCheckpoint=prepare_separate_versioned_bounded_dependency_source_identity_and_acquisition_decision",
+            "staged-fixed-point-source-closure",
+            "dependency_source_license_security_closure_review",
+            "36/36 checker tests",
+            "complete 19-file portfolio",
+            "other seven portfolio options",
+            "all seven root patch units",
+            "other three structural recommendations",
+            "external authentication",
+            "user action",
+        ):
+            if snippet not in current_section:
+                failures.append(
+                    f"{relative_path}: historical implementation/dependency-review "
+                    f"section is missing {snippet!r}."
+                )
+        for snippet in (
+            "status=wave1_source_identity_and_request_contract_prepared_acquisition_not_authorized",
+            "result=exact_19_root_requirement_source_identities_and_bounded_wave1_request_contract_prepared",
+            "nextAction=prepare_separate_versioned_wave1_execution_permit_after_checker_runner_and_tests",
+            "56/56",
+            "acquisition",
+            "network",
+            "user action",
+        ):
+            if snippet not in current_section:
+                failures.append(
+                    f"{relative_path}: current dependency wave-one preparation "
+                    f"section is missing {snippet!r}."
+                )
+        for snippet in (
+            "status=wave1_dependency_source_acquisition_authorized_not_consumed",
+            "result=exact_19_public_proxy_zip_requests_authorized_once_not_executed",
+            "recordedNextActionAtThatCheckpoint=execute_bound_dependency_source_wave1_once",
+            "44/44",
+            "38/38",
+            "user action",
+        ):
+            if snippet not in current_section:
+                failures.append(
+                    f"{relative_path}: historical dependency wave-one execution "
+                    f"permit section is missing {snippet!r}."
+                )
+        for snippet in (
+            "status=wave1_v1_failure_read_back_recovery_v2_design_selected_execution_not_authorized",
+            "result=v1_ratio_policy_rejected_tuple2_after_two_responses_no_final_set_v2_bounded_telemetry_policy_selected",
+            "recordedNextActionAtThatCheckpoint=prepare_separate_v2_runner_checker_tests_and_execution_permit",
+            "31/31",
+            "non-gating",
+            "user action",
+        ):
+            if snippet not in current_section:
+                failures.append(
+                    f"{relative_path}: historical dependency wave-one recovery "
+                    f"section is missing {snippet!r}."
+                )
+        for snippet in (
+            "status=wave1_v2_dependency_source_acquisition_authorized_not_consumed",
+            "result=exact_19_public_proxy_zip_requests_v2_authorized_once_not_executed",
+            "recordedNextActionAtThatCheckpoint=execute_bound_dependency_source_wave1_v2_once",
+            "E_GO_MOD_MISSING",
+            "user action",
+        ):
+            if snippet not in current_section:
+                failures.append(
+                    f"{relative_path}: historical dependency wave-one v2 execution "
+                    f"permit section is missing {snippet!r}."
+                )
+        for snippet in (
+            "status=wave1_v2_failure_read_back_recovery_v3_design_selected_execution_not_authorized",
+            "result=v2_conflated_zip_and_mod_resources_tuple11_after_eleven_responses_no_final_set_v3_zip_plus_mod_policy_selected",
+            "recordedNextActionAtThatCheckpoint=prepare_separate_v3_runner_checker_tests_and_execution_permit",
+            "39/39",
+            ".mod",
+            ".zip",
+            "user action",
+        ):
+            if snippet not in current_section:
+                failures.append(
+                    f"{relative_path}: historical dependency wave-one v2 recovery "
+                    f"section is missing {snippet!r}."
+                )
+        for snippet in (
+            "status=wave1_v3_dependency_source_acquisition_authorized_not_consumed",
+            "result=exact_19_public_proxy_mod_then_zip_pairs_v3_authorized_once_not_executed",
+            "nextAction=execute_bound_dependency_source_wave1_v3_once",
+            "status=acquired_pending_independent_readback",
+            "result=fresh_exact_19_dependency_zip_mod_pairs_acquired_and_hash_verified",
+            "status=independent_readback_complete",
+            "prepare_separate_dependency_source_review_wave",
+            "38 accepted resources",
+            "43 regular files",
+            "34/34",
+            "9/9",
+            "fixedHashEnforcedInsideHeldValidation=true",
+            "verificationOnly=true",
+            "recordModeExposed=false",
+            "consumed and cannot be retried",
+            "All 19 findings remain open",
+            "credentials",
+            "user action",
+        ):
+            if snippet not in current_section:
+                failures.append(
+                    f"{relative_path}: current dependency wave-one v3 acquisition/readback "
+                    f"section is missing {snippet!r}."
+                )
+        normalized_document = normalize_current_semantic_section(document_text)
+        for stale_instruction in (
+            "current next action is prepare_versioned_rung3_patch_and_dependency_closure_decision",
+            "current next action prepare_versioned_rung3_patch_and_dependency_closure_decision",
+            "its current next action is prepare_versioned_rung3_patch_and_dependency_closure_decision",
+            "its next action is prepare_versioned_rung3_patch_and_dependency_closure_decision",
+            "its next action prepare_versioned_rung3_patch_and_dependency_closure_decision",
+            "the next action is prepare_versioned_rung3_patch_and_dependency_closure_decision",
+            "and next action prepare_versioned_rung3_patch_and_dependency_closure_decision",
+            "next prepare only prepare_versioned_rung3_patch_and_dependency_closure_decision",
+            "next prepare prepare_versioned_rung3_patch_and_dependency_closure_decision",
+            "prepare only prepare_versioned_rung3_patch_and_dependency_closure_decision",
+        ):
+            if stale_instruction in normalized_document.casefold():
+                failures.append(
+                    f"{relative_path}: completed patch/dependency preparation is "
+                    f"still presented as current work: {stale_instruction!r}."
+                )
+        for stale_instruction in (
+            "current next action is prepare_separate_versioned_implementation_or_dependency_review_decision",
+            "current next action prepare_separate_versioned_implementation_or_dependency_review_decision",
+            "its current next action is prepare_separate_versioned_implementation_or_dependency_review_decision",
+            "its next action is prepare_separate_versioned_implementation_or_dependency_review_decision",
+            "its next action prepare_separate_versioned_implementation_or_dependency_review_decision",
+            "the next action is prepare_separate_versioned_implementation_or_dependency_review_decision",
+            "and next action prepare_separate_versioned_implementation_or_dependency_review_decision",
+            "next prepare only prepare_separate_versioned_implementation_or_dependency_review_decision",
+            "next prepare prepare_separate_versioned_implementation_or_dependency_review_decision",
+            "prepare only prepare_separate_versioned_implementation_or_dependency_review_decision",
+            "the current preparation status is",
+            "current g2 patch/dependency decision preparation",
+        ):
+            if stale_instruction in normalized_document.casefold():
+                failures.append(
+                    f"{relative_path}: completed implementation/dependency-review "
+                    f"decision is still presented as current work: {stale_instruction!r}."
+                )
+        for stale_instruction in (
+            "current next action is prepare_separate_versioned_bounded_dependency_source_identity_and_acquisition_decision",
+            "current next action prepare_separate_versioned_bounded_dependency_source_identity_and_acquisition_decision",
+            "its current next action is prepare_separate_versioned_bounded_dependency_source_identity_and_acquisition_decision",
+            "its next action is prepare_separate_versioned_bounded_dependency_source_identity_and_acquisition_decision",
+            "its next action prepare_separate_versioned_bounded_dependency_source_identity_and_acquisition_decision",
+            "the next action is prepare_separate_versioned_bounded_dependency_source_identity_and_acquisition_decision",
+            "and next action prepare_separate_versioned_bounded_dependency_source_identity_and_acquisition_decision",
+            "next prepare only prepare_separate_versioned_bounded_dependency_source_identity_and_acquisition_decision",
+            "next prepare prepare_separate_versioned_bounded_dependency_source_identity_and_acquisition_decision",
+            "prepare only prepare_separate_versioned_bounded_dependency_source_identity_and_acquisition_decision",
+            "current g2 dependency-review selection",
+        ):
+            if stale_instruction in normalized_document.casefold():
+                failures.append(
+                    f"{relative_path}: completed dependency wave-one preparation "
+                    f"is still presented as current work: {stale_instruction!r}."
+                )
+
+    try:
+        rung3_manifest_v2 = json.loads(texts["rung3_manifest_v2"])
+    except (json.JSONDecodeError, TypeError) as error:
+        failures.append(
+            f"{paths['rung3_manifest_v2'].relative_to(ROOT)}: invalid JSON: {error}."
+        )
+        rung3_manifest_v2 = {}
+
+    if rung3_manifest_v2.get("collectionSha256") != (
+        "49b517e8f35b4db4537de193e0b68b3d6aa9dde173aa080edd8adb122af6567a"
+    ):
+        failures.append(
+            f"{paths['rung3_manifest_v2'].relative_to(ROOT)}: current collection "
+            "digest does not match the rung-three canonical-document delta."
+        )
+
+    artifacts = rung3_manifest_v2.get("artifacts")
+    if isinstance(artifacts, list):
+        collection_rows: list[str] = []
+        artifact_by_path: dict[str, dict[str, object]] = {}
+        for artifact in artifacts:
+            if not isinstance(artifact, dict):
+                failures.append(
+                    f"{paths['rung3_manifest_v2'].relative_to(ROOT)}: artifact row "
+                    "must be an object."
+                )
+                continue
+            evidence_id = artifact.get("evidenceId")
+            digest = artifact.get("sha256")
+            relative_path = artifact.get("path")
+            if not all(isinstance(value, str) for value in (evidence_id, digest, relative_path)):
+                failures.append(
+                    f"{paths['rung3_manifest_v2'].relative_to(ROOT)}: artifact row "
+                    "must contain string evidenceId, sha256, and path."
+                )
+                continue
+            collection_rows.append(f"{evidence_id}\t{digest}\t{relative_path}\n")
+            artifact_by_path[relative_path] = artifact
+        computed_collection = hashlib.sha256(
+            "".join(collection_rows).encode("utf-8")
+        ).hexdigest()
+        if computed_collection != rung3_manifest_v2.get("collectionSha256"):
+            failures.append(
+                f"{paths['rung3_manifest_v2'].relative_to(ROOT)}: collection "
+                "digest does not match its ordered artifact rows."
+            )
+        for relative_path in canonical_document_paths:
+            artifact = artifact_by_path.get(relative_path)
+            if artifact is None:
+                failures.append(
+                    f"{paths['rung3_manifest_v2'].relative_to(ROOT)}: missing "
+                    f"canonical document artifact {relative_path!r}."
+                )
+                continue
+            if re.fullmatch(r"[0-9a-f]{64}", str(artifact.get("sha256"))) is None:
+                failures.append(
+                    f"{paths['rung3_manifest_v2'].relative_to(ROOT)}: historical "
+                    f"raw canonical document binding for {relative_path!r} must "
+                    "remain a lowercase SHA-256."
+                )
+    else:
+        failures.append(
+            f"{paths['rung3_manifest_v2'].relative_to(ROOT)}: artifacts must be a list."
+        )
+
+    semantic_bindings = rung3_manifest_v2.get("semanticBindings")
+    semantic_scope = (
+        [
+            binding.get("path")
+            for binding in semantic_bindings
+            if isinstance(binding, dict)
+        ]
+        if isinstance(semantic_bindings, list)
+        else []
+    )
+    if semantic_scope != list(canonical_document_paths):
+        failures.append(
+            f"{paths['rung3_manifest_v2'].relative_to(ROOT)}: semantic scope must "
+            "be the exact six canonical documents in canonical order."
+        )
+    expected_historical_semantic_bindings = (
+        ("docs/roadmap.md", "c4c1bd03744480f9dec7b5a82044dfbaf18f364d65d90cde06f0a60c3076328e"),
+        ("docs/handoff.md", "4eeba15b929d310e55441f99d53645c251cb1f8b7966fef09683f870863dc27d"),
+        ("README.md", "a435a8bdb86fd8c2a12106bdae2f9f167cf6f034fae759baaf7713471d6b3c5b"),
+        (
+            "shared/protocol/README.md",
+            "d701bde56308fba26ede86b080ac1c6e489de2a66ba81f1c43ebc8e2d8c64e06",
+        ),
+        ("docs/progress.md", "41bd164aa03592344106e21fffc9cf41586815192a2b86b292db122c5410b1b6"),
+        (
+            "docs/qa-evidence.md",
+            "85f60e8cda6ca4ab2a1785f729bc5c2c7f33f091290da7a63fc0e4e90835400a",
+        ),
+    )
+    actual_historical_semantic_bindings = (
+        tuple(
+            (binding.get("path"), binding.get("semanticSha256"))
+            for binding in semantic_bindings
+            if isinstance(binding, dict)
+        )
+        if isinstance(semantic_bindings, list)
+        else ()
+    )
+    if actual_historical_semantic_bindings != expected_historical_semantic_bindings:
+        failures.append(
+            f"{paths['rung3_manifest_v2'].relative_to(ROOT)}: immutable historical "
+            "semantic bindings drifted."
+        )
+    if isinstance(semantic_bindings, list):
+        for binding in semantic_bindings:
+            if not isinstance(binding, dict):
+                failures.append(
+                    f"{paths['rung3_manifest_v2'].relative_to(ROOT)}: semantic "
+                    "binding row must be an object."
+                )
+                continue
+            relative_path = binding.get("path")
+            if relative_path not in canonical_document_paths:
+                continue
+            if re.fullmatch(
+                r"[0-9a-f]{64}", str(binding.get("semanticSha256"))
+            ) is None:
+                failures.append(
+                    f"{paths['rung3_manifest_v2'].relative_to(ROOT)}: historical "
+                    f"semantic canonical document binding for {relative_path!r} "
+                    "must remain a lowercase SHA-256."
+                )
+
+            document_text = (ROOT / relative_path).read_text(
+                encoding="utf-8", errors="strict"
+            )
+            historical_next_action = (
+                "prepare_versioned_rung3_offline_source_review_decision"
+            )
+            scoped_historical_next_action = (
+                "recordedNextActionAtThatCheckpoint="
+                + historical_next_action
+            )
+            if document_text.count(historical_next_action) != 1 or (
+                document_text.count(scoped_historical_next_action) != 1
+            ):
+                failures.append(
+                    f"{relative_path}: historical rung-two next action must appear "
+                    "exactly once and only under recordedNextActionAtThatCheckpoint."
+                )
 
     markdown_normalized = re.sub(r"\s+", " ", texts["markdown"])
     for snippet in (
@@ -60713,7 +63789,7 @@ def personal_single_owner_governance_guard_failures() -> list[str]:
             )
 
     for label in ("roadmap", "handoff", "progress", "qa"):
-        current_prefix = texts[label][:8_000]
+        current_prefix = texts[label][:24_000]
         if "G1a no-network" not in current_prefix:
             failures.append(
                 f"{paths[label].relative_to(ROOT)} current section is missing 'G1a no-network'"
@@ -61198,11 +64274,26 @@ def personal_single_owner_governance_guard_failures() -> list[str]:
         if required not in mac_exact_bound_tests:
             failures.append(f"macOS exact-bound regression coverage is missing {required!r}")
 
+    roadmap_text = texts["roadmap"]
+    roadmap_canonical_start = roadmap_text.find("## Canonical V1 Delivery Roadmap")
+    roadmap_canonical_end = (
+        roadmap_text.find("\n## ", roadmap_canonical_start + 3)
+        if roadmap_canonical_start >= 0
+        else -1
+    )
+    if roadmap_canonical_start < 0 or roadmap_canonical_end < 0:
+        failures.append("roadmap canonical V1 delivery section is missing")
+        roadmap_current_window = ""
+    else:
+        roadmap_current_window = roadmap_text[
+            roadmap_canonical_start:roadmap_canonical_end
+        ]
+
     current_document_windows = {
-        "handoff": "\n".join(texts["handoff"].splitlines()[:500]),
-        "progress": "\n".join(texts["progress"].splitlines()[:400]),
-        "qa": "\n".join(texts["qa"].splitlines()[:360]),
-        "roadmap": "\n".join(texts["roadmap"].splitlines()[:1_200]),
+        "handoff": "\n".join(texts["handoff"].splitlines()[:650]),
+        "progress": "\n".join(texts["progress"].splitlines()[:550]),
+        "qa": "\n".join(texts["qa"].splitlines()[:450]),
+        "roadmap": roadmap_current_window,
     }
     for label, current_window in current_document_windows.items():
         for required in (

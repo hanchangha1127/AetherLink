@@ -1,0 +1,125 @@
+{
+  "documentType": "aetherlink.g2-pion-rung3-offline-source-review-execution-failure",
+  "schemaVersion": "1.0",
+  "failureId": "g2-pion-ice-v4.3.0-rung3-offline-source-review-execution-failure-v1",
+  "recordedDate": "2026-07-23",
+  "status": "rung3_bounded_static_inventory_permit_v1_consumed_failed_closed",
+  "result": "archive_rejected_before_source_decode_missing_auditable_unix_mode_metadata",
+  "nextAction": "prepare_separate_versioned_rung3_static_inventory_execution_permit_v2_with_exact_non_unix_creator_policy",
+  "contentBinding": {
+    "algorithm": "sha256",
+    "canonicalization": "utf8_ascii_escaped_sorted_keys_compact_single_lf",
+    "scope": "failure_without_contentBinding",
+    "sha256": "edb00f91aa41ee1ef2fad9044fe20d88934faf293649b120b2b010559487c587"
+  },
+  "permitBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-execution-permit-v1.json",
+    "permitId": "g2-pion-ice-v4.3.0-offline-source-review-execution-permit-v1",
+    "rawSha256": "13d1760477a07c32424f101fad98e85584c6a4335fb64e65992e099c750a756b",
+    "semanticSha256": "c28e798a1e953ffa291c9f9d7397ca377b3bc780b8a137325b0363951a083aac",
+    "consumed": true
+  },
+  "predecessorManifestBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/execution-permit-checker-manifest-v4.json",
+    "rawSha256": "437fc1faa7d0f406cc932be316897fc011f3428f408521f5578cdf476d4934e9",
+    "semanticSha256": "e95c34affc20acbf912c9a081e0f52fa0e631ad26add3063ea73ae64f07c6d47",
+    "collectionSha256": "a19c61ca6a017159b62df238711e4de28903c670a1286b7e44b2f514f6c4741b"
+  },
+  "claimEvidence": {
+    "path": "build/offline-source/pion-ice-v4.3.0/review-v1/.g2-pion-ice-v4.3.0-rung3-offline-review-v1.claim",
+    "rawSha256": "955c0196c5ecea12e1249b8bbb5e8fe48b6f76510bba39e372d81f8e0904fafa",
+    "bytes": 437,
+    "mode": "0600",
+    "linkCount": 1,
+    "claimType": "aetherlink.g2-pion-rung3-offline-review-one-use-claim",
+    "schemaVersion": "1.0",
+    "permitRawSha256": "13d1760477a07c32424f101fad98e85584c6a4335fb64e65992e099c750a756b",
+    "retained": true,
+    "automaticRetryAllowed": false
+  },
+  "reportAbsenceEvidence": {
+    "directory": "build/offline-source/pion-ice-v4.3.0/review-v1",
+    "checkedNames": [
+      "offline-source-review-result-v1.json",
+      "offline-source-review-manifest-v1.json",
+      ".offline-source-review-result-v1.json.tmp",
+      ".offline-source-review-manifest-v1.json.tmp"
+    ],
+    "allAbsent": true,
+    "directoryEnumerated": false
+  },
+  "interactiveRunnerObservation": {
+    "evidenceClass": "current_session_process_result_not_independent_runtime_receipt",
+    "code": "zip_entry_creator_mode_metadata_not_auditable",
+    "observedArchiveEntryPath": "github.com/pion/ice/v4@v4.3.0/.github/.gitignore",
+    "archiveRejectedBeforeSourceDecode": true,
+    "sourceBytesDecoded": false,
+    "candidateLocationInventoryStarted": false,
+    "completionManifestPublished": false,
+    "operationCounters": {
+      "claimCreateCount": 1,
+      "archiveOpenCount": 1,
+      "archiveReadPassCount": 1,
+      "centralDirectoryEnumerationAttemptCount": 1,
+      "sourceObservationCount": 0,
+      "reportPublicationCount": 0,
+      "materializationCount": 0,
+      "networkOperationCount": 0,
+      "subprocessCount": 0,
+      "socketCreateCount": 0,
+      "gitOperationCount": 0,
+      "deviceOperationCount": 0,
+      "reviewedSourceCompilerInvocationCount": 0,
+      "verifiedAuxiliaryToolModulePythonCompileCount": 2
+    }
+  },
+  "independentlyRecheckedState": {
+    "evidenceClass": "claim_identity_and_exact_report_name_absence_only",
+    "claimIdentityVerified": true,
+    "claimRetainedVerified": true,
+    "exactFourReportNameAbsenceVerified": true,
+    "archiveOpenCountIndependentlyProven": false,
+    "archiveReadPassCountIndependentlyProven": false,
+    "centralDirectoryEnumerationAttemptCountIndependentlyProven": false,
+    "failureCodeIndependentlyReproduced": false,
+    "observedArchiveEntryPathIndependentlyReproduced": false
+  },
+  "executionBoundary": {
+    "completed": false,
+    "permitConsumed": true,
+    "claimRetained": true,
+    "automaticRetryAllowed": false,
+    "sourceDecoded": false,
+    "sourceObserved": false,
+    "semanticSourceReviewPerformed": false,
+    "rungThreeComplete": false,
+    "candidateSelected": false,
+    "librarySelected": false,
+    "sourceMaterialized": false,
+    "sourceExecuted": false,
+    "sourcePatched": false,
+    "dependencyInstalled": false,
+    "reviewedSourceCompiled": false,
+    "networkUsed": false,
+    "socketCreated": false,
+    "gitOperationPerformed": false,
+    "deviceOperationPerformed": false,
+    "productionDeploymentAuthorized": false
+  },
+  "checkerObservationBoundary": {
+    "exactClaimReadAllowed": true,
+    "exactFourReportNameAbsenceChecksAllowed": true,
+    "buildDirectoryEnumerationAllowed": false,
+    "archiveOpenByCheckerAllowed": false,
+    "archiveReadByCheckerAllowed": false,
+    "archiveStatByCheckerAllowed": false
+  },
+  "personalProjectBoundary": {
+    "technicalSafetyGatesRemainRequired": true,
+    "repositoryOwnerAuthenticationIsNotATechnicalGate": true,
+    "repositoryOwnerAuthenticationRequired": false,
+    "externalIdentityProofRequired": false,
+    "userActionRequired": false,
+    "productEndpointAuthenticationRequired": true
+  }
+}

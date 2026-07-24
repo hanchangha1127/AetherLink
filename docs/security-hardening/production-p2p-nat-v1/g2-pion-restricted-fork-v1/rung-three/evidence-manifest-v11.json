@@ -1,0 +1,105 @@
+{
+  "documentType": "aetherlink.g2-pion-rung3-success-evidence-manifest",
+  "schemaVersion": "3.0",
+  "manifestId": "g2-pion-ice-v4.3.0-rung3-success-evidence-manifest-v11",
+  "recordedDate": "2026-07-23",
+  "status": "rung3_v3_publication_read_back_complete",
+  "result": "bounded_v3_exact_candidate_totals_digests_and_ranked_representatives_publication_committed_semantic_review_not_performed",
+  "nextAction": "prepare_separate_versioned_rung3_semantic_source_review_decision",
+  "artifactScope": "canonical_tracked_v3_runtime_result_manifest_receipt_progress_supersession_and_postrun_readback_tools",
+  "predecessorManifestBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/execution-permit-checker-manifest-v10.json",
+    "rawSha256": "84ca9e464f7f03bbe5522b45893a44ae05502a15a379b5359c5cb551c8c19f06",
+    "semanticSha256": "ee85d0205a44ac37c38e765d3cfdabb172cec8f5101b17413db2cfa6834e722c",
+    "collectionSha256": "f2c93ed6d633a8c396416cb8197918bd69e5cb301fb740a48a7709b52b581ded"
+  },
+  "artifactCount": 7,
+  "orderingRule": "ascending_evidence_id",
+  "collectionDigestAlgorithm": "sha256_utf8_lf_of_evidence_id_tab_sha256_tab_repo_relative_path_newline",
+  "collectionSha256": "d5f09ef15eeadda4308e948e27413e742390977f3a758dd6ca9ac7c552b9e227",
+  "artifacts": [
+    {
+      "evidenceId": "G2R3E061",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-result-v3.json",
+      "sha256": "ef4b8d88ec57501377a7bc9db066c04a1a379041ee1b11999f5d16c7d4447933",
+      "role": "byte_identical_canonical_tracked_v3_runtime_result"
+    },
+    {
+      "evidenceId": "G2R3E062",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-runtime-manifest-v3.json",
+      "sha256": "2dace9b59b7374423754f1f9a7345eda76db9130728d1c0579797e5a0c829055",
+      "role": "byte_identical_canonical_tracked_v3_runtime_completion_manifest"
+    },
+    {
+      "evidenceId": "G2R3E063",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-execution-receipt-v3.json",
+      "sha256": "dbb46cb6ffacbe14b15118488e07ea71ceb242f652dda17cc42b233f8c966d71",
+      "role": "v3_success_execution_and_fixed_name_postrun_readback_receipt"
+    },
+    {
+      "evidenceId": "G2R3E064",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-progress-v4.json",
+      "sha256": "08fd7def7fc0c6f9623ffaaf8dbe5157f4128d228e16c55552f1e8a8613f0a10",
+      "role": "current_v3_publication_readback_complete_progress"
+    },
+    {
+      "evidenceId": "G2R3E065",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/canonical-document-supersession-v4.json",
+      "sha256": "5b7735f57a6e97f512d469e683ba6d86a0c195bc16168b56ad1f2ad381120f19",
+      "role": "canonical_v3_success_state_supersession"
+    },
+    {
+      "evidenceId": "G2R3E066",
+      "path": "script/check_p2p_nat_g2_pion_rung3_post_run_v3.py",
+      "sha256": "049c632530cb94d63e09a53ac00514dbe6c0090ef3a091fa1d6263d23cc1c559",
+      "role": "fixed_name_no_archive_v3_runtime_postrun_readback_checker"
+    },
+    {
+      "evidenceId": "G2R3E067",
+      "path": "script/test_p2p_nat_g2_pion_rung3_post_run_v3.py",
+      "sha256": "c3bacb05c8673b61c6b8ebea0794c8b489ca59f8ec5f9f3c91d442a0f2b65381",
+      "role": "synthetic_v3_postrun_readback_mutation_tests"
+    }
+  ],
+  "canonicalCheckerBoundary": {
+    "checkerPath": "script/check_p2p_nat_g2_pion_rung3_success_evidence_v3.py",
+    "checkerTestPath": "script/test_p2p_nat_g2_pion_rung3_success_evidence_v3.py",
+    "includedAsManifestArtifacts": false,
+    "reason": "invoked_checker_and_test_remain_outside_the_manifest_to_avoid_self_referential_digest_cycles",
+    "checkerReadsTrackedFilesOnly": true,
+    "buildReadAllowed": false,
+    "archiveReadOrStatAllowed": false
+  },
+  "successBoundary": {
+    "permitVersionThreeConsumed": true,
+    "automaticRetryAllowed": false,
+    "claimRetained": true,
+    "completionManifestPublished": true,
+    "completionManifestReadBack": true,
+    "boundedCandidateLocationInventoryCompleted": true,
+    "runnerIndependentCandidateRecomputationPerformed": true,
+    "postRunCandidateCountsIndependentlyReproduced": false,
+    "postRunCompleteObservationDigestsIndependentlyReproduced": false,
+    "postRunRepresentativeRuleMatchesIndependentlyReproduced": false,
+    "postRunLowestRankSelectionIndependentlyReproduced": false,
+    "semanticSourceReviewPerformed": false,
+    "rungThreeComplete": false,
+    "candidateSelected": false,
+    "librarySelected": false
+  },
+  "trustBoundary": {
+    "invokedCanonicalCheckerBytesAreLocalTrustRoot": true,
+    "checkerSelfAuthenticationClaimed": false,
+    "trackedFilesOnly": true,
+    "runtimeOutputReadAllowed": false,
+    "buildDirectoryEnumerationAllowed": false,
+    "archiveOpenReadOrStatAllowed": false,
+    "networkAllowed": false,
+    "gitAllowed": false,
+    "deviceAllowed": false,
+    "repositoryOwnerAuthenticationRequired": false,
+    "externalIdentityProofRequired": false,
+    "executionPermitAuthenticationRequired": false,
+    "userActionRequired": false
+  }
+}

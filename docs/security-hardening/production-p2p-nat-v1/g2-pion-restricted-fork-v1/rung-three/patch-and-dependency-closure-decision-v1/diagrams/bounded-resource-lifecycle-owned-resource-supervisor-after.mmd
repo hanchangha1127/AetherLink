@@ -1,0 +1,11 @@
+flowchart LR
+  peer["Untrusted candidates and packets"] --> supervisor["Per-agent resource supervisor"]
+  supervisor --> candidates["Candidate / pair budget"]
+  supervisor --> requests["Request / task / worker budget"]
+  supervisor --> events["Bounded pull events"]
+  supervisor --> terminal["Sticky terminal latch"]
+  close["Close with one 2500 ms budget"] --> supervisor
+  supervisor --> abort["Preserved socket and write abort"]
+  terminal --> consumer["Consumer observes terminal state"]
+  classDef control fill:#173f5f,color:#fff,stroke:#3ca0d3
+  class supervisor,terminal control

@@ -3,7 +3,7 @@
 
 This validator is deliberately offline. It authenticates the recorded Go
 checksum-database tree and inclusion proof, pins the exact pre-acquisition
-state, and never performs source acquisition, compilation, or Git operations.
+state, and never performs source acquisition, compilation, or Git writes.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
+import subprocess
 import sys
 from typing import Any, Iterable, Mapping, Sequence
 from urllib.parse import unquote, urlsplit
@@ -38,6 +39,13 @@ DECISION_PATH = RUNG_TWO_ROOT / "source-acquisition-decision-v1.json"
 DECISION_MARKDOWN_PATH = RUNG_TWO_ROOT / "source-acquisition-decision-v1.md"
 PROGRESS_PATH = RUNG_TWO_ROOT / "source-acquisition-progress-v1.json"
 EVIDENCE_MANIFEST_PATH = RUNG_TWO_ROOT / "evidence-manifest-v2.json"
+CANONICAL_DOC_SUPERSESSION_PATH = (
+    RUNG_TWO_ROOT / "canonical-document-supersession-v1.json"
+)
+CANONICAL_DOC_SUPERSESSION_V2_PATH = (
+    RUNG_TWO_ROOT / "canonical-document-supersession-v2.json"
+)
+CANONICAL_SYNC_MANIFEST_V4_PATH = RUNG_TWO_ROOT / "evidence-manifest-v4.json"
 
 EXPECTED_RAW_SHA256 = {
     PROFILE_PATH: "10e9436ae9b8f24c4447d12f8087b4f121810841ae33526e08fcc3d862d60a0f",
@@ -47,6 +55,8 @@ EXPECTED_RAW_SHA256 = {
     DECISION_MARKDOWN_PATH: "1c14cfd54cb0e4c5cec647b9cb42a9f9352e8809556e74a7a27c163e047ebb72",
     PROGRESS_PATH: "25b00486c80a6a769be0ab25ad8a7d2e5f27652f5799682892de0561a10ca2cd",
     EVIDENCE_MANIFEST_PATH: "46437bbfcb99c852009f03dbe8736aa95399ee1b053b517a3ab8c00dc796d445",
+    CANONICAL_DOC_SUPERSESSION_PATH: "51b1eb43a6b57441ddcb307d37db86420cea9932ea89e316c50730215bf4d816",
+    CANONICAL_DOC_SUPERSESSION_V2_PATH: "3a2b74ecde45b69204b9687904a4f88d731dfc532046e472ec22a4873765309a",
 }
 
 EXPECTED_SEMANTIC_SHA256 = {
@@ -55,6 +65,8 @@ EXPECTED_SEMANTIC_SHA256 = {
     DECISION_PATH: "e49f17012acc8f6a3663311bc89074de309a4a174f9032909f87bd0fa9404eed",
     PROGRESS_PATH: "92592186087c211560bfc021aea423f5380d9d09aedddaa937e62276ef771c33",
     EVIDENCE_MANIFEST_PATH: "8934d039a8f73c58872de9cfe74b118a8f0b88a5701412b1611aaa0212dc4b09",
+    CANONICAL_DOC_SUPERSESSION_PATH: "f33ffd58ca37a7a3d604281d328344c7081c9fd80ce8d64e5d1280ba9e40d6c2",
+    CANONICAL_DOC_SUPERSESSION_V2_PATH: "1c1245ceb52e0f2b90fcd89934b02fedaf3985466b4e4b53d9c1821d85921932",
 }
 
 RUNG_ONE_COLLECTION_SHA256 = (
@@ -1199,6 +1211,482 @@ def validate_markdown() -> None:
     validate_markdown_text(text)
 
 
+def read_exact_git_object(arguments: Sequence[str], maximum_bytes: int) -> bytes:
+    """Read one historical Git object without checkout, mutation, or networking."""
+
+    environment = {
+        "PATH": "/usr/bin:/bin",
+        "LC_ALL": "C",
+        "LANG": "C",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_NO_LAZY_FETCH": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_TERMINAL_PROMPT": "0",
+    }
+    try:
+        result = subprocess.run(
+            ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", *arguments],
+            cwd=ROOT,
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        fail(f"unable to read historical Git object: {error}")
+    if result.returncode != 0:
+        fail(
+            "historical Git object read failed: "
+            + result.stderr[:512].decode("utf-8", errors="replace")
+        )
+    if len(result.stdout) > maximum_bytes:
+        fail("historical Git object exceeds its read ceiling")
+    return result.stdout
+
+
+def validate_canonical_document_supersession(
+    *, verify_superseded_current_files: bool = False
+) -> None:
+    document = load_json(CANONICAL_DOC_SUPERSESSION_PATH)
+    verify_pretty_json_bytes(CANONICAL_DOC_SUPERSESSION_PATH, document)
+    require_semantic_hash(
+        document,
+        EXPECTED_SEMANTIC_SHA256[CANONICAL_DOC_SUPERSESSION_PATH],
+        "canonicalDocSupersession",
+    )
+    require_exact_keys(
+        document,
+        {
+            "documentType", "schemaVersion", "supersessionId", "recordedDate",
+            "status", "reason", "predecessorManifestBinding",
+            "historicalGitSnapshot", "currentDocumentState",
+            "currentEvidenceBinding", "executionBoundary",
+        },
+        "canonicalDocSupersession",
+    )
+    expected_identity = {
+        "documentType": "aetherlink.g2-canonical-document-supersession",
+        "schemaVersion": "1.0",
+        "supersessionId": "g2-pion-rung2-canonical-document-supersession-v1",
+        "recordedDate": "2026-07-23",
+        "status": "historical_rung1_bytes_git_preserved_current_docs_advanced_to_rung2_receipt",
+        "reason": "roadmap_and_handoff_are_living_canonical_documents_and_must_advance_without_rewriting_the_rung1_snapshot",
+    }
+    for key, expected in expected_identity.items():
+        require_equal(document[key], expected, f"canonicalDocSupersession.{key}")
+    predecessor = require_exact_keys(
+        document["predecessorManifestBinding"],
+        {"path", "sha256", "collectionSha256"},
+        "canonicalDocSupersession.predecessorManifestBinding",
+    )
+    predecessor_expected = {
+        "path": RUNG_ONE_MANIFEST_PATH.relative_to(ROOT).as_posix(),
+        "sha256": EXPECTED_RAW_SHA256[RUNG_ONE_MANIFEST_PATH],
+        "collectionSha256": RUNG_ONE_COLLECTION_SHA256,
+    }
+    for key, expected in predecessor_expected.items():
+        require_equal(
+            predecessor[key], expected,
+            f"canonicalDocSupersession.predecessorManifestBinding.{key}",
+        )
+
+    historical = require_exact_keys(
+        document["historicalGitSnapshot"],
+        {"commit", "tree", "objectReadMode", "readOnlyGitObjectVerificationRequired", "documents"},
+        "canonicalDocSupersession.historicalGitSnapshot",
+    )
+    historical_commit = "3bf9615024a3959f61d4bb749f8930dd07ea4385"
+    historical_tree = "a0640a2484e2ec249a5cfb0180ab26e8a0493d98"
+    require_equal(historical["commit"], historical_commit, "canonicalDocSupersession.historical.commit")
+    require_equal(historical["tree"], historical_tree, "canonicalDocSupersession.historical.tree")
+    require_equal(historical["objectReadMode"], "exact_commit_tree_blob_read_only_no_checkout", "canonicalDocSupersession.historical.objectReadMode")
+    require_equal(historical["readOnlyGitObjectVerificationRequired"], True, "canonicalDocSupersession.historical.readOnlyGitObjectVerificationRequired")
+    commit_bytes = read_exact_git_object(["cat-file", "commit", historical_commit], 64 * 1024)
+    if not commit_bytes.startswith(f"tree {historical_tree}\n".encode("ascii")):
+        fail("historical Git commit does not bind the recorded root tree")
+    historical_rows = (
+        (
+            "G2E003", "docs/roadmap.md",
+            "2fcb2e60b39d6ea843179d84c29bb57ac5219d20b2b2454c0165e420e1c462a5",
+            "historical_rung1_canonical_roadmap_snapshot",
+        ),
+        (
+            "G2E004", "docs/handoff.md",
+            "f3f43bd602660bc01d5fcbde54550423abcc72ae73ce705021d1ef3b4f4fd2d4",
+            "historical_rung1_canonical_handoff_snapshot",
+        ),
+    )
+    historical_documents = require_list(
+        historical["documents"], "canonicalDocSupersession.historical.documents"
+    )
+    if len(historical_documents) != len(historical_rows):
+        fail("canonicalDocSupersession must bind exactly two historical documents")
+    for index, (item, expected) in enumerate(zip(historical_documents, historical_rows)):
+        item = require_exact_keys(
+            item, {"evidenceId", "path", "sha256", "role"},
+            f"canonicalDocSupersession.historical.documents[{index}]",
+        )
+        for key, expected_value in zip(("evidenceId", "path", "sha256", "role"), expected):
+            require_equal(
+                item[key], expected_value,
+                f"canonicalDocSupersession.historical.documents[{index}].{key}",
+            )
+        blob = read_exact_git_object(
+            ["cat-file", "blob", f"{historical_commit}:{item['path']}"],
+            1024 * 1024,
+        )
+        if hashlib.sha256(blob).hexdigest() != item["sha256"]:
+            fail(f"historical Git blob hash mismatch for {item['path']}")
+
+    current = require_exact_keys(
+        document["currentDocumentState"], {"status", "nextAction", "documents"},
+        "canonicalDocSupersession.currentDocumentState",
+    )
+    require_equal(current["status"], "synchronized_to_acquisition_complete_archive_retained_not_extracted", "canonicalDocSupersession.current.status")
+    require_equal(current["nextAction"], "prepare_versioned_rung3_offline_source_review_decision", "canonicalDocSupersession.current.nextAction")
+    current_rows = (
+        ("docs/roadmap.md", "b4a78169161f9a72788cc5c4dc7e55fe53ac720ec65095e9fe4562ce5c47d45d", "current_canonical_v1_delivery_roadmap"),
+        ("docs/handoff.md", "e4b659e737402e359ec3e99d1a7b871176cdb1ea53ec986da5f9884089858987", "current_canonical_session_handoff"),
+    )
+    current_documents = require_list(current["documents"], "canonicalDocSupersession.current.documents")
+    if len(current_documents) != len(current_rows):
+        fail("canonicalDocSupersession must bind exactly two current documents")
+    for index, (item, expected) in enumerate(zip(current_documents, current_rows)):
+        item = require_exact_keys(item, {"path", "sha256", "role"}, f"canonicalDocSupersession.current.documents[{index}]")
+        for key, expected_value in zip(("path", "sha256", "role"), expected):
+            require_equal(item[key], expected_value, f"canonicalDocSupersession.current.documents[{index}].{key}")
+        if verify_superseded_current_files:
+            verify_file_shape_and_hash(ROOT / item["path"], item["sha256"])
+
+    evidence = require_exact_keys(
+        document["currentEvidenceBinding"],
+        {"receiptPath", "receiptSha256", "progressPath", "progressSha256", "manifestPath", "manifestSha256"},
+        "canonicalDocSupersession.currentEvidenceBinding",
+    )
+    evidence_expected = {
+        "receiptPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/source-acquisition-receipt-v1.json",
+        "receiptSha256": "3faa5d1d12b7d52b9c2f74a68a2bd83d2bbd459342e56fe6a20caf1ac61409f6",
+        "progressPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/source-acquisition-progress-v2.json",
+        "progressSha256": "df1ad52bc6fff294b9bb54fd94a8eaacd76d9ff2b179be4a6752a867d229196f",
+        "manifestPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/evidence-manifest-v3.json",
+        "manifestSha256": "8ed1a2667153f77270531d7c373f5f61ed9eb9080bceab7c804c9b686259537e",
+    }
+    for key, expected in evidence_expected.items():
+        require_equal(evidence[key], expected, f"canonicalDocSupersession.currentEvidenceBinding.{key}")
+        if key.endswith("Sha256"):
+            require_hex(evidence[key], 64, f"canonicalDocSupersession.currentEvidenceBinding.{key}")
+
+    boundary = require_exact_keys(
+        document["executionBoundary"],
+        {
+            "historicalDecisionRewritten", "historicalReceiptRewritten",
+            "archiveExtracted", "sourceReviewPerformed", "candidateSelected",
+            "librarySelected", "compilerInvocationAllowed", "codeLoadingAllowed",
+            "socketCreationAllowed", "runtimeNetworkIoAllowed", "deviceExecutionAllowed",
+            "productionDeploymentAllowed", "gitWriteOperationAllowed",
+            "externalIdentityProofRequired", "userActionRequired",
+            "repositoryOwnerAuthenticationRequired",
+            "rungThreeOfflineReviewDecisionPreparationAllowed",
+            "rungThreeOfflineReviewExecutionAllowed",
+        },
+        "canonicalDocSupersession.executionBoundary",
+    )
+    for key, value in boundary.items():
+        require_equal(
+            value,
+            key == "rungThreeOfflineReviewDecisionPreparationAllowed",
+            f"canonicalDocSupersession.executionBoundary.{key}",
+        )
+
+
+CURRENT_CANONICAL_DOCUMENT_PATHS = (
+    "docs/roadmap.md",
+    "docs/handoff.md",
+    "README.md",
+    "shared/protocol/README.md",
+    "docs/progress.md",
+    "docs/qa-evidence.md",
+)
+CURRENT_CANONICAL_FORBIDDEN_PHRASES = (
+    "current pre-acquisition result",
+    "current restricted-fork rung-one result",
+    "current restricted-fork rung-one",
+    "active pre-acquisition direction",
+    "prepare the separate rung-two exact-source identity/acquisition decision",
+    "preparation of its separate rung-two technical decision",
+    "preparation of a separate rung-two technical decision",
+    "opens only preparation of a separate rung-two",
+    "proceed only to preparation of a separate rung-two",
+    "rung-two source-identity and acquisition decision",
+    "rung-two provenance/acquisition decision",
+    "explicit user decision",
+)
+CURRENT_CANONICAL_NORMALIZATION_RULE = (
+    "unicode_preserving_split_whitespace_join_single_ascii_space_then_lowercase"
+)
+CURRENT_CANONICAL_ROADMAP_SECTION_HEADINGS = (
+    "### G2 - Select A New P2P/NAT Stack Under Fresh Authority",
+    "### Immediate Execution Queue",
+)
+HISTORICAL_RUNG_TWO_PREPARATION_MARKERS = (
+    "prepare_versioned_rung2_source_identity_and_acquisition_decision",
+    "preparation of a separate rung-two",
+    "rung-two source-identity and acquisition decision",
+    "rung-two provenance/acquisition decision",
+)
+
+
+def normalized_markdown_text(text: str) -> str:
+    return " ".join(text.split()).lower()
+
+
+def markdown_section(text: str, heading: str) -> str:
+    lines = text.splitlines()
+    try:
+        start = lines.index(heading)
+    except ValueError:
+        fail(f"canonical roadmap is missing section heading {heading!r}")
+    level = len(heading) - len(heading.lstrip("#"))
+    end = len(lines)
+    for index in range(start + 1, len(lines)):
+        match = re.match(r"^(#{1,6})\s+", lines[index])
+        if match and len(match.group(1)) <= level:
+            end = index
+            break
+    return "\n".join(lines[start:end])
+
+
+def validate_current_canonical_document_semantics(
+    texts: Mapping[str, str] | None = None,
+) -> None:
+    if texts is None:
+        loaded: dict[str, str] = {}
+        for relative_path in CURRENT_CANONICAL_DOCUMENT_PATHS:
+            try:
+                loaded[relative_path] = secure_read_bytes(ROOT / relative_path).decode("utf-8")
+            except (OSError, UnicodeError) as error:
+                fail(f"unable to read current canonical document {relative_path}: {error}")
+        texts = loaded
+    require_equal(
+        tuple(texts.keys()),
+        CURRENT_CANONICAL_DOCUMENT_PATHS,
+        "canonicalDocSupersessionV2.semanticGuard.scope",
+    )
+    for relative_path, text in texts.items():
+        require_exact_type(text, str, f"canonicalDocSupersessionV2.semanticGuard.{relative_path}")
+        normalized = normalized_markdown_text(text)
+        if "at_that_checkpoint" not in normalized:
+            fail(f"{relative_path} must mark historical G2 direction with at_that_checkpoint")
+        if "prepare_versioned_rung3_offline_source_review_decision" not in normalized:
+            fail(f"{relative_path} must name the exact current rung-three preparation action")
+        for phrase in CURRENT_CANONICAL_FORBIDDEN_PHRASES:
+            if phrase in normalized:
+                fail(f"{relative_path} contains superseded current-step phrase {phrase!r}")
+    roadmap = texts["docs/roadmap.md"]
+    for heading in CURRENT_CANONICAL_ROADMAP_SECTION_HEADINGS:
+        section = markdown_section(roadmap, heading)
+        normalized_section = normalized_markdown_text(section)
+        if "prepare_versioned_rung3_offline_source_review_decision" not in normalized_section:
+            fail(f"canonical roadmap section {heading!r} lacks the current rung-three action")
+        for paragraph in re.split(r"\n\s*\n", section):
+            normalized_paragraph = normalized_markdown_text(paragraph)
+            if any(
+                marker in normalized_paragraph
+                for marker in HISTORICAL_RUNG_TWO_PREPARATION_MARKERS
+            ) and "at_that_checkpoint" not in normalized_paragraph:
+                fail(
+                    f"canonical roadmap section {heading!r} contains an unscoped "
+                    "historical rung-two preparation instruction"
+                )
+
+
+def validate_canonical_document_supersession_v2(
+    *, verify_superseded_current_files: bool = False
+) -> None:
+    path = CANONICAL_DOC_SUPERSESSION_V2_PATH
+    document = load_json(path)
+    verify_pretty_json_bytes(path, document)
+    require_semantic_hash(
+        document,
+        EXPECTED_SEMANTIC_SHA256[path],
+        "canonicalDocSupersessionV2",
+    )
+    require_exact_keys(
+        document,
+        {
+            "documentType", "schemaVersion", "supersessionId", "recordedDate",
+            "status", "reason", "predecessorSupersessionBinding",
+            "predecessorManifestBinding", "previousDocumentState",
+            "currentDocumentState", "semanticGuard", "executionBoundary",
+        },
+        "canonicalDocSupersessionV2",
+    )
+    expected_identity = {
+        "documentType": "aetherlink.g2-canonical-document-supersession",
+        "schemaVersion": "1.0",
+        "supersessionId": "g2-pion-rung2-canonical-document-supersession-v2",
+        "recordedDate": "2026-07-23",
+        "status": "historical_v4_semantic_conflict_corrected_current_docs_advanced_to_unambiguous_rung3_preparation",
+        "reason": "historical_checkpoint_sections_must_not_override_the_consumed_rung2_receipt_or_reselect_a_completed_acquisition_step",
+    }
+    for key, expected in expected_identity.items():
+        require_equal(document[key], expected, f"canonicalDocSupersessionV2.{key}")
+
+    require_exact_keys(
+        document["predecessorSupersessionBinding"],
+        {"path", "sha256", "semanticSha256"},
+        "canonicalDocSupersessionV2.predecessorSupersessionBinding",
+    )
+    predecessor_supersession = {
+        "path": CANONICAL_DOC_SUPERSESSION_PATH.relative_to(ROOT).as_posix(),
+        "sha256": EXPECTED_RAW_SHA256[CANONICAL_DOC_SUPERSESSION_PATH],
+        "semanticSha256": EXPECTED_SEMANTIC_SHA256[CANONICAL_DOC_SUPERSESSION_PATH],
+    }
+    require_equal(
+        document["predecessorSupersessionBinding"],
+        predecessor_supersession,
+        "canonicalDocSupersessionV2.predecessorSupersessionBinding",
+    )
+    verify_file_shape_and_hash(
+        CANONICAL_DOC_SUPERSESSION_PATH,
+        predecessor_supersession["sha256"],
+    )
+
+    predecessor_manifest = {
+        "path": CANONICAL_SYNC_MANIFEST_V4_PATH.relative_to(ROOT).as_posix(),
+        "sha256": "eb2352de7623706095b6208edcc58b9550e1a1501ed2482739f89525c74da022",
+        "collectionSha256": "a2f2ab09307a5b1408d65699b3746782f8e6de6ece8e98891241dc350bc4cae3",
+    }
+    require_exact_keys(
+        document["predecessorManifestBinding"],
+        {"path", "sha256", "collectionSha256"},
+        "canonicalDocSupersessionV2.predecessorManifestBinding",
+    )
+    require_equal(
+        document["predecessorManifestBinding"],
+        predecessor_manifest,
+        "canonicalDocSupersessionV2.predecessorManifestBinding",
+    )
+    verify_file_shape_and_hash(
+        CANONICAL_SYNC_MANIFEST_V4_PATH,
+        predecessor_manifest["sha256"],
+    )
+
+    previous_rows = (
+        ("docs/roadmap.md", "b4a78169161f9a72788cc5c4dc7e55fe53ac720ec65095e9fe4562ce5c47d45d", "previous_canonical_v1_delivery_roadmap"),
+        ("docs/handoff.md", "e4b659e737402e359ec3e99d1a7b871176cdb1ea53ec986da5f9884089858987", "previous_canonical_session_handoff"),
+        ("README.md", "0c760bc7409629e70e9ddc170f295640c15738ad41ce76d6cb4c85a23194d0ae", "previous_root_project_status"),
+        ("shared/protocol/README.md", "319771b5614e71125809202c5625ade90416e19f29ca2dd5da7237bed8df24a0", "previous_shared_protocol_status"),
+        ("docs/progress.md", "d4f6885a898ad4468348999bed169837530663e87d94bd1b413aec21b1730cb1", "previous_progress_status"),
+        ("docs/qa-evidence.md", "f2458587f32fa3d93862dd84501544046bc4859291225fbf4eda8a07200a8880", "previous_qa_checklist"),
+    )
+    current_rows = (
+        ("docs/roadmap.md", "067fe008fb7be9c73883cf50bd9f9d44764025fb8197e18fbe46d79bf1ef110e", "current_canonical_v1_delivery_roadmap"),
+        ("docs/handoff.md", "8117a2eea69f9fc2241145fec833700da1076f3e387b3b8a8a09ab725c207ae8", "current_canonical_session_handoff"),
+        ("README.md", "aca5762ff01056401e8e6824d96a548c589493a9dd28d7d4c07524913b41fdfc", "current_root_project_status"),
+        ("shared/protocol/README.md", "50e6337bf9685a3b3e064f954a7bb25dc129a19cf79a7ec536d990c60c73df40", "current_shared_protocol_status"),
+        ("docs/progress.md", "10d878b77bdfee4ebd0d0a104bdb3aa7ae80bfaf2130b293852b4fb04c50c1c4", "current_progress_status"),
+        ("docs/qa-evidence.md", "fe7b7535c3aa4d27b1e079d3be4fcfa5a13f1dba32c9a528b739a082fa348832", "current_qa_checklist"),
+    )
+    for state_name, expected_status, expected_rows, verify_files in (
+        (
+            "previousDocumentState",
+            "rung2_acquisition_complete_with_ambiguous_historical_current_wording",
+            previous_rows,
+            False,
+        ),
+        (
+            "currentDocumentState",
+            "rung2_acquisition_complete_archive_retained_not_extracted_semantically_unambiguous",
+            current_rows,
+            verify_superseded_current_files,
+        ),
+    ):
+        expected_keys = {"status", "documents"}
+        if state_name == "currentDocumentState":
+            expected_keys.add("nextAction")
+        state = require_exact_keys(
+            document[state_name], expected_keys, f"canonicalDocSupersessionV2.{state_name}"
+        )
+        require_equal(
+            state["status"], expected_status, f"canonicalDocSupersessionV2.{state_name}.status"
+        )
+        if state_name == "currentDocumentState":
+            require_equal(
+                state["nextAction"],
+                "prepare_versioned_rung3_offline_source_review_decision",
+                "canonicalDocSupersessionV2.currentDocumentState.nextAction",
+            )
+        rows = require_list(
+            state["documents"], f"canonicalDocSupersessionV2.{state_name}.documents"
+        )
+        if len(rows) != len(expected_rows):
+            fail(f"canonicalDocSupersessionV2.{state_name} must bind exactly six documents")
+        for index, (item, expected_row) in enumerate(zip(rows, expected_rows)):
+            item = require_exact_keys(
+                item,
+                {"path", "sha256", "role"},
+                f"canonicalDocSupersessionV2.{state_name}.documents[{index}]",
+            )
+            expected_item = dict(zip(("path", "sha256", "role"), expected_row))
+            require_equal(
+                item,
+                expected_item,
+                f"canonicalDocSupersessionV2.{state_name}.documents[{index}]",
+            )
+            if verify_files:
+                verify_file_shape_and_hash(ROOT / item["path"], item["sha256"])
+
+    semantic_guard = require_exact_keys(
+        document["semanticGuard"],
+        {
+            "scope", "historicalCheckpointToken", "requiredCurrentNextAction",
+            "forbiddenCurrentPhrases", "normalizationRule", "roadmapSectionScopes",
+        },
+        "canonicalDocSupersessionV2.semanticGuard",
+    )
+    require_equal(
+        semantic_guard,
+        {
+            "scope": list(CURRENT_CANONICAL_DOCUMENT_PATHS),
+            "historicalCheckpointToken": "at_that_checkpoint",
+            "requiredCurrentNextAction": "prepare_versioned_rung3_offline_source_review_decision",
+            "forbiddenCurrentPhrases": list(CURRENT_CANONICAL_FORBIDDEN_PHRASES),
+            "normalizationRule": CURRENT_CANONICAL_NORMALIZATION_RULE,
+            "roadmapSectionScopes": list(CURRENT_CANONICAL_ROADMAP_SECTION_HEADINGS),
+        },
+        "canonicalDocSupersessionV2.semanticGuard",
+    )
+    if verify_superseded_current_files:
+        validate_current_canonical_document_semantics()
+
+    boundary = require_exact_keys(
+        document["executionBoundary"],
+        {
+            "historicalDecisionRewritten", "historicalReceiptRewritten",
+            "archiveExtracted", "sourceReviewPerformed", "candidateSelected",
+            "librarySelected", "compilerInvocationAllowed", "codeLoadingAllowed",
+            "socketCreationAllowed", "runtimeNetworkIoAllowed", "deviceExecutionAllowed",
+            "productionDeploymentAllowed", "gitWriteOperationAllowed",
+            "externalIdentityProofRequired", "userActionRequired",
+            "repositoryOwnerAuthenticationRequired",
+            "rungThreeOfflineReviewDecisionPreparationAllowed",
+            "rungThreeOfflineReviewExecutionAllowed",
+        },
+        "canonicalDocSupersessionV2.executionBoundary",
+    )
+    for key, value in boundary.items():
+        require_equal(
+            value,
+            key == "rungThreeOfflineReviewDecisionPreparationAllowed",
+            f"canonicalDocSupersessionV2.executionBoundary.{key}",
+        )
+
+
 def validate_cross_document_bindings(
     provenance: Mapping[str, Any],
     decision: Mapping[str, Any],
@@ -1268,7 +1756,11 @@ def validate_repository() -> None:
     validate_provenance_document(provenance)
     validate_decision_document(decision)
     validate_progress_document(progress)
-    validate_evidence_manifest(manifest)
+    validate_evidence_manifest(manifest, verify_artifact_files=False)
+    for _, artifact_path, artifact_hash, _ in EXPECTED_MANIFEST_ROWS[:2]:
+        verify_file_shape_and_hash(ROOT / artifact_path, artifact_hash)
+    validate_canonical_document_supersession()
+    validate_canonical_document_supersession_v2()
     validate_cross_document_bindings(provenance, decision, progress)
     validate_markdown()
 
@@ -1293,9 +1785,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"G2 Pion rung-two validation failed: {error}", file=sys.stderr)
         return 1
     print(
-        "G2 Pion rung-two acquisition authority passed: public SumDB signature "
-        "and inclusion proof verified; exact one-use source request authorized "
-        "but not consumed; no user or owner authentication required."
+        "G2 Pion historical rung-two acquisition authority passed: public SumDB "
+        "signature and inclusion proof verified; the immutable checkpoint records "
+        "the exact request as authorized but not yet consumed; the historical "
+        "canonical-document supersession chain is verified while the current "
+        "successor is checked by the rung-three validator; "
+        "no user or owner authentication required."
     )
     return 0
 

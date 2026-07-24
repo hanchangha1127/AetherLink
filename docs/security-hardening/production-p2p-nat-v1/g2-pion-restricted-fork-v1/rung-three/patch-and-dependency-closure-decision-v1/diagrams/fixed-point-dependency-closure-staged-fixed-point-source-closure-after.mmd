@@ -1,0 +1,11 @@
+flowchart LR
+  decision["Versioned tuple allowlist"] --> wave["Bounded immutable acquisition wave"]
+  wave --> verify["Hash / archive / provenance / license gate"]
+  verify --> graph["Exact module graph"]
+  graph -->|"new tuple"| next["New versioned decision"]
+  graph -->|"no new tuple"| review["Two-pass source and build-profile review"]
+  review --> sbom["SPDX 2.3 SBOM and source manifest"]
+  sbom --> readback["Manifest-last independent readback"]
+  context["Checksum-only tuples"] --> quarantine["Context quarantine"]
+  classDef control fill:#173f5f,color:#fff,stroke:#3ca0d3
+  class decision,verify,review,readback,quarantine control

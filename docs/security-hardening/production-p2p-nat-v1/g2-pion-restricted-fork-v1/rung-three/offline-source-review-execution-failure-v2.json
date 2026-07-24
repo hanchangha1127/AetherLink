@@ -1,0 +1,130 @@
+{
+  "documentType": "aetherlink.g2-pion-rung3-offline-source-review-execution-failure",
+  "schemaVersion": "2.0",
+  "failureId": "g2-pion-ice-v4.3.0-rung3-offline-source-review-execution-failure-v2",
+  "recordedDate": "2026-07-23",
+  "status": "rung3_bounded_static_inventory_permit_v2_consumed_failed_closed",
+  "result": "candidate_inventory_hit_bound_exceeded_before_report_publication",
+  "nextAction": "preserve_v2_claim_and_review_inventory_bound_design_before_any_separate_versioned_permit",
+  "contentBinding": {
+    "algorithm": "sha256",
+    "canonicalization": "utf8_ascii_escaped_sorted_keys_compact_single_lf",
+    "scope": "failure_without_contentBinding",
+    "sha256": "fecdabf0267a9908fb2c6c2acc7e02c39386b819587e3cb0274b0c36f51bf65e"
+  },
+  "permitBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-execution-permit-v2.json",
+    "permitId": "g2-pion-ice-v4.3.0-offline-source-review-execution-permit-v2",
+    "rawSha256": "7f125ecc7d6e6d0a597cb4cddecebf37eaad5e0a8f614d1019603b4e952f9a06",
+    "semanticSha256": "3164cbf4b25f75c9689ad47db50776ba4fbbe7c4b315dfa5bcfbbba01e5c0321",
+    "consumed": true
+  },
+  "authorityManifestBindings": {
+    "core": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/execution-permit-core-manifest-v6.json",
+      "rawSha256": "443c6d918b94329692f1ed57a989263ae38f939120752103c47e852c50f83e73",
+      "semanticSha256": "861c04832e845be2066632697f1a5b8eb3085157328351cde5fdc052c6c00240",
+      "collectionSha256": "cf53cf2b33ab07ec539a97a4f8f43cc84e32848e9fbfb2ae8669250529312f41"
+    },
+    "observationalToolchain": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/execution-permit-checker-manifest-v7.json",
+      "rawSha256": "35538ba8c5db14d881b9d1f2420637e21f4a9e2a4b376e4e0f1687e6c137d3aa",
+      "semanticSha256": "dee99588758c8d8c9f9e0efdbd2c63abfaac9df4bb9c7c1d0d4bbf31cb0c9b32",
+      "collectionSha256": "96bd129c1020591b8f4b19e6b9037631ee2801615cd07ef7581ba813bd5828e8",
+      "executionAuthority": false
+    }
+  },
+  "runnerBinding": {
+    "path": "script/run_p2p_nat_g2_pion_rung3_offline_review_v2_once.py",
+    "rawSha256": "938e44be1dc020e4f58175fe6d9190108ae70a38d307fc83ef093ce445f529e7",
+    "invokedBytesAreLocalTrustRoot": true,
+    "runnerSelfAuthenticationClaimed": false
+  },
+  "claimEvidence": {
+    "path": "build/offline-source/pion-ice-v4.3.0/review-v2/.g2-pion-ice-v4.3.0-rung3-offline-review-v2.claim",
+    "rawSha256": "ff5a1ea309d1fd51b0ed46a35f6b711a829170d70c330135b40d214544b8de9d",
+    "bytes": 446,
+    "mode": "0600",
+    "linkCount": 1,
+    "claimType": "aetherlink.g2-pion-rung3-offline-review-v2-one-use-claim",
+    "schemaVersion": "2.0",
+    "permitRawSha256": "7f125ecc7d6e6d0a597cb4cddecebf37eaad5e0a8f614d1019603b4e952f9a06",
+    "retained": true,
+    "automaticRetryAllowed": false
+  },
+  "reportAbsenceEvidence": {
+    "directory": "build/offline-source/pion-ice-v4.3.0/review-v2",
+    "checkedNames": [
+      "offline-source-review-result-v2.json",
+      "offline-source-review-manifest-v2.json",
+      ".offline-source-review-result-v2.json.tmp",
+      ".offline-source-review-manifest-v2.json.tmp"
+    ],
+    "allAbsent": true,
+    "directoryEnumerated": false
+  },
+  "interactiveRunnerObservation": {
+    "evidenceClass": "current_session_process_result_not_independent_runtime_receipt",
+    "processExitCode": 1,
+    "runnerReportedStatus": "failed_closed",
+    "reason": "candidate inventory for 'disable_nonprofile_network_paths' exceeds its hit bound",
+    "automaticRetryAllowed": false,
+    "externalIdentityProofRequired": false,
+    "repositoryOwnerAuthenticationRequired": false,
+    "userActionRequired": false,
+    "archiveOperationCountersPresentInFailurePayload": false,
+    "sourceObservationCountersPresentInFailurePayload": false,
+    "reportPublicationCountersPresentInFailurePayload": false
+  },
+  "independentlyRecheckedState": {
+    "evidenceClass": "claim_identity_and_exact_report_name_absence_only",
+    "claimIdentityVerified": true,
+    "claimRetainedVerified": true,
+    "exactFourReportNameAbsenceVerified": true,
+    "runnerFailureReasonIndependentlyReproduced": false,
+    "candidateInventoryHitBoundIndependentlyReproduced": false,
+    "archiveOpenCountIndependentlyProven": false,
+    "archiveReadPassCountIndependentlyProven": false,
+    "archiveEntryEnumerationCountIndependentlyProven": false,
+    "sourceObservationCountIndependentlyProven": false
+  },
+  "executionBoundary": {
+    "completed": false,
+    "permitConsumed": true,
+    "claimRetained": true,
+    "automaticRetryAllowed": false,
+    "boundedCandidateLocationInventoryCompleted": false,
+    "semanticSourceReviewPerformed": false,
+    "rungThreeComplete": false,
+    "candidateSelected": false,
+    "librarySelected": false,
+    "sourceMaterialized": false,
+    "sourceExecuted": false,
+    "sourcePatched": false,
+    "dependencyInstalled": false,
+    "reviewedSourceCompiled": false,
+    "completionManifestPublished": false,
+    "networkUsed": false,
+    "socketCreated": false,
+    "gitOperationPerformed": false,
+    "deviceOperationPerformed": false,
+    "productionDeploymentAuthorized": false
+  },
+  "checkerObservationBoundary": {
+    "exactClaimReadAllowed": true,
+    "exactFourReportNameAbsenceChecksAllowed": true,
+    "buildDirectoryEnumerationAllowed": false,
+    "archiveOpenByCheckerAllowed": false,
+    "archiveReadByCheckerAllowed": false,
+    "archiveStatByCheckerAllowed": false,
+    "failureReproductionByCheckerAllowed": false
+  },
+  "personalProjectBoundary": {
+    "technicalSafetyGatesRemainRequired": true,
+    "repositoryOwnerAuthenticationRequired": false,
+    "externalIdentityProofRequired": false,
+    "executionPermitAuthenticationRequired": false,
+    "userActionRequired": false,
+    "productEndpointAuthenticationChangedByThisEvidence": false
+  }
+}

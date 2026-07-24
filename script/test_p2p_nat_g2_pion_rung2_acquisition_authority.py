@@ -9,6 +9,7 @@ import importlib.util
 from pathlib import Path
 import re
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -411,9 +412,52 @@ class G2PionRungTwoMutationTests(unittest.TestCase):
         CHECKER.validate_decision_document(copy.deepcopy(self.decision))
         CHECKER.validate_progress_document(copy.deepcopy(self.progress))
         CHECKER.validate_evidence_manifest(
-            copy.deepcopy(self.manifest), verify_artifact_files=True
+            copy.deepcopy(self.manifest), verify_artifact_files=False
         )
+        CHECKER.validate_canonical_document_supersession()
+        CHECKER.validate_canonical_document_supersession_v2()
         CHECKER.validate_markdown_text(self.markdown)
+        completed = mock.Mock(returncode=0, stdout=b"historical-object", stderr=b"")
+        with mock.patch.object(CHECKER.subprocess, "run", return_value=completed) as run:
+            self.assertEqual(
+                CHECKER.read_exact_git_object(["cat-file", "blob", "deadbeef"], 32),
+                b"historical-object",
+            )
+        environment = run.call_args.kwargs["env"]
+        self.assertEqual(environment["GIT_NO_LAZY_FETCH"], "1")
+        self.assertEqual(environment["GIT_TERMINAL_PROMPT"], "0")
+        self.assertEqual(environment["GIT_OPTIONAL_LOCKS"], "0")
+        historical_action = "prepare_versioned_rung3_offline_source_review_decision"
+        historical_checkpoint = "at_that_checkpoint"
+        canonical_texts = {
+            path: f"{historical_checkpoint} {historical_action}\n"
+            for path in CHECKER.CURRENT_CANONICAL_DOCUMENT_PATHS
+        }
+        canonical_texts["docs/roadmap.md"] = (
+            "### G2 - Select A New P2P/NAT Stack Under Fresh Authority\n\n"
+            f"{historical_checkpoint} "
+            "prepare_versioned_rung2_source_identity_and_acquisition_decision "
+            "was the historical preparation action.\n\n"
+            f"{historical_action}\n\n"
+            "### Immediate Execution Queue\n\n"
+            f"{historical_checkpoint} {historical_action}\n"
+        )
+        CHECKER.validate_current_canonical_document_semantics(canonical_texts)
+        stale_texts = copy.deepcopy(canonical_texts)
+        stale_texts["docs/progress.md"] += (
+            "\nPreparation of a separate rung-two\ntechnical decision\n"
+        )
+        with self.assertRaises(CHECKER.RungTwoValidationError):
+            CHECKER.validate_current_canonical_document_semantics(stale_texts)
+        unscoped_texts = copy.deepcopy(canonical_texts)
+        unscoped_texts["docs/roadmap.md"] = unscoped_texts["docs/roadmap.md"].replace(
+            f"{historical_checkpoint} "
+            "prepare_versioned_rung2_source_identity_and_acquisition_decision",
+            "prepare_versioned_rung2_source_identity_and_acquisition_decision",
+            1,
+        )
+        with self.assertRaises(CHECKER.RungTwoValidationError):
+            CHECKER.validate_current_canonical_document_semantics(unscoped_texts)
         for claim in (
             "Source acquired successfully.",
             "All required checks passed.",

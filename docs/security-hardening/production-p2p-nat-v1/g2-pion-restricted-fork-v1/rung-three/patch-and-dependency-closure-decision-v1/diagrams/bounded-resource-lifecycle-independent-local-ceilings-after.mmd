@@ -1,0 +1,11 @@
+flowchart LR
+  peer["Untrusted candidates and packets"] --> agent["Agent"]
+  agent --> candidates["Locally capped candidates / pairs"]
+  agent --> requests["Locally capped requests / tasks"]
+  agent --> events["Bounded callback queues"]
+  close["Close"] --> taskwait["Per-component timeout"]
+  close --> eventwait["Per-component timeout"]
+  close --> gatherwait["Per-component timeout"]
+  overflow["Local overflow policies"] --> agent
+  classDef control fill:#173f5f,color:#fff,stroke:#3ca0d3
+  class overflow control

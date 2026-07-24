@@ -1,0 +1,46 @@
+{
+  "documentType": "aetherlink.g2-pion-rung3-execution-permit-checker-evidence-manifest",
+  "schemaVersion": "1.0",
+  "manifestId": "g2-pion-ice-v4.3.0-rung3-execution-permit-checker-evidence-manifest-v4",
+  "recordedDate": "2026-07-23",
+  "status": "rung3_bounded_static_inventory_execution_authorized_not_consumed",
+  "result": "single_use_bounded_static_candidate_location_inventory_authorized_not_executed",
+  "nextAction": "execute_bound_rung3_static_candidate_location_inventory_once",
+  "artifactScope": "execution_permit_checker_evidence_separate_from_pinned_core",
+  "predecessorManifestBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/execution-permit-core-manifest-v3.json",
+    "rawSha256": "5da37c6101ea9eee4f12074c76cfdd97bb74f4a6e30dad2edddc1d788e415e09",
+    "semanticSha256": "179eaf84db4b6500d41d560474d802e3930dbfe671163ef307062aa94bb3ee8f",
+    "collectionSha256": "2073107b2cd994097270a28907ee8bbb562e8647ecba992f5e13b8c9b7adb2c0"
+  },
+  "artifactCount": 2,
+  "orderingRule": "ascending_evidence_id",
+  "collectionDigestAlgorithm": "sha256_utf8_lf_of_evidence_id_tab_sha256_tab_repo_relative_path_newline",
+  "collectionSha256": "a19c61ca6a017159b62df238711e4de28903c670a1286b7e44b2f514f6c4741b",
+  "artifacts": [
+    {
+      "evidenceId": "G2R3E021",
+      "path": "script/check_p2p_nat_g2_pion_rung3_execution_permit.py",
+      "sha256": "076e0ad21c837c7068cdbe013c5809a23c0ae65f759bbbe13bad1e5830fcb570",
+      "role": "strict_no_archive_execution_permit_checker"
+    },
+    {
+      "evidenceId": "G2R3E022",
+      "path": "script/test_p2p_nat_g2_pion_rung3_execution_permit.py",
+      "sha256": "f9462eaba9dc5afef92f15c54158db6ef0ee6e6b24a35ded9e1789004ec055e7",
+      "role": "execution_permit_checker_schema_digest_and_safe_read_tests"
+    }
+  ],
+  "trustBoundary": {
+    "invokedCheckerBytesAreLocalTrustRoot": true,
+    "checkerSelfAuthenticationClaimed": false,
+    "checkerImportsRunner": false,
+    "reviewedSourceCompilerInvocationAllowed": false,
+    "verifiedPinnedReviewToolModuleLoadingAllowed": true,
+    "verifiedAuxiliaryToolModulePythonCompileAllowed": true,
+    "archiveReadByCheckerAllowed": false,
+    "buildDirectoryReadByCheckerAllowed": false,
+    "networkAllowed": false,
+    "gitAllowed": false
+  }
+}

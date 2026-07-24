@@ -1,0 +1,140 @@
+{
+  "documentType": "aetherlink.g2-canonical-document-supersession",
+  "schemaVersion": "1.0",
+  "supersessionId": "g2-pion-rung2-canonical-document-supersession-v2",
+  "recordedDate": "2026-07-23",
+  "status": "historical_v4_semantic_conflict_corrected_current_docs_advanced_to_unambiguous_rung3_preparation",
+  "reason": "historical_checkpoint_sections_must_not_override_the_consumed_rung2_receipt_or_reselect_a_completed_acquisition_step",
+  "predecessorSupersessionBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/canonical-document-supersession-v1.json",
+    "sha256": "51b1eb43a6b57441ddcb307d37db86420cea9932ea89e316c50730215bf4d816",
+    "semanticSha256": "f33ffd58ca37a7a3d604281d328344c7081c9fd80ce8d64e5d1280ba9e40d6c2"
+  },
+  "predecessorManifestBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/evidence-manifest-v4.json",
+    "sha256": "eb2352de7623706095b6208edcc58b9550e1a1501ed2482739f89525c74da022",
+    "collectionSha256": "a2f2ab09307a5b1408d65699b3746782f8e6de6ece8e98891241dc350bc4cae3"
+  },
+  "previousDocumentState": {
+    "status": "rung2_acquisition_complete_with_ambiguous_historical_current_wording",
+    "documents": [
+      {
+        "path": "docs/roadmap.md",
+        "sha256": "b4a78169161f9a72788cc5c4dc7e55fe53ac720ec65095e9fe4562ce5c47d45d",
+        "role": "previous_canonical_v1_delivery_roadmap"
+      },
+      {
+        "path": "docs/handoff.md",
+        "sha256": "e4b659e737402e359ec3e99d1a7b871176cdb1ea53ec986da5f9884089858987",
+        "role": "previous_canonical_session_handoff"
+      },
+      {
+        "path": "README.md",
+        "sha256": "0c760bc7409629e70e9ddc170f295640c15738ad41ce76d6cb4c85a23194d0ae",
+        "role": "previous_root_project_status"
+      },
+      {
+        "path": "shared/protocol/README.md",
+        "sha256": "319771b5614e71125809202c5625ade90416e19f29ca2dd5da7237bed8df24a0",
+        "role": "previous_shared_protocol_status"
+      },
+      {
+        "path": "docs/progress.md",
+        "sha256": "d4f6885a898ad4468348999bed169837530663e87d94bd1b413aec21b1730cb1",
+        "role": "previous_progress_status"
+      },
+      {
+        "path": "docs/qa-evidence.md",
+        "sha256": "f2458587f32fa3d93862dd84501544046bc4859291225fbf4eda8a07200a8880",
+        "role": "previous_qa_checklist"
+      }
+    ]
+  },
+  "currentDocumentState": {
+    "status": "rung2_acquisition_complete_archive_retained_not_extracted_semantically_unambiguous",
+    "nextAction": "prepare_versioned_rung3_offline_source_review_decision",
+    "documents": [
+      {
+        "path": "docs/roadmap.md",
+        "sha256": "067fe008fb7be9c73883cf50bd9f9d44764025fb8197e18fbe46d79bf1ef110e",
+        "role": "current_canonical_v1_delivery_roadmap"
+      },
+      {
+        "path": "docs/handoff.md",
+        "sha256": "8117a2eea69f9fc2241145fec833700da1076f3e387b3b8a8a09ab725c207ae8",
+        "role": "current_canonical_session_handoff"
+      },
+      {
+        "path": "README.md",
+        "sha256": "aca5762ff01056401e8e6824d96a548c589493a9dd28d7d4c07524913b41fdfc",
+        "role": "current_root_project_status"
+      },
+      {
+        "path": "shared/protocol/README.md",
+        "sha256": "50e6337bf9685a3b3e064f954a7bb25dc129a19cf79a7ec536d990c60c73df40",
+        "role": "current_shared_protocol_status"
+      },
+      {
+        "path": "docs/progress.md",
+        "sha256": "10d878b77bdfee4ebd0d0a104bdb3aa7ae80bfaf2130b293852b4fb04c50c1c4",
+        "role": "current_progress_status"
+      },
+      {
+        "path": "docs/qa-evidence.md",
+        "sha256": "fe7b7535c3aa4d27b1e079d3be4fcfa5a13f1dba32c9a528b739a082fa348832",
+        "role": "current_qa_checklist"
+      }
+    ]
+  },
+  "semanticGuard": {
+    "scope": [
+      "docs/roadmap.md",
+      "docs/handoff.md",
+      "README.md",
+      "shared/protocol/README.md",
+      "docs/progress.md",
+      "docs/qa-evidence.md"
+    ],
+    "historicalCheckpointToken": "at_that_checkpoint",
+    "requiredCurrentNextAction": "prepare_versioned_rung3_offline_source_review_decision",
+    "forbiddenCurrentPhrases": [
+      "current pre-acquisition result",
+      "current restricted-fork rung-one result",
+      "current restricted-fork rung-one",
+      "active pre-acquisition direction",
+      "prepare the separate rung-two exact-source identity/acquisition decision",
+      "preparation of its separate rung-two technical decision",
+      "preparation of a separate rung-two technical decision",
+      "opens only preparation of a separate rung-two",
+      "proceed only to preparation of a separate rung-two",
+      "rung-two source-identity and acquisition decision",
+      "rung-two provenance/acquisition decision",
+      "explicit user decision"
+    ],
+    "normalizationRule": "unicode_preserving_split_whitespace_join_single_ascii_space_then_lowercase",
+    "roadmapSectionScopes": [
+      "### G2 - Select A New P2P/NAT Stack Under Fresh Authority",
+      "### Immediate Execution Queue"
+    ]
+  },
+  "executionBoundary": {
+    "historicalDecisionRewritten": false,
+    "historicalReceiptRewritten": false,
+    "archiveExtracted": false,
+    "sourceReviewPerformed": false,
+    "candidateSelected": false,
+    "librarySelected": false,
+    "compilerInvocationAllowed": false,
+    "codeLoadingAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIoAllowed": false,
+    "deviceExecutionAllowed": false,
+    "productionDeploymentAllowed": false,
+    "gitWriteOperationAllowed": false,
+    "externalIdentityProofRequired": false,
+    "userActionRequired": false,
+    "repositoryOwnerAuthenticationRequired": false,
+    "rungThreeOfflineReviewDecisionPreparationAllowed": true,
+    "rungThreeOfflineReviewExecutionAllowed": false
+  }
+}

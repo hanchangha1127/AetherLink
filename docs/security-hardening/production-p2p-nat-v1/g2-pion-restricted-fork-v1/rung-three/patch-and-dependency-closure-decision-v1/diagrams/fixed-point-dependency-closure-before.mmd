@@ -1,0 +1,9 @@
+flowchart LR
+  gomod["Root go.mod: 19 requirements"] --> inventory["Inventory-only metadata"]
+  gosum["Root go.sum: 44 records"] --> inventory
+  archive["Root source archive"] --> review["Root semantic review"]
+  inventory -. "no retained dependency source" .-> missing["Unknown transitive behavior / license"]
+  missing --> resolver["Resolver and network behavior unresolved"]
+  missing --> tls["TURN TLS identity unresolved"]
+  classDef danger fill:#5d1f2b,color:#fff,stroke:#d15b73
+  class missing,resolver,tls danger

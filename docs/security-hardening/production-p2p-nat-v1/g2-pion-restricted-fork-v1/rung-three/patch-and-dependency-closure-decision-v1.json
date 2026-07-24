@@ -1,0 +1,212 @@
+{
+  "documentType": "aetherlink.g2-pion-rung3-patch-and-dependency-closure-decision",
+  "schemaVersion": "1.0",
+  "decisionId": "g2-pion-ice-v4.3.0-rung3-patch-and-dependency-closure-decision-v1",
+  "recordedDate": "2026-07-23",
+  "status": "prepared_options_unselected_dependency_closure_blocked",
+  "predecessorBindings": {
+    "classifications": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/semantic-source-review-classifications-v1.json",
+      "rawSha256": "e76e8c9fa0a78c8c5c4beae1ebfd4c4f8144b411689a3a8bd5f8804ebf61c8c9",
+      "contentSha256": "d7feed1bdd5a7a8ee0eead002c598157c01dafe2d429b7c1c012978d39a38886"
+    },
+    "result": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/semantic-source-review-result-v1.json",
+      "rawSha256": "a01b3518f1354d438542ae77c06aa92d8f0936d516b4070d19c5bf27791e8a98",
+      "contentSha256": "9a7eeae26ca7538b33f805f35ade421c528dd52745fd6c737fedb7c70acf6e97"
+    },
+    "manifest": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/semantic-source-review-manifest-v1.json",
+      "rawSha256": "300da97505b4715576d665846b23dd8363b36d416ed5d24ed4a7d4e77f098e6f",
+      "contentSha256": "3812c15c57b93b7d35dde44b4cdb3d4abff4f696b517fb6e7e216dab0b45671e"
+    }
+  },
+  "archiveBinding": {
+    "path": "build/offline-source/pion-ice-v4.3.0/original/github.com-pion-ice-v4@v4.3.0.zip",
+    "rawSha256": "f95ef3ce2e0063c13925f478bf8d188833725b2f0a7ecb1e695dee8ab61ef63c",
+    "sourceTreeSha256": "b44b1277937432822d005632dc0ac77b0c733959c871d998fac5e3964ce39244",
+    "goModRawSha256": "5044428710b5a718aad517eed5c08e1933378efa3d9b4245853cfb312560aca4",
+    "goSumRawSha256": "b47d7d5f3bb8c8b85b3283585f97ea6bd0a8b97427b49068b9f5685ddd953887",
+    "sourceExtracted": false,
+    "sourceCompiled": false,
+    "sourceLoaded": false,
+    "sourceExecuted": false
+  },
+  "analysisBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/patch-and-dependency-closure-decision-v1/hardening.json",
+    "rawSha256": "d426e363672e8d36155d37bad754e89ce775d37d16c3cbd0a8de8b6abd393866",
+    "analysisId": "g2_pion_rung3_patch_dependency_closure_decision_v1",
+    "evidenceCollectionSha256": "853bec14073a55c21980a306b748bc52aa58ec00d94da11e3a65df2533cb4a1f",
+    "opportunityIds": [
+      "capability-gated-network-boundary",
+      "bounded-resource-lifecycle",
+      "typed-secret-free-diagnostics",
+      "fixed-point-dependency-closure"
+    ],
+    "recommendationsAreSelections": false
+  },
+  "findingSet": {
+    "count": 19,
+    "dispositionCounts": {
+      "patch_required": 7,
+      "unresolved": 12
+    },
+    "severityCounts": {
+      "P0": 0,
+      "P1": 11,
+      "P2": 3,
+      "P3": 4,
+      "none": 1
+    },
+    "findings": [
+      {"findingId": "G2SR1-F-8a09ee9cfc2ec2968e9c", "canonicalInvariantId": "binding_indication_liveness_without_integrity", "finalDisposition": "unresolved", "finalSeverity": "P2", "dependencyBlocked": false},
+      {"findingId": "G2SR1-F-964c63e397f00eeecc36", "canonicalInvariantId": "partial_close_abort_controls", "finalDisposition": "unresolved", "finalSeverity": "P3", "dependencyBlocked": false},
+      {"findingId": "G2SR1-F-2eef005a63ea93252f5d", "canonicalInvariantId": "fixed_buffer_and_stun_checks", "finalDisposition": "unresolved", "finalSeverity": "P3", "dependencyBlocked": false},
+      {"findingId": "G2SR1-F-c9dd2e9b3fa55e3ad43b", "canonicalInvariantId": "lexical_locations_are_not_vulnerabilities", "finalDisposition": "unresolved", "finalSeverity": "P3", "dependencyBlocked": false},
+      {"findingId": "G2SR1-F-bfc6cef606dab975ede3", "canonicalInvariantId": "partial_existing_controls", "finalDisposition": "unresolved", "finalSeverity": "P3", "dependencyBlocked": false},
+      {"findingId": "G2SR1-F-65bdab86ddd0720af770", "canonicalInvariantId": "dependency_source_closure_missing", "finalDisposition": "unresolved", "finalSeverity": "P1", "dependencyBlocked": true},
+      {"findingId": "G2SR1-F-0b0f647a603042ba5063", "canonicalInvariantId": "raw_candidate_hostname_diagnostic_sink", "finalDisposition": "unresolved", "finalSeverity": "P2", "dependencyBlocked": false},
+      {"findingId": "G2SR1-F-6469763b45a8335ddef9", "canonicalInvariantId": "remote_password_diagnostic_sink", "finalDisposition": "unresolved", "finalSeverity": "P1", "dependencyBlocked": false},
+      {"findingId": "G2SR1-F-263f18372976e5bfaa73", "canonicalInvariantId": "exact_egress_capability", "finalDisposition": "patch_required", "finalSeverity": "P1", "dependencyBlocked": false},
+      {"findingId": "G2SR1-F-04b73f19b3e2520c5c13", "canonicalInvariantId": "unbounded_push_callback_and_graceful_close", "finalDisposition": "patch_required", "finalSeverity": "P1", "dependencyBlocked": false},
+      {"findingId": "G2SR1-F-b077f40a5a605032af05", "canonicalInvariantId": "ingress_admission_rate_size_source_generation_capability", "finalDisposition": "patch_required", "finalSeverity": "P1", "dependencyBlocked": false},
+      {"findingId": "G2SR1-F-4189417f18abce71d56a", "canonicalInvariantId": "nonprofile_paths_reachable", "finalDisposition": "patch_required", "finalSeverity": "P2", "dependencyBlocked": false},
+      {"findingId": "G2SR1-F-29bea0297021e485b7b0", "canonicalInvariantId": "one_use_required_mechanism_absent", "finalDisposition": "unresolved", "finalSeverity": "none", "dependencyBlocked": false},
+      {"findingId": "G2SR1-F-9b119ebd5dad38048abc", "canonicalInvariantId": "one_use_preauth_atomic_promotion_gap", "finalDisposition": "unresolved", "finalSeverity": "P1", "dependencyBlocked": false},
+      {"findingId": "G2SR1-F-9650aac47015cf5758c9", "canonicalInvariantId": "one_use_preauth_atomic_promotion_gap", "finalDisposition": "unresolved", "finalSeverity": "P1", "dependencyBlocked": false},
+      {"findingId": "G2SR1-F-7e744b8ee19e7de9b7c3", "canonicalInvariantId": "ambient_resolution_dependency_behavior", "finalDisposition": "unresolved", "finalSeverity": "P1", "dependencyBlocked": true},
+      {"findingId": "G2SR1-F-9206ffd24b3357f7cda5", "canonicalInvariantId": "unbounded_candidate_pair_request_task_process", "finalDisposition": "patch_required", "finalSeverity": "P1", "dependencyBlocked": false},
+      {"findingId": "G2SR1-F-9c7a12eced69a28176a4", "canonicalInvariantId": "no_total_shutdown_deadline", "finalDisposition": "patch_required", "finalSeverity": "P1", "dependencyBlocked": false},
+      {"findingId": "G2SR1-F-7d678ddf77ac89e04ae4", "canonicalInvariantId": "turn_tls_service_identity", "finalDisposition": "patch_required", "finalSeverity": "P1", "dependencyBlocked": true}
+    ]
+  },
+  "treatments": [
+    {"findingId": "G2SR1-F-8a09ee9cfc2ec2968e9c", "status": "deferred_not_resolved_by_preparation", "patchUnitIds": ["split_egress_capability_and_ingress_admission_boundaries", "add_one_use_pre_auth_path_and_exact_secure_session_promotion"], "preservationRequired": false, "assuranceBoundary": false},
+    {"findingId": "G2SR1-F-964c63e397f00eeecc36", "status": "deferred_not_resolved_by_preparation", "patchUnitIds": [], "preservationRequired": true, "assuranceBoundary": false},
+    {"findingId": "G2SR1-F-2eef005a63ea93252f5d", "status": "deferred_not_resolved_by_preparation", "patchUnitIds": [], "preservationRequired": true, "assuranceBoundary": false},
+    {"findingId": "G2SR1-F-c9dd2e9b3fa55e3ad43b", "status": "deferred_not_resolved_by_preparation", "patchUnitIds": ["dependency_source_license_security_closure_review"], "preservationRequired": false, "assuranceBoundary": true},
+    {"findingId": "G2SR1-F-bfc6cef606dab975ede3", "status": "deferred_not_resolved_by_preparation", "patchUnitIds": [], "preservationRequired": true, "assuranceBoundary": false},
+    {"findingId": "G2SR1-F-65bdab86ddd0720af770", "status": "deferred_not_resolved_by_preparation", "patchUnitIds": ["split_egress_capability_and_ingress_admission_boundaries", "remove_secret_bearing_diagnostics", "replace_callbacks_with_bounded_pull_events_and_sticky_terminal_latch", "deadline_bounded_shutdown", "disable_nonprofile_network_paths", "inject_bounded_resolver_interface_and_turn_tls_identity_inputs", "add_one_use_pre_auth_path_and_exact_secure_session_promotion", "dependency_source_license_security_closure_review"], "preservationRequired": false, "assuranceBoundary": true},
+    {"findingId": "G2SR1-F-0b0f647a603042ba5063", "status": "deferred_not_resolved_by_preparation", "patchUnitIds": ["remove_secret_bearing_diagnostics"], "preservationRequired": false, "assuranceBoundary": false},
+    {"findingId": "G2SR1-F-6469763b45a8335ddef9", "status": "deferred_not_resolved_by_preparation", "patchUnitIds": ["remove_secret_bearing_diagnostics"], "preservationRequired": false, "assuranceBoundary": false},
+    {"findingId": "G2SR1-F-263f18372976e5bfaa73", "status": "deferred_not_resolved_by_preparation", "patchUnitIds": ["split_egress_capability_and_ingress_admission_boundaries", "disable_nonprofile_network_paths"], "preservationRequired": false, "assuranceBoundary": false},
+    {"findingId": "G2SR1-F-04b73f19b3e2520c5c13", "status": "deferred_not_resolved_by_preparation", "patchUnitIds": ["replace_callbacks_with_bounded_pull_events_and_sticky_terminal_latch", "deadline_bounded_shutdown"], "preservationRequired": false, "assuranceBoundary": false},
+    {"findingId": "G2SR1-F-b077f40a5a605032af05", "status": "deferred_not_resolved_by_preparation", "patchUnitIds": ["split_egress_capability_and_ingress_admission_boundaries", "add_one_use_pre_auth_path_and_exact_secure_session_promotion"], "preservationRequired": false, "assuranceBoundary": false},
+    {"findingId": "G2SR1-F-4189417f18abce71d56a", "status": "deferred_not_resolved_by_preparation", "patchUnitIds": ["disable_nonprofile_network_paths"], "preservationRequired": false, "assuranceBoundary": false},
+    {"findingId": "G2SR1-F-29bea0297021e485b7b0", "status": "deferred_not_resolved_by_preparation", "patchUnitIds": ["add_one_use_pre_auth_path_and_exact_secure_session_promotion"], "preservationRequired": false, "assuranceBoundary": true},
+    {"findingId": "G2SR1-F-9b119ebd5dad38048abc", "status": "deferred_not_resolved_by_preparation", "patchUnitIds": ["add_one_use_pre_auth_path_and_exact_secure_session_promotion"], "preservationRequired": false, "assuranceBoundary": false},
+    {"findingId": "G2SR1-F-9650aac47015cf5758c9", "status": "deferred_not_resolved_by_preparation", "patchUnitIds": ["add_one_use_pre_auth_path_and_exact_secure_session_promotion"], "preservationRequired": false, "assuranceBoundary": false},
+    {"findingId": "G2SR1-F-7e744b8ee19e7de9b7c3", "status": "deferred_not_resolved_by_preparation", "patchUnitIds": ["inject_bounded_resolver_interface_and_turn_tls_identity_inputs", "dependency_source_license_security_closure_review"], "preservationRequired": false, "assuranceBoundary": false},
+    {"findingId": "G2SR1-F-9206ffd24b3357f7cda5", "status": "deferred_not_resolved_by_preparation", "patchUnitIds": ["split_egress_capability_and_ingress_admission_boundaries", "replace_callbacks_with_bounded_pull_events_and_sticky_terminal_latch", "deadline_bounded_shutdown", "disable_nonprofile_network_paths"], "preservationRequired": false, "assuranceBoundary": false},
+    {"findingId": "G2SR1-F-9c7a12eced69a28176a4", "status": "deferred_not_resolved_by_preparation", "patchUnitIds": ["replace_callbacks_with_bounded_pull_events_and_sticky_terminal_latch", "deadline_bounded_shutdown"], "preservationRequired": false, "assuranceBoundary": false},
+    {"findingId": "G2SR1-F-7d678ddf77ac89e04ae4", "status": "deferred_not_resolved_by_preparation", "patchUnitIds": ["inject_bounded_resolver_interface_and_turn_tls_identity_inputs", "dependency_source_license_security_closure_review"], "preservationRequired": false, "assuranceBoundary": false}
+  ],
+  "options": [
+    {"optionId": "split_egress_capability_and_ingress_admission_boundaries", "kind": "root_patch_unit", "selected": false, "implementationPrepared": false, "findingIds": ["G2SR1-F-8a09ee9cfc2ec2968e9c", "G2SR1-F-65bdab86ddd0720af770", "G2SR1-F-263f18372976e5bfaa73", "G2SR1-F-b077f40a5a605032af05", "G2SR1-F-9206ffd24b3357f7cda5"]},
+    {"optionId": "remove_secret_bearing_diagnostics", "kind": "root_patch_unit", "selected": false, "implementationPrepared": false, "findingIds": ["G2SR1-F-65bdab86ddd0720af770", "G2SR1-F-0b0f647a603042ba5063", "G2SR1-F-6469763b45a8335ddef9"]},
+    {"optionId": "replace_callbacks_with_bounded_pull_events_and_sticky_terminal_latch", "kind": "root_patch_unit", "selected": false, "implementationPrepared": false, "findingIds": ["G2SR1-F-65bdab86ddd0720af770", "G2SR1-F-04b73f19b3e2520c5c13", "G2SR1-F-9206ffd24b3357f7cda5", "G2SR1-F-9c7a12eced69a28176a4"]},
+    {"optionId": "deadline_bounded_shutdown", "kind": "root_patch_unit", "selected": false, "implementationPrepared": false, "findingIds": ["G2SR1-F-65bdab86ddd0720af770", "G2SR1-F-04b73f19b3e2520c5c13", "G2SR1-F-9206ffd24b3357f7cda5", "G2SR1-F-9c7a12eced69a28176a4"]},
+    {"optionId": "disable_nonprofile_network_paths", "kind": "root_patch_unit", "selected": false, "implementationPrepared": false, "findingIds": ["G2SR1-F-65bdab86ddd0720af770", "G2SR1-F-263f18372976e5bfaa73", "G2SR1-F-4189417f18abce71d56a", "G2SR1-F-9206ffd24b3357f7cda5"]},
+    {"optionId": "inject_bounded_resolver_interface_and_turn_tls_identity_inputs", "kind": "root_patch_unit", "selected": false, "implementationPrepared": false, "findingIds": ["G2SR1-F-65bdab86ddd0720af770", "G2SR1-F-7e744b8ee19e7de9b7c3", "G2SR1-F-7d678ddf77ac89e04ae4"]},
+    {"optionId": "add_one_use_pre_auth_path_and_exact_secure_session_promotion", "kind": "root_patch_unit", "selected": false, "implementationPrepared": false, "findingIds": ["G2SR1-F-8a09ee9cfc2ec2968e9c", "G2SR1-F-65bdab86ddd0720af770", "G2SR1-F-b077f40a5a605032af05", "G2SR1-F-29bea0297021e485b7b0", "G2SR1-F-9b119ebd5dad38048abc", "G2SR1-F-9650aac47015cf5758c9"]},
+    {"optionId": "dependency_source_license_security_closure_review", "kind": "dependency_review_unit", "selected": false, "implementationPrepared": false, "findingIds": ["G2SR1-F-c9dd2e9b3fa55e3ad43b", "G2SR1-F-65bdab86ddd0720af770", "G2SR1-F-7e744b8ee19e7de9b7c3", "G2SR1-F-7d678ddf77ac89e04ae4"]}
+  ],
+  "dependencySeed": {
+    "goVersion": "1.24.0",
+    "requirementCount": 19,
+    "directRequirementCount": 10,
+    "indirectRequirementCount": 9,
+    "goSumRecordCount": 44,
+    "goSumModuleVersionTupleCount": 23,
+    "goSumSourceHashCount": 21,
+    "goSumGoModHashCount": 23,
+    "requirements": [
+      {"module": "github.com/google/uuid", "version": "v1.6.0", "direct": true},
+      {"module": "github.com/pion/dtls/v3", "version": "v3.1.5", "direct": true},
+      {"module": "github.com/pion/logging", "version": "v0.2.4", "direct": true},
+      {"module": "github.com/pion/mdns/v2", "version": "v2.1.0", "direct": true},
+      {"module": "github.com/pion/randutil", "version": "v0.1.0", "direct": true},
+      {"module": "github.com/pion/stun/v3", "version": "v3.1.6", "direct": true},
+      {"module": "github.com/pion/transport/v4", "version": "v4.0.2", "direct": true},
+      {"module": "github.com/pion/turn/v5", "version": "v5.0.12", "direct": true},
+      {"module": "github.com/stretchr/testify", "version": "v1.11.1", "direct": true},
+      {"module": "golang.org/x/net", "version": "v0.49.0", "direct": true},
+      {"module": "github.com/davecgh/go-spew", "version": "v1.1.1", "direct": false},
+      {"module": "github.com/kr/pretty", "version": "v0.1.0", "direct": false},
+      {"module": "github.com/pmezard/go-difflib", "version": "v1.0.0", "direct": false},
+      {"module": "github.com/wlynxg/anet", "version": "v0.0.5", "direct": false},
+      {"module": "golang.org/x/crypto", "version": "v0.48.0", "direct": false},
+      {"module": "golang.org/x/sys", "version": "v0.41.0", "direct": false},
+      {"module": "golang.org/x/time", "version": "v0.14.0", "direct": false},
+      {"module": "gopkg.in/check.v1", "version": "v1.0.0-20190902080502-41f04d3bba15", "direct": false},
+      {"module": "gopkg.in/yaml.v3", "version": "v3.0.1", "direct": false}
+    ],
+    "checksumOnlyContextTuples": [
+      {"module": "github.com/kr/pty", "version": "v1.1.1", "selected": false},
+      {"module": "github.com/kr/text", "version": "v0.1.0", "selected": false},
+      {"module": "github.com/pion/transport/v3", "version": "v3.1.1", "selected": false},
+      {"module": "gopkg.in/check.v1", "version": "v0.0.0-20161208181325-20d25e280405", "selected": false}
+    ],
+    "inventoryOnlyNoDependencyAcquisition": true,
+    "rootMetadataProvesCompleteGraph": false
+  },
+  "dependencyClosureSequence": [
+    {"order": 1, "stepId": "normalize_root_seed", "prepared": true, "executed": false, "rule": "Bind exact root metadata and keep checksum-only tuples quarantined."},
+    {"order": 2, "stepId": "prepare_source_identity_and_acquisition_decision", "prepared": false, "executed": false, "rule": "A separate version must predeclare tuples, provenance, hashes, archive limits, no-overwrite, and stop conditions."},
+    {"order": 3, "stepId": "acquire_immutable_bounded_waves", "prepared": false, "executed": false, "rule": "A later technical decision may open a bounded wave; this decision opens no network or package-manager action."},
+    {"order": 4, "stepId": "expand_exact_graph_to_fixed_point", "prepared": false, "executed": false, "rule": "Every new selected tuple requires a new immutable decision version."},
+    {"order": 5, "stepId": "two_pass_source_license_security_review", "prepared": false, "executed": false, "rule": "Review declared build profiles, licenses, network, resolver, TLS, diagnostics, queues, shutdown, native/generated code, and initialization."},
+    {"order": 6, "stepId": "publish_sbom_manifest_and_independent_readback", "prepared": false, "executed": false, "rule": "Closure needs SPDX 2.3, complete source manifest, no unresolved blocker, and manifest-last independent byte readback."}
+  ],
+  "selection": {
+    "anyOptionSelected": false,
+    "selectedOptionIds": [],
+    "implementationPlanCreated": false,
+    "patchSeriesCreated": false,
+    "dependencyAcquisitionDecisionCreated": false
+  },
+  "authority": {
+    "sourceModificationAuthorized": false,
+    "sourceExtractionAuthorized": false,
+    "dependencyAcquisitionAuthorized": false,
+    "packageManagerAuthorized": false,
+    "compilerAuthorized": false,
+    "sourceLoadAuthorized": false,
+    "sourceExecutionAuthorized": false,
+    "socketAuthorized": false,
+    "networkAuthorized": false,
+    "deviceAuthorized": false,
+    "deploymentAuthorized": false,
+    "gitWriteAuthorized": false,
+    "externalAuthenticationRequired": false,
+    "userActionRequired": false
+  },
+  "closure": {
+    "findingsClosedByPreparation": 0,
+    "rootPatchComplete": false,
+    "dependencySourceReviewed": false,
+    "dependencyClosureComplete": false,
+    "semanticClosureComplete": false,
+    "rungThreeComplete": false,
+    "candidateSelected": false,
+    "librarySelected": false
+  },
+  "nonClaims": {
+    "recommendationIsSelection": false,
+    "preparationIsImplementation": false,
+    "goSumIsCompleteGraphEvidence": false,
+    "sourceReviewIsRuntimeVerification": false,
+    "dependencyClosureAloneClosesRootFindings": false,
+    "dependencyClosureSelectsLibrary": false,
+    "repositoryIdentityProofRequired": false,
+    "productEndpointAuthenticationSatisfied": false
+  },
+  "result": "four_structural_recommendations_and_eight_unselected_treatment_units_prepared_all_19_findings_remain_open",
+  "nextAction": "prepare_separate_versioned_implementation_or_dependency_review_decision",
+  "contentBinding": {
+    "algorithm": "sha256",
+    "canonicalization": "utf8_ascii_escaped_sorted_keys_compact_single_lf",
+    "scope": "decision_without_contentBinding",
+    "sha256": "b0bc1feb01546e3bcd261794f21b51d526de1b3d84fabc36d459699319a773ef"
+  }
+}

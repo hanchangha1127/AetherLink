@@ -1,0 +1,65 @@
+{
+  "documentType": "aetherlink.g2-pion-rung2-source-acquisition-evidence-manifest",
+  "schemaVersion": "1.0",
+  "manifestId": "g2-pion-ice-v4.3.0-rung2-acquisition-evidence-manifest-v3",
+  "recordedDate": "2026-07-23",
+  "status": "rung2_acquisition_evidence_complete_rung3_decision_not_recorded",
+  "result": "exact_archive_acquired_verified_and_retained",
+  "nextAction": "prepare_versioned_rung3_offline_source_review_decision",
+  "predecessorManifestBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/evidence-manifest-v2.json",
+    "sha256": "46437bbfcb99c852009f03dbe8736aa95399ee1b053b517a3ab8c00dc796d445",
+    "collectionSha256": "cf0a8773a7b78f6f41be7c6b475660136f376d0f39524a1d5fc11eb72f7397ee"
+  },
+  "artifactScope": "post_v2_delta_only",
+  "orderingRule": "ascending_evidence_id",
+  "collectionDigestAlgorithm": "sha256_utf8_lf_of_evidence_id_tab_sha256_tab_repo_relative_path_newline",
+  "artifactCount": 5,
+  "artifacts": [
+    {
+      "evidenceId": "G2R2E007",
+      "path": "script/acquire_p2p_nat_g2_pion_source_once.py",
+      "sha256": "a63c5d8905ee3b91537b84993116334b3e237d84a66a342febdcccbef9603e71",
+      "role": "exact_one_use_fail_closed_acquisition_runner"
+    },
+    {
+      "evidenceId": "G2R2E008",
+      "path": "build/offline-source/pion-ice-v4.3.0/original/.g2-pion-ice-v4.3.0-source-acquisition-v1.claim",
+      "sha256": "49c221d8b31a7a87d85e04bbea3dc949b3f2afcc74a32c97d271698dd787562f",
+      "role": "retained_one_use_permit_consumption_claim"
+    },
+    {
+      "evidenceId": "G2R2E009",
+      "path": "build/offline-source/pion-ice-v4.3.0/original/github.com-pion-ice-v4@v4.3.0.zip",
+      "sha256": "f95ef3ce2e0063c13925f478bf8d188833725b2f0a7ecb1e695dee8ab61ef63c",
+      "role": "retained_verified_upstream_module_archive_not_extracted"
+    },
+    {
+      "evidenceId": "G2R2E010",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/source-acquisition-receipt-v1.json",
+      "sha256": "3faa5d1d12b7d52b9c2f74a68a2bd83d2bbd459342e56fe6a20caf1ac61409f6",
+      "role": "bounded_acquisition_and_independent_byte_readback_receipt"
+    },
+    {
+      "evidenceId": "G2R2E011",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/source-acquisition-progress-v2.json",
+      "sha256": "df1ad52bc6fff294b9bb54fd94a8eaacd76d9ff2b179be4a6752a867d229196f",
+      "role": "consumed_permit_current_progress_and_rung_three_preparation_boundary"
+    }
+  ],
+  "collectionSha256": "0e5e41990ed8b46dd40dba9808f29f40e007142ed0ae77408d4d8afa6f4142a0",
+  "sourceAcquisitionExecuted": true,
+  "requestCount": 1,
+  "permitConsumed": true,
+  "claimRetained": true,
+  "archiveRetained": true,
+  "archiveExtracted": false,
+  "sourceReviewPerformed": false,
+  "candidateSelected": false,
+  "librarySelected": false,
+  "externalIdentityProofRequired": false,
+  "userActionRequired": false,
+  "repositoryOwnerAuthenticationRequired": false,
+  "rungThreeOfflineReviewDecisionPreparationAllowed": true,
+  "rungThreeOfflineReviewExecutionAllowed": false
+}

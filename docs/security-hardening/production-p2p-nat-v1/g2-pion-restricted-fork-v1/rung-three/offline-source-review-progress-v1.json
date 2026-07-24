@@ -1,0 +1,162 @@
+{
+  "documentType": "aetherlink.g2-pion-rung3-offline-source-review-progress",
+  "schemaVersion": "1.0",
+  "progressId": "g2-pion-ice-v4.3.0-offline-source-review-progress-v1",
+  "recordedDate": "2026-07-23",
+  "status": "rung3_review_plan_recorded_execution_not_authorized",
+  "result": "retained_archive_metadata_bound_preparation_only",
+  "nextAction": "prepare_separate_versioned_rung3_review_execution_permit",
+  "decisionBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-decision-v1.json",
+    "decisionId": "g2-pion-ice-v4.3.0-offline-source-review-decision-v1",
+    "rawSha256": "8e2c60b977ee139644c372581e066bfa720d4c5bf1c1809d34b142917abdfa16",
+    "semanticSha256": "fe816c45fb080a619bfad426406618952adbc2fd909b6d02f90e4de172b4d5c5",
+    "requiredStatus": "rung3_review_plan_recorded_execution_not_authorized"
+  },
+  "policyBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/preparation-sandbox-policy-v1.json",
+    "policyId": "g2-pion-ice-v4.3.0-review-decision-preparation-policy-v1",
+    "rawSha256": "c615da9fb80d7af0162077503b55663cf428aaee434cef61a67807c234ea3558",
+    "semanticSha256": "bf5de358234c03a5bfc96b66d4fd8b5f0464328f4733820899ce0f93219be64a"
+  },
+  "preparationToolBinding": {
+    "generatorPath": "script/prepare_p2p_nat_g2_pion_rung3_review_decision.py",
+    "generatorRawSha256": "1a1641355182178c23526f568fa1e5fbe429745acc82ffcb59ccbe9f2bc9855b",
+    "testPath": "script/test_prepare_p2p_nat_g2_pion_rung3_review_decision.py",
+    "testRawSha256": "cc443da3f3d970b445b8578a911ba518336a7b971ce6b83977ea5375948fc408",
+    "offlineTestCount": 15,
+    "offlineTestsPassed": true
+  },
+  "predecessorBindings": {
+    "sourceAcquisitionProgressV2": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/source-acquisition-progress-v2.json",
+      "rawSha256": "df1ad52bc6fff294b9bb54fd94a8eaacd76d9ff2b179be4a6752a867d229196f"
+    },
+    "evidenceManifestV3": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/evidence-manifest-v3.json",
+      "rawSha256": "8ed1a2667153f77270531d7c373f5f61ed9eb9080bceab7c804c9b686259537e",
+      "semanticSha256": "61bfeb7f12bdbea38c73d7a1581f5ceada31bfc9b0ef64ee25e97f8c5c8d2221",
+      "collectionSha256": "0e5e41990ed8b46dd40dba9808f29f40e007142ed0ae77408d4d8afa6f4142a0"
+    },
+    "canonicalDocumentSupersessionV2": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/canonical-document-supersession-v2.json",
+      "rawSha256": "3a2b74ecde45b69204b9687904a4f88d731dfc532046e472ec22a4873765309a",
+      "semanticSha256": "1c1245ceb52e0f2b90fcd89934b02fedaf3985466b4e4b53d9c1821d85921932"
+    },
+    "canonicalEvidenceManifestV5": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/evidence-manifest-v5.json",
+      "rawSha256": "203e88cf73ad358fd6c73d8bb8d988efa966ffa67573d6e7dda9c03a2fe01f89",
+      "semanticSha256": "fd738ae8de9909adf6d9dd915d4d861998c06bde97b10cb9e87c4cc9adea9d80",
+      "collectionSha256": "adb1fbce766b0750e186285024156abea290d80763eea142420192aa8261d0a8"
+    }
+  },
+  "archiveState": {
+    "receiptPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-two/source-acquisition-receipt-v1.json",
+    "archiveMetadataJsonPointer": "/archive",
+    "archiveEvidenceId": "G2R2E009",
+    "archivePathCopiedIntoProgress": false,
+    "retained": true,
+    "expectedBytes": 293023,
+    "rawSha256": "f95ef3ce2e0063c13925f478bf8d188833725b2f0a7ecb1e695dee8ab61ef63c",
+    "archiveOpenedByRungThree": false,
+    "archiveReadByRungThree": false,
+    "archiveMaterializedByRungThree": false,
+    "sourceReviewedByRungThree": false
+  },
+  "evidenceBasis": {
+    "kind": "static_contract_and_synthetic_tests_not_os_attestation",
+    "generatorUsesClosedCompileTimeConstantsOnly": true,
+    "generatorFilesystemCapabilityPresent": false,
+    "actualArchiveAccessEvidencePresent": false,
+    "operatingSystemSandboxAttestationPresent": false,
+    "documentationArtifactsRecorded": true
+  },
+  "plannedVerification": [
+    {
+      "id": "g2-r3-egress-path-coverage",
+      "status": "planned_not_performed"
+    },
+    {
+      "id": "g2-r3-ingress-path-coverage",
+      "status": "planned_not_performed"
+    },
+    {
+      "id": "g2-r3-address-and-resolution-adversarial",
+      "status": "planned_not_performed"
+    },
+    {
+      "id": "g2-r3-turn-tls-service-identity",
+      "status": "planned_not_performed"
+    },
+    {
+      "id": "g2-r3-secure-session-promotion",
+      "status": "planned_not_performed"
+    },
+    {
+      "id": "g2-r3-resource-and-event-bounds",
+      "status": "planned_not_performed"
+    },
+    {
+      "id": "g2-r3-secret-free-diagnostics",
+      "status": "planned_not_performed"
+    },
+    {
+      "id": "g2-r3-deadline-shutdown",
+      "status": "planned_not_performed"
+    }
+  ],
+  "zeroOperationCounters": {
+    "counterScope": "rung3_review_execution_not_documentation_artifact_creation_or_checker_reads",
+    "archiveOpenCount": 0,
+    "archiveReadCount": 0,
+    "archiveEntryEnumerationCount": 0,
+    "materializationCount": 0,
+    "sourceObservationCount": 0,
+    "reviewFindingCount": 0,
+    "sourceFileWriteCount": 0,
+    "subprocessCount": 0,
+    "networkOperationCount": 0,
+    "gitOperationCount": 0,
+    "compilerInvocationCount": 0,
+    "deviceOperationCount": 0
+  },
+  "executionBoundary": {
+    "reviewPlanPreparationRecorded": true,
+    "reviewExecutionAuthorized": false,
+    "archiveReadAllowed": false,
+    "archiveMaterializationAllowed": false,
+    "sourceReviewPerformed": false,
+    "sourceExecutionAllowed": false,
+    "patchApplicationAllowed": false,
+    "dependencyInstallationAllowed": false,
+    "compilerInvocationAllowed": false,
+    "codeLoadingAllowed": false,
+    "subprocessAllowed": false,
+    "socketCreationAllowed": false,
+    "networkIoAllowed": false,
+    "deviceExecutionAllowed": false,
+    "productionDeploymentAllowed": false,
+    "gitOperationAllowed": false,
+    "externalIdentityProofRequired": false,
+    "userActionRequired": false,
+    "repositoryOwnerAuthenticationRequired": false,
+    "productEndpointAuthenticationRequired": true
+  },
+  "forwardOnlyBindings": {
+    "manifest": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/evidence-manifest-v1.json",
+      "manifestId": "g2-pion-ice-v4.3.0-rung3-decision-evidence-manifest-v1",
+      "binding": "forward_identity_only_no_sha256"
+    },
+    "canonicalSupersession": {
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/canonical-document-supersession-v1.json",
+      "supersessionId": "g2-pion-rung3-canonical-document-supersession-v1",
+      "binding": "forward_identity_only_no_sha256"
+    }
+  },
+  "personalProjectBoundary": {
+    "technicalSafetyGatesRemainRequired": true,
+    "repositoryOwnerAuthenticationIsNotATechnicalGate": true,
+    "noAuthenticationOrUserActionRequested": true
+  }
+}

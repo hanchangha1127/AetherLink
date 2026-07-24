@@ -1,0 +1,457 @@
+{
+  "documentType": "aetherlink.g2-pion-rung3-implementation-or-dependency-review-decision",
+  "schemaVersion": "1.0",
+  "decisionId": "g2-pion-ice-v4.3.0-rung3-implementation-or-dependency-review-decision-v1",
+  "recordedDate": "2026-07-23",
+  "status": "dependency_review_selected_acquisition_not_authorized",
+  "predecessorBinding": {
+    "decisionPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/patch-and-dependency-closure-decision-v1.json",
+    "decisionRawSha256": "5ab3bfe60c617c58b88ae0885f2bdb6fba0c315c0478d6eacf526cdd935903ec",
+    "decisionContentSha256": "b0bc1feb01546e3bcd261794f21b51d526de1b3d84fabc36d459699319a773ef",
+    "decisionCheckerPath": "script/check_p2p_nat_g2_pion_rung3_patch_dependency_decision_v1.py",
+    "decisionCheckerRawSha256": "9b8d92ddcfa93e10ab1a67718b709773b21a4ebd6429552a1a85cfee01a9b078",
+    "decisionCheckerTestsPath": "script/test_p2p_nat_g2_pion_rung3_patch_dependency_decision_v1.py",
+    "decisionCheckerTestsRawSha256": "9fee38580b8090f8a9c732203a0ba6a4fbe704385856341d3cfd820916da8f1d",
+    "analysisPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/patch-and-dependency-closure-decision-v1/hardening.json",
+    "analysisRawSha256": "d426e363672e8d36155d37bad754e89ce775d37d16c3cbd0a8de8b6abd393866",
+    "portfolioPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/patch-and-dependency-closure-decision-v1",
+    "portfolioArtifactCount": 19,
+    "portfolioByteSize": 186716,
+    "portfolioBundleSha256": "020fa0b627a85844d557323b5106e4179637fe3f14c578fec50e6a3e34e68f56",
+    "portfolioMarkdownPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/patch-and-dependency-closure-decision-v1/hardening.md",
+    "portfolioMarkdownRawSha256": "1d3dbc89ac20b7fa961e4f986d3a9002de6e51943306d9927fc3220b902bc606",
+    "classificationPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/semantic-source-review-classifications-v1.json",
+    "classificationRawSha256": "e76e8c9fa0a78c8c5c4beae1ebfd4c4f8144b411689a3a8bd5f8804ebf61c8c9",
+    "resultPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/semantic-source-review-result-v1.json",
+    "resultRawSha256": "a01b3518f1354d438542ae77c06aa92d8f0936d516b4070d19c5bf27791e8a98",
+    "manifestPath": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/semantic-source-review-manifest-v1.json",
+    "manifestRawSha256": "300da97505b4715576d665846b23dd8363b36d416ed5d24ed4a7d4e77f098e6f",
+    "recordedNextAction": "prepare_separate_versioned_implementation_or_dependency_review_decision"
+  },
+  "sourceSnapshot": {
+    "module": "github.com/pion/ice/v4",
+    "version": "v4.3.0",
+    "upstreamCommit": "1e8716372f2bb52e45bf2a7172e4fb1004251c46",
+    "archivePath": "build/offline-source/pion-ice-v4.3.0/original/github.com-pion-ice-v4@v4.3.0.zip",
+    "archiveRawSha256": "f95ef3ce2e0063c13925f478bf8d188833725b2f0a7ecb1e695dee8ab61ef63c",
+    "sourceTreeSha256": "b44b1277937432822d005632dc0ac77b0c733959c871d998fac5e3964ce39244",
+    "goModRawSha256": "5044428710b5a718aad517eed5c08e1933378efa3d9b4245853cfb312560aca4",
+    "goSumRawSha256": "b47d7d5f3bb8c8b85b3283585f97ea6bd0a8b97427b49068b9f5685ddd953887",
+    "sourceExtracted": false,
+    "sourceModified": false,
+    "sourceCompiled": false,
+    "sourceLoaded": false,
+    "sourceExecuted": false
+  },
+  "findingBoundary": {
+    "canonicalFindingCount": 19,
+    "openFindingCount": 19,
+    "findingsClosedBySelection": 0,
+    "dispositionCounts": {
+      "patch_required": 7,
+      "unresolved": 12
+    },
+    "severityCounts": {
+      "P0": 0,
+      "P1": 11,
+      "P2": 3,
+      "P3": 4,
+      "none": 1
+    },
+    "findings": [
+      {
+        "findingId": "G2SR1-F-8a09ee9cfc2ec2968e9c",
+        "canonicalInvariantId": "binding_indication_liveness_without_integrity",
+        "finalDisposition": "unresolved",
+        "finalSeverity": "P2",
+        "dependencyBlocked": false
+      },
+      {
+        "findingId": "G2SR1-F-964c63e397f00eeecc36",
+        "canonicalInvariantId": "partial_close_abort_controls",
+        "finalDisposition": "unresolved",
+        "finalSeverity": "P3",
+        "dependencyBlocked": false
+      },
+      {
+        "findingId": "G2SR1-F-2eef005a63ea93252f5d",
+        "canonicalInvariantId": "fixed_buffer_and_stun_checks",
+        "finalDisposition": "unresolved",
+        "finalSeverity": "P3",
+        "dependencyBlocked": false
+      },
+      {
+        "findingId": "G2SR1-F-c9dd2e9b3fa55e3ad43b",
+        "canonicalInvariantId": "lexical_locations_are_not_vulnerabilities",
+        "finalDisposition": "unresolved",
+        "finalSeverity": "P3",
+        "dependencyBlocked": false
+      },
+      {
+        "findingId": "G2SR1-F-bfc6cef606dab975ede3",
+        "canonicalInvariantId": "partial_existing_controls",
+        "finalDisposition": "unresolved",
+        "finalSeverity": "P3",
+        "dependencyBlocked": false
+      },
+      {
+        "findingId": "G2SR1-F-65bdab86ddd0720af770",
+        "canonicalInvariantId": "dependency_source_closure_missing",
+        "finalDisposition": "unresolved",
+        "finalSeverity": "P1",
+        "dependencyBlocked": true
+      },
+      {
+        "findingId": "G2SR1-F-0b0f647a603042ba5063",
+        "canonicalInvariantId": "raw_candidate_hostname_diagnostic_sink",
+        "finalDisposition": "unresolved",
+        "finalSeverity": "P2",
+        "dependencyBlocked": false
+      },
+      {
+        "findingId": "G2SR1-F-6469763b45a8335ddef9",
+        "canonicalInvariantId": "remote_password_diagnostic_sink",
+        "finalDisposition": "unresolved",
+        "finalSeverity": "P1",
+        "dependencyBlocked": false
+      },
+      {
+        "findingId": "G2SR1-F-263f18372976e5bfaa73",
+        "canonicalInvariantId": "exact_egress_capability",
+        "finalDisposition": "patch_required",
+        "finalSeverity": "P1",
+        "dependencyBlocked": false
+      },
+      {
+        "findingId": "G2SR1-F-04b73f19b3e2520c5c13",
+        "canonicalInvariantId": "unbounded_push_callback_and_graceful_close",
+        "finalDisposition": "patch_required",
+        "finalSeverity": "P1",
+        "dependencyBlocked": false
+      },
+      {
+        "findingId": "G2SR1-F-b077f40a5a605032af05",
+        "canonicalInvariantId": "ingress_admission_rate_size_source_generation_capability",
+        "finalDisposition": "patch_required",
+        "finalSeverity": "P1",
+        "dependencyBlocked": false
+      },
+      {
+        "findingId": "G2SR1-F-4189417f18abce71d56a",
+        "canonicalInvariantId": "nonprofile_paths_reachable",
+        "finalDisposition": "patch_required",
+        "finalSeverity": "P2",
+        "dependencyBlocked": false
+      },
+      {
+        "findingId": "G2SR1-F-29bea0297021e485b7b0",
+        "canonicalInvariantId": "one_use_required_mechanism_absent",
+        "finalDisposition": "unresolved",
+        "finalSeverity": "none",
+        "dependencyBlocked": false
+      },
+      {
+        "findingId": "G2SR1-F-9b119ebd5dad38048abc",
+        "canonicalInvariantId": "one_use_preauth_atomic_promotion_gap",
+        "finalDisposition": "unresolved",
+        "finalSeverity": "P1",
+        "dependencyBlocked": false
+      },
+      {
+        "findingId": "G2SR1-F-9650aac47015cf5758c9",
+        "canonicalInvariantId": "one_use_preauth_atomic_promotion_gap",
+        "finalDisposition": "unresolved",
+        "finalSeverity": "P1",
+        "dependencyBlocked": false
+      },
+      {
+        "findingId": "G2SR1-F-7e744b8ee19e7de9b7c3",
+        "canonicalInvariantId": "ambient_resolution_dependency_behavior",
+        "finalDisposition": "unresolved",
+        "finalSeverity": "P1",
+        "dependencyBlocked": true
+      },
+      {
+        "findingId": "G2SR1-F-9206ffd24b3357f7cda5",
+        "canonicalInvariantId": "unbounded_candidate_pair_request_task_process",
+        "finalDisposition": "patch_required",
+        "finalSeverity": "P1",
+        "dependencyBlocked": false
+      },
+      {
+        "findingId": "G2SR1-F-9c7a12eced69a28176a4",
+        "canonicalInvariantId": "no_total_shutdown_deadline",
+        "finalDisposition": "patch_required",
+        "finalSeverity": "P1",
+        "dependencyBlocked": false
+      },
+      {
+        "findingId": "G2SR1-F-7d678ddf77ac89e04ae4",
+        "canonicalInvariantId": "turn_tls_service_identity",
+        "finalDisposition": "patch_required",
+        "finalSeverity": "P1",
+        "dependencyBlocked": true
+      }
+    ],
+    "dependencyReviewFindingIds": [
+      "G2SR1-F-c9dd2e9b3fa55e3ad43b",
+      "G2SR1-F-65bdab86ddd0720af770",
+      "G2SR1-F-7e744b8ee19e7de9b7c3",
+      "G2SR1-F-7d678ddf77ac89e04ae4"
+    ],
+    "allFindingsRemainOpen": true
+  },
+  "selection": {
+    "decisionLane": "dependency_review_selection",
+    "dependencyReviewSelected": true,
+    "selectedPortfolioOptionIds": [
+      "staged-fixed-point-source-closure"
+    ],
+    "selectedTreatmentUnitIds": [
+      "dependency_source_license_security_closure_review"
+    ],
+    "selectedPortfolioOptionCount": 1,
+    "selectedTreatmentUnitCount": 1,
+    "rootImplementationOptionSetSelected": false,
+    "rootPatchImplementationPrepared": false,
+    "patchSeriesCreated": false,
+    "dependencyReviewPlanCreated": true,
+    "dependencyAcquisitionDecisionCreated": false
+  },
+  "portfolioSelections": [
+    {
+      "opportunityId": "capability-gated-network-boundary",
+      "optionId": "distributed-sink-guards",
+      "recommended": false,
+      "selected": false,
+      "status": "deferred_until_dependency_review_outcome"
+    },
+    {
+      "opportunityId": "capability-gated-network-boundary",
+      "optionId": "typed-capability-state-machine",
+      "recommended": true,
+      "selected": false,
+      "status": "deferred_until_dependency_review_outcome"
+    },
+    {
+      "opportunityId": "bounded-resource-lifecycle",
+      "optionId": "independent-local-ceilings",
+      "recommended": false,
+      "selected": false,
+      "status": "deferred_until_dependency_review_outcome"
+    },
+    {
+      "opportunityId": "bounded-resource-lifecycle",
+      "optionId": "owned-resource-supervisor",
+      "recommended": true,
+      "selected": false,
+      "status": "deferred_until_dependency_review_outcome"
+    },
+    {
+      "opportunityId": "typed-secret-free-diagnostics",
+      "optionId": "delete-current-sensitive-logs",
+      "recommended": false,
+      "selected": false,
+      "status": "deferred_until_dependency_review_outcome"
+    },
+    {
+      "opportunityId": "typed-secret-free-diagnostics",
+      "optionId": "typed-diagnostic-sink",
+      "recommended": true,
+      "selected": false,
+      "status": "deferred_until_dependency_review_outcome"
+    },
+    {
+      "opportunityId": "fixed-point-dependency-closure",
+      "optionId": "single-wave-inventory-review",
+      "recommended": false,
+      "selected": false,
+      "status": "deferred_incomplete_graph_evidence"
+    },
+    {
+      "opportunityId": "fixed-point-dependency-closure",
+      "optionId": "staged-fixed-point-source-closure",
+      "recommended": true,
+      "selected": true,
+      "status": "selected_for_review_plan_only"
+    }
+  ],
+  "treatmentUnitSelections": [
+    {
+      "unitId": "split_egress_capability_and_ingress_admission_boundaries",
+      "kind": "root_patch_unit",
+      "selected": false,
+      "status": "deferred_until_dependency_review_outcome"
+    },
+    {
+      "unitId": "remove_secret_bearing_diagnostics",
+      "kind": "root_patch_unit",
+      "selected": false,
+      "status": "deferred_until_dependency_review_outcome"
+    },
+    {
+      "unitId": "replace_callbacks_with_bounded_pull_events_and_sticky_terminal_latch",
+      "kind": "root_patch_unit",
+      "selected": false,
+      "status": "deferred_until_dependency_review_outcome"
+    },
+    {
+      "unitId": "deadline_bounded_shutdown",
+      "kind": "root_patch_unit",
+      "selected": false,
+      "status": "deferred_until_dependency_review_outcome"
+    },
+    {
+      "unitId": "disable_nonprofile_network_paths",
+      "kind": "root_patch_unit",
+      "selected": false,
+      "status": "deferred_until_dependency_review_outcome"
+    },
+    {
+      "unitId": "inject_bounded_resolver_interface_and_turn_tls_identity_inputs",
+      "kind": "root_patch_unit",
+      "selected": false,
+      "status": "deferred_until_dependency_review_outcome"
+    },
+    {
+      "unitId": "add_one_use_pre_auth_path_and_exact_secure_session_promotion",
+      "kind": "root_patch_unit",
+      "selected": false,
+      "status": "deferred_until_dependency_review_outcome"
+    },
+    {
+      "unitId": "dependency_source_license_security_closure_review",
+      "kind": "dependency_review_unit",
+      "selected": true,
+      "status": "selected_for_review_plan_only"
+    }
+  ],
+  "dependencyReviewContract": {
+    "rootRequirementCount": 19,
+    "rootDirectRequirementCount": 10,
+    "rootIndirectRequirementCount": 9,
+    "goSumRecordCount": 44,
+    "goSumModuleVersionTupleCount": 23,
+    "goSumSourceHashCount": 21,
+    "goSumGoModHashCount": 23,
+    "checksumOnlyContextTupleCount": 4,
+    "rootMetadataProvesCompleteGraph": false,
+    "fixedPointGraphRequired": true,
+    "immutableBoundedWavesRequired": true,
+    "newSelectedTupleRequiresNewDecisionVersion": true,
+    "twoIndependentSemanticPassesRequired": true,
+    "licenseClosureRequired": true,
+    "spdx23SbomRequired": true,
+    "manifestLastIndependentReadbackRequired": true,
+    "productionReachabilityProfilesFrozenByThisDecision": false,
+    "acquisitionBoundsFrozenByThisDecision": false
+  },
+  "implementationPlanBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/implementation-or-dependency-review-decision-v1/implementation/staged-fixed-point-source-closure.md",
+    "byteSize": 16155,
+    "rawSha256": "22d7cfbc2db9e34fab641167d227e650cb490dcfd9a402a4dff86e1f967234bc",
+    "selectedOptionId": "staged-fixed-point-source-closure",
+    "planPrepared": true,
+    "planExecuted": false
+  },
+  "sequence": [
+    {
+      "order": 1,
+      "stepId": "bind_patch_dependency_portfolio",
+      "prepared": true,
+      "executed": true
+    },
+    {
+      "order": 2,
+      "stepId": "select_dependency_review_lane",
+      "prepared": true,
+      "executed": true
+    },
+    {
+      "order": 3,
+      "stepId": "prepare_staged_fixed_point_review_plan",
+      "prepared": true,
+      "executed": true
+    },
+    {
+      "order": 4,
+      "stepId": "prepare_bounded_dependency_source_identity_and_acquisition_decision",
+      "prepared": false,
+      "executed": false
+    },
+    {
+      "order": 5,
+      "stepId": "acquire_immutable_bounded_waves",
+      "prepared": false,
+      "executed": false
+    },
+    {
+      "order": 6,
+      "stepId": "expand_exact_graph_to_fixed_point",
+      "prepared": false,
+      "executed": false
+    },
+    {
+      "order": 7,
+      "stepId": "two_pass_source_license_security_review",
+      "prepared": false,
+      "executed": false
+    },
+    {
+      "order": 8,
+      "stepId": "publish_sbom_manifest_and_independent_readback",
+      "prepared": false,
+      "executed": false
+    },
+    {
+      "order": 9,
+      "stepId": "prepare_separate_root_implementation_selection_decision",
+      "prepared": false,
+      "executed": false
+    }
+  ],
+  "authority": {
+    "sourceModificationAuthorized": false,
+    "sourceExtractionAuthorized": false,
+    "dependencyAcquisitionAuthorized": false,
+    "packageManagerAuthorized": false,
+    "compilerAuthorized": false,
+    "sourceLoadAuthorized": false,
+    "sourceExecutionAuthorized": false,
+    "socketAuthorized": false,
+    "networkAuthorized": false,
+    "deviceAuthorized": false,
+    "deploymentAuthorized": false,
+    "gitWriteAuthorized": false,
+    "externalAuthenticationRequired": false,
+    "userActionRequired": false
+  },
+  "closure": {
+    "findingsClosedBySelection": 0,
+    "rootPatchComplete": false,
+    "dependencySourceReviewed": false,
+    "dependencyClosureComplete": false,
+    "semanticClosureComplete": false,
+    "rungThreeComplete": false,
+    "candidateSelected": false,
+    "librarySelected": false
+  },
+  "nonClaims": {
+    "reviewLaneSelectionIsDependencyClosure": false,
+    "implementationPlanIsSourceImplementation": false,
+    "implementationPlanIsAcquisitionAuthority": false,
+    "rootRecommendationsSelected": false,
+    "rootMetadataIsCompleteGraphEvidence": false,
+    "dependencyReviewSelectsLibrary": false,
+    "repositoryIdentityProofRequired": false,
+    "productEndpointAuthenticationSatisfied": false
+  },
+  "result": "staged_fixed_point_dependency_review_selected_all_19_findings_remain_open",
+  "nextAction": "prepare_separate_versioned_bounded_dependency_source_identity_and_acquisition_decision",
+  "contentBinding": {
+    "algorithm": "sha256",
+    "canonicalization": "utf8_ascii_escaped_sorted_keys_compact_single_lf",
+    "scope": "decision_without_contentBinding",
+    "sha256": "359e8e51ba3568f7f66bec4222149ef8b28162f35f4868f3d4a78ae4f4b5c7a6"
+  }
+}

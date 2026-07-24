@@ -1,0 +1,9 @@
+flowchart LR
+  roots["19 root requirements"] --> fetch["One allowlisted acquisition wave"]
+  fetch --> verify["Checksum / path / license checks"]
+  verify --> review["Review acquired source"]
+  review --> graph["Observed dependency metadata"]
+  graph --> unresolved["New tuples require a later decision"]
+  context["4 checksum-only tuples"] --> quarantine["Context quarantine"]
+  classDef control fill:#173f5f,color:#fff,stroke:#3ca0d3
+  class verify,quarantine control

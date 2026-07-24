@@ -1,0 +1,87 @@
+{
+  "documentType": "aetherlink.g2-pion-rung3-execution-failure-evidence-manifest",
+  "schemaVersion": "2.0",
+  "manifestId": "g2-pion-ice-v4.3.0-rung3-execution-failure-evidence-manifest-v8",
+  "recordedDate": "2026-07-23",
+  "status": "rung3_bounded_static_inventory_permit_v2_consumed_failed_closed",
+  "result": "candidate_inventory_hit_bound_exceeded_before_report_publication",
+  "nextAction": "preserve_v2_claim_and_review_inventory_bound_design_before_any_separate_versioned_permit",
+  "artifactScope": "immutable_v2_failed_closed_execution_evidence_with_claim_only_runtime_read",
+  "predecessorManifestBinding": {
+    "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/execution-permit-checker-manifest-v7.json",
+    "rawSha256": "35538ba8c5db14d881b9d1f2420637e21f4a9e2a4b376e4e0f1687e6c137d3aa",
+    "semanticSha256": "dee99588758c8d8c9f9e0efdbd2c63abfaac9df4bb9c7c1d0d4bbf31cb0c9b32",
+    "collectionSha256": "96bd129c1020591b8f4b19e6b9037631ee2801615cd07ef7581ba813bd5828e8"
+  },
+  "artifactCount": 5,
+  "orderingRule": "ascending_evidence_id",
+  "collectionDigestAlgorithm": "sha256_utf8_lf_of_evidence_id_tab_sha256_tab_repo_relative_path_newline",
+  "collectionSha256": "b206cc0e744484136f513276c4d965288945bb5dded3d29e982494cb4fab3b02",
+  "artifacts": [
+    {
+      "evidenceId": "G2R3E038",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-execution-failure-v2.json",
+      "sha256": "c1c36b4f2a6aaeddacbfad56e19cb3c658569e7f561eef764c4d48652be2b66c",
+      "role": "immutable_consumed_permit_v2_failed_closed_execution_record"
+    },
+    {
+      "evidenceId": "G2R3E039",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-progress-v3.json",
+      "sha256": "2b4a3a5c89bf5f1d9821f1ed83e78f8953d775f8d49d385a1177acb572c6dd00",
+      "role": "current_v2_failed_closed_rung3_progress"
+    },
+    {
+      "evidenceId": "G2R3E040",
+      "path": "docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/canonical-document-supersession-v3.json",
+      "sha256": "7a2bf9d692396d356db4b98318fa066f9ff0af000b8b75ebe2b12c568ebbc938",
+      "role": "canonical_v2_failed_closed_state_supersession"
+    },
+    {
+      "evidenceId": "G2R3E041",
+      "path": "script/check_p2p_nat_g2_pion_rung3_execution_failure_v2.py",
+      "sha256": "358c75b1685231f5134b3e74c14300fccd713e76afebebb9a941b2fe2cb7c7e1",
+      "role": "strict_v2_claim_only_no_archive_failure_evidence_checker"
+    },
+    {
+      "evidenceId": "G2R3E042",
+      "path": "script/test_p2p_nat_g2_pion_rung3_execution_failure_v2.py",
+      "sha256": "cffaa6ebaae901da123dc0c66b921d27cec0e4e0df94c1eae0e40b249f370106",
+      "role": "v2_failure_evidence_schema_runtime_and_mutation_tests"
+    }
+  ],
+  "failureBoundary": {
+    "permitVersionTwoConsumed": true,
+    "automaticRetryAllowed": false,
+    "completed": false,
+    "completionManifestPublished": false,
+    "boundedCandidateLocationInventoryCompleted": false,
+    "semanticSourceReviewPerformed": false,
+    "rungThreeComplete": false,
+    "candidateSelected": false,
+    "librarySelected": false
+  },
+  "observationBoundary": {
+    "interactiveFailureReasonIsIndependentReceipt": false,
+    "independentRecheckScope": "claim_identity_and_exact_four_report_name_absence_only",
+    "failureReasonIndependentlyReproduced": false,
+    "archiveOpenOrReadCountersIndependentlyProven": false,
+    "sourceObservationCountersIndependentlyProven": false
+  },
+  "trustBoundary": {
+    "invokedCheckerBytesAreLocalTrustRoot": true,
+    "checkerSelfAuthenticationClaimed": false,
+    "exactClaimReadAllowed": true,
+    "exactFourReportNameAbsenceChecksAllowed": true,
+    "buildDirectoryEnumerationAllowed": false,
+    "archiveOpenByCheckerAllowed": false,
+    "archiveReadByCheckerAllowed": false,
+    "archiveStatByCheckerAllowed": false,
+    "networkAllowed": false,
+    "gitAllowed": false,
+    "deviceAllowed": false,
+    "repositoryOwnerAuthenticationRequired": false,
+    "externalIdentityProofRequired": false,
+    "executionPermitAuthenticationRequired": false,
+    "userActionRequired": false
+  }
+}

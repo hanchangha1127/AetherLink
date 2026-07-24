@@ -217,23 +217,25 @@ endpoint stack remain absent, the macOS accepted-raw primitive remains
 unproven. The eventual production send path must keep `seal + channel.send`
 inside the same read-permit closure.
 
-The current G2 official-source preflight selects no networking library.
+The historical G2 official-source preflight selected no networking library.
 Unmodified Pion ICE v4.3.0 at exact commit
 `1e8716372f2bb52e45bf2a7172e4fb1004251c46` is
 `rejected_at_official_source_preflight_as_is` for non-uniform destination-policy
 enforcement, remote ICE password logging, unbounded callback queues, and
-shutdown that can wait indefinitely on a blocked callback. No Pion source was
-retained, compiled, loaded, or executed, and no socket or network rung was
-opened. This technical result requires no repository-owner, GitHub, SSH, or GPG
+shutdown that can wait indefinitely on a blocked callback. At that checkpoint,
+no Pion source was retained, compiled, loaded, or executed, and no socket or
+network rung was opened. This technical result requires no repository-owner,
+GitHub, SSH, or GPG
 authentication; product pairing and endpoint secure-session requirements remain
 separate and unchanged.
 
 The follow-up [G2 restricted-fork rung-one portfolio](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/hardening.md)
 and its exact [machine profile](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/restricted-fork-profile.md)
 compare unmodified upstream, a wrapper-only gateway, and a minimal
-AetherLink-maintained fork. Only the restricted-fork shape may proceed to
-preparation of a separate rung-two official-source identity and acquisition
-decision; Pion and every networking library remain unselected. Its schema 1.1
+AetherLink-maintained fork. At the recorded `at_that_checkpoint`, only the
+restricted-fork shape could proceed to preparation of a separate rung-two
+official-source identity and acquisition decision; Pion and every networking
+library remained unselected. Its schema 1.1
 design requires separate egress capability and ingress admission boundaries,
 authenticated TURN TLS service identity, exact AetherLink endpoint-confirmed
 pre-auth promotion, bounded session/process resources with a sticky terminal
@@ -242,12 +244,170 @@ are not implemented or runtime-verified. The future compile-only matrix remains
 Android `arm64-v8a` and macOS `arm64`, followed by later SBOM, license, patch,
 symbol, and reproducibility evidence. The validator and all 17 mutation tests
 pass, but no actual backend, reliable ordered carrier, or
-fragmentation/reassembly implementation has been selected or built.
+fragmentation/reassembly implementation has been selected or built. Rung two
+has since consumed its exact one-use source request and retained verified bytes
+without extraction. Rung-three v1 and v2 each consumed their own permit and
+failed closed before publication. The separate v3 one-use path completed a
+bounded lexical candidate inventory and tracked readback. That v3 predecessor
+recorded `rung3_v3_publication_read_back_complete` and
+`prepare_separate_versioned_rung3_semantic_source_review_decision` at that
+checkpoint. The tracked
+[semantic-review decision v1](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/semantic-source-review-decision-v1.json)
+is now historical execution authority. The semantic-review checkpoint is
+bound by the [classifications](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/semantic-source-review-classifications-v1.json),
+[result](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/semantic-source-review-result-v1.json),
+and atomic [manifest](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/semantic-source-review-manifest-v1.json):
+`status=rung3_semantic_source_review_v1_publication_read_back_complete_semantic_closure_blocked`,
+`result=two_non_attesting_full_coverage_semantic_passes_published_and_independently_read_back_patch_and_dependency_gaps_remain`,
+and
+`recordedNextActionAtThatCheckpoint=prepare_versioned_rung3_patch_and_dependency_closure_decision`.
 
-G2 restricted-fork rung-one status contract:
+That next action is now satisfied by the preparation-only
+[patch/dependency decision v1](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/patch-and-dependency-closure-decision-v1.json)
+and its [security-hardening portfolio](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/patch-and-dependency-closure-decision-v1/hardening.md).
+At that checkpoint it recorded
+`status=prepared_options_unselected_dependency_closure_blocked`,
+`result=four_structural_recommendations_and_eight_unselected_treatment_units_prepared_all_19_findings_remain_open`,
+and
+`recordedNextActionAtThatCheckpoint=prepare_separate_versioned_implementation_or_dependency_review_decision`.
+It maps all 19 findings to seven unselected root patch units and one unselected
+dependency-review unit, and its read-only checker passes 28/28 checker tests.
+The checker pins the complete 19-file portfolio, rejects unexpected artifacts,
+schema claims, reader-facing effect drift, and replace-after-read drift, and
+retains all input identities through its final readback.
+Recommendations are not selections: all option, implementation, dependency,
+closure, candidate, and library selection flags remain false. Source change,
+dependency acquisition, compiler, socket, network, device, deployment, and Git
+write remain unauthorized. Neither external authentication nor user action is
+authorized or required.
+
+The separate
+[implementation-or-dependency review decision v1](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/implementation-or-dependency-review-decision-v1.json)
+and [staged fixed-point review plan](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/implementation-or-dependency-review-decision-v1/implementation/staged-fixed-point-source-closure.md)
+recorded at that checkpoint
+`status=dependency_review_selected_acquisition_not_authorized`,
+`result=staged_fixed_point_dependency_review_selected_all_19_findings_remain_open`,
+and
+`recordedNextActionAtThatCheckpoint=prepare_separate_versioned_bounded_dependency_source_identity_and_acquisition_decision`.
+Exactly one portfolio option, `staged-fixed-point-source-closure`, and one
+treatment unit, `dependency_source_license_security_closure_review`, are
+selected for the dependency-review plan. The other seven portfolio options,
+all seven root patch units, and the other three structural recommendations
+remain unselected. The isolated read-only checker and 36/36 checker tests bind
+the exact predecessor, semantic triad, retained archive and root metadata,
+complete 19-file portfolio bundle, and review plan; they assert distinct raw,
+selection, authority, finding, closure, contract, sequence, plan, inventory,
+filesystem, and TOCTOU failure layers. All 19 findings remain open and
+dependency acquisition, source modification/extraction, package management,
+compilation, source load/execution, sockets, network, device, deployment, Git
+writes, external authentication, and user action remain unauthorized or
+unrequired.
+
+The predecessor
+[bounded dependency wave-one preparation decision v1](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-v1.json)
+and its [reader-facing decision](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-v1.md)
+record
+`status=wave1_source_identity_and_request_contract_prepared_acquisition_not_authorized`,
+`result=exact_19_root_requirement_source_identities_and_bounded_wave1_request_contract_prepared`,
+and
+`nextAction=prepare_separate_versioned_wave1_execution_permit_after_checker_runner_and_tests`.
+They freeze the exact 19-tuple intake seed, four quarantined checksum-only
+tuples, two V1 arm64 review profiles, deterministic fixed-point graph rules,
+public-proxy request/output set, and finite failure/receipt bounds. The checker
+passes 56/56 mutation tests. It also rehashes the retained root ZIP, embedded
+`go.mod`/`go.sum`, and source tree, verifies that every premature wave artifact
+is absent through the final barrier, and pins the exact H1 and ordered
+source-set digest algorithms. This is preparation only: request count is zero,
+dependency acquisition and network remain unauthorized, all 19 findings remain
+open, and no candidate or library is selected. Neither external authentication
+nor user action is required.
+
+The historical successor
+[bounded dependency wave-one execution permit v1](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-execution-permit-v1.json)
+and its [reader contract](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-execution-permit-v1.md)
+recorded, before execution,
+`status=wave1_dependency_source_acquisition_authorized_not_consumed`,
+`result=exact_19_public_proxy_zip_requests_authorized_once_not_executed`,
+and `recordedNextActionAtThatCheckpoint=execute_bound_dependency_source_wave1_once`.
+The isolated streaming runner still passes 44/44 tests. The permit suite
+recorded 38/38 only at the unconsumed checkpoint; the current gate reruns its
+36 state-independent cases because v1 is consumed and may not be retried.
+
+The historical
+[wave-one recovery decision v1](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-recovery-decision-v1.json)
+and its [reader contract](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-recovery-decision-v1.md)
+recorded, at that checkpoint,
+`status=wave1_v1_failure_read_back_recovery_v2_design_selected_execution_not_authorized`,
+`result=v1_ratio_policy_rejected_tuple2_after_two_responses_no_final_set_v2_bounded_telemetry_policy_selected`,
+and `recordedNextActionAtThatCheckpoint=prepare_separate_v2_runner_checker_tests_and_execution_permit`.
+The retained v1 claim and failure receipt show two completed response bodies,
+one fully validated and staged tuple, `E_ZIP_RATIO` during the second ordered
+tuple, zero accepted artifacts, and no final set. The 31/31 recovery tests
+keeps v1 immutable, distinguishes HTTP completion from validation/staging, and
+selects non-gating exact-integer compression telemetry while retaining every
+absolute streaming and deadline bound.
+
+The historical
+[wave-one execution permit v2](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-execution-permit-v2.json)
+and [reader contract](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-execution-permit-v2.md)
+recorded, before its single execution,
+`status=wave1_v2_dependency_source_acquisition_authorized_not_consumed`,
+`result=exact_19_public_proxy_zip_requests_v2_authorized_once_not_executed`,
+and `recordedNextActionAtThatCheckpoint=execute_bound_dependency_source_wave1_v2_once`.
+That permit is now consumed and may not be reused. The retained v2 claim and
+failure receipt record `E_GO_MOD_MISSING` on tuple 11 after 11 completed ZIP
+responses, 10 validated/staged tuples, zero accepted artifacts, and no final
+set.
+
+The predecessor
+[wave-one recovery decision v2](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-recovery-decision-v2.json)
+and [reader contract](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-recovery-decision-v2.md)
+record
+`status=wave1_v2_failure_read_back_recovery_v3_design_selected_execution_not_authorized`,
+`result=v2_conflated_zip_and_mod_resources_tuple11_after_eleven_responses_no_final_set_v3_zip_plus_mod_policy_selected`,
+and
+`recordedNextActionAtThatCheckpoint=prepare_separate_v3_runner_checker_tests_and_execution_permit`.
+The checker and 39/39 mutation tests bind both terminal generations and select
+a fresh 19-pair `.mod`-then-`.zip` design with 38 separately validated
+resources. That preparation action is complete.
+
+The historical
+[wave-one execution permit v3](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-execution-permit-v3.json)
+and [reader contract](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-execution-permit-v3.md)
+recorded, before execution,
+`status=wave1_v3_dependency_source_acquisition_authorized_not_consumed`,
+`result=exact_19_public_proxy_mod_then_zip_pairs_v3_authorized_once_not_executed`,
+and `nextAction=execute_bound_dependency_source_wave1_v3_once`. It is now
+consumed and cannot be retried. The immutable
+[success receipt](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-receipt-v3.json)
+and [manifest](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-manifest-v3.json)
+record `status=acquired_pending_independent_readback`,
+`result=fresh_exact_19_dependency_zip_mod_pairs_acquired_and_hash_verified`,
+38 request attempts, 38 completed bodies, and 38 accepted resources across 19
+exact `.mod`/`.zip` pairs. The separate
+[readback receipt](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-readback-v1.json)
+and [manifest](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-readback-manifest-v1.json)
+now validate `status=independent_readback_complete`, 43 regular files, and the
+same 38 resources. The permit-bound 34/34 reader tests remain immutable; a
+versioned recovery reader recorded the outputs once, and the
+[fixed-hash post-verification decision v3](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-readback-post-verification-decision-v3.json)
+plus its verification-only 9/9 suite close the discovered raw-encoding,
+dispatch, TOCTOU, and typed-comparison gaps with
+`fixedHashEnforcedInsideHeldValidation=true`, `verificationOnly=true`, and
+`recordModeExposed=false`. The current
+`nextAction=prepare_separate_dependency_source_review_wave`. Extraction, compilation,
+source execution, runtime/product network, device, deployment, and Git work
+remain closed. All 19 findings remain open, no candidate or library is
+selected, and no credentials or user action are involved.
+
+The rung-two successor recorded, only `at_that_checkpoint`,
+`recordedNextActionAtThatCheckpoint=prepare_versioned_rung3_offline_source_review_decision`.
+That historical preparation action is complete and is not current authority.
+
+Historical G2 restricted-fork rung-one status contract at_that_checkpoint:
 `status=rung1_profile_complete_candidate_not_selected`,
 `result=pion_restricted_fork_profile_ready_for_rung2_decision_only`, and
-`nextAction=prepare_versioned_rung2_source_identity_and_acquisition_decision`.
+`recordedNextActionAtThatCheckpoint=prepare_versioned_rung2_source_identity_and_acquisition_decision`.
 Rung one completes only the design, validator, and 17 mutation tests;
 `implementationStatus=not_implemented`, `candidateSelected=false`,
 `librarySelected=false`, `sourceAcquisitionAllowed=false`,
@@ -275,6 +435,47 @@ GitHub, SSH, GPG, or
 public-key identity proof is neither a prerequisite nor a future G2 rung;
 `externalIdentityProofRequired=false` and `userActionRequired=false`. Product
 pairing and endpoint authentication remain mandatory and separate.
+
+The tracked rung-three [result-v3](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-result-v3.json),
+[runtime-manifest-v3](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-runtime-manifest-v3.json),
+and [execution-receipt-v3](docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-execution-receipt-v3.json)
+bind exact readback. The result is 76,685 bytes at SHA-256
+`ef4b8d88ec57501377a7bc9db066c04a1a379041ee1b11999f5d16c7d4447933`;
+the runtime manifest is 2,458 bytes at SHA-256
+`2dace9b59b7374423754f1f9a7345eda76db9130728d1c0579797e5a0c829055`.
+The inventory observed 100 Go files, 1,077,591 source bytes, and 39,064 logical
+lines. Its 19 lexical rules across seven patch units found 4,701 hits, recording
+144 bounded representatives at no more than eight per rule and omitting 4,557.
+All 129 archive entries use
+creator system 0 metadata accepted as DOS attributes `00` and synthetic
+read-only mode `100444`; no filesystem extraction occurred.
+
+That v3 inventory remains historical lexical location evidence, not 4,701
+vulnerabilities. Semantic-review v1 has since completed two non-attesting full-
+coverage passes over all 100 Go source bodies and all 4,701 observations. The
+29 input candidates deduplicate exactly to 19 findings: severity counts are
+P0=0, P1=11, P2=3, P3=4, and none=1; dispositions are patch_required=7 and
+unresolved=12. The one-use zero-hit remains a missing-required-mechanism gap,
+and disagreements remain unresolved. The independent tracked-only
+[post-run checker](script/check_p2p_nat_g2_pion_rung3_semantic_review_result_v1.py)
+and its 25/25 mutation tests hold all eight file descriptors plus every
+repository-path directory component through two stable full-set readback passes
+and a final identity barrier, validate the manifest last, and observe the
+failure file and four staging names absent before and after readback.
+`semanticSourceReviewPerformed=true`, while
+`semanticClosureComplete=false`, `dependencyClosureComplete=false`,
+`rungThreeComplete=false`, `candidateSelected=false`, and
+`librarySelected=false`. Semantic review was performed, but semantic closure,
+dependency closure, rung-three completion, candidate selection, and library
+selection remain false. The checker does not independently reproduce semantic
+judgments or source-based location bounds. Same-UID concurrent mutation is not
+prevented, and absence is not guaranteed after the final observation. No source
+body, individual line digest, absolute path, or credential/secret value is
+published. No materialization, source compilation/execution, dependency
+installation, socket, network, device, deployment, or Git operation occurred.
+No repository-owner
+authentication, external identity proof, execution-permit authentication or
+document, or user action is required.
 
 The previous complete default no-device aggregate snapshot exits zero with
 `No-device quality checks passed.` It records the initial Python batch at

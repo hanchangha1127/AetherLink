@@ -1,0 +1,12 @@
+flowchart LR
+  peer["Untrusted peer / service"] --> ingress["Candidate recv loops"]
+  ingress --> state["Agent state and liveness"]
+  ingress --> app["Application buffer"]
+  config["Caller configuration"] --> agent["Pion agent"]
+  agent --> resolve["Ambient resolver"]
+  agent --> io["Dial / listen / write sinks"]
+  agent --> turn["TURN TLS and credentials"]
+  select["Selected candidate pair"] --> appio["Application read / write"]
+  policy["AetherLink policy"] -. "convention at several callers" .-> agent
+  classDef danger fill:#5d1f2b,color:#fff,stroke:#d15b73
+  class ingress,state,app,resolve,io,turn,appio danger
