@@ -51,8 +51,8 @@ V2_PACKAGE = {
 }
 EXPECTED_V2_CONTENT = "83f97eeece6f5802f4b2fc807469a8abd08971cc8712a3bad415e801258d2e9f"
 EXPECTED_DECISION_READER_RAW = "3ea8982d4d7b552eacf351ad9261b33f5aa54242022923f77ae19b12f3951ae5"
-EXPECTED_PERMIT_READER_RAW = "48d9e5a69cadf38b927f21b280f523011063b86a2c1d827d889d2a100604fc85"
-EXPECTED_RUNNER_NORMALIZED_SHA256 = "f5d21fe4eac889ddc892f81185e7b5f78f59a02cf45d263318cf86b61316d2e6"
+EXPECTED_PERMIT_READER_RAW = "9a66ffadad94742208681b1b67123ecff9b7fdfdc8c980ff5008efce544fc6d9"
+EXPECTED_RUNNER_NORMALIZED_SHA256 = "52e62cb33379027d1349879bf0d562fe9b63f4636142e07a2d306234ca777ef0"
 PROXY_HOST = "proxy.golang.org"
 CLAIM_PATH = "build/offline-source/pion-ice-v4.3.0/dependencies/.wave-3-v1.claim"
 DEPENDENCY_ROOT = "build/offline-source/pion-ice-v4.3.0/dependencies"
@@ -325,6 +325,7 @@ def decision_payload(package_raw: Mapping[str, bytes]) -> dict[str, Any]:
             "readbackPath": READBACK_PATH,
             "readbackManifestPath": READBACK_MANIFEST_PATH,
             "allCurrentlyAbsent": True,
+            "lexicalAbsenceRequiredIncludingBrokenSymlinks": True,
             "reservationIsWriteAuthority": False,
         },
         "authority": {
@@ -405,10 +406,10 @@ def validate_runner(runner_raw: bytes, checker_raw: bytes) -> None:
     require(reverse == [sha256(checker_raw)], "E_RUNNER")
 
 
-def namespace_absent() -> None:
+def namespace_absent(root: Path = ROOT) -> None:
     for path in (CLAIM_PATH, FINAL_ROOT, RECEIPT_PATH, FAILURE_PATH, MANIFEST_PATH, READBACK_PATH, READBACK_MANIFEST_PATH):
-        require(not (ROOT / path).exists(), "E_NAMESPACE")
-    parent = ROOT / DEPENDENCY_ROOT
+        require(not os.path.lexists(root / path), "E_NAMESPACE")
+    parent = root / DEPENDENCY_ROOT
     require(not any(p.name.startswith(STAGING_PREFIX) for p in parent.iterdir()), "E_NAMESPACE")
 
 
@@ -459,6 +460,8 @@ def permit_payload(
             "claimPath": CLAIM_PATH,
             "claimCreatedOExcl0600AndFsyncedBeforeDnsOrNetwork": True,
             "claimPersistsAfterSuccessFailureTimeoutOrUncertainty": True,
+            "existingClaimState": "already_consumed",
+            "claimCreationUncertaintyState": "consumed_terminal_state_uncertain",
             "secondExecutionAllowed": False,
             "stagingPrefix": STAGING_PREFIX,
             "finalAcceptedPath": FINAL_ACCEPTED,
@@ -487,6 +490,7 @@ def permit_payload(
             "perRequestDeadlineMilliseconds": PER_REQUEST_DEADLINE_MS,
             "wholeAttemptDeadlineMilliseconds": WHOLE_ATTEMPT_DEADLINE_MS,
             "absoluteWallTimersRequired": True,
+            "preexistingRealTimerRestoredWithElapsedAdjustment": True,
         },
         "filesystemAuthority": {
             "claimWriteAuthorized": True,
@@ -521,6 +525,8 @@ def permit_payload(
             "manifestPath": MANIFEST_PATH,
             "successAndFailureMutuallyExclusive": True,
             "failurePublishesFailureOnly": True,
+            "failurePublicationUncertaintyState": "consumed_terminal_state_uncertain",
+            "postPublicationUncertaintyState": "consumed_terminal_state_uncertain",
             "manifestWrittenLast": True,
             "independentReadbackRequired": True,
         },

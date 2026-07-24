@@ -20,7 +20,9 @@ import ast
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
+import tempfile
 import unittest
 
 
@@ -59,6 +61,11 @@ class Wave3AcquisitionContractTests(unittest.TestCase):
         self.assertTrue(authority["decisionRecorded"])
         self.assertTrue(all(value is False for key, value in authority.items() if key != "decisionRecorded"))
         self.assertFalse(values["decision"]["reservedNamespace"]["reservationIsWriteAuthority"])
+        self.assertTrue(
+            values["decision"]["reservedNamespace"][
+                "lexicalAbsenceRequiredIncludingBrokenSymlinks"
+            ]
+        )
 
     def test_04_permit_is_exact_one_use_authentication_free_scope(self):
         permit = C.evaluate(True)[0]["permit"]
@@ -74,6 +81,11 @@ class Wave3AcquisitionContractTests(unittest.TestCase):
         ):
             self.assertFalse(request[key])
         self.assertTrue(permit["oneUseContract"]["claimCreatedOExcl0600AndFsyncedBeforeDnsOrNetwork"])
+        self.assertEqual(permit["oneUseContract"]["existingClaimState"], "already_consumed")
+        self.assertEqual(
+            permit["oneUseContract"]["claimCreationUncertaintyState"],
+            "consumed_terminal_state_uncertain",
+        )
         self.assertFalse(permit["authority"]["externalAuthenticationRequired"])
         self.assertFalse(permit["authority"]["sourceExtractionAuthorized"])
 
@@ -87,10 +99,15 @@ class Wave3AcquisitionContractTests(unittest.TestCase):
         self.assertEqual(limits["maximumAggregateResponseBodyBytes"], 128 * 1024 * 1024)
         self.assertEqual(limits["perRequestDeadlineMilliseconds"], 30_000)
         self.assertEqual(limits["wholeAttemptDeadlineMilliseconds"], 600_000)
+        self.assertTrue(limits["preexistingRealTimerRestoredWithElapsedAdjustment"])
         self.assertEqual(permit["filesystemAuthority"]["newFileMode"], "0600")
         self.assertEqual(permit["filesystemAuthority"]["newDirectoryMode"], "0700")
         self.assertTrue(permit["terminalContract"]["manifestWrittenLast"])
         self.assertTrue(permit["terminalContract"]["failurePublishesFailureOnly"])
+        self.assertEqual(
+            permit["terminalContract"]["failurePublicationUncertaintyState"],
+            "consumed_terminal_state_uncertain",
+        )
 
     def test_06_runner_normalization_and_reverse_pin_are_exact(self):
         runner = C.stable_read(C.RUNNER_PATH)
@@ -138,6 +155,22 @@ class Wave3AcquisitionContractTests(unittest.TestCase):
             elif isinstance(node, ast.ImportFrom):
                 imports.add(node.module or "")
         self.assertFalse({"http.client", "socket", "ssl", "requests"} & imports)
+
+    def test_10_namespace_absence_is_lexical_for_broken_symlinks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            parent = root / C.DEPENDENCY_ROOT
+            parent.mkdir(parents=True)
+            claim = root / C.CLAIM_PATH
+            os.symlink("missing-target", claim)
+            self.assertFalse(claim.exists())
+            self.assertTrue(os.path.lexists(claim))
+            with self.assertRaises(C.CheckError):
+                C.namespace_absent(root)
+            claim.unlink()
+            os.symlink("missing-target", parent / f"{C.STAGING_PREFIX}broken")
+            with self.assertRaises(C.CheckError):
+                C.namespace_absent(root)
 
 
 if __name__ == "__main__":

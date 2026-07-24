@@ -165,6 +165,56 @@ class Wave3AcquirerTests(unittest.TestCase):
         with self.assertRaises(R.AcquisitionError):
             R.validate_mod(raw.replace(b"example.test/a", b"example.test/b"), "example.test/a")
 
+    def test_01b_quoted_module_directives_and_fail_closed_forms(self):
+        module = "example.test/a"
+        for raw in (
+            b"module example.test/a\n",
+            b'module "example.test/a"\n',
+            b'module "example.test/a" // exact quoted form\n',
+        ):
+            self.assertEqual(R.validate_mod(raw, module)["goModH1"], R.go_mod_h1(raw))
+        invalid = (
+            b'module "example.test/a\n',
+            b'module "example.test\\x2fa"\n',
+            b'module "example.test/a\\""\n',
+            b"module example.test/a extra\n",
+            b"module example.test/a\nmodule example.test/a\n",
+        )
+        for raw in invalid:
+            with self.subTest(raw=raw), self.assertRaises(R.AcquisitionError):
+                R.validate_mod(raw, module)
+
+    def test_01c_retained_quoted_module_fixtures_pass_read_only(self):
+        fixtures = [
+            (
+                "build/offline-source/pion-ice-v4.3.0/dependencies/wave-1-v3/accepted/"
+                "012-2055c3218667fc22d930.mod",
+                "e3d5d46d2f6ac94a666a54b5e867ec16bf199d9f4b700827cd731607efdd109a",
+                "github.com/kr/pretty",
+                "h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=",
+            ),
+            (
+                "build/offline-source/pion-ice-v4.3.0/dependencies/wave-1-v3/accepted/"
+                "019-495087f35325ae50e341.mod",
+                "21579860a20306fcf43b1bd234d1fba319499c77611b71c05f9bf3ba90dab939",
+                "gopkg.in/yaml.v3",
+                "h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=",
+            ),
+            (
+                "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v3/accepted/"
+                "001-21ba4abc86961659f24e.mod",
+                "2fba9529e5c13dde62f371ef7383baf04d7132501dac6aa08e910f9ec0bf85c5",
+                "github.com/kr/text",
+                "h1:4Jbv+DJW3UT/LiOwJeYQe1efqtUx/iVham/4vfdArNI=",
+            ),
+        ]
+        root = PATH.parents[1]
+        for relative, expected_raw, module, expected_h1 in fixtures:
+            with self.subTest(module=module):
+                raw = (root / relative).read_bytes()
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), expected_raw)
+                self.assertEqual(R.validate_mod(raw, module)["goModH1"], expected_h1)
+
     def test_02_zip_h1_uses_full_names_and_mod_parity(self):
         module, version = "example.test/a", "v1.2.3"
         mod = b"module example.test/a\n"
@@ -314,6 +364,37 @@ class Wave3AcquirerTests(unittest.TestCase):
         with self.assertRaises(R.AcquisitionError):
             R.validate_zip(bytes(digital), module, version)
 
+    def test_03f_retained_proxy_data_descriptor_archives_pass_read_only(self):
+        fixtures = [
+            (
+                "build/offline-source/pion-ice-v4.3.0/dependencies/wave-1-v3/accepted/"
+                "001-c7683a099605cf146d8d.zip",
+                "d0f02f377217f42702e259684e06441edbf5140dddcc34ba9bea56038b38a6ed",
+                "github.com/google/uuid",
+                "v1.6.0",
+                "h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=",
+            ),
+            (
+                "build/offline-source/pion-ice-v4.3.0/dependencies/wave-2-v3/accepted/"
+                "001-21ba4abc86961659f24e.zip",
+                "9363a4c8f1f3387a36014de51b477b831a13981fc59a5665f9d21609bea9e77c",
+                "github.com/kr/text",
+                "v0.1.0",
+                "h1:45sCR5RtlFHMR4UwH9sdQ5TC8v0qDQCHnXt+kaKSTVE=",
+            ),
+        ]
+        root = PATH.parents[1]
+        for relative, expected_raw, module, version, expected_h1 in fixtures:
+            with self.subTest(module=module):
+                raw = (root / relative).read_bytes()
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), expected_raw)
+                with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                    self.assertTrue(all(info.flag_bits & 0x0008 for info in archive.infolist()))
+                self.assertEqual(
+                    R.validate_zip(raw, module, version)["moduleZipH1"],
+                    expected_h1,
+                )
+
     def test_04_bound_resources_are_exact_order_and_paths(self):
         values, _ = R.CHECK.evaluate(True)
         rows = values["permit"]["requestContract"]["resources"]
@@ -427,8 +508,9 @@ class Wave3AcquirerTests(unittest.TestCase):
                 "runnerRawSha256", "claimRawSha256", "resourceSetCanonicalSha256",
             ):
                 self.assertRegex(terminal[key], r"^[0-9a-f]{64}$")
-            with self.assertRaises(FileExistsError):
+            with self.assertRaises(R.AcquisitionError) as consumed:
                 R.create_claim(claim, {"second": True})
+            self.assertEqual(consumed.exception.code, "E_CONSUMED")
             self.assertEqual(calls, [1, 2, 3, 4])
 
     def test_09_expired_deadline_fails_after_claim_without_fetch(self):
@@ -452,6 +534,149 @@ class Wave3AcquirerTests(unittest.TestCase):
             self.assertEqual(calls, [])
             self.assertTrue((dependencies / ".claim").exists())
             self.assertTrue((terminals / "failure").exists())
+
+    def test_09b_claim_write_and_fsync_uncertainty_never_fetches(self):
+        values, _ = R.CHECK.evaluate(True)
+        rows, _ = synthetic_rows()
+        for failure_kind in ("write_after_exclusive", "file_fsync", "parent_fsync"):
+            with self.subTest(failure_kind=failure_kind), tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                dependencies = base / "dependencies"
+                terminals = base / "terminals"
+                dependencies.mkdir()
+                terminals.mkdir()
+                claim = dependencies / ".claim"
+                fetches = []
+                real_write = R.os.write
+                real_fsync = R.os.fsync
+                write_calls = 0
+                fsync_calls = 0
+
+                def controlled_write(fd, raw):
+                    nonlocal write_calls
+                    write_calls += 1
+                    if failure_kind == "write_after_exclusive" and write_calls == 1:
+                        real_write(fd, b"{")
+                        raise OSError("synthetic claim write uncertainty")
+                    return real_write(fd, raw)
+
+                def controlled_fsync(fd):
+                    nonlocal fsync_calls
+                    fsync_calls += 1
+                    if (
+                        failure_kind == "file_fsync" and fsync_calls == 1
+                    ) or (
+                        failure_kind == "parent_fsync" and fsync_calls == 2
+                    ):
+                        raise OSError("synthetic claim fsync uncertainty")
+                    return real_fsync(fd)
+
+                with mock.patch.object(R.os, "write", controlled_write), mock.patch.object(
+                    R.os, "fsync", controlled_fsync
+                ):
+                    with self.assertRaises(R.AcquisitionError) as caught:
+                        R._attempt(
+                            lambda resource, deadline: fetches.append(resource),
+                            values, claim, dependencies, ".stage-", dependencies / "final",
+                            terminals / "receipt", terminals / "failure",
+                            terminals / "manifest",
+                            lambda source, destination: os.rename(source, destination),
+                            rows, 10,
+                        )
+                self.assertEqual(caught.exception.code, "E_CLAIM_STATE_UNCERTAIN")
+                self.assertEqual(caught.exception.phase, "claim")
+                self.assertEqual(fetches, [])
+                self.assertTrue(claim.exists())
+                self.assertFalse((terminals / "failure").exists())
+                self.assertFalse((dependencies / "final").exists())
+
+    def test_09c_failure_publication_uncertainty_is_explicit(self):
+        values, _ = R.CHECK.evaluate(True)
+        original_rows, bodies = synthetic_rows()
+        for failure_kind in ("partial_write", "file_fsync", "parent_fsync"):
+            with self.subTest(failure_kind=failure_kind), tempfile.TemporaryDirectory() as directory:
+                rows = copy.deepcopy(original_rows)
+                rows[0]["expectedH1"] = "h1:" + base64.b64encode(b"\0" * 32).decode()
+                base = Path(directory)
+                dependencies = base / "dependencies"
+                terminals = base / "terminals"
+                dependencies.mkdir()
+                terminals.mkdir()
+                claim = dependencies / ".claim"
+                failure = terminals / "failure"
+                real_write = R.os.write
+                real_fsync = R.os.fsync
+                write_calls = 0
+                fsync_calls = 0
+
+                def controlled_write(fd, raw):
+                    nonlocal write_calls
+                    write_calls += 1
+                    if failure_kind == "partial_write" and write_calls == 2:
+                        real_write(fd, b"{")
+                        raise OSError("synthetic failure write uncertainty")
+                    return real_write(fd, raw)
+
+                def controlled_fsync(fd):
+                    nonlocal fsync_calls
+                    fsync_calls += 1
+                    target = 4 if failure_kind == "file_fsync" else 5
+                    if failure_kind != "partial_write" and fsync_calls == target:
+                        raise OSError("synthetic failure fsync uncertainty")
+                    return real_fsync(fd)
+
+                with mock.patch.object(R.os, "write", controlled_write), mock.patch.object(
+                    R.os, "fsync", controlled_fsync
+                ):
+                    with self.assertRaises(R.AcquisitionError) as caught:
+                        R._attempt(
+                            lambda resource, deadline: bodies[resource["requestOrdinal"]],
+                            values, claim, dependencies, ".stage-", dependencies / "final",
+                            terminals / "receipt", failure, terminals / "manifest",
+                            lambda source, destination: os.rename(source, destination),
+                            rows, 10,
+                        )
+                self.assertEqual(
+                    caught.exception.code,
+                    "E_FAILURE_PUBLICATION_UNCERTAIN",
+                )
+                self.assertEqual(caught.exception.phase, "failure_terminal")
+                self.assertTrue(claim.exists())
+                self.assertTrue(failure.exists())
+                self.assertFalse((dependencies / "final").exists())
+
+    def test_09d_exception_immediately_after_claim_is_consumed_uncertainty(self):
+        values, _ = R.CHECK.evaluate(True)
+        rows, _ = synthetic_rows()
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            dependencies = base / "dependencies"
+            terminals = base / "terminals"
+            dependencies.mkdir()
+            terminals.mkdir()
+            claim = dependencies / ".claim"
+            fetches = []
+            real_create = R.create_claim
+
+            def create_then_interrupt(path, payload):
+                real_create(path, payload)
+                raise RuntimeError("synthetic post-claim/pre-flag interruption")
+
+            with mock.patch.object(R, "create_claim", create_then_interrupt):
+                with self.assertRaises(R.AcquisitionError) as caught:
+                    R._attempt(
+                        lambda resource, deadline: fetches.append(resource),
+                        values, claim, dependencies, ".stage-", dependencies / "final",
+                        terminals / "receipt", terminals / "failure",
+                        terminals / "manifest",
+                        lambda source, destination: os.rename(source, destination),
+                        rows, 10,
+                    )
+            self.assertEqual(caught.exception.code, "E_CLAIM_STATE_UNCERTAIN")
+            self.assertEqual(fetches, [])
+            self.assertTrue(claim.exists())
+            self.assertFalse((terminals / "failure").exists())
+            self.assertFalse(any(dependencies.glob(".stage-*")))
 
     def test_10_post_publication_terminal_uncertainty_never_writes_failure(self):
         values, _ = R.CHECK.evaluate(True)
@@ -489,6 +714,37 @@ class Wave3AcquirerTests(unittest.TestCase):
                 self.assertFalse(failure.exists())
                 self.assertEqual(receipt.exists(), failed_name == "manifest")
                 self.assertFalse(manifest.exists())
+
+    def test_11_execute_restores_preexisting_real_timer(self):
+        original_handler = R.signal.getsignal(R.signal.SIGALRM)
+        original_timer = R.signal.getitimer(R.signal.ITIMER_REAL)
+
+        def previous_handler(_signum, _frame):
+            pass
+
+        R.signal.signal(R.signal.SIGALRM, previous_handler)
+        R.signal.setitimer(R.signal.ITIMER_REAL, 5.0, 0.25)
+        started = time.monotonic()
+        try:
+            with mock.patch.object(R, "preflight", return_value=({}, {})), mock.patch.object(
+                R, "_attempt", return_value={"synthetic": True}
+            ):
+                self.assertEqual(R.execute(lambda resource, deadline: b""), {"synthetic": True})
+            delay, interval = R.signal.getitimer(R.signal.ITIMER_REAL)
+            elapsed = time.monotonic() - started
+            self.assertGreater(delay, max(0.1, 5.0 - elapsed - 0.2))
+            self.assertLessEqual(delay, 5.0)
+            self.assertAlmostEqual(interval, 0.25, places=2)
+            self.assertIs(R.signal.getsignal(R.signal.SIGALRM), previous_handler)
+        finally:
+            R.signal.setitimer(R.signal.ITIMER_REAL, 0)
+            R.signal.signal(R.signal.SIGALRM, original_handler)
+            if original_timer[0] > 0:
+                R.signal.setitimer(
+                    R.signal.ITIMER_REAL,
+                    max(0.000001, original_timer[0] - (time.monotonic() - started)),
+                    original_timer[1],
+                )
 
 
 if __name__ == "__main__":

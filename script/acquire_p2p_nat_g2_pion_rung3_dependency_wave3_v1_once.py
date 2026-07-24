@@ -44,7 +44,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CHECKER_PATH = Path(__file__).with_name(
     "check_p2p_nat_g2_pion_rung3_dependency_wave3_acquisition_v1.py"
 )
-EXPECTED_CHECKER_RAW = "b1c715ff23e06a84637138d9b90c8446802f1d5c2f9635efa952369be07f35e8"
+EXPECTED_CHECKER_RAW = "ca1cb2a766c4fcb4c6d1cec036352ff0529400554006e8129af4f9eb30f1be2a"
 RENAME_EXCL = 0x00000004
 MAXIMUM_TOOL_BYTES = 8 * 1024 * 1024
 ZIP_LOCAL_HEADER = struct.Struct("<IHHHHHIIIHH")
@@ -168,13 +168,60 @@ def go_mod_h1(raw: bytes) -> str:
     return dirhash_h1([("go.mod", sha256(raw))])
 
 
+def _module_directive_operand(line: str) -> str | None:
+    match = re.fullmatch(r"[ \t]*module(?:[ \t]+(.*))?", line)
+    if match is None:
+        return None
+    remainder = match.group(1)
+    require(remainder is not None, "E_MOD", "mod")
+    remainder = remainder.rstrip(" \t")
+    if remainder.startswith('"'):
+        require(
+            len(remainder) >= 2,
+            "E_MOD",
+            "mod",
+        )
+        closing = remainder.find('"', 1)
+        require(closing > 1, "E_MOD", "mod")
+        value = remainder[1:closing]
+        tail = remainder[closing + 1:].lstrip(" \t")
+        require(
+            '"' not in value
+            and "\\" not in value
+            and value.isascii()
+            and all(0x21 <= ord(character) <= 0x7E for character in value)
+            and (not tail or tail.startswith("//")),
+            "E_MOD",
+            "mod",
+        )
+        return value
+    token, separator, tail = remainder.partition(" ")
+    if not separator:
+        token, separator, tail = remainder.partition("\t")
+    tail = tail.lstrip(" \t")
+    require(
+        bool(token)
+        and token.isascii()
+        and all(0x21 <= ord(character) <= 0x7E for character in token)
+        and (not separator or not tail or tail.startswith("//")),
+        "E_MOD",
+        "mod",
+    )
+    return token
+
+
 def validate_mod(raw: bytes, module: str) -> dict[str, Any]:
     require(0 < len(raw) <= CHECK.MAX_MOD_BYTES and b"\x00" not in raw, "E_MOD", "mod")
     try:
         text = raw.decode("utf-8", errors="strict")
     except UnicodeDecodeError as error:
         raise AcquisitionError("E_MOD", "mod") from error
-    directives = re.findall(r"(?m)^[ \t]*module[ \t]+([^ \t\r\n]+)[ \t]*$", text)
+    directives = []
+    for line in text.splitlines():
+        if re.match(r"^[ \t]*module(?:[ \t]|$)", line):
+            operand = _module_directive_operand(line)
+            require(operand is not None, "E_MOD", "mod")
+            directives.append(operand)
     require(directives == [module], "E_MOD", "mod")
     return {"rawSha256": sha256(raw), "goModH1": go_mod_h1(raw)}
 
@@ -351,12 +398,10 @@ def _compressed_payloads(
             signature_value == ZIP_LOCAL_SIGNATURE
             and (
                 extract_version, flags, method, modified_time, modified_date,
-                crc, compressed_size, file_size,
             )
             == (
                 record["extractVersion"], record["flags"], record["method"],
-                record["modifiedTime"], record["modifiedDate"], record["crc"],
-                record["compressedSize"], record["fileSize"],
+                record["modifiedTime"], record["modifiedDate"],
             )
             and (
                 info.extract_version, info.flag_bits, info.compress_type,
@@ -402,6 +447,19 @@ def _compressed_payloads(
         )
         require(data_end <= boundary, "E_ZIP_OVERLAP", "zip")
         if flags & 0x0008:
+            require(
+                (crc, compressed_size, file_size)
+                in {
+                    (0, 0, 0),
+                    (
+                        record["crc"],
+                        record["compressedSize"],
+                        record["fileSize"],
+                    ),
+                },
+                "E_ZIP_DESCRIPTOR",
+                "zip",
+            )
             descriptor = raw[data_end:boundary]
             if len(descriptor) == ZIP_DATA_DESCRIPTOR.size:
                 values = ZIP_DATA_DESCRIPTOR.unpack(descriptor)
@@ -412,9 +470,12 @@ def _compressed_payloads(
                 raise AcquisitionError("E_ZIP_DESCRIPTOR", "zip")
             require(
                 tuple(values) == (info.CRC, info.compress_size, info.file_size)
-                and crc in {0, info.CRC}
-                and compressed_size in {0, info.compress_size}
-                and file_size in {0, info.file_size},
+                and (
+                    crc, compressed_size, file_size
+                ) in {
+                    (0, 0, 0),
+                    (info.CRC, info.compress_size, info.file_size),
+                },
                 "E_ZIP_DESCRIPTOR",
                 "zip",
             )
@@ -722,8 +783,45 @@ def _fsync_directory(path: Path) -> None:
 
 
 def create_claim(path: Path, payload: Mapping[str, Any]) -> None:
-    _exclusive_file(path, canonical_bytes(payload), 0o600)
-    _fsync_directory(path.parent)
+    raw = canonical_bytes(payload)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    created = False
+    fd = -1
+    try:
+        fd = os.open(path, flags, 0o600)
+        created = True
+        os.fchmod(fd, 0o600)
+        view = memoryview(raw)
+        while view:
+            written = os.write(fd, view)
+            require(written > 0, "E_CLAIM_STATE_UNCERTAIN", "claim")
+            view = view[written:]
+        info = os.fstat(fd)
+        require(
+            stat.S_ISREG(info.st_mode)
+            and info.st_nlink == 1
+            and stat.S_IMODE(info.st_mode) == 0o600
+            and info.st_size == len(raw),
+            "E_CLAIM_STATE_UNCERTAIN",
+            "claim",
+        )
+        os.fsync(fd)
+        closing_fd = fd
+        fd = -1
+        os.close(closing_fd)
+        _fsync_directory(path.parent)
+    except FileExistsError as error:
+        raise AcquisitionError("E_CONSUMED", "claim") from error
+    except Exception as error:
+        code = "E_CLAIM_STATE_UNCERTAIN" if created else "E_CLAIM_NOT_CREATED"
+        raise AcquisitionError(code, "claim") from error
+    finally:
+        if fd >= 0:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
 
 
 def rename_exclusive(source: Path, destination: Path) -> None:
@@ -796,7 +894,6 @@ def _attempt(
         "status": "consumed_active",
     }
     claim_raw = canonical_bytes(claim)
-    create_claim(claim_path, claim)
     staging = dependency_root / f"{staging_prefix}{attempt_id}"
     accepted = staging / "accepted"
     evidence = []
@@ -811,7 +908,10 @@ def _attempt(
     response_completed_bytes = 0
     validated_count = 0
     persisted_count = 0
+    claim_durable = False
     try:
+        create_claim(claim_path, claim)
+        claim_durable = True
         os.mkdir(staging, 0o700)
         os.mkdir(accepted, 0o700)
         _fsync_directory(dependency_root)
@@ -953,6 +1053,17 @@ def _attempt(
         _fsync_directory(manifest_path.parent)
         return receipt
     except Exception as error:
+        if not claim_durable:
+            if isinstance(error, AcquisitionError) and error.code in {
+                "E_CONSUMED",
+                "E_CLAIM_NOT_CREATED",
+                "E_CLAIM_STATE_UNCERTAIN",
+            }:
+                raise
+            raise AcquisitionError(
+                "E_CLAIM_STATE_UNCERTAIN",
+                "claim",
+            ) from error
         if isinstance(error, AcquisitionError):
             code, phase = error.code, error.phase
         else:
@@ -991,8 +1102,11 @@ def _attempt(
             try:
                 _exclusive_file(failure_path, canonical_bytes(failure), 0o600)
                 _fsync_directory(failure_path.parent)
-            except Exception:
-                pass
+            except Exception as publication_error:
+                raise AcquisitionError(
+                    "E_FAILURE_PUBLICATION_UNCERTAIN",
+                    "failure_terminal",
+                ) from publication_error
         raise AcquisitionError(code, phase) from error
 
 
@@ -1000,6 +1114,8 @@ def execute(fetch: Fetch = direct_fetch) -> dict[str, Any]:
     values, _ = preflight()
     old_umask = os.umask(0o077)
     previous_handler = signal.getsignal(signal.SIGALRM)
+    old_delay, old_interval = signal.getitimer(signal.ITIMER_REAL)
+    started = time.monotonic()
 
     def alarm_handler(_signum: int, _frame: Any) -> None:
         raise AcquisitionError("E_DEADLINE", "whole_attempt")
@@ -1022,6 +1138,13 @@ def execute(fetch: Fetch = direct_fetch) -> dict[str, Any]:
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, previous_handler)
+        elapsed = time.monotonic() - started
+        if old_delay > 0:
+            signal.setitimer(
+                signal.ITIMER_REAL,
+                max(0.000001, old_delay - elapsed),
+                old_interval,
+            )
         os.umask(old_umask)
 
 
@@ -1040,10 +1163,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         sys.stdout.buffer.write(canonical_bytes(result))
         return 0
     except AcquisitionError as error:
+        if error.code == "E_CONSUMED":
+            status = "already_consumed"
+        elif error.code in {
+            "E_CLAIM_STATE_UNCERTAIN",
+            "E_FAILURE_PUBLICATION_UNCERTAIN",
+            "E_POST_PUBLISH_UNCERTAIN",
+        }:
+            status = "consumed_terminal_state_uncertain"
+        else:
+            status = "failed_closed"
         sys.stdout.buffer.write(canonical_bytes({
             "documentType": "aetherlink.wave3-source-acquisition-error",
             "schemaVersion": "1.0",
-            "status": "failed_closed",
+            "status": status,
             "failureCode": error.code,
             "failurePhase": error.phase,
             "retryAllowed": False,

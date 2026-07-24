@@ -13,6 +13,18 @@ uncertainty. Retry, resume, backfill, redirects, ambient proxies,
 authentication, cookies, client certificates, ranges, alternate hosts, and
 extra requests are forbidden.
 
+An existing claim is `already_consumed`. Any error after the exclusive claim
+file is created but before its file-and-parent durability barrier is
+`consumed_terminal_state_uncertain`; no request or failure backfill follows.
+Likewise, failure-record write or parent-fsync uncertainty and any error after
+final publication begins are explicit consumed terminal uncertainty, never an
+ordinary recorded failure and never retryable.
+
+All reserved paths require lexical absence, so even a broken symbolic link
+occupies and blocks a name. The runner restores any pre-existing process
+`ITIMER_REAL` handler and timer with elapsed-time adjustment after its bounded
+attempt.
+
 The runner independently verifies the virtual `go.mod` dirhash H1 and module
 ZIP HashZip/Hash1 H1 in Python. ZIP entries must have the exact canonical
 module-version prefix and pass bounded path, type, size, duplicate, encryption,
