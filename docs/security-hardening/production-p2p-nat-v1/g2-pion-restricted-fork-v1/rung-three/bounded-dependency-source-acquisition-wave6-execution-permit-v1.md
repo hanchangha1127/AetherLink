@@ -1,0 +1,88 @@
+# Wave6 bounded dependency-source acquisition permit v1
+
+This document explains the machine-checked, one-use Wave6 acquisition permit.
+The canonical authority record is the adjacent JSON file.
+
+## Scope
+
+- The permit covers exactly 36 public `GET` requests to
+  `https://proxy.golang.org:443`: one `.mod` and one `.zip` resource for each
+  of the 18 identity-complete Wave6 module/version vertices, in exact lexical
+  tuple order with `.mod` immediately before `.zip`.
+- Request order, paths, expected Go `h1:` values, response limits, accepted
+  filenames, and the output namespace are fixed by the canonical JSON.
+- The claim must be created with exclusive owner-only access and made durable
+  before DNS, TCP, TLS, or HTTPS begins. The claim is never removed, and the
+  permit cannot be retried, resumed, backfilled, or overwritten.
+- Execution opens the project root once, traverses every dependency and
+  documentation directory component relative to held parent descriptors with
+  `O_DIRECTORY|O_NOFOLLOW`, and retains every intermediate descriptor and
+  initial identity through termination. Each barrier compares the held child
+  with the same name under its held parent; mutable writes use only the final
+  held descriptors. SIGALRM and SIGINT are deferred only for the minimal local
+  `open`-to-owned-FD transfer and final owner-FD cleanup. Cleanup finishes every
+  independent close and clears the held namespace before restoring the prior
+  signal mask. Network work, resource inspection, validation, writes, and
+  `fsync` remain outside those narrow local exceptions.
+- `existingClaimState: already_consumed` defines how any pre-existing claim is
+  interpreted at execution time. The separate
+  `claimAbsentAtPermitPublication: true` field records only the bounded
+  observation that the claim path was absent when this permit was published.
+- Every accepted response is checked against its bound `h1:` value. Module ZIP
+  files are also checked for their exact module/version prefix, safe names,
+  structural consistency, CRCs, bounded expansion, and `.mod` parity.
+- The 36-resource portfolio retains conservative fixed aggregate response
+  caps: 8 MiB across all `.mod` bodies, 128 MiB across all ZIP bodies, and
+  128 MiB across all responses. These are portfolio-wide ceilings in addition
+  to the 1 MiB per-`.mod` and 16 MiB per-ZIP limits.
+- SIGALRM remains deliverable throughout every fetch, validation, write, and
+  `fsync`. The caller is rejected before preflight if it already blocks
+  SIGALRM. The pinned fetch primitive receives the 30-second per-request
+  deadline, and the process guard supplies the 600-second whole-attempt alarm.
+- An immutable single-assignment phase ledger records dispatch boundaries and
+  committed response bytes, validations, and durable resource persistence.
+  Failure counts are committed lower bounds, not claims of exact completion.
+  A failure also records the current resource ordinal, one of
+  `fetch_may_have_completed`, `validation_may_have_completed`, or
+  `persist_may_have_completed`, and `additionalCompletionUncertain`. Zero
+  committed responses with an active fetch is
+  `sourceAcquisitionState: unknown_after_dispatch`; it is never represented as
+  a definitive “not acquired” result. Success requires no active operation and
+  exactly 36 committed dispatch, response, validation, and persistence
+  boundaries.
+- Process-global handler, timer, umask, and signal-mask setup and teardown are
+  guarded separately from resource operations. Teardown attempts timer
+  cancellation and synchronously consumes any installed pending SIGALRM before
+  restoring the prior handler. The prior timer is armed with elapsed adjustment
+  only after that handler restoration succeeds. If pending-alarm inspection or
+  consumption fails, the runner handler remains installed, SIGALRM remains
+  blocked, and the unsafe prior alarm state is not restored. Umask and other
+  safe restoration steps are still attempted independently. Any process-state
+  restoration failure after a claim or possible terminal result is reported as
+  `E_PROCESS_STATE_RESTORE_UNCERTAIN` with
+  `consumed_terminal_state_uncertain`; a body or namespace-teardown failure
+  after a possible terminal result is reported as
+  `E_CONSUMED_TERMINAL_STATE_UNCERTAIN` with the same status. Neither can be
+  reported as ordinary `failed_closed`.
+- Production fetches remain reachable only through the pinned
+  `Wave6 -> Wave4` wrapper. Individual, aggregate `.mod`, aggregate ZIP,
+  aggregate total, and ZIP inventory limits fail closed before a resource can
+  be counted as validated or persisted.
+- Successful publication is atomic and no-replace. The acquisition manifest is
+  written last. Independent local byte readback remains mandatory afterward.
+
+## Authentication boundary
+
+This personal-project acquisition requires no account login, owner proof, SSH
+or GPG key, password, private key, signature, token, cookie, client
+certificate, authorization header, or user interaction. The endpoint is the
+public Go module proxy and ordinary TLS certificate/hostname validation is the
+only remote identity check.
+
+## Explicit non-authority
+
+The permit does not authorize source extraction, source loading or execution,
+package-manager execution, compilation, product runtime networking, device
+work, deployment, Git operations, or release publication. It does not establish
+dependency fixed-point closure, semantic closure, library selection, rung-three
+completion, or V1 release readiness.

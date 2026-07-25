@@ -65041,8 +65041,15 @@ def personal_single_owner_governance_guard_failures() -> list[str]:
             roadmap_canonical_start:roadmap_canonical_end
         ]
 
+    handoff_current_end = texts["handoff"].find("\n## First Five Minutes")
+    if handoff_current_end < 0:
+        failures.append("handoff current snapshot boundary is missing")
+        handoff_current_window = ""
+    else:
+        handoff_current_window = texts["handoff"][:handoff_current_end]
+
     current_document_windows = {
-        "handoff": "\n".join(texts["handoff"].splitlines()[:700]),
+        "handoff": handoff_current_window,
         "progress": "\n".join(texts["progress"].splitlines()[:600]),
         "qa": "\n".join(texts["qa"].splitlines()[:450]),
         "roadmap": roadmap_current_window,

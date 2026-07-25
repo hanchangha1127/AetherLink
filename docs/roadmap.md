@@ -2,7 +2,7 @@
 
 ## Canonical V1 Delivery Roadmap
 
-Last revised: 2026-07-24 KST.
+Last revised: 2026-07-25 KST.
 
 This section is the canonical forward plan for the first production release of
 AetherLink. It supersedes the shipping order implied by the historical feature
@@ -11,8 +11,10 @@ ideas and implementation history, but `v0.x` or `v1.x` labels in older sections
 are not release commitments. In particular, Windows, DGX OS, iOS, additional
 serving backends, MCP, web search, skills, workspaces, and automations are
 post-V1 work unless a later approved scope decision explicitly changes that.
+Personal-project governance changes no product security requirement
+or G1a no-network scope.
 
-### Current G2 Rung-Three Dependency Wave-One Acquisition And Readback
+### Current G2 Rung-Three Dependency Fixed-Point Waves
 
 Rung two consumed its exact one-use source request and retained the verified
 archive without extraction. Rung-three v1 and v2 then consumed their distinct
@@ -255,25 +257,116 @@ the result was
 and
 `recordedNextActionAtThatCheckpoint=prepare_separate_versioned_wave2_checker_runner_tests_and_one_use_execution_permit`.
 
-That action is now complete in the
+That action was later completed in the historical
 [wave2 one-use execution permit v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-execution-permit-v1.json)
 and
 [reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave2-execution-permit-v1.md).
-Current status is
-`status=wave2_v1_dependency_source_acquisition_authorized_not_consumed`;
-current result is
-`result=exact_15_public_proxy_mod_then_zip_pairs_authorized_once_not_executed`;
-and `nextAction=execute_bound_dependency_source_wave2_v1_once`.
-Focused evidence passes 37/37 decision, 41/41 permit, 50/50 runner, and 39/39
-readback checks. Exact preflights bind the 15 tuples and 30 ordered public Go
-proxy requests and observe an empty namespace without using network or writing
-files. Future bytes remain unacquired and unverified, and the held H1 lines are
-not fresh checksum-database proof. Only the bounded one-use source intake is
-authorized; extraction, source execution, compilation, runtime/product
-network, Git, device, and deployment remain closed. Repository authentication,
-account login, owner proof, credential, key, signature, token, and password are
-outside this workflow. Neither external authentication nor user action is
-authorized or required.
+At that unconsumed v1 checkpoint it recorded
+`status=wave2_v1_dependency_source_acquisition_authorized_not_consumed`,
+`result=exact_15_public_proxy_mod_then_zip_pairs_authorized_once_not_executed`,
+and `nextAction=execute_bound_dependency_source_wave2_v1_once`; its focused
+evidence was 37/37 decision, 41/41 permit, 50/50 runner, and 39/39 readback
+checks. Those are historical permit facts, not the current execution state.
+Its versioned recovery path reached the successful v3 intake: the tracked
+wave2 v3 receipt retained 30 exact `.mod`/`.zip` resources and the independent
+readback reopened and H1-verified all 30. Wave3 then classified a 16-tuple
+frontier, completed all 32 H1 identities, consumed its separate one-use
+acquisition permit, retained 32 resources, and completed independent readback.
+
+Combined-v2 held 101 source inputs (the root ZIP plus 50 `.mod` and 50
+dependency ZIP files), reconstructed the graph twice, and recorded
+`fixedPointReached=false` with an exact 16-tuple Wave4 frontier: three
+graph-selected vertices and thirteen retained version-specific vertices. The
+[Wave4 identity/acquisition decision v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave4-v1.json)
+and
+[reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave4-v1.md)
+derive, twice and without network, 22 parent declarations, 24 module-ZIP H1
+witnesses, and 26 `go.mod` H1 witnesses. All 16 tuples have one conflict-free
+H1 pair. The decision fixes the ordered 32-request future contract and passes
+11/11 focused tests, but keeps acquisition, extraction, source execution,
+compilation, runtime/product network, Git, device, and deployment closed.
+The separate
+[Wave4 one-use acquisition permit v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave4-execution-permit-v1.json)
+and
+[reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave4-execution-permit-v1.md)
+bound that exact contract and was consumed once. Attempt
+`4cda3d86462fff445d6e69bce4b92dec` retained all 32 resources
+(16 `.mod`, 16 ZIP; 24,118,812 bytes), and the separate
+[Wave4 independent readback](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave4-readback-v1.json)
+reopened and independently verified the exact bytes twice before its
+[manifest](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave4-readback-manifest-v1.json)
+was written last.
+
+The current combined-v3 read-only checker holds 133 source inputs (the root ZIP
+plus 66 `.mod` and 66 dependency ZIP files), reconstructs the graph twice, and
+records `fixedPointReached=false` with an exact 15-tuple Wave5 frontier. Its
+input-set SHA-256 is
+`b2d981dae1576f27ae5cd292e218b0a0eb35f5bdc0d98734fb1b350408ce4eca`,
+graph SHA-256 is
+`ee330142d77874457cccf78d5a9fe51652c81916f1d7aabb390f321dff51e03a`,
+and its focused suite passes 23/23, including exact-byte reproduction and
+Wave4 predecessor, attempt, H1, order, selection, and resource-mutation
+failures. The separate Wave5 candidate checker retains all 15
+version-specific vertices even though every
+`selectedByGraphAlgorithm` value is false, and passes 10/10 focused tests.
+The
+[Wave5 identity/acquisition decision v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave5-v1.json)
+and
+[reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave5-v1.md)
+reproduce 20 parent declarations, 20 module-ZIP H1 witnesses, and 22
+`go.mod` H1 witnesses in two identical offline scans. All 15 identity pairs
+are complete and conflict-free. The compact identity SHA-256 is
+`52567cdead3fcd8029f9c1676a7f83af86a5d0110c52851b47e55b2f09af8a7d`,
+the full witness SHA-256 is
+`af51e067ccf3388561bfe0e2b38dae744792625cdc5f7a37b55208b41d4a5fb4`,
+and the focused decision suite passes 11/11. At that checkpoint the decision
+prepared 30 ordered, distinct `.mod`/`.zip` requests without authorizing
+acquisition. The separate
+[Wave5 one-use acquisition permit v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave5-execution-permit-v1.json)
+and
+[reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave5-execution-permit-v1.md)
+were then consumed exactly once. Acquisition attempt
+`ed050bd13835ab1f9fecc0dd3cfb6e12` retained all 30 resources
+(15 `.mod`, 15 ZIP; 26,123,889 bytes) without extraction, loading,
+execution, or compilation. The separate
+[Wave5 retained-snapshot readback](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave5-readback-v1.json)
+recomputed the raw hashes, H1 values, ZIP safety shape, root `go.mod` parity,
+and aggregate counts twice before its
+[manifest](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave5-readback-manifest-v1.json)
+was written last. Readback attempt
+`8f3813a784359883b4d93370c9041809` applies completion only to the retained
+snapshot: current-path identity is not guaranteed through manifest publication,
+and same-UID replacement after the final pre-manifest barrier is not prevented.
+The current combined-v4 read-only checker now holds the exact 163 inputs
+(root ZIP, 81 `.mod`, 81 dependency ZIP) and reconstructs the graph twice
+after executing the pinned v3 predecessor. Its combined input-set SHA-256 is
+`b7eca5385fd0cf811d0eb7e8a00fe467bf64f8c10fa1ab998521f00510b0b8b2`;
+the module graph/frontier SHA-256 is
+`a27185f3136ee694ba5e5e4d89d4eb985055b5c1d0599e826842169625d8c2e6`.
+It records 100 module nodes, 247 module edges, and
+`fixedPointReached=false` with an exact 18-tuple frontier whose canonical
+SHA-256 is
+`a966326a38b3050ac6ad7387405d359488b049d86982cde27946008dd258a6ce`.
+All 18 frontier tuples are retained version-specific vertices with
+`selectedByGraphAlgorithm=false`; the selected package graph remains 132
+nodes and 1,047 edges with no unresolved or unmapped import. Its 17/17 focused
+tests include deeply rebound Wave5 H1, order, and selector mutations. The
+[Wave6 identity/acquisition decision v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave6-v1.json)
+and
+[reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave6-v1.md)
+then resolve all 18 conflict-free H1 pairs from 18 parent declarations, 18
+module-ZIP witnesses, and 25 `go.mod` witnesses. The exact lexical frontier
+order is preserved, every selector remains false, and the canonical 36-request
+`.mod`-then-`.zip` contract has SHA-256
+`d1ea9ec1fab702b1bf405f13e1d7aaeb9a5354ff7f98a0d916870def124372a1`.
+The decision checker records 400 graph-lineage archive opens plus 164
+identity-witness opens, 564 total, and its 10/10 candidate plus 12/12 decision
+suites pass. It authorizes no acquisition. The next bounded action is the
+separate one-use Wave6 36-resource acquisition permit, checker, runner, and
+tests.
+Repository authentication, account login, owner proof, credential, key,
+signature, token, and password are outside this workflow. No user action is
+requested or required.
 
 The rung-two successor recorded, only `at_that_checkpoint`,
 `recordedNextActionAtThatCheckpoint=prepare_versioned_rung3_offline_source_review_decision`.
@@ -339,18 +432,18 @@ external-network evidence. A debug QR, local authenticated smoke, release
 compile, mock relay, or same-Wi-Fi camera run is valuable lower-rung evidence
 but cannot independently satisfy the V1 release gate.
 
-### Current 2026-07-24 Baseline And Gap
+### Current 2026-07-25 Baseline And Gap
 
-| Area | Current 2026-07-24 baseline | V1 gap |
+| Area | Current 2026-07-25 baseline | V1 gap |
 | --- | --- | --- |
 | Product loop | macOS Runtime and Android controller implement pairing, trust, health, installed-model selection, chat streaming/cancel, history, memory, and attachment flows. | Exercise the supported loop from clean signed release installs, with live Ollama and LM Studio, across every required route. |
 | Local physical proof | One `SM-S936N` completed debug same-Wi-Fi optical QR pairing, challenge-response authentication, health, force-stop, Bonjour rediscovery, and trusted reconnect. | Expiry/rotation, camera denial/regrant, process death, TalkBack/VoiceOver, additional supported devices, and release binaries remain unproven. |
 | Automated proof | The previous complete default no-device aggregate snapshot exits zero with `No-device quality checks passed.` It records Python 182/182, 1,946 Swift tests with two declared skips and zero failures, all Android Gradle invocations `BUILD SUCCESSFUL`, copy/docs hygiene across 94/12 files, direct and development-relay local mock smokes, relay freshness across 56 connections, 905 encrypted frame bodies at the ciphertext boundary, and the final G1a-D authority-lifecycle marker. Focused authority-lifecycle evidence includes 31/31 exact-bound Swift coordinator, 78/78 TrustedDevices, 9/9 Swift shared-vector, 87/87 Swift P2PNAT, 7/7 Kotlin shared-vector, 232/232 Android protocol, 200/200 Android pairing, and 8/8 Python mutation tests. Focused Android transport-composition evidence is 79/79 (49/49 manager plus 30/30 adapter). The root independently reran full `core:transport --tests '*'`: 10 suites pass 163/163 with zero failures, errors, or skips; app `compileDebugKotlin` plus `compileDebugUnitTestKotlin` also succeed. An independent iterative audit found and fixed six P3 availability/lifetime races in total; a final fresh re-audit reports no P0-P3 finding. The current root-independent full Swift rerun passes 2,003 tests with two declared skips and zero failures in 313.440 seconds. Those focused/full-module reruns alone were not a completed full no-device gate run; the current full no-device gate exits zero. Focused macOS transport-composition evidence is 39/39 (17/17 composition plus 22/22 secure-channel) and 34/34 (6/6 production-pair-coordinator plus 28/28 manager), and the release build passes. The audit-found cancellation/replacement P2 is fixed with a deterministic delayed-abandon regression; final independent re-audit reports no P0-P3 finding. Current caller-bridge evidence passes Android composer 16/16 plus ViewModel-clear 1/1, full app 1,174, and complete core protocol/pairing/transport 232/232, 200/200, and 163/163. Current macOS caller evidence passes service 9/9 and manager + service + composition 54/54; the release build succeeds. Newer G1b-A focused evidence covers the normal empty controller, injected real-fixture manager/ViewModel activation, and macOS accepted-raw primitive without live socket execution. | CI still lacks signed artifacts, physical-device, external-network, sanitizer/fuzz, soak, and production-deployment evidence. The prior aggregate is no-device local proof, not production transport or production app/service activation. Its counts were not refreshed for the transport-composition, caller-bridge, or G1b-A seams and remain snapshot facts, not permanent release thresholds. |
 | Transport | Identity-first routing, local discovery, route records, a bounded encrypted development relay, socket-free G1a-A route/transcript, G1a-B monotonic pair-state/durable admission, and G1a-C root-pinned signed authority/capability/candidate/receipt verification plus exact object-25/26 grant projection exist. Compound persistence and the exact-bound coordinator protect the latest durable start boundary. G1a-D derives role-separated keys only from a verifier-minted exact object-7/object-26 binding and implements mutual object-29 confirmation plus ordered, bounded, rekeying object-30 AES-256-GCM records on both platforms. A store-owned process-local publication gate binds start and every crypto result to pre/post lease/live fences. The composition seam is concrete: Android uses a manager-owned one-use raw-route lease and `ProductionRuntimeSecureChannelAdapter`; macOS owns exact one-use accepted-session attachment with no plaintext fallback. G1b-A now installs an app-scoped empty `AndroidProductionRuntimeActivationController` in the normal factory with the exact `PairingStore` and trusted clock. It publishes no route until an upstream producer supplies a verified attempt and an already-connected one-use endpoint. Injected real-fixture manager and full ViewModel E2E tests complete the authority-bound handshake and an application record without legacy fallback or an OS socket. macOS now exposes `LocalPeerServer.startAcceptedRaw` with an IPv4-loopback-only listener policy, bounded one-slot authorization, serialized receive ownership, and injected no-socket tests. | Real production activation, hardened allocation, signaling, ICE/STUN/TURN, P2P path migration, and blind relay operations remain incomplete. Android still lacks the upstream verifier/candidate/secret producer and actual P2P endpoint stack. The macOS accepted-raw primitive is not connected to `CompanionAppModel`, and its listener has not been socket-executed. Actual socket close interruption, live network, physical-device, and production-release behavior remain unproven. The current guarantee is single-process and same-store/coordinator-graph only. The eventual production caller must keep `seal + channel.send` inside the same read-permit closure. |
-| P2P library | `libjuice` and `libnice` were rejected before compile, and unmodified Pion ICE v4.3.0 remains rejected as-is. Rung two retained a verified archive; rung-three v1/v2 failed closed before publication, while v3 completed bounded lexical inventory. Semantic-review v1 completed two non-attesting full-coverage passes and independent readback, yielding 19 findings from 29 candidates. Patch/dependency decision v1 maps all 19 open findings to eight treatment units and four structural recommendations. The historical dependency-review decision selected only `staged-fixed-point-source-closure` and `dependency_source_license_security_closure_review`. The acquisition wave-one v1 permit was consumed by terminal `E_ZIP_RATIO`; v2 was consumed by tuple-11 `E_GO_MOD_MISSING`; neither produced a final source set. Recovery decision v2 selected a fresh bounded 19-pair `.mod`-then-`.zip` v3 design. The v3 one-use acquisition permit is consumed: 38 requests retained 38 resources, and fixed-hash independent readback verifies the exact 43-file set. Dependency source-review v1/v2 then failed closed with `E_HELD_SET` and `E_ARCHIVE_STRUCTURE`; v3 and its independent readback recorded route `new_tuple_wave_required`, graph SHA-256 `2c94906a07a40737e30ca832c215fa88d2233297c9fb0ea25755488d9a72408b`, and the exact 15-tuple frontier. Wave2 decision v1 now binds all 15 exact parent declarations and 30 held-H1 resource identities without acquisition. Semantic closure, dependency closure, rung-three completion, candidate selection, and library selection remain false. | Prepare the separate fail-closed wave2 runner, checker tests, and one-use execution permit. Preserve every version-specific tuple, terminal artifact, and all seven patch-required and twelve unresolved dispositions. Do not retry earlier attempts or open acquisition, extraction, dependency installation, reviewed-source compilation/execution, runtime sockets/network, or product operation until that exact permit is complete. |
+| P2P library | `libjuice`, `libnice`, and unmodified Pion ICE v4.3.0 remain rejected before compile/as-is. The restricted-fork dependency review has completed successful acquisition and retained-snapshot readback for waves 1 through 5 while preserving all terminal failed attempts. Combined-v4 holds 163 exact inputs and remains non-fixed with 100 module nodes, 247 module edges, and an exact 18-tuple all-false Wave6 frontier. Wave6 decision v1 resolves all 18 H1 pairs and prepares 36 ordered requests without acquisition authority. All 19 semantic findings remain open; semantic closure, dependency closure, rung-three completion, candidate selection, and library selection remain false. | Prepare the separate one-use Wave6 36-resource acquisition permit, checker, runner, and tests. Preserve every version-specific tuple and all prior evidence. Keep extraction, dependency installation, reviewed-source compilation/execution, runtime sockets/product networking, and product operation closed until their later gates. |
 | Relay security | Bounded leases, identity challenges, strict JSON, encrypted frame bodies, quotas, and development lifecycle controls exist. | Allocation TLS, service-signed lease capabilities, peer-verifiable KEX, pair epoch recovery, immediate revocation, signer rotation, multi-instance operations, and deployment remain open. |
 | Distribution | Android is version `0.1.0` with no production signing configuration; the macOS development bundle is ad-hoc signed. | Production application identity, signing custody, channel validation such as direct-distribution notarization or App Store review, install/update/rollback, artifact provenance, and staged distribution are required. |
-| Repository state | Historical G0 lineage and owner-trust artifacts are published and independently read back through `main@4227204b450372fcee55e0ef970c401f10b6c98c`; their bytes remain preserved, but their owner-authentication and authority flags do not govern this personal project. The current source includes the socket-free G1a-A/B/C/D foundations, G1b-A ownership primitives, the G2 as-is rejection, consumed rung-two acquisition, historical rung-three v3 evidence, semantic-review v1 publication, patch/dependency decision v1, the staged fixed-point dependency-review plan, consumed wave-one v1/v2/v3 permits, the successful 38-resource v3 intake, its fixed-hash 43-file readback, and the preparation-only dependency source-review wave-one decision. | Repository publication state must be read from Git and is not asserted by this roadmap. Commit and push remain outside this preparation-only slice. Continue with separate runner/tests/permit preparation; do not retry v1/v2/v3. No selected backend/carrier, extraction, compiler, runtime socket/network, Git, or device work is opened. No credentials or user action are involved. |
+| Repository state | Historical G0 lineage remains byte-preserved but does not impose owner authentication on this personal project. Current tracked history includes the socket-free G1 foundations and the Pion rejection/restricted-fork review lineage. The present working scope adds Wave4/Wave5 acquisition and readback evidence, combined-v3/v4, and the Wave5 plus Wave6 identity decisions. | Read publication state from Git; this roadmap does not stage, commit, or push. The next bounded action is the one-use Wave6 36-resource acquisition permit package. No selected backend/carrier, extraction, compiler, runtime socket/product network, Git write, credential, authentication, or user action is opened or required. |
 
 ### Governing Source Records
 
@@ -392,12 +485,26 @@ but cannot independently satisfy the V1 release gate.
   permit, its 38-resource success receipt/manifest, and the fixed-hash 43-file
   independent readback. Source-review v1/v2 then failed closed without a
   partial result; v3 and its independent readback recorded the exact 15-tuple
-  frontier. Wave2 decision v1 now binds the 15 exact parent declarations and
-  30 held-H1 resource expectations without acquisition. The current
-  `nextAction=prepare_separate_versioned_wave2_checker_runner_tests_and_one_use_execution_permit`.
-  Source extraction,
-  compilation, loading, runtime sockets/network, Git, and device work remain
-  closed, with no credentials or user action involved.
+  frontier. Wave2 and Wave3 then completed their versioned acquisition and
+  independent-readback paths. Combined-v2 held the root plus 100 dependency
+  resources and projected the exact non-fixed 16-tuple Wave4 frontier. The
+  Wave4 decision binds 22 parent declarations and complete,
+  conflict-free H1 pairs for all 16 tuples without acquiring Wave4 source.
+  Its separate one-use permit was consumed once, retained all 32 resources,
+  and completed a separate two-pass independent readback. Combined-v3 now
+  held 133 source inputs and projected the exact non-fixed 15-tuple Wave5
+  frontier. Wave5 decision v1 resolved all 15 H1 pairs and prepared 30 ordered
+  requests without acquisition authority at that checkpoint. Its later one-use
+  acquisition attempt retained all 30 resources, and readback attempt
+  `8f3813a784359883b4d93370c9041809` independently verified the retained
+  snapshot twice. Combined-v4 then reconstructed all 163 inputs twice and
+  projected a non-fixed 18-tuple Wave6 frontier whose entries are all
+  graph-unselected retained versions. Wave6 decision v1 then resolved all 18
+  H1 pairs and prepared the exact 36 ordered requests without acquisition
+  authority. The current next action is its separate one-use acquisition
+  permit, checker, runner, and tests. Source extraction, compilation, loading,
+  runtime sockets/product networking, Git, and device work remain closed, with
+  no authentication, credentials, or user action involved.
 - The relay portfolio originally recommended
   [TLS plus signed lease capabilities](security-hardening/production-relay-v1/proposals/authenticated-allocation-control-plane.md)
   and [pair epoch recovery](security-hardening/production-relay-v1/proposals/pair-epoch-recovery.md).
@@ -1025,14 +1132,24 @@ decision v2 then selected the v3 design. The v3 permit was consumed exactly
 once; 38 requests retained 19 verified `.mod`/`.zip` pairs, and fixed-hash
  independent readback confirms the 43-file set. Source-review v1/v2 then failed
  closed without a partial result; v3 and its independent readback recorded the
- exact 15-tuple frontier. Wave2 decision v1 now binds all 15 parent
- declarations and 30 held-H1 resource expectations without acquisition. The
- current
- `nextAction=prepare_separate_versioned_wave2_checker_runner_tests_and_one_use_execution_permit`.
- Dependency extraction,
-compiler, loading, runtime
-sockets/network, device execution, deployment, Git writes, external identity
-proof, and user action remain closed or unrequired.
+ exact 15-tuple frontier. Wave2 and Wave3 subsequently completed bounded
+ acquisition plus independent readback. Combined-v2 held 101 exact source
+ inputs and recorded a non-fixed 16-tuple Wave4 frontier. Wave4 decision v1
+ derived complete, conflict-free H1 pairs for all 16 tuples. Its exact one-use
+ permit was consumed once; all 32 resources were retained and independently
+ read back twice. Combined-v3 now holds 133 exact source inputs and records a
+ non-fixed 15-tuple Wave5 frontier. Wave5 decision v1 resolves all 15
+ conflict-free H1 pairs and prepared 30 ordered requests without acquisition
+ authority at that checkpoint. The one-use Wave5 acquisition subsequently
+ retained all 30 resources, and its retained snapshot completed a separate
+ two-pass independent readback. Combined-v4 then held all 163 inputs and
+ projected the exact non-fixed 18-tuple Wave6 frontier. Wave6 decision v1 then
+ resolved all 18 H1 pairs and prepared the exact 36-request contract without
+ acquisition authority. The current next action is a separate one-use Wave6
+ acquisition permit, checker, runner, and tests.
+ Dependency extraction, compiler use, loading, runtime sockets/network, device
+ execution, deployment, Git writes, external identity proof, and user action
+ remain closed or unrequired.
 
 Historical G2 restricted-fork rung-one status contract at_that_checkpoint:
 `status=rung1_profile_complete_candidate_not_selected`,
@@ -1379,7 +1496,7 @@ content.
 
 | Risk | Current signal | Mitigation and decision gate |
 | --- | --- | --- |
-| No accepted P2P library | `libjuice` and `libnice` were rejected before compile; Pion ICE v4.3.0 at exact commit `1e8716372f2bb52e45bf2a7172e4fb1004251c46` is also rejected as-is. Rung-three semantic-review v1 completed two non-attesting full-coverage passes and independent readback; patch/dependency decision v1 prepared eight treatment units and four structural recommendations. The historical dependency-review decision selected only the staged fixed-point source-closure option and dependency-review unit. The predecessor acquisition wave fixed the exact 19 source identities and both V1 graph profiles; its v1/v2 attempts failed terminally, while v3 and fixed-hash readback verified 38 retained resources across 43 files. Dependency source-review v1/v2 then failed closed with no partial result; v3 and its independent readback recorded the exact 15-tuple frontier and `new_tuple_wave_required`. Wave2 decision v1 preserves all 15 tuple versions and binds 30 held-H1 expectations without acquisition. Semantic closure, dependency closure, candidate selection, and library selection remain false. | Prepare the separate wave2 runner, checker tests, and one-use permit. Preserve all prior terminal evidence plus all seven patch-required and twelve unresolved findings; keep acquisition, extraction, compilation, runtime sockets/network, and product networking closed until the exact permit exists. |
+| No accepted P2P library | `libjuice`, `libnice`, and Pion ICE v4.3.0 as-is remain rejected. The restricted-fork review preserved the 19 findings and completed retained-snapshot readback for source waves 1–5. Combined-v4 holds 163 exact inputs but is still not at fixed point: it projects 18 all-false Wave6 tuples. Wave6 decision v1 resolves their identities and prepares 36 requests, but no candidate/library is selected. | Prepare the separate one-use Wave6 36-resource acquisition permit, checker, runner, and tests. Preserve all prior terminal evidence plus all seven patch-required and twelve unresolved findings; keep extraction, compilation, runtime sockets/product networking, and product networking closed until their ordered gates. |
 | Security contract spans every route | Current development paths have stronger pieces but no complete production profile. | Freeze G1 before networking; use one cross-platform vector suite and prohibit route-specific downgrade. |
 | Relay becomes an authority or data observer | Current allocation transport is development-grade. | TLS plus signed leases, endpoint KEX, blinded payloads, split-compatible capability shape, packet/log privacy tests, and operational key separation. |
 | Infrastructure becomes the schedule bottleneck | Production allocation, signaling, relay, key custody, monitoring, and incident ownership are not deployed. | Assign an owner and service plan in G0; develop G3 alongside G2 after G1. No client-only workaround counts as progress. |
@@ -1621,14 +1738,14 @@ V1 is complete only when all of the following are true:
 
 - Priority and status: the selected historical implementation baseline remains `d32c1846`; the bounded G0 V2/V3 packet and its successors are published and read back through the twelve-file `main@4227204b450372fcee55e0ef970c401f10b6c98c` checkpoint. The latest 16/16 strict HTTPS `blob:none` readback produced manifest SHA-256 `1b91a321de9a39faf9fb519b47ffa6e82ce85dd48595f092a63581875c9d4a37`; the later 12/12 public HTTPS readback from `2026-07-21T12:34:24Z` through `12:34:32Z` matched parent `b24c5ecb`, tree `c321c33e`, and produced manifest SHA-256 `267be3ca8f56fe353fbb856f95c6f634e98afbc3f204b589a9935be0fe5b0a15`. Those owner/receipt flags are historical byte-integrity facts and do not govern current personal-project implementation. This slice began from clean aligned `main@dee5d87791ceaddb094235fbf33f7997580ddb1e`; the current local scope includes the socket-free G1a foundations, G1b-A Android normal-graph ownership plus injected manager/ViewModel E2E, the macOS loopback-only accepted-raw primitive, the G2 Pion official-source preflight, and the G2 restricted-fork rung-one design. The next session must still refresh branch, HEAD, Git status, device attachment, and runtime process state instead of inheriting stale assumptions.
 - Current product checkpoint: one earlier same-Wi-Fi debug QR was decoded from the real macOS screen and paired through a physical `SM-S936N` camera. On 2026-07-21 the connected authorized device also passed a preserved-data debug APK rebuild/install, cold launch, force-stop/relaunch, ADB-injected development pairing and trusted-route reconnect, mock chat cancel and natural completion, and bounded chat/model/drawer/settings UI inspection. CAMERA revoke reached the Android system permission dialog and was restored to granted; actual denial selection and post-denial recovery were not completed. These are debug/local-development observations, not G0 evidence or production proof. Optical QR in this pass, actual TalkBack/VoiceOver traversal, haptic feel, live providers, external relay, different-network behavior, release binaries, and production crypto remain unverified.
-- Default next bounded slice: the G1a foundations and G1b-A ownership primitives are complete for their stated no-network/injected-I/O scope. Android's normal graph owns an empty exact-store/exact-clock controller, and injected real-fixture manager/ViewModel E2E proves the secure composition path; macOS owns a tested IPv4-loopback-only accepted-raw primitive. G2 semantic-review v1 has completed two non-attesting full-coverage passes and independent tracked readback, patch/dependency decision v1 prepared the treatment portfolio, and the historical dependency-review decision selected the staged fixed-point plan. The acquisition wave-one v3 and fixed-hash readback retained 19 verified `.mod`/`.zip` pairs across 43 files. Dependency source-review v1/v2 failed closed without partial results; v3 and its independent readback recorded 132 graph nodes, 1,047 edges, and an exact 15-tuple frontier. Wave2 decision v1 now preserves all 15 versions, their parent declarations, and 30 held-H1 expectations. Next prepare `prepare_separate_versioned_wave2_checker_runner_tests_and_one_use_execution_permit`, keeping acquisition/network authority and semantic/dependency/rung-three closure false until that exact fail-closed contract exists. Stack-neutral ownership work may continue, but backend and socket proof wait for their G2 scopes. No user authentication or action is requested or required.
+- Default next bounded slice: the G1a foundations and G1b-A ownership primitives remain complete for their stated no-network/injected-I/O scope. G2 has progressed through successful retained-snapshot readback of dependency waves 1 through 5. Wave5 acquisition attempt `ed050bd13835ab1f9fecc0dd3cfb6e12` retained 30 resources totaling 26,123,889 bytes; readback attempt `8f3813a784359883b4d93370c9041809` independently verified those held bytes twice and wrote its manifest last. Combined-v4 now holds the root ZIP plus 81 `.mod` and 81 dependency ZIP inputs and projects a non-fixed 18-tuple Wave6 frontier. Wave6 decision v1 resolves all 18 H1 pairs and prepares 36 ordered requests without acquisition authority. Next prepare its separate one-use permit, checker, runner, and tests. Stack-neutral ownership work may continue, but extraction, backend compilation/execution, and product socket proof wait for their G2 scopes. No user authentication or action is requested or required.
 - Conditional next slice: different-network pairing may begin only after the exact reachable route, environment, and execution authority are established. Same-Wi-Fi `local_diagnostic` evidence is not a relay, P2P/NAT, Phase B, production-capacity, deployment, or readiness result.
 - Publication rule: `12c38154`, its nine-file `70350f5e` successor, the seven-file `025a4ef5` successor, the sixteen-file `b24c5ecb` successor, and the historical twelve-file `4227204` successor have intentional publication and fresh exact remote-byte readback evidence. Preserve those bytes without treating their owner/receipt state as a current work gate. Read current publication state from Git; this workflow does not stage, commit, or push unless the user separately requests it.
 - Continuity rule: update the existing canonical handoff after future substantial work and synchronize current progress, QA, and roadmap facts. GPT-5.6 Sol is the requested subagent model; GPT-5.3-Codex-Spark remains excluded for this workstream.
 - Reading rule: `docs/handoff.md` and the current sections at the top of this roadmap are authoritative. Sections marked Historical Checkpoint or Superseded preserve at-checkpoint evidence only and cannot override the current Debug/Release matrix, physical observation manifest, or authority boundary.
 - Authority freshness: the QR-modified P2P/NAT source snapshot is synchronized at 13-artifact collection SHA-256 `6e6dfbfc0cdb70370c30f54222584b69042a6e22b6df04c7f3e65043c38522bd`; its validator and seven Phase A progress tests pass. This does not select a library or open compiler, socket, runtime-network, Phase B, production, or deployment authority.
 - G2 preflight history: [the requirements review](security-hardening/production-p2p-nat-v1/g2-requirements-review-v1.md) rejects Pion ICE v4.3.0 as-is at exact commit `1e8716372f2bb52e45bf2a7172e4fb1004251c46`. That checkpoint retained no source and opened no compile, load, socket, network, device, Git, or deployment operation.
-- G2 current freshness: the tracked [result-v3](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/offline-source-review-result-v3.json), semantic review artifacts, patch/dependency decision, and historical staged fixed-point selection remain predecessors. The bounded acquisition wave-one v1/v2 terminal claim/failure pairs remain canonical evidence, while v3 completed exactly 38 requests and retained all 38 resources. Its fixed-hash readback confirms the 43-file set with no verification network or writes. Dependency source-review v1 failed closed at `E_HELD_SET`, v2 failed closed at `E_ARCHIVE_STRUCTURE`, and neither published a partial result. The corrected v3 result plus independent readback bind graph SHA-256 `2c94906a07a40737e30ca832c215fa88d2233297c9fb0ea25755488d9a72408b`, 132 nodes/1,047 edges, a 35-node/86-edge module graph, 25 selected versions, zero unmapped or unresolved declared external imports, and an exact 15-tuple frontier. Wave2 decision v1 binds all 15 exact parent declarations and 30 non-conflicting held-H1 expectations; its exact next action is `prepare_separate_versioned_wave2_checker_runner_tests_and_one_use_execution_permit`. Semantic closure, dependency closure, rung-three completion, candidate selection, and library selection remain false. Source acquisition/extraction, compile/execution, runtime socket/network, Git, device, credential, repository authentication, or user action did not occur.
+- G2 current freshness: the tracked lexical/semantic review, patch/dependency decision, and staged fixed-point selection remain predecessors. Wave-one v1/v2 terminal failures remain canonical, while wave-one v3 and its readback retained 38 resources. Wave2 v3 and readback retained 30 resources; Wave3 and readback retained 32. Combined-v2 bound 101 held inputs and projected the exact Wave4 frontier. Wave4 decision v1 bound compact identity SHA-256 `7018a78754932244c8bc1449ad9079d19d0c48bcdb287b0109178cb3709895b2` and full witness SHA-256 `338069b9666561cc23dd859a202b72e45e0c7fa2f94b69d6b976777dbd148d86`; its one-use acquisition attempt `4cda3d86462fff445d6e69bce4b92dec` retained all 32 resources, and readback attempt `abab55937e110dc0a77018509db6ecca` independently verified them twice. Combined-v3 binds 133 inputs with input-set SHA-256 `b2d981dae1576f27ae5cd292e218b0a0eb35f5bdc0d98734fb1b350408ce4eca`, graph SHA-256 `ee330142d77874457cccf78d5a9fe51652c81916f1d7aabb390f321dff51e03a`, and an exact 15-tuple Wave5 frontier. Wave5 decision v1 binds compact identity SHA-256 `52567cdead3fcd8029f9c1676a7f83af86a5d0110c52851b47e55b2f09af8a7d` and full witness SHA-256 `af51e067ccf3388561bfe0e2b38dae744792625cdc5f7a37b55208b41d4a5fb4`. Its later one-use acquisition retained all 30 resources; the readback receipt raw SHA-256 is `dcd2f6703e770c453ded369f8c4b1b082bbbe8162bb785ba84885e1c70a16cc2`, and manifest raw SHA-256 is `1f9eea4c306e6f59c21e5a6dc66b23f1e530b9d006075f7b3a6199dcebc79059`. Completion applies to the retained snapshot, not current-path identity through publication. Semantic closure, dependency closure, rung-three completion, candidate selection, and library selection remain false. No extraction, compile/execution, runtime socket/product network, Git write, device work, credential, repository authentication, or user action occurred.
 
 ## macOS Debug Local QR And Android Optical Pairing Recovery
 
