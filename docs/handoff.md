@@ -1150,7 +1150,8 @@ execution.
   activation-controller ownership, injected real-fixture manager/ViewModel E2E,
   the macOS IPv4-loopback-only accepted-raw primitive, the G2 Pion v4.3.0
   official-source preflight, and the restricted-fork lineage through consumed
-  Wave16 acquisition/readback and the read-only combined-v14 reconstruction. The normal
+  Wave16 acquisition/readback and the verified read-only combined-v15
+  reconstruction. The normal
   Android controller intentionally starts
   empty, the macOS primitive is not `CompanionAppModel`-wired, and neither path
   has executed a live socket or device. The worktree is intentionally dirty for
@@ -1158,12 +1159,13 @@ execution.
   unstaged; refresh `git status --short` because live Git output remains
   authoritative.
 - Current G2 terminal state: Wave16 acquisition and independent readback are
-  consumed successes, and the verified read-only combined-v14 reconstruction
-  has classified the retained 351-input predecessor set. Wave16 retained all
-  three exact frontier identities as six `.mod`/ZIP resources, and its
-  25-file readback completed two verification passes and all three retained-FD
-  barriers. The next boundary is the read-only Combined V15 fixed-point
-  reconstruction over the exact 357-input retained set.
+  consumed successes, and the verified read-only Combined V15 reconstruction
+  has classified the exact 357-input retained set. It derives
+  `fixedPointReached=false`, `route=next_wave_required`, and exactly one
+  non-selected Wave17 frontier tuple, `golang.org/x/tools@v0.33.0`, with
+  `selectedByGraphAlgorithm=false`. The next boundary is its separate
+  verification-only Wave17 identity/acquisition decision; it grants no
+  acquisition authority.
   Historical Wave11
   acquisition attempt
   `ac18b8fda0a80a132510efd5dd17d5b7` retained all 18 exact resources, and
@@ -1252,9 +1254,36 @@ execution.
   `b8863a58dd5db814afe94eb101c166e4f5bfb92d9b8197dbe3e32a3b1f0e99c4`
   twice, completed all three retained-FD barriers, and published the manifest
   last. Both Wave16 one-use actions are consumed successes and cannot be
-  retried. The next boundary is the read-only Combined V15 reconstruction
-  over the exact 357-input retained set. No authentication or user action is
-  required.
+  retried. Combined-v15 then held the exact 357-input retained set and
+  reconstructed it twice across 179 archives, 68,852 entries, and
+  1,296,608,653 ZIP-uncompressed bytes. Cumulative accounting is 28 full
+  reconstructions and 3,696 graph archive opens. Input-set, source-binding,
+  candidate-content, graph, and exact-frontier SHA-256 values are
+  `4b12b7ca7f0a8b1556c692522e8832af033f9d2a1f00fbeb7469623a00541f1e`,
+  `86512fdc6c5b8ff8b1d79e500e32c6c35c36f6c097aca5385f8ff1e06ffe18fd`,
+  `4666c802e40734bb1b5b91489eb24aa782cb346710caec9605be4e0e005553ee`,
+  `ffe9f910669401198b88752663055ca2e6622d19e171f2d20a2b303d06c989d7`,
+  and
+  `ce1be1152aabf580a211f038d80aeaf9249418117b7d12ff26ffc909f1e4d593`.
+  It derives `fixedPointReached=false`, `route=next_wave_required`, and
+  exactly one non-selected Wave17 frontier tuple,
+  `golang.org/x/tools@v0.33.0`, with
+  `selectedByGraphAlgorithm=false`. Checker raw/normalized and current tests
+  raw SHA-256 values are
+  `e0a8353e5bd4f40b587c2b62c563c0b679ca5261345e577d71d00fb868f08fb5`,
+  `63198050500264a07082d205172c21993a309289649a5459e1c638b53fb22bf7`,
+  and
+  `65d7f435cef11da2cccae7e31a3c410d7a3038f6bc3261552753801a0de431b1`.
+  The genuine two-pass run passed 21 of 23 tests; both failures were
+  test-oracle defects. After correcting those oracles, the affected tests
+  passed independently 2/2 and the fast boundary suite passed 2/2. All 23
+  behaviors therefore have verification coverage across the genuine run and
+  targeted reruns, but no single post-fix 23/23 full-suite run is claimed.
+  The next boundary is the separate verification-only Wave17
+  identity/acquisition decision, with no acquisition authority. No
+  acquisition, extraction, source load/compile/execution, runtime
+  socket/product network, Git write, device work, credential, authentication,
+  or user action is opened or required.
 - G1a-A no-network state: six typed `ALS1` route authorizations and one exact
   21-field endpoint secure-session transcript are implemented independently in
   Swift and Kotlin. The shared fixture pins six route plus six transcript byte
@@ -2406,7 +2435,8 @@ persistence, transition history, legacy-downgrade guards, dormant internal pre-
   readback terminal evidence, the read-only combined-v14 reconstruction, the
   verification-only Wave16 identity/acquisition decision, the consumed
   six-resource Wave16 acquisition, and its exact-25-file offline readback
-  terminal evidence. Wave12 through Wave16 one-use
+  terminal evidence, and the verified read-only combined-v15 reconstruction.
+  Wave12 through Wave16 one-use
   acquisition/readback actions are consumed successes and cannot be retried.
   The exact 333-input
   combined-v12 normal path passes 24/24, and the latest observed local Wave14
@@ -2425,9 +2455,13 @@ persistence, transition history, legacy-downgrade guards, dormant internal pre-
   Wave16 acquisition/runner suites pass 18/18 and 48/48, the readback suites
   pass 17/17 and 50/50, and attempts
   `fff8d6073748eab6fd1a05c79c57a84f` and
-  `e7c555246489b1ccd63bf3aca3e27c2f` are consumed successes. The next
-  bounded G2 action is the read-only Combined V15 reconstruction over the
-  exact 357-input retained set. Live Git state
+  `e7c555246489b1ccd63bf3aca3e27c2f` are consumed successes. Combined-v15
+  verifies the exact 357-input set with a genuine two-pass reconstruction and
+  derives exactly one non-selected Wave17 tuple,
+  `golang.org/x/tools@v0.33.0`. Its genuine run plus two corrected targeted
+  tests cover all 23 behaviors without claiming a single post-fix 23/23 full
+  run. The next bounded G2 action is the separate verification-only Wave17
+  identity/acquisition decision, with no acquisition authority. Live Git state
   remains authoritative for publication status.
 
 The historical sidecar, one-response dormant intake envelope, profile, and
@@ -3031,8 +3065,15 @@ Unless the user redirects the task, use this decision order:
    Readback attempt `e7c555246489b1ccd63bf3aca3e27c2f` verified the exact
    25-file snapshot twice, completed all three retained-FD barriers, and
    published the manifest last. Both actions are consumed successes and cannot
-   be retried. The next bounded G2 step is the read-only Combined V15
-   reconstruction over the exact 357-input retained set.
+   be retried. Combined-v15 then reconstructed the exact 357-input retained set
+   twice, derived `fixedPointReached=false`, `route=next_wave_required`, and
+   exactly one non-selected Wave17 frontier tuple,
+   `golang.org/x/tools@v0.33.0`. The original genuine run passed 21/23 before
+   two test-oracle corrections; the corrected affected tests passed 2/2
+   independently and the fast suite passed 2/2. This covers all 23 behaviors
+   without claiming a single post-fix 23/23 full run. The next bounded G2 step
+   is the separate verification-only Wave17 identity/acquisition decision,
+   with no acquisition authority.
    Semantic review was performed, but semantic closure, dependency closure,
    rung-three completion, candidate selection, and library selection remain
    false. Android verified-endpoint
