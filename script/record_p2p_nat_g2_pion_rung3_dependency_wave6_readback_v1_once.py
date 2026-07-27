@@ -46,7 +46,7 @@ READBACK_CHECKER_PATH = Path(__file__).with_name(
     "check_p2p_nat_g2_pion_rung3_dependency_wave6_"
     "readback_execution_permit_v1.py"
 )
-EXPECTED_READBACK_CHECKER_RAW = "9d9945a918c9cece423aa6999af69a819701951a50242584c58c7703769a6fff"
+EXPECTED_READBACK_CHECKER_RAW = "9d5be82523dc4d5a5e2d65c1f8ad72dbd5c935a4fe5181ad1e5e747283081dfa"
 MAXIMUM_CHECKER_BYTES = 8 * 1024 * 1024
 RENAME_EXCL = 0x00000004
 ZIP_LOCAL_HEADER = struct.Struct("<IHHHHHIIIHH")
@@ -217,6 +217,7 @@ def _read_fd(fd: int, size: int, phase: str) -> bytes:
 def _open_to_owner(
     owner: list[int],
     opener: Callable[[], int],
+    on_opened: Callable[[int], None] | None = None,
 ) -> int:
     """Defer SIGALRM/SIGINT only across local open-to-owner transfer."""
     previous_mask = signal.pthread_sigmask(
@@ -225,25 +226,114 @@ def _open_to_owner(
     )
     fd = -1
     transferred = False
+    primary_error: BaseException | None = None
     try:
-        fd = opener()
         try:
+            fd = opener()
+            if on_opened is not None:
+                on_opened(fd)
             owner.append(fd)
             transferred = True
-        except BaseException:
-            try:
-                os.close(fd)
-            finally:
-                fd = -1
-            raise
-        return fd
-    finally:
+        except BaseException as error:
+            primary_error = error
         if fd >= 0 and not transferred:
             try:
+                while fd in owner:
+                    owner.remove(fd)
                 os.close(fd)
-            except OSError:
-                pass
+            except BaseException as error:
+                if primary_error is None:
+                    primary_error = error
+            fd = -1
+    except BaseException as error:
+        primary_error = error
+    restore_error: BaseException | None = None
+    try:
         signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+    except BaseException as error:
+        restore_error = error
+    if primary_error is not None:
+        if restore_error is not None:
+            raise primary_error from restore_error
+        raise primary_error
+    if restore_error is not None:
+        raise restore_error
+    return fd
+
+
+def _remove_owned_fd(owner: list[int], fd: int) -> None:
+    while fd in owner:
+        owner.remove(fd)
+
+
+def _attempt_close_owned_fd(
+    owner: list[int],
+    fd: int,
+) -> BaseException | None:
+    """Retry only a reported close failure in this single-threaded recorder."""
+    if fd not in owner:
+        return None
+    first_error: BaseException | None = None
+    for _ in range(2):
+        try:
+            os.close(fd)
+        except OSError as error:
+            if error.errno == errno.EBADF:
+                _remove_owned_fd(owner, fd)
+                return None
+            if first_error is None:
+                first_error = error
+        except BaseException as error:
+            if first_error is None:
+                first_error = error
+        else:
+            _remove_owned_fd(owner, fd)
+            return None
+        try:
+            os.fstat(fd)
+        except OSError as error:
+            if error.errno == errno.EBADF:
+                _remove_owned_fd(owner, fd)
+                return None
+            if first_error is None:
+                first_error = error
+        except BaseException as error:
+            if first_error is None:
+                first_error = error
+        else:
+            continue
+    return first_error or OSError(
+        errno.EIO,
+        "file descriptor closure could not be verified",
+    )
+
+
+def _close_owned_members(owner: list[int], members: Sequence[int]) -> None:
+    """Attempt each selected FD and retain any observably open ownership."""
+    errors: list[BaseException] = []
+    previous_mask: set[signal.Signals] | None = None
+    try:
+        previous_mask = signal.pthread_sigmask(
+            signal.SIG_BLOCK,
+            {signal.SIGALRM, signal.SIGINT},
+        )
+    except BaseException as error:
+        errors.append(error)
+    seen: set[int] = set()
+    for fd in members:
+        if fd < 0 or fd in seen:
+            continue
+        seen.add(fd)
+        error = _attempt_close_owned_fd(owner, fd)
+        if error is not None:
+            errors.append(error)
+    if previous_mask is not None:
+        try:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+        except BaseException as error:
+            errors.append(error)
+    if errors:
+        raise errors[0]
 
 
 def _adopt_owned_fd(owner: list[int], fd: int) -> None:
@@ -259,85 +349,71 @@ def _adopt_owned_fd(owner: list[int], fd: int) -> None:
 
 
 def _close_owned_fd(owner: list[int], fd: int) -> None:
-    previous_mask = signal.pthread_sigmask(
-        signal.SIG_BLOCK,
-        {signal.SIGALRM, signal.SIGINT},
-    )
-    errors: list[BaseException] = []
-    try:
-        if fd in owner:
-            try:
-                os.close(fd)
-            except OSError as error:
-                if error.errno != errno.EBADF:
-                    errors.append(error)
-            except BaseException as error:
-                errors.append(error)
-            else:
-                owner.remove(fd)
-            if fd in owner:
-                try:
-                    os.fstat(fd)
-                except OSError as error:
-                    if error.errno == errno.EBADF:
-                        owner.remove(fd)
-                    else:
-                        errors.append(error)
-                except BaseException as error:
-                    errors.append(error)
-    finally:
-        try:
-            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
-        except BaseException as error:
-            errors.append(error)
-    if errors:
-        raise errors[0]
+    _close_owned_members(owner, (fd,))
 
 
 def _close_owned_fds(owner: list[int]) -> None:
-    """Close every registered FD before restoring the caller's signal mask."""
-    errors: list[BaseException] = []
-    previous_mask: set[signal.Signals] | None = None
-    try:
+    """Attempt every registered FD before restoring the caller's mask."""
+    _close_owned_members(owner, tuple(reversed(tuple(owner))))
+
+
+class _RestrictedUmask:
+    """Install and restore a process umask with an armed outer guard."""
+
+    def __init__(self, value: int) -> None:
+        self.value = value
+        self.previous: int | None = None
+        self.active = False
+
+    def activate(self) -> None:
+        require(not self.active, "E_UMASK", "umask")
         previous_mask = signal.pthread_sigmask(
             signal.SIG_BLOCK,
             {signal.SIGALRM, signal.SIGINT},
         )
-    except BaseException as error:
-        errors.append(error)
-    seen: set[int] = set()
-    for fd in reversed(tuple(owner)):
-        if fd < 0 or fd in seen:
-            continue
-        seen.add(fd)
         try:
-            os.close(fd)
-        except OSError as error:
-            if error.errno != errno.EBADF:
-                errors.append(error)
-        except BaseException as error:
-            errors.append(error)
+            self.previous = os.umask(self.value)
+            self.active = True
         finally:
-            while fd in owner:
-                owner.remove(fd)
-    if previous_mask is not None:
-        try:
             signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+
+    def restore(self) -> None:
+        if not self.active:
+            return
+        errors: list[BaseException] = []
+        previous_mask: set[signal.Signals] | None = None
+        try:
+            previous_mask = signal.pthread_sigmask(
+                signal.SIG_BLOCK,
+                {signal.SIGALRM, signal.SIGINT},
+            )
         except BaseException as error:
             errors.append(error)
-    if errors:
-        raise errors[0]
+        try:
+            require(self.previous is not None, "E_UMASK", "umask")
+            os.umask(self.previous)
+            self.active = False
+        except BaseException as error:
+            errors.append(error)
+        if previous_mask is not None:
+            try:
+                signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+            except BaseException as error:
+                errors.append(error)
+        if errors:
+            raise errors[0]
 
 
 def load_readback_checker() -> types.ModuleType:
     flags = os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC
     flags |= O_NOFOLLOW
     owned: list[int] = []
-    fd = _open_to_owner(
-        owned,
-        lambda: os.open(READBACK_CHECKER_PATH, flags),
-    )
+    fd = -1
     try:
+        fd = _open_to_owner(
+            owned,
+            lambda: os.open(READBACK_CHECKER_PATH, flags),
+        )
         before = os.fstat(fd)
         require(
             stat.S_ISREG(before.st_mode)
@@ -794,9 +870,9 @@ class FrozenSnapshot:
     def close(self) -> None:
         if self.closed:
             return
-        self.closed = True
         _close_owned_fds(self.owned_fds)
         self.root_fd = -1
+        self.closed = True
 
 
 class ReadbackNamespace:
@@ -832,6 +908,8 @@ class ReadbackNamespace:
 
     def _temporary_names_absent(self) -> None:
         ephemeral: list[int] = []
+        terminal_error: ReadbackError | None = None
+        cleanup_error: BaseException | None = None
         try:
             parent = _open_directory_beneath(
                 self.root_fd,
@@ -839,19 +917,32 @@ class ReadbackNamespace:
                 "readback_namespace",
                 ephemeral,
             )
-            require(
-                not has_portable_prefix(
-                    os.listdir(parent),
-                    PERMIT.READBACK_TEMP_PREFIXES,
-                ),
-                "E_STALE_TEMP_NAMESPACE",
-                "readback_namespace",
-            )
+            if has_portable_prefix(
+                os.listdir(parent),
+                PERMIT.READBACK_TEMP_PREFIXES,
+            ):
+                terminal_error = ReadbackError(
+                    "E_STALE_TEMP_NAMESPACE",
+                    "readback_namespace",
+                    consumed=True,
+                    uncertain=True,
+                )
         finally:
-            _close_owned_fds(ephemeral)
+            try:
+                _close_owned_fds(ephemeral)
+            except BaseException as error:
+                cleanup_error = error
+        if terminal_error is not None:
+            if cleanup_error is not None:
+                raise terminal_error from cleanup_error
+            raise terminal_error
+        if cleanup_error is not None:
+            raise cleanup_error
 
     def namespace_state(self) -> str:
         ephemeral: list[int] = []
+        observed_state: str | None = None
+        cleanup_error: BaseException | None = None
         try:
             claim = _lexists_beneath(
                 self.root_fd,
@@ -881,19 +972,59 @@ class ReadbackNamespace:
                 os.listdir(parent),
                 PERMIT.READBACK_TEMP_PREFIXES,
             )
+            if stale:
+                observed_state = "stale_temporary_namespace"
+            elif not claim and not receipt and not manifest:
+                observed_state = "absent"
+            elif claim and not receipt and not manifest:
+                observed_state = "claim_only"
+            elif claim and receipt and not manifest:
+                observed_state = "receipt_only"
+            elif claim and receipt and manifest:
+                observed_state = "complete"
+            else:
+                observed_state = "inconsistent"
         finally:
-            _close_owned_fds(ephemeral)
-        if stale:
-            return "stale_temporary_namespace"
-        if not claim and not receipt and not manifest:
-            return "absent"
-        if claim and not receipt and not manifest:
-            return "claim_only"
-        if claim and receipt and not manifest:
-            return "receipt_only"
-        if claim and receipt and manifest:
-            return "complete"
-        return "inconsistent"
+            try:
+                _close_owned_fds(ephemeral)
+            except BaseException as error:
+                cleanup_error = error
+        if cleanup_error is not None:
+            if observed_state in {"claim_only", "complete"}:
+                raise ReadbackError(
+                    "E_CONSUMED",
+                    observed_state,
+                    consumed=True,
+                    uncertain=False,
+                ) from cleanup_error
+            if observed_state == "receipt_only":
+                raise ReadbackError(
+                    "E_RECEIPT_ONLY_OR_TERMINAL_UNCERTAIN",
+                    observed_state,
+                    consumed=True,
+                    uncertain=True,
+                ) from cleanup_error
+            if observed_state == "stale_temporary_namespace":
+                raise ReadbackError(
+                    "E_STALE_TEMP_NAMESPACE",
+                    observed_state,
+                    consumed=True,
+                    uncertain=True,
+                ) from cleanup_error
+            if observed_state == "inconsistent":
+                raise ReadbackError(
+                    "E_NAMESPACE_STATE_UNCERTAIN",
+                    observed_state,
+                    consumed=True,
+                    uncertain=True,
+                ) from cleanup_error
+            raise cleanup_error
+        require(
+            observed_state is not None,
+            "E_NAMESPACE_STATE_UNCERTAIN",
+            "readback_namespace",
+        )
+        return observed_state
 
     def preclaim_barrier(self) -> None:
         self._root_barrier()
@@ -1006,6 +1137,8 @@ class ReadbackNamespace:
         self._root_barrier()
         self._claim_barrier()
         ephemeral: list[int] = []
+        terminal_error: ReadbackError | None = None
+        cleanup_error: BaseException | None = None
         try:
             receipt_exists = _lexists_beneath(
                 self.root_fd,
@@ -1019,41 +1152,57 @@ class ReadbackNamespace:
                 "readback_namespace",
                 ephemeral,
             )
+            if receipt_exists is not receipt_required or manifest_exists:
+                terminal_error = ReadbackError(
+                    "E_OUTPUT_STATE",
+                    "readback_namespace",
+                    consumed=True,
+                    uncertain=True,
+                )
         finally:
-            _close_owned_fds(ephemeral)
-        require(
-            receipt_exists is receipt_required,
-            "E_OUTPUT_STATE",
-            "readback_namespace",
-        )
+            try:
+                _close_owned_fds(ephemeral)
+            except BaseException as error:
+                cleanup_error = error
+        if terminal_error is not None:
+            if cleanup_error is not None:
+                raise terminal_error from cleanup_error
+            raise terminal_error
+        if cleanup_error is not None:
+            raise cleanup_error
         if receipt_required:
-            require(
-                self.receipt is not None,
-                "E_OUTPUT_STATE",
-                "readback_namespace",
-            )
+            if self.receipt is None:
+                raise ReadbackError(
+                    "E_OUTPUT_STATE",
+                    "readback_namespace",
+                    consumed=True,
+                    uncertain=True,
+                )
             self.receipt.barrier()
         else:
-            require(
-                self.receipt is None,
+            if self.receipt is not None:
+                raise ReadbackError(
+                    "E_OUTPUT_STATE",
+                    "readback_namespace",
+                    consumed=True,
+                    uncertain=True,
+                )
+        if self.manifest is not None or manifest_exists:
+            raise ReadbackError(
                 "E_OUTPUT_STATE",
                 "readback_namespace",
+                consumed=True,
+                uncertain=True,
             )
-        require(
-            self.manifest is None
-            and not manifest_exists,
-            "E_OUTPUT_STATE",
-            "readback_namespace",
-        )
         self._temporary_names_absent()
         self._root_barrier()
 
     def close(self) -> None:
         if self.closed:
             return
-        self.closed = True
         _close_owned_fds(self.owned_fds)
         self.root_fd = -1
+        self.closed = True
 
 
 def decode_h1(value: str, phase: str) -> bytes:
@@ -2005,21 +2154,6 @@ def create_readback_claim(
     fd_owner: list[int] | None = None,
 ) -> tuple[dict[str, Any], int]:
     traversal_owner: list[int] = []
-    if retained_root_fd is None:
-        root_fd, _ = _open_root(
-            root.absolute(),
-            "claim",
-            traversal_owner,
-        )
-    else:
-        root_fd = retained_root_fd
-    target_parts = _safe_relative(PERMIT.READBACK_CLAIM_PATH, "claim")
-    parent = _open_directory_beneath(
-        root_fd,
-        "/".join(target_parts[:-1]),
-        "claim",
-        traversal_owner,
-    )
     claim = content_bound(
         {
             "documentType": "aetherlink.wave6-acquisition-readback-one-use-claim",
@@ -2036,11 +2170,33 @@ def create_readback_claim(
     )
     raw = canonical_bytes(claim)
     created = False
+    existing_claim_observed = False
     fd = -1
     claim_owner = [] if fd_owner is None else fd_owner
-    transferred_to_caller = False
+    success: tuple[dict[str, Any], int] | None = None
+
+    def mark_created(opened_fd: int) -> None:
+        nonlocal created, fd
+        created = True
+        fd = opened_fd
+
     try:
-        fd = _open_to_owner(
+        if retained_root_fd is None:
+            root_fd, _ = _open_root(
+                root.absolute(),
+                "claim",
+                traversal_owner,
+            )
+        else:
+            root_fd = retained_root_fd
+        target_parts = _safe_relative(PERMIT.READBACK_CLAIM_PATH, "claim")
+        parent = _open_directory_beneath(
+            root_fd,
+            "/".join(target_parts[:-1]),
+            "claim",
+            traversal_owner,
+        )
+        opened_fd = _open_to_owner(
             claim_owner,
             lambda: os.open(
                 target_parts[-1],
@@ -2052,11 +2208,12 @@ def create_readback_claim(
                 0o600,
                 dir_fd=parent,
             ),
+            mark_created,
         )
-        created = True
-        os.fchmod(fd, 0o600)
-        _write_all(fd, raw, "claim")
-        info = os.fstat(fd)
+        require(opened_fd == fd and created, "E_FD_OWNER", "claim")
+        os.fchmod(opened_fd, 0o600)
+        _write_all(opened_fd, raw, "claim")
+        info = os.fstat(opened_fd)
         require(
             stat.S_ISREG(info.st_mode)
             and info.st_nlink == 1
@@ -2065,7 +2222,7 @@ def create_readback_claim(
             "E_CLAIM",
             "claim",
         )
-        os.fsync(fd)
+        os.fsync(opened_fd)
         os.fsync(parent)
         result = {
             "path": PERMIT.READBACK_CLAIM_PATH,
@@ -2076,9 +2233,9 @@ def create_readback_claim(
             "linkCount": info.st_nlink,
             "contentSha256": claim["contentBinding"]["sha256"],
         }
-        transferred_to_caller = True
-        return result, fd
+        success = (result, opened_fd)
     except FileExistsError as error:
+        existing_claim_observed = True
         raise ReadbackError(
             "E_CONSUMED",
             "claim",
@@ -2096,12 +2253,40 @@ def create_readback_claim(
             uncertain=created,
         ) from cause
     finally:
-        if fd >= 0 and not transferred_to_caller:
+        cleanup_errors: list[BaseException] = []
+        try:
+            _close_owned_fds(traversal_owner)
+        except BaseException as error:
+            cleanup_errors.append(error)
+        if (success is None or cleanup_errors) and fd >= 0:
             try:
-                _close_owned_fd(claim_owner, fd)
-            except BaseException:
-                pass
-        _close_owned_fds(traversal_owner)
+                if fd in claim_owner:
+                    _close_owned_fd(claim_owner, fd)
+                else:
+                    orphaned_owner = [fd]
+                    _close_owned_fds(orphaned_owner)
+            except BaseException as error:
+                cleanup_errors.append(error)
+        if cleanup_errors:
+            if existing_claim_observed:
+                raise ReadbackError(
+                    "E_CONSUMED",
+                    "claim_cleanup",
+                    consumed=True,
+                    uncertain=False,
+                ) from cleanup_errors[0]
+            raise ReadbackError(
+                (
+                    "E_CLAIM_STATE_UNCERTAIN"
+                    if created
+                    else "E_CLAIM_NOT_CREATED"
+                ),
+                "claim",
+                consumed=created,
+                uncertain=created,
+            ) from cleanup_errors[0]
+    require(success is not None, "E_CLAIM", "claim")
+    return success
 
 
 def rename_no_replace(
@@ -2153,33 +2338,43 @@ def atomic_publish(
     )
     root_path = root.absolute()
     owned: list[int] = []
-    root_fd, root_before = _open_root(
-        root_path,
-        "publication",
-        owned,
-    )
-    parts = _safe_relative(path, "publication")
-    parent = _open_directory_beneath(
-        root_fd,
-        "/".join(parts[:-1]),
-        "publication",
-        owned,
-    )
-    target = parts[-1]
-    temporary = f".{target}.tmp-{secrets.token_hex(16)}"
+    root_fd = -1
+    parent = -1
+    target = ""
+    temporary = ""
     raw = canonical_bytes(payload)
     temporary_created = False
     published = False
     fd = -1
     local_hold: HeldFile | None = None
+
+    def mark_temporary_created(opened_fd: int) -> None:
+        nonlocal fd, temporary_created
+        fd = opened_fd
+        temporary_created = True
+
     try:
+        root_fd, root_before = _open_root(
+            root_path,
+            "publication",
+            owned,
+        )
+        parts = _safe_relative(path, "publication")
+        parent = _open_directory_beneath(
+            root_fd,
+            "/".join(parts[:-1]),
+            "publication",
+            owned,
+        )
+        target = parts[-1]
+        temporary = f".{target}.tmp-{secrets.token_hex(16)}"
         _root_barrier(root_path, root_fd, root_before, "publication")
         try:
             os.stat(target, dir_fd=parent, follow_symlinks=False)
             raise ReadbackError("E_OUTPUT_EXISTS", "publication")
         except FileNotFoundError:
             pass
-        fd = _open_to_owner(
+        opened_fd = _open_to_owner(
             owned,
             lambda: os.open(
                 temporary,
@@ -2191,11 +2386,16 @@ def atomic_publish(
                 0o600,
                 dir_fd=parent,
             ),
+            mark_temporary_created,
         )
-        temporary_created = True
-        os.fchmod(fd, 0o600)
-        _write_all(fd, raw, "publication")
-        info = os.fstat(fd)
+        require(
+            opened_fd == fd and temporary_created,
+            "E_FD_OWNER",
+            "publication",
+        )
+        os.fchmod(opened_fd, 0o600)
+        _write_all(opened_fd, raw, "publication")
+        info = os.fstat(opened_fd)
         require(
             stat.S_ISREG(info.st_mode)
             and info.st_nlink == 1
@@ -2205,11 +2405,11 @@ def atomic_publish(
             "publication",
         )
         require(
-            _read_fd(fd, len(raw), "publication") == raw,
+            _read_fd(opened_fd, len(raw), "publication") == raw,
             "E_WRITE",
             "publication",
         )
-        os.fsync(fd)
+        os.fsync(opened_fd)
         _root_barrier(root_path, root_fd, root_before, "publication")
         rename_fn(parent, temporary, parent, target)
         temporary_created = False
@@ -2256,18 +2456,30 @@ def atomic_publish(
             ) from error
         raise
     finally:
+        cleanup_errors: list[BaseException] = []
         if local_hold is not None:
             try:
                 local_hold.close()
-            except BaseException:
-                pass
-        if temporary_created:
+            except BaseException as error:
+                cleanup_errors.append(error)
+        if temporary_created and parent >= 0 and temporary:
             try:
                 os.unlink(temporary, dir_fd=parent)
                 os.fsync(parent)
-            except BaseException:
-                pass
-        _close_owned_fds(owned)
+            except BaseException as error:
+                cleanup_errors.append(error)
+        if fd >= 0 and fd not in owned:
+            try:
+                orphaned_owner = [fd]
+                _close_owned_fds(orphaned_owner)
+            except BaseException as error:
+                cleanup_errors.append(error)
+        try:
+            _close_owned_fds(owned)
+        except BaseException as error:
+            cleanup_errors.append(error)
+        if cleanup_errors:
+            raise cleanup_errors[0]
 
 
 def complete_pre_manifest_barrier(
@@ -2299,7 +2511,7 @@ def execute(
     snapshot_factory: Callable[[Path], FrozenSnapshot] = FrozenSnapshot,
     namespace_factory: Callable[[Path], ReadbackNamespace] = ReadbackNamespace,
 ) -> dict[str, Any]:
-    old_umask = os.umask(0o077)
+    umask_guard = _RestrictedUmask(0o077)
     claim_attempted = False
     claim_durable = False
     publication_attempted = False
@@ -2307,7 +2519,9 @@ def execute(
     snapshot: FrozenSnapshot | None = None
     namespace: ReadbackNamespace | None = None
     claim_creation_fd = -1
+    pending_error: ReadbackError | None = None
     try:
+        umask_guard.activate()
         try:
             package = preflight()
             readback_attempt_id = secrets.token_hex(16)
@@ -2479,36 +2693,40 @@ def execute(
             else:
                 original = ReadbackError("E_INTERNAL", "readback")
             if original.code == "E_CONSUMED":
+                pending_error = original
                 raise
             if publication_attempted or receipt_published:
-                raise ReadbackError(
+                pending_error = ReadbackError(
                     "E_RECEIPT_ONLY_OR_TERMINAL_UNCERTAIN",
                     "terminal_state",
                     consumed=True,
                     uncertain=True,
-                ) from error
-            if claim_attempted and not claim_durable:
+                )
+            elif claim_attempted and not claim_durable:
                 if original.code == "E_CLAIM_NOT_CREATED":
+                    pending_error = original
                     raise
-                raise ReadbackError(
+                pending_error = ReadbackError(
                     "E_CLAIM_STATE_UNCERTAIN",
                     "claim",
                     consumed=True,
                     uncertain=True,
-                ) from error
-            if original.uncertain:
-                raise ReadbackError(
+                )
+            elif original.uncertain:
+                pending_error = ReadbackError(
                     "E_CONSUMED_STATE_UNCERTAIN",
                     original.phase,
                     consumed=True,
                     uncertain=True,
-                ) from error
-            raise ReadbackError(
-                original.code,
-                original.phase,
-                consumed=claim_durable,
-                uncertain=False,
-            ) from error
+                )
+            else:
+                pending_error = ReadbackError(
+                    original.code,
+                    original.phase,
+                    consumed=claim_durable or original.consumed,
+                    uncertain=original.uncertain,
+                )
+            raise pending_error from error
         finally:
             cleanup_errors: list[BaseException] = []
             if claim_creation_fd >= 0:
@@ -2537,7 +2755,7 @@ def execute(
                 except BaseException as error:
                     cleanup_errors.append(error)
             try:
-                os.umask(old_umask)
+                umask_guard.restore()
             except BaseException as error:
                 cleanup_errors.append(error)
             if cleanup_errors:
@@ -2545,15 +2763,46 @@ def execute(
                     publication_attempted
                     or receipt_published
                     or (claim_attempted and not claim_durable)
+                    or (
+                        pending_error.uncertain
+                        if pending_error is not None
+                        else False
+                    )
                 )
+                pending_error = ReadbackError(
+                    "E_CLEANUP_STATE_UNCERTAIN",
+                    "cleanup",
+                    consumed=(
+                        claim_attempted
+                        or claim_durable
+                        or (
+                            pending_error.consumed
+                            if pending_error is not None
+                            else False
+                        )
+                    ),
+                    uncertain=terminal_uncertain,
+                )
+                raise pending_error from cleanup_errors[0]
+    finally:
+        if umask_guard.active:
+            try:
+                umask_guard.restore()
+            except BaseException as error:
                 raise ReadbackError(
                     "E_CLEANUP_STATE_UNCERTAIN",
                     "cleanup",
-                    consumed=claim_attempted or claim_durable,
-                    uncertain=terminal_uncertain,
-                ) from cleanup_errors[0]
-    finally:
-        pass
+                    consumed=(
+                        pending_error.consumed
+                        if pending_error is not None
+                        else False
+                    ),
+                    uncertain=(
+                        pending_error.uncertain
+                        if pending_error is not None
+                        else False
+                    ),
+                ) from error
 
 
 class Parser(argparse.ArgumentParser):

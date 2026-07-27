@@ -31,10 +31,14 @@ Ancestor or project-root namespace replacement observed at a barrier therefore
 fails closed. Every root-relative intermediate directory descriptor opened
 for the retained snapshot remains owned through verification and cleanup.
 `SIGALRM` and `SIGINT` are deferred only across the small local
-open-to-owner or close-cleanup transfer; validation, reading, writing, and
-fsync do not run under that deferral. Cleanup attempts every owned descriptor
-before restoring the caller's prior signal mask, and a restoration error is
-reported only after those close attempts. The
+open-to-owner, close-cleanup, or process-umask state transfer; validation,
+reading, writing, and fsync do not run under that deferral. An exclusive
+creation is recorded before owner-list registration, and a primary open result
+is not hidden by a later signal-mask restoration error. Cleanup independently
+attempts every owned descriptor before restoring the caller's prior signal
+mask, retries an observably failed close once, and retains ownership when an FD
+is still observably open. Object cleanup therefore remains retryable instead of
+discarding a live descriptor. The
 durable readback claim is created with an `O_RDWR` descriptor that remains
 open; the current claim name is reopened and required to match that original
 creation inode before any frozen input is opened. The original claim
@@ -93,6 +97,9 @@ The acquisition staging prefix uses the same portable-name comparison.
 Claim-only, receipt-only, complete, inconsistent, and stale-temporary
 namespaces are distinct consumed-state observations; receipt-only and
 inconsistent publication states remain terminal uncertainty.
+Once an existing claim, receipt, manifest, or reserved temporary output is
+observed, a simultaneous cleanup or process-state restoration failure cannot
+downgrade that consumed or uncertain classification to a not-consumed result.
 
 An ordinary verification failure publishes neither success output. Every
 failure after a durable readback claim is consumed and never retryable, but a

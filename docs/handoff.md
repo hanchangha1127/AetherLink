@@ -1,6 +1,6 @@
 # AetherLink Session Handoff
 
-Last updated: 2026-07-25 KST.
+Last updated: 2026-07-27 KST.
 
 This is the canonical first document for the next Codex session. Read it before
 editing, staging, rebuilding, or making claims from older QA logs. It describes
@@ -54,7 +54,7 @@ not repository-owner identity proof.
   older chronological entries in `docs/progress.md`, `docs/qa-evidence.md`, and
   `docs/roadmap.md`.
 - This handoff and the canonical section at the top of `docs/roadmap.md` carry
-  the current 2026-07-25 G2 summary. `docs/progress.md` and
+  the current 2026-07-27 G2 summary. `docs/progress.md` and
   `docs/qa-evidence.md` retain their dated execution snapshots. Sections
   explicitly labeled historical or superseded record what was true at that
   checkpoint; they do not override this handoff.
@@ -398,13 +398,645 @@ the exact lexical 36-request `.mod`-then-`.zip` contract has SHA-256
 `d1ea9ec1fab702b1bf405f13e1d7aaeb9a5354ff7f98a0d916870def124372a1`.
 The decision accounts separately for 400 graph-lineage archive opens and 164
 identity-witness opens, 564 total. Its 10/10 candidate and 12/12 decision suites
-pass without acquisition. The next bounded action is the separate one-use
-Wave6 36-resource acquisition permit, checker, runner, and tests.
-Extraction, source loading/execution, compilation, runtime/product network,
-Git write, device, and deployment remain closed.
-Repository authentication, account login, owner proof, credential, key,
-signature, token, and password are outside this workflow. No user action is
-requested or required.
+pass without acquisition at that checkpoint. The separate
+[Wave6 one-use acquisition permit](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave6-execution-permit-v1.json)
+was later consumed exactly once. Acquisition attempt
+`5e0828c2e5dc1ce7ef2a06dd235d5076` retained all 36 resources
+(18 `.mod`, 18 ZIP; 36,115,415 bytes) without extraction, loading, execution,
+or compilation. The separate
+[Wave6 retained-snapshot readback](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave6-readback-v1.json)
+independently verified those retained bytes twice before its
+[manifest](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave6-readback-manifest-v1.json)
+was written last. Readback attempt
+`7fc50276e880013e1ace73920397ba3f` produced receipt raw SHA-256
+`6234799bbfbc608bdb5938adb36eaeaa85b5fb111b927873e825ed63947349e7`
+and manifest raw SHA-256
+`fe98535d35f7059a18e31d73a2e50fefefe92952bc4eece49623decea2068227`.
+The separate read-only combined-v5 checker now reconstructs the exact 199 held
+inputs (root ZIP, 99 `.mod`, 99 dependency ZIP) twice. Its input-set SHA-256 is
+`06acb9e5395898abb1827761436b8c4b5d983d87d242eaf20622e352d0180c63`,
+graph SHA-256 is
+`4b424c41fbc8fa09c5bc9f91a880f14309cb409785991cfb872bb2475d94e8fe`,
+and it derives `fixedPointReached=false` with an exact 15-tuple Wave7 frontier
+whose canonical SHA-256 is
+`1c226bfc244970e071ad2bf09d6e356cd9d42e7b542cd0cf1582fc2fdc4d9b8a`.
+Its focused suite passes 25/25. The trusted pinned normal path records zero
+file writes and explicitly does not claim an OS syscall sandbox. The separate
+[Wave7 identity/acquisition decision v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave7-v1.json)
+and
+[reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave7-v1.md)
+now resolve all 15 conflict-free H1 pairs from 18 parent declarations, 41
+`go.mod` witnesses, and 20 module-ZIP witnesses. Every selector remains false.
+The exact 30-request contract has canonical SHA-256
+`8fbabe69d049992e28c687852686ae0ad28adce690443d61e335c903b87d0f48`;
+decision content SHA-256 is
+`dc771927a4cf8b6a8713f42c0716e98f242fdf7c277cddf0dadfe666bb02614f`,
+and raw SHA-256 is
+`4214aa1b0eb624ca17d3579e74be0cbb8d897027689e8dd1340d073601e28022`.
+The optimized suite passes 13/13 in 358.677 seconds with one full
+reconstruction, and an independent GPT-5.6 Sol static re-audit reports no
+P0-P3 finding. Identity is acquisition-ready, but the decision grants no
+acquisition. The separate
+[Wave7 one-use acquisition permit](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave7-execution-permit-v1.json)
+and
+[reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave7-execution-permit-v1.md)
+were prepared at `status=authorized_not_consumed`. Permit raw SHA-256 is
+`1d15cb97e1ac04b4a99258ed876a0b84f71dcb9cc588f9bce5c9aaa1ba0b7a60`;
+content SHA-256 is
+`62339ae44907c1c28174fa55b0e5f99c95a20e10181148d30d8702288f8d940a`.
+The checker passes 13/13 and the offline fake-I/O runner suite passes 36/36.
+Independent GPT-5.6 Sol re-audit reports no P0-P3 finding after four
+claim/teardown uncertainty findings were corrected. Acquisition attempt
+`c15f4504ae880326144eca93dc91e37b` then retained all 30 resources
+(15 `.mod`, 15 ZIP; 32,352,251 bytes) without extraction, loading, execution,
+or compilation. Its receipt and manifest raw SHA-256 values are
+`bd7f2db9500c8f8c0dc67737804d1a0ab62f722f1dacfc4b92fad48414b8a778`
+and
+`0af9c0adaaa5fb2bc71fed14f457be76b014fcc234ca0805a63d0bc31da9a559`.
+The separate
+[Wave7 readback permit](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave7-readback-execution-permit-v1.json)
+binds an exact 48-file frozen snapshot. Its checker and recorder suites pass
+16/16 and 45/45, and independent GPT-5.6 Sol audit reports no P0-P3 finding.
+Offline readback attempt `1839537589935de087068a5a7d5c7e14` verified all 30
+resources twice, completed three retained-FD pre-manifest barriers, and wrote
+its
+[manifest](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave7-readback-manifest-v1.json)
+last. The
+[receipt](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave7-readback-v1.json)
+and manifest raw SHA-256 values are
+`2153ef62af2dabf89467e481a35c2f50467fca37d422e70d549b9fc6d3377ba3`
+and
+`cb1e22055ccfde532f85842d7fd485f5b661ad4ae152f34f6247affc621a1482`.
+Completion applies to the retained snapshot. Combined-v6 then holds all 229
+exact source inputs (root ZIP, 114 `.mod`, 114 dependency ZIP), 45 terminal
+controls, and one auxiliary Wave7 evidence file. It reconstructs the graph
+twice and derives `fixedPointReached=false` with an exact 14-tuple Wave8
+frontier. The combined input-set SHA-256 is
+`f7ad0b43d571da61edd4941f8e504d54d014b01f3395aeca8d0d10b9b3c22349`;
+the graph SHA-256 is
+`3648bdf037e316e69e155615edd5748c2bb653238579216ddd8b8dce4beb9f09`;
+the frontier canonical SHA-256 is
+`d3c3788d6a1144bf04ea2c68e6aa4b9fdd17859bc625e2c2c51019bb3c61ff92`;
+and candidate content SHA-256 is
+`b33ef7a10de32dc99cea1dbbbcab1dac3a549eb466ef80b0229d2a0381ab9052`.
+The final focused suite passes 25/25 in 514.493 seconds, and independent
+GPT-5.6 Sol audit reports no P0-P3 finding. Its trusted pinned path records 230
+direct plus 600 inherited archive opens, ten total full-source
+reconstructions, and zero extraction/load/execution/compile/network/file-write
+operations. The separate
+[Wave8 identity/acquisition decision v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave8-v1.json)
+and
+[reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave8-v1.md)
+then resolve all 14 exact version-specific tuples from 14 parent declarations,
+93 `.mod` H1 witnesses, and 15 module-ZIP H1 witnesses. No tuple is blocked or
+conflicting. The compact identity SHA-256 is
+`c6aa1a974ad09f11927c103c7f2b63df0835d09b41d0dac9f6349d46d377a388`;
+the canonical 28-request contract SHA-256 is
+`b0f0f887864ddc4cf3ab15319a9e89dbea8c84087fa3d0e374a0332240336ddc`;
+the decision content and raw SHA-256 values are
+`1e1d62f03fe3137a88aa9413be8310bf7260f65a4825a09baab9a848ce6969da`
+and
+`45236a2ea42a4a3af59e60d27ed2f09cd5d191e34a6db992a9d81cb49316297e`.
+The focused suite passes 18/18 in 512.113 seconds, and independent GPT-5.6 Sol
+audit reports no P0-P3 finding. All decision selectors and acquisition
+authorities are false. The separate
+[Wave8 one-use acquisition permit v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave8-execution-permit-v1.json)
+and
+[reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave8-execution-permit-v1.md)
+were prepared at `status=authorized_not_consumed` and then consumed exactly
+once. The permit binds exactly 14 tuples and 28 ordered resources, resource
+canonical SHA-256
+`ee32b0512643b0e767f5b1e96625352fc47ea6ae7aea5d7366adfe98f4db8136`,
+content SHA-256
+`527a4558d069b31f92256926ea90e05c8353a33f65128b131d1c960614df925b`,
+and raw SHA-256
+`8595241898ebc14d563f5b03c3a4b46afdd995207bc1597d86c861e5c37bcb4c`.
+The checker passes 15/15 and the network-free mock/local runner suite passes
+44/44; final independent GPT-5.6 Sol re-audit reports no P0-P3 finding. The
+acquisition attempt `6d8ea4473126c853b439c56a895f9c28` retained all 28
+resources: 1,730 `.mod` bytes and 35,195,229 ZIP bytes, 35,196,959 bytes
+total, across 4,907 ZIP entries and 144,867,307 uncompressed ZIP bytes. The
+accepted-resource hash-set SHA-256 is
+`7642f0b4dea8fee8eb92f573a3a4d948aa46a8736be70857097ce3b83af2eb38`;
+the acquisition receipt and manifest raw SHA-256 values are
+`77ca07dadeddd5578b08c1aab7b746b50f6d2e4f0ee83d0a73baa3cc4cb6ec68`
+and
+`5c440c55c3534c0d8b537fbbc0843b4e053f5e0c7397a568638dd043619abebe`.
+The separate
+[readback permit](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave8-readback-execution-permit-v1.json),
+[reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave8-readback-execution-permit-v1.md),
+[receipt](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave8-readback-v1.json),
+and
+[manifest](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave8-readback-manifest-v1.json)
+record readback attempt `8618087527c005b5d19c8f902ec33557`. The 16/16 permit
+and 45/45 recorder suites pass. The recorder independently verified the exact
+46-file frozen snapshot twice, completed all three retained-FD publication
+barriers, and wrote the manifest last. Readback claim, receipt, and manifest
+raw SHA-256 values are
+`aa696de4edaa8aad7e8a256dd0900680b42e3c0b6d2f877623461f6fe2bf5f6a`,
+`b61738fe4ffae1b4aec7ee7fd8f7a186962cbbebf8911afd7d1fd0e94f0a5fce`,
+and
+`79f844b647915661b0b36fd5fa333591327ad934d6589c0fc98c912e7660d62f`.
+Combined-v7 then holds all 257 exact source inputs (root ZIP, 128 `.mod`, 128
+dependency ZIP), 52 terminal controls, the acquisition claim, evidence, and
+readback claim, plus six direct tool inputs. It reconstructs the graph twice
+and derives `fixedPointReached=false` with an exact ten-tuple Wave9 frontier.
+The input-set, graph, frontier, and candidate content SHA-256 values are
+`d389c84ae3b6d2d3d7dbb38d7003711972a75db3a558b9d6e0d79856249ef528`,
+`c7889fbf06a01e08ba75150b85bb2cb2860ea71ce205cead432cf0a37e0d89b9`,
+`03058e3aea23aca0c6208dd0023361f90421d394272f212d80bf61d587baff4e`,
+and
+`c71188f8d648a0f020a164002644f825e018f4c01b56d90e57011e05cc2e5202`.
+The checker raw and normalized SHA-256 values are
+`7264d85e1948bc8f86e8238192663706e7bf7472153d37fe812bd118620e99c7`
+and
+`cf4fd9d25efe04c2ecb3eea882bb24d6c40b02f2f258c4ab01d824d1373d1c02`.
+Its trusted read-only path records 258 direct plus 830 inherited archive
+opens, twelve total full-source reconstructions, and zero extraction,
+load/execution, compile, subprocess, network, or file-write operations. The
+strengthened focused suite passes 28/28 in 716.223 seconds, and the final
+independent GPT-5.6 Sol re-audit reports no P0-P3 finding. Combined-v7
+live-checks the seven Wave8 terminal files and exact final/accepted inventories
+before and after reconstruction; the 46-file readback set is described only as
+a historical descriptor-set binding, not as continuous current-path identity
+after the last barrier.
+The separate read-only
+[Wave9 identity/acquisition decision](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave9-v1.json)
+then reopens and reads all 257 inputs twice and reproduces the identity scan
+twice. All ten exact frontier tuples are identity-complete, with 11 parent
+declarations, 73 `go.mod` H1 witnesses, 11 module-ZIP H1 witnesses, zero
+blocked/conflicting identity, compact identity SHA-256
+`db31bdd4d1ae0c97ba88094502f7c0dc5e0f554e72c5f68503d917005f762753`,
+and exact 20-request SHA-256
+`e3922164eda6657d447f1b75ff49268265338efe35440dad39a237d1ddf643bc`.
+The decision raw/content SHA-256 values are
+`21ca43d44a67aec62b65a86fa44c43726eaa81fa277e07550f105e8c3b33bca8`
+and
+`340966e22b9759e2c1abd106e0cd9d9e9afa47b89ae3bb3929bfa6302dda18ae`.
+The disk checker passes, and the focused suite passes 19/19 in 890.601
+seconds. The clean namespace result is explicitly point-in-time only; every
+selector and acquisition authority remains false.
+The separate
+[Wave9 one-use acquisition permit](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave9-execution-permit-v1.json)
+and [reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave9-execution-permit-v1.md)
+now bind exactly ten tuples and twenty ordered public-proxy resources. The
+normalized resource projection SHA-256 is
+`8758566447b9300880837d7316cf6fac319f50ec90549cb41aa36600ef2171f9`;
+the permit raw/content SHA-256 values are
+`026c270af575655245042998cdfae15478ac1630d5f7545ed33f66822c9c2ff5`
+and
+`14ac147494887a6019d8e5f66a1af2f8d9e27872a1b6560122e3bca2ff557a43`.
+The disk checker passes, as do 16/16 checker tests and 44/44 injected,
+network-free runner tests. The permit was consumed exactly once. Acquisition
+attempt `df64a4816a083806020580efe953b9a7` retained all twenty resources
+(ten `.mod`, ten ZIP; 16,285,940 bytes) without extraction, source
+loading/execution, or compilation. Its claim, receipt, and manifest raw
+SHA-256 values are
+`84957554fe937841165f38a2418613e4e740082bea4f55538b21324dfe6d45f4`,
+`55a989da9058e57fb44432e29299a3e6025f78b90e1bd011d5eb8e2141aee33c`,
+and
+`3acb2c48c4ba1dbc701896188f166026133e1860c4abfe58078e145574ba6514`.
+The separate
+[Wave9 readback permit](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave9-readback-execution-permit-v1.json),
+[reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave9-readback-execution-permit-v1.md),
+[receipt](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave9-readback-v1.json),
+and
+[manifest](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave9-readback-manifest-v1.json)
+bind the exact 38-file retained snapshot. The readback permit raw/content
+SHA-256 values are
+`e493bfb7befa21cba3380a0c3b7147375eaa18688c1dbed78cd2e22f3c05b3eb`
+and
+`3c4d68ff4f5d7c7d456eeafcc495e17b3662420f75a7023c3fe8a78a84de349c`.
+Its 16/16 checker and 45/45 recorder suites pass, and two independent
+GPT-5.6 Sol pre-execution audits found no P0-P3 issue. Offline readback attempt
+`2d61a0483984e9a2f77665dd3c624cb2` verified all twenty resources twice,
+completed all three retained-FD publication barriers, and wrote the manifest
+last. The readback claim, receipt, and manifest raw SHA-256 values are
+`af0dab21e05292511bb105545750a61048f9d4b23e7ec7b9e7e1de5f1e7e41a7`,
+`0e1816a43e2b7d8210dd90fb7349ea63637abbe830da0badc81105a03f0e439f`,
+and
+`7cd427780a29dc85b6ae59188c7ee2601939dbdca0393362824a2509f5878b7e`.
+An independent byte readback revalidated canonical JSON, content bindings,
+cross-file raw hashes, exact counts, and zero-network/zero-authentication
+counters. Completion applies to the retained snapshot at the final
+pre-manifest barrier; it does not claim continuous current-path identity.
+Combined-v8 now holds all 277 exact source inputs (root ZIP, 138 `.mod`, 138
+dependency ZIP), 59 terminal controls, three Wave9 auxiliaries, and seven
+direct tool inputs. It reconstructs the graph twice and derives
+`fixedPointReached=false` with an exact eleven-tuple Wave10 frontier. The
+input-set, graph, frontier, and candidate content SHA-256 values are
+`030743c3959a6e7466385e9f89255fcb03d65576676a1e5cd7e5e2929e9f6339`,
+`721d045a10cdf015e865a84db7026115ac63462217dbb5349504fed9f1bae7b7`,
+`780501bca37fbeb953590004ca7e5aad7f206083f749b920e2a9842b63675f82`,
+and
+`f9f683d3afbe65a77626577428c0f9ce94219e39529d0c5811b49172c51e3b37`.
+The checker raw and normalized SHA-256 values are
+`798a055a9a4c3957c0edd75ecbad35f0cfa9f17bf39e63cd262876dcb6103e32`
+and
+`cfd83cdd00b6daee857cbff915ec48fd78390bbf06098ccab963a54e8748ba4b`.
+It records 278 direct plus 1,088 inherited archive opens, fourteen total
+full-source reconstructions, four exact pinned legacy-build compatibility
+applications, and zero extraction, load/execution, compile, subprocess,
+network, or file-write operations. V7 test bytes are explicitly historical
+metadata rather than a live-held V8 tool input. The checker exits zero; the
+full suite passes 29/29 in 969.215 seconds, and the final audit assertions pass
+AST, 23/23 fast checks, and direct test 29. Final independent GPT-5.6 Sol audit
+reports no P0-P3 finding.
+The separately bound read-only Wave10 identity/acquisition decision is now
+complete. It reopened the 277 exact source bindings, scanned 139 archives twice,
+and resolved all eleven frontier identities: one graph-selected
+`golang.org/x/xerrors` tuple plus ten non-selected version vertices. The two
+scans reproduced 15 parent declarations, 107 `go.mod` H1 witnesses, and 15
+module-ZIP H1 witnesses with eleven complete pairs and zero blocked or
+conflicting identities. The exact 22-request set is bound at SHA-256
+`cf6a97651565b55bb714a713e66e6a452f7132973ce21ced254bd0d728d12a89`;
+the decision content and raw SHA-256 values are
+`d0bfdd7247584e116656ca4efd560e893814241e0b17be96ba0cb55151b9150e`
+and
+`d1c23056487d88b92f1f2fd105d219abd029079590b379f7a671317b4158b6eb`.
+The checker raw/normalized, tests raw, and reader raw SHA-256 values are
+`e7c3aabac84dd14f33b77b777730eb95bcd4160b6886645698ccad9060defebc`,
+`165a4ce6fb946866811846e2fc6a999be646f2e1d2a52bf66dd1450a367510da`,
+`9336e06a6fde88ad382a0cd54176d3cf3807c3a51c215769659c4fb7e199b9a4`,
+and
+`700a0ae5d4067806cfbad2f8efd6439f272c1d02e5311da7e60d153cf2d85caa`.
+It records fourteen total source reconstructions, 1,366 graph archive opens,
+278 identity-witness archive opens, and 1,644 overall archive opens, with zero
+authentication, network, extraction, source load/compile/execution, subprocess,
+or file-write operations.
+The disk checker exits zero and the focused suite passes 21/21 in 922.040
+seconds. The separate one-use 22-resource Wave10 source-acquisition permit
+package passed its checker and offline runner gates. Its permit JSON
+raw/content SHA-256 values are
+`841d30e43ce839662baab07d0f47f39cfe9c52d2b4d3757e2066a128452a6c93`
+and
+`33edc56dcb497f9fb94d54ef1d0c07f3ff18fe04cdbaca1ff0bffd81169eabfa`;
+the checker, checker-test, runner, runner-test, and reader raw SHA-256 values
+are
+`fe39b88609bbca78461bf7db416cb311143371d68ebab176703bbc2c7a81eaec`,
+`fe4d7372b82f9fd4e50529ab4a17076ed3787ec2f663512476b846de6f6e0c3c`,
+`5395afdaff0d928e786d3e7fb50cea46bf83dd78e57865196813ca1d080546b3`,
+`5aa7f30a6debda432577227e86f0b933b7d668732141d78d3cf9c0a150bad747`,
+and
+`25b5a7cee6b0c9b4ddd633d39ed000b03a85a795b74770ecf0b28e08c4884074`.
+The checker and offline runner suites pass 16/16 and 44/44, and two independent
+GPT-5.6 Sol audits report no P0-P3 finding. Acquisition attempt
+`ffe70ee4562fcfc9e0fd6c9c4e136bd9` consumed that permit exactly once and
+retained all 22 resources (11 `.mod`, 11 ZIP; 27,773,526 bytes), including
+4,872 ZIP entries and 108,563,141 uncompressed bytes, without extraction,
+source load/execution, or compilation. The acquisition claim, evidence,
+receipt, and manifest raw SHA-256 values are
+`5260f5d7e7473013871573717848a3e8eae868a47ab2bfe538340d681ec4a6de`,
+`0b3700d12d11d334e91c95dfd561d43aa8827294ab9caee0b21258ded48cf9de`,
+`49f4aab3f71e52631aa48ac34ba7ee2a1ef3613814b06e87095ef75c3adaa1a1`,
+and
+`3f1f178d3bd48b3b8d8792ae1be57716aacd7cba16f526afccfca3d4b998643c`.
+
+The separate Wave10 readback permit raw/content SHA-256 values are
+`361fa5cc18fa167f9ebfd880a4cc1d7a0f6512a99a68712ebd85cc3de0dcbaee`
+and
+`7dd8a8cb7187f6d199da6c9b13173b6669a92ae3690dca2f987349b50cc13c8c`;
+its reader, checker, checker-test, recorder, and recorder-test raw SHA-256
+values are
+`c2da54eeba369acef1a755bca756c4cb5aae99f5fad69a561209633f66e24a6a`,
+`b118273738520e78c669a7f07a4639a94147134af6c9ffaffa4ac441e9e7cfd0`,
+`70aab8c0489215dd5f7da6634be3b57e19f2a5019df609b5fc628c1264f352c2`,
+`bbc40c85a77b94f3615f803dcb672eba825ba0ee4ce7b4d4159943d04c7cdb24`,
+and
+`a1abe031ad2c06c5f8428702356c06ef39556b8157e02403842bae4adac2ecf9`.
+The checker and recorder suites pass 17/17 and 49/49, and two independent
+GPT-5.6 Sol exact-byte audits report no P0-P3 finding. Offline readback attempt
+`e74e030f7f5ef33589d7895e1b28b3b1` verified the retained resources twice,
+completed all three pre-manifest retained-FD barriers, and wrote the manifest
+last. The readback claim, receipt, and manifest are mode `0600` with raw
+SHA-256 values
+`5eaed52abe8fc9c1de5ceba356d37057b470ada00048b3f7cd5048003f82ef0f`,
+`056b0b2d9bbdc19702f8400451ff5329ca7eaceff4613bba1dbfd34e93f21224`,
+and
+`66eb30a0d1f943b0718ee2b14a3cdaee6fae5127e796569c16a55f14ade41762`.
+An independent raw-byte readback revalidated all three canonical JSON/content
+bindings, their cross-pins, and all 22 accepted resource hashes and byte
+counts. Both one-use actions are consumed and cannot be retried. Completion
+applies to the retained snapshot at the last pre-manifest barrier; it does not
+claim continuous current-path identity through manifest publication.
+Runtime/product network, extraction, source load/execution/compile, Git,
+device operation, release/product publication, and deployment remain closed.
+Repository authentication, account login, owner proof, credentials, keys,
+signatures, tokens, passwords, and user action are outside this workflow and
+were neither requested nor required.
+
+The read-only combined-v9 successor is now complete. It held the exact 299
+source inputs (root ZIP, 149 `.mod`, 149 dependency ZIP), 66 terminal controls,
+all three Wave10 acquisition/evidence/readback auxiliaries, and eight direct
+tool inputs. It reconstructed the graph twice and derived
+`fixedPointReached=false` with an exact nine-tuple Wave11 frontier. The combined
+input-set, graph, frontier, candidate-content, and compact-source-binding
+SHA-256 values are
+`5a08d28573b68ddd031eff34a8b6afad8f7cd9e01966f4516c22a410bbb51b71`,
+`4367fc6c4c5efb69f948d8e040c2cfa496345102631719692d31feabb794a6b5`,
+`171af951e3a67405b62ddceface1341bb6f64b08f370d3d216ede541bd011f06`,
+`9c9e995f853a8dbbc07d55d41ce1c5660cb616d879b3565803e13b6aaf4532ba`,
+and
+`2455ab16e4c1dd6a68127c38f25d49275d9ef955d4d12ad711d644f0d745839f`.
+The checker raw/normalized and tests raw SHA-256 values are
+`c0f098cf0a047c4d1aca03f5b7f16f327306b56ed8e656d67afe32503eb117da`,
+`b4cdbfd385e0606fa2ca37017983bd80b6856dd69dfafb46df6579e76c618684`,
+and
+`fca6a0ca437356185d287816bcfaf5e110794207b3413addf95e9eb24038c217`.
+The checker records sixteen total source reconstructions, 300 direct plus 1,366
+inherited archive opens, 32 graph-algorithm invocations, eight hardened-module
+checks, and eight provider loads. Extraction, source loading/execution,
+compilation, subprocess, product/runtime network, and file-write counters all
+remain zero. The exact Wave11 frontier is `golang.org/x/crypto` at
+`v0.0.0-20190308221718-c2843e01d9a2`; `golang.org/x/mod` at `v0.27.0`;
+`golang.org/x/net` at `v0.43.0`; `golang.org/x/sync` at `v0.16.0`;
+`golang.org/x/sys` at `v0.0.0-20190215142949-d0b11bdaac8a`,
+`v0.0.0-20201119102817-f84b799fce68`, and `v0.35.0`;
+`golang.org/x/telemetry` at
+`v0.0.0-20250807160809-1a19826ec488`; and `golang.org/x/text` at `v0.3.0`.
+Every row has `selectedByGraphAlgorithm=false`,
+`acquisitionAuthorized=false`, and `requiresSeparateWaveDecision=true`. The
+checker exits zero, and the exact final suite passes 21/21 in 1,187.320 seconds.
+Two independent GPT-5.6 Sol exact-byte audits report no P0-P3 finding. At that
+checkpoint, the next gate was a separately versioned, read-only Wave11
+identity/acquisition decision; it granted no acquisition, extraction,
+compilation, network, authentication, Git-write, device, or user-action
+authority.
+
+The separate read-only
+[Wave11 identity/acquisition decision v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave11-v1.json)
+and
+[reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave11-v1.md)
+are now complete. The checker re-executed the exact pinned combined-v9
+candidate, held all 299 source inputs, and reproduced the identity scan twice.
+All nine exact frontier identities are complete and conflict-free, with zero
+graph-selected rows, 12 parent declarations, 68 `go.mod` H1 witnesses, 13
+module-ZIP H1 witnesses, zero blocked tuples, and zero conflicts. The compact
+identity and full-witness SHA-256 values are
+`8e6e8473c3938f40dbbffb090c26a73bf965c247df33c8ead5c04341b74adbc4`
+and
+`ea353c9595bbe020bd908347b9576bc7e8c820047735e768cc2d7ac37dc2713e`.
+The exact 18-request structural contract has SHA-256
+`bbde21b5f7a523bb6cddf78fbbbfdce46f8bcf61d60ebcec72a80d52dda50ba8`;
+every request keeps authentication, network, and acquisition authority false.
+The decision raw/content SHA-256 values are
+`e1f3a82025c711694cb6551a53407aa1164493396a65f383eacf95dbf90b881a`
+and
+`1bdb93f69c6a44d977a701dab83ea847a5ff473bb18e41bf093ed45bc4c1647f`.
+The checker raw/normalized, tests raw, reader raw, and normalized full-AST
+SHA-256 values are
+`d73fa27a15a2936e21bdc1dfb12ad83c0f7b4b2399a67c637e84626170698f16`,
+`5b4cf2878c2f659815876965bd8ff5aefe7853e01180103854455ee06faabe4f`,
+`b124eb04e26faa66ab9a194ae945583e8eedf3f4788fa23122f50e86b46a35cc`,
+`a153ab49d1d6e2c0f99564fd49704b9d4000ba686b076e1e19ce7a68413c8c74`,
+and
+`daf9ed7b36710a442a86b5a12e7d98ca64446d106d483f1437f8a23d5215af8f`.
+The exact final suite passes 25/25 in 1,157.225 seconds, and three independent
+GPT-5.6 Sol final-byte audits report no P0-P3 finding. The separately bound
+Wave11 acquisition checker/runner suites then passed 17/17 and 46/46.
+Acquisition attempt `ac18b8fda0a80a132510efd5dd17d5b7` consumed its permit
+once and retained all 18 exact resources (9 `.mod`, 9 ZIP; 16,363,894 bytes),
+including 3,329 ZIP entries and 64,428,507 uncompressed bytes, without
+extraction, source load/execution, or compilation. The acquisition claim,
+evidence, receipt, and manifest raw SHA-256 values are
+`a41663bd827b8f07e0e04e887b21a7306c0ba286396e43d854ea3f2369a3e985`,
+`c4194219b35723fb61ee41fca23a10ffe5f2c18f01f82fb70856a404019fb797`,
+`0c35d330476362fdaba23192229d8aa0fa096c0f47fddb39955f8976db6115a8`,
+and
+`ac247bed91f7cbe50c90d8a640b885ca1adaa2888fa8447f6ea0baeb4a046a15`.
+
+The separately bound readback checker/recorder suites pass 17/17 and 50/50,
+and three final GPT-5.6 Sol audits report no P0-P3 finding. Offline readback
+attempt `9b4dac65f66ce9e5d53dcd8edaf4d1d4` verified the exact 36-file
+retained snapshot twice, completed all three retained-FD pre-manifest barriers,
+and wrote the manifest last. Its claim, receipt, and manifest raw SHA-256
+values are
+`752c0fdc006688a4c22dc26f54be1c9bb4498e9a94f196217aebfaff8e61dc13`,
+`f89904b359aed770e89ed8de25b775d6b920d7eef3d32bdc464a486a862cc5ca`,
+and
+`0bda6e5da9609ddd375e20a6692a4cec46aaf930acee4861c5168efde1f18c0e`.
+An independent raw-byte process revalidated all canonical JSON/content
+bindings, cross-pins, and 18 resource hashes and byte counts. Both one-use
+actions are consumed and cannot be retried.
+
+The separately versioned read-only
+[combined-v10 checker](../script/check_p2p_nat_g2_pion_combined_fixed_point_v10.py)
+is now complete. It held 317 exact source inputs (root ZIP, 158 `.mod`, 158
+dependency ZIP), 73 terminal controls, three auxiliaries, nine direct tool
+inputs, and eleven transitive tool paths. Two complete reconstructions covered
+159 archives, 59,494 entries, and 1,098,221,637 uncompressed bytes. The input,
+compact source-binding, graph, frontier, and candidate-content SHA-256 values
+are
+`f946c625334ac8cf42d42c9f45f0f051eb7f89fb9ecf5dfc576114b1cba990be`,
+`067808934056712884a75ea669d61189bb5d5d722d2a961c8b8c5d25345bb75c`,
+`77813f467c7452290f35c4ecaa6a1041a0988d563ea37660bb6cc902bb95cdc4`,
+`8b84bd2fd9201d33f4424b9dd1018aee7f8470a87306c2ba23eba0c8b6d4ff05`,
+and
+`d7feddd3b291756c36359b013ea05aaa2f25cb83605daaeb493c0395ff9cc4f7`.
+The ordered frontier is `golang.org/x/crypto@v0.41.0`,
+`golang.org/x/term@v0.34.0`, `golang.org/x/text@v0.28.0`, and
+`golang.org/x/tools@v0.35.0`. Every row remains non-selected and
+non-authorizing, so `fixedPointReached=false` and the route is
+`next_wave_required`.
+
+The checker raw/normalized and current
+[test](../script/test_p2p_nat_g2_pion_combined_fixed_point_v10.py) raw SHA-256
+values are
+`11d0c2743f92d59a8417870db279edeb6a1b6c0a1af9db577e5cec4c50350985`,
+`ccb5430b1c41e5fcd39e00b7345ba285a427b1b25d48c299f81f1be8ca25f751`,
+and
+`ab00dbe4d70fbfc596ee6553e2d87f94f75370f07ff38b93d5c5fb5652bfac35`.
+The pre-audit suite passed 23/23 in 1,438.484 seconds. Test-only follow-up
+hardening now independently pins both checker hashes, reaches the exact
+selector-type semantic branch for every selector-bearing projection, and
+proves aggregate ceiling `limit - 1` rejection; the two changed focused
+boundaries pass, and an independent GPT-5.6 Sol re-audit reports no P0-P3
+finding. A full 24-test rerun remains pending. The verified candidate records
+18 total source reconstructions, 318 direct plus 1,666 inherited archive opens,
+36 graph algorithms, nine hardened checker modules, nine provider loads, and
+zero extraction, load/execution, compile, subprocess, network, or write
+operations.
+
+The separately versioned read-only Wave12 identity/acquisition decision is
+complete for its bounded scope. It re-executed the exact pinned combined-v10
+candidate, reproduced the V10 content, input-set, source-binding, graph, and
+frontier hashes, scanned the 159 held archives twice, and resolved all four
+exact frontier identities with four parent declarations, four `go.mod` H1
+witnesses, four module-ZIP H1 witnesses, zero blocked tuples, and zero
+conflicts. It binds exactly eight ordered `.mod`-then-ZIP request shapes at
+SHA-256
+`6531872e99da0c94746cbdb53fe9f5302ebc71bc82bfde1705b5e2300b2a2ee5`.
+The final suite passes 26/26 in 1,366.737 seconds. Checker raw/normalized,
+tests raw, reader raw, and materialized-decision content/raw SHA-256 values are
+`bb9d62377d676cc6de7678db6be8e64b6d65a088c4c508269fdd51f6f9ca9b53`,
+`b8702241e4455fb49d7bcae13857d6d3c2a4cad181390ecea8009d229e3d9051`,
+`196fcdaf9a20a60d1b29b628492d1c3f0164805adc5df05678921437e7243def`,
+`31036c0f25364c5f316c30a4541a6a649a13cdcc9952ec9df9cf2c94a1de5398`,
+`9da32d6de84064039bce0438d75fb0ae7b5c9a22faff6b956c0e443f923a09a9`,
+and
+`230d4329170a27fd27f8eef4c33337971441726837693526b732a4847a779c0a`.
+The separate
+[Wave12 one-use acquisition permit](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave12-execution-permit-v1.json)
+and [reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave12-execution-permit-v1.md)
+were materialized before execution at `status=authorized_not_consumed`,
+`structurePreparationOnly=false`, and `executionReady=true`. The package binds
+the exact four tuples and eight requests at resource-canonical SHA-256
+`c8ca9bc4559bea59a5a52fbceaaf068fe82ab9211fa0a888d3918aaa2dec55a2`.
+Permit raw/content SHA-256 values are
+`ab96943fd74a110b42099826f3555517995e4b2e1ed7f7552cbb683fbe7330a5`
+and
+`06b436d850c8f1d89f2f7fbc95130c9d560ddb71dda50257537f0876a164af80`.
+The package checker, checker tests, runner raw/normalized bytes, runner tests,
+and reader raw SHA-256 values are
+`b00ea74bf16e02d429ecf9130ac15ffba9b594a0ae105aa620cd2439cda9bcc1`,
+`493c85a538d86f8c78a5b08c22395e4f0d084d8bdc74960028d5f8d08115ec36`,
+`d954a733dafdb9296d79a5a1bb81d7801393dc8063fcee2a70e41bf85f6961c9`,
+`985d611f46e62e89341ff250aeb66849a2fc1943ae8aa45a4f31b19397567e90`,
+`0590055346f99746bcdd5aef6deeadc251295fae29336a644c5fadd48044c666`,
+and
+`fa09ad2834fb1a145ab606a4251769a5321d17d97e6bdfb4477dd500de7ad047`.
+The package checker and fake/local runner suites pass 18/18 and 48/48.
+Acquisition attempt `f977ddcf8fc391e5915048b930beccbd` then consumed the
+permit exactly once and retained all 8 resources: 753 `.mod` bytes,
+15,035,516 ZIP bytes, 15,036,269 accepted bytes, 2,547 ZIP entries, and
+55,940,531 ZIP-uncompressed bytes. The accepted hash-set SHA-256 is
+`38e9b110d8857fe1644a8fc80bb4a584da540981d43ee19b62e3e9e845422a2c`;
+acquisition receipt and manifest raw SHA-256 values are
+`59117c663f4eff44057e74690acffa506d71dd86b07d3f4f7aa86b96704edd43`
+and
+`f00f4ae58f5d193bf32d8ff77661037fa6f38114c55766abb1bbd25c29b5900b`.
+
+The separate
+[Wave12 offline readback permit](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave12-readback-execution-permit-v1.json)
+and [reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave12-readback-execution-permit-v1.md)
+bind the exact 26-file frozen snapshot at canonical SHA-256
+`3d7365fd16905b8fb3c3d8682e8803c5487b120b3ba8f49b75d16eba2bc354fd`.
+Permit raw/content SHA-256 values are
+`67e98623c54b61182ada2e873f953da197a94e25c59a827fa4fd33d60df218a4`
+and
+`6d642dbd6e72e57f45bbb20b24132e07752029ba18244d09c400ea067b14bed3`;
+its checker and fake/local recorder suites pass 17/17 and 50/50. Offline
+readback attempt `32ab6b747a02382f85f48f65e0c388c5` independently
+verified the snapshot twice, completed all three pre-manifest retained-FD
+barriers, and wrote the manifest last. Readback receipt and manifest raw
+SHA-256 values are
+`74b14b3eb23c3544d96f59ae1c9860f98128bb7908a547e8c98d425ef6e6d456`
+and
+`20126430c1041a2fbcb54b15f5b0661ab9a330b87e332355c32c95c073709d13`.
+Both one-use actions are consumed and cannot be retried. No user identity,
+credential, ownership proof, authentication, or interaction was required.
+Extraction, source loading/execution, compilation, product/runtime networking,
+general socket use, device work, deployment, Git writes, and release
+publication remain closed.
+
+The read-only combined-v11 checker then held the exact 325-input retained set
+and reconstructed it twice. Input-set, source-binding, candidate-content,
+graph, and exact-frontier SHA-256 values are
+`124995740eb0d95e83c77f078a334bd55ac491a14453098fa70da26cf52d6caa`,
+`504b3ed2a6182db6464c93999c3bd073381ee181c7238ca62da5afd2ca87269f`,
+`1976ed89f18f28b0b3440a693581f171bdd574bc615f2054bea2cba1cf85b837`,
+`b4b0ec50d5538e80de93e89574249ca0d49b411443ebd2c78827928704b0a44d`,
+and
+`3528abe3579eb1d06ba01f66f56002a6e193fe1e25e233f03eab9b8ac3e4fc32`.
+It derives `fixedPointReached=false`, `route=next_wave_required`, and four
+exact non-selected Wave13 tuples: `golang.org/x/mod@v0.26.0`,
+`golang.org/x/net@v0.42.0`, `golang.org/x/sys@v0.34.0`, and
+`golang.org/x/telemetry@v0.0.0-20250710130107-8d8967aff50b`. Cumulative
+accounting is twenty full reconstructions and 2,310 graph archive opens over
+163 archives, 62,041 entries, and 1,154,162,168 uncompressed bytes. The full
+suite passes 24/24 in 1,676.228 seconds, and three independent GPT-5.6 Sol
+audits report no P0-P3 finding.
+
+The verification-only Wave13 identity/acquisition decision then re-executed
+the exact combined-v11 predecessor and scanned the 325 retained inputs twice.
+It resolved all four H1 pairs with six parent declarations, six `go.mod` H1
+witnesses, six module-ZIP H1 witnesses, 113 ZIP-contained `go.sum` entries,
+zero blocked tuples, and zero conflicts. It binds the exact eight-request set
+at SHA-256
+`eae1bb0f8645a5d698bfe50fae505a1c7d6887c78c9dcc3b088939b97e0ffce1`;
+decision content and raw-file SHA-256 values are
+`3d08d589ed9121128717215fe0d9583b6f64e59fc033e1c5f50477f6e59d5b83`
+and
+`0092e8b0290b6bb60193e0d744f4f5af8fbf2f6d02f947997e683952caf7aa65`.
+Its focused suite passes 27/27 in 1,648.766 seconds, including a pinned
+`109 + 4 = 113` regression. The decision is structurally acquisition-ready
+but grants no acquisition, network, authentication, write, source
+load/execution/compile, Git, or user-action authority. The separate one-use
+eight-resource Wave13 permit package is now materialized. It binds resource
+canonical SHA-256
+`cdb0c96d670feb69063b50709a342313501de575e4d8d692f943dffcab176f29`,
+permit content SHA-256
+`d3e7fb34e17a94cd2d89249e115e4ef15122a40f1df4ff8d6c977ed9dd6cfc07`,
+and raw SHA-256
+`b976f9bea30a20e34df25e9d90cfa9ee4617ce825b0d28f254b5bb512b6c29a1`.
+Its checker and fake/local network-denied runner suites pass 18/18 and 48/48.
+Three independent GPT-5.6 Sol final-byte audits report no P0-P3 finding.
+Acquisition attempt `eb05816e0b897ea8c3ad8b7089668e91` consumed the permit
+exactly once and retained all 8 resources: 411 `.mod` bytes, 5,097,127 ZIP
+bytes, 5,097,538 accepted bytes, 1,647 ZIP entries, and 20,065,482
+ZIP-uncompressed bytes. The accepted hash-set canonical SHA-256 is
+`bcb43e80159d68f179c24e87f1f8d439bb1c387d713b9a3aec0ac932f9a6ee92`.
+Acquisition receipt and manifest raw SHA-256 values are
+`b85a242f11255a82a8422adfda8cfe86113bd47bd9920c69fafb69985895c514`
+and
+`6d33bb51108da1f8e010f23ff6abfdd5eb62b398db0fd048e2a50576b7cbfa12`.
+
+The separate Wave13 offline readback permit binds the exact 27-file snapshot
+at canonical SHA-256
+`a99b35472a140330847b1ff7e746a83dc060707ea63af3ef22d165a4f2ced11d`.
+Its raw/content SHA-256 values are
+`f6e1ed89709cb2c15640c051a74ce1ab4e549c635ced30d6621489a7559225d5`
+and
+`db9b97fce13b46fa0ebb5c774054b88237c8bab7b4ff729d5fcbe7e8d82f5481`;
+the checker and recorder suites pass 17/17 and 50/50 after exact Wave12-drift
+mutation hardening. Offline readback attempt
+`8b5f92c9d90f825f5f3b46df0d006ef3` verified the snapshot twice, completed
+all three pre-manifest retained-FD barriers, and wrote the manifest last.
+Readback claim, receipt, and manifest raw SHA-256 values are
+`11c1e04dfde8be7d7728f32912154870dc1e0305d0bbb61f1ff4167304bc5274`,
+`eb5ac65c8e8dbe186d7f79d292642029f08d35241dd157a610351b5b5b7de62f`,
+and
+`cdb07a858e11e3c5709210794d84a793dd81d5b32ba3867b750f1e8a27369628`.
+Both Wave13 one-use actions are consumed successes and cannot be retried. No
+authentication, credential, network, Git, or user action was required.
+
+The read-only combined-v12 checker then held the exact 333-input retained set
+and reconstructed it twice. Input-set, source-binding, candidate-content,
+graph, and exact-frontier SHA-256 values are
+`656dcf1c1e94b09649041fa6d99b0db1d3997914dc40eba5e7ca840b35b9760d`,
+`bf043a07c5fa6d26f28de9954b8f676e583f625ccf28ca5a39d6fe23c6678592`,
+`176f5802b4bb56a6136f930a02ddd648774416945984af04bae4438de4e2bc17`,
+`0ab3b47d6b4fc628a3bf83e648308591c84ddce8ad46ce8f8d6aca1797cf1e26`,
+and
+`a149da341952b398d71c9a9395cb18aac2c711bb8a8d72e1eb53ca710377df63`.
+It derives `fixedPointReached=false`, `route=next_wave_required`, and four
+exact non-selected Wave14 tuples: `golang.org/x/crypto@v0.40.0`,
+`golang.org/x/term@v0.33.0`, `golang.org/x/text@v0.27.0`, and
+`golang.org/x/tools@v0.34.0`. Cumulative accounting is 22 full
+reconstructions and 2,644 graph archive opens over 167 archives, 63,688
+entries, and 1,174,227,650 uncompressed bytes. The checker pins exact
+Wave13 predecessor containers and acquisition/readback resource limits. Its
+full normal-path suite passes 24/24 in 1,996.811 seconds.
+
+The separate
+[Wave14 identity/acquisition decision v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave14-v1.json)
+and
+[reader](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave14-v1.md)
+now resolve all four exact H1 pairs from four parent declarations, four
+`go.mod` H1 witnesses, and four module-ZIP H1 witnesses, with zero blocked or
+conflicting identities. Decision raw/content SHA-256 values are
+`14d6debddca620af7f628198f7a7ae2d9291adc35a6fffbe13873d3fd75dc28f`
+and
+`cb4201b1d0e6fd4ae2275cf5a58ceedd0ca14e33cb6af4269e798f1115f37450`;
+the canonical eight-request SHA-256 is
+`505587c90ec32b1dea879b1e034450de091874a2ff9db9993532f1b14d9dc3aa`.
+The latest observed local full-suite run passes 27/27 in 2,030.976 seconds,
+including canonical disk readback; that duration is execution observation,
+not a package-attested receipt. The next bounded action is preparation of the
+separate one-use eight-resource Wave14 acquisition permit checker, runner, and
+tests.
+Acquisition, network access, extraction, source loading/execution/compilation,
+Git writes, authentication, and user action remain closed or unrequired.
 
 The rung-two successor recorded, only `at_that_checkpoint`,
 `recordedNextActionAtThatCheckpoint=prepare_versioned_rung3_offline_source_review_decision`.
@@ -462,19 +1094,57 @@ execution.
   its bytes were not persisted or signed. This remains a bounded remote-source
   observation only. Its historical owner-authentication and authority state does
   not govern current personal-project work. The current slice began from clean,
-  aligned `main` and `origin/main` at
+  aligned `main` and `origin/main` at the historical starting checkpoint
   `dee5d87791ceaddb094235fbf33f7997580ddb1e`. Beyond the completed socket-free
   G1a foundations, the current worktree contains G1b-A Android normal-graph
   activation-controller ownership, injected real-fixture manager/ViewModel E2E,
   the macOS IPv4-loopback-only accepted-raw primitive, the G2 Pion v4.3.0
-  official-source preflight plus restricted-fork rung-one design, and the
-  consumed rung-two acquisition receipt with retained unextracted bytes. The normal
+  official-source preflight, and the restricted-fork lineage through Wave13
+  acquisition/readback, combined-v12, and Wave14 decision v1. The normal
   Android controller intentionally starts
   empty, the macOS primitive is not `CompanionAppModel`-wired, and neither path
   has executed a live socket or device. The worktree is intentionally dirty for
-  this bounded current slice. All changes remain unstaged and uncommitted for
-  user review.
-  Run `git status --short` again because live output is authoritative.
+  this bounded current slice. At this snapshot the Wave14 package changes are
+  unstaged; refresh `git status --short` because live Git output remains
+  authoritative.
+- Current G2 terminal state: Wave14 decision v1 is complete and the next
+  boundary is Wave14 acquisition-permit preparation. Historical Wave11
+  acquisition attempt
+  `ac18b8fda0a80a132510efd5dd17d5b7` retained all 18 exact resources, and
+  offline readback attempt `9b4dac65f66ce9e5d53dcd8edaf4d1d4`
+  independently verified the exact 36-file retained snapshot twice before
+  manifest-last publication. Both one-use actions are consumed and cannot be
+  retried. Combined-v10 subsequently reconstructed all 317 exact source inputs
+  twice and derived `fixedPointReached=false` with four exact Wave12 frontier
+  tuples. Wave12 identity/acquisition decision v1 is complete for its read-only
+  bounded scope: all four exact H1 pairs are complete and zero are blocked or
+  conflicting. That decision remains non-authorizing, while the separately
+  materialized exact-eight permit passes 18/18 checker plus 48/48
+  network-denied runner tests. Acquisition attempt
+  `f977ddcf8fc391e5915048b930beccbd` consumed it exactly once and retained all
+  8 resources. Offline readback attempt
+  `32ab6b747a02382f85f48f65e0c388c5` then verified the exact 26-file
+  snapshot twice before manifest-last publication. Both one-use actions are
+  consumed and cannot be retried. Combined-v11 reconstructed the exact
+  325-input retained set twice, and Wave13 decision v1 resolved all four
+  resulting H1 pairs with zero blocked/conflicting tuples. Its decision
+  content SHA-256 is
+  `3d08d589ed9121128717215fe0d9583b6f64e59fc033e1c5f50477f6e59d5b83`,
+  and its focused suite passes 27/27 in 1,648.766 seconds. The separate
+  exact-eight Wave13 permit package is materialized at raw SHA-256
+  `b976f9bea30a20e34df25e9d90cfa9ee4617ce825b0d28f254b5bb512b6c29a1`
+  and passes 18/18 checker plus 48/48 fake/local network-denied runner tests.
+  Acquisition attempt `eb05816e0b897ea8c3ad8b7089668e91` retained all eight
+  resources, and offline readback attempt
+  `8b5f92c9d90f825f5f3b46df0d006ef3` verified the exact 27-file snapshot
+  twice before manifest-last publication. Both one-use actions are consumed
+  successes and cannot be retried. Combined-v12 then reconstructed the exact
+  333-input retained set twice and identified four exact non-selected Wave14
+  tuples. Wave14 decision v1 resolves all four H1 pairs with zero
+  blocked/conflicting identities, and the latest observed local suite passes
+  27/27. The next
+  boundary is preparation of the separate one-use eight-resource Wave14
+  acquisition permit package. No authentication or user action is required.
 - G1a-A no-network state: six typed `ALS1` route authorizations and one exact
   21-field endpoint secure-session transcript are implemented independently in
   Swift and Kotlin. The shared fixture pins six route plus six transcript byte
@@ -754,8 +1424,30 @@ execution.
   all 163 inputs and projected a non-fixed 18-tuple Wave6 frontier whose
   entries are all graph-unselected retained versions. Wave6 decision v1 then
   resolved all 18 H1 pairs and prepared the exact 36 ordered requests without
-  acquisition authority. The current next action is its separate one-use
-  acquisition permit, checker, runner, and tests.
+  acquisition authority at that checkpoint. The later one-use Wave6 acquisition
+  attempt `5e0828c2e5dc1ce7ef2a06dd235d5076` retained all 36 resources,
+  and readback attempt `7fc50276e880013e1ace73920397ba3f` independently
+  verified the retained snapshot twice before writing its manifest last.
+  Combined-v5 then reconstructed all 199 exact inputs twice and derived the
+  non-fixed 15-tuple Wave7 frontier; its focused suite passes 25/25. Wave7
+  decision v1 now resolves all 15 conflict-free H1 pairs, preserves every
+  selector as false, and prepares 30 ordered requests without acquisition
+  authority; its focused suite passes 13/13. Acquisition attempt
+  `c15f4504ae880326144eca93dc91e37b` retained all 30 resources, and readback
+  attempt `1839537589935de087068a5a7d5c7e14` independently verified them twice
+  before writing its manifest last. Combined-v6 then reconstructed all 229
+  exact source inputs twice, derived a non-fixed 14-tuple Wave8 frontier at
+  SHA-256
+  `d3c3788d6a1144bf04ea2c68e6aa4b9fdd17859bc625e2c2c51019bb3c61ff92`,
+  and passed 25/25 focused tests. Wave8 decision v1 then resolves all 14 H1
+  pairs, binds a 28-request contract, and passes 18/18 tests without granting
+  acquisition. Its separate exact one-use permit package passes 15/15 checker
+  and 44/44 network-free mock/local runner tests. Acquisition attempt
+  `6d8ea4473126c853b439c56a895f9c28` retained all 28 resources; readback
+  attempt `8618087527c005b5d19c8f902ec33557` independently verified the exact
+  46-file snapshot twice and wrote its manifest last. Readback suites pass
+  16/16 and 45/45, and independent GPT-5.6 Sol post-run audit reports no
+  P0-P3 finding.
 - Historical G2 restricted-fork rung-one status contract at_that_checkpoint:
   `status=rung1_profile_complete_candidate_not_selected`,
   `result=pion_restricted_fork_profile_ready_for_rung2_decision_only`, and
@@ -1587,9 +2279,23 @@ That twelve-path publication remains historical. The current unpublished scope
 is the personal-governance synchronization plus the socket-free G1a-A/B/C/D
 Swift and Kotlin contracts, five shared fixtures, pair/endpoint-ledger
 persistence, transition history, legacy-downgrade guards, dormant internal pre-
-connector admission seams, G1b-A stack-neutral ownership work, the G2 Pion
-preflight and restricted-fork rung-one design/checker portfolio, tests,
-documentation, and gate integration described in the snapshot.
+  connector admission seams, G1b-A stack-neutral ownership work, the G2 Pion
+  preflight and restricted-fork lineage through terminal Wave11
+  acquisition/readback evidence, tests, documentation, and gate integration
+  described in the snapshot, the read-only combined-v10 reconstruction, the
+  Wave12 decision package, the exact-eight acquisition package and terminal
+  evidence, and the exact-26-file offline readback package and terminal
+  evidence, the read-only combined-v11 reconstruction, the verification-only
+  Wave13 decision package, the consumed exact-eight Wave13 acquisition, and
+  the exact-27-file offline readback package and terminal evidence, the
+  read-only combined-v12 reconstruction, and the verification-only Wave14
+  identity decision. Wave12 and Wave13 one-use acquisition/readback actions
+  are consumed successes and cannot be retried. The exact 333-input
+  combined-v12 normal path passes 24/24, and the latest observed local Wave14
+  decision v1 suite passes 27/27 with all four identity pairs complete. The
+  next bounded G2 action is
+  preparation of the separate one-use eight-resource Wave14 acquisition
+  permit package. Live Git state remains authoritative for publication status.
 
 The historical sidecar, one-response dormant intake envelope, profile, and
 scripts structurally validate the exact recorded candidate values without
@@ -1946,9 +2652,12 @@ Do not claim the following from the current evidence:
   `local_diagnostic`.
 - Release/default product pairing remains remote-required.
 - Connection Recovery remains the explicit remote-route path.
-- No source-acquisition, native-library execution, socket destination,
-  runtime-network, external-egress, P2P Phase B, production-network, or
-  deployment authority was expanded.
+- The QR/device slice expanded no source-acquisition, native-library execution,
+  socket destination, runtime-network, external-egress, P2P Phase B,
+  production-network, or deployment authority.
+- Separate bounded Wave11 source-acquisition and offline-readback authorities
+  were later consumed exactly once. They are terminal, non-reusable evidence
+  and do not authorize any further acquisition or product/runtime operation.
 - The canonical P2P/NAT authority records are:
   - `docs/security-hardening/production-p2p-nat-v1/controlled-network-spike/phase-a/progress-v8.json`
   - `docs/security-hardening/production-p2p-nat-v1/controlled-network-spike/decision-v6.json`
@@ -1985,8 +2694,16 @@ Do not claim the following from the current evidence:
   `compilerInvocationAllowed=false`, `codeLoadingAllowed=false`,
   `socketCreationAllowed=false`, `networkIoAllowed=false`,
   `deviceExecutionAllowed=false`, `productionDeploymentAllowed=false`, and
-  `gitOperationAllowed=false`. The succeeding rung-two decision has now consumed
-  exactly one bounded request without selecting a library. Rejected authority
+  `gitOperationAllowed=false`. The succeeding separately versioned waves
+  through Wave12 retained and independently read back their bounded resource
+  sets without mutating that rung-one profile or selecting a library.
+  Combined-v10 reconstructed all 317 predecessor inputs and derived a non-fixed
+  four-tuple frontier. Wave12 identity/acquisition decision v1 completed all
+  four exact H1 pairs with zero blocked or conflicting rows. Acquisition
+  attempt `f977ddcf8fc391e5915048b930beccbd` retained its 8 exact resources, and
+  readback attempt `32ab6b747a02382f85f48f65e0c388c5` verified the exact
+  26-file snapshot twice before manifest-last publication. Both Wave12 one-use
+  actions are consumed and cannot be retried. Rejected or consumed authority
   cannot be reused implicitly, and
   no repository-owner, GitHub, SSH, GPG, public-key proof, or additional user
   decision is required; `externalIdentityProofRequired=false` and
@@ -2058,17 +2775,113 @@ Unless the user redirects the task, use this decision order:
    readback. Combined-v4 then held all 163 inputs and projected an exact
    non-fixed 18-tuple Wave6 frontier. Wave6 decision v1 then resolved all 18
    H1 pairs and prepared the exact 36-request contract without acquisition
-   authority. Its exact next action is a separate one-use Wave6 acquisition
-   permit, checker, runner, and tests, without retrying prior waves or asking
-   for user authentication.
-   Semantic
-   review was performed, but semantic closure, dependency closure, rung-three
-   completion, candidate selection, and library selection remain false. Android verified-endpoint handoff and macOS
-   `CompanionAppModel` listener wiring may continue as stack-neutral ownership
-   work, but the actual P2P backend and socket proof wait for their G2 scopes.
-   The accepted dependency source set is intake evidence only; materialization,
-   reviewed-source compile/execution, runtime network, Git, device, or other
-   user action remains closed or unrequired for this local work.
+   authority at that checkpoint. The later one-use Wave6 acquisition retained
+   all 36 resources, and readback attempt
+   `7fc50276e880013e1ace73920397ba3f` independently verified them twice.
+   Combined-v5 then reconstructed the exact 199 held inputs twice, derived
+   `fixedPointReached=false` with the exact 15-tuple Wave7 frontier, and passed
+   25/25 focused tests. Wave7 decision v1 then resolved all 15 conflict-free H1
+   pairs, preserved selector `false`, and prepared the exact 30-request
+   contract without acquisition authority; its focused suite passes 13/13.
+   Acquisition attempt `c15f4504ae880326144eca93dc91e37b` retained all 30
+   resources, and readback attempt `1839537589935de087068a5a7d5c7e14`
+   independently verified them twice before writing its manifest last.
+   Combined-v6 then reconstructed all 229 exact source inputs twice, derived
+   `fixedPointReached=false` with the exact 14-tuple Wave8 frontier at SHA-256
+   `d3c3788d6a1144bf04ea2c68e6aa4b9fdd17859bc625e2c2c51019bb3c61ff92`,
+   and passed 25/25 focused tests. Wave8 decision v1 then resolves all 14 exact
+   H1 pairs and passes 18/18 tests. Its 28-request contract has SHA-256
+   `b0f0f887864ddc4cf3ab15319a9e89dbea8c84087fa3d0e374a0332240336ddc`,
+   with every decision selector and acquisition authority false. Its separate
+   exact one-use permit package binds resource canonical SHA-256
+   `ee32b0512643b0e767f5b1e96625352fc47ea6ae7aea5d7366adfe98f4db8136`,
+   and passes 15/15 checker plus 44/44 network-free mock/local runner tests.
+   Acquisition attempt `6d8ea4473126c853b439c56a895f9c28` retained all 28
+   resources, and readback attempt `8618087527c005b5d19c8f902ec33557`
+   independently verified the exact 46-file snapshot twice before manifest-last
+   publication. Readback suites pass 16/16 and 45/45. Combined-v7 subsequently
+   projected the exact non-fixed ten-tuple Wave9 frontier, and Wave9 decision
+   v1 resolved all ten H1 pairs without acquisition authority. Its separate
+   one-use 20-resource permit package passes 16/16 checker and 44/44 injected
+   network-free runner tests. Acquisition attempt
+   `df64a4816a083806020580efe953b9a7` retained all 20 resources, and readback
+   attempt `2d61a0483984e9a2f77665dd3c624cb2` independently verified the exact
+   38-file snapshot twice before manifest-last publication. Readback suites
+   pass 16/16 and 45/45. Neither one-use action may be retried. Combined-v8
+   then reconstructed all 277 exact source inputs twice and derived the exact
+   non-fixed eleven-tuple Wave10 frontier at SHA-256
+   `780501bca37fbeb953590004ca7e5aad7f206083f749b920e2a9842b63675f82`.
+   Its checker exits zero and the full suite passes 29/29. Wave10 decision v1
+   then resolved all eleven exact identities, including one graph-selected
+   x/xerrors vertex, reproduced 15 declarations, 107 `go.mod` H1 and 15 ZIP H1
+   witnesses twice, and bound the exact 22-request set at SHA-256
+   `cf6a97651565b55bb714a713e66e6a452f7132973ce21ced254bd0d728d12a89`.
+   Its disk checker exits zero and focused suite passes 21/21. Acquisition
+   attempt `ffe70ee4562fcfc9e0fd6c9c4e136bd9` then retained all 22 exact
+   resources, and offline readback attempt
+   `e74e030f7f5ef33589d7895e1b28b3b1` verified them twice before manifest-last
+   publication. Both one-use actions are consumed and cannot be retried.
+   Combined-v9 then held 299 exact source inputs, reconstructed the graph twice,
+   and derived the exact non-fixed nine-tuple Wave11 frontier at SHA-256
+   `171af951e3a67405b62ddceface1341bb6f64b08f370d3d216ede541bd011f06`.
+   Its exact final suite passes 21/21 and two independent GPT-5.6 Sol audits
+   report no P0-P3 finding. Wave11 decision v1 then reproduced the identity scan
+   twice, resolved all nine exact pairs with 12 declarations, 68 `go.mod` H1
+   witnesses, 13 ZIP H1 witnesses, and zero selected, blocked, or conflicting
+   rows, and bound the exact 18-request set at SHA-256
+   `bbde21b5f7a523bb6cddf78fbbbfdce46f8bcf61d60ebcec72a80d52dda50ba8`.
+   Its final suite passes 25/25 in 1,157.225 seconds and three independent
+   GPT-5.6 Sol final-byte audits report no P0-P3 finding. Every selector and
+   acquisition flag remains false.
+   Wave11 acquisition attempt `ac18b8fda0a80a132510efd5dd17d5b7`
+   subsequently retained all 18 exact resources (16,363,894 bytes), and
+   readback attempt `9b4dac65f66ce9e5d53dcd8edaf4d1d4`
+   independently verified the exact 36-file snapshot twice, completed all
+   three pre-manifest retained-FD barriers, and wrote the manifest last. Both
+   one-use actions are consumed and cannot be retried. Combined-v10 then held
+   all 317 exact source inputs, reconstructed the graph twice, and derived the
+   exact non-fixed four-tuple frontier at SHA-256
+   `8b84bd2fd9201d33f4424b9dd1018aee7f8470a87306c2ba23eba0c8b6d4ff05`.
+   Wave12 identity/acquisition decision v1 then re-executed that exact
+   predecessor, completed all four exact H1 pairs with zero blocked or
+   conflicting tuples, and bound the still-unauthorized eight-request shape at
+   SHA-256
+   `6531872e99da0c94746cbdb53fe9f5302ebc71bc82bfde1705b5e2300b2a2ee5`.
+   Its final suite passes 26/26. The separate exact-eight permit package is
+   materialized and passes 18/18 checker plus 48/48 fake/local runner tests.
+   Acquisition attempt `f977ddcf8fc391e5915048b930beccbd` retained all 8
+   exact resources (15,036,269 accepted bytes). Offline readback attempt
+   `32ab6b747a02382f85f48f65e0c388c5` independently verified the exact
+   26-file retained snapshot twice, completed all three pre-manifest retained-FD
+   barriers, and wrote the manifest last. Both one-use actions are consumed and
+   cannot be retried. Combined-v11 reconstructed the exact 325-input set twice,
+   and Wave13 decision v1 resolved all four resulting H1 pairs with zero
+   blocked/conflicting tuples. Its decision content SHA-256 is
+   `3d08d589ed9121128717215fe0d9583b6f64e59fc033e1c5f50477f6e59d5b83`,
+   and its focused suite passes 27/27 in 1,648.766 seconds. Its separate
+   exact-eight permit package is materialized at raw SHA-256
+   `b976f9bea30a20e34df25e9d90cfa9ee4617ce825b0d28f254b5bb512b6c29a1`
+   and passes 18/18 checker plus 48/48 fake/local network-denied runner tests.
+   Acquisition attempt `eb05816e0b897ea8c3ad8b7089668e91` retained all eight
+   resources, and readback attempt `8b5f92c9d90f825f5f3b46df0d006ef3`
+   independently verified the exact 27-file snapshot twice before manifest-last
+   publication. Both Wave13 one-use actions are consumed successes and cannot
+   be retried. Combined-v12 reconstructed the exact 333-input set twice,
+   passed 24/24 normal-path tests, and identified four exact Wave14 tuples.
+   Wave14 decision v1 resolves all four H1 pairs with zero blocked/conflicting
+   identities, and the latest observed local suite passes 27/27 tests. The
+   next bounded G2 step is preparation
+   of the separate one-use eight-resource Wave14 acquisition permit package.
+   Semantic review was performed, but semantic closure, dependency closure,
+   rung-three completion, candidate selection, and library selection remain
+   false. Android verified-endpoint
+   handoff and
+   macOS `CompanionAppModel` listener wiring may continue as stack-neutral
+   ownership work, but the actual P2P backend and socket proof wait for their
+   G2 scopes. The retained set is terminal acquisition/readback evidence only;
+   no additional acquisition, materialization, reviewed-source
+   compile/execution, runtime network, Git, device, deployment,
+   authentication, or user action is opened or required for this local work.
 6. Leave production identifiers, accounts, keys, signing, store upload, and
    deployment for their actual release slice. Their absence does not block local
    implementation.

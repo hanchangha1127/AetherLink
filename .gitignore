@@ -23,3 +23,7 @@ artifacts/*.xml
 artifacts/**/*.png
 artifacts/**/*.xml
 .codex-artifacts/
+
+# Python bytecode is generated locally and must never become repository input.
+__pycache__/
+*.py[cod]

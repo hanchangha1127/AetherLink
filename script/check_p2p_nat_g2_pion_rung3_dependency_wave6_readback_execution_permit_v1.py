@@ -18,6 +18,7 @@ if not (
 
 import argparse
 import ast
+import errno
 import hashlib
 import json
 import os
@@ -113,8 +114,12 @@ EXPECTED_HELD_SOURCE_BINDINGS = (
 EXPECTED_ACCEPTED_RESOURCE_HASH_SET = (
     "61b02eaa698ddcbbac9aa4ed839e43705817d8d5204f28b81e6c3f5ab050acbf"
 )
-EXPECTED_READER_RAW = "0" * 64
-EXPECTED_RECORDER_NORMALIZED_SHA256 = "0" * 64
+EXPECTED_READER_RAW = (
+    "fae03c2eaf6e95d53aa8b79f85de8467ee06bde32cb2cd963be45d44fed8cbcb"
+)
+EXPECTED_RECORDER_NORMALIZED_SHA256 = (
+    "042846f6d348bd2324d2ff479e58308d80f993e87464a149a08c13acce66137e"
+)
 MAXIMUM_PACKAGE_FILE_BYTES = 8 * 1024 * 1024
 
 
@@ -437,25 +442,110 @@ def _open_to_owner(
     )
     fd = -1
     transferred = False
+    primary_error: BaseException | None = None
     try:
-        fd = opener()
         try:
+            fd = opener()
             owner.append(fd)
             transferred = True
-        except BaseException:
-            try:
-                os.close(fd)
-            finally:
-                fd = -1
-            raise
-        return fd
-    finally:
+        except BaseException as error:
+            primary_error = error
         if fd >= 0 and not transferred:
             try:
                 os.close(fd)
-            except OSError:
-                pass
+            except BaseException as error:
+                if primary_error is None:
+                    primary_error = error
+            fd = -1
+    except BaseException as error:
+        primary_error = error
+    restore_error: BaseException | None = None
+    try:
         signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+    except BaseException as error:
+        restore_error = error
+    if primary_error is not None:
+        if restore_error is not None:
+            raise primary_error from restore_error
+        raise primary_error
+    if restore_error is not None:
+        raise restore_error
+    return fd
+
+
+def _remove_owned_fd(owner: list[int], fd: int) -> None:
+    while fd in owner:
+        owner.remove(fd)
+
+
+def _attempt_close_owned_fd(
+    owner: list[int],
+    fd: int,
+) -> BaseException | None:
+    """Retry only a reported close failure in this single-threaded checker."""
+    if fd not in owner:
+        return None
+    first_error: BaseException | None = None
+    for _ in range(2):
+        try:
+            os.close(fd)
+        except OSError as error:
+            if error.errno == errno.EBADF:
+                _remove_owned_fd(owner, fd)
+                return None
+            if first_error is None:
+                first_error = error
+        except BaseException as error:
+            if first_error is None:
+                first_error = error
+        else:
+            _remove_owned_fd(owner, fd)
+            return None
+        try:
+            os.fstat(fd)
+        except OSError as error:
+            if error.errno == errno.EBADF:
+                _remove_owned_fd(owner, fd)
+                return None
+            if first_error is None:
+                first_error = error
+        except BaseException as error:
+            if first_error is None:
+                first_error = error
+        else:
+            continue
+    return first_error or OSError(
+        errno.EIO,
+        "file descriptor closure could not be verified",
+    )
+
+
+def _close_owned_fds(owner: list[int]) -> None:
+    """Attempt every FD and retain ownership of any observably open FD."""
+    errors: list[BaseException] = []
+    previous_mask: set[signal.Signals] | None = None
+    try:
+        previous_mask = signal.pthread_sigmask(
+            signal.SIG_BLOCK,
+            {signal.SIGALRM, signal.SIGINT},
+        )
+    except BaseException as error:
+        errors.append(error)
+    seen: set[int] = set()
+    for fd in reversed(tuple(owner)):
+        if fd < 0 or fd in seen:
+            continue
+        seen.add(fd)
+        error = _attempt_close_owned_fd(owner, fd)
+        if error is not None:
+            errors.append(error)
+    if previous_mask is not None:
+        try:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+        except BaseException as error:
+            errors.append(error)
+    if errors:
+        raise errors[0]
 
 
 class HeldTraversal:
@@ -588,37 +678,10 @@ class HeldTraversal:
     def close(self) -> None:
         if self.closed:
             return
-        self.closed = True
-        errors: list[BaseException] = []
-        previous_mask: set[signal.Signals] | None = None
-        try:
-            previous_mask = signal.pthread_sigmask(
-                signal.SIG_BLOCK,
-                {signal.SIGALRM, signal.SIGINT},
-            )
-        except BaseException as error:
-            errors.append(error)
-        seen: set[int] = set()
-        for fd in reversed(self.owned):
-            if fd in seen:
-                continue
-            seen.add(fd)
-            try:
-                os.close(fd)
-            except OSError as error:
-                if error.errno != 9:
-                    errors.append(error)
-            except BaseException as error:
-                errors.append(error)
-        self.owned.clear()
+        _close_owned_fds(self.owned)
         self.directories.clear()
-        if previous_mask is not None:
-            try:
-                signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
-            except BaseException as error:
-                errors.append(error)
-        if errors:
-            raise errors[0]
+        self.root_fd = -1
+        self.closed = True
 
     def __enter__(self) -> "HeldTraversal":
         return self
@@ -1109,23 +1172,38 @@ def audit_frozen_snapshot() -> None:
 
 
 def readback_namespace_state(root: Path = ROOT) -> str:
-    with HeldTraversal(root) as traversal:
+    traversal = HeldTraversal(root)
+    observed_state: str | None = None
+    try:
         claim = traversal.exists(READBACK_CLAIM_PATH)
         receipt = traversal.exists(READBACK_RECEIPT_PATH)
         manifest = traversal.exists(READBACK_MANIFEST_PATH)
         names = os.listdir(traversal.directory(BASE))
         traversal.barrier()
         if has_portable_prefix(names, READBACK_TEMP_PREFIXES):
-            return "stale_temporary_namespace"
-        if not claim and not receipt and not manifest:
-            return "absent"
-        if claim and not receipt and not manifest:
-            return "claim_only"
-        if claim and receipt and not manifest:
-            return "receipt_only"
-        if claim and receipt and manifest:
-            return "complete"
-        return "inconsistent"
+            observed_state = "stale_temporary_namespace"
+        elif not claim and not receipt and not manifest:
+            observed_state = "absent"
+        elif claim and not receipt and not manifest:
+            observed_state = "claim_only"
+        elif claim and receipt and not manifest:
+            observed_state = "receipt_only"
+        elif claim and receipt and manifest:
+            observed_state = "complete"
+        else:
+            observed_state = "inconsistent"
+    finally:
+        try:
+            traversal.close()
+        except BaseException as error:
+            if observed_state is not None and observed_state != "absent":
+                raise PermitError(
+                    "E_CONSUMED",
+                    observed_state,
+                ) from error
+            raise
+    require(observed_state is not None, "E_NAMESPACE")
+    return observed_state
 
 
 def readback_namespace_absent(root: Path = ROOT) -> None:

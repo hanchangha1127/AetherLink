@@ -20,6 +20,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import errno
 import os
 from pathlib import Path
 import stat
@@ -1082,9 +1083,14 @@ class Wave6ReadbackRecorderTests(unittest.TestCase):
                         "linkCount": info.st_nlink,
                     }
                     if slot == "claim":
-                        creation_fd = os.open(
-                            target,
-                            os.O_RDWR | os.O_CLOEXEC | R.O_NOFOLLOW,
+                        creation_fd = R._open_to_owner(
+                            namespace.owned_fds,
+                            lambda: os.open(
+                                target,
+                                os.O_RDWR
+                                | os.O_CLOEXEC
+                                | R.O_NOFOLLOW,
+                            ),
                         )
                         namespace.hold_claim(expected, creation_fd)
                         held = namespace.claim
@@ -1320,6 +1326,536 @@ class Wave6ReadbackRecorderTests(unittest.TestCase):
         observed_umask = os.umask(before_umask)
         os.umask(observed_umask)
         self.assertEqual(observed_umask, before_umask)
+
+    def test_25_checker_bootstrap_restore_failure_closes_opened_fd(self):
+        before = len(os.listdir("/dev/fd"))
+        real_mask = R.signal.pthread_sigmask
+        restore_calls = 0
+
+        def fail_first_restore(how, mask):
+            nonlocal restore_calls
+            result = real_mask(how, mask)
+            if how == R.signal.SIG_SETMASK:
+                restore_calls += 1
+                if restore_calls == 1:
+                    raise RuntimeError("synthetic bootstrap restore")
+            return result
+
+        with mock.patch.object(
+            R.signal,
+            "pthread_sigmask",
+            side_effect=fail_first_restore,
+        ):
+            with self.assertRaises(RuntimeError):
+                R.load_readback_checker()
+        self.assertEqual(len(os.listdir("/dev/fd")), before)
+
+    def test_26_claim_open_restore_failure_is_consumed_uncertainty(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / R.PERMIT.READBACK_CLAIM_PATH
+            target.parent.mkdir(parents=True, mode=0o700)
+            (root / R.PERMIT.BASE).mkdir(parents=True, mode=0o700)
+            namespace = R.ReadbackNamespace(root)
+            baseline_owned = tuple(namespace.owned_fds)
+            real_mask = R.signal.pthread_sigmask
+            restore_calls = 0
+
+            def fail_claim_restore(how, mask):
+                nonlocal restore_calls
+                result = real_mask(how, mask)
+                if how == R.signal.SIG_SETMASK:
+                    restore_calls += 1
+                    if restore_calls == 5:
+                        raise RuntimeError("synthetic claim restore")
+                return result
+
+            try:
+                with mock.patch.object(
+                    R.signal,
+                    "pthread_sigmask",
+                    side_effect=fail_claim_restore,
+                ):
+                    with self.assertRaises(R.ReadbackError) as caught:
+                        R.create_readback_claim(
+                            root,
+                            "1" * 32,
+                            {"x": 1},
+                            namespace.root_fd,
+                            namespace.owned_fds,
+                        )
+                self.assertEqual(
+                    caught.exception.code,
+                    "E_CLAIM_STATE_UNCERTAIN",
+                )
+                self.assertTrue(caught.exception.consumed)
+                self.assertTrue(caught.exception.uncertain)
+                self.assertTrue(os.path.lexists(target))
+                self.assertEqual(
+                    tuple(namespace.owned_fds),
+                    baseline_owned,
+                )
+            finally:
+                namespace.close()
+
+    def test_27_atomic_temp_restore_failure_cleans_reserved_name_and_fds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output_parent = root / "out"
+            output_parent.mkdir(mode=0o700)
+            before = len(os.listdir("/dev/fd"))
+            real_mask = R.signal.pthread_sigmask
+            restore_calls = 0
+
+            def fail_temp_restore(how, mask):
+                nonlocal restore_calls
+                result = real_mask(how, mask)
+                if how == R.signal.SIG_SETMASK:
+                    restore_calls += 1
+                    if restore_calls == 4:
+                        raise RuntimeError("synthetic temp restore")
+                return result
+
+            with mock.patch.object(
+                R.signal,
+                "pthread_sigmask",
+                side_effect=fail_temp_restore,
+            ):
+                with self.assertRaises(RuntimeError):
+                    R.atomic_publish(
+                        root,
+                        "out/result.json",
+                        R.content_bound({"value": 1}),
+                    )
+            self.assertFalse((output_parent / "result.json").exists())
+            self.assertEqual(list(output_parent.iterdir()), [])
+            self.assertEqual(len(os.listdir("/dev/fd")), before)
+
+    def test_28_claim_owner_append_failure_is_consumed_uncertainty(self):
+        class FailingAppendOwner(list):
+            def append(self, _fd):
+                raise MemoryError("synthetic owner append")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / R.PERMIT.READBACK_CLAIM_PATH
+            target.parent.mkdir(parents=True, mode=0o700)
+            owner = FailingAppendOwner()
+            before = len(os.listdir("/dev/fd"))
+            with self.assertRaises(R.ReadbackError) as caught:
+                R.create_readback_claim(
+                    root,
+                    "1" * 32,
+                    {"x": 1},
+                    fd_owner=owner,
+                )
+            self.assertEqual(
+                caught.exception.code,
+                "E_CLAIM_STATE_UNCERTAIN",
+            )
+            self.assertTrue(caught.exception.consumed)
+            self.assertTrue(caught.exception.uncertain)
+            self.assertTrue(os.path.lexists(target))
+            self.assertEqual(owner, [])
+            self.assertEqual(len(os.listdir("/dev/fd")), before)
+
+    def test_29_atomic_temp_owner_append_failure_cleans_name_and_fds(self):
+        class FailingAppendOwner(list):
+            def append(self, _fd):
+                raise MemoryError("synthetic owner append")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output_parent = root / "out"
+            output_parent.mkdir(mode=0o700)
+            before = len(os.listdir("/dev/fd"))
+            real_open_to_owner = R._open_to_owner
+            real_close_owned_fds = R._close_owned_fds
+            open_calls = 0
+            close_calls = 0
+
+            def fail_temporary_transfer(owner, opener, on_opened=None):
+                nonlocal open_calls
+                open_calls += 1
+                if open_calls == 4:
+                    return real_open_to_owner(
+                        FailingAppendOwner(),
+                        opener,
+                        on_opened,
+                    )
+                return real_open_to_owner(owner, opener, on_opened)
+
+            def fail_orphan_cleanup(owner):
+                nonlocal close_calls
+                close_calls += 1
+                real_close_owned_fds(owner)
+                if close_calls == 2:
+                    raise RuntimeError("synthetic orphan cleanup")
+
+            with mock.patch.object(
+                R,
+                "_open_to_owner",
+                side_effect=fail_temporary_transfer,
+            ), mock.patch.object(
+                R,
+                "_close_owned_fds",
+                side_effect=fail_orphan_cleanup,
+            ):
+                with self.assertRaises(RuntimeError):
+                    R.atomic_publish(
+                        root,
+                        "out/result.json",
+                        R.content_bound({"value": 1}),
+                    )
+            self.assertEqual(open_calls, 4)
+            self.assertEqual(close_calls, 3)
+            self.assertFalse((output_parent / "result.json").exists())
+            self.assertEqual(list(output_parent.iterdir()), [])
+            self.assertEqual(len(os.listdir("/dev/fd")), before)
+
+    def test_30_existing_claim_cleanup_failure_stays_consumed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / R.PERMIT.READBACK_CLAIM_PATH
+            target.parent.mkdir(parents=True, mode=0o700)
+            target.write_bytes(b"existing")
+            real_close_owned_fds = R._close_owned_fds
+            close_calls = 0
+
+            def close_then_fail(owner):
+                nonlocal close_calls
+                close_calls += 1
+                real_close_owned_fds(owner)
+                if close_calls == 1:
+                    raise RuntimeError("synthetic traversal cleanup")
+
+            with mock.patch.object(
+                R,
+                "_close_owned_fds",
+                side_effect=close_then_fail,
+            ):
+                with self.assertRaises(R.ReadbackError) as caught:
+                    R.create_readback_claim(root, "1" * 32, {"x": 1})
+            self.assertEqual(caught.exception.code, "E_CONSUMED")
+            self.assertEqual(caught.exception.phase, "claim_cleanup")
+            self.assertTrue(caught.exception.consumed)
+            self.assertFalse(caught.exception.uncertain)
+
+    def test_31_bulk_close_retries_and_object_close_remains_retryable(self):
+        read_fd, write_fd = os.pipe()
+        snapshot = object.__new__(R.FrozenSnapshot)
+        snapshot.closed = False
+        snapshot.owned_fds = [read_fd, write_fd]
+        snapshot.root_fd = read_fd
+        real_close = R.os.close
+        transient_attempts = 0
+
+        def fail_read_once(fd):
+            nonlocal transient_attempts
+            if fd == read_fd and transient_attempts == 0:
+                transient_attempts += 1
+                raise OSError(errno.EIO, "synthetic transient close")
+            return real_close(fd)
+
+        with mock.patch.object(R.os, "close", side_effect=fail_read_once):
+            snapshot.close()
+        self.assertTrue(snapshot.closed)
+        self.assertEqual(snapshot.owned_fds, [])
+        self.assertEqual(transient_attempts, 1)
+        for fd in (read_fd, write_fd):
+            with self.assertRaises(OSError):
+                os.fstat(fd)
+
+        read_fd, write_fd = os.pipe()
+        snapshot = object.__new__(R.FrozenSnapshot)
+        snapshot.closed = False
+        snapshot.owned_fds = [read_fd, write_fd]
+        snapshot.root_fd = read_fd
+
+        def refuse_read_close(fd):
+            if fd == read_fd:
+                raise OSError(errno.EIO, "synthetic persistent close")
+            return real_close(fd)
+
+        with mock.patch.object(R.os, "close", side_effect=refuse_read_close):
+            with self.assertRaises(OSError):
+                snapshot.close()
+        self.assertFalse(snapshot.closed)
+        self.assertEqual(snapshot.owned_fds, [read_fd])
+        os.fstat(read_fd)
+        with self.assertRaises(OSError):
+            os.fstat(write_fd)
+
+        snapshot.close()
+        self.assertTrue(snapshot.closed)
+        self.assertEqual(snapshot.owned_fds, [])
+        with self.assertRaises(OSError):
+            os.fstat(read_fd)
+
+    def test_32_umask_activation_restore_error_restores_original_umask(self):
+        before_umask = os.umask(0o077)
+        os.umask(before_umask)
+        real_mask = R.signal.pthread_sigmask
+        restore_calls = 0
+
+        def fail_first_restore(how, mask):
+            nonlocal restore_calls
+            result = real_mask(how, mask)
+            if how == R.signal.SIG_SETMASK:
+                restore_calls += 1
+                if restore_calls == 1:
+                    raise RuntimeError("synthetic activation restore")
+            return result
+
+        with mock.patch.object(
+            R.signal,
+            "pthread_sigmask",
+            side_effect=fail_first_restore,
+        ):
+            with self.assertRaises(RuntimeError):
+                R.execute(Path("/unused"))
+        observed_umask = os.umask(0o077)
+        os.umask(observed_umask)
+        self.assertEqual(observed_umask, before_umask)
+
+    def test_33_existing_consumed_survives_outer_umask_retry_failure(self):
+        events: list[str] = []
+
+        class ExistingNamespace(FakeNamespace):
+            def preclaim_barrier(self):
+                raise R.ReadbackError(
+                    "E_CONSUMED",
+                    "claim_only",
+                    consumed=True,
+                    uncertain=False,
+                )
+
+        real_restore = R._RestrictedUmask.restore
+        restore_calls = 0
+
+        def restore_then_raise(guard):
+            nonlocal restore_calls
+            restore_calls += 1
+            if restore_calls == 1:
+                raise RuntimeError("synthetic umask cleanup")
+            real_restore(guard)
+            raise RuntimeError("synthetic outer umask retry")
+
+        with mock.patch.object(
+            R,
+            "preflight",
+            return_value=fake_preflight(),
+        ), mock.patch.object(
+            R._RestrictedUmask,
+            "restore",
+            side_effect=restore_then_raise,
+            autospec=True,
+        ):
+            with self.assertRaises(R.ReadbackError) as caught:
+                R.execute(
+                    Path("/unused"),
+                    namespace_factory=lambda _root: ExistingNamespace(events),
+                )
+        self.assertEqual(
+            caught.exception.code,
+            "E_CLEANUP_STATE_UNCERTAIN",
+        )
+        self.assertTrue(caught.exception.consumed)
+        self.assertFalse(caught.exception.uncertain)
+
+    def test_34_existing_claim_restore_error_stays_consumed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / R.PERMIT.READBACK_CLAIM_PATH
+            target.parent.mkdir(parents=True, mode=0o700)
+            target.write_bytes(b"existing")
+            real_mask = R.signal.pthread_sigmask
+            restore_calls = 0
+            claim_restore_call = (
+                len(R.PERMIT.READBACK_CLAIM_PATH.split("/")) + 1
+            )
+
+            def fail_claim_restore(how, mask):
+                nonlocal restore_calls
+                result = real_mask(how, mask)
+                if how == R.signal.SIG_SETMASK:
+                    restore_calls += 1
+                    if restore_calls == claim_restore_call:
+                        raise RuntimeError("synthetic claim restore")
+                return result
+
+            with mock.patch.object(
+                R.signal,
+                "pthread_sigmask",
+                side_effect=fail_claim_restore,
+            ):
+                with self.assertRaises(R.ReadbackError) as caught:
+                    R.create_readback_claim(root, "1" * 32, {"x": 1})
+            self.assertEqual(caught.exception.code, "E_CONSUMED")
+            self.assertTrue(caught.exception.consumed)
+            self.assertFalse(caught.exception.uncertain)
+
+    def test_35_first_publication_barrier_output_or_temp_is_uncertain(self):
+        cases = ("receipt", "manifest", "temporary")
+        for occupied in cases:
+            with self.subTest(occupied=occupied), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                claim_path = root / R.PERMIT.READBACK_CLAIM_PATH
+                claim_path.parent.mkdir(parents=True, mode=0o700)
+                output_parent = root / R.PERMIT.BASE
+                output_parent.mkdir(parents=True, mode=0o700)
+                namespace = R.ReadbackNamespace(root)
+                claim_fd = -1
+                try:
+                    claim, claim_fd = R.create_readback_claim(
+                        root,
+                        "1" * 32,
+                        {"x": 1},
+                        namespace.root_fd,
+                        namespace.owned_fds,
+                    )
+                    namespace.hold_claim(claim, claim_fd)
+                    claim_fd = -1
+                    if occupied == "receipt":
+                        (
+                            root / R.PERMIT.READBACK_RECEIPT_PATH
+                        ).write_bytes(b"unexpected")
+                    elif occupied == "manifest":
+                        (
+                            root / R.PERMIT.READBACK_MANIFEST_PATH
+                        ).write_bytes(b"unexpected")
+                    else:
+                        (
+                            output_parent
+                            / (
+                                R.PERMIT.READBACK_TEMP_PREFIXES[0]
+                                + "unexpected"
+                            )
+                        ).write_bytes(b"unexpected")
+                    with self.assertRaises(R.ReadbackError) as caught:
+                        namespace.publication_barrier(
+                            receipt_required=False,
+                        )
+                    self.assertTrue(caught.exception.consumed)
+                    self.assertTrue(caught.exception.uncertain)
+                finally:
+                    if claim_fd >= 0:
+                        if claim_fd in namespace.owned_fds:
+                            R._close_owned_fd(
+                                namespace.owned_fds,
+                                claim_fd,
+                            )
+                        else:
+                            os.close(claim_fd)
+                    namespace.close()
+
+    def test_36_observed_output_survives_ephemeral_cleanup_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            claim_path = root / R.PERMIT.READBACK_CLAIM_PATH
+            claim_path.parent.mkdir(parents=True, mode=0o700)
+            (root / R.PERMIT.BASE).mkdir(parents=True, mode=0o700)
+            namespace = R.ReadbackNamespace(root)
+            claim_fd = -1
+            try:
+                claim, claim_fd = R.create_readback_claim(
+                    root,
+                    "1" * 32,
+                    {"x": 1},
+                    namespace.root_fd,
+                    namespace.owned_fds,
+                )
+                namespace.hold_claim(claim, claim_fd)
+                claim_fd = -1
+                (
+                    root / R.PERMIT.READBACK_RECEIPT_PATH
+                ).write_bytes(b"unexpected")
+                real_close_owned_fds = R._close_owned_fds
+                close_calls = 0
+
+                def fail_observation_cleanup(owner):
+                    nonlocal close_calls
+                    close_calls += 1
+                    real_close_owned_fds(owner)
+                    if close_calls == 3:
+                        raise RuntimeError("synthetic observation cleanup")
+
+                with mock.patch.object(
+                    R,
+                    "_close_owned_fds",
+                    side_effect=fail_observation_cleanup,
+                ):
+                    with self.assertRaises(R.ReadbackError) as caught:
+                        namespace.publication_barrier(
+                            receipt_required=False,
+                        )
+                self.assertEqual(caught.exception.code, "E_OUTPUT_STATE")
+                self.assertTrue(caught.exception.consumed)
+                self.assertTrue(caught.exception.uncertain)
+                self.assertEqual(close_calls, 3)
+            finally:
+                if claim_fd >= 0:
+                    if claim_fd in namespace.owned_fds:
+                        R._close_owned_fd(
+                            namespace.owned_fds,
+                            claim_fd,
+                        )
+                    else:
+                        os.close(claim_fd)
+                namespace.close()
+
+    def test_37_preclaim_state_survives_ephemeral_cleanup_failure(self):
+        cases = {
+            "claim": ("E_CONSUMED", False),
+            "receipt": (
+                "E_RECEIPT_ONLY_OR_TERMINAL_UNCERTAIN",
+                True,
+            ),
+            "stale": ("E_STALE_TEMP_NAMESPACE", True),
+        }
+        for occupied, (code, uncertain) in cases.items():
+            with self.subTest(occupied=occupied), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                claim = root / R.PERMIT.READBACK_CLAIM_PATH
+                receipt = root / R.PERMIT.READBACK_RECEIPT_PATH
+                claim.parent.mkdir(parents=True, mode=0o700)
+                receipt.parent.mkdir(parents=True, mode=0o700)
+                namespace = R.ReadbackNamespace(root)
+                try:
+                    if occupied == "claim":
+                        claim.write_bytes(b"observed")
+                    elif occupied == "receipt":
+                        claim.write_bytes(b"observed")
+                        receipt.write_bytes(b"observed")
+                    else:
+                        (
+                            receipt.parent
+                            / (
+                                R.PERMIT.READBACK_TEMP_PREFIXES[0]
+                                + "observed"
+                            )
+                        ).write_bytes(b"observed")
+                    real_close_owned_fds = R._close_owned_fds
+
+                    def close_then_fail(owner):
+                        real_close_owned_fds(owner)
+                        raise RuntimeError("synthetic ephemeral cleanup")
+
+                    with mock.patch.object(
+                        R,
+                        "_close_owned_fds",
+                        side_effect=close_then_fail,
+                    ):
+                        with self.assertRaises(R.ReadbackError) as caught:
+                            namespace.namespace_state()
+                    self.assertEqual(caught.exception.code, code)
+                    self.assertTrue(caught.exception.consumed)
+                    self.assertEqual(
+                        caught.exception.uncertain,
+                        uncertain,
+                    )
+                finally:
+                    namespace.close()
 
 
 if __name__ == "__main__":

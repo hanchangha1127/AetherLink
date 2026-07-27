@@ -18,6 +18,7 @@ if not (
 
 import ast
 import copy
+import errno
 import hashlib
 import importlib.util
 import json
@@ -406,6 +407,59 @@ class Wave6ReadbackPermitTests(unittest.TestCase):
             for fd in owned:
                 with self.assertRaises(OSError):
                     os.fstat(fd)
+
+    def test_15_close_retains_observably_open_fd_and_is_retryable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            traversal = C.HeldTraversal(root)
+            root_fd = traversal.root_fd
+            real_close = C.os.close
+
+            def refuse_root_close(fd):
+                if fd == root_fd:
+                    raise OSError(errno.EIO, "synthetic close failure")
+                return real_close(fd)
+
+            with mock.patch.object(
+                C.os,
+                "close",
+                side_effect=refuse_root_close,
+            ):
+                with self.assertRaises(OSError):
+                    traversal.close()
+            self.assertFalse(traversal.closed)
+            self.assertIn(root_fd, traversal.owned)
+            os.fstat(root_fd)
+
+            traversal.close()
+            self.assertTrue(traversal.closed)
+            self.assertEqual(traversal.owned, [])
+            with self.assertRaises(OSError):
+                os.fstat(root_fd)
+
+    def test_16_claim_observation_survives_traversal_close_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            claim = root / C.READBACK_CLAIM_PATH
+            claim.parent.mkdir(parents=True, mode=0o700)
+            (root / C.BASE).mkdir(parents=True, mode=0o700)
+            claim.write_bytes(b"observed")
+            real_close = C.HeldTraversal.close
+
+            def close_then_fail(traversal):
+                real_close(traversal)
+                raise RuntimeError("synthetic traversal cleanup")
+
+            with mock.patch.object(
+                C.HeldTraversal,
+                "close",
+                side_effect=close_then_fail,
+                autospec=True,
+            ):
+                with self.assertRaises(C.PermitError) as caught:
+                    C.readback_namespace_state(root)
+            self.assertEqual(caught.exception.code, "E_CONSUMED")
+            self.assertEqual(caught.exception.state, "claim_only")
 
 
 if __name__ == "__main__":
