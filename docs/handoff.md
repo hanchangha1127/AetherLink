@@ -1,6 +1,6 @@
 # AetherLink Session Handoff
 
-Last updated: 2026-07-27 KST.
+Last updated: 2026-07-28 KST.
 
 This is the canonical first document for the next Codex session. Read it before
 editing, staging, rebuilding, or making claims from older QA logs. It describes
@@ -54,7 +54,7 @@ not repository-owner identity proof.
   older chronological entries in `docs/progress.md`, `docs/qa-evidence.md`, and
   `docs/roadmap.md`.
 - This handoff and the canonical section at the top of `docs/roadmap.md` carry
-  the current 2026-07-27 G2 summary. `docs/progress.md` and
+  the current 2026-07-28 G2 summary. `docs/progress.md` and
   `docs/qa-evidence.md` retain their dated execution snapshots. Sections
   explicitly labeled historical or superseded record what was true at that
   checkpoint; they do not override this handoff.
@@ -117,9 +117,9 @@ independently reproduce semantic judgments or source-based location bounds.
 Same-UID concurrent mutation is not prevented, and absence is not guaranteed
 after the final observation. No extraction, materialization, dependency
 install, source compile/execution, socket, network, device, deployment, or Git
-operation occurred. No repository-owner authentication, external identity
-proof, execution-permit authentication
-or document, or user action is required.
+operation occurred. Repository-owner authentication, external identity proof,
+execution-permit authentication or documents, and user action remain outside
+this local workflow.
 
 The historical preparation-only
 [patch/dependency decision v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/patch-and-dependency-closure-decision-v1.json)
@@ -135,8 +135,8 @@ complete 19-file portfolio, and all-false authority and closure boundary; they
 also reject unexpected artifacts, reader-facing effect drift, and
 replace-after-read drift. Recommendations are not selections; no implementation
 plan or patch series exists. Source change, dependency acquisition, compiler,
-socket, network, device, deployment, and Git write remain unauthorized. Neither
-external authentication nor user action is authorized or required.
+socket, network, device, deployment, and Git write remain unauthorized.
+`externalAuthenticationRequired=false` and `userActionRequired=false`.
 
 The predecessor
 [implementation-or-dependency review decision v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/implementation-or-dependency-review-decision-v1.json)
@@ -186,8 +186,8 @@ attestation, raw ZIP identity, production reachability, license compatibility,
 source review, and graph/dependency closure are not claimed. Request count is
 zero; dependency acquisition and network remain unauthorized and unexecuted.
 All 19 findings remain open, and candidate/library selection remains false.
-Neither repository-owner identity proof, external authentication, nor user
-action is required.
+`repositoryOwnerIdentityProofRequired=false`,
+`externalAuthenticationRequired=false`, and `userActionRequired=false`.
 
 The historical successor
 [bounded dependency wave-one execution permit v1](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave1-execution-permit-v1.json)
@@ -1150,22 +1150,35 @@ execution.
   activation-controller ownership, injected real-fixture manager/ViewModel E2E,
   the macOS IPv4-loopback-only accepted-raw primitive, the G2 Pion v4.3.0
   official-source preflight, and the restricted-fork lineage through consumed
-  Wave16 acquisition/readback and the verified read-only combined-v15
-  reconstruction. The normal
-  Android controller intentionally starts
-  empty, the macOS primitive is not `CompanionAppModel`-wired, and neither path
-  has executed a live socket or device. The worktree is intentionally dirty for
-  this bounded current slice. At this snapshot the bounded G2 changes are
+  Wave19 acquisition/readback and the verified read-only Combined V18
+  fixed-point candidate plus its non-authorizing closure-review decision. The
+  normal Android controller intentionally starts empty, the macOS primitive is
+  not `CompanionAppModel`-wired, and neither path has executed a live socket or
+  device. The worktree is intentionally dirty for this bounded current slice.
+  At this snapshot the bounded G2 changes are
   unstaged; refresh `git status --short` because live Git output remains
   authoritative.
-- Current G2 terminal state: Wave16 acquisition and independent readback are
-  consumed successes, and the verified read-only Combined V15 reconstruction
-  has classified the exact 357-input retained set. It derives
-  `fixedPointReached=false`, `route=next_wave_required`, and exactly one
-  non-selected Wave17 frontier tuple, `golang.org/x/tools@v0.33.0`, with
-  `selectedByGraphAlgorithm=false`. The next boundary is its separate
-  verification-only Wave17 identity/acquisition decision; it grants no
-  acquisition authority.
+- Current G2 terminal state: Wave19 acquisition attempt
+  `f10c20196d994afe3a8eba830eb42614` retained the exact four resources and
+  11,453,955 bytes, and independent readback attempt
+  `060a3d9bcd02113ef12c2c75a1e11d70` verified the exact 23-file retained
+  snapshot twice, completed all three pre-manifest barriers, and published its
+  manifest last. Both one-use actions are consumed successes and cannot be
+  retried. No extraction, source loading/execution, compilation, readback
+  network request, external authentication, or user action occurred. Combined
+  V18 subsequently reconstructed the exact 369-source retained set twice and
+  derived an empty-frontier fixed-point candidate with zero unmapped or
+  unresolved imports. Its separate read-only closure review now accepts only
+  `dependencyFixedPointReached=true`; all 19 findings and every later closure
+  or selection state remain open. The fixed-point source/license preparation
+  decision and zero-write adapter are complete, but both independent Sol
+  passes returned `passComplete=false`, so completion remains 0/2. The next
+  boundary is bounded file-by-file semantic, special-source,
+  broad-license/`PATENTS`, SPDX/provenance/binary, and native-profile
+  completion work.
+  Readback completion applies only to the retained snapshot; continuous
+  current-path identity through manifest publication and same-UID replacement
+  prevention after the final barrier are not claimed.
   Historical Wave11
   acquisition attempt
   `ac18b8fda0a80a132510efd5dd17d5b7` retained all 18 exact resources, and
@@ -1279,11 +1292,27 @@ execution.
   passed independently 2/2 and the fast boundary suite passed 2/2. All 23
   behaviors therefore have verification coverage across the genuine run and
   targeted reruns, but no single post-fix 23/23 full-suite run is claimed.
-  The next boundary is the separate verification-only Wave17
-  identity/acquisition decision, with no acquisition authority. No
-  acquisition, extraction, source load/compile/execution, runtime
+  Wave17 acquisition/readback attempts
+  `117fb836380658986632911b9508e274` and
+  `01f3117be3154e37f7f791b49002c490` are consumed successes. Combined V16
+  then derived the three-tuple Wave18 frontier. Wave18 subsequently completed
+  its verification-only decision, consumed exact six-resource acquisition, and
+  completed independent readback without extraction. Combined V17 reconstructs
+  the exact 365-source retained set twice and derives two non-selected Wave19
+  frontier tuples with zero unmapped or unresolved imports. Wave19 then
+  completed its verification-only decision, exact four-resource acquisition,
+  and exact 23-file independent readback without extraction. The two Wave19
+  one-use actions are consumed successes. Combined V18 then reconstructed the
+  exact 369-source retained set twice and derived an empty-frontier fixed-point
+  candidate with zero unmapped or unresolved imports. Its separate read-only
+  closure review now accepts only the dependency graph fixed point. The
+  fixed-point source/license preparation package is complete, but both
+  independent passes remain incomplete at 0/2. The next boundary is bounded
+  per-file semantic, special-source, broad-license/`PATENTS`,
+  SPDX/provenance/binary, and native-profile completion work. Further
+  extraction, source load/compile/execution, runtime
   socket/product network, Git write, device work, credential, authentication,
-  or user action is opened or required.
+  or user action is not opened or required by this boundary.
 - G1a-A no-network state: six typed `ALS1` route authorizations and one exact
   21-field endpoint secure-session transcript are implemented independently in
   Swift and Kotlin. The shared fixture pins six route plus six transcript byte
@@ -2415,54 +2444,154 @@ commit/tree API, raw-content, and `git ls-remote` readback. Remote `main`, paren
 manifest SHA-256 is
 `267be3ca8f56fe353fbb856f95c6f634e98afbc3f204b589a9935be0fe5b0a15`.
 That twelve-path publication remains historical. The current unpublished scope
-is the personal-governance synchronization plus the socket-free G1a-A/B/C/D
-Swift and Kotlin contracts, five shared fixtures, pair/endpoint-ledger
-persistence, transition history, legacy-downgrade guards, dormant internal pre-
-  connector admission seams, G1b-A stack-neutral ownership work, the G2 Pion
-  preflight and restricted-fork lineage through terminal Wave11
-  acquisition/readback evidence, tests, documentation, and gate integration
-  described in the snapshot, the read-only combined-v10 reconstruction, the
-  Wave12 decision package, the exact-eight acquisition package and terminal
-  evidence, and the exact-26-file offline readback package and terminal
-  evidence, the read-only combined-v11 reconstruction, the verification-only
-  Wave13 decision package, the consumed exact-eight Wave13 acquisition, and
-  the exact-27-file offline readback package and terminal evidence, the
-  read-only combined-v12 reconstruction, the verification-only Wave14
-  identity decision, the consumed Wave14 acquisition plus exact-27-file
-  offline readback terminal evidence, the read-only combined-v13
-  reconstruction, the verification-only Wave15 identity/acquisition decision,
-  the consumed ten-resource Wave15 acquisition, and its exact-29-file offline
-  readback terminal evidence, the read-only combined-v14 reconstruction, the
-  verification-only Wave16 identity/acquisition decision, the consumed
-  six-resource Wave16 acquisition, and its exact-25-file offline readback
-  terminal evidence, and the verified read-only combined-v15 reconstruction.
-  Wave12 through Wave16 one-use
-  acquisition/readback actions are consumed successes and cannot be retried.
-  The exact 333-input
-  combined-v12 normal path passes 24/24, and the latest observed local Wave14
-  decision v1 suite passes 27/27 with all four identity pairs complete.
-  Wave14 permit/runner suites pass 18/18 and 48/48, and the readback suites
-  pass 17/17 and 50/50. Combined-v13 passes 24/24 over the exact 341-input
-  set and derives five exact Wave15 frontier tuples. Wave15 decision v1
-  resolves all five identities and records zero blocked/conflicting rows.
-  Wave15 acquisition/runner suites pass 18/18 and 48/48, the readback suites
-  pass 17/17 and 50/50, and attempts
-  `c5db51cfd9a295b448927cca36d1ea07` and
-  `fb2b53eb42982732b0344695065c625d` are consumed successes. Combined-v14
-  passes 23/23 over the exact 351-input set, with 2/2 post-seal fast tests,
-  and derives three exact Wave16 frontier tuples. Wave16 decision v1 resolves
-  all three identities with zero blocked/conflicting rows and passes 27/27.
-  Wave16 acquisition/runner suites pass 18/18 and 48/48, the readback suites
-  pass 17/17 and 50/50, and attempts
-  `fff8d6073748eab6fd1a05c79c57a84f` and
-  `e7c555246489b1ccd63bf3aca3e27c2f` are consumed successes. Combined-v15
-  verifies the exact 357-input set with a genuine two-pass reconstruction and
-  derives exactly one non-selected Wave17 tuple,
-  `golang.org/x/tools@v0.33.0`. Its genuine run plus two corrected targeted
-  tests cover all 23 behaviors without claiming a single post-fix 23/23 full
-  run. The next bounded G2 action is the separate verification-only Wave17
-  identity/acquisition decision, with no acquisition authority. Live Git state
-  remains authoritative for publication status.
+includes the personal-governance synchronization, socket-free G1a-A/B/C/D
+contracts, G1b-A stack-neutral ownership work, and the restricted-fork G2
+lineage through consumed Wave19 acquisition/readback and the verified read-only
+Combined V18 fixed-point candidate plus its non-authorizing closure-review
+decision.
+Wave12 through Wave19 one-use acquisition/readback actions are consumed
+successes and cannot be retried.
+
+Wave17 acquisition attempt `117fb836380658986632911b9508e274`
+retained the exact x/tools `.mod` and ZIP pair, 3,450,700 bytes total, without
+extraction. Readback attempt `01f3117be3154e37f7f791b49002c490`
+independently verified the exact 21-file snapshot twice and completed all three
+retained-FD barriers.
+
+Combined V16 reconstructs the exact 359-input set twice. It covers 180
+archives, 70,402 entries, and 1,305,716,657 ZIP-uncompressed bytes, with
+cumulative totals of 30 full source reconstructions, 4,056 archive opens, and
+60 underlying independent graph algorithms. Candidate, graph, and frontier
+SHA-256 values are
+`90928eb85eded2938b25a0beec82c00ebcd69147bf92733bc65a528d26c00e03`,
+`db7e36664afd819c72e9c9916bd7053782282954ed4f359c550b7972b74147a2`,
+and
+`fe15a3ea57682b276a6f11a2c2fd998d9120640fac40038fc9c1f100e50750b5`.
+It derives `fixedPointReached=false`, `route=next_wave_required`, no unmapped
+or unresolved imports, and three non-selected Wave18 tuples:
+`golang.org/x/mod@v0.24.0`, `golang.org/x/net@v0.40.0`, and
+`golang.org/x/sync@v0.14.0`. The post-seal dry and fast boundary suites pass
+13/13.
+
+The verification-only
+[Wave18 decision](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave18-v1.json)
+resolves all three identity pairs, records zero conflict or blockage, and
+binds the exact six-request set at SHA-256
+`3c13b764b7267efe885528d9f7d4fe31d6b7bdac48839f95e60bb5bd45a7d836`.
+Its content/raw SHA-256 values are
+`c75e5751d3e7c67939251d56e212f95f85439d05684cd50a49701de3e099803d`
+and
+`c90d16a7c7194c7a6dbde2be9bd99f4101a3a8cd1722278209fe5df8bf6371fa`.
+The isolated checker and 24/24 adversarial tests pass; final independent
+review reports no P0-P3 findings. The decision creates no permit, runner,
+claim, receipt, or manifest and grants no acquisition authority at that
+checkpoint.
+
+Wave18 acquisition attempt `4380f5bbcd3366154b05111381ccab18`
+subsequently retained all six exact resources and 2,109,100 bytes without
+extraction. Readback attempt `7e424a47ffdde1099227564f41d610c4`
+independently verified the retained snapshot and published its manifest last.
+Both one-use actions are consumed successes and cannot be retried.
+
+Combined V17 reconstructs the resulting exact 365-source retained set twice.
+It covers 183 archives, 71,373 entries, and 1,312,942,457 ZIP-uncompressed
+bytes, with cumulative totals of 32 full reconstructions, 4,422 archive opens,
+and 64 independent graph algorithms. Candidate, graph, and frontier SHA-256
+values are
+`1267edbe7f1a4f2554808376f67c6ba25a9217db0e6e2cc80a0822d780710f78`,
+`cc748b6a5285321d8e74abab1c881dbc5ffd4433865ba9c75e459152f459092e`,
+and
+`4a7998ef0c1e5716640cccf9c5b349e92124bd787a2ca4090e3ba0920b68b006`.
+It derives `fixedPointReached=false`, `route=next_wave_required`, no unmapped
+or unresolved imports, and two non-selected Wave19 tuples:
+`golang.org/x/crypto@v0.38.0` and `golang.org/x/text@v0.25.0`. Post-seal dry,
+latent, and fast-boundary suites pass 18/18.
+
+The verification-only
+[Wave19 decision](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave19-v1.json)
+resolves both exact H1 pairs, records zero conflict or blockage, binds the
+exact four-request set at SHA-256
+`97f4d8c1775c01c27f83f19b66af6274e0ae77b1be328456c2685ba18552b6e7`,
+and passes 24/24 tests. Two independent GPT-5.6 Sol reviews report no P0-P3
+finding. Wave19 acquisition attempt `f10c20196d994afe3a8eba830eb42614`
+then retained all four exact resources and 11,453,955 bytes. Independent
+readback attempt `060a3d9bcd02113ef12c2c75a1e11d70` verified the exact
+23-file snapshot twice, completed all three retained-FD barriers, and
+published its manifest last with zero network requests. Neither action
+extracted, loaded, executed, or compiled retained source. Both one-use actions
+are consumed successes and cannot be retried. Authentication and user action
+remain false. Live Git state remains
+authoritative for publication status. Completion applies only to the retained
+snapshot; continuous current-path identity through manifest publication and
+same-UID replacement prevention after the final barrier are not claimed.
+
+Combined V18 reconstructs the exact 369-source retained set twice from the
+exact 379-path inventory. It covers 185 archives, 72,304 entries, and
+1,359,347,284 ZIP-uncompressed bytes, with cumulative totals of 34 full source
+reconstructions, 4,792 archive opens, and 68 independent graph algorithms.
+Candidate-content, graph, and frontier SHA-256 values are
+`9dce50013314ec8934ad52ac57cb0de92e982c2334303fc77289f01bc9c285fb`,
+`a865a62a7a80a0dece55aeebd537d3fb9aa73ce6ceeea10304a6a2074c2dfaba`,
+and
+`37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570`.
+It derives `fixedPointReached=true`, `route=fixed_point_candidate`, an empty
+frontier, and zero new, unmapped, or unresolved tuples/imports. The dry,
+latent, and fast-boundary suites pass 18/18. The genuine full class reproduced
+the candidate and passed 23/24; its sole error was a stale test-chain index.
+After correction, that affected legacy-Wave9 compatibility test passed
+independently. No single post-fix 24/24 full-class rerun is claimed. Checker
+raw/normalized and final tests raw SHA-256 values are
+`35c35e98bfc0ea4b49f29b76d732a54f8f0f80dbbe20812266f35143c92da564`,
+`b53fa66b34a8379216d64892502bb352220397c598cbe0b84911ca641b9e40aa`,
+and
+`44a62fc3771a027987320dee3c690f350a62d1eb16911fd925f56a22f09c74eb`.
+
+The separate
+[Combined V18 closure-review decision](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-combined-fixed-point-closure-review-decision-v1.json)
+accepts only `dependencyFixedPointReached=true` for that exact retained
+graph-discovery snapshot. Its canonical reader and self-sealed read-only
+checker bind the V18 tools, semantic predecessors, and input/output digests;
+the focused mutation suite passes 15/15. It creates or persists no candidate
+artifact. All 19 semantic findings remain open, and dependency-source review,
+dependency/semantic closure, license/security review, candidate/library
+selection, rung-three completion, and release readiness remain false. At that
+checkpoint, the next bounded G2 action was the separate fixed-point-snapshot
+dependency source and license review decision completed below. Authentication
+and user action remain false, and no
+acquisition, extraction, loading, execution, compilation, network, socket,
+device, publication, Git-write, or deployment authority is opened.
+
+The separate
+[fixed-point snapshot source/license review decision](security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-fixed-point-snapshot-source-license-review-decision-v1.json)
+and zero-write adapter are complete for their preparation-only boundary. The
+adapter binds all 369 inputs, 184 dependency tuples, 185 archives, 72,304
+entries, 58,478 Go files, 11,150 special-source rows, and the accepted V18
+graph; its focused suite passes 14/14, while the decision checker and mutation
+suite pass 15/15. Two independent GPT-5.6 Sol passes reproduced the exact
+input and full scan but both returned `passComplete=false`, so completed passes
+remain 0/2. Pass A's code claims are rediscoveries of existing canonical
+findings. Pass B's `PATENTS` and native-profile gaps are review-completion
+blockers under the existing dependency-review gap rather than new product
+vulnerabilities. Initial pass B's no-P0-P3 statement meant no new finding and
+did not
+contradict or close the existing open P1 findings at that incomplete stage.
+Resume with bounded
+file-by-file semantic, special-source, broad-license,
+SPDX/provenance/binary, and native-profile coverage. Do not request
+authentication or user action.
+
+Both passes subsequently completed deterministic rows 1-164: 164 files and
+753,000 bytes at batch SHA-256
+`e3604e20a65059f07429913d09784784493c5fd8b71b3859ca544963cdfd143a`.
+Each still has 328 files remaining, so completed-pass count remains 0/2.
+Cross-validation confirmed one new non-canonical P2 reliability candidate:
+DTLS queues subslices of a pooled receive buffer without copying, returns the
+backing buffer to `sync.Pool`, and processes the queued data later. It also
+confirmed unbounded completed-handshake caching as a dependency-source
+extension of existing resource finding
+`G2SR1-F-9206ffd24b3357f7cda5`. No authentication bypass is claimed and neither
+observation is a persisted closure result. Continue with exact batch 2 rows
+165-328; never request authentication or user action.
 
 The historical sidecar, one-response dormant intake envelope, profile, and
 scripts structurally validate the exact recorded candidate values without
@@ -3066,14 +3195,26 @@ Unless the user redirects the task, use this decision order:
    25-file snapshot twice, completed all three retained-FD barriers, and
    published the manifest last. Both actions are consumed successes and cannot
    be retried. Combined-v15 then reconstructed the exact 357-input retained set
-   twice, derived `fixedPointReached=false`, `route=next_wave_required`, and
-   exactly one non-selected Wave17 frontier tuple,
-   `golang.org/x/tools@v0.33.0`. The original genuine run passed 21/23 before
-   two test-oracle corrections; the corrected affected tests passed 2/2
-   independently and the fast suite passed 2/2. This covers all 23 behaviors
-   without claiming a single post-fix 23/23 full run. The next bounded G2 step
-   is the separate verification-only Wave17 identity/acquisition decision,
-   with no acquisition authority.
+   twice and derived one non-selected Wave17 tuple. Wave17 subsequently
+   completed its verification-only decision, consumed its exact two-resource
+   acquisition, and completed exact-21-file independent readback. Combined V16
+   produced the three-tuple Wave18 frontier; Wave18 then completed its
+   verification-only decision, consumed exact six-resource acquisition, and
+   completed independent readback without extraction. Combined V17 reconstructs
+   the resulting exact 365-source retained set twice and derives
+   `fixedPointReached=false`, `route=next_wave_required`, and two exact
+   non-selected Wave19 tuples: `golang.org/x/crypto@v0.38.0` and
+   `golang.org/x/text@v0.25.0`. Wave19 subsequently completed its
+   verification-only decision, exact four-resource acquisition, and exact
+   23-file independent readback without extraction. The two one-use actions
+   are consumed successes. Combined V18 subsequently reconstructs the exact
+   369-source retained set twice and derives an empty-frontier fixed-point
+   candidate. Its separate read-only closure review now accepts only
+   `dependencyFixedPointReached=true`. The fixed-point source/license
+   preparation package is complete, but both independent review passes returned
+   `passComplete=false`; completion remains 0/2. The next bounded G2 step is
+   file-by-file semantic, special-source, broad-license/`PATENTS`,
+   SPDX/provenance/binary, and native-profile completion work.
    Semantic review was performed, but semantic closure, dependency closure,
    rung-three completion, candidate selection, and library selection remain
    false. Android verified-endpoint
@@ -3081,7 +3222,7 @@ Unless the user redirects the task, use this decision order:
    macOS `CompanionAppModel` listener wiring may continue as stack-neutral
    ownership work, but the actual P2P backend and socket proof wait for their
    G2 scopes. The retained set is terminal acquisition/readback evidence only;
-   no additional acquisition, materialization, reviewed-source
+   no further acquisition, materialization, reviewed-source
    compile/execution, runtime network, Git, device, deployment,
    authentication, or user action is opened or required for this local work.
 6. Leave production identifiers, accounts, keys, signing, store upload, and

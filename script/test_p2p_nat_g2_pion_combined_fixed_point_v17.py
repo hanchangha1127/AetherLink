@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused tests for the exact read-only 359-input combined v16 checker."""
+"""Focused tests for the exact read-only 365-source combined v17 checker."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def require_isolated_interpreter() -> None:
         and flags.optimize == 0
     ):
         raise RuntimeError(
-            "combined fixed-point v16 tests require unoptimized "
+            "combined fixed-point v17 tests require unoptimized "
             "`python3 -I -B -S`"
         )
 
@@ -37,31 +37,60 @@ from pathlib import Path
 import re
 import stat
 import tempfile
+import types
 import unittest
 from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CHECKER_PATH = ROOT / "script/check_p2p_nat_g2_pion_combined_fixed_point_v16.py"
+CHECKER_PATH = ROOT / "script/check_p2p_nat_g2_pion_combined_fixed_point_v17.py"
 
 
 def load_checker():
-    spec = importlib.util.spec_from_file_location(
-        "combined_fixed_point_v16_tests_target",
-        CHECKER_PATH,
+    raw = CHECKER_PATH.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != EXPECTED_CHECKER_RAW_SHA256:
+        raise RuntimeError("checker raw preload gate failed")
+    marker = re.compile(
+        br'(SELF_NORMALIZED_SHA256 = \(\n    ")[0-9a-f]{64}("\n\))'
     )
-    if spec is None or spec.loader is None:
-        raise RuntimeError("checker load failed")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    normalized, count = marker.subn(
+        rb"\g<1>" + b"0" * 64 + rb"\g<2>",
+        raw,
+    )
+    if (
+        count != 1
+        or hashlib.sha256(normalized).hexdigest()
+        != EXPECTED_SELF_NORMALIZED_SHA256
+    ):
+        raise RuntimeError("checker normalized preload gate failed")
+    source = raw.decode("utf-8")
+    validate_checker_static_surface(source)
+    module = types.ModuleType("combined_fixed_point_v17_tests_target")
+    module.__dict__.update(
+        {
+            "__cached__": None,
+            "__file__": str(CHECKER_PATH),
+            "__loader__": None,
+            "__name__": "combined_fixed_point_v17_tests_target",
+            "__package__": None,
+        }
+    )
+    code = compile(
+        raw,
+        str(CHECKER_PATH),
+        "exec",
+        dont_inherit=True,
+        optimize=0,
+    )
+    exec(code, module.__dict__, module.__dict__)
     return module
 
 
-CHECKER = load_checker()
+CHECKER = None
 
 UNRESOLVED_SHA256 = "0" * 64
 EXPECTED_SELF_NORMALIZED_SHA256 = (
-    "7dd2c81a2032a374192f7c502afc65305d97f7c1e3699654e416b60bf64c6bd5"
+    "d2ebef7f9aad384b08a68c438320de882d640a859a7d35521853818afbcdd7ce"
 )
 EXPECTED_CLOSED_AUTHORITY = {
     "decisionAuthorityGranted": False,
@@ -85,9 +114,17 @@ EXPECTED_CLOSED_AUTHORITY = {
 }
 EXPECTED_TOOL_BINDINGS = [
     {
-        "role": "current_v16_combined_checker",
-        "path": "script/check_p2p_nat_g2_pion_combined_fixed_point_v16.py",
+        "role": "current_v17_combined_checker",
+        "path": "script/check_p2p_nat_g2_pion_combined_fixed_point_v17.py",
         "normalizedSha256": EXPECTED_SELF_NORMALIZED_SHA256,
+    },
+    {
+        "role": "immutable_v16_combined_checker",
+        "path": "script/check_p2p_nat_g2_pion_combined_fixed_point_v16.py",
+        "rawSha256":
+            "2e388d466c5346fa6f82b7fd23fa6dca24009acadacdd62f1fe2ba25b0a10879",
+        "normalizedSha256":
+            "7dd2c81a2032a374192f7c502afc65305d97f7c1e3699654e416b60bf64c6bd5",
     },
     {
         "role": "immutable_v15_combined_checker",
@@ -197,46 +234,74 @@ EXPECTED_TOOL_BINDINGS = [
             "3ee8a2dbb067b31a3f0cdd02f75413ef7de33a8279b97e2100189cdb576049d3",
     },
 ]
-EXPECTED_WAVE17_RESOURCE_IDENTITY = [
+EXPECTED_WAVE18_RESOURCE_IDENTITY = [
     (
-        1, 179, "mod", "golang.org/x/tools", "v0.33.0",
-        "build/offline-source/pion-ice-v4.3.0/dependencies/"
-        "wave-17-v1/accepted/001-8bd04ea612cec9787131.mod",
-        "428571a10aab7586a67da2c9375e8ae480def8d2fa11de8c6fff28a696b9591f",
+        1, 180, "mod",
+        "golang.org/x/mod", "v0.24.0",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-18-v1/accepted/001-bb2025870bcef7a0c287.mod",
+        "1fb8ad2f7201cd79bf178578b35aaead1720cab2b8cfea35b99b25b60839f1ef",
     ),
     (
-        2, 179, "zip", "golang.org/x/tools", "v0.33.0",
-        "build/offline-source/pion-ice-v4.3.0/dependencies/"
-        "wave-17-v1/accepted/001-8bd04ea612cec9787131.zip",
-        "da7a76d9db0956f30dd7f9957eead7aab5aa132dbca78a6d578436f94fdfee84",
+        2, 180, "zip",
+        "golang.org/x/mod", "v0.24.0",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-18-v1/accepted/001-bb2025870bcef7a0c287.zip",
+        "1a8ef77bb4d41c1a7d3fa5d0caf2fe599f14eac10f473629e31546f12759b89f",
+    ),
+    (
+        3, 181, "mod",
+        "golang.org/x/net", "v0.40.0",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-18-v1/accepted/002-3c84a9eecca520aed886.mod",
+        "3258ec9e17abe2bf1053d0b176d3d50367815237a7701eb373c38152bbd6b9a0",
+    ),
+    (
+        4, 181, "zip",
+        "golang.org/x/net", "v0.40.0",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-18-v1/accepted/002-3c84a9eecca520aed886.zip",
+        "388e4a624f48990057f1a2a2cc5f3e0f81e41b99dd2036247d98c931c59d44d4",
+    ),
+    (
+        5, 182, "mod",
+        "golang.org/x/sync", "v0.14.0",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-18-v1/accepted/003-4615480e24f0c4184e4c.mod",
+        "720b98f1bf033d6b64a454ca8c29cdca6e9265ab7d70db3b834dff49560f1587",
+    ),
+    (
+        6, 182, "zip",
+        "golang.org/x/sync", "v0.14.0",
+        "build/offline-source/pion-ice-v4.3.0/dependencies/wave-18-v1/accepted/003-4615480e24f0c4184e4c.zip",
+        "8b19a2aa2162ec8fa1cba4762eb06b089ef8d2dbddf4e64ef51334e722b83a7f",
     ),
 ]
-EXPECTED_WAVE17_FALSE_ROOT_GO_MOD_FILES = set()
-EXPECTED_WAVE17_FROZEN_PATH_RAWS = [
-    ("docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave17-v1.json", "659e9ce6f079701cab68e337d2746959741ef4868ffff6392fcdbf26ae692f93"),
-    ("docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave17-v1.md", "3af49874bd518628971566d6067331c75e2f4fbcf7ac36bafee914938873ef51"),
-    ("script/check_p2p_nat_g2_pion_rung3_dependency_wave17_decision_v1.py", "564a8f0c3a6dbf9331fe8e02d121efe8c4e91fcd6c5e7415607e0c0b6d9fb256"),
-    ("script/test_p2p_nat_g2_pion_rung3_dependency_wave17_decision_v1.py", "5af9a8ed93b2424e4251cbe3b47de3281c498fc93e707975311dbddff41065a6"),
-    ("script/check_p2p_nat_g2_pion_combined_fixed_point_v15.py", "e0a8353e5bd4f40b587c2b62c563c0b679ca5261345e577d71d00fb868f08fb5"),
-    ("script/test_p2p_nat_g2_pion_combined_fixed_point_v15.py", "65d7f435cef11da2cccae7e31a3c410d7a3038f6bc3261552753801a0de431b1"),
-    ("build/offline-source/pion-ice-v4.3.0/dependencies/.wave-16-v1.claim", "df97f5d9bf8c56f3bbf08635b8332bbc18b25babd0e5f35742fee3657555f4b8"),
-    ("docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave17-execution-permit-v1.md", "95ff70bdd0fdb5f2b7bdfdbeb8960774aa1b5ef48c67e6d62031c3d4cf485655"),
-    ("docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave17-execution-permit-v1.json", "8376c5daef8a9e8970b03b15cda5861a2d16c237024d97cb00e1dfeac275baaa"),
-    ("script/check_p2p_nat_g2_pion_rung3_dependency_wave17_acquisition_v1.py", "acd6af5f174569c0b3d988d4528cf9b6219c9b5c5b6ba9205db982506b0e7b81"),
-    ("script/test_p2p_nat_g2_pion_rung3_dependency_wave17_acquisition_v1.py", "46e4508695dba47cfdb899a5f1ca5a4f9d2c1cb8e3e288babf0036daf632827c"),
-    ("script/acquire_p2p_nat_g2_pion_rung3_dependency_wave17_v1_once.py", "8e9ec1a6633754f27566e065899c2dbf492b4707dc562ccdccd4e56a94e96fb8"),
-    ("script/test_acquire_p2p_nat_g2_pion_rung3_dependency_wave17_v1_once.py", "edaaf7e0c557ab9648b6caf651276cdf406da338eca03fb7ee77ecaefa7e283e"),
+EXPECTED_WAVE18_FALSE_ROOT_GO_MOD_FILES = set()
+EXPECTED_WAVE18_FROZEN_PATH_RAWS = [
+    ("docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave18-v1.json", "c90d16a7c7194c7a6dbde2be9bd99f4101a3a8cd1722278209fe5df8bf6371fa"),
+    ("docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-identity-and-acquisition-decision-wave18-v1.md", "862ac89248970b9b4d59230e6b9f894b3fc49ed82f151608687e82cb8b1d1a2d"),
+    ("script/check_p2p_nat_g2_pion_rung3_dependency_wave18_decision_v1.py", "bad407e7e0c95dc843ccc7bd7b0aa578c10f70b0592c110eab52fba0c6a73b57"),
+    ("script/test_p2p_nat_g2_pion_rung3_dependency_wave18_decision_v1.py", "e6ae108af2326c97ac2db488451922640ddecefe576d8c7dedd0415a6e57904d"),
+    ("script/check_p2p_nat_g2_pion_combined_fixed_point_v16.py", "2e388d466c5346fa6f82b7fd23fa6dca24009acadacdd62f1fe2ba25b0a10879"),
+    ("script/test_p2p_nat_g2_pion_combined_fixed_point_v16.py", "15cf4d56a68b9f0cfd61554b24e781357066b27e63c90c871dfb0cde19c80889"),
+    ("build/offline-source/pion-ice-v4.3.0/dependencies/.wave-17-v1.claim", "3090e729d99c46c4b4d1e4242d6f25c08e2345062dfb6c15e1e87d3edf632fad"),
+    ("docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave18-execution-permit-v1.md", "abe114edafaf7f1ed7dd11af5179bf39d6577c95ac87bc64f86ed57b9402fe8c"),
+    ("docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave18-execution-permit-v1.json", "c8bca67d38117c3658da504780bb97e33b92367567121285129e90dde0db0fc1"),
+    ("script/check_p2p_nat_g2_pion_rung3_dependency_wave18_acquisition_v1.py", "c454de5191c7a9de4bccaa4c8aa00f914e74e2c9bb4c4bf59164b827a0c6bfc5"),
+    ("script/test_p2p_nat_g2_pion_rung3_dependency_wave18_acquisition_v1.py", "589f27f6754e357207e90f1a275126acba4f7f1008821dd0f18df4f904ce7c4e"),
+    ("script/acquire_p2p_nat_g2_pion_rung3_dependency_wave18_v1_once.py", "5d4d77663d61b9ff77f35ec6f0e55239637e18970e9d3e6ad7a104d308b9e3ca"),
+    ("script/test_acquire_p2p_nat_g2_pion_rung3_dependency_wave18_v1_once.py", "f45a478e0ed4a36bebaf4f2360181c4287ab5bfa09113238fa6b9eaf534b4dad"),
     ("script/check_p2p_nat_g2_pion_rung3_dependency_wave4_acquisition_v1.py", "37a0266f3b4310f1980c70d26cfd10b98bb32ebf4e81f96193e40d4ebb9c0dbd"),
     ("script/acquire_p2p_nat_g2_pion_rung3_dependency_wave4_v1_once.py", "ad611c379020c5dfc502547d80cb89eb9ed2d89a0585e0abe03357d3163f177b"),
-    ("build/offline-source/pion-ice-v4.3.0/dependencies/.wave-17-v1.claim", "3090e729d99c46c4b4d1e4242d6f25c08e2345062dfb6c15e1e87d3edf632fad"),
-    ("build/offline-source/pion-ice-v4.3.0/dependencies/wave-17-v1/evidence.json", "bfe3e3cb97d5ed20d5c95e83344cc79f8f16de09b2cafb924cf59cbe64da6175"),
-    ("build/offline-source/pion-ice-v4.3.0/dependencies/wave-17-v1/accepted/001-8bd04ea612cec9787131.mod", "428571a10aab7586a67da2c9375e8ae480def8d2fa11de8c6fff28a696b9591f"),
-    ("build/offline-source/pion-ice-v4.3.0/dependencies/wave-17-v1/accepted/001-8bd04ea612cec9787131.zip", "da7a76d9db0956f30dd7f9957eead7aab5aa132dbca78a6d578436f94fdfee84"),
-    ("docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave17-receipt-v1.json", "0736a577af59b621483694c8f9fa36ce3c8f06bfd7c48d2b204b6a94a6d8f4c5"),
-    ("docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave17-manifest-v1.json", "3c9a6d92ca6b967a5fdc3997793cf90456836923a8460e2816271be6c57a7733"),
+    ("build/offline-source/pion-ice-v4.3.0/dependencies/.wave-18-v1.claim", "08f5134ce03805e512c2dec0dee13251ce682d793d2b87f7f8e29f6d3426d362"),
+    ("build/offline-source/pion-ice-v4.3.0/dependencies/wave-18-v1/evidence.json", "954d26f4d95a500b1c993b6e4727f787416db866246a009754c8baa1cb7febed"),
+    ("build/offline-source/pion-ice-v4.3.0/dependencies/wave-18-v1/accepted/001-bb2025870bcef7a0c287.mod", "1fb8ad2f7201cd79bf178578b35aaead1720cab2b8cfea35b99b25b60839f1ef"),
+    ("build/offline-source/pion-ice-v4.3.0/dependencies/wave-18-v1/accepted/001-bb2025870bcef7a0c287.zip", "1a8ef77bb4d41c1a7d3fa5d0caf2fe599f14eac10f473629e31546f12759b89f"),
+    ("build/offline-source/pion-ice-v4.3.0/dependencies/wave-18-v1/accepted/002-3c84a9eecca520aed886.mod", "3258ec9e17abe2bf1053d0b176d3d50367815237a7701eb373c38152bbd6b9a0"),
+    ("build/offline-source/pion-ice-v4.3.0/dependencies/wave-18-v1/accepted/002-3c84a9eecca520aed886.zip", "388e4a624f48990057f1a2a2cc5f3e0f81e41b99dd2036247d98c931c59d44d4"),
+    ("build/offline-source/pion-ice-v4.3.0/dependencies/wave-18-v1/accepted/003-4615480e24f0c4184e4c.mod", "720b98f1bf033d6b64a454ca8c29cdca6e9265ab7d70db3b834dff49560f1587"),
+    ("build/offline-source/pion-ice-v4.3.0/dependencies/wave-18-v1/accepted/003-4615480e24f0c4184e4c.zip", "8b19a2aa2162ec8fa1cba4762eb06b089ef8d2dbddf4e64ef51334e722b83a7f"),
+    ("docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave18-receipt-v1.json", "30c703bde55144665117bffcafa0f7fcd1b54c9885acd8fb028adda9339643ca"),
+    ("docs/security-hardening/production-p2p-nat-v1/g2-pion-restricted-fork-v1/rung-three/bounded-dependency-source-acquisition-wave18-manifest-v1.json", "28230bf973cc4346772430080e87c1ac06d0482b9188e072cc75b72020332b7a"),
 ]
 EXPECTED_CHECKER_RAW_SHA256 = (
-    "2e388d466c5346fa6f82b7fd23fa6dca24009acadacdd62f1fe2ba25b0a10879"
+    "32df9bd1bf9b4b6610a2a74038956eab7e51c506198c11f45fa5058968caacb8"
 )
 EXPECTED_CHECKER_IMPORT_SURFACE = (
     ("from", "__future__", 0, (("annotations", None),)),
@@ -260,36 +325,69 @@ EXPECTED_CHECKER_IMPORT_SURFACE = (
     ("import", (("unicodedata", None),)),
     ("import", (("zipfile", None),)),
 )
-EXPECTED_CHECKER_CALL_COUNT = 1_900
+EXPECTED_CHECKER_CALL_COUNT = 1_939
 EXPECTED_CHECKER_CALL_SURFACE_SHA256 = (
-    "5385bcc62195dc7dcb684ee1c0928cee950fb469f4222baf2fe99401d45ab857"
+    "b5750164d32c0c39ba1043d13a0316188476e3aa9c59ffd7357656bdf3ddd514"
 )
-EXPECTED_V16_CANDIDATE_CONTENT_SHA256 = (
-    "90928eb85eded2938b25a0beec82c00ebcd69147bf92733bc65a528d26c00e03"
+EXPECTED_V17_CANDIDATE_CONTENT_SHA256 = (
+    "1267edbe7f1a4f2554808376f67c6ba25a9217db0e6e2cc80a0822d780710f78"
 )
-EXPECTED_V16_GRAPH_SHA256 = (
-    "db7e36664afd819c72e9c9916bd7053782282954ed4f359c550b7972b74147a2"
+EXPECTED_V17_GRAPH_SHA256 = (
+    "cc748b6a5285321d8e74abab1c881dbc5ffd4433865ba9c75e459152f459092e"
 )
-EXPECTED_V16_FRONTIER_SHA256 = (
-    "fe15a3ea57682b276a6f11a2c2fd998d9120640fac40038fc9c1f100e50750b5"
+EXPECTED_V17_FRONTIER_SHA256 = (
+    "4a7998ef0c1e5716640cccf9c5b349e92124bd787a2ca4090e3ba0920b68b006"
 )
-EXPECTED_V16_EXACT_FRONTIER = (
-    ("golang.org/x/mod", "v0.24.0", False),
-    ("golang.org/x/net", "v0.40.0", False),
-    ("golang.org/x/sync", "v0.14.0", False),
+# Resolve this fixture only from the same audited full reconstruction that
+# resolves the three output seals above.  Its eventual shape is:
+# {
+#     "exactFrontier": ((module, version, selected), ...),
+#     "newTupleCount": int,
+#     "unmappedExternalImportCount": int,
+#     "unresolvedDeclaredExternalImportCount": int,
+#     "fixedPointReached": bool,
+#     "route": {
+#         "route": str,
+#         "status": str,
+#         "nextAction": str,
+#     },
+# }
+EXPECTED_V17_OUTCOME = {
+    "exactFrontier": (
+        ("golang.org/x/crypto", "v0.38.0", False),
+        ("golang.org/x/text", "v0.25.0", False),
+    ),
+    "newTupleCount": 2,
+    "unmappedExternalImportCount": 0,
+    "unresolvedDeclaredExternalImportCount": 0,
+    "fixedPointReached": False,
+    "route": {
+        "route": "next_wave_required",
+        "status": "combined_graph_discovery_complete_next_wave_required",
+        "nextAction": (
+            "prepare_separate_versioned_dependency_wave_identity_"
+            "and_acquisition_decision"
+        ),
+    },
+}
+EXPECTED_V17_INPUT_SET_SHA256 = (
+    "79f2c8e28daf3f46c97d827cdc7416b77905eea49bc482911f8d234e0de3765f"
 )
-EXPECTED_V16_INPUT_SET_SHA256 = (
-    "15705de20633cdf4bf473c82a634136f481a2c131e7960a0a6cbdeccf10397a7"
+EXPECTED_V17_SOURCE_BINDINGS_SHA256 = (
+    "72c1253423412744380ed5c7f8b74f9d5b34daaefd05caf5b384d9bb55589490"
 )
-EXPECTED_V16_SOURCE_BINDINGS_SHA256 = (
-    "401a3e85faacc150944d883495fca4b22e4cac1933c0308aedaec228a7c872ea"
+EXPECTED_V17_EXACT_INPUT_INVENTORY_SHA256 = (
+    "c12860b50bf2022cac92b8def3618496b3b8819b814aa67bb325cb8217d80a7b"
 )
-OUTPUT_SEALS_UNRESOLVED = any(
-    value == UNRESOLVED_SHA256
-    for value in (
-        EXPECTED_V16_CANDIDATE_CONTENT_SHA256,
-        EXPECTED_V16_GRAPH_SHA256,
-        EXPECTED_V16_FRONTIER_SHA256,
+OUTPUT_SEALS_UNRESOLVED = (
+    EXPECTED_V17_OUTCOME is None
+    or any(
+        value == UNRESOLVED_SHA256
+        for value in (
+            EXPECTED_V17_CANDIDATE_CONTENT_SHA256,
+            EXPECTED_V17_GRAPH_SHA256,
+            EXPECTED_V17_FRONTIER_SHA256,
+        )
     )
 )
 
@@ -322,7 +420,7 @@ ALLOWED_GETATTR_CALLS = {
         static_expression_dump("getattr(module, name)"),
     ),
     (
-        "load_v15_checker",
+        "load_v16_checker",
         static_expression_dump("getattr(module, name, None)"),
     ),
     (
@@ -678,7 +776,7 @@ def validate_checker_static_surface(source):
         }:
             allowed_loaders = {
                 "load_provider_facade": "V1_PROVIDER_PATH",
-                "load_v15_checker": "V15_CHECKER_PATH",
+                "load_v16_checker": "V16_CHECKER_PATH",
                 "load_v14_checker": "V14_CHECKER_PATH",
                 "load_v13_checker": "V13_CHECKER_PATH",
                 "load_v12_checker": "V12_CHECKER_PATH",
@@ -859,6 +957,11 @@ def held_toolchain():
     with (
         CHECKER.PinnedCodeFile(
             ROOT,
+            CHECKER.V16_CHECKER_PATH,
+            CHECKER.V16_CHECKER_RAW_SHA256,
+        ) as held_v16,
+        CHECKER.PinnedCodeFile(
+            ROOT,
             CHECKER.V15_CHECKER_PATH,
             CHECKER.V15_CHECKER_RAW_SHA256,
         ) as held_v15,
@@ -918,9 +1021,10 @@ def held_toolchain():
             CHECKER.V4_CHECKER_RAW_SHA256,
         ) as held_v4,
     ):
-        v15 = CHECKER.harden_checker_module(
-            CHECKER.load_v15_checker(held_v15)
+        v16 = CHECKER.harden_checker_module(
+            CHECKER.load_v16_checker(held_v16)
         )
+        v15 = v16.load_v15_checker(held_v15)
         v14 = v15.load_v14_checker(held_v14)
         v13 = v14.load_v13_checker(held_v13)
         v12 = v13.load_v12_checker(held_v12)
@@ -941,6 +1045,7 @@ def held_toolchain():
             with v1.PinnedRunnerFile(ROOT) as held_provider:
                 runner = v1.load_pinned_runner(held_provider)
                 yield (
+                    v16,
                     v15,
                     v14,
                     v13,
@@ -959,9 +1064,10 @@ def held_toolchain():
 
 
 @contextmanager
-def held_wave17_documents(*, include_held=False):
+def held_wave18_documents(*, include_held=False):
     with held_toolchain() as chain:
         (
+            v16,
             v15,
             v14,
             v13,
@@ -978,11 +1084,11 @@ def held_wave17_documents(*, include_held=False):
             runner,
         ) = chain
         bindings = (
-            CHECKER.wave17_control_bindings()
-            + CHECKER.wave17_auxiliary_evidence_bindings()
+            CHECKER.wave18_control_bindings()
+            + CHECKER.wave18_auxiliary_evidence_bindings()
         )
         with runner.HeldInputSet(ROOT, bindings) as held:
-            documents = CHECKER.parse_wave17_documents(runner, held)
+            documents = CHECKER.parse_wave18_documents(runner, held)
             if include_held:
                 yield v4, runner, documents, held
             else:
@@ -993,6 +1099,7 @@ def held_wave17_documents(*, include_held=False):
 def held_all_documents():
     with held_toolchain() as chain:
         (
+            v16,
             v15,
             v14,
             v13,
@@ -1024,9 +1131,10 @@ def held_all_documents():
             + v13.wave14_control_bindings()
             + v14.wave15_control_bindings()
             + v15.wave16_control_bindings()
-            + CHECKER.wave17_control_bindings()
+            + v16.wave17_control_bindings()
+            + CHECKER.wave18_control_bindings()
         )
-        auxiliary = CHECKER.wave17_auxiliary_evidence_bindings()
+        auxiliary = CHECKER.wave18_auxiliary_evidence_bindings()
         with runner.HeldInputSet(ROOT, controls + auxiliary) as held:
             yield (
                 chain,
@@ -1048,48 +1156,49 @@ def held_all_documents():
                 v13.parse_wave14_documents(runner, held),
                 v14.parse_wave15_documents(runner, held),
                 v15.parse_wave16_documents(runner, held),
-                CHECKER.parse_wave17_documents(runner, held),
+                v16.parse_wave17_documents(runner, held),
+                CHECKER.parse_wave18_documents(runner, held),
             )
 
 
-def assert_wave17_mutation_fails(
+def assert_wave18_mutation_fails(
     testcase: unittest.TestCase,
     mutate,
     expected_code: str,
 ) -> None:
-    with held_wave17_documents() as (v4, runner, documents):
+    with held_wave18_documents() as (v4, runner, documents):
         mutated = copy.deepcopy(documents)
         mutate(mutated)
         with (
             mock.patch.object(
                 CHECKER,
-                "verify_wave17_content_bindings",
+                "verify_wave18_content_bindings",
             ),
             testcase.assertRaises(
                 CHECKER.CombinedCheckFailure,
             ) as caught,
         ):
-            CHECKER.wave17_request_resources(v4, runner, mutated)
+            CHECKER.wave18_request_resources(v4, runner, mutated)
     testcase.assertEqual(str(caught.exception), expected_code)
 
 
-def rebind_wave17_selector_hashes(
+def rebind_wave18_selector_hashes(
     runner,
     documents,
 ) -> tuple[str, str]:
     """Rebind selector-bearing projections so semantic checks run."""
 
-    decision = documents[CHECKER.WAVE17_DECISION_PATH]
-    permit = documents[CHECKER.WAVE17_PERMIT_PATH]
-    readback_permit = documents[CHECKER.WAVE17_READBACK_PERMIT_PATH]
-    readback = documents[CHECKER.WAVE17_READBACK_PATH]
+    decision = documents[CHECKER.WAVE18_DECISION_PATH]
+    permit = documents[CHECKER.WAVE18_PERMIT_PATH]
+    readback_permit = documents[CHECKER.WAVE18_READBACK_PERMIT_PATH]
+    readback = documents[CHECKER.WAVE18_READBACK_PATH]
     resources = permit["requestContract"]["resources"]
     source_requests = decision["sourceAcquisitionPreparation"]["requestSet"]
     resources_sha256 = CHECKER.sha256_bytes(
         runner.canonical_json_bytes(resources)
     )
     request_set_sha256 = CHECKER.sha256_bytes(
-        CHECKER.wave17_digest_bytes(source_requests)
+        CHECKER.wave18_digest_bytes(source_requests)
     )
 
     decision["sourceAcquisitionPreparation"][
@@ -1112,7 +1221,10 @@ def rebind_wave17_selector_hashes(
     return resources_sha256, request_set_sha256
 
 
-class CombinedFixedPointV16DryOracleTests(unittest.TestCase):
+CHECKER = load_checker()
+
+
+class CombinedFixedPointV17DryOracleTests(unittest.TestCase):
     """Read-only oracles that never invoke full graph reconstruction."""
 
     maxDiff = None
@@ -1135,8 +1247,8 @@ class CombinedFixedPointV16DryOracleTests(unittest.TestCase):
             for node in ast.walk(tree)
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
-        self.assertIn("load_v15_checker", functions)
-        self.assertIn("validate_v15_predecessor_candidate", functions)
+        self.assertIn("load_v16_checker", functions)
+        self.assertIn("validate_v16_predecessor_candidate", functions)
         self.assertIn("derive_and_validate_graph_result", functions)
         self.assertIn("execute_reconstruction_protocol_prefix", functions)
         self.assertIn("finalize_reconstruction_protocol", functions)
@@ -1150,59 +1262,59 @@ class CombinedFixedPointV16DryOracleTests(unittest.TestCase):
             validate_checker_static_surface(bool_optimize_source)
         self.assertEqual(caught.exception.code, "E_PINNED_CODE_CALL")
 
-    def test_00_exact_wave17_consumed_bindings_and_input_delta(self):
+    def test_00_exact_wave18_consumed_bindings_and_input_delta(self):
         controls = {
             (
                 "docs/security-hardening/production-p2p-nat-v1/"
                 "g2-pion-restricted-fork-v1/rung-three/"
                 "bounded-dependency-source-identity-and-acquisition-"
-                "decision-wave17-v1.json"
-            ): "659e9ce6f079701cab68e337d2746959741ef4868ffff6392fcdbf26ae692f93",
+                "decision-wave18-v1.json"
+            ): "c90d16a7c7194c7a6dbde2be9bd99f4101a3a8cd1722278209fe5df8bf6371fa",
             (
                 "docs/security-hardening/production-p2p-nat-v1/"
                 "g2-pion-restricted-fork-v1/rung-three/"
-                "bounded-dependency-source-acquisition-wave17-"
+                "bounded-dependency-source-acquisition-wave18-"
                 "execution-permit-v1.json"
-            ): "8376c5daef8a9e8970b03b15cda5861a2d16c237024d97cb00e1dfeac275baaa",
+            ): "c8bca67d38117c3658da504780bb97e33b92367567121285129e90dde0db0fc1",
             (
                 "docs/security-hardening/production-p2p-nat-v1/"
                 "g2-pion-restricted-fork-v1/rung-three/"
-                "bounded-dependency-source-acquisition-wave17-"
+                "bounded-dependency-source-acquisition-wave18-"
                 "receipt-v1.json"
-            ): "0736a577af59b621483694c8f9fa36ce3c8f06bfd7c48d2b204b6a94a6d8f4c5",
+            ): "30c703bde55144665117bffcafa0f7fcd1b54c9885acd8fb028adda9339643ca",
             (
                 "docs/security-hardening/production-p2p-nat-v1/"
                 "g2-pion-restricted-fork-v1/rung-three/"
-                "bounded-dependency-source-acquisition-wave17-"
+                "bounded-dependency-source-acquisition-wave18-"
                 "manifest-v1.json"
-            ): "3c9a6d92ca6b967a5fdc3997793cf90456836923a8460e2816271be6c57a7733",
+            ): "28230bf973cc4346772430080e87c1ac06d0482b9188e072cc75b72020332b7a",
             (
                 "docs/security-hardening/production-p2p-nat-v1/"
                 "g2-pion-restricted-fork-v1/rung-three/"
-                "bounded-dependency-source-acquisition-wave17-readback-"
+                "bounded-dependency-source-acquisition-wave18-readback-"
                 "execution-permit-v1.json"
-            ): "05e71da5b47544728c74fb8eb9b4bb665179dde420b48211a5f9dfb5ad2d3bcd",
+            ): "12e405fd04b08cd39c797b9cd5b9c82f1831ba73bdb48f86db961fb39e4f6a4f",
             (
                 "docs/security-hardening/production-p2p-nat-v1/"
                 "g2-pion-restricted-fork-v1/rung-three/"
-                "bounded-dependency-source-acquisition-wave17-"
+                "bounded-dependency-source-acquisition-wave18-"
                 "readback-v1.json"
-            ): "9f21afa4c98081d95228d217e60eec66961b85ee5b23ab11e51f19c6f9865958",
+            ): "63bf2cf4ed12e8203d39f334e78f14010950b7697501035698a678dd0fa3d4d7",
             (
                 "docs/security-hardening/production-p2p-nat-v1/"
                 "g2-pion-restricted-fork-v1/rung-three/"
-                "bounded-dependency-source-acquisition-wave17-readback-"
+                "bounded-dependency-source-acquisition-wave18-readback-"
                 "manifest-v1.json"
-            ): "05bd78ba52abac67c3eec63a180c7e815a7528709f4b8e58b40c2e948ff4f3e4",
+            ): "f7edbf34643f25813fd3d6e73dc475a2e47c67ab888f6161d4f1cdf0a6fa66b8",
         }
         documents = {
             path: self._document(path, digest)
             for path, digest in controls.items()
         }
-        self.assertEqual(CHECKER.WAVE17_CONTROL_SHA256, controls)
+        self.assertEqual(CHECKER.WAVE18_CONTROL_SHA256, controls)
 
-        readback_permit = documents[CHECKER.WAVE17_READBACK_PERMIT_PATH]
-        readback = documents[CHECKER.WAVE17_READBACK_PATH]
+        readback_permit = documents[CHECKER.WAVE18_READBACK_PERMIT_PATH]
+        readback = documents[CHECKER.WAVE18_READBACK_PATH]
         snapshot = readback_permit["frozenAcquisitionSnapshot"]
         frozen_rows = (
             snapshot["acquisitionAuthority"]
@@ -1215,11 +1327,11 @@ class CombinedFixedPointV16DryOracleTests(unittest.TestCase):
         )
         self.assertEqual(
             [(row["path"], row["rawSha256"]) for row in frozen_rows],
-            EXPECTED_WAVE17_FROZEN_PATH_RAWS,
+            EXPECTED_WAVE18_FROZEN_PATH_RAWS,
         )
-        self.assertEqual(snapshot["frozenFileCount"], 21)
+        self.assertEqual(snapshot["frozenFileCount"], 25)
         self.assertEqual(len(snapshot["acquisitionAuthority"]), 15)
-        self.assertEqual(snapshot["acceptedResourceCount"], 2)
+        self.assertEqual(snapshot["acceptedResourceCount"], 6)
         for key in (
             "acceptedResourceCount",
             "frozenFileCount",
@@ -1228,8 +1340,8 @@ class CombinedFixedPointV16DryOracleTests(unittest.TestCase):
             "zipCount",
         ):
             self.assertIs(type(snapshot[key]), int, key)
-        self.assertEqual(snapshot["modCount"], 1)
-        self.assertEqual(snapshot["zipCount"], 1)
+        self.assertEqual(snapshot["modCount"], 3)
+        self.assertEqual(snapshot["zipCount"], 3)
         self.assertEqual(
             (
                 snapshot["aggregateModBytes"],
@@ -1238,32 +1350,44 @@ class CombinedFixedPointV16DryOracleTests(unittest.TestCase):
                 snapshot["aggregateZipEntryCount"],
                 snapshot["aggregateZipUncompressedBytes"],
             ),
-            (301, 3_450_399, 3_450_700, 1_550, 9_108_004),
+            (279, 2_108_821, 2_109_100, 971, 7_225_800),
         )
 
         resources = readback["verified"]["resources"]
         identity = [
             (
                 row["requestOrdinal"],
-                179,
+                179 + (row["requestOrdinal"] + 1) // 2,
                 row["kind"],
-                "golang.org/x/tools",
-                "v0.33.0",
+                (
+                    "golang.org/x/mod",
+                    "golang.org/x/net",
+                    "golang.org/x/sync",
+                )[(row["requestOrdinal"] - 1) // 2],
+                (
+                    "v0.24.0",
+                    "v0.40.0",
+                    "v0.14.0",
+                )[(row["requestOrdinal"] - 1) // 2],
                 (
                     "build/offline-source/pion-ice-v4.3.0/dependencies/"
-                    "wave-17-v1/accepted/"
+                    "wave-18-v1/accepted/"
                     + row["acceptedFileName"]
                 ),
                 row["rawSha256"],
             )
             for row in resources
         ]
-        self.assertEqual(identity, EXPECTED_WAVE17_RESOURCE_IDENTITY)
+        self.assertEqual(identity, EXPECTED_WAVE18_RESOURCE_IDENTITY)
         self.assertEqual(
             [row["verifiedH1"] for row in resources],
             [
-                "h1:CIJMaWEY88juyUfo7UbgPqbC8rU2OqfAV1h2Qp0oMYI=",
-                "h1:4qz2S3zmRxbGIhDIAgjxvFutSvH5EfnsYrRBj0UI0bc=",
+                "h1:IXM97Txy2VM4PJ3gI61r1YEk/gAj6zAHN3AdZt6S9Ww=",
+                "h1:ZfthKaKaT4NrhGVZHO1/WDTwGES4De8KtWO0SIbNJMU=",
+                "h1:y0hY0exeL2Pku80/zKK7tpntoX23cqL3Oa6njdgRtds=",
+                "h1:79Xs7wF06Gbdcg4kdCCIQArK11Z1hr5POQ6+fIYHNuY=",
+                "h1:1dzgHSNfp02xaA81J2MS99Qcpr2w7fw1gpm99rleRqA=",
+                "h1:woo0S4Yywslg6hp4eUFjTVOyKt0RookbpAHG4c1HmhQ=",
             ],
         )
         for key in (
@@ -1288,20 +1412,20 @@ class CombinedFixedPointV16DryOracleTests(unittest.TestCase):
         )
 
         predecessor = {
-            "inputs": 357,
-            "resources": 356,
-            "tuples": 178,
-            "raw": 339_078_885,
-            "archives": 179,
-            "entries": 68_852,
-            "uncompressed": 1_296_608_653,
+            "inputs": 359,
+            "resources": 358,
+            "tuples": 179,
+            "raw": 342_529_585,
+            "archives": 180,
+            "entries": 70_402,
+            "uncompressed": 1_305_716_657,
         }
         delta = {
-            "inputs": 2,
-            "resources": 2,
-            "tuples": 1,
+            "inputs": 6,
+            "resources": 6,
+            "tuples": 3,
             "raw": snapshot["aggregateAcceptedBytes"],
-            "archives": 1,
+            "archives": 3,
             "entries": snapshot["aggregateZipEntryCount"],
             "uncompressed": snapshot[
                 "aggregateZipUncompressedBytes"
@@ -1313,46 +1437,114 @@ class CombinedFixedPointV16DryOracleTests(unittest.TestCase):
                 for key in predecessor
             },
             {
-                "inputs": 359,
-                "resources": 358,
-                "tuples": 179,
-                "raw": 342_529_585,
-                "archives": 180,
-                "entries": 70_402,
-                "uncompressed": 1_305_716_657,
+                "inputs": 365,
+                "resources": 364,
+                "tuples": 182,
+                "raw": 344_638_685,
+                "archives": 183,
+                "entries": 71_373,
+                "uncompressed": 1_312_942_457,
             },
         )
         self.assertEqual(
-            CHECKER.V16_INPUT_SET_SHA256,
-            EXPECTED_V16_INPUT_SET_SHA256,
+            CHECKER.V17_INPUT_SET_SHA256,
+            EXPECTED_V17_INPUT_SET_SHA256,
         )
         self.assertEqual(
-            CHECKER.V16_SOURCE_BINDINGS_SHA256,
-            EXPECTED_V16_SOURCE_BINDINGS_SHA256,
+            CHECKER.V17_SOURCE_BINDINGS_SHA256,
+            EXPECTED_V17_SOURCE_BINDINGS_SHA256,
         )
         self.assertEqual(
             (
-                CHECKER.V16_EXPECTED_HELD_SOURCE_INPUT_COUNT,
-                CHECKER.V16_EXPECTED_ARCHIVE_COUNT,
-                CHECKER.V16_EXPECTED_AGGREGATE_ENTRY_COUNT,
-                CHECKER.V16_EXPECTED_AGGREGATE_RAW_BYTE_SIZE,
-                CHECKER.V16_MAXIMUM_AGGREGATE_UNCOMPRESSED_BYTES,
+                CHECKER.V17_EXPECTED_HELD_SOURCE_INPUT_COUNT,
+                CHECKER.V17_EXPECTED_ARCHIVE_COUNT,
+                CHECKER.V17_EXPECTED_AGGREGATE_ENTRY_COUNT,
+                CHECKER.V17_EXPECTED_AGGREGATE_RAW_BYTE_SIZE,
+                CHECKER.V17_MAXIMUM_AGGREGATE_UNCOMPRESSED_BYTES,
             ),
-            (359, 180, 70_402, 342_529_585, 1_305_716_657),
+            (365, 183, 71_373, 344_638_685, 1_312_942_457),
+        )
+
+    def test_00_exact_375_input_inventory_is_disjoint_and_bound(self):
+        with held_all_documents() as value:
+            chain, controls, auxiliary, _, *documents = value
+            (
+                v16,
+                v15,
+                v14,
+                v13,
+                v12,
+                v11,
+                v10,
+                v9,
+                v8,
+                v7,
+                v6,
+                v5,
+                v4,
+                v1,
+                runner,
+            ) = chain
+            bindings = CHECKER.combined_source_bindings(
+                v16,
+                v15,
+                v14,
+                v13,
+                v12,
+                v11,
+                v10,
+                v9,
+                v8,
+                v7,
+                v6,
+                v5,
+                v4,
+                v1,
+                runner,
+                *documents,
+            )
+            inventory = CHECKER.exact_input_inventory_bindings(
+                runner,
+                bindings,
+            )
+        self.assertEqual((len(controls), len(auxiliary)), (122, 3))
+        self.assertEqual(len(bindings), 365)
+        self.assertEqual(len(inventory), 375)
+        self.assertEqual(len({row["path"] for row in inventory}), 375)
+        self.assertEqual(
+            sum(row["bytes"] for row in inventory),
+            344_702_522,
+        )
+        self.assertEqual(
+            hashlib.sha256(
+                runner.canonical_json_bytes(inventory)
+            ).hexdigest(),
+            EXPECTED_V17_EXACT_INPUT_INVENTORY_SHA256,
+        )
+        self.assertEqual(
+            [row["category"] for row in inventory[-10:]],
+            ["wave18_terminal_control"] * 7
+            + ["wave18_auxiliary_evidence"] * 3,
+        )
+        self.assertEqual(
+            hashlib.sha256(
+                runner.canonical_json_bytes(inventory[-10:])
+            ).hexdigest(),
+            CHECKER.V17_WAVE18_READBACK_BINDINGS_SHA256,
         )
 
     def test_00_authority_and_request_contract_require_no_credentials(self):
         permit = self._document(
-            CHECKER.WAVE17_PERMIT_PATH,
-            "8376c5daef8a9e8970b03b15cda5861a2d16c237024d97cb00e1dfeac275baaa",
+            CHECKER.WAVE18_PERMIT_PATH,
+            "c8bca67d38117c3658da504780bb97e33b92367567121285129e90dde0db0fc1",
         )
         readback_permit = self._document(
-            CHECKER.WAVE17_READBACK_PERMIT_PATH,
-            "05e71da5b47544728c74fb8eb9b4bb665179dde420b48211a5f9dfb5ad2d3bcd",
+            CHECKER.WAVE18_READBACK_PERMIT_PATH,
+            "12e405fd04b08cd39c797b9cd5b9c82f1831ba73bdb48f86db961fb39e4f6a4f",
         )
         readback = self._document(
-            CHECKER.WAVE17_READBACK_PATH,
-            "9f21afa4c98081d95228d217e60eec66961b85ee5b23ab11e51f19c6f9865958",
+            CHECKER.WAVE18_READBACK_PATH,
+            "63bf2cf4ed12e8203d39f334e78f14010950b7697501035698a678dd0fa3d4d7",
         )
         false_keys = (
             "authenticationRequired",
@@ -1402,9 +1594,9 @@ class CombinedFixedPointV16DryOracleTests(unittest.TestCase):
         )
         self.assertEqual(readback["networkRequestAttemptCount"], 0)
 
-    def test_00_wave17_exact_control_validator_is_read_only(self):
-        with held_wave17_documents() as (v4, runner, documents):
-            resources = CHECKER.wave17_request_resources(
+    def test_00_wave18_exact_control_validator_is_read_only(self):
+        with held_wave18_documents() as (v4, runner, documents):
+            resources = CHECKER.wave18_request_resources(
                 v4,
                 runner,
                 documents,
@@ -1422,107 +1614,107 @@ class CombinedFixedPointV16DryOracleTests(unittest.TestCase):
                 )
                 for row in resources
             ],
-            EXPECTED_WAVE17_RESOURCE_IDENTITY,
+            EXPECTED_WAVE18_RESOURCE_IDENTITY,
         )
         for row in resources:
             self.assertIs(type(row["order"]), int)
             self.assertIs(type(row["tupleOrder"]), int)
 
-    def test_00_wave17_unknown_bool_int_and_stale_v16_fail_closed(self):
-        assert_wave17_mutation_fails(
+    def test_00_wave18_unknown_bool_int_and_stale_v16_fail_closed(self):
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_DECISION_PATH][
+            lambda docs: docs[CHECKER.WAVE18_DECISION_PATH][
                 "authority"
             ].__setitem__("unknown", False),
-            "E_WAVE17_DECISION",
+            "E_WAVE18_DECISION",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_PERMIT_PATH][
+            lambda docs: docs[CHECKER.WAVE18_PERMIT_PATH][
                 "requestContract"
             ].__setitem__("requestCount", True),
-            "E_WAVE17_PERMIT",
+            "E_WAVE18_PERMIT",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                 "frozenAcquisitionSnapshot"
-            ].__setitem__("frozenFileCount", 25),
-            "E_WAVE17_READBACK_PERMIT",
+            ].__setitem__("frozenFileCount", 21),
+            "E_WAVE18_READBACK_PERMIT",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_PATH][
                 "verified"
-            ].__setitem__("acceptedResourceCount", 6),
-            "E_WAVE17_READBACK",
+            ].__setitem__("acceptedResourceCount", 2),
+            "E_WAVE18_READBACK",
         )
 
         def stale_predecessor(documents):
             predecessors = documents[
-                CHECKER.WAVE17_READBACK_PERMIT_PATH
+                CHECKER.WAVE18_READBACK_PERMIT_PATH
             ]["frozenAcquisitionSnapshot"]["predecessorBindings"]
-            predecessors["combinedFixedPointV14"] = predecessors.pop(
-                "combinedFixedPointV15"
+            predecessors["combinedFixedPointV15"] = predecessors.pop(
+                "combinedFixedPointV16"
             )
 
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
             stale_predecessor,
-            "E_WAVE17_READBACK_PERMIT",
+            "E_WAVE18_READBACK_PERMIT",
         )
 
-    def test_00_wave17_bool_int_and_typed_dicts_fail_closed(self):
+    def test_00_wave18_bool_int_and_typed_dicts_fail_closed(self):
         cases = (
             (
-                lambda docs: docs[CHECKER.WAVE17_DECISION_PATH][
+                lambda docs: docs[CHECKER.WAVE18_DECISION_PATH][
                     "identityResolution"
                 ].__setitem__("tupleCount", True),
-                "E_WAVE17_DECISION",
+                "E_WAVE18_DECISION",
             ),
             (
-                lambda docs: docs[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+                lambda docs: docs[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                     "frozenAcquisitionSnapshot"
                 ].__setitem__("selectedTupleCount", False),
-                "E_WAVE17_READBACK_PERMIT",
+                "E_WAVE18_READBACK_PERMIT",
             ),
             (
-                lambda docs: docs[CHECKER.WAVE17_DECISION_PATH][
+                lambda docs: docs[CHECKER.WAVE18_DECISION_PATH][
                     "authority"
                 ].__setitem__("externalAuthenticationRequired", 0),
-                "E_WAVE17_DECISION",
+                "E_WAVE18_DECISION",
             ),
             (
-                lambda docs: docs[CHECKER.WAVE17_PERMIT_PATH][
+                lambda docs: docs[CHECKER.WAVE18_PERMIT_PATH][
                     "absoluteResourceLimits"
                 ].__setitem__(
                     "callerBlockedSigalrmRejectedBeforePreflight",
                     1,
                 ),
-                "E_WAVE17_PERMIT",
+                "E_WAVE18_PERMIT",
             ),
             (
-                lambda docs: docs[CHECKER.WAVE17_MANIFEST_PATH].__setitem__(
+                lambda docs: docs[CHECKER.WAVE18_MANIFEST_PATH].__setitem__(
                     "manifestWrittenLast",
                     1,
                 ),
-                "E_WAVE17_MANIFEST",
+                "E_WAVE18_MANIFEST",
             ),
         )
         for mutate, expected in cases:
             with self.subTest(expected=expected):
-                assert_wave17_mutation_fails(
+                assert_wave18_mutation_fails(
                     self,
                     mutate,
                     expected,
                 )
 
-    def test_00_wave17_rebound_resource_bool_int_fails_closed(self):
-        with held_wave17_documents() as (v4, runner, documents):
+    def test_00_wave18_rebound_resource_bool_int_fails_closed(self):
+        with held_wave18_documents() as (v4, runner, documents):
             cases = (
                 (
                     "selector_zero",
-                    lambda docs: docs[CHECKER.WAVE17_PERMIT_PATH][
+                    lambda docs: docs[CHECKER.WAVE18_PERMIT_PATH][
                         "requestContract"
                     ]["resources"][0].__setitem__(
                         "selectedByGraphAlgorithm",
@@ -1531,7 +1723,7 @@ class CombinedFixedPointV16DryOracleTests(unittest.TestCase):
                 ),
                 (
                     "ordinal_true",
-                    lambda docs: docs[CHECKER.WAVE17_PERMIT_PATH][
+                    lambda docs: docs[CHECKER.WAVE18_PERMIT_PATH][
                         "requestContract"
                     ]["resources"][0].__setitem__(
                         "requestOrdinal",
@@ -1543,36 +1735,36 @@ class CombinedFixedPointV16DryOracleTests(unittest.TestCase):
                 mutated = copy.deepcopy(documents)
                 mutate(mutated)
                 resources_sha256, request_set_sha256 = (
-                    rebind_wave17_selector_hashes(runner, mutated)
+                    rebind_wave18_selector_hashes(runner, mutated)
                 )
                 with (
                     self.subTest(case=label),
                     mock.patch.object(
                         CHECKER,
-                        "verify_wave17_content_bindings",
+                        "verify_wave18_content_bindings",
                     ),
                     mock.patch.object(
                         CHECKER,
-                        "WAVE17_PERMIT_RESOURCES_SHA256",
+                        "WAVE18_PERMIT_RESOURCES_SHA256",
                         resources_sha256,
                     ),
                     mock.patch.object(
                         CHECKER,
-                        "WAVE17_REQUEST_SET_SHA256",
+                        "WAVE18_REQUEST_SET_SHA256",
                         request_set_sha256,
                     ),
                     self.assertRaises(
                         CHECKER.CombinedCheckFailure,
                     ) as caught,
                 ):
-                    CHECKER.wave17_request_resources(
+                    CHECKER.wave18_request_resources(
                         v4,
                         runner,
                         mutated,
                     )
                 self.assertEqual(
                     str(caught.exception),
-                    "E_WAVE17_RESOURCE",
+                    "E_WAVE18_RESOURCE",
                 )
 
     def test_00_derived_route_is_graph_owned_and_bool_int_fails(self):
@@ -1713,42 +1905,431 @@ class CombinedFixedPointV16DryOracleTests(unittest.TestCase):
 
     def test_00_error_document_requests_no_authentication(self):
         value = json.loads(CHECKER.error_document_bytes())
-        self.assertEqual(value["schemaVersion"], "16.0")
+        self.assertEqual(value["schemaVersion"], "17.0")
         self.assertEqual(value["status"], "verification_failed")
         self.assertIs(value["externalAuthenticationRequired"], False)
         self.assertIs(value["userActionRequired"], False)
 
 
-class CombinedFixedPointV16Tests(unittest.TestCase):
+class CombinedFixedPointV17LatentOracleTests(unittest.TestCase):
+    """Seal-independent coverage for heavy-suite baseline assumptions."""
+
+    maxDiff = None
+
+    @staticmethod
+    def _tool_path_fixture():
+        v16 = types.SimpleNamespace(
+            TRANSITIVE_CHECKER_PATHS={
+                (
+                    "script/check_p2p_nat_g2_pion_combined_fixed_point_"
+                    f"v{version}.py"
+                )
+                for version in range(1, 16)
+            },
+            V1_PROVIDER_PATH=(
+                "script/run_p2p_nat_g2_pion_dependency_source_review_"
+                "wave1_once.py"
+            ),
+        )
+        direct_bindings = copy.deepcopy(EXPECTED_TOOL_BINDINGS)
+        direct_inputs = tuple(
+            types.SimpleNamespace(relative_path=row["path"])
+            for row in direct_bindings
+        )
+        predecessor_bindings = [
+            copy.deepcopy(row)
+            for row in direct_bindings
+            if row["path"] != CHECKER.SELF_PATH
+        ]
+        predecessor_candidate = {
+            "toolBindings": predecessor_bindings,
+            "operationCounters": {
+                "heldToolInputCount": len(predecessor_bindings),
+                "transitiveDistinctToolPathCount": 17,
+            },
+        }
+        return (
+            v16,
+            predecessor_candidate,
+            direct_bindings,
+            direct_inputs,
+        )
+
+    def test_00_wave18_exact_mutation_domains_reach_semantic_checks(self):
+        with held_wave18_documents() as (v4, runner, documents):
+            decision = documents[CHECKER.WAVE18_DECISION_PATH]
+            permit = documents[CHECKER.WAVE18_PERMIT_PATH]
+            snapshot = documents[CHECKER.WAVE18_READBACK_PERMIT_PATH][
+                "frozenAcquisitionSnapshot"
+            ]
+            verified = documents[CHECKER.WAVE18_READBACK_PATH]["verified"]
+            resources = permit["requestContract"]["resources"]
+            source_requests = decision["sourceAcquisitionPreparation"][
+                "requestSet"
+            ]
+            tuples = decision["identityResolution"]["tuples"]
+            accepted = snapshot["acceptedDirectory"]["files"]
+            self.assertEqual(
+                (
+                    len(resources),
+                    len(source_requests),
+                    len(tuples),
+                    len(accepted),
+                    len(verified["resources"]),
+                ),
+                (6, 6, 3, 6, 6),
+            )
+            self.assertEqual(
+                [
+                    index
+                    for index, row in enumerate(verified["resources"])
+                    if row["kind"] == "zip"
+                    and row["rootGoModPresent"] is True
+                ],
+                [1, 3, 5],
+            )
+            self.assertEqual(
+                (
+                    decision["identityResolution"]["tupleCount"],
+                    permit["requestContract"]["requestCount"],
+                    snapshot["frozenFileCount"],
+                    snapshot["acceptedDirectory"]["exactFileCount"],
+                    snapshot["acceptedResourceCount"],
+                    snapshot["modCount"],
+                ),
+                (3, 6, 25, 6, 6, 3),
+            )
+
+            def assert_semantic_failure(label, mutate, expected):
+                mutated = copy.deepcopy(documents)
+                mutate(mutated)
+                resources_sha256, request_set_sha256 = (
+                    rebind_wave18_selector_hashes(runner, mutated)
+                )
+                with (
+                    self.subTest(mutation=label),
+                    mock.patch.object(
+                        CHECKER,
+                        "verify_wave18_content_bindings",
+                    ),
+                    mock.patch.object(
+                        CHECKER,
+                        "WAVE18_PERMIT_RESOURCES_SHA256",
+                        resources_sha256,
+                    ),
+                    mock.patch.object(
+                        CHECKER,
+                        "WAVE18_REQUEST_SET_SHA256",
+                        request_set_sha256,
+                    ),
+                    self.assertRaises(
+                        CHECKER.CombinedCheckFailure,
+                    ) as caught,
+                ):
+                    CHECKER.wave18_request_resources(
+                        v4,
+                        runner,
+                        mutated,
+                    )
+                self.assertEqual(
+                    str(caught.exception),
+                    expected,
+                    label,
+                )
+
+            cases = (
+                (
+                    "accepted_index_5",
+                    lambda docs: docs[
+                        CHECKER.WAVE18_READBACK_PERMIT_PATH
+                    ]["frozenAcquisitionSnapshot"]["acceptedDirectory"][
+                        "files"
+                    ][5].__setitem__("rawSha256", "0" * 64),
+                    "E_WAVE18_READBACK_PERMIT",
+                ),
+                (
+                    "permit_selector_index_5",
+                    lambda docs: docs[CHECKER.WAVE18_PERMIT_PATH][
+                        "requestContract"
+                    ]["resources"][5].__setitem__(
+                        "selectedByGraphAlgorithm",
+                        True,
+                    ),
+                    "E_WAVE18_RESOURCE",
+                ),
+                (
+                    "source_selector_index_5",
+                    lambda docs: docs[CHECKER.WAVE18_DECISION_PATH][
+                        "sourceAcquisitionPreparation"
+                    ]["requestSet"][5].__setitem__(
+                        "selectedByGraphAlgorithm",
+                        True,
+                    ),
+                    "E_WAVE18_PERMIT",
+                ),
+                (
+                    "tuple_selector_index_2",
+                    lambda docs: docs[CHECKER.WAVE18_DECISION_PATH][
+                        "identityResolution"
+                    ]["tuples"][2].__setitem__(
+                        "selectedByGraphAlgorithm",
+                        True,
+                    ),
+                    "E_WAVE18_DECISION",
+                ),
+                (
+                    "tuple_count_4",
+                    lambda docs: docs[CHECKER.WAVE18_DECISION_PATH][
+                        "identityResolution"
+                    ].__setitem__("tupleCount", 4),
+                    "E_WAVE18_DECISION",
+                ),
+                (
+                    "request_count_7",
+                    lambda docs: docs[CHECKER.WAVE18_PERMIT_PATH][
+                        "requestContract"
+                    ].__setitem__("requestCount", 7),
+                    "E_WAVE18_PERMIT",
+                ),
+                (
+                    "frozen_file_count_26",
+                    lambda docs: docs[
+                        CHECKER.WAVE18_READBACK_PERMIT_PATH
+                    ]["frozenAcquisitionSnapshot"].__setitem__(
+                        "frozenFileCount",
+                        26,
+                    ),
+                    "E_WAVE18_READBACK_PERMIT",
+                ),
+                (
+                    "exact_file_count_7",
+                    lambda docs: docs[
+                        CHECKER.WAVE18_READBACK_PERMIT_PATH
+                    ]["frozenAcquisitionSnapshot"][
+                        "acceptedDirectory"
+                    ].__setitem__(
+                        "exactFileCount",
+                        7,
+                    ),
+                    "E_WAVE18_READBACK_PERMIT",
+                ),
+            )
+            for label, mutate, expected in cases:
+                assert_semantic_failure(label, mutate, expected)
+
+            scalar_cases = (
+                (
+                    "accepted_resource_count_7",
+                    "acceptedResourceCount",
+                    7,
+                ),
+                ("mod_count_4", "modCount", 4),
+            )
+            for label, key, value in scalar_cases:
+                assert_semantic_failure(
+                    label,
+                    lambda docs, field=key, replacement=value: docs[
+                        CHECKER.WAVE18_READBACK_PERMIT_PATH
+                    ]["frozenAcquisitionSnapshot"].__setitem__(
+                        field,
+                        replacement,
+                    ),
+                    "E_WAVE18_READBACK_PERMIT",
+                )
+
+            limit_cases = (
+                (
+                    "permit_aggregate_limit",
+                    CHECKER.WAVE18_PERMIT_PATH,
+                    "absoluteResourceLimits",
+                    "maximumAggregateResponseBodyBytes",
+                    53_477_377,
+                    "E_WAVE18_PERMIT",
+                ),
+                (
+                    "permit_zip_entry_limit",
+                    CHECKER.WAVE18_PERMIT_PATH,
+                    "zipLimits",
+                    "maximumEntryCountAcrossAllZips",
+                    60_001,
+                    "E_WAVE18_PERMIT",
+                ),
+                (
+                    "readback_aggregate_limit",
+                    CHECKER.WAVE18_READBACK_PERMIT_PATH,
+                    "resourceLimits",
+                    "maximumAggregateAcceptedBytes",
+                    53_477_377,
+                    "E_WAVE18_READBACK_PERMIT",
+                ),
+                (
+                    "readback_zip_entry_limit",
+                    CHECKER.WAVE18_READBACK_PERMIT_PATH,
+                    "resourceLimits",
+                    "maximumZipEntriesAcrossAll",
+                    60_001,
+                    "E_WAVE18_READBACK_PERMIT",
+                ),
+            )
+            for label, path, section, key, value, expected in limit_cases:
+                assert_semantic_failure(
+                    label,
+                    lambda docs, target=path, group=section, field=key,
+                    replacement=value: docs[target][group].__setitem__(
+                        field,
+                        replacement,
+                    ),
+                    expected,
+                )
+
+    def test_01_predecessor_namespace_and_metadata_names_are_current(self):
+        expected_anchor = {
+            "path": (
+                "build/offline-source/pion-ice-v4.3.0/dependencies/"
+                ".wave-17-v1.claim"
+            ),
+            "rawSha256": (
+                "3090e729d99c46c4b4d1e4242d6f25c08e2345062dfb6c15e1e87d3edf632fad"
+            ),
+        }
+        documents = {}
+        for path in (
+            CHECKER.WAVE18_DECISION_PATH,
+            CHECKER.WAVE18_PERMIT_PATH,
+            CHECKER.WAVE18_READBACK_PERMIT_PATH,
+        ):
+            raw = (ROOT / path).read_bytes()
+            self.assertEqual(
+                hashlib.sha256(raw).hexdigest(),
+                CHECKER.WAVE18_CONTROL_SHA256[path],
+            )
+            documents[path] = json.loads(raw)
+        predecessor_bindings = (
+            documents[CHECKER.WAVE18_DECISION_PATH]["predecessorBindings"],
+            documents[CHECKER.WAVE18_PERMIT_PATH]["predecessorBindings"],
+            documents[CHECKER.WAVE18_READBACK_PERMIT_PATH][
+                "frozenAcquisitionSnapshot"
+            ]["predecessorBindings"],
+        )
+        for bindings in predecessor_bindings:
+            predecessor = bindings["combinedFixedPointV16"]
+            self.assertEqual(
+                predecessor["wave17NamespaceAnchor"],
+                expected_anchor,
+            )
+            self.assertNotIn("wave16NamespaceAnchor", predecessor)
+
+        v16_raw = (ROOT / CHECKER.V16_CHECKER_PATH).read_bytes()
+        self.assertEqual(
+            hashlib.sha256(v16_raw).hexdigest(),
+            CHECKER.V16_CHECKER_RAW_SHA256,
+        )
+        tree = ast.parse(v16_raw.decode("utf-8"))
+        generators = [
+            node
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "generate_candidate"
+        ]
+        self.assertEqual(len(generators), 1)
+        literal_pairs = {
+            (key.value, value.value)
+            for node in ast.walk(generators[0])
+            if isinstance(node, ast.Dict)
+            for key, value in zip(node.keys, node.values)
+            if isinstance(key, ast.Constant)
+            and type(key.value) is str
+            and isinstance(value, ast.Constant)
+        }
+        self.assertIn(
+            (
+                "v15TestsBindingScope",
+                "historical_metadata_only_not_live_held",
+            ),
+            literal_pairs,
+        )
+        self.assertIn(("v15TestsLiveHeld", False), literal_pairs)
+        self.assertFalse(
+            any(
+                key in {"v14TestsBindingScope", "v14TestsLiveHeld"}
+                for key, _ in literal_pairs
+            )
+        )
+
+    def test_02_tool_helper_baseline_includes_self_v17_and_v15(self):
+        fixture = self._tool_path_fixture()
+        direct_paths, transitive_paths = (
+            CHECKER.derive_and_validate_tool_paths(*fixture)
+        )
+        expected_opened_paths = {
+            (
+                "script/check_p2p_nat_g2_pion_combined_fixed_point_"
+                f"v{version}.py"
+            )
+            for version in range(1, 18)
+        } | {
+            (
+                "script/run_p2p_nat_g2_pion_dependency_source_review_"
+                "wave1_once.py"
+            )
+        }
+        self.assertEqual(
+            direct_paths,
+            {row["path"] for row in EXPECTED_TOOL_BINDINGS},
+        )
+        self.assertEqual(transitive_paths, expected_opened_paths)
+        self.assertIn(CHECKER.SELF_PATH, transitive_paths)
+        self.assertIn(CHECKER.V15_CHECKER_PATH, transitive_paths)
+
+    def test_03_tool_helper_rejects_fake_v16_without_v15(self):
+        fixture = list(self._tool_path_fixture())
+        fixture[0].TRANSITIVE_CHECKER_PATHS = {
+            (
+                "script/check_p2p_nat_g2_pion_combined_fixed_point_"
+                f"v{version}.py"
+            )
+            for version in range(1, 15)
+        }
+        with self.assertRaises(
+            CHECKER.CombinedCheckFailure,
+        ) as caught:
+            CHECKER.derive_and_validate_tool_paths(*fixture)
+        self.assertEqual(str(caught.exception), "E_TOOL_BINDINGS")
+
+
+class CombinedFixedPointV17Tests(unittest.TestCase):
     maxDiff = None
 
     @classmethod
     def setUpClass(cls):
         unresolved_bootstrap = {
             "SELF_NORMALIZED_SHA256": CHECKER.SELF_NORMALIZED_SHA256,
-            "V16_INPUT_SET_SHA256": CHECKER.V16_INPUT_SET_SHA256,
-            "V16_SOURCE_BINDINGS_SHA256":
-                CHECKER.V16_SOURCE_BINDINGS_SHA256,
-            "EXPECTED_V16_CANDIDATE_CONTENT_SHA256":
-                EXPECTED_V16_CANDIDATE_CONTENT_SHA256,
-            "EXPECTED_V16_GRAPH_SHA256": EXPECTED_V16_GRAPH_SHA256,
-            "EXPECTED_V16_FRONTIER_SHA256": EXPECTED_V16_FRONTIER_SHA256,
+            "V17_INPUT_SET_SHA256": CHECKER.V17_INPUT_SET_SHA256,
+            "V17_SOURCE_BINDINGS_SHA256":
+                CHECKER.V17_SOURCE_BINDINGS_SHA256,
+            "EXPECTED_V17_CANDIDATE_CONTENT_SHA256":
+                EXPECTED_V17_CANDIDATE_CONTENT_SHA256,
+            "EXPECTED_V17_GRAPH_SHA256": EXPECTED_V17_GRAPH_SHA256,
+            "EXPECTED_V17_FRONTIER_SHA256": EXPECTED_V17_FRONTIER_SHA256,
         }
-        if any(
-            value == UNRESOLVED_SHA256
-            for value in unresolved_bootstrap.values()
+        if (
+            EXPECTED_V17_OUTCOME is None
+            or any(
+                value == UNRESOLVED_SHA256
+                for value in unresolved_bootstrap.values()
+            )
         ):
             raise unittest.SkipTest(
-                "V16 exact bootstrap seals remain unresolved; "
+                "V17 exact bootstrap seals/outcome remain unresolved; "
                 "full reconstruction is intentionally not run"
             )
-        original_load_v15 = CHECKER.load_v15_checker
+        original_load_v16 = CHECKER.load_v16_checker
         original_derive_tool_paths = CHECKER.derive_and_validate_tool_paths
         original_os_open = os.open
         cls.actual_python_open_paths = []
 
-        def capturing_load_v15(held):
-            module = original_load_v15(held)
+        def capturing_load_v16(held):
+            module = original_load_v16(held)
             original_generate = module.generate_candidate
 
             def capturing_generate(root):
@@ -1760,13 +2341,13 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
             return module
 
         def capturing_derive_tool_paths(
-            v15,
+            v16,
             predecessor_candidate,
             direct_tool_bindings,
             direct_tool_inputs,
         ):
             result = original_derive_tool_paths(
-                v15,
+                v16,
                 predecessor_candidate,
                 direct_tool_bindings,
                 direct_tool_inputs,
@@ -1804,8 +2385,8 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
         with (
             mock.patch.object(
                 CHECKER,
-                "load_v15_checker",
-                side_effect=capturing_load_v15,
+                "load_v16_checker",
+                side_effect=capturing_load_v16,
             ),
             mock.patch.object(
                 CHECKER,
@@ -1841,14 +2422,14 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
             EXPECTED_SELF_NORMALIZED_SHA256,
         )
         for path, expected in (
-            (CHECKER.V15_CHECKER_PATH, CHECKER.V15_CHECKER_RAW_SHA256),
-            (CHECKER.V15_TESTS_PATH, CHECKER.V15_TESTS_RAW_SHA256),
+            (CHECKER.V16_CHECKER_PATH, CHECKER.V16_CHECKER_RAW_SHA256),
+            (CHECKER.V16_TESTS_PATH, CHECKER.V16_TESTS_RAW_SHA256),
         ):
             self.assertEqual(
                 hashlib.sha256((ROOT / path).read_bytes()).hexdigest(),
                 expected,
             )
-        for path, expected in CHECKER.WAVE17_CONTROL_SHA256.items():
+        for path, expected in CHECKER.WAVE18_CONTROL_SHA256.items():
             self.assertEqual(
                 hashlib.sha256((ROOT / path).read_bytes()).hexdigest(),
                 expected,
@@ -1872,26 +2453,27 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
             ).hexdigest(),
             binding["sha256"],
         )
-        self.assertEqual(candidate["schemaVersion"], "16.0")
+        self.assertEqual(candidate["schemaVersion"], "17.0")
         self.assertEqual(
             candidate["documentType"],
             (
                 "aetherlink.g2-pion-combined-wave1-wave2-wave3-wave4-"
                 "wave5-wave6-wave7-wave8-wave9-wave10-wave11-wave12-"
-                "wave13-wave14-wave15-wave16-wave17-fixed-point-candidate"
+                "wave13-wave14-wave15-wave16-wave17-wave18-"
+                "fixed-point-candidate"
             ),
         )
         self.assertEqual(
             binding["sha256"],
-            EXPECTED_V16_CANDIDATE_CONTENT_SHA256,
+            EXPECTED_V17_CANDIDATE_CONTENT_SHA256,
         )
         self.assertEqual(
             candidate["graphDiscovery"]["graphSha256"],
-            EXPECTED_V16_GRAPH_SHA256,
+            EXPECTED_V17_GRAPH_SHA256,
         )
         self.assertEqual(
             candidate["derivedResult"]["frontierSha256"],
-            EXPECTED_V16_FRONTIER_SHA256,
+            EXPECTED_V17_FRONTIER_SHA256,
         )
         self.assertEqual(candidate["authority"], EXPECTED_CLOSED_AUTHORITY)
         for key, expected in EXPECTED_CLOSED_AUTHORITY.items():
@@ -1918,14 +2500,121 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
             len(candidate["graphDiscovery"]["exactFrontier"]),
         )
 
-    def test_03_exact_359_input_composition_and_hashes(self):
+    def test_02_actual_candidate_is_cross_bound_to_outcome_fixture(self):
+        candidate = self.candidate
+        graph = candidate["graphDiscovery"]
+        outcome = EXPECTED_V17_OUTCOME
+        self.assertIs(type(outcome), dict)
+        self.assertEqual(
+            set(outcome),
+            {
+                "exactFrontier",
+                "newTupleCount",
+                "unmappedExternalImportCount",
+                "unresolvedDeclaredExternalImportCount",
+                "fixedPointReached",
+                "route",
+            },
+        )
+        expected_frontier = outcome["exactFrontier"]
+        self.assertIs(type(expected_frontier), tuple)
+        self.assertTrue(
+            all(
+                type(row) is tuple
+                and len(row) == 3
+                and type(row[0]) is str
+                and row[0] != ""
+                and type(row[1]) is str
+                and row[1] != ""
+                and type(row[2]) is bool
+                for row in expected_frontier
+            )
+        )
+        actual_frontier = graph["exactFrontier"]
+        self.assertIs(type(actual_frontier), list)
+        self.assertTrue(
+            all(
+                type(row) is dict
+                and set(row)
+                == {
+                    "acquisitionAuthorized",
+                    "module",
+                    "requiresSeparateWaveDecision",
+                    "selectedByGraphAlgorithm",
+                    "version",
+                }
+                and type(row["module"]) is str
+                and type(row["version"]) is str
+                and type(row["selectedByGraphAlgorithm"]) is bool
+                and row["acquisitionAuthorized"] is False
+                and row["requiresSeparateWaveDecision"] is True
+                for row in actual_frontier
+            )
+        )
+        self.assertEqual(
+            tuple(
+                (
+                    row["module"],
+                    row["version"],
+                    row["selectedByGraphAlgorithm"],
+                )
+                for row in actual_frontier
+            ),
+            expected_frontier,
+        )
+        for key in (
+            "newTupleCount",
+            "unmappedExternalImportCount",
+            "unresolvedDeclaredExternalImportCount",
+        ):
+            self.assertIs(type(outcome[key]), int)
+            self.assertGreaterEqual(outcome[key], 0)
+            self.assertIs(type(graph[key]), int)
+            self.assertEqual(graph[key], outcome[key], key)
+        self.assertEqual(outcome["newTupleCount"], len(expected_frontier))
+        self.assertIs(type(outcome["fixedPointReached"]), bool)
+        self.assertIs(type(graph["fixedPointReached"]), bool)
+        self.assertIs(
+            graph["fixedPointReached"],
+            outcome["fixedPointReached"],
+        )
+        self.assertIs(
+            candidate["derivedResult"]["fixedPointReached"],
+            outcome["fixedPointReached"],
+        )
+        self.assertEqual(
+            candidate["derivedResult"]["frontierTupleCount"],
+            len(expected_frontier),
+        )
+        expected_route = outcome["route"]
+        self.assertIs(type(expected_route), dict)
+        self.assertEqual(
+            set(expected_route),
+            {"route", "status", "nextAction"},
+        )
+        self.assertTrue(
+            all(
+                type(value) is str and value != ""
+                for value in expected_route.values()
+            )
+        )
+        self.assertEqual(
+            {
+                "route": candidate["route"],
+                "status": candidate["status"],
+                "nextAction": candidate["nextAction"],
+            },
+            expected_route,
+        )
+
+    def test_03_exact_365_source_and_375_input_composition_and_hashes(self):
         inputs = self.candidate["inputSet"]
         rows = inputs["sourceBindings"]
         expected_counts = {
-            "heldSourceInputCount": 359,
-            "resourceCount": 358,
-            "modCount": 179,
-            "zipCount": 179,
+            "heldSourceInputCount": 365,
+            "resourceCount": 364,
+            "modCount": 182,
+            "zipCount": 182,
             "wave1ResourceCount": 38,
             "wave2ResourceCount": 30,
             "wave3ResourceCount": 32,
@@ -1943,8 +2632,9 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
             "wave15ResourceCount": 10,
             "wave16ResourceCount": 6,
             "wave17ResourceCount": 2,
-            "uniqueModuleVersionTupleCount": 179,
-            "aggregateRawByteSize": 342_529_585,
+            "wave18ResourceCount": 6,
+            "uniqueModuleVersionTupleCount": 182,
+            "aggregateRawByteSize": 344_638_685,
         }
         for key, value in expected_counts.items():
             self.assertEqual(inputs[key], value, key)
@@ -1956,26 +2646,26 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 inputs["zipCount"],
                 inputs["uniqueModuleVersionTupleCount"],
             ),
-            (357, 356, 178, 178, 178),
-            "stale V15/Wave16 combined cardinality was accepted",
+            (359, 358, 179, 179, 179),
+            "stale V16/Wave17 combined cardinality was accepted",
         )
-        self.assertEqual(len(rows), 359)
-        self.assertEqual(len({row["path"] for row in rows}), 359)
+        self.assertEqual(len(rows), 365)
+        self.assertEqual(len({row["path"] for row in rows}), 365)
         self.assertEqual(
             inputs["combinedInputSetSha256"],
-            EXPECTED_V16_INPUT_SET_SHA256,
+            EXPECTED_V17_INPUT_SET_SHA256,
         )
         self.assertEqual(
-            CHECKER.V16_INPUT_SET_SHA256,
-            EXPECTED_V16_INPUT_SET_SHA256,
+            CHECKER.V17_INPUT_SET_SHA256,
+            EXPECTED_V17_INPUT_SET_SHA256,
         )
         self.assertEqual(
-            hashlib.sha256(CHECKER.wave17_digest_bytes(rows)).hexdigest(),
-            EXPECTED_V16_SOURCE_BINDINGS_SHA256,
+            hashlib.sha256(CHECKER.wave18_digest_bytes(rows)).hexdigest(),
+            EXPECTED_V17_SOURCE_BINDINGS_SHA256,
         )
         self.assertEqual(
-            CHECKER.V16_SOURCE_BINDINGS_SHA256,
-            EXPECTED_V16_SOURCE_BINDINGS_SHA256,
+            CHECKER.V17_SOURCE_BINDINGS_SHA256,
+            EXPECTED_V17_SOURCE_BINDINGS_SHA256,
         )
         pair_orders = sorted(
             {
@@ -1984,16 +2674,37 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 if row["kind"] != "root_zip"
             }
         )
-        self.assertEqual(pair_orders, list(range(1, 180)))
+        self.assertEqual(pair_orders, list(range(1, 183)))
         self.assertEqual(
             sorted(
                 {
                     row["tupleOrder"]
                     for row in rows
-                    if row["wave"] == "wave17"
+                    if row["wave"] == "wave18"
                 }
             ),
-            [179],
+            [180, 181, 182],
+        )
+        inventory = self.candidate["exactInputInventory"]
+        self.assertEqual(
+            (
+                inventory["heldInputCount"],
+                inventory["sourceBindingCount"],
+                inventory["wave18TerminalControlBindingCount"],
+                inventory["wave18AuxiliaryEvidenceBindingCount"],
+                inventory["aggregateRawByteSize"],
+            ),
+            (375, 365, 7, 3, 344_702_522),
+        )
+        self.assertEqual(
+            inventory["orderedBindingsSha256"],
+            EXPECTED_V17_EXACT_INPUT_INVENTORY_SHA256,
+        )
+        self.assertEqual(len(inventory["orderedBindings"]), 375)
+        self.assertEqual(len(inventory["wave18ReadbackBindings"]), 10)
+        self.assertEqual(
+            inventory["wave18ReadbackBindingsSha256"],
+            CHECKER.V17_WAVE18_READBACK_BINDINGS_SHA256,
         )
 
     def test_04_reconstruction_and_archive_counters_are_not_stale(self):
@@ -2005,9 +2716,9 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 coverage["archiveCount"],
                 coverage["aggregateEntryCount"],
                 coverage["aggregateUncompressedByteCount"],
-                CHECKER.V16_MAXIMUM_AGGREGATE_UNCOMPRESSED_BYTES,
+                CHECKER.V17_MAXIMUM_AGGREGATE_UNCOMPRESSED_BYTES,
             ),
-            (180, 70_402, 1_305_716_657, 1_305_716_657),
+            (183, 71_373, 1_312_942_457, 1_312_942_457),
         )
         self.assertEqual(
             (
@@ -2015,7 +2726,7 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 verification["inheritedFullInputReconstructionCount"],
                 verification["totalFullInputReconstructionCount"],
             ),
-            (2, 28, 30),
+            (2, 30, 32),
         )
         self.assertEqual(
             (
@@ -2023,7 +2734,7 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 counters["inheritedFullSourceReconstructionCount"],
                 counters["totalFullSourceReconstructionCount"],
             ),
-            (2, 28, 30),
+            (2, 30, 32),
         )
         self.assertEqual(
             (
@@ -2032,24 +2743,24 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 counters["totalArchiveOpenCount"],
                 counters["archiveOpenCount"],
             ),
-            (360, 3_696, 4_056, 4_056),
+            (366, 4_056, 4_422, 4_422),
         )
         self.assertEqual(
             verification["underlyingIndependentGraphAlgorithmCount"],
-            60,
+            64,
         )
-        self.assertEqual(verification["hardenedCheckerModuleCount"], 15)
-        self.assertEqual(verification["providerFacadeLoadCount"], 15)
-        self.assertEqual(counters["heldTerminalEvidenceCount"], 115)
+        self.assertEqual(verification["hardenedCheckerModuleCount"], 16)
+        self.assertEqual(verification["providerFacadeLoadCount"], 16)
+        self.assertEqual(counters["heldTerminalEvidenceCount"], 122)
         self.assertEqual(counters["heldAuxiliaryEvidenceCount"], 3)
-        self.assertEqual(counters["heldToolInputCount"], 15)
-        self.assertEqual(counters["transitiveDistinctToolPathCount"], 17)
+        self.assertEqual(counters["heldToolInputCount"], 16)
+        self.assertEqual(counters["transitiveDistinctToolPathCount"], 18)
         self.assertEqual(
             counters["heldSourceInputCount"]
             + counters["heldTerminalEvidenceCount"]
             + counters["heldAuxiliaryEvidenceCount"]
             + counters["heldToolInputCount"],
-            492,
+            506,
         )
         for key in (
             "archiveExtractionCount",
@@ -2067,58 +2778,58 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
         verification = self.candidate["checkerVerification"]
         predecessor = self.candidate["predecessorVerification"]
         self.assertIs(
-            verification["pinnedV15PredecessorExecuted"],
+            verification["pinnedV16PredecessorExecuted"],
             True,
         )
         self.assertEqual(
-            verification["v15TestsBindingScope"],
+            verification["v16TestsBindingScope"],
             "historical_metadata_only_not_live_held",
         )
-        self.assertIs(verification["v15TestsLiveHeld"], False)
+        self.assertIs(verification["v16TestsLiveHeld"], False)
         self.assertIs(
             verification[
-                "wave17HistoricalExact21FrozenSnapshotDescriptorSetBound"
+                "wave18HistoricalExact25FrozenSnapshotDescriptorSetBound"
             ],
             True,
         )
         self.assertIs(
-            verification["wave17LiveTerminalControlMetadataVerified"],
+            verification["wave18LiveTerminalControlMetadataVerified"],
             True,
         )
         self.assertIs(
-            verification["wave17LiveFinalAndAcceptedInventoriesVerified"],
+            verification["wave18LiveFinalAndAcceptedInventoriesVerified"],
             True,
         )
         self.assertIs(
-            verification["wave17CompletionAppliesToRetainedSnapshot"],
+            verification["wave18CompletionAppliesToRetainedSnapshot"],
             True,
         )
         self.assertIs(
             verification[
-                "wave17CurrentPathIdentityGuaranteedThroughManifestPublication"
+                "wave18CurrentPathIdentityGuaranteedThroughManifestPublication"
             ],
             False,
         )
         self.assertIs(
             verification[
-                "wave17SameUidConcurrentRenameOrReplacementAfterLastBarrierPrevented"
+                "wave18SameUidConcurrentRenameOrReplacementAfterLastBarrierPrevented"
             ],
             False,
         )
         self.assertEqual(
-            predecessor["v15TestsBindingScope"],
+            predecessor["v16TestsBindingScope"],
             "historical_metadata_only_not_live_held",
         )
-        self.assertIs(predecessor["v15TestsLiveHeld"], False)
+        self.assertIs(predecessor["v16TestsLiveHeld"], False)
 
-    def test_06_wave17_terminal_resources_are_exact(self):
-        with held_wave17_documents() as (v4, runner, documents):
-            resources = CHECKER.wave17_request_resources(
+    def test_06_wave18_terminal_resources_are_exact(self):
+        with held_wave18_documents() as (v4, runner, documents):
+            resources = CHECKER.wave18_request_resources(
                 v4,
                 runner,
                 documents,
             )
-            snapshot = documents[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+            snapshot = documents[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                 "frozenAcquisitionSnapshot"
             ]
             frozen_rows = [
@@ -2129,10 +2840,10 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 snapshot["acquisitionReceipt"],
                 snapshot["acquisitionManifest"],
             ]
-            verified_resources = documents[CHECKER.WAVE17_READBACK_PATH][
+            verified_resources = documents[CHECKER.WAVE18_READBACK_PATH][
                 "verified"
             ]["resources"]
-        self.assertEqual(len(resources), 2)
+        self.assertEqual(len(resources), 6)
         self.assertEqual(
             [
                 (
@@ -2146,17 +2857,17 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 )
                 for row in resources
             ],
-            EXPECTED_WAVE17_RESOURCE_IDENTITY,
+            EXPECTED_WAVE18_RESOURCE_IDENTITY,
         )
         self.assertEqual(
             [
                 (row["path"], row["rawSha256"])
                 for row in frozen_rows
             ],
-            EXPECTED_WAVE17_FROZEN_PATH_RAWS,
+            EXPECTED_WAVE18_FROZEN_PATH_RAWS,
         )
-        self.assertEqual(len(EXPECTED_WAVE17_FROZEN_PATH_RAWS), 21)
-        self.assertEqual(snapshot["frozenFileCount"], 21)
+        self.assertEqual(len(EXPECTED_WAVE18_FROZEN_PATH_RAWS), 25)
+        self.assertEqual(snapshot["frozenFileCount"], 25)
         self.assertEqual(len(snapshot["acquisitionAuthority"]), 15)
         self.assertEqual(
             (
@@ -2166,12 +2877,12 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 snapshot["aggregateZipEntryCount"],
                 snapshot["aggregateZipUncompressedBytes"],
             ),
-            (3_450_700, 301, 3_450_399, 1_550, 9_108_004),
+            (2_109_100, 279, 2_108_821, 971, 7_225_800),
         )
         self.assertIs(
-            documents[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+            documents[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                 "verificationContract"
-            ]["exact21FrozenFileSnapshotRequired"],
+            ]["exact25FrozenFileSnapshotRequired"],
             True,
         )
         self.assertEqual(
@@ -2179,19 +2890,19 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 sum(row["kind"] == "mod" for row in resources),
                 sum(row["kind"] == "zip" for row in resources),
             ),
-            (1, 1),
+            (3, 3),
         )
         self.assertEqual(
             [row["order"] for row in resources],
-            list(range(1, 3)),
+            list(range(1, 7)),
         )
         self.assertEqual(
             sorted({row["tupleOrder"] for row in resources}),
-            [179],
+            [180, 181, 182],
         )
         self.assertEqual(
             sum(row["maximumBytes"] for row in resources),
-            3_450_700,
+            2_109_100,
         )
         self.assertEqual(
             {
@@ -2200,7 +2911,7 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 if row["kind"] == "zip"
                 and row["rootGoModPresent"] is False
             },
-            EXPECTED_WAVE17_FALSE_ROOT_GO_MOD_FILES,
+            EXPECTED_WAVE18_FALSE_ROOT_GO_MOD_FILES,
         )
 
     def test_07_combined_input_inventory_is_recomputed(self):
@@ -2226,8 +2937,10 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 d15,
                 d16,
                 d17,
+                d18,
             ) = value
             (
+                v16,
                 v15,
                 v14,
                 v13,
@@ -2244,6 +2957,7 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 runner,
             ) = chain
             rows = CHECKER.combined_source_bindings(
+                v16,
                 v15,
                 v14,
                 v13,
@@ -2274,238 +2988,248 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 d15,
                 d16,
                 d17,
+                d18,
             )
             projection = v1.source_projection(rows)
-        self.assertEqual((len(controls), len(auxiliary)), (115, 3))
-        self.assertEqual(len(rows), 359)
+            inventory = CHECKER.exact_input_inventory_bindings(
+                runner,
+                rows,
+            )
+        self.assertEqual((len(controls), len(auxiliary)), (122, 3))
+        self.assertEqual(len(rows), 365)
+        self.assertEqual(len(inventory), 375)
         self.assertEqual(
             hashlib.sha256(
                 runner.canonical_json_bytes(projection)
             ).hexdigest(),
-            EXPECTED_V16_INPUT_SET_SHA256,
+            EXPECTED_V17_INPUT_SET_SHA256,
         )
         self.assertEqual(
             hashlib.sha256(
-                CHECKER.wave17_digest_bytes(projection)
+                CHECKER.wave18_digest_bytes(projection)
             ).hexdigest(),
-            EXPECTED_V16_SOURCE_BINDINGS_SHA256,
+            EXPECTED_V17_SOURCE_BINDINGS_SHA256,
         )
 
     def test_08_unknown_authority_and_tool_pin_fail_closed(self):
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_PERMIT_PATH][
+            lambda docs: docs[CHECKER.WAVE18_PERMIT_PATH][
                 "authority"
             ].__setitem__("unknownAuthority", False),
-            "E_WAVE17_PERMIT",
+            "E_WAVE18_PERMIT",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_DECISION_PATH][
+            lambda docs: docs[CHECKER.WAVE18_DECISION_PATH][
                 "toolBindings"
             ][0].__setitem__("normalizedSha256", "0" * 64),
-            "E_WAVE17_DECISION",
+            "E_WAVE18_DECISION",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                 "toolBindings"
             ][2].__setitem__("rawSha256", "0" * 64),
-            "E_WAVE17_READBACK_PERMIT",
+            "E_WAVE18_READBACK_PERMIT",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_DECISION_PATH][
+            lambda docs: docs[CHECKER.WAVE18_DECISION_PATH][
                 "contentBinding"
             ].__setitem__("sha256", "0" * 64),
-            "E_WAVE17_DECISION",
+            "E_WAVE18_DECISION",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                 "contentBinding"
             ].__setitem__("sha256", "0" * 64),
-            "E_WAVE17_READBACK_PERMIT",
+            "E_WAVE18_READBACK_PERMIT",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_PATH][
                 "contentBinding"
             ].__setitem__("sha256", "0" * 64),
-            "E_WAVE17_READBACK",
+            "E_WAVE18_READBACK",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_MANIFEST_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_MANIFEST_PATH][
                 "contentBinding"
             ].__setitem__("sha256", "0" * 64),
-            "E_WAVE17_READBACK_MANIFEST",
+            "E_WAVE18_READBACK_MANIFEST",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                 "frozenAcquisitionSnapshot"
             ]["acquisitionReceipt"].__setitem__("rawSha256", "0" * 64),
-            "E_WAVE17_READBACK_PERMIT",
+            "E_WAVE18_READBACK_PERMIT",
         )
         for key in ("acquisitionClaim", "evidence"):
-            assert_wave17_mutation_fails(
+            assert_wave18_mutation_fails(
                 self,
                 lambda docs, target=key: docs[
-                    CHECKER.WAVE17_READBACK_PERMIT_PATH
+                    CHECKER.WAVE18_READBACK_PERMIT_PATH
                 ]["frozenAcquisitionSnapshot"][target].__setitem__(
                     "rawSha256",
                     "0" * 64,
                 ),
-                "E_WAVE17_READBACK_PERMIT",
+                "E_WAVE18_READBACK_PERMIT",
             )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_PATH][
                 "readbackClaim"
             ].__setitem__("rawSha256", "0" * 64),
-            "E_WAVE17_READBACK",
+            "E_WAVE18_READBACK",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_MANIFEST_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_MANIFEST_PATH][
                 "receipt"
             ].__setitem__("rawSha256", "0" * 64),
-            "E_WAVE17_READBACK_MANIFEST",
+            "E_WAVE18_READBACK_MANIFEST",
         )
 
-    def test_08_each_wave17_accepted_raw_binding_tamper_fails_closed(self):
-        with held_wave17_documents() as (v4, runner, documents):
-            accepted = documents[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+    def test_08_each_wave18_accepted_raw_binding_tamper_fails_closed(self):
+        with held_wave18_documents() as (v4, runner, documents):
+            accepted = documents[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                 "frozenAcquisitionSnapshot"
             ]["acceptedDirectory"]["files"]
-            self.assertEqual(len(accepted), 2)
-            for index in range(2):
+            self.assertEqual(len(accepted), 6)
+            for index in range(6):
                 mutated = copy.deepcopy(documents)
-                mutated[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+                mutated[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                     "frozenAcquisitionSnapshot"
                 ]["acceptedDirectory"]["files"][index]["rawSha256"] = "0" * 64
                 with (
                     self.subTest(accepted_raw_index=index),
                     mock.patch.object(
                         CHECKER,
-                        "verify_wave17_content_bindings",
+                        "verify_wave18_content_bindings",
                     ),
                     self.assertRaises(
                         CHECKER.CombinedCheckFailure,
                     ) as caught,
                 ):
-                    CHECKER.wave17_request_resources(v4, runner, mutated)
+                    CHECKER.wave18_request_resources(v4, runner, mutated)
                 self.assertEqual(
                     str(caught.exception),
-                    "E_WAVE17_READBACK_PERMIT",
+                    "E_WAVE18_READBACK_PERMIT",
                 )
 
-    def test_09_stale_wave16_cardinality_and_v14_predecessor_fail_closed(
+    def test_09_wave18_cardinality_wave17_anchor_and_explicit_v14_downgrade(
         self,
     ):
         def substitute_resource_same_cardinality(documents):
-            rows = documents[CHECKER.WAVE17_PERMIT_PATH][
+            rows = documents[CHECKER.WAVE18_PERMIT_PATH][
                 "requestContract"
             ]["resources"]
             rows[0] = copy.deepcopy(rows[1])
 
         def substitute_authority_same_cardinality(documents):
-            rows = documents[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+            rows = documents[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                 "frozenAcquisitionSnapshot"
             ]["acquisitionAuthority"]
             rows[0] = copy.deepcopy(rows[1])
 
-        def substitute_v14_predecessor(documents):
-            predecessors = documents[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+        def substitute_explicit_transitive_v14_predecessor(documents):
+            predecessors = documents[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                 "frozenAcquisitionSnapshot"
             ]["predecessorBindings"]
             predecessors["combinedFixedPointV14"] = predecessors.pop(
-                "combinedFixedPointV15"
+                "combinedFixedPointV16"
             )
 
-        def add_v14_predecessor_sibling(documents, path, nested=False):
+        def add_explicit_transitive_v14_predecessor_sibling(
+            documents,
+            path,
+            nested=False,
+        ):
             container = documents[path]
             if nested:
                 container = container["frozenAcquisitionSnapshot"]
             predecessors = container["predecessorBindings"]
             predecessors["combinedFixedPointV14"] = copy.deepcopy(
-                predecessors["combinedFixedPointV15"]
+                predecessors["combinedFixedPointV16"]
             )
 
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_DECISION_PATH].__setitem__(
+            lambda docs: docs[CHECKER.WAVE18_DECISION_PATH].__setitem__(
                 "retainedMetadataEvidence",
                 {
-                    **docs[CHECKER.WAVE17_DECISION_PATH][
+                    **docs[CHECKER.WAVE18_DECISION_PATH][
                         "retainedMetadataEvidence"
                     ],
                     "unknown": False,
                 },
             ),
-            "E_WAVE17_DECISION",
+            "E_WAVE18_DECISION",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_DECISION_PATH][
+            lambda docs: docs[CHECKER.WAVE18_DECISION_PATH][
                 "identityResolution"
-            ].__setitem__("tupleCount", 3),
-            "E_WAVE17_DECISION",
+            ].__setitem__("tupleCount", 4),
+            "E_WAVE18_DECISION",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_PERMIT_PATH][
+            lambda docs: docs[CHECKER.WAVE18_PERMIT_PATH][
                 "requestContract"
-            ].__setitem__("requestCount", 6),
-            "E_WAVE17_PERMIT",
+            ].__setitem__("requestCount", 7),
+            "E_WAVE18_PERMIT",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                 "frozenAcquisitionSnapshot"
-            ].__setitem__("frozenFileCount", 25),
-            "E_WAVE17_READBACK_PERMIT",
+            ].__setitem__("frozenFileCount", 26),
+            "E_WAVE18_READBACK_PERMIT",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                 "frozenAcquisitionSnapshot"
-            ]["acceptedDirectory"].__setitem__("exactFileCount", 6),
-            "E_WAVE17_READBACK_PERMIT",
+            ]["acceptedDirectory"].__setitem__("exactFileCount", 7),
+            "E_WAVE18_READBACK_PERMIT",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                 "frozenAcquisitionSnapshot"
-            ].__setitem__("acceptedResourceCount", 6),
-            "E_WAVE17_READBACK_PERMIT",
+            ].__setitem__("acceptedResourceCount", 7),
+            "E_WAVE18_READBACK_PERMIT",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                 "frozenAcquisitionSnapshot"
             ]["acquisitionAuthority"].pop(),
-            "E_WAVE17_READBACK_PERMIT",
+            "E_WAVE18_READBACK_PERMIT",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            substitute_v14_predecessor,
-            "E_WAVE17_READBACK_PERMIT",
+            substitute_explicit_transitive_v14_predecessor,
+            "E_WAVE18_READBACK_PERMIT",
         )
         for path, nested, expected in (
-            (CHECKER.WAVE17_DECISION_PATH, False, "E_WAVE17_DECISION"),
-            (CHECKER.WAVE17_PERMIT_PATH, False, "E_WAVE17_PERMIT"),
+            (CHECKER.WAVE18_DECISION_PATH, False, "E_WAVE18_DECISION"),
+            (CHECKER.WAVE18_PERMIT_PATH, False, "E_WAVE18_PERMIT"),
             (
-                CHECKER.WAVE17_READBACK_PERMIT_PATH,
+                CHECKER.WAVE18_READBACK_PERMIT_PATH,
                 True,
-                "E_WAVE17_READBACK_PERMIT",
+                "E_WAVE18_READBACK_PERMIT",
             ),
         ):
-            assert_wave17_mutation_fails(
+            assert_wave18_mutation_fails(
                 self,
                 lambda docs, target=path, is_nested=nested:
-                    add_v14_predecessor_sibling(
+                    add_explicit_transitive_v14_predecessor_sibling(
                         docs,
                         target,
                         nested=is_nested,
@@ -2513,18 +3237,18 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 expected,
             )
         for path, nested, expected in (
-            (CHECKER.WAVE17_PERMIT_PATH, False, "E_WAVE17_PERMIT"),
+            (CHECKER.WAVE18_PERMIT_PATH, False, "E_WAVE18_PERMIT"),
             (
-                CHECKER.WAVE17_READBACK_PERMIT_PATH,
+                CHECKER.WAVE18_READBACK_PERMIT_PATH,
                 True,
-                "E_WAVE17_READBACK_PERMIT",
+                "E_WAVE18_READBACK_PERMIT",
             ),
         ):
             for key, value in (
-                ("path", "build/offline-source/stale-wave15.claim"),
+                ("path", "build/offline-source/stale-wave16.claim"),
                 ("rawSha256", "0" * 64),
             ):
-                assert_wave17_mutation_fails(
+                assert_wave18_mutation_fails(
                     self,
                     lambda docs, target=path, is_nested=nested,
                     anchor_key=key, anchor_value=value: (
@@ -2532,87 +3256,87 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                             docs[target]["frozenAcquisitionSnapshot"]
                             if is_nested
                             else docs[target]
-                        )["predecessorBindings"]["combinedFixedPointV15"][
-                            "wave16NamespaceAnchor"
+                        )["predecessorBindings"]["combinedFixedPointV16"][
+                            "wave17NamespaceAnchor"
                         ].__setitem__(anchor_key, anchor_value)
                     ),
                     expected,
                 )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                 "frozenAcquisitionSnapshot"
             ]["acceptedDirectory"]["files"][0].__setitem__(
                 "rawSha256",
                 "0" * 64,
             ),
-            "E_WAVE17_READBACK_PERMIT",
+            "E_WAVE18_READBACK_PERMIT",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
             substitute_resource_same_cardinality,
-            "E_WAVE17_PERMIT",
+            "E_WAVE18_PERMIT",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
             substitute_authority_same_cardinality,
-            "E_WAVE17_READBACK_PERMIT",
+            "E_WAVE18_READBACK_PERMIT",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                 "frozenAcquisitionSnapshot"
             ].__setitem__("frozenFilesCanonicalSha256", "0" * 64),
-            "E_WAVE17_READBACK_PERMIT",
+            "E_WAVE18_READBACK_PERMIT",
         )
         for key, value in (
             ("aggregateAcceptedBytes", 11_475_644),
-            ("modCount", 3),
+            ("modCount", 4),
             ("aggregateZipBytes", 11_475_192),
             ("aggregateZipEntryCount", 948),
             ("aggregateZipUncompressedBytes", 46_464_212),
         ):
-            assert_wave17_mutation_fails(
+            assert_wave18_mutation_fails(
                 self,
                 lambda docs, field=key, stale=value: docs[
-                    CHECKER.WAVE17_READBACK_PERMIT_PATH
+                    CHECKER.WAVE18_READBACK_PERMIT_PATH
                 ]["frozenAcquisitionSnapshot"].__setitem__(field, stale),
-                "E_WAVE17_READBACK_PERMIT",
+                "E_WAVE18_READBACK_PERMIT",
             )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                 "frozenAcquisitionSnapshot"
             ].__setitem__(
                 "frozenFilesCanonicalSha256",
                 "b8863a58dd5db814afe94eb101c166e4f5bfb92d9b8197dbe3e32a3b1f0e99c4",
             ),
-            "E_WAVE17_READBACK_PERMIT",
+            "E_WAVE18_READBACK_PERMIT",
         )
         for path, key, value, expected in (
             (
-                CHECKER.WAVE17_PERMIT_PATH,
+                CHECKER.WAVE18_PERMIT_PATH,
                 "maximumAggregateResponseBodyBytes",
-                53_477_376,
-                "E_WAVE17_PERMIT",
+                53_477_377,
+                "E_WAVE18_PERMIT",
             ),
             (
-                CHECKER.WAVE17_PERMIT_PATH,
+                CHECKER.WAVE18_PERMIT_PATH,
                 "maximumEntryCountAcrossAllZips",
-                60_000,
-                "E_WAVE17_PERMIT",
+                60_001,
+                "E_WAVE18_PERMIT",
             ),
             (
-                CHECKER.WAVE17_READBACK_PERMIT_PATH,
+                CHECKER.WAVE18_READBACK_PERMIT_PATH,
                 "maximumAggregateAcceptedBytes",
-                53_477_376,
-                "E_WAVE17_READBACK_PERMIT",
+                53_477_377,
+                "E_WAVE18_READBACK_PERMIT",
             ),
             (
-                CHECKER.WAVE17_READBACK_PERMIT_PATH,
+                CHECKER.WAVE18_READBACK_PERMIT_PATH,
                 "maximumZipEntriesAcrossAll",
-                60_000,
-                "E_WAVE17_READBACK_PERMIT",
+                60_001,
+                "E_WAVE18_READBACK_PERMIT",
             ),
         ):
             def mutate_limit(
@@ -2622,7 +3346,7 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 stale=value,
             ):
                 document = documents[target]
-                if target == CHECKER.WAVE17_PERMIT_PATH:
+                if target == CHECKER.WAVE18_PERMIT_PATH:
                     section = (
                         "zipLimits"
                         if field == "maximumEntryCountAcrossAllZips"
@@ -2632,51 +3356,52 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                     section = "resourceLimits"
                 document[section][field] = stale
 
-            assert_wave17_mutation_fails(
+            assert_wave18_mutation_fails(
                 self,
                 mutate_limit,
                 expected,
             )
 
     def test_10_selected_tuple_and_live_hold_overclaim_fail_closed(self):
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_DECISION_PATH][
+            lambda docs: docs[CHECKER.WAVE18_DECISION_PATH][
                 "identityResolution"
             ].__setitem__("graphSelectedTupleCount", 1),
-            "E_WAVE17_DECISION",
+            "E_WAVE18_DECISION",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_PATH][
                 "verified"
             ].__setitem__("selectedRequestOrdinals", [1]),
-            "E_WAVE17_READBACK",
+            "E_WAVE18_READBACK",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_PATH][
                 "verified"
             ].__setitem__("selectedRequestOrdinals", [1, 2]),
-            "E_WAVE17_READBACK",
+            "E_WAVE18_READBACK",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                 "verificationContract"
-            ].__setitem__("v15TestsLiveHeld", False),
-            "E_WAVE17_READBACK_PERMIT",
+            ].__setitem__("v16TestsLiveHeld", False),
+            "E_WAVE18_READBACK_PERMIT",
         )
 
-    def test_10_all_wave17_selectors_and_false_root_mods_are_exact(self):
-        with held_wave17_documents() as (v4, runner, documents):
-            baseline = documents[CHECKER.WAVE17_PERMIT_PATH][
+    def test_10_all_wave18_selectors_and_false_root_mods_are_exact(self):
+        with held_wave18_documents() as (v4, runner, documents):
+            baseline = documents[CHECKER.WAVE18_PERMIT_PATH][
                 "requestContract"
             ]["resources"]
-            verified = documents[CHECKER.WAVE17_READBACK_PATH]["verified"][
+            verified = documents[CHECKER.WAVE18_READBACK_PATH]["verified"][
                 "resources"
             ]
-            self.assertEqual(len(baseline), 2)
+            self.assertEqual(len(baseline), 6)
+            self.assertEqual(len(verified), 6)
             self.assertTrue(
                 all(
                     row["selectedByGraphAlgorithm"] is False
@@ -2689,33 +3414,36 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 if row["kind"] == "zip"
                 and row["rootGoModPresent"] is True
             ]
-            self.assertEqual(zip_root_indexes, [1])
+            self.assertEqual(zip_root_indexes, [1, 3, 5])
 
             selector_collections = (
                 (
                     "permit_resource",
-                    2,
-                    lambda docs: docs[CHECKER.WAVE17_PERMIT_PATH][
+                    6,
+                    lambda docs: docs[CHECKER.WAVE18_PERMIT_PATH][
                         "requestContract"
                     ]["resources"],
+                    "E_WAVE18_RESOURCE",
                 ),
                 (
                     "source_request",
-                    2,
-                    lambda docs: docs[CHECKER.WAVE17_DECISION_PATH][
+                    6,
+                    lambda docs: docs[CHECKER.WAVE18_DECISION_PATH][
                         "sourceAcquisitionPreparation"
                     ]["requestSet"],
+                    "E_WAVE18_PERMIT",
                 ),
                 (
                     "identity_tuple",
-                    1,
-                    lambda docs: docs[CHECKER.WAVE17_DECISION_PATH][
+                    3,
+                    lambda docs: docs[CHECKER.WAVE18_DECISION_PATH][
                         "identityResolution"
                     ]["tuples"],
+                    "E_WAVE18_DECISION",
                 ),
             )
             missing = object()
-            for location, count, rows_for in selector_collections:
+            for location, count, rows_for, expected in selector_collections:
                 for index in range(count):
                     for value in (True, 0, "false", None, missing):
                         mutated = copy.deepcopy(documents)
@@ -2727,7 +3455,7 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                             row["selectedByGraphAlgorithm"] = value
                             case_value = value
                         resources_sha256, request_set_sha256 = (
-                            rebind_wave17_selector_hashes(runner, mutated)
+                            rebind_wave18_selector_hashes(runner, mutated)
                         )
                         with (
                             self.subTest(
@@ -2737,82 +3465,82 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                             ),
                             mock.patch.object(
                                 CHECKER,
-                                "verify_wave17_content_bindings",
+                                "verify_wave18_content_bindings",
                             ),
                             mock.patch.object(
                                 CHECKER,
-                                "WAVE17_PERMIT_RESOURCES_SHA256",
+                                "WAVE18_PERMIT_RESOURCES_SHA256",
                                 resources_sha256,
                             ),
                             mock.patch.object(
                                 CHECKER,
-                                "WAVE17_REQUEST_SET_SHA256",
+                                "WAVE18_REQUEST_SET_SHA256",
                                 request_set_sha256,
                             ),
                             self.assertRaises(
                                 CHECKER.CombinedCheckFailure,
                             ) as caught,
                         ):
-                            CHECKER.wave17_request_resources(
+                            CHECKER.wave18_request_resources(
                                 v4,
                                 runner,
                                 mutated,
                             )
                         self.assertEqual(
                             str(caught.exception),
-                            "E_WAVE17_RESOURCE",
+                            expected,
                         )
 
             for index in zip_root_indexes:
                 mutated = copy.deepcopy(documents)
-                mutated[CHECKER.WAVE17_READBACK_PATH]["verified"][
+                mutated[CHECKER.WAVE18_READBACK_PATH]["verified"][
                     "resources"
                 ][index]["rootGoModPresent"] = False
                 with (
                     self.subTest(root_go_mod_index=index),
                     mock.patch.object(
                         CHECKER,
-                        "verify_wave17_content_bindings",
+                        "verify_wave18_content_bindings",
                     ),
                     self.assertRaises(
                         CHECKER.CombinedCheckFailure,
                     ) as caught,
                 ):
-                    CHECKER.wave17_request_resources(v4, runner, mutated)
+                    CHECKER.wave18_request_resources(v4, runner, mutated)
                 self.assertEqual(
                     str(caught.exception),
-                    "E_WAVE17_RESOURCE",
+                    "E_WAVE18_RESOURCE",
                 )
 
     def test_11_post_success_reporting_contract_is_pinned(self):
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_PERMIT_PATH][
+            lambda docs: docs[CHECKER.WAVE18_READBACK_PERMIT_PATH][
                 "verificationContract"
             ]["postSuccessReportingFailure"].__setitem__(
                 "retryAllowed",
                 True,
             ),
-            "E_WAVE17_READBACK_PERMIT",
+            "E_WAVE18_READBACK_PERMIT",
         )
-        assert_wave17_mutation_fails(
+        assert_wave18_mutation_fails(
             self,
-            lambda docs: docs[CHECKER.WAVE17_READBACK_PERMIT_PATH].__setitem__(
+            lambda docs: docs[CHECKER.WAVE18_READBACK_PERMIT_PATH].__setitem__(
                 "recorderNormalizedSha256",
                 "0" * 64,
             ),
-            "E_WAVE17_READBACK_PERMIT",
+            "E_WAVE18_READBACK_PERMIT",
         )
 
     def test_12_terminal_modes_sizes_and_namespace_are_live(self):
-        with held_wave17_documents(include_held=True) as (
+        with held_wave18_documents(include_held=True) as (
             _,
             _,
             documents,
             held,
         ):
-            CHECKER.validate_wave17_completed_namespace(held, documents)
-            for path, (size, mode) in CHECKER.WAVE17_CONTROL_METADATA.items():
+            CHECKER.validate_wave18_completed_namespace(held, documents)
+            for path, (size, mode) in CHECKER.WAVE18_CONTROL_METADATA.items():
                 info = os.fstat(held.files[path].fd)
                 self.assertEqual(info.st_size, size)
                 self.assertEqual(stat.S_IMODE(info.st_mode), mode)
@@ -2973,7 +3701,7 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
 
         allowed_loader_functions = {
             "load_provider_facade",
-            "load_v15_checker",
+            "load_v16_checker",
             "load_v14_checker",
             "load_v13_checker",
             "load_v12_checker",
@@ -3108,63 +3836,65 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
 
     def test_16_error_document_requests_no_credentials(self):
         value = json.loads(CHECKER.error_document_bytes())
-        self.assertEqual(value["schemaVersion"], "16.0")
+        self.assertEqual(value["schemaVersion"], "17.0")
         self.assertEqual(value["status"], "verification_failed")
         self.assertIs(value["externalAuthenticationRequired"], False)
         self.assertIs(value["userActionRequired"], False)
 
-    def test_17_v15_predecessor_is_exact_and_mutations_fail_closed(self):
+    def test_17_v16_candidate_v15_metadata_and_wave17_anchor_are_exact(self):
         predecessor = self.predecessor_candidate
         self.assertEqual(
             predecessor["contentBinding"]["sha256"],
-            CHECKER.V15_CANDIDATE_CONTENT_SHA256,
+            CHECKER.V16_CANDIDATE_CONTENT_SHA256,
         )
         self.assertEqual(
             predecessor["inputSet"]["combinedInputSetSha256"],
-            CHECKER.V15_INPUT_SET_SHA256,
+            CHECKER.V16_INPUT_SET_SHA256,
         )
         self.assertEqual(
             predecessor["graphDiscovery"]["graphSha256"],
-            CHECKER.V15_GRAPH_SHA256,
+            CHECKER.V16_GRAPH_SHA256,
         )
         self.assertEqual(
             predecessor["derivedResult"]["frontierSha256"],
-            CHECKER.V15_FRONTIER_SHA256,
+            CHECKER.V16_FRONTIER_SHA256,
         )
         self.assertEqual(
-            predecessor["checkerVerification"]["v14TestsBindingScope"],
+            predecessor["checkerVerification"]["v15TestsBindingScope"],
             "historical_metadata_only_not_live_held",
         )
         self.assertIs(
-            predecessor["checkerVerification"]["v14TestsLiveHeld"],
+            predecessor["checkerVerification"]["v15TestsLiveHeld"],
             False,
         )
-        with held_wave17_documents() as (_, runner, documents):
-            decision = documents[CHECKER.WAVE17_DECISION_PATH]
-            verified = CHECKER.validate_v15_predecessor_candidate(
+        with held_wave18_documents() as (_, runner, documents):
+            decision = documents[CHECKER.WAVE18_DECISION_PATH]
+            verified = CHECKER.validate_v16_predecessor_candidate(
                 runner,
                 predecessor,
                 decision,
             )
             self.assertEqual(
                 verified["candidateContentSha256"],
-                CHECKER.V15_CANDIDATE_CONTENT_SHA256,
+                CHECKER.V16_CANDIDATE_CONTENT_SHA256,
             )
-            stale_key_decision = copy.deepcopy(decision)
-            stale_key_decision["predecessorBindings"][
+            explicit_transitive_v14_decision = copy.deepcopy(decision)
+            explicit_transitive_v14_decision["predecessorBindings"][
                 "combinedFixedPointV14"
-            ] = stale_key_decision["predecessorBindings"].pop(
-                "combinedFixedPointV15"
+            ] = explicit_transitive_v14_decision[
+                "predecessorBindings"
+            ].pop(
+                "combinedFixedPointV16"
             )
             with self.assertRaises(
                 CHECKER.CombinedCheckFailure,
             ) as caught:
-                CHECKER.validate_v15_predecessor_candidate(
+                CHECKER.validate_v16_predecessor_candidate(
                     runner,
                     predecessor,
-                    stale_key_decision,
+                    explicit_transitive_v14_decision,
                 )
-            self.assertEqual(str(caught.exception), "E_V15_PREDECESSOR")
+            self.assertEqual(str(caught.exception), "E_V16_PREDECESSOR")
             for key in (
                 "contentSha256",
                 "combinedInputSetSha256",
@@ -3178,40 +3908,40 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 with self.subTest(predecessor_binding=key):
                     mutated_decision = copy.deepcopy(decision)
                     mutated_decision["predecessorBindings"][
-                        "combinedFixedPointV15"
+                        "combinedFixedPointV16"
                     ][key] = "0" * 64
                     with self.assertRaises(
                         CHECKER.CombinedCheckFailure,
                     ) as caught:
-                        CHECKER.validate_v15_predecessor_candidate(
+                        CHECKER.validate_v16_predecessor_candidate(
                             runner,
                             predecessor,
                             mutated_decision,
                         )
                     self.assertEqual(
                         str(caught.exception),
-                        "E_V15_PREDECESSOR",
+                        "E_V16_PREDECESSOR",
                     )
             for key, value in (
-                ("path", "build/offline-source/stale-wave15.claim"),
+                ("path", "build/offline-source/stale-wave16.claim"),
                 ("rawSha256", "0" * 64),
             ):
-                with self.subTest(wave16_namespace_anchor=key):
+                with self.subTest(wave17_namespace_anchor=key):
                     mutated_decision = copy.deepcopy(decision)
                     mutated_decision["predecessorBindings"][
-                        "combinedFixedPointV15"
-                    ]["wave16NamespaceAnchor"][key] = value
+                        "combinedFixedPointV16"
+                    ]["wave17NamespaceAnchor"][key] = value
                     with self.assertRaises(
                         CHECKER.CombinedCheckFailure,
                     ) as caught:
-                        CHECKER.validate_v15_predecessor_candidate(
+                        CHECKER.validate_v16_predecessor_candidate(
                             runner,
                             predecessor,
                             mutated_decision,
                         )
                     self.assertEqual(
                         str(caught.exception),
-                        "E_V15_PREDECESSOR",
+                        "E_V16_PREDECESSOR",
                     )
             mismatched_identity_decision = copy.deepcopy(decision)
             mismatched_identity_decision["identityResolution"]["tuples"][0][
@@ -3220,14 +3950,14 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
             with self.assertRaises(
                 CHECKER.CombinedCheckFailure,
             ) as caught:
-                CHECKER.validate_v15_predecessor_candidate(
+                CHECKER.validate_v16_predecessor_candidate(
                     runner,
                     predecessor,
                     mismatched_identity_decision,
                 )
             self.assertEqual(
                 str(caught.exception),
-                "E_V15_PREDECESSOR",
+                "E_V16_PREDECESSOR",
             )
             candidate_mutations = [
                 lambda value: value["inputSet"]["sourceBindings"][0].__setitem__(
@@ -3254,14 +3984,14 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                     with self.assertRaises(
                         CHECKER.CombinedCheckFailure,
                     ) as caught:
-                        CHECKER.validate_v15_predecessor_candidate(
+                        CHECKER.validate_v16_predecessor_candidate(
                             runner,
                             mutated_candidate,
                             decision,
                         )
                     self.assertEqual(
                         str(caught.exception),
-                        "E_V15_PREDECESSOR",
+                        "E_V16_PREDECESSOR",
                     )
 
     def test_18_live_protocol_order_and_tool_holds_are_observed(self):
@@ -3278,7 +4008,7 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 "script/check_p2p_nat_g2_pion_combined_fixed_point_"
                 f"v{version}.py"
             )
-            for version in range(1, 17)
+            for version in range(1, 18)
         } | {
             (
                 "script/run_p2p_nat_g2_pion_dependency_source_review_"
@@ -3293,7 +4023,7 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
             set(self.actual_python_open_paths),
             expected_transitive_paths,
         )
-        self.assertNotIn(CHECKER.V15_TESTS_PATH, self.actual_python_open_paths)
+        self.assertNotIn(CHECKER.V16_TESTS_PATH, self.actual_python_open_paths)
         self.assertNotIn(CHECKER.V14_TESTS_PATH, self.actual_python_open_paths)
         self.assertNotIn(CHECKER.V13_TESTS_PATH, self.actual_python_open_paths)
         self.assertNotIn(CHECKER.V12_TESTS_PATH, self.actual_python_open_paths)
@@ -3301,17 +4031,17 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
         self.assertNotIn(CHECKER.V10_TESTS_PATH, self.actual_python_open_paths)
         self.assertNotIn(CHECKER.V9_TESTS_PATH, self.actual_python_open_paths)
         for forbidden in (
-            "script/acquire_p2p_nat_g2_pion_rung3_dependency_wave17_v1_once.py",
+            "script/acquire_p2p_nat_g2_pion_rung3_dependency_wave18_v1_once.py",
             (
-                "script/record_p2p_nat_g2_pion_rung3_dependency_wave17_"
+                "script/record_p2p_nat_g2_pion_rung3_dependency_wave18_"
                 "readback_v1_once.py"
             ),
             (
-                "script/check_p2p_nat_g2_pion_rung3_dependency_wave17_"
+                "script/check_p2p_nat_g2_pion_rung3_dependency_wave18_"
                 "acquisition_v1.py"
             ),
             (
-                "script/check_p2p_nat_g2_pion_rung3_dependency_wave17_"
+                "script/check_p2p_nat_g2_pion_rung3_dependency_wave18_"
                 "readback_execution_permit_v1.py"
             ),
         ):
@@ -3380,7 +4110,7 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
         with (
             mock.patch.object(
                 CHECKER,
-                "validate_wave17_completed_namespace",
+                "validate_wave18_completed_namespace",
                 side_effect=namespace_spy,
             ),
             mock.patch.object(CHECKER, "check", side_effect=check_spy),
@@ -3589,13 +4319,13 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
             self.assertEqual(str(caught.exception), "E_DERIVED_RESULT")
 
     def test_20_tool_path_derivation_rejects_duplicate_missing_and_extra(self):
-        class V15:
+        class V16:
             TRANSITIVE_CHECKER_PATHS = {
                 (
                     "script/check_p2p_nat_g2_pion_combined_fixed_point_"
                     f"v{version}.py"
                 )
-                for version in range(1, 15)
+                for version in range(1, 16)
             }
             V1_CHECKER_PATH = (
                 "script/check_p2p_nat_g2_pion_combined_fixed_point_v1.py"
@@ -3615,14 +4345,14 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
         )
         direct_paths, transitive_paths = (
             CHECKER.derive_and_validate_tool_paths(
-                V15,
+                V16,
                 self.predecessor_candidate,
                 direct_bindings,
                 direct_inputs,
             )
         )
-        self.assertEqual(len(direct_paths), 15)
-        self.assertEqual(len(transitive_paths), 17)
+        self.assertEqual(len(direct_paths), 16)
+        self.assertEqual(len(transitive_paths), 18)
 
         duplicate = copy.deepcopy(direct_bindings)
         duplicate[-1] = copy.deepcopy(duplicate[0])
@@ -3645,7 +4375,7 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 CHECKER.CombinedCheckFailure,
             ) as caught:
                 CHECKER.derive_and_validate_tool_paths(
-                    V15,
+                    V16,
                     self.predecessor_candidate,
                     mutated,
                     direct_inputs,
@@ -3658,7 +4388,7 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
         )
         with self.assertRaises(CHECKER.CombinedCheckFailure) as caught:
             CHECKER.derive_and_validate_tool_paths(
-                V15,
+                V16,
                 predecessor_duplicate,
                 direct_bindings,
                 direct_inputs,
@@ -3682,7 +4412,7 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
                 self.assertRaises(CHECKER.CombinedCheckFailure) as caught,
             ):
                 CHECKER.derive_and_validate_tool_paths(
-                    V15,
+                    V16,
                     self.predecessor_candidate,
                     direct_bindings,
                     direct_inputs,
@@ -3853,18 +4583,18 @@ class CombinedFixedPointV16Tests(unittest.TestCase):
 
 @unittest.skipIf(
     OUTPUT_SEALS_UNRESOLVED,
-    "V16 candidate/graph/frontier output seals remain unresolved",
+    "V17 output seals/outcome fixture remain unresolved",
 )
-class CombinedFixedPointV16FastBoundaryTests(unittest.TestCase):
-    def test_v16_regression_seals_are_resolved_and_fresh(self):
+class CombinedFixedPointV17FastBoundaryTests(unittest.TestCase):
+    def test_v17_regression_seals_and_outcome_are_resolved(self):
         self.assertEqual(
             (
-                CHECKER.V16_INPUT_SET_SHA256,
-                CHECKER.V16_SOURCE_BINDINGS_SHA256,
+                CHECKER.V17_INPUT_SET_SHA256,
+                CHECKER.V17_SOURCE_BINDINGS_SHA256,
             ),
             (
-                EXPECTED_V16_INPUT_SET_SHA256,
-                EXPECTED_V16_SOURCE_BINDINGS_SHA256,
+                EXPECTED_V17_INPUT_SET_SHA256,
+                EXPECTED_V17_SOURCE_BINDINGS_SHA256,
             ),
         )
         self.assertEqual(
@@ -3876,26 +4606,59 @@ class CombinedFixedPointV16FastBoundaryTests(unittest.TestCase):
             UNRESOLVED_SHA256,
         )
         for digest in (
-            EXPECTED_V16_CANDIDATE_CONTENT_SHA256,
-            EXPECTED_V16_GRAPH_SHA256,
-            EXPECTED_V16_FRONTIER_SHA256,
+            EXPECTED_V17_CANDIDATE_CONTENT_SHA256,
+            EXPECTED_V17_GRAPH_SHA256,
+            EXPECTED_V17_FRONTIER_SHA256,
         ):
             self.assertRegex(digest, r"^[0-9a-f]{64}$")
             self.assertNotEqual(digest, UNRESOLVED_SHA256)
-        self.assertNotEqual(
-            EXPECTED_V16_CANDIDATE_CONTENT_SHA256,
-            CHECKER.V15_CANDIDATE_CONTENT_SHA256,
+        outcome = EXPECTED_V17_OUTCOME
+        self.assertIs(type(outcome), dict)
+        self.assertEqual(
+            set(outcome),
+            {
+                "exactFrontier",
+                "newTupleCount",
+                "unmappedExternalImportCount",
+                "unresolvedDeclaredExternalImportCount",
+                "fixedPointReached",
+                "route",
+            },
         )
-        self.assertNotEqual(
-            EXPECTED_V16_GRAPH_SHA256,
-            CHECKER.V15_GRAPH_SHA256,
+        frontier = outcome["exactFrontier"]
+        self.assertIs(type(frontier), tuple)
+        self.assertTrue(
+            all(
+                type(row) is tuple
+                and len(row) == 3
+                and type(row[0]) is str
+                and row[0] != ""
+                and type(row[1]) is str
+                and row[1] != ""
+                and type(row[2]) is bool
+                for row in frontier
+            )
         )
-        self.assertNotEqual(
-            EXPECTED_V16_FRONTIER_SHA256,
-            CHECKER.V15_FRONTIER_SHA256,
+        for key in (
+            "newTupleCount",
+            "unmappedExternalImportCount",
+            "unresolvedDeclaredExternalImportCount",
+        ):
+            self.assertIs(type(outcome[key]), int)
+            self.assertGreaterEqual(outcome[key], 0)
+        self.assertEqual(outcome["newTupleCount"], len(frontier))
+        self.assertIs(type(outcome["fixedPointReached"]), bool)
+        route = outcome["route"]
+        self.assertIs(type(route), dict)
+        self.assertEqual(
+            set(route),
+            {"route", "status", "nextAction"},
+        )
+        self.assertTrue(
+            all(type(value) is str and value != "" for value in route.values())
         )
 
-    def test_genuine_v16_boundary_is_exact_and_requires_next_wave(self):
+    def test_genuine_v17_boundary_matches_audited_outcome(self):
         class Runner:
             @staticmethod
             def canonical_json_bytes(value):
@@ -3910,6 +4673,7 @@ class CombinedFixedPointV16FastBoundaryTests(unittest.TestCase):
                     + b"\n"
                 )
 
+        outcome = EXPECTED_V17_OUTCOME
         frontier = [
             {
                 "acquisitionAuthorized": False,
@@ -3918,25 +4682,20 @@ class CombinedFixedPointV16FastBoundaryTests(unittest.TestCase):
                 "selectedByGraphAlgorithm": selected,
                 "version": version,
             }
-            for module, version, selected in EXPECTED_V16_EXACT_FRONTIER
+            for module, version, selected in outcome["exactFrontier"]
         ]
         graph = {
             "exactFrontier": frontier,
-            "newTupleCount": len(frontier),
-            "unmappedExternalImportCount": 0,
-            "unresolvedDeclaredExternalImportCount": 0,
-            "fixedPointReached": False,
-        }
-        route = {
-            "route": "next_wave_required",
-            "status": (
-                "combined_graph_discovery_complete_next_wave_required"
+            "newTupleCount": outcome["newTupleCount"],
+            "unmappedExternalImportCount": (
+                outcome["unmappedExternalImportCount"]
             ),
-            "nextAction": (
-                "prepare_separate_versioned_dependency_wave_identity_and_"
-                "acquisition_decision"
+            "unresolvedDeclaredExternalImportCount": (
+                outcome["unresolvedDeclaredExternalImportCount"]
             ),
+            "fixedPointReached": outcome["fixedPointReached"],
         }
+        route = dict(outcome["route"])
 
         result = CHECKER.derive_and_validate_graph_result(
             Runner(),
@@ -3953,22 +4712,25 @@ class CombinedFixedPointV16FastBoundaryTests(unittest.TestCase):
                 )
                 for row in frontier
             ],
-            list(EXPECTED_V16_EXACT_FRONTIER),
+            list(outcome["exactFrontier"]),
         )
         self.assertEqual(
             result,
             {
-                "fixedPointReached": False,
-                "frontierTupleCount": 3,
-                "frontierSha256": EXPECTED_V16_FRONTIER_SHA256,
+                "fixedPointReached": outcome["fixedPointReached"],
+                "frontierTupleCount": len(frontier),
+                "frontierSha256": EXPECTED_V17_FRONTIER_SHA256,
             },
         )
-        self.assertIs(result["fixedPointReached"], False)
-        self.assertEqual(route["route"], "next_wave_required")
+        self.assertIs(
+            result["fixedPointReached"],
+            outcome["fixedPointReached"],
+        )
+        self.assertEqual(route, outcome["route"])
 
     def test_aggregate_uncompressed_limit_minus_one_is_rejected(self):
         aggregate_bytes = (
-            CHECKER.V16_MAXIMUM_AGGREGATE_UNCOMPRESSED_BYTES
+            CHECKER.V17_MAXIMUM_AGGREGATE_UNCOMPRESSED_BYTES
         )
         archive = {
             "embeddedGoMod": b"module example.invalid/root\n",
@@ -3989,7 +4751,7 @@ class CombinedFixedPointV16FastBoundaryTests(unittest.TestCase):
             "maximumAggregateUncompressedBytes": aggregate_bytes - 1,
         }
         with held_toolchain() as chain:
-            v4 = chain[11]
+            v4 = chain[12]
             with (
                 mock.patch.object(
                     v4,

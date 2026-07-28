@@ -1,8 +1,171 @@
 # QA Evidence
 
-Last updated: 2026-07-24 KST.
+Last updated: 2026-07-28 KST.
 
 This document separates current verification evidence from historical captures.
+
+## 2026-07-28 G2 Fixed-Point Snapshot Review Completion Batch 1 Checklist
+
+- [x] Both independent GPT-5.6 Sol passes reviewed all 164 files and 753,000
+  bytes in deterministic rows 1-164.
+- [x] Both match batch SHA-256
+  `e3604e20a65059f07429913d09784784493c5fd8b71b3859ca544963cdfd143a`
+  and full-list anchor
+  `241dd1a80eb7e7434fa573b20312569b5acfca3581a286ccb8f7a1da9e33b709`.
+- [x] Static cross-validation confirms the DTLS pooled receive-buffer alias as
+  a valid new non-canonical P2 reliability candidate. Queue-count,
+  epoch/replay, and AEAD controls limit it; no authentication bypass or
+  confidentiality impact is claimed.
+- [x] Static cross-validation confirms unbounded completed-handshake caching as
+  an additional dependency-source location for existing
+  `G2SR1-F-9206ffd24b3357f7cda5`, without creating a duplicate finding.
+- [x] File write, archive extraction, source execution/compilation, network,
+  Git, device, external-authentication, and user-action counts remain zero or
+  false.
+- [ ] Each pass still has 328 files and 2,100,327 bytes remaining, so completed
+  pass count remains 0/2. The P2 candidate is not yet a canonical persisted
+  review result.
+- [ ] Batch 2 must cover exact rows 165-328: 164 files, 757,606 bytes, SHA-256
+  `1dcc6d2f3ef570c9e0dcf56fe876f80ff6aa195670165cd5cad14dd9592993e3`.
+
+## 2026-07-28 G2 Fixed-Point Snapshot Source/License Review Preparation Checklist
+
+- [x] The canonical decision and reader bind the exact closure decision,
+  implementation-review selection, staged plan, adapter, adapter tests, pinned
+  runner, V18 graph/source/inventory seals, and two exact build profiles.
+- [x] The self-sealed read-only decision checker succeeds and its mutation
+  suite passes 15/15. An independent GPT-5.6 Sol package audit reports no
+  P0-P3 finding.
+- [x] Adapter preflight and its focused suite pass 14/14.
+- [x] The exact full scan succeeds for 369 source inputs, 184 module/version
+  tuples, 185 archives, 72,304 entries, and 1,359,347,284 uncompressed bytes.
+- [x] Full-scan projection seals match 185 coverage rows, 58,478 Go source
+  files, 195 pinned-runner narrow and 362 broader name-based license
+  candidates, 11,150 special-source rows, and 185 metadata rows.
+- [x] The exact graph reproduces 132 nodes, 1,047 edges, 185 module nodes, 471
+  module edges, 33 selected versions, and V18 graph SHA-256
+  `a865a62a7a80a0dece55aeebd537d3fb9aa73ce6ceeea10304a6a2074c2dfaba`.
+- [x] The two legacy and 30 malformed non-production compatibility occurrences
+  are bounded by exact source hash, path/class, and count.
+- [x] Archive extraction, retained-source execution/compilation, subprocess,
+  network, and file-write counters are zero.
+- [x] External authentication, repository-owner proof, signatures, keys,
+  tokens, passwords, approvals, and user action are not required.
+- [x] Two independent GPT-5.6 Sol source/license/security passes returned
+  without seeing each other's output and independently reproduced the exact
+  binding and zero-write full scan.
+- [x] Static source/control/sink validation maps pass A's code-level claims to
+  existing findings for credential diagnostics, TURN identity, exact egress,
+  bounded callbacks/shutdown, and pre-auth/promotion. No duplicate finding or
+  severity promotion was created.
+- [x] Pass B's selected-version `PATENTS` omissions and native/API/OS profile
+  ambiguity are review-tooling completion blockers under the existing
+  dependency-review gap, not newly established product vulnerabilities.
+- [ ] Both passes report `passComplete=false`, so completed independent passes
+  remain 0/2. Initial pass B's no-P0-P3 statement meant no new finding at that
+  incomplete stage and did not contradict or close the existing open P1
+  findings.
+- [ ] File-by-file semantics for 492 production-reachable Go bodies, selected
+  special-source semantics, broad license/`PATENTS` conclusions, SPDX/source
+  provenance and binary mapping, and native profile reachability remain open.
+- [ ] The adapter projection is not an SPDX SBOM, license-compatibility
+  decision, security acceptance, or persisted review result. All 19 findings,
+  dependency/semantic closure, candidate/library selection, rung-three
+  completion, and V1 readiness remain open.
+
+## 2026-07-28 G2 Combined V18 Closure-Review Decision Checklist
+
+- [x] The canonical decision and reader bind the exact Combined V18 checker,
+  corrected tests, semantic-review predecessors, and all six input/output
+  digests without rerunning source acquisition or the full reconstruction.
+- [x] The focused read-only checker succeeds and the mutation suite passes
+  15/15.
+- [x] `dependencyFixedPointReached=true` is accepted only for the exact
+  retained Wave1-Wave19 graph-discovery snapshot.
+- [x] The decision records an empty frontier and zero new, unmapped, or
+  unresolved tuples/imports, while explicitly recording that this review
+  creates or persists no candidate artifact.
+- [x] The exact test history remains 18/18 post-seal boundary checks, 23/24 in
+  the pre-correction full class, and 1/1 for corrected isolated `test_13`.
+  No clean post-correction 24/24 full-class run is claimed.
+- [x] All 19 canonical findings remain open: seven `patch_required`, twelve
+  `unresolved`, and zero closed by this decision.
+- [x] External authentication, repository-owner proof, signatures, keys,
+  tokens, passwords, approvals, and user action are not required.
+- [x] Acquisition, extraction, source loading/execution, compilation,
+  subprocess, socket, network, device, publication, Git-write, and deployment
+  authority remain false.
+- [ ] Dependency-source semantic/security review, license compatibility,
+  SPDX 2.3 SBOM, source manifest, dependency/semantic closure,
+  candidate/library selection, rung-three completion, and V1 readiness remain
+  open.
+- [ ] The next gate is the separate fixed-point-snapshot dependency source and
+  license review decision.
+
+## 2026-07-28 G2 Combined V18 Fixed-Point Checklist
+
+- [x] The exact 369-source set and 379-path inventory are bound by SHA-256 and
+  reconstructed twice without extraction, dependency-source loading,
+  execution, compilation, subprocesses, network operations, or file writes.
+- [x] Coverage is exact: 185 archives, 72,304 entries, and 1,359,347,284
+  ZIP-uncompressed bytes.
+- [x] The result is `fixedPointReached=true`, `route=fixed_point_candidate`,
+  with an empty frontier, zero new tuples, zero unmapped external imports, and
+  zero unresolved declared external imports.
+- [x] Candidate-content, graph, and frontier SHA-256 values are
+  `9dce50013314ec8934ad52ac57cb0de92e982c2334303fc77289f01bc9c285fb`,
+  `a865a62a7a80a0dece55aeebd537d3fb9aa73ce6ceeea10304a6a2074c2dfaba`,
+  and
+  `37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570`.
+- [x] The post-seal dry, latent, and fast-boundary suites pass 18/18.
+- [x] The genuine full class reproduced the sealed candidate and passed 23 of
+  24 tests. The sole error was a stale test-chain index, not a checker or graph
+  failure; after correction, the affected legacy-Wave9 compatibility test
+  passed independently. A single post-fix 24/24 full-class run is not claimed.
+- [x] Checker raw/normalized and final test raw SHA-256 values are
+  `35c35e98bfc0ea4b49f29b76d732a54f8f0f80dbbe20812266f35143c92da564`,
+  `b53fa66b34a8379216d64892502bb352220397c598cbe0b84911ca641b9e40aa`,
+  and
+  `44a62fc3771a027987320dee3c690f350a62d1eb16911fd925f56a22f09c74eb`.
+- [x] Closed authority is explicit: external authentication and user action are
+  false, and no acquisition, extraction, compilation/execution, socket,
+  product-network, Git-write, or deployment permission is granted.
+- [x] The separate Combined fixed-point closure review decision is complete
+  and accepts only `dependencyFixedPointReached=true`.
+- [ ] The 19 semantic findings, dependency/semantic closure, candidate/library
+  selection, rung-three completion, and V1 release readiness remain open.
+
+## 2026-07-28 G2 Wave19 Acquisition And Readback Checklist
+
+- [x] The Wave19 acquisition checker passes 16/16 tests and its one-use runner
+  passes 18/18 tests. Independent GPT-5.6 Sol review found no P0-P3 issue.
+- [x] Acquisition attempt `f10c20196d994afe3a8eba830eb42614`
+  retained four exact resources totaling 11,453,955 bytes, including 931 ZIP
+  entries and 46,404,827 uncompressed ZIP bytes.
+- [x] The acquisition published its claim, receipt, and manifest successfully.
+  It extracted, loaded, executed, and compiled no retained source. The one-use
+  action is consumed and cannot be retried.
+- [x] The independent readback checker passes 18/18 tests and its recorder
+  passes 55/55 tests. Two independent GPT-5.6 Sol audits found no P0-P3 issue
+  or execution blocker.
+- [x] Readback attempt `060a3d9bcd02113ef12c2c75a1e11d70`
+  verified the exact 23-file retained snapshot twice, completed all three
+  required pre-manifest retained-FD barriers, and published its manifest last.
+- [x] Completion applies only to the retained snapshot. Continuous current-path
+  identity through manifest publication and same-UID replacement prevention
+  after the final barrier are explicitly not claimed.
+- [x] Readback made zero network requests and zero source acquisitions. Its
+  receipt raw SHA-256 is
+  `31343f4f9511694acef39078ee7124b8747ebd7796da326ef9b316f06829992e`,
+  exactly as bound by the manifest.
+- [x] Both actions record `externalAuthenticationRequired=false` and
+  `userActionRequired=false`; no key, signature, token, credential, approval,
+  or user operation is required.
+- [x] These checks do not select a candidate or library and do not close any of
+  the 19 semantic findings. Combined V18 subsequently produced a read-only
+  fixed-point candidate; its separate closure review now accepts only
+  `dependencyFixedPointReached=true`. The source/license review remains the
+  next gate.
 
 ## 2026-07-24 Personal Governance, G1b-A, And G2 Dependency Wave-One Permit Checklist
 

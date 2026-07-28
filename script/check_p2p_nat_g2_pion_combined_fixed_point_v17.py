@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Recompute the exact 359-input Wave1..Wave17 graph without publishing.
+"""Recompute the exact 365-source Wave1..Wave18 graph without publishing.
 
-Run only with ``python3 -I -B -S``. The checker pins the immutable v15
-combined checker, all Wave17 decision/acquisition/readback controls, and the
-root archive plus 179 mod and 179 zip inputs. Every source input is opened
+Run only with ``python3 -I -B -S``. The checker pins the immutable v16
+combined checker, all Wave18 decision/acquisition/readback controls, and the
+root archive plus 182 mod and 182 zip inputs. Every source input is opened
 no-follow, held by descriptor, read twice, and used for two full graph
 reconstructions. Fixed-point and frontier results are derived only from those
 reconstructions. No dependency source is extracted, loaded, executed, or
@@ -30,7 +30,7 @@ def require_isolated_interpreter() -> None:
         and flags.optimize == 0
     ):
         raise RuntimeError(
-            "combined fixed-point v16 checker requires unoptimized "
+            "combined fixed-point v17 checker requires unoptimized "
             "`python3 -I -B -S`"
         )
 
@@ -52,9 +52,20 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 # FINAL SELF-SEAL PLACEHOLDER: replace after the checker freezes.
-SELF_PATH = "script/check_p2p_nat_g2_pion_combined_fixed_point_v16.py"
+SELF_PATH = "script/check_p2p_nat_g2_pion_combined_fixed_point_v17.py"
 SELF_NORMALIZED_SHA256 = (
+    "d2ebef7f9aad384b08a68c438320de882d640a859a7d35521853818afbcdd7ce"
+)
+V16_CHECKER_PATH = "script/check_p2p_nat_g2_pion_combined_fixed_point_v16.py"
+V16_CHECKER_RAW_SHA256 = (
+    "2e388d466c5346fa6f82b7fd23fa6dca24009acadacdd62f1fe2ba25b0a10879"
+)
+V16_CHECKER_NORMALIZED_SHA256 = (
     "7dd2c81a2032a374192f7c502afc65305d97f7c1e3699654e416b60bf64c6bd5"
+)
+V16_TESTS_PATH = "script/test_p2p_nat_g2_pion_combined_fixed_point_v16.py"
+V16_TESTS_RAW_SHA256 = (
+    "15cf4d56a68b9f0cfd61554b24e781357066b27e63c90c871dfb0cde19c80889"
 )
 V15_CHECKER_PATH = "script/check_p2p_nat_g2_pion_combined_fixed_point_v15.py"
 V15_CHECKER_RAW_SHA256 = (
@@ -211,12 +222,12 @@ WAVE9_LEGACY_BUILD_TRAILING_OR_OPTIONS = (
 )
 TRANSITIVE_CHECKER_PATHS = {
     f"script/check_p2p_nat_g2_pion_combined_fixed_point_v{version}.py"
-    for version in range(1, 16)
+    for version in range(1, 17)
 }
 CHECKER_ID = (
     "g2-pion-ice-v4.3.0-combined-wave1-wave2-wave3-wave4-wave5-wave6-"
     "wave7-wave8-wave9-wave10-wave11-wave12-wave13-wave14-wave15-"
-    "wave16-wave17-check-v16"
+    "wave16-wave17-wave18-check-v17"
 )
 CODE_MAXIMUM_BYTES = 4 * 1024 * 1024
 JSON_MAXIMUM_BYTES = 8 * 1024 * 1024
@@ -225,146 +236,146 @@ BASE = (
     "g2-pion-restricted-fork-v1/rung-three"
 )
 
-WAVE17_DECISION_PATH = (
+WAVE18_DECISION_PATH = (
     f"{BASE}/bounded-dependency-source-identity-and-acquisition-"
-    "decision-wave17-v1.json"
+    "decision-wave18-v1.json"
 )
-WAVE17_PERMIT_PATH = (
-    f"{BASE}/bounded-dependency-source-acquisition-wave17-"
+WAVE18_PERMIT_PATH = (
+    f"{BASE}/bounded-dependency-source-acquisition-wave18-"
     "execution-permit-v1.json"
 )
-WAVE17_RECEIPT_PATH = (
-    f"{BASE}/bounded-dependency-source-acquisition-wave17-receipt-v1.json"
+WAVE18_RECEIPT_PATH = (
+    f"{BASE}/bounded-dependency-source-acquisition-wave18-receipt-v1.json"
 )
-WAVE17_MANIFEST_PATH = (
-    f"{BASE}/bounded-dependency-source-acquisition-wave17-manifest-v1.json"
+WAVE18_MANIFEST_PATH = (
+    f"{BASE}/bounded-dependency-source-acquisition-wave18-manifest-v1.json"
 )
-WAVE17_READBACK_PERMIT_PATH = (
-    f"{BASE}/bounded-dependency-source-acquisition-wave17-"
+WAVE18_READBACK_PERMIT_PATH = (
+    f"{BASE}/bounded-dependency-source-acquisition-wave18-"
     "readback-execution-permit-v1.json"
 )
-WAVE17_READBACK_PATH = (
-    f"{BASE}/bounded-dependency-source-acquisition-wave17-readback-v1.json"
+WAVE18_READBACK_PATH = (
+    f"{BASE}/bounded-dependency-source-acquisition-wave18-readback-v1.json"
 )
-WAVE17_READBACK_MANIFEST_PATH = (
-    f"{BASE}/bounded-dependency-source-acquisition-wave17-"
+WAVE18_READBACK_MANIFEST_PATH = (
+    f"{BASE}/bounded-dependency-source-acquisition-wave18-"
     "readback-manifest-v1.json"
 )
-WAVE17_ACCEPTED_DIRECTORY = (
+WAVE18_ACCEPTED_DIRECTORY = (
     "build/offline-source/pion-ice-v4.3.0/dependencies/"
-    "wave-17-v1/accepted"
+    "wave-18-v1/accepted"
 )
-WAVE17_ACQUISITION_CLAIM_PATH = (
-    "build/offline-source/pion-ice-v4.3.0/dependencies/.wave-17-v1.claim"
+WAVE18_ACQUISITION_CLAIM_PATH = (
+    "build/offline-source/pion-ice-v4.3.0/dependencies/.wave-18-v1.claim"
 )
-WAVE17_EVIDENCE_PATH = (
+WAVE18_EVIDENCE_PATH = (
     "build/offline-source/pion-ice-v4.3.0/dependencies/"
-    "wave-17-v1/evidence.json"
+    "wave-18-v1/evidence.json"
 )
-WAVE17_READBACK_CLAIM_PATH = (
+WAVE18_READBACK_CLAIM_PATH = (
     "build/offline-source/pion-ice-v4.3.0/dependencies/"
-    ".wave-17-v1-readback.claim"
+    ".wave-18-v1-readback.claim"
 )
-WAVE17_FAILURE_PATH = (
-    f"{BASE}/bounded-dependency-source-acquisition-wave17-failure-v1.json"
+WAVE18_FAILURE_PATH = (
+    f"{BASE}/bounded-dependency-source-acquisition-wave18-failure-v1.json"
 )
-WAVE17_STAGING_PREFIX = ".wave-17-v1-staging-"
-WAVE17_READBACK_TEMP_PREFIXES = (
-    ".bounded-dependency-source-acquisition-wave17-readback-v1.json.tmp-",
+WAVE18_STAGING_PREFIX = ".wave-18-v1-staging-"
+WAVE18_READBACK_TEMP_PREFIXES = (
+    ".bounded-dependency-source-acquisition-wave18-readback-v1.json.tmp-",
     (
-        ".bounded-dependency-source-acquisition-wave17-readback-"
+        ".bounded-dependency-source-acquisition-wave18-readback-"
         "manifest-v1.json.tmp-"
     ),
 )
 
-WAVE17_CONTROL_SHA256 = {
-    WAVE17_DECISION_PATH:
-        "659e9ce6f079701cab68e337d2746959741ef4868ffff6392fcdbf26ae692f93",
-    WAVE17_PERMIT_PATH:
-        "8376c5daef8a9e8970b03b15cda5861a2d16c237024d97cb00e1dfeac275baaa",
-    WAVE17_RECEIPT_PATH:
-        "0736a577af59b621483694c8f9fa36ce3c8f06bfd7c48d2b204b6a94a6d8f4c5",
-    WAVE17_MANIFEST_PATH:
-        "3c9a6d92ca6b967a5fdc3997793cf90456836923a8460e2816271be6c57a7733",
-    WAVE17_READBACK_PERMIT_PATH:
-        "05e71da5b47544728c74fb8eb9b4bb665179dde420b48211a5f9dfb5ad2d3bcd",
-    WAVE17_READBACK_PATH:
-        "9f21afa4c98081d95228d217e60eec66961b85ee5b23ab11e51f19c6f9865958",
-    WAVE17_READBACK_MANIFEST_PATH:
-        "05bd78ba52abac67c3eec63a180c7e815a7528709f4b8e58b40c2e948ff4f3e4",
+WAVE18_CONTROL_SHA256 = {
+    WAVE18_DECISION_PATH:
+        "c90d16a7c7194c7a6dbde2be9bd99f4101a3a8cd1722278209fe5df8bf6371fa",
+    WAVE18_PERMIT_PATH:
+        "c8bca67d38117c3658da504780bb97e33b92367567121285129e90dde0db0fc1",
+    WAVE18_RECEIPT_PATH:
+        "30c703bde55144665117bffcafa0f7fcd1b54c9885acd8fb028adda9339643ca",
+    WAVE18_MANIFEST_PATH:
+        "28230bf973cc4346772430080e87c1ac06d0482b9188e072cc75b72020332b7a",
+    WAVE18_READBACK_PERMIT_PATH:
+        "12e405fd04b08cd39c797b9cd5b9c82f1831ba73bdb48f86db961fb39e4f6a4f",
+    WAVE18_READBACK_PATH:
+        "63bf2cf4ed12e8203d39f334e78f14010950b7697501035698a678dd0fa3d4d7",
+    WAVE18_READBACK_MANIFEST_PATH:
+        "f7edbf34643f25813fd3d6e73dc475a2e47c67ab888f6161d4f1cdf0a6fa66b8",
 }
-WAVE17_CONTROL_METADATA = {
-    WAVE17_DECISION_PATH: (8_801, 0o644),
-    WAVE17_PERMIT_PATH: (16_139, 0o644),
-    WAVE17_RECEIPT_PATH: (1_659, 0o600),
-    WAVE17_MANIFEST_PATH: (465, 0o600),
-    WAVE17_READBACK_PERMIT_PATH: (17_498, 0o644),
-    WAVE17_READBACK_PATH: (4_980, 0o600),
-    WAVE17_READBACK_MANIFEST_PATH: (2_301, 0o600),
+WAVE18_CONTROL_METADATA = {
+    WAVE18_DECISION_PATH: (11_584, 0o644),
+    WAVE18_PERMIT_PATH: (18_591, 0o644),
+    WAVE18_RECEIPT_PATH: (1_658, 0o600),
+    WAVE18_MANIFEST_PATH: (465, 0o600),
+    WAVE18_READBACK_PERMIT_PATH: (18_477, 0o644),
+    WAVE18_READBACK_PATH: (6_485, 0o600),
+    WAVE18_READBACK_MANIFEST_PATH: (2_301, 0o600),
 }
-WAVE17_CONTENT_SHA256 = {
-    WAVE17_DECISION_PATH:
-        "867a2ba1a7da54b5466951b1caea9b09eb355d2325a58fa552037047d3fad7df",
-    WAVE17_PERMIT_PATH:
-        "1731bfc92d04b15db9419167ce3279eed567d9154019da03f595f6556ccd98e4",
-    WAVE17_READBACK_PERMIT_PATH:
-        "04a0e2397b574fb3ad1b60b3c3cc42500f28640e2d08f7fd924af05d35f81e0e",
-    WAVE17_READBACK_PATH:
-        "d71a8dd363817a605179fa490bf42fe81fbc494c3f19faed3d3d2d5c31b2e8dd",
-    WAVE17_READBACK_MANIFEST_PATH:
-        "1612a5eab4181ff2fba8772077434cd973c220893b9febf2ebc19afee0f7d98c",
+WAVE18_CONTENT_SHA256 = {
+    WAVE18_DECISION_PATH:
+        "c75e5751d3e7c67939251d56e212f95f85439d05684cd50a49701de3e099803d",
+    WAVE18_PERMIT_PATH:
+        "522be316d62538e52eead736c1a38ba786768ac6e2777af1b44b4065b3cc6a24",
+    WAVE18_READBACK_PERMIT_PATH:
+        "8b3c585b03de2815d96690f8114edee5387105e312afdcd9bf62b325247efe42",
+    WAVE18_READBACK_PATH:
+        "fc12995262c535084f48a986004ba5afa643a80de701709b2a609bb6cd98d35f",
+    WAVE18_READBACK_MANIFEST_PATH:
+        "f1b861b9cc3ab8ce5d3ed66cee538ae5dd40163d9f03a5ff3fbe3503130528e7",
 }
-WAVE17_REQUEST_SET_SHA256 = (
-    "acf64af2352fb4d82325f3e5bd2a3e913b8ef95db553fa0015bc71a239f3fb35"
+WAVE18_REQUEST_SET_SHA256 = (
+    "3c13b764b7267efe885528d9f7d4fe31d6b7bdac48839f95e60bb5bd45a7d836"
 )
-WAVE17_PERMIT_RESOURCES_SHA256 = (
-    "4920d020b6a4df4adc890a8eb2a0290e1343938483e396cc7e21447728f14686"
+WAVE18_PERMIT_RESOURCES_SHA256 = (
+    "86587f7dbea64ab85bdfd32287595007577de1ea3d0bb554c6471af81b4d8602"
 )
-WAVE17_RESOURCE_SET_SHA256 = (
-    "7bee498b9c53d5d834fad61a2862162791ad46f45471199389046fb466c16cfa"
+WAVE18_RESOURCE_SET_SHA256 = (
+    "757651958dc0538863d7654d59df95a4171cf44fccfa726da87fb0fdf5babc0f"
 )
-WAVE17_FROZEN_FILE_SET_SHA256 = (
-    "bea9d0c6a260407e34524b5aced01cf9a334c36a6f882350e57f02107b1008c8"
+WAVE18_FROZEN_FILE_SET_SHA256 = (
+    "59595e842e331a333c74f688d57198546ca8aad7347976a20906afc8df6161f4"
 )
-WAVE17_ATTEMPT_ID = "117fb836380658986632911b9508e274"
-WAVE17_READBACK_ATTEMPT_ID = "01f3117be3154e37f7f791b49002c490"
-WAVE17_COMPACT_IDENTITY_SHA256 = (
-    "813ac6030c903b716fb5f68852468a53ebb0bcfe60c7c11582d2f2ffb18041ca"
+WAVE18_ATTEMPT_ID = "4380f5bbcd3366154b05111381ccab18"
+WAVE18_READBACK_ATTEMPT_ID = "7e424a47ffdde1099227564f41d610c4"
+WAVE18_COMPACT_IDENTITY_SHA256 = (
+    "53a711ff8b8771d698ac0df4448a6155eddc69179e1895d8619afd104f7623d7"
 )
-WAVE17_FULL_WITNESS_SHA256 = (
-    "ee3f4b0e1072a8bc0e1eb6e53b83fe8d749fdfd8c13bec54c60774dc3755dc54"
+WAVE18_FULL_WITNESS_SHA256 = (
+    "c95159a8c9b5fbf06f54830a06c59c2f358b8ec5901c3a467fabd0ad64ef5419"
 )
-WAVE17_HELD_SOURCE_BINDINGS_SHA256 = (
-    "86512fdc6c5b8ff8b1d79e500e32c6c35c36f6c097aca5385f8ff1e06ffe18fd"
+WAVE18_HELD_SOURCE_BINDINGS_SHA256 = (
+    "401a3e85faacc150944d883495fca4b22e4cac1933c0308aedaec228a7c872ea"
 )
-WAVE17_ACQUISITION_CLAIM_RAW_SHA256 = (
-    "3090e729d99c46c4b4d1e4242d6f25c08e2345062dfb6c15e1e87d3edf632fad"
+WAVE18_ACQUISITION_CLAIM_RAW_SHA256 = (
+    "08f5134ce03805e512c2dec0dee13251ce682d793d2b87f7f8e29f6d3426d362"
 )
-WAVE17_ACQUISITION_EVIDENCE_RAW_SHA256 = (
-    "bfe3e3cb97d5ed20d5c95e83344cc79f8f16de09b2cafb924cf59cbe64da6175"
+WAVE18_ACQUISITION_EVIDENCE_RAW_SHA256 = (
+    "954d26f4d95a500b1c993b6e4727f787416db866246a009754c8baa1cb7febed"
 )
-WAVE17_ACQUISITION_CHECKER_RAW_SHA256 = (
-    "acd6af5f174569c0b3d988d4528cf9b6219c9b5c5b6ba9205db982506b0e7b81"
+WAVE18_ACQUISITION_CHECKER_RAW_SHA256 = (
+    "c454de5191c7a9de4bccaa4c8aa00f914e74e2c9bb4c4bf59164b827a0c6bfc5"
 )
-WAVE17_ACQUISITION_RUNNER_RAW_SHA256 = (
-    "8e9ec1a6633754f27566e065899c2dbf492b4707dc562ccdccd4e56a94e96fb8"
+WAVE18_ACQUISITION_RUNNER_RAW_SHA256 = (
+    "5d4d77663d61b9ff77f35ec6f0e55239637e18970e9d3e6ad7a104d308b9e3ca"
 )
-WAVE17_READBACK_CLAIM_RAW_SHA256 = (
-    "51857e48f14271386627fe222f8e094bc6c0347563a15b663d37772378fbaba7"
+WAVE18_READBACK_CLAIM_RAW_SHA256 = (
+    "118739a401c3b43cad5b8318a9daf21ae84a7bc3b04dd13c9a5fb86288050ad2"
 )
-WAVE17_READBACK_CLAIM_CONTENT_SHA256 = (
-    "41d7d468c1018a33f75cf1a4f23d6d1697900ff0c9a755e32e2b3085e662ebca"
+WAVE18_READBACK_CLAIM_CONTENT_SHA256 = (
+    "68936727f4723a424497d193e8c61543353fb79106efe6a76ae0c60140e6c940"
 )
-WAVE17_READBACK_CHECKER_RAW_SHA256 = (
-    "f9ceb4756e2ef7cf3c13cd5c3b21399d1f5f44aef3f0c8781ba6dfa67d11bb3f"
+WAVE18_READBACK_CHECKER_RAW_SHA256 = (
+    "c20c83420c1c48b37fd76b3757f6b9951ebda9992a98192bc839082097380df5"
 )
-WAVE17_READBACK_RECORDER_RAW_SHA256 = (
-    "ab448a2479f35b1013c32451489c477d6f1742208debd5145b101acf0b2e7434"
+WAVE18_READBACK_RECORDER_RAW_SHA256 = (
+    "cb2a29633c475402ba1e209f468e9aaa0f406cb73ddca00c95dcdac7dcfe74c1"
 )
-WAVE17_READBACK_RECORDER_NORMALIZED_SHA256 = (
-    "e7095acf4dfd443469bf75e1c58a3a77038dcff278b41e91f179cf655a9baff1"
+WAVE18_READBACK_RECORDER_NORMALIZED_SHA256 = (
+    "dee88b1d2197d19d64bcd634c6d8ee1af6b4396f30f4f817ed5f41baf7cd4d40"
 )
-WAVE17_RETAINED_BARRIERS = [
+WAVE18_RETAINED_BARRIERS = [
     "complete_snapshot_and_claim_immediately_before_receipt",
     "complete_snapshot_claim_and_receipt_after_receipt",
     (
@@ -372,14 +383,14 @@ WAVE17_RETAINED_BARRIERS = [
         "manifest_publication"
     ),
 ]
-WAVE17_ABSOLUTE_RESOURCE_LIMITS = {
+WAVE18_ABSOLUTE_RESOURCE_LIMITS = {
     "callerBlockedSigalrmRejectedBeforePreflight": True,
-    "maximumAggregateModResponseBodyBytes": 1_048_576,
-    "maximumAggregateResponseBodyBytes": 17_825_792,
-    "maximumAggregateZipResponseBodyBytes": 16_777_216,
+    "maximumAggregateModResponseBodyBytes": 3_145_728,
+    "maximumAggregateResponseBodyBytes": 53_477_376,
+    "maximumAggregateZipResponseBodyBytes": 50_331_648,
     "maximumHeaderBytesPerResponse": 16_384,
     "maximumModResponseBodyBytes": 1_048_576,
-    "maximumRequestCount": 2,
+    "maximumRequestCount": 6,
     "maximumZipEntryBytes": 134_217_728,
     "maximumZipEntryCount": 20_000,
     "maximumZipResponseBodyBytes": 16_777_216,
@@ -399,28 +410,28 @@ WAVE17_ABSOLUTE_RESOURCE_LIMITS = {
     "wholeAttemptDeadlineMilliseconds": 600_000,
     "wholeAttemptSigalrmDeadlineRequired": True,
 }
-WAVE17_ZIP_LIMITS = {
+WAVE18_ZIP_LIMITS = {
     "encryptedSymlinkDirectoryDuplicateOrUnsafeEntriesAllowed": False,
-    "maximumEntryCountAcrossAllZips": 20_000,
+    "maximumEntryCountAcrossAllZips": 60_000,
     "maximumEntryCountPerZip": 20_000,
     "maximumEntryNameBytes": 1_024,
     "maximumSingleEntryBytes": 134_217_728,
-    "maximumUncompressedBytesAcrossAllZips": 134_217_728,
+    "maximumUncompressedBytesAcrossAllZips": 402_653_184,
     "maximumUncompressedBytesPerZip": 134_217_728,
 }
-WAVE17_READBACK_RESOURCE_LIMITS = {
-    "maximumAcceptedResourceCount": 2,
-    "maximumAggregateAcceptedBytes": 17_825_792,
-    "maximumAggregateModBytes": 1_048_576,
-    "maximumAggregateZipBytes": 16_777_216,
+WAVE18_READBACK_RESOURCE_LIMITS = {
+    "maximumAcceptedResourceCount": 6,
+    "maximumAggregateAcceptedBytes": 53_477_376,
+    "maximumAggregateModBytes": 3_145_728,
+    "maximumAggregateZipBytes": 50_331_648,
     "maximumModBytes": 1_048_576,
     "maximumPackageFileBytes": 8_388_608,
     "maximumZipBytes": 16_777_216,
-    "maximumZipEntriesAcrossAll": 20_000,
+    "maximumZipEntriesAcrossAll": 60_000,
     "maximumZipEntriesPerZip": 20_000,
     "maximumZipEntryBytes": 134_217_728,
     "maximumZipEntryNameBytes": 1_024,
-    "maximumZipUncompressedBytesAcrossAll": 134_217_728,
+    "maximumZipUncompressedBytesAcrossAll": 402_653_184,
     "maximumZipUncompressedBytesPerZip": 134_217_728,
 }
 V6_CANDIDATE_CONTENT_SHA256 = (
@@ -499,26 +510,34 @@ V14_SOURCE_BINDINGS_SHA256 = (
     "a360afdc5d94502f53f5e393503198bb7ce6adf4d21a0c64245a1b7e49be9eae"
 )
 V14_MAXIMUM_AGGREGATE_UNCOMPRESSED_BYTES = 1_250_144_441
-V15_INPUT_SET_SHA256 = (
-    "4b12b7ca7f0a8b1556c692522e8832af033f9d2a1f00fbeb7469623a00541f1e"
-)
-V15_SOURCE_BINDINGS_SHA256 = (
-    "86512fdc6c5b8ff8b1d79e500e32c6c35c36f6c097aca5385f8ff1e06ffe18fd"
-)
-V15_MAXIMUM_AGGREGATE_UNCOMPRESSED_BYTES = 1_296_608_653
-V16_EXPECTED_HELD_SOURCE_INPUT_COUNT = 359
-V16_EXPECTED_ARCHIVE_COUNT = 180
-V16_EXPECTED_AGGREGATE_ENTRY_COUNT = 70_402
-V16_EXPECTED_AGGREGATE_RAW_BYTE_SIZE = 342_529_585
-V16_EXPECTED_MAXIMUM_AGGREGATE_UNCOMPRESSED_BYTES = 1_305_716_657
-V16_MAXIMUM_AGGREGATE_UNCOMPRESSED_BYTES = (
-    V16_EXPECTED_MAXIMUM_AGGREGATE_UNCOMPRESSED_BYTES
-)
 V16_INPUT_SET_SHA256 = (
     "15705de20633cdf4bf473c82a634136f481a2c131e7960a0a6cbdeccf10397a7"
 )
 V16_SOURCE_BINDINGS_SHA256 = (
     "401a3e85faacc150944d883495fca4b22e4cac1933c0308aedaec228a7c872ea"
+)
+V16_MAXIMUM_AGGREGATE_UNCOMPRESSED_BYTES = 1_305_716_657
+V17_EXPECTED_HELD_SOURCE_INPUT_COUNT = 365
+V17_EXPECTED_EXACT_INPUT_INVENTORY_COUNT = 375
+V17_EXPECTED_ARCHIVE_COUNT = 183
+V17_EXPECTED_AGGREGATE_ENTRY_COUNT = 71_373
+V17_EXPECTED_AGGREGATE_RAW_BYTE_SIZE = 344_638_685
+V17_EXPECTED_EXACT_INPUT_INVENTORY_RAW_BYTE_SIZE = 344_702_522
+V17_EXPECTED_MAXIMUM_AGGREGATE_UNCOMPRESSED_BYTES = 1_312_942_457
+V17_MAXIMUM_AGGREGATE_UNCOMPRESSED_BYTES = (
+    V17_EXPECTED_MAXIMUM_AGGREGATE_UNCOMPRESSED_BYTES
+)
+V17_INPUT_SET_SHA256 = (
+    "79f2c8e28daf3f46c97d827cdc7416b77905eea49bc482911f8d234e0de3765f"
+)
+V17_SOURCE_BINDINGS_SHA256 = (
+    "72c1253423412744380ed5c7f8b74f9d5b34daaefd05caf5b384d9bb55589490"
+)
+V17_EXACT_INPUT_INVENTORY_SHA256 = (
+    "c12860b50bf2022cac92b8def3618496b3b8819b814aa67bb325cb8217d80a7b"
+)
+V17_WAVE18_READBACK_BINDINGS_SHA256 = (
+    "4305ce86435d7edcaa581b1f58bee7ed9e9e6d5d7d3da5e938a85d737b14ed33"
 )
 V9_CANDIDATE_CONTENT_SHA256 = (
     "9c9e995f853a8dbbc07d55d41ce1c5660cb616d879b3565803e13b6aaf4532ba"
@@ -574,14 +593,14 @@ V14_GRAPH_SHA256 = (
 V14_FRONTIER_SHA256 = (
     "5544db5bdf34f4afadce7d91f7c56998988e68810ed96b454048bf62dc07c452"
 )
-V15_CANDIDATE_CONTENT_SHA256 = (
-    "4666c802e40734bb1b5b91489eb24aa782cb346710caec9605be4e0e005553ee"
+V16_CANDIDATE_CONTENT_SHA256 = (
+    "90928eb85eded2938b25a0beec82c00ebcd69147bf92733bc65a528d26c00e03"
 )
-V15_GRAPH_SHA256 = (
-    "ffe9f910669401198b88752663055ca2e6622d19e171f2d20a2b303d06c989d7"
+V16_GRAPH_SHA256 = (
+    "db7e36664afd819c72e9c9916bd7053782282954ed4f359c550b7972b74147a2"
 )
-V15_FRONTIER_SHA256 = (
-    "ce1be1152aabf580a211f038d80aeaf9249418117b7d12ff26ffc909f1e4d593"
+V16_FRONTIER_SHA256 = (
+    "fe15a3ea57682b276a6f11a2c2fd998d9120640fac40038fc9c1f100e50750b5"
 )
 V6_AUTHORITY = {
     "decisionAuthorityGranted": False,
@@ -612,7 +631,8 @@ V12_AUTHORITY = dict(V11_AUTHORITY)
 V13_AUTHORITY = dict(V12_AUTHORITY)
 V14_AUTHORITY = dict(V13_AUTHORITY)
 V15_AUTHORITY = dict(V14_AUTHORITY)
-WAVE17_DECISION_AUTHORITY = {
+V16_AUTHORITY = dict(V15_AUTHORITY)
+WAVE18_DECISION_AUTHORITY = {
     "acquisitionAuthorityGranted": False,
     "authenticationRequired": False,
     "compileAuthorized": False,
@@ -643,7 +663,7 @@ WAVE17_DECISION_AUTHORITY = {
     "userActionRequired": False,
 }
 
-WAVE17_ACQUISITION_AUTHORITY = {
+WAVE18_ACQUISITION_AUTHORITY = {
     "accountRequired": False,
     "ambientOrDirectSocketUseOutsidePinnedFetchAuthorized": False,
     "authenticationRequired": False,
@@ -671,9 +691,9 @@ WAVE17_ACQUISITION_AUTHORITY = {
     "tokenRequired": False,
     "userActionRequired": False,
     "publicationAuthorized": False,
-    "wave17PublicProxy2GetAcquisitionAuthorizedOnce": True,
+    "wave18PublicProxy6GetAcquisitionAuthorizedOnce": True,
 }
-WAVE17_READBACK_AUTHORITY = {
+WAVE18_READBACK_AUTHORITY = {
     "accountRequired": False,
     "authenticationRequired": False,
     "clientCertificateRequired": False,
@@ -712,97 +732,97 @@ WAVE17_READBACK_AUTHORITY = {
     "tokenRequired": False,
     "userActionRequired": False,
 }
-WAVE17_READBACK_AUTHORITY_BINDING = {
+WAVE18_READBACK_AUTHORITY_BINDING = {
     "checker": {
         "path": (
-            "script/check_p2p_nat_g2_pion_rung3_dependency_wave17_"
+            "script/check_p2p_nat_g2_pion_rung3_dependency_wave18_"
             "readback_execution_permit_v1.py"
         ),
-        "rawSha256": WAVE17_READBACK_CHECKER_RAW_SHA256,
+        "rawSha256": WAVE18_READBACK_CHECKER_RAW_SHA256,
     },
     "permit": {
-        "contentSha256": WAVE17_CONTENT_SHA256[WAVE17_READBACK_PERMIT_PATH],
-        "path": WAVE17_READBACK_PERMIT_PATH,
-        "rawSha256": WAVE17_CONTROL_SHA256[WAVE17_READBACK_PERMIT_PATH],
+        "contentSha256": WAVE18_CONTENT_SHA256[WAVE18_READBACK_PERMIT_PATH],
+        "path": WAVE18_READBACK_PERMIT_PATH,
+        "rawSha256": WAVE18_CONTROL_SHA256[WAVE18_READBACK_PERMIT_PATH],
     },
     "recorder": {
         "path": (
-            "script/record_p2p_nat_g2_pion_rung3_dependency_wave17_"
+            "script/record_p2p_nat_g2_pion_rung3_dependency_wave18_"
             "readback_v1_once.py"
         ),
-        "rawSha256": WAVE17_READBACK_RECORDER_RAW_SHA256,
+        "rawSha256": WAVE18_READBACK_RECORDER_RAW_SHA256,
     },
 }
-WAVE17_DECISION_TOOL_BINDINGS = [
+WAVE18_DECISION_TOOL_BINDINGS = [
     {
         "normalizedSha256":
-            "226cb948492708f50e695c9d5e849c4f0acff11143625f473372c1bb59cec269",
+            "0bdec01037fd269627cfbc3e6a0c968a5a16d2c946016ee552ca07727fc3379d",
         "path":
-            "script/check_p2p_nat_g2_pion_rung3_dependency_wave17_decision_v1.py",
-        "role": "current_wave17_decision_checker",
+            "script/check_p2p_nat_g2_pion_rung3_dependency_wave18_decision_v1.py",
+        "role": "current_wave18_decision_checker",
     },
     {
-        "normalizedSha256": V15_CHECKER_NORMALIZED_SHA256,
-        "path": V15_CHECKER_PATH,
-        "rawSha256": V15_CHECKER_RAW_SHA256,
-        "role": "immutable_combined_v15_checker",
+        "normalizedSha256": V16_CHECKER_NORMALIZED_SHA256,
+        "path": V16_CHECKER_PATH,
+        "rawSha256": V16_CHECKER_RAW_SHA256,
+        "role": "immutable_combined_v16_checker",
     },
     {
-        "path": V15_TESTS_PATH,
-        "rawSha256": V15_TESTS_RAW_SHA256,
-        "role": "immutable_combined_v15_tests",
+        "path": V16_TESTS_PATH,
+        "rawSha256": V16_TESTS_RAW_SHA256,
+        "role": "immutable_combined_v16_tests",
     },
 ]
-WAVE17_ACQUISITION_TOOL_BINDINGS = [
+WAVE18_ACQUISITION_TOOL_BINDINGS = [
     {
         "path":
-            "script/check_p2p_nat_g2_pion_rung3_dependency_wave17_acquisition_v1.py",
-        "rawSha256": WAVE17_ACQUISITION_CHECKER_RAW_SHA256,
+            "script/check_p2p_nat_g2_pion_rung3_dependency_wave18_acquisition_v1.py",
+        "rawSha256": WAVE18_ACQUISITION_CHECKER_RAW_SHA256,
         "normalizedSha256":
-            "6e653ff394c5e6f7d1dae9048ec34daecb9b7420121d19db01e772009acef959",
-        "role": "wave17_acquisition_checker",
+            "e9a227bcdf6f5cd23b4f243f2358d506950cf5721c0414dd1163d70e6df2d579",
+        "role": "wave18_acquisition_checker",
     },
     {
         "path":
-            "script/test_p2p_nat_g2_pion_rung3_dependency_wave17_acquisition_v1.py",
+            "script/test_p2p_nat_g2_pion_rung3_dependency_wave18_acquisition_v1.py",
         "rawSha256":
-            "46e4508695dba47cfdb899a5f1ca5a4f9d2c1cb8e3e288babf0036daf632827c",
-        "role": "wave17_acquisition_checker_tests",
+            "589f27f6754e357207e90f1a275126acba4f7f1008821dd0f18df4f904ce7c4e",
+        "role": "wave18_acquisition_checker_tests",
     },
     {
         "path":
-            "script/acquire_p2p_nat_g2_pion_rung3_dependency_wave17_v1_once.py",
-        "rawSha256": WAVE17_ACQUISITION_RUNNER_RAW_SHA256,
+            "script/acquire_p2p_nat_g2_pion_rung3_dependency_wave18_v1_once.py",
+        "rawSha256": WAVE18_ACQUISITION_RUNNER_RAW_SHA256,
         "normalizedSha256":
-            "4842e63aefaf6c1d0a07abbe9705a4c203ba398e4e7cfba3b698489f53a3f5f2",
-        "role": "wave17_one_use_runner",
+            "e78aa3d3a13327d98d7704da5429cd84223426f1855758c722761b2af255ca13",
+        "role": "wave18_one_use_runner",
     },
     {
         "path":
-            "script/test_acquire_p2p_nat_g2_pion_rung3_dependency_wave17_v1_once.py",
+            "script/test_acquire_p2p_nat_g2_pion_rung3_dependency_wave18_v1_once.py",
         "rawSha256":
-            "edaaf7e0c557ab9648b6caf651276cdf406da338eca03fb7ee77ecaefa7e283e",
-        "role": "wave17_one_use_runner_tests",
+            "f45a478e0ed4a36bebaf4f2360181c4287ab5bfa09113238fa6b9eaf534b4dad",
+        "role": "wave18_one_use_runner_tests",
     },
 ]
-WAVE17_READBACK_TOOL_BINDINGS = [
-    WAVE17_READBACK_AUTHORITY_BINDING["checker"],
+WAVE18_READBACK_TOOL_BINDINGS = [
+    WAVE18_READBACK_AUTHORITY_BINDING["checker"],
     {
         "path": (
-            "script/test_p2p_nat_g2_pion_rung3_dependency_wave17_"
+            "script/test_p2p_nat_g2_pion_rung3_dependency_wave18_"
             "readback_execution_permit_v1.py"
         ),
         "rawSha256":
-            "30806750c7c9cdfadb59eded1f0449b79d9f119f687b246f02daed41c0c82831",
+            "34712fade8af513367fa7bb3e814a262d52c45c5b0d2a56d49726489675ec3c4",
     },
-    WAVE17_READBACK_AUTHORITY_BINDING["recorder"],
+    WAVE18_READBACK_AUTHORITY_BINDING["recorder"],
     {
         "path": (
-            "script/test_record_p2p_nat_g2_pion_rung3_dependency_wave17_"
+            "script/test_record_p2p_nat_g2_pion_rung3_dependency_wave18_"
             "readback_v1_once.py"
         ),
         "rawSha256":
-            "83a4cb9e238d8feac4c518f11b53cee70da059990b521d87cc62c72ae5fa9727",
+            "3e85450681cb39ec7ca155372ea3ebe520a8929f3aef1eb6dcdaf0e38ee5197e",
     },
 ]
 
@@ -873,7 +893,7 @@ def sha256_bytes(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def wave17_digest_bytes(value: Any) -> bytes:
+def wave18_digest_bytes(value: Any) -> bytes:
     return json.dumps(
         value,
         ensure_ascii=False,
@@ -1859,9 +1879,9 @@ PROVIDER_FACADE_LOAD_COUNT = 0
 def harden_checker_module(module: types.ModuleType) -> types.ModuleType:
     """Recursively replace every transitive pin and provider loader."""
 
-    if module.__dict__.get("_v16_safe_hardened") is True:
+    if module.__dict__.get("_v17_safe_hardened") is True:
         return module
-    module.__dict__["_v16_safe_hardened"] = True
+    module.__dict__["_v17_safe_hardened"] = True
     module_path = str(module.__dict__.get("__file__", ""))
     HARDENED_CHECKER_PATHS.add(module_path)
     if "PinnedCodeFile" in module.__dict__:
@@ -1899,43 +1919,43 @@ def harden_checker_module(module: types.ModuleType) -> types.ModuleType:
     return module
 
 
-def load_v15_checker(held: PinnedCodeFile) -> types.ModuleType:
-    module = types.ModuleType("aetherlink_combined_fixed_point_v15_pinned")
+def load_v16_checker(held: PinnedCodeFile) -> types.ModuleType:
+    module = types.ModuleType("aetherlink_combined_fixed_point_v16_pinned")
     module.__dict__.update(
         {
             "__cached__": None,
-            "__file__": str(ROOT / V15_CHECKER_PATH),
+            "__file__": str(ROOT / V16_CHECKER_PATH),
             "__loader__": None,
-            "__name__": "aetherlink_combined_fixed_point_v15_pinned",
+            "__name__": "aetherlink_combined_fixed_point_v16_pinned",
             "__package__": None,
         }
     )
     try:
         code = compile(
             held.raw,
-            V15_CHECKER_PATH,
+            V16_CHECKER_PATH,
             "exec",
             dont_inherit=True,
             optimize=0,
         )
         exec(code, module.__dict__, module.__dict__)
     except Exception as error:
-        raise CombinedCheckFailure("E_V15_CHECKER_LOAD") from error
+        raise CombinedCheckFailure("E_V16_CHECKER_LOAD") from error
     for name in (
         "PinnedCodeFile",
-        "load_v14_checker",
-        "wave16_control_bindings",
-        "parse_wave16_documents",
+        "load_v15_checker",
+        "wave17_control_bindings",
+        "parse_wave17_documents",
         "combined_source_bindings",
         "generate_candidate",
     ):
-        check(callable(getattr(module, name, None)), "E_V15_CHECKER_API")
+        check(callable(getattr(module, name, None)), "E_V16_CHECKER_API")
     check(
-        module.SELF_PATH == V15_CHECKER_PATH
-        and sha256_bytes(held.raw) == V15_CHECKER_RAW_SHA256
+        module.SELF_PATH == V16_CHECKER_PATH
+        and sha256_bytes(held.raw) == V16_CHECKER_RAW_SHA256
         and sha256_bytes(normalized_self_bytes(held.raw))
-        == V15_CHECKER_NORMALIZED_SHA256,
-        "E_V15_CHECKER_PIN",
+        == V16_CHECKER_NORMALIZED_SHA256,
+        "E_V16_CHECKER_PIN",
     )
     return module
 
@@ -2309,50 +2329,50 @@ def load_v6_checker(held: PinnedCodeFile) -> types.ModuleType:
     return module
 
 
-def wave17_control_bindings() -> list[dict[str, Any]]:
+def wave18_control_bindings() -> list[dict[str, Any]]:
     return [
         {
             "path": path,
             "rawSha256": digest,
             "maximumBytes": JSON_MAXIMUM_BYTES,
-            "ownerOnly": WAVE17_CONTROL_METADATA[path][1] == 0o600,
+            "ownerOnly": WAVE18_CONTROL_METADATA[path][1] == 0o600,
             "kind": "terminal_evidence",
         }
-        for path, digest in WAVE17_CONTROL_SHA256.items()
+        for path, digest in WAVE18_CONTROL_SHA256.items()
     ]
 
 
-def parse_wave17_documents(
+def parse_wave18_documents(
     runner: types.ModuleType,
     held: Any,
 ) -> dict[str, dict[str, Any]]:
     result: dict[str, dict[str, Any]] = {}
-    for path in WAVE17_CONTROL_SHA256:
+    for path in WAVE18_CONTROL_SHA256:
         value = runner.strict_json(held.raw[path], path)
-        check(type(value) is dict, "E_WAVE17_JSON")
+        check(type(value) is dict, "E_WAVE18_JSON")
         result[path] = value
     return result
 
 
-def wave17_auxiliary_evidence_bindings() -> list[dict[str, Any]]:
+def wave18_auxiliary_evidence_bindings() -> list[dict[str, Any]]:
     return [
         {
-            "path": WAVE17_ACQUISITION_CLAIM_PATH,
-            "rawSha256": WAVE17_ACQUISITION_CLAIM_RAW_SHA256,
+            "path": WAVE18_ACQUISITION_CLAIM_PATH,
+            "rawSha256": WAVE18_ACQUISITION_CLAIM_RAW_SHA256,
             "maximumBytes": 416,
             "ownerOnly": True,
             "kind": "consumed_acquisition_claim",
         },
         {
-            "path": WAVE17_EVIDENCE_PATH,
-            "rawSha256": WAVE17_ACQUISITION_EVIDENCE_RAW_SHA256,
-            "maximumBytes": 1_100,
+            "path": WAVE18_EVIDENCE_PATH,
+            "rawSha256": WAVE18_ACQUISITION_EVIDENCE_RAW_SHA256,
+            "maximumBytes": 2_605,
             "ownerOnly": True,
             "kind": "frozen_acquisition_evidence",
         },
         {
-            "path": WAVE17_READBACK_CLAIM_PATH,
-            "rawSha256": WAVE17_READBACK_CLAIM_RAW_SHA256,
+            "path": WAVE18_READBACK_CLAIM_PATH,
+            "rawSha256": WAVE18_READBACK_CLAIM_RAW_SHA256,
             "maximumBytes": 1_255,
             "ownerOnly": True,
             "kind": "consumed_readback_claim",
@@ -2364,27 +2384,27 @@ def portable_name(value: str) -> str:
     return unicodedata.normalize("NFC", value).casefold()
 
 
-def validate_wave17_completed_namespace(
+def validate_wave18_completed_namespace(
     control_held: Any,
     documents: Mapping[str, Mapping[str, Any]],
 ) -> None:
-    acquisition_claim = control_held.files[WAVE17_ACQUISITION_CLAIM_PATH]
-    readback_claim = control_held.files[WAVE17_READBACK_CLAIM_PATH]
-    evidence = control_held.files[WAVE17_EVIDENCE_PATH]
-    readback = control_held.files[WAVE17_READBACK_PATH]
-    readback_manifest = control_held.files[WAVE17_READBACK_MANIFEST_PATH]
-    for path, (expected_bytes, expected_mode) in WAVE17_CONTROL_METADATA.items():
+    acquisition_claim = control_held.files[WAVE18_ACQUISITION_CLAIM_PATH]
+    readback_claim = control_held.files[WAVE18_READBACK_CLAIM_PATH]
+    evidence = control_held.files[WAVE18_EVIDENCE_PATH]
+    readback = control_held.files[WAVE18_READBACK_PATH]
+    readback_manifest = control_held.files[WAVE18_READBACK_MANIFEST_PATH]
+    for path, (expected_bytes, expected_mode) in WAVE18_CONTROL_METADATA.items():
         info = os.fstat(control_held.files[path].fd)
         check(
             info.st_uid == os.geteuid()
             and info.st_nlink == 1
             and stat.S_IMODE(info.st_mode) == expected_mode
             and info.st_size == expected_bytes,
-            "E_WAVE17_CONTROL_METADATA",
+            "E_WAVE18_CONTROL_METADATA",
         )
     for held, expected_bytes in (
         (acquisition_claim, 416),
-        (evidence, 1_100),
+        (evidence, 2_605),
         (readback_claim, 1_255),
     ):
         info = os.fstat(held.fd)
@@ -2393,7 +2413,7 @@ def validate_wave17_completed_namespace(
             and info.st_nlink == 1
             and stat.S_IMODE(info.st_mode) == 0o600
             and info.st_size == expected_bytes,
-            "E_WAVE17_AUXILIARY_METADATA",
+            "E_WAVE18_AUXILIARY_METADATA",
         )
 
     dependency_names = os.listdir(acquisition_claim.parent_fd)
@@ -2405,11 +2425,11 @@ def validate_wave17_completed_namespace(
     normalized_base_names = [portable_name(name) for name in base_names]
     normalized_final_names = [portable_name(name) for name in final_names]
     exact_dependency_names = {
-        Path(WAVE17_ACQUISITION_CLAIM_PATH).name,
-        Path(WAVE17_READBACK_CLAIM_PATH).name,
+        Path(WAVE18_ACQUISITION_CLAIM_PATH).name,
+        Path(WAVE18_READBACK_CLAIM_PATH).name,
     }
     exact_base_names = {
-        Path(path).name for path in WAVE17_CONTROL_SHA256
+        Path(path).name for path in WAVE18_CONTROL_SHA256
     }
     exact_final_names = {"accepted", "evidence.json"}
     check(
@@ -2422,36 +2442,36 @@ def validate_wave17_completed_namespace(
             for name in exact_base_names
         )
         and not any(
-            name.startswith(portable_name(WAVE17_STAGING_PREFIX))
+            name.startswith(portable_name(WAVE18_STAGING_PREFIX))
             for name in normalized_dependency_names
         )
-        and portable_name(Path(WAVE17_FAILURE_PATH).name)
+        and portable_name(Path(WAVE18_FAILURE_PATH).name)
         not in normalized_base_names
         and not any(
             name.startswith(portable_name(prefix))
             for name in normalized_base_names
-            for prefix in WAVE17_READBACK_TEMP_PREFIXES
+            for prefix in WAVE18_READBACK_TEMP_PREFIXES
         )
         and len(final_names) == len(exact_final_names)
         and set(final_names) == exact_final_names
         and len(set(normalized_final_names)) == len(exact_final_names),
-        "E_WAVE17_NAMESPACE",
+        "E_WAVE18_NAMESPACE",
     )
     check(
         readback.parent_fd == readback_manifest.parent_fd
         or directory_identity(os.fstat(readback.parent_fd))
         == directory_identity(os.fstat(readback_manifest.parent_fd)),
-        "E_WAVE17_NAMESPACE",
+        "E_WAVE18_NAMESPACE",
     )
     final_info = os.fstat(evidence.parent_fd)
     check(
         final_info.st_uid == os.geteuid()
         and final_info.st_nlink == 4
         and stat.S_IMODE(final_info.st_mode) == 0o700,
-        "E_WAVE17_NAMESPACE",
+        "E_WAVE18_NAMESPACE",
     )
 
-    readback_permit = documents[WAVE17_READBACK_PERMIT_PATH]
+    readback_permit = documents[WAVE18_READBACK_PERMIT_PATH]
     snapshot = readback_permit.get("frozenAcquisitionSnapshot")
     accepted = (
         snapshot.get("acceptedDirectory")
@@ -2462,8 +2482,8 @@ def validate_wave17_completed_namespace(
         accepted.get("files") if type(accepted) is dict else None
     )
     check(
-        type(accepted_files) is list and len(accepted_files) == 2,
-        "E_WAVE17_NAMESPACE",
+        type(accepted_files) is list and len(accepted_files) == 6,
+        "E_WAVE18_NAMESPACE",
     )
     expected_accepted_names = {
         Path(row.get("path", "")).name
@@ -2471,12 +2491,12 @@ def validate_wave17_completed_namespace(
         if type(row) is dict and type(row.get("path")) is str
     }
     check(
-        len(expected_accepted_names) == 2
+        len(expected_accepted_names) == 6
         and all(
-            Path(row["path"]).parent.as_posix() == WAVE17_ACCEPTED_DIRECTORY
+            Path(row["path"]).parent.as_posix() == WAVE18_ACCEPTED_DIRECTORY
             for row in accepted_files
         ),
-        "E_WAVE17_NAMESPACE",
+        "E_WAVE18_NAMESPACE",
     )
     accepted_fd = -1
     try:
@@ -2496,30 +2516,30 @@ def validate_wave17_completed_namespace(
         ]
         check(
             accepted_info.st_uid == os.geteuid()
-            and accepted_info.st_nlink == 4
+            and accepted_info.st_nlink == 8
             and stat.S_IMODE(accepted_info.st_mode) == 0o700
-            and len(accepted_names) == 2
+            and len(accepted_names) == 6
             and set(accepted_names) == expected_accepted_names
-            and len(set(normalized_accepted_names)) == 2,
-            "E_WAVE17_NAMESPACE",
+            and len(set(normalized_accepted_names)) == 6,
+            "E_WAVE18_NAMESPACE",
         )
     finally:
         if accepted_fd >= 0:
             os.close(accepted_fd)
 
 
-def validate_wave17_consumed_claims(
+def validate_wave18_consumed_claims(
     runner: types.ModuleType,
     acquisition_raw: bytes,
     readback_raw: bytes,
 ) -> None:
     acquisition_claim = runner.strict_json(
         acquisition_raw,
-        WAVE17_ACQUISITION_CLAIM_PATH,
+        WAVE18_ACQUISITION_CLAIM_PATH,
     )
     readback_claim = runner.strict_json(
         readback_raw,
-        WAVE17_READBACK_CLAIM_PATH,
+        WAVE18_READBACK_CLAIM_PATH,
     )
     check(
         acquisition_raw == runner.canonical_json_bytes(acquisition_claim)
@@ -2534,20 +2554,20 @@ def validate_wave17_consumed_claims(
         )
         and acquisition_claim
         == {
-            "attemptId": WAVE17_ATTEMPT_ID,
-            "checkerRawSha256": WAVE17_ACQUISITION_CHECKER_RAW_SHA256,
-            "documentType": "aetherlink.wave17-source-acquisition-claim",
+            "attemptId": WAVE18_ATTEMPT_ID,
+            "checkerRawSha256": WAVE18_ACQUISITION_CHECKER_RAW_SHA256,
+            "documentType": "aetherlink.wave18-source-acquisition-claim",
             "externalAuthenticationRequired": False,
-            "permitContentSha256": WAVE17_CONTENT_SHA256[WAVE17_PERMIT_PATH],
-            "requestCount": 2,
+            "permitContentSha256": WAVE18_CONTENT_SHA256[WAVE18_PERMIT_PATH],
+            "requestCount": 6,
             "schemaVersion": "1.0",
             "status": "consumed_active",
             "userActionRequired": False,
         },
-        "E_WAVE17_ACQUISITION_CLAIM",
+        "E_WAVE18_ACQUISITION_CLAIM",
     )
     check(
-        exact_int(acquisition_claim.get("requestCount"), 2)
+        exact_int(acquisition_claim.get("requestCount"), 6)
         and exact_boolean_items(
             acquisition_claim,
             {
@@ -2555,7 +2575,7 @@ def validate_wave17_consumed_claims(
                 "userActionRequired": False,
             },
         ),
-        "E_WAVE17_ACQUISITION_CLAIM",
+        "E_WAVE18_ACQUISITION_CLAIM",
     )
     without = dict(readback_claim)
     without.pop("contentBinding", None)
@@ -2575,17 +2595,17 @@ def validate_wave17_consumed_claims(
         and readback_claim.get("contentBinding")
         == {
             "algorithm": "sha256(canonical-json-without-contentBinding)",
-            "sha256": WAVE17_READBACK_CLAIM_CONTENT_SHA256,
+            "sha256": WAVE18_READBACK_CLAIM_CONTENT_SHA256,
         }
         and sha256_bytes(runner.canonical_json_bytes(without))
-        == WAVE17_READBACK_CLAIM_CONTENT_SHA256
-        and readback_claim.get("acquisitionAttemptId") == WAVE17_ATTEMPT_ID
+        == WAVE18_READBACK_CLAIM_CONTENT_SHA256
+        and readback_claim.get("acquisitionAttemptId") == WAVE18_ATTEMPT_ID
         and readback_claim.get("readbackAttemptId")
-        == WAVE17_READBACK_ATTEMPT_ID
+        == WAVE18_READBACK_ATTEMPT_ID
         and readback_claim.get("authorityBinding")
-        == WAVE17_READBACK_AUTHORITY_BINDING
+        == WAVE18_READBACK_AUTHORITY_BINDING
         and readback_claim.get("documentType")
-        == "aetherlink.wave17-acquisition-readback-one-use-claim"
+        == "aetherlink.wave18-acquisition-readback-one-use-claim"
         and readback_claim.get(
             "claimPersistsAfterSuccessFailureOrUncertainty"
         )
@@ -2595,18 +2615,18 @@ def validate_wave17_consumed_claims(
         and readback_claim.get("status") == "consumed_active"
         and readback_claim.get("externalAuthenticationRequired") is False
         and readback_claim.get("userActionRequired") is False,
-        "E_WAVE17_READBACK_CLAIM",
+        "E_WAVE18_READBACK_CLAIM",
     )
 
 
-def validate_wave17_evidence(
+def validate_wave18_evidence(
     runner: types.ModuleType,
     raw: bytes,
     evidence_document: Mapping[str, Any],
     documents: Mapping[str, Mapping[str, Any]],
 ) -> None:
-    check(type(evidence_document) is dict, "E_WAVE17_EVIDENCE")
-    readback = documents[WAVE17_READBACK_PATH]
+    check(type(evidence_document) is dict, "E_WAVE18_EVIDENCE")
+    readback = documents[WAVE18_READBACK_PATH]
     verified = readback.get("verified")
     evidence_resources = evidence_document.get("resources")
     verified_resources = (
@@ -2624,77 +2644,77 @@ def validate_wave17_evidence(
             ),
         )
         and raw == runner.canonical_json_bytes(evidence_document)
-        and sha256_bytes(raw) == WAVE17_ACQUISITION_EVIDENCE_RAW_SHA256
+        and sha256_bytes(raw) == WAVE18_ACQUISITION_EVIDENCE_RAW_SHA256
         and evidence_document.get("documentType")
-        == "aetherlink.wave17-source-acquisition-evidence"
+        == "aetherlink.wave18-source-acquisition-evidence"
         and evidence_document.get("schemaVersion") == "1.0"
-        and evidence_document.get("attemptId") == WAVE17_ATTEMPT_ID
-        and exact_int(evidence_document.get("requestCount"), 2)
+        and evidence_document.get("attemptId") == WAVE18_ATTEMPT_ID
+        and exact_int(evidence_document.get("requestCount"), 6)
         and exact_int(
             evidence_document.get("aggregateResponseBytes"),
-            3_450_700,
+            2_109_100,
         )
         and exact_int(
             evidence_document.get("aggregateModResponseBytes"),
-            301,
+            279,
         )
         and exact_int(
             evidence_document.get("aggregateZipResponseBytes"),
-            3_450_399,
+            2_108_821,
         )
         and exact_int(
             evidence_document.get("aggregateZipEntryCount"),
-            1_550,
+            971,
         )
         and exact_int(
             evidence_document.get("aggregateZipUncompressedBytes"),
-            9_108_004,
+            7_225_800,
         )
         and type(evidence_resources) is list
-        and len(evidence_resources) == 2
+        and len(evidence_resources) == 6
         and type(verified_resources) is list
         and runner.canonical_json_bytes(evidence_resources)
         == runner.canonical_json_bytes(verified_resources),
-        "E_WAVE17_EVIDENCE",
+        "E_WAVE18_EVIDENCE",
     )
 
 
-def verify_wave17_content_bindings(
+def verify_wave18_content_bindings(
     v4: types.ModuleType,
     runner: types.ModuleType,
     documents: Mapping[str, Mapping[str, Any]],
 ) -> None:
     v4.verify_modern_content_binding(
         runner,
-        documents[WAVE17_DECISION_PATH],
-        WAVE17_CONTENT_SHA256[WAVE17_DECISION_PATH],
+        documents[WAVE18_DECISION_PATH],
+        WAVE18_CONTENT_SHA256[WAVE18_DECISION_PATH],
         "decision_without_contentBinding",
     )
     v4.verify_modern_content_binding(
         runner,
-        documents[WAVE17_PERMIT_PATH],
-        WAVE17_CONTENT_SHA256[WAVE17_PERMIT_PATH],
+        documents[WAVE18_PERMIT_PATH],
+        WAVE18_CONTENT_SHA256[WAVE18_PERMIT_PATH],
         "permit_without_contentBinding",
     )
     for path in (
-        WAVE17_READBACK_PERMIT_PATH,
-        WAVE17_READBACK_PATH,
-        WAVE17_READBACK_MANIFEST_PATH,
+        WAVE18_READBACK_PERMIT_PATH,
+        WAVE18_READBACK_PATH,
+        WAVE18_READBACK_MANIFEST_PATH,
     ):
         v4.verify_content_binding(
             runner,
             documents[path],
-            WAVE17_CONTENT_SHA256[path],
+            WAVE18_CONTENT_SHA256[path],
         )
 
 
-def validate_v15_predecessor_candidate(
+def validate_v16_predecessor_candidate(
     runner: types.ModuleType,
     candidate: Mapping[str, Any],
     decision: Mapping[str, Any],
 ) -> dict[str, Any]:
     predecessor = decision.get("predecessorBindings", {}).get(
-        "combinedFixedPointV15"
+        "combinedFixedPointV16"
     )
     binding = candidate.get("contentBinding")
     without = dict(candidate)
@@ -2724,10 +2744,10 @@ def validate_v15_predecessor_candidate(
     check(
         exact_keys(
             decision.get("predecessorBindings"),
-            ("combinedFixedPointV15",),
+            ("combinedFixedPointV16",),
         )
         and type(source_bindings) is list
-        and len(source_bindings) == 357
+        and len(source_bindings) == 359
         and all(
             type(row) is dict
             and set(row) == source_keys
@@ -2746,7 +2766,7 @@ def validate_v15_predecessor_candidate(
             and type(row["wave"]) is str
             for row in source_bindings
         ),
-        "E_V15_PREDECESSOR",
+        "E_V16_PREDECESSOR",
     )
     source_pairs: dict[tuple[str, str, int], set[str]] = defaultdict(set)
     for row in source_bindings:
@@ -2766,42 +2786,42 @@ def validate_v15_predecessor_candidate(
                 "sourceBindingCount", "sourceBindingsSha256",
                 "testsPath", "testsRawSha256",
                 "totalFullSourceReconstructionCount",
-                "totalGraphArchiveOpenCount", "wave16NamespaceAnchor",
+                "totalGraphArchiveOpenCount", "wave17NamespaceAnchor",
             ),
         )
         and predecessor.get("contentSha256")
-        == V15_CANDIDATE_CONTENT_SHA256
+        == V16_CANDIDATE_CONTENT_SHA256
         and predecessor.get("combinedInputSetSha256")
-        == V15_INPUT_SET_SHA256
+        == V16_INPUT_SET_SHA256
         and predecessor.get("sourceBindingsSha256")
-        == V15_SOURCE_BINDINGS_SHA256
-        and predecessor.get("graphSha256") == V15_GRAPH_SHA256
-        and predecessor.get("frontierSha256") == V15_FRONTIER_SHA256
-        and exact_int(predecessor.get("frontierTupleCount"), 1)
+        == V16_SOURCE_BINDINGS_SHA256
+        and predecessor.get("graphSha256") == V16_GRAPH_SHA256
+        and predecessor.get("frontierSha256") == V16_FRONTIER_SHA256
+        and exact_int(predecessor.get("frontierTupleCount"), 3)
         and predecessor.get("fixedPointReached") is False
-        and predecessor.get("checkerPath") == V15_CHECKER_PATH
-        and predecessor.get("checkerRawSha256") == V15_CHECKER_RAW_SHA256
+        and predecessor.get("checkerPath") == V16_CHECKER_PATH
+        and predecessor.get("checkerRawSha256") == V16_CHECKER_RAW_SHA256
         and predecessor.get("checkerNormalizedSha256")
-        == V15_CHECKER_NORMALIZED_SHA256
-        and predecessor.get("testsPath") == V15_TESTS_PATH
-        and predecessor.get("testsRawSha256") == V15_TESTS_RAW_SHA256
+        == V16_CHECKER_NORMALIZED_SHA256
+        and predecessor.get("testsPath") == V16_TESTS_PATH
+        and predecessor.get("testsRawSha256") == V16_TESTS_RAW_SHA256
         and exact_int(
             predecessor.get("totalFullSourceReconstructionCount"),
-            28,
+            30,
         )
         and exact_int(
             predecessor.get("totalGraphArchiveOpenCount"),
-            3_696,
+            4_056,
         )
-        and exact_int(predecessor.get("sourceBindingCount"), 357)
-        and predecessor.get("wave16NamespaceAnchor")
+        and exact_int(predecessor.get("sourceBindingCount"), 359)
+        and predecessor.get("wave17NamespaceAnchor")
         == {
             "path": (
                 "build/offline-source/pion-ice-v4.3.0/dependencies/"
-                ".wave-16-v1.claim"
+                ".wave-17-v1.claim"
             ),
             "rawSha256": (
-                "df97f5d9bf8c56f3bbf08635b8332bbc18b25babd0e5f35742fee3657555f4b8"
+                "3090e729d99c46c4b4d1e4242d6f25c08e2345062dfb6c15e1e87d3edf632fad"
             ),
         }
         and exact_int(
@@ -2811,40 +2831,40 @@ def validate_v15_predecessor_candidate(
             4,
         )
         and candidate.get("checkerVerification", {}).get(
-            "pinnedV14PredecessorExecuted"
+            "pinnedV15PredecessorExecuted"
         ) is True
         and candidate.get("checkerVerification", {}).get(
-            "v14TestsBindingScope"
+            "v15TestsBindingScope"
         ) == "historical_metadata_only_not_live_held"
         and candidate.get("checkerVerification", {}).get(
-            "v14TestsLiveHeld"
+            "v15TestsLiveHeld"
         ) is False
         and candidate.get("checkerVerification", {}).get(
-            "wave16HistoricalExact25FrozenSnapshotDescriptorSetBound"
+            "wave17HistoricalExact21FrozenSnapshotDescriptorSetBound"
         ) is True
         and candidate.get("checkerVerification", {}).get(
-            "wave16LiveTerminalControlMetadataVerified"
+            "wave17LiveTerminalControlMetadataVerified"
         ) is True
         and candidate.get("checkerVerification", {}).get(
-            "wave16LiveFinalAndAcceptedInventoriesVerified"
+            "wave17LiveFinalAndAcceptedInventoriesVerified"
         ) is True
         and candidate.get("checkerVerification", {}).get(
-            "wave16FinalNamespaceReverifiedAfterReconstruction"
+            "wave17FinalNamespaceReverifiedAfterReconstruction"
         ) is True
         and exact_int(
             candidate.get("checkerVerification", {}).get(
-                "wave16RetainedFdPreManifestBarrierCount"
+                "wave17RetainedFdPreManifestBarrierCount"
             ),
             3,
         )
         and candidate.get("checkerVerification", {}).get(
-            "wave16CompletionAppliesToRetainedSnapshot"
+            "wave17CompletionAppliesToRetainedSnapshot"
         ) is True
         and candidate.get("checkerVerification", {}).get(
-            "wave16CurrentPathIdentityGuaranteedThroughManifestPublication"
+            "wave17CurrentPathIdentityGuaranteedThroughManifestPublication"
         ) is False
         and candidate.get("checkerVerification", {}).get(
-            "wave16SameUidConcurrentRenameOrReplacementAfterLastBarrierPrevented"
+            "wave17SameUidConcurrentRenameOrReplacementAfterLastBarrierPrevented"
         ) is False
         and candidate.get("checkerVerification", {}).get(
             "providerFacadeVerificationScope"
@@ -2868,16 +2888,16 @@ def validate_v15_predecessor_candidate(
             "canonicalization":
                 "utf8_ascii_escaped_sorted_keys_compact_single_lf",
             "scope": "candidate_without_contentBinding",
-            "sha256": V15_CANDIDATE_CONTENT_SHA256,
+            "sha256": V16_CANDIDATE_CONTENT_SHA256,
         }
         and sha256_bytes(runner.canonical_json_bytes(without))
-        == V15_CANDIDATE_CONTENT_SHA256
-        and candidate.get("schemaVersion") == "15.0"
+        == V16_CANDIDATE_CONTENT_SHA256
+        and candidate.get("schemaVersion") == "16.0"
         and candidate.get("documentType")
         == (
             "aetherlink.g2-pion-combined-wave1-wave2-wave3-wave4-"
             "wave5-wave6-wave7-wave8-wave9-wave10-wave11-wave12-wave13-"
-            "wave14-wave15-wave16-"
+            "wave14-wave15-wave16-wave17-"
             "fixed-point-candidate"
         )
         and candidate.get("status")
@@ -2885,7 +2905,7 @@ def validate_v15_predecessor_candidate(
         and candidate.get("result")
         == (
             "combined_graph_recomputed_twice_from_exact_"
-            "wave1_through_wave16_source_bytes"
+            "wave1_through_wave17_source_bytes"
         )
         and candidate.get("route") == "next_wave_required"
         and candidate.get("nextAction")
@@ -2896,26 +2916,26 @@ def validate_v15_predecessor_candidate(
         and candidate.get("derivedResult")
         == {
             "fixedPointReached": False,
-            "frontierTupleCount": 1,
-            "frontierSha256": V15_FRONTIER_SHA256,
+            "frontierTupleCount": 3,
+            "frontierSha256": V16_FRONTIER_SHA256,
         }
         and candidate.get("derivedResult", {}).get("fixedPointReached")
         is False
         and exact_int(
             candidate.get("derivedResult", {}).get("frontierTupleCount"),
-            1,
+            3,
         )
         and type(inputs) is dict
-        and exact_int(inputs.get("heldSourceInputCount"), 357)
-        and inputs.get("combinedInputSetSha256") == V15_INPUT_SET_SHA256
+        and exact_int(inputs.get("heldSourceInputCount"), 359)
+        and inputs.get("combinedInputSetSha256") == V16_INPUT_SET_SHA256
         and sha256_bytes(runner.canonical_json_bytes(source_bindings))
-        == V15_INPUT_SET_SHA256
-        and sha256_bytes(wave17_digest_bytes(source_bindings))
-        == V15_SOURCE_BINDINGS_SHA256
-        and len({row["path"] for row in source_bindings}) == 357
+        == V16_INPUT_SET_SHA256
+        and sha256_bytes(wave18_digest_bytes(source_bindings))
+        == V16_SOURCE_BINDINGS_SHA256
+        and len({row["path"] for row in source_bindings}) == 359
         and sum(row["kind"] == "root_zip" for row in source_bindings) == 1
-        and sum(row["kind"] == "mod" for row in source_bindings) == 178
-        and sum(row["kind"] == "zip" for row in source_bindings) == 178
+        and sum(row["kind"] == "mod" for row in source_bindings) == 179
+        and sum(row["kind"] == "zip" for row in source_bindings) == 179
         and sum(row["wave"] == "wave1" for row in source_bindings) == 38
         and sum(row["wave"] == "wave2" for row in source_bindings) == 30
         and sum(row["wave"] == "wave3" for row in source_bindings) == 32
@@ -2932,16 +2952,17 @@ def validate_v15_predecessor_candidate(
         and sum(row["wave"] == "wave14" for row in source_bindings) == 8
         and sum(row["wave"] == "wave15" for row in source_bindings) == 10
         and sum(row["wave"] == "wave16" for row in source_bindings) == 6
-        and len(source_pairs) == 178
+        and sum(row["wave"] == "wave17" for row in source_bindings) == 2
+        and len(source_pairs) == 179
         and all(kinds == {"mod", "zip"} for kinds in source_pairs.values())
         and sorted(order for _, _, order in source_pairs)
-        == list(range(1, 179))
+        == list(range(1, 180))
         and type(graph) is dict
         and graph.get("fixedPointReached") is False
-        and exact_int(graph.get("newTupleCount"), 1)
-        and graph.get("graphSha256") == V15_GRAPH_SHA256
+        and exact_int(graph.get("newTupleCount"), 3)
+        and graph.get("graphSha256") == V16_GRAPH_SHA256
         and type(frontier) is list
-        and len(frontier) == 1
+        and len(frontier) == 3
         and all(
             exact_keys(
                 row,
@@ -2975,9 +2996,9 @@ def validate_v15_predecessor_candidate(
                 for row in frontier
             }
         )
-        == 1
+        == 3
         and type(identity_tuples) is list
-        and len(identity_tuples) == 1
+        and len(identity_tuples) == 3
         and all(
             type(row) is dict
             and type(row.get("selectedByGraphAlgorithm")) is bool
@@ -3003,43 +3024,43 @@ def validate_v15_predecessor_candidate(
             if type(row) is dict
         ]
         and sha256_bytes(runner.canonical_json_bytes(frontier))
-        == V15_FRONTIER_SHA256
-        and exact_boolean_map(candidate.get("authority"), V15_AUTHORITY)
+        == V16_FRONTIER_SHA256
+        and exact_boolean_map(candidate.get("authority"), V16_AUTHORITY)
         and exact_int(
             candidate.get("checkerVerification", {}).get(
                 "totalFullInputReconstructionCount"
             ),
-            28,
+            30,
         )
         and exact_int(
             candidate.get("checkerVerification", {}).get(
                 "underlyingIndependentGraphAlgorithmCount"
             ),
-            56,
+            60,
         )
         and exact_int(
             candidate.get("checkerVerification", {}).get(
                 "hardenedCheckerModuleCount"
             ),
-            14,
+            15,
         )
         and exact_int(
             candidate.get("checkerVerification", {}).get(
                 "providerFacadeLoadCount"
             ),
-            14,
+            15,
         )
         and exact_int(
             candidate.get("operationCounters", {}).get(
                 "totalFullSourceReconstructionCount"
             ),
-            28,
+            30,
         )
         and exact_int(
             candidate.get("operationCounters", {}).get("archiveOpenCount"),
-            3_696,
+            4_056,
         ),
-        "E_V15_PREDECESSOR",
+        "E_V16_PREDECESSOR",
     )
     return {
         "checkerExecutedFromPinnedBytes": True,
@@ -3051,12 +3072,12 @@ def validate_v15_predecessor_candidate(
         ),
         "fixedPointReached": graph["fixedPointReached"],
         "frontierTupleCount": len(frontier),
-        "wave16CompletionAppliesToRetainedSnapshot": True,
-        "wave16CurrentPathIdentityGuaranteedThroughManifestPublication": False,
-        "wave16SameUidConcurrentRenameOrReplacementAfterLastBarrierPrevented":
+        "wave17CompletionAppliesToRetainedSnapshot": True,
+        "wave17CurrentPathIdentityGuaranteedThroughManifestPublication": False,
+        "wave17SameUidConcurrentRenameOrReplacementAfterLastBarrierPrevented":
             False,
-        "v15TestsBindingScope": "historical_metadata_only_not_live_held",
-        "v15TestsLiveHeld": False,
+        "v16TestsBindingScope": "historical_metadata_only_not_live_held",
+        "v16TestsLiveHeld": False,
     }
 
 def validate_v14_predecessor_candidate(
@@ -3064,7 +3085,7 @@ def validate_v14_predecessor_candidate(
     candidate: Mapping[str, Any],
     decision: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Retained historical contract oracle; V16 never calls this helper."""
+    """Retained historical contract oracle; V17 never calls this helper."""
     predecessor = decision.get("predecessorBindings", {}).get(
         "combinedFixedPointV14"
     )
@@ -3290,7 +3311,7 @@ def validate_v14_predecessor_candidate(
         and inputs.get("combinedInputSetSha256") == V14_INPUT_SET_SHA256
         and sha256_bytes(runner.canonical_json_bytes(source_bindings))
         == V14_INPUT_SET_SHA256
-        and sha256_bytes(wave17_digest_bytes(source_bindings))
+        and sha256_bytes(wave18_digest_bytes(source_bindings))
         == V14_SOURCE_BINDINGS_SHA256
         and len({row["path"] for row in source_bindings}) == 351
         and sum(row["kind"] == "root_zip" for row in source_bindings) == 1
@@ -3439,19 +3460,19 @@ def validate_v14_predecessor_candidate(
     }
 
 
-def wave17_request_resources(
+def wave18_request_resources(
     v4: types.ModuleType,
     runner: types.ModuleType,
     documents: Mapping[str, Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
-    decision = documents[WAVE17_DECISION_PATH]
-    permit = documents[WAVE17_PERMIT_PATH]
-    receipt = documents[WAVE17_RECEIPT_PATH]
-    manifest = documents[WAVE17_MANIFEST_PATH]
-    readback_permit = documents[WAVE17_READBACK_PERMIT_PATH]
-    readback = documents[WAVE17_READBACK_PATH]
-    readback_manifest = documents[WAVE17_READBACK_MANIFEST_PATH]
-    verify_wave17_content_bindings(v4, runner, documents)
+    decision = documents[WAVE18_DECISION_PATH]
+    permit = documents[WAVE18_PERMIT_PATH]
+    receipt = documents[WAVE18_RECEIPT_PATH]
+    manifest = documents[WAVE18_MANIFEST_PATH]
+    readback_permit = documents[WAVE18_READBACK_PERMIT_PATH]
+    readback = documents[WAVE18_READBACK_PATH]
+    readback_manifest = documents[WAVE18_READBACK_MANIFEST_PATH]
+    verify_wave18_content_bindings(v4, runner, documents)
 
     resolution = decision.get("identityResolution")
     retained_metadata = decision.get("retainedMetadataEvidence")
@@ -3518,9 +3539,9 @@ def wave17_request_resources(
         )
         and exact_keys(
             decision.get("predecessorBindings"),
-            ("combinedFixedPointV15",),
+            ("combinedFixedPointV16",),
         ),
-        "E_WAVE17_DECISION",
+        "E_WAVE18_DECISION",
     )
     check(
         decision.get("contentBinding")
@@ -3529,35 +3550,35 @@ def wave17_request_resources(
             "canonicalization":
                 "utf8_ascii_escaped_sorted_keys_compact_single_lf",
             "scope": "decision_without_contentBinding",
-            "sha256": WAVE17_CONTENT_SHA256[WAVE17_DECISION_PATH],
+            "sha256": WAVE18_CONTENT_SHA256[WAVE18_DECISION_PATH],
         }
         and decision.get("status")
         == (
-            "wave17_exact_1_frontier_identity_classified_1_complete_"
+            "wave18_exact_3_frontier_identity_classified_3_complete_"
             "0_blocked_acquisition_ready_not_authorized"
         )
         and exact_boolean_map(
             decision.get("authority"),
-            WAVE17_DECISION_AUTHORITY,
+            WAVE18_DECISION_AUTHORITY,
         )
-        and decision.get("toolBindings") == WAVE17_DECISION_TOOL_BINDINGS
+        and decision.get("toolBindings") == WAVE18_DECISION_TOOL_BINDINGS
         and type(resolution) is dict
-        and exact_int(resolution.get("tupleCount"), 1)
-        and exact_int(resolution.get("completeIdentityPairCount"), 1)
+        and exact_int(resolution.get("tupleCount"), 3)
+        and exact_int(resolution.get("completeIdentityPairCount"), 3)
         and exact_int(resolution.get("blockedTupleCount"), 0)
         and exact_int(resolution.get("conflictingIdentityCount"), 0)
-        and exact_int(resolution.get("goModH1WitnessCount"), 1)
+        and exact_int(resolution.get("goModH1WitnessCount"), 3)
         and exact_int(resolution.get("graphSelectedTupleCount"), 0)
-        and exact_int(resolution.get("moduleZipH1WitnessCount"), 1)
-        and exact_int(resolution.get("parentDeclarationCount"), 1)
+        and exact_int(resolution.get("moduleZipH1WitnessCount"), 3)
+        and exact_int(resolution.get("parentDeclarationCount"), 3)
         and exact_int(
             resolution.get("versionSpecificNonSelectedTupleCount"),
-            1,
+            3,
         )
         and resolution.get("compactIdentitySha256")
-        == WAVE17_COMPACT_IDENTITY_SHA256
+        == WAVE18_COMPACT_IDENTITY_SHA256
         and resolution.get("fullWitnessSha256")
-        == WAVE17_FULL_WITNESS_SHA256
+        == WAVE18_FULL_WITNESS_SHA256
         and exact_boolean_items(
             resolution,
             {
@@ -3577,17 +3598,17 @@ def wave17_request_resources(
         and preparation.get("namespaceCleanAtDecisionCheck") is True
         and preparation.get("namespaceReservationClaimed") is False
         and preparation.get("permitOrRunnerCreated") is False
-        and exact_int(preparation.get("requestCount"), 2)
+        and exact_int(preparation.get("requestCount"), 6)
         and preparation.get("requestOrder")
         == "tuple_order_ascending_mod_then_zip"
         and preparation.get("acceptedDirectoryPath")
-        == WAVE17_ACCEPTED_DIRECTORY
+        == WAVE18_ACCEPTED_DIRECTORY
         and preparation.get("requestSetCanonicalSha256")
-        == WAVE17_REQUEST_SET_SHA256
+        == WAVE18_REQUEST_SET_SHA256
         and preparation.get("separateOneUseExecutionPermitRequired")
         is True
         and type(identity_tuples) is list
-        and len(identity_tuples) == 1
+        and len(identity_tuples) == 3
         and all(
             exact_keys(
                 row,
@@ -3605,7 +3626,8 @@ def wave17_request_resources(
             and exact_int(row.get("goModH1WitnessCount"), 1)
             and exact_int(row.get("moduleZipH1WitnessCount"), 1)
             and exact_int(row.get("parentDeclarationCount"), 1)
-            and exact_int(row.get("tupleOrder"), 1)
+            and type(row.get("tupleOrder")) is int
+            and 1 <= row["tupleOrder"] <= 3
             and row.get("acquisitionAuthorized") is False
             and row.get("acquisitionReady") is True
             and row.get("identityConflict") is False
@@ -3615,10 +3637,10 @@ def wave17_request_resources(
             for row in identity_tuples
         )
         and type(source_requests) is list
-        and len(source_requests) == 2
-        and sha256_bytes(wave17_digest_bytes(source_requests))
-        == WAVE17_REQUEST_SET_SHA256,
-        "E_WAVE17_DECISION",
+        and len(source_requests) == 6
+        and sha256_bytes(wave18_digest_bytes(source_requests))
+        == WAVE18_REQUEST_SET_SHA256,
+        "E_WAVE18_DECISION",
     )
 
     contract = permit.get("requestContract")
@@ -3626,7 +3648,7 @@ def wave17_request_resources(
     permit_decision_binding = permit.get("decisionBinding")
     permit_identity_binding = permit.get("identityBinding")
     permit_predecessor = permit.get("predecessorBindings", {}).get(
-        "combinedFixedPointV15"
+        "combinedFixedPointV16"
     )
     check(
         exact_keys(
@@ -3651,7 +3673,7 @@ def wave17_request_resources(
             permit_decision_binding,
             (
                 "contentSha256", "files", "path", "rawSha256",
-                "requiredStatus",
+                "requiredStatus", "typedProjectionCanonicalSha256",
             ),
         )
         and exact_keys(
@@ -3669,6 +3691,7 @@ def wave17_request_resources(
                 "ambientProxyAllowed", "authenticationAllowed",
                 "authorizationHeaderAllowed", "clientCertificateAllowed",
                 "contentEncoding", "cookieAllowed", "directHttpsOnly", "host",
+                "decisionToPermitTypedProjectionCanonicalSha256",
                 "identityContentEncodingRequired", "method", "order",
                 "port", "proxyAuthorizationHeaderAllowed",
                 "queryOrFragmentAllowed", "rangeHeaderAllowed",
@@ -3683,9 +3706,9 @@ def wave17_request_resources(
         )
         and exact_keys(
             permit.get("predecessorBindings"),
-            ("combinedFixedPointV15",),
+            ("combinedFixedPointV16",),
         ),
-        "E_WAVE17_PERMIT",
+        "E_WAVE18_PERMIT",
     )
     check(
         permit.get("contentBinding")
@@ -3694,66 +3717,71 @@ def wave17_request_resources(
             "canonicalization":
                 "utf8_ascii_escaped_sorted_keys_compact_single_lf",
             "scope": "permit_without_contentBinding",
-            "sha256": WAVE17_CONTENT_SHA256[WAVE17_PERMIT_PATH],
+            "sha256": WAVE18_CONTENT_SHA256[WAVE18_PERMIT_PATH],
         }
         and permit.get("status") == "authorized_not_consumed"
         and exact_boolean_map(
             permit.get("authority"),
-            WAVE17_ACQUISITION_AUTHORITY,
+            WAVE18_ACQUISITION_AUTHORITY,
         )
-        and permit.get("toolBindings") == WAVE17_ACQUISITION_TOOL_BINDINGS
+        and permit.get("toolBindings") == WAVE18_ACQUISITION_TOOL_BINDINGS
         and permit.get("decisionBinding", {}).get("rawSha256")
-        == WAVE17_CONTROL_SHA256[WAVE17_DECISION_PATH]
+        == WAVE18_CONTROL_SHA256[WAVE18_DECISION_PATH]
         and permit.get("decisionBinding", {}).get("contentSha256")
-        == WAVE17_CONTENT_SHA256[WAVE17_DECISION_PATH]
+        == WAVE18_CONTENT_SHA256[WAVE18_DECISION_PATH]
+        and permit.get("decisionBinding", {}).get(
+            "typedProjectionCanonicalSha256"
+        )
+        == contract.get("decisionToPermitTypedProjectionCanonicalSha256")
+        == "acb203748c6976b219949a73a89da48a381f6db4d33faa6f91fd5e9e6ab17304"
         and permit.get("identityBinding", {}).get("compactIdentitySha256")
-        == WAVE17_COMPACT_IDENTITY_SHA256
+        == WAVE18_COMPACT_IDENTITY_SHA256
         and permit.get("identityBinding", {}).get("fullWitnessSha256")
-        == WAVE17_FULL_WITNESS_SHA256
+        == WAVE18_FULL_WITNESS_SHA256
         and permit.get("identityBinding", {}).get(
             "requestSetCanonicalSha256"
         )
-        == WAVE17_REQUEST_SET_SHA256
+        == WAVE18_REQUEST_SET_SHA256
         and permit.get("absoluteResourceLimits")
-        == WAVE17_ABSOLUTE_RESOURCE_LIMITS
+        == WAVE18_ABSOLUTE_RESOURCE_LIMITS
         and exact_integer_items(
             permit.get("absoluteResourceLimits"),
-            WAVE17_ABSOLUTE_RESOURCE_LIMITS,
+            WAVE18_ABSOLUTE_RESOURCE_LIMITS,
         )
         and exact_boolean_items(
             permit.get("absoluteResourceLimits"),
-            WAVE17_ABSOLUTE_RESOURCE_LIMITS,
+            WAVE18_ABSOLUTE_RESOURCE_LIMITS,
         )
-        and permit.get("zipLimits") == WAVE17_ZIP_LIMITS
+        and permit.get("zipLimits") == WAVE18_ZIP_LIMITS
         and exact_integer_items(
             permit.get("zipLimits"),
-            WAVE17_ZIP_LIMITS,
+            WAVE18_ZIP_LIMITS,
         )
         and exact_boolean_items(
             permit.get("zipLimits"),
-            WAVE17_ZIP_LIMITS,
+            WAVE18_ZIP_LIMITS,
         )
         and permit_predecessor
         == {
-            "checkerNormalizedSha256": V15_CHECKER_NORMALIZED_SHA256,
-            "checkerPath": V15_CHECKER_PATH,
-            "checkerRawSha256": V15_CHECKER_RAW_SHA256,
-            "combinedInputSetSha256": V15_INPUT_SET_SHA256,
-            "contentSha256": V15_CANDIDATE_CONTENT_SHA256,
-            "frontierSha256": V15_FRONTIER_SHA256,
-            "graphSha256": V15_GRAPH_SHA256,
-            "sourceBindingsSha256": V15_SOURCE_BINDINGS_SHA256,
-            "testsPath": V15_TESTS_PATH,
-            "testsRawSha256": V15_TESTS_RAW_SHA256,
-            "totalFullSourceReconstructionCount": 28,
-            "totalGraphArchiveOpenCount": 3_696,
-            "wave16NamespaceAnchor": {
+            "checkerNormalizedSha256": V16_CHECKER_NORMALIZED_SHA256,
+            "checkerPath": V16_CHECKER_PATH,
+            "checkerRawSha256": V16_CHECKER_RAW_SHA256,
+            "combinedInputSetSha256": V16_INPUT_SET_SHA256,
+            "contentSha256": V16_CANDIDATE_CONTENT_SHA256,
+            "frontierSha256": V16_FRONTIER_SHA256,
+            "graphSha256": V16_GRAPH_SHA256,
+            "sourceBindingsSha256": V16_SOURCE_BINDINGS_SHA256,
+            "testsPath": V16_TESTS_PATH,
+            "testsRawSha256": V16_TESTS_RAW_SHA256,
+            "totalFullSourceReconstructionCount": 30,
+            "totalGraphArchiveOpenCount": 4_056,
+            "wave17NamespaceAnchor": {
                 "path": (
                     "build/offline-source/pion-ice-v4.3.0/dependencies/"
-                    ".wave-16-v1.claim"
+                    ".wave-17-v1.claim"
                 ),
                 "rawSha256": (
-                    "df97f5d9bf8c56f3bbf08635b8332bbc18b25babd0e5f35742fee3657555f4b8"
+                    "3090e729d99c46c4b4d1e4242d6f25c08e2345062dfb6c15e1e87d3edf632fad"
                 ),
             },
         }
@@ -3764,12 +3792,12 @@ def wave17_request_resources(
         )
         and exact_int(
             permit.get("identityBinding", {}).get("completeTupleCount"),
-            1,
+            3,
         )
         and exact_int(contract.get("acceptedStatusCode"), 200)
         and exact_int(contract.get("port"), 443)
-        and exact_int(contract.get("requestCount"), 2)
-        and exact_int(contract.get("tupleCount"), 1)
+        and exact_int(contract.get("requestCount"), 6)
+        and exact_int(contract.get("tupleCount"), 3)
         and exact_boolean_items(
             contract,
             {
@@ -3793,14 +3821,14 @@ def wave17_request_resources(
         )
         and contract.get("order") == "tuple_order_ascending_mod_then_zip"
         and contract.get("sourceRequestSetCanonicalSha256")
-        == WAVE17_REQUEST_SET_SHA256
+        == WAVE18_REQUEST_SET_SHA256
         and contract.get("resourcesCanonicalSha256")
-        == WAVE17_PERMIT_RESOURCES_SHA256
+        == WAVE18_PERMIT_RESOURCES_SHA256
         and type(resources) is list
-        and len(resources) == 2
+        and len(resources) == 6
         and sha256_bytes(runner.canonical_json_bytes(resources))
-        == WAVE17_PERMIT_RESOURCES_SHA256,
-        "E_WAVE17_PERMIT",
+        == WAVE18_PERMIT_RESOURCES_SHA256,
+        "E_WAVE18_PERMIT",
     )
 
     check(
@@ -3828,44 +3856,44 @@ def wave17_request_resources(
                 "validationCommittedCount", "zipCount",
             ),
         ),
-        "E_WAVE17_RECEIPT",
+        "E_WAVE18_RECEIPT",
     )
     check(
         receipt.get("status")
         == "consumed_success_pending_independent_readback"
-        and receipt.get("attemptId") == WAVE17_ATTEMPT_ID
-        and receipt.get("acceptedPath") == WAVE17_ACCEPTED_DIRECTORY
-        and exact_int(receipt.get("acceptedResourceCount"), 2)
-        and exact_int(receipt.get("modCount"), 1)
-        and exact_int(receipt.get("zipCount"), 1)
-        and exact_int(receipt.get("requestCount"), 2)
-        and exact_int(receipt.get("dispatchBoundaryCount"), 2)
-        and exact_int(receipt.get("responseCommittedCount"), 2)
-        and exact_int(receipt.get("validationCommittedCount"), 2)
-        and exact_int(receipt.get("persistenceCommittedCount"), 2)
-        and exact_int(receipt.get("responseCommittedBytes"), 3_450_700)
-        and exact_int(receipt.get("aggregateResponseBytes"), 3_450_700)
-        and exact_int(receipt.get("aggregateModResponseBytes"), 301)
-        and exact_int(receipt.get("aggregateZipResponseBytes"), 3_450_399)
-        and exact_int(receipt.get("aggregateZipEntryCount"), 1_550)
+        and receipt.get("attemptId") == WAVE18_ATTEMPT_ID
+        and receipt.get("acceptedPath") == WAVE18_ACCEPTED_DIRECTORY
+        and exact_int(receipt.get("acceptedResourceCount"), 6)
+        and exact_int(receipt.get("modCount"), 3)
+        and exact_int(receipt.get("zipCount"), 3)
+        and exact_int(receipt.get("requestCount"), 6)
+        and exact_int(receipt.get("dispatchBoundaryCount"), 6)
+        and exact_int(receipt.get("responseCommittedCount"), 6)
+        and exact_int(receipt.get("validationCommittedCount"), 6)
+        and exact_int(receipt.get("persistenceCommittedCount"), 6)
+        and exact_int(receipt.get("responseCommittedBytes"), 2_109_100)
+        and exact_int(receipt.get("aggregateResponseBytes"), 2_109_100)
+        and exact_int(receipt.get("aggregateModResponseBytes"), 279)
+        and exact_int(receipt.get("aggregateZipResponseBytes"), 2_108_821)
+        and exact_int(receipt.get("aggregateZipEntryCount"), 971)
         and exact_int(
             receipt.get("aggregateZipUncompressedBytes"),
-            9_108_004,
+            7_225_800,
         )
         and receipt.get("acceptedResourceHashSetCanonicalSha256")
-        == WAVE17_RESOURCE_SET_SHA256
+        == WAVE18_RESOURCE_SET_SHA256
         and receipt.get("claimRawSha256")
-        == WAVE17_ACQUISITION_CLAIM_RAW_SHA256
+        == WAVE18_ACQUISITION_CLAIM_RAW_SHA256
         and receipt.get("acceptedEvidenceRawSha256")
-        == WAVE17_ACQUISITION_EVIDENCE_RAW_SHA256
+        == WAVE18_ACQUISITION_EVIDENCE_RAW_SHA256
         and receipt.get("checkerRawSha256")
-        == WAVE17_ACQUISITION_CHECKER_RAW_SHA256
+        == WAVE18_ACQUISITION_CHECKER_RAW_SHA256
         and receipt.get("runnerRawSha256")
-        == WAVE17_ACQUISITION_RUNNER_RAW_SHA256
+        == WAVE18_ACQUISITION_RUNNER_RAW_SHA256
         and receipt.get("decisionContentSha256")
-        == WAVE17_CONTENT_SHA256[WAVE17_DECISION_PATH]
+        == WAVE18_CONTENT_SHA256[WAVE18_DECISION_PATH]
         and receipt.get("permitContentSha256")
-        == WAVE17_CONTENT_SHA256[WAVE17_PERMIT_PATH]
+        == WAVE18_CONTENT_SHA256[WAVE18_PERMIT_PATH]
         and receipt.get("additionalCompletionUncertain") is False
         and receipt.get("sourceAcquired") is True
         and receipt.get("sourceExtracted") is False
@@ -3873,16 +3901,16 @@ def wave17_request_resources(
         and receipt.get("compiled") is False
         and receipt.get("externalAuthenticationRequired") is False
         and receipt.get("userActionRequired") is False,
-        "E_WAVE17_RECEIPT",
+        "E_WAVE18_RECEIPT",
     )
     check(
         manifest
         == {
-            "attemptId": WAVE17_ATTEMPT_ID,
-            "documentType": "aetherlink.wave17-source-acquisition-manifest",
+            "attemptId": WAVE18_ATTEMPT_ID,
+            "documentType": "aetherlink.wave18-source-acquisition-manifest",
             "manifestWrittenLast": True,
-            "receiptPath": WAVE17_RECEIPT_PATH,
-            "receiptRawSha256": WAVE17_CONTROL_SHA256[WAVE17_RECEIPT_PATH],
+            "receiptPath": WAVE18_RECEIPT_PATH,
+            "receiptRawSha256": WAVE18_CONTROL_SHA256[WAVE18_RECEIPT_PATH],
             "schemaVersion": "1.0",
             "status": "consumed_success_pending_independent_readback",
         }
@@ -3890,7 +3918,7 @@ def wave17_request_resources(
             manifest,
             {"manifestWrittenLast": True},
         ),
-        "E_WAVE17_MANIFEST",
+        "E_WAVE18_MANIFEST",
     )
 
     snapshot = readback_permit.get("frozenAcquisitionSnapshot")
@@ -3933,7 +3961,7 @@ def wave17_request_resources(
         else None
     )
     snapshot_predecessor = (
-        snapshot.get("predecessorBindings", {}).get("combinedFixedPointV15")
+        snapshot.get("predecessorBindings", {}).get("combinedFixedPointV16")
         if type(snapshot) is dict
         else None
     )
@@ -3996,7 +4024,7 @@ def wave17_request_resources(
                 ),
                 "claimDurableBeforeAnyFrozenAcquisitionInputOpen",
                 "cleanupClosesEveryOwnedFdBeforeSignalMaskRestore",
-                "combinedFixedPointV15PredecessorBindingRecomputed",
+                "combinedFixedPointV16PredecessorBindingRecomputed",
                 "completeVerificationPassCount",
                 "completionAppliesToRetainedSnapshot",
                 (
@@ -4009,8 +4037,8 @@ def wave17_request_resources(
                 ),
                 "decisionAndPermitContentBindingsRecomputed",
                 "eachPreManifestBarrierReopensEveryCurrentPathNoFollow",
-                "exact2ResourceOrderAndAggregateRecomputed",
-                "exact21FrozenFileSnapshotRequired",
+                "exact6ResourceOrderAndAggregateRecomputed",
+                "exact25FrozenFileSnapshotRequired",
                 "exactFinalAndAcceptedDirectoryInventoriesRequired",
                 "executeSuccessRecordedBeforeStdoutReporting",
                 (
@@ -4047,7 +4075,7 @@ def wave17_request_resources(
                 ),
                 "sourceExtractionAllowed",
                 "strictCanonicalTerminalAndEvidenceJsonRequired",
-                "v14TestsLiveHeld", "v15TestsLiveHeld",
+                "v15TestsLiveHeld", "v16TestsLiveHeld",
                 "zipStructurePathCrcAndModParityRecomputed",
             ),
         )
@@ -4055,35 +4083,35 @@ def wave17_request_resources(
             snapshot.get("predecessorBindings")
             if type(snapshot) is dict
             else None,
-            ("combinedFixedPointV15",),
+            ("combinedFixedPointV16",),
         ),
-        "E_WAVE17_READBACK_PERMIT",
+        "E_WAVE18_READBACK_PERMIT",
     )
     check(
         readback_permit.get("contentBinding")
         == {
             "algorithm":
                 "sha256(canonical-json-without-contentBinding)",
-            "sha256": WAVE17_CONTENT_SHA256[WAVE17_READBACK_PERMIT_PATH],
+            "sha256": WAVE18_CONTENT_SHA256[WAVE18_READBACK_PERMIT_PATH],
         }
         and readback_permit.get("status") == "authorized_not_consumed"
         and exact_boolean_map(
             readback_permit.get("authority"),
-            WAVE17_READBACK_AUTHORITY,
+            WAVE18_READBACK_AUTHORITY,
         )
         and readback_permit.get("toolBindings")
-        == WAVE17_READBACK_TOOL_BINDINGS
+        == WAVE18_READBACK_TOOL_BINDINGS
         and readback_permit.get("recorderNormalizedSha256")
-        == WAVE17_READBACK_RECORDER_NORMALIZED_SHA256
+        == WAVE18_READBACK_RECORDER_NORMALIZED_SHA256
         and readback_permit.get("resourceLimits")
-        == WAVE17_READBACK_RESOURCE_LIMITS
+        == WAVE18_READBACK_RESOURCE_LIMITS
         and exact_integer_items(
             readback_permit.get("resourceLimits"),
-            WAVE17_READBACK_RESOURCE_LIMITS,
+            WAVE18_READBACK_RESOURCE_LIMITS,
         )
         and exact_boolean_items(
             readback_permit.get("resourceLimits"),
-            WAVE17_READBACK_RESOURCE_LIMITS,
+            WAVE18_READBACK_RESOURCE_LIMITS,
         )
         and type(verification_contract) is dict
         and exact_int(
@@ -4092,13 +4120,13 @@ def wave17_request_resources(
         )
         and verification_contract.get("allFrozenFilesOpenedNoFollowAndHeld")
         is True
-        and verification_contract.get("exact21FrozenFileSnapshotRequired")
+        and verification_contract.get("exact25FrozenFileSnapshotRequired")
         is True
         and verification_contract.get(
-            "combinedFixedPointV15PredecessorBindingRecomputed"
+            "combinedFixedPointV16PredecessorBindingRecomputed"
         ) is True
         and verification_contract.get(
-            "exact2ResourceOrderAndAggregateRecomputed"
+            "exact6ResourceOrderAndAggregateRecomputed"
         ) is True
         and verification_contract.get(
             "executeSuccessRecordedBeforeStdoutReporting"
@@ -4122,8 +4150,8 @@ def wave17_request_resources(
         )
         and verification_contract.get("requiredFallibleBarrierAfterManifest")
         is False
-        and verification_contract.get("v14TestsLiveHeld") is False
-        and verification_contract.get("v15TestsLiveHeld") is True
+        and verification_contract.get("v15TestsLiveHeld") is False
+        and verification_contract.get("v16TestsLiveHeld") is True
         and verification_contract.get(
             "requestResourcesCanonicalSha256Recomputed"
         ) is True
@@ -4134,7 +4162,7 @@ def wave17_request_resources(
             3,
         )
         and verification_contract.get("retainedFdPreManifestBarriers")
-        == WAVE17_RETAINED_BARRIERS
+        == WAVE18_RETAINED_BARRIERS
         and verification_contract.get("completionAppliesToRetainedSnapshot")
         is True
         and verification_contract.get(
@@ -4144,49 +4172,49 @@ def wave17_request_resources(
             "sameUidConcurrentRenameOrReplacementAfterLastBarrierPrevented"
         ) is False
         and type(snapshot) is dict
-        and snapshot.get("attemptId") == WAVE17_ATTEMPT_ID
+        and snapshot.get("attemptId") == WAVE18_ATTEMPT_ID
         and identity_bindings
         == {
-            "compactIdentitySha256": WAVE17_COMPACT_IDENTITY_SHA256,
-            "fullWitnessSha256": WAVE17_FULL_WITNESS_SHA256,
+            "compactIdentitySha256": WAVE18_COMPACT_IDENTITY_SHA256,
+            "fullWitnessSha256": WAVE18_FULL_WITNESS_SHA256,
             "heldSourceBindingsSha256":
-                WAVE17_HELD_SOURCE_BINDINGS_SHA256,
+                WAVE18_HELD_SOURCE_BINDINGS_SHA256,
             "resourcesCanonicalSha256":
-                WAVE17_PERMIT_RESOURCES_SHA256,
+                WAVE18_PERMIT_RESOURCES_SHA256,
             "sourceRequestSetCanonicalSha256":
-                WAVE17_REQUEST_SET_SHA256,
+                WAVE18_REQUEST_SET_SHA256,
         }
         and snapshot_predecessor
         == {
-            "checkerNormalizedSha256": V15_CHECKER_NORMALIZED_SHA256,
-            "checkerPath": V15_CHECKER_PATH,
-            "checkerRawSha256": V15_CHECKER_RAW_SHA256,
-            "combinedInputSetSha256": V15_INPUT_SET_SHA256,
-            "contentSha256": V15_CANDIDATE_CONTENT_SHA256,
-            "frontierSha256": V15_FRONTIER_SHA256,
-            "graphSha256": V15_GRAPH_SHA256,
-            "sourceBindingsSha256": V15_SOURCE_BINDINGS_SHA256,
-            "testsPath": V15_TESTS_PATH,
-            "testsRawSha256": V15_TESTS_RAW_SHA256,
-            "totalFullSourceReconstructionCount": 28,
-            "totalGraphArchiveOpenCount": 3_696,
-            "wave16NamespaceAnchor": {
+            "checkerNormalizedSha256": V16_CHECKER_NORMALIZED_SHA256,
+            "checkerPath": V16_CHECKER_PATH,
+            "checkerRawSha256": V16_CHECKER_RAW_SHA256,
+            "combinedInputSetSha256": V16_INPUT_SET_SHA256,
+            "contentSha256": V16_CANDIDATE_CONTENT_SHA256,
+            "frontierSha256": V16_FRONTIER_SHA256,
+            "graphSha256": V16_GRAPH_SHA256,
+            "sourceBindingsSha256": V16_SOURCE_BINDINGS_SHA256,
+            "testsPath": V16_TESTS_PATH,
+            "testsRawSha256": V16_TESTS_RAW_SHA256,
+            "totalFullSourceReconstructionCount": 30,
+            "totalGraphArchiveOpenCount": 4_056,
+            "wave17NamespaceAnchor": {
                 "path": (
                     "build/offline-source/pion-ice-v4.3.0/dependencies/"
-                    ".wave-16-v1.claim"
+                    ".wave-17-v1.claim"
                 ),
                 "rawSha256": (
-                    "df97f5d9bf8c56f3bbf08635b8332bbc18b25babd0e5f35742fee3657555f4b8"
+                    "3090e729d99c46c4b4d1e4242d6f25c08e2345062dfb6c15e1e87d3edf632fad"
                 ),
             },
         }
         and snapshot.get("acquisitionDecisionContentSha256")
-        == WAVE17_CONTENT_SHA256[WAVE17_DECISION_PATH]
+        == WAVE18_CONTENT_SHA256[WAVE18_DECISION_PATH]
         == decision.get("contentBinding", {}).get("sha256")
         == permit.get("decisionBinding", {}).get("contentSha256")
         == receipt.get("decisionContentSha256")
         and snapshot.get("acquisitionPermitContentSha256")
-        == WAVE17_CONTENT_SHA256[WAVE17_PERMIT_PATH]
+        == WAVE18_CONTENT_SHA256[WAVE18_PERMIT_PATH]
         == permit.get("contentBinding", {}).get("sha256")
         == receipt.get("permitContentSha256")
         and final_directory
@@ -4197,7 +4225,7 @@ def wave17_request_resources(
             "ownerUid": os.geteuid(),
             "path": (
                 "build/offline-source/pion-ice-v4.3.0/dependencies/"
-                "wave-17-v1"
+                "wave-18-v1"
             ),
         }
         and exact_int(final_directory.get("linkCount"), 4)
@@ -4206,7 +4234,7 @@ def wave17_request_resources(
         == {
             "failureAbsent": True,
             "failurePath": (
-                f"{BASE}/bounded-dependency-source-acquisition-wave17-"
+                f"{BASE}/bounded-dependency-source-acquisition-wave18-"
                 "failure-v1.json"
             ),
             "portableNameComparison": "NFC_casefold",
@@ -4214,7 +4242,7 @@ def wave17_request_resources(
             "stagingParent": (
                 "build/offline-source/pion-ice-v4.3.0/dependencies"
             ),
-            "stagingPrefix": ".wave-17-v1-staging-",
+            "stagingPrefix": ".wave-18-v1-staging-",
         }
         and exact_boolean_items(
             absence_contract,
@@ -4223,43 +4251,43 @@ def wave17_request_resources(
                 "stagingAbsent": True,
             },
         )
-        and exact_int(snapshot.get("frozenFileCount"), 21)
+        and exact_int(snapshot.get("frozenFileCount"), 25)
         and snapshot.get("frozenFilesCanonicalSha256")
-        == WAVE17_FROZEN_FILE_SET_SHA256
-        and exact_int(snapshot.get("acceptedResourceCount"), 2)
+        == WAVE18_FROZEN_FILE_SET_SHA256
+        and exact_int(snapshot.get("acceptedResourceCount"), 6)
         and exact_int(snapshot.get("selectedTupleCount"), 0)
         and snapshot.get("selectedRequestOrdinals") == []
-        and exact_int(snapshot.get("modCount"), 1)
-        and exact_int(snapshot.get("zipCount"), 1)
-        and exact_int(snapshot.get("aggregateAcceptedBytes"), 3_450_700)
-        and exact_int(snapshot.get("aggregateModBytes"), 301)
-        and exact_int(snapshot.get("aggregateZipBytes"), 3_450_399)
-        and exact_int(snapshot.get("aggregateZipEntryCount"), 1_550)
+        and exact_int(snapshot.get("modCount"), 3)
+        and exact_int(snapshot.get("zipCount"), 3)
+        and exact_int(snapshot.get("aggregateAcceptedBytes"), 2_109_100)
+        and exact_int(snapshot.get("aggregateModBytes"), 279)
+        and exact_int(snapshot.get("aggregateZipBytes"), 2_108_821)
+        and exact_int(snapshot.get("aggregateZipEntryCount"), 971)
         and exact_int(
             snapshot.get("aggregateZipUncompressedBytes"),
-            9_108_004,
+            7_225_800,
         )
         and snapshot.get("acceptedResourceHashSetCanonicalSha256")
-        == WAVE17_RESOURCE_SET_SHA256
+        == WAVE18_RESOURCE_SET_SHA256
         and type(acquisition_authority) is list
         and len(acquisition_authority) == 15
         and len(acquisition_authority_by_path) == 15
         and acquisition_authority_by_path.get(
             (
-                "script/check_p2p_nat_g2_pion_rung3_dependency_wave17_"
+                "script/check_p2p_nat_g2_pion_rung3_dependency_wave18_"
                 "acquisition_v1.py"
             ),
             {},
         ).get("rawSha256")
-        == WAVE17_ACQUISITION_CHECKER_RAW_SHA256
+        == WAVE18_ACQUISITION_CHECKER_RAW_SHA256
         and acquisition_authority_by_path.get(
             (
-                "script/acquire_p2p_nat_g2_pion_rung3_dependency_wave17_"
+                "script/acquire_p2p_nat_g2_pion_rung3_dependency_wave18_"
                 "v1_once.py"
             ),
             {},
         ).get("rawSha256")
-        == WAVE17_ACQUISITION_RUNNER_RAW_SHA256
+        == WAVE18_ACQUISITION_RUNNER_RAW_SHA256
         and acquisition_claim
         == {
             "bytes": 416,
@@ -4268,38 +4296,38 @@ def wave17_request_resources(
             "ownerUid": os.geteuid(),
             "path": (
                 "build/offline-source/pion-ice-v4.3.0/dependencies/"
-                ".wave-17-v1.claim"
+                ".wave-18-v1.claim"
             ),
-            "rawSha256": WAVE17_ACQUISITION_CLAIM_RAW_SHA256,
+            "rawSha256": WAVE18_ACQUISITION_CLAIM_RAW_SHA256,
         }
         and exact_int(acquisition_claim.get("bytes"), 416)
         and exact_int(acquisition_claim.get("linkCount"), 1)
         and exact_int(acquisition_claim.get("ownerUid"), os.geteuid())
         and evidence
         == {
-            "bytes": 1_100,
+            "bytes": 2_605,
             "linkCount": 1,
             "mode": "0600",
             "ownerUid": os.geteuid(),
             "path": (
                 "build/offline-source/pion-ice-v4.3.0/dependencies/"
-                "wave-17-v1/evidence.json"
+                "wave-18-v1/evidence.json"
             ),
-            "rawSha256": WAVE17_ACQUISITION_EVIDENCE_RAW_SHA256,
+            "rawSha256": WAVE18_ACQUISITION_EVIDENCE_RAW_SHA256,
         }
-        and exact_int(evidence.get("bytes"), 1_100)
+        and exact_int(evidence.get("bytes"), 2_605)
         and exact_int(evidence.get("linkCount"), 1)
         and exact_int(evidence.get("ownerUid"), os.geteuid())
         and acquisition_receipt
         == {
-            "bytes": 1_659,
+            "bytes": 1_658,
             "linkCount": 1,
             "mode": "0600",
             "ownerUid": os.geteuid(),
-            "path": WAVE17_RECEIPT_PATH,
-            "rawSha256": WAVE17_CONTROL_SHA256[WAVE17_RECEIPT_PATH],
+            "path": WAVE18_RECEIPT_PATH,
+            "rawSha256": WAVE18_CONTROL_SHA256[WAVE18_RECEIPT_PATH],
         }
-        and exact_int(acquisition_receipt.get("bytes"), 1_659)
+        and exact_int(acquisition_receipt.get("bytes"), 1_658)
         and exact_int(acquisition_receipt.get("linkCount"), 1)
         and exact_int(
             acquisition_receipt.get("ownerUid"),
@@ -4311,8 +4339,8 @@ def wave17_request_resources(
             "linkCount": 1,
             "mode": "0600",
             "ownerUid": os.geteuid(),
-            "path": WAVE17_MANIFEST_PATH,
-            "rawSha256": WAVE17_CONTROL_SHA256[WAVE17_MANIFEST_PATH],
+            "path": WAVE18_MANIFEST_PATH,
+            "rawSha256": WAVE18_CONTROL_SHA256[WAVE18_MANIFEST_PATH],
         }
         and exact_int(acquisition_manifest.get("bytes"), 465)
         and exact_int(acquisition_manifest.get("linkCount"), 1)
@@ -4324,13 +4352,13 @@ def wave17_request_resources(
         and manifest.get("receiptRawSha256")
         == acquisition_receipt["rawSha256"]
         and type(accepted) is dict
-        and accepted.get("path") == WAVE17_ACCEPTED_DIRECTORY
+        and accepted.get("path") == WAVE18_ACCEPTED_DIRECTORY
         and accepted.get("mode") == "0700"
         and exact_int(accepted.get("ownerUid"), os.geteuid())
-        and exact_int(accepted.get("linkCount"), 4)
-        and exact_int(accepted.get("exactFileCount"), 2)
+        and exact_int(accepted.get("linkCount"), 8)
+        and exact_int(accepted.get("exactFileCount"), 6)
         and type(accepted_files) is list
-        and len(accepted_files) == 2
+        and len(accepted_files) == 6
         and sha256_bytes(
             runner.canonical_json_bytes(
                 [
@@ -4343,8 +4371,8 @@ def wave17_request_resources(
                 ]
             )
         )
-        == WAVE17_FROZEN_FILE_SET_SHA256,
-        "E_WAVE17_READBACK_PERMIT",
+        == WAVE18_FROZEN_FILE_SET_SHA256,
+        "E_WAVE18_READBACK_PERMIT",
     )
 
     verified = readback.get("verified")
@@ -4397,7 +4425,7 @@ def wave17_request_resources(
             "aggregateZipEntryCount",
             "aggregateZipUncompressedBytes",
             "authorityFileCount",
-            "combinedFixedPointV15ContentSha256",
+            "combinedFixedPointV16ContentSha256",
             "compactIdentitySha256",
             "compiled",
             "decisionContentSha256",
@@ -4420,21 +4448,21 @@ def wave17_request_resources(
             "userActionRequired",
             "zipCount",
         },
-        "E_WAVE17_READBACK",
+        "E_WAVE18_READBACK",
     )
     check(
         readback.get("contentBinding")
         == {
             "algorithm":
                 "sha256(canonical-json-without-contentBinding)",
-            "sha256": WAVE17_CONTENT_SHA256[WAVE17_READBACK_PATH],
+            "sha256": WAVE18_CONTENT_SHA256[WAVE18_READBACK_PATH],
         }
         and readback.get("status")
-        == "wave17_acquisition_retained_snapshot_independently_read_back"
-        and readback.get("acquisitionAttemptId") == WAVE17_ATTEMPT_ID
-        and readback.get("readbackAttemptId") == WAVE17_READBACK_ATTEMPT_ID
+        == "wave18_acquisition_retained_snapshot_independently_read_back"
+        and readback.get("acquisitionAttemptId") == WAVE18_ATTEMPT_ID
+        and readback.get("readbackAttemptId") == WAVE18_READBACK_ATTEMPT_ID
         and readback.get("authorityBinding")
-        == WAVE17_READBACK_AUTHORITY_BINDING
+        == WAVE18_READBACK_AUTHORITY_BINDING
         and exact_int(readback.get("verificationPassCount"), 2)
         and readback.get("offline") is True
         and exact_int(readback.get("networkRequestAttemptCount"), 0)
@@ -4447,15 +4475,15 @@ def wave17_request_resources(
         and readback.get("readbackClaim")
         == {
             "bytes": 1_255,
-            "contentSha256": WAVE17_READBACK_CLAIM_CONTENT_SHA256,
+            "contentSha256": WAVE18_READBACK_CLAIM_CONTENT_SHA256,
             "linkCount": 1,
             "mode": "0600",
             "ownerUid": os.geteuid(),
             "path": (
                 "build/offline-source/pion-ice-v4.3.0/dependencies/"
-                ".wave-17-v1-readback.claim"
+                ".wave-18-v1-readback.claim"
             ),
-            "rawSha256": WAVE17_READBACK_CLAIM_RAW_SHA256,
+            "rawSha256": WAVE18_READBACK_CLAIM_RAW_SHA256,
         }
         and exact_int(
             readback.get("readbackClaim", {}).get("bytes"),
@@ -4487,7 +4515,7 @@ def wave17_request_resources(
             2,
         )
         and readback.get("retainedFdPreManifestBarriers")
-        == WAVE17_RETAINED_BARRIERS
+        == WAVE18_RETAINED_BARRIERS
         and readback.get("completionAppliesToRetainedSnapshot") is True
         and readback.get(
             "currentPathIdentityGuaranteedThroughManifestPublication"
@@ -4497,7 +4525,7 @@ def wave17_request_resources(
         ) is False
         and type(verified) is dict
         and verified.get("status")
-        == "wave17_acquisition_retained_snapshot_independently_verified"
+        == "wave18_acquisition_retained_snapshot_independently_verified"
         and verified.get("acquisitionAttemptId")
         == snapshot.get("attemptId")
         == receipt.get("attemptId")
@@ -4508,12 +4536,12 @@ def wave17_request_resources(
         )
         and verified.get("authorityFileCount")
         == len(acquisition_authority)
-        and exact_int(verified.get("acceptedResourceCount"), 2)
-        and verified.get("acceptedResourceCount") == 2
+        and exact_int(verified.get("acceptedResourceCount"), 6)
+        and verified.get("acceptedResourceCount") == 6
         == snapshot.get("acceptedResourceCount")
         == receipt.get("acceptedResourceCount")
         and verified.get("acceptedResourceHashSetCanonicalSha256")
-        == WAVE17_RESOURCE_SET_SHA256
+        == WAVE18_RESOURCE_SET_SHA256
         == snapshot.get("acceptedResourceHashSetCanonicalSha256")
         == receipt.get("acceptedResourceHashSetCanonicalSha256")
         and exact_int(verified.get("selectedTupleCount"), 0)
@@ -4521,76 +4549,76 @@ def wave17_request_resources(
         == snapshot.get("selectedTupleCount")
         and verified.get("selectedRequestOrdinals") == []
         == snapshot.get("selectedRequestOrdinals")
-        and exact_int(verified.get("modCount"), 1)
+        and exact_int(verified.get("modCount"), 3)
         and verified.get("modCount")
         == snapshot.get("modCount")
         == receipt.get("modCount")
-        == 1
-        and exact_int(verified.get("zipCount"), 1)
+        == 3
+        and exact_int(verified.get("zipCount"), 3)
         and verified.get("zipCount")
         == snapshot.get("zipCount")
         == receipt.get("zipCount")
-        == 1
+        == 3
         and exact_int(
             verified.get("aggregateAcceptedBytes"),
-            3_450_700,
+            2_109_100,
         )
         and verified.get("aggregateAcceptedBytes")
         == snapshot.get("aggregateAcceptedBytes")
         == receipt.get("aggregateResponseBytes")
-        == 3_450_700
-        and exact_int(verified.get("aggregateModBytes"), 301)
+        == 2_109_100
+        and exact_int(verified.get("aggregateModBytes"), 279)
         and verified.get("aggregateModBytes")
         == snapshot.get("aggregateModBytes")
         == receipt.get("aggregateModResponseBytes")
-        == 301
-        and exact_int(verified.get("aggregateZipBytes"), 3_450_399)
+        == 279
+        and exact_int(verified.get("aggregateZipBytes"), 2_108_821)
         and verified.get("aggregateZipBytes")
         == snapshot.get("aggregateZipBytes")
         == receipt.get("aggregateZipResponseBytes")
-        == 3_450_399
-        and exact_int(verified.get("aggregateZipEntryCount"), 1_550)
+        == 2_108_821
+        and exact_int(verified.get("aggregateZipEntryCount"), 971)
         and verified.get("aggregateZipEntryCount")
         == snapshot.get("aggregateZipEntryCount")
         == receipt.get("aggregateZipEntryCount")
-        == 1_550
+        == 971
         and exact_int(
             verified.get("aggregateZipUncompressedBytes"),
-            9_108_004,
+            7_225_800,
         )
         and verified.get("aggregateZipUncompressedBytes")
         == snapshot.get("aggregateZipUncompressedBytes")
         == receipt.get("aggregateZipUncompressedBytes")
-        == 9_108_004
-        and verified.get("combinedFixedPointV15ContentSha256")
-        == V15_CANDIDATE_CONTENT_SHA256
+        == 7_225_800
+        and verified.get("combinedFixedPointV16ContentSha256")
+        == V16_CANDIDATE_CONTENT_SHA256
         and verified.get("resourcesCanonicalSha256")
         == identity_bindings["resourcesCanonicalSha256"]
         == contract.get("resourcesCanonicalSha256")
-        == WAVE17_PERMIT_RESOURCES_SHA256
+        == WAVE18_PERMIT_RESOURCES_SHA256
         and verified.get("decisionContentSha256")
         == snapshot.get("acquisitionDecisionContentSha256")
         == receipt.get("decisionContentSha256")
-        == WAVE17_CONTENT_SHA256[WAVE17_DECISION_PATH]
+        == WAVE18_CONTENT_SHA256[WAVE18_DECISION_PATH]
         and verified.get("permitContentSha256")
         == snapshot.get("acquisitionPermitContentSha256")
         == receipt.get("permitContentSha256")
-        == WAVE17_CONTENT_SHA256[WAVE17_PERMIT_PATH]
+        == WAVE18_CONTENT_SHA256[WAVE18_PERMIT_PATH]
         and verified.get("sourceRequestSetCanonicalSha256")
         == identity_bindings["sourceRequestSetCanonicalSha256"]
         == contract.get("sourceRequestSetCanonicalSha256")
-        == WAVE17_REQUEST_SET_SHA256
+        == WAVE18_REQUEST_SET_SHA256
         and verified.get("compactIdentitySha256")
         == identity_bindings["compactIdentitySha256"]
         == resolution.get("compactIdentitySha256")
-        == WAVE17_COMPACT_IDENTITY_SHA256
+        == WAVE18_COMPACT_IDENTITY_SHA256
         and verified.get("fullWitnessSha256")
         == identity_bindings["fullWitnessSha256"]
         == resolution.get("fullWitnessSha256")
-        == WAVE17_FULL_WITNESS_SHA256
+        == WAVE18_FULL_WITNESS_SHA256
         and verified.get("heldSourceBindingsSha256")
         == identity_bindings["heldSourceBindingsSha256"]
-        == WAVE17_HELD_SOURCE_BINDINGS_SHA256
+        == WAVE18_HELD_SOURCE_BINDINGS_SHA256
         and verified.get("acquisitionClaimRawSha256")
         == acquisition_claim["rawSha256"]
         == receipt.get("claimRawSha256")
@@ -4629,8 +4657,8 @@ def wave17_request_resources(
         is readback.get("userActionRequired")
         is False
         and type(verified_resources) is list
-        and len(verified_resources) == 2,
-        "E_WAVE17_READBACK",
+        and len(verified_resources) == 6,
+        "E_WAVE18_READBACK",
     )
     check(
         set(readback_manifest)
@@ -4657,24 +4685,24 @@ def wave17_request_resources(
             "status",
             "userActionRequired",
         },
-        "E_WAVE17_READBACK_MANIFEST",
+        "E_WAVE18_READBACK_MANIFEST",
     )
     check(
         readback_manifest.get("contentBinding")
         == {
             "algorithm":
                 "sha256(canonical-json-without-contentBinding)",
-            "sha256": WAVE17_CONTENT_SHA256[
-                WAVE17_READBACK_MANIFEST_PATH
+            "sha256": WAVE18_CONTENT_SHA256[
+                WAVE18_READBACK_MANIFEST_PATH
             ],
         }
         and readback_manifest.get("status")
-        == "wave17_acquisition_retained_snapshot_readback_publication_complete"
-        and readback_manifest.get("acquisitionAttemptId") == WAVE17_ATTEMPT_ID
+        == "wave18_acquisition_retained_snapshot_readback_publication_complete"
+        and readback_manifest.get("acquisitionAttemptId") == WAVE18_ATTEMPT_ID
         and readback_manifest.get("readbackAttemptId")
-        == WAVE17_READBACK_ATTEMPT_ID
+        == WAVE18_READBACK_ATTEMPT_ID
         and readback_manifest.get("authorityBinding")
-        == WAVE17_READBACK_AUTHORITY_BINDING
+        == WAVE18_READBACK_AUTHORITY_BINDING
         and readback_manifest.get("manifestWrittenLast") is True
         and readback_manifest.get("allRequiredPreManifestBarriersCompleted")
         is True
@@ -4687,7 +4715,7 @@ def wave17_request_resources(
         and readback_manifest.get("lastCurrentPathIdentityBarrierTiming")
         == "immediately_before_manifest_publication"
         and readback_manifest.get("retainedFdPreManifestBarriers")
-        == WAVE17_RETAINED_BARRIERS
+        == WAVE18_RETAINED_BARRIERS
         and readback_manifest.get("completionAppliesToRetainedSnapshot")
         is True
         and readback_manifest.get(
@@ -4698,17 +4726,17 @@ def wave17_request_resources(
         ) is False
         and readback_manifest.get("receipt")
         == {
-            "bytes": 4_980,
-            "contentSha256": WAVE17_CONTENT_SHA256[WAVE17_READBACK_PATH],
+            "bytes": 6_485,
+            "contentSha256": WAVE18_CONTENT_SHA256[WAVE18_READBACK_PATH],
             "linkCount": 1,
             "mode": "0600",
             "ownerUid": os.geteuid(),
-            "path": WAVE17_READBACK_PATH,
-            "rawSha256": WAVE17_CONTROL_SHA256[WAVE17_READBACK_PATH],
+            "path": WAVE18_READBACK_PATH,
+            "rawSha256": WAVE18_CONTROL_SHA256[WAVE18_READBACK_PATH],
         }
         and exact_int(
             readback_manifest.get("receipt", {}).get("bytes"),
-            4_980,
+            6_485,
         )
         and exact_int(
             readback_manifest.get("receipt", {}).get("linkCount"),
@@ -4729,7 +4757,7 @@ def wave17_request_resources(
         )
         and readback_manifest.get("externalAuthenticationRequired") is False
         and readback_manifest.get("userActionRequired") is False,
-        "E_WAVE17_READBACK_MANIFEST",
+        "E_WAVE18_READBACK_MANIFEST",
     )
 
     accepted_by_name = {
@@ -4748,10 +4776,10 @@ def wave17_request_resources(
         if type(row) is dict
     }
     check(
-        len(accepted_by_name) == 2
-        and len(verified_by_name) == 2
-        and len(identity_by_order) == 1,
-        "E_WAVE17_RESOURCE",
+        len(accepted_by_name) == 6
+        and len(verified_by_name) == 6
+        and len(identity_by_order) == 3,
+        "E_WAVE18_RESOURCE",
     )
     result: list[dict[str, Any]] = []
     tuple_rows: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -4789,7 +4817,7 @@ def wave17_request_resources(
             is False
             and value.get("tupleDigestSha256") == digest
             and value.get("tupleId")
-            == f"wave17-{tuple_order:03}-{digest[:12]}"
+            == f"wave18-{tuple_order:03}-{digest[:12]}"
             and value.get("acceptedFileName")
             == f"{tuple_order:03}-{digest[:20]}.{expected_kind}"
             and type(source_value) is dict
@@ -4832,7 +4860,7 @@ def wave17_request_resources(
             == value.get("expectedH1")
             and identity_tuple.get("selectedByGraphAlgorithm")
             is False,
-            "E_WAVE17_RESOURCE",
+            "E_WAVE18_RESOURCE",
         )
         name = value["acceptedFileName"]
         accepted_row = accepted_by_name.get(name)
@@ -4849,7 +4877,7 @@ def wave17_request_resources(
                 "rawSha256",
             }
             and accepted_row.get("path")
-            == f"{WAVE17_ACCEPTED_DIRECTORY}/{name}"
+            == f"{WAVE18_ACCEPTED_DIRECTORY}/{name}"
             and accepted_row.get("mode") == "0600"
             and exact_int(
                 accepted_row.get("ownerUid"),
@@ -4898,7 +4926,7 @@ def wave17_request_resources(
             )
             and verified_row.get("rawSha256")
             == accepted_row.get("rawSha256"),
-            "E_WAVE17_RESOURCE",
+            "E_WAVE18_RESOURCE",
         )
         accepted_hash_projection.append(
             {
@@ -4917,12 +4945,12 @@ def wave17_request_resources(
                 and verified_row.get("rootGoModPresent") is True
                 and type(verified_row.get("uncompressedBytes")) is int
                 and verified_row["uncompressedBytes"] > 0,
-                "E_WAVE17_RESOURCE",
+                "E_WAVE18_RESOURCE",
             )
             totals["entries"] += verified_row.get("entryCount", -1)
             totals["expanded"] += verified_row.get("uncompressedBytes", -1)
         row = {
-            "wave": "wave17",
+            "wave": "wave18",
             "path": accepted_row["path"],
             "rawSha256": accepted_row["rawSha256"],
             "maximumBytes": accepted_row["bytes"],
@@ -4931,7 +4959,7 @@ def wave17_request_resources(
             "module": value["module"],
             "version": value["version"],
             "tupleId": value["tupleId"],
-            "tupleOrder": 178 + tuple_order,
+            "tupleOrder": 179 + tuple_order,
             "order": index,
         }
         if expected_kind == "zip":
@@ -4942,7 +4970,7 @@ def wave17_request_resources(
         tuple_rows[value["tupleId"]].append(row)
         result.append(row)
     check(
-        len(tuple_rows) == 1
+        len(tuple_rows) == 3
         and all(
             len(rows) == 2
             and {row["kind"] for row in rows} == {"mod", "zip"}
@@ -4951,22 +4979,23 @@ def wave17_request_resources(
         )
         and totals
         == {
-            "all": 3_450_700,
-            "mod": 301,
-            "zip": 3_450_399,
-            "entries": 1_550,
-            "expanded": 9_108_004,
+            "all": 2_109_100,
+            "mod": 279,
+            "zip": 2_108_821,
+            "entries": 971,
+            "expanded": 7_225_800,
         }
         and sha256_bytes(
             runner.canonical_json_bytes(accepted_hash_projection)
         )
-        == WAVE17_RESOURCE_SET_SHA256,
-        "E_WAVE17_AGGREGATE",
+        == WAVE18_RESOURCE_SET_SHA256,
+        "E_WAVE18_AGGREGATE",
     )
     return result
 
 
 def combined_source_bindings(
+    v16: types.ModuleType,
     v15: types.ModuleType,
     v14: types.ModuleType,
     v13: types.ModuleType,
@@ -4997,8 +5026,10 @@ def combined_source_bindings(
     wave15_documents: Mapping[str, Mapping[str, Any]],
     wave16_documents: Mapping[str, Mapping[str, Any]],
     wave17_documents: Mapping[str, Mapping[str, Any]],
+    wave18_documents: Mapping[str, Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
-    bindings = v15.combined_source_bindings(
+    bindings = v16.combined_source_bindings(
+        v15,
         v14,
         v13,
         v12,
@@ -5027,13 +5058,14 @@ def combined_source_bindings(
         wave14_documents,
         wave15_documents,
         wave16_documents,
+        wave17_documents,
     )
-    bindings.extend(wave17_request_resources(v4, runner, wave17_documents))
+    bindings.extend(wave18_request_resources(v4, runner, wave18_documents))
     check(
-        len(bindings) == V16_EXPECTED_HELD_SOURCE_INPUT_COUNT
+        len(bindings) == V17_EXPECTED_HELD_SOURCE_INPUT_COUNT
         and sum(row["kind"] == "root_zip" for row in bindings) == 1
-        and sum(row["kind"] == "mod" for row in bindings) == 179
-        and sum(row["kind"] == "zip" for row in bindings) == 179
+        and sum(row["kind"] == "mod" for row in bindings) == 182
+        and sum(row["kind"] == "zip" for row in bindings) == 182
         and sum(row["wave"] == "wave1" for row in bindings) == 38
         and sum(row["wave"] == "wave2" for row in bindings) == 30
         and sum(row["wave"] == "wave3" for row in bindings) == 32
@@ -5050,12 +5082,13 @@ def combined_source_bindings(
         and sum(row["wave"] == "wave14" for row in bindings) == 8
         and sum(row["wave"] == "wave15" for row in bindings) == 10
         and sum(row["wave"] == "wave16" for row in bindings) == 6
-        and sum(row["wave"] == "wave17" for row in bindings) == 2,
+        and sum(row["wave"] == "wave17" for row in bindings) == 2
+        and sum(row["wave"] == "wave18" for row in bindings) == 6,
         "E_COMBINED_INPUT",
     )
     check(
         len({row["path"] for row in bindings})
-        == V16_EXPECTED_HELD_SOURCE_INPUT_COUNT
+        == V17_EXPECTED_HELD_SOURCE_INPUT_COUNT
         and len(
             {
                 (row["module"], row["version"])
@@ -5063,7 +5096,7 @@ def combined_source_bindings(
                 if row["kind"] != "root_zip"
             }
         )
-        == 179,
+        == 182,
         "E_COMBINED_INPUT",
     )
     pair_kinds: dict[tuple[str, str, int], set[str]] = defaultdict(set)
@@ -5073,12 +5106,76 @@ def combined_source_bindings(
                 (row["module"], row["version"], row["tupleOrder"])
             ].add(row["kind"])
     check(
-        len(pair_kinds) == 179
+        len(pair_kinds) == 182
         and all(kinds == {"mod", "zip"} for kinds in pair_kinds.values())
-        and sorted(order for _, _, order in pair_kinds) == list(range(1, 180)),
+        and sorted(order for _, _, order in pair_kinds) == list(range(1, 183)),
         "E_COMBINED_INPUT",
     )
     return bindings
+
+
+def exact_input_inventory_bindings(
+    runner: types.ModuleType,
+    bindings: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Project source and Wave18 readback inputs into one disjoint inventory."""
+
+    result = [
+        {
+            "bytes": row["maximumBytes"],
+            "category": "source",
+            "path": row["path"],
+            "rawSha256": row["rawSha256"],
+        }
+        for row in bindings
+    ]
+    result.extend(
+        {
+            "bytes": WAVE18_CONTROL_METADATA[path][0],
+            "category": "wave18_terminal_control",
+            "path": path,
+            "rawSha256": digest,
+        }
+        for path, digest in WAVE18_CONTROL_SHA256.items()
+    )
+    result.extend(
+        {
+            "bytes": row["maximumBytes"],
+            "category": "wave18_auxiliary_evidence",
+            "path": row["path"],
+            "rawSha256": row["rawSha256"],
+        }
+        for row in wave18_auxiliary_evidence_bindings()
+    )
+    wave18_readback_bindings = result[
+        V17_EXPECTED_HELD_SOURCE_INPUT_COUNT:
+    ]
+    check(
+        len(result) == V17_EXPECTED_EXACT_INPUT_INVENTORY_COUNT
+        and len({row["path"] for row in result}) == len(result)
+        and sum(row["bytes"] for row in result)
+        == V17_EXPECTED_EXACT_INPUT_INVENTORY_RAW_BYTE_SIZE
+        and all(
+            exact_keys(row, ("bytes", "category", "path", "rawSha256"))
+            and type(row["bytes"]) is int
+            and row["bytes"] > 0
+            and type(row["category"]) is str
+            and type(row["path"]) is str
+            and type(row["rawSha256"]) is str
+            and len(row["rawSha256"]) == 64
+            for row in result
+        )
+        and sha256_bytes(runner.canonical_json_bytes(result))
+        == V17_EXACT_INPUT_INVENTORY_SHA256
+        and len(wave18_readback_bindings) == 10
+        and sum(row["bytes"] for row in wave18_readback_bindings) == 63_837
+        and sha256_bytes(
+            runner.canonical_json_bytes(wave18_readback_bindings)
+        )
+        == V17_WAVE18_READBACK_BINDINGS_SHA256,
+        "E_EXACT_INPUT_INVENTORY",
+    )
+    return result
 
 
 def derive_and_validate_graph_result(
@@ -5213,23 +5310,24 @@ def validated_tool_binding_paths(
 
 
 def derive_and_validate_tool_paths(
-    v15: types.ModuleType,
+    v16: types.ModuleType,
     predecessor_candidate: Mapping[str, Any],
     direct_tool_bindings: list[dict[str, Any]],
     direct_tool_inputs: tuple[Any, ...],
 ) -> tuple[set[str], set[str]]:
     """Bind counters to actual held tools and the pinned predecessor chain."""
 
-    declared_v15_paths = v15.TRANSITIVE_CHECKER_PATHS
+    declared_v16_paths = v16.TRANSITIVE_CHECKER_PATHS
     expected_declared_paths = {
         f"script/check_p2p_nat_g2_pion_combined_fixed_point_v{version}.py"
-        for version in range(1, 16)
+        for version in range(1, 17)
     }
     v1_checker_path = (
         "script/check_p2p_nat_g2_pion_combined_fixed_point_v1.py"
     )
     expected_direct_paths = {
         SELF_PATH,
+        V16_CHECKER_PATH,
         V15_CHECKER_PATH,
         V14_CHECKER_PATH,
         V13_CHECKER_PATH,
@@ -5243,7 +5341,7 @@ def derive_and_validate_tool_paths(
         V5_CHECKER_PATH,
         V4_CHECKER_PATH,
         v1_checker_path,
-        v15.V1_PROVIDER_PATH,
+        v16.V1_PROVIDER_PATH,
     }
     direct_binding_paths = validated_tool_binding_paths(
         direct_tool_bindings,
@@ -5258,9 +5356,9 @@ def derive_and_validate_tool_paths(
     check(
         type(TRANSITIVE_CHECKER_PATHS) is set
         and TRANSITIVE_CHECKER_PATHS == expected_declared_paths
-        and type(declared_v15_paths) is set
-        and declared_v15_paths
-        == TRANSITIVE_CHECKER_PATHS - {V15_CHECKER_PATH}
+        and type(declared_v16_paths) is set
+        and declared_v16_paths
+        == TRANSITIVE_CHECKER_PATHS - {V16_CHECKER_PATH}
         and direct_binding_paths == expected_direct_paths
         and len(held_paths) == len(expected_direct_paths)
         and len(set(held_paths)) == len(held_paths)
@@ -5275,10 +5373,12 @@ def derive_and_validate_tool_paths(
         and exact_int(
             predecessor_counters.get("transitiveDistinctToolPathCount"),
             len(
-                declared_v15_paths
-                | {V15_CHECKER_PATH, v15.V1_PROVIDER_PATH}
+                declared_v16_paths
+                | {V16_CHECKER_PATH, v16.V1_PROVIDER_PATH}
             ),
         )
+        and V16_TESTS_PATH not in direct_binding_paths
+        and V16_TESTS_PATH not in predecessor_binding_paths
         and V15_TESTS_PATH not in direct_binding_paths
         and V15_TESTS_PATH not in predecessor_binding_paths
         and V14_TESTS_PATH not in direct_binding_paths
@@ -5295,10 +5395,11 @@ def derive_and_validate_tool_paths(
         and V9_TESTS_PATH not in predecessor_binding_paths,
         "E_TOOL_BINDINGS",
     )
-    transitive_paths = direct_binding_paths | declared_v15_paths
+    transitive_paths = direct_binding_paths | declared_v16_paths
     check(
         transitive_paths
         == TRANSITIVE_CHECKER_PATHS | {SELF_PATH, V1_PROVIDER_PATH}
+        and V16_TESTS_PATH not in transitive_paths
         and V15_TESTS_PATH not in transitive_paths
         and V14_TESTS_PATH not in transitive_paths
         and V13_TESTS_PATH not in transitive_paths
@@ -5337,11 +5438,11 @@ def execute_reconstruction_protocol_prefix(
     source_held: Any,
     limits: Any,
     control_held: Any,
-    wave17_documents: Mapping[str, Mapping[str, Any]],
+    wave18_documents: Mapping[str, Mapping[str, Any]],
 ) -> ReconstructionProtocolState:
     """Run namespace-pre, barriers, both reconstructions, and equality."""
 
-    validate_wave17_completed_namespace(control_held, wave17_documents)
+    validate_wave18_completed_namespace(control_held, wave18_documents)
     v4.combined_identity_barrier(root, held_inputs)
     first_graph, first_coverage = v4.reconstruct_graph_v3(
         runner,
@@ -5377,7 +5478,7 @@ def finalize_reconstruction_protocol(
     held_inputs: tuple[Any, ...],
     v4: types.ModuleType,
     control_held: Any,
-    wave17_documents: Mapping[str, Mapping[str, Any]],
+    wave18_documents: Mapping[str, Mapping[str, Any]],
     state: ReconstructionProtocolState,
     candidate: dict[str, Any],
 ) -> dict[str, Any]:
@@ -5390,7 +5491,7 @@ def finalize_reconstruction_protocol(
         "E_REPRODUCTION_STATE",
     )
     v4.combined_identity_barrier(root, held_inputs)
-    validate_wave17_completed_namespace(control_held, wave17_documents)
+    validate_wave18_completed_namespace(control_held, wave18_documents)
     return candidate
 
 
@@ -5408,6 +5509,11 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
             SELF_NORMALIZED_SHA256,
             normalized_self_bytes,
         ) as self_held,
+        PinnedCodeFile(
+            root,
+            V16_CHECKER_PATH,
+            V16_CHECKER_RAW_SHA256,
+        ) as v16_held,
         PinnedCodeFile(
             root,
             V15_CHECKER_PATH,
@@ -5469,8 +5575,10 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
             V4_CHECKER_RAW_SHA256,
         ) as v4_held,
     ):
-        v15 = load_v15_checker(v15_held)
-        predecessor_candidate = v15.generate_candidate(root)
+        v16 = load_v16_checker(v16_held)
+        predecessor_candidate = v16.generate_candidate(root)
+        v16 = harden_checker_module(v16)
+        v15 = v16.load_v15_checker(v15_held)
         v15 = harden_checker_module(v15)
         v14 = v15.load_v14_checker(v14_held)
         v14 = harden_checker_module(v14)
@@ -5495,9 +5603,15 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                 runner = v1.load_pinned_runner(provider_held)
                 direct_tool_bindings = [
                     {
-                        "role": "current_v16_combined_checker",
+                        "role": "current_v17_combined_checker",
                         "path": SELF_PATH,
                         "normalizedSha256": SELF_NORMALIZED_SHA256,
+                    },
+                    {
+                        "role": "immutable_v16_combined_checker",
+                        "path": V16_CHECKER_PATH,
+                        "rawSha256": V16_CHECKER_RAW_SHA256,
+                        "normalizedSha256": V16_CHECKER_NORMALIZED_SHA256,
                     },
                     {
                         "role": "immutable_v15_combined_checker",
@@ -5583,6 +5697,7 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                 ]
                 direct_tool_inputs = (
                     self_held,
+                    v16_held,
                     v15_held,
                     v14_held,
                     v13_held,
@@ -5600,7 +5715,7 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                 )
                 direct_tool_paths, transitive_tool_paths = (
                     derive_and_validate_tool_paths(
-                        v15,
+                        v16,
                         predecessor_candidate,
                         direct_tool_bindings,
                         direct_tool_inputs,
@@ -5609,6 +5724,7 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                 expected_direct_hardened_paths = {
                     str(root / path)
                     for path in (
+                        V16_CHECKER_PATH,
                         V15_CHECKER_PATH,
                         V14_CHECKER_PATH,
                         V13_CHECKER_PATH,
@@ -5625,7 +5741,8 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                     )
                 }
                 check(
-                    v15.PinnedCodeFile is PinnedCodeFile
+                    v16.PinnedCodeFile is PinnedCodeFile
+                    and v15.PinnedCodeFile is PinnedCodeFile
                     and v14.PinnedCodeFile is PinnedCodeFile
                     and v13.PinnedCodeFile is PinnedCodeFile
                     and v12.PinnedCodeFile is PinnedCodeFile
@@ -5645,16 +5762,16 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                         predecessor_candidate["checkerVerification"][
                             "hardenedCheckerModuleCount"
                         ],
-                        14,
+                            15,
                     )
                     and exact_int(
                         predecessor_candidate["checkerVerification"][
                             "providerFacadeLoadCount"
                         ],
-                        14,
+                            15,
                     )
-                    and len(direct_tool_paths) == 15
-                    and len(transitive_tool_paths) == 17
+                    and len(direct_tool_paths) == 16
+                    and len(transitive_tool_paths) == 18
                     and exact_int(PROVIDER_FACADE_LOAD_COUNT, 1),
                     "E_CHECKER_HARDENING",
                 )
@@ -5674,11 +5791,12 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                     + v13.wave14_control_bindings()
                     + v14.wave15_control_bindings()
                     + v15.wave16_control_bindings()
-                    + wave17_control_bindings()
+                    + v16.wave17_control_bindings()
+                    + wave18_control_bindings()
                 )
-                auxiliary_evidence = wave17_auxiliary_evidence_bindings()
+                auxiliary_evidence = wave18_auxiliary_evidence_bindings()
                 check(
-                    len(controls) == 115
+                    len(controls) == 122
                     and len(auxiliary_evidence) == 3,
                     "E_CONTROL_CARDINALITY",
                 )
@@ -5747,18 +5865,23 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                         runner,
                         control_held,
                     )
-                    wave17_documents = parse_wave17_documents(
+                    wave17_documents = v16.parse_wave17_documents(
+                        runner,
+                        control_held,
+                    )
+                    wave18_documents = parse_wave18_documents(
                         runner,
                         control_held,
                     )
                     predecessor_verification = (
-                        validate_v15_predecessor_candidate(
+                        validate_v16_predecessor_candidate(
                             runner,
                             predecessor_candidate,
-                            wave17_documents[WAVE17_DECISION_PATH],
+                            wave18_documents[WAVE18_DECISION_PATH],
                         )
                     )
                     bindings = combined_source_bindings(
+                        v16,
                         v15,
                         v14,
                         v13,
@@ -5789,26 +5912,28 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                         wave15_documents,
                         wave16_documents,
                         wave17_documents,
+                        wave18_documents,
                     )
-                    wave17_evidence_raw = control_held.raw[WAVE17_EVIDENCE_PATH]
-                    wave17_evidence_document = runner.strict_json(
-                        wave17_evidence_raw,
-                        WAVE17_EVIDENCE_PATH,
+                    wave18_evidence_raw = control_held.raw[WAVE18_EVIDENCE_PATH]
+                    wave18_evidence_document = runner.strict_json(
+                        wave18_evidence_raw,
+                        WAVE18_EVIDENCE_PATH,
                     )
-                    validate_wave17_evidence(
+                    validate_wave18_evidence(
                         runner,
-                        wave17_evidence_raw,
-                        wave17_evidence_document,
-                        wave17_documents,
+                        wave18_evidence_raw,
+                        wave18_evidence_document,
+                        wave18_documents,
                     )
-                    validate_wave17_consumed_claims(
+                    validate_wave18_consumed_claims(
                         runner,
-                        control_held.raw[WAVE17_ACQUISITION_CLAIM_PATH],
-                        control_held.raw[WAVE17_READBACK_CLAIM_PATH],
+                        control_held.raw[WAVE18_ACQUISITION_CLAIM_PATH],
+                        control_held.raw[WAVE18_READBACK_CLAIM_PATH],
                     )
                     with runner.HeldInputSet(root, bindings) as source_held:
                         held_inputs = (
                             self_held,
+                            v16_held,
                             v15_held,
                             v14_held,
                             v13_held,
@@ -5829,7 +5954,7 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                         limits = {
                             **v1.graph_limits(runner),
                             "maximumAggregateUncompressedBytes":
-                                V16_EXPECTED_MAXIMUM_AGGREGATE_UNCOMPRESSED_BYTES,
+                                V17_EXPECTED_MAXIMUM_AGGREGATE_UNCOMPRESSED_BYTES,
                         }
                         reconstruction_state = (
                             execute_reconstruction_protocol_prefix(
@@ -5842,7 +5967,7 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                                 source_held,
                                 limits,
                                 control_held,
-                                wave17_documents,
+                                wave18_documents,
                             )
                         )
                         first_graph = reconstruction_state.first_graph
@@ -5850,17 +5975,17 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                         check(
                             exact_int(
                                 first_coverage.get("archiveCount"),
-                                V16_EXPECTED_ARCHIVE_COUNT,
+                                V17_EXPECTED_ARCHIVE_COUNT,
                             )
                             and exact_int(
                                 first_coverage.get("aggregateEntryCount"),
-                                V16_EXPECTED_AGGREGATE_ENTRY_COUNT,
+                                V17_EXPECTED_AGGREGATE_ENTRY_COUNT,
                             )
                             and exact_int(
                                 first_coverage.get(
                                     "aggregateUncompressedByteCount"
                                 ),
-                                V16_EXPECTED_MAXIMUM_AGGREGATE_UNCOMPRESSED_BYTES,
+                                V17_EXPECTED_MAXIMUM_AGGREGATE_UNCOMPRESSED_BYTES,
                             ),
                             "E_COMBINED_INPUT",
                         )
@@ -5870,16 +5995,20 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                         projection = v1.source_projection(bindings)
                         check(
                             len(projection)
-                            == V16_EXPECTED_HELD_SOURCE_INPUT_COUNT
+                            == V17_EXPECTED_HELD_SOURCE_INPUT_COUNT
                             and sum(
                                 row["maximumBytes"] for row in bindings
-                            ) == V16_EXPECTED_AGGREGATE_RAW_BYTE_SIZE
+                            ) == V17_EXPECTED_AGGREGATE_RAW_BYTE_SIZE
                             and sha256_bytes(
                                 runner.canonical_json_bytes(projection)
-                            ) == V16_INPUT_SET_SHA256
-                            and sha256_bytes(wave17_digest_bytes(projection))
-                            == V16_SOURCE_BINDINGS_SHA256,
+                            ) == V17_INPUT_SET_SHA256
+                            and sha256_bytes(wave18_digest_bytes(projection))
+                            == V17_SOURCE_BINDINGS_SHA256,
                             "E_COMBINED_INPUT",
+                        )
+                        exact_inventory = exact_input_inventory_bindings(
+                            runner,
+                            bindings,
                         )
                         route = v1.route_for_graph(first_graph)
                         frontier = first_graph["exactFrontier"]
@@ -5908,15 +6037,15 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                                 "aetherlink.g2-pion-combined-wave1-wave2-"
                                 "wave3-wave4-wave5-wave6-wave7-wave8-"
                                 "wave9-wave10-wave11-wave12-wave13-wave14-"
-                                "wave15-wave16-wave17-"
+                                "wave15-wave16-wave17-wave18-"
                                 "fixed-point-candidate"
                             ),
-                            "schemaVersion": "16.0",
+                            "schemaVersion": "17.0",
                             "checkerId": CHECKER_ID,
                             "status": route["status"],
                             "result": (
                                 "combined_graph_recomputed_twice_from_exact_"
-                                "wave1_through_wave17_source_bytes"
+                                "wave1_through_wave18_source_bytes"
                             ),
                             "verificationOnly": True,
                             "recordModeExposed": False,
@@ -5942,12 +6071,38 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                                     WAVE9_LEGACY_BUILD_SOURCE_SHA256,
                                 "sourceBytesModified": False,
                             },
+                            "exactInputInventory": {
+                                "scope": (
+                                    "365_source_bindings_plus_7_wave18_"
+                                    "terminal_controls_plus_3_wave18_"
+                                    "auxiliary_evidence"
+                                ),
+                                "heldInputCount": len(exact_inventory),
+                                "sourceBindingCount": len(bindings),
+                                "wave18TerminalControlBindingCount": 7,
+                                "wave18AuxiliaryEvidenceBindingCount": 3,
+                                "aggregateRawByteSize": sum(
+                                    row["bytes"] for row in exact_inventory
+                                ),
+                                "orderedBindingsSha256": sha256_bytes(
+                                    runner.canonical_json_bytes(
+                                        exact_inventory
+                                    )
+                                ),
+                                "orderedBindings": exact_inventory,
+                                "wave18ReadbackBindingsSha256":
+                                    V17_WAVE18_READBACK_BINDINGS_SHA256,
+                                "wave18ReadbackBindings":
+                                    exact_inventory[
+                                        V17_EXPECTED_HELD_SOURCE_INPUT_COUNT:
+                                    ],
+                            },
                             "inputSet": {
                                 "heldSourceInputCount": len(bindings),
                                 "rootArchiveCount": 1,
-                                "resourceCount": 358,
-                                "modCount": 179,
-                                "zipCount": 179,
+                                "resourceCount": 364,
+                                "modCount": 182,
+                                "zipCount": 182,
                                 "wave1ResourceCount": 38,
                                 "wave2ResourceCount": 30,
                                 "wave3ResourceCount": 32,
@@ -5965,7 +6120,8 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                                 "wave15ResourceCount": 10,
                                 "wave16ResourceCount": 6,
                                 "wave17ResourceCount": 2,
-                                "uniqueModuleVersionTupleCount": 179,
+                                "wave18ResourceCount": 6,
+                                "uniqueModuleVersionTupleCount": 182,
                                 "aggregateRawByteSize": sum(
                                     row["maximumBytes"] for row in bindings
                                 ),
@@ -6008,7 +6164,9 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                                 "wave16AcceptedResourceSetSha256":
                                     v15.WAVE16_RESOURCE_SET_SHA256,
                                 "wave17AcceptedResourceSetSha256":
-                                    WAVE17_RESOURCE_SET_SHA256,
+                                    v16.WAVE17_RESOURCE_SET_SHA256,
+                                "wave18AcceptedResourceSetSha256":
+                                    WAVE18_RESOURCE_SET_SHA256,
                             },
                             "toolBindings": direct_tool_bindings,
                             "terminalEvidenceBindings": [
@@ -6044,10 +6202,10 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                                         "underlyingIndependentGraphAlgorithmCount"
                                     ]
                                     + 4,
-                                "pinnedV15PredecessorExecuted": True,
-                                "v15TestsBindingScope":
+                                "pinnedV16PredecessorExecuted": True,
+                                "v16TestsBindingScope":
                                     "historical_metadata_only_not_live_held",
-                                "v15TestsLiveHeld": False,
+                                "v16TestsLiveHeld": False,
                                 "canonicalGraphEqualityVerified": True,
                                 "barrierBeforeReconstructionCompleted": True,
                                 "barrierBetweenReconstructionsCompleted": True,
@@ -6055,20 +6213,20 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                                 "workspaceRootIdentityBoundAcrossAllInputs":
                                     True,
                                 "calculatedFixedPointCandidate": fixed_point,
-                                "wave17HistoricalExact21FrozenSnapshotDescriptorSetBound":
+                                "wave18HistoricalExact25FrozenSnapshotDescriptorSetBound":
                                     True,
-                                "wave17LiveTerminalControlMetadataVerified":
+                                "wave18LiveTerminalControlMetadataVerified":
                                     True,
-                                "wave17LiveFinalAndAcceptedInventoriesVerified":
+                                "wave18LiveFinalAndAcceptedInventoriesVerified":
                                     True,
-                                "wave17FinalNamespaceReverifiedAfterReconstruction":
+                                "wave18FinalNamespaceReverifiedAfterReconstruction":
                                     True,
-                                "wave17RetainedFdPreManifestBarrierCount": 3,
-                                "wave17CompletionAppliesToRetainedSnapshot":
+                                "wave18RetainedFdPreManifestBarrierCount": 3,
+                                "wave18CompletionAppliesToRetainedSnapshot":
                                     True,
-                                "wave17CurrentPathIdentityGuaranteedThroughManifestPublication":
+                                "wave18CurrentPathIdentityGuaranteedThroughManifestPublication":
                                     False,
-                                "wave17SameUidConcurrentRenameOrReplacementAfterLastBarrierPrevented":
+                                "wave18SameUidConcurrentRenameOrReplacementAfterLastBarrierPrevented":
                                     False,
                                 "transitiveSafePinnedClassesVerified":
                                     True,
@@ -6175,7 +6333,7 @@ def generate_candidate(root: Path = ROOT) -> dict[str, Any]:
                             held_inputs,
                             v4,
                             control_held,
-                            wave17_documents,
+                            wave18_documents,
                             reconstruction_state,
                             candidate,
                         )
@@ -6191,10 +6349,10 @@ def error_document_bytes() -> bytes:
         json.dumps(
             {
                 "documentType": (
-                    "aetherlink.g2-pion-combined-wave1-through-wave17-"
+                    "aetherlink.g2-pion-combined-wave1-through-wave18-"
                     "fixed-point-check-error"
                 ),
-                "schemaVersion": "16.0",
+                "schemaVersion": "17.0",
                 "status": "verification_failed",
                 "externalAuthenticationRequired": False,
                 "userActionRequired": False,

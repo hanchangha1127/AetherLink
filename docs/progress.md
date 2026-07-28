@@ -1,8 +1,194 @@
 # AetherLink Progress And Forward Plan
 
-Last updated: 2026-07-24 KST.
+Last updated: 2026-07-28 KST.
 
 This document records what has been implemented so far and what should happen next. It is intentionally broader than the original v0.1 MVP because recent work has moved the prototype toward a more complete product shape.
+
+## 2026-07-28 G2 Fixed-Point Snapshot Review Completion Batch 1
+
+- Both independent GPT-5.6 Sol passes completed the exact first deterministic
+  batch: 164/164 production-reachable Go bodies and 753,000 source bytes at
+  canonical batch SHA-256
+  `e3604e20a65059f07429913d09784784493c5fd8b71b3859ca544963cdfd143a`.
+  The full 492-row anchor remains
+  `241dd1a80eb7e7434fa573b20312569b5acfca3581a286ccb8f7a1da9e33b709`.
+- Each pass still has 328 files and 2,100,327 bytes remaining. A completed
+  batch is not a completed pass, so independent pass completion remains 0/2.
+- Cross-validation confirmed one new non-canonical P2 reliability candidate in
+  selected `github.com/pion/dtls/v3@v3.1.5`: `readAndBuffer` retains subslices
+  of a pooled 8,192-byte receive buffer in `encryptedPackets` without copying,
+  then returns the backing buffer to `sync.Pool` before delayed processing.
+  Reuse can corrupt queued bytes and cause nondeterministic decrypt/parse or
+  handshake failure. The 100-packet queue cap, epoch/replay checks, and
+  downstream AEAD limit impact; no authentication bypass or confidentiality
+  impact is established.
+- The completed-handshake cache has no entry, byte, deduplication, or eviction
+  bound after the fragment buffer releases its 2 MB/1,000-fragment counters.
+  This is a validated dependency-source location extending existing
+  unbounded-resource finding `G2SR1-F-9206ffd24b3357f7cda5`, not a new
+  canonical finding.
+- Exact source SHA-256 values for this validation are
+  `c6a3c9313d888e375a10198ba2bb3441866ee7cdbc6402e5bb6e73228b2740ca`
+  (`conn.go`),
+  `bc96343870526fd0d326db83af2007e4c03f8e63ba75fae989c7c38e239a4589`
+  (`recordlayer.go`),
+  `f8a0c62d29783ce44fd7bc66c6051aa7c65dc9b33bffdd9b5830103a6479df88`
+  (`fragment_buffer.go`), and
+  `0c8fdbe2cce5d5bcb721dadc1bb69fc44aef6e9863afa056dbc44195d19aa8b0`
+  (`handshake_cache.go`).
+- These are stdout/in-memory review observations, not a persisted review
+  result or closure artifact. Extraction, source execution/compilation,
+  network, Git write, device work, external authentication, and user action
+  remain zero or false. Batch 2 covers rows 165-328.
+
+## 2026-07-28 G2 Fixed-Point Snapshot Source/License Review Preparation
+
+- The separately versioned review decision, reader, self-sealed read-only
+  checker, and 15-test mutation suite are complete. The checker succeeds, the
+  suite passes 15/15, and an independent GPT-5.6 Sol package audit reports no
+  P0-P3 finding.
+- The exact zero-write adapter binds 369 source inputs, 184 module/version
+  tuples, 185 archives, 72,304 entries, 356,092,640 raw bytes, and
+  1,359,347,284 ZIP-uncompressed bytes. Its binding-set SHA-256 is
+  `3423f30722a5d9be67774be1b3dc7f25544ddd9b452c914e891085f0e3e24d23`.
+- Adapter preflight and its 14 tests pass. The full read-only scan reproduces
+  exact coverage for 185 modules, 58,478 Go sources, 195 pinned-runner narrow
+  and 362 broader name-based license candidates, 11,150 special-source rows,
+  185 metadata rows, and the accepted V18 graph SHA-256
+  `a865a62a7a80a0dece55aeebd537d3fb9aa73ce6ceeea10304a6a2074c2dfaba`.
+- The full scan performs 369 metadata-preflight plus 185 delegated ZIP opens.
+  Archive extraction, retained-source execution or compilation, subprocess,
+  network, and file-write counters remain zero. Two exact legacy
+  build-constraint occurrences and 30 exact malformed non-production testdata
+  occurrences are bounded by source hash, path/class, and occurrence count.
+- The adapter stdout is review input only. It is not a source-review result,
+  SPDX SBOM, license-compatibility decision, security acceptance, or persistent
+  evidence artifact.
+- Two independent GPT-5.6 Sol review passes returned without reading each
+  other's output. Both reproduced the exact binding set and zero-write full
+  scan, but both reported `passComplete=false`; independent pass completion
+  therefore remains 0/2 rather than 2/2.
+- Static source/control/sink validation maps every code-level claim from pass A
+  to an already-open canonical finding: remote credential diagnostics
+  (`G2SR1-F-6469763b45a8335ddef9`), TURN verification bypass
+  (`G2SR1-F-7d678ddf77ac89e04ae4`), exact egress capability
+  (`G2SR1-F-263f18372976e5bfaa73`), callback/shutdown bounds
+  (`G2SR1-F-04b73f19b3e2520c5c13` and
+  `G2SR1-F-9c7a12eced69a28176a4`), and pre-auth/promotion boundaries
+  (`G2SR1-F-b077f40a5a605032af05`,
+  `G2SR1-F-9b119ebd5dad38048abc`, and
+  `G2SR1-F-9650aac47015cf5758c9`). No duplicate finding was created and no
+  existing severity or disposition was promoted.
+- Pass B's 11 selected-version `PATENTS` omissions and native/cgo/assembly
+  API/OS reachability ambiguity are review-tooling completion blockers under
+  `G2SR1-F-65bdab86ddd0720af770`, not newly established product
+  vulnerabilities. Initial pass B's statement that it established no P0-P3
+  finding meant no new finding at that incomplete stage; it did not contradict
+  or close the existing open P1 findings.
+- The next bounded slice is completion-oriented coverage: file-by-file
+  semantics for the 492 production-reachable Go bodies, selected special
+  sources, broad license and `PATENTS` inventory, SPDX/provenance/binary
+  mapping, and native profile reachability. All 19 findings and every
+  post-fixed-point closure remain open until that work produces two complete
+  independent passes.
+- No owner authentication, signature, private key, token, password, approval,
+  or user action is required. No acquisition, extraction, source execution,
+  network, device, publication, Git-write, or deployment authority is opened.
+
+## 2026-07-28 G2 Combined V18 Fixed-Point Closure Review
+
+- The separately versioned closure-review decision accepts the exact Combined
+  V18 result only as a dependency-graph discovery fixed point. Its canonical
+  decision, reader, read-only checker, and 15-test mutation suite are complete.
+- The decision binds the exact V18 checker and corrected tests, the input,
+  source-binding, inventory, candidate, graph, and frontier digests, and the
+  exact semantic-review predecessors that preserve seven `patch_required` plus
+  twelve `unresolved` findings.
+- `dependencyFixedPointReached=true` is now the only true closure flag. All 19
+  semantic findings remain open; dependency-source review, dependency and
+  semantic closure, license/security review, candidate and library selection,
+  rung-three completion, and release readiness remain false.
+- Test history remains exact: the post-seal boundary suites passed 18/18; the
+  pre-correction full class passed 23/24; after correcting its stale
+  `test_13` chain index, that isolated test passed. No clean post-correction
+  24/24 full-class rerun is claimed.
+- The checker requires no external authentication or user action and grants no
+  acquisition, extraction, loading, execution, compilation, network, socket,
+  device, publication, Git-write, or deployment authority.
+- At this closure-review checkpoint, the next bounded G2 slice was the
+  separate fixed-point-snapshot dependency source and license review decision
+  covering exact build-profile classification, two-pass source review,
+  license/notice inventory, SPDX 2.3 SBOM, and source-manifest preparation.
+  The preparation package is now complete as recorded above; graph
+  completeness alone still cannot satisfy either incomplete review pass.
+
+## 2026-07-28 G2 Combined V18 Fixed-Point Candidate
+
+- The separately versioned, read-only Combined V18 checker reconstructed the
+  exact 369-source retained set twice from an exact 379-path inventory. It
+  covered 185 archives, 72,304 entries, and 1,359,347,284 ZIP-uncompressed
+  bytes.
+- The independently reproduced result is `fixedPointReached=true` with an empty
+  frontier, zero new tuples, zero unmapped external imports, and zero unresolved
+  declared external imports. Candidate-content, graph, and frontier SHA-256
+  values are
+  `9dce50013314ec8934ad52ac57cb0de92e982c2334303fc77289f01bc9c285fb`,
+  `a865a62a7a80a0dece55aeebd537d3fb9aa73ce6ceeea10304a6a2074c2dfaba`,
+  and
+  `37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570`.
+- Cumulative counters are 34 full source reconstructions, 4,792 archive opens,
+  and 68 independent graph algorithms. Extraction, dependency-source loading,
+  execution, compilation, subprocess, network, and file-write counters are all
+  zero.
+- The post-seal dry, latent, and fast-boundary suites pass 18/18. The genuine
+  full class reproduced the candidate and passed 23 of 24 tests; its only error
+  was a stale test-chain index after the V16 module was inserted. That fixture
+  was corrected and the affected legacy-Wave9 compatibility test then passed
+  independently. No single post-fix 24/24 full-class rerun is claimed.
+- Checker raw/normalized and final test raw SHA-256 values are
+  `35c35e98bfc0ea4b49f29b76d732a54f8f0f80dbbe20812266f35143c92da564`,
+  `b53fa66b34a8379216d64892502bb352220397c598cbe0b84911ca641b9e40aa`,
+  and
+  `44a62fc3771a027987320dee3c690f350a62d1eb16911fd925f56a22f09c74eb`.
+- This result is a dependency-graph fixed-point candidate only. All 19 semantic
+  findings remain open; dependency/semantic closure, candidate and library
+  selection, rung-three completion, and V1 release readiness remain false. The
+  later separate closure-review decision accepted only
+  `dependencyFixedPointReached=true`; its at-checkpoint next slice was the
+  fixed-point-snapshot dependency source and license review preparation now
+  recorded above. Neither boundary requires external authentication or user
+  action or opens
+  acquisition, extraction, compilation/execution, runtime socket,
+  product-network, Git-write, or deployment authority.
+
+## 2026-07-28 G2 Wave19 Acquisition And Independent Readback
+
+- The separately versioned Wave19 acquisition package passed its 16/16 checker
+  and 18/18 one-use-runner tests plus independent GPT-5.6 Sol review.
+  Acquisition attempt `f10c20196d994afe3a8eba830eb42614` retained the exact
+  two module files and two ZIP files: four resources totaling 11,453,955 bytes,
+  931 ZIP entries, and 46,404,827 uncompressed ZIP bytes.
+- The acquisition performed no extraction, source loading/execution, or
+  compilation. Its one-use claim, receipt, and manifest were published
+  successfully, so the action is consumed and cannot be retried.
+- The separately versioned independent readback package passed 18/18 checker
+  and 55/55 recorder tests plus two independent GPT-5.6 Sol audits with no
+  P0-P3 finding or execution blocker.
+- Readback attempt `060a3d9bcd02113ef12c2c75a1e11d70` verified the exact
+  23-file retained snapshot twice, completed all three required pre-manifest
+  retained-FD barriers, and published its manifest last. It made zero network
+  requests and zero source acquisitions. Completion applies only to the
+  retained snapshot; continuous current-path identity through publication and
+  same-UID replacement prevention after the final barrier are not claimed.
+- Both actions record `externalAuthenticationRequired=false` and
+  `userActionRequired=false`. No key, signature, token, credential, approval,
+  or user operation is a prerequisite for continued personal-project work.
+- All 19 semantic findings remain open. No candidate or library is selected,
+  and rung-three/V1 completion remains false. Combined V18 subsequently
+  completed its read-only reconstruction and produced a fixed-point candidate.
+  Its separate closure review now accepts only the dependency graph fixed
+  point; its at-checkpoint next slice was the fixed-point-snapshot dependency
+  source and license review preparation now recorded above.
 
 ## 2026-07-24 Personal Governance, G1b-A Integration, And G2 Dependency Wave-One Permit
 

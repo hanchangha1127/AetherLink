@@ -51387,6 +51387,144 @@ def production_secure_session_crypto_guard_failures() -> list[str]:
     return failures
 
 
+def current_document_evidence_windows(
+    texts: dict[str, str],
+) -> tuple[dict[str, str], list[str]]:
+    """Return semantic current-evidence windows and fail closed on drift."""
+
+    failures: list[str] = []
+    roadmap_text = texts["roadmap"]
+    roadmap_marker = "## Canonical V1 Delivery Roadmap"
+    if roadmap_text.count(roadmap_marker) != 1:
+        failures.append(
+            "roadmap canonical V1 delivery section start is missing or ambiguous"
+        )
+        roadmap_current_window = ""
+    else:
+        roadmap_start = roadmap_text.find(roadmap_marker)
+        roadmap_end = roadmap_text.find(
+            "\n## ",
+            roadmap_start + len(roadmap_marker),
+        )
+        if roadmap_end < 0:
+            failures.append(
+                "roadmap canonical V1 delivery section end is missing"
+            )
+            roadmap_current_window = ""
+        else:
+            roadmap_current_window = roadmap_text[
+                roadmap_start:roadmap_end
+            ]
+
+    handoff_text = texts["handoff"]
+    handoff_marker = "\n## First Five Minutes"
+    if handoff_text.count(handoff_marker) != 1:
+        failures.append(
+            "handoff current snapshot boundary is missing or ambiguous"
+        )
+        handoff_current_window = ""
+    else:
+        handoff_current_window = handoff_text[
+            :handoff_text.find(handoff_marker)
+        ]
+
+    dated_current_windows: dict[str, str] = {}
+    for label in ("progress", "qa"):
+        text = texts[label]
+        historical_start = text.find("\n## Historical ")
+        if historical_start < 0:
+            failures.append(
+                f"{label} first historical-section boundary is missing"
+            )
+            dated_current_windows[label] = ""
+        else:
+            dated_current_windows[label] = text[:historical_start]
+
+    return (
+        {
+            "handoff": handoff_current_window,
+            "progress": dated_current_windows["progress"],
+            "qa": dated_current_windows["qa"],
+            "roadmap": roadmap_current_window,
+        },
+        failures,
+    )
+
+
+def current_document_evidence_window_self_test_failures() -> list[str]:
+    """Exercise late current evidence, historical decoys, and missing bounds."""
+
+    failures: list[str] = []
+    current_marker = "late-current-evidence"
+    historical_marker = "historical-decoy"
+    roadmap_filler = "\n".join(f"current-line-{index}" for index in range(1_150))
+    base = {
+        "roadmap": (
+            "preface\n## Canonical V1 Delivery Roadmap\n"
+            f"{roadmap_filler}\n{current_marker}\n"
+            f"## Historical Notes\n{historical_marker}\n"
+        ),
+        "handoff": (
+            f"current snapshot\n{current_marker}\n"
+            f"## First Five Minutes\n{historical_marker}\n"
+        ),
+        "progress": (
+            f"current progress\n{current_marker}\n"
+            f"## Historical Progress\n{historical_marker}\n"
+        ),
+        "qa": (
+            f"current qa\n{current_marker}\n"
+            f"## Historical QA\n{historical_marker}\n"
+        ),
+    }
+    windows, boundary_failures = current_document_evidence_windows(base)
+    if boundary_failures:
+        failures.append(
+            "semantic current-evidence window rejected valid boundaries"
+        )
+    for label in ("roadmap", "handoff", "progress", "qa"):
+        if (
+            current_marker not in windows[label]
+            or historical_marker in windows[label]
+        ):
+            failures.append(
+                f"semantic current-evidence window is wrong for {label}"
+            )
+
+    missing_cases = {
+        "roadmap start": {
+            **base,
+            "roadmap": "preface\n## Historical Notes\n",
+        },
+        "roadmap end": {
+            **base,
+            "roadmap": (
+                "preface\n## Canonical V1 Delivery Roadmap\n"
+                f"{current_marker}\n"
+            ),
+        },
+        "handoff end": {
+            **base,
+            "handoff": f"current snapshot\n{current_marker}\n",
+        },
+        "progress end": {
+            **base,
+            "progress": f"current progress\n{current_marker}\n",
+        },
+        "qa end": {
+            **base,
+            "qa": f"current qa\n{current_marker}\n",
+        },
+    }
+    for label, case in missing_cases.items():
+        _, case_failures = current_document_evidence_windows(case)
+        if not case_failures:
+            failures.append(
+                f"semantic current-evidence window did not fail closed: {label}"
+            )
+    return failures
+
+
 def production_authority_bound_secure_session_lifecycle_guard_failures() -> list[str]:
     """Pin the no-network authority/crypto publication lifecycle boundary."""
 
@@ -51582,8 +51720,9 @@ def production_authority_bound_secure_session_lifecycle_guard_failures() -> list
                     f"evidence retains obsolete aggregate state {obsolete!r}."
                 )
 
-    for label in ("handoff", "progress", "qa", "roadmap"):
-        current_window = "\n".join(texts[label].splitlines()[:1_100])
+    current_windows, window_failures = current_document_evidence_windows(texts)
+    failures.extend(window_failures)
+    for label, current_window in current_windows.items():
         normalized = " ".join(current_window.split()).lower()
         for snippet in (
             "31/31",
@@ -56122,6 +56261,10 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
         "No repository-owner authentication, external identity proof, "
         "execution-permit authentication or document, or user action is required."
     )
+    current_semantic_auth_flag_boundary = (
+        "externalAuthenticationRequired=false",
+        "userActionRequired=false",
+    )
     current_semantic_checker_boundary = (
         "Same-UID concurrent mutation is not prevented, and absence is not "
         "guaranteed after the final observation."
@@ -56222,6 +56365,46 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
     def normalize_current_semantic_section(value: str) -> str:
         return re.sub(r"\s+", " ", value).replace("`", "").strip()
 
+    def scrub_negative_auth_sentences(value: str) -> str:
+        """Remove only explicit whole-sentence no-auth/no-action statements."""
+
+        retained: list[str] = []
+        for sentence in re.split(r"(?<=[.!?])\s+", value):
+            lowered = sentence.strip().casefold()
+            if not lowered:
+                continue
+            user_action_negated = (
+                (
+                    lowered.startswith("no ")
+                    and (
+                        re.search(
+                            r"\bor user action "
+                            r"(?:is|was|are|were) "
+                            r"(?:opened or |requested or |authorized or )?"
+                            r"required\b",
+                            lowered,
+                        )
+                        is not None
+                    )
+                )
+                or (
+                    lowered.startswith("neither ")
+                    and "nor user action" in lowered
+                    and "required" in lowered
+                )
+                or (
+                    "user action are outside this workflow" in lowered
+                    and "neither requested nor required" in lowered
+                )
+            )
+            if user_action_negated and not any(
+                reversal in lowered
+                for reversal in (" but ", " however ", " except ")
+            ):
+                continue
+            retained.append(sentence)
+        return " ".join(retained)
+
     def current_semantic_overclaims(normalized_section: str) -> tuple[str, ...]:
         scrubbed = normalized_section.casefold()
         for negative_clause in (
@@ -56239,6 +56422,7 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
             "external authentication, or user action remain unauthorized or unrequired",
         ):
             scrubbed = scrubbed.replace(negative_clause, "")
+        scrubbed = scrub_negative_auth_sentences(scrubbed)
         return tuple(
             pattern
             for pattern in current_semantic_overclaim_patterns
@@ -56288,6 +56472,7 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
             "external authentication, or user action remain unauthorized or unrequired",
         ):
             scrubbed = scrubbed.replace(negative_clause, "")
+        scrubbed = scrub_negative_auth_sentences(scrubbed)
         return tuple(
             pattern
             for pattern in current_dependency_overclaim_patterns
@@ -56409,13 +56594,23 @@ def g2_pion_rung_two_acquisition_authority_guard_failures() -> list[str]:
             "25/25 mutation tests",
             "every repository-path directory component",
             current_semantic_checker_boundary,
-            current_semantic_auth_boundary,
         ):
             if snippet not in current_section:
                 failures.append(
                     f"{relative_path}: current semantic-review bounded section "
                     f"is missing {snippet!r}."
                 )
+        if (
+            current_semantic_auth_boundary not in current_section
+            and not all(
+                flag in current_section
+                for flag in current_semantic_auth_flag_boundary
+            )
+        ):
+            failures.append(
+                f"{relative_path}: current semantic-review bounded section is "
+                "missing the canonical no-authentication/no-user-action boundary."
+            )
         for pattern in current_semantic_overclaims(current_section):
             failures.append(
                 f"{relative_path}: current semantic-review bounded section "
@@ -65026,34 +65221,10 @@ def personal_single_owner_governance_guard_failures() -> list[str]:
         if required not in mac_exact_bound_tests:
             failures.append(f"macOS exact-bound regression coverage is missing {required!r}")
 
-    roadmap_text = texts["roadmap"]
-    roadmap_canonical_start = roadmap_text.find("## Canonical V1 Delivery Roadmap")
-    roadmap_canonical_end = (
-        roadmap_text.find("\n## ", roadmap_canonical_start + 3)
-        if roadmap_canonical_start >= 0
-        else -1
+    current_document_windows, window_failures = (
+        current_document_evidence_windows(texts)
     )
-    if roadmap_canonical_start < 0 or roadmap_canonical_end < 0:
-        failures.append("roadmap canonical V1 delivery section is missing")
-        roadmap_current_window = ""
-    else:
-        roadmap_current_window = roadmap_text[
-            roadmap_canonical_start:roadmap_canonical_end
-        ]
-
-    handoff_current_end = texts["handoff"].find("\n## First Five Minutes")
-    if handoff_current_end < 0:
-        failures.append("handoff current snapshot boundary is missing")
-        handoff_current_window = ""
-    else:
-        handoff_current_window = texts["handoff"][:handoff_current_end]
-
-    current_document_windows = {
-        "handoff": handoff_current_window,
-        "progress": "\n".join(texts["progress"].splitlines()[:600]),
-        "qa": "\n".join(texts["qa"].splitlines()[:450]),
-        "roadmap": roadmap_current_window,
-    }
+    failures.extend(window_failures)
     for label, current_window in current_document_windows.items():
         for required in (
             "31/31",
@@ -66038,6 +66209,12 @@ def main() -> int:
     if report_guard_failures(
         "Production secure-session crypto guard failed:",
         production_secure_session_crypto_guard_failures,
+    ):
+        return 1
+
+    if report_guard_failures(
+        "Current document evidence-window self-test failed:",
+        current_document_evidence_window_self_test_failures,
     ):
         return 1
 
