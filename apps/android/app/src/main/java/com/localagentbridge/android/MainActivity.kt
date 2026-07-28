@@ -111,6 +111,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -125,7 +126,9 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -479,13 +482,15 @@ private fun LocalAgentBridgeApp(
             color = MaterialTheme.colorScheme.background,
         ) {
             LocalizedContent(languageTag = state.selectedLanguageTag) {
-            val configuration = LocalConfiguration.current
+            val density = LocalDensity.current
+            val windowInfo = LocalWindowInfo.current
             val hapticFeedback = LocalHapticFeedback.current
             val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
             val scope = rememberCoroutineScope()
             val snackbarHostState = remember { SnackbarHostState() }
             var sharedDraftAnnouncementMessage by remember { mutableStateOf<String?>(null) }
-            val usePermanentNavigation = shouldUsePermanentNavigationRail(configuration.screenWidthDp)
+            val windowWidth = with(density) { windowInfo.containerSize.width.toDp() }
+            val usePermanentNavigation = shouldUsePermanentNavigationRail(windowWidth)
             var destination by rememberSaveable { mutableStateOf(AppDestination.Chat) }
             var renamingSessionId by rememberSaveable { mutableStateOf<String?>(null) }
             var renameDraft by rememberSaveable { mutableStateOf("") }
@@ -1634,7 +1639,7 @@ private fun ChatModelMenuItem(
         }
     )
     DropdownMenuItem(
-        modifier = chatModelMenuItemSemanticsModifier(
+        modifier = Modifier.chatModelMenuItemSemanticsModifier(
             model = model,
             selected = selected,
             installing = installing,
@@ -1716,7 +1721,7 @@ internal fun ResearchBriefModelMenuItem(
 }
 
 @Composable
-private fun chatModelMenuItemSemanticsModifier(
+private fun Modifier.chatModelMenuItemSemanticsModifier(
     model: RuntimeModel,
     selected: Boolean,
     installing: Boolean,
@@ -1738,7 +1743,7 @@ private fun chatModelMenuItemSemanticsModifier(
         else -> null
     }
     val selectedStateDescription = stateDescriptionRes?.let { stringResource(it) }
-    return Modifier.semantics {
+    return semantics {
         this.contentDescription = contentDescription
         if (enabled) {
             onClick(label = actionLabel, action = null)
@@ -1825,8 +1830,9 @@ private fun modelMenuCapabilityDisplay(model: RuntimeModel): ModelMenuCapability
         }
         model.contextWindowTokens?.takeIf { it > 0 }?.let { contextWindowTokens ->
             add(
-                stringResource(
-                    R.string.model_capability_context_window,
+                pluralStringResource(
+                    R.plurals.model_capability_context_window,
+                    contextWindowTokens,
                     contextWindowTokens,
                 )
             )
@@ -2172,7 +2178,7 @@ internal fun AetherLinkNavigationDrawerContent(
     var expandedResearchNotebookMenuSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var expandedChatSessionMenuId by rememberSaveable { mutableStateOf<String?>(null) }
     var researchNotebookDeleteTarget by remember { mutableStateOf<ResearchNotebookPayload?>(null) }
-    var researchNotebookDeleteConfirmationStep by rememberSaveable { mutableStateOf(0) }
+    var researchNotebookDeleteConfirmationStep by rememberSaveable { mutableIntStateOf(0) }
 
     LaunchedEffect(researchNotebooks) {
         val expandedSessionId = expandedResearchNotebookMenuSessionId ?: return@LaunchedEffect
@@ -3987,15 +3993,15 @@ private fun PairingQrScannerScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 internal fun PairingQrScannerChrome(
     hasCameraPermission: Boolean,
-    cameraPermissionPermanentlyDenied: Boolean = false,
     torchAvailable: Boolean,
     torchEnabled: Boolean,
-    scannerFeedback: PairingQrScannerFeedback? = null,
     onTorchToggle: () -> Unit,
     onCancel: () -> Unit,
     onRequestCameraPermission: () -> Unit,
-    onOpenAppSettings: () -> Unit = {},
     modifier: Modifier = Modifier,
+    cameraPermissionPermanentlyDenied: Boolean = false,
+    scannerFeedback: PairingQrScannerFeedback? = null,
+    onOpenAppSettings: () -> Unit = {},
     cameraContent: @Composable () -> Unit = {},
 ) {
     val hapticFeedback = LocalHapticFeedback.current

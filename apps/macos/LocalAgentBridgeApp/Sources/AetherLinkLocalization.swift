@@ -114,6 +114,27 @@ enum AetherLinkAppAppearance: String, CaseIterable, Identifiable {
 }
 
 typealias AetherLinkLocalizedBundleResolver = (AetherLinkAppLanguage) -> Bundle?
+typealias AetherLinkResourceBundleResolver = () -> Bundle?
+
+func resolveAetherLinkResourceBundle(
+    packaged: AetherLinkResourceBundleResolver,
+    fallback: () -> Bundle
+) -> Bundle {
+    packaged() ?? fallback()
+}
+
+private let aetherLinkResourceBundle = resolveAetherLinkResourceBundle(
+    packaged: {
+        guard let bundleURL = Bundle.main.url(
+            forResource: "AetherLink_LocalAgentBridge",
+            withExtension: "bundle"
+        ) else {
+            return nil
+        }
+        return Bundle(url: bundleURL)
+    },
+    fallback: { Bundle.module }
+)
 
 func makeAetherLinkLocalizedBundleCache(
     resolvingWith resolver: AetherLinkLocalizedBundleResolver
@@ -130,7 +151,7 @@ func makeAetherLinkLocalizedBundleCache(
 private let aetherLinkLocalizedBundles = makeAetherLinkLocalizedBundleCache { language in
     let resourceCandidates = [language.localeIdentifier, language.localeIdentifier.lowercased()]
     for resourceName in resourceCandidates {
-        if let localizedBundleURL = Bundle.module.url(
+        if let localizedBundleURL = aetherLinkResourceBundle.url(
             forResource: resourceName,
             withExtension: "lproj"
         ),
@@ -146,7 +167,7 @@ func NSLocalizedString(_ key: String, comment: String) -> String {
     if let localizedBundle = aetherLinkLocalizedBundles[language] {
         return localizedBundle.localizedString(forKey: key, value: key, table: nil)
     }
-    return Bundle.module.localizedString(forKey: key, value: key, table: nil)
+    return aetherLinkResourceBundle.localizedString(forKey: key, value: key, table: nil)
 }
 
 func localizedTrustedDeviceCount(_ count: Int) -> String {

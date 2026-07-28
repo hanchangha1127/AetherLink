@@ -19,6 +19,15 @@ func removeIfPresent(_ url: URL) throws {
     }
 }
 
+func removeDirectoryIfEmpty(_ url: URL) throws {
+    guard FileManager.default.fileExists(atPath: url.path) else {
+        return
+    }
+    if try FileManager.default.contentsOfDirectory(atPath: url.path).isEmpty {
+        try FileManager.default.removeItem(at: url)
+    }
+}
+
 func loadSourceImage() throws -> NSImage {
     guard let image = NSImage(contentsOf: sourceURL), image.isValid else {
         throw NSError(
@@ -92,19 +101,22 @@ try writePNG(
     to: brandDir.appendingPathComponent("aetherlink_icon_1024.png")
 )
 
-let densities: [(String, Int)] = [
-    ("mipmap-mdpi", 48),
-    ("mipmap-hdpi", 72),
-    ("mipmap-xhdpi", 96),
-    ("mipmap-xxhdpi", 144),
-    ("mipmap-xxxhdpi", 192)
+let legacyLauncherDirectories = [
+    "mipmap-mdpi",
+    "mipmap-hdpi",
+    "mipmap-xhdpi",
+    "mipmap-xxhdpi",
+    "mipmap-xxxhdpi"
 ]
-for (directory, size) in densities {
+for directory in legacyLauncherDirectories {
     let outputDir = androidResDir.appendingPathComponent(directory, isDirectory: true)
-    try ensureDirectory(outputDir)
-    try writePNG(try renderPNG(from: sourceImage, pixelSize: size, insetRatio: 0.06), to: outputDir.appendingPathComponent("ic_launcher.png"))
-    try writePNG(try renderPNG(from: sourceImage, pixelSize: size, insetRatio: 0.06), to: outputDir.appendingPathComponent("ic_launcher_round.png"))
+    try removeIfPresent(outputDir.appendingPathComponent("ic_launcher.png"))
+    try removeIfPresent(outputDir.appendingPathComponent("ic_launcher_round.png"))
+    try removeDirectoryIfEmpty(outputDir)
 }
+try removeDirectoryIfEmpty(
+    androidResDir.appendingPathComponent("mipmap-anydpi-v26", isDirectory: true)
+)
 
 let drawableNoDpiDir = androidResDir.appendingPathComponent("drawable-nodpi", isDirectory: true)
 try ensureDirectory(drawableNoDpiDir)
@@ -114,7 +126,29 @@ try writePNG(
 )
 
 try removeIfPresent(androidResDir.appendingPathComponent("drawable/ic_launcher_foreground.xml"))
-try removeIfPresent(androidResDir.appendingPathComponent("drawable/ic_launcher_monochrome.xml"))
+let monochromeVector = """
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,22 L24,84 L38,84 L54,50 L70,84 L84,84 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M31,72 C44,62 64,62 77,72 L73,78 C62,70 46,70 35,78 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M24,30 C13,43 10,60 16,76 L24,72 C20,59 22,46 31,35 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M84,30 L77,35 C86,46 88,59 84,72 L92,76 C98,60 95,43 84,30 Z" />
+</vector>
+"""
+let monochromeURL = androidResDir.appendingPathComponent("drawable/ic_launcher_monochrome.xml")
+try monochromeVector.write(to: monochromeURL, atomically: true, encoding: .utf8)
 
 let iconset = generatedDir.appendingPathComponent("AetherLink.iconset", isDirectory: true)
 try? FileManager.default.removeItem(at: iconset)

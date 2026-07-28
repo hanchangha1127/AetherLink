@@ -638,6 +638,104 @@ AetherLink Runtime is a SwiftPM SwiftUI app and can be launched with:
 ./script/build_and_run.sh
 ```
 
+To assemble a self-contained local Release app without stopping or launching the
+running app:
+
+```bash
+./script/build_and_run.sh --package-only
+```
+
+This mode embeds the SwiftPM localization bundle under
+`Contents/Resources`, writes semantic/build version metadata, and applies the
+same strict local ad-hoc seal used by development packaging. It is a local
+qualification artifact, not Developer ID signing, notarization, or a DMG.
+Both this package and the Android Release variant read
+`release/version-ledger.tsv`; its current entry is marketing version `1.0.0`
+and shared build number `1`. Android Debug deliberately remains `0.1.0+1`.
+Its Release metadata is backed by a lazy Gradle provider, so Debug still
+configures and builds when the release ledger is unavailable; a Release task
+validates the ledger's LF-only printable-ASCII/tab byte format when it needs
+the version.
+The development application and bundle identifiers remain unchanged until
+their production replacements are reserved in the selected distribution
+accounts.
+
+To build the optimized unsigned Android Release artifacts and release lint
+report from a populated dependency cache:
+
+```bash
+./gradlew --offline --no-daemon --console=plain \
+  :app:assembleRelease :app:bundleRelease :app:lintRelease \
+  -Pkotlin.incremental=false
+```
+
+The release build enables R8 code shrinking/obfuscation and resource shrinking.
+The unsigned APK and AAB are written below `apps/android/app/build/outputs`;
+the R8 mapping and related outputs are below
+`apps/android/app/build/outputs/mapping/release`. Preserve the exact mapping
+with any signed artifact derived from that build. This command does not sign,
+install, upload, or launch the app.
+
+After generating both local release artifacts, verify their shared version
+metadata against the ledger with:
+
+```bash
+python3 script/check_release_version_ledger.py --artifacts
+```
+
+To clean-build both V1 targets, enforce the recorded Release dependency graph,
+package their local outputs, and perform an independent full-byte readback in
+one command:
+
+```bash
+./script/build_release_artifacts.sh
+```
+
+The current output is
+`dist/releases/aetherlink-1.0.0+1-local-v1/`. It contains one canonical
+normalized-input ZIP, an identical external manifest, and a ZIP SHA-256
+sidecar.
+Android Release is unsigned and `arm64-v8a`-only; the macOS app is a thin
+`arm64` local ad-hoc package accompanied by its UUID-matched dSYM. The container
+metadata is canonical. R8's unordered `resources.txt`/`seeds.txt` lines and
+per-build `mapping.prt` ZIP metadata are normalized while retaining their exact
+semantic payloads. Other raw AGP and debug-symbol payloads may retain build-host
+paths, so this is not a cross-checkout reproducible-build claim.
+Six generated Gradle lock files cover settings, the buildscript, and
+configurations resolved by the clean Release graph. Release uses strict
+read-only lock mode and never writes locks. The manifest declares the one
+Gradle 9.4.1/Kotlin 2.3.21 compatibility exception,
+`org.jetbrains.kotlin:kotlin-stdlib-common`; its locked parent
+`kotlin-stdlib:2.3.21` remains fixed. SwiftPM currently has no external package
+dependencies, so `Package.resolved` is intentionally absent.
+
+When the declared Android dependency graph changes intentionally, regenerate
+the locks only in a dedicated maintenance run by adding `--write-locks` to the
+same offline four-module clean APK/AAB/lint task graph used by the release
+script. Repeat that writer in a fresh process until two consecutive six-file
+hash sets match, then run `build_release_artifacts.sh` twice. The normal release
+script deliberately contains no `--write-locks`; it must fail rather than
+silently accept a changed graph.
+
+The builder and independent verifier each read the archived APK with `aapt2`
+and the archived AAB base manifest with the AGP-pinned `bundletool 1.18.3`,
+checking package, version code/name, and minimum/target SDK directly from both
+artifact forms.
+Current upstream JNI dependencies arrive pre-stripped; the manifest records
+that native-symbol archive as unavailable instead of claiming it was retained.
+This workflow does not sign, install, upload, launch, or deploy either app.
+The consolidated
+[1.0.0 build 1 local qualification record](docs/releases/1.0.0-build-1-local-v1.md)
+defines the current release notes, compatibility matrix, migration boundary,
+known limitations, support diagnostics, privacy boundary, rollback posture, and
+the canonical no-device first-lineage transition and recorded-date provider
+compatibility fixtures. The provider snapshot records official current/previous
+candidates separately from local observations. Both exact Ollama candidates
+passed isolated adapter health, empty-catalog, restart, and stopped-endpoint
+checks from SHA-256-verified official archives. Exact LM Studio candidate
+testing, model-backed behavior, minimum versions, and full live-provider
+qualification remain unresolved.
+
 For physical trusted-device development over USB, run the runtime host dev server
 in one terminal:
 
@@ -953,6 +1051,9 @@ and keep the same key set and order as English without duplicate keys.
 Android and macOS five-language app-language verification now covers Android
 resource parity, macOS localization parity, and the shared `chat.send.locale`
 handoff used by runtime-generated chat titles.
+Android plural parity is locale-aware: English/default use `one/other`,
+Korean, Japanese, and Simplified Chinese use `other`, and French uses
+`one/many/other`.
 
 The copy hygiene check scans user-facing Android and macOS resources plus
 runtime/device-visible status strings for stale prototype wording. It blocks

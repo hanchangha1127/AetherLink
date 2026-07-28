@@ -384,6 +384,36 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testResourceBundleResolutionPrefersPackagedBundleWithoutLoadingFallback() {
+        var fallbackCalls = 0
+
+        let resolved = resolveAetherLinkResourceBundle(
+            packaged: { Bundle.main },
+            fallback: {
+                fallbackCalls += 1
+                return Bundle.main
+            }
+        )
+
+        XCTAssertTrue(resolved === Bundle.main)
+        XCTAssertEqual(fallbackCalls, 0)
+    }
+
+    func testResourceBundleResolutionUsesFallbackWhenPackageResourceIsMissing() {
+        var fallbackCalls = 0
+
+        let resolved = resolveAetherLinkResourceBundle(
+            packaged: { nil },
+            fallback: {
+                fallbackCalls += 1
+                return Bundle.main
+            }
+        )
+
+        XCTAssertTrue(resolved === Bundle.main)
+        XCTAssertEqual(fallbackCalls, 1)
+    }
+
     func testLocalizedVisibleAnchorsAcrossInitialLanguages() {
         let expectations: [(String, [String: String])] = [
             (

@@ -4,6 +4,7 @@
 from pathlib import Path
 import re
 import sys
+from typing import Optional
 import xml.etree.ElementTree as ET
 
 
@@ -88,8 +89,17 @@ APP_NAVIGATION_TEST_SOURCE = (
 )
 ANDROID_MANIFEST_SOURCE = ANDROID_APP_ROOT / "src" / "main" / "AndroidManifest.xml"
 ANDROID_LOCALE_CONFIG_SOURCE = ANDROID_APP_ROOT / "src" / "main" / "res" / "xml" / "locales_config.xml"
+ANDROID_APP_BUILD_GRADLE_SOURCE = ANDROID_APP_ROOT / "build.gradle.kts"
 ANDROID_XML_NS = "{http://schemas.android.com/apk/res/android}"
 LOCALE_DIRS = ("values-en", "values-ko", "values-ja", "values-zh-rCN", "values-fr")
+EXPECTED_PLURAL_QUANTITIES = {
+    "values": ("one", "other"),
+    "values-en": ("one", "other"),
+    "values-ko": ("other",),
+    "values-ja": ("other",),
+    "values-zh-rCN": ("other",),
+    "values-fr": ("one", "many", "other"),
+}
 EXPECTED_RUNTIME_LANGUAGES = {
     "English": "en",
     "Korean": "ko",
@@ -450,6 +460,33 @@ def untranslated_memory_noun_failures(
     return failures
 
 
+def uncommented_kotlin_dsl(path: Path) -> str:
+    return re.sub(
+        r"/\*.*?\*/|//[^\r\n]*",
+        "",
+        path.read_text(encoding="utf-8"),
+        flags=re.DOTALL,
+    )
+
+
+def kotlin_dsl_block(source: str, name: str) -> Optional[str]:
+    match = re.search(rf"\b{re.escape(name)}\s*\{{", source)
+    if match is None:
+        return None
+
+    opening_brace = source.find("{", match.start())
+    depth = 0
+    for index in range(opening_brace, len(source)):
+        character = source[index]
+        if character == "{":
+            depth += 1
+        elif character == "}":
+            depth -= 1
+            if depth == 0:
+                return source[opening_brace + 1 : index]
+    return None
+
+
 def check_runtime_language_selector(default_names: list[str]) -> list[str]:
     failures: list[str] = []
     ui_state_relative = RUNTIME_UI_STATE_SOURCE.relative_to(ROOT)
@@ -487,6 +524,7 @@ def check_runtime_language_selector(default_names: list[str]) -> list[str]:
 
 def check_android_locale_config() -> list[str]:
     failures: list[str] = []
+    build_gradle_relative = ANDROID_APP_BUILD_GRADLE_SOURCE.relative_to(ROOT)
     manifest_relative = ANDROID_MANIFEST_SOURCE.relative_to(ROOT)
     locale_config_relative = ANDROID_LOCALE_CONFIG_SOURCE.relative_to(ROOT)
     expected_languages = list(EXPECTED_RUNTIME_LANGUAGES.values())
@@ -495,6 +533,30 @@ def check_android_locale_config() -> list[str]:
         return [f"{manifest_relative}: missing Android manifest"]
     if not ANDROID_LOCALE_CONFIG_SOURCE.exists():
         return [f"{locale_config_relative}: missing Android locale config"]
+
+    if not ANDROID_APP_BUILD_GRADLE_SOURCE.exists():
+        failures.append(f"{build_gradle_relative}: missing App Bundle language packaging")
+    else:
+        uncommented_build_gradle_source = uncommented_kotlin_dsl(
+            ANDROID_APP_BUILD_GRADLE_SOURCE
+        )
+        bundle_block = kotlin_dsl_block(uncommented_build_gradle_source, "bundle")
+        language_block = (
+            kotlin_dsl_block(bundle_block, "language")
+            if bundle_block is not None
+            else None
+        )
+        split_values = (
+            re.findall(r"\benableSplit\s*=\s*(true|false)\b", language_block)
+            if language_block is not None
+            else []
+        )
+        if split_values != ["false"]:
+            failures.append(
+                f"{build_gradle_relative}: App Bundle language splitting must remain disabled "
+                "exactly once for the in-app locale picker "
+                f"(assignments={split_values})"
+            )
 
     manifest_root = ET.parse(ANDROID_MANIFEST_SOURCE).getroot()
     application = manifest_root.find("application")
@@ -585,6 +647,93 @@ def check_android_locale_config() -> list[str]:
             "Android app-language shell handoff regression tests",
         )
     )
+
+    return failures
+
+
+def check_android_release_packaging_config() -> list[str]:
+    relative_path = ANDROID_APP_BUILD_GRADLE_SOURCE.relative_to(ROOT)
+    if not ANDROID_APP_BUILD_GRADLE_SOURCE.exists():
+        return [f"{relative_path}: missing Android release packaging configuration"]
+
+    source = uncommented_kotlin_dsl(ANDROID_APP_BUILD_GRADLE_SOURCE)
+    build_types_block = kotlin_dsl_block(source, "buildTypes")
+    if build_types_block is None:
+        return [f"{relative_path}: buildTypes block not found"]
+
+    release_block = kotlin_dsl_block(build_types_block, "release")
+    if release_block is None:
+        return [f"{relative_path}: release build type not found"]
+
+    failures: list[str] = []
+    exact_boolean_assignments = (
+        (
+            "isMinifyEnabled",
+            "release R8 code shrinking must remain enabled exactly once",
+        ),
+        (
+            "isShrinkResources",
+            "release resource shrinking must remain enabled exactly once",
+        ),
+    )
+    for property_name, message in exact_boolean_assignments:
+        values = re.findall(
+            rf"\b{re.escape(property_name)}\s*=\s*(true|false)\b",
+            release_block,
+        )
+        if values != ["true"]:
+            failures.append(
+                f"{relative_path}: {message} (assignments={values})"
+            )
+
+    optimized_default_rules = re.compile(
+        r"""\bproguardFiles\s*\(\s*getDefaultProguardFile\s*\(\s*["']proguard-android-optimize\.txt["']\s*\)""",
+    )
+    if optimized_default_rules.search(release_block) is None:
+        failures.append(
+            f"{relative_path}: release R8 must pass the Android optimized default rules "
+            "directly to proguardFiles"
+        )
+
+    ndk_block = kotlin_dsl_block(release_block, "ndk")
+    if ndk_block is None:
+        failures.append(
+            f"{relative_path}: release NDK packaging block not found"
+        )
+    else:
+        abi_filters = re.findall(
+            r"""\babiFilters\s*\+=\s*["']([^"']+)["']""",
+            ndk_block,
+        )
+        if abi_filters != ["arm64-v8a"]:
+            failures.append(
+                f"{relative_path}: release ABI filters must contain exactly "
+                f"arm64-v8a (assignments={abi_filters})"
+            )
+        debug_symbol_levels = re.findall(
+            r"""\bdebugSymbolLevel\s*=\s*["']([^"']+)["']""",
+            ndk_block,
+        )
+        if debug_symbol_levels != ["SYMBOL_TABLE"]:
+            failures.append(
+                f"{relative_path}: release native debug symbol level must be "
+                f"SYMBOL_TABLE exactly once (assignments={debug_symbol_levels})"
+            )
+
+    lint_block = kotlin_dsl_block(source, "lint")
+    if lint_block is None:
+        failures.append(f"{relative_path}: Android lint block not found")
+    else:
+        disabled_issue_ids = re.findall(
+            r"""\bdisable\s*\+=\s*["']([^"']+)["']""",
+            lint_block,
+        )
+        if disabled_issue_ids != ["ChromeOsAbiSupport"]:
+            failures.append(
+                f"{relative_path}: the arm64-only V1 matrix must scope exactly "
+                "the ChromeOsAbiSupport lint warning "
+                f"(assignments={disabled_issue_ids})"
+            )
 
     return failures
 
@@ -698,7 +847,7 @@ def raw_compose_visible_literal_matcher_self_test_failures() -> list[str]:
         ("string resource Text", "Text(stringResource(R.string.app_name))"),
         (
             "string resource content description",
-            'Icon(imageVector = Icons.Filled.Close, contentDescription = stringResource(R.string.content_desc_close))',
+            'Icon(imageVector = Icons.Filled.Close, contentDescription = stringResource(R.string.app_name))',
         ),
     )
 
@@ -755,6 +904,14 @@ def main() -> int:
         plural_duplicates = duplicate_names(default_plural_names)
         if plural_duplicates:
             failures.append(f"{module}: duplicate plural keys {plural_duplicates}")
+        expected_default_quantities = EXPECTED_PLURAL_QUANTITIES["values"]
+        for name, quantities in default_plural_entries:
+            actual_quantities = tuple(quantities)
+            if actual_quantities != expected_default_quantities:
+                failures.append(
+                    f"{module}: default plural quantities mismatch for {name!r} "
+                    f"(expected={expected_default_quantities}, actual={actual_quantities})"
+                )
 
         stale_names = [name for name in FORBIDDEN_STALE_STRING_NAMES if name in default_names]
         if stale_names:
@@ -828,14 +985,21 @@ def main() -> int:
             for name in default_plural_names:
                 default_quantities = default_plural_values[name]
                 locale_quantities = locale_plural_values[name]
-                if list(locale_quantities.keys()) != list(default_quantities.keys()):
+                expected_quantities = EXPECTED_PLURAL_QUANTITIES[locale_dir_name]
+                actual_quantities = tuple(locale_quantities)
+                if actual_quantities != expected_quantities:
                     failures.append(
                         f"{locale_relative}: plural quantity mismatch for {name!r} "
-                        f"(default={list(default_quantities.keys())}, locale={list(locale_quantities.keys())})"
+                        f"(expected={expected_quantities}, actual={actual_quantities})"
                     )
                     continue
-                for quantity in default_quantities:
-                    default_placeholders = placeholders(default_quantities[quantity])
+                for quantity in locale_quantities:
+                    reference_quantity = (
+                        quantity if quantity in default_quantities else "other"
+                    )
+                    default_placeholders = placeholders(
+                        default_quantities[reference_quantity]
+                    )
                     locale_placeholders = placeholders(locale_quantities[quantity])
                     if locale_placeholders != default_placeholders:
                         failures.append(
@@ -845,6 +1009,7 @@ def main() -> int:
 
         failures.extend(check_runtime_language_selector(default_names))
         failures.extend(check_android_locale_config())
+        failures.extend(check_android_release_packaging_config())
         failures.extend(check_runtime_theme_selector(default_names))
 
     failures.extend(raw_compose_visible_literal_matcher_self_test_failures())
@@ -864,8 +1029,10 @@ def main() -> int:
         f"{module_count} module resource set(s), "
         f"{locale_count} locale(s), "
         f"{localized_resource_count} localized strings.xml file(s), "
-        "including plural resources, OS app-language handoff, translated Memory noun checks, "
-        "and raw Compose visible-string guards."
+        "including locale-aware plural resources, release R8/resource-shrinking configuration "
+        "and arm64/native-symbol configuration, "
+        "unsplit App Bundle language packaging, "
+        "OS app-language handoff, translated Memory noun checks, and raw Compose visible-string guards."
     )
     return 0
 

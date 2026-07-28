@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import plistlib
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -15,6 +17,97 @@ SCRIPT_PATH = ROOT / "script/build_and_run.sh"
 
 
 class BuildAndRunModeTests(unittest.TestCase):
+    def make_fake_package_workspace(
+        self,
+        temporary: str,
+        *,
+        resource_bundle_count: int,
+        ledger_text: str | None = None,
+        ledger_bytes: bytes | None = None,
+    ) -> tuple[Path, dict[str, str], Path]:
+        temp_path = Path(temporary)
+        workspace = temp_path / "workspace"
+        script_dir = workspace / "script"
+        release_dir = workspace / "release"
+        resources_dir = workspace / "apps/macos/LocalAgentBridgeApp/Sources/Resources"
+        fake_bin = temp_path / "bin"
+        swift_bin_path = temp_path / "swift-bin"
+        script_dir.mkdir(parents=True)
+        release_dir.mkdir()
+        fake_bin.mkdir()
+        swift_bin_path.mkdir()
+        shutil.copy2(SCRIPT_PATH, script_dir / SCRIPT_PATH.name)
+        if ledger_text is not None and ledger_bytes is not None:
+            raise ValueError("provide at most one ledger fixture")
+        if ledger_bytes is not None:
+            (release_dir / "version-ledger.tsv").write_bytes(ledger_bytes)
+        elif ledger_text is None:
+            shutil.copy2(
+                ROOT / "release/version-ledger.tsv",
+                release_dir / "version-ledger.tsv",
+            )
+        else:
+            (release_dir / "version-ledger.tsv").write_text(
+                ledger_text,
+                encoding="ascii",
+            )
+        shutil.copytree(
+            ROOT / "apps/macos/LocalAgentBridgeApp/Sources/Resources",
+            resources_dir,
+        )
+        fake_executable = swift_bin_path / "AetherLink"
+        shutil.copyfile("/usr/bin/true", fake_executable)
+        fake_executable.chmod(0o755)
+
+        for index in range(resource_bundle_count):
+            prefix = "AetherLink" if resource_bundle_count == 1 else f"Candidate{index + 1}"
+            resource_bundle = swift_bin_path / f"{prefix}_LocalAgentBridge.bundle"
+            resource_bundle.mkdir()
+            with (resource_bundle / "Info.plist").open("wb") as handle:
+                plistlib.dump(
+                    {
+                        "CFBundleDevelopmentRegion": "en",
+                        "CFBundleIdentifier": f"test.{prefix.lower()}",
+                    },
+                    handle,
+                )
+            for locale in ("en", "ko", "ja", "zh-Hans", "fr"):
+                localized = resource_bundle / f"{locale}.lproj"
+                localized.mkdir()
+                (localized / "Localizable.strings").write_text(
+                    '"AetherLink" = "AetherLink";\n',
+                    encoding="utf-8",
+                )
+
+        invocation_log = temp_path / "invocations.log"
+        fake_swift = fake_bin / "swift"
+        fake_swift.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            'printf "swift %s\\n" "$*" >>"$FAKE_TOOLCHAIN_LOG"\n'
+            'case "$*" in\n'
+            '  "build -c release --product AetherLink") exit 0 ;;\n'
+            '  "build -c release --show-bin-path") printf "%s\\n" "$FAKE_SWIFT_BIN_PATH"; exit 0 ;;\n'
+            "  *) exit 97 ;;\n"
+            "esac\n",
+            encoding="utf-8",
+        )
+        fake_swift.chmod(0o755)
+        fake_pkill = fake_bin / "pkill"
+        fake_pkill.write_text(
+            "#!/usr/bin/env bash\n"
+            'printf "pkill %s\\n" "$*" >>"$FAKE_TOOLCHAIN_LOG"\n'
+            "exit 97\n",
+            encoding="utf-8",
+        )
+        fake_pkill.chmod(0o755)
+
+        environment = os.environ.copy()
+        environment["PATH"] = f"{fake_bin}:/usr/bin:/bin"
+        environment["FAKE_TOOLCHAIN_LOG"] = str(invocation_log)
+        environment["FAKE_SWIFT_BIN_PATH"] = str(swift_bin_path)
+        return workspace, environment, invocation_log
+
     def test_invalid_mode_invokes_no_fake_toolchain_commands(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             temp_path = Path(temporary)
@@ -94,6 +187,196 @@ class BuildAndRunModeTests(unittest.TestCase):
         self.assertIn('sleep "$APP_LAUNCH_SETTLE_SECONDS"', source)
         self.assertIn('kill -0 "$launch_pid"', source)
         self.assertNotIn("/usr/bin/open", source)
+
+    def test_package_only_builds_self_contained_release_without_launch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace, environment, invocation_log = self.make_fake_package_workspace(
+                temporary,
+                resource_bundle_count=1,
+            )
+            script = workspace / "script/build_and_run.sh"
+            result = subprocess.run(
+                ["/bin/bash", str(script), "--package-only"],
+                cwd=workspace,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result)
+            app_bundle = workspace / "dist/AetherLink.app"
+            self.assertTrue(
+                (
+                    app_bundle
+                    / "Contents/Resources/AetherLink_LocalAgentBridge.bundle"
+                ).is_dir()
+            )
+            self.assertFalse(
+                (
+                    app_bundle
+                    / "Contents/Resources/AetherLink_LocalAgentBridge.bundle/AppIcon.icns"
+                ).exists()
+            )
+            for locale in ("en", "ko", "ja", "zh-Hans", "fr"):
+                self.assertFalse(
+                    (app_bundle / f"Contents/Resources/{locale}.lproj").exists()
+                )
+            self.assertTrue((app_bundle / "Contents/MacOS/AetherLink").is_file())
+            with (app_bundle / "Contents/Info.plist").open("rb") as handle:
+                info = plistlib.load(handle)
+            self.assertEqual(info["CFBundleShortVersionString"], "1.0.0")
+            self.assertEqual(info["CFBundleVersion"], "1")
+            invocations = invocation_log.read_text(encoding="utf-8")
+            self.assertEqual(
+                invocations.splitlines(),
+                [
+                    "swift build -c release --product AetherLink",
+                    "swift build -c release --show-bin-path",
+                ],
+            )
+            self.assertNotIn("pkill", invocations)
+            verification = subprocess.run(
+                [
+                    "/usr/bin/codesign",
+                    "--verify",
+                    "--deep",
+                    "--strict",
+                    str(app_bundle),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(verification.returncode, 0, verification)
+
+    def test_package_only_uses_latest_shared_release_ledger_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace, environment, _ = self.make_fake_package_workspace(
+                temporary,
+                resource_bundle_count=1,
+                ledger_text=(
+                    "build_number\tmarketing_version\n"
+                    "1\t1.0.0\n"
+                    "42\t1.2.3\n"
+                ),
+            )
+            script = workspace / "script/build_and_run.sh"
+
+            result = subprocess.run(
+                ["/bin/bash", str(script), "--package-only"],
+                cwd=workspace,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result)
+            with (
+                workspace / "dist/AetherLink.app/Contents/Info.plist"
+            ).open("rb") as handle:
+                info = plistlib.load(handle)
+            self.assertEqual(info["CFBundleShortVersionString"], "1.2.3")
+            self.assertEqual(info["CFBundleVersion"], "42")
+
+    def test_invalid_release_ledger_fails_before_toolchain_side_effects(self) -> None:
+        invalid_ledgers = {
+            "missing_entry": b"build_number\tmarketing_version\n",
+            "duplicate_build": (
+                b"build_number\tmarketing_version\n"
+                b"1\t1.0.0\n"
+                b"1\t1.0.1\n"
+            ),
+            "version_regression": (
+                b"build_number\tmarketing_version\n"
+                b"1\t1.1.0\n"
+                b"2\t1.0.0\n"
+            ),
+            "extra_field": (
+                b"build_number\tmarketing_version\n1\t1.0.0\textra\n"
+            ),
+            "nul": b"build_number\tmarketing_version\n1\t1.0.0\x00\n",
+            "vertical_tab_as_separator": (
+                b"build_number\tmarketing_version\n"
+                b"1\t1.0.0\x0b2\t1.0.1\n"
+            ),
+            "form_feed_as_separator": (
+                b"build_number\tmarketing_version\n"
+                b"1\t1.0.0\x0c2\t1.0.1\n"
+            ),
+            "file_separator_as_separator": (
+                b"build_number\tmarketing_version\n"
+                b"1\t1.0.0\x1c2\t1.0.1\n"
+            ),
+            "group_separator_as_separator": (
+                b"build_number\tmarketing_version\n"
+                b"1\t1.0.0\x1d2\t1.0.1\n"
+            ),
+            "record_separator_as_separator": (
+                b"build_number\tmarketing_version\n"
+                b"1\t1.0.0\x1e2\t1.0.1\n"
+            ),
+            "delete_control": (
+                b"build_number\tmarketing_version\n1\t1.0.0\x7f\n"
+            ),
+            "non_ascii": (
+                b"build_number\tmarketing_version\n1\t1.0.0\xc2\xa0\n"
+            ),
+        }
+
+        for label, ledger_bytes in invalid_ledgers.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as temporary:
+                workspace, environment, invocation_log = (
+                    self.make_fake_package_workspace(
+                        temporary,
+                        resource_bundle_count=1,
+                        ledger_bytes=ledger_bytes,
+                    )
+                )
+                script = workspace / "script/build_and_run.sh"
+
+                result = subprocess.run(
+                    ["/bin/bash", str(script), "--package-only"],
+                    cwd=workspace,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+                self.assertEqual(result.returncode, 2, result)
+                self.assertIn("release version ledger", result.stderr)
+                self.assertFalse(invocation_log.exists())
+                self.assertFalse((workspace / "dist").exists())
+
+    def test_package_only_rejects_missing_or_ambiguous_resource_bundle(self) -> None:
+        for resource_bundle_count in (0, 2):
+            with self.subTest(resource_bundle_count=resource_bundle_count):
+                with tempfile.TemporaryDirectory() as temporary:
+                    workspace, environment, _ = self.make_fake_package_workspace(
+                        temporary,
+                        resource_bundle_count=resource_bundle_count,
+                    )
+                    script = workspace / "script/build_and_run.sh"
+                    result = subprocess.run(
+                        ["/bin/bash", str(script), "--package-only"],
+                        cwd=workspace,
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+
+                    self.assertEqual(result.returncode, 1, result)
+                    self.assertIn(
+                        "expected exactly one SwiftPM resource bundle",
+                        result.stderr,
+                    )
+                    self.assertIn(
+                        f"found {resource_bundle_count}",
+                        result.stderr,
+                    )
 
 
 if __name__ == "__main__":

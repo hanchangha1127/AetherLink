@@ -233,6 +233,508 @@ private func generatePairingQR() {{
 
         self.assertTrue(any("credential-like string value" in failure for failure in failures))
 
+    def local_release_failures_from_text(
+        self,
+        document_text: str,
+        *,
+        ledger_bytes: bytes | None = None,
+        g0_text: str | None = None,
+    ) -> list[str]:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            document_path = Path(temporary_directory) / "release.md"
+            document_path.write_text(document_text, encoding="utf-8")
+            missing_archive = Path(temporary_directory) / "missing-archive"
+            ledger_path = Path(temporary_directory) / "version-ledger.tsv"
+            ledger_path.write_bytes(
+                ledger_bytes
+                if ledger_bytes is not None
+                else check_docs_hygiene.LOCAL_RELEASE_LEDGER.read_bytes()
+            )
+            g0_path = Path(temporary_directory) / "decision-v1.json"
+            g0_path.write_text(
+                g0_text
+                if g0_text is not None
+                else check_docs_hygiene.LOCAL_RELEASE_G0_DECISION.read_text(
+                    encoding="utf-8"
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch.object(
+                    check_docs_hygiene,
+                    "LOCAL_RELEASE_DOC",
+                    document_path,
+                ),
+                patch.object(
+                    check_docs_hygiene,
+                    "LOCAL_RELEASE_ARCHIVE_DIR",
+                    missing_archive,
+                ),
+                patch.object(
+                    check_docs_hygiene,
+                    "LOCAL_RELEASE_LEDGER",
+                    ledger_path,
+                ),
+                patch.object(
+                    check_docs_hygiene,
+                    "LOCAL_RELEASE_G0_DECISION",
+                    g0_path,
+                ),
+            ):
+                return check_docs_hygiene.local_release_document_failures()
+
+    def local_release_transition_failures_from_text(
+        self,
+        document_text: str,
+        *,
+        ledger_bytes: bytes | None = None,
+        g0_text: str | None = None,
+    ) -> list[str]:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            ledger_path = Path(temporary_directory) / "version-ledger.tsv"
+            ledger_path.write_bytes(
+                ledger_bytes
+                if ledger_bytes is not None
+                else check_docs_hygiene.LOCAL_RELEASE_LEDGER.read_bytes()
+            )
+            g0_path = Path(temporary_directory) / "decision-v1.json"
+            g0_path.write_text(
+                g0_text
+                if g0_text is not None
+                else check_docs_hygiene.LOCAL_RELEASE_G0_DECISION.read_text(
+                    encoding="utf-8"
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch.object(
+                    check_docs_hygiene,
+                    "LOCAL_RELEASE_LEDGER",
+                    ledger_path,
+                ),
+                patch.object(
+                    check_docs_hygiene,
+                    "LOCAL_RELEASE_G0_DECISION",
+                    g0_path,
+                ),
+            ):
+                return (
+                    check_docs_hygiene.local_release_transition_fixture_failures(
+                        document_text
+                    )
+                )
+
+    def local_release_provider_failures_from_text(
+        self,
+        document_text: str,
+        *,
+        g0_text: str | None = None,
+    ) -> list[str]:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            g0_path = Path(temporary_directory) / "decision-v1.json"
+            g0_path.write_text(
+                g0_text
+                if g0_text is not None
+                else check_docs_hygiene.LOCAL_RELEASE_G0_DECISION.read_text(
+                    encoding="utf-8"
+                ),
+                encoding="utf-8",
+            )
+            with patch.object(
+                check_docs_hygiene,
+                "LOCAL_RELEASE_G0_DECISION",
+                g0_path,
+            ):
+                return (
+                    check_docs_hygiene.local_release_provider_fixture_failures(
+                        document_text
+                    )
+                )
+
+    def test_current_local_release_document_passes_identity_contract(self) -> None:
+        document_text = check_docs_hygiene.LOCAL_RELEASE_DOC.read_text(
+            encoding="utf-8"
+        )
+
+        self.assertEqual(
+            self.local_release_failures_from_text(document_text),
+            [],
+        )
+
+    def test_current_local_release_document_cross_checks_archive_when_present(
+        self,
+    ) -> None:
+        if not check_docs_hygiene.LOCAL_RELEASE_ARCHIVE_DIR.is_dir():
+            self.skipTest("local release archive is not present")
+
+        self.assertEqual(
+            check_docs_hygiene.local_release_document_failures(),
+            [],
+        )
+
+    def test_every_local_release_identity_mutation_is_rejected(self) -> None:
+        document_text = check_docs_hygiene.LOCAL_RELEASE_DOC.read_text(
+            encoding="utf-8"
+        )
+        identity_snippets = (
+            f"`{check_docs_hygiene.LOCAL_RELEASE_ID}`",
+            f"{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_MEMBER_COUNT} payload members",
+            f"{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT}-file source inventory",
+            f"{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_ZIP_SIZE:,} bytes",
+            f"{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_MANIFEST_SIZE:,} bytes",
+            f"`{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_ZIP_SHA256}`",
+            f"`{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256}`",
+            f"`{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_SOURCE_SHA256}`",
+            f"`{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_SOURCE_HEAD}`",
+            f"`{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_MACOS_UUID}`",
+            *(
+                f"{size:,} bytes"
+                for size, _ in check_docs_hygiene.LOCAL_RELEASE_EXPECTED_MEMBERS.values()
+            ),
+            *(
+                f"`{sha256}`"
+                for _, sha256 in check_docs_hygiene.LOCAL_RELEASE_EXPECTED_MEMBERS.values()
+            ),
+        )
+
+        for identity_snippet in identity_snippets:
+            with self.subTest(identity=identity_snippet):
+                mutated = document_text.replace(
+                    identity_snippet,
+                    "INVALID_RELEASE_IDENTITY",
+                )
+                self.assertNotEqual(mutated, document_text)
+                self.assertTrue(
+                    any(
+                        "missing exact" in failure
+                        for failure in self.local_release_failures_from_text(
+                            mutated
+                        )
+                    ),
+                    f"mutated release identity {identity_snippet!r} was accepted",
+                )
+
+    def test_local_release_transition_fixture_mutations_are_rejected(self) -> None:
+        document_text = check_docs_hygiene.LOCAL_RELEASE_DOC.read_text(
+            encoding="utf-8"
+        )
+        mutations = {
+            "boolean_type_confusion": (
+                '"inPlaceUpgradeSupported": false',
+                '"inPlaceUpgradeSupported": 0',
+            ),
+            "predecessor_invented": (
+                '"productionPredecessor": null',
+                '"productionPredecessor": "aetherlink-0.9.0+9"',
+            ),
+            "n_minus_one_overclaim": (
+                '"status": "unproven-no-prior-production-release"',
+                '"status": "qualified"',
+            ),
+            "upgrade_path_overclaim": (
+                '"upgradePathTested": false',
+                '"upgradePathTested": true',
+            ),
+            "migration_overclaim": (
+                '"stateMigrationSupported": false',
+                '"stateMigrationSupported": true',
+            ),
+            "wrong_transition": (
+                '"requiredAction": "clean-install-and-fresh-pair"',
+                '"requiredAction": "in-place-upgrade"',
+            ),
+            "duplicate_root_key": (
+                '"schemaVersion": 1',
+                '"schemaVersion": 1,\n  "schemaVersion": 1',
+            ),
+            "missing_start_marker": (
+                check_docs_hygiene.LOCAL_RELEASE_TRANSITION_FIXTURE_START,
+                "<!-- removed-transition-fixture-start -->",
+            ),
+            "missing_end_marker": (
+                check_docs_hygiene.LOCAL_RELEASE_TRANSITION_FIXTURE_END,
+                "<!-- removed-transition-fixture-end -->",
+            ),
+        }
+
+        for label, (before, after) in mutations.items():
+            with self.subTest(label=label):
+                mutated = document_text.replace(before, after)
+                self.assertNotEqual(mutated, document_text)
+                failures = self.local_release_transition_failures_from_text(
+                    mutated
+                )
+                expected_failure = (
+                    "expected exactly one"
+                    if label in ("missing_start_marker", "missing_end_marker")
+                    else (
+                        "invalid release-transition fixture JSON"
+                        if label == "duplicate_root_key"
+                        else "must match the canonical first-lineage schema"
+                    )
+                )
+                self.assertTrue(
+                    any(expected_failure in failure for failure in failures),
+                    f"transition fixture mutation {label!r} produced "
+                    f"unexpected failures: {failures!r}",
+                )
+
+    def test_local_release_transition_fixture_rejects_ledger_drift(self) -> None:
+        document_text = check_docs_hygiene.LOCAL_RELEASE_DOC.read_text(
+            encoding="utf-8"
+        )
+        drifted_ledger = (
+            b"build_number\tmarketing_version\n"
+            b"1\t1.0.0\n"
+            b"2\t1.0.0\n"
+        )
+
+        failures = self.local_release_transition_failures_from_text(
+            document_text,
+            ledger_bytes=drifted_ledger,
+        )
+
+        self.assertTrue(
+            any(
+                "current entry differs from the local release transition fixture"
+                in failure
+                for failure in failures
+            )
+        )
+
+    def test_local_release_transition_fixture_rejects_malformed_middle_ledger_row(
+        self,
+    ) -> None:
+        document_text = check_docs_hygiene.LOCAL_RELEASE_DOC.read_text(
+            encoding="utf-8"
+        )
+        malformed_ledger = (
+            b"build_number\tmarketing_version\n"
+            b"MALFORMED\n"
+            b"1\t1.0.0\n"
+        )
+
+        failures = self.local_release_transition_failures_from_text(
+            document_text,
+            ledger_bytes=malformed_ledger,
+        )
+
+        self.assertTrue(
+            any(
+                "cannot cross-check local release transition fixture" in failure
+                for failure in failures
+            )
+        )
+
+    def test_local_release_transition_fixture_rejects_g0_migration_drift(self) -> None:
+        document_text = check_docs_hygiene.LOCAL_RELEASE_DOC.read_text(
+            encoding="utf-8"
+        )
+        g0 = json.loads(
+            check_docs_hygiene.LOCAL_RELEASE_G0_DECISION.read_text(
+                encoding="utf-8"
+            )
+        )
+        g0["releasePolicy"]["android"]["currentDebugDataMigration"] = (
+            "in_place_upgrade"
+        )
+
+        failures = self.local_release_transition_failures_from_text(
+            document_text,
+            g0_text=json.dumps(g0, indent=2, sort_keys=True),
+        )
+
+        self.assertTrue(
+            any(
+                "non-security release version, identity, migration, or "
+                "compatibility fields differ" in failure
+                for failure in failures
+            )
+        )
+
+    def test_local_release_transition_fixture_rejects_g0_policy_version_drift(
+        self,
+    ) -> None:
+        document_text = check_docs_hygiene.LOCAL_RELEASE_DOC.read_text(
+            encoding="utf-8"
+        )
+        g0 = json.loads(
+            check_docs_hygiene.LOCAL_RELEASE_G0_DECISION.read_text(
+                encoding="utf-8"
+            )
+        )
+        g0["releasePolicy"]["versioning"]["marketingVersion"] = "9.9.9"
+
+        failures = self.local_release_transition_failures_from_text(
+            document_text,
+            g0_text=json.dumps(g0, indent=2, sort_keys=True),
+        )
+
+        self.assertTrue(
+            any(
+                "non-security release version, identity, migration, or "
+                "compatibility fields differ" in failure
+                for failure in failures
+            )
+        )
+
+    def test_local_release_provider_fixture_mutations_are_rejected(self) -> None:
+        document_text = check_docs_hygiene.LOCAL_RELEASE_DOC.read_text(
+            encoding="utf-8"
+        )
+        mutations = {
+            "boolean_type_confusion": (
+                '"qualified": false,\n      "releaseDate": "2026-07-27"',
+                '"qualified": 0,\n      "releaseDate": "2026-07-27"',
+            ),
+            "current_candidate_overclaim": (
+                '"qualified": false,\n      "releaseDate": "2026-07-27"',
+                '"qualified": true,\n      "releaseDate": "2026-07-27"',
+            ),
+            "previous_candidate_overclaim": (
+                '"qualified": false,\n      "releaseDate": "2026-07-25"',
+                '"qualified": true,\n      "releaseDate": "2026-07-25"',
+            ),
+            "minimum_version_invented": (
+                '"minimumSupportedVersion": null',
+                '"minimumSupportedVersion": "0.4.19"',
+            ),
+            "local_version_drift": (
+                '"version": "0.4.17-beta+3"',
+                '"version": "0.4.20"',
+            ),
+            "official_version_drift": (
+                '"version": "0.32.5"',
+                '"version": "0.32.6"',
+            ),
+            "official_release_date_drift": (
+                '"releaseDate": "2026-07-22"',
+                '"releaseDate": "2026-07-23"',
+            ),
+            "official_archive_hash_drift": (
+                '"darwinArchiveSha256": '
+                '"5789dd037a86adb328c72c11fc45e6c558452d07e5b50814a8bdb7b0fbdbcd81"',
+                '"darwinArchiveSha256": '
+                '"0000000000000000000000000000000000000000000000000000000000000000"',
+            ),
+            "isolated_restart_drift": (
+                '"restartPassed": true',
+                '"restartPassed": false',
+            ),
+            "recorded_date_drift": (
+                '"recordedDate": "2026-07-28"',
+                '"recordedDate": "2026-07-29"',
+            ),
+            "isolated_run_count_drift": (
+                '"executed": 4',
+                '"executed": 3',
+            ),
+            "test_count_type_confusion": (
+                '"executed": 71',
+                '"executed": 71.0',
+            ),
+            "evidence_overclaim": (
+                '"exact-version-isolated-ollama-adapter-health-empty-catalog-'
+                'restart-plus-focused-default-tests-no-live-chat-or-model-'
+                'lifecycle"',
+                '"full-live-provider-qualification"',
+            ),
+            "duplicate_root_key": (
+                '"schemaVersion": 1,\n  "tests"',
+                '"schemaVersion": 1,\n  "schemaVersion": 1,\n  "tests"',
+            ),
+        }
+
+        start_index = document_text.index(
+            check_docs_hygiene.LOCAL_RELEASE_PROVIDER_FIXTURE_START
+        )
+        end_index = document_text.index(
+            check_docs_hygiene.LOCAL_RELEASE_PROVIDER_FIXTURE_END
+        ) + len(check_docs_hygiene.LOCAL_RELEASE_PROVIDER_FIXTURE_END)
+        fixture_block = document_text[start_index:end_index]
+
+        for label, (before, after) in mutations.items():
+            with self.subTest(label=label):
+                mutated_block = fixture_block.replace(before, after, 1)
+                self.assertNotEqual(mutated_block, fixture_block)
+                mutated = (
+                    document_text[:start_index]
+                    + mutated_block
+                    + document_text[end_index:]
+                )
+                failures = self.local_release_provider_failures_from_text(
+                    mutated
+                )
+                expected_failure = (
+                    "invalid provider-compatibility fixture JSON"
+                    if label == "duplicate_root_key"
+                    else "must match the canonical recorded-date schema"
+                )
+                self.assertTrue(
+                    any(expected_failure in failure for failure in failures),
+                    f"provider fixture mutation {label!r} produced "
+                    f"unexpected failures: {failures!r}",
+                )
+
+        marker_mutations = {
+            "missing_start_marker": (
+                check_docs_hygiene.LOCAL_RELEASE_PROVIDER_FIXTURE_START,
+                "<!-- removed-provider-fixture-start -->",
+            ),
+            "missing_end_marker": (
+                check_docs_hygiene.LOCAL_RELEASE_PROVIDER_FIXTURE_END,
+                "<!-- removed-provider-fixture-end -->",
+            ),
+        }
+        for label, (before, after) in marker_mutations.items():
+            with self.subTest(label=label):
+                mutated = document_text.replace(before, after, 1)
+                failures = self.local_release_provider_failures_from_text(
+                    mutated
+                )
+                self.assertTrue(
+                    any("expected exactly one" in failure for failure in failures),
+                    f"provider fixture mutation {label!r} produced "
+                    f"unexpected failures: {failures!r}",
+                )
+
+    def test_local_release_provider_fixture_rejects_g0_policy_drift(self) -> None:
+        document_text = check_docs_hygiene.LOCAL_RELEASE_DOC.read_text(
+            encoding="utf-8"
+        )
+        original_g0 = check_docs_hygiene.LOCAL_RELEASE_G0_DECISION.read_text(
+            encoding="utf-8"
+        )
+        mutations = {
+            "provider_id": ("id", "ollama-drift"),
+            "minimum_version": ("minimumSupportedVersion", "0.32.4"),
+            "release_policy": ("releasePolicy", "current_only"),
+            "provider_access": ("access", "client_direct"),
+        }
+
+        for label, (field, value) in mutations.items():
+            with self.subTest(label=label):
+                g0 = json.loads(original_g0)
+                ollama = next(
+                    provider
+                    for provider in g0["productScope"]["providers"]
+                    if provider["id"] == "ollama"
+                )
+                ollama[field] = value
+                failures = self.local_release_provider_failures_from_text(
+                    document_text,
+                    g0_text=json.dumps(g0, indent=2, sort_keys=True),
+                )
+                self.assertTrue(
+                    any(
+                        "non-security provider IDs, runtime-host access, "
+                        "minimum versions, or release policies differ"
+                        in failure
+                        for failure in failures
+                    ),
+                    f"G0 provider drift {label!r} was accepted: {failures!r}",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

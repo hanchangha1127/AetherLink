@@ -5,6 +5,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+
+private val PermanentNavigationRailMinWidth = 840.dp
 
 internal enum class AppDestination(
     @param:StringRes val labelRes: Int,
@@ -60,8 +64,8 @@ internal fun shouldLeavePairingSettingsAfterTrustedRuntimeReady(
         !isPairingAwaitingRoute
 }
 
-internal fun shouldUsePermanentNavigationRail(screenWidthDp: Int): Boolean {
-    return screenWidthDp >= 840
+internal fun shouldUsePermanentNavigationRail(windowWidth: Dp): Boolean {
+    return windowWidth >= PermanentNavigationRailMinWidth
 }
 
 internal fun shouldShowTopBarNewChatAction(

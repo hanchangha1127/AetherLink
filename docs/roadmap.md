@@ -11,8 +11,130 @@ ideas and implementation history, but `v0.x` or `v1.x` labels in older sections
 are not release commitments. In particular, Windows, DGX OS, iOS, additional
 serving backends, MCP, web search, skills, workspaces, and automations are
 post-V1 work unless a later approved scope decision explicitly changes that.
-Personal-project governance changes no product security requirement
-or G1a no-network scope.
+Historical security material remains reference-only and does not govern the
+active non-security lane.
+
+### Current Non-Security Quality Lane
+
+Active implementation is limited to non-security feature, UX, accessibility,
+performance, build, and release-quality work at the user's direction. The G2
+security track below is paused and retained as historical roadmap context; it
+is not the next action.
+
+The current G5 accessibility slice closes the previously under-tested 200%
+font-size ceiling for core Chat and Settings controls. Existing no-device
+Compose regressions now exercise all five supported locales at font scale
+`2.0`, with compact Chat and Settings viewports and a copy-hygiene guard against
+future downgrades. Both focused tests pass. The full no-device gate and
+physical-device visual checks remain unclaimed.
+
+The next release-packaging gap is also closed locally: Android App Bundle
+language splitting is disabled so all five supported translations remain
+available to the existing in-app locale picker. The parity guard, offline lint,
+and unsigned release-bundle build pass. Play-generated APK delivery and
+physical-device locale switching remain unclaimed.
+
+All 23 shared plural resources now follow each supported locale's Android/CLDR
+categories. Exact category/placeholder shapes are statically pinned. Eight
+terminal progress strings use typographic ellipses across all six resource
+sets, and nine additional count-sensitive summaries select singular grammar;
+three abbreviation or independent-multi-count strings use only targeted
+per-resource lint ignores. A clean ten-test affected-path slice and independent
+GPT-5.6 Sol review pass. `TypographyEllipsis`, `PluralsCandidate`,
+`MissingQuantity`, and `UnusedQuantity` are all zero; physical rendering and
+spoken plural output remain unclaimed.
+
+Adaptive navigation now derives the 840dp permanent-rail breakpoint from the
+actual Compose window container rather than device configuration width. The
+typed `Dp` boundary and top-bar behavior pass focused tests. Physical
+split-screen, freeform-window, and fold-state visual checks remain unclaimed.
+
+Unchanged chat messages now retain their outer Markdown/fenced-code parse
+results across unrelated recompositions. Parser and multilingual rendering/copy
+regressions pass; streaming content changes still invalidate the cache.
+Physical frame-time improvement remains unmeasured.
+
+Android's disabled-animation setting now changes chat feedback behavior rather
+than merely shortening framework animation time: streaming progress becomes a
+static centered segment, and both automatic and user-requested latest-message
+scrolling are immediate. Standard motion is unchanged. Policy and dual-mode
+multilingual Compose regressions pass; physical accessibility-setting and
+screen-reader checks remain unclaimed.
+
+The first local G6 packaging defect is also closed: macOS package-only mode now
+uses a Swift Release build and embeds the SwiftPM localization bundle under the
+standard signed app resource directory. The app prefers that packaged bundle,
+version metadata is present, and strict local ad-hoc verification passes
+without launching the app. A new shared ledger now supplies the same
+`1.0.0+1` metadata to macOS packaging and Android Release while Android Debug
+remains `0.1.0+1` and builds without the ledger; the three consumers share a
+strict LF-only byte boundary, monotonic guard, and semantic-regression guard.
+Final distribution identity, Developer ID signing, notarization, signed DMG,
+and clean-machine execution remain open G6 requirements. Intel macOS remains
+Post-V1 and is not a G6 obligation.
+
+Android G6 release optimization is now explicit as well. Release-only R8 code
+shrinking/obfuscation and resource shrinking use the optimized Android defaults
+and dependency consumer rules without a broad app keep file. A clean offline
+APK/AAB/lint build passes. V1 Release is now `arm64-v8a`-only: the unsigned AAB
+is 10,658,234 bytes, contains one DEX, retains all five app locales and five JNI
+libraries, and embeds the generated mapping byte-for-byte. The ChromeOS x86_64
+lint warning is narrowly excluded because ChromeOS is outside the V1 matrix.
+Final application ID, production signing, Play-generated delivery, physical
+release launch, and three SDK/policy notices remain open G6 requirements.
+
+One canonical local release container now retains the unsigned APK/AAB, R8
+outputs, dependency report, arm64 ad-hoc macOS app, and UUID-matched dSYM with
+an exact 234-file source snapshot, external checksum, immutable publication,
+and independent full readback. APK identity/version/SDK/ABI are independently
+read with aapt2. The builder and separate readback verifier now also execute
+AGP-pinned `bundletool 1.18.3` against their own AAB bytes and directly confirm
+the base manifest package, version code/name, and minimum/target SDK. Current
+dependency JNI inputs are already stripped, so Android native symbols remain
+explicitly unavailable rather than falsely complete. R8's three unstable
+metadata/order surfaces are canonicalized with an explicit manifest contract;
+other raw tool/debug paths still make this local normalized-input evidence, not
+a cross-checkout reproducible build or a completed G6 signed-release gate.
+
+Release-scoped dependency locking is now closed for the current checkout. Six
+generated Gradle locks cover settings, buildscript, and clean Release-resolved
+configurations; two byte-identical writers and two strict read-only clean
+Release readers passed without lock mutation. The manifest explicitly excludes
+only `org.jetbrains.kotlin:kotlin-stdlib-common`, whose configuration membership
+Gradle 9.4.1 did not persist consistently, while its parent
+`kotlin-stdlib:2.3.21` remains locked. SwiftPM reports zero external
+dependencies, so no `Package.resolved` is required. Debug, test, androidTest,
+clean-machine, and cross-machine dependency resolution remain unclaimed. The
+versioned release notes/compatibility/migration/known-limitations/support/
+privacy/rollback pack is now consolidated in
+`docs/releases/1.0.0-build-1-local-v1.md`. It explicitly labels the current
+container as a local qualification candidate rather than a production release.
+That same document now embeds one canonical first-lineage transition fixture:
+there is no production predecessor, N/N-1 remains unproven, both development
+baselines require clean install plus fresh pairing, and no state migration or
+in-place upgrade is claimed. The checker cross-validates it against the current
+ledger and the G0 version/identity/migration/compatibility fields. A second
+canonical fixture now records the 2026-07-28 provider baseline: Ollama
+`0.32.5`/`0.32.4` and LM Studio `0.4.20` build 1/`0.4.19` build 2 are the
+official current/previous candidates, while local schema smoke covered Ollama
+`0.32.4` and LM Studio `0.4.17-beta+3`. SHA-256-verified official Darwin
+archives for both exact Ollama candidates now pass the AetherLink adapter's
+health and empty-catalog checks after cold start and process restart, and their
+endpoints close after stop. Four opt-in exact-version runs pass. The default
+focused backend suites pass 141 of 144 executed tests, with the two live-unload
+tests and the new opt-in compatibility test skipped. Exact LM Studio candidate
+testing, minimum versions, model-backed chat/cancel/embedding/lifecycle, and
+complete candidate qualification remain unclaimed.
+
+Android Compose API and primitive-state cleanup now removes 15 release-lint
+issues without changing UI behavior. An independent GPT-5.6 Sol audit confirms
+all 197 affected calls use named arguments; 22 focused clean no-device tests
+pass, and all three targeted issue IDs remain absent. After the later localized
+resource cleanup, current release lint is at 0 errors, 3 warnings, and 0 hints.
+Fifty unused keys per resource set, legacy API-25 launcher PNGs, three KTX
+findings, and the locale-config attribute warning are gone. Adaptive standard
+and round icons now include a generated monochrome layer. Physical interaction,
+launcher rendering, and frame-time improvement remain unclaimed.
 
 ### Current G2 Rung-Three Dependency Fixed-Point Waves
 

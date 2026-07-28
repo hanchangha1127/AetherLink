@@ -78,6 +78,7 @@ let package = Package(
             name: macCompanionTarget,
             dependencies: ["CompanionCore", "OllamaBackend"],
             path: "apps/macos/LocalAgentBridgeApp/Sources",
+            exclude: ["Resources/AppIcon.icns"],
             resources: [.process("Resources")]
         ),
         .executableTarget(

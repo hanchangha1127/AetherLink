@@ -40,9 +40,8 @@
     <string name="permanently_delete_research_notebook_confirm_first">"%1$s"을(를) 영구 삭제할까요? 보관된 노트북에만 사용할 수 있습니다.</string>
     <string name="permanently_delete_research_notebook_confirm_second">"%1$s" 영구 삭제를 다시 확인하세요. 이 작업은 취소할 수 없습니다.</string>
     <string name="create_research_brief">리서치 브리프 만들기</string>
-    <string name="loading_research_notebooks">노트북 불러오는 중...</string>
+    <string name="loading_research_notebooks">노트북 불러오는 중…</string>
     <plurals name="research_notebook_source_count">
-        <item quantity="one">소스 %1$d개</item>
         <item quantity="other">소스 %1$d개</item>
     </plurals>
     <string name="research_topic">주제</string>
@@ -56,7 +55,6 @@
     <string name="chat_history_group_older">이전</string>
     <string name="no_previous_chats">아직 이전 채팅이 없습니다.</string>
     <string name="chat_search_label">채팅 검색</string>
-    <string name="clear_chat_search">채팅 검색 지우기</string>
     <string name="clear_chat_search_named">%1$s 검색어로 된 채팅 검색 지우기</string>
     <string name="no_chat_search_results">일치하는 채팅이 없습니다.</string>
     <string name="chat_search_match_rank">일치 %1$d</string>
@@ -73,7 +71,6 @@
     <string name="untitled_chat">제목 없는 채팅</string>
     <string name="chat_top_bar_active_title_summary">현재 채팅 %1$s</string>
     <plurals name="chat_message_count">
-        <item quantity="one">메시지 %1$d개</item>
         <item quantity="other">메시지 %1$d개</item>
     </plurals>
     <string name="chat_session_status_value">%1$s - %2$s</string>
@@ -81,7 +78,6 @@
     <string name="chat_session_status_cancelled">취소됨</string>
     <string name="chat_session_status_failed">확인 필요</string>
     <string name="chat_session_status_in_progress">진행 중</string>
-    <string name="chat_session_more">채팅 옵션</string>
     <string name="chat_session_more_named">%1$s 채팅 옵션</string>
     <string name="chat_session_model_value">모델: %1$s</string>
     <string name="chat_session_row_summary">채팅 %1$s. %2$s.</string>
@@ -105,15 +101,12 @@
     <string name="chat_history_settings_subtitle">채팅을 보관하고 나중에 복원하거나, 보관된 채팅만 영구 삭제합니다.</string>
     <string name="chat_history_summary_title">저장된 채팅</string>
     <plurals name="chat_history_saved_count">
-        <item quantity="one">저장된 채팅 %1$d개</item>
         <item quantity="other">저장된 채팅 %1$d개</item>
     </plurals>
     <plurals name="chat_history_active_count">
-        <item quantity="one">활성 채팅 %1$d개</item>
         <item quantity="other">활성 채팅 %1$d개</item>
     </plurals>
     <plurals name="chat_history_archived_count">
-        <item quantity="one">보관된 채팅 %1$d개</item>
         <item quantity="other">보관된 채팅 %1$d개</item>
     </plurals>
     <string name="chat_history_summary_detail">활성: %1$s. 보관: %2$s.</string>
@@ -153,7 +146,6 @@
     <string name="delete">삭제</string>
     <string name="delete_chat">채팅 삭제</string>
     <string name="delete_chat_named">%1$s 채팅 삭제</string>
-    <string name="clear">지우기</string>
 
     <string name="pairing_title">AetherLink 페어링</string>
     <string name="pairing_subtitle">모델을 불러오거나 채팅하기 전에 신뢰된 AetherLink QR을 스캔하세요.</string>
@@ -213,7 +205,6 @@
     <string name="pending_pairing_route_accessibility_summary">QR 스캔 완료. 이 QR은 %1$s를 확인했지만 보호된 연결 정보 없이는 다른 네트워크에서 다시 연결할 수 없습니다. AetherLink Runtime에서 최신 QR을 생성한 뒤 다시 스캔하세요. %1$s 대기 중</string>
     <string name="discovery_detail">연결 가능한 AetherLink Runtime을 찾은 뒤 QR 코드를 스캔해 신뢰를 설정합니다.</string>
     <string name="stop">중지</string>
-    <string name="use">사용</string>
     <string name="use_trusted_connection">신뢰된 연결 사용</string>
     <string name="use_trusted_connection_named">%1$s에 신뢰된 연결 사용</string>
     <string name="forget">삭제</string>
@@ -227,7 +218,6 @@
     <string name="emulator">에뮬레이터 연결</string>
     <string name="runtime_host">연결 주소</string>
     <string name="runtime_port">연결 포트</string>
-    <string name="pairing_code">페어링 QR</string>
     <string name="connect_runtime">연결</string>
     <string name="connect_remote_route">신뢰된 경로 연결</string>
     <string name="connecting">연결 중</string>
@@ -242,11 +232,9 @@
     <string name="discovery_route_qr_required">QR 필요</string>
     <string name="discovery_route_not_trusted">신뢰 안 됨</string>
     <string name="discovered_runtime_unavailable_summary">%1$s. %2$s. %3$s.</string>
-    <string name="connect_requires_pairing">먼저 AetherLink Runtime QR을 스캔하세요. 신뢰가 설정되기 전에는 경로 진단이 꺼져 있습니다.</string>
 
     <string name="status_title">페어링 및 연결</string>
     <string name="status_subtitle">페어링 QR을 스캔하면 AetherLink가 신뢰된 연결을 자동으로 복원합니다.</string>
-    <string name="status_connected_summary">이 기기와 신뢰된 런타임이 연결되어 있습니다.</string>
     <string name="status_disconnected_summary">모델을 사용하려면 신뢰된 런타임에 연결하세요.</string>
     <string name="status_hero_accessibility_summary">%1$s. %2$s</string>
     <string name="status_connected_trusted_title">신뢰된 런타임으로 연결됨</string>
@@ -265,23 +253,12 @@
     <string name="status_connect_ready_detail">연결을 사용해 %1$s에 다시 연결하세요.</string>
     <string name="runtime">AetherLink Runtime</string>
     <string name="backend">모델 서비스</string>
-    <string name="endpoint">경로</string>
-    <string name="runtime_route">경로</string>
-    <string name="runtime_route_resolving">신뢰된 경로 확인 중</string>
-    <string name="runtime_route_pair_first">먼저 AetherLink와 페어링하세요</string>
-    <string name="runtime_route_saved_hint">저장된 로컬 경로</string>
     <string name="runtime_route_local_discovery">로컬 검색 경로</string>
-    <string name="runtime_route_local_qr">QR의 로컬 경로</string>
-    <string name="runtime_route_relay">신뢰된 연결</string>
-    <string name="runtime_route_p2p">P2P 경로</string>
-    <string name="runtime_route_development">문제 해결 경로</string>
-    <string name="runtime_route_diagnostics">문제 해결 경로</string>
     <string name="connected">연결됨</string>
     <string name="auto_reconnect">자동 재연결</string>
     <string name="auto_reconnect_detail">이 기기가 앱으로 돌아오면 신뢰된 런타임에 자동으로 다시 연결합니다.</string>
     <string name="auto_reconnect_paused">자동 재연결이 일시 중지되었습니다. 연결을 사용하면 신뢰된 런타임 복구가 다시 켜집니다.</string>
     <string name="auto_reconnect_state_pair_first">꺼짐. 자동 재연결을 켜기 전에 AetherLink Runtime과 페어링하세요.</string>
-    <string name="health">상태 확인</string>
     <string name="disconnect">연결 해제</string>
     <string name="yes">예</string>
     <string name="no">아니오</string>
@@ -305,7 +282,9 @@
     <string name="provider_status_row_summary_retryable">%1$s, %2$s. %3$s %4$s</string>
     <string name="provider_status_summary_all_ready">모든 모델 서비스 준비됨</string>
     <string name="provider_status_summary_none_ready">모델 서비스 확인 필요</string>
-    <string name="provider_status_summary_mixed">모델 서비스 %2$d개 중 %1$d개 준비됨</string>
+    <plurals name="provider_status_summary_mixed">
+        <item quantity="other">모델 서비스 %2$d개 중 %1$d개 준비됨</item>
+    </plurals>
     <string name="provider_ollama_unavailable_hint">Ollama가 런타임을 통해 응답하지 않습니다. AetherLink Runtime에서 제공자 상태를 확인한 다음 상태를 새로고침하세요.</string>
     <string name="provider_lm_studio_unavailable_hint">LM Studio가 런타임을 통해 응답하지 않습니다. AetherLink Runtime에서 제공자 상태를 확인한 다음 상태를 새로고침하세요.</string>
     <string name="provider_unavailable_hint">%1$s이(가) 런타임을 통해 응답하지 않습니다. AetherLink Runtime에서 제공자 상태를 확인한 다음 상태를 새로고침하세요.</string>
@@ -330,9 +309,7 @@
     <string name="model_residency_unload_reason_idle_timeout">유휴 시간 초과</string>
     <string name="model_residency_unload_reason_manual">수동 언로드</string>
 
-    <string name="models_title">모델</string>
     <string name="choose_model">모델 선택</string>
-    <string name="models_subtitle">AetherLink Runtime이 제공하는 모델을 선택합니다.</string>
     <string name="load_models">모델 새로고침</string>
     <string name="selected_model">선택된 모델</string>
     <string name="drawer_runtime_summary_accessibility">런타임 %1$s. 상태: %2$s. 선택된 모델: %3$s.</string>
@@ -352,8 +329,6 @@
     <string name="chat_model_picker_summary">채팅 모델 선택기. %1$s. %2$s</string>
     <string name="chat_model_picker_summary_selected">채팅 모델 선택기. 선택된 채팅 모델 %1$s.</string>
     <string name="models_from_runtime">모델은 이 앱에서 직접 불러오지 않고 AetherLink Runtime을 통해 불러옵니다.</string>
-    <string name="models_need_connection">모델을 불러오기 전에 신뢰된 런타임에 연결하세요.</string>
-    <string name="model_backend_value">모델 서비스: %1$s</string>
     <string name="model_status_value">%1$s - %2$s</string>
     <string name="model_status_capabilities_value">%1$s · %2$s</string>
     <string name="chat_model_row_summary">채팅 모델 %1$s. %2$s. %3$s</string>
@@ -361,7 +336,9 @@
     <string name="model_capability_chat">채팅</string>
     <string name="model_capability_embedding">임베딩</string>
     <string name="model_capability_vision">비전</string>
-    <string name="model_capability_context_window">컨텍스트: %1$,d 토큰</string>
+    <plurals name="model_capability_context_window">
+        <item quantity="other">컨텍스트: %1$,d 토큰</item>
+    </plurals>
     <string name="model_capability_visual_pair">%1$s · %2$s</string>
     <string name="model_capability_accessibility_pair">%1$s, %2$s</string>
     <string name="model_capabilities_accessibility">기능: %1$s.</string>
@@ -369,47 +346,33 @@
     <string name="model_running">실행 중</string>
     <string name="model_not_installed">설치되지 않음</string>
     <string name="model_not_recommended_for_images">이미지에는 권장되지 않음</string>
-    <string name="model_available_to_install">설치 가능</string>
-    <string name="model_source_value">소스: %1$s</string>
-    <string name="model_size_value">크기: %1$s</string>
-    <string name="install_model">모델 설치</string>
     <string name="model_install_host_approval_required">런타임 승인 필요</string>
-    <string name="installing_model">설치 중...</string>
+    <string name="installing_model">설치 중…</string>
     <string name="model_picker_empty_state_summary">%1$s. %2$s</string>
     <string name="no_models_connected_title">불러온 모델 없음</string>
-    <string name="no_models_connected">AetherLink Runtime을 통해 모델을 불러오세요.</string>
     <string name="no_models_disconnected_title">런타임 필요</string>
     <string name="no_models_disconnected">모델을 불러오려면 먼저 신뢰된 런타임에 연결하세요.</string>
-    <string name="loading_models">모델 불러오는 중...</string>
+    <string name="loading_models">모델 불러오는 중…</string>
     <string name="model_search_label">모델 검색</string>
-    <string name="clear_model_search">모델 검색 지우기</string>
     <string name="clear_model_search_named">%1$s 검색어로 된 모델 검색 지우기</string>
-    <string name="no_model_search_results_title">일치하는 모델 없음</string>
     <string name="no_model_search_results">다른 모델 이름, 제공자, 서비스 또는 소스로 검색해보세요.</string>
 
-    <string name="chat_title">채팅</string>
-    <string name="chat_subtitle">메시지는 AetherLink Runtime을 통해 스트리밍됩니다.</string>
-    <string name="chat_via_companion">AetherLink Runtime 경유</string>
     <string name="model_value">모델: %1$s</string>
     <string name="model_none">없음</string>
     <string name="model_provider_value">제공자: %1$s</string>
-    <string name="model_source_local">로컬</string>
-    <string name="model_source_cloud">제공자 관리</string>
     <string name="provider_ollama">Ollama</string>
     <string name="provider_lm_studio">LM Studio</string>
     <string name="provider_companion_runtime">AetherLink Runtime</string>
     <string name="message">메시지</string>
-    <string name="send">전송</string>
     <string name="cancel">취소</string>
-    <string name="attach_files">파일 첨부</string>
     <string name="attach_files_state_ready">파일을 첨부할 수 있습니다.</string>
     <plurals name="attach_files_state_count">
-        <item quantity="one">%2$d개 중 %1$d개 파일이 첨부되었습니다.</item>
         <item quantity="other">%2$d개 중 %1$d개 파일이 첨부되었습니다.</item>
     </plurals>
-    <string name="attach_files_state_limit_reached">%2$d개 중 %1$d개 파일이 첨부되었습니다. 첨부 제한에 도달했습니다.</string>
+    <plurals name="attach_files_state_limit_reached">
+        <item quantity="other">%2$d개 중 %1$d개 파일이 첨부되었습니다. 첨부 제한에 도달했습니다.</item>
+    </plurals>
     <string name="attach_files_state_unavailable">첨부를 사용할 수 없습니다.</string>
-    <string name="remove_attachment">첨부 제거</string>
     <string name="attachment_type_image">이미지</string>
     <string name="attachment_type_document">문서</string>
     <string name="attachment_metadata_with_size">%1$s · %2$s</string>
@@ -431,14 +394,9 @@
     <string name="empty_chat_no_model">전송하기 전에 모델을 선택하세요.</string>
     <string name="empty_chat_streaming_title">응답 진행 중</string>
     <string name="empty_chat_streaming">AetherLink Runtime에서 스트리밍 응답을 받는 중입니다.</string>
-    <string name="loading_chat_messages">채팅 불러오는 중...</string>
-    <string name="streaming">응답 수신 중</string>
-    <string name="streaming_detail">AetherLink Runtime에서 스트리밍 응답을 받는 중입니다.</string>
+    <string name="loading_chat_messages">채팅 불러오는 중…</string>
     <string name="chat_status_connected">연결됨</string>
     <string name="chat_status_disconnected">연결 안 됨</string>
-    <string name="chat_status_streaming">응답 중</string>
-    <string name="chat_uses_runtime">채팅 요청은 AetherLink Runtime을 통해 전달됩니다.</string>
-    <string name="chat_needs_runtime">채팅하려면 신뢰된 런타임에 연결하세요.</string>
     <string name="chat_backend_unavailable_title">모델 서비스 확인 필요</string>
     <string name="chat_backend_unavailable_detail">AetherLink Runtime에서 모델 서비스 상태를 확인한 다음 상태를 새로고침하세요.</string>
     <string name="chat_backend_unavailable_summary">%1$s. %2$s</string>
@@ -461,7 +419,7 @@
     <string name="role_assistant">어시스턴트</string>
     <string name="role_assistant_initial">어</string>
     <string name="chat_message_accessibility_summary">%1$s: %2$s</string>
-    <string name="assistant_typing">응답 생성 중...</string>
+    <string name="assistant_typing">응답 생성 중…</string>
     <string name="assistant_reasoning_label">생각</string>
     <string name="assistant_reasoning_summary">%1$s. %2$s. %3$s</string>
     <string name="assistant_reasoning_state_shown">전체 표시됨</string>
@@ -470,7 +428,6 @@
     <string name="copy_message">메시지 복사</string>
     <string name="chat_source_attributions_title">응답에 제공된 소스</string>
     <plurals name="chat_source_attributions_accessibility_summary">
-        <item quantity="one">응답에 제공된 소스가 %1$d개 있습니다.</item>
         <item quantity="other">응답에 제공된 소스가 %1$d개 있습니다.</item>
     </plurals>
     <string name="chat_source_attribution_item">%1$d. %2$s, %3$s, 구간 %4$d</string>
@@ -487,17 +444,14 @@
     <string name="copy_code_block_named">%1$s 코드 블록 %2$d 복사</string>
     <string name="copy_code_block_numbered">코드 블록 %1$d 복사</string>
     <plurals name="code_block_line_count">
-        <item quantity="one">%1$d줄</item>
         <item quantity="other">%1$d줄</item>
     </plurals>
     <string name="code_block_language_unspecified">언어 지정 안 됨</string>
     <string name="code_block_accessibility_summary">코드 블록. %1$s. %2$s.</string>
     <plurals name="markdown_table_column_count">
-        <item quantity="one">열 %1$d개</item>
         <item quantity="other">열 %1$d개</item>
     </plurals>
     <plurals name="markdown_table_row_count">
-        <item quantity="one">행 %1$d개</item>
         <item quantity="other">행 %1$d개</item>
     </plurals>
     <string name="markdown_table_accessibility_summary">표. %1$s. %2$s.</string>
@@ -568,22 +522,22 @@
     <string name="memory_connect_to_load">메모리를 불러오고 관리하려면 신뢰된 런타임에 연결하세요.</string>
     <string name="memory_read_only_notice">현재 세션에 표시된 메모리는 읽기 전용입니다. 새로고침하거나 관리하려면 신뢰된 런타임에 다시 연결하세요.</string>
     <plurals name="memory_saved_count">
-        <item quantity="one">저장된 메모리 %1$d개</item>
         <item quantity="other">저장된 메모리 %1$d개</item>
     </plurals>
     <plurals name="memory_paused_count">
-        <item quantity="one">일시 중지 %1$d개</item>
         <item quantity="other">일시 중지 %1$d개</item>
     </plurals>
     <string name="memory_summary">%1$s, %2$s.</string>
     <string name="memory_refresh">메모리 새로고침</string>
     <string name="memory_refresh_state_ready">메모리를 새로고침할 준비가 되었습니다.</string>
     <string name="memory_duplicate_suggestions_scan">정확히 중복된 메모리 찾기</string>
-    <string name="memory_duplicate_suggestions_scanning">정확히 중복된 메모리를 찾는 중...</string>
+    <string name="memory_duplicate_suggestions_scanning">정확히 중복된 메모리를 찾는 중…</string>
     <string name="memory_duplicate_suggestions_scan_state_ready">정확히 중복된 메모리를 검토할 준비가 되었습니다.</string>
     <string name="memory_duplicate_suggestions_title">정확한 중복 메모리 제안</string>
     <string name="memory_duplicate_suggestions_review_only">검토 전용입니다. 자동으로 병합, 수정 또는 삭제하지 않습니다.</string>
-    <string name="memory_duplicate_suggestions_scanned_count">메모리 항목 %1$d개를 확인했습니다.</string>
+    <plurals name="memory_duplicate_suggestions_scanned_count">
+        <item quantity="other">메모리 항목 %1$d개를 확인했습니다.</item>
+    </plurals>
     <string name="memory_duplicate_suggestions_truncated">검사 한도에 도달하여 결과가 완전하지 않을 수 있습니다.</string>
     <string name="memory_duplicate_suggestions_empty">정확히 중복된 메모리를 찾지 못했습니다.</string>
     <string name="memory_duplicate_suggestions_group">중복 그룹 %1$d</string>
@@ -591,13 +545,17 @@
     <string name="memory_semantic_duplicate_suggestions_review_only">유사할 수 있는 메모리는 모델에 따라 달라지는 검토 전용 제안입니다. 자동으로 병합, 수정, 전환 또는 삭제하지 않습니다.</string>
     <string name="memory_semantic_duplicate_suggestions_threshold">유사도 기준: %1$.2f%%</string>
     <string name="memory_semantic_duplicate_suggestions_scan">유사할 수 있는 메모리 찾기</string>
-    <string name="memory_semantic_duplicate_suggestions_scanning">유사할 수 있는 메모리를 찾는 중...</string>
+    <string name="memory_semantic_duplicate_suggestions_scanning">유사할 수 있는 메모리를 찾는 중…</string>
     <string name="memory_semantic_duplicate_suggestions_scan_state_ready">유사할 수 있는 메모리를 검토할 준비가 되었습니다.</string>
     <string name="memory_semantic_duplicate_suggestions_select_local_model">유사할 수 있는 메모리를 확인하려면 설치된 로컬 메모리 색인 모델을 선택하세요.</string>
     <string name="memory_semantic_duplicate_suggestions_model_unavailable">선택한 로컬 메모리 색인 모델을 현재 사용할 수 없습니다. 모델을 새로고침하거나 다른 모델을 선택하세요.</string>
     <string name="memory_semantic_duplicate_suggestions_unavailable">이 런타임에서는 현재 유사 메모리 검토를 사용할 수 없습니다.</string>
-    <string name="memory_semantic_duplicate_suggestions_result_summary">메모리 항목 %1$d개를 %2$.2f%% 기준으로 확인했습니다.</string>
-    <string name="memory_semantic_duplicate_suggestions_omitted_count">제한된 유사도 검사에 포함할 수 없어 항목 %1$d개를 제외했습니다.</string>
+    <plurals name="memory_semantic_duplicate_suggestions_result_summary">
+        <item quantity="other">메모리 항목 %1$d개를 %2$.2f%% 기준으로 확인했습니다.</item>
+    </plurals>
+    <plurals name="memory_semantic_duplicate_suggestions_omitted_count">
+        <item quantity="other">제한된 유사도 검사에 포함할 수 없어 항목 %1$d개를 제외했습니다.</item>
+    </plurals>
     <string name="memory_semantic_duplicate_suggestions_truncated">의미 유사도 검사 한도에 도달하여 결과가 완전하지 않을 수 있습니다.</string>
     <string name="memory_semantic_duplicate_suggestions_empty">유사할 수 있는 메모리를 찾지 못했습니다.</string>
     <string name="memory_semantic_duplicate_suggestions_pair">가능한 쌍 %1$d: %2$.2f%% 유사</string>
@@ -605,13 +563,17 @@
     <string name="memory_semantic_duplicate_clusters_review_only">모델에 따라 달라지는 유사 메모리 클러스터이며 검토 전용입니다. 자동으로 병합, 편집, 활성화 전환 또는 삭제하지 않습니다.</string>
     <string name="memory_semantic_duplicate_clusters_threshold">클러스터 유사도 임계값: %1$.2f%%</string>
     <string name="memory_semantic_duplicate_clusters_scan">유사 메모리 클러스터 찾기</string>
-    <string name="memory_semantic_duplicate_clusters_scanning">유사 메모리 클러스터를 찾는 중...</string>
+    <string name="memory_semantic_duplicate_clusters_scanning">유사 메모리 클러스터를 찾는 중…</string>
     <string name="memory_semantic_duplicate_clusters_scan_state_ready">유사 메모리 클러스터를 검토할 준비가 되었습니다.</string>
     <string name="memory_semantic_duplicate_clusters_select_local_model">유사 메모리 클러스터를 찾으려면 설치된 로컬 메모리 인덱싱 모델을 선택하세요.</string>
     <string name="memory_semantic_duplicate_clusters_model_unavailable">선택한 로컬 메모리 인덱싱 모델을 현재 사용할 수 없습니다. 모델을 새로 고치거나 다른 모델을 선택하세요.</string>
     <string name="memory_semantic_duplicate_clusters_unavailable">현재 이 런타임에서는 유사 메모리 클러스터 검토를 사용할 수 없습니다.</string>
-    <string name="memory_semantic_duplicate_clusters_result_summary">%2$.2f%% 임계값으로 메모리 항목 %1$d개를 스캔했습니다.</string>
-    <string name="memory_semantic_duplicate_clusters_omitted_count">항목 %1$d개를 제한된 클러스터 스캔에 포함하지 못했습니다.</string>
+    <plurals name="memory_semantic_duplicate_clusters_result_summary">
+        <item quantity="other">%2$.2f%% 임계값으로 메모리 항목 %1$d개를 스캔했습니다.</item>
+    </plurals>
+    <plurals name="memory_semantic_duplicate_clusters_omitted_count">
+        <item quantity="other">항목 %1$d개를 제한된 클러스터 스캔에 포함하지 못했습니다.</item>
+    </plurals>
     <string name="memory_semantic_duplicate_clusters_truncated">클러스터 스캔 한도에 도달하여 결과가 불완전할 수 있습니다.</string>
     <string name="memory_semantic_duplicate_clusters_empty">유사 메모리 클러스터를 찾지 못했습니다.</string>
     <string name="memory_semantic_duplicate_clusters_cluster">클러스터 %1$d: 최소 유사도 %2$.2f%%</string>
@@ -621,7 +583,9 @@
     <string name="clear_document_search_named">%1$s 검색어로 된 문서 검색 지우기</string>
     <string name="document_index_search_ready">%1$s 검색을 준비했습니다. 새로고침하면 런타임에 검색을 요청합니다.</string>
     <string name="no_document_search_results">일치하는 문서 발췌가 없습니다.</string>
-    <string name="document_index_search_result_summary">%1$s 검색어와 일치하는 문서 결과 %2$d개를 표시 중입니다.</string>
+    <plurals name="document_index_search_result_summary">
+        <item quantity="other">%1$s 검색어와 일치하는 문서 결과 %2$d개를 표시 중입니다.</item>
+    </plurals>
     <string name="document_index_summary">문서 %1$d개. 청크 %2$d개. 문자 %3$d개. 품질: 빈 문서 %4$d개, 단일 청크 %5$d개, 청크됨 %6$d개.</string>
     <string name="document_index_document_metadata">%1$s. 청크 %2$d개. 문자 %3$d개. %4$s.</string>
     <string name="document_index_catalog_row_summary">%1$s. %2$s</string>
@@ -666,11 +630,9 @@
     <string name="chat_trusted_source_remove_named">채팅 컨텍스트에서 %1$s 제거</string>
     <string name="memory_summary_drafts_title">제안된 메모리</string>
     <plurals name="memory_summary_drafts_count">
-        <item quantity="one">오래된 채팅에서 온 제안 %1$d개</item>
         <item quantity="other">오래된 채팅에서 온 제안 %1$d개</item>
     </plurals>
     <plurals name="memory_summary_draft_source_count">
-        <item quantity="one">출처 %1$d개</item>
         <item quantity="other">출처 %1$d개</item>
     </plurals>
     <string name="memory_summary_draft_source_range">범위 %1$s</string>
@@ -696,7 +658,6 @@
     <string name="memory_summary_draft_dismissing">메모리 숨기는 중…</string>
     <string name="memory_summary_draft_dismiss_named">%1$s의 제안 메모리 숨기기</string>
     <string name="memory_summary_draft_dismiss_state_ready">제안 메모리를 숨길 준비가 되었습니다.</string>
-    <string name="memory_remove">메모리 삭제</string>
     <string name="memory_remove_named">%1$s 메모리 삭제</string>
     <string name="memory_enable_named">%1$s 메모리 사용</string>
     <string name="memory_pause_named">%1$s 메모리 일시 중지</string>
@@ -798,7 +759,6 @@
     <string name="error_unreadable_attachment">AetherLink Runtime이 이 첨부 파일을 읽을 수 없습니다.</string>
     <string name="error_select_chat_model">대화에는 채팅 모델을 선택하세요.</string>
     <string name="error_select_embedding_model">메모리 색인 모델을 선택하세요.</string>
-    <string name="error_qr_empty_detail">QR 코드가 비어 있습니다</string>
     <string name="error_qr_scanner_unavailable_detail">QR 스캐너를 시작할 수 없습니다. 카메라 권한을 확인하거나 앱을 다시 여세요.</string>
     <string name="error_ollama_auth_required">Ollama 접근 상태를 확인해야 합니다.</string>
     <string name="error_ollama_auth_required_detail">AetherLink Runtime에서 Ollama 접근 상태를 확인한 뒤 다시 시도하세요.</string>
@@ -821,12 +781,6 @@
     <string name="route_diagnostic_direct_qr_rejected">이 QR에는 근거리 전용 진단 경로가 포함되어 있어 다른 네트워크 페어링에 사용할 수 없습니다.</string>
     <string name="route_diagnostic_relay_qr_unreachable">이 QR은 이 기기에서 도달할 수 없는 경로를 가리킵니다. 두 기기 모두에서 도달 가능한 릴레이 경로를 사용하세요.</string>
     <string name="route_diagnostic_private_overlay_scope_required">이 QR은 private_overlay 범위가 없는 프라이빗 릴레이 주소를 사용합니다. 두 기기 모두 도달할 수 있는 릴레이, VPN, 터널 또는 프라이빗 오버레이에서 새 QR을 생성하세요.</string>
-    <string name="content_desc_error">오류</string>
-    <string name="content_desc_refresh">새로고침</string>
-    <string name="content_desc_close">닫기</string>
-    <string name="content_desc_device">기기</string>
-    <string name="content_desc_connect">연결</string>
-    <string name="content_desc_scan_qr">QR 스캔</string>
     <string name="content_desc_attach_files">파일 첨부</string>
     <string name="content_desc_remove_attachment">%1$s 첨부 제거</string>
     <string name="clear_draft">초안 지우기</string>

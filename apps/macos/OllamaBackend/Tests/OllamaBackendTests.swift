@@ -1825,6 +1825,79 @@ final class OllamaBackendTests: XCTestCase {
         XCTAssertFalse(runningAfter.contains(where: { Self.sameOllamaModel($0, modelID) }))
     }
 
+    func testLiveOllamaExactVersionEmptyCatalogCompatibility() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["AETHERLINK_RUN_OLLAMA_LIVE_COMPATIBILITY_TEST"] == "1" else {
+            throw XCTSkip(
+                "Set AETHERLINK_RUN_OLLAMA_LIVE_COMPATIBILITY_TEST=1 to enable the isolated Ollama compatibility test."
+            )
+        }
+        guard
+            let baseURLValue = environment["AETHERLINK_OLLAMA_LIVE_BASE_URL"],
+            let baseURL = URL(string: baseURLValue),
+            let expectedVersion = environment["AETHERLINK_OLLAMA_LIVE_EXPECTED_VERSION"],
+            let archiveSHA256 = environment["AETHERLINK_OLLAMA_LIVE_ARCHIVE_SHA256"],
+            let modelsDirectory = environment["AETHERLINK_OLLAMA_LIVE_MODELS_DIRECTORY"]
+        else {
+            XCTFail("Set the exact candidate URL, version, archive SHA-256, and isolated model directory.")
+            return
+        }
+        let exactCandidateHashes = [
+            "0.32.5": "5789dd037a86adb328c72c11fc45e6c558452d07e5b50814a8bdb7b0fbdbcd81",
+            "0.32.4": "15383493225d5e7e7fda052dc103ab4d2835a22eabb41655f1d6302c6d1577bc",
+        ]
+        guard
+            baseURL.scheme == "http",
+            baseURL.host == "127.0.0.1",
+            let port = baseURL.port,
+            port != 11434,
+            baseURL.user == nil,
+            baseURL.password == nil,
+            baseURL.query == nil,
+            baseURL.fragment == nil,
+            baseURL.path.isEmpty || baseURL.path == "/",
+            exactCandidateHashes[expectedVersion] == archiveSHA256
+        else {
+            XCTFail("The compatibility test accepts only a recorded candidate on a non-default loopback port.")
+            return
+        }
+        var isDirectory: ObjCBool = false
+        let modelsDirectoryURL = URL(
+            fileURLWithPath: modelsDirectory,
+            isDirectory: true
+        ).standardizedFileURL
+        guard
+            modelsDirectory.hasPrefix("/"),
+            modelsDirectoryURL.lastPathComponent == "empty-models",
+            modelsDirectoryURL.pathComponents.contains(where: {
+                $0.hasPrefix("aetherlink-ollama-compatibility-")
+            }),
+            FileManager.default.fileExists(
+                atPath: modelsDirectoryURL.path,
+                isDirectory: &isDirectory
+            ),
+            isDirectory.boolValue
+        else {
+            XCTFail("The compatibility test requires the runner-owned isolated model directory.")
+            return
+        }
+
+        let session = URLSession(configuration: .ephemeral)
+        let versionURL = baseURL.appending(path: "api/version")
+        let (versionData, versionResponse) = try await session.data(from: versionURL)
+        XCTAssertEqual((versionResponse as? HTTPURLResponse)?.statusCode, 200)
+        let versionPayload = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: versionData) as? [String: Any]
+        )
+        XCTAssertEqual(versionPayload["version"] as? String, expectedVersion)
+
+        let backend = OllamaBackend(baseURL: baseURL, session: session)
+        let status = await backend.healthCheck()
+        let models = try await backend.listModels()
+        XCTAssertEqual(status, .available)
+        XCTAssertTrue(models.isEmpty)
+    }
+
     private func byteStream(_ value: String) -> AsyncStream<UInt8> {
         AsyncStream { continuation in
             for byte in value.utf8 { continuation.yield(byte) }

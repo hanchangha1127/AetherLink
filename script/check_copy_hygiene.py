@@ -909,6 +909,7 @@ def android_client_ui_resource_copy_guard_failures() -> list[str]:
     failures: list[str] = []
     string_paths = sorted(ROOT.glob("apps/android/app/src/main/res/values*/strings.xml"))
     main_activity_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt"
+    app_navigation_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/AppNavigation.kt"
     runtime_local_store_path = ROOT / (
         "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt"
     )
@@ -1072,6 +1073,7 @@ def android_client_ui_resource_copy_guard_failures() -> list[str]:
             )
 
     main_activity_text = main_activity_path.read_text(encoding="utf-8", errors="replace")
+    app_navigation_text = app_navigation_path.read_text(encoding="utf-8", errors="replace")
     runtime_local_store_text = runtime_local_store_path.read_text(encoding="utf-8", errors="replace")
     runtime_view_model_text = runtime_view_model_path.read_text(encoding="utf-8", errors="replace")
     client_screens_text = client_screens_path.read_text(encoding="utf-8", errors="replace")
@@ -1079,6 +1081,144 @@ def android_client_ui_resource_copy_guard_failures() -> list[str]:
     runtime_view_model_test_text = runtime_view_model_test_path.read_text(encoding="utf-8", errors="replace")
     compose_test_text = compose_test_path.read_text(encoding="utf-8", errors="replace")
     qr_verifier_text = qr_verifier_path.read_text(encoding="utf-8", errors="replace")
+    required_window_container_width_snippets = (
+        (
+            main_activity_path,
+            main_activity_text,
+            "val windowInfo = LocalWindowInfo.current",
+            "Adaptive navigation must observe the current Compose window container.",
+        ),
+        (
+            main_activity_path,
+            main_activity_text,
+            "windowInfo.containerSize.width.toDp()",
+            "Adaptive navigation must convert the current window container width with the active density.",
+        ),
+        (
+            app_navigation_path,
+            app_navigation_text,
+            "internal fun shouldUsePermanentNavigationRail(windowWidth: Dp): Boolean",
+            "The permanent-navigation breakpoint must retain a typed window-width input.",
+        ),
+        (
+            app_navigation_test_path,
+            app_navigation_test_text,
+            "shouldUsePermanentNavigationRail(839.99.dp)",
+            "AppNavigationTest must cover the fractional value below the 840dp breakpoint.",
+        ),
+        (
+            app_navigation_test_path,
+            app_navigation_test_text,
+            "shouldUsePermanentNavigationRail(840.dp)",
+            "AppNavigationTest must cover the inclusive 840dp breakpoint.",
+        ),
+    )
+    for path, text, snippet, message in required_window_container_width_snippets:
+        if snippet not in text:
+            failures.append(f"{path.relative_to(ROOT)}: {message}")
+    if "shouldUsePermanentNavigationRail(configuration.screenWidthDp)" in main_activity_text:
+        failures.append(
+            f"{main_activity_path.relative_to(ROOT)}: Adaptive navigation must not use "
+            "Configuration.screenWidthDp in place of the current Compose window container."
+        )
+
+    required_message_content_memoization_snippets = (
+        (
+            "val showVisibleCopyAction = remember(message.content) {",
+            "Message copy-action parsing must be memoized for unchanged message content.",
+        ),
+        (
+            "val parts = remember(content) { parseMessageContent(content) }",
+            "Message rendering must memoize outer Markdown/code-block parsing for unchanged content.",
+        ),
+    )
+    for snippet, message in required_message_content_memoization_snippets:
+        if snippet not in client_screens_text:
+            failures.append(f"{client_screens_path.relative_to(ROOT)}: {message}")
+    if "val parts = parseMessageContent(content)" in client_screens_text:
+        failures.append(
+            f"{client_screens_path.relative_to(ROOT)}: Message rendering must not reparse "
+            "unchanged content on every recomposition."
+        )
+
+    required_reduced_motion_snippets = (
+        (
+            client_screens_path,
+            client_screens_text,
+            "internal val LocalAetherLinkReducedMotionOverride",
+            "Reduced-motion Compose regressions need an explicit test-only override.",
+        ),
+        (
+            client_screens_path,
+            client_screens_text,
+            "scope.coroutineContext[MotionDurationScale]?.scaleFactor",
+            "Chat motion policy must follow the active Android animation duration scale.",
+        ),
+        (
+            client_screens_path,
+            client_screens_text,
+            "internal fun shouldReduceChatMotion(motionDurationScale: Float?): Boolean",
+            "Chat reduced-motion policy must remain directly regression-testable.",
+        ),
+        (
+            client_screens_path,
+            client_screens_text,
+            "val offsetFraction = if (reduceMotion) {",
+            "Streaming progress must select a non-animated reduced-motion branch.",
+        ),
+        (
+            app_navigation_test_path,
+            app_navigation_test_text,
+            "chatReducedMotionPolicyDisablesAnimationOnlyAtZeroScale",
+            "AppNavigationTest must cover the Android animation-scale policy.",
+        ),
+        (
+            compose_test_path,
+            compose_test_text,
+            "LocalAetherLinkReducedMotionOverride provides reduceMotion.value",
+            "Compose coverage must render the streaming state with both motion policies.",
+        ),
+        (
+            compose_test_path,
+            compose_test_text,
+            'val modeLabel = if (nextReduceMotion) "reduced motion" else "standard motion"',
+            "Compose coverage must distinguish standard and reduced-motion assertions.",
+        ),
+    )
+    for path, text, snippet, message in required_reduced_motion_snippets:
+        if snippet not in text:
+            failures.append(f"{path.relative_to(ROOT)}: {message}")
+    if client_screens_text.count("listState.scrollToItem(state.messages.lastIndex)") < 2:
+        failures.append(
+            f"{client_screens_path.relative_to(ROOT)}: Reduced motion must use immediate scrolling "
+            "for both automatic and user-requested movement to the latest message."
+        )
+    streaming_progress_start = client_screens_text.find("private fun StreamingProgressIndicator(")
+    streaming_progress_end = client_screens_text.find(
+        "\n@Composable\nprivate fun MessageContent(",
+        streaming_progress_start,
+    )
+    if streaming_progress_start < 0 or streaming_progress_end < 0:
+        failures.append(
+            f"{client_screens_path.relative_to(ROOT)}: Could not isolate StreamingProgressIndicator."
+        )
+    else:
+        streaming_progress_text = client_screens_text[
+            streaming_progress_start:streaming_progress_end
+        ]
+        reduced_branch_position = streaming_progress_text.find("if (reduceMotion) {")
+        transition_position = streaming_progress_text.find("rememberInfiniteTransition()")
+        if (
+            reduced_branch_position < 0
+            or transition_position < 0
+            or reduced_branch_position >= transition_position
+            or "0.5f" not in streaming_progress_text[:transition_position]
+        ):
+            failures.append(
+                f"{client_screens_path.relative_to(ROOT)}: Reduced-motion streaming progress "
+                "must use a static centered segment before the infinite-transition branch."
+            )
+
     required_follow_system_snippets = (
         (
             main_activity_path,
@@ -1864,6 +2004,29 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         if snippet not in client_screens_test_text:
             failures.append(
                 f"{client_screens_test_path.relative_to(ROOT)}: Missing Android archive undo compact snackbar regression {snippet}."
+            )
+
+    required_v1_font_scale_snippets = (
+        (
+            "fun chatScreenCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages() {\n"
+            '        val language = mutableStateOf("en")\n'
+            "        // V1 qualification ceiling: Android font size 200%.\n"
+            "        val fontScale = 2.0f",
+            "Chat",
+        ),
+        (
+            "fun settingsCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages() {\n"
+            '        val language = mutableStateOf("en")\n'
+            "        // V1 qualification ceiling: Android font size 200%.\n"
+            "        val fontScale = 2.0f",
+            "Settings",
+        ),
+    )
+    for snippet, surface in required_v1_font_scale_snippets:
+        if snippet not in client_screens_test_text:
+            failures.append(
+                f"{client_screens_test_path.relative_to(ROOT)}: Android {surface} core-control "
+                "qualification must retain the V1 200% font-size ceiling."
             )
 
     pairing_parser_path = ROOT / (
@@ -9820,35 +9983,35 @@ def android_chat_history_danger_guard_failures() -> list[str]:
             "Bulk chat-history action labels must allow a second line before ellipsizing.",
         ),
         (
-            "bulkArchiveConfirmStep.value = 1",
+            "bulkArchiveConfirmStep.intValue = 1",
             "Archive-all must open the two-step confirmation dialog before acting.",
         ),
         (
             "onClick = {\n"
             "                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)\n"
-            "                                bulkArchiveConfirmStep.value = 1\n"
+            "                                bulkArchiveConfirmStep.intValue = 1\n"
             "                            },",
             "Archive-all must open confirmation with lightweight haptic feedback.",
         ),
         (
-            "bulkDeleteConfirmStep.value = 1",
+            "bulkDeleteConfirmStep.intValue = 1",
             "Permanent bulk delete must open the two-step confirmation dialog before acting.",
         ),
         (
             "onClick = {\n"
             "                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)\n"
-            "                                bulkDeleteConfirmStep.value = 1\n"
+            "                                bulkDeleteConfirmStep.intValue = 1\n"
             "                            },",
             "Permanent bulk delete must open confirmation with lightweight haptic feedback.",
         ),
         (
-            "deleteConfirmStep.value = 1",
+            "deleteConfirmStep.intValue = 1",
             "Single permanent delete must open the two-step confirmation dialog before acting.",
         ),
         (
             "onClick = {\n"
             "                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)\n"
-            "                            deleteConfirmStep.value = 1\n"
+            "                            deleteConfirmStep.intValue = 1\n"
             "                        },",
             "Single permanent delete must open confirmation with lightweight haptic feedback.",
         ),
@@ -12791,7 +12954,7 @@ def android_haptic_guard_failures() -> list[str]:
             "Composer attachment-only send state must derive from the localized attachment count.",
         ),
         (
-            "R.string.attach_files_state_limit_reached",
+            "R.plurals.attach_files_state_limit_reached",
             "Attachment button must announce when the attachment limit has been reached.",
         ),
         (
@@ -13926,7 +14089,7 @@ def android_haptic_guard_failures() -> list[str]:
         "chatScreenAttachmentSizeUsesSelectedAppLanguageContext",
         "chatScreenAttachButtonAnnouncesAttachmentCountAndLimitAcrossSupportedLanguages",
         "R.plurals.attach_files_state_count",
-        "R.string.attach_files_state_limit_reached",
+        "R.plurals.attach_files_state_limit_reached",
         "Formatter.formatFileSize(localizedContext, attachment.sizeBytes)",
         "chatScreenMessageAttachmentChipsExposeFileStateToAccessibility",
         "chatScreenReadOnlyAttachmentChipsWrapOnCompactWidthAcrossSupportedLanguages",
@@ -31275,6 +31438,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android OS app-language handoff coverage.",
         ),
         (
+            "Android unsplit App Bundle language packaging",
+            "Default no-device gate coverage summary must mention Android unsplit App Bundle language packaging.",
+        ),
+        (
             "Android follow system language preference",
             "Default no-device gate coverage summary must mention Android follow-system language preference coverage.",
         ),
@@ -31545,6 +31712,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android markdown message rendering",
             "Default no-device gate coverage summary must mention Android markdown message rendering coverage.",
+        ),
+        (
+            "Android unchanged-message Markdown parse memoization",
+            "Default no-device gate coverage summary must mention unchanged-message Markdown parsing memoization.",
+        ),
+        (
+            "Android reduced-motion static streaming progress and immediate chat scrolling",
+            "Default no-device gate coverage summary must mention Android reduced-motion chat behavior.",
         ),
         (
             "Android markdown heading accessibility",
@@ -32013,6 +32188,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android permanent rail Chat pairing gate",
             "Default no-device gate coverage summary must mention Android permanent rail Chat pairing gate coverage.",
+        ),
+        (
+            "Android permanent rail actual window-container width breakpoint",
+            "Default no-device gate coverage summary must mention the actual-window adaptive navigation breakpoint.",
         ),
         (
             "Android chat empty route guidance full-wrap layout",
@@ -36065,7 +36244,7 @@ let afterQuotedRaw = 2
             (
                 "val previousPendingSecretRef = storedDataStringOrNull()",
                 "private fun storedDataStringOrNull(): String?",
-                "preferences.edit().remove(STORE_KEY).apply()",
+                "preferences.edit { remove(STORE_KEY) }",
                 "val diskProjection = data.sanitized().withoutRuntimeOwnedLocalData()",
                 "json.encodeToString(dataForDisk)",
             ),
@@ -37385,12 +37564,24 @@ def macos_render_smoke_guard_failures() -> list[str]:
 def android_string_parity_guard_failures() -> list[str]:
     failures: list[str] = []
     parity_path = ROOT / "script/check_android_string_parity.py"
+    build_gradle_path = ROOT / "apps/android/app/build.gradle.kts"
+    gate_path = ROOT / "script/check_no_device_quality.sh"
 
     if not parity_path.exists():
         failures.append("script/check_android_string_parity.py is missing.")
         return failures
 
     parity_text = parity_path.read_text(encoding="utf-8", errors="replace")
+    build_gradle_text = (
+        build_gradle_path.read_text(encoding="utf-8", errors="replace")
+        if build_gradle_path.is_file()
+        else ""
+    )
+    gate_text = (
+        gate_path.read_text(encoding="utf-8", errors="replace")
+        if gate_path.is_file()
+        else ""
+    )
     required_snippets = (
         (
             "RAW_COMPOSE_VISIBLE_LITERAL_RE",
@@ -37436,10 +37627,66 @@ def android_string_parity_guard_failures() -> list[str]:
             "Tap Connect",
             "Android string parity must reject touch-specific Connect guidance.",
         ),
+        (
+            "def uncommented_kotlin_dsl(",
+            "Android release configuration checks must ignore commented-out Kotlin DSL.",
+        ),
+        (
+            'if values != ["true"]:',
+            "Android release shrinking checks must reject duplicate or trailing opposite assignments.",
+        ),
+        (
+            "release R8/resource-shrinking configuration",
+            "Android string parity output must distinguish configuration proof from artifact proof.",
+        ),
+        (
+            "arm64/native-symbol configuration",
+            "Android string parity output must report the V1 release ABI and symbol configuration.",
+        ),
+        (
+            "ChromeOsAbiSupport",
+            "Android string parity must pin the arm64-only ChromeOS lint scope.",
+        ),
+        (
+            "EXPECTED_PLURAL_QUANTITIES",
+            "Android string parity must pin locale-specific plural categories.",
+        ),
+        (
+            "including locale-aware plural resources",
+            "Android string parity output must report locale-aware plural coverage.",
+        ),
     )
     for snippet, guidance in required_snippets:
         if snippet not in parity_text:
             failures.append(f"{parity_path.relative_to(ROOT)}: {guidance}")
+
+    if not build_gradle_path.is_file():
+        failures.append(f"{build_gradle_path.relative_to(ROOT)} is missing.")
+    else:
+        for snippet in (
+            "isMinifyEnabled = true",
+            "isShrinkResources = true",
+            'abiFilters += "arm64-v8a"',
+            'debugSymbolLevel = "SYMBOL_TABLE"',
+            'disable += "ChromeOsAbiSupport"',
+            'getDefaultProguardFile("proguard-android-optimize.txt")',
+        ):
+            if snippet not in build_gradle_text:
+                failures.append(
+                    f"{build_gradle_path.relative_to(ROOT)}: missing Android "
+                    f"release optimization configuration {snippet!r}."
+                )
+
+    if "Android release optimization addendum" not in gate_text:
+        failures.append(
+            f"{gate_path.relative_to(ROOT)}: missing Android release "
+            "optimization summary boundary."
+        )
+    if "Android locale-aware plural addendum" not in gate_text:
+        failures.append(
+            f"{gate_path.relative_to(ROOT)}: missing Android locale-aware "
+            "plural summary boundary."
+        )
 
     return failures
 
@@ -48887,6 +49134,8 @@ def app_icon_readability_guard_failures() -> list[str]:
         "require_icon_data_readability(",
         "AppIcon.icns",
         "def require_icon_readability(",
+        "legacy launcher bitmap must be absent",
+        "ic_launcher_monochrome.xml",
         "min_center_foreground_coverage",
         "min_strong_edge_ratio",
         "strong edge ratio too low",
@@ -48918,7 +49167,7 @@ def app_icon_readability_guard_failures() -> list[str]:
         "python3 script/check_app_icons.py",
         "check_macos_dock_capture_dry_run_summary_guard",
         "dry_run_not_macos_dock_screenshot_proof",
-        "Covered app icon addendum: no-device Android launcher and macOS Dock small-size readability plus asset-chain validation.",
+        "Covered app icon addendum: Android adaptive/monochrome asset-chain validation plus macOS Dock no-device small-size readability.",
         "Covered macOS Dock capture dry-run summary addendum: capture_macos_dock_icon dry-run writes no-side-effect summary evidence without claiming a physical Dock screenshot.",
         "Physical macOS Dock capture option: script/capture_macos_dock_icon.sh stages dist/AetherLink.app and captures build/qa/aetherlink-macos-dock-visible.png with CFBundleIconFile=AppIcon.",
         "launcher/Dock screenshots",
@@ -57020,8 +57269,27 @@ def bounded_script_hardening_guard_failures() -> list[str]:
         "preflight_test": ROOT / "script/test_relay_allocation_preflight.py",
         "production": ROOT / "script/check_production_relay_security_design.py",
         "production_test": ROOT / "script/test_production_relay_security_design.py",
+        "readme": ROOT / "README.md",
+        "package": ROOT / "Package.swift",
+        "release_ledger": ROOT / "release/version-ledger.tsv",
+        "release_check": ROOT / "script/check_release_version_ledger.py",
+        "release_test": ROOT / "script/test_release_version_ledger.py",
+        "release_builder": ROOT / "script/build_release_artifacts.sh",
+        "release_archive": ROOT / "script/package_release_artifacts.py",
+        "release_archive_check": ROOT / (
+            "script/check_release_artifact_archive.py"
+        ),
+        "release_archive_test": ROOT / (
+            "script/test_release_artifact_archive.py"
+        ),
         "build": ROOT / "script/build_and_run.sh",
         "build_test": ROOT / "script/test_build_and_run.py",
+        "localization": ROOT / (
+            "apps/macos/LocalAgentBridgeApp/Sources/AetherLinkLocalization.swift"
+        ),
+        "localization_test": ROOT / (
+            "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift"
+        ),
         "gate": ROOT / "script/check_no_device_quality.sh",
     }
     texts: dict[str, str] = {}
@@ -57056,25 +57324,152 @@ def bounded_script_hardening_guard_failures() -> list[str]:
             "test_unknown_authorization_looking_keys_are_rejected",
             "test_exact_scalar_types_reject_bool_int_and_float_confusion",
         ),
+        "readme": (
+            "`release/version-ledger.tsv`",
+            "Android Debug deliberately remains `0.1.0+1`",
+            "python3 script/check_release_version_ledger.py --artifacts",
+            "./script/build_release_artifacts.sh",
+            "normalized-input ZIP",
+        ),
+        "package": (
+            'exclude: ["Resources/AppIcon.icns"]',
+            'resources: [.process("Resources")]',
+        ),
+        "release_ledger": (
+            "build_number\tmarketing_version",
+            "1\t1.0.0",
+        ),
+        "release_check": (
+            "def parse_release_version_ledger(",
+            "MAX_ANDROID_VERSION_CODE = 2_100_000_000",
+            "ledger may contain only printable ASCII, tab, and LF",
+            "build_number must be strictly increasing",
+            "marketing_version must not decrease",
+            "def artifact_contract_failures(",
+            "Android release versionName does not match the ledger",
+            "macOS release build number does not match the ledger",
+        ),
+        "release_test": (
+            "test_repository_ledger_and_consumers_pass",
+            "test_increasing_builds_allow_same_or_newer_marketing_version",
+            "test_invalid_closed_format_is_rejected",
+            "test_duplicate_or_regressive_entries_are_rejected",
+        ),
+        "release_builder": (
+            "source_before=",
+            "-PaetherlinkStrictReleaseDependencyLocks=true",
+            ":app:clean",
+            ":core:pairing:clean",
+            ":core:protocol:clean",
+            ":core:transport:clean",
+            ":app:assembleRelease",
+            ":app:bundleRelease",
+            ":app:lintRelease",
+            "./script/build_and_run.sh --package-only",
+            'if [[ "$source_before" != "$source_after" ]]',
+            "script/package_release_artifacts.py create",
+            "script/check_release_artifact_archive.py",
+        ),
+        "release_archive": (
+            "FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)",
+            "SOURCE_REQUIRED_FILES = (",
+            "def read_stable_regular_file(",
+            "def source_snapshot(",
+            "def parse_aapt2_badging(",
+            "def inspect_apk_badging(",
+            "def parse_gradle_lockfile(",
+            "def dependency_locking_metadata(",
+            "def canonicalize_r8_line_artifact(",
+            "def canonicalize_r8_mapping_prt(",
+            "def write_canonical_zip(",
+            "canonical-container-for-normalized-release-inputs",
+            "raw-paths-with-declared-r8-byte-normalization",
+            "unavailable-upstream-prestripped",
+            "increment the shared build number instead of overwriting",
+            "macos/AetherLink.dSYM",
+        ),
+        "release_archive_check": (
+            "def reject_duplicate_keys(",
+            "def require_exact_keys(",
+            "def verify_canonical_container(",
+            "def verify_source_snapshot(",
+            "def verify_android_relationships(",
+            "def verify_macos_relationships(",
+            "def parse_gradle_lockfile(",
+            "def dependency_locking_metadata(",
+            "def canonicalize_r8_line_artifact(",
+            "def canonicalize_r8_mapping_prt(",
+            "independent archived APK badging differs from manifest",
+            "manifest members must be strictly ASCII-sorted",
+            "ZIP timestamp is not canonical",
+            "archived AAB mapping differs from archived mapping.txt",
+        ),
+        "release_archive_test": (
+            "test_builder_and_readback_parse_exact_apk_badging",
+            "test_apk_badging_parsers_reject_missing_duplicate_and_nondecimal_fields",
+            "test_canonical_zip_is_reproducible_and_reads_back",
+            "test_r8_unordered_line_artifacts_are_canonicalized",
+            "test_r8_mapping_partition_zip_is_canonicalized",
+            "test_dependency_lock_inventory_tracks_gradle_and_swiftpm_state",
+            "test_release_script_requires_strict_read_only_dependency_locks",
+            "test_readback_rejects_payload_tampering",
+            "test_readback_rejects_noncanonical_zip_metadata",
+            "test_readback_reports_unicode_zip_member_as_a_controlled_error",
+            "test_readback_rejects_unsorted_or_extended_member_records",
+            "test_publish_is_idempotent_and_never_overwrites_different_bytes",
+            "test_json_rejects_duplicate_keys_and_noncanonical_encoding",
+        ),
         "build": (
             "validate_mode() {",
             'validate_mode "$MODE"',
+            'RELEASE_VERSION_LEDGER="$ROOT_DIR/release/version-ledger.tsv"',
+            "load_release_version_metadata() {",
+            'load_release_version_metadata "$RELEASE_VERSION_LEDGER"',
+            '/usr/bin/od -An -v -t u1 "$ledger_path"',
+            "release version ledger may contain only printable ASCII, tab, and LF",
             "DEBUG_RUNTIME_IDENTITY_FILE=",
             "/usr/bin/nohup /usr/bin/env",
             'AETHERLINK_RUNTIME_IDENTITY_FILE="$DEBUG_RUNTIME_IDENTITY_FILE"',
             "APP_LAUNCH_SETTLE_SECONDS=5",
             'sleep "$APP_LAUNCH_SETTLE_SECONDS"',
             'kill -0 "$launch_pid"',
+            "--package-only|package-only",
+            'BUILD_CONFIGURATION="release"',
+            'swift build -c "$BUILD_CONFIGURATION" --product "$PRODUCT_NAME"',
+            "RESOURCE_BUNDLE_CANDIDATES=()",
+            '-name "*_${TARGET_EXECUTABLE_NAME}.bundle"',
+            'cp -R "$RESOURCE_BUNDLE_SOURCE" "$APP_RESOURCES/"',
+            'rm -f "$RESOURCE_BUNDLE_DESTINATION/AppIcon.icns"',
+            "CFBundleShortVersionString",
+            "CFBundleVersion",
+            "Packaged self-contained release app",
         ),
         "build_test": (
             "test_invalid_mode_invokes_no_fake_toolchain_commands",
             "test_debug_launch_uses_file_backed_runtime_identity",
+            "test_package_only_builds_self_contained_release_without_launch",
+            "test_package_only_uses_latest_shared_release_ledger_entry",
+            "test_invalid_release_ledger_fails_before_toolchain_side_effects",
+            "test_package_only_rejects_missing_or_ambiguous_resource_bundle",
+            "Contents/Resources/AetherLink_LocalAgentBridge.bundle",
             'environment["FAKE_TOOLCHAIN_LOG"]',
             'environment["PATH"] = f"{fake_bin}:/usr/bin:/bin"',
+        ),
+        "localization": (
+            "func resolveAetherLinkResourceBundle(",
+            'forResource: "AetherLink_LocalAgentBridge"',
+            "fallback: { Bundle.module }",
+            "aetherLinkResourceBundle.localizedString",
+        ),
+        "localization_test": (
+            "testResourceBundleResolutionPrefersPackagedBundleWithoutLoadingFallback",
+            "testResourceBundleResolutionUsesFallbackWhenPackageResourceIsMissing",
         ),
         "gate": (
             "check_python_syntax() {",
             "ast.parse(source, filename=str(path))",
+            "Covered shared release version ledger addendum:",
+            "macOS self-contained release package-only",
         ),
     }
     for name, snippets in required_snippets.items():
@@ -57086,6 +57481,14 @@ def bounded_script_hardening_guard_failures() -> list[str]:
                 )
 
     build_text = texts.get("build", "")
+    for forbidden in (
+        "AETHERLINK_MARKETING_VERSION",
+        "AETHERLINK_BUILD_NUMBER",
+    ):
+        if forbidden in build_text:
+            failures.append(
+                f"{paths['build'].relative_to(ROOT)} retains release-version override {forbidden}."
+            )
     validation_marker = 'validate_mode "$MODE"'
     validation_index = build_text.find(validation_marker)
     for side_effect in (
@@ -57105,6 +57508,25 @@ def bounded_script_hardening_guard_failures() -> list[str]:
                 "script/build_and_run.sh must validate MODE before "
                 f"the {side_effect!r} side effect."
             )
+
+    resource_copy_index = build_text.find(
+        'cp -R "$RESOURCE_BUNDLE_SOURCE" "$APP_RESOURCES/"'
+    )
+    codesign_index = build_text.find("/usr/bin/codesign --force --deep --sign -")
+    if (
+        resource_copy_index < 0
+        or codesign_index < 0
+        or resource_copy_index >= codesign_index
+    ):
+        failures.append(
+            "script/build_and_run.sh must install the SwiftPM resource bundle "
+            "inside Contents/Resources before sealing the app."
+        )
+    if '-name "*.lproj"' in build_text:
+        failures.append(
+            "script/build_and_run.sh must not duplicate localization tables beside "
+            "the canonical SwiftPM resource bundle."
+        )
 
     gate_text = texts.get("gate", "")
     if "python3 -m py_compile" in gate_text:
@@ -58439,6 +58861,9 @@ def review_only_memory_duplicate_suggestions_guard_failures() -> list[str]:
         relative = f"apps/android/app/src/main/res/{values_dir}/strings.xml"
         path = ROOT / relative
         contents = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+        plural_keys = {
+            "memory_duplicate_suggestions_scanned_count",
+        }
         for key in (
             "memory_duplicate_suggestions_scan",
             "memory_duplicate_suggestions_scanning",
@@ -58450,7 +58875,8 @@ def review_only_memory_duplicate_suggestions_guard_failures() -> list[str]:
             "memory_duplicate_suggestions_empty",
             "memory_duplicate_suggestions_group",
         ):
-            if f'<string name="{key}">' not in contents:
+            tag = "plurals" if key in plural_keys else "string"
+            if f'<{tag} name="{key}">' not in contents:
                 failures.append(f"{relative}: missing localized duplicate suggestion key {key!r}.")
     return failures
 
@@ -58657,6 +59083,10 @@ def review_only_memory_semantic_duplicate_suggestions_guard_failures() -> list[s
         relative = f"apps/android/app/src/main/res/{values_dir}/strings.xml"
         path = ROOT / relative
         contents = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+        plural_keys = {
+            "memory_semantic_duplicate_suggestions_result_summary",
+            "memory_semantic_duplicate_suggestions_omitted_count",
+        }
         for key in (
             "memory_semantic_duplicate_suggestions_title",
             "memory_semantic_duplicate_suggestions_review_only",
@@ -58668,7 +59098,8 @@ def review_only_memory_semantic_duplicate_suggestions_guard_failures() -> list[s
             "memory_semantic_duplicate_suggestions_truncated",
             "memory_semantic_duplicate_suggestions_pair",
         ):
-            if f'<string name="{key}">' not in contents:
+            tag = "plurals" if key in plural_keys else "string"
+            if f'<{tag} name="{key}">' not in contents:
                 failures.append(
                     f"{relative}: missing localized semantic duplicate suggestion key {key!r}."
                 )
@@ -59068,6 +59499,10 @@ def review_only_memory_semantic_duplicate_clusters_guard_failures() -> list[str]
         relative = f"apps/android/app/src/main/res/{values_dir}/strings.xml"
         path = ROOT / relative
         contents = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+        plural_keys = {
+            "memory_semantic_duplicate_clusters_result_summary",
+            "memory_semantic_duplicate_clusters_omitted_count",
+        }
         for key in (
             "memory_semantic_duplicate_clusters_title",
             "memory_semantic_duplicate_clusters_review_only",
@@ -59078,7 +59513,8 @@ def review_only_memory_semantic_duplicate_clusters_guard_failures() -> list[str]
             "memory_semantic_duplicate_clusters_truncated",
             "memory_semantic_duplicate_clusters_cluster",
         ):
-            if f'<string name="{key}">' not in contents:
+            tag = "plurals" if key in plural_keys else "string"
+            if f'<{tag} name="{key}">' not in contents:
                 failures.append(
                     f"{relative}: missing localized semantic duplicate cluster key {key!r}."
                 )
@@ -64690,7 +65126,7 @@ def android_runtime_health_current_request_authority_guard_failures() -> list[st
 
 
 def personal_single_owner_governance_guard_failures() -> list[str]:
-    """Keep personal-project work free of repository-owner authentication gates."""
+    """Keep personal-project work free of owner-auth and active security gates."""
 
     failures: list[str] = []
     paths = {
@@ -64737,13 +65173,18 @@ def personal_single_owner_governance_guard_failures() -> list[str]:
 
     for label in ("roadmap", "handoff", "progress", "qa"):
         current_prefix = texts[label][:24_000]
-        if "G1a no-network" not in current_prefix:
+        if "non-security" not in current_prefix.lower():
             failures.append(
-                f"{paths[label].relative_to(ROOT)} current section is missing 'G1a no-network'"
+                f"{paths[label].relative_to(ROOT)} current section is missing the non-security lane"
             )
-        if "product security" not in current_prefix.lower():
+        if re.search(
+            r"(?:security.{0,160}(?:paused|excluded|outside)|"
+            r"(?:no|outside).{0,160}security)",
+            current_prefix,
+            re.IGNORECASE | re.DOTALL,
+        ) is None:
             failures.append(
-                f"{paths[label].relative_to(ROOT)} current section is missing product security"
+                f"{paths[label].relative_to(ROOT)} current section does not keep security work excluded"
             )
 
     gate_text = texts["gate"]

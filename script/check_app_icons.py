@@ -13,19 +13,20 @@ ROOT = Path(__file__).resolve().parents[1]
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 ANDROID_MANIFEST = ROOT / "apps/android/app/src/main/AndroidManifest.xml"
+ANDROID_BUILD_GRADLE = ROOT / "apps/android/app/build.gradle.kts"
 ANDROID_RES = ROOT / "apps/android/app/src/main/res"
 MACOS_ICON = ROOT / "apps/macos/LocalAgentBridgeApp/Sources/Resources/AppIcon.icns"
 BRAND_SOURCE = ROOT / "assets/brand/aetherlink_icon_source.png"
 BRAND_PREVIEW = ROOT / "assets/brand/aetherlink_icon_1024.png"
 BRAND_GENERATOR = ROOT / "assets/brand/generate_aetherlink_icons.swift"
 
-ANDROID_DENSITY_ICONS = {
-    "mipmap-mdpi": 48,
-    "mipmap-hdpi": 72,
-    "mipmap-xhdpi": 96,
-    "mipmap-xxhdpi": 144,
-    "mipmap-xxxhdpi": 192,
-}
+LEGACY_ANDROID_LAUNCHER_DIRS = (
+    "mipmap-mdpi",
+    "mipmap-hdpi",
+    "mipmap-xhdpi",
+    "mipmap-xxhdpi",
+    "mipmap-xxxhdpi",
+)
 REQUIRED_ICNS_CHUNKS = {
     "ic04",
     "ic05",
@@ -383,6 +384,9 @@ def main() -> int:
         (
             "aetherlink_icon_source.png",
             "ic_launcher_foreground.png",
+            "ic_launcher_monochrome.xml",
+            "legacyLauncherDirectories",
+            "removeDirectoryIfEmpty",
             "AppIcon.icns",
             "/usr/bin/iconutil",
         ),
@@ -396,31 +400,50 @@ def main() -> int:
         ),
         failures,
     )
+    require_text(ANDROID_BUILD_GRADLE, ("minSdk = 26",), failures)
+    obsolete_adaptive_directory = ANDROID_RES / "mipmap-anydpi-v26"
+    if obsolete_adaptive_directory.exists():
+        failures.append(
+            f"{obsolete_adaptive_directory.relative_to(ROOT)}: obsolete API qualifier directory "
+            "must be absent when minSdk is 26"
+        )
 
-    for density_dir, size in ANDROID_DENSITY_ICONS.items():
-        launcher = ANDROID_RES / density_dir / "ic_launcher.png"
-        round_launcher = ANDROID_RES / density_dir / "ic_launcher_round.png"
-        require_png(launcher, size, failures)
-        require_icon_readability(launcher, failures)
-        require_png(round_launcher, size, failures)
-        require_icon_readability(round_launcher, failures)
+    for density_dir in LEGACY_ANDROID_LAUNCHER_DIRS:
+        for filename in ("ic_launcher.png", "ic_launcher_round.png"):
+            legacy_launcher = ANDROID_RES / density_dir / filename
+            if legacy_launcher.exists():
+                failures.append(
+                    f"{legacy_launcher.relative_to(ROOT)}: legacy launcher bitmap must be absent "
+                    "when minSdk is 26"
+                )
 
     android_foreground = ANDROID_RES / "drawable-nodpi/ic_launcher_foreground.png"
     require_png(android_foreground, 432, failures)
     require_icon_readability(android_foreground, failures)
     require_text(
-        ANDROID_RES / "mipmap-anydpi-v26/ic_launcher.xml",
+        ANDROID_RES / "mipmap-anydpi/ic_launcher.xml",
         (
             '<background android:drawable="@drawable/ic_launcher_background" />',
             '<foreground android:drawable="@drawable/ic_launcher_foreground" />',
+            '<monochrome android:drawable="@drawable/ic_launcher_monochrome" />',
         ),
         failures,
     )
     require_text(
-        ANDROID_RES / "mipmap-anydpi-v26/ic_launcher_round.xml",
+        ANDROID_RES / "mipmap-anydpi/ic_launcher_round.xml",
         (
             '<background android:drawable="@drawable/ic_launcher_background" />',
             '<foreground android:drawable="@drawable/ic_launcher_foreground" />',
+            '<monochrome android:drawable="@drawable/ic_launcher_monochrome" />',
+        ),
+        failures,
+    )
+    require_text(
+        ANDROID_RES / "drawable/ic_launcher_monochrome.xml",
+        (
+            'android:viewportWidth="108"',
+            'android:viewportHeight="108"',
+            'android:fillColor="#FFFFFFFF"',
         ),
         failures,
     )
@@ -465,7 +488,10 @@ def main() -> int:
             print(f" - {failure}", file=sys.stderr)
         return 1
 
-    print("App icon assets OK for Android and macOS, including no-device small-size readability.")
+    print(
+        "App icon assets OK for Android adaptive/monochrome structure "
+        "and macOS no-device small-size readability."
+    )
     return 0
 
 

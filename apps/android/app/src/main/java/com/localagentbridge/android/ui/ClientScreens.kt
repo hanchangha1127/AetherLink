@@ -99,6 +99,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -107,6 +108,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -207,6 +209,7 @@ private data class CopySuccessAnnouncement(
 )
 
 private val LocalCopySuccessAnnouncer = staticCompositionLocalOf<(String) -> Unit> { {} }
+internal val LocalAetherLinkReducedMotionOverride = staticCompositionLocalOf<Boolean?> { null }
 
 internal enum class AetherLinkInteractionFeedback {
     PrimaryAction,
@@ -660,11 +663,11 @@ internal fun connectRuntimeActionLabelRes(state: RuntimeUiState): Int {
 @Composable
 fun ConnectionStatusScreen(
     state: RuntimeUiState,
-    onConnect: (() -> Unit)? = null,
     onRefreshHealth: () -> Unit,
     onDisconnect: () -> Unit,
-    onScanLatestQr: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    onConnect: (() -> Unit)? = null,
+    onScanLatestQr: (() -> Unit)? = null,
 ) {
     ScreenList(modifier) {
         item {
@@ -1772,7 +1775,6 @@ private fun ProviderStatusRow(provider: RuntimeProviderStatus) {
 fun ChatScreen(
     state: RuntimeUiState,
     onInputChange: (String) -> Unit,
-    onClearDraft: () -> Unit = { onInputChange("") },
     onSend: () -> Unit,
     onCancel: () -> Unit,
     onConnect: () -> Unit,
@@ -1780,6 +1782,9 @@ fun ChatScreen(
     onRefreshHealth: () -> Unit,
     onAttachFiles: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
+    onScanLatestQr: () -> Unit,
+    modifier: Modifier = Modifier,
+    onClearDraft: () -> Unit = { onInputChange("") },
     onToggleTrustedSource: (String) -> Unit = {},
     onRemoveTrustedSource: (String) -> Unit = {},
     onRefreshTrustedSources: () -> Unit = {},
@@ -1787,14 +1792,15 @@ fun ChatScreen(
     onApproveTrustedSource: () -> Unit = {},
     onDismissTrustedSource: () -> Unit = {},
     onRevokeTrustedSource: (String) -> Unit = {},
-    onScanLatestQr: () -> Unit,
     onRegenerateLatestResponse: () -> Unit = {},
     onReuseLatestUserMessage: () -> Unit = {},
-    modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
     val hapticFeedback = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
+    val reduceMotion = LocalAetherLinkReducedMotionOverride.current ?: shouldReduceChatMotion(
+        scope.coroutineContext[MotionDurationScale]?.scaleFactor,
+    )
     val hasSendableContent = chatComposerHasSendableContent(state)
     val hasUnsupportedImageAttachment = chatComposerHasUnsupportedImageAttachment(state)
     val canEditComposer = chatComposerCanEdit(state)
@@ -1810,9 +1816,9 @@ fun ChatScreen(
         (state.isConnected && state.backendAvailable == false) ||
             !state.routeRefreshNoticeRuntimeName.isNullOrBlank() ||
             showChatBottomError
-    var previousMessageCount by rememberSaveable { mutableStateOf(0) }
+    var previousMessageCount by rememberSaveable { mutableIntStateOf(0) }
     var copyAnnouncement by remember { mutableStateOf<CopySuccessAnnouncement?>(null) }
-    var copyAnnouncementId by remember { mutableStateOf(0) }
+    var copyAnnouncementId by remember { mutableIntStateOf(0) }
     val announceCopySuccess: (String) -> Unit = { message ->
         copyAnnouncementId += 1
         copyAnnouncement = CopySuccessAnnouncement(
@@ -1834,6 +1840,7 @@ fun ChatScreen(
         state.messages.lastOrNull()?.content,
         state.messages.lastOrNull()?.reasoning,
         state.isStreaming,
+        reduceMotion,
     ) {
         if (state.messages.isNotEmpty()) {
             val layoutInfo = listState.layoutInfo
@@ -1853,7 +1860,11 @@ fun ChatScreen(
                     newUserMessageAdded = newUserMessageAdded,
                 )
             ) {
-                listState.animateScrollToItem(state.messages.lastIndex)
+                if (reduceMotion) {
+                    listState.scrollToItem(state.messages.lastIndex)
+                } else {
+                    listState.animateScrollToItem(state.messages.lastIndex)
+                }
             }
         }
         previousMessageCount = state.messages.size
@@ -1972,6 +1983,7 @@ fun ChatScreen(
                                     isStreaming = state.isStreaming &&
                                         message.role == "assistant" &&
                                         message.id == state.messages.lastOrNull()?.id,
+                                    reduceMotion = reduceMotion,
                                     showRegenerateAction = isLatestAssistant &&
                                         message.content.isNotBlank() &&
                                         !state.isStreaming &&
@@ -2002,7 +2014,11 @@ fun ChatScreen(
                             onClick = {
                                 hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                                 scope.launch {
-                                    listState.animateScrollToItem(state.messages.lastIndex)
+                                    if (reduceMotion) {
+                                        listState.scrollToItem(state.messages.lastIndex)
+                                    } else {
+                                        listState.animateScrollToItem(state.messages.lastIndex)
+                                    }
                                 }
                             },
                             modifier = Modifier
@@ -2262,12 +2278,19 @@ fun SettingsScreen(
     onDisconnect: () -> Unit,
     onSetAutoReconnectEnabled: (Boolean) -> Unit,
     onSetLanguageTag: (String) -> Unit,
-    onFollowSystemLanguage: () -> Unit = {},
     onSetTheme: (RuntimeAppTheme) -> Unit,
     onSelectEmbeddingModel: (String?) -> Unit,
     onAddMemoryEntry: (String) -> Unit,
     onRemoveMemoryEntry: (String) -> Unit,
     onSetMemoryEntryEnabled: (String, Boolean) -> Unit,
+    onArchiveChatSession: (String) -> Unit,
+    onRestoreChatSession: (String) -> Unit,
+    onPermanentlyDeleteChatSession: (String) -> Unit,
+    onArchiveAllChatSessions: () -> Unit,
+    onPermanentlyDeleteArchivedChatSessions: () -> Unit,
+    showDeveloperDiagnostics: Boolean,
+    modifier: Modifier = Modifier,
+    onFollowSystemLanguage: () -> Unit = {},
     onGenerateMemorySummaryDraft: (String) -> Unit = {},
     onApproveMemorySummaryDraft: (String) -> Unit = {},
     onDismissMemorySummaryDraft: (String) -> Unit = {},
@@ -2286,13 +2309,6 @@ fun SettingsScreen(
     onRefreshChatHistory: (String?) -> Unit = {},
     onOpenChatSession: (String) -> Unit = {},
     onRenameChatSession: (String) -> Unit = {},
-    onArchiveChatSession: (String) -> Unit,
-    onRestoreChatSession: (String) -> Unit,
-    onPermanentlyDeleteChatSession: (String) -> Unit,
-    onArchiveAllChatSessions: () -> Unit,
-    onPermanentlyDeleteArchivedChatSessions: () -> Unit,
-    showDeveloperDiagnostics: Boolean,
-    modifier: Modifier = Modifier,
 ) {
     val topError = settingsTopError(state)
     ScreenList(modifier) {
@@ -3732,10 +3748,15 @@ private fun quickModelStatus(model: RuntimeModel, installing: Boolean): String {
     }
 }
 
+internal fun shouldReduceChatMotion(motionDurationScale: Float?): Boolean {
+    return motionDurationScale != null && motionDurationScale <= 0f
+}
+
 @Composable
 private fun ChatMessageRow(
     message: RuntimeChatMessage,
     isStreaming: Boolean,
+    reduceMotion: Boolean,
     showRegenerateAction: Boolean,
     showReuseAction: Boolean,
     onRegenerateLatestResponse: () -> Unit,
@@ -3773,7 +3794,9 @@ private fun ChatMessageRow(
         else -> null
     }
     val isAttachmentOnlyMessage = message.content.isBlank() && message.attachments.isNotEmpty()
-    val showVisibleCopyAction = shouldShowVisibleMessageCopyAction(message.content)
+    val showVisibleCopyAction = remember(message.content) {
+        shouldShowVisibleMessageCopyAction(message.content)
+    }
     val copyMessageActionLabel = stringResource(R.string.copy_message)
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -3872,6 +3895,7 @@ private fun ChatMessageRow(
             AssistantMessage(
                 message = message,
                 isStreaming = isStreaming,
+                reduceMotion = reduceMotion,
                 messageAccessibilitySummary = messageAccessibilitySummary,
                 showVisibleCopyAction = showVisibleCopyAction,
                 copyMessageActionLabel = copyMessageActionLabel,
@@ -3890,6 +3914,7 @@ private fun ChatMessageRow(
 private fun AssistantMessage(
     message: RuntimeChatMessage,
     isStreaming: Boolean,
+    reduceMotion: Boolean,
     messageAccessibilitySummary: String?,
     showVisibleCopyAction: Boolean,
     copyMessageActionLabel: String,
@@ -4031,6 +4056,7 @@ private fun AssistantMessage(
                     .testTag(CHAT_STREAMING_PROGRESS_TEST_TAG),
             ) {
                 StreamingProgressIndicator(
+                    reduceMotion = reduceMotion,
                     modifier = Modifier
                         .fillMaxWidth(),
                 )
@@ -4140,15 +4166,23 @@ private fun ChatSourceAttributionList(
 }
 
 @Composable
-private fun StreamingProgressIndicator(modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition()
-    val offsetFraction by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1200, easing = LinearEasing),
-        ),
-    )
+private fun StreamingProgressIndicator(
+    reduceMotion: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val offsetFraction = if (reduceMotion) {
+        0.5f
+    } else {
+        val transition = rememberInfiniteTransition()
+        val animatedOffsetFraction by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1200, easing = LinearEasing),
+            ),
+        )
+        animatedOffsetFraction
+    }
     val activeColor = MaterialTheme.colorScheme.primary
     val trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
 
@@ -4229,7 +4263,7 @@ private fun MessageContent(
     textColor: androidx.compose.ui.graphics.Color,
     modifier: Modifier = Modifier,
 ) {
-    val parts = parseMessageContent(content)
+    val parts = remember(content) { parseMessageContent(content) }
     val codeBlockCount = parts.count { it is MessageContentPart.Code }
     var codeBlockIndex = 0
 
@@ -5271,8 +5305,9 @@ private fun ChatComposer(
     val attachFilesStateDescription = when {
         !enabled && hint.isNotBlank() -> hint
         !enabled -> stringResource(R.string.attach_files_state_unavailable)
-        attachmentLimitReached -> stringResource(
-            R.string.attach_files_state_limit_reached,
+        attachmentLimitReached -> pluralStringResource(
+            R.plurals.attach_files_state_limit_reached,
+            MAX_PENDING_ATTACHMENTS,
             attachments.size,
             MAX_PENDING_ATTACHMENTS,
         )
@@ -6237,8 +6272,9 @@ private fun embeddingModelCapabilityDisplay(model: RuntimeModel): EmbeddingModel
             ?.takeIf { it > 0 }
             ?.let { contextWindowTokens ->
                 add(
-                    stringResource(
-                        R.string.model_capability_context_window,
+                    pluralStringResource(
+                        R.plurals.model_capability_context_window,
+                        contextWindowTokens,
                         contextWindowTokens,
                     )
                 )
@@ -6351,7 +6387,7 @@ private fun EmbeddingModelNoneRow(
             onSelectEmbeddingModel(null)
         },
         enabled = enabled,
-        modifier = selectedEmbeddingModelRowModifier(
+        modifier = Modifier.selectedEmbeddingModelRowModifier(
             selected = selected,
             enabled = enabled,
             contentDescription = accessibilitySummary,
@@ -6437,7 +6473,7 @@ private fun EmbeddingModelRow(
             onSelectEmbeddingModel(model.id)
         },
         enabled = rowEnabled,
-        modifier = selectedEmbeddingModelRowModifier(
+        modifier = Modifier.selectedEmbeddingModelRowModifier(
             selected = selected,
             enabled = rowEnabled,
             contentDescription = accessibilitySummary,
@@ -6476,7 +6512,7 @@ private fun EmbeddingModelRow(
 }
 
 @Composable
-private fun selectedEmbeddingModelRowModifier(
+private fun Modifier.selectedEmbeddingModelRowModifier(
     selected: Boolean,
     enabled: Boolean,
     contentDescription: String,
@@ -6485,8 +6521,7 @@ private fun selectedEmbeddingModelRowModifier(
     val selectedStateDescription = stringResource(R.string.selection_state_selected)
     val resolvedDisabledStateDescription = disabledStateDescription
         ?: stringResource(R.string.model_picker_state_wait_for_stream)
-    return Modifier
-        .fillMaxWidth()
+    return fillMaxWidth()
         .semantics {
             this.contentDescription = contentDescription
             if (!enabled) {
@@ -6712,8 +6747,8 @@ internal fun ChatHistorySettingsPanel(
     showHeader: Boolean = true,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
-    val bulkArchiveConfirmStep = rememberSaveable { mutableStateOf(0) }
-    val bulkDeleteConfirmStep = rememberSaveable { mutableStateOf(0) }
+    val bulkArchiveConfirmStep = rememberSaveable { mutableIntStateOf(0) }
+    val bulkDeleteConfirmStep = rememberSaveable { mutableIntStateOf(0) }
     var showBulkActions by rememberSaveable { mutableStateOf(false) }
     var chatSearchQuery by rememberSaveable { mutableStateOf("") }
     val untitledTitle = stringResource(R.string.untitled_chat)
@@ -6782,25 +6817,25 @@ internal fun ChatHistorySettingsPanel(
     )
 
     TwoStepConfirmationDialog(
-        step = bulkArchiveConfirmStep.value,
+        step = bulkArchiveConfirmStep.intValue,
         titleRes = R.string.archive_all_chats,
         accessibilitySubject = stringResource(R.string.archive_all_chats),
         firstMessage = stringResource(R.string.archive_all_chats_confirm_first),
         secondMessage = stringResource(R.string.archive_all_chats_confirm_second),
         confirmRes = R.string.archive,
         enabled = canArchiveAll,
-        onStepChange = { bulkArchiveConfirmStep.value = it },
+        onStepChange = { bulkArchiveConfirmStep.intValue = it },
         onConfirm = onArchiveAllChatSessions,
     )
     TwoStepConfirmationDialog(
-        step = bulkDeleteConfirmStep.value,
+        step = bulkDeleteConfirmStep.intValue,
         titleRes = R.string.permanently_delete_archived_chats,
         accessibilitySubject = stringResource(R.string.permanently_delete_archived_chats),
         firstMessage = stringResource(R.string.delete_archived_chats_confirm_first),
         secondMessage = stringResource(R.string.delete_archived_chats_confirm_second),
         confirmRes = R.string.permanently_delete,
         enabled = canPermanentlyDeleteArchived,
-        onStepChange = { bulkDeleteConfirmStep.value = it },
+        onStepChange = { bulkDeleteConfirmStep.intValue = it },
         onConfirm = onPermanentlyDeleteArchivedChatSessions,
     )
 
@@ -6951,7 +6986,7 @@ internal fun ChatHistorySettingsPanel(
                         OutlinedButton(
                             onClick = {
                                 hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                                bulkArchiveConfirmStep.value = 1
+                                bulkArchiveConfirmStep.intValue = 1
                             },
                             enabled = canArchiveAll,
                             modifier = Modifier
@@ -6989,7 +7024,7 @@ internal fun ChatHistorySettingsPanel(
                         OutlinedButton(
                             onClick = {
                                 hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                                bulkDeleteConfirmStep.value = 1
+                                bulkDeleteConfirmStep.intValue = 1
                             },
                             enabled = canPermanentlyDeleteArchived,
                             modifier = Modifier
@@ -7220,7 +7255,7 @@ private fun ChatHistorySettingsRow(
     onPermanentlyDeleteChatSession: (String) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
-    val deleteConfirmStep = rememberSaveable(session.id) { mutableStateOf(0) }
+    val deleteConfirmStep = rememberSaveable(session.id) { mutableIntStateOf(0) }
     val isArchived = session.archivedAtMillis != null
     val title = session.localizedTitle(stringResource(R.string.untitled_chat))
     val statusRes = chatHistorySessionStatusRes(session)
@@ -7288,14 +7323,14 @@ private fun ChatHistorySettingsRow(
     )
 
     TwoStepConfirmationDialog(
-        step = deleteConfirmStep.value,
+        step = deleteConfirmStep.intValue,
         titleRes = R.string.permanently_delete_chat,
         accessibilitySubject = permanentlyDeleteActionContentDescription,
         firstMessage = stringResource(R.string.permanently_delete_chat_confirm_first, title),
         secondMessage = stringResource(R.string.permanently_delete_chat_confirm_second, title),
         confirmRes = R.string.permanently_delete,
         enabled = canPermanentlyDelete,
-        onStepChange = { deleteConfirmStep.value = it },
+        onStepChange = { deleteConfirmStep.intValue = it },
         onConfirm = { onPermanentlyDeleteChatSession(session.id) },
     )
 
@@ -7409,7 +7444,7 @@ private fun ChatHistorySettingsRow(
                     OutlinedButton(
                         onClick = {
                             hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                            deleteConfirmStep.value = 1
+                            deleteConfirmStep.intValue = 1
                         },
                         enabled = isActionEnabled,
                         modifier = Modifier
@@ -8094,7 +8129,12 @@ private fun DocumentSearchResultSummary(
     query: String,
     resultCount: Int,
 ) {
-    val resultText = stringResource(R.string.document_index_search_result_summary, query, resultCount)
+    val resultText = pluralStringResource(
+        R.plurals.document_index_search_result_summary,
+        resultCount,
+        query,
+        resultCount,
+    )
     Text(
         text = resultText,
         style = MaterialTheme.typography.bodySmall,
@@ -8932,7 +8972,11 @@ private fun MemoryDuplicateSuggestionsSection(
             color = MaterialTheme.colorScheme.secondary,
         )
         Text(
-            text = stringResource(R.string.memory_duplicate_suggestions_scanned_count, scannedCount),
+            text = pluralStringResource(
+                R.plurals.memory_duplicate_suggestions_scanned_count,
+                scannedCount,
+                scannedCount,
+            ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.secondary,
         )
@@ -8993,7 +9037,7 @@ private fun MemorySemanticDuplicateSuggestionsSection(
 ) {
     val entriesById = remember(entries) { entries.associateBy(RuntimeMemoryEntry::id) }
     var thresholdBasisPoints by rememberSaveable(resultThresholdBasisPoints) {
-        mutableStateOf(resultThresholdBasisPoints.coerceIn(8_000, 10_000))
+        mutableIntStateOf(resultThresholdBasisPoints.coerceIn(8_000, 10_000))
     }
     val thresholdLabel = stringResource(
         R.string.memory_semantic_duplicate_suggestions_threshold,
@@ -9082,8 +9126,9 @@ private fun MemorySemanticDuplicateSuggestionsSection(
         }
         if (hasResult) {
             Text(
-                text = stringResource(
-                    R.string.memory_semantic_duplicate_suggestions_result_summary,
+                text = pluralStringResource(
+                    R.plurals.memory_semantic_duplicate_suggestions_result_summary,
+                    scannedCount,
                     scannedCount,
                     resultThresholdBasisPoints / 100.0,
                 ),
@@ -9092,8 +9137,9 @@ private fun MemorySemanticDuplicateSuggestionsSection(
             )
             if (omittedCount > 0) {
                 Text(
-                    text = stringResource(
-                        R.string.memory_semantic_duplicate_suggestions_omitted_count,
+                    text = pluralStringResource(
+                        R.plurals.memory_semantic_duplicate_suggestions_omitted_count,
+                        omittedCount,
                         omittedCount,
                     ),
                     style = MaterialTheme.typography.bodySmall,
@@ -9179,7 +9225,7 @@ private fun MemorySemanticDuplicateClustersSection(
 ) {
     val entriesById = remember(entries) { entries.associateBy(RuntimeMemoryEntry::id) }
     var thresholdBasisPoints by rememberSaveable(resultThresholdBasisPoints) {
-        mutableStateOf(resultThresholdBasisPoints.coerceIn(8_000, 10_000))
+        mutableIntStateOf(resultThresholdBasisPoints.coerceIn(8_000, 10_000))
     }
     val thresholdLabel = stringResource(
         R.string.memory_semantic_duplicate_clusters_threshold,
@@ -9268,8 +9314,9 @@ private fun MemorySemanticDuplicateClustersSection(
         }
         if (hasResult) {
             Text(
-                text = stringResource(
-                    R.string.memory_semantic_duplicate_clusters_result_summary,
+                text = pluralStringResource(
+                    R.plurals.memory_semantic_duplicate_clusters_result_summary,
+                    scannedCount,
                     scannedCount,
                     resultThresholdBasisPoints / 100.0,
                 ),
@@ -9278,8 +9325,9 @@ private fun MemorySemanticDuplicateClustersSection(
             )
             if (omittedCount > 0) {
                 Text(
-                    text = stringResource(
-                        R.string.memory_semantic_duplicate_clusters_omitted_count,
+                    text = pluralStringResource(
+                        R.plurals.memory_semantic_duplicate_clusters_omitted_count,
+                        omittedCount,
                         omittedCount,
                     ),
                     style = MaterialTheme.typography.bodySmall,
@@ -10565,8 +10613,8 @@ private fun ChatHistorySummary(
 @Composable
 private fun EmptyState(
     text: String,
-    announceChanges: Boolean = false,
     modifier: Modifier = Modifier,
+    announceChanges: Boolean = false,
     textModifier: Modifier = Modifier,
 ) {
     val stateModifier = if (announceChanges) {
@@ -11872,8 +11920,9 @@ private fun providerStatusSummary(state: RuntimeUiState): String {
     return when (availableCount) {
         totalCount -> stringResource(R.string.provider_status_summary_all_ready)
         0 -> stringResource(R.string.provider_status_summary_none_ready)
-        else -> stringResource(
-            R.string.provider_status_summary_mixed,
+        else -> pluralStringResource(
+            R.plurals.provider_status_summary_mixed,
+            totalCount,
             availableCount,
             totalCount,
         )

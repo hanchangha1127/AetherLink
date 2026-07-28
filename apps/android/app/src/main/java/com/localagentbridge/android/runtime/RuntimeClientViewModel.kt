@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.os.LocaleList
 import android.provider.OpenableColumns
 import android.util.Log
+import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.localagentbridge.android.BuildConfig
@@ -1095,7 +1096,7 @@ private class AndroidRuntimeAttachmentReader(
     private val application: Application,
 ) : RuntimeAttachmentReader {
     override suspend fun metadata(reference: String): RuntimeAttachmentMetadata {
-        val uri = Uri.parse(reference)
+        val uri = reference.toUri()
         val resolver = application.contentResolver
         var name = uri.lastPathSegment?.substringAfterLast('/')?.takeIf(String::isNotBlank)
             ?: "attachment"
@@ -1123,7 +1124,7 @@ private class AndroidRuntimeAttachmentReader(
         maxDecodedBytes: Int,
         maxEncodedBytes: Int,
     ): RuntimeAttachmentReadResult {
-        val uri = Uri.parse(reference)
+        val uri = reference.toUri()
         val resolver = application.contentResolver
         return try {
             resolver.openInputStream(uri)?.use { input ->

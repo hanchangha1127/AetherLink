@@ -4,6 +4,255 @@ Last updated: 2026-07-28 KST.
 
 This document records what has been implemented so far and what should happen next. It is intentionally broader than the original v0.1 MVP because recent work has moved the prototype toward a more complete product shape.
 
+## 2026-07-28 Provider Compatibility Baseline
+
+- The existing `1.0.0+1` local qualification record now embeds a second
+  canonical JSON fixture instead of adding a standalone provider file.
+- Official release snapshots pin Ollama `0.32.5`/`0.32.4` and LM Studio
+  `0.4.20` build 1/`0.4.19` build 2 as current/previous candidates on
+  2026-07-28. This is a dated snapshot, not a permanently current claim.
+- Localhost schema smoke observed Ollama `0.32.4` at `/api/version`,
+  `/api/tags`, and `/api/ps`, plus LM Studio `0.4.17-beta+3` at native
+  `/api/v1/models` and fallback `/v1/models`. Model names and catalog counts
+  were not retained.
+- Official Darwin archives for Ollama `0.32.5` and `0.32.4` matched their
+  published SHA-256 values. Each ran from a temporary directory on a unique
+  localhost port with an empty model directory. Four opt-in AetherLink adapter
+  runs passed exact-version, health, empty-catalog, cold-start, restart, and
+  stopped-endpoint checks.
+- The focused default suites executed 144 tests: 141 passed and three opt-in
+  tests skipped. No model was downloaded, loaded, unloaded, or used for chat.
+- Docs hygiene enforces canonical JSON and exact types, rejects candidate or
+  evidence overclaims, and cross-checks both provider IDs, runtime-host-only
+  access, null minimum versions, and the current-plus-previous policy against
+  the non-security G0 provider fields.
+- The post-edit full Swift run executed 2,032 tests with zero failures and the
+  three expected opt-in skips. Docs/copy hygiene, release archive byte
+  readback, artifact-ledger readback, 21 documentation/handoff tests, Python
+  syntax, and diff whitespace checks pass with an empty staging area.
+- Exact LM Studio candidate testing, model-backed behavior, minimum supported
+  versions, and full candidate qualification remain unresolved. No installed
+  provider app, release artifact/archive identity, device, security scope, or
+  Git state was changed.
+
+## 2026-07-28 First-Lineage Release Transition Fixture
+
+- The existing `1.0.0+1` local qualification record now embeds one canonical
+  JSON transition fixture rather than adding another standalone data file.
+- `productionPredecessor` and the compatible N-1 release are null. N/N-1 is
+  explicitly unproven because no production predecessor exists.
+- Android Debug `0.1.0+1` and pre-production local ad-hoc macOS packages both
+  require clean installation plus fresh pairing. In-place upgrade and state
+  migration are both false; no data-preservation or import claim is made.
+- Docs hygiene enforces exact values and JSON types, rejects duplicate keys and
+  overclaims, strictly parses every release-ledger row, and cross-checks both
+  G0 marketing versions plus only the development identity, migration, and
+  compatibility fields.
+- Twenty-one documentation/handoff regressions now pass. Transition coverage
+  includes Boolean/integer confusion, invented predecessor, false N/N-1
+  qualification, migration/upgrade overclaims, duplicate keys, both missing
+  markers, current and malformed-middle-row ledger drift, both G0
+  version/migration drifts, and the present archive cross-check.
+- Caveat: this is a no-device policy fixture, not an install, migration,
+  uninstall, or state-cleanup execution. In particular, it does not claim that
+  macOS uninstall automatically removes Application Support data. No app build
+  input, artifact/archive identity, security scope, device, or Git state was
+  changed.
+
+## 2026-07-28 Consolidated Local Release Qualification Record
+
+- `docs/releases/1.0.0-build-1-local-v1.md` now provides one versioned source
+  for release notes, the platform/provider/locale compatibility matrix,
+  installation and migration boundaries, known limitations, support
+  diagnostics, privacy/evidence boundaries, and rollback posture.
+- The record distinguishes the current unsigned Android and ad-hoc macOS
+  container from an installable production release and preserves the exact
+  artifact, manifest, source-inventory, mapping, executable, and dSYM hashes.
+- Android Debug `0.1.0+1` and existing local macOS packages are explicitly not
+  assumed upgradeable. Until a compatible predecessor is declared and tested,
+  the documented transition is clean install plus fresh pairing.
+- The first-lineage fresh-pair and provider compatibility fixtures are now
+  complete as bounded no-device records. No device, signing, upload,
+  deployment, security work, or Git write occurred.
+
+## 2026-07-28 Compose Cleanup
+
+- Fifteen Compose lint issues were removed; 22 focused tests passed. Later
+  resource, typography, and count-copy cleanup brings current lint to 0/3/0.
+
+## 2026-07-28 Android Locale-Correct Plural And Typography Resources
+
+- All 23 shared plurals use locale-correct Android/CLDR categories:
+  English/default `one/other`, Korean/Japanese/Simplified Chinese `other`, and
+  French `one/many/other`; parity pins category order and placeholders.
+- Nine count-sensitive summaries now select singular grammar correctly. Three
+  abbreviation or multi-count strings retain scoped per-resource lint ignores
+  because one plural selector cannot represent their wording.
+- Terminal progress copy uses the typographic ellipsis in all six resource
+  sets. This removes 48 `TypographyEllipsis` and 24 `PluralsCandidate`
+  warnings; both IDs, `MissingQuantity`, and `UnusedQuantity` are now absent.
+- Ten clean focused no-device tests cover the new English/French singulars and
+  affected multilingual UI paths. String parity and copy hygiene pass.
+- Current release lint reports 0 errors, 3 warnings, and 0 hints.
+- Caveat: this is no-device resource, Compose, lint, and release-build
+  evidence. It does not prove physical font rendering or spoken plural
+  pronunciation. No security work, device action, Git index, commit, or push
+  occurred.
+
+## 2026-07-28 Android Release R8 And Resource Shrinking
+
+- The Android `release` build type now enables R8 code
+  shrinking/obfuscation and resource shrinking with
+  `proguard-android-optimize.txt`. No app-wide keep file or broad keep rule was
+  added; the current dependencies retain their own consumer rules.
+- Android string parity now parses comment-free Kotlin DSL blocks and requires
+  exactly one `true` assignment for each release shrinker switch, exactly one
+  `false` language-split assignment, and a direct optimized-default
+  `proguardFiles(...)` binding. An independent GPT-5.6 Sol review found no
+  remaining blocking or nonblocking correctness issue in these two files.
+- The latest clean offline APK/AAB/lint build completed in 1 minute 13 seconds.
+  V1 Release is now `arm64-v8a`-only. The unsigned AAB is 10,658,079 bytes at
+  `647b2121817d5c3f7c09a3dbe26e9f240bcca22f77411307f6cc87d9533992db`;
+  the unsigned APK is 9,568,734 bytes at
+  `acddd234a5e8e0a3fee031bd811befc55b228028d577fbffbf482110f114317e`.
+- Relative to the 28,404,408-byte pre-R8 four-ABI baseline, the combined R8,
+  resource-shrinking, and arm64-only result is 17,746,329 bytes (62.48%) smaller;
+  this is not an isolated R8-only comparison.
+- R8 emits one DEX instead of the baseline four. The current 71,646,798-byte
+  `mapping.txt` is embedded byte-for-byte in the AAB and has SHA-256
+  `cb41d4afe7c4f5c6e99640e11a41cc1d624652e8c8629ff3a39a70128c9ef1f9`;
+  configuration, resource, seed, and usage outputs are also nonempty.
+- Independent APK badging confirms package/version `1` / `1.0.0`, API 26-36,
+  and only `arm64-v8a`; the AAB contains the same five JNI libraries and all
+  five app locales. Release lint reports 0 errors, 3 warnings, and 0 hints; the
+  ChromeOS x86_64 warning is narrowly excluded because ChromeOS is outside V1.
+- Caveat: this is clean offline no-device build and byte-readback evidence, not
+  an installed release, physical launch, Play-generated APK set, production
+  signature, upload, or warning-free lint result. The final application ID and
+  upstream native-symbol availability remain open G6 work. No Git index,
+  commit, push, or device operation occurred.
+
+## 2026-07-28 macOS Self-Contained Release App Packaging
+
+- `build_and_run.sh --package-only` now compiles the `AetherLink` product in
+  Swift Release mode, assembles the app without stopping or launching it, and
+  fails unless exactly one target SwiftPM resource bundle is present.
+- The resource bundle is embedded at the code-signing-compatible
+  `Contents/Resources/AetherLink_LocalAgentBridge.bundle` location. App
+  localization resolves that packaged bundle first and uses `Bundle.module`
+  only as a development/test fallback.
+- Packaging no longer copies a second loose set of the same localization
+  tables. The app icon is excluded from the SwiftPM resource definition and
+  removed from a copied incremental bundle if an older build cache retained it.
+  The resulting app allocation fell from 22,780 KiB to 20,272 KiB, a 2,508 KiB
+  reduction, while retaining the outer app icon and all five localized tables.
+- The generated `Info.plist` now contains validated semantic and positive
+  decimal build versions. The package now reads `1.0.0+1` from the same
+  repository ledger consumed by Android Release; per-platform environment
+  overrides are rejected by source guards.
+- Five fake-toolchain packaging regressions pass, and the complete 145-test
+  macOS localization class—including both new resolver regressions—passes. A
+  real Release package completed successfully; its five localized resource
+  tables are present, `plutil` passes, and strict deep code-sign verification
+  reports a thin arm64 ad-hoc app.
+- This closes the demonstrated build-tree localization dependency for the
+  local package shape. The current development bundle ID, ad-hoc signature,
+  arm64-only output, clean-machine launch, Developer ID signing, notarization,
+  and DMG remain outside this evidence.
+- No network, device, app launch, Git index, commit, or remote operation
+  occurred.
+
+## 2026-07-28 Android Reduced-Motion Chat Feedback
+
+- Chat now reads Android's active animation-duration scale. At a zero scale,
+  automatic and user-requested movement to the latest message uses immediate
+  scrolling instead of animated scrolling.
+- The streaming assistant indicator becomes a static centered segment when
+  animations are disabled. Its ordinary 1.2-second looping motion remains
+  unchanged at nonzero scales.
+- The policy unit regression and both the standard/reduced-motion
+  five-language streaming layout matrix and existing jump-to-latest Compose
+  regression pass.
+- Copy hygiene requires the platform-scale wiring, static indicator branch,
+  both immediate-scroll sites, unit regression, and dual-mode Compose coverage.
+  The default no-device summary names the behavior.
+- This is no-device source/unit/Compose evidence. No physical accessibility
+  setting, screen reader, frame-time benchmark, network, Git index, commit, or
+  remote operation was used.
+
+## 2026-07-28 Android Unchanged-Message Markdown Parse Memoization
+
+- Chat rows now memoize the message-level copy-action parse by
+  `message.content`, and `MessageContent` memoizes its outer fenced-code/Markdown
+  partition by `content`.
+- Unrelated recompositions no longer repeat those two outer parser calls for an
+  unchanged message. Streaming deltas and any other content change still
+  invalidate the keys and reparse normally.
+- Seven focused parser, Markdown/code rendering, and five-language copy-action
+  regressions passed in 41 seconds.
+- Copy hygiene requires both `remember(...)` boundaries and rejects the former
+  direct render-path parse. The default no-device gate summary names the
+  optimization.
+- This is structurally verified CPU/allocation avoidance, not a benchmarked
+  performance claim. No device, network, Git index, commit, or remote operation
+  occurred.
+
+## 2026-07-28 Android Adaptive Navigation Window Width
+
+- The 840dp permanent-navigation-rail decision now uses the actual Compose
+  window container width instead of `Configuration.screenWidthDp`.
+- Container pixels are converted through the active Compose density, and the
+  breakpoint helper now accepts `Dp` directly to avoid integer truncation.
+- Focused debug compilation plus the 839dp, 839.99dp, 840dp, and 1200dp
+  breakpoint regression passed. The related top-bar New Chat behavior also
+  passed.
+- Regenerated offline lint passed in 51 seconds with zero errors; both
+  `ConfigurationScreenWidthHeight` and the earlier bundle-language warning are
+  absent.
+- Focused permanent-rail pairing/haptics and five-language Settings action
+  semantics regressions also passed.
+- Copy hygiene requires the live-window wiring, typed breakpoint, and both
+  sides of the inclusive 840dp boundary. The default no-device gate already
+  runs the full `AppNavigationTest` class.
+- This is no-device source/unit evidence. Split-screen, freeform-window, and
+  fold-state visual behavior remain unclaimed.
+
+## 2026-07-28 Android In-App Language Bundle Packaging
+
+- Android lint identified `AppBundleLocaleChanges`: AetherLink changes locale
+  at runtime, but its release bundle still allowed Play to split translations
+  by language.
+- The app bundle now disables language splitting, so the five existing
+  translations remain installed and available to the in-app language picker.
+  This trades a modest package-size increase for deterministic language
+  switching without Play Core language downloads.
+- Android string parity now enforces the unsplit bundle configuration with a
+  comment-stripped, whitespace-tolerant guard.
+- Offline `:app:lintDebug` passed and the regenerated lint report no longer
+  contains `AppBundleLocaleChanges`. Offline `:app:bundleRelease` also passed,
+  producing the 28,404,408-byte unsigned pre-R8 baseline used by the newer
+  release-shrinking result above.
+- Five focused app-language option, normalization, handoff, and persistence
+  regressions passed.
+- No device, network, production signing, upload, Git index, commit, or remote
+  operation occurred.
+
+## 2026-07-28 Android 200% Font-Scale Qualification
+
+- Active work is limited to non-security product quality. Security,
+  authentication, and authorization analysis is paused at the user's direction;
+  existing material below is retained only as historical context.
+- The existing no-device Compose regressions for Chat and Settings now run at
+  Android font scale `2.0` across `en`, `ko`, `ja`, `zh-CN`, and `fr`.
+- Chat remains qualified at 320 x 470 dp and Settings at 260 x 760 dp. The
+  focused tests confirm that their core controls remain reachable by semantics
+  lookup and scrolling at the V1 200% font-size ceiling.
+- The focused Gradle run passed both selected tests. Copy hygiene now fails if
+  either qualification silently drops below `2.0`, and the default no-device
+  gate reports the exact 200% coverage.
+- No production UI source, device state, Git index, commit, or remote was
+  changed by this slice. The full no-device gate has not been rerun.
+
 ## 2026-07-28 G2 Fixed-Point Snapshot Review Completion Batch 1
 
 - Both independent GPT-5.6 Sol passes completed the exact first deterministic
@@ -812,6 +1061,106 @@ This document records what has been implemented so far and what should happen ne
   `dee5d87791ceaddb094235fbf33f7997580ddb1e`, aligned with `origin/main`.
   Read current publication state from Git; this workflow does not stage,
   commit, or push unless the user separately requests it.
+
+## 2026-07-28 Android Release Lint And Adaptive Icon Cleanup
+
+- Fifty unused string keys were removed from each of the six Android resource
+  sets (300 entries total) after production, test, manifest, and dynamic lookup
+  searches found no references. String parity and copy hygiene remain green.
+- Three Android KTX migrations and the API-33 locale-config annotation remove
+  their targeted lint findings without changing the public `Uri` API or
+  persisted-store recovery behavior.
+- Because the app's minimum SDK is 26, ten API-25-and-earlier density launcher
+  PNGs were removed. Standard and round adaptive icons now live in
+  `mipmap-anydpi`, share an explicit monochrome vector, and are regenerated and
+  checked by the canonical icon pipeline.
+- A clean twelve-test affected-path slice passed in 35 seconds. The clean
+  offline APK/AAB/lint build passed in 1 minute 19 seconds. Release lint fell
+  from 70 warnings to 3: the two SDK-37 availability notices and the backup
+  policy notice intentionally outside this non-security slice.
+- Current artifact readback confirms one DEX, API 26/36, arm64-v8a with five
+  JNI libraries, no `debuggable` or `testOnly`, zero packaged legacy launcher
+  PNGs, and an AAB-embedded mapping byte-identical to `mapping.txt`.
+- This is no-device source, build, lint, and byte-readback evidence. It does not
+  claim physical launcher rendering. No backup-policy/security work, Git index
+  change, commit, push, device operation, or network operation occurred.
+
+## 2026-07-28 Shared Android/macOS Release Version Ledger
+
+- `release/version-ledger.tsv` is now the single append-only source for the V1
+  marketing version and shared build number. The current entry is `1.0.0+1`;
+  build numbers must increase strictly and semantic versions cannot decrease.
+- Android's default development metadata remains `0.1.0+1`. Release outputs
+  obtain ledger metadata through a lazy AGP variant-output provider. A direct
+  offline `assembleDebug` succeeds with the ledger absent, while a Release
+  manifest task rejects a NUL-bearing ledger.
+- `build_and_run.sh` reads the same ledger before any build, process, or package
+  side effect. The former independent marketing/build environment overrides
+  are gone.
+- Twelve Python regressions cover the ledger parser and macOS fake-toolchain
+  packaging, including NUL/VT/FF/FS/GS/RS/DEL/non-ASCII input, malformed
+  format, overflow, duplicate/regressive build numbers, semantic-version
+  regression, and failure before toolchain effects. Python, Bash, and Gradle
+  now enforce the same LF-only printable-ASCII/tab byte boundary.
+- Actual artifact readback confirms Android Debug `0.1.0+1`, Android Release
+  APK/AAB `1.0.0+1`, and the local ad-hoc macOS package `1.0.0+1`. The release
+  ledger checker matches both local artifact metadata sources to the final
+  ledger entry.
+- Production Android/macOS identifiers remain deliberately unchanged and
+  unresolved until external account reservation. This is local version
+  alignment, not signing, notarization, store upload, install, upgrade, or
+  production-identity evidence. No security work or Git write occurred.
+
+## 2026-07-28 Canonical Local Release Artifact Archive
+
+- `build_release_artifacts.sh` now performs one source-stable clean Android
+  APK/AAB/lint build across all four Android modules, a no-launch macOS Release
+  package, version-ledger checks, canonical archive creation, and an independent
+  byte readback.
+- The 25-payload-member normalized-input ZIP is 164,775,328 bytes at SHA-256
+  `1944238784f7235b93e5e5889fdc903137ca6229bc39c870b5935cf3489c89ac`.
+  Its 10,242-byte external/embedded manifest is
+  `60baac0fa0567d3929370d401475d5a773d7541025017e68cc4b06def1b4ae8a`;
+  the 234-file source snapshot is
+  `938b95c38c106aae73ecc7a8899364598780c21545bfcb73e5806befc6ac0282`.
+- The archive retains the unsigned arm64-only APK/AAB, all R8 outputs, SDK
+  dependency report, the thin arm64 ad-hoc app, and the matching dSYM. The app
+  and dSYM UUID are both `6B5402D4-F853-3A12-AD51-94C892EC7BD5`.
+- The AAB mapping equals the archived 71,646,798-byte `mapping.txt`
+  byte-for-byte. Five dependency JNI files carry Build IDs but arrive
+  pre-stripped, so the requested `SYMBOL_TABLE` output is explicitly recorded
+  as `unavailable-upstream-prestripped`, not misreported as archived symbols.
+- The builder and independent verifier each execute AGP-pinned
+  `bundletool 1.18.3` on their own AAB temporary bytes. Both directly read
+  package `com.localagentbridge.android`, version `1.0.0+1`, and SDK 26/36
+  from the base protobuf manifest and compare all five fields with the APK,
+  ledger, and archive metadata.
+- Six generated Gradle lock files now cover settings, buildscript, and the
+  configurations resolved by the clean Release graph. Two consecutive writers
+  reached the same byte state, then two strict read-only clean Release runs
+  passed without changing any lock. The manifest declares the sole ignored
+  coordinate `org.jetbrains.kotlin:kotlin-stdlib-common`; Gradle 9.4.1 did not
+  persist its runtime configuration membership consistently, while the parent
+  `kotlin-stdlib:2.3.21` remains locked. SwiftPM reports zero external
+  dependencies and correctly has no `Package.resolved`.
+- R8 emits equivalent but byte-unstable `mapping.prt`, `resources.txt`, and
+  `seeds.txt`. The archive now fixes nested ZIP metadata/member order and sorts
+  the two unique line sets. Two real clean builds had identical semantic
+  payloads and normalized bytes.
+- Twenty-two archive regressions cover canonical bytes, tampering, metadata,
+  Unicode/unsafe paths, closed field sets/order, exact integer types, aapt2
+  parsing, bundletool XML/classpath/version failures, success/failure temporary
+  cleanup, Gradle lock parsing/inventory, R8 normalization, idempotence, and
+  no-overwrite publication. Both final strict clean Android runs passed; the
+  second real creation reports `already matched` without changing ZIP/manifest
+  hash or mtime, and the independent full readback passes. Release lint remains
+  0 errors and 3 warnings.
+- This is a local unsigned/ad-hoc qualification container. Raw AGP and dSYM
+  debug payloads retain build-host paths, so only the container for normalized
+  local inputs is canonical. Debug/test/androidTest dependency graphs,
+  cross-checkout/cross-machine reproducibility, signing, install, launch,
+  device, network, upload, and deployment remain unclaimed. No staging, commit,
+  or push occurred.
 
 ## Historical 2026-07-21 V1 G0 Publication Follow-Up And Authority Baseline
 
@@ -16532,7 +16881,7 @@ Verified after this change:
 
 - Continued no-device Android Settings accessibility polish while the Android phone was disconnected.
 - Updated Settings route discovery controls so `Find trusted routes`, `Discovering runtimes`, and `Stop` expose explicit localized click action labels in addition to their localized idle/running state descriptions.
-- Updated the Settings Memory indexing model `Refresh models` / `Loading models...` button so the visible localized label is also the explicit accessibility action label across ready, loading, and disconnected states.
+- Updated the Settings Memory indexing model `Refresh models` / `Loading models…` button so the visible localized label is also the explicit accessibility action label across ready, loading, and disconnected states.
 - Updated the Settings Memory `Add Memory` button so locked, empty, and ready states expose the localized `Add Memory` action label alongside the existing readiness state description.
 - Updated Chat history bulk actions so `Archive all chats` and `Permanently delete archived chats` expose explicit localized action labels, including the disabled streaming state. This keeps bulk/destructive controls consistent with per-chat actions and confirmation dialog buttons.
 - Strengthened `ClientScreensNoDeviceComposeTest.settingsDiscoveryActionsExplainIdleAndRunningStatesAcrossSupportedLanguages`, `settingsModelRefreshActionLocalizesReadinessStates`, `settingsMemoryAddControlsLocalizeReadinessStateAcrossSupportedLanguages`, and `settingsBulkChatHistoryActionsExplainStreamingDisabledStateAcrossSupportedLanguages`.
@@ -26940,7 +27289,7 @@ Verified after this change:
 - Scope: no-device Android ViewModel/Compose evidence for opening runtime-owned previous chats without showing a blank editable transcript; GPT-5.3-Codex-Spark was not used.
 - Used a GPT-5.5 read-only explorer to identify the loading-state UX gap, then implemented the patch directly in the main workspace.
 - Result: `RuntimeUiState` now tracks the session id whose runtime transcript is loading. Runtime-owned `chat.messages.list` requests set this state, matching responses and runtime-history send failures clear it, and stale loading ids are dropped when the active session changes.
-- Result: while the active transcript is loading, composer editing, attachment changes, send, regenerate, and reuse-as-draft paths are blocked with localized feedback. The Chat screen shows a localized polite live-region `Loading chat...` state instead of a blank pane.
+- Result: while the active transcript is loading, composer editing, attachment changes, send, regenerate, and reuse-as-draft paths are blocked with localized feedback. The Chat screen shows a localized polite live-region `Loading chat…` state instead of a blank pane.
 - Guardrail: `script/check_copy_hygiene.py` now requires the loading state, ViewModel lockout regression, Compose localization regression, and no-device coverage label. `script/check_no_device_quality.sh` runs the focused runtime transcript loading regressions and includes the coverage in its summary.
 - Caveat: the client device was disconnected for this pass, so this is no-device JVM/Compose/script evidence only. It does not prove physical install, camera QR scanning, physical haptics, live streamed chat/cancel, or actual different-network runtime connectivity.
 

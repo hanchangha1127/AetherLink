@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import com.localagentbridge.android.core.transport.RuntimeEndpointHint
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
@@ -100,6 +101,7 @@ import com.localagentbridge.android.ui.shouldAutoScrollChat
 import com.localagentbridge.android.ui.shouldShowChatBottomError
 import com.localagentbridge.android.ui.shouldShowChatEmptyState
 import com.localagentbridge.android.ui.shouldShowJumpToLatestChatButton
+import com.localagentbridge.android.ui.shouldReduceChatMotion
 import com.localagentbridge.android.ui.shouldScanLatestQrFromEmptyChat
 import com.localagentbridge.android.ui.shouldPerformSelectionChangeHaptic
 import com.localagentbridge.android.ui.settingsPrimaryConnectionSectionInitiallyExpanded
@@ -711,9 +713,10 @@ class AppNavigationTest {
 
     @Test
     fun permanentNavigationRailUsesExpandedWidthOnly() {
-        assertEquals(false, shouldUsePermanentNavigationRail(839))
-        assertEquals(true, shouldUsePermanentNavigationRail(840))
-        assertEquals(true, shouldUsePermanentNavigationRail(1200))
+        assertEquals(false, shouldUsePermanentNavigationRail(839.dp))
+        assertEquals(false, shouldUsePermanentNavigationRail(839.99.dp))
+        assertEquals(true, shouldUsePermanentNavigationRail(840.dp))
+        assertEquals(true, shouldUsePermanentNavigationRail(1200.dp))
     }
 
     @Test
@@ -3631,6 +3634,14 @@ class AppNavigationTest {
                 totalItemsCount = 0,
             ),
         )
+    }
+
+    @Test
+    fun chatReducedMotionPolicyDisablesAnimationOnlyAtZeroScale() {
+        assertEquals(false, shouldReduceChatMotion(null))
+        assertEquals(false, shouldReduceChatMotion(1f))
+        assertEquals(false, shouldReduceChatMotion(0.5f))
+        assertEquals(true, shouldReduceChatMotion(0f))
     }
 
     private fun trustedRuntime(

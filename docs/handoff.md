@@ -10,6 +10,7 @@ boundaries, and the shortest path to resume work.
 
 ## Contents
 
+- [Current non-security quality lane](#current-non-security-quality-lane)
 - [Current truth versus historical evidence](#current-truth-versus-historical-evidence)
 - [Active personal-project governance](#active-personal-project-governance)
 - [Current handoff snapshot](#current-handoff-snapshot)
@@ -40,12 +41,111 @@ or any equivalent owner-authentication evidence.
 The published G0 lineage and owner-trust profiles are historical enterprise-
 assurance artifacts. Preserve their bytes and integrity tests, but do not treat
 their owner-authentication, receipt, or `blocked_before_g1a` state as an active
-work prerequisite. Product security and authentication are separate and remain mandatory:
-QR pairing, paired-device challenge/response, endpoint encryption, replay and
-downgrade protection, pair-epoch recovery, revocation, and route capabilities.
-Sockets, external-network execution, production signing, store upload, and
-deployment remain distinct technical scopes governed by current user direction,
-not repository-owner identity proof.
+work prerequisite. Product security, authentication, and authorization
+analysis or implementation is paused at the user's direction. Existing
+material remains historical context and must not block the active non-security
+product-quality lane. Sockets, external-network execution, production signing,
+store upload, and deployment remain distinct technical scopes governed by
+current user direction, not repository-owner identity proof.
+
+## Current Non-Security Quality Lane
+
+- Continue only feature, UX, accessibility, performance, build, documentation,
+  and release-quality work. Do not resume security findings, threat analysis,
+  owner authentication, or authority-evidence work.
+- The current Android accessibility slice raises the existing Chat and Settings
+  no-device multilingual regressions to font scale `2.0`, covering `en`, `ko`,
+  `ja`, `zh-CN`, and `fr`.
+- Chat is exercised at 320 x 470 dp and Settings at 260 x 760 dp. Both focused
+  tests pass, and copy hygiene prevents a silent reduction of the 200%
+  qualification ceiling.
+- Android App Bundle language splitting is now disabled so the existing
+  five-language in-app picker does not depend on Play Core language downloads.
+  String parity, offline lint, and an unsigned release AAB build pass.
+- All 23 shared plural resources now use locale-correct Android/CLDR category
+  sets: English/default `one/other`, Korean/Japanese/Simplified Chinese
+  `other`, and French `one/many/other`. Eight terminal strings use typographic
+  ellipses across all six resource sets; nine additional count-sensitive
+  summaries use quantity-aware singular grammar, while three nonplural cases
+  have narrow per-resource ignores. A clean ten-test affected-path slice and
+  independent GPT-5.6 Sol review pass.
+- Android release builds now enable R8 and resource shrinking with the
+  optimized defaults and dependency consumer rules, without a broad app keep
+  file. A clean offline APK/AAB/lint run passes. V1 Release is arm64-only: the
+  unsigned AAB is 10,658,234 bytes, has one DEX, embeds its mapping byte-for-byte,
+  and retains all five locales and five JNI libraries. Production signing,
+  final ID, Play delivery, and physical release launch remain unclaimed.
+- Five Compose screen APIs now follow required-parameter/`modifier` ordering,
+  two Modifier factories are receiver extensions, and eight integer states use
+  primitive Compose state. A clean 22-test focused run passes; all three
+  targeted issue IDs remain absent. After resource and localized-copy cleanup,
+  current release lint is at 0 errors, 3 warnings, and 0 hints.
+- Fifty unused keys per locale set and ten API-25-and-earlier launcher PNGs are
+  removed. The API-26 adaptive standard/round icons include a generated
+  monochrome layer, and the canonical generator/checker pins this structure.
+  Three KTX findings and the locale-config warning are also gone. Physical
+  launcher rendering remains unclaimed.
+- The 840dp permanent-navigation breakpoint now uses the actual Compose window
+  container width with density-aware `Dp` conversion. Focused breakpoint and
+  top-bar behavior tests pass.
+- Chat message copy-action and outer Markdown/fenced-code parsing are memoized
+  by unchanged content. Seven focused parser/render/copy regressions pass; no
+  benchmark claim is made.
+- Chat follows Android's disabled-animation setting: streaming progress becomes
+  static and automatic/manual latest-message scrolling becomes immediate.
+  Policy, dual-mode multilingual streaming layout, and jump-to-latest
+  regressions pass; no physical accessibility-setting claim is made.
+- macOS `--package-only` now produces a no-launch Swift Release app with the
+  target SwiftPM localization bundle inside `Contents/Resources`, semantic and
+  build versions, and a strict local ad-hoc seal. Five packaging regressions and
+  the complete 145-test localization class pass, as does real package
+  structure/signature verification. Final identity, Developer ID/notarization/
+  DMG, and clean-machine launch remain unclaimed; Intel is Post-V1.
+- `release/version-ledger.tsv` is now the single version source for Android
+  Release and macOS packaging. Both read back as `1.0.0+1`; Android Debug stays
+  `0.1.0+1` and builds with the ledger absent. Python, Bash, and lazy Gradle
+  consumers reject noncanonical control bytes; strict parser, source, artifact,
+  and fake-toolchain checks pass.
+  Production IDs remain unchanged pending actual account reservation.
+- `build_release_artifacts.sh` clean-builds both targets and creates
+  `dist/releases/aetherlink-1.0.0+1-local-v1/`. Its 164,775,328-byte canonical
+  normalized-input ZIP has SHA-256
+  `1944238784f7235b93e5e5889fdc903137ca6229bc39c870b5935cf3489c89ac`.
+  Independent readback verifies 25 payload members, arm64-only APK badging,
+  AAB mapping/JNI identity, direct base-manifest package/version/SDK through
+  AGP-pinned `bundletool 1.18.3`, and the arm64 app/dSYM UUID
+  `6B5402D4-F853-3A12-AD51-94C892EC7BD5`. Android native symbols remain
+  explicitly unavailable because all five upstream JNI inputs are pre-stripped.
+  Three byte-unstable R8 metadata/order surfaces are explicitly normalized.
+  Six Gradle locks reached a writer fixed point and passed two strict read-only
+  clean Release runs unchanged; the manifest declares the one
+  `kotlin-stdlib-common` compatibility exception. SwiftPM has zero external
+  dependencies. Raw debug paths still make this local evidence, not
+  cross-checkout reproducibility.
+- The versioned
+  `docs/releases/1.0.0-build-1-local-v1.md` record now consolidates release
+  notes, compatibility, migration, limitations, diagnostics, privacy/evidence
+  boundaries, and rollback. It explicitly treats Android Debug `0.1.0+1` and
+  local ad-hoc macOS packages as non-upgrade lineages. Its canonical
+  first-lineage fixture now pins a null production predecessor, unproven N/N-1,
+  clean install plus fresh pairing, and false migration/in-place-upgrade claims
+  against the release ledger and G0 non-security release fields.
+- The same release record now embeds the dated provider fixture. Official
+  current/previous candidates are Ollama `0.32.5`/`0.32.4` and LM Studio
+  `0.4.20` build 1/`0.4.19` build 2. Local schema smoke covered Ollama
+  `0.32.4` and LM Studio `0.4.17-beta+3`. SHA-256-verified official Darwin
+  archives for both exact Ollama candidates passed four isolated AetherLink
+  adapter runs covering cold start, exact version, health, empty catalog,
+  process restart, and stopped-endpoint unavailability. The default focused
+  suites passed 141 of 144 tests with three opt-in skips. Exact LM Studio
+  candidate testing, minimum versions, model-backed behavior, and full
+  live-provider qualification remain unresolved.
+- The post-edit full Swift run executed 2,032 tests with zero failures and the
+  three expected opt-in skips. Docs/copy hygiene, archive and ledger readback, 21
+  documentation/handoff tests, Python syntax, diff whitespace, and the empty
+  staging guard pass. No physical-device claim was made.
+- Do not stage, commit, or push these local changes unless the user explicitly
+  requests it.
 
 ## Current Truth Versus Historical Evidence
 
@@ -3014,7 +3114,27 @@ Do not claim the following from the current evidence:
 
 ## Recommended Next Session Flow
 
-Unless the user redirects the task, use this decision order:
+Unless the user redirects the task, use this active non-security order:
+
+1. Re-read this handoff and refresh Git plus generated-artifact state. Do not
+   infer device/process state from an older snapshot.
+2. Run the focused static guards and
+   `python3 script/check_release_artifact_archive.py` before using the current
+   local ZIP as evidence.
+3. Continue the non-security provider matrix. Both exact Ollama candidates have
+   isolated empty-catalog/restart evidence; next add bounded model-backed
+   behavior without downloading a model, or test exact LM Studio candidates
+   only when their official builds can be isolated without changing the
+   installed app.
+4. Keep physical-device, production signing, store upload, and deployment work
+   deferred until the user explicitly selects those technical slices.
+5. Do not start security, authentication, governance, or owner-proof work.
+   Do not stage, commit, or push unless the user explicitly asks.
+
+### Inactive Historical Continuation Record
+
+The numbered sequence below is preserved only as historical context. It is not
+the active next-session plan while security work is paused:
 
 1. Re-read this handoff and refresh Git, device, and process state.
 2. Preserve historical G0/owner-trust bytes, but do not run an owner-

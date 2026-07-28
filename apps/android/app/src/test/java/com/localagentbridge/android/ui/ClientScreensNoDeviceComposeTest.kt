@@ -4065,8 +4065,9 @@ class ClientScreensNoDeviceComposeTest {
             )
             val chatCapability = localizedContext.getString(R.string.model_capability_chat)
             val visionCapability = localizedContext.getString(R.string.model_capability_vision)
-            val contextCapability = localizedContext.getString(
-                R.string.model_capability_context_window,
+            val contextCapability = localizedContext.resources.getQuantityString(
+                R.plurals.model_capability_context_window,
+                131_072,
                 131_072,
             )
             val chatVisionCapabilities = localizedContext.getString(
@@ -4136,6 +4137,84 @@ class ClientScreensNoDeviceComposeTest {
                 counts.second,
                 resources.getQuantityString(R.plurals.research_notebook_source_count, 2, 2),
             )
+        }
+    }
+
+    @Test
+    fun countSensitiveSummariesUseEnglishAndFrenchSingularGrammar() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val expected = mapOf(
+            "en" to listOf(
+                "1 of 1 model service ready",
+                "Context: 1 token",
+                "1 of 1 file attached. Attachment limit reached.",
+                "1 memory entry scanned.",
+                "1 memory entry scanned at a 75.00% threshold.",
+                "1 entry could not be included in the bounded similarity scan.",
+                "1 memory entry scanned at a 75.00% threshold.",
+                "1 entry could not be included in the bounded cluster scan.",
+                "Showing 1 document match for notes.",
+            ),
+            "fr" to listOf(
+                "Service de modèle prêt : 1/1",
+                "Contexte : 1 jeton",
+                "1 fichier joint sur 1. Limite de pièces jointes atteinte.",
+                "1 élément de mémoire analysé.",
+                "1 élément de mémoire analysé avec un seuil de 75,00%.",
+                "1 élément n’a pas pu être inclus dans l’analyse de similarité limitée.",
+                "1 élément de mémoire analysé avec un seuil de 75,00%.",
+                "1 élément n’a pas pu être inclus dans l’analyse limitée des groupes.",
+                "Affichage de 1 résultat de document pour notes.",
+            ),
+        )
+
+        expected.forEach { (languageTag, expectedSummaries) ->
+            val resources = context.localizedContext(languageTag).resources
+            val actualSummaries = listOf(
+                resources.getQuantityString(R.plurals.provider_status_summary_mixed, 1, 1, 1),
+                resources.getQuantityString(R.plurals.model_capability_context_window, 1, 1),
+                resources.getQuantityString(
+                    R.plurals.attach_files_state_limit_reached,
+                    1,
+                    1,
+                    1,
+                ),
+                resources.getQuantityString(
+                    R.plurals.memory_duplicate_suggestions_scanned_count,
+                    1,
+                    1,
+                ),
+                resources.getQuantityString(
+                    R.plurals.memory_semantic_duplicate_suggestions_result_summary,
+                    1,
+                    1,
+                    75.0,
+                ),
+                resources.getQuantityString(
+                    R.plurals.memory_semantic_duplicate_suggestions_omitted_count,
+                    1,
+                    1,
+                ),
+                resources.getQuantityString(
+                    R.plurals.memory_semantic_duplicate_clusters_result_summary,
+                    1,
+                    1,
+                    75.0,
+                ),
+                resources.getQuantityString(
+                    R.plurals.memory_semantic_duplicate_clusters_omitted_count,
+                    1,
+                    1,
+                ),
+                resources.getQuantityString(
+                    R.plurals.document_index_search_result_summary,
+                    1,
+                    "notes",
+                    1,
+                ),
+            )
+
+            assertEquals("$languageTag singular count summaries", expectedSummaries, actualSummaries)
         }
     }
 
@@ -4234,7 +4313,13 @@ class ClientScreensNoDeviceComposeTest {
                 add(context.getString(R.string.model_capability_chat))
                 add(context.getString(R.string.model_capability_vision))
                 contextWindowTokens?.takeIf { it > 0 }?.let { tokens ->
-                    add(context.getString(R.string.model_capability_context_window, tokens))
+                    add(
+                        context.resources.getQuantityString(
+                            R.plurals.model_capability_context_window,
+                            tokens,
+                            tokens,
+                        )
+                    )
                 }
             }
             return labels.drop(1).fold(labels.first()) { line, label ->
@@ -4411,8 +4496,9 @@ class ClientScreensNoDeviceComposeTest {
             hasContentDescription(expectedRuntimeSummary),
             useUnmergedTree = true,
         ).assertIsDisplayed()
-        val nonpositiveContext = localizedContext.getString(
-            R.string.model_capability_context_window,
+        val nonpositiveContext = localizedContext.resources.getQuantityString(
+            R.plurals.model_capability_context_window,
+            0,
             0,
         )
         compose.onAllNodesWithText(
@@ -14157,11 +14243,11 @@ class ClientScreensNoDeviceComposeTest {
         )
 
         val expectedLoadings = listOf(
-            ExpectedLoading("en", "Loading chat...", "Wait for this chat to finish loading."),
-            ExpectedLoading("ko", "채팅 불러오는 중...", "이 채팅을 모두 불러올 때까지 기다리세요."),
-            ExpectedLoading("ja", "チャットを読み込み中...", "このチャットの読み込みが完了するまでお待ちください。"),
-            ExpectedLoading("zh-CN", "正在加载聊天...", "请等待此聊天加载完成。"),
-            ExpectedLoading("fr", "Chargement du chat...", "Attendez la fin du chargement de ce chat."),
+            ExpectedLoading("en", "Loading chat…", "Wait for this chat to finish loading."),
+            ExpectedLoading("ko", "채팅 불러오는 중…", "이 채팅을 모두 불러올 때까지 기다리세요."),
+            ExpectedLoading("ja", "チャットを読み込み中…", "このチャットの読み込みが完了するまでお待ちください。"),
+            ExpectedLoading("zh-CN", "正在加载聊天…", "请等待此聊天加载完成。"),
+            ExpectedLoading("fr", "Chargement du chat…", "Attendez la fin du chargement de ce chat."),
         )
         val chatModel = RuntimeModel(
             id = "ollama:llama3.1:8b",
@@ -15983,8 +16069,9 @@ class ClientScreensNoDeviceComposeTest {
             }
             compose.waitForIdle()
 
-            val limitState = localizedContext.getString(
-                R.string.attach_files_state_limit_reached,
+            val limitState = localizedContext.resources.getQuantityString(
+                R.plurals.attach_files_state_limit_reached,
+                MAX_PENDING_ATTACHMENTS,
                 MAX_PENDING_ATTACHMENTS,
                 MAX_PENDING_ATTACHMENTS,
             )
@@ -16780,7 +16867,8 @@ class ClientScreensNoDeviceComposeTest {
     @Test
     fun chatScreenCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages() {
         val language = mutableStateOf("en")
-        val fontScale = 1.45f
+        // V1 qualification ceiling: Android font size 200%.
+        val fontScale = 2.0f
         val chatModel = RuntimeModel(
             id = "ollama:qwen3:8b",
             name = "Qwen3 8B",
@@ -17644,7 +17732,7 @@ class ClientScreensNoDeviceComposeTest {
         )
             .assertIsDisplayed()
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
-        compose.onAllNodesWithText("Generating...").assertCountEquals(0)
+        compose.onAllNodesWithText("Generating…").assertCountEquals(0)
 
         compose.onNode(hasText("Thinking") and hasStateDescription("Collapsed") and hasClickAction())
             .performClick()
@@ -18019,6 +18107,7 @@ class ClientScreensNoDeviceComposeTest {
     fun chatScreenStreamingProgressIndicatorStaysDecorativeAndBoundedAcrossSupportedLanguages() {
         val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
         val language = mutableStateOf(languageTags.first())
+        val reduceMotion = mutableStateOf(false)
         val fontScale = 1.5f
         val chatModel = RuntimeModel(
             id = "ollama:qwen3:8b",
@@ -18051,70 +18140,86 @@ class ClientScreensNoDeviceComposeTest {
         )
 
         compose.setContent {
-            MaterialTheme {
-                LocalizedTestContent(languageTag = language.value, fontScale = fontScale) {
-                    key(language.value) {
-                        Surface(
-                            modifier = Modifier
-                                .width(300.dp)
-                                .height(420.dp)
-                                .testTag(chatStreamingProgressNarrowRootTestTag),
-                        ) {
-                            ChatScreen(
-                                state = state.copy(selectedLanguageTag = language.value),
-                                onInputChange = {},
-                                onSend = {},
-                                onCancel = {},
-                                onConnect = {},
-                                onScanPairingQr = {},
-                                onRefreshHealth = {},
-                                onAttachFiles = {},
-                                onRemoveAttachment = {},
-                                onScanLatestQr = {},
-                                modifier = Modifier.fillMaxSize(),
-                            )
+            CompositionLocalProvider(
+                LocalAetherLinkReducedMotionOverride provides reduceMotion.value,
+            ) {
+                MaterialTheme {
+                    LocalizedTestContent(languageTag = language.value, fontScale = fontScale) {
+                        key(language.value) {
+                            Surface(
+                                modifier = Modifier
+                                    .width(300.dp)
+                                    .height(420.dp)
+                                    .testTag(chatStreamingProgressNarrowRootTestTag),
+                            ) {
+                                ChatScreen(
+                                    state = state.copy(selectedLanguageTag = language.value),
+                                    onInputChange = {},
+                                    onSend = {},
+                                    onCancel = {},
+                                    onConnect = {},
+                                    onScanPairingQr = {},
+                                    onRefreshHealth = {},
+                                    onAttachFiles = {},
+                                    onRemoveAttachment = {},
+                                    onScanLatestQr = {},
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
                         }
                     }
                 }
             }
         }
 
-        languageTags.forEach { nextLanguageTag ->
-            compose.runOnUiThread { language.value = nextLanguageTag }
-            compose.waitForIdle()
+        listOf(false, true).forEach { nextReduceMotion ->
+            languageTags.forEach { nextLanguageTag ->
+                compose.runOnUiThread {
+                    reduceMotion.value = nextReduceMotion
+                    language.value = nextLanguageTag
+                }
+                compose.waitForIdle()
 
-            val localizedContext = ApplicationProvider
-                .getApplicationContext<Context>()
-                .localizedContext(nextLanguageTag, fontScale = fontScale)
-            val expectedTyping = localizedContext.getString(R.string.assistant_typing)
+                val modeLabel = if (nextReduceMotion) "reduced motion" else "standard motion"
+                val localizedContext = ApplicationProvider
+                    .getApplicationContext<Context>()
+                    .localizedContext(nextLanguageTag, fontScale = fontScale)
+                val expectedTyping = localizedContext.getString(R.string.assistant_typing)
 
-            compose.onNode(
-                hasContentDescription(expectedTyping) and hasPoliteLiveRegion(),
-                useUnmergedTree = true,
-            ).assertIsDisplayed()
+                compose.onNode(
+                    hasContentDescription(expectedTyping) and hasPoliteLiveRegion(),
+                    useUnmergedTree = true,
+                ).assertIsDisplayed()
 
-            val rootBounds = compose.onNodeWithTag(chatStreamingProgressNarrowRootTestTag)
-                .getUnclippedBoundsInRoot()
-            val listBounds = compose.onNodeWithTag(CHAT_MESSAGE_LIST_TEST_TAG)
-                .getUnclippedBoundsInRoot()
-            val composerBounds = compose.onNodeWithTag(CHAT_COMPOSER_CONTAINER_TEST_TAG, useUnmergedTree = true)
-                .assertIsDisplayed()
-                .getUnclippedBoundsInRoot()
-            val progressNode = compose.onNodeWithTag(CHAT_STREAMING_PROGRESS_TEST_TAG, useUnmergedTree = true)
-                .assertIsDisplayed()
-            val progressSemantics = progressNode.fetchSemanticsNode()
-            val progressBounds = progressNode.getUnclippedBoundsInRoot()
+                val rootBounds = compose.onNodeWithTag(chatStreamingProgressNarrowRootTestTag)
+                    .getUnclippedBoundsInRoot()
+                val listBounds = compose.onNodeWithTag(CHAT_MESSAGE_LIST_TEST_TAG)
+                    .getUnclippedBoundsInRoot()
+                val composerBounds = compose
+                    .onNodeWithTag(CHAT_COMPOSER_CONTAINER_TEST_TAG, useUnmergedTree = true)
+                    .assertIsDisplayed()
+                    .getUnclippedBoundsInRoot()
+                val progressNode = compose
+                    .onNodeWithTag(CHAT_STREAMING_PROGRESS_TEST_TAG, useUnmergedTree = true)
+                    .assertIsDisplayed()
+                val progressSemantics = progressNode.fetchSemanticsNode()
+                val progressBounds = progressNode.getUnclippedBoundsInRoot()
 
-            assertFalse(
-                "$nextLanguageTag streaming progress indicator should stay decorative.",
-                progressSemantics.config.contains(SemanticsProperties.ProgressBarRangeInfo),
-            )
-            assertBoundsInside("$nextLanguageTag message list", listBounds, rootBounds)
-            assertBoundsInside("$nextLanguageTag streaming progress indicator", progressBounds, rootBounds)
-            assertFalse(
-                "$nextLanguageTag streaming progress indicator should not overlap the composer.",
-                boundsOverlap(progressBounds, composerBounds),
-            )
+                assertFalse(
+                    "$nextLanguageTag $modeLabel streaming progress indicator should stay decorative.",
+                    progressSemantics.config.contains(SemanticsProperties.ProgressBarRangeInfo),
+                )
+                assertBoundsInside("$nextLanguageTag $modeLabel message list", listBounds, rootBounds)
+                assertBoundsInside(
+                    "$nextLanguageTag $modeLabel streaming progress indicator",
+                    progressBounds,
+                    rootBounds,
+                )
+                assertFalse(
+                    "$nextLanguageTag $modeLabel streaming progress indicator should not overlap the composer.",
+                    boundsOverlap(progressBounds, composerBounds),
+                )
+            }
         }
     }
 
@@ -20466,7 +20571,7 @@ class ClientScreensNoDeviceComposeTest {
             ExpectedModelRefreshState(
                 languageTag = "en",
                 sectionTitle = "Memory indexing model",
-                buttonLabel = "Loading models...",
+                buttonLabel = "Loading models…",
                 stateDescription = "Model refresh in progress.",
                 isConnected = true,
                 isLoadingModels = true,
@@ -20475,7 +20580,7 @@ class ClientScreensNoDeviceComposeTest {
             ExpectedModelRefreshState(
                 languageTag = "ko",
                 sectionTitle = "메모리 색인 모델",
-                buttonLabel = "모델 불러오는 중...",
+                buttonLabel = "모델 불러오는 중…",
                 stateDescription = "모델 새로고침이 진행 중입니다.",
                 isConnected = true,
                 isLoadingModels = true,
@@ -20484,7 +20589,7 @@ class ClientScreensNoDeviceComposeTest {
             ExpectedModelRefreshState(
                 languageTag = "ja",
                 sectionTitle = "メモリ インデックスモデル",
-                buttonLabel = "モデルを読み込み中...",
+                buttonLabel = "モデルを読み込み中…",
                 stateDescription = "モデルを更新中です。",
                 isConnected = true,
                 isLoadingModels = true,
@@ -20493,7 +20598,7 @@ class ClientScreensNoDeviceComposeTest {
             ExpectedModelRefreshState(
                 languageTag = "zh-CN",
                 sectionTitle = "记忆索引模型",
-                buttonLabel = "正在加载模型...",
+                buttonLabel = "正在加载模型…",
                 stateDescription = "模型刷新正在进行。",
                 isConnected = true,
                 isLoadingModels = true,
@@ -20502,7 +20607,7 @@ class ClientScreensNoDeviceComposeTest {
             ExpectedModelRefreshState(
                 languageTag = "fr",
                 sectionTitle = "Modèle d’indexation de la mémoire",
-                buttonLabel = "Chargement des modèles...",
+                buttonLabel = "Chargement des modèles…",
                 stateDescription = "Actualisation des modèles en cours.",
                 isConnected = true,
                 isLoadingModels = true,
@@ -21215,8 +21320,9 @@ class ClientScreensNoDeviceComposeTest {
                     localizedContext.getString(
                         R.string.model_capability_visual_pair,
                         localizedContext.getString(R.string.model_capability_embedding),
-                        localizedContext.getString(
-                            R.string.model_capability_context_window,
+                        localizedContext.resources.getQuantityString(
+                            R.plurals.model_capability_context_window,
+                            contextWindowTokens,
                             contextWindowTokens,
                         ),
                     )
@@ -23475,8 +23581,9 @@ class ClientScreensNoDeviceComposeTest {
                 catalog.summary.qualityCounts.singleChunk,
                 catalog.summary.qualityCounts.chunked,
             )
-            val searchSummaryText = localizedContext.getString(
-                R.string.document_index_search_result_summary,
+            val searchSummaryText = localizedContext.resources.getQuantityString(
+                R.plurals.document_index_search_result_summary,
+                1,
                 searchQuery,
                 1,
             )
@@ -28448,7 +28555,13 @@ class ClientScreensNoDeviceComposeTest {
                     add(context.getString(R.string.model_capability_vision))
                 }
                 model.contextWindowTokens?.let { tokens ->
-                    add(context.getString(R.string.model_capability_context_window, tokens))
+                    add(
+                        context.resources.getQuantityString(
+                            R.plurals.model_capability_context_window,
+                            tokens,
+                            tokens,
+                        )
+                    )
                 }
             }
             return labels.drop(1).fold(labels.first()) { line, label ->
@@ -29395,7 +29508,8 @@ class ClientScreensNoDeviceComposeTest {
     @Test
     fun settingsCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages() {
         val language = mutableStateOf("en")
-        val fontScale = 1.5f
+        // V1 qualification ceiling: Android font size 200%.
+        val fontScale = 2.0f
         val chatModel = RuntimeModel(
             id = "ollama:qwen3:8b",
             name = "Qwen3 8B",

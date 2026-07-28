@@ -5,19 +5,274 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import hashlib
 import json
 import re
+import runpy
 import sys
+
+if __package__:
+    from script.check_release_version_ledger import (
+        LedgerError,
+        parse_release_version_ledger,
+    )
+else:
+    from check_release_version_ledger import (
+        LedgerError,
+        parse_release_version_ledger,
+    )
 
 
 ROOT = Path(__file__).resolve().parents[1]
 PHYSICAL_QR_OBSERVATION_MANIFEST = (
     ROOT / "docs/evidence/physical-qr-pairing-20260719.json"
 )
+LOCAL_RELEASE_ID = "aetherlink-1.0.0+1-local-v1"
+LOCAL_RELEASE_DOC = ROOT / "docs/releases/1.0.0-build-1-local-v1.md"
+LOCAL_RELEASE_ARCHIVE_DIR = ROOT / "dist/releases" / LOCAL_RELEASE_ID
+LOCAL_RELEASE_LEDGER = ROOT / "release/version-ledger.tsv"
+LOCAL_RELEASE_G0_DECISION = ROOT / "docs/v1/g0/decision-v1.json"
+LOCAL_RELEASE_EXPECTED_ZIP_SIZE = 164_775_328
+LOCAL_RELEASE_EXPECTED_ZIP_SHA256 = (
+    "1944238784f7235b93e5e5889fdc903137ca6229bc39c870b5935cf3489c89ac"
+)
+LOCAL_RELEASE_EXPECTED_MANIFEST_SIZE = 10_242
+LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256 = (
+    "60baac0fa0567d3929370d401475d5a773d7541025017e68cc4b06def1b4ae8a"
+)
+LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT = 234
+LOCAL_RELEASE_EXPECTED_SOURCE_SHA256 = (
+    "938b95c38c106aae73ecc7a8899364598780c21545bfcb73e5806befc6ac0282"
+)
+LOCAL_RELEASE_EXPECTED_SOURCE_HEAD = (
+    "cde05acbaab0b77af6a3d87ea5c926f08597f7e6"
+)
+LOCAL_RELEASE_EXPECTED_MEMBER_COUNT = 25
+LOCAL_RELEASE_EXPECTED_MACOS_UUID = "6B5402D4-F853-3A12-AD51-94C892EC7BD5"
+LOCAL_RELEASE_EXPECTED_MEMBERS = {
+    "android/apk/app-release-unsigned.apk": (
+        9_568_738,
+        "10a4e7f93786d24c519c53d59b383f1b875a4ced3e5a981603690e2ba63654e7",
+    ),
+    "android/bundle/app-release.aab": (
+        10_658_234,
+        "dec9eb9cf1397ccc58ddd57d7a7497c35966016fe78a96c8784592ec274b16e6",
+    ),
+    "android/mapping/mapping.txt": (
+        71_646_798,
+        "cb41d4afe7c4f5c6e99640e11a41cc1d624652e8c8629ff3a39a70128c9ef1f9",
+    ),
+    "macos/AetherLink.app/Contents/MacOS/AetherLink": (
+        18_171_648,
+        "f63193ff991fa7743dd74b2af0434006c842a864007a0f499abb8c590d899f59",
+    ),
+    "macos/AetherLink.dSYM/Contents/Resources/DWARF/AetherLink": (
+        31_535_883,
+        "b313e20ff5727b80f268250de72d3bcc305e470123a588137a48f5aaba715eab",
+    ),
+}
+LOCAL_RELEASE_TRANSITION_FIXTURE_START = (
+    "<!-- aetherlink-release-transition-fixture-v1:start -->"
+)
+LOCAL_RELEASE_TRANSITION_FIXTURE_END = (
+    "<!-- aetherlink-release-transition-fixture-v1:end -->"
+)
+LOCAL_RELEASE_PROVIDER_FIXTURE_START = (
+    "<!-- aetherlink-provider-compatibility-fixture-v1:start -->"
+)
+LOCAL_RELEASE_PROVIDER_FIXTURE_END = (
+    "<!-- aetherlink-provider-compatibility-fixture-v1:end -->"
+)
+LOCAL_RELEASE_OLLAMA_RUNNER_FIXTURE_START = (
+    "<!-- aetherlink-ollama-exact-version-run-v1:start -->"
+)
+LOCAL_RELEASE_OLLAMA_RUNNER_FIXTURE_END = (
+    "<!-- aetherlink-ollama-exact-version-run-v1:end -->"
+)
+LOCAL_RELEASE_OLLAMA_RUNNER = (
+    ROOT / "script/run_ollama_compatibility_matrix.py"
+)
+LOCAL_RELEASE_EXPECTED_TRANSITION_FIXTURE = {
+    "android": {
+        "developmentBaseline": "0.1.0+1-debug",
+        "inPlaceUpgradeSupported": False,
+        "requiredAction": "clean-install-and-fresh-pair",
+        "sourceApplicationId": "com.localagentbridge.android",
+        "stateMigrationSupported": False,
+    },
+    "currentRelease": {
+        "buildNumber": 1,
+        "marketingVersion": "1.0.0",
+        "releaseId": LOCAL_RELEASE_ID,
+    },
+    "evidenceBoundary": "policy-fixture-only-no-install-or-state-migration-executed",
+    "fixtureId": "aetherlink-first-production-lineage-transition-v1",
+    "macos": {
+        "developmentBaseline": "pre-production-local-ad-hoc",
+        "inPlaceUpgradeSupported": False,
+        "requiredAction": "clean-install-and-fresh-pair",
+        "sourceBundleId": "dev.aetherlink.companion",
+        "stateMigrationSupported": False,
+    },
+    "nMinusOne": {
+        "compatibleReleaseId": None,
+        "status": "unproven-no-prior-production-release",
+        "upgradePathTested": False,
+    },
+    "productionPredecessor": None,
+    "schemaVersion": 1,
+}
+LOCAL_RELEASE_EXPECTED_PROVIDER_FIXTURE = {
+    "evidenceBoundary": (
+        "exact-version-isolated-ollama-adapter-health-empty-catalog-restart-"
+        "plus-focused-default-tests-no-live-chat-or-model-lifecycle"
+    ),
+    "fixtureId": "aetherlink-provider-compatibility-baseline-v1",
+    "lmStudio": {
+        "access": "runtime_host_only",
+        "currentCandidate": {
+            "build": 1,
+            "qualified": False,
+            "releaseDate": "2026-07-22",
+            "schemaSmokeObserved": False,
+            "version": "0.4.20",
+        },
+        "localObservation": {
+            "channel": "beta",
+            "cliCommit": "6041ae0",
+            "fallbackModelsEndpoint": {
+                "arrayField": "data",
+                "httpStatus": 200,
+                "objectField": "list",
+                "path": "/v1/models",
+            },
+            "nativeModelsEndpoint": {
+                "arrayField": "models",
+                "httpStatus": 200,
+                "path": "/api/v1/models",
+            },
+            "version": "0.4.17-beta+3",
+        },
+        "minimumSupportedVersion": None,
+        "officialSource": "https://lmstudio.ai/changelog",
+        "previousCandidate": {
+            "build": 2,
+            "qualified": False,
+            "releaseDate": "2026-07-07",
+            "schemaSmokeObserved": False,
+            "version": "0.4.19",
+        },
+        "providerId": "lm_studio",
+        "releasePolicy": (
+            "exact_rc_current_stable_and_previous_verified_versions"
+        ),
+        "supportStatus": "unresolved-no-minimum-or-full-qualification",
+    },
+    "ollama": {
+        "access": "runtime_host_only",
+        "currentCandidate": {
+            "darwinArchiveSha256": (
+                "5789dd037a86adb328c72c11fc45e6c558452d07e5b50814a8bdb7b0fbdbcd81"
+            ),
+            "darwinArchiveUrl": (
+                "https://github.com/ollama/ollama/releases/download/"
+                "v0.32.5/ollama-darwin.tgz"
+            ),
+            "isolatedAdapterSmoke": {
+                "coldStartPassed": True,
+                "emptyCatalogPassed": True,
+                "restartPassed": True,
+                "stoppedEndpointUnavailable": True,
+            },
+            "qualified": False,
+            "releaseDate": "2026-07-27",
+            "schemaSmokeObserved": True,
+            "version": "0.32.5",
+        },
+        "localObservation": {
+            "catalogEndpoint": {
+                "arrayField": "models",
+                "httpStatus": 200,
+                "path": "/api/tags",
+            },
+            "channel": "stable",
+            "runningEndpoint": {
+                "arrayField": "models",
+                "httpStatus": 200,
+                "path": "/api/ps",
+            },
+            "version": "0.32.4",
+            "versionEndpoint": {
+                "httpStatus": 200,
+                "path": "/api/version",
+                "versionField": "version",
+            },
+        },
+        "minimumSupportedVersion": None,
+        "officialSource": "https://github.com/ollama/ollama/releases",
+        "previousCandidate": {
+            "darwinArchiveSha256": (
+                "15383493225d5e7e7fda052dc103ab4d2835a22eabb41655f1d6302c6d1577bc"
+            ),
+            "darwinArchiveUrl": (
+                "https://github.com/ollama/ollama/releases/download/"
+                "v0.32.4/ollama-darwin.tgz"
+            ),
+            "isolatedAdapterSmoke": {
+                "coldStartPassed": True,
+                "emptyCatalogPassed": True,
+                "restartPassed": True,
+                "stoppedEndpointUnavailable": True,
+            },
+            "qualified": False,
+            "releaseDate": "2026-07-25",
+            "schemaSmokeObserved": True,
+            "version": "0.32.4",
+        },
+        "providerId": "ollama",
+        "releasePolicy": (
+            "exact_rc_current_stable_and_previous_verified_versions"
+        ),
+        "supportStatus": "unresolved-no-minimum-or-full-qualification",
+    },
+    "recordedDate": "2026-07-28",
+    "schemaVersion": 1,
+    "tests": {
+        "isolatedOllamaExactVersion": {
+            "executed": 4,
+            "failures": 0,
+            "passed": 4,
+        },
+        "lmStudio": {
+            "executed": 71,
+            "failures": 0,
+            "passed": 70,
+            "skipped": 1,
+        },
+        "ollama": {
+            "executed": 73,
+            "failures": 0,
+            "passed": 71,
+            "skipped": 2,
+        },
+        "testKind": "focused-default-plus-opt-in-isolated-exact-version",
+    },
+}
 
 
 class DuplicateJSONKeyError(ValueError):
     pass
+
+
+def reject_duplicate_json_keys(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise DuplicateJSONKeyError(f"duplicate JSON key {key!r}")
+        result[key] = value
+    return result
 
 
 @dataclass(frozen=True)
@@ -105,6 +360,7 @@ HYGIENE_TARGETS = (
     "docs/mvp-v0.1.md",
     "docs/protocol.md",
     "docs/qa-evidence.md",
+    "docs/releases/1.0.0-build-1-local-v1.md",
     "docs/roadmap.md",
     "docs/security.md",
     "examples/README.md",
@@ -183,6 +439,39 @@ CONTRACTS = (
 )
 
 FILE_CONTRACTS = (
+    DocsFileContract(
+        "local-release-qualification-boundary",
+        "docs/releases/1.0.0-build-1-local-v1.md",
+        (
+            re.compile(
+                r"\bStatus:\s*local release-engineering candidate,\s*not a production release\b",
+                re.IGNORECASE,
+            ),
+            re.compile(
+                r"\bAndroid Debug\b.*\b0\.1\.0\+1\b.*\bnon-migratable\b",
+                re.IGNORECASE | re.DOTALL,
+            ),
+            re.compile(
+                r"\bN/N-1\b.*\bnot yet qualified\b",
+                re.IGNORECASE | re.DOTALL,
+            ),
+            re.compile(
+                r"\bAndroid channel\b.*\brollback\b.*\bhigher\s+`versionCode`",
+                re.IGNORECASE | re.DOTALL,
+            ),
+            re.compile(
+                r"\bcurrent\s+or\s+immediately\s+previous\b.*\bsigned DMG\b",
+                re.IGNORECASE | re.DOTALL,
+            ),
+            re.compile(
+                r"\b1944238784f7235b93e5e5889fdc903137ca6229bc39c870b5935cf3489c89ac\b"
+            ),
+            re.compile(
+                r"\b60baac0fa0567d3929370d401475d5a773d7541025017e68cc4b06def1b4ae8a\b"
+            ),
+        ),
+        "The local release record must retain its exact artifact identity, non-production boundary, transition limits, and rollback posture.",
+    ),
     DocsFileContract(
         "canonical-session-handoff",
         "docs/handoff.md",
@@ -453,6 +742,658 @@ def file_contract_text(target: str) -> str:
     if not path.is_file():
         return ""
     return path.read_text(encoding="utf-8", errors="replace")
+
+
+def embedded_json_fixture_body(
+    document_text: str,
+    *,
+    start_marker: str,
+    end_marker: str,
+    fixture_label: str,
+) -> tuple[str | None, list[str]]:
+    pattern = re.compile(
+        re.escape(start_marker)
+        + r"\n```json\n(?P<body>.*?)\n```\n"
+        + re.escape(end_marker),
+        re.DOTALL,
+    )
+    matches = list(pattern.finditer(document_text))
+    if (
+        len(matches) != 1
+        or document_text.count(start_marker) != 1
+        or document_text.count(end_marker) != 1
+    ):
+        return (
+            None,
+            [
+                "docs/releases/1.0.0-build-1-local-v1.md: expected exactly "
+                f"one canonical {fixture_label} fixture block."
+            ],
+        )
+
+    fixture_body = matches[0].group("body")
+
+    try:
+        json.loads(
+            fixture_body,
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+    except (json.JSONDecodeError, DuplicateJSONKeyError) as error:
+        return (
+            None,
+            [
+                "docs/releases/1.0.0-build-1-local-v1.md: invalid "
+                f"{fixture_label} fixture JSON: {error}"
+            ],
+        )
+
+    return fixture_body, []
+
+
+def local_release_transition_fixture_failures(
+    document_text: str,
+) -> list[str]:
+    failures: list[str] = []
+    fixture_body, parse_failures = embedded_json_fixture_body(
+        document_text,
+        start_marker=LOCAL_RELEASE_TRANSITION_FIXTURE_START,
+        end_marker=LOCAL_RELEASE_TRANSITION_FIXTURE_END,
+        fixture_label="release-transition",
+    )
+    if fixture_body is None:
+        return parse_failures
+
+    expected_body = json.dumps(
+        LOCAL_RELEASE_EXPECTED_TRANSITION_FIXTURE,
+        ensure_ascii=True,
+        indent=2,
+        sort_keys=True,
+    )
+    if fixture_body != expected_body:
+        failures.append(
+            "docs/releases/1.0.0-build-1-local-v1.md: release-transition "
+            "fixture must match the canonical first-lineage schema, exact "
+            "values, JSON types, and key order."
+        )
+
+    try:
+        ledger_bytes = LOCAL_RELEASE_LEDGER.read_bytes()
+        ledger_entries = parse_release_version_ledger(ledger_bytes)
+        current_entry = ledger_entries[-1]
+        ledger_current = {
+            "buildNumber": current_entry.build_number,
+            "marketingVersion": current_entry.marketing_version,
+            "releaseId": (
+                f"aetherlink-{current_entry.marketing_version}"
+                f"+{current_entry.build_number}-local-v1"
+            ),
+        }
+    except (OSError, LedgerError) as error:
+        failures.append(
+            "release/version-ledger.tsv: cannot cross-check local release "
+            f"transition fixture: {error}"
+        )
+    else:
+        if json.dumps(
+            ledger_current,
+            sort_keys=True,
+        ) != json.dumps(
+            LOCAL_RELEASE_EXPECTED_TRANSITION_FIXTURE["currentRelease"],
+            sort_keys=True,
+        ):
+            failures.append(
+                "release/version-ledger.tsv: current entry differs from the "
+                "local release transition fixture."
+            )
+
+    try:
+        g0 = json.loads(
+            LOCAL_RELEASE_G0_DECISION.read_text(encoding="utf-8"),
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+        g0_projection = {
+            "androidCurrentApplicationId": (
+                g0["releasePolicy"]["android"]["currentApplicationId"]
+            ),
+            "androidDebugTransition": (
+                g0["releasePolicy"]["android"]["currentDebugDataMigration"]
+            ),
+            "androidProductionApplicationId": (
+                g0["releasePolicy"]["android"]["productionApplicationId"]
+            ),
+            "macosCurrentBundleId": (
+                g0["releasePolicy"]["macos"]["currentBundleId"]
+            ),
+            "macosProductionBundleId": (
+                g0["releasePolicy"]["macos"]["productionBundleId"]
+            ),
+            "marketingVersion": g0["productScope"]["releaseVersion"],
+            "policyMarketingVersion": (
+                g0["releasePolicy"]["versioning"]["marketingVersion"]
+            ),
+            "wireCompatibility": (
+                g0["releasePolicy"]["compatibility"]["wireAndService"]
+            ),
+        }
+    except (
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+        DuplicateJSONKeyError,
+        KeyError,
+        TypeError,
+    ) as error:
+        failures.append(
+            "docs/v1/g0/decision-v1.json: cannot cross-check local release "
+            f"transition fixture: {error}"
+        )
+    else:
+        expected_g0_projection = {
+            "androidCurrentApplicationId": (
+                LOCAL_RELEASE_EXPECTED_TRANSITION_FIXTURE["android"][
+                    "sourceApplicationId"
+                ]
+            ),
+            "androidDebugTransition": (
+                "unsupported_clean_install_and_fresh_pair_required"
+            ),
+            "androidProductionApplicationId": None,
+            "macosCurrentBundleId": (
+                LOCAL_RELEASE_EXPECTED_TRANSITION_FIXTURE["macos"][
+                    "sourceBundleId"
+                ]
+            ),
+            "macosProductionBundleId": None,
+            "marketingVersion": (
+                LOCAL_RELEASE_EXPECTED_TRANSITION_FIXTURE["currentRelease"][
+                    "marketingVersion"
+                ]
+            ),
+            "policyMarketingVersion": (
+                LOCAL_RELEASE_EXPECTED_TRANSITION_FIXTURE["currentRelease"][
+                    "marketingVersion"
+                ]
+            ),
+            "wireCompatibility": "n_and_n_minus_1",
+        }
+        if json.dumps(
+            g0_projection,
+            sort_keys=True,
+        ) != json.dumps(
+            expected_g0_projection,
+            sort_keys=True,
+        ):
+            failures.append(
+                "docs/v1/g0/decision-v1.json: non-security release version, "
+                "identity, migration, or compatibility fields differ from "
+                "the local transition fixture."
+            )
+
+    return failures
+
+
+def local_release_provider_fixture_failures(
+    document_text: str,
+) -> list[str]:
+    failures: list[str] = []
+    fixture_body, parse_failures = embedded_json_fixture_body(
+        document_text,
+        start_marker=LOCAL_RELEASE_PROVIDER_FIXTURE_START,
+        end_marker=LOCAL_RELEASE_PROVIDER_FIXTURE_END,
+        fixture_label="provider-compatibility",
+    )
+    if fixture_body is None:
+        return parse_failures
+
+    expected_body = json.dumps(
+        LOCAL_RELEASE_EXPECTED_PROVIDER_FIXTURE,
+        ensure_ascii=True,
+        indent=2,
+        sort_keys=True,
+    )
+    if fixture_body != expected_body:
+        failures.append(
+            "docs/releases/1.0.0-build-1-local-v1.md: "
+            "provider-compatibility fixture must match the canonical "
+            "recorded-date schema, exact values, JSON types, and key order."
+        )
+
+    try:
+        g0 = json.loads(
+            LOCAL_RELEASE_G0_DECISION.read_text(encoding="utf-8"),
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+        providers = g0["productScope"]["providers"]
+        if not isinstance(providers, list):
+            raise TypeError("productScope.providers must be an array")
+        g0_projection = sorted(
+            (
+                {
+                    "access": provider["access"],
+                    "minimumSupportedVersion": (
+                        provider["minimumSupportedVersion"]
+                    ),
+                    "providerId": provider["id"],
+                    "releasePolicy": provider["releasePolicy"],
+                }
+                for provider in providers
+            ),
+            key=lambda provider: provider["providerId"],
+        )
+    except (
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+        DuplicateJSONKeyError,
+        KeyError,
+        TypeError,
+    ) as error:
+        failures.append(
+            "docs/v1/g0/decision-v1.json: cannot cross-check local "
+            f"provider-compatibility fixture: {error}"
+        )
+    else:
+        expected_projection = sorted(
+            (
+                {
+                    "access": provider["access"],
+                    "minimumSupportedVersion": (
+                        provider["minimumSupportedVersion"]
+                    ),
+                    "providerId": provider["providerId"],
+                    "releasePolicy": provider["releasePolicy"],
+                }
+                for provider in (
+                    LOCAL_RELEASE_EXPECTED_PROVIDER_FIXTURE["ollama"],
+                    LOCAL_RELEASE_EXPECTED_PROVIDER_FIXTURE["lmStudio"],
+                )
+            ),
+            key=lambda provider: provider["providerId"],
+        )
+        if json.dumps(g0_projection, sort_keys=True) != json.dumps(
+            expected_projection,
+            sort_keys=True,
+        ):
+            failures.append(
+                "docs/v1/g0/decision-v1.json: non-security provider IDs, "
+                "runtime-host access, minimum versions, or release policies "
+                "differ from the local provider-compatibility fixture."
+            )
+
+    return failures
+
+
+def local_release_ollama_runner_fixture_failures(
+    document_text: str,
+) -> list[str]:
+    fixture_body, failures = embedded_json_fixture_body(
+        document_text,
+        start_marker=LOCAL_RELEASE_OLLAMA_RUNNER_FIXTURE_START,
+        end_marker=LOCAL_RELEASE_OLLAMA_RUNNER_FIXTURE_END,
+        fixture_label="ollama-exact-version-run",
+    )
+    if fixture_body is None:
+        return failures
+
+    if not LOCAL_RELEASE_OLLAMA_RUNNER.is_file():
+        return failures + [
+            "script/run_ollama_compatibility_matrix.py: missing exact-version runner."
+        ]
+
+    try:
+        runner = runpy.run_path(str(LOCAL_RELEASE_OLLAMA_RUNNER))
+        runner_id = runner["RUNNER_ID"]
+        recorded_date = runner["RECORDED_DATE"]
+        evidence_boundary = runner["EVIDENCE_BOUNDARY"]
+        candidates = runner["EXACT_CANDIDATES"]
+        live_test_filter = runner["LIVE_TEST_FILTER"]
+        default_port = runner["DEFAULT_OLLAMA_PORT"]
+        if not isinstance(runner_id, str) or not runner_id:
+            raise TypeError("RUNNER_ID must be a non-empty string")
+        if not isinstance(recorded_date, str) or not recorded_date:
+            raise TypeError("RECORDED_DATE must be a non-empty string")
+        if not isinstance(evidence_boundary, str) or not evidence_boundary:
+            raise TypeError("EVIDENCE_BOUNDARY must be a non-empty string")
+        if type(candidates) is not tuple or len(candidates) != 2:
+            raise TypeError("EXACT_CANDIDATES must contain exactly two rows")
+        if live_test_filter != (
+            "OllamaBackendTests."
+            "testLiveOllamaExactVersionEmptyCatalogCompatibility"
+        ):
+            raise ValueError("LIVE_TEST_FILTER differs from the canonical test")
+        if type(default_port) is not int or default_port != 11_434:
+            raise ValueError("DEFAULT_OLLAMA_PORT differs from 11434")
+
+        versions: list[dict[str, object]] = []
+        for candidate in candidates:
+            if type(candidate) is not dict:
+                raise TypeError("candidate rows must be objects")
+            archive_sha256 = candidate["archiveSha256"]
+            archive_url = candidate["archiveUrl"]
+            version = candidate["version"]
+            if not all(
+                isinstance(value, str) and value
+                for value in (archive_sha256, archive_url, version)
+            ):
+                raise TypeError("candidate strings must be non-empty")
+            versions.append(
+                {
+                    "archiveSha256": archive_sha256,
+                    "archiveUrl": archive_url,
+                    "coldStart": {
+                        "adapterTestPassed": True,
+                        "endpointUnavailableAfterStop": True,
+                    },
+                    "restart": {
+                        "adapterTestPassed": True,
+                        "endpointUnavailableAfterStop": True,
+                    },
+                    "testRuns": 2,
+                    "version": version,
+                }
+            )
+        expected_fixture = {
+            "evidenceBoundary": evidence_boundary,
+            "fixtureId": runner_id,
+            "recordedDate": recorded_date,
+            "schemaVersion": 1,
+            "versions": versions,
+        }
+    except (
+        KeyError,
+        OSError,
+        TypeError,
+        ValueError,
+    ) as error:
+        return failures + [
+            "script/run_ollama_compatibility_matrix.py: "
+            f"cannot derive canonical runner fixture: {error}"
+        ]
+
+    expected_body = json.dumps(
+        expected_fixture,
+        ensure_ascii=True,
+        indent=2,
+        sort_keys=True,
+    )
+    if fixture_body != expected_body:
+        failures.append(
+            "docs/releases/1.0.0-build-1-local-v1.md: "
+            "ollama-exact-version-run fixture must match the runner's "
+            "canonical exact values, JSON types, and key order."
+        )
+
+    provider_candidates = (
+        LOCAL_RELEASE_EXPECTED_PROVIDER_FIXTURE["ollama"][
+            "currentCandidate"
+        ],
+        LOCAL_RELEASE_EXPECTED_PROVIDER_FIXTURE["ollama"][
+            "previousCandidate"
+        ],
+    )
+    for provider_candidate, runner_candidate in zip(
+        provider_candidates,
+        versions,
+        strict=True,
+    ):
+        if (
+            provider_candidate["version"] != runner_candidate["version"]
+            or provider_candidate["darwinArchiveSha256"]
+            != runner_candidate["archiveSha256"]
+            or provider_candidate["darwinArchiveUrl"]
+            != runner_candidate["archiveUrl"]
+            or provider_candidate["isolatedAdapterSmoke"]
+            != {
+                "coldStartPassed": runner_candidate["coldStart"][
+                    "adapterTestPassed"
+                ],
+                "emptyCatalogPassed": True,
+                "restartPassed": runner_candidate["restart"][
+                    "adapterTestPassed"
+                ],
+                "stoppedEndpointUnavailable": (
+                    runner_candidate["coldStart"][
+                        "endpointUnavailableAfterStop"
+                    ]
+                    and runner_candidate["restart"][
+                        "endpointUnavailableAfterStop"
+                    ]
+                ),
+            }
+        ):
+            failures.append(
+                "provider-compatibility fixture and exact-version runner "
+                "fixture differ in Ollama version, archive identity, or "
+                "isolated adapter result."
+            )
+            break
+
+    return failures
+
+
+def local_release_document_failures() -> list[str]:
+    try:
+        relative_doc = LOCAL_RELEASE_DOC.relative_to(ROOT)
+    except ValueError:
+        relative_doc = LOCAL_RELEASE_DOC
+    if not LOCAL_RELEASE_DOC.is_file():
+        return [f"{relative_doc}: missing local release qualification record."]
+
+    try:
+        document_text = LOCAL_RELEASE_DOC.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        return [f"{relative_doc}: unreadable local release qualification record: {error}"]
+
+    failures: list[str] = []
+    required_claims = (
+        ("release ID", f"`{LOCAL_RELEASE_ID}`"),
+        (
+            "ZIP size",
+            f"{LOCAL_RELEASE_EXPECTED_ZIP_SIZE:,} bytes",
+        ),
+        ("ZIP SHA-256", f"`{LOCAL_RELEASE_EXPECTED_ZIP_SHA256}`"),
+        (
+            "manifest size",
+            f"{LOCAL_RELEASE_EXPECTED_MANIFEST_SIZE:,} bytes",
+        ),
+        (
+            "manifest SHA-256",
+            f"`{LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256}`",
+        ),
+        (
+            "source inventory count",
+            f"{LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT}-file source inventory",
+        ),
+        (
+            "source inventory SHA-256",
+            f"`{LOCAL_RELEASE_EXPECTED_SOURCE_SHA256}`",
+        ),
+        ("source HEAD", f"`{LOCAL_RELEASE_EXPECTED_SOURCE_HEAD}`"),
+        (
+            "payload member count",
+            f"{LOCAL_RELEASE_EXPECTED_MEMBER_COUNT} payload members",
+        ),
+        ("macOS app/dSYM UUID", f"`{LOCAL_RELEASE_EXPECTED_MACOS_UUID}`"),
+    )
+    for member_path, (size, sha256) in LOCAL_RELEASE_EXPECTED_MEMBERS.items():
+        required_claims += (
+            (f"{member_path} size", f"{size:,} bytes"),
+            (f"{member_path} SHA-256", f"`{sha256}`"),
+        )
+
+    for label, expected_text in required_claims:
+        if expected_text not in document_text:
+            failures.append(
+                f"{relative_doc}: missing exact {label} claim {expected_text!r}."
+            )
+
+    failures.extend(local_release_transition_fixture_failures(document_text))
+    failures.extend(local_release_provider_fixture_failures(document_text))
+    failures.extend(local_release_ollama_runner_fixture_failures(document_text))
+
+    if not LOCAL_RELEASE_ARCHIVE_DIR.exists():
+        return failures
+    if not LOCAL_RELEASE_ARCHIVE_DIR.is_dir():
+        failures.append(
+            f"{LOCAL_RELEASE_ARCHIVE_DIR.relative_to(ROOT)}: local release archive path is not a directory."
+        )
+        return failures
+
+    archive_path = LOCAL_RELEASE_ARCHIVE_DIR / f"{LOCAL_RELEASE_ID}.zip"
+    manifest_path = (
+        LOCAL_RELEASE_ARCHIVE_DIR / f"{LOCAL_RELEASE_ID}.manifest.json"
+    )
+    checksum_path = (
+        LOCAL_RELEASE_ARCHIVE_DIR / f"{LOCAL_RELEASE_ID}.zip.sha256"
+    )
+    for path in (archive_path, manifest_path, checksum_path):
+        if not path.is_file():
+            failures.append(
+                f"{path.relative_to(ROOT)}: missing local release readback input."
+            )
+    if failures and any(not path.is_file() for path in (archive_path, manifest_path, checksum_path)):
+        return failures
+
+    def reject_duplicate_keys(
+        pairs: list[tuple[str, object]],
+    ) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise DuplicateJSONKeyError(f"duplicate JSON key {key!r}")
+            result[key] = value
+        return result
+
+    try:
+        manifest_bytes = manifest_path.read_bytes()
+        manifest = json.loads(
+            manifest_bytes.decode("utf-8"),
+            object_pairs_hook=reject_duplicate_keys,
+        )
+        checksum_fields = checksum_path.read_text(encoding="ascii").split()
+    except (
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+        DuplicateJSONKeyError,
+    ) as error:
+        failures.append(
+            f"{manifest_path.relative_to(ROOT)}: unreadable local release identity: {error}"
+        )
+        return failures
+
+    if not isinstance(manifest, dict):
+        failures.append(
+            f"{manifest_path.relative_to(ROOT)}: manifest root must be a JSON object."
+        )
+        return failures
+
+    def read_path(path: tuple[str, ...]) -> object:
+        value: object = manifest
+        for key in path:
+            if not isinstance(value, dict) or key not in value:
+                return None
+            value = value[key]
+        return value
+
+    manifest_expectations = (
+        (("release", "releaseId"), LOCAL_RELEASE_ID),
+        (
+            ("archive", "memberCountExcludingManifest"),
+            LOCAL_RELEASE_EXPECTED_MEMBER_COUNT,
+        ),
+        (("source", "fileCount"), LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT),
+        (("source", "snapshotSha256"), LOCAL_RELEASE_EXPECTED_SOURCE_SHA256),
+        (("source", "head"), LOCAL_RELEASE_EXPECTED_SOURCE_HEAD),
+        (("platforms", "android", "applicationId"), "com.localagentbridge.android"),
+        (("platforms", "android", "versionCode"), 1),
+        (("platforms", "android", "versionName"), "1.0.0"),
+        (("platforms", "android", "minSdk"), 26),
+        (("platforms", "android", "targetSdk"), 36),
+        (("platforms", "android", "abis"), ["arm64-v8a"]),
+        (("platforms", "android", "signatureState"), "unsigned"),
+        (("platforms", "macos", "bundleId"), "dev.aetherlink.companion"),
+        (("platforms", "macos", "marketingVersion"), "1.0.0"),
+        (("platforms", "macos", "buildNumber"), 1),
+        (("platforms", "macos", "minimumSystemVersion"), "14.0"),
+        (("platforms", "macos", "architectures"), ["arm64"]),
+        (("platforms", "macos", "signatureState"), "ad-hoc-local"),
+        (("platforms", "macos", "uuid"), LOCAL_RELEASE_EXPECTED_MACOS_UUID),
+        (
+            ("platforms", "macos", "dSYM", "uuid"),
+            LOCAL_RELEASE_EXPECTED_MACOS_UUID,
+        ),
+    )
+    for path, expected in manifest_expectations:
+        actual = read_path(path)
+        if type(actual) is not type(expected) or actual != expected:
+            failures.append(
+                f"{manifest_path.relative_to(ROOT)}: expected "
+                f"{'.'.join(path)}={expected!r}, found {actual!r}."
+            )
+
+    member_rows = manifest.get("members")
+    actual_members: dict[str, tuple[object, object]] = {}
+    if not isinstance(member_rows, list):
+        failures.append(
+            f"{manifest_path.relative_to(ROOT)}: members must be a JSON array."
+        )
+    else:
+        for index, row in enumerate(member_rows):
+            if not isinstance(row, dict):
+                failures.append(
+                    f"{manifest_path.relative_to(ROOT)}: members[{index}] must be an object."
+                )
+                continue
+            path = row.get("path")
+            if not isinstance(path, str):
+                failures.append(
+                    f"{manifest_path.relative_to(ROOT)}: members[{index}].path must be a string."
+                )
+                continue
+            if path in actual_members:
+                failures.append(
+                    f"{manifest_path.relative_to(ROOT)}: duplicate member path {path!r}."
+                )
+                continue
+            actual_members[path] = (row.get("size"), row.get("sha256"))
+
+    for member_path, expected_identity in LOCAL_RELEASE_EXPECTED_MEMBERS.items():
+        actual_identity = actual_members.get(member_path)
+        if actual_identity != expected_identity:
+            failures.append(
+                f"{manifest_path.relative_to(ROOT)}: expected {member_path} "
+                f"identity {expected_identity!r}, found {actual_identity!r}."
+            )
+
+    manifest_identity = (len(manifest_bytes), hashlib.sha256(manifest_bytes).hexdigest())
+    expected_manifest_identity = (
+        LOCAL_RELEASE_EXPECTED_MANIFEST_SIZE,
+        LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256,
+    )
+    if manifest_identity != expected_manifest_identity:
+        failures.append(
+            f"{manifest_path.relative_to(ROOT)}: expected manifest identity "
+            f"{expected_manifest_identity!r}, found {manifest_identity!r}."
+        )
+
+    archive_size = archive_path.stat().st_size
+    if archive_size != LOCAL_RELEASE_EXPECTED_ZIP_SIZE:
+        failures.append(
+            f"{archive_path.relative_to(ROOT)}: expected size "
+            f"{LOCAL_RELEASE_EXPECTED_ZIP_SIZE}, found {archive_size}."
+        )
+    if (
+        len(checksum_fields) != 2
+        or checksum_fields[0] != LOCAL_RELEASE_EXPECTED_ZIP_SHA256
+        or checksum_fields[1] != archive_path.name
+    ):
+        failures.append(
+            f"{checksum_path.relative_to(ROOT)}: checksum sidecar does not match "
+            f"{LOCAL_RELEASE_EXPECTED_ZIP_SHA256} and {archive_path.name}."
+        )
+
+    return failures
 
 
 def latest_progress_entry() -> tuple[int, str]:
@@ -977,6 +1918,7 @@ def main() -> int:
     failures.extend(latest_progress_evidence_failures())
     failures.extend(latest_qa_evidence_failures())
     failures.extend(syntax_only_no_device_gate_evidence_failures())
+    failures.extend(local_release_document_failures())
     failures.extend(physical_qr_observation_manifest_failures())
 
     if failures:

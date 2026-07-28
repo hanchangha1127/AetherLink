@@ -3,6 +3,7 @@ package com.localagentbridge.android.runtime
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import com.localagentbridge.android.core.protocol.ChatAttachmentPayload
 import com.localagentbridge.android.core.protocol.ChatMessagePayload
 import com.localagentbridge.android.core.protocol.ChatSourceAttributionPayload
@@ -210,7 +211,7 @@ class RuntimeLocalStore internal constructor(
         return try {
             preferences.getString(STORE_KEY, null)
         } catch (_: ClassCastException) {
-            preferences.edit().remove(STORE_KEY).apply()
+            preferences.edit { remove(STORE_KEY) }
             null
         }
     }

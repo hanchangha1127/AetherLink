@@ -40,9 +40,8 @@
     <string name="permanently_delete_research_notebook_confirm_first">「%1$s」を完全に削除しますか？この操作はノートブックがアーカイブ済みの場合に実行できます。</string>
     <string name="permanently_delete_research_notebook_confirm_second">「%1$s」の完全な削除を確定してください。この操作は取り消せません。</string>
     <string name="create_research_brief">リサーチブリーフを作成</string>
-    <string name="loading_research_notebooks">ノートブックを読み込み中...</string>
+    <string name="loading_research_notebooks">ノートブックを読み込み中…</string>
     <plurals name="research_notebook_source_count">
-        <item quantity="one">%1$d 件のソース</item>
         <item quantity="other">%1$d 件のソース</item>
     </plurals>
     <string name="research_topic">トピック</string>
@@ -56,7 +55,6 @@
     <string name="chat_history_group_older">それ以前</string>
     <string name="no_previous_chats">以前のチャットはまだありません。</string>
     <string name="chat_search_label">チャットを検索</string>
-    <string name="clear_chat_search">チャット検索をクリア</string>
     <string name="clear_chat_search_named">「%1$s」のチャット検索をクリア</string>
     <string name="no_chat_search_results">一致するチャットはありません。</string>
     <string name="chat_search_match_rank">一致 %1$d</string>
@@ -73,7 +71,6 @@
     <string name="untitled_chat">無題のチャット</string>
     <string name="chat_top_bar_active_title_summary">現在のチャット「%1$s」</string>
     <plurals name="chat_message_count">
-        <item quantity="one">メッセージ %1$d 件</item>
         <item quantity="other">メッセージ %1$d 件</item>
     </plurals>
     <string name="chat_session_status_value">%1$s - %2$s</string>
@@ -81,7 +78,6 @@
     <string name="chat_session_status_cancelled">キャンセル済み</string>
     <string name="chat_session_status_failed">確認が必要</string>
     <string name="chat_session_status_in_progress">進行中</string>
-    <string name="chat_session_more">チャットオプション</string>
     <string name="chat_session_more_named">「%1$s」のチャットオプション</string>
     <string name="chat_session_model_value">モデル: %1$s</string>
     <string name="chat_session_row_summary">チャット「%1$s」。%2$s。</string>
@@ -105,15 +101,12 @@
     <string name="chat_history_settings_subtitle">チャットをアーカイブし、後で復元するか、アーカイブ済みチャットだけを完全削除します。</string>
     <string name="chat_history_summary_title">保存済みチャット</string>
     <plurals name="chat_history_saved_count">
-        <item quantity="one">保存済みチャット %1$d 件</item>
         <item quantity="other">保存済みチャット %1$d 件</item>
     </plurals>
     <plurals name="chat_history_active_count">
-        <item quantity="one">アクティブなチャット %1$d 件</item>
         <item quantity="other">アクティブなチャット %1$d 件</item>
     </plurals>
     <plurals name="chat_history_archived_count">
-        <item quantity="one">アーカイブ済みチャット %1$d 件</item>
         <item quantity="other">アーカイブ済みチャット %1$d 件</item>
     </plurals>
     <string name="chat_history_summary_detail">アクティブ: %1$s。アーカイブ済み: %2$s。</string>
@@ -153,7 +146,6 @@
     <string name="delete">削除</string>
     <string name="delete_chat">チャットを削除</string>
     <string name="delete_chat_named">「%1$s」を削除</string>
-    <string name="clear">クリア</string>
 
     <string name="pairing_title">AetherLink をペアリング</string>
     <string name="pairing_subtitle">モデルの読み込みやチャットを始める前に、信頼済みの AetherLink QR をスキャンしてください。</string>
@@ -213,7 +205,6 @@
     <string name="pending_pairing_route_accessibility_summary">QRをスキャンしました。この QR は%1$sを確認しましたが、保護された接続情報がないため別ネットワークでは再接続できません。AetherLink Runtime で最新 QR を生成して再スキャンしてください。%1$sを待機中</string>
     <string name="discovery_detail">到達可能な AetherLink Runtime を見つけ、その QR コードをスキャンして信頼を確立します。</string>
     <string name="stop">停止</string>
-    <string name="use">使用</string>
     <string name="use_trusted_connection">信頼済み接続を使用</string>
     <string name="use_trusted_connection_named">「%1$s」に信頼済み接続を使用</string>
     <string name="forget">削除</string>
@@ -227,7 +218,6 @@
     <string name="emulator">エミュレーター接続</string>
     <string name="runtime_host">接続アドレス</string>
     <string name="runtime_port">接続ポート</string>
-    <string name="pairing_code">ペアリング QR</string>
     <string name="connect_runtime">接続</string>
     <string name="connect_remote_route">信頼済み経路に接続</string>
     <string name="connecting">接続中</string>
@@ -242,11 +232,9 @@
     <string name="discovery_route_qr_required">QR が必要</string>
     <string name="discovery_route_not_trusted">未信頼</string>
     <string name="discovered_runtime_unavailable_summary">%1$s。%2$s。%3$s。</string>
-    <string name="connect_requires_pairing">先に AetherLink Runtime の QR をスキャンしてください。信頼が確立されるまで経路診断はオフです。</string>
 
     <string name="status_title">ペアリングと接続</string>
     <string name="status_subtitle">ペアリング QR をスキャンすると、AetherLink が信頼済み接続を自動で復元します。</string>
-    <string name="status_connected_summary">このデバイスと信頼済みランタイムは接続されています。</string>
     <string name="status_disconnected_summary">モデルを使用するには、信頼済みランタイムに接続してください。</string>
     <string name="status_hero_accessibility_summary">%1$s。%2$s</string>
     <string name="status_connected_trusted_title">信頼済みランタイム経由で接続済み</string>
@@ -265,23 +253,12 @@
     <string name="status_connect_ready_detail">接続を使って %1$s を復元します。</string>
     <string name="runtime">AetherLink Runtime</string>
     <string name="backend">モデルサービス</string>
-    <string name="endpoint">経路</string>
-    <string name="runtime_route">経路</string>
-    <string name="runtime_route_resolving">信頼済み経路を解決中</string>
-    <string name="runtime_route_pair_first">先に AetherLink とペアリングしてください</string>
-    <string name="runtime_route_saved_hint">保存済みローカル経路</string>
     <string name="runtime_route_local_discovery">ローカル検出経路</string>
-    <string name="runtime_route_local_qr">QR のローカル経路</string>
-    <string name="runtime_route_relay">信頼済み接続</string>
-    <string name="runtime_route_p2p">P2P 経路</string>
-    <string name="runtime_route_development">トラブルシューティング経路</string>
-    <string name="runtime_route_diagnostics">トラブルシューティング経路</string>
     <string name="connected">接続済み</string>
     <string name="auto_reconnect">自動再接続</string>
     <string name="auto_reconnect_detail">このデバイスがアプリに戻ったとき、信頼済みランタイムへ自動的に再接続します。</string>
     <string name="auto_reconnect_paused">自動再接続は一時停止中です。接続を使うと、信頼済みランタイムの復元を再開します。</string>
     <string name="auto_reconnect_state_pair_first">オフ。自動再接続を有効にする前に AetherLink Runtime とペアリングしてください。</string>
-    <string name="health">ヘルス</string>
     <string name="disconnect">切断</string>
     <string name="yes">はい</string>
     <string name="no">いいえ</string>
@@ -305,7 +282,9 @@
     <string name="provider_status_row_summary_retryable">%1$s、%2$s。%3$s%4$s</string>
     <string name="provider_status_summary_all_ready">すべてのモデルサービスが準備完了</string>
     <string name="provider_status_summary_none_ready">モデルサービスの確認が必要です</string>
-    <string name="provider_status_summary_mixed">%2$d 件中 %1$d 件のモデルサービスが準備完了</string>
+    <plurals name="provider_status_summary_mixed">
+        <item quantity="other">%2$d 件中 %1$d 件のモデルサービスが準備完了</item>
+    </plurals>
     <string name="provider_ollama_unavailable_hint">Ollama がランタイム経由で応答していません。AetherLink Runtime でプロバイダー状態を確認し、ヘルスを更新してください。</string>
     <string name="provider_lm_studio_unavailable_hint">LM Studio がランタイム経由で応答していません。AetherLink Runtime でプロバイダー状態を確認し、ヘルスを更新してください。</string>
     <string name="provider_unavailable_hint">%1$s がランタイム経由で応答していません。AetherLink Runtime でプロバイダー状態を確認し、ヘルスを更新してください。</string>
@@ -330,9 +309,7 @@
     <string name="model_residency_unload_reason_idle_timeout">アイドルタイムアウト</string>
     <string name="model_residency_unload_reason_manual">手動アンロード</string>
 
-    <string name="models_title">モデル</string>
     <string name="choose_model">モデルを選択</string>
-    <string name="models_subtitle">AetherLink Runtime が公開しているモデルを選択します。</string>
     <string name="load_models">モデルを更新</string>
     <string name="selected_model">選択中のモデル</string>
     <string name="drawer_runtime_summary_accessibility">ランタイム %1$s。状態: %2$s。選択中のモデル: %3$s。</string>
@@ -352,8 +329,6 @@
     <string name="chat_model_picker_summary">チャットモデルピッカー。%1$s。%2$s</string>
     <string name="chat_model_picker_summary_selected">チャットモデルピッカー。選択中のチャットモデル「%1$s」。</string>
     <string name="models_from_runtime">モデルはこのアプリから直接ではなく、AetherLink Runtime を通じて読み込まれます。</string>
-    <string name="models_need_connection">モデルを読み込む前に、信頼済みランタイムに接続してください。</string>
-    <string name="model_backend_value">モデルサービス: %1$s</string>
     <string name="model_status_value">%1$s - %2$s</string>
     <string name="model_status_capabilities_value">%1$s · %2$s</string>
     <string name="chat_model_row_summary">チャットモデル「%1$s」。%2$s。%3$s</string>
@@ -361,7 +336,9 @@
     <string name="model_capability_chat">チャット</string>
     <string name="model_capability_embedding">メモリ インデックス</string>
     <string name="model_capability_vision">ビジョン</string>
-    <string name="model_capability_context_window">コンテキスト：%1$,d トークン</string>
+    <plurals name="model_capability_context_window">
+        <item quantity="other">コンテキスト：%1$,d トークン</item>
+    </plurals>
     <string name="model_capability_visual_pair">%1$s · %2$s</string>
     <string name="model_capability_accessibility_pair">%1$s、%2$s</string>
     <string name="model_capabilities_accessibility">機能：%1$s。</string>
@@ -369,47 +346,33 @@
     <string name="model_running">実行中</string>
     <string name="model_not_installed">未インストール</string>
     <string name="model_not_recommended_for_images">画像には推奨されません</string>
-    <string name="model_available_to_install">インストール可能</string>
-    <string name="model_source_value">ソース: %1$s</string>
-    <string name="model_size_value">サイズ: %1$s</string>
-    <string name="install_model">モデルをインストール</string>
     <string name="model_install_host_approval_required">ランタイムの承認が必要</string>
-    <string name="installing_model">インストール中...</string>
+    <string name="installing_model">インストール中…</string>
     <string name="model_picker_empty_state_summary">%1$s。%2$s</string>
     <string name="no_models_connected_title">読み込まれたモデルはありません</string>
-    <string name="no_models_connected">AetherLink Runtime を通じてモデルを読み込んでください。</string>
     <string name="no_models_disconnected_title">ランタイムが必要です</string>
     <string name="no_models_disconnected">モデルを読み込む前に、信頼済みランタイムに接続してください。</string>
-    <string name="loading_models">モデルを読み込み中...</string>
+    <string name="loading_models">モデルを読み込み中…</string>
     <string name="model_search_label">モデルを検索</string>
-    <string name="clear_model_search">モデル検索をクリア</string>
     <string name="clear_model_search_named">%1$s のモデル検索をクリア</string>
-    <string name="no_model_search_results_title">一致するモデルはありません</string>
     <string name="no_model_search_results">別のモデル名、プロバイダー、サービス、またはソースで検索してください。</string>
 
-    <string name="chat_title">チャット</string>
-    <string name="chat_subtitle">メッセージは AetherLink Runtime を通じてストリーミングされます。</string>
-    <string name="chat_via_companion">AetherLink Runtime 経由</string>
     <string name="model_value">モデル: %1$s</string>
     <string name="model_none">なし</string>
     <string name="model_provider_value">プロバイダー: %1$s</string>
-    <string name="model_source_local">ローカル</string>
-    <string name="model_source_cloud">プロバイダー管理</string>
     <string name="provider_ollama">Ollama</string>
     <string name="provider_lm_studio">LM Studio</string>
     <string name="provider_companion_runtime">AetherLink Runtime</string>
     <string name="message">メッセージ</string>
-    <string name="send">送信</string>
     <string name="cancel">キャンセル</string>
-    <string name="attach_files">ファイルを添付</string>
     <string name="attach_files_state_ready">ファイルを添付できます。</string>
     <plurals name="attach_files_state_count">
-        <item quantity="one">%2$d個中%1$d個のファイルが添付されています。</item>
         <item quantity="other">%2$d個中%1$d個のファイルが添付されています。</item>
     </plurals>
-    <string name="attach_files_state_limit_reached">%2$d個中%1$d個のファイルが添付されています。添付の上限に達しました。</string>
+    <plurals name="attach_files_state_limit_reached">
+        <item quantity="other">%2$d個中%1$d個のファイルが添付されています。添付の上限に達しました。</item>
+    </plurals>
     <string name="attach_files_state_unavailable">添付は利用できません。</string>
-    <string name="remove_attachment">添付を削除</string>
     <string name="attachment_type_image">画像</string>
     <string name="attachment_type_document">ドキュメント</string>
     <string name="attachment_metadata_with_size">%1$s · %2$s</string>
@@ -431,14 +394,9 @@
     <string name="empty_chat_no_model">送信する前にモデルを選択してください。</string>
     <string name="empty_chat_streaming_title">応答中</string>
     <string name="empty_chat_streaming">AetherLink Runtime からストリーミング応答を受信しています。</string>
-    <string name="loading_chat_messages">チャットを読み込み中...</string>
-    <string name="streaming">ストリーミング中</string>
-    <string name="streaming_detail">AetherLink Runtime からストリーミング応答を受信しています。</string>
+    <string name="loading_chat_messages">チャットを読み込み中…</string>
     <string name="chat_status_connected">接続済み</string>
     <string name="chat_status_disconnected">未接続</string>
-    <string name="chat_status_streaming">応答中</string>
-    <string name="chat_uses_runtime">チャットリクエストは AetherLink Runtime 経由で中継されます。</string>
-    <string name="chat_needs_runtime">チャットする前に、信頼済みランタイムに接続してください。</string>
     <string name="chat_backend_unavailable_title">モデルサービスの確認が必要です</string>
     <string name="chat_backend_unavailable_detail">AetherLink Runtime でモデルサービスの状態を確認し、ヘルスを更新してください。</string>
     <string name="chat_backend_unavailable_summary">%1$s。%2$s</string>
@@ -461,7 +419,7 @@
     <string name="role_assistant">アシスタント</string>
     <string name="role_assistant_initial">ア</string>
     <string name="chat_message_accessibility_summary">%1$s: %2$s</string>
-    <string name="assistant_typing">回答を生成中...</string>
+    <string name="assistant_typing">回答を生成中…</string>
     <string name="assistant_reasoning_label">思考</string>
     <string name="assistant_reasoning_summary">%1$s。%2$s。%3$s</string>
     <string name="assistant_reasoning_state_shown">すべて表示済み</string>
@@ -470,7 +428,6 @@
     <string name="copy_message">メッセージをコピー</string>
     <string name="chat_source_attributions_title">応答に提供されたソース</string>
     <plurals name="chat_source_attributions_accessibility_summary">
-        <item quantity="one">応答に提供されたソースは%1$d件です。</item>
         <item quantity="other">応答に提供されたソースは%1$d件です。</item>
     </plurals>
     <string name="chat_source_attribution_item">%1$d. %2$s、%3$s、区間 %4$d</string>
@@ -487,17 +444,14 @@
     <string name="copy_code_block_named">%1$s コードブロック %2$d をコピー</string>
     <string name="copy_code_block_numbered">コードブロック %1$d をコピー</string>
     <plurals name="code_block_line_count">
-        <item quantity="one">%1$d 行</item>
         <item quantity="other">%1$d 行</item>
     </plurals>
     <string name="code_block_language_unspecified">言語未指定</string>
     <string name="code_block_accessibility_summary">コードブロック。%1$s。%2$s。</string>
     <plurals name="markdown_table_column_count">
-        <item quantity="one">%1$d 列</item>
         <item quantity="other">%1$d 列</item>
     </plurals>
     <plurals name="markdown_table_row_count">
-        <item quantity="one">%1$d 行</item>
         <item quantity="other">%1$d 行</item>
     </plurals>
     <string name="markdown_table_accessibility_summary">表。%1$s。%2$s。</string>
@@ -568,22 +522,22 @@
     <string name="memory_connect_to_load">メモリを読み込み、管理するには、信頼済みランタイムに接続してください。</string>
     <string name="memory_read_only_notice">このセッションに表示されているメモリは読み取り専用です。更新または管理するには、信頼済みランタイムに再接続してください。</string>
     <plurals name="memory_saved_count">
-        <item quantity="one">保存済みメモリ %1$d 件</item>
         <item quantity="other">保存済みメモリ %1$d 件</item>
     </plurals>
     <plurals name="memory_paused_count">
-        <item quantity="one">一時停止 %1$d 件</item>
         <item quantity="other">一時停止 %1$d 件</item>
     </plurals>
     <string name="memory_summary">%1$s、%2$s。</string>
     <string name="memory_refresh">メモリを更新</string>
     <string name="memory_refresh_state_ready">メモリを更新できます。</string>
     <string name="memory_duplicate_suggestions_scan">完全に重複するメモリを検索</string>
-    <string name="memory_duplicate_suggestions_scanning">完全に重複するメモリを検索中...</string>
+    <string name="memory_duplicate_suggestions_scanning">完全に重複するメモリを検索中…</string>
     <string name="memory_duplicate_suggestions_scan_state_ready">完全に重複するメモリを確認できます。</string>
     <string name="memory_duplicate_suggestions_title">完全重複の候補</string>
     <string name="memory_duplicate_suggestions_review_only">確認専用です。自動で統合、編集、削除されることはありません。</string>
-    <string name="memory_duplicate_suggestions_scanned_count">%1$d 件のメモリ項目を確認しました。</string>
+    <plurals name="memory_duplicate_suggestions_scanned_count">
+        <item quantity="other">%1$d 件のメモリ項目を確認しました。</item>
+    </plurals>
     <string name="memory_duplicate_suggestions_truncated">検索上限に達したため、結果が完全ではない可能性があります。</string>
     <string name="memory_duplicate_suggestions_empty">完全に重複するメモリは見つかりませんでした。</string>
     <string name="memory_duplicate_suggestions_group">重複グループ %1$d</string>
@@ -591,13 +545,17 @@
     <string name="memory_semantic_duplicate_suggestions_review_only">類似している可能性のあるメモリは、モデルに依存する確認専用の候補です。自動で統合、編集、切り替え、削除されることはありません。</string>
     <string name="memory_semantic_duplicate_suggestions_threshold">類似度のしきい値: %1$.2f%%</string>
     <string name="memory_semantic_duplicate_suggestions_scan">類似している可能性のあるメモリを検索</string>
-    <string name="memory_semantic_duplicate_suggestions_scanning">類似している可能性のあるメモリを検索中...</string>
+    <string name="memory_semantic_duplicate_suggestions_scanning">類似している可能性のあるメモリを検索中…</string>
     <string name="memory_semantic_duplicate_suggestions_scan_state_ready">類似している可能性のあるメモリを確認できます。</string>
     <string name="memory_semantic_duplicate_suggestions_select_local_model">類似している可能性のあるメモリを確認するには、インストール済みのローカル メモリ インデックスモデルを選択してください。</string>
     <string name="memory_semantic_duplicate_suggestions_model_unavailable">選択したローカル メモリ インデックスモデルは現在利用できません。モデルを更新するか、別のモデルを選択してください。</string>
     <string name="memory_semantic_duplicate_suggestions_unavailable">このランタイムでは、類似メモリの確認を現在利用できません。</string>
-    <string name="memory_semantic_duplicate_suggestions_result_summary">%1$d 件のメモリ項目を %2$.2f%% のしきい値で確認しました。</string>
-    <string name="memory_semantic_duplicate_suggestions_omitted_count">制限付きの類似度確認に含められなかったため、%1$d 件を除外しました。</string>
+    <plurals name="memory_semantic_duplicate_suggestions_result_summary">
+        <item quantity="other">%1$d 件のメモリ項目を %2$.2f%% のしきい値で確認しました。</item>
+    </plurals>
+    <plurals name="memory_semantic_duplicate_suggestions_omitted_count">
+        <item quantity="other">制限付きの類似度確認に含められなかったため、%1$d 件を除外しました。</item>
+    </plurals>
     <string name="memory_semantic_duplicate_suggestions_truncated">意味的類似性の検索上限に達したため、結果が完全ではない可能性があります。</string>
     <string name="memory_semantic_duplicate_suggestions_empty">類似している可能性のあるメモリは見つかりませんでした。</string>
     <string name="memory_semantic_duplicate_suggestions_pair">候補ペア %1$d: %2$.2f%% 類似</string>
@@ -605,13 +563,17 @@
     <string name="memory_semantic_duplicate_clusters_review_only">モデルに依存するクラスターで、確認専用です。自動的な統合、編集、有効化の切り替え、削除は行いません。</string>
     <string name="memory_semantic_duplicate_clusters_threshold">クラスター類似度のしきい値: %1$.2f%%</string>
     <string name="memory_semantic_duplicate_clusters_scan">類似メモリクラスターを検索</string>
-    <string name="memory_semantic_duplicate_clusters_scanning">類似メモリクラスターを検索しています...</string>
+    <string name="memory_semantic_duplicate_clusters_scanning">類似メモリクラスターを検索しています…</string>
     <string name="memory_semantic_duplicate_clusters_scan_state_ready">類似メモリクラスターを確認できます。</string>
     <string name="memory_semantic_duplicate_clusters_select_local_model">類似メモリクラスターを検索するには、インストール済みのローカルメモリ索引モデルを選択してください。</string>
     <string name="memory_semantic_duplicate_clusters_model_unavailable">選択したローカルメモリ索引モデルは現在利用できません。モデルを更新するか、別のモデルを選択してください。</string>
     <string name="memory_semantic_duplicate_clusters_unavailable">このランタイムでは現在、類似メモリクラスターを確認できません。</string>
-    <string name="memory_semantic_duplicate_clusters_result_summary">%2$.2f%% のしきい値で %1$d 件のメモリをスキャンしました。</string>
-    <string name="memory_semantic_duplicate_clusters_omitted_count">%1$d 件を制限付きクラスター検索に含められませんでした。</string>
+    <plurals name="memory_semantic_duplicate_clusters_result_summary">
+        <item quantity="other">%2$.2f%% のしきい値で %1$d 件のメモリをスキャンしました。</item>
+    </plurals>
+    <plurals name="memory_semantic_duplicate_clusters_omitted_count">
+        <item quantity="other">%1$d 件を制限付きクラスター検索に含められませんでした。</item>
+    </plurals>
     <string name="memory_semantic_duplicate_clusters_truncated">クラスター検索の上限に達したため、結果が不完全な可能性があります。</string>
     <string name="memory_semantic_duplicate_clusters_empty">類似メモリクラスターは見つかりませんでした。</string>
     <string name="memory_semantic_duplicate_clusters_cluster">クラスター %1$d: 最小類似度 %2$.2f%%</string>
@@ -621,7 +583,9 @@
     <string name="clear_document_search_named">%1$s のドキュメント検索をクリア</string>
     <string name="document_index_search_ready">%1$s の検索準備ができました。更新するとランタイムに問い合わせます。</string>
     <string name="no_document_search_results">一致するドキュメント抜粋はありません。</string>
-    <string name="document_index_search_result_summary">%1$s に一致するドキュメント結果 %2$d 件を表示しています。</string>
+    <plurals name="document_index_search_result_summary">
+        <item quantity="other">%1$s に一致するドキュメント結果 %2$d 件を表示しています。</item>
+    </plurals>
     <string name="document_index_summary">ドキュメント %1$d 件。チャンク %2$d 件。文字 %3$d 件。品質: 空 %4$d 件、単一 %5$d 件、分割済み %6$d 件。</string>
     <string name="document_index_document_metadata">%1$s。チャンク %2$d 件。文字 %3$d 件。%4$s。</string>
     <string name="document_index_catalog_row_summary">%1$s。%2$s</string>
@@ -666,11 +630,9 @@
     <string name="chat_trusted_source_remove_named">%1$s をチャットコンテキストから削除</string>
     <string name="memory_summary_drafts_title">提案メモリ</string>
     <plurals name="memory_summary_drafts_count">
-        <item quantity="one">古いチャットからの提案 %1$d 件</item>
         <item quantity="other">古いチャットからの提案 %1$d 件</item>
     </plurals>
     <plurals name="memory_summary_draft_source_count">
-        <item quantity="one">ソース %1$d 件</item>
         <item quantity="other">ソース %1$d 件</item>
     </plurals>
     <string name="memory_summary_draft_source_range">範囲 %1$s</string>
@@ -696,7 +658,6 @@
     <string name="memory_summary_draft_dismissing">メモリを非表示にしています…</string>
     <string name="memory_summary_draft_dismiss_named">%1$s の提案メモリを非表示</string>
     <string name="memory_summary_draft_dismiss_state_ready">提案メモリを非表示にできます。</string>
-    <string name="memory_remove">メモリを削除</string>
     <string name="memory_remove_named">「%1$s」のメモリを削除</string>
     <string name="memory_enable_named">「%1$s」のメモリを有効化</string>
     <string name="memory_pause_named">「%1$s」のメモリを一時停止</string>
@@ -798,7 +759,6 @@
     <string name="error_unreadable_attachment">AetherLink Runtime がこの添付ファイルを読み取れませんでした。</string>
     <string name="error_select_chat_model">会話にはチャットモデルを選択してください。</string>
     <string name="error_select_embedding_model">メモリ インデックスモデルを選択してください。</string>
-    <string name="error_qr_empty_detail">QR コードが空です</string>
     <string name="error_qr_scanner_unavailable_detail">QR スキャナーを開始できませんでした。カメラ権限を確認するか、アプリを開き直してください。</string>
     <string name="error_ollama_auth_required">Ollama のアクセス状態を確認してください。</string>
     <string name="error_ollama_auth_required_detail">AetherLink Runtime で Ollama のアクセス状態を確認してから、もう一度試してください。</string>
@@ -821,12 +781,6 @@
     <string name="route_diagnostic_direct_qr_rejected">この QR には近距離専用の診断経路が含まれており、別ネットワークのペアリングには使用できません。</string>
     <string name="route_diagnostic_relay_qr_unreachable">この QR はこのデバイスから到達できない経路を指しています。両方のデバイスから到達できるリレー経路を使用してください。</string>
     <string name="route_diagnostic_private_overlay_scope_required">この QR は private_overlay スコープのないプライベートリレーアドレスを使用しています。両方のデバイスから到達できるリレー、VPN、トンネル、またはプライベートオーバーレイから新しい QR を生成してください。</string>
-    <string name="content_desc_error">エラー</string>
-    <string name="content_desc_refresh">更新</string>
-    <string name="content_desc_close">閉じる</string>
-    <string name="content_desc_device">デバイス</string>
-    <string name="content_desc_connect">接続</string>
-    <string name="content_desc_scan_qr">QR をスキャン</string>
     <string name="content_desc_attach_files">ファイルを添付</string>
     <string name="content_desc_remove_attachment">%1$s の添付を削除</string>
     <string name="clear_draft">下書きをクリア</string>
