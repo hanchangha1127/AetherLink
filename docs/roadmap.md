@@ -21,6 +21,35 @@ performance, build, and release-quality work at the user's direction. The G2
 security track below is paused and retained as historical roadmap context; it
 is not the next action.
 
+A new versioned V3 observation path prepares the unresolved multilingual model
+gate without rewriting V2. The frozen V2 task, scorer, runner, schema-4 fixture,
+and failed result keep their exact bytes. V3 validates both complete
+80-embedding maps, evaluates all 80 ranking and 80 repeatability comparisons,
+and accumulates bounded locale/ordinal coordinates while structural or numeric
+errors remain fatal. Its opt-in live assertion performs unload and final
+catalog/health checks before one marker, and its separate schema-5 runner keeps
+the exact two-candidate semantic/recovery order plus source/task/snapshot and
+cleanup precedence. Seven V3 Swift tests and eight V3 Python tests pass. This is
+preparation only: no V3 live observation has run, V2 remains failed at Korean
+ordinal 2, and later-locale/repeatability outcomes remain unknown.
+
+The current unreleased G5 product-quality slice adds bounded two-stage semantic
+chat search. Retrieval query/document ranking remains primary; a transient
+semantic-similarity pass considers only 8 through 32 available candidates
+derived from the visible limit, excludes known research backing sessions, and
+reorders only primary-score groups inside an inclusive 0.05 cosine window.
+Scaled cosine keeps very large finite embeddings deterministic. Backend or
+model/profile drift falls back to primary ranking, drift suppresses stale cache
+writes, and a research-membership change before final publication also selects
+the retained primary materialization. The final filter renumbers visible search
+ranks from one. Sixteen focused checks, the 544-test broad router/search
+regression, the 2,066-test full Swift run with zero failures and ten expected
+opt-in/live skips, and independent GPT-5.6 Sol review pass; the frozen
+multilingual V2 result remains a separate failed model-quality observation, not
+a passing claim. Its live runner rejects the changed router/fingerprint source
+bytes; a future observation requires a new versioned binding rather than
+rewriting V2.
+
 The current G5 accessibility slice closes the previously under-tested 200%
 font-size ceiling for core Chat and Settings controls. Existing no-device
 Compose regressions now exercise all five supported locales at font scale
@@ -66,7 +95,8 @@ uses a Swift Release build and embeds the SwiftPM localization bundle under the
 standard signed app resource directory. The app prefers that packaged bundle,
 version metadata is present, and strict local ad-hoc verification passes
 without launching the app. The append-only shared ledger now supplies the same
-`1.0.0+6` metadata to macOS packaging and Android Release while Android Debug
+`1.0.0+9` metadata to the current isolated macOS and Android Release
+qualification while Android Debug
 remains `0.1.0+1` and builds without the ledger; the three consumers share a
 strict LF-only byte boundary, monotonic guard, and semantic-regression guard.
 Final distribution identity, Developer ID signing, notarization, signed DMG,
@@ -77,7 +107,7 @@ Android G6 release optimization is now explicit as well. Release-only R8 code
 shrinking/obfuscation and resource shrinking use the optimized Android defaults
 and dependency consumer rules without a broad app keep file. A clean offline
 APK/AAB/lint build passes. V1 Release is now `arm64-v8a`-only: the current
-unsigned AAB is 10,658,234 bytes, contains one DEX, retains all five app locales
+unsigned AAB is 10,658,233 bytes, contains one DEX, retains all five app locales
 and five JNI libraries, and embeds the generated mapping byte-for-byte. The
 ChromeOS x86_64
 lint warning is narrowly excluded because ChromeOS is outside the V1 matrix.
@@ -86,7 +116,7 @@ release launch, and three SDK/policy notices remain open G6 requirements.
 
 One canonical local release container now retains the unsigned APK/AAB, R8
 outputs, dependency report, arm64 ad-hoc macOS app, and UUID-matched dSYM with
-an exact 235-file source snapshot, external checksum, immutable publication,
+an exact 239-file source snapshot, external checksum, immutable publication,
 and independent full readback. APK identity/version/SDK/ABI are independently
 read with aapt2. The builder and separate readback verifier now also execute
 AGP-pinned `bundletool 1.18.3` against their own AAB bytes and directly confirm
@@ -94,35 +124,67 @@ the base manifest package, version code/name, and minimum/target SDK. Current
 dependency JNI inputs are already stripped, so Android native symbols remain
 explicitly unavailable rather than falsely complete. Build 5 introduced a
 closed semantic normalization for R8 `resources.txt` and remains a valid
-equal-length-root historical qualification. Build 6 retains that and the other
-declared archive normalizations, then builds and packages two isolated clean
-lane worktrees whose source-root UTF-8 byte lengths are 101 and 109. Under the
-same host, fixed toolchains, paired clones of one byte-identical Gradle seed,
-and the canonical Swift scratch policy, both lanes produced the exact same
-164,177,236-byte ZIP, 10,328-byte manifest, checksum sidecar, and 26-entry
-archive inventory. The current immutable archive is
-`aetherlink-1.0.0+6-local-v1`; independent current-source readback passes.
-Builds 1 through 5 remain separately readable historical archives. The
+equal-length-root historical qualification. Build 6 retained that and the
+other declared normalizations in its unequal-length-root qualification.
+The current manifest records `worktreeState=dirty-content-snapshot`, source
+SHA-256 `22e26f5ed62be9b7badcc01ff76db91f436d0a0cde9ad1587a6c27588962a5ec`,
+and HEAD/`origin/main`
+`d699b557aa36deb7add763e5f8f4fe3dcf66c7ed`. The commit alone cannot
+reconstruct the release bytes; the archived source inventory is the source
+identity.
+Build 9 uses the same 101- and 109-byte isolated lane roots, host, fixed
+toolchains, paired clones of one byte-identical Gradle seed, and canonical
+Swift scratch policy. Two complete A/B runs produced the exact same
+165,065,657-byte ZIP, 11,918-byte manifest, checksum sidecar, and 30-entry
+archive inventory. The latest immutable ledger archive is
+`aetherlink-1.0.0+9-local-v1`, and independent current-source readback passes.
+Builds 1 through 8 remain separately readable historical archives. The
 verifier cross-binds each Gradle lock identity to the archived source inventory
-and rejects current releases in historical mode. This extends the local
-same-host two-root unsigned reproducibility slice to the recorded unequal-length
-pair, but does not establish arbitrary-root, cross-host, signed-release,
+and rejects current releases in historical mode. This proves only the two
+recorded successful same-host pairs; it does not establish variance-free
+arbitrary repetition, arbitrary roots, cross-host, signed-release,
 clean-machine, or physical-device G6 qualification.
 
-A separate post-publication Build 6 macOS lifecycle slice is now locally
+That current-source statement describes the recorded Build 9 qualification
+snapshot. The unreleased two-stage reranker now makes Build 9 prior
+source-bound evidence rather than proof of the current worktree. Archive-byte
+readback remains available with `--no-current-source`; a later release build
+must bind the settled reranker worktree before current-source release claims
+resume.
+
+Build 9 preserves the exact-role local G6 package-inventory slice introduced by
+Build 8. The frozen
+catalog covers 350 unique Maven coordinates from the six Gradle locks, 379 POM
+byte identities, parsed POM-declared license names and URLs, and zero external
+SwiftPM packages. Compliance profile
+`aetherlink-release-compliance-v2` with `schemaVersion=2` emits 692 exact role
+relationships: 202 runtime, 155 build dependency, and 335 build tool. Two
+hundred packages have more than one role. Release generation is offline; the
+separate verifier reconstructs the SPDX and text bytes, cross-binds
+lock/source/member identities, and rejects catalog or relationship mutations.
+Original POM bodies and license/NOTICE texts are not archived, and the offline
+checker does not re-fetch or re-parse those originals. Every third-party
+`licenseConcluded` remains `NOASSERTION`; attribution completeness,
+binary-artifact analysis, and license compatibility remain unclaimed. Build 7
+is preserved under its frozen profile-less V1 interpretation, whose 350
+one-per-package relationships compressed additional roles for 200 multi-role
+packages. Security analysis is excluded from this active lane.
+
+A post-publication Build 9 macOS lifecycle slice is now locally
 qualified. The runner binds to the exact published ZIP and manifest, extracts
 the packaged app into a temporary root, and completes two AppKit
 finished-launch, minimum five-second observation, and identity-rechecked
 exact-PID termination cycles with zero exits. Its QA-only sandbox preflight
 permits a temporary-root write while denying a non-temporary write and AF_INET
 bind. The exact 1,311-byte result SHA-256 is
-`30d90827182e353d9f49fd1fa9edde846bc073f1af5113548f913c7b8af34447`.
+`aad796ee3c768e37953f18eeea0e6642107750c3a8c398df798a46e96aabab53`.
 This closes only a bounded local packaged-process launch/relaunch gap. The
 observed Application Support file presence does not prove second-run readback,
 and the absent identity file leaves identity persistence and state recovery
 unqualified. Installation, UI correctness, listener/provider readiness,
 clean-machine behavior, signed distribution, and physical-device lifecycle
-remain open.
+remain open. PID 59809 remained untouched; its existing main bundle is Build 4,
+not Build 9.
 
 Release-scoped dependency locking is now closed for the current checkout. Six
 generated Gradle locks cover settings, buildscript, and clean Release-resolved
@@ -135,7 +197,7 @@ dependencies, so no `Package.resolved` is required. Debug, test, androidTest,
 clean-machine, and cross-machine dependency resolution remain unclaimed. The
 versioned release notes/compatibility/migration/known-limitations/support/
 privacy/rollback pack is now consolidated in
-`docs/releases/1.0.0-build-6-local-v1.md`. It explicitly labels the current
+`docs/releases/1.0.0-build-9-local-v1.md`. It explicitly labels the current
 container as a local qualification candidate rather than a production release.
 `docs/releases/1.0.0-build-1-local-v1.md` retains the superseded build 1
 identity, and `docs/releases/1.0.0-build-2-local-v1.md` retains the superseded
@@ -143,7 +205,12 @@ build 2 identity. Builds 3 through 5 are also historical; the fixture-rich
 `docs/releases/1.0.0-build-3-local-v1.md` remains the immutable source for the
 recorded provider and first-lineage transition fixtures, build 4 records the
 diagnostic publication before the first qualified two-root run, and build 5
-retains the superseded equal-length two-root qualification.
+retains the superseded equal-length two-root qualification. Build 6 retains
+its superseded archive and packaged-app lifecycle evidence, but the exact
+17,674-byte two-root result JSON is no longer retained; only its historical
+size and SHA-256 remain in the written record. Build 7 retains the superseded
+profile-less compliance V1 qualification, and Build 8 retains the superseded
+first exact-role compliance V2 qualification.
 The Build 3 fixture document embeds one canonical first-lineage transition fixture:
 there is no production predecessor, N/N-1 remains unproven, both development
 baselines require clean install plus fresh pairing, and no state migration or
@@ -199,17 +266,23 @@ generalize beyond that one local model and task set.
 A separate multilingual V2 task set preserves the passing English V1 record
 while predeclaring four within-locale scenarios each for `en`, `ko`, `ja`,
 `zh-CN`, and `fr`, using the same 200-basis-point positive-margin and
-9,990-basis-point repeatability thresholds. On both exact Ollama candidates,
-both 80-text batches completed with valid shapes and all four English rankings
-passed, but Korean scenario ordinal 2 failed the positive-margin
-check. Japanese, Simplified Chinese, French, and repeatability were not
-evaluated after that fail-closed result. The task set and thresholds were not
-weakened after observation. Both versions then passed a fresh ordinary
-embedding recovery with confirmed unload and unchanged source/task/snapshot
-bindings. The canonical failure record retains only the failed locale and
-ordinal—no model name, task text or ID, vector, dimension, score, or provider
-output. Its runner accepts the expected failure only from one bounded regular
-UTF-8 log with exactly one matching XCTest start/failure and one closed
+9,990-basis-point repeatability thresholds. The runtime now preserves explicit
+retrieval-query, retrieval-document, and semantic-similarity roles through
+aggregate routing; the Ollama adapter maps a recognized embedding profile to
+its role prompts, rejects malformed profile metadata, reserves bounded prefix
+headroom, and advances persistent cache identity before reuse. On both exact
+Ollama candidates, both role-aware 80-text batches completed with valid shapes
+and all four English rankings passed, but Korean scenario ordinal 2 still
+failed the positive-margin check. Japanese, Simplified Chinese, French, and
+repeatability were not evaluated after that fail-closed result. The task set
+and thresholds were not weakened after observation. Both versions then passed
+a fresh ordinary embedding recovery with confirmed unload and unchanged
+source/task/snapshot bindings. The schema-4 canonical failure record binds the
+request contract, adapter implementation, aggregate role preservation, runtime
+role assignment, and profile-bound semantic fingerprint, and retains only the
+failed locale and ordinal—no model name, task text or ID, vector, dimension,
+score, or provider output. Its runner accepts the expected failure only from one bounded
+regular UTF-8 log with exactly one matching XCTest start/failure and one closed
 locale/ordinal diagnostic; cleanup errors cannot be converted into a quality
 observation. Multilingual qualification remains open.
 

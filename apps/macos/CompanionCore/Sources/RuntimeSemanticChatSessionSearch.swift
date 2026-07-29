@@ -11,13 +11,24 @@ struct RuntimeSemanticChatSessionCandidate: Sendable {
     var matchedFields: [String]
 }
 
+struct RuntimeSemanticChatSessionPrimaryRanking: Equatable {
+    var orderedIndexes: [Int]
+    var scoresByCandidateIndex: [Double]
+}
+
 enum RuntimeSemanticChatSessionSearch {
     static let maximumCandidateCount = 200
     static let maximumMessagesPerCandidate = 100
     static let maximumDocumentUTF8Bytes = 8_192
     static let fallbackDocumentUTF8Bytes = 1_024
+    static let minimumSecondStageRerankCandidateCount = 8
+    static let maximumSecondStageRerankCandidateCount = 32
+    static let secondStageRerankLimitMultiplier = 4
+    static let secondStagePrimaryAcceptanceWindow = 0.05
+    static let secondStagePrimaryAcceptanceTolerance =
+        32 * Double.ulpOfOne
     static let documentEncodingVersion = "chat-session-semantic-document-v1"
-    static let modelFingerprintVersion = "embedding-model-fingerprint-v1"
+    static let modelFingerprintVersion = "embedding-model-fingerprint-v3"
 
     static func candidate(
         session: RuntimeChatStoredSession,
@@ -83,7 +94,8 @@ enum RuntimeSemanticChatSessionSearch {
               model.kind == .embedding,
               let requested = ModelProvider.splitQualifiedModelID(requestedQualifiedModelID),
               requested.provider == model.provider,
-              let revision = strongPersistentEmbeddingRevision(for: model) else {
+              let revision = strongPersistentEmbeddingRevision(for: model),
+              let embeddingInputProfile = model.embeddingInputProfile else {
             return nil
         }
         let canonicalProviderModelID = canonicalModelName(model.providerModelID)
@@ -94,7 +106,8 @@ enum RuntimeSemanticChatSessionSearch {
         let adapterContract: String
         switch model.provider {
         case .ollama:
-            adapterContract = "ollama-api-embed-truncate-false-v1"
+            adapterContract =
+                "ollama-api-embed-truncate-false-role-aware-profile-bound-v3"
         case .lmStudio:
             adapterContract = "lmstudio-openai-embeddings-v1"
         case .aggregate:
@@ -110,6 +123,7 @@ enum RuntimeSemanticChatSessionSearch {
             model.modifiedAt.map { String(format: "%.6f", $0.timeIntervalSince1970) } ?? "",
             capabilities.joined(separator: ","),
             model.contextWindowTokens.map(String.init) ?? "",
+            embeddingInputProfile.rawValue,
             adapterContract
         ])
     }
@@ -141,6 +155,35 @@ enum RuntimeSemanticChatSessionSearch {
         candidateEmbeddings: [[Double]],
         limit: Int
     ) throws -> [RuntimeChatStoredSession] {
+        let primaryRanking = try primaryRanking(
+            candidates: candidates,
+            queryEmbedding: queryEmbedding,
+            candidateEmbeddings: candidateEmbeddings
+        )
+        return try rankedSessions(
+            candidates: candidates,
+            orderedIndexes: primaryRanking.orderedIndexes,
+            limit: limit
+        )
+    }
+
+    static func primaryOrderedCandidateIndexes(
+        candidates: [RuntimeSemanticChatSessionCandidate],
+        queryEmbedding: [Double],
+        candidateEmbeddings: [[Double]]
+    ) throws -> [Int] {
+        try primaryRanking(
+            candidates: candidates,
+            queryEmbedding: queryEmbedding,
+            candidateEmbeddings: candidateEmbeddings
+        ).orderedIndexes
+    }
+
+    static func primaryRanking(
+        candidates: [RuntimeSemanticChatSessionCandidate],
+        queryEmbedding: [Double],
+        candidateEmbeddings: [[Double]]
+    ) throws -> RuntimeSemanticChatSessionPrimaryRanking {
         guard queryEmbedding.isValidSemanticEmbedding else {
             throw RuntimeSemanticChatSessionSearchError.invalidQueryEmbedding
         }
@@ -148,32 +191,195 @@ enum RuntimeSemanticChatSessionSearch {
             throw RuntimeSemanticChatSessionSearchError.embeddingCountMismatch
         }
 
-        let scored = try zip(candidates, candidateEmbeddings).map { candidate, embedding in
+        var scoresByCandidateIndex = Array(
+            repeating: 0.0,
+            count: candidateEmbeddings.count
+        )
+        let scored = try candidateEmbeddings.indices.map { index in
+            let embedding = candidateEmbeddings[index]
             guard embedding.count == queryEmbedding.count,
                   embedding.isValidSemanticEmbedding else {
                 throw RuntimeSemanticChatSessionSearchError.invalidCandidateEmbedding
             }
-            return (candidate: candidate, score: cosineSimilarity(queryEmbedding, embedding))
+            let score = cosineSimilarity(queryEmbedding, embedding)
+            guard score.isFinite else {
+                throw RuntimeSemanticChatSessionSearchError
+                    .invalidCandidateEmbedding
+            }
+            scoresByCandidateIndex[index] = score
+            return (index: index, score: score)
         }
 
-        return scored
+        let orderedIndexes = scored
             .sorted { lhs, rhs in
                 if lhs.score != rhs.score {
                     return lhs.score > rhs.score
                 }
-                if lhs.candidate.session.lastActivityAt != rhs.candidate.session.lastActivityAt {
-                    return lhs.candidate.session.lastActivityAt > rhs.candidate.session.lastActivityAt
+                let lhsSession = candidates[lhs.index].session
+                let rhsSession = candidates[rhs.index].session
+                if lhsSession.lastActivityAt != rhsSession.lastActivityAt {
+                    return lhsSession.lastActivityAt >
+                        rhsSession.lastActivityAt
                 }
-                return lhs.candidate.session.sessionID < rhs.candidate.session.sessionID
+                return lhsSession.sessionID < rhsSession.sessionID
             }
+            .map(\.index)
+        return RuntimeSemanticChatSessionPrimaryRanking(
+            orderedIndexes: orderedIndexes,
+            scoresByCandidateIndex: scoresByCandidateIndex
+        )
+    }
+
+    static func secondStageRerankCandidateIndexes(
+        primaryOrderedIndexes: [Int],
+        limit: Int,
+        excludedIndexes: Set<Int> = []
+    ) -> [Int] {
+        let eligibleIndexes = primaryOrderedIndexes.filter {
+            !excludedIndexes.contains($0)
+        }
+        guard limit > 0, !eligibleIndexes.isEmpty else { return [] }
+        let boundedLimit = min(
+            limit,
+            maximumSecondStageRerankCandidateCount
+        )
+        let scaledLimit = min(
+            maximumSecondStageRerankCandidateCount,
+            boundedLimit * secondStageRerankLimitMultiplier
+        )
+        let poolCount = min(
+            eligibleIndexes.count,
+            max(minimumSecondStageRerankCandidateCount, scaledLimit)
+        )
+        return Array(eligibleIndexes.prefix(poolCount))
+    }
+
+    static func applyingSecondStageRerank(
+        primaryOrderedIndexes: [Int],
+        primaryScoresByCandidateIndex: [Double],
+        rerankCandidateIndexes: [Int],
+        queryEmbedding: [Double],
+        candidateEmbeddings: [[Double]]
+    ) throws -> [Int] {
+        guard queryEmbedding.isValidSemanticEmbedding else {
+            throw RuntimeSemanticChatSessionSearchError
+                .invalidRerankQueryEmbedding
+        }
+        let primaryIndexSet = Set(primaryOrderedIndexes)
+        let rerankIndexSet = Set(rerankCandidateIndexes)
+        guard
+            candidateEmbeddings.count == rerankCandidateIndexes.count,
+            primaryScoresByCandidateIndex.count ==
+                primaryOrderedIndexes.count,
+            primaryIndexSet.count == primaryOrderedIndexes.count,
+            rerankIndexSet.count ==
+                rerankCandidateIndexes.count,
+            rerankIndexSet.isSubset(of: primaryIndexSet),
+            primaryOrderedIndexes.allSatisfy({
+                primaryScoresByCandidateIndex.indices.contains($0) &&
+                    primaryScoresByCandidateIndex[$0].isFinite
+            }),
+            rerankCandidateIndexes ==
+                primaryOrderedIndexes.filter({
+                    rerankIndexSet.contains($0)
+                })
+        else {
+            throw RuntimeSemanticChatSessionSearchError
+                .invalidRerankCandidateSet
+        }
+        let primaryPositions = Dictionary(
+            uniqueKeysWithValues: primaryOrderedIndexes.enumerated().map {
+                ($0.element, $0.offset)
+            }
+        )
+        let scored = try rerankCandidateIndexes.enumerated().map {
+            offset,
+            candidateIndex in
+            let embedding = candidateEmbeddings[offset]
+            guard
+                embedding.count == queryEmbedding.count,
+                embedding.isValidSemanticEmbedding,
+                primaryPositions[candidateIndex] != nil
+            else {
+                throw RuntimeSemanticChatSessionSearchError
+                    .invalidRerankCandidateEmbedding
+            }
+            let score = cosineSimilarity(queryEmbedding, embedding)
+            guard score.isFinite else {
+                throw RuntimeSemanticChatSessionSearchError
+                    .invalidRerankCandidateEmbedding
+            }
+            return (
+                index: candidateIndex,
+                score: score
+            )
+        }
+
+        var reranked: [Int] = []
+        var groupStart = 0
+        while groupStart < scored.count {
+            let anchorIndex = scored[groupStart].index
+            let anchorPrimaryScore =
+                primaryScoresByCandidateIndex[anchorIndex]
+            var groupEnd = groupStart + 1
+            while groupEnd < scored.count {
+                let candidatePrimaryScore =
+                    primaryScoresByCandidateIndex[
+                        scored[groupEnd].index
+                    ]
+                guard
+                    anchorPrimaryScore - candidatePrimaryScore <=
+                        secondStagePrimaryAcceptanceWindow +
+                            secondStagePrimaryAcceptanceTolerance
+                else {
+                    break
+                }
+                groupEnd += 1
+            }
+            reranked.append(contentsOf: scored[groupStart..<groupEnd]
+                .sorted { lhs, rhs in
+                    if lhs.score != rhs.score {
+                        return lhs.score > rhs.score
+                    }
+                    return primaryPositions[
+                        lhs.index,
+                        default: .max
+                    ] < primaryPositions[
+                        rhs.index,
+                        default: .max
+                    ]
+                }
+                .map(\.index))
+            groupStart = groupEnd
+        }
+        let rerankedSet = Set(reranked)
+        return reranked + primaryOrderedIndexes.filter {
+            !rerankedSet.contains($0)
+        }
+    }
+
+    static func rankedSessions(
+        candidates: [RuntimeSemanticChatSessionCandidate],
+        orderedIndexes: [Int],
+        limit: Int
+    ) throws -> [RuntimeChatStoredSession] {
+        guard
+            orderedIndexes.count == candidates.count,
+            Set(orderedIndexes) == Set(candidates.indices)
+        else {
+            throw RuntimeSemanticChatSessionSearchError
+                .invalidRankingOrder
+        }
+        return orderedIndexes
             .prefix(max(0, limit))
             .enumerated()
-            .map { offset, result in
-                var session = result.candidate.session
+            .map { offset, candidateIndex in
+                let candidate = candidates[candidateIndex]
+                var session = candidate.session
                 session.search = RuntimeChatStoredSessionSearch(
                     rank: offset + 1,
-                    snippet: result.candidate.snippet,
-                    matchedFields: result.candidate.matchedFields
+                    snippet: candidate.snippet,
+                    matchedFields: candidate.matchedFields
                 )
                 return session
             }
@@ -202,16 +408,35 @@ enum RuntimeSemanticChatSessionSearch {
     }
 
     private static func cosineSimilarity(_ lhs: [Double], _ rhs: [Double]) -> Double {
+        let lhsScale = lhs.reduce(0.0) {
+            max($0, abs($1))
+        }
+        let rhsScale = rhs.reduce(0.0) {
+            max($0, abs($1))
+        }
+        guard lhsScale.isFinite, lhsScale > 0,
+              rhsScale.isFinite, rhsScale > 0 else {
+            return .nan
+        }
         var dotProduct = 0.0
         var lhsMagnitudeSquared = 0.0
         var rhsMagnitudeSquared = 0.0
         for index in lhs.indices {
-            dotProduct += lhs[index] * rhs[index]
-            lhsMagnitudeSquared += lhs[index] * lhs[index]
-            rhsMagnitudeSquared += rhs[index] * rhs[index]
+            let scaledLHS = lhs[index] / lhsScale
+            let scaledRHS = rhs[index] / rhsScale
+            dotProduct += scaledLHS * scaledRHS
+            lhsMagnitudeSquared += scaledLHS * scaledLHS
+            rhsMagnitudeSquared += scaledRHS * scaledRHS
         }
         let denominator = sqrt(lhsMagnitudeSquared) * sqrt(rhsMagnitudeSquared)
-        return denominator > 0 ? dotProduct / denominator : -Double.infinity
+        guard denominator.isFinite, denominator > 0 else {
+            return .nan
+        }
+        let similarity = dotProduct / denominator
+        guard similarity.isFinite else {
+            return .nan
+        }
+        return min(1, max(-1, similarity))
     }
 
     private static func fingerprint(fields: [String]) -> String {
@@ -230,6 +455,10 @@ enum RuntimeSemanticChatSessionSearchError: Error, Equatable {
     case invalidQueryEmbedding
     case embeddingCountMismatch
     case invalidCandidateEmbedding
+    case invalidRerankQueryEmbedding
+    case invalidRerankCandidateSet
+    case invalidRerankCandidateEmbedding
+    case invalidRankingOrder
 }
 
 extension Array where Element == Double {

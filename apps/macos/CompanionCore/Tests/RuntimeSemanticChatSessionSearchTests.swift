@@ -45,6 +45,216 @@ final class RuntimeSemanticChatSessionSearchTests: XCTestCase {
         XCTAssertEqual(ranked.first?.search?.snippet, "Reconnect through the private relay.")
     }
 
+    func testSecondStageRerankReordersOnlyTheBoundedPrimaryPool()
+        throws
+    {
+        let candidates = (0..<40).compactMap { index in
+            RuntimeSemanticChatSessionSearch.candidate(
+                session: RuntimeChatStoredSession(
+                    sessionID: String(format: "session-%02d", index),
+                    title: "Session \(index)",
+                    model: "ollama:chat",
+                    lastActivityAt: Date(
+                        timeIntervalSince1970: Double(1_000 - index)
+                    ),
+                    messageCount: 1
+                ),
+                messages: [
+                    .init(
+                        role: "assistant",
+                        content: "Candidate \(index)"
+                    ),
+                ],
+                query: "semantic query"
+            )
+        }
+        let primaryRanking = try RuntimeSemanticChatSessionSearch
+            .primaryRanking(
+                candidates: candidates,
+                queryEmbedding: [1, 0],
+                candidateEmbeddings: Array(
+                    repeating: [1, 0],
+                    count: candidates.count
+                )
+            )
+        let primaryOrder = primaryRanking.orderedIndexes
+        let rerankPool = RuntimeSemanticChatSessionSearch
+            .secondStageRerankCandidateIndexes(
+                primaryOrderedIndexes: primaryOrder,
+                limit: 1
+            )
+
+        XCTAssertEqual(primaryOrder, Array(candidates.indices))
+        XCTAssertEqual(rerankPool, Array(0..<8))
+
+        let rerankedOrder = try RuntimeSemanticChatSessionSearch
+            .applyingSecondStageRerank(
+                primaryOrderedIndexes: primaryOrder,
+                primaryScoresByCandidateIndex:
+                    primaryRanking.scoresByCandidateIndex,
+                rerankCandidateIndexes: rerankPool,
+                queryEmbedding: [1, 0],
+                candidateEmbeddings: rerankPool.map { index in
+                    switch index {
+                    case 0:
+                        return [0, 1]
+                    case 1:
+                        return [1, 0]
+                    default:
+                        return [0.5, 0.5]
+                    }
+                }
+            )
+        let ranked = try RuntimeSemanticChatSessionSearch.rankedSessions(
+            candidates: candidates,
+            orderedIndexes: rerankedOrder,
+            limit: 3
+        )
+
+        XCTAssertEqual(rerankedOrder.first, 1)
+        XCTAssertEqual(rerankedOrder[8], 8)
+        XCTAssertEqual(
+            ranked.map(\.sessionID),
+            ["session-01", "session-02", "session-03"]
+        )
+        XCTAssertEqual(ranked.map(\.search?.rank), [1, 2, 3])
+    }
+
+    func testSecondStageRerankPreservesStrongPrimaryWinnerAndSkipsExcludedIndexes()
+        throws
+    {
+        let primaryOrder = Array(0..<40)
+        let rerankPool = RuntimeSemanticChatSessionSearch
+            .secondStageRerankCandidateIndexes(
+                primaryOrderedIndexes: primaryOrder,
+                limit: 1,
+                excludedIndexes: Set(0..<32)
+            )
+        XCTAssertEqual(rerankPool, Array(32..<40))
+
+        let reranked = try RuntimeSemanticChatSessionSearch
+            .applyingSecondStageRerank(
+                primaryOrderedIndexes: [0, 1, 2],
+                primaryScoresByCandidateIndex: [1, 0.9, 0.89],
+                rerankCandidateIndexes: [0, 1, 2],
+                queryEmbedding: [1, 0],
+                candidateEmbeddings: [
+                    [0, 1],
+                    [1, 0],
+                    [0.9, 0.1],
+                ]
+            )
+
+        XCTAssertEqual(reranked, [0, 1, 2])
+    }
+
+    func testSecondStageRerankIncludesExactPrimaryAcceptanceBoundary()
+        throws
+    {
+        let reranked = try RuntimeSemanticChatSessionSearch
+            .applyingSecondStageRerank(
+                primaryOrderedIndexes: [0, 1],
+                primaryScoresByCandidateIndex: [1, 0.95],
+                rerankCandidateIndexes: [0, 1],
+                queryEmbedding: [1, 0],
+                candidateEmbeddings: [
+                    [0, 1],
+                    [1, 0],
+                ]
+            )
+
+        XCTAssertEqual(reranked, [1, 0])
+    }
+
+    func testRankingStaysFiniteForLargestFiniteVectorComponents()
+        throws
+    {
+        let candidates = (0..<2).compactMap { index in
+            RuntimeSemanticChatSessionSearch.candidate(
+                session: RuntimeChatStoredSession(
+                    sessionID: "extreme-\(index)",
+                    title: "Extreme \(index)",
+                    model: "ollama:chat",
+                    lastActivityAt: Date(
+                        timeIntervalSince1970: Double(2 - index)
+                    ),
+                    messageCount: 1
+                ),
+                messages: [],
+                query: "extreme"
+            )
+        }
+        let maximum = Double.greatestFiniteMagnitude
+        let primaryRanking = try RuntimeSemanticChatSessionSearch
+            .primaryRanking(
+                candidates: candidates,
+                queryEmbedding: [maximum, maximum],
+                candidateEmbeddings: [
+                    [maximum, maximum],
+                    [maximum, -maximum],
+                ]
+            )
+
+        XCTAssertEqual(primaryRanking.orderedIndexes, [0, 1])
+        XCTAssertTrue(
+            primaryRanking.scoresByCandidateIndex
+                .allSatisfy(\.isFinite)
+        )
+        XCTAssertEqual(
+            primaryRanking.scoresByCandidateIndex[0],
+            1,
+            accuracy: 0.000_000_001
+        )
+
+        let reranked = try RuntimeSemanticChatSessionSearch
+            .applyingSecondStageRerank(
+                primaryOrderedIndexes: [0, 1],
+                primaryScoresByCandidateIndex: [1, 0.99],
+                rerankCandidateIndexes: [0, 1],
+                queryEmbedding: [maximum, maximum],
+                candidateEmbeddings: [
+                    [maximum, -maximum],
+                    [maximum, maximum],
+                ]
+            )
+        XCTAssertEqual(reranked, [1, 0])
+    }
+
+    func testSecondStageRerankRejectsMalformedShapeAndCandidateSets()
+        throws
+    {
+        XCTAssertThrowsError(
+            try RuntimeSemanticChatSessionSearch
+                .applyingSecondStageRerank(
+                    primaryOrderedIndexes: [0, 1],
+                    primaryScoresByCandidateIndex: [1, 0.9],
+                    rerankCandidateIndexes: [0, 0],
+                    queryEmbedding: [1, 0],
+                    candidateEmbeddings: [[1, 0], [1, 0]]
+                )
+        ) { error in
+            XCTAssertEqual(
+                error as? RuntimeSemanticChatSessionSearchError,
+                .invalidRerankCandidateSet
+            )
+        }
+        XCTAssertThrowsError(
+            try RuntimeSemanticChatSessionSearch
+                .applyingSecondStageRerank(
+                    primaryOrderedIndexes: [0, 1],
+                    primaryScoresByCandidateIndex: [1, 0.9],
+                    rerankCandidateIndexes: [0],
+                    queryEmbedding: [1, 0],
+                    candidateEmbeddings: [[1]]
+                )
+        ) { error in
+            XCTAssertEqual(
+                error as? RuntimeSemanticChatSessionSearchError,
+                .invalidRerankCandidateEmbedding
+            )
+        }
+    }
+
     func testCandidateBoundsUTF8AndNeverIncludesInlineAttachmentBytes() throws {
         let privateBytes = "private-inline-base64-canary"
         let session = RuntimeChatStoredSession(
@@ -197,6 +407,10 @@ final class RuntimeSemanticChatSessionSearchTests: XCTestCase {
         var nonCanonicalDigestRevision = base
         nonCanonicalDigestRevision.persistentEmbeddingRevision =
             "ollama-sha256:" + String(repeating: "A", count: 64)
+        var roleAwareProfile = base
+        roleAwareProfile.embeddingInputProfile = .embeddingGemma
+        var unknownProfile = base
+        unknownProfile.embeddingInputProfile = nil
 
         let untagged = try XCTUnwrap(RuntimeSemanticChatSessionSearch.persistentModelFingerprint(
             model: base,
@@ -210,6 +424,14 @@ final class RuntimeSemanticChatSessionSearchTests: XCTestCase {
         XCTAssertEqual(untagged, latest)
         XCTAssertNotEqual(untagged, RuntimeSemanticChatSessionSearch.persistentModelFingerprint(
             model: changedRevision,
+            requestedQualifiedModelID: "ollama:nomic-embed-text"
+        ))
+        XCTAssertNotEqual(untagged, RuntimeSemanticChatSessionSearch.persistentModelFingerprint(
+            model: roleAwareProfile,
+            requestedQualifiedModelID: "ollama:nomic-embed-text"
+        ))
+        XCTAssertNil(RuntimeSemanticChatSessionSearch.persistentModelFingerprint(
+            model: unknownProfile,
             requestedQualifiedModelID: "ollama:nomic-embed-text"
         ))
         XCTAssertNil(RuntimeSemanticChatSessionSearch.persistentModelFingerprint(

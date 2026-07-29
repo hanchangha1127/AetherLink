@@ -217,7 +217,17 @@ class MacOSPackagedAppLifecycleSmokeTests(unittest.TestCase):
             ):
                 smoke.load_release_inputs(wrong, verify_readback=False)
 
-    def test_load_release_inputs_pins_exact_build6_archive_identity(self) -> None:
+    def test_build9_readback_uses_current_lane(self) -> None:
+        with patch.object(smoke, "run_checked") as run_checked:
+            smoke.verify_archive_readback(Path("/tmp/build-9"))
+
+        command = run_checked.call_args.args[0]
+        self.assertNotIn("--historical", command)
+        self.assertEqual(command[-1], "/tmp/build-9")
+        self.assertIn("--archive-dir", command)
+        self.assertEqual(run_checked.call_args.kwargs["cwd"], smoke.ROOT)
+
+    def test_load_release_inputs_pins_exact_build9_archive_identity(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             release = self.release_fixture(Path(temporary))
 
@@ -230,13 +240,50 @@ class MacOSPackagedAppLifecycleSmokeTests(unittest.TestCase):
                 patch.object(smoke, "EXPECTED_ARCHIVE_SHA256", "0" * 64),
                 self.assertRaisesRegex(
                     smoke.LifecycleSmokeError,
-                    "qualified Build 6 identity",
+                    "qualified Build 9 identity",
                 ),
             ):
                 smoke.load_release_inputs(
                     release.archive_dir,
                     verify_readback=False,
                 )
+
+    def test_load_release_inputs_wraps_unreadable_checksum_sidecar(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            release = self.release_fixture(Path(temporary))
+            release.checksum_path.write_bytes(b"\xff")
+
+            with (
+                patch.object(
+                    smoke,
+                    "EXPECTED_MANIFEST_SHA256",
+                    release.manifest_sha256,
+                ),
+                self.assertRaisesRegex(
+                    smoke.LifecycleSmokeError,
+                    "checksum sidecar is unreadable",
+                ),
+            ):
+                smoke.load_release_inputs(
+                    release.archive_dir,
+                    verify_readback=False,
+                )
+
+    def test_run_checked_wraps_subprocess_timeout(self) -> None:
+        with (
+            patch.object(
+                smoke.subprocess,
+                "run",
+                side_effect=subprocess.TimeoutExpired(["fixture"], 60),
+            ),
+            self.assertRaisesRegex(
+                smoke.LifecycleSmokeError,
+                "command timed out after 60 seconds",
+            ),
+        ):
+            smoke.run_checked(["fixture"])
 
     def test_sandbox_profile_denies_network_and_non_temp_writes(self) -> None:
         root = Path("/private/tmp/aetherlink-lifecycle-fixture")
@@ -698,6 +745,37 @@ class MacOSPackagedAppLifecycleSmokeTests(unittest.TestCase):
             smoke.bounded_float("5", "observation", 5, 30),
             5,
         )
+
+    def test_validated_duration_rejects_nonfinite_and_boolean_values(
+        self,
+    ) -> None:
+        for value in (float("nan"), float("inf"), float("-inf"), True, False):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(
+                    smoke.LifecycleSmokeError,
+                    "finite number",
+                ):
+                    smoke.validated_duration(value, "duration", 0.1, 30)
+
+    def test_execute_rejects_sub_five_second_observation_before_readback(
+        self,
+    ) -> None:
+        with (
+            patch.object(smoke, "load_release_inputs") as load,
+            self.assertRaisesRegex(
+                smoke.LifecycleSmokeError,
+                "observation window",
+            ),
+        ):
+            smoke.execute(
+                archive_dir=Path("/tmp/release"),
+                result_path=Path("/tmp/result.json"),
+                readiness_timeout_seconds=15,
+                observation_seconds=4.999,
+                termination_timeout_seconds=10,
+            )
+
+        load.assert_not_called()
 
 
 if __name__ == "__main__":

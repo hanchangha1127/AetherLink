@@ -31,11 +31,16 @@ from script.check_release_version_ledger import (
     load_release_version_ledger,
     source_contract_failures,
 )
+from script.generate_release_compliance import (
+    ComplianceError,
+    build_release_compliance,
+)
 
 
 DEFAULT_OUTPUT_ROOT = ROOT / "dist/releases"
 FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
-SCHEMA_VERSION = 1
+MANIFEST_SCHEMA_VERSION = 2
+MEMBER_SCHEMA_VERSION = 1
 CHANNEL = "local"
 ARCHIVE_REVISION = "v1"
 
@@ -137,10 +142,14 @@ SOURCE_REQUIRED_FILES = (
     "apps/android/core/protocol/gradle.lockfile",
     "apps/android/core/transport/build.gradle.kts",
     "apps/android/core/transport/gradle.lockfile",
+    "release/release-compliance-metadata-v1.json",
+    "release/third-party-license-inventory-v1.json",
     "release/version-ledger.tsv",
     "script/build_and_run.sh",
     "script/build_release_artifacts.sh",
+    "script/check_release_compliance.py",
     "script/check_release_version_ledger.py",
+    "script/generate_release_compliance.py",
     "script/package_release_artifacts.py",
     "script/check_release_artifact_archive.py",
     "script/run_clean_release_reproducibility.py",
@@ -1554,7 +1563,12 @@ def release_id(current: ReleaseVersion) -> str:
 def collect_release_members(
     current: ReleaseVersion,
     source: dict[str, object],
-) -> tuple[list[ArchiveMember], dict[str, object], dict[str, object]]:
+) -> tuple[
+    list[ArchiveMember],
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+]:
     macos_dsym = resolve_macos_dsym_path()
     exact_files = {
         "android/apk/app-release-unsigned.apk": ANDROID_APK,
@@ -1598,7 +1612,7 @@ def collect_release_members(
         {
             "nativeLibraries": android["nativeLibraries"],
             "nativeSymbols": android["nativeSymbols"],
-            "schemaVersion": SCHEMA_VERSION,
+            "schemaVersion": MEMBER_SCHEMA_VERSION,
         }
     )
     members.append(
@@ -1610,17 +1624,35 @@ def collect_release_members(
     )
     source_bytes = canonical_json_bytes(
         {
-            "schemaVersion": SCHEMA_VERSION,
+            "schemaVersion": MEMBER_SCHEMA_VERSION,
             "snapshot": source,
         }
     )
     members.append(ArchiveMember("source-files.json", source_bytes, 0o644))
+    try:
+        compliance_members, compliance = build_release_compliance(
+            marketing_version=current.marketing_version,
+            build_number=current.build_number,
+            source_snapshot_sha256=str(source["sha256"]),
+            root=ROOT,
+        )
+    except ComplianceError as error:
+        raise ReleaseArchiveError(
+            f"release compliance inputs are invalid: {error}"
+        ) from error
+    for member_path, data in compliance_members:
+        validate_member_path(member_path)
+        if not data:
+            raise ReleaseArchiveError(
+                f"release compliance member is empty: {member_path}"
+            )
+        members.append(ArchiveMember(member_path, data, 0o644))
     members.extend(collect_tree_members(MACOS_APP, "macos/AetherLink.app"))
     members.extend(collect_tree_members(macos_dsym, "macos/AetherLink.dSYM"))
     members.sort(key=lambda member: member.path.encode("ascii"))
     if len({member.path for member in members}) != len(members):
         raise ReleaseArchiveError("release payload contains duplicate member paths")
-    return members, android, macos
+    return members, android, macos, compliance
 
 
 def build_manifest(
@@ -1629,6 +1661,7 @@ def build_manifest(
     source: dict[str, object],
     android: dict[str, object],
     macos: dict[str, object],
+    compliance: dict[str, object],
 ) -> dict[str, object]:
     ledger_data, _ = read_stable_regular_file(LEDGER_PATH)
     git = git_metadata()
@@ -1648,6 +1681,7 @@ def build_manifest(
             ),
         },
         "channel": CHANNEL,
+        "compliance": compliance,
         "dependencyLocking": dependency_locking_metadata(),
         "ledger": {
             "path": LEDGER_PATH.relative_to(ROOT).as_posix(),
@@ -1665,7 +1699,7 @@ def build_manifest(
             "marketingVersion": current.marketing_version,
             "releaseId": release_id(current),
         },
-        "schemaVersion": SCHEMA_VERSION,
+        "schemaVersion": MANIFEST_SCHEMA_VERSION,
         "source": {
             **git,
             "fileCount": source["fileCount"],
@@ -1814,7 +1848,10 @@ def create_release_archive(
             "release version contract failed:\n - " + "\n - ".join(failures)
         )
     source_before = source_snapshot()
-    members, android, macos = collect_release_members(current, source_before)
+    members, android, macos, compliance = collect_release_members(
+        current,
+        source_before,
+    )
     source_after = source_snapshot()
     if source_before != source_after:
         raise ReleaseArchiveError(
@@ -1826,6 +1863,7 @@ def create_release_archive(
         source_before,
         android,
         macos,
+        compliance,
     )
     manifest_bytes = canonical_json_bytes(manifest)
     output_root.mkdir(parents=True, exist_ok=True)

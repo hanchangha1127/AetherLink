@@ -28,12 +28,12 @@ PHYSICAL_QR_OBSERVATION_MANIFEST = (
     ROOT / "docs/evidence/physical-qr-pairing-20260719.json"
 )
 LOCAL_RELEASE_MARKETING_VERSION = "1.0.0"
-LOCAL_RELEASE_BUILD_NUMBER = 6
+LOCAL_RELEASE_BUILD_NUMBER = 9
 LOCAL_RELEASE_ID = (
     f"aetherlink-{LOCAL_RELEASE_MARKETING_VERSION}"
     f"+{LOCAL_RELEASE_BUILD_NUMBER}-local-v1"
 )
-LOCAL_RELEASE_CURRENT_DOC = ROOT / "docs/releases/1.0.0-build-6-local-v1.md"
+LOCAL_RELEASE_CURRENT_DOC = ROOT / "docs/releases/1.0.0-build-9-local-v1.md"
 LOCAL_RELEASE_FIXTURE_BUILD_NUMBER = 3
 LOCAL_RELEASE_FIXTURE_ID = (
     f"aetherlink-{LOCAL_RELEASE_MARKETING_VERSION}"
@@ -46,55 +46,57 @@ LOCAL_RELEASE_FIXTURE_DOC = (
 LOCAL_RELEASE_DOC = LOCAL_RELEASE_FIXTURE_DOC
 LOCAL_RELEASE_ARCHIVE_DIR = ROOT / "dist/releases" / LOCAL_RELEASE_ID
 LOCAL_RELEASE_REPRODUCIBILITY_RESULT = (
-    ROOT / "dist/reproducibility/clean-release-two-root-v2.json"
+    ROOT
+    / "dist/reproducibility/"
+    "aetherlink-1.0.0+9-local-v1-two-root-v2.json"
 )
 MACOS_PACKAGED_LIFECYCLE_RESULT = (
     ROOT
-    / "dist/lifecycle/macos-packaged-app-build-6-lifecycle-v1.json"
+    / "dist/lifecycle/macos-packaged-app-build-9-lifecycle-v1.json"
 )
 LOCAL_RELEASE_LEDGER = ROOT / "release/version-ledger.tsv"
 LOCAL_RELEASE_G0_DECISION = ROOT / "docs/v1/g0/decision-v1.json"
-LOCAL_RELEASE_EXPECTED_ZIP_SIZE = 164_177_236
+LOCAL_RELEASE_EXPECTED_ZIP_SIZE = 165_065_657
 LOCAL_RELEASE_EXPECTED_ZIP_SHA256 = (
-    "ac5294b7af4e8b5393ff1d0b6e2f60b39afc40bce0696549e4e9e6b871d919d4"
+    "e2cbd350bf031d04b6e29054ceb387bbe453e60244b47919c54f6d3c13ba7e1a"
 )
-LOCAL_RELEASE_EXPECTED_MANIFEST_SIZE = 10_328
+LOCAL_RELEASE_EXPECTED_MANIFEST_SIZE = 11_918
 LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256 = (
-    "4dab491197abc0acfbd71dd794d4bb11f84b924f3253bcfbb85f6f3c161be527"
+    "56380c239f916ba9d400cc73824ebbda111f61e0baa4d0dc66e8d14e044d05a5"
 )
 LOCAL_RELEASE_EXPECTED_CHECKSUM_SIZE = 98
 LOCAL_RELEASE_EXPECTED_CHECKSUM_SHA256 = (
-    "73b694ddbd113a1409c9ae27d25c003e774442d0de236b07bf56a664266344e1"
+    "87200b847712ae01c7affae8364c2e3500e84ad6b5ba0781da584b6eece9ba1f"
 )
-LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SIZE = 17_674
+LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SIZE = 19_744
 LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SHA256 = (
-    "32ee3613318261f15512f9b4c878732a09038012998048c8a63caf0d2185d91a"
+    "4342dac875e9a98af92c810e289bc37969c3df4f77ab4b3af44713945b5f5414"
 )
 MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT_SIZE = 1_311
 MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT_SHA256 = (
-    "30d90827182e353d9f49fd1fa9edde846bc073f1af5113548f913c7b8af34447"
+    "aad796ee3c768e37953f18eeea0e6642107750c3a8c398df798a46e96aabab53"
 )
 LOCAL_RELEASE_EXPECTED_SOURCE_ROOT_BYTE_LENGTHS = {
     "build-a": 101,
     "build-b": 109,
 }
-LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT = 235
+LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT = 239
 LOCAL_RELEASE_EXPECTED_SOURCE_SHA256 = (
-    "767465297c3627d9a8a99eda232fed8fe3ff3b9b518aca9926b47038d74890ed"
+    "22e26f5ed62be9b7badcc01ff76db91f436d0a0cde9ad1587a6c27588962a5ec"
 )
 LOCAL_RELEASE_EXPECTED_SOURCE_HEAD = (
-    "7d6ecbf56827b1a7c999b3c7a339bebc53bbd421"
+    "d699b557aa36deb7add763e5f8f4fe3dcf66c7ed"
 )
-LOCAL_RELEASE_EXPECTED_MEMBER_COUNT = 25
-LOCAL_RELEASE_EXPECTED_MACOS_UUID = "1D6CD3E2-5769-3BB2-9F11-CBFEF782D44F"
+LOCAL_RELEASE_EXPECTED_MEMBER_COUNT = 29
+LOCAL_RELEASE_EXPECTED_MACOS_UUID = "0711F00D-B4B5-316C-A159-2E8BE3FE9FCB"
 LOCAL_RELEASE_EXPECTED_MEMBERS = {
     "android/apk/app-release-unsigned.apk": (
-        9_568_742,
-        "6c47433ccaf35a6051672c112d5fccf8419542e505359871806870b71248abbf",
+        9_568_738,
+        "01e0cdcb7912702c57d62f20e7609a6d64c5146f164d188187462f0c2b52139d",
     ),
     "android/bundle/app-release.aab": (
-        10_658_234,
-        "eb3522ca92c0c5bb5e99d1b4ba0be1a66386dfdb88f4ea6bb4f434464931ec83",
+        10_658_233,
+        "863959acb9c669aa07091f6c2f3823b20631e77f091827e938877ad5ef75d5f5",
     ),
     "android/mapping/mapping.txt": (
         71_646_798,
@@ -105,21 +107,46 @@ LOCAL_RELEASE_EXPECTED_MEMBERS = {
         "c816b0f709eaa66526973bdda6fc0790afdebdfdecfe0a306cda82c742a686d5",
     ),
     "macos/AetherLink.app/Contents/MacOS/AetherLink": (
-        18_170_560,
-        "1405a06fd5e8491f647c6fc74bed4211eeabf22aca2307d08a14c71035ab2f34",
+        18_209_264,
+        "66f4fde6f4ba578f9f6f2a6a4f5fed6f2e27b26e169a868c405fe676535e2c8c",
     ),
     "macos/AetherLink.dSYM/Contents/Resources/DWARF/AetherLink": (
-        31_024_134,
-        "65becd00d15b4632269cfb5b585a28390a6f2aee727dd5c08b18dd2aaa3310a2",
+        31_079_261,
+        "233ef14e8ac9b8647e6321d0baf38e0e0605f0968a22fa3d473f7342a4463453",
+    ),
+    "compliance/THIRD_PARTY_LICENSE_INVENTORY.txt": (
+        109_725,
+        "7bee5eee533db2b7c3ddc88c6e131287a0e641c92fa501bb8e680732da0e92c7",
+    ),
+    "compliance/release-compliance-metadata-v1.json": (
+        94,
+        "380bfb4b649035fc1ddbb1a8fa3e8da7bed97aa4910d22d557367332f87e0fdd",
+    ),
+    "compliance/sbom.spdx.json": (
+        252_415,
+        "7524ead20b6b57be73e935b53d9ea507f863ff1902c7e83595a61b5ef190ee60",
+    ),
+    "compliance/third-party-license-inventory-v1.json": (
+        411_087,
+        "1f97b74e794e5e2b3092cc31ce8c67f634a299989658feca597bc301b67dcda5",
     ),
 }
+MACOS_PACKAGED_LIFECYCLE_BUILD_NUMBER = 9
+MACOS_PACKAGED_LIFECYCLE_RELEASE_ID = "aetherlink-1.0.0+9-local-v1"
+MACOS_PACKAGED_LIFECYCLE_ARCHIVE_SHA256 = (
+    "e2cbd350bf031d04b6e29054ceb387bbe453e60244b47919c54f6d3c13ba7e1a"
+)
+MACOS_PACKAGED_LIFECYCLE_MANIFEST_SHA256 = (
+    "56380c239f916ba9d400cc73824ebbda111f61e0baa4d0dc66e8d14e044d05a5"
+)
+MACOS_PACKAGED_LIFECYCLE_EXECUTABLE_SHA256 = (
+    "66f4fde6f4ba578f9f6f2a6a4f5fed6f2e27b26e169a868c405fe676535e2c8c"
+)
 MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT = {
     "app": {
-        "buildNumber": LOCAL_RELEASE_BUILD_NUMBER,
+        "buildNumber": MACOS_PACKAGED_LIFECYCLE_BUILD_NUMBER,
         "bundleIdentifier": "dev.aetherlink.companion",
-        "executableSha256": LOCAL_RELEASE_EXPECTED_MEMBERS[
-            "macos/AetherLink.app/Contents/MacOS/AetherLink"
-        ][1],
+        "executableSha256": MACOS_PACKAGED_LIFECYCLE_EXECUTABLE_SHA256,
         "marketingVersion": LOCAL_RELEASE_MARKETING_VERSION,
         "uuid": LOCAL_RELEASE_EXPECTED_MACOS_UUID,
     },
@@ -134,9 +161,9 @@ MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT = {
         "temporaryCFUserHomeConfigured": True,
     },
     "release": {
-        "archiveSha256": LOCAL_RELEASE_EXPECTED_ZIP_SHA256,
-        "manifestSha256": LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256,
-        "releaseId": LOCAL_RELEASE_ID,
+        "archiveSha256": MACOS_PACKAGED_LIFECYCLE_ARCHIVE_SHA256,
+        "manifestSha256": MACOS_PACKAGED_LIFECYCLE_MANIFEST_SHA256,
+        "releaseId": MACOS_PACKAGED_LIFECYCLE_RELEASE_ID,
     },
     "runs": [
         {
@@ -668,10 +695,15 @@ HYGIENE_TARGETS = (
     "docs/mvp-v0.1.md",
     "docs/protocol.md",
     "docs/qa-evidence.md",
+    "docs/releases/1.0.0-build-1-local-v1.md",
+    "docs/releases/1.0.0-build-2-local-v1.md",
     "docs/releases/1.0.0-build-3-local-v1.md",
     "docs/releases/1.0.0-build-4-local-v1.md",
     "docs/releases/1.0.0-build-5-local-v1.md",
     "docs/releases/1.0.0-build-6-local-v1.md",
+    "docs/releases/1.0.0-build-7-local-v1.md",
+    "docs/releases/1.0.0-build-8-local-v1.md",
+    "docs/releases/1.0.0-build-9-local-v1.md",
     "docs/roadmap.md",
     "docs/security.md",
     "examples/README.md",
@@ -752,7 +784,7 @@ CONTRACTS = (
 FILE_CONTRACTS = (
     DocsFileContract(
         "local-release-qualification-boundary",
-        "docs/releases/1.0.0-build-6-local-v1.md",
+        "docs/releases/1.0.0-build-9-local-v1.md",
         (
             re.compile(
                 r"\bStatus:\s*local release-engineering candidate,\s*not a production release\b",
@@ -775,16 +807,16 @@ FILE_CONTRACTS = (
                 re.IGNORECASE | re.DOTALL,
             ),
             re.compile(
-                r"\bac5294b7af4e8b5393ff1d0b6e2f60b39afc40bce0696549e4e9e6b871d919d4\b"
+                r"\be2cbd350bf031d04b6e29054ceb387bbe453e60244b47919c54f6d3c13ba7e1a\b"
             ),
             re.compile(
-                r"\b4dab491197abc0acfbd71dd794d4bb11f84b924f3253bcfbb85f6f3c161be527\b"
+                r"\b56380c239f916ba9d400cc73824ebbda111f61e0baa4d0dc66e8d14e044d05a5\b"
             ),
             re.compile(
-                r"\b73b694ddbd113a1409c9ae27d25c003e774442d0de236b07bf56a664266344e1\b"
+                r"\b87200b847712ae01c7affae8364c2e3500e84ad6b5ba0781da584b6eece9ba1f\b"
             ),
             re.compile(
-                r"\b32ee3613318261f15512f9b4c878732a09038012998048c8a63caf0d2185d91a\b"
+                r"\b4342dac875e9a98af92c810e289bc37969c3df4f77ab4b3af44713945b5f5414\b"
             ),
             re.compile(
                 r"\b101-\s+and\s+109-byte source roots\b",
@@ -1044,15 +1076,21 @@ FILE_CONTRACTS = (
 PROGRESS_DOC = ROOT / "docs/progress.md"
 QA_EVIDENCE_DOC = ROOT / "docs/qa-evidence.md"
 QA_CURRENT_RELEASE_READBACK_MARKER = (
-    "The current build 6 archive includes the terminal-less EOF fix and the "
-    "settled provider-quality source snapshot."
+    "The Build 9 archive remains the latest ledger entry but its source-bound "
+    "snapshot predates the current two-stage reranker worktree."
 )
 QA_STALE_RELEASE_READBACK_MARKERS = (
+    "The current build 6 archive includes the terminal-less EOF fix and the "
+    "settled provider-quality source snapshot.",
     "The current build 5 archive includes the terminal-less EOF fix and the "
     "settled provider-quality source snapshot.",
     "The current build 3 archive includes the terminal-less EOF fix and the "
     "settled provider-quality source snapshot.",
     "The existing local release archive predates the terminal-less EOF fix"
+)
+RELEASE_READBACK_COMMAND_DOCS = (
+    PROGRESS_DOC,
+    QA_EVIDENCE_DOC,
 )
 
 
@@ -1074,15 +1112,84 @@ def current_release_qa_evidence_failures(
     failures: list[str] = []
     if QA_CURRENT_RELEASE_READBACK_MARKER not in normalized_text:
         failures.append(
-            "docs/qa-evidence.md: current build 6 EOF/provider source "
-            "readback marker is missing."
+            "docs/qa-evidence.md: Build 9 prior-source and current reranker "
+            "boundary marker is missing."
         )
     for stale_marker in QA_STALE_RELEASE_READBACK_MARKERS:
         if stale_marker in normalized_text:
             failures.append(
-                "docs/qa-evidence.md: stale pre-build6 EOF readback claim "
+                "docs/qa-evidence.md: stale current-release EOF readback claim "
                 "must not remain current."
             )
+    return failures
+
+
+def release_readback_command_mode_failures(
+    document_text_by_path: dict[str, str] | None = None,
+) -> list[str]:
+    failures: list[str] = []
+    release_pattern = re.compile(
+        r"--archive-dir\s+dist/releases/"
+        r"aetherlink-[0-9]+\.[0-9]+\.[0-9]+\+"
+        r"(?P<build>[1-9][0-9]*)-local-v1"
+    )
+    historical_pattern = re.compile(
+        r"(?<![\w-])--historical(?![\w-])"
+    )
+
+    for path in RELEASE_READBACK_COMMAND_DOCS:
+        relative = str(path.relative_to(ROOT))
+        if document_text_by_path is None:
+            try:
+                document_text = path.read_text(
+                    encoding="utf-8",
+                    errors="replace",
+                )
+            except OSError as error:
+                failures.append(
+                    f"{relative}: cannot inspect release readback commands: "
+                    f"{error}"
+                )
+                continue
+        else:
+            document_text = document_text_by_path.get(relative, "")
+
+        for line_number, line in enumerate(document_text.splitlines(), 1):
+            if "check_release_artifact_archive.py" not in line:
+                continue
+            match = release_pattern.search(line)
+            if match is None:
+                failures.append(
+                    f"{relative}:{line_number}: release readback command must "
+                    "name a canonical versioned archive directory on the same "
+                    "line."
+                )
+                continue
+
+            build_number = int(match.group("build"))
+            historical_mode = historical_pattern.search(line) is not None
+            if build_number < LOCAL_RELEASE_BUILD_NUMBER and not historical_mode:
+                failures.append(
+                    f"{relative}:{line_number}: historical Build "
+                    f"{build_number} release readback command requires "
+                    "`--historical`."
+                )
+            elif (
+                build_number == LOCAL_RELEASE_BUILD_NUMBER
+                and historical_mode
+            ):
+                failures.append(
+                    f"{relative}:{line_number}: current Build "
+                    f"{build_number} release readback command must not use "
+                    "`--historical`."
+                )
+            elif build_number > LOCAL_RELEASE_BUILD_NUMBER:
+                failures.append(
+                    f"{relative}:{line_number}: release readback command names "
+                    f"future Build {build_number}; current Build is "
+                    f"{LOCAL_RELEASE_BUILD_NUMBER}."
+                )
+
     return failures
 
 
@@ -2258,7 +2365,6 @@ def local_release_ollama_embedding_multilingual_semantic_quality_fixture_failure
         fixture_validator = runner["validate_recorded_fixture"]
         task_set_bytes_reader = runner["recorded_task_set_bytes"]
         task_set_validator = runner["validate_task_set"]
-        source_validator = runner["assert_bound_sources"]
         normalized_source_sha256 = runner[
             "normalized_runner_source_sha256"
         ]
@@ -2283,7 +2389,6 @@ def local_release_ollama_embedding_multilingual_semantic_quality_fixture_failure
             or not callable(fixture_validator)
             or not callable(task_set_bytes_reader)
             or not callable(task_set_validator)
-            or not callable(source_validator)
             or not callable(normalized_source_sha256)
         ):
             raise TypeError(
@@ -2314,7 +2419,11 @@ def local_release_ollama_embedding_multilingual_semantic_quality_fixture_failure
                 )
             ):
                 raise ValueError(f"{label} SHA-256 was invalid")
-        source_validator()
+        # The V2 fixture is a historical observation bound to its recorded
+        # product-source digests. The live runner still calls
+        # assert_bound_sources() and refuses re-execution after product-source
+        # drift; documentation validation must not relabel current bytes as the
+        # bytes that produced the observation.
         expected_fixture = fixture_builder()
         if type(expected_fixture) is not dict:
             raise TypeError(
@@ -2862,7 +2971,10 @@ def local_release_document_failures() -> list[str]:
         ),
         (
             "reproducibility result path",
-            "`dist/reproducibility/clean-release-two-root-v2.json`",
+            (
+                "`dist/reproducibility/"
+                "aetherlink-1.0.0+9-local-v1-two-root-v2.json`"
+            ),
         ),
         (
             "reproducibility result size",
@@ -2876,7 +2988,7 @@ def local_release_document_failures() -> list[str]:
             "packaged-app lifecycle result path",
             (
                 "`dist/lifecycle/"
-                "macos-packaged-app-build-6-lifecycle-v1.json`"
+                "macos-packaged-app-build-9-lifecycle-v1.json`"
             ),
         ),
         (
@@ -2928,6 +3040,32 @@ def local_release_document_failures() -> list[str]:
             f"`{LOCAL_RELEASE_EXPECTED_SOURCE_SHA256}`",
         ),
         ("source HEAD", f"`{LOCAL_RELEASE_EXPECTED_SOURCE_HEAD}`"),
+        ("dirty source boundary", "`dirty-content-snapshot`"),
+        (
+            "commit-only reconstruction boundary",
+            "The Git commit alone cannot reconstruct these release bytes.",
+        ),
+        (
+            "POM body retention boundary",
+            "Original POM bodies are not archived.",
+        ),
+        (
+            "license text retention boundary",
+            "License/NOTICE texts are not archived.",
+        ),
+        (
+            "offline evidence boundary",
+            "The offline checker does not re-fetch or re-parse those originals.",
+        ),
+        (
+            "compliance profile",
+            "`aetherlink-release-compliance-v2`",
+        ),
+        ("compliance schema", "`schemaVersion=2`"),
+        ("runtime relationship count", "202 runtime"),
+        ("build dependency relationship count", "155 build dependency"),
+        ("build tool relationship count", "335 build tool"),
+        ("total relationship count", "692 exact role relationships"),
         (
             "payload member count",
             f"{LOCAL_RELEASE_EXPECTED_MEMBER_COUNT} payload members",
@@ -3065,6 +3203,7 @@ def local_release_document_failures() -> list[str]:
         return value
 
     manifest_expectations = (
+        (("schemaVersion",), 2),
         (("release", "releaseId"), LOCAL_RELEASE_ID),
         (
             ("archive", "memberCountExcludingManifest"),
@@ -3073,6 +3212,7 @@ def local_release_document_failures() -> list[str]:
         (("source", "fileCount"), LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT),
         (("source", "snapshotSha256"), LOCAL_RELEASE_EXPECTED_SOURCE_SHA256),
         (("source", "head"), LOCAL_RELEASE_EXPECTED_SOURCE_HEAD),
+        (("source", "worktreeState"), "dirty-content-snapshot"),
         (("platforms", "android", "applicationId"), "com.localagentbridge.android"),
         (
             ("platforms", "android", "versionCode"),
@@ -3103,6 +3243,23 @@ def local_release_document_failures() -> list[str]:
             ("platforms", "macos", "dSYM", "uuid"),
             LOCAL_RELEASE_EXPECTED_MACOS_UUID,
         ),
+        (("compliance", "gradleLockedPackageCount"), 350),
+        (("compliance", "swiftExternalDependencyCount"), 0),
+        (("compliance", "artifactFilesAnalyzed"), False),
+        (
+            ("compliance", "licenseCompatibilityConclusionIncluded"),
+            False,
+        ),
+        (("compliance", "licenseConcluded"), "NOASSERTION"),
+        (("compliance", "networkRequiredForReleaseBuild"), False),
+        (
+            ("compliance", "profile"),
+            "aetherlink-release-compliance-v2",
+        ),
+        (("compliance", "schemaVersion"), 2),
+        (("compliance", "spdx", "format"), "SPDX-2.3"),
+        (("compliance", "spdx", "packageCount"), 351),
+        (("compliance", "spdx", "relationshipCount"), 692),
     )
     for path, expected in manifest_expectations:
         actual = read_path(path)
@@ -3190,7 +3347,8 @@ def local_release_document_failures() -> list[str]:
         )
 
     result_relative = (
-        "dist/reproducibility/clean-release-two-root-v2.json"
+        "dist/reproducibility/"
+        "aetherlink-1.0.0+9-local-v1-two-root-v2.json"
     )
     if not LOCAL_RELEASE_REPRODUCIBILITY_RESULT.is_file():
         failures.append(
@@ -3294,7 +3452,7 @@ def local_release_document_failures() -> list[str]:
 def macos_packaged_lifecycle_evidence_failures(
     result_bytes: bytes | None = None,
 ) -> list[str]:
-    relative = "dist/lifecycle/macos-packaged-app-build-6-lifecycle-v1.json"
+    relative = "dist/lifecycle/macos-packaged-app-build-9-lifecycle-v1.json"
     if result_bytes is None:
         if not MACOS_PACKAGED_LIFECYCLE_RESULT.is_file():
             return [f"{relative}: missing packaged-app lifecycle result."]
@@ -4056,6 +4214,7 @@ def main() -> int:
     failures.extend(latest_progress_evidence_failures())
     failures.extend(latest_qa_evidence_failures())
     failures.extend(current_release_qa_evidence_failures())
+    failures.extend(release_readback_command_mode_failures())
     failures.extend(syntax_only_no_device_gate_evidence_failures())
     failures.extend(local_release_document_failures())
     failures.extend(macos_packaged_lifecycle_evidence_failures())

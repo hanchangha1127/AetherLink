@@ -180,13 +180,25 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
 
     public func embed(request: EmbeddingRequest) async throws -> EmbeddingResult {
         let endpoint = "POST /api/embed"
+        let preparedInput: (
+            texts: [String],
+            profile: EmbeddingInputProfile
+        )
+        do {
+            preparedInput = try await preparedEmbeddingInput(for: request)
+        } catch OllamaModelDetailsError.malformedResponse {
+            throw OllamaBackendError.responseDecoding(
+                endpoint: "POST /api/show",
+                reason: "The embedding model profile was malformed."
+            )
+        }
         var urlRequest = URLRequest(url: baseURL.appending(path: "api/embed"))
         urlRequest.httpMethod = "POST"
         urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
         do {
             urlRequest.httpBody = try encoder.encode(OllamaEmbedRequest(
                 model: request.model,
-                input: request.texts
+                input: preparedInput.texts
             ))
         } catch {
             throw OllamaBackendError.requestEncoding(endpoint: endpoint, reason: error.localizedDescription)
@@ -200,7 +212,30 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
             throw OllamaBackendError.responseDecoding(endpoint: endpoint, reason: error.localizedDescription)
         }
         try Self.validateEmbeddings(response.embeddings, expectedCount: request.texts.count, endpoint: endpoint)
-        return EmbeddingResult(model: response.model ?? request.model, embeddings: response.embeddings)
+        return EmbeddingResult(
+            model: response.model ?? request.model,
+            embeddings: response.embeddings,
+            embeddingInputProfile: preparedInput.profile
+        )
+    }
+
+    private func preparedEmbeddingInput(
+        for request: EmbeddingRequest
+    ) async throws -> (
+        texts: [String],
+        profile: EmbeddingInputProfile
+    ) {
+        guard request.inputs.contains(where: { $0.role != .plain }) else {
+            return (request.texts, .raw)
+        }
+        let details = try await fetchModelDetails(name: request.model)
+        guard let promptProfile = details.embeddingPromptProfile else {
+            return (request.texts, .raw)
+        }
+        return (
+            request.inputs.map(promptProfile.formattedText),
+            promptProfile.embeddingInputProfile
+        )
     }
 
     private static func mergeModels(
@@ -242,7 +277,8 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
                 remoteModel: model.remoteModel,
                 remoteHost: model.remoteHost,
                 contextWindowTokens: details.contextWindowTokens,
-                persistentEmbeddingRevision: model.persistentEmbeddingRevision
+                persistentEmbeddingRevision: model.persistentEmbeddingRevision,
+                embeddingInputProfile: details.embeddingInputProfile
             ))
         }
 
@@ -255,6 +291,13 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
                 }
                 if result[existingIndex].contextWindowTokens == nil {
                     result[existingIndex].contextWindowTokens = modelDetails(for: model.name, in: detailsByName).contextWindowTokens
+                }
+                if result[existingIndex].embeddingInputProfile == nil {
+                    result[existingIndex].embeddingInputProfile =
+                        modelDetails(
+                            for: model.name,
+                            in: detailsByName
+                        ).embeddingInputProfile
                 }
             } else {
                 if model.source == .cloud {
@@ -278,7 +321,8 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
                     installed: true,
                     running: true,
                     source: model.source,
-                    contextWindowTokens: details.contextWindowTokens
+                    contextWindowTokens: details.contextWindowTokens,
+                    embeddingInputProfile: details.embeddingInputProfile
                 ))
             }
         }
@@ -384,9 +428,20 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         guard ModelInfo.areValidCapabilities(capabilities) else {
             throw OllamaModelDetailsError.malformedResponse
         }
+        let embeddingPromptProfile = OllamaEmbeddingPromptProfile(
+            capabilities: capabilities,
+            architecture: response.architecture,
+            embeddingLength: response.embeddingLength
+        )
         return OllamaModelDetails(
             capabilities: capabilities,
-            contextWindowTokens: response.contextWindowTokens
+            contextWindowTokens: response.contextWindowTokens,
+            embeddingPromptProfile: embeddingPromptProfile,
+            embeddingInputProfile: capabilities.contains(where: {
+                $0 == "embedding" || $0 == "embed"
+            })
+                ? embeddingPromptProfile?.embeddingInputProfile ?? .raw
+                : nil
         )
     }
 
@@ -1252,6 +1307,8 @@ private struct OllamaShowRequest: Encodable {
 private struct OllamaModelDetails: Sendable {
     var capabilities: [String] = []
     var contextWindowTokens: Int?
+    var embeddingPromptProfile: OllamaEmbeddingPromptProfile?
+    var embeddingInputProfile: EmbeddingInputProfile?
     var isTrusted = true
 
     static let untrusted = OllamaModelDetails(isTrusted: false)
@@ -1261,9 +1318,50 @@ private struct OllamaModelDetails: Sendable {
     }
 }
 
-private struct OllamaShowResponse: Decodable {
+enum OllamaEmbeddingPromptProfile: Sendable {
+    case embeddingGemma
+
+    init?(
+        capabilities: [String],
+        architecture: String?,
+        embeddingLength: Int?
+    ) {
+        guard capabilities.contains(where: {
+            $0 == "embedding" || $0 == "embed"
+        }),
+        architecture == "gemma3",
+        embeddingLength == 768 else {
+            return nil
+        }
+        self = .embeddingGemma
+    }
+
+    func formattedText(_ input: EmbeddingInput) -> String {
+        switch input.role {
+        case .plain:
+            return input.text
+        case .retrievalQuery:
+            return "task: search result | query: \(input.text)"
+        case .retrievalDocument:
+            return "title: none | text: \(input.text)"
+        case .semanticSimilarity:
+            return "task: sentence similarity | query: \(input.text)"
+        }
+    }
+
+    var embeddingInputProfile: EmbeddingInputProfile {
+        switch self {
+        case .embeddingGemma:
+            return .embeddingGemma
+        }
+    }
+}
+
+struct OllamaShowResponse: Decodable {
     var capabilities: [String]
     var contextWindowTokens: Int?
+    var architecture: String?
+    var embeddingLength: Int?
 
     enum CodingKeys: String, CodingKey {
         case capabilities
@@ -1278,6 +1376,8 @@ private struct OllamaShowResponse: Decodable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         capabilities = try container.decodeIfPresent([String].self, forKey: .capabilities) ?? []
+        architecture = nil
+        embeddingLength = nil
 
         do {
             var candidates = try Self.contextWindowValues(
@@ -1305,6 +1405,54 @@ private struct OllamaShowResponse: Decodable {
         } catch {
             contextWindowTokens = nil
         }
+
+        guard container.contains(.modelInfo) else { return }
+        let modelInfo = try container.nestedContainer(
+            keyedBy: ModelInfoCodingKey.self,
+            forKey: .modelInfo
+        )
+        if modelInfo.contains(.generalArchitecture) {
+            guard try !modelInfo.decodeNil(
+                forKey: .generalArchitecture
+            ) else {
+                throw OllamaCatalogValidationError
+                    .invalidEmbeddingProfileMetadata
+            }
+            architecture = try modelInfo.decode(
+                String.self,
+                forKey: .generalArchitecture
+            )
+        }
+        if let architecture,
+           architecture.isEmpty ||
+            architecture.unicodeScalars.count > 128 {
+            throw OllamaCatalogValidationError
+                .invalidEmbeddingProfileMetadata
+        }
+        if modelInfo.contains(.gemma3EmbeddingLength) {
+            guard
+                let value = try modelInfo.decodeIfPresent(
+                    Decimal.self,
+                    forKey: .gemma3EmbeddingLength
+                ),
+                let validated = Self.validatedEmbeddingLength(value)
+            else {
+                throw OllamaCatalogValidationError
+                    .invalidEmbeddingProfileMetadata
+            }
+            embeddingLength = validated
+        }
+    }
+
+    private static func validatedEmbeddingLength(
+        _ value: Decimal
+    ) -> Int? {
+        guard value >= 1, value <= 65_536 else { return nil }
+        var candidate = value
+        var integral = Decimal()
+        NSDecimalRound(&integral, &candidate, 0, .down)
+        guard integral == value else { return nil }
+        return NSDecimalNumber(decimal: integral).intValue
     }
 
     private static func contextWindowValues<Key: CodingKey>(
@@ -1343,6 +1491,12 @@ private struct OllamaShowResponse: Decodable {
 }
 
 private struct ModelInfoCodingKey: CodingKey, Hashable {
+    static let generalArchitecture = Self(
+        stringValue: "general.architecture"
+    )!
+    static let gemma3EmbeddingLength = Self(
+        stringValue: "gemma3.embedding_length"
+    )!
     static let contextWindowKeys = [
         Self(stringValue: "llama.context_length")!,
         Self(stringValue: "general.context_length")!,
@@ -1368,6 +1522,7 @@ private enum OllamaCatalogValidationError: Error, LocalizedError {
     case conflictingContextWindowAliases
     case invalidCapabilities
     case invalidContextWindow
+    case invalidEmbeddingProfileMetadata
     case tooManyModels
 
     var errorDescription: String? {
@@ -1380,6 +1535,8 @@ private enum OllamaCatalogValidationError: Error, LocalizedError {
             return "The provider returned invalid model capabilities."
         case .invalidContextWindow:
             return "The provider returned an invalid context window."
+        case .invalidEmbeddingProfileMetadata:
+            return "The provider returned invalid embedding-profile metadata."
         case .tooManyModels:
             return "The provider returned too many model rows."
         }

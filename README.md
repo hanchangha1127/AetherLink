@@ -651,7 +651,7 @@ same strict local ad-hoc seal used by development packaging. It is a local
 qualification artifact, not Developer ID signing, notarization, or a DMG.
 Both this package and the Android Release variant read
 `release/version-ledger.tsv`; its current entry is marketing version `1.0.0`
-and shared build number `3`. Android Debug deliberately remains `0.1.0+1`.
+and shared build number `9`. Android Debug deliberately remains `0.1.0+1`.
 Its Release metadata is backed by a lazy Gradle provider, so Debug still
 configures and builds when the release ledger is unavailable; a Release task
 validates the ledger's LF-only printable-ASCII/tab byte format when it needs
@@ -697,7 +697,7 @@ release IDs are immutable: the packager refuses to replace an existing ID with
 different bytes.
 
 The current output is
-`dist/releases/aetherlink-1.0.0+6-local-v1/`. It contains one canonical
+`dist/releases/aetherlink-1.0.0+9-local-v1/`. It contains one canonical
 normalized-input ZIP, an identical external manifest, and a ZIP SHA-256
 sidecar.
 Android Release is unsigned and `arm64-v8a`-only; the macOS app is a thin
@@ -707,32 +707,58 @@ normalization; `seeds.txt`, `mapping.prt`, and extracted configuration roots
 use their separately declared normalizations while retaining the checked
 payload meaning.
 
-The Build 6 qualification runner created two isolated clean lane worktrees
+The Build 9 qualification runner created two isolated lane worktrees from one
+239-file `dirty-content-snapshot`
 whose source-root UTF-8 byte lengths were 101 and 109. With the same host,
 fixed toolchains, paired clones of one byte-identical Gradle seed, and a fixed
-canonical Swift scratch policy, both lanes produced the exact 164,177,236-byte
+canonical Swift scratch policy, two complete A/B runs produced the exact
+165,065,657-byte
 ZIP
-`ac5294b7af4e8b5393ff1d0b6e2f60b39afc40bce0696549e4e9e6b871d919d4`
-and the exact 10,328-byte manifest
-`4dab491197abc0acfbd71dd794d4bb11f84b924f3253bcfbb85f6f3c161be527`.
-The 17,674-byte result
-`dist/reproducibility/clean-release-two-root-v2.json` records exact lane
+`e2cbd350bf031d04b6e29054ceb387bbe453e60244b47919c54f6d3c13ba7e1a`
+and the exact 11,918-byte manifest
+`56380c239f916ba9d400cc73824ebbda111f61e0baa4d0dc66e8d14e044d05a5`.
+The 19,744-byte result
+`dist/reproducibility/aetherlink-1.0.0+9-local-v1-two-root-v2.json` records exact lane
 comparison, immutable local publication, and independent current-source
-readback. This establishes bounded same-host reproducibility for that recorded
-unequal-length pair, not arbitrary-root, cross-host, clean-machine,
-signed-artifact, or physical-device qualification. Immutable builds 1 through
-5 remain available for historical readback. The verifier cross-binds every
+readback. The 19,743-byte
+`dist/reproducibility/aetherlink-1.0.0+9-local-v1-two-root-v2-confirmation.json`
+has SHA-256
+`eeac49b926261a5cfaed806b4db6e03b3a9e4028e55cbcf7a26408d466053246`
+and recorded `alreadyMatched=true`. The claim is limited to the two recorded
+successful pairs, not variance-free arbitrary repeats,
+arbitrary-root, cross-host, clean-machine, signed-artifact, or physical-device
+qualification. The Git commit alone cannot reconstruct the dirty release
+snapshot. Immutable Builds 1 through 8 remain available for historical
+readback. The verifier cross-binds every
 recorded Gradle lock identity to the archived source inventory and keeps
 current and historical readback modes mutually exclusive.
 
-A separate post-publication macOS lifecycle smoke now reads back that exact
-Build 6 ZIP, extracts its packaged app into a temporary root, and completes two
+Build 9 preserves compliance profile `aetherlink-release-compliance-v2` and four
+deterministic members: a
+350-coordinate Gradle lock/POM catalog, fixed creation metadata, a text
+third-party license inventory, and SPDX 2.3 JSON. It emits 692 exact
+package-to-root roles: 202 runtime, 155 build dependency, and 335 build tool.
+Build 8 remains readable under the same exact-role V2 contract. Build 7 remains
+readable under its frozen profile-less, precedence-compressed
+350-relationship V1 contract. The catalog retains 379 POM URL/size/SHA records,
+parsed declarations, and zero Swift external packages, but not original POM
+bodies or license/NOTICE texts. Offline readback does not re-fetch or re-parse
+those originals, so attribution completeness, original POM authenticity,
+binary/source coverage, and legal compatibility are not claimed. Third-party
+license conclusions remain `NOASSERTION`.
+Refresh public POM evidence only as an explicit maintenance action with
+`python3 -B script/generate_release_compliance.py refresh`, then validate the
+checked-in catalog offline with
+`python3 -B script/generate_release_compliance.py check`.
+
+A post-publication macOS lifecycle smoke reads back the exact current Build 9
+ZIP, extracts its packaged app into a temporary root, and completes two
 AppKit finished-launch → minimum five-second observation → identity-rechecked
 exact-PID termination cycles. Both runs exit zero. The QA-only sandbox uses a
 temporary Core Foundation user home, denies non-temporary writes and AF_INET
 binds, and has no unisolated fallback. Its exact 1,311-byte result is
-`dist/lifecycle/macos-packaged-app-build-6-lifecycle-v1.json`, SHA-256
-`30d90827182e353d9f49fd1fa9edde846bc073f1af5113548f913c7b8af34447`.
+`dist/lifecycle/macos-packaged-app-build-9-lifecycle-v1.json`, SHA-256
+`aad796ee3c768e37953f18eeea0e6642107750c3a8c398df798a46e96aabab53`.
 Expected Application Support files were present after each run, but the
 identity-file override used the in-memory fallback; the smoke therefore makes
 no identity-persistence or state-recovery claim. It also does not qualify
@@ -764,7 +790,7 @@ Current upstream JNI dependencies arrive pre-stripped; the manifest records
 that native-symbol archive as unavailable instead of claiming it was retained.
 This workflow does not sign, install, upload, launch, or deploy either app.
 The consolidated
-[1.0.0 build 6 local qualification record](docs/releases/1.0.0-build-6-local-v1.md)
+[1.0.0 build 9 local qualification record](docs/releases/1.0.0-build-9-local-v1.md)
 defines the current release notes, compatibility matrix, migration boundary,
 known limitations, rollback posture, exact artifact identity, and bounded
 two-root evidence. The fixture-rich
@@ -780,6 +806,15 @@ the diagnostic publication that preceded the first qualified two-root result.
 The
 [build 5 historical record](docs/releases/1.0.0-build-5-local-v1.md) preserves
 the valid equal-length two-root qualification superseded by Build 6. The
+[build 6 historical record](docs/releases/1.0.0-build-6-local-v1.md) preserves
+the archive and packaged-app lifecycle evidence, while its exact standalone
+two-root result bytes were not retained. The
+[build 7 historical record](docs/releases/1.0.0-build-7-local-v1.md) preserves
+the first compliance inventory and its documented precedence-compressed
+relationship limitation superseded by Build 8. The
+[build 8 historical record](docs/releases/1.0.0-build-8-local-v1.md) preserves
+the first exact-role compliance qualification and its recorded repeated-run
+boundary. The
 provider snapshot records official current/previous
 candidates separately from local observations. Both exact Ollama candidates
 passed isolated adapter health, empty-catalog, restart, and stopped-endpoint

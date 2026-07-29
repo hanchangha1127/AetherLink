@@ -3002,17 +3002,27 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 ).map(\.backingSessionID))
             }
             let candidateSessions: [RuntimeChatStoredSession]
+            let semanticMaterialization:
+                RuntimeSemanticChatSessionMaterialization?
             if let embeddingModelID, let query {
                 try beginSemanticSearch(connectionID: sink.connectionID)
                 defer { finishSemanticSearch(connectionID: sink.connectionID) }
-                candidateSessions = try await semanticChatSessions(
+                let materialization = try await semanticChatSessions(
                     ownerDeviceID: ownerDeviceID,
                     limit: materializationLimit,
+                    rerankVisibleLimit: limit,
+                    rerankExcludedSessionIDs:
+                        researchBackingSessionIDsBeforeMaterialization,
                     includeArchived: includeArchived,
                     query: query,
                     embeddingModelID: embeddingModelID
                 )
+                semanticMaterialization = materialization
+                candidateSessions =
+                    materialization.rerankedSessions
+                    ?? materialization.primarySessions
             } else {
+                semanticMaterialization = nil
                 candidateSessions = try chatEventStore.listSessions(
                     ownerDeviceID: ownerDeviceID,
                     limit: materializationLimit,
@@ -3064,9 +3074,36 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     ).map(\.backingSessionID))
                     let researchBackingSessionIDs = researchBackingSessionIDsAfterSecondSnapshot
                         .union(finalResearchBackingSessionIDs)
-                    let sessions = Array(candidateSessions.lazy
+                    let publicationCandidateSessions:
+                        [RuntimeChatStoredSession]
+                    if
+                        let semanticMaterialization,
+                        semanticMaterialization.rerankedSessions != nil,
+                        researchBackingSessionIDs.intersection(
+                            semanticMaterialization.candidateSessionIDs
+                        ) != semanticMaterialization
+                            .rerankExcludedSessionIDs
+                    {
+                        publicationCandidateSessions =
+                            semanticMaterialization.primarySessions
+                    } else {
+                        publicationCandidateSessions = candidateSessions
+                    }
+                    let visibleCandidateSessions = Array(
+                        publicationCandidateSessions.lazy
                         .filter { !researchBackingSessionIDs.contains($0.sessionID) }
-                        .prefix(visibleMaterializationLimit))
+                        .prefix(visibleMaterializationLimit)
+                    )
+                    let sessions = visibleCandidateSessions
+                        .enumerated()
+                        .map { offset, storedSession in
+                            var session = storedSession
+                            if var search = session.search {
+                                search.rank = offset + 1
+                                session.search = search
+                            }
+                            return session
+                        }
                     if supportsAuthoritativeSync {
                         guard let initialRequestAuthority else {
                             throw RuntimeChatSessionAuthoritativeSyncError.authenticationChanged
@@ -3199,12 +3236,16 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private func semanticChatSessions(
         ownerDeviceID: String?,
         limit: Int,
+        rerankVisibleLimit: Int,
+        rerankExcludedSessionIDs: Set<String>,
         includeArchived: Bool,
         query: String,
         embeddingModelID: String
-    ) async throws -> [RuntimeChatStoredSession] {
+    ) async throws -> RuntimeSemanticChatSessionMaterialization {
         try Task.checkCancellation()
-        guard limit > 0 else { return [] }
+        guard limit > 0 else {
+            return .empty
+        }
         let sources = try chatEventStore.listSemanticSearchSources(
             ownerDeviceID: ownerDeviceID,
             sessionLimit: RuntimeSemanticChatSessionSearch.maximumCandidateCount,
@@ -3218,7 +3259,9 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             documentByteLimit: modelDescriptor?.documentByteLimit
                 ?? RuntimeSemanticChatSessionSearch.fallbackDocumentUTF8Bytes
         )
-        guard !candidates.isEmpty else { return [] }
+        guard !candidates.isEmpty else {
+            return .empty
+        }
 
         var cacheKeys = semanticEmbeddingCacheKeys(
             ownerDeviceID: ownerDeviceID,
@@ -3241,9 +3284,10 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             }
         }
 
-        var result = try await semanticEmbeddingResult(
+        var result = try await semanticRetrievalEmbeddingResult(
             modelID: embeddingModelID,
-            texts: [query] + missingCandidateIndexes.map { candidates[$0].document }
+            query: query,
+            documents: missingCandidateIndexes.map { candidates[$0].document }
         )
         guard result.embeddings.count == missingCandidateIndexes.count + 1,
               let firstQueryEmbedding = result.embeddings.first else {
@@ -3270,15 +3314,18 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     documentByteLimit: descriptorAfterEmbedding?.documentByteLimit
                         ?? RuntimeSemanticChatSessionSearch.fallbackDocumentUTF8Bytes
                 )
-                guard !candidates.isEmpty else { return [] }
+                guard !candidates.isEmpty else {
+                    return .empty
+                }
                 cacheKeys = semanticEmbeddingCacheKeys(
                     ownerDeviceID: ownerDeviceID,
                     descriptor: descriptorAfterEmbedding,
                     candidates: candidates
                 )
-                result = try await semanticEmbeddingResult(
+                result = try await semanticRetrievalEmbeddingResult(
                     modelID: embeddingModelID,
-                    texts: [query] + candidates.map(\.document)
+                    query: query,
+                    documents: candidates.map(\.document)
                 )
                 guard result.embeddings.count == candidates.count + 1,
                       let refreshedQueryEmbedding = result.embeddings.first else {
@@ -3309,9 +3356,10 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             resolvedCandidateEmbeddings.contains(where: {
                 $0.count != queryEmbedding.count || !$0.isValidSemanticEmbedding
             }) {
-            result = try await semanticEmbeddingResult(
+            result = try await semanticRetrievalEmbeddingResult(
                 modelID: embeddingModelID,
-                texts: [query] + candidates.map(\.document)
+                query: query,
+                documents: candidates.map(\.document)
             )
             guard result.embeddings.count == candidates.count + 1,
                   let refreshedQueryEmbedding = result.embeddings.first else {
@@ -3334,12 +3382,52 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             }
         }
         do {
-            let sessions = try RuntimeSemanticChatSessionSearch.rankedSessions(
-                candidates: candidates,
-                queryEmbedding: queryEmbedding,
-                candidateEmbeddings: resolvedCandidateEmbeddings,
-                limit: limit
+            let primaryRanking = try
+                RuntimeSemanticChatSessionSearch
+                    .primaryRanking(
+                        candidates: candidates,
+                        queryEmbedding: queryEmbedding,
+                        candidateEmbeddings: resolvedCandidateEmbeddings
+                    )
+            let rerankExcludedIndexes = Set(
+                primaryRanking.orderedIndexes.filter {
+                    rerankExcludedSessionIDs.contains(
+                        candidates[$0].session.sessionID
+                    )
+                }
             )
+            let rerankResult = try await
+                semanticSecondStageRerankedChatCandidateIndexes(
+                    modelID: embeddingModelID,
+                    descriptor: persistenceDescriptor,
+                    query: query,
+                    candidates: candidates,
+                    primaryOrderedIndexes:
+                        primaryRanking.orderedIndexes,
+                    primaryScoresByCandidateIndex:
+                        primaryRanking.scoresByCandidateIndex,
+                    rerankExcludedIndexes: rerankExcludedIndexes,
+                    limit: rerankVisibleLimit
+                )
+            let orderedIndexes = rerankResult.orderedIndexes
+            if !rerankResult.primaryPersistenceRemainsValid {
+                persistenceDescriptor = nil
+            }
+            let primarySessions = try RuntimeSemanticChatSessionSearch
+                .rankedSessions(
+                    candidates: candidates,
+                    orderedIndexes: primaryRanking.orderedIndexes,
+                    limit: limit
+                )
+            let rerankedSessions = orderedIndexes ==
+                primaryRanking.orderedIndexes
+                ? nil
+                : try RuntimeSemanticChatSessionSearch
+                    .rankedSessions(
+                        candidates: candidates,
+                        orderedIndexes: orderedIndexes,
+                        limit: limit
+                    )
             try Task.checkCancellation()
             if let descriptor = persistenceDescriptor,
                let modelFingerprint = descriptor.modelFingerprint {
@@ -3362,7 +3450,18 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     })
                 }
             }
-            return sessions
+            return RuntimeSemanticChatSessionMaterialization(
+                primarySessions: primarySessions,
+                rerankedSessions: rerankedSessions,
+                candidateSessionIDs: Set(
+                    candidates.map(\.session.sessionID)
+                ),
+                rerankExcludedSessionIDs: Set(
+                    rerankExcludedIndexes.map {
+                        candidates[$0].session.sessionID
+                    }
+                )
+            )
         } catch is RuntimeSemanticChatSessionSearchError {
             throw semanticSearchInvalidEmbeddingResponseError()
         }
@@ -3421,6 +3520,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
         return lhs.canonicalQualifiedModelID == rhs.canonicalQualifiedModelID &&
             lhs.modelFingerprint == rhs.modelFingerprint &&
+            lhs.embeddingInputProfile == rhs.embeddingInputProfile &&
             lhs.documentByteLimit == rhs.documentByteLimit
     }
 
@@ -3428,6 +3528,10 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         _ result: EmbeddingResult,
         matches descriptor: RuntimeSemanticEmbeddingModelDescriptor
     ) -> Bool {
+        if let expectedProfile = descriptor.embeddingInputProfile,
+           result.embeddingInputProfile != expectedProfile {
+            return false
+        }
         if let qualified = ModelProvider.splitQualifiedModelID(result.model) {
             let canonicalQualifiedResultModelID = qualified.provider.qualifiedModelID(
                 RuntimeSemanticChatSessionSearch.canonicalModelName(qualified.modelID)
@@ -3518,16 +3622,137 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func semanticEmbeddingResult(
         modelID: String,
-        texts: [String]
+        inputs: [EmbeddingInput]
     ) async throws -> EmbeddingResult {
         try Task.checkCancellation()
         do {
-            let result = try await backend.embed(request: EmbeddingRequest(model: modelID, texts: texts))
+            let result = try await backend.embed(
+                request: EmbeddingRequest(model: modelID, inputs: inputs)
+            )
             try Task.checkCancellation()
             return result
         } catch {
             try Task.checkCancellation()
             throw error
+        }
+    }
+
+    private func semanticEmbeddingResult(
+        modelID: String,
+        texts: [String],
+        role: EmbeddingInputRole
+    ) async throws -> EmbeddingResult {
+        try await semanticEmbeddingResult(
+            modelID: modelID,
+            inputs: texts.map { EmbeddingInput(text: $0, role: role) }
+        )
+    }
+
+    private func semanticRetrievalEmbeddingResult(
+        modelID: String,
+        query: String,
+        documents: [String]
+    ) async throws -> EmbeddingResult {
+        try await semanticEmbeddingResult(
+            modelID: modelID,
+            inputs: [
+                EmbeddingInput(text: query, role: .retrievalQuery)
+            ] + documents.map {
+                EmbeddingInput(text: $0, role: .retrievalDocument)
+            }
+        )
+    }
+
+    private func semanticSecondStageRerankedChatCandidateIndexes(
+        modelID: String,
+        descriptor: RuntimeSemanticEmbeddingModelDescriptor?,
+        query: String,
+        candidates: [RuntimeSemanticChatSessionCandidate],
+        primaryOrderedIndexes: [Int],
+        primaryScoresByCandidateIndex: [Double],
+        rerankExcludedIndexes: Set<Int>,
+        limit: Int
+    ) async throws -> (
+        orderedIndexes: [Int],
+        primaryPersistenceRemainsValid: Bool
+    ) {
+        guard
+            let descriptor,
+            descriptor.modelFingerprint != nil,
+            descriptor.embeddingInputProfile == .embeddingGemma
+        else {
+            return (primaryOrderedIndexes, true)
+        }
+        let rerankCandidateIndexes = RuntimeSemanticChatSessionSearch
+            .secondStageRerankCandidateIndexes(
+                primaryOrderedIndexes: primaryOrderedIndexes,
+                limit: limit,
+                excludedIndexes: rerankExcludedIndexes
+            )
+        guard !rerankCandidateIndexes.isEmpty else {
+            return (primaryOrderedIndexes, true)
+        }
+        let texts = [query] + rerankCandidateIndexes.map {
+            candidates[$0].document
+        }
+        guard
+            texts.count <=
+                RuntimeSemanticDocumentSearch.maximumEmbeddingBatchCount,
+            embeddingBatchFitsRuntimeBudget(
+                texts: texts,
+                embeddingInputProfile: descriptor.embeddingInputProfile,
+                maximumUTF8ByteCount:
+                    RuntimeSemanticDocumentSearch
+                        .maximumEmbeddingBatchUTF8Bytes
+            )
+        else {
+            return (primaryOrderedIndexes, true)
+        }
+
+        do {
+            let result = try await semanticEmbeddingResult(
+                modelID: modelID,
+                texts: texts,
+                role: .semanticSimilarity
+            )
+            guard
+                result.embeddings.count == texts.count,
+                semanticEmbeddingResult(result, matches: descriptor),
+                let queryEmbedding = result.embeddings.first
+            else {
+                return (primaryOrderedIndexes, false)
+            }
+            guard semanticEmbeddingCacheIdentityMatches(
+                descriptor,
+                await semanticEmbeddingModelDescriptor(modelID: modelID)
+            ) else {
+                return (primaryOrderedIndexes, false)
+            }
+            let orderedIndexes = try RuntimeSemanticChatSessionSearch
+                .applyingSecondStageRerank(
+                    primaryOrderedIndexes: primaryOrderedIndexes,
+                    primaryScoresByCandidateIndex:
+                        primaryScoresByCandidateIndex,
+                    rerankCandidateIndexes: rerankCandidateIndexes,
+                    queryEmbedding: queryEmbedding,
+                    candidateEmbeddings: Array(
+                        result.embeddings.dropFirst()
+                    )
+                )
+            return (orderedIndexes, true)
+        } catch {
+            try Task.checkCancellation()
+            let primaryPersistenceRemainsValid =
+                semanticEmbeddingCacheIdentityMatches(
+                    descriptor,
+                    await semanticEmbeddingModelDescriptor(
+                        modelID: modelID
+                    )
+                )
+            return (
+                primaryOrderedIndexes,
+                primaryPersistenceRemainsValid
+            )
         }
     }
 
@@ -3564,11 +3789,21 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             }) else {
                 return nil
             }
+            let adapterPromptUTF8ByteCount =
+                model.embeddingInputProfile?
+                    .maximumAdapterPromptUTF8ByteCount
+                ?? EmbeddingInputRole
+                    .maximumAdapterPromptUTF8ByteCount
             let documentByteLimit: Int
-            if let contextWindowTokens = model.contextWindowTokens, contextWindowTokens > 32 {
+            if let contextWindowTokens = model.contextWindowTokens,
+               contextWindowTokens > adapterPromptUTF8ByteCount {
                 documentByteLimit = min(
                     RuntimeSemanticChatSessionSearch.maximumDocumentUTF8Bytes,
-                    max(1, contextWindowTokens - 32)
+                    max(
+                        1,
+                        contextWindowTokens -
+                            adapterPromptUTF8ByteCount
+                    )
                 )
             } else {
                 documentByteLimit = RuntimeSemanticChatSessionSearch.fallbackDocumentUTF8Bytes
@@ -3582,6 +3817,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     model: model,
                     requestedQualifiedModelID: modelID
                 ),
+                embeddingInputProfile: model.embeddingInputProfile,
                 documentByteLimit: documentByteLimit
             )
         }
@@ -4704,7 +4940,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         let candidates = selection.candidates
         guard descriptor.modelFingerprint != nil ||
                 !semanticDuplicateRequiresMultipleEmbeddingBatches(
-                    documents: candidates.map(\.document)
+                    documents: candidates.map(\.document),
+                    embeddingInputProfile: descriptor.embeddingInputProfile
                 ) else {
             throw BackendError(
                 provider: backend.provider,
@@ -4833,27 +5070,39 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             while index < documents.count,
                   batch.count < RuntimeMemorySemanticDuplicateSuggester.maximumEmbeddingBatchCount {
                 let documentByteCount = documents[index].utf8.count
+                guard let embeddingInputByteCount = embeddingInputUTF8ByteCount(
+                    textUTF8ByteCount: documentByteCount,
+                    embeddingInputProfile: descriptor.embeddingInputProfile
+                ) else {
+                    throw LocalRuntimeRouterError.invalidPayload(
+                        "Selected memory content exceeds the embedding model input budget"
+                    )
+                }
                 guard documentByteCount <= descriptor.documentByteLimit,
-                      documentByteCount <=
+                      embeddingInputByteCount <=
                         RuntimeMemorySemanticDuplicateSuggester.maximumEmbeddingBatchUTF8ByteCount else {
                     throw LocalRuntimeRouterError.invalidPayload(
                         "Selected memory content exceeds the embedding model input budget"
                     )
                 }
                 if !batch.isEmpty,
-                   documentByteCount >
+                   embeddingInputByteCount >
                     RuntimeMemorySemanticDuplicateSuggester.maximumEmbeddingBatchUTF8ByteCount -
                         byteCount {
                     break
                 }
                 batch.append(documents[index])
-                byteCount += documentByteCount
+                byteCount += embeddingInputByteCount
                 index += 1
             }
             guard !batch.isEmpty else {
                 throw semanticSearchInvalidEmbeddingResponseError()
             }
-            let result = try await semanticEmbeddingResult(modelID: modelID, texts: batch)
+            let result = try await semanticEmbeddingResult(
+                modelID: modelID,
+                texts: batch,
+                role: .semanticSimilarity
+            )
             guard semanticEmbeddingResult(result, matches: descriptor),
                   semanticDuplicateEmbeddingsAreValid(
                     result.embeddings,
@@ -4867,7 +5116,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     }
 
     private func semanticDuplicateRequiresMultipleEmbeddingBatches(
-        documents: [String]
+        documents: [String],
+        embeddingInputProfile: EmbeddingInputProfile?
     ) -> Bool {
         guard documents.count <=
                 RuntimeMemorySemanticDuplicateSuggester.maximumEmbeddingBatchCount else {
@@ -4875,15 +5125,52 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
         var byteCount = 0
         for document in documents {
-            let documentByteCount = document.utf8.count
-            guard documentByteCount <=
+            guard let embeddingInputByteCount = embeddingInputUTF8ByteCount(
+                textUTF8ByteCount: document.utf8.count,
+                embeddingInputProfile: embeddingInputProfile
+            ),
+            embeddingInputByteCount <=
                     RuntimeMemorySemanticDuplicateSuggester.maximumEmbeddingBatchUTF8ByteCount -
                         byteCount else {
                 return true
             }
-            byteCount += documentByteCount
+            byteCount += embeddingInputByteCount
         }
         return false
+    }
+
+    private func embeddingInputUTF8ByteCount(
+        textUTF8ByteCount: Int,
+        embeddingInputProfile: EmbeddingInputProfile?
+    ) -> Int? {
+        let adapterPromptUTF8ByteCount =
+            embeddingInputProfile?
+                .maximumAdapterPromptUTF8ByteCount
+            ?? EmbeddingInputRole
+                .maximumAdapterPromptUTF8ByteCount
+        let (result, overflow) = textUTF8ByteCount.addingReportingOverflow(
+            adapterPromptUTF8ByteCount
+        )
+        return overflow ? nil : result
+    }
+
+    private func embeddingBatchFitsRuntimeBudget(
+        texts: [String],
+        embeddingInputProfile: EmbeddingInputProfile?,
+        maximumUTF8ByteCount: Int
+    ) -> Bool {
+        var remainingUTF8ByteCount = maximumUTF8ByteCount
+        for text in texts {
+            guard let inputUTF8ByteCount = embeddingInputUTF8ByteCount(
+                textUTF8ByteCount: text.utf8.count,
+                embeddingInputProfile: embeddingInputProfile
+            ),
+            inputUTF8ByteCount <= remainingUTF8ByteCount else {
+                return false
+            }
+            remainingUTF8ByteCount -= inputUTF8ByteCount
+        }
+        return true
     }
 
     private func semanticDuplicateEmbeddingsAreValid(
@@ -4906,6 +5193,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         guard let rhs else { return false }
         return lhs.canonicalQualifiedModelID == rhs.canonicalQualifiedModelID &&
             lhs.modelFingerprint == rhs.modelFingerprint &&
+            lhs.embeddingInputProfile == rhs.embeddingInputProfile &&
             lhs.documentByteLimit == rhs.documentByteLimit
     }
 
@@ -5019,9 +5307,10 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             }
         }
 
-        var result = try await semanticEmbeddingResult(
+        var result = try await semanticRetrievalEmbeddingResult(
             modelID: embeddingModelID,
-            texts: [query] + missingIndexes.map { candidates[$0].document }
+            query: query,
+            documents: missingIndexes.map { candidates[$0].document }
         )
         guard result.embeddings.count == missingIndexes.count + 1,
               let firstQueryEmbedding = result.embeddings.first,
@@ -5039,9 +5328,10 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             resolvedEmbeddings.contains(where: {
                 $0.count != queryEmbedding.count || !$0.isValidSemanticEmbedding
             }) {
-            result = try await semanticEmbeddingResult(
+            result = try await semanticRetrievalEmbeddingResult(
                 modelID: embeddingModelID,
-                texts: [query] + candidates.map(\.document)
+                query: query,
+                documents: candidates.map(\.document)
             )
             guard result.embeddings.count == candidates.count + 1,
                   let refreshedQueryEmbedding = result.embeddings.first,
@@ -5307,15 +5597,20 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         if !hasStrongModelFingerprint {
             let texts = [query] + candidates.map(\.semanticDocument)
             guard texts.count <= RuntimeSemanticDocumentSearch.maximumEmbeddingBatchCount,
-                  texts.reduce(0, { $0 + $1.utf8.count }) <=
-                    RuntimeSemanticDocumentSearch.maximumEmbeddingBatchUTF8Bytes else {
+                  embeddingBatchFitsRuntimeBudget(
+                    texts: texts,
+                    embeddingInputProfile: descriptor?.embeddingInputProfile,
+                    maximumUTF8ByteCount:
+                        RuntimeSemanticDocumentSearch.maximumEmbeddingBatchUTF8Bytes
+                  ) else {
                 throw LocalRuntimeRouterError.invalidPayload(
                     "Semantic document embedding batch exceeds the runtime input budget"
                 )
             }
-            let result = try await semanticEmbeddingResult(
+            let result = try await semanticRetrievalEmbeddingResult(
                 modelID: embeddingModelID,
-                texts: texts
+                query: query,
+                documents: candidates.map(\.semanticDocument)
             )
             guard result.embeddings.count == texts.count,
                   descriptor.map({ semanticEmbeddingResult(result, matches: $0) }) ?? true,
@@ -5344,7 +5639,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
         let queryResult = try await semanticEmbeddingResult(
             modelID: embeddingModelID,
-            texts: [query]
+            texts: [query],
+            role: .retrievalQuery
         )
         guard queryResult.embeddings.count == 1,
               let queryEmbedding = queryResult.embeddings.first,
@@ -5482,15 +5778,20 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         ) {
             try Task.checkCancellation()
             let texts = batch.map { candidates[$0].semanticDocument }
-            guard texts.reduce(0, { $0 + $1.utf8.count }) <=
-                    RuntimeSemanticDocumentSearch.maximumEmbeddingBatchUTF8Bytes else {
+            guard embeddingBatchFitsRuntimeBudget(
+                texts: texts,
+                embeddingInputProfile: descriptor?.embeddingInputProfile,
+                maximumUTF8ByteCount:
+                    RuntimeSemanticDocumentSearch.maximumEmbeddingBatchUTF8Bytes
+            ) else {
                 throw LocalRuntimeRouterError.invalidPayload(
                     "Semantic document embedding batch exceeds the runtime input budget"
                 )
             }
             let result = try await semanticEmbeddingResult(
                 modelID: embeddingModelID,
-                texts: texts
+                texts: texts,
+                role: .retrievalDocument
             )
             guard result.embeddings.count == texts.count,
                   descriptor.map({ semanticEmbeddingResult(result, matches: $0) }) ?? true else {
@@ -11121,10 +11422,25 @@ private actor RuntimeChatTitleGenerationCoordinator {
     }
 }
 
+private struct RuntimeSemanticChatSessionMaterialization {
+    static let empty = RuntimeSemanticChatSessionMaterialization(
+        primarySessions: [],
+        rerankedSessions: nil,
+        candidateSessionIDs: [],
+        rerankExcludedSessionIDs: []
+    )
+
+    var primarySessions: [RuntimeChatStoredSession]
+    var rerankedSessions: [RuntimeChatStoredSession]?
+    var candidateSessionIDs: Set<String>
+    var rerankExcludedSessionIDs: Set<String>
+}
+
 private struct RuntimeSemanticEmbeddingModelDescriptor: Equatable {
     var providerModelID: String
     var canonicalQualifiedModelID: String
     var modelFingerprint: String?
+    var embeddingInputProfile: EmbeddingInputProfile?
     var documentByteLimit: Int
 }
 

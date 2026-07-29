@@ -475,10 +475,21 @@ final class LMStudioBackendTests: XCTestCase {
             )
         }
 
-        let result = try await backend.embed(request: EmbeddingRequest(
-            model: "text-embedding-nomic",
-            texts: ["first", "second"]
-        ))
+        let result = try await backend.embed(
+            request: EmbeddingRequest(
+                model: "text-embedding-nomic",
+                inputs: [
+                    EmbeddingInput(
+                        text: "first",
+                        role: .retrievalQuery
+                    ),
+                    EmbeddingInput(
+                        text: "second",
+                        role: .retrievalDocument
+                    ),
+                ]
+            )
+        )
 
         XCTAssertEqual(result.model, "text-embedding-nomic")
         XCTAssertEqual(result.embeddings, [[0.1, 0.2], [0.3, 0.4]])

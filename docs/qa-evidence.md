@@ -4,9 +4,143 @@ Last updated: 2026-07-29 KST.
 
 This document separates current verification evidence from historical captures.
 
-## 2026-07-29 Local V1 Build 6 Packaged macOS Lifecycle Checklist
+## 2026-07-29 Multilingual Full-Matrix V3 Preparation Checklist
 
-- [x] The runner first performs the independent current Build 6 archive
+- [x] The frozen V2 task, Swift scorer/live assertion, Python runner, schema-4
+  fixture, and observed `qualityGatePassed=false` result remain unchanged.
+  Exact V2 scorer and task SHA-256 checks pass.
+- [x] The separate V3 scorer validates both 80-vector maps before evaluating all
+  80 ranking comparisons and all 80 repeatability comparisons. Quality failures
+  accumulate; invalid shape, dimension, finite-value, or zero-vector input still
+  fails structurally.
+- [x] Ranking failure output is limited to the 20 frozen scenarios and records
+  only locale, ordinal, and failed batch ordinals. Repeatability output is
+  limited to 80 locale/input ordinals. Per-locale counts and all aggregate
+  counts are derived and cross-validated.
+- [x] The canonical marker retains no task ID/text, model name, vector,
+  dimension, raw score, provider output, path, process identifier, or base URL.
+- [x] The opt-in live assertion emits its marker only after confirmed unload,
+  catalog identity preservation, installed/not-running state, and final health.
+- [x] The schema-5 runner requires one exact passed V3 XCTest and one marker,
+  rejects duplicate JSON keys, bool-as-int counts, unknown fields, duplicate or
+  noncanonical coordinates, count/gate drift, retained inputs, source/task or
+  snapshot drift, and cleanup failures.
+- [x] Seven V3 Swift tests pass with one expected live skip; frozen V2 plus V3
+  passes 17 tests with two expected skips. Combined V2/V3 Python validation
+  passes 18 tests.
+- [ ] No V3 live model observation was executed. Japanese, Simplified Chinese,
+  French, and repeatability results for the installed candidate therefore
+  remain unknown, and V2 remains a failed partial observation rather than a
+  passing multilingual gate.
+- [ ] No physical device, provider/model load, download, catalog mutation,
+  signing, deployment, or production-readiness claim is made. Security work
+  remains excluded.
+
+## 2026-07-29 Unreleased Two-Stage Semantic Chat Search Checklist
+
+- [x] Retrieval query/document ranking remains the first stage. A second
+  semantic-similarity request is enabled only for a strong model revision and
+  the recognized EmbeddingGemma input profile.
+- [x] The visible-limit-based rerank pool is bounded to 8 through 32 available
+  candidates at four times the requested limit; known research backing
+  sessions are excluded from pool selection.
+- [x] Second-stage scores reorder only primary groups within an inclusive 0.05
+  cosine window. Stable scaled cosine avoids finite-component norm overflow,
+  the exact boundary is covered, and a strong primary winner remains fixed.
+- [x] Second-stage vectors are not cached. Failure returns primary order,
+  cancellation propagates, and descriptor/profile drift returns primary order
+  while suppressing a stale retrieval-cache write.
+- [x] A research-membership change at the final coordinated snapshot selects
+  the separately retained primary materialization before filtering, and
+  published semantic ranks are renumbered from one after filtering.
+- [x] Sixteen focused tests and the post-review 544-test broad router/search
+  rerun pass with zero failures.
+- [x] The post-edit full Swift run executes 2,066 tests with zero failures and
+  ten expected opt-in/live skips in 310.6 seconds.
+- [ ] The frozen five-locale V2 gate remains an observed failure at Korean
+  scenario ordinal 2 on both exact candidates. The reranker is separate product
+  behavior and is not passing multilingual embedding qualification.
+- [x] The V2 fixture retains its original router/fingerprint source digests.
+  Its live runner rejects current product-source drift, so this work neither
+  reran nor relabeled the old observation.
+- [ ] No live provider, model load/download, physical device, camera QR,
+  installation, signing, deployment, or production-readiness claim is made.
+  Security work remains excluded.
+- [ ] Build 9 is still the latest immutable ledger entry, but its source-bound
+  snapshot predates this worktree. Its archive can be checked without comparing
+  current source, and that 29-payload-member readback passes; these changes
+  require a later source-bound release build.
+
+## 2026-07-29 Local V1 Build 9 Prior Source-Bound Release And Lifecycle Checklist
+
+- [x] `release/version-ledger.tsv` ends at `1.0.0+9`; Build 9 is current and
+  Builds 1 through 8 remain historical.
+- [x] The archive binds the settled role-aware embedding source to a 239-file
+  `dirty-content-snapshot` with SHA-256
+  `22e26f5ed62be9b7badcc01ff76db91f436d0a0cde9ad1587a6c27588962a5ec`.
+- [x] Two complete A/B runs at 101- and 109-byte source roots produced the same
+  165,065,657-byte ZIP SHA-256
+  `e2cbd350bf031d04b6e29054ceb387bbe453e60244b47919c54f6d3c13ba7e1a`,
+  identical sidecars, and identical bytes and metadata for all 30 ZIP entries.
+- [x] The 19,744-byte reproducibility result has SHA-256
+  `4342dac875e9a98af92c810e289bc37969c3df4f77ab4b3af44713945b5f5414`
+  and records immutable publication plus independent current-source readback.
+- [x] The 19,743-byte confirmation has SHA-256
+  `eeac49b926261a5cfaed806b4db6e03b3a9e4028e55cbcf7a26408d466053246`
+  and records `alreadyMatched=true` for the same archive.
+- [x] Manifest schema 2 preserves compliance profile
+  `aetherlink-release-compliance-v2`, 350 Maven packages, and 692 exact roles:
+  202 runtime, 155 build dependency, and 335 build tool.
+- [x] The Build 9 archive remains the latest ledger entry but its source-bound snapshot predates the current two-stage reranker worktree.
+- [x] The exact Build 9 packaged macOS app reached AppKit finished-launch state,
+  remained alive for at least five seconds, accepted identity-rechecked
+  exact-PID termination, and exited zero in both runs.
+- [x] The 1,311-byte lifecycle result has SHA-256
+  `aad796ee3c768e37953f18eeea0e6642107750c3a8c398df798a46e96aabab53`;
+  sandbox preflight denied AF_INET bind and writes outside the temporary root.
+- [x] PID 59809 and the main Build 4 executable bytes remained untouched before
+  and after the isolated Build 9 lifecycle run.
+- [ ] Proof boundary: this is no-device, same-host, fixed-toolchain/cache
+  release-engineering and bounded packaged-process lifecycle evidence. It does
+  not prove arbitrary repetition, physical-device behavior, camera QR,
+  live-provider behavior, installation, signing, deployment, clean-machine
+  launch, identity persistence, legal compatibility, or production readiness.
+  Security work was excluded.
+- Current readback:
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+9-local-v1 --no-current-source`.
+
+## 2026-07-29 Historical Local V1 Build 7 SPDX And License Inventory Checklist
+
+- [x] The checked-in catalog exactly covers 350 unique coordinates from all six
+  Gradle lock files, 379 POM byte records, and zero external SwiftPM packages.
+- [x] Release generation is offline and adds the catalog, fixed metadata, text
+  inventory, and SPDX 2.3 JSON as four mandatory manifest-schema-2 members.
+- [x] The SPDX document has one AetherLink root, 350 Maven packages, 350
+  precedence-compressed one-per-package relationships, unique PURLs/SPDX IDs,
+  and `filesAnalyzed=false` for every package. That V1 shape omitted additional
+  roles for 200 multi-role packages.
+- [x] All third-party `licenseConcluded` values remain `NOASSERTION`; 25
+  coordinates also retain `licenseDeclared=NOASSERTION`. No binary-artifact or
+  license-compatibility conclusion is claimed.
+- [x] Independent readback reconstructs the SPDX and text bytes, cross-binds
+  six lock identities, and rejects catalog, mapping, PURL, count, relationship,
+  source-identity, and member-byte mutations.
+- [x] Two clean isolated roots at 101 and 109 UTF-8 bytes produced the same
+  164,903,866-byte ZIP SHA-256
+  `f604545b9334f77c724856eab2e054db000b8fb660ca8a0c0182e7b01d941e04`,
+  identical sidecars, and identical bytes for all 30 ZIP entries.
+- [x] The 19,744-byte reproducibility result has SHA-256
+  `ed1b07663e3d96cb8ab64690bebed35e74e7039d8cd18c53c5af4584c026b099`
+  and records successful immutable publication plus independent readback.
+- [ ] Proof boundary: this is no-device, same-host, fixed-toolchain/cache,
+  package-inventory evidence. It does not prove legal compatibility,
+  binary/source license review, physical-device behavior, camera QR,
+  live-provider behavior, installation, signing, deployment, or Build 7 app
+  launch. Original POM bodies and license/NOTICE texts were not archived.
+
+## 2026-07-29 Historical Local V1 Build 6 Packaged macOS Lifecycle Checklist
+
+- [x] The runner first performs the independent historical Build 6 archive
   readback, then pins the exact ZIP and manifest SHA-256 identities before
   extracting the packaged app.
 - [x] ZIP extraction accepts only the manifest-bound regular files below
@@ -34,10 +168,10 @@ This document separates current verification evidence from historical captures.
   behavior, signed distribution, physical-device behavior, or production
   readiness.
 
-## 2026-07-29 Local V1 Build 6 Unequal-Length Two-Root Qualification Checklist
+## 2026-07-29 Historical Local V1 Build 6 Unequal-Length Two-Root Qualification Checklist
 
-- [x] `release/version-ledger.tsv` contains append-only builds 1 through 6 and
-  ends at `1.0.0+6`.
+- [x] At publication, `release/version-ledger.tsv` contained append-only builds
+  1 through 6 and ended at `1.0.0+6`; Build 9 is current now.
 - [x] Two isolated clean lane worktrees at source-root UTF-8 byte lengths 101
   and 109 independently built and packaged both platforms with the same host,
   fixed toolchains, paired clones of one byte-identical Gradle seed, and the
@@ -57,15 +191,12 @@ This document separates current verification evidence from historical captures.
   intermediates. A canonical source-location alias removes the final observed
   physical-path-length byte from one generated Swift closure diagnostic site
   while retaining the dSYM.
-- [x] The current build 6 archive includes the terminal-less EOF fix and the
-  settled provider-quality source snapshot. Current source-bound readback
-  passes, and preserved builds 1 through 5 pass explicit historical
-  ledger-prefix readback.
-- [x] The 17,674-byte two-root result JSON has SHA-256
+- [x] Historical source-bound archive readback passes for Build 6 and preserved
+  Builds 1 through 5.
+- [x] The run recorded a 17,674-byte two-root result JSON with SHA-256
   `32ee3613318261f15512f9b4c878732a09038012998048c8a63caf0d2185d91a`
-  and records an empty member-difference set, unequal source-root lengths,
-  source freshness, immutable local publication, and independent main-root
-  readback.
+  and an empty member-difference set, but the exact JSON bytes are not retained.
+  The generic result path now contains a later Build 7 result.
 - [ ] Proof boundary: this is no-device, same-host, fixed-toolchain and
   fixed-cache-snapshot evidence for the recorded 101/109-byte root pair. It
   does not claim arbitrary roots or path lengths, cross-host equivalence,
@@ -114,10 +245,18 @@ This document separates current verification evidence from historical captures.
   scenarios and 16 texts per locale, two permuted 80-text batches, and the
   predeclared 200-basis-point positive-margin and 9,990-basis-point
   repeatability thresholds.
+- [x] The shared embedding request now carries explicit plain,
+  retrieval-query, retrieval-document, and semantic-similarity roles.
+  Aggregate routing preserves them; runtime search and duplicate-review paths
+  assign the intended roles; recognized Ollama profile metadata selects the
+  recommended prompt family; present-null or malformed metadata fails closed;
+  and profile-aware per-input/batch budgeting plus a V3 model fingerprint bind
+  the effective adapter profile before cache reuse.
 - [x] Both exact Ollama candidates completed and shape-validated both 80-text
-  batches, passed all four English rankings and one Korean ranking, then failed
-  the positive-margin check at Korean scenario ordinal 2. Japanese, Simplified
-  Chinese, French, and repeatability were not evaluated after failure.
+  role-aware batches, passed all four English rankings and one Korean ranking,
+  then still failed the positive-margin check at Korean scenario ordinal 2.
+  Japanese, Simplified Chinese, French, and repeatability were not evaluated
+  after failure.
 - [x] No task or threshold was weakened after observing the result. The
   canonical fixture explicitly records `qualityGatePassed: false` and
   `resultStatus: observed-quality-failure`.
@@ -127,9 +266,13 @@ This document separates current verification evidence from historical captures.
 - [x] Canonical evidence retains only the failed locale and ordinal. It excludes
   model names, task text and IDs, vectors, dimensions, cosine/margin scores,
   provider output, paths, process identifiers, and base URLs.
-- [x] Focused Swift and Python tests cover exact source/task hashes, closed
-  schema, locale counts, NFC/Unicode boundaries, scoring and failure
-  projection, raw and escaped input/ID non-retention, source drift,
+- [x] Schema-4 evidence binds the exact `0.32.5` selection source, embedding
+  request contract, Ollama adapter, aggregate role preservation, runtime role
+  assignment, semantic fingerprint, Swift scorer/live assertion, recovery
+  assertion, base runner, and frozen task. Focused Swift and Python tests cover
+  role preservation, prompt formatting, cache separation, exact source/task
+  hashes, closed schema, locale counts, NFC/Unicode boundaries, scoring and
+  failure projection, raw and escaped input/ID non-retention, source drift,
   semantic-before-recovery order, cleanup-error priority, and the bounded
   regular UTF-8 log with exactly one matching XCTest start/failure plus one
   closed locale/ordinal diagnostic.
@@ -3388,7 +3531,86 @@ JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_
 - No-device evidence does not prove physical Android rendering, TalkBack/VoiceOver traversal, optical/camera QR scan reliability, live provider-backed chat/cancel or chat-complete, or real different-network runtime connectivity.
 - New `artifacts/*.png` and `artifacts/*.xml` files are ignored by default so stale generated captures are not accidentally committed.
 
-## 2026-07-29 Local V1 Build 6 Packaged macOS Lifecycle Evidence
+## 2026-07-29 Historical Local V1 Build 8 Exact-Role Compliance Evidence
+
+- Proof boundary: the Build 8 archive proves exact no-device compliance
+  rendering, package/POM catalog projection, recorded same-host two-root
+  equality, and independent byte readback for the successful runs.
+- Device/runtime state: PID 59809 remained alive on the unchanged main Build 4
+  app. Build 8 was assembled only in isolated roots and was not launched. No
+  physical Android device, camera QR, UI traversal, live-provider interaction,
+  installation, or real different-network path was exercised.
+- Compliance evidence: profile `aetherlink-release-compliance-v2` and
+  `schemaVersion=2` emit 692 exact role relationships over 350 packages:
+  202 runtime, 155 build dependency, and 335 build tool. The frozen Build 7 V1
+  reader still accepts its historical 350 precedence-compressed relationships.
+- Source/evidence boundary: the archive binds a 239-file
+  `dirty-content-snapshot`; the commit alone cannot reconstruct its bytes.
+  Original POM bodies and license/NOTICE texts are not archived, and offline
+  readback does not re-fetch or re-parse them.
+- Reproducibility evidence: two full A/B runs at 101- and 109-byte source roots
+  produced the same 164,953,388-byte ZIP SHA-256
+  `721f34710af236191bfab13c8e015f336f06a6e69dad66fdc23e8bd21bfab6a2`,
+  manifest, checksum, metadata, and member bytes. Primary result SHA-256 is
+  `ef6dca809232e83a6a5399c6b5a8c1ca1693cd3c08629add2665f144587407ac`;
+  confirmation SHA-256 is
+  `924956aaf7c61d29b7368b91c8c5c324b6eda0f5550a4cd0b4c0811b56650e59`.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.6 Sol subagents supplied
+  independent tests and evidence-boundary review.
+- Caveat: one earlier A/B attempt did not publish after lane B macOS executable,
+  dSYM, and relocation YAML variance, and its failed JSON bytes were not
+  retained. The two recorded successful pairs do not establish arbitrary
+  repeated same-host variance-free output, legal compatibility, attribution
+  completeness, physical behavior, production signing, clean-machine launch,
+  deployment, or Build 8 runtime lifecycle. Security work was excluded.
+
+Verification commands:
+
+- `python3 -B script/generate_release_compliance.py check`
+- `python3 -B -m unittest script.test_release_compliance script.test_release_artifact_archive script.test_run_clean_release_reproducibility`
+- `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+8-local-v1 --historical`
+- `python3 -B script/check_docs_hygiene.py`
+- `python3 -B -m unittest script.test_documentation_handoff_guards`
+- `git diff --check`
+
+## 2026-07-29 Historical Local V1 Build 7 SPDX And License Inventory Evidence
+
+- Proof boundary: the Build 7 archive proves exact no-device package/POM
+  inventory generation and same-host two-root equality for the recorded
+  toolchains, Gradle cache seed, Swift scratch policy, and 101/109-byte roots.
+- Device/runtime state: PID 59809 remained alive on the unchanged main Build 4
+  app throughout the run. Build 7 was assembled in isolated roots. No physical
+  Android device, camera QR, UI traversal, live-provider interaction, app
+  installation, or real different-network path was exercised.
+- Catalog evidence: 350 Gradle-locked Maven packages, 379 POM byte identities,
+  and zero Swift external packages are exact-covered. The four compliance
+  members are independently regenerated and byte-checked without release-time
+  network access.
+- SPDX evidence: the document contains 351 packages and 350 relationships.
+  Package file analysis is false, third-party license conclusions remain
+  `NOASSERTION`, and unresolved declarations are preserved rather than guessed.
+- Reproducibility evidence: both lanes produced the exact 164,903,866-byte ZIP
+  SHA-256
+  `f604545b9334f77c724856eab2e054db000b8fb660ca8a0c0182e7b01d941e04`,
+  with identical manifest, checksum, member set, metadata, and bytes.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.6 Sol subagents performed
+  independent read-only G6 gap and schema-compatibility reviews.
+- Caveat: this does not establish legal compatibility, complete binary/source
+  license coverage, arbitrary-root or cross-host reproducibility, physical
+  behavior, production signing, clean-machine launch, deployment, or Build 7
+  runtime lifecycle.
+
+Verification commands:
+
+- `python3 -B script/generate_release_compliance.py check`
+- `python3 -B -m unittest script.test_release_compliance script.test_release_artifact_archive script.test_run_clean_release_reproducibility`
+- `python3 -B script/run_clean_release_reproducibility.py`
+- `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+7-local-v1 --historical`
+- `python3 -B script/check_docs_hygiene.py`
+- `python3 -B -m unittest script.test_documentation_handoff_guards`
+- `git diff --check`
+
+## 2026-07-29 Historical Local V1 Build 6 Packaged macOS Lifecycle Evidence
 
 - Proof boundary: the exact Build 6 ZIP's extracted macOS app completed two
   local process lifecycles only. This is no-device post-publication QA, not
@@ -3422,24 +3644,27 @@ Verification commands:
 
 - `python3 -B -m unittest script.test_run_macos_packaged_app_lifecycle_smoke`
 - `python3 -B script/run_macos_packaged_app_lifecycle_smoke.py`
-- `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+6-local-v1`
+- `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+6-local-v1 --historical`
 - `python3 -B script/check_docs_hygiene.py`
 - `python3 -B -m unittest script.test_documentation_handoff_guards`
 - `python3 -B script/check_copy_hygiene.py`
 - `git diff --check`
 
-## 2026-07-29 Local V1 Build 6 Reproducibility Evidence
+## 2026-07-29 Historical Local V1 Build 6 Reproducibility Evidence
 
-- Proof boundary: the current Build 6 record proves exact no-device, same-host
+- Proof boundary: the historical Build 6 record described exact no-device, same-host
   two-root archive equality only for the recorded fixed toolchains, paired
   Gradle-seed clones, canonical Swift scratch policy, 101/109-byte source-root
   pair, and declared archive normalizations.
 - Device/runtime state: the Android phone is disconnected. No physical app
   launch, optical QR scan, rendering, accessibility traversal, live-provider
   interaction, or real different-network runtime path was exercised.
-- Current evidence: both isolated clean lanes produced the same ZIP, manifest,
-  checksum sidecar, and 26-entry inventory; independent current readback passes,
-  and builds 1 through 5 pass historical ledger-prefix readback.
+- Historical archive evidence: both isolated clean lanes produced the same ZIP,
+  manifest, checksum sidecar, and 26-entry inventory; historical archive
+  readback passes for Builds 1 through 6. The recorded 17,674-byte result
+  SHA-256 was
+  `32ee3613318261f15512f9b4c878732a09038012998048c8a63caf0d2185d91a`,
+  but its exact JSON bytes are no longer retained.
 - Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.6 Sol was used only for
   an independent read-only review of the documentation/guard boundary.
 - Caveat: this evidence does not qualify arbitrary roots or path lengths,
@@ -3451,7 +3676,7 @@ Verification commands:
 - `python3 -B script/check_docs_hygiene.py`
 - `python3 -B -m unittest script.test_documentation_handoff_guards`
 - `python3 -B script/check_copy_hygiene.py`
-- `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+6-local-v1`
+- `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+6-local-v1 --historical`
 - `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+5-local-v1 --historical`
 - `git diff --check`
 

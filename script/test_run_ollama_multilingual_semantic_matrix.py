@@ -76,7 +76,11 @@ class OllamaMultilingualSemanticMatrixTests(unittest.TestCase):
         )
 
     def test_recorded_sources_and_task_set_are_exact(self) -> None:
-        runner.assert_bound_sources()
+        with self.assertRaisesRegex(
+            runner.MatrixFailure,
+            "runtime semantic role assignment source bytes drifted",
+        ):
+            runner.assert_bound_sources()
         data = runner.recorded_task_set_bytes()
         self.assertEqual(
             hashlib.sha256(data).hexdigest(),
@@ -152,7 +156,34 @@ class OllamaMultilingualSemanticMatrixTests(unittest.TestCase):
             "observed-quality-failure",
         )
         self.assertEqual(fixture["semanticObservationCount"], 2)
+        self.assertEqual(fixture["schemaVersion"], 4)
+        self.assertEqual(fixture["semanticPassObservationCount"], 0)
+        self.assertEqual(
+            fixture["semanticFailureObservationCount"],
+            2,
+        )
         self.assertEqual(fixture["recoveryObservationCount"], 2)
+        self.assertEqual(
+            fixture["source"]["providerVersion"],
+            runner.SOURCE_PROVIDER_VERSION,
+        )
+        self.assertEqual(
+            fixture["canonicalFixtureSha256"],
+            runner.recorded_source_selection_fixture_sha256(),
+        )
+        self.assertEqual(
+            set(fixture["sourceBindings"]),
+            {
+                "aggregateRolePreservationSha256",
+                "baseRunnerSha256",
+                "embeddingRequestContractSha256",
+                "ollamaEmbeddingAdapterSha256",
+                "recoveryAssertionSha256",
+                "routerRoleAssignmentSha256",
+                "scorerAndLiveAssertionSha256",
+                "semanticFingerprintSha256",
+            },
+        )
         self.assertEqual(
             fixture["taskSet"]["locales"],
             list(runner.SUPPORTED_LOCALES),
@@ -172,6 +203,28 @@ class OllamaMultilingualSemanticMatrixTests(unittest.TestCase):
             self.assertIs(
                 version["semantic"]["qualityGatePassed"],
                 False,
+            )
+            self.assertIs(
+                version["semantic"]["repeatabilityEvaluated"],
+                False,
+            )
+            self.assertIs(
+                version["semantic"]["modelUnloadConfirmed"],
+                False,
+            )
+            self.assertEqual(
+                version["semantic"]["failureCheck"],
+                "positive-margin",
+            )
+            self.assertEqual(
+                version["semantic"]["failureLocale"],
+                "ko",
+            )
+            self.assertEqual(
+                version["semantic"][
+                    "failureScenarioOrdinalWithinLocale"
+                ],
+                2,
             )
             self.assertIs(
                 version["recovery"]["adapterTestPassed"],
@@ -297,7 +350,47 @@ class OllamaMultilingualSemanticMatrixTests(unittest.TestCase):
                 )
 
     def test_source_binding_drift_is_rejected(self) -> None:
+        current_router_sha256 = hashlib.sha256(
+            runner.ROUTER_ROLE_ASSIGNMENT_SOURCE_PATH.read_bytes()
+        ).hexdigest()
+        current_fingerprint_sha256 = hashlib.sha256(
+            runner.SEMANTIC_FINGERPRINT_SOURCE_PATH.read_bytes()
+        ).hexdigest()
+        with (
+            patch.object(
+                runner,
+                "ROUTER_ROLE_ASSIGNMENT_SOURCE_SHA256",
+                current_router_sha256,
+            ),
+            patch.object(
+                runner,
+                "SEMANTIC_FINGERPRINT_SOURCE_SHA256",
+                current_fingerprint_sha256,
+            ),
+        ):
+            runner.assert_bound_sources()
+
         for label, constant in (
+            (
+                "embedding request contract",
+                "EMBEDDING_CONTRACT_SOURCE_SHA256",
+            ),
+            (
+                "Ollama embedding adapter",
+                "OLLAMA_ADAPTER_SOURCE_SHA256",
+            ),
+            (
+                "aggregate embedding role preservation",
+                "AGGREGATING_ADAPTER_SOURCE_SHA256",
+            ),
+            (
+                "runtime semantic role assignment",
+                "ROUTER_ROLE_ASSIGNMENT_SOURCE_SHA256",
+            ),
+            (
+                "semantic embedding fingerprint",
+                "SEMANTIC_FINGERPRINT_SOURCE_SHA256",
+            ),
             ("base compatibility runner", "BASE_RUNNER_SOURCE_SHA256"),
             (
                 "multilingual scorer and live assertion",
@@ -314,6 +407,16 @@ class OllamaMultilingualSemanticMatrixTests(unittest.TestCase):
         ):
             with (
                 self.subTest(label=label),
+                patch.object(
+                    runner,
+                    "ROUTER_ROLE_ASSIGNMENT_SOURCE_SHA256",
+                    current_router_sha256,
+                ),
+                patch.object(
+                    runner,
+                    "SEMANTIC_FINGERPRINT_SOURCE_SHA256",
+                    current_fingerprint_sha256,
+                ),
                 patch.object(runner, constant, "0" * 64),
                 self.assertRaises(runner.MatrixFailure),
             ):
@@ -411,6 +514,7 @@ class OllamaMultilingualSemanticMatrixTests(unittest.TestCase):
                 raise runner.MatrixFailure("adapter failed")
 
             with (
+                patch.object(runner, "assert_bound_sources"),
                 patch.object(
                     runner.base,
                     "start_live_fault_provider",

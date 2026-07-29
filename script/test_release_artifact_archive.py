@@ -19,6 +19,7 @@ from script.check_release_artifact_archive import (
     ReleaseArchiveVerificationError,
     expected_release_id,
     ledger_prefix_bytes_for_release,
+    manifest_contract_for_build,
     archive_normalizations_for_build,
     parse_aapt2_badging as parse_readback_aapt2_badging,
     parse_bundletool_manifest as parse_readback_bundletool_manifest,
@@ -205,6 +206,17 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
             "semantic-reachability-sorted-unique-lines",
             archive_normalizations_for_build(5),
         )
+
+    def test_manifest_schema_two_starts_at_build_seven(self) -> None:
+        for build_number in range(1, 7):
+            schema, keys = manifest_contract_for_build(build_number)
+            self.assertEqual(schema, 1)
+            self.assertNotIn("compliance", keys)
+        schema, keys = manifest_contract_for_build(7)
+        self.assertEqual(schema, 2)
+        self.assertIn("compliance", keys)
+        with self.assertRaises(ReleaseArchiveVerificationError):
+            manifest_contract_for_build(True)
 
     def test_r8_configuration_roots_and_sections_are_canonicalized(
         self,
@@ -819,6 +831,23 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                 compare_current_source=False,
                 require_current_release=False,
             )
+
+    def test_present_build_seven_uses_frozen_historical_compliance_profile(
+        self,
+    ) -> None:
+        archive_id = "aetherlink-1.0.0+7-local-v1"
+        archive_directory = readback_module.DEFAULT_OUTPUT_ROOT / archive_id
+        if not archive_directory.is_dir():
+            self.skipTest("build 7 historical archive is not present")
+        manifest = verify_release_archive(
+            archive_directory,
+            compare_current_source=False,
+            require_current_release=False,
+        )
+        compliance = manifest["compliance"]
+        self.assertNotIn("profile", compliance)
+        self.assertNotIn("schemaVersion", compliance)
+        self.assertEqual(compliance["spdx"]["relationshipCount"], 350)
 
     def test_publish_is_idempotent_and_never_overwrites_different_bytes(
         self,

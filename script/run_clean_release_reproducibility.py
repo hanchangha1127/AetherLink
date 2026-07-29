@@ -26,7 +26,10 @@ if str(ROOT) not in sys.path:
 
 import script.package_release_artifacts as archive_builder
 import script.check_release_artifact_archive as archive_reader
-from script.check_release_version_ledger import load_release_version_ledger
+from script.check_release_version_ledger import (
+    LedgerError,
+    load_release_version_ledger,
+)
 
 
 WORK_ROOT = Path("/private/tmp/aetherlink-g6-clean-release-repro-v1")
@@ -1110,6 +1113,56 @@ def files_equal(first: Path, second: Path) -> bool:
                 return True
 
 
+def member_difference_diagnostic(
+    first: ArchiveEvidence,
+    second: ArchiveEvidence,
+    path: str,
+) -> dict[str, object]:
+    with (
+        zipfile.ZipFile(first.archive_path) as left_archive,
+        zipfile.ZipFile(second.archive_path) as right_archive,
+    ):
+        left = left_archive.read(path)
+        right = right_archive.read(path)
+    shared_length = min(len(left), len(right))
+    first_offset = next(
+        (
+            index
+            for index in range(shared_length)
+            if left[index] != right[index]
+        ),
+        shared_length if len(left) != len(right) else None,
+    )
+    diagnostic: dict[str, object] = {
+        "firstDifferenceOffset": first_offset,
+        "sizeA": len(left),
+        "sizeB": len(right),
+    }
+    if path.endswith((".yml", ".yaml")):
+        left_lines = left.splitlines()
+        right_lines = right.splitlines()
+        shared_lines = min(len(left_lines), len(right_lines))
+        line_index = next(
+            (
+                index
+                for index in range(shared_lines)
+                if left_lines[index] != right_lines[index]
+            ),
+            shared_lines if len(left_lines) != len(right_lines) else None,
+        )
+        diagnostic["firstDifferingLineNumber"] = (
+            None if line_index is None else line_index + 1
+        )
+        if line_index is not None:
+            for label, lines in (("lineA", left_lines), ("lineB", right_lines)):
+                value = b"" if line_index >= len(lines) else lines[line_index]
+                diagnostic[label] = value[:512].decode(
+                    "ascii",
+                    errors="backslashreplace",
+                )
+    return diagnostic
+
+
 def compare_archives(
     first: ArchiveEvidence,
     second: ArchiveEvidence,
@@ -1155,18 +1208,24 @@ def compare_archives(
                 }
             )
             continue
-        member_differences.append(
-            {
-                "bytesEqual": left["sha256"] == right["sha256"],
-                "metadataEqual": all(
-                    left[field] == right[field]
-                    for field in metadata_fields
-                ),
-                "path": path,
-                "presentInBuildA": True,
-                "presentInBuildB": True,
-            }
-        )
+        bytes_equal = left["sha256"] == right["sha256"]
+        record: dict[str, object] = {
+            "bytesEqual": bytes_equal,
+            "metadataEqual": all(
+                left[field] == right[field]
+                for field in metadata_fields
+            ),
+            "path": path,
+            "presentInBuildA": True,
+            "presentInBuildB": True,
+        }
+        if not bytes_equal:
+            record["diagnostic"] = member_difference_diagnostic(
+                first,
+                second,
+                path,
+            )
+        member_differences.append(record)
     member_differences = [
         record
         for record in member_differences
@@ -1600,17 +1659,39 @@ def execute(result_path: Path) -> tuple[int, dict[str, object]]:
     return exit_code, result
 
 
+def default_result_path() -> Path:
+    current = load_release_version_ledger()[-1]
+    return RESULT_ROOT / (
+        f"{archive_builder.release_id(current)}-two-root-v2.json"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--result",
         type=Path,
-        default=ROOT
-        / "dist/reproducibility/clean-release-two-root-v2.json",
-        help="atomic canonical JSON result path outside the fixed scratch",
+        default=None,
+        help=(
+            "atomic canonical JSON result path outside the fixed scratch; "
+            "defaults to a release-ID-qualified file under dist/reproducibility"
+        ),
     )
     arguments = parser.parse_args()
-    exit_code, result = execute(arguments.result.resolve())
+    try:
+        result_path = (
+            default_result_path()
+            if arguments.result is None
+            else arguments.result.resolve()
+        )
+    except (LedgerError, OSError) as error:
+        print(
+            f"Clean release reproducibility failed: invocation: {error}",
+            file=os.sys.stderr,
+            flush=True,
+        )
+        return 2
+    exit_code, result = execute(result_path.resolve())
     if exit_code == 0:
         comparison = result["comparison"]
         archive_sha = result["builds"][0]["archive"]["sha256"]

@@ -7,6 +7,7 @@ import argparse
 from dataclasses import dataclass
 import hashlib
 import json
+import math
 import os
 from pathlib import Path, PurePosixPath
 import plistlib
@@ -22,21 +23,21 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_RELEASE_ID = "aetherlink-1.0.0+6-local-v1"
+EXPECTED_RELEASE_ID = "aetherlink-1.0.0+9-local-v1"
 EXPECTED_MARKETING_VERSION = "1.0.0"
-EXPECTED_BUILD_NUMBER = 6
+EXPECTED_BUILD_NUMBER = 9
 EXPECTED_BUNDLE_ID = "dev.aetherlink.companion"
 EXPECTED_ARCHIVE_SHA256 = (
-    "ac5294b7af4e8b5393ff1d0b6e2f60b39afc40bce0696549e4e9e6b871d919d4"
+    "e2cbd350bf031d04b6e29054ceb387bbe453e60244b47919c54f6d3c13ba7e1a"
 )
 EXPECTED_MANIFEST_SHA256 = (
-    "4dab491197abc0acfbd71dd794d4bb11f84b924f3253bcfbb85f6f3c161be527"
+    "56380c239f916ba9d400cc73824ebbda111f61e0baa4d0dc66e8d14e044d05a5"
 )
 DEFAULT_ARCHIVE_DIR = ROOT / "dist/releases" / EXPECTED_RELEASE_ID
 DEFAULT_RESULT = (
     ROOT
     / "dist/lifecycle"
-    / "macos-packaged-app-build-6-lifecycle-v1.json"
+    / "macos-packaged-app-build-9-lifecycle-v1.json"
 )
 ARCHIVE_CHECKER = ROOT / "script/check_release_artifact_archive.py"
 SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
@@ -249,15 +250,20 @@ def run_checked(
     cwd: Path | None = None,
     environment: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    completed = subprocess.run(
-        command,
-        cwd=cwd,
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=cwd,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise LifecycleSmokeError(
+            f"command timed out after 60 seconds: {' '.join(command)}"
+        ) from error
     if completed.returncode != 0:
         rendered = " ".join(command)
         detail = bounded_output(completed)
@@ -311,7 +317,7 @@ def load_release_inputs(
     manifest_sha256 = sha256_bytes(manifest_bytes)
     if manifest_sha256 != EXPECTED_MANIFEST_SHA256:
         raise LifecycleSmokeError(
-            "release manifest does not match the qualified Build 6 identity"
+            "release manifest does not match the qualified Build 9 identity"
         )
     manifest = strict_json_loads(manifest_bytes, str(manifest_path))
     if not isinstance(manifest, dict):
@@ -338,7 +344,12 @@ def load_release_inputs(
             f"unexpected release metadata: {actual_release!r}"
         )
 
-    checksum_fields = checksum_path.read_text(encoding="ascii").split()
+    try:
+        checksum_fields = checksum_path.read_text(encoding="ascii").split()
+    except (OSError, UnicodeError) as error:
+        raise LifecycleSmokeError(
+            f"release checksum sidecar is unreadable: {error}"
+        ) from error
     if (
         len(checksum_fields) != 2
         or checksum_fields[1] != archive_path.name
@@ -351,7 +362,7 @@ def load_release_inputs(
         raise LifecycleSmokeError("release ZIP differs from its checksum sidecar")
     if archive_sha256 != EXPECTED_ARCHIVE_SHA256:
         raise LifecycleSmokeError(
-            "release ZIP does not match the qualified Build 6 identity"
+            "release ZIP does not match the qualified Build 9 identity"
         )
 
     return ReleaseInputs(
@@ -941,6 +952,24 @@ def execute(
     observation_seconds: float,
     termination_timeout_seconds: float,
 ) -> dict[str, object]:
+    readiness_timeout_seconds = validated_duration(
+        readiness_timeout_seconds,
+        "readiness timeout",
+        0.1,
+        60.0,
+    )
+    observation_seconds = validated_duration(
+        observation_seconds,
+        "observation window",
+        MINIMUM_OBSERVATION_SECONDS,
+        30.0,
+    )
+    termination_timeout_seconds = validated_duration(
+        termination_timeout_seconds,
+        "termination timeout",
+        0.1,
+        30.0,
+    )
     release = load_release_inputs(archive_dir)
     with tempfile.TemporaryDirectory(
         prefix="aetherlink-macos-packaged-lifecycle-"
@@ -1071,6 +1100,23 @@ def execute(
     return result
 
 
+def validated_duration(
+    value: object,
+    label: str,
+    minimum: float,
+    maximum: float,
+) -> float:
+    if (
+        type(value) not in (int, float)
+        or not math.isfinite(value)
+        or not minimum <= value <= maximum
+    ):
+        raise LifecycleSmokeError(
+            f"{label} must be a finite number from {minimum} through {maximum}"
+        )
+    return float(value)
+
+
 def bounded_float(
     value: str,
     label: str,
@@ -1083,11 +1129,10 @@ def bounded_float(
         raise argparse.ArgumentTypeError(
             f"{label} must be a number"
         ) from error
-    if not minimum <= parsed <= maximum:
-        raise argparse.ArgumentTypeError(
-            f"{label} must be at least {minimum} and at most {maximum}"
-        )
-    return parsed
+    try:
+        return validated_duration(parsed, label, minimum, maximum)
+    except LifecycleSmokeError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:

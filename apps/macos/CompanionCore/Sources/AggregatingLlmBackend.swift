@@ -442,7 +442,7 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
             try Task.checkCancellation()
             let result = try await backend.embed(request: EmbeddingRequest(
                 model: resolved.modelID,
-                texts: request.texts
+                inputs: request.inputs
             ))
             residencyFinished = true
             try await finishResidency(for: residencyModel)

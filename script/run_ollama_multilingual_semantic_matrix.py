@@ -28,11 +28,13 @@ FIXTURE_ID = (
     "aetherlink-ollama-embedding-multilingual-semantic-quality-v2"
 )
 RECORDED_DATE = "2026-07-29"
+SOURCE_PROVIDER_VERSION = "0.32.5"
 EVIDENCE_BOUNDARY = (
     "one-local-macos-existing-embedding-model-five-supported-locales-"
     "twenty-fixed-within-locale-ranking-scenarios-two-permuted-batches-"
     "two-exact-ollama-versions-both-observed-korean-positive-margin-"
-    "failure-plus-fresh-recovery-no-model-download-or-retained-model-name-"
+    "failure-after-role-aware-input-formatting-plus-fresh-recovery-no-"
+    "model-download-or-retained-model-name-"
     "input-id-vector-dimension-score-output-no-chat-vision-lm-studio-"
     "cross-locale-retrieval-accuracy-long-text-soak-sla-or-qualification"
 )
@@ -70,6 +72,61 @@ TASK_SET_COPY_NAME = (
 TASK_SET_SHA256 = (
     "a4dde8d94f661fe9682103875ed53db703761722c19ec32b35ceba72ecae2e31"
 )
+EMBEDDING_CONTRACT_SOURCE_PATH = (
+    ROOT
+    / "apps"
+    / "macos"
+    / "OllamaBackend"
+    / "Sources"
+    / "LlmBackend.swift"
+)
+EMBEDDING_CONTRACT_SOURCE_SHA256 = (
+    "708a22934bb8f28218e5ddaeab6a7b469d8beddaa77e5887746e35be40125505"
+)
+OLLAMA_ADAPTER_SOURCE_PATH = (
+    ROOT
+    / "apps"
+    / "macos"
+    / "OllamaBackend"
+    / "Sources"
+    / "OllamaBackend.swift"
+)
+OLLAMA_ADAPTER_SOURCE_SHA256 = (
+    "5c10154d96c9c6e69f10bb214abaefdaded4646f85cacdc781c55ffb6e48a06d"
+)
+AGGREGATING_ADAPTER_SOURCE_PATH = (
+    ROOT
+    / "apps"
+    / "macos"
+    / "CompanionCore"
+    / "Sources"
+    / "AggregatingLlmBackend.swift"
+)
+AGGREGATING_ADAPTER_SOURCE_SHA256 = (
+    "808b434913bb004883b4cfa77c70a4b46dfceebc562615a2223dd27de02d5c99"
+)
+ROUTER_ROLE_ASSIGNMENT_SOURCE_PATH = (
+    ROOT
+    / "apps"
+    / "macos"
+    / "CompanionCore"
+    / "Sources"
+    / "LocalRuntimeMessageRouter.swift"
+)
+ROUTER_ROLE_ASSIGNMENT_SOURCE_SHA256 = (
+    "7e6443295993b3ac9e19e78a45c989d8eb3b00e40d237191067ee14c70df6a97"
+)
+SEMANTIC_FINGERPRINT_SOURCE_PATH = (
+    ROOT
+    / "apps"
+    / "macos"
+    / "CompanionCore"
+    / "Sources"
+    / "RuntimeSemanticChatSessionSearch.swift"
+)
+SEMANTIC_FINGERPRINT_SOURCE_SHA256 = (
+    "bca3faff000112e59945fb558815b1108a1704c6a438eed3e347cf15d685ac8c"
+)
 SWIFT_SOURCE_PATH = (
     ROOT
     / "apps"
@@ -79,7 +136,7 @@ SWIFT_SOURCE_PATH = (
     / "OllamaEmbeddingMultilingualSemanticQualityTests.swift"
 )
 SWIFT_SOURCE_SHA256 = (
-    "62ff0de9a1bffa9f42d65d89bd5b4622286ed4cf31ff4b1d0e00306bc5ace768"
+    "054639797cc9a07f336034f8858772017d63f43970a269f810c24fb3f23c8d40"
 )
 RECOVERY_SOURCE_PATH = (
     ROOT
@@ -99,7 +156,7 @@ BASE_RUNNER_SOURCE_SHA256 = (
     "7a7ff27b84387f56d712e7ed6fc3bd926796a159c76bfbd2e3b57878e2b23014"
 )
 RECORDED_RUNNER_SOURCE_SHA256 = (
-    "5362015be1e3f7f565e50389a0fa5b094b6c32a67e797b1ddf0686916118707b"
+    "45cd9fe57e15bcc8adc1b335ead87d36a888545d37de9720ef4c7f5d49697078"
 )
 LIVE_TEST_FILTER = (
     "OllamaEmbeddingMultilingualSemanticQualityTests."
@@ -187,6 +244,31 @@ def assert_bound_sources() -> None:
             "multilingual semantic runner source bytes drifted"
         )
     for label, path, expected_sha256 in (
+        (
+            "embedding request contract",
+            EMBEDDING_CONTRACT_SOURCE_PATH,
+            EMBEDDING_CONTRACT_SOURCE_SHA256,
+        ),
+        (
+            "Ollama embedding adapter",
+            OLLAMA_ADAPTER_SOURCE_PATH,
+            OLLAMA_ADAPTER_SOURCE_SHA256,
+        ),
+        (
+            "aggregate embedding role preservation",
+            AGGREGATING_ADAPTER_SOURCE_PATH,
+            AGGREGATING_ADAPTER_SOURCE_SHA256,
+        ),
+        (
+            "runtime semantic role assignment",
+            ROUTER_ROLE_ASSIGNMENT_SOURCE_PATH,
+            ROUTER_ROLE_ASSIGNMENT_SOURCE_SHA256,
+        ),
+        (
+            "semantic embedding fingerprint",
+            SEMANTIC_FINGERPRINT_SOURCE_PATH,
+            SEMANTIC_FINGERPRINT_SOURCE_SHA256,
+        ),
         (
             "base compatibility runner",
             BASE_RUNNER_SOURCE_PATH,
@@ -835,6 +917,8 @@ def run_phase(
             "embeddingShapeValidated": True,
             "installedStatePreserved": True,
             "localeResults": locale_results(),
+            "qualityGatePassed": True,
+            "repeatabilityEvaluated": True,
             "repeatabilityPassed": True,
         }
     return {
@@ -934,9 +1018,7 @@ def run_candidate(
 
 
 def recorded_fixture() -> dict[str, object]:
-    canonical_embedding = base.recorded_selected_model_backed_fixture(
-        base.EMBEDDING_MODEL_BACKED_PROFILE
-    )
+    canonical_embedding = recorded_source_selection_fixture()
     semantic = {
         "adapterTestPassed": False,
         "allLocalesPassed": False,
@@ -991,9 +1073,7 @@ def recorded_fixture() -> dict[str, object]:
     ]
     return {
         "canonicalFixtureSha256": (
-            base.recorded_selected_model_backed_fixture_sha256(
-                base.EMBEDDING_MODEL_BACKED_PROFILE
-            )
+            recorded_source_selection_fixture_sha256()
         ),
         "deadlinesMs": {
             "processGroupReap": (
@@ -1014,15 +1094,31 @@ def recorded_fixture() -> dict[str, object]:
         "recoveryObservationCount": 2,
         "resultStatus": "observed-quality-failure",
         "runnerSourceSha256": RECORDED_RUNNER_SOURCE_SHA256,
-        "schemaVersion": 2,
+        "schemaVersion": 4,
         "semanticFailureObservationCount": 2,
         "semanticObservationCount": 2,
+        "semanticPassObservationCount": 0,
         "snapshot": canonical_embedding["snapshot"],
         "source": canonical_embedding["source"],
         "sourceBindings": {
+            "aggregateRolePreservationSha256": (
+                AGGREGATING_ADAPTER_SOURCE_SHA256
+            ),
             "baseRunnerSha256": BASE_RUNNER_SOURCE_SHA256,
+            "embeddingRequestContractSha256": (
+                EMBEDDING_CONTRACT_SOURCE_SHA256
+            ),
+            "ollamaEmbeddingAdapterSha256": (
+                OLLAMA_ADAPTER_SOURCE_SHA256
+            ),
             "recoveryAssertionSha256": RECOVERY_SOURCE_SHA256,
+            "routerRoleAssignmentSha256": (
+                ROUTER_ROLE_ASSIGNMENT_SOURCE_SHA256
+            ),
             "scorerAndLiveAssertionSha256": SWIFT_SOURCE_SHA256,
+            "semanticFingerprintSha256": (
+                SEMANTIC_FINGERPRINT_SOURCE_SHA256
+            ),
         },
         "taskSet": {
             "fixtureId": TASK_SET_ID,
@@ -1048,6 +1144,24 @@ def recorded_fixture() -> dict[str, object]:
         },
         "versions": versions,
     }
+
+
+def recorded_source_selection_fixture() -> dict[str, object]:
+    fixture = base.recorded_selected_model_backed_fixture(
+        base.EMBEDDING_MODEL_BACKED_PROFILE
+    )
+    fixture["source"]["providerVersion"] = SOURCE_PROVIDER_VERSION
+    return fixture
+
+
+def recorded_source_selection_fixture_sha256() -> str:
+    data = json.dumps(
+        recorded_source_selection_fixture(),
+        ensure_ascii=True,
+        indent=2,
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(data).hexdigest()
 
 
 def validate_recorded_fixture(value: object) -> None:
@@ -1179,7 +1293,7 @@ def run_matrix(source_models_directory: Path) -> dict[str, object]:
         candidate["version"] for candidate in base.EXACT_CANDIDATES
     }
     if (
-        source_version_before != profile.recorded_source_version
+        source_version_before != SOURCE_PROVIDER_VERSION
         or source_version_before not in candidate_versions
     ):
         raise MatrixFailure(

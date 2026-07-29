@@ -53,6 +53,38 @@ current user direction, not repository-owner identity proof.
 - Continue only feature, UX, accessibility, performance, build, documentation,
   and release-quality work. Do not resume security findings, threat analysis,
   owner authentication, or authority-evidence work.
+- A separate multilingual full-matrix V3 preparation path now leaves the frozen
+  V2 task, scorer, runner, schema-4 fixture, and failed result byte-identical.
+  The V3 scorer evaluates all 80 margin and 80 repeatability comparisons,
+  accumulates quality coordinates without retaining text/IDs/scores, and treats
+  invalid shape or numeric state as fatal. Its opt-in live assertion unloads
+  and rechecks catalog/health before emitting one marker; the schema-5 runner
+  preserves exact candidate and fresh-recovery order with cleanup priority.
+  Seven V3 Swift tests and eight V3 Python tests pass. No V3 live observation
+  has run, so no later-locale, repeatability, or passing-quality claim exists.
+- The current unreleased product slice adds a bounded semantic-similarity
+  rerank after retrieval ranking for strong-revision EmbeddingGemma profiles.
+  Its pool is derived from the visible limit, contains 8 through 32 available
+  non-research candidates, and may reorder only primary-score groups inside an
+  inclusive 0.05 cosine window.
+- Scaled cosine closes finite-vector norm overflow. Exact boundary,
+  strong-winner, transient/no-cache rerank, failure/profile-drift fallback,
+  visible-limit, and final-snapshot research-promotion regressions pass. If
+  research membership changes before final coordinated publication, the
+  retained primary materialization is published before filtering and visible
+  search ranks are renumbered from one. Sixteen focused checks and the
+  post-review 544-test broad router/search run pass. The full Swift run passes
+  2,066 tests with zero failures and ten expected opt-in/live skips.
+- The frozen multilingual V2 result remains
+  `qualityGatePassed=false` at Korean ordinal 2 on both exact candidates. The
+  product reranker is not a model qualification and must not be described as
+  one. Its recorded router/fingerprint hashes remain historical, and the live
+  V2 runner correctly rejects the changed product-source bytes until a future
+  versioned observation is prepared.
+- Build 9 remains the latest immutable ledger archive, but its source snapshot
+  predates this unreleased reranker. It is now prior source-bound evidence; use
+  `--no-current-source` for archive-byte readback until a later release build
+  binds the settled worktree.
 - The current Android accessibility slice raises the existing Chat and Settings
   no-device multilingual regressions to font scale `2.0`, covering `en`, `ko`,
   `ja`, `zh-CN`, and `fr`.
@@ -102,21 +134,38 @@ current user direction, not repository-owner identity proof.
   structure/signature verification. Final identity, Developer ID/notarization/
   DMG, and clean-machine launch remain unclaimed; Intel is Post-V1.
 - `release/version-ledger.tsv` is now the single version source for Android
-  Release and macOS packaging. Both read back as `1.0.0+6`; Android Debug stays
-  `0.1.0+1` and builds with the ledger absent. Python, Bash, and lazy Gradle
-  consumers reject noncanonical control bytes; strict parser, source, artifact,
-  and fake-toolchain checks pass.
-  Production IDs remain unchanged pending actual account reservation.
-- The Build 6 qualification runner clean-builds both targets in two isolated
+  Release and macOS packaging. The latest published qualification reads back as
+  `1.0.0+9`; Android Debug stays `0.1.0+1` and builds with the ledger absent.
+  Python, Bash, and lazy Gradle consumers reject noncanonical control bytes;
+  strict parser, source, artifact, and fake-toolchain checks pass. The main
+  `dist/AetherLink.app` remains the user-owned running Build 4 bundle and was
+  not replaced during Build 9 qualification.
+- The Build 9 qualification runner clean-builds both targets in two isolated
   source roots whose UTF-8 byte lengths are 101 and 109, and publishes
-  `dist/releases/aetherlink-1.0.0+6-local-v1/`. Its 164,177,236-byte canonical
+  `dist/releases/aetherlink-1.0.0+9-local-v1/`. Its 165,065,657-byte canonical
   normalized-input ZIP has SHA-256
-  `ac5294b7af4e8b5393ff1d0b6e2f60b39afc40bce0696549e4e9e6b871d919d4`.
-  Independent readback verifies 25 payload members, arm64-only APK badging,
+  `e2cbd350bf031d04b6e29054ceb387bbe453e60244b47919c54f6d3c13ba7e1a`.
+  The 2-root result is
+  `dist/reproducibility/aetherlink-1.0.0+9-local-v1-two-root-v2.json`; it records
+  byte-identical lane output, immutable publication, and independent readback.
+  Independent readback verifies 29 payload members, arm64-only APK badging,
   AAB mapping/JNI identity, direct base-manifest package/version/SDK through
   AGP-pinned `bundletool 1.18.3`, and the arm64 app/dSYM UUID
-  `1D6CD3E2-5769-3BB2-9F11-CBFEF782D44F`. Android native symbols remain
+  `0711F00D-B4B5-316C-A159-2E8BE3FE9FCB`. Android native symbols remain
   explicitly unavailable because all five upstream JNI inputs are pre-stripped.
+  The 239-file source is explicitly a `dirty-content-snapshot`; commit
+  `d699b557aa36deb7add763e5f8f4fe3dcf66c7ed` alone cannot reconstruct the
+  archived bytes. Compliance profile `aetherlink-release-compliance-v2`
+  requires a 350-package Gradle lock/POM catalog, fixed metadata, text
+  inventory, and SPDX 2.3 JSON. It records 692 exact package roles: 202
+  runtime, 155 build dependency, and 335 build tool. Build 7 remains readable
+  under its frozen profile-less, precedence-compressed 350-relationship V1
+  contract. The catalog retains POM URL/size/SHA and parsed declarations, not
+  original POM bodies or license/NOTICE texts. Offline verification does not
+  re-fetch or re-parse those originals and does not prove attribution
+  completeness, binary/source coverage, or legal compatibility. SwiftPM has
+  zero external dependencies and all third-party license conclusions remain
+  `NOASSERTION`.
   R8 `resources.txt` now uses semantic reachability normalization; the other
   declared metadata surfaces retain their independent normalization contracts.
   Six Gradle locks reached a writer fixed point and passed two strict read-only
@@ -124,35 +173,44 @@ current user direction, not repository-owner identity proof.
   `kotlin-stdlib-common` compatibility exception. SwiftPM has zero external
   dependencies. Fixed Clang importer and debug compilation directories plus a
   canonical source-location alias remove the observed source-path-length byte
-  dependence while retaining the dSYM. Both lane builds produced
-  byte-identical ZIP, manifest, checksum sidecar, and 26-entry archive
-  inventory. This is bounded same-host, fixed-toolchain/cache-snapshot,
-  canonical-scratch evidence for the recorded unequal-length pair; arbitrary
-  roots or path lengths, cross-host reproducibility, signed artifacts,
-  clean-machine launch, and physical behavior remain unclaimed. Builds 1
-  through 5 remain immutable, independently readable historical archives. The
+  dependence while retaining the dSYM. Two complete A/B qualifications produced
+  a byte-identical ZIP, manifest, checksum sidecar, and 30-entry archive
+  inventory. The 19,743-byte confirmation result has SHA-256
+  `eeac49b926261a5cfaed806b4db6e03b3a9e4028e55cbcf7a26408d466053246`
+  and records `alreadyMatched=true`. This is bounded evidence for two recorded same-host,
+  fixed-toolchain/cache-snapshot, canonical-scratch pair, not a claim that
+  arbitrary repeats are variance-free. Arbitrary roots or path lengths,
+  cross-host reproducibility, signed artifacts, clean-machine launch, and
+  physical behavior remain unclaimed. Builds 1 through 8 remain immutable,
+  independently readable historical archives. The
   verifier now cross-binds Gradle lock identities to the archived source
   inventory and rejects use of historical mode for the current release.
 - The separate
   `script/run_macos_packaged_app_lifecycle_smoke.py` post-publication gate binds
-  itself to that exact Build 6 ZIP and manifest, extracts only the packaged
+  itself to the exact current Build 9 ZIP and manifest, extracts only the packaged
   macOS app, and completes two AppKit finished-launch → five-second minimum
   observation → identity-rechecked exact-PID termination cycles with zero
   exits. Its QA-only sandbox uses a temporary Core Foundation user home,
   verifies a temporary-root write, denies a non-temporary write and AF_INET
   bind, and has no unisolated fallback. The exact 1,311-byte result at
-  `dist/lifecycle/macos-packaged-app-build-6-lifecycle-v1.json` has SHA-256
-  `30d90827182e353d9f49fd1fa9edde846bc073f1af5113548f913c7b8af34447`.
+  `dist/lifecycle/macos-packaged-app-build-9-lifecycle-v1.json` has SHA-256
+  `aad796ee3c768e37953f18eeea0e6642107750c3a8c398df798a46e96aabab53`.
   Expected Application Support files were present after both runs, but the
   runtime identity file was absent after both. Do not claim identity
   persistence, state recovery, UI correctness, listener/provider readiness,
   installation, clean-machine behavior, signed distribution, or
   physical-device behavior from this smoke.
 - The versioned
-  `docs/releases/1.0.0-build-6-local-v1.md` record now consolidates release
+  `docs/releases/1.0.0-build-9-local-v1.md` record now consolidates release
   notes, compatibility, migration, limitations, diagnostics, privacy/evidence
   boundaries, and rollback. It explicitly treats Android Debug `0.1.0+1` and
-  local ad-hoc macOS packages as non-upgrade lineages. The fixture-rich
+  local ad-hoc macOS packages as non-upgrade lineages. Build 6 remains a
+  historical archive and owns the separate packaged-app lifecycle result; its
+  standalone reproducibility result bytes were not retained. Build 7 preserves
+  the first compliance inventory and documents why its one-role-per-package
+  mapping was superseded. Build 8 preserves the first exact-role V2 compliance
+  qualification and its bounded repeatability record. The
+  fixture-rich
   `docs/releases/1.0.0-build-3-local-v1.md` historical record retains the
   canonical first-lineage fixture, which pins a null production predecessor,
   unproven N/N-1, clean install plus fresh pairing, and false
@@ -248,16 +306,17 @@ current user direction, not repository-owner identity proof.
   independent user-data/model-store path for a non-invasive run. Minimum
   versions, broader semantic quality, further model-shape coverage, and full
   live-provider qualification remain unresolved.
-- The post-edit full Swift run executed 2,045 tests with zero failures and the
+- The pre-reranker full Swift run executed 2,045 tests with zero failures and the
   nine expected opt-in skips. Docs/copy hygiene, ledger readback, 113 combined
   runner/documentation tests, Python syntax, diff whitespace, and the empty
-  staging guard pass. The current Build 6 archive binds the settled source
-  snapshot and passes independent readback; superseded builds 1 through 5 pass
-  historical ledger-prefix readback. No physical-device
+  staging guard pass. The Build 9 archive binds that earlier settled source
+  snapshot and passed independent readback; it no longer proves the current
+  reranker worktree. Superseded Builds 1 through 8 pass historical
+  ledger-prefix readback. No physical-device
   claim was made.
 - A separately user-authored commit appeared during the preceding verification:
   `main` and `origin/main` both resolve to
-  `7d6ecbf56827b1a7c999b3c7a339bebc53bbd421`. This work did not stage,
+  `d699b557aa36deb7add763e5f8f4fe3dcf66c7ed`. This work did not stage,
   commit, or push. Current post-commit implementation, runner-test,
   documentation, and checker changes remain modified and unstaged; preserve
   them when continuing.
@@ -3240,25 +3299,34 @@ Unless the user redirects the task, use this active non-security order:
 
 1. Re-read this handoff and refresh Git plus generated-artifact state. Do not
    infer device/process state from an older snapshot.
-2. Run the focused static guards and
-   `python3 script/check_release_artifact_archive.py` before using the current
-   local ZIP as evidence.
+2. Run the focused static guards. Use
+   `python3 script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+9-local-v1 --no-current-source`
+   only for Build 9 archive-byte evidence; do not call it current-source proof
+   for the unreleased reranker.
 3. Continue the non-security provider matrix. Both exact Ollama candidates now
    have isolated empty-catalog plus two existing chat-model shapes, one
    embedding-model shape, and one vision-model shape
    cold/restart evidence plus bounded chat process-lifecycle fault and recovery
    evidence. Their four-scenario fixed-task embedding semantic-quality and
    fresh-provider recovery gate also passes for English V1. The separate
-   five-locale V2 observation fails the fixed positive-margin check at Korean
-   scenario ordinal 2 on both exact candidates; its task and thresholds remain
-   frozen, and both follow-up recovery phases pass. Treat this as an unresolved
-   multilingual qualification gap rather than a passing gate. Exact LM Studio
+   five-locale V2 observation now preserves retrieval query/document roles,
+   uses the recognized Ollama profile prompts, binds the effective input
+   profile to result validation and V3 cache identity, accounts for profile
+   prefixes in batch budgets, and binds those implementation sources. It still fails the fixed
+   positive-margin check at Korean scenario ordinal 2 on both exact candidates;
+   its task and thresholds remain frozen, and both follow-up recovery phases
+   pass. Treat this as an explicit model-qualification gap rather than a
+   passing gate. Exact LM Studio
    execution stays deferred until the official tools
    expose an independent user-data/model-store path that cannot change the
    installed app. Keep a passing multilingual result, retrieval accuracy,
    minimum-version, further-model-shape,
    embedding/vision fault, power-loss, concurrency, soak, SLA, and full
    qualification claims open.
+   The current product path separately adds bounded semantic-similarity
+   reranking with primary-score acceptance groups and primary fallback. Keep it
+   labeled deterministic no-device product behavior until live end-to-end
+   retrieval evidence exists.
 4. Keep physical-device, production signing, store upload, and deployment work
    deferred until the user explicitly selects those technical slices.
 5. Do not start security, authentication, governance, or owner-proof work.

@@ -88,6 +88,7 @@ public struct ModelInfo: Identifiable, Equatable, Sendable {
     public var remoteHost: String?
     public var contextWindowTokens: Int?
     public var persistentEmbeddingRevision: String?
+    public var embeddingInputProfile: EmbeddingInputProfile?
 
     public init(
         id: String,
@@ -104,7 +105,8 @@ public struct ModelInfo: Identifiable, Equatable, Sendable {
         remoteModel: String? = nil,
         remoteHost: String? = nil,
         contextWindowTokens: Int? = nil,
-        persistentEmbeddingRevision: String? = nil
+        persistentEmbeddingRevision: String? = nil,
+        embeddingInputProfile: EmbeddingInputProfile? = .raw
     ) {
         self.id = id
         self.name = name
@@ -121,6 +123,9 @@ public struct ModelInfo: Identifiable, Equatable, Sendable {
         self.remoteHost = remoteHost
         self.contextWindowTokens = contextWindowTokens
         self.persistentEmbeddingRevision = persistentEmbeddingRevision
+        self.embeddingInputProfile = kind == .embedding
+            ? embeddingInputProfile
+            : nil
     }
 
     public static func validatedContextWindowTokens(_ value: Int?) -> Int? {
@@ -499,23 +504,71 @@ public enum GenerationCancellationResult: Equatable, Sendable {
     case notFound(generationID: String)
 }
 
+public enum EmbeddingInputRole: String, Equatable, Sendable {
+    public static let maximumAdapterPromptUTF8ByteCount = 64
+
+    case plain
+    case retrievalQuery = "retrieval_query"
+    case retrievalDocument = "retrieval_document"
+    case semanticSimilarity = "semantic_similarity"
+}
+
+public enum EmbeddingInputProfile: String, Equatable, Sendable {
+    case raw = "raw-v1"
+    case embeddingGemma = "embedding-gemma-v1"
+
+    public var maximumAdapterPromptUTF8ByteCount: Int {
+        switch self {
+        case .raw:
+            return 0
+        case .embeddingGemma:
+            return EmbeddingInputRole.maximumAdapterPromptUTF8ByteCount
+        }
+    }
+}
+
+public struct EmbeddingInput: Equatable, Sendable {
+    public var text: String
+    public var role: EmbeddingInputRole
+
+    public init(text: String, role: EmbeddingInputRole = .plain) {
+        self.text = text
+        self.role = role
+    }
+}
+
 public struct EmbeddingRequest: Equatable, Sendable {
     public var model: String
-    public var texts: [String]
+    public var inputs: [EmbeddingInput]
+
+    public var texts: [String] {
+        inputs.map(\.text)
+    }
 
     public init(model: String, texts: [String]) {
         self.model = model
-        self.texts = texts
+        self.inputs = texts.map { EmbeddingInput(text: $0) }
+    }
+
+    public init(model: String, inputs: [EmbeddingInput]) {
+        self.model = model
+        self.inputs = inputs
     }
 }
 
 public struct EmbeddingResult: Equatable, Sendable {
     public var model: String
     public var embeddings: [[Double]]
+    public var embeddingInputProfile: EmbeddingInputProfile
 
-    public init(model: String, embeddings: [[Double]]) {
+    public init(
+        model: String,
+        embeddings: [[Double]],
+        embeddingInputProfile: EmbeddingInputProfile = .raw
+    ) {
         self.model = model
         self.embeddings = embeddings
+        self.embeddingInputProfile = embeddingInputProfile
     }
 }
 

@@ -28,11 +28,17 @@ from script.check_release_version_ledger import (
     LedgerError,
     load_release_version_ledger,
 )
+from script.check_release_compliance import (
+    ComplianceVerificationError,
+    verify_release_compliance,
+)
 
 
 DEFAULT_OUTPUT_ROOT = ROOT / "dist/releases"
 FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
-SCHEMA_VERSION = 1
+LEGACY_MANIFEST_SCHEMA_VERSION = 1
+CURRENT_MANIFEST_SCHEMA_VERSION = 2
+MEMBER_SCHEMA_VERSION = 1
 GRADLE_LOCK_PATHS = (
     "apps/android/app/gradle.lockfile",
     "apps/android/core/pairing/gradle.lockfile",
@@ -96,10 +102,14 @@ SOURCE_REQUIRED_FILES = (
     "apps/android/core/protocol/gradle.lockfile",
     "apps/android/core/transport/build.gradle.kts",
     "apps/android/core/transport/gradle.lockfile",
+    "release/release-compliance-metadata-v1.json",
+    "release/third-party-license-inventory-v1.json",
     "release/version-ledger.tsv",
     "script/build_and_run.sh",
     "script/build_release_artifacts.sh",
+    "script/check_release_compliance.py",
     "script/check_release_version_ledger.py",
+    "script/generate_release_compliance.py",
     "script/package_release_artifacts.py",
     "script/check_release_artifact_archive.py",
     "script/run_clean_release_reproducibility.py",
@@ -1245,7 +1255,7 @@ def verify_source_snapshot(
     if require_exact_int(
         source_document.get("schemaVersion"),
         "source-files.schemaVersion",
-    ) != SCHEMA_VERSION:
+    ) != MEMBER_SCHEMA_VERSION:
         raise ReleaseArchiveVerificationError(
             "source-files schemaVersion is unsupported"
         )
@@ -1751,7 +1761,7 @@ def verify_android_relationships(
     if require_exact_int(
         status_document.get("schemaVersion"),
         "android/native-symbol-status.schemaVersion",
-    ) != SCHEMA_VERSION:
+    ) != MEMBER_SCHEMA_VERSION:
         raise ReleaseArchiveVerificationError(
             "Android native-symbol status schema is unsupported"
         )
@@ -1973,6 +1983,29 @@ def verify_dependency_lock_source_identity(
         )
 
 
+def manifest_contract_for_build(build_number: int) -> tuple[int, set[str]]:
+    if type(build_number) is not int or build_number < 1:
+        raise ReleaseArchiveVerificationError(
+            "manifest build number is invalid for schema selection"
+        )
+    keys = {
+        "archive",
+        "channel",
+        "dependencyLocking",
+        "ledger",
+        "members",
+        "platforms",
+        "product",
+        "release",
+        "schemaVersion",
+        "source",
+        "toolchains",
+    }
+    if build_number <= 6:
+        return LEGACY_MANIFEST_SCHEMA_VERSION, keys
+    return CURRENT_MANIFEST_SCHEMA_VERSION, keys | {"compliance"}
+
+
 def verify_manifest_header(
     manifest: dict[str, object],
     payload: dict[str, bytes],
@@ -1981,29 +2014,36 @@ def verify_manifest_header(
     require_current_release: bool,
     source_identities: dict[str, tuple[int, str]],
 ) -> None:
+    release_hint = manifest.get("release")
+    if type(release_hint) is not dict:
+        raise ReleaseArchiveVerificationError(
+            "manifest release metadata must be an object"
+        )
+    build_number_hint = require_exact_int(
+        release_hint.get("buildNumber"),
+        "release.buildNumber",
+    )
+    expected_schema, expected_keys = manifest_contract_for_build(
+        build_number_hint
+    )
     require_exact_keys(
         manifest,
-        {
-            "archive",
-            "channel",
-            "dependencyLocking",
-            "ledger",
-            "members",
-            "platforms",
-            "product",
-            "release",
-            "schemaVersion",
-            "source",
-            "toolchains",
-        },
+        expected_keys,
         "manifest",
     )
     if require_exact_int(
         manifest.get("schemaVersion"),
         "manifest.schemaVersion",
-    ) != SCHEMA_VERSION:
+    ) != expected_schema:
         raise ReleaseArchiveVerificationError(
-            "release archive schemaVersion is unsupported"
+            "release archive schemaVersion differs from its build contract"
+        )
+    compliance_members = {
+        name for name in payload if name.startswith("compliance/")
+    }
+    if build_number_hint <= 6 and compliance_members:
+        raise ReleaseArchiveVerificationError(
+            "historical schema-1 archive contains compliance members"
         )
     if manifest.get("product") != "AetherLink" or manifest.get("channel") != "local":
         raise ReleaseArchiveVerificationError(
@@ -2342,6 +2382,39 @@ def verify_release_archive(
         require_current_release=require_current_release,
         source_identities=source_identities,
     )
+    release = manifest["release"]
+    dependency_locking = manifest["dependencyLocking"]
+    assert isinstance(release, dict)
+    assert isinstance(dependency_locking, dict)
+    gradle_locking = dependency_locking["gradle"]
+    assert isinstance(gradle_locking, dict)
+    build_number = require_exact_int(
+        release.get("buildNumber"),
+        "release.buildNumber",
+    )
+    if build_number >= 7:
+        try:
+            verify_release_compliance(
+                compliance=manifest.get("compliance"),
+                payload=payload,
+                source_identities=source_identities,
+                manifest_lock_files=gradle_locking["lockFiles"],
+                marketing_version=require_string(
+                    release.get("marketingVersion"),
+                    "release.marketingVersion",
+                ),
+                build_number=build_number,
+                source_snapshot_sha256=require_string(
+                    manifest["source"].get("snapshotSha256"),
+                    "source.snapshotSha256",
+                ),
+                root=ROOT,
+                compare_current_source=compare_current_source,
+            )
+        except ComplianceVerificationError as error:
+            raise ReleaseArchiveVerificationError(
+                f"release compliance readback failed: {error}"
+            ) from error
     verify_android_relationships(manifest, payload)
     verify_macos_relationships(manifest, payload, modes)
     return manifest

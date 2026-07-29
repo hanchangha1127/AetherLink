@@ -1245,20 +1245,45 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
         )
         let backend = AggregatingLlmBackend([ollama, lmStudio])
 
-        let result = try await backend.embed(request: EmbeddingRequest(
-            model: "lm_studio:text-embedding-nomic",
-            texts: ["first", "second"]
-        ))
+        let result = try await backend.embed(
+            request: EmbeddingRequest(
+                model: "lm_studio:text-embedding-nomic",
+                inputs: [
+                    EmbeddingInput(
+                        text: "first",
+                        role: .retrievalQuery
+                    ),
+                    EmbeddingInput(
+                        text: "second",
+                        role: .retrievalDocument
+                    ),
+                ]
+            )
+        )
 
         XCTAssertEqual(result, EmbeddingResult(
             model: "text-embedding-nomic",
             embeddings: [[1, 2], [1, 2]]
         ))
         XCTAssertTrue(ollama.embeddingRequests.isEmpty)
-        XCTAssertEqual(lmStudio.embeddingRequests, [EmbeddingRequest(
-            model: "text-embedding-nomic",
-            texts: ["first", "second"]
-        )])
+        XCTAssertEqual(
+            lmStudio.embeddingRequests,
+            [
+                EmbeddingRequest(
+                    model: "text-embedding-nomic",
+                    inputs: [
+                        EmbeddingInput(
+                            text: "first",
+                            role: .retrievalQuery
+                        ),
+                        EmbeddingInput(
+                            text: "second",
+                            role: .retrievalDocument
+                        ),
+                    ]
+                )
+            ]
+        )
     }
 
     func testEmbeddingRejectsChatModelAndDoesNotRoute() async {

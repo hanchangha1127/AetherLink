@@ -257,6 +257,18 @@ struct OllamaEmbeddingMultilingualSemanticTaskSet: Decodable {
         firstCall.map(\.text)
     }
 
+    var firstCallInputs: [EmbeddingInput] {
+        let queryIDs = Set(scenarios.map(\.queryId))
+        return firstCall.map { input in
+            EmbeddingInput(
+                text: input.text,
+                role: queryIDs.contains(input.id)
+                    ? .retrievalQuery
+                    : .retrievalDocument
+            )
+        }
+    }
+
     var secondCallOrder: [String] {
         firstCall.map(\.id).reversed()
     }
@@ -266,6 +278,16 @@ struct OllamaEmbeddingMultilingualSemanticTaskSet: Decodable {
             uniqueKeysWithValues: firstCall.map { ($0.id, $0.text) }
         )
         return secondCallOrder.compactMap { textsByID[$0] }
+    }
+
+    var secondCallInputs: [EmbeddingInput] {
+        let inputsByID = Dictionary(
+            uniqueKeysWithValues: zip(
+                firstCall.map(\.id),
+                firstCallInputs
+            )
+        )
+        return secondCallOrder.compactMap { inputsByID[$0] }
     }
 }
 
@@ -506,6 +528,78 @@ enum OllamaEmbeddingMultilingualSemanticScorer {
 final class OllamaEmbeddingMultilingualSemanticQualityTests:
     XCTestCase
 {
+    func testRecognizedEmbeddingProfileFormatsExplicitInputRoles() throws {
+        let profile = try XCTUnwrap(OllamaEmbeddingPromptProfile(
+            capabilities: ["embedding"],
+            architecture: "gemma3",
+            embeddingLength: 768
+        ))
+        let inputs = [
+            EmbeddingInput(text: "unchanged"),
+            EmbeddingInput(
+                text: "find this",
+                role: .retrievalQuery
+            ),
+            EmbeddingInput(
+                text: "matching document",
+                role: .retrievalDocument
+            ),
+            EmbeddingInput(
+                text: "compare this",
+                role: .semanticSimilarity
+            ),
+        ]
+        let formatted = inputs.map(profile.formattedText)
+
+        XCTAssertEqual(profile.embeddingInputProfile, .embeddingGemma)
+        XCTAssertEqual(formatted, [
+            "unchanged",
+            "task: search result | query: find this",
+            "title: none | text: matching document",
+            "task: sentence similarity | query: compare this",
+        ])
+        XCTAssertTrue(formatted.allSatisfy {
+            $0.utf8.count <=
+                inputs[formatted.firstIndex(of: $0)!].text.utf8.count +
+                EmbeddingInputRole.maximumAdapterPromptUTF8ByteCount
+        })
+        XCTAssertNil(OllamaEmbeddingPromptProfile(
+            capabilities: ["chat"],
+            architecture: "gemma3",
+            embeddingLength: 768
+        ))
+        XCTAssertNil(OllamaEmbeddingPromptProfile(
+            capabilities: ["embedding"],
+            architecture: "other",
+            embeddingLength: 768
+        ))
+        XCTAssertNil(OllamaEmbeddingPromptProfile(
+            capabilities: ["embedding"],
+            architecture: "gemma3",
+            embeddingLength: 767
+        ))
+    }
+
+    func testEmbeddingProfileMetadataRejectsPresentNullArchitecture() throws {
+        let decoder = JSONDecoder()
+        let absent = try decoder.decode(
+            OllamaShowResponse.self,
+            from: Data(
+                #"{"capabilities":["embedding"],"model_info":{"gemma3.embedding_length":768}}"#
+                    .utf8
+            )
+        )
+        XCTAssertNil(absent.architecture)
+
+        XCTAssertThrowsError(try decoder.decode(
+            OllamaShowResponse.self,
+            from: Data(
+                #"{"capabilities":["embedding"],"model_info":{"general.architecture":null,"gemma3.embedding_length":768}}"#
+                    .utf8
+            )
+        ))
+    }
+
     func testCanonicalTaskSetHasRecordedHashAndClosedContract() throws {
         let taskSet = try loadCanonicalTaskSet()
 
@@ -520,6 +614,22 @@ final class OllamaEmbeddingMultilingualSemanticQualityTests:
         XCTAssertEqual(taskSet.scenarios.count, 20)
         XCTAssertEqual(taskSet.firstCall.count, 80)
         XCTAssertEqual(taskSet.secondCallTexts.count, 80)
+        XCTAssertEqual(
+            taskSet.firstCallInputs.filter {
+                $0.role == .retrievalQuery
+            }.count,
+            20
+        )
+        XCTAssertEqual(
+            taskSet.firstCallInputs.filter {
+                $0.role == .retrievalDocument
+            }.count,
+            60
+        )
+        XCTAssertEqual(
+            taskSet.secondCallInputs.map(\.text),
+            taskSet.secondCallTexts
+        )
     }
 
     func testScorerAcceptsEveryLocaleAcrossBothPermutations() throws {
@@ -774,22 +884,34 @@ final class OllamaEmbeddingMultilingualSemanticQualityTests:
         XCTAssertTrue(selectedBefore.installed)
         XCTAssertFalse(selectedBefore.running)
         XCTAssertEqual(selectedBefore.kind, .embedding)
+        XCTAssertEqual(
+            selectedBefore.embeddingInputProfile,
+            .embeddingGemma
+        )
         let catalogIdentityBefore = catalogBefore.map(\.id).sorted()
 
         let firstResult = try await backend.embed(
             request: EmbeddingRequest(
                 model: modelID,
-                texts: taskSet.firstCallTexts
+                inputs: taskSet.firstCallInputs
             )
         )
         let secondResult = try await backend.embed(
             request: EmbeddingRequest(
                 model: modelID,
-                texts: taskSet.secondCallTexts
+                inputs: taskSet.secondCallInputs
             )
         )
         XCTAssertTrue(Self.sameOllamaModel(firstResult.model, modelID))
         XCTAssertTrue(Self.sameOllamaModel(secondResult.model, modelID))
+        XCTAssertEqual(
+            firstResult.embeddingInputProfile,
+            .embeddingGemma
+        )
+        XCTAssertEqual(
+            secondResult.embeddingInputProfile,
+            .embeddingGemma
+        )
         let assessment = try OllamaEmbeddingMultilingualSemanticScorer
             .assess(
                 taskSet: taskSet,

@@ -4231,6 +4231,15 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(backend.embeddingRequests.first?.model, "ollama:nomic-embed-text")
         XCTAssertEqual(backend.embeddingRequests.first?.texts.first, "fresh QR")
         XCTAssertTrue(backend.embeddingRequests.first?.texts.dropFirst().first?.contains("Remote relay route") == true)
+        XCTAssertEqual(
+            backend.embeddingRequests.first?.inputs.first?.role,
+            .retrievalQuery
+        )
+        XCTAssertTrue(
+            backend.embeddingRequests.first?.inputs.dropFirst().allSatisfy {
+                $0.role == .retrievalDocument
+            } == true
+        )
         XCTAssertEqual(store.searchRequests, [])
         guard case .array(let sessions)? = response?.payload["sessions"],
               case .object(let session)? = sessions.first,
@@ -4259,6 +4268,474 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(store.searchRequests.count, 1)
         XCTAssertNil(store.searchRequests.last?.query)
         XCTAssertNil(store.searchRequests.last?.embeddingModelID)
+    }
+
+    func testChatSessionsListUsesBoundedSemanticSimilarityRerankForRecognizedProfile()
+        async throws
+    {
+        let sink = RecordingSink()
+        let profileModel = semanticEmbeddingModel(
+            revision: "role-aware-rerank-v1",
+            embeddingInputProfile: .embeddingGemma
+        )
+        let retrievalResult = EmbeddingResult(
+            model: "nomic-embed-text:latest",
+            embeddings: [
+                [1, 0],
+                [0.96, 0.28],
+                [0.99, 0.1410673598],
+            ],
+            embeddingInputProfile: .embeddingGemma
+        )
+        let rerankResult = EmbeddingResult(
+            model: "nomic-embed-text:latest",
+            embeddings: [
+                [1, 0],
+                [0, 1],
+                [1, 0],
+            ],
+            embeddingInputProfile: .embeddingGemma
+        )
+        let backend = MockBackend(
+            models: [profileModel],
+            embeddingResultBatches: [
+                .success(retrievalResult),
+                .success(rerankResult),
+            ]
+        )
+        let store = SearchHintRecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: "semantic-positive",
+                title: "Natural satellite orbit",
+                model: "ollama:chat",
+                lastActivityAt: Date(timeIntervalSince1970: 100),
+                messageCount: 1
+            ),
+            RuntimeChatStoredSession(
+                sessionID: "semantic-hard-negative",
+                title: "Moon photograph calendar",
+                model: "ollama:chat",
+                lastActivityAt: Date(timeIntervalSince1970: 200),
+                messageCount: 1
+            ),
+        ])
+        let router = makeRouter(backend: backend, chatEventStore: store)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "semantic-second-stage-rerank",
+            payload: [
+                "limit": .number(1),
+                "query": .string("The moon orbits Earth"),
+                "embedding_model_id":
+                    .string("ollama:nomic-embed-text:latest"),
+            ]
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 1).first
+        guard
+            case .array(let sessions)? = response?.payload["sessions"],
+            case .object(let first)? = sessions.first
+        else {
+            XCTFail("Expected reranked semantic chat session")
+            return
+        }
+        XCTAssertEqual(response?.type, MessageType.chatSessionsList)
+        XCTAssertEqual(
+            first["session_id"],
+            .string("semantic-positive")
+        )
+        XCTAssertEqual(backend.embeddingRequests.count, 2)
+        XCTAssertEqual(
+            backend.embeddingRequests[0].inputs.map(\.role),
+            [.retrievalQuery, .retrievalDocument, .retrievalDocument]
+        )
+        XCTAssertEqual(
+            backend.embeddingRequests[1].inputs.map(\.role),
+            [.semanticSimilarity, .semanticSimilarity, .semanticSimilarity]
+        )
+        XCTAssertEqual(store.semanticEmbeddingWriteBatches.map(\.count), [2])
+    }
+
+    func testChatSessionsListRerankPoolUsesVisibleLimitInsteadOfMaterializationLimit()
+        async throws
+    {
+        let sink = RecordingSink()
+        let sessions = (0..<40).map { index in
+            RuntimeChatStoredSession(
+                sessionID: String(format: "visible-%02d", index),
+                title: "Visible session \(index)",
+                model: "ollama:chat",
+                lastActivityAt: Date(
+                    timeIntervalSince1970: Double(1_000 - index)
+                ),
+                messageCount: 1
+            )
+        }
+        let backend = MockBackend(
+            models: [semanticEmbeddingModel(
+                revision: "visible-limit-rerank-v1",
+                embeddingInputProfile: .embeddingGemma
+            )],
+            embeddingResultBatches: [
+                .success(EmbeddingResult(
+                    model: "nomic-embed-text:latest",
+                    embeddings: Array(
+                        repeating: [1, 0],
+                        count: sessions.count + 1
+                    ),
+                    embeddingInputProfile: .embeddingGemma
+                )),
+                .success(EmbeddingResult(
+                    model: "nomic-embed-text:latest",
+                    embeddings: Array(
+                        repeating: [1, 0],
+                        count: 9
+                    ),
+                    embeddingInputProfile: .embeddingGemma
+                )),
+            ]
+        )
+        let store = SearchHintRecordingRuntimeChatEventStore(
+            sessions: sessions
+        )
+        let router = makeRouter(backend: backend, chatEventStore: store)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "semantic-visible-limit-rerank",
+            payload: [
+                "limit": .number(1),
+                "query": .string("visible session"),
+                "embedding_model_id":
+                    .string("ollama:nomic-embed-text:latest"),
+            ]
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(response?.type, MessageType.chatSessionsList)
+        XCTAssertEqual(backend.embeddingRequests.count, 2)
+        XCTAssertEqual(
+            backend.embeddingRequests.map { $0.inputs.count },
+            [41, 9]
+        )
+        XCTAssertTrue(
+            backend.embeddingRequests[1].inputs.allSatisfy {
+                $0.role == .semanticSimilarity
+            }
+        )
+        XCTAssertEqual(store.semanticEmbeddingWriteBatches.map(\.count), [40])
+    }
+
+    func testChatSessionsListFallsBackToPrimaryWhenResearchMembershipChangesAfterRerank()
+        async throws
+    {
+        let ownerDeviceID = "semantic-rerank-research-race-owner"
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(
+            fileURL: trustedDeviceStoreURL()
+        )
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerDeviceID,
+            name: "Semantic Rerank Research Race Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation
+                .base64EncodedString()
+        ))
+        let promotedSessionID = "semantic-rerank-promoted"
+        let ordinarySessionA = "semantic-rerank-ordinary-a"
+        let ordinarySessionB = "semantic-rerank-ordinary-b"
+        let sessions = [
+            RuntimeChatStoredSession(
+                sessionID: promotedSessionID,
+                title: "Primary first",
+                model: "ollama:chat",
+                lastActivityAt: Date(timeIntervalSince1970: 300),
+                messageCount: 1
+            ),
+            RuntimeChatStoredSession(
+                sessionID: ordinarySessionA,
+                title: "Primary second",
+                model: "ollama:chat",
+                lastActivityAt: Date(timeIntervalSince1970: 200),
+                messageCount: 1
+            ),
+            RuntimeChatStoredSession(
+                sessionID: ordinarySessionB,
+                title: "Rerank first",
+                model: "ollama:chat",
+                lastActivityAt: Date(timeIntervalSince1970: 100),
+                messageCount: 1
+            ),
+        ]
+        let backend = MockBackend(
+            models: [semanticEmbeddingModel(
+                revision: "research-race-rerank-v1",
+                embeddingInputProfile: .embeddingGemma
+            )],
+            embeddingResultBatches: [
+                .success(EmbeddingResult(
+                    model: "nomic-embed-text:latest",
+                    embeddings: [
+                        [1, 0],
+                        [1, 0],
+                        [0.9998, 0.02],
+                        [0.9992, 0.04],
+                    ],
+                    embeddingInputProfile: .embeddingGemma
+                )),
+                .success(EmbeddingResult(
+                    model: "nomic-embed-text:latest",
+                    embeddings: [
+                        [1, 0],
+                        [0.5, 0.5],
+                        [0, 1],
+                        [1, 0],
+                    ],
+                    embeddingInputProfile: .embeddingGemma
+                )),
+            ]
+        )
+        let chatStore = SearchHintRecordingRuntimeChatEventStore(
+            sessions: sessions
+        )
+        let notebookStore = RuntimeResearchNotebookStore()
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        let sink = RecordingSink()
+        let router = makeRouter(
+            backend: backend,
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            researchNotebookStore: notebookStore,
+            researchNotebookChatSessionPublicationCheckpoint: {
+                checkpoint.checkpoint()
+            }
+        )
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey
+        )
+
+        checkpoint.arm()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "semantic-rerank-research-race",
+            payload: [
+                "limit": .number(2),
+                "query": .string("bounded semantic query"),
+                "embedding_model_id":
+                    .string("ollama:nomic-embed-text:latest"),
+            ]
+        ), sink: sink)
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+        guard didEnterCheckpoint else {
+            checkpoint.release()
+            return
+        }
+
+        _ = try notebookStore.create(
+            ownerDeviceID: ownerDeviceID,
+            notebookID: "research_notebook_" +
+                String(repeating: "7", count: 32),
+            backingSessionID: promotedSessionID,
+            title: "Concurrent promotion",
+            model: "ollama:chat",
+            promptSkillBinding:
+                RuntimePromptSkillRegistry.researchBriefBinding,
+            trustedSourceGrantIDs: [
+                "trusted_source_" +
+                    String(repeating: "7", count: 32),
+            ]
+        )
+        checkpoint.release()
+
+        let response = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(response?.type, MessageType.chatSessionsList)
+        let responseSessions = try chatSessionObjects(
+            from: XCTUnwrap(response)
+        )
+        XCTAssertEqual(
+            responseSessions.compactMap {
+                $0["session_id"]?.stringValue
+            },
+            [ordinarySessionA, ordinarySessionB]
+        )
+        XCTAssertEqual(
+            responseSessions.compactMap { session -> JSONValue? in
+                guard
+                    case .object(let search)? = session["search"]
+                else {
+                    return nil
+                }
+                return search["rank"]
+            },
+            [.number(1), .number(2)]
+        )
+        XCTAssertEqual(backend.embeddingRequests.count, 2)
+    }
+
+    func testChatSessionsListFallsBackToPrimaryRankingWhenSecondStageFails()
+        async throws
+    {
+        let sink = RecordingSink()
+        let profileModel = semanticEmbeddingModel(
+            revision: "role-aware-rerank-v1",
+            embeddingInputProfile: .embeddingGemma
+        )
+        let retrievalResult = EmbeddingResult(
+            model: "nomic-embed-text:latest",
+            embeddings: [
+                [1, 0],
+                [0.96, 0.28],
+                [0.99, 0.1410673598],
+            ],
+            embeddingInputProfile: .embeddingGemma
+        )
+        let backend = MockBackend(
+            models: [profileModel],
+            embeddingResultBatches: [
+                .success(retrievalResult),
+                .failure(BackendError(
+                    provider: .ollama,
+                    code: "backend_unavailable",
+                    message: "Second-stage embedding unavailable.",
+                    retryable: true
+                )),
+            ]
+        )
+        let store = SearchHintRecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: "semantic-positive",
+                title: "Natural satellite orbit",
+                model: "ollama:chat",
+                lastActivityAt: Date(timeIntervalSince1970: 100),
+                messageCount: 1
+            ),
+            RuntimeChatStoredSession(
+                sessionID: "semantic-hard-negative",
+                title: "Moon photograph calendar",
+                model: "ollama:chat",
+                lastActivityAt: Date(timeIntervalSince1970: 200),
+                messageCount: 1
+            ),
+        ])
+        let router = makeRouter(backend: backend, chatEventStore: store)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "semantic-second-stage-fallback",
+            payload: [
+                "limit": .number(1),
+                "query": .string("The moon orbits Earth"),
+                "embedding_model_id":
+                    .string("ollama:nomic-embed-text:latest"),
+            ]
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 1).first
+        guard
+            case .array(let sessions)? = response?.payload["sessions"],
+            case .object(let first)? = sessions.first
+        else {
+            XCTFail("Expected primary semantic chat session")
+            return
+        }
+        XCTAssertEqual(response?.type, MessageType.chatSessionsList)
+        XCTAssertEqual(
+            first["session_id"],
+            .string("semantic-hard-negative")
+        )
+        XCTAssertEqual(backend.embeddingRequests.count, 2)
+        XCTAssertEqual(
+            backend.embeddingRequests[1].inputs.map(\.role),
+            [.semanticSimilarity, .semanticSimilarity, .semanticSimilarity]
+        )
+        XCTAssertEqual(store.semanticEmbeddingWriteBatches.map(\.count), [2])
+    }
+
+    func testChatSessionsListSecondStageIdentityDriftSkipsRerankAndCacheWrite()
+        async throws
+    {
+        let sink = RecordingSink()
+        let profileV1 = semanticEmbeddingModel(
+            revision: "role-aware-rerank-v1",
+            embeddingInputProfile: .embeddingGemma
+        )
+        let profileV2 = semanticEmbeddingModel(
+            revision: "role-aware-rerank-v2",
+            embeddingInputProfile: .embeddingGemma
+        )
+        let backend = MockBackend(
+            modelListBatches: [[profileV1], [profileV1], [profileV2]],
+            embeddingResultBatches: [
+                .success(EmbeddingResult(
+                    model: "nomic-embed-text:latest",
+                    embeddings: [
+                        [1, 0],
+                        [0.96, 0.28],
+                        [0.99, 0.1410673598],
+                    ],
+                    embeddingInputProfile: .embeddingGemma
+                )),
+                .success(EmbeddingResult(
+                    model: "nomic-embed-text:latest",
+                    embeddings: [
+                        [1, 0],
+                        [0, 1],
+                        [1, 0],
+                    ],
+                    embeddingInputProfile: .embeddingGemma
+                )),
+            ]
+        )
+        let store = SearchHintRecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: "semantic-positive",
+                title: "Natural satellite orbit",
+                model: "ollama:chat",
+                lastActivityAt: Date(timeIntervalSince1970: 100),
+                messageCount: 1
+            ),
+            RuntimeChatStoredSession(
+                sessionID: "semantic-hard-negative",
+                title: "Moon photograph calendar",
+                model: "ollama:chat",
+                lastActivityAt: Date(timeIntervalSince1970: 200),
+                messageCount: 1
+            ),
+        ])
+        let router = makeRouter(backend: backend, chatEventStore: store)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "semantic-second-stage-identity-drift",
+            payload: [
+                "limit": .number(1),
+                "query": .string("The moon orbits Earth"),
+                "embedding_model_id":
+                    .string("ollama:nomic-embed-text:latest"),
+            ]
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 1).first
+        guard
+            case .array(let sessions)? = response?.payload["sessions"],
+            case .object(let first)? = sessions.first
+        else {
+            XCTFail("Expected primary semantic chat session")
+            return
+        }
+        XCTAssertEqual(response?.type, MessageType.chatSessionsList)
+        XCTAssertEqual(
+            first["session_id"],
+            .string("semantic-hard-negative")
+        )
+        XCTAssertEqual(backend.embeddingRequests.count, 2)
+        XCTAssertTrue(store.semanticEmbeddingWriteBatches.isEmpty)
+        XCTAssertEqual(store.cachedSemanticEmbeddingCount, 0)
     }
 
     func testChatSessionsListPersistentEmbeddingCacheEmbedsOnlyQueryAfterColdFill() async throws {
@@ -4590,7 +5067,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let response = try await sink.waitForMessages(count: 1).first
         XCTAssertEqual(response?.type, MessageType.chatSessionsList)
         let candidateDocument = try XCTUnwrap(backend.embeddingRequests.first?.texts.dropFirst().first)
-        XCTAssertLessThanOrEqual(candidateDocument.utf8.count, 128)
+        XCTAssertEqual(candidateDocument.utf8.count, 160)
     }
 
     func testChatSessionsListRejectsResourceHeavyQueriesBeforeEmbeddingOrStoreSearch() async throws {
@@ -7426,6 +7903,15 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(cold?.payload, hit?.payload)
         XCTAssertEqual(backend.embeddingRequests.map { $0.texts.count }, [3, 1])
         XCTAssertEqual(backend.embeddingRequests.first?.texts.first, "recover connection")
+        XCTAssertEqual(
+            backend.embeddingRequests.first?.inputs.first?.role,
+            .retrievalQuery
+        )
+        XCTAssertTrue(
+            backend.embeddingRequests.first?.inputs.dropFirst().allSatisfy {
+                $0.role == .retrievalDocument
+            } == true
+        )
         XCTAssertEqual(Set(backend.embeddingRequests.first?.texts.dropFirst() ?? []), Set([
             "Use the latest QR for relay recovery.",
             "Keep answers concise."
@@ -20061,6 +20547,15 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let cold = try await firstSink.waitForMessages(count: 1).first
         XCTAssertEqual(cold?.type, MessageType.retrievalQuery)
         XCTAssertEqual(backend.embeddingRequests.map(\.texts.count), [1, 1])
+        XCTAssertEqual(
+            backend.embeddingRequests.map {
+                $0.inputs.map(\.role)
+            },
+            [
+                [.retrievalQuery],
+                [.retrievalDocument],
+            ]
+        )
 
         let reopenedStore = SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
         let secondSink = RecordingSink()
@@ -34188,7 +34683,8 @@ private final class RecordingRuntimeChatCompactionSummaryCache:
 
 private func semanticEmbeddingModel(
     revision: String?,
-    provider: ModelProvider = .ollama
+    provider: ModelProvider = .ollama,
+    embeddingInputProfile: EmbeddingInputProfile? = .raw
 ) -> ModelInfo {
     let persistentRevision = revision.map { value in
         "ollama-sha256:" + SHA256.hash(data: Data(value.utf8))
@@ -34204,7 +34700,8 @@ private func semanticEmbeddingModel(
         sizeBytes: 274_000_000,
         modifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
         contextWindowTokens: 2_048,
-        persistentEmbeddingRevision: persistentRevision
+        persistentEmbeddingRevision: persistentRevision,
+        embeddingInputProfile: embeddingInputProfile
     )
 }
 

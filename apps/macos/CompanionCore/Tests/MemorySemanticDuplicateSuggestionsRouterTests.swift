@@ -192,6 +192,13 @@ final class MemorySemanticDuplicateSuggestionsRouterTests: XCTestCase {
         let accepted = try await singleBatchSink.waitForMessages(count: 3)
         XCTAssertEqual(accepted.last?.type, MessageType.memorySemanticDuplicateSuggestionsList)
         XCTAssertEqual(singleBatchBackend.embeddingRequests.map(\.texts.count), [5])
+        XCTAssertTrue(
+            singleBatchBackend.embeddingRequests.allSatisfy { request in
+                request.inputs.allSatisfy {
+                    $0.role == .semanticSimilarity
+                }
+            }
+        )
         XCTAssertEqual(singleBatchFixture.memoryStore.cachedRecordCount, 0)
         XCTAssertEqual(singleBatchFixture.memoryStore.cacheWriteCount, 0)
 
@@ -242,16 +249,28 @@ final class MemorySemanticDuplicateSuggestionsRouterTests: XCTestCase {
     }
 
     func testStrongFingerprintSplitsAtByteBudgetAndWeakFingerprintRejectsBeforeDispatch() async throws {
+        let contextWindowTokens = 8_224
+        let perInputUTF8ByteBudget =
+            RuntimeMemorySemanticDuplicateSuggester
+                .maximumEmbeddingBatchUTF8ByteCount / 32
+        let modelDocumentUTF8ByteLimit =
+            perInputUTF8ByteBudget -
+                EmbeddingInputProfile.embeddingGemma
+                    .maximumAdapterPromptUTF8ByteCount
         let entries = (0..<33).map { index in
             memoryEntry(
                 id: String(format: "byte-batch-%03d", index),
-                content: String(format: "%04d", index) + String(repeating: "x", count: 8_188)
+                content: String(format: "%04d", index) + String(
+                    repeating: "x",
+                    count: modelDocumentUTF8ByteLimit - 4
+                )
             )
         }
         let strongBackend = SemanticDuplicateBackend(
             models: [embeddingModel(
                 revision: "strong-byte-batches",
-                contextWindowTokens: 8_224
+                contextWindowTokens: contextWindowTokens,
+                embeddingInputProfile: .embeddingGemma
             )]
         )
         let strongFixture = try await makeFixture(entries: entries, backend: strongBackend)
@@ -266,13 +285,18 @@ final class MemorySemanticDuplicateSuggestionsRouterTests: XCTestCase {
         XCTAssertEqual(messages.last?.type, MessageType.memorySemanticDuplicateSuggestionsList)
         XCTAssertEqual(strongBackend.embeddingRequests.map(\.texts.count), [32, 1])
         XCTAssertTrue(strongBackend.embeddingRequests.allSatisfy { request in
-            request.texts.reduce(0) { $0 + $1.utf8.count } <=
+            request.texts.reduce(0) {
+                $0 + $1.utf8.count +
+                    EmbeddingInputProfile.embeddingGemma
+                        .maximumAdapterPromptUTF8ByteCount
+            } <=
                 RuntimeMemorySemanticDuplicateSuggester.maximumEmbeddingBatchUTF8ByteCount
         })
 
         let weakBackend = SemanticDuplicateBackend(models: [embeddingModel(
             revision: nil,
-            contextWindowTokens: 8_224
+            contextWindowTokens: contextWindowTokens,
+            embeddingInputProfile: .embeddingGemma
         )])
         let weakFixture = try await makeFixture(entries: entries, backend: weakBackend)
         let weakSink = SemanticDuplicateRecordingSink()
@@ -342,6 +366,46 @@ final class MemorySemanticDuplicateSuggestionsRouterTests: XCTestCase {
             XCTAssertFalse(response.contains { $0.type == MessageType.memorySemanticDuplicateSuggestionsList }, name)
             XCTAssertEqual(fixture.memoryStore.cachedRecordCount, 0, name)
         }
+    }
+
+    func testEmbeddingInputProfileMismatchFailsWithoutCaching() async throws {
+        let backend = SemanticDuplicateBackend(
+            models: [embeddingModel(
+                revision: "profile-mismatch",
+                embeddingInputProfile: .embeddingGemma
+            )],
+            embeddingResponder: { request, _ in
+                EmbeddingResult(
+                    model: request.model,
+                    embeddings: request.texts.map { _ in [1, 0] },
+                    embeddingInputProfile: .raw
+                )
+            }
+        )
+        let fixture = try await makeFixture(
+            entries: semanticEntries(),
+            backend: backend
+        )
+        let sink = SemanticDuplicateRecordingSink()
+        try await authenticate(
+            router: fixture.router,
+            sink: sink,
+            fixture: fixture
+        )
+
+        fixture.router.handle(
+            request(id: "profile-mismatch"),
+            sink: sink
+        )
+        let messages = try await sink.waitForMessages(count: 3)
+
+        XCTAssertEqual(messages.last?.type, MessageType.error)
+        XCTAssertEqual(
+            messages.last?.payload["code"],
+            .string("backend_unavailable")
+        )
+        XCTAssertEqual(fixture.memoryStore.cachedRecordCount, 0)
+        XCTAssertEqual(fixture.memoryStore.cacheWriteCount, 0)
     }
 
     func testSourceMutationRetriesOnceAndRepeatedMutationFailsClosed() async throws {
@@ -1497,15 +1561,21 @@ private final class SemanticDuplicateBackend: LlmBackend, @unchecked Sendable {
         models: [ModelInfo],
         modelListBatches: [[ModelInfo]] = [],
         holdEmbeddings: Bool = false,
-        embeddingResponder: @escaping EmbeddingResponder = { request, _ in
-            EmbeddingResult(model: request.model, embeddings: request.texts.map { _ in [1, 0] })
-        }
+        embeddingResponder: EmbeddingResponder? = nil
     ) {
         self.provider = provider
         self.models = models
         self.modelListBatches = modelListBatches
         self.holdEmbeddings = holdEmbeddings
-        self.embeddingResponder = embeddingResponder
+        let defaultEmbeddingInputProfile =
+            models.first?.embeddingInputProfile ?? .raw
+        self.embeddingResponder = embeddingResponder ?? { request, _ in
+            EmbeddingResult(
+                model: request.model,
+                embeddings: request.texts.map { _ in [1, 0] },
+                embeddingInputProfile: defaultEmbeddingInputProfile
+            )
+        }
     }
 
     var listModelsCallCount: Int { lock.withLock { modelListCalls } }
@@ -1563,7 +1633,8 @@ private func embeddingModel(
     installed: Bool = true,
     source: ModelSource = .local,
     kind: ModelKind = .embedding,
-    contextWindowTokens: Int? = 2_048
+    contextWindowTokens: Int? = 2_048,
+    embeddingInputProfile: EmbeddingInputProfile? = .raw
 ) -> ModelInfo {
     let persistentRevision = revision.map { value in
         "ollama-sha256:" + SHA256.hash(data: Data(value.utf8))
@@ -1580,7 +1651,8 @@ private func embeddingModel(
         installed: installed,
         source: source,
         contextWindowTokens: contextWindowTokens,
-        persistentEmbeddingRevision: persistentRevision
+        persistentEmbeddingRevision: persistentRevision,
+        embeddingInputProfile: embeddingInputProfile
     )
 }
 

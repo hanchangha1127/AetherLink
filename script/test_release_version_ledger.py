@@ -19,8 +19,8 @@ class ReleaseVersionLedgerTests(unittest.TestCase):
     def test_repository_ledger_and_consumers_pass(self) -> None:
         entries = load_release_version_ledger()
 
-        self.assertEqual(len(entries), 6)
-        self.assertEqual(entries[-1].build_number, 6)
+        self.assertEqual(len(entries), 9)
+        self.assertEqual(entries[-1].build_number, 9)
         self.assertEqual(entries[-1].marketing_version, "1.0.0")
         self.assertEqual(source_contract_failures(entries[-1]), [])
 

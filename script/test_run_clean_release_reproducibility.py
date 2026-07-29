@@ -102,6 +102,22 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result)
         self.assertIn("--result", result.stdout)
 
+    def test_default_result_path_is_release_id_qualified(self) -> None:
+        current = mock.Mock(
+            build_number=8,
+            marketing_version="1.0.0",
+        )
+        with mock.patch.object(
+            runner,
+            "load_release_version_ledger",
+            return_value=(current,),
+        ):
+            self.assertEqual(
+                runner.default_result_path(),
+                runner.RESULT_ROOT
+                / "aetherlink-1.0.0+8-local-v1-two-root-v2.json",
+            )
+
     def test_git_refs_capture_head_and_origin_independently(self) -> None:
         with mock.patch.object(
             runner,
@@ -484,6 +500,14 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             self.assertEqual(
                 [record["path"] for record in comparison["memberDifferences"]],
                 ["payload.bin"],
+            )
+            self.assertEqual(
+                comparison["memberDifferences"][0]["diagnostic"],
+                {
+                    "firstDifferenceOffset": 0,
+                    "sizeA": 7,
+                    "sizeB": 7,
+                },
             )
 
     def test_execute_never_builds_from_original_and_holds_lock_through_cleanup(

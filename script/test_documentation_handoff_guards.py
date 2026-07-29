@@ -110,8 +110,10 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
             [],
         )
         missing_current = document_text.replace(
-            "The current build 6 archive includes the terminal-less EOF fix",
-            "The build 6 readback marker was removed.",
+            "The Build 9 archive remains the latest ledger entry but its "
+            "source-bound snapshot predates the current two-stage reranker "
+            "worktree",
+            "The Build 9 readback marker was removed.",
             1,
         )
         self.assertTrue(
@@ -128,6 +130,69 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
         self.assertTrue(
             check_docs_hygiene.current_release_qa_evidence_failures(
                 stale
+            )
+        )
+
+    def test_release_readback_commands_require_correct_history_mode(
+        self,
+    ) -> None:
+        documents = {
+            str(path.relative_to(check_docs_hygiene.ROOT)): path.read_text(
+                encoding="utf-8"
+            )
+            for path in check_docs_hygiene.RELEASE_READBACK_COMMAND_DOCS
+        }
+        self.assertEqual(
+            check_docs_hygiene.release_readback_command_mode_failures(
+                documents
+            ),
+            [],
+        )
+
+        progress_path = "docs/progress.md"
+        historical_command = (
+            "--archive-dir "
+            "dist/releases/aetherlink-1.0.0+7-local-v1 --historical"
+        )
+        without_historical = dict(documents)
+        without_historical[progress_path] = documents[progress_path].replace(
+            historical_command,
+            historical_command.removesuffix(" --historical"),
+            1,
+        )
+        self.assertTrue(
+            any(
+                "historical Build 7" in failure
+                for failure in (
+                    check_docs_hygiene
+                    .release_readback_command_mode_failures(
+                        without_historical
+                    )
+                )
+            )
+        )
+
+        current_command = (
+            "--archive-dir "
+            "dist/releases/aetherlink-1.0.0+9-local-v1"
+        )
+        current_as_historical = dict(documents)
+        current_as_historical[progress_path] = documents[
+            progress_path
+        ].replace(
+            current_command,
+            current_command + " --historical",
+            1,
+        )
+        self.assertTrue(
+            any(
+                "current Build 9" in failure
+                for failure in (
+                    check_docs_hygiene
+                    .release_readback_command_mode_failures(
+                        current_as_historical
+                    )
+                )
             )
         )
 
@@ -640,7 +705,7 @@ private func generatePairingQR() {{
                 "current qualification record pointer",
             ),
             "additional_stale_fuller_contract": (
-                f"contract now lives in the build {current.build_number} record",
+                f"contract now lives in the Build {current.build_number} record",
                 (
                     f"contract now lives in the build "
                     f"{current.build_number} record.\n"
@@ -650,8 +715,8 @@ private func generatePairingQR() {{
                 "fuller contract must point to current build",
             ),
             "fuller_contract": (
-                f"build {current.build_number} record",
-                f"build {previous.build_number} record",
+                f"Build {current.build_number} record",
+                f"Build {previous.build_number} record",
                 "fuller contract must point to current build",
             ),
         }
@@ -760,7 +825,7 @@ private func generatePairingQR() {{
             ),
             (
                 "`dist/lifecycle/"
-                "macos-packaged-app-build-6-lifecycle-v1.json`"
+                "macos-packaged-app-build-9-lifecycle-v1.json`"
             ),
             (
                 f"{check_docs_hygiene.MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT_SIZE:,} "
@@ -2008,7 +2073,7 @@ private func generatePairingQR() {{
             ),
             "runner_sha": (
                 '"runnerSourceSha256": '
-                '"5362015be1e3f7f565e50389a0fa5b094b6c32a67e797b1ddf0686916118707b"',
+                '"45cd9fe57e15bcc8adc1b335ead87d36a888545d37de9720ef4c7f5d49697078"',
                 f'"runnerSourceSha256": "{"0" * 64}"',
             ),
             "locale": (
@@ -2041,8 +2106,33 @@ private func generatePairingQR() {{
             ),
             "source_identity": (
                 '"scorerAndLiveAssertionSha256": '
-                '"62ff0de9a1bffa9f42d65d89bd5b4622286ed4cf31ff4b1d0e00306bc5ace768"',
+                '"054639797cc9a07f336034f8858772017d63f43970a269f810c24fb3f23c8d40"',
                 f'"scorerAndLiveAssertionSha256": "{"0" * 64}"',
+            ),
+            "embedding_contract_identity": (
+                '"embeddingRequestContractSha256": '
+                '"708a22934bb8f28218e5ddaeab6a7b469d8beddaa77e5887746e35be40125505"',
+                f'"embeddingRequestContractSha256": "{"0" * 64}"',
+            ),
+            "ollama_adapter_identity": (
+                '"ollamaEmbeddingAdapterSha256": '
+                '"5c10154d96c9c6e69f10bb214abaefdaded4646f85cacdc781c55ffb6e48a06d"',
+                f'"ollamaEmbeddingAdapterSha256": "{"0" * 64}"',
+            ),
+            "aggregate_identity": (
+                '"aggregateRolePreservationSha256": '
+                '"808b434913bb004883b4cfa77c70a4b46dfceebc562615a2223dd27de02d5c99"',
+                f'"aggregateRolePreservationSha256": "{"0" * 64}"',
+            ),
+            "router_identity": (
+                '"routerRoleAssignmentSha256": '
+                '"7e6443295993b3ac9e19e78a45c989d8eb3b00e40d237191067ee14c70df6a97"',
+                f'"routerRoleAssignmentSha256": "{"0" * 64}"',
+            ),
+            "fingerprint_identity": (
+                '"semanticFingerprintSha256": '
+                '"bca3faff000112e59945fb558815b1108a1704c6a438eed3e347cf15d685ac8c"',
+                f'"semanticFingerprintSha256": "{"0" * 64}"',
             ),
             "boolean_count": (
                 '"semanticFailureObservationCount": 2',
@@ -2054,10 +2144,10 @@ private func generatePairingQR() {{
                 '        "unexpected": true,',
             ),
             "duplicate_root_key": (
-                '"schemaVersion": 2,\n'
+                '"schemaVersion": 4,\n'
                 '  "semanticFailureObservationCount"',
-                '"schemaVersion": 2,\n'
-                '  "schemaVersion": 2,\n'
+                '"schemaVersion": 4,\n'
+                '  "schemaVersion": 4,\n'
                 '  "semanticFailureObservationCount"',
             ),
         }
