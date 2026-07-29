@@ -228,63 +228,77 @@ class OllamaMultilingualSemanticFullMatrixV3Tests(unittest.TestCase):
             task_path = candidate_root / runner.v2.TASK_SET_COPY_NAME
             task_path.write_bytes(runner.v2.recorded_task_set_bytes())
             snapshot = (("snapshot", 1, "0" * 64),)
-            fallback = Mock()
-            with (
-                patch.object(runner, "assert_bound_sources"),
-                patch.object(
-                    runner,
-                    "semantic_adapter_environment",
-                    return_value={},
+            changed_snapshot = (("changed", 2, "1" * 64),)
+            cases = (
+                (None, "cleanup failed"),
+                (
+                    runner.MatrixFailure("fallback failed"),
+                    "fallback failed",
                 ),
-                patch.object(
-                    runner.base,
-                    "start_live_fault_provider",
-                    return_value=FakeProcess(),
-                ),
-                patch.object(
-                    runner.base,
-                    "run_fault_swift_test",
-                    side_effect=runner.MatrixFailure("adapter failed"),
-                ),
-                patch.object(
-                    runner.base,
-                    "stop_provider",
-                    side_effect=runner.MatrixFailure("cleanup failed"),
-                ),
-                patch.object(
-                    runner.base,
-                    "process_group_is_available",
-                    return_value=True,
-                ),
-                patch.object(
-                    runner.base,
-                    "kill_process_group_and_wait",
-                    side_effect=fallback,
-                ),
-                patch.object(
-                    runner.base,
-                    "model_snapshot_state",
-                    return_value=snapshot,
-                ),
-                self.assertRaisesRegex(
-                    runner.MatrixFailure,
-                    "cleanup failed",
-                ),
-            ):
-                runner.run_phase_v3(
-                    binary=root / "ollama",
-                    extracted=root,
-                    models_directory=root / "models",
-                    candidate_root=candidate_root,
-                    phase="semantic",
-                    port=31343,
-                    base_url="http://127.0.0.1:31343",
-                    candidate=runner.base.EXACT_CANDIDATES[0],
-                    selected=self.selected_model(),
-                    task_set_path=task_path,
-                    initial_snapshot_state=snapshot,
-                )
-            fallback.assert_called_once()
+            )
+            for fallback_error, expected in cases:
+                with self.subTest(expected=expected):
+                    fallback = Mock(side_effect=fallback_error)
+                    with (
+                        patch.object(runner, "assert_bound_sources"),
+                        patch.object(
+                            runner,
+                            "semantic_adapter_environment",
+                            return_value={},
+                        ),
+                        patch.object(
+                            runner.base,
+                            "start_live_fault_provider",
+                            return_value=FakeProcess(),
+                        ),
+                        patch.object(
+                            runner.base,
+                            "run_fault_swift_test",
+                            side_effect=runner.MatrixFailure(
+                                "adapter failed"
+                            ),
+                        ),
+                        patch.object(
+                            runner.base,
+                            "stop_provider",
+                            side_effect=runner.MatrixFailure(
+                                "cleanup failed"
+                            ),
+                        ),
+                        patch.object(
+                            runner.base,
+                            "process_group_is_available",
+                            return_value=True,
+                        ),
+                        patch.object(
+                            runner.base,
+                            "kill_process_group_and_wait",
+                            side_effect=fallback,
+                        ),
+                        patch.object(
+                            runner.base,
+                            "model_snapshot_state",
+                            return_value=changed_snapshot,
+                        ),
+                        self.assertRaisesRegex(
+                            runner.MatrixFailure,
+                            expected,
+                        ),
+                    ):
+                        runner.run_phase_v3(
+                            binary=root / "ollama",
+                            extracted=root,
+                            models_directory=root / "models",
+                            candidate_root=candidate_root,
+                            phase="semantic",
+                            port=31343,
+                            base_url="http://127.0.0.1:31343",
+                            candidate=runner.base.EXACT_CANDIDATES[0],
+                            selected=self.selected_model(),
+                            task_set_path=task_path,
+                            initial_snapshot_state=snapshot,
+                        )
+                    fallback.assert_called_once()
 
     def test_boundary_error_precedes_adapter_error(self) -> None:
         class FakeProcess:
@@ -412,6 +426,7 @@ class OllamaMultilingualSemanticFullMatrixV3Tests(unittest.TestCase):
             for index in range(profile.recorded_catalog_model_count)
         )
         source_state = (("selected", 1, "0" * 64),)
+        binding_check = Mock()
 
         def run_candidate(
             candidate: dict[str, str],
@@ -431,7 +446,11 @@ class OllamaMultilingualSemanticFullMatrixV3Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             source_root = Path(directory).resolve()
             with (
-                patch.object(runner, "assert_bound_sources"),
+                patch.object(
+                    runner,
+                    "assert_bound_sources",
+                    binding_check,
+                ),
                 patch.object(
                     runner.base,
                     "source_provider_version",
@@ -479,6 +498,7 @@ class OllamaMultilingualSemanticFullMatrixV3Tests(unittest.TestCase):
             [row["version"] for row in result["versions"]],
             expected,
         )
+        self.assertEqual(binding_check.call_count, 2)
         self.assertFalse(result["qualityGatePassed"])
 
     def test_source_drift_precedes_candidate_error(self) -> None:

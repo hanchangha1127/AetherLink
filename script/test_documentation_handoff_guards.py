@@ -110,10 +110,8 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
             [],
         )
         missing_current = document_text.replace(
-            "The Build 9 archive remains the latest ledger entry but its "
-            "source-bound snapshot predates the current two-stage reranker "
-            "worktree",
-            "The Build 9 readback marker was removed.",
+            "The Build 11 archive is the latest ledger entry",
+            "The Build 11 readback marker was removed.",
             1,
         )
         self.assertTrue(
@@ -174,7 +172,7 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
 
         current_command = (
             "--archive-dir "
-            "dist/releases/aetherlink-1.0.0+9-local-v1"
+            "dist/releases/aetherlink-1.0.0+11-local-v1"
         )
         current_as_historical = dict(documents)
         current_as_historical[progress_path] = documents[
@@ -186,7 +184,7 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
         )
         self.assertTrue(
             any(
-                "current Build 9" in failure
+                "current Build 11" in failure
                 for failure in (
                     check_docs_hygiene
                     .release_readback_command_mode_failures(
@@ -566,6 +564,47 @@ private func generatePairingQR() {{
             [],
         )
 
+    def test_current_reproducibility_confirmation_matches_closed_contract(
+        self,
+    ) -> None:
+        self.assertEqual(
+            (
+                check_docs_hygiene
+                .current_release_reproducibility_confirmation_failures()
+            ),
+            [],
+        )
+        result = json.loads(
+            (
+                check_docs_hygiene
+                .LOCAL_RELEASE_REPRODUCIBILITY_CONFIRMATION_RESULT
+                .read_text(encoding="utf-8")
+            )
+        )
+        result["publication"]["alreadyMatched"] = False
+        mutated = (
+            json.dumps(
+                result,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("ascii")
+
+        failures = (
+            check_docs_hygiene
+            .current_release_reproducibility_confirmation_failures(mutated)
+        )
+
+        self.assertTrue(
+            any(
+                "expected identity" in failure
+                or "publication.alreadyMatched" in failure
+                for failure in failures
+            )
+        )
+
     def test_macos_packaged_lifecycle_result_matches_closed_contract(
         self,
     ) -> None:
@@ -599,6 +638,46 @@ private func generatePairingQR() {{
         self.assertTrue(
             any("exact closed" in failure for failure in failures)
         )
+
+    def test_macos_packaged_lifecycle_sources_match_recorded_bytes(
+        self,
+    ) -> None:
+        self.assertEqual(
+            check_docs_hygiene.macos_packaged_lifecycle_source_failures(),
+            [],
+        )
+
+    def test_historical_macos_packaged_lifecycle_result_is_preserved(
+        self,
+    ) -> None:
+        self.assertEqual(
+            check_docs_hygiene
+            .historical_macos_packaged_lifecycle_evidence_failures(),
+            [],
+        )
+        result = json.loads(
+            check_docs_hygiene
+            .HISTORICAL_MACOS_PACKAGED_LIFECYCLE_RESULT
+            .read_text(encoding="utf-8")
+        )
+        result["app"]["buildNumber"] = 10
+        mutated = (
+            json.dumps(
+                result,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
+
+        failures = (
+            check_docs_hygiene
+            .historical_macos_packaged_lifecycle_evidence_failures(mutated)
+        )
+
+        self.assertTrue(any("expected identity" in failure for failure in failures))
+        self.assertTrue(any("exact closed" in failure for failure in failures))
 
     def test_historical_release_documents_follow_current_ledger_record(
         self,
@@ -824,8 +903,20 @@ private func generatePairingQR() {{
                 f"`{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SHA256}`"
             ),
             (
+                "`dist/reproducibility/"
+                "aetherlink-1.0.0+11-local-v1-two-root-v2-confirmation.json`"
+            ),
+            (
+                f"{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_CONFIRMATION_SIZE:,} "
+                "bytes"
+            ),
+            (
+                f"`{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_CONFIRMATION_SHA256}`"
+            ),
+            "`alreadyMatched=true`",
+            (
                 "`dist/lifecycle/"
-                "macos-packaged-app-build-9-lifecycle-v1.json`"
+                "macos-packaged-app-build-10-lifecycle-v1.json`"
             ),
             (
                 f"{check_docs_hygiene.MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT_SIZE:,} "
@@ -834,9 +925,36 @@ private func generatePairingQR() {{
             (
                 f"`{check_docs_hygiene.MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT_SHA256}`"
             ),
+            (
+                f"`{check_docs_hygiene.MACOS_PACKAGED_LIFECYCLE_EXPECTED_RUNNER_SHA256}`"
+            ),
+            (
+                f"`{check_docs_hygiene.MACOS_PACKAGED_LIFECYCLE_EXPECTED_TEST_SHA256}`"
+            ),
+            (
+                f"`{check_docs_hygiene.HISTORICAL_MACOS_PACKAGED_LIFECYCLE_EXPECTED_RUNNER_SHA256}`"
+            ),
+            (
+                f"`{check_docs_hygiene.HISTORICAL_MACOS_PACKAGED_LIFECYCLE_EXPECTED_TEST_SHA256}`"
+            ),
+            (
+                "Build 10 observations remain bound to Build 10 and are not "
+                "reinterpreted as Build 11 evidence."
+            ),
             "`minimumObservationSeconds=5.0`",
             "`observationDeadlineReached=true`",
             "`identityFilePresentAfterRuns=[false, false]`",
+            (
+                "`dist/lifecycle/"
+                "macos-packaged-app-build-9-lifecycle-v1.json`"
+            ),
+            (
+                f"{check_docs_hygiene.HISTORICAL_MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT_SIZE:,} "
+                "bytes"
+            ),
+            (
+                f"`{check_docs_hygiene.HISTORICAL_MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT_SHA256}`"
+            ),
             f"`{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_SOURCE_SHA256}`",
             f"`{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_SOURCE_HEAD}`",
             f"`{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_MACOS_UUID}`",

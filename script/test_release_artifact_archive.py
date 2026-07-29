@@ -8,6 +8,7 @@ import hashlib
 import io
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -71,6 +72,13 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
         '<uses-sdk android:minSdkVersion="26" '
         'android:targetSdkVersion="36"/>'
         "</manifest>"
+    )
+    BUNDLETOOL_VALIDATE_OUTPUT = (
+        "App Bundle information\n"
+        "------------\n"
+        "Feature modules:\n"
+        "\tFeature module: base\n"
+        "\t\tFile: dex/classes.dex"
     )
     GRADLE_LOCKFILE = (
         "# This is a Gradle generated file for dependency locking.\n"
@@ -1078,6 +1086,158 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                 with self.assertRaises(ReleaseArchiveVerificationError):
                     parse_readback_bundletool_manifest(document)
 
+    def test_bundletool_validate_output_requires_one_base_module(
+        self,
+    ) -> None:
+        modules = (
+            (builder_module, ReleaseArchiveError),
+            (readback_module, ReleaseArchiveVerificationError),
+        )
+        invalid = (
+            "",
+            self.BUNDLETOOL_VALIDATE_OUTPUT.replace(
+                "App Bundle information",
+                "Bundle information",
+            ),
+            self.BUNDLETOOL_VALIDATE_OUTPUT.replace(
+                "\tFeature module: base\n",
+                "",
+            ),
+            self.BUNDLETOOL_VALIDATE_OUTPUT.replace(
+                "\tFeature module: base\n",
+                "\tFeature module: base\n\tFeature module: feature\n",
+            ),
+            self.BUNDLETOOL_VALIDATE_OUTPUT.replace(
+                "\tFeature module: base\n",
+                "\tFeature module: base\n\tFeature module: base\n",
+            ),
+        )
+        for module, error_type in modules:
+            module.validate_bundletool_validation_output(
+                self.BUNDLETOOL_VALIDATE_OUTPUT
+            )
+            for output in invalid:
+                with self.subTest(
+                    module=module.__name__,
+                    output=output,
+                ), self.assertRaises(error_type):
+                    module.validate_bundletool_validation_output(output)
+
+    def test_bundle_structure_validation_claim_starts_at_build_11(
+        self,
+    ) -> None:
+        claim = {
+            "member": "android/bundle/app-release.aab",
+            "moduleSet": ["base"],
+            "status": "passed",
+            "tool": "bundletool validate",
+        }
+        self.assertIsNone(
+            builder_module.bundle_structure_validation_claim_for_build(10)
+        )
+        self.assertEqual(
+            builder_module.bundle_structure_validation_claim_for_build(11),
+            claim,
+        )
+        self.assertNotIn(
+            "bundleStructureValidation",
+            readback_module.expected_android_manifest_keys(10),
+        )
+        self.assertIn(
+            "bundleStructureValidation",
+            readback_module.expected_android_manifest_keys(11),
+        )
+        readback_module.verify_bundle_structure_validation_claim(
+            {"bundleStructureValidation": claim},
+            11,
+        )
+        readback_module.verify_bundle_structure_validation_claim({}, 10)
+
+        invalid_build_numbers = (True, 0, -1)
+        for build_number in invalid_build_numbers:
+            with self.subTest(
+                implementation="builder",
+                build_number=build_number,
+            ), self.assertRaises(ReleaseArchiveError):
+                builder_module.bundle_structure_validation_claim_for_build(
+                    build_number
+                )
+            with self.subTest(
+                implementation="readback-keys",
+                build_number=build_number,
+            ), self.assertRaises(ReleaseArchiveVerificationError):
+                readback_module.expected_android_manifest_keys(build_number)
+            with self.subTest(
+                implementation="readback-claim",
+                build_number=build_number,
+            ), self.assertRaises(ReleaseArchiveVerificationError):
+                readback_module.verify_bundle_structure_validation_claim(
+                    {},
+                    build_number,
+                )
+
+        with self.assertRaisesRegex(
+            ReleaseArchiveVerificationError,
+            "future validation claim",
+        ):
+            readback_module.verify_bundle_structure_validation_claim(
+                {"bundleStructureValidation": claim},
+                10,
+            )
+
+        for label, invalid_claim in (
+            (
+                "missing",
+                {},
+            ),
+            (
+                "extra",
+                {
+                    **claim,
+                    "unexpected": "value",
+                },
+            ),
+            (
+                "status-type",
+                {
+                    **claim,
+                    "status": True,
+                },
+            ),
+            (
+                "module-set-type",
+                {
+                    **claim,
+                    "moduleSet": ("base",),
+                },
+            ),
+            (
+                "module-set-value",
+                {
+                    **claim,
+                    "moduleSet": ["base", "feature"],
+                },
+            ),
+            (
+                "tool",
+                {
+                    **claim,
+                    "tool": "bundletool dump manifest",
+                },
+            ),
+        ):
+            with self.subTest(label=label), self.assertRaises(
+                ReleaseArchiveVerificationError
+            ):
+                readback_module.verify_bundle_structure_validation_claim(
+                    (
+                        invalid_claim
+                        if label == "missing"
+                        else {"bundleStructureValidation": invalid_claim}
+                    ),
+                    11,
+                )
+
     def test_bundletool_runtime_classpath_is_closed_and_version_pinned(
         self,
     ) -> None:
@@ -1171,19 +1331,39 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                         module.bundletool_version()
 
             temporary_paths: list[Path] = []
+            commands: list[list[str]] = []
 
             def fake_run(
                 arguments: list[str],
                 *,
                 root: Path,
             ) -> str:
-                self.assertEqual(arguments[:2], ["dump", "manifest"])
-                self.assertEqual(arguments[-1], "--module=base")
+                commands.append(list(arguments))
+                path_argument = (
+                    arguments[1]
+                    if arguments[0] == "validate"
+                    else arguments[2]
+                )
                 bundle_path = Path(
-                    arguments[2].removeprefix("--bundle=")
+                    path_argument.removeprefix("--bundle=")
                 )
                 self.assertEqual(bundle_path.read_bytes(), b"fixture-aab")
                 temporary_paths.append(bundle_path)
+                if arguments[0] == "validate":
+                    self.assertEqual(
+                        arguments,
+                        ["validate", f"--bundle={bundle_path}"],
+                    )
+                    return self.BUNDLETOOL_VALIDATE_OUTPUT
+                self.assertEqual(
+                    arguments,
+                    [
+                        "dump",
+                        "manifest",
+                        f"--bundle={bundle_path}",
+                        "--module=base",
+                    ],
+                )
                 return self.BUNDLETOOL_MANIFEST
 
             with mock.patch.object(
@@ -1202,31 +1382,159 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                     },
                 )
             self.assertTrue(temporary_paths)
+            self.assertEqual(
+                [command[0] for command in commands],
+                ["validate", "dump"],
+            )
+            self.assertEqual(len(set(temporary_paths)), 1)
             self.assertTrue(
                 all(not path.exists() for path in temporary_paths)
             )
 
-            failed_paths: list[Path] = []
+            for failing_stage in ("validate", "dump"):
+                failed_paths: list[Path] = []
 
-            def fail_run(
-                arguments: list[str],
-                *,
-                root: Path,
-            ) -> str:
-                failed_paths.append(
-                    Path(arguments[2].removeprefix("--bundle="))
+                def fail_run(
+                    arguments: list[str],
+                    *,
+                    root: Path,
+                ) -> str:
+                    path_argument = (
+                        arguments[1]
+                        if arguments[0] == "validate"
+                        else arguments[2]
+                    )
+                    failed_paths.append(
+                        Path(path_argument.removeprefix("--bundle="))
+                    )
+                    if arguments[0] == failing_stage:
+                        raise error_type("fixture bundletool failure")
+                    if arguments[0] == "validate":
+                        return self.BUNDLETOOL_VALIDATE_OUTPUT
+                    return self.BUNDLETOOL_MANIFEST
+
+                with self.subTest(
+                    module=module.__name__,
+                    failing_stage=failing_stage,
+                ), mock.patch.object(
+                    module,
+                    "run_bundletool",
+                    side_effect=fail_run,
+                ):
+                    with self.assertRaises(error_type):
+                        module.inspect_aab_manifest(b"fixture-aab")
+                self.assertTrue(failed_paths)
+                self.assertTrue(
+                    all(not path.exists() for path in failed_paths)
                 )
-                raise error_type("fixture bundletool failure")
 
-            with mock.patch.object(
-                module,
-                "run_bundletool",
-                side_effect=fail_run,
+    def test_bundletool_subprocess_failure_and_stderr_fail_closed(
+        self,
+    ) -> None:
+        modules = (
+            (builder_module, ReleaseArchiveError),
+            (readback_module, ReleaseArchiveVerificationError),
+        )
+        arguments = ["validate", "--bundle=/tmp/fixture.aab"]
+        self.assertEqual(
+            builder_module.BUNDLETOOL_TIMEOUT_SECONDS,
+            readback_module.BUNDLETOOL_TIMEOUT_SECONDS,
+        )
+        for module, error_type in modules:
+            with (
+                mock.patch.object(
+                    module,
+                    "java_executable",
+                    return_value=Path("/fixture/java"),
+                ),
+                mock.patch.object(
+                    module,
+                    "bundletool_runtime_classpath",
+                    return_value="/fixture/classpath",
+                ),
+                mock.patch.object(
+                    module.subprocess,
+                    "run",
+                    side_effect=subprocess.TimeoutExpired(
+                        ["/fixture/java", "/fixture/classpath"],
+                        module.BUNDLETOOL_TIMEOUT_SECONDS,
+                    ),
+                ) as timed_run,
             ):
-                with self.assertRaises(error_type):
-                    module.inspect_aab_manifest(b"fixture-aab")
-            self.assertTrue(failed_paths)
-            self.assertTrue(all(not path.exists() for path in failed_paths))
+                with self.assertRaises(error_type) as captured:
+                    module.run_bundletool(arguments)
+            self.assertIn("timed out after 60 seconds", str(captured.exception))
+            self.assertIn("validate", str(captured.exception))
+            self.assertNotIn("/fixture/classpath", str(captured.exception))
+            self.assertEqual(
+                timed_run.call_args.kwargs["timeout"],
+                module.BUNDLETOOL_TIMEOUT_SECONDS,
+            )
+
+            with (
+                mock.patch.object(
+                    module,
+                    "java_executable",
+                    return_value=Path("/fixture/java"),
+                ),
+                mock.patch.object(
+                    module,
+                    "bundletool_runtime_classpath",
+                    return_value="/fixture/classpath",
+                ),
+                mock.patch.object(
+                    module.subprocess,
+                    "run",
+                    side_effect=subprocess.CalledProcessError(
+                        1,
+                        ["bundletool", *arguments],
+                        stderr="invalid bundle fixture",
+                    ),
+                ),
+            ):
+                with self.assertRaises(error_type) as captured:
+                    module.run_bundletool(arguments)
+            self.assertIn("validate", str(captured.exception))
+            self.assertIn("invalid bundle fixture", str(captured.exception))
+            self.assertNotIn("/fixture/classpath", str(captured.exception))
+
+            completed = subprocess.CompletedProcess(
+                ["bundletool", *arguments],
+                0,
+                stdout=self.BUNDLETOOL_VALIDATE_OUTPUT,
+                stderr="unexpected warning",
+            )
+            with (
+                mock.patch.object(
+                    module,
+                    "java_executable",
+                    return_value=Path("/fixture/java"),
+                ),
+                mock.patch.object(
+                    module,
+                    "bundletool_runtime_classpath",
+                    return_value="/fixture/classpath",
+                ),
+                mock.patch.object(
+                    module.subprocess,
+                    "run",
+                    return_value=completed,
+                ) as run,
+                self.assertRaisesRegex(
+                    error_type,
+                    "standard-error",
+                ),
+            ):
+                module.run_bundletool(arguments)
+            command = run.call_args.args[0]
+            self.assertEqual(
+                command[-2:],
+                arguments,
+            )
+            self.assertEqual(
+                run.call_args.kwargs["timeout"],
+                module.BUNDLETOOL_TIMEOUT_SECONDS,
+            )
 
     def test_builder_and_readback_parse_exact_gradle_lockfile(self) -> None:
         expected = {

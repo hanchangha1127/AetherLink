@@ -12504,7 +12504,7 @@ def android_haptic_guard_failures() -> list[str]:
         ),
         (
             "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)\n"
-            "                                    onRenameChatSession(session)",
+            "                onRenameChatSession(session)",
             "Chat rename menu action must keep primary-action haptic.",
         ),
         (
@@ -12579,7 +12579,7 @@ def android_haptic_guard_failures() -> list[str]:
         ),
         (
             "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)\n"
-            "                                    onArchiveChatSession(session)",
+            "                onArchiveChatSession(session)",
             "Chat archive action must use lightweight feedback because archive is reversible.",
         ),
         (
@@ -25277,13 +25277,16 @@ def runtime_history_storage_guard_failures() -> list[str]:
         (
             macos_router_text,
             macos_router_relative,
-            "candidateSessions = try await semanticChatSessions(",
+            "let materialization = try await semanticChatSessions(",
             "chat.sessions.list must dispatch selected embedding models to real semantic ranking.",
         ),
         (
             macos_router_text,
             macos_router_relative,
-            "texts: [query] + candidates.map(\\.document)",
+            "inputs: [\n"
+            "                EmbeddingInput(text: query, role: .retrievalQuery)\n"
+            "            ] + documents.map {\n"
+            "                EmbeddingInput(text: $0, role: .retrievalDocument)",
             "Semantic ranking must embed the bounded query and owner-scoped candidate documents together.",
         ),
         (

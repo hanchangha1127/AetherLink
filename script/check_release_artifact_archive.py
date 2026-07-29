@@ -56,6 +56,7 @@ BUNDLETOOL_MAIN_CLASS = (
     "com.android.tools.build.bundletool.BundleToolMain"
 )
 BUNDLETOOL_VERSION = "1.18.3"
+BUNDLETOOL_TIMEOUT_SECONDS = 60
 LEGACY_ARCHIVE_NORMALIZATIONS_BUILD_1_TO_3 = (
     "android/mapping/mapping.prt:"
     "sorted-members-fixed-metadata-deflate-9",
@@ -478,6 +479,64 @@ def require_exact_keys(
         )
 
 
+def expected_android_manifest_keys(build_number: int) -> set[str]:
+    if type(build_number) is not int or build_number < 1:
+        raise ReleaseArchiveVerificationError(
+            "Android manifest build number is invalid"
+        )
+    keys = {
+        "abis",
+        "applicationId",
+        "bundleManifestReadback",
+        "mappingEmbeddedByteIdentical",
+        "minSdk",
+        "nativeLibraries",
+        "nativeSymbols",
+        "signatureState",
+        "targetSdk",
+        "versionCode",
+        "versionName",
+    }
+    if build_number >= 11:
+        keys.add("bundleStructureValidation")
+    return keys
+
+
+def verify_bundle_structure_validation_claim(
+    android: dict[str, object],
+    build_number: int,
+) -> None:
+    if type(build_number) is not int or build_number < 1:
+        raise ReleaseArchiveVerificationError(
+            "Android bundle validation build number is invalid"
+        )
+    if build_number <= 10:
+        if "bundleStructureValidation" in android:
+            raise ReleaseArchiveVerificationError(
+                "historical Android manifest has a future validation claim"
+            )
+        return
+    claim = android.get("bundleStructureValidation")
+    if type(claim) is not dict:
+        raise ReleaseArchiveVerificationError(
+            "Android AAB structure validation claim is missing"
+        )
+    require_exact_keys(
+        claim,
+        {"member", "moduleSet", "status", "tool"},
+        "platforms.android.bundleStructureValidation",
+    )
+    if claim != {
+        "member": "android/bundle/app-release.aab",
+        "moduleSet": ["base"],
+        "status": "passed",
+        "tool": "bundletool validate",
+    }:
+        raise ReleaseArchiveVerificationError(
+            "Android AAB structure validation claim is not canonical"
+        )
+
+
 def run_text(command: list[str], cwd: Path) -> str:
     environment = os.environ.copy()
     environment["LC_ALL"] = "C"
@@ -782,16 +841,50 @@ def run_bundletool(
             capture_output=True,
             env=environment,
             text=True,
+            timeout=BUNDLETOOL_TIMEOUT_SECONDS,
         )
-    except (OSError, subprocess.CalledProcessError) as error:
+    except OSError as error:
         raise ReleaseArchiveVerificationError(
-            f"bundletool readback command failed: {error}"
+            f"bundletool readback command could not start: {error}"
+        ) from error
+    except subprocess.TimeoutExpired as error:
+        raise ReleaseArchiveVerificationError(
+            "bundletool readback command timed out after "
+            f"{BUNDLETOOL_TIMEOUT_SECONDS} seconds: {arguments[0]}"
+        ) from error
+    except subprocess.CalledProcessError as error:
+        detail = (error.stderr or "").strip()[-4_000:]
+        raise ReleaseArchiveVerificationError(
+            "bundletool readback command failed "
+            f"({error.returncode}): {arguments[0]}"
+            + (f"\n{detail}" if detail else "")
         ) from error
     if result.stderr.strip():
         raise ReleaseArchiveVerificationError(
             "bundletool emitted unexpected standard-error output"
         )
     return result.stdout.strip()
+
+
+def validate_bundletool_validation_output(output: str) -> None:
+    lines = output.splitlines()
+    if lines[:3] != [
+        "App Bundle information",
+        "------------",
+        "Feature modules:",
+    ]:
+        raise ReleaseArchiveVerificationError(
+            "bundletool validate readback has an unexpected header"
+        )
+    feature_modules = [
+        line.removeprefix("\tFeature module: ")
+        for line in lines[3:]
+        if line.startswith("\tFeature module: ")
+    ]
+    if feature_modules != ["base"]:
+        raise ReleaseArchiveVerificationError(
+            "bundletool validate readback must contain only the base module"
+        )
 
 
 def parse_bundletool_manifest(output: str) -> dict[str, object]:
@@ -868,6 +961,14 @@ def inspect_aab_manifest(
     try:
         with os.fdopen(file_descriptor, "wb") as output:
             output.write(aab_data)
+        validation = run_bundletool(
+            [
+                "validate",
+                f"--bundle={temporary_name}",
+            ],
+            root=root,
+        )
+        validate_bundletool_validation_output(validation)
         manifest = run_bundletool(
             [
                 "dump",
@@ -1459,23 +1560,6 @@ def verify_android_relationships(
     require_exact_keys(platforms, {"android", "macos"}, "platforms")
     android = platforms["android"]
     assert isinstance(android, dict)
-    require_exact_keys(
-        android,
-        {
-            "abis",
-            "applicationId",
-            "bundleManifestReadback",
-            "mappingEmbeddedByteIdentical",
-            "minSdk",
-            "nativeLibraries",
-            "nativeSymbols",
-            "signatureState",
-            "targetSdk",
-            "versionCode",
-            "versionName",
-        },
-        "platforms.android",
-    )
     release = manifest["release"]
     assert isinstance(release, dict)
     build_number = require_exact_int(
@@ -1486,6 +1570,12 @@ def verify_android_relationships(
         release.get("marketingVersion"),
         "release.marketingVersion",
     )
+    require_exact_keys(
+        android,
+        expected_android_manifest_keys(build_number),
+        "platforms.android",
+    )
+    verify_bundle_structure_validation_claim(android, build_number)
     if android.get("abis") != ["arm64-v8a"]:
         raise ReleaseArchiveVerificationError(
             "Android archived ABI set must be exactly arm64-v8a"

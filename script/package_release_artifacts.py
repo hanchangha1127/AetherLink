@@ -100,6 +100,7 @@ BUNDLETOOL_MAIN_CLASS = (
     "com.android.tools.build.bundletool.BundleToolMain"
 )
 BUNDLETOOL_VERSION = "1.18.3"
+BUNDLETOOL_TIMEOUT_SECONDS = 60
 ANDROID_STUDIO_JAVA_HOME = Path(
     "/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 )
@@ -959,16 +960,66 @@ def run_bundletool(
             capture_output=True,
             env=environment,
             text=True,
+            timeout=BUNDLETOOL_TIMEOUT_SECONDS,
         )
-    except (OSError, subprocess.CalledProcessError) as error:
+    except OSError as error:
         raise ReleaseArchiveError(
-            f"bundletool command failed while reading release metadata: {error}"
+            f"bundletool command could not start: {error}"
+        ) from error
+    except subprocess.TimeoutExpired as error:
+        raise ReleaseArchiveError(
+            "bundletool command timed out after "
+            f"{BUNDLETOOL_TIMEOUT_SECONDS} seconds: {arguments[0]}"
+        ) from error
+    except subprocess.CalledProcessError as error:
+        detail = (error.stderr or "").strip()[-4_000:]
+        raise ReleaseArchiveError(
+            f"bundletool command failed ({error.returncode}): {arguments[0]}"
+            + (f"\n{detail}" if detail else "")
         ) from error
     if result.stderr.strip():
         raise ReleaseArchiveError(
             "bundletool emitted unexpected standard-error output"
         )
     return result.stdout.strip()
+
+
+def validate_bundletool_validation_output(output: str) -> None:
+    lines = output.splitlines()
+    if lines[:3] != [
+        "App Bundle information",
+        "------------",
+        "Feature modules:",
+    ]:
+        raise ReleaseArchiveError(
+            "bundletool validate output has an unexpected header"
+        )
+    feature_modules = [
+        line.removeprefix("\tFeature module: ")
+        for line in lines[3:]
+        if line.startswith("\tFeature module: ")
+    ]
+    if feature_modules != ["base"]:
+        raise ReleaseArchiveError(
+            "bundletool validate output must contain only the base module"
+        )
+
+
+def bundle_structure_validation_claim_for_build(
+    build_number: int,
+) -> dict[str, object] | None:
+    if type(build_number) is not int or build_number < 1:
+        raise ReleaseArchiveError(
+            "Android bundle validation build number is invalid"
+        )
+    if build_number <= 10:
+        return None
+    return {
+        "member": "android/bundle/app-release.aab",
+        "moduleSet": ["base"],
+        "status": "passed",
+        "tool": "bundletool validate",
+    }
 
 
 def parse_bundletool_manifest(output: str) -> dict[str, object]:
@@ -1045,6 +1096,14 @@ def inspect_aab_manifest(
     try:
         with os.fdopen(file_descriptor, "wb") as output:
             output.write(aab_data)
+        validation = run_bundletool(
+            [
+                "validate",
+                f"--bundle={temporary_name}",
+            ],
+            root=root,
+        )
+        validate_bundletool_validation_output(validation)
         manifest = run_bundletool(
             [
                 "dump",
@@ -1441,7 +1500,7 @@ def android_metadata(
             )
         native_symbol_status = "unavailable-upstream-prestripped"
 
-    return {
+    metadata: dict[str, object] = {
         "abis": abis,
         "applicationId": apk_badging["applicationId"],
         "bundleManifestReadback": {
@@ -1472,6 +1531,16 @@ def android_metadata(
         "versionCode": current.build_number,
         "versionName": current.marketing_version,
     }
+    bundle_structure_validation = (
+        bundle_structure_validation_claim_for_build(
+            current.build_number
+        )
+    )
+    if bundle_structure_validation is not None:
+        metadata[
+            "bundleStructureValidation"
+        ] = bundle_structure_validation
+    return metadata
 
 
 def macos_metadata(

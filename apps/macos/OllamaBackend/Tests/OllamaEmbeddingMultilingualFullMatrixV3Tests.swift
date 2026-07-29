@@ -570,7 +570,6 @@ final class OllamaEmbeddingMultilingualFullMatrixV3Tests:
             )
         }
         let fixture = try liveFixture(environment: environment)
-        let taskSet = try liveTaskSet(environment: environment)
         let backend = fixture.backend
         let modelID = fixture.modelID
 
@@ -580,6 +579,7 @@ final class OllamaEmbeddingMultilingualFullMatrixV3Tests:
             Error
         >
         do {
+            let taskSet = try liveTaskSet(environment: environment)
             guard await backend.healthCheck() == .available else {
                 throw OllamaEmbeddingMultilingualFullMatrixV3Error
                     .invalidLiveState

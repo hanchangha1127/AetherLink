@@ -53,15 +53,29 @@ current user direction, not repository-owner identity proof.
 - Continue only feature, UX, accessibility, performance, build, documentation,
   and release-quality work. Do not resume security findings, threat analysis,
   owner authentication, or authority-evidence work.
+- The Android navigation drawer now submits its trimmed, nonblank chat query
+  through the keyboard Search action when the existing Runtime history policy
+  permits it. Typing remains an immediate local filter; only an exact
+  current-query remote response replaces it. Remote results exclude archived
+  sessions, retain global Runtime rank across date buckets, and show localized
+  rank plus snippet text. The clean affected run passes 167 navigation-policy
+  tests and 24 drawer Compose tests; the complete Android app unit gate passes
+  1,179 tests. Release lint adds no finding, and final independent GPT-5.6 Sol
+  review reports no P0-P3 issue. No physical keyboard, screen-reader, provider,
+  device, or network claim is made.
 - A separate multilingual full-matrix V3 preparation path now leaves the frozen
   V2 task, scorer, runner, schema-4 fixture, and failed result byte-identical.
   The V3 scorer evaluates all 80 margin and 80 repeatability comparisons,
-  accumulates quality coordinates without retaining text/IDs/scores, and treats
-  invalid shape or numeric state as fatal. Its opt-in live assertion unloads
-  and rechecks catalog/health before emitting one marker; the schema-5 runner
-  preserves exact candidate and fresh-recovery order with cleanup priority.
-  Seven V3 Swift tests and eight V3 Python tests pass. No V3 live observation
-  has run, so no later-locale, repeatability, or passing-quality claim exists.
+  accumulates only bounded failed-batch/comparison and repeatability coordinates
+  without retaining text/IDs/scores, and treats invalid shape or numeric state
+  as fatal. Its opt-in live assertion captures all primary errors, always
+  attempts unload, requires confirmed unload after successful primary work,
+  and rechecks catalog/health before emitting one marker; the compact schema-5
+  runner derives totals while preserving exact candidate and fresh-recovery
+  order with cleanup priority. Eight V3 Swift tests and eleven V3 Python tests
+  pass. The settled full Swift suite passes 2,074 tests with 11 expected
+  opt-in/live skips and zero failures. No V3 live observation has run, so no
+  later-locale, repeatability, or passing-quality claim exists.
 - The current unreleased product slice adds a bounded semantic-similarity
   rerank after retrieval ranking for strong-revision EmbeddingGemma profiles.
   Its pool is derived from the visible limit, contains 8 through 32 available
@@ -73,18 +87,20 @@ current user direction, not repository-owner identity proof.
   research membership changes before final coordinated publication, the
   retained primary materialization is published before filtering and visible
   search ranks are renumbered from one. Sixteen focused checks and the
-  post-review 544-test broad router/search run pass. The full Swift run passes
-  2,066 tests with zero failures and ten expected opt-in/live skips.
+  post-review 544-test broad router/search run pass. The current full Swift run,
+  including the later V3 preparation, passes 2,074 tests with zero failures and
+  11 expected opt-in/live skips.
 - The frozen multilingual V2 result remains
   `qualityGatePassed=false` at Korean ordinal 2 on both exact candidates. The
   product reranker is not a model qualification and must not be described as
   one. Its recorded router/fingerprint hashes remain historical, and the live
   V2 runner correctly rejects the changed product-source bytes until a future
   versioned observation is prepared.
-- Build 9 remains the latest immutable ledger archive, but its source snapshot
-  predates this unreleased reranker. It is now prior source-bound evidence; use
-  `--no-current-source` for archive-byte readback until a later release build
-  binds the settled worktree.
+- Build 11 is now the latest immutable ledger archive and binds the settled
+  reranker, Android drawer-search release inputs, and the dual AAB structure
+  validation gate to a current 239-file source snapshot. Two independent
+  two-root qualification executions reproduced the same archive, and
+  current-source readback passes. Builds 1 through 10 are historical.
 - The current Android accessibility slice raises the existing Chat and Settings
   no-device multilingual regressions to font scale `2.0`, covering `en`, `ko`,
   `ja`, `zh-CN`, and `fr`.
@@ -104,7 +120,7 @@ current user direction, not repository-owner identity proof.
 - Android release builds now enable R8 and resource shrinking with the
   optimized defaults and dependency consumer rules, without a broad app keep
   file. A clean offline APK/AAB/lint run passes. V1 Release is arm64-only: the
-  unsigned AAB is 10,658,235 bytes, has one DEX, embeds its mapping byte-for-byte,
+  unsigned AAB is 10,660,783 bytes, has one DEX, embeds its mapping byte-for-byte,
   and retains all five locales and five JNI libraries. Production signing,
   final ID, Play delivery, and physical release launch remain unclaimed.
 - Five Compose screen APIs now follow required-parameter/`modifier` ordering,
@@ -135,26 +151,27 @@ current user direction, not repository-owner identity proof.
   DMG, and clean-machine launch remain unclaimed; Intel is Post-V1.
 - `release/version-ledger.tsv` is now the single version source for Android
   Release and macOS packaging. The latest published qualification reads back as
-  `1.0.0+9`; Android Debug stays `0.1.0+1` and builds with the ledger absent.
+  `1.0.0+11`; Android Debug stays `0.1.0+1` and builds with the ledger absent.
   Python, Bash, and lazy Gradle consumers reject noncanonical control bytes;
   strict parser, source, artifact, and fake-toolchain checks pass. The main
   `dist/AetherLink.app` remains the user-owned running Build 4 bundle and was
-  not replaced during Build 9 qualification.
-- The Build 9 qualification runner clean-builds both targets in two isolated
+  not replaced during Build 11 qualification.
+- The Build 11 qualification runner clean-builds both targets in two isolated
   source roots whose UTF-8 byte lengths are 101 and 109, and publishes
-  `dist/releases/aetherlink-1.0.0+9-local-v1/`. Its 165,065,657-byte canonical
+  `dist/releases/aetherlink-1.0.0+11-local-v1/`. Its 165,378,312-byte canonical
   normalized-input ZIP has SHA-256
-  `e2cbd350bf031d04b6e29054ceb387bbe453e60244b47919c54f6d3c13ba7e1a`.
+  `08505eaefa7f7ef035ad9ff644f1f7e6efa95ef924acccd23d2478e47d92c148`.
   The 2-root result is
-  `dist/reproducibility/aetherlink-1.0.0+9-local-v1-two-root-v2.json`; it records
+  `dist/reproducibility/aetherlink-1.0.0+11-local-v1-two-root-v2.json`; it records
   byte-identical lane output, immutable publication, and independent readback.
   Independent readback verifies 29 payload members, arm64-only APK badging,
-  AAB mapping/JNI identity, direct base-manifest package/version/SDK through
-  AGP-pinned `bundletool 1.18.3`, and the arm64 app/dSYM UUID
-  `0711F00D-B4B5-316C-A159-2E8BE3FE9FCB`. Android native symbols remain
+  AAB mapping/JNI identity, exact `base`-only structure through
+  `bundletool 1.18.3 validate`, direct base-manifest package/version/SDK, and
+  the arm64 app/dSYM UUID
+  `415765ED-429A-36D9-BC1A-BAC6DDF18B45`. Android native symbols remain
   explicitly unavailable because all five upstream JNI inputs are pre-stripped.
   The 239-file source is explicitly a `dirty-content-snapshot`; commit
-  `d699b557aa36deb7add763e5f8f4fe3dcf66c7ed` alone cannot reconstruct the
+  `8955fb1c25ec483aaedad53793609311337605de` alone cannot reconstruct the
   archived bytes. Compliance profile `aetherlink-release-compliance-v2`
   requires a 350-package Gradle lock/POM catalog, fixed metadata, text
   inventory, and SPDX 2.3 JSON. It records 692 exact package roles: 202
@@ -175,33 +192,44 @@ current user direction, not repository-owner identity proof.
   canonical source-location alias remove the observed source-path-length byte
   dependence while retaining the dSYM. Two complete A/B qualifications produced
   a byte-identical ZIP, manifest, checksum sidecar, and 30-entry archive
-  inventory. The 19,743-byte confirmation result has SHA-256
-  `eeac49b926261a5cfaed806b4db6e03b3a9e4028e55cbcf7a26408d466053246`
+  inventory. The 19,744-byte confirmation result has SHA-256
+  `6da0148640ef5bb97d53369214103a90ea67c499cc2f2cf918591d19f2e87039`
   and records `alreadyMatched=true`. This is bounded evidence for two recorded same-host,
   fixed-toolchain/cache-snapshot, canonical-scratch pair, not a claim that
   arbitrary repeats are variance-free. Arbitrary roots or path lengths,
   cross-host reproducibility, signed artifacts, clean-machine launch, and
-  physical behavior remain unclaimed. Builds 1 through 8 remain immutable,
+  physical behavior remain unclaimed. Builds 1 through 10 remain immutable,
   independently readable historical archives. The
   verifier now cross-binds Gradle lock identities to the archived source
   inventory and rejects use of historical mode for the current release.
-- The separate
-  `script/run_macos_packaged_app_lifecycle_smoke.py` post-publication gate binds
-  itself to the exact current Build 9 ZIP and manifest, extracts only the packaged
-  macOS app, and completes two AppKit finished-launch → five-second minimum
-  observation → identity-rechecked exact-PID termination cycles with zero
-  exits. Its QA-only sandbox uses a temporary Core Foundation user home,
-  verifies a temporary-root write, denies a non-temporary write and AF_INET
-  bind, and has no unisolated fallback. The exact 1,311-byte result at
-  `dist/lifecycle/macos-packaged-app-build-9-lifecycle-v1.json` has SHA-256
-  `aad796ee3c768e37953f18eeea0e6642107750c3a8c398df798a46e96aabab53`.
+- The historical
+  `script/run_macos_packaged_app_build10_lifecycle_smoke.py` gate fixes the
+  exact Build 10 ZIP, manifest, executable, and macOS UUID contract. At its
+  original qualification it used then-current-source readback before extracting
+  only the packaged app and completed two AppKit finished-launch →
+  five-second minimum observation →
+  identity-rechecked exact-PID termination cycles with zero exits. Its QA-only
+  sandbox uses a temporary Core Foundation user home, verifies a temporary-root
+  write, denies a non-temporary write and AF_INET bind, and has no unisolated
+  fallback. The exact 1,313-byte result at
+  `dist/lifecycle/macos-packaged-app-build-10-lifecycle-v1.json` has SHA-256
+  `c0ea4dba08e74130f7aaa1e9855121d02459249ff5e6a0fc27cd1b01f46f0ded`.
   Expected Application Support files were present after both runs, but the
-  runtime identity file was absent after both. Do not claim identity
-  persistence, state recovery, UI correctness, listener/provider readiness,
-  installation, clean-machine behavior, signed distribution, or
-  physical-device behavior from this smoke.
+  runtime identity file was absent after both.
+  The new runner reuses the exact SHA-256-pinned historical process engine
+  without changing the Build 9 runner, test, or 1,311-byte result at
+  `dist/lifecycle/macos-packaged-app-build-9-lifecycle-v1.json`, whose SHA-256
+  remains
+  `aad796ee3c768e37953f18eeea0e6642107750c3a8c398df798a46e96aabab53`.
+  PID 59809 stayed alive at the same path with executable SHA-256
+  `93cb550903f74e5018514870d1f4e7ac95ffc5df915fb8bde48c1ff512b382d0`.
+  Build 11 has no packaged-app lifecycle result. The Build 10 observations
+  remain bound to Build 10 and are not reinterpreted as Build 11 evidence.
+  Do not claim identity persistence, state recovery, UI correctness,
+  listener/provider readiness, installation, clean-machine behavior, signed
+  distribution, or physical-device behavior from this smoke.
 - The versioned
-  `docs/releases/1.0.0-build-9-local-v1.md` record now consolidates release
+  `docs/releases/1.0.0-build-11-local-v1.md` record now consolidates release
   notes, compatibility, migration, limitations, diagnostics, privacy/evidence
   boundaries, and rollback. It explicitly treats Android Debug `0.1.0+1` and
   local ad-hoc macOS packages as non-upgrade lineages. Build 6 remains a
@@ -310,16 +338,17 @@ current user direction, not repository-owner identity proof.
   nine expected opt-in skips. Docs/copy hygiene, ledger readback, 113 combined
   runner/documentation tests, Python syntax, diff whitespace, and the empty
   staging guard pass. The Build 9 archive binds that earlier settled source
-  snapshot and passed independent readback; it no longer proves the current
-  reranker worktree. Superseded Builds 1 through 8 pass historical
-  ledger-prefix readback. No physical-device
-  claim was made.
+  snapshot and passes historical readback. Build 11 now binds the current
+  reranker, Android drawer-search release inputs, and AAB validation gate;
+  Builds 1 through 10 pass
+  historical ledger-prefix readback. No physical-device claim was made.
 - A separately user-authored commit appeared during the preceding verification:
   `main` and `origin/main` both resolve to
-  `d699b557aa36deb7add763e5f8f4fe3dcf66c7ed`. This work did not stage,
-  commit, or push. Current post-commit implementation, runner-test,
-  documentation, and checker changes remain modified and unstaged; preserve
-  them when continuing.
+  `8955fb1c25ec483aaedad53793609311337605de`. Codex did not stage, commit,
+  or push. The current post-commit V3 Swift test, runner, runner test, and four
+  top-level documentation files plus the Android drawer source and two Android
+  test files and their copy-hygiene guard remain modified and unstaged;
+  preserve them when continuing.
 - Do not stage, commit, or push these local changes unless the user explicitly
   requests it.
 
@@ -3126,16 +3155,18 @@ swift test --filter AetherLinkRenderSmokeTests/testPrimaryCompanionSurfacesRende
 swift build -c release --product AetherLink
 ```
 
-### Exact Build 6 packaged macOS lifecycle
+### Historical Build 10 packaged macOS lifecycle
 
-This does not rebuild or replace `dist/AetherLink.app`. It reads back the
-immutable Build 6 ZIP, launches only temporary extracted copies under the
-QA-only sandbox, and terminates only executable-and-bundle-matched owned PIDs.
-It displays the temporary app briefly twice.
+The frozen runner's original observations remain exact Build 10 evidence only.
+Because Build 11 is now current, do not invoke that runner: its fixed
+current-source lane intentionally no longer matches the ledger. Verify the
+historical archive, preserved test contract, and immutable result bytes
+without launching the app.
 
 ```bash
-python3 -B -m unittest script.test_run_macos_packaged_app_lifecycle_smoke
-python3 -B script/run_macos_packaged_app_lifecycle_smoke.py
+python3 -B -m unittest script.test_run_macos_packaged_app_build10_lifecycle_smoke script.test_run_macos_packaged_app_lifecycle_smoke
+python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+10-local-v1 --historical
+python3 -B script/check_docs_hygiene.py
 ```
 
 ### Android debug/release QR policy
@@ -3300,10 +3331,17 @@ Unless the user redirects the task, use this active non-security order:
 1. Re-read this handoff and refresh Git plus generated-artifact state. Do not
    infer device/process state from an older snapshot.
 2. Run the focused static guards. Use
-   `python3 script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+9-local-v1 --no-current-source`
-   only for Build 9 archive-byte evidence; do not call it current-source proof
-   for the unreleased reranker.
-3. Continue the non-security provider matrix. Both exact Ollama candidates now
+   `python3 script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+11-local-v1`
+   for current-source Build 11 evidence. Builds 1 through 10 require
+   `--historical`.
+3. Preserve the historical Build 10 packaged-app lifecycle result and the
+   exact Build 9 historical runner/test/result bytes. Do not run the frozen
+   Build 10 lifecycle command against the Build 11 ledger. The next bounded
+   no-device G6 candidate should prove benign state save followed by actual
+   second-process readback in a separately versioned runner; it must not claim
+   identity, pairing, authentication, or other security behavior.
+4. Continue the non-security provider matrix only when live provider execution
+   is in scope. Both exact Ollama candidates now
    have isolated empty-catalog plus two existing chat-model shapes, one
    embedding-model shape, and one vision-model shape
    cold/restart evidence plus bounded chat process-lifecycle fault and recovery
@@ -3327,9 +3365,9 @@ Unless the user redirects the task, use this active non-security order:
    reranking with primary-score acceptance groups and primary fallback. Keep it
    labeled deterministic no-device product behavior until live end-to-end
    retrieval evidence exists.
-4. Keep physical-device, production signing, store upload, and deployment work
+5. Keep physical-device, production signing, store upload, and deployment work
    deferred until the user explicitly selects those technical slices.
-5. Do not start security, authentication, governance, or owner-proof work.
+6. Do not start security, authentication, governance, or owner-proof work.
    Do not stage, commit, or push unless the user explicitly asks.
 
 ### Inactive Historical Continuation Record

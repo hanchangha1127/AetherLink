@@ -19,6 +19,10 @@ struct LocalAgentBridgeApp: App {
                 .preferredColorScheme(currentAppAppearance.preferredColorScheme)
                 .frame(minWidth: 860, minHeight: 560)
                 .task {
+                    PackagedStateRecoveryProbe.prepareIfRequested()?.recordObservation(
+                        sessions: model.runtimeChatSessions,
+                        storeError: model.runtimeChatSessionsError
+                    )
                     model.requestStartForUserInterface()
                 }
         }

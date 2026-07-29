@@ -4,6 +4,77 @@ Last updated: 2026-07-29 KST.
 
 This document records what has been implemented so far and what should happen next. It is intentionally broader than the original v0.1 MVP because recent work has moved the prototype toward a more complete product shape.
 
+## 2026-07-29 Local V1 Build 11 Current-Source Release Qualification
+
+- The append-only release ledger now ends at `1.0.0+11`. Build 11 is the
+  current local qualification record; Builds 1 through 10 remain immutable
+  historical records.
+- The 239-file `dirty-content-snapshot` has SHA-256
+  `da7dbf88cba5d5bc9f9d822e0f70fe7b21a9080add5e1b3718c60ef9dc341c84`.
+  HEAD and `origin/main` were both
+  `8955fb1c25ec483aaedad53793609311337605de`; the archived source inventory,
+  not that commit alone, is the release source identity.
+- Two complete independent qualification runs each built Android Release and
+  macOS Release at 101- and 109-byte isolated roots. All four builds produced
+  the same 165,378,312-byte ZIP with SHA-256
+  `08505eaefa7f7ef035ad9ff644f1f7e6efa95ef924acccd23d2478e47d92c148`,
+  the same 12,062-byte manifest, 99-byte checksum sidecar, and every one of 30
+  ZIP entries byte-for-byte.
+- The first 19,745-byte reproducibility result has SHA-256
+  `65bb96a93008a077b95608611416e4c41cb91e27cb70d61facd66104748512f4`
+  and published the immutable archive. The separate 19,744-byte confirmation
+  has SHA-256
+  `6da0148640ef5bb97d53369214103a90ea67c499cc2f2cf918591d19f2e87039`
+  and records `alreadyMatched=true`.
+- Builder and independent readback each run exact `bundletool 1.18.3
+  validate` with a 60-second timeout, require only the `base` module, and then
+  read the same AAB's base manifest. Independent current-source readback passes
+  for all 29 payload members, Android `1.0.0+11` unsigned arm64-v8a APK/AAB
+  identity, R8 outputs, five locales and JNI libraries, and the ad-hoc arm64
+  macOS app plus UUID-matched dSYM.
+- Build 11 has no packaged-app lifecycle result. The historical Build 10
+  lifecycle observation remains bound only to the Build 10 ZIP, manifest, and
+  executable. It is not reinterpreted as Build 11 launch, UI, persistence, or
+  recovery evidence.
+- This closes a bounded local current-source G6 AAB-structure and packaging
+  gap only. Installation, launch, UI correctness, listener/provider readiness,
+  production signing, notarization, signed DMG, Play delivery, physical
+  devices, provider/network behavior, clean-machine execution, and G6/G7 exit
+  remain unclaimed. PID 59809 stayed alive at the same path and its executable
+  SHA-256 remained
+  `93cb550903f74e5018514870d1f4e7ac95ffc5df915fb8bde48c1ff512b382d0`.
+- Current readback:
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+11-local-v1`.
+- Historical Build 10 readback:
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+10-local-v1 --historical`.
+  No security work, staging, commit, or push occurred.
+
+## 2026-07-29 Unreleased Android Drawer Semantic Chat Search UX
+
+- The primary Android navigation drawer now exposes the existing Runtime chat
+  search path through the keyboard Search action. It submits one trimmed,
+  nonblank query only while the existing chat-history refresh policy permits a
+  Runtime request; typing still provides immediate local title/model/status
+  filtering while disconnected, streaming, or awaiting a matching response.
+- A remote response is selected only when its trimmed query exactly matches the
+  current drawer query. Stale or absent response state keeps the local result
+  set. Current remote results exclude archived sessions, sort globally by
+  Runtime rank and then update time, and bypass the normal recency buckets so a
+  newer lower-ranked result cannot move ahead of an older higher-ranked result.
+- Remote rows display the localized match rank and bounded result snippet in
+  the existing subtitle/accessibility summary. Search-only rows continue
+  through the existing ViewModel materialization path when opened.
+- The clean affected gate passes all 167 `AppNavigationTest` cases and 24
+  navigation-drawer/chat-drawer Compose cases with zero failures. The complete
+  Android app unit gate then passes 1,179 tests with zero skips, failures, or
+  errors. Release lint has zero errors and no new warning; its three previously
+  recorded project warnings remain. Independent GPT-5.6 Sol review found one
+  rank-versus-date ordering issue, which was fixed and re-reviewed with no
+  P0-P3 findings.
+- This is no-device, non-security UX work. It makes no physical keyboard,
+  screen-reader, live-provider, model-quality, network, installation, signing,
+  or release-readiness claim. Codex performed no Git write.
+
 ## 2026-07-29 Unreleased Multilingual Full-Matrix V3 Preparation
 
 - The frozen multilingual V2 task, scorer/live assertion, runner, schema-4
@@ -17,25 +88,35 @@ This document records what has been implemented so far and what should happen ne
   Quality misses accumulate instead of short-circuiting; fixture, shape,
   nonfinite, zero-vector, or incompatible-dimension failures remain fatal.
 - Its canonical projection is bounded by the frozen task shape: at most 20
-  scenario coordinates with failed batch ordinals and at most 80 repeatability
-  coordinates. It retains ordered per-locale pass counts and booleans but no
-  task ID or text, model name, vector, dimension, cosine or margin score,
-  provider output, path, process identifier, or base URL.
-- The opt-in V3 live assertion captures the full assessment, confirms model
-  unload plus final catalog and health state, and only then prints one canonical
-  marker. Therefore a future valid quality failure can remain an observed
-  failure without preventing lifecycle cleanup evidence.
+  scenario coordinates with per-batch failed-comparison counts and at most 80
+  repeatability coordinates. Python derives totals and the quality gate from
+  those three projection fields; no duplicate locale summaries or fixed-count
+  booleans are emitted. The marker retains no task ID or text, model name,
+  vector, dimension, cosine or margin score, provider output, path, process
+  identifier, or base URL.
+- The opt-in V3 live assertion captures every primary-work failure, attempts
+  unload unconditionally, rechecks final catalog and health state, gives
+  cleanup errors precedence, and only then prints one canonical marker. A
+  successful assessment deliberately requires a confirmed unload transition;
+  an already-absent outcome is accepted only after failed primary work.
+  Therefore a future valid quality failure cannot bypass lifecycle cleanup.
 - A separate schema-5 Python runner preserves exact `0.32.5` then `0.32.4`
   candidate order, semantic-then-fresh-recovery order, source/task/snapshot
   readback, cleanup-error priority, closed projection validation, and aggregate
   quality derivation. It does not modify or reinterpret the V2 runner.
-- Seven V3 Swift tests pass with one expected opt-in live skip. The combined
-  frozen V2 plus V3 selection runs 17 tests with two expected skips and zero
-  failures; 18 combined V2/V3 Python tests pass.
+- Eight V3 Swift tests pass with one expected opt-in live skip. The combined
+  frozen V2 plus V3 selection runs 18 tests with two expected skips and zero
+  failures; 21 combined V2/V3 Python tests pass.
+- The settled full Swift suite runs 2,074 tests with 11 expected opt-in/live
+  skips and zero failures in 315.439 test seconds.
 - This is full-matrix observation preparation, not a live V3 observation or a
   passing multilingual qualification. No model/provider load, archive or model
-  download, catalog mutation, physical device, security work, staging, commit,
-  or push occurred.
+  download, catalog mutation, physical device, or security work occurred.
+  Codex performed no Git write. During verification a user-side commit advanced
+  both `main` and `origin/main` to
+  `8955fb1c25ec483aaedad53793609311337605de`; the seven final V3/code-doc
+  follow-up paths, the three Android drawer-search paths, and the corresponding
+  copy-hygiene guard remain modified and unstaged.
 
 ## 2026-07-29 Unreleased Two-Stage Semantic Chat Search
 
@@ -63,8 +144,9 @@ This document records what has been implemented so far and what should happen ne
   visible-limit bounding, final-snapshot research promotion, and visible-rank
   continuity. The post-review broad rerun passes all 544 router/search tests
   with zero failures.
-- The post-edit full Swift run passes 2,066 tests with zero failures and ten
-  expected opt-in/live skips in 310.6 seconds.
+- The pre-V3 post-edit full Swift run passed 2,066 tests with zero failures and
+  ten expected opt-in/live skips in 310.6 seconds; the newer V3 result above
+  supersedes that aggregate count.
 - The frozen multilingual V2 observation is unchanged:
   `qualityGatePassed=false`, with Korean scenario ordinal 2 failing on both
   exact candidates. This product reranker is not an embedding-model
@@ -73,21 +155,17 @@ This document records what has been implemented so far and what should happen ne
   the observation. The live V2 runner now intentionally rejects the changed
   product sources instead of silently rebinding that historical result; no live
   retry was attempted.
-- Build 9 remains the latest append-only ledger entry and its immutable archive
-  remains readable, but its source-bound snapshot predates this worktree.
-  Therefore Build 9 is not current-source proof for these changes. Use
-  `--no-current-source` only for archive-byte readback until a later release
-  build binds the settled worktree; that bounded readback passes for all 29
-  payload members.
+- Build 11 now binds these release inputs to a current source snapshot and
+  passes independent readback. Builds 9 and 10 remain readable only as historical
+  source-bound evidence.
 - This was no-device, mocked/deterministic, non-security product-quality work.
   No provider/model load, download, catalog mutation, installed-app change,
   staging, commit, or push occurred.
 
 ## 2026-07-29 Local V1 Build 9 Prior Source-Bound Release And Lifecycle Qualification
 
-- The append-only release ledger now ends at `1.0.0+9`. Build 9 is the current
-  ledger entry and prior source-bound local qualification record; builds 1
-  through 8 remain immutable historical records.
+- At publication, the append-only release ledger ended at `1.0.0+9`. Build 9
+  is now a prior source-bound historical qualification; Build 11 is current.
 - The 239-file `dirty-content-snapshot` has SHA-256
   `22e26f5ed62be9b7badcc01ff76db91f436d0a0cde9ad1587a6c27588962a5ec`.
   It binds the settled role-aware embedding implementation; HEAD and
@@ -118,13 +196,13 @@ This document records what has been implemented so far and what should happen ne
   lifecycle slice. Physical Android, camera QR, live provider, installation,
   signing, deployment, clean-machine behavior, and identity persistence remain
   unclaimed. No staging, commit, or push occurred.
-- Current readback:
-  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+9-local-v1 --no-current-source`.
+- Historical readback:
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+9-local-v1 --historical`.
 
 ## 2026-07-29 Historical Local V1 Build 7 SPDX And License Inventory Qualification
 
 - At the time of publication, the append-only release ledger ended at
-  `1.0.0+7`. Build 7 is now historical; Build 9 is the current local
+  `1.0.0+7`. Build 7 is now historical; Build 11 is the current local
   qualification record.
 - A source-controlled catalog exactly covers 350 unique Maven coordinates from
   six Gradle lock files, 379 exact POM byte identities, and zero external
@@ -185,7 +263,7 @@ This document records what has been implemented so far and what should happen ne
 ## 2026-07-29 Historical Local V1 Build 6 Unequal-Length Two-Root Qualification
 
 - At the time of publication, the append-only release ledger ended at
-  `1.0.0+6`. Build 6 is now historical; Build 9 is the current local
+  `1.0.0+6`. Build 6 is now historical; Build 11 is the current local
   qualification record.
 - One fixed dirty-content source snapshot with 235 production files was cloned
   into two isolated lane roots whose UTF-8 byte lengths are 101 and 109. The

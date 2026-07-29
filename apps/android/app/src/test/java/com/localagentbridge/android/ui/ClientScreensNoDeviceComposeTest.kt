@@ -161,6 +161,7 @@ import com.localagentbridge.android.researchNotebookDrawerMenuItemTestTag
 import com.localagentbridge.android.researchNotebookDrawerOptionsTestTag
 import com.localagentbridge.android.researchBriefModelMenuItemCapabilityTestTag
 import com.localagentbridge.android.researchBriefModelMenuItemTestTag
+import com.localagentbridge.android.selectDrawerChatSearchSessions
 import com.localagentbridge.android.sharedChatDraftConfirmationMessageRes
 import com.localagentbridge.android.core.protocol.ResearchNotebookPayload
 import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_IN_APP
@@ -4982,6 +4983,189 @@ class ClientScreensNoDeviceComposeTest {
         history.performScrollToNode(hasText("Code review"))
         compose.onNodeWithText("Code review").assertIsDisplayed()
         compose.onAllNodesWithText("No matching chats.").assertCountEquals(0)
+    }
+
+    @Test
+    fun navigationDrawerChatSearchImeSubmitsTrimmedQueryOnlyWhenRemoteSearchIsAvailable() {
+        val query = mutableStateOf("")
+        val connected = mutableStateOf(false)
+        val streaming = mutableStateOf(false)
+        val submittedQueries = mutableListOf<String>()
+        val sessions = listOf(
+            RuntimeChatSession(
+                id = "session-relay",
+                title = "Relay route",
+                updatedAtMillis = 2_000L,
+                messageCount = 4,
+            ),
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    val searchQuery = query.value
+                    val filteredSessions = filterChatHistorySessions(
+                        sessions = sessions,
+                        query = searchQuery,
+                        untitledTitle = "Untitled chat",
+                    )
+                    AetherLinkNavigationDrawerContent(
+                        state = RuntimeUiState(
+                            isConnected = connected.value,
+                            isStreaming = streaming.value,
+                            chatSessions = sessions,
+                        ),
+                        effectiveDestination = AppDestination.Chat,
+                        chatSearchQuery = searchQuery,
+                        hasAnyChatSessions = true,
+                        hasChatSearchQuery = searchQuery.isNotBlank(),
+                        hasChatSearchResults = filteredSessions.isNotEmpty(),
+                        filteredChatSessions = filteredSessions,
+                        onChatSearchQueryChange = { query.value = it },
+                        onClearChatSearch = { query.value = "" },
+                        onNewChat = {},
+                        onSelectChatSession = {},
+                        onRenameChatSession = {},
+                        onArchiveChatSession = {},
+                        onSelectSettings = {},
+                        onSearchChatHistory = { submittedQueries += it },
+                    )
+                }
+            }
+        }
+
+        compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+            .performScrollToNode(hasTestTag(DRAWER_CHAT_SEARCH_TEST_TAG))
+        val searchField = compose.onNodeWithTag(DRAWER_CHAT_SEARCH_TEST_TAG)
+        searchField.performTextInput("   ")
+        searchField.performImeAction()
+        compose.runOnIdle {
+            assertTrue(submittedQueries.isEmpty())
+        }
+
+        searchField.performTextClearance()
+        searchField.performTextInput("  relay route  ")
+        searchField.performImeAction()
+        compose.runOnIdle {
+            assertTrue(submittedQueries.isEmpty())
+        }
+
+        compose.runOnUiThread {
+            connected.value = true
+            streaming.value = true
+        }
+        compose.waitForIdle()
+        searchField.performImeAction()
+        compose.runOnIdle {
+            assertTrue(submittedQueries.isEmpty())
+        }
+
+        compose.runOnUiThread {
+            streaming.value = false
+        }
+        compose.waitForIdle()
+        searchField.performImeAction()
+        compose.runOnIdle {
+            assertEquals(listOf("relay route"), submittedQueries)
+        }
+    }
+
+    @Test
+    @Config(sdk = [35], qualifiers = "w420dp-h1200dp")
+    fun navigationDrawerChatSearchShowsCurrentRemoteRankingAndSnippet() {
+        val nowMillis = System.currentTimeMillis()
+        val localSessions = listOf(
+            RuntimeChatSession(
+                id = "local-relay",
+                title = "Relay recovery",
+                updatedAtMillis = 2_000L,
+                messageCount = 4,
+            ),
+        )
+        val remoteResults = listOf(
+            RuntimeChatSession(
+                id = "remote-second",
+                title = "Earlier semantic result",
+                updatedAtMillis = nowMillis,
+                messageCount = 6,
+                searchRank = 2,
+                searchSnippet = "Recover the runtime route.",
+            ),
+            RuntimeChatSession(
+                id = "remote-archived",
+                title = "Archived semantic result",
+                updatedAtMillis = nowMillis - 1_000L,
+                messageCount = 8,
+                archivedAtMillis = nowMillis,
+                searchRank = 1,
+            ),
+            RuntimeChatSession(
+                id = "remote-first",
+                title = "Best semantic result",
+                updatedAtMillis = nowMillis - 30L * 24L * 60L * 60L * 1_000L,
+                messageCount = 5,
+                searchRank = 1,
+                searchSnippet = "Restore connectivity with the latest route.",
+            ),
+        )
+        val selection = selectDrawerChatSearchSessions(
+            sessions = localSessions,
+            query = "restore connectivity",
+            untitledTitle = "Untitled chat",
+            remoteSearchQuery = "restore connectivity",
+            remoteSearchResults = remoteResults,
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.width(420.dp).height(1_200.dp)) {
+                    AetherLinkNavigationDrawerContent(
+                        state = RuntimeUiState(
+                            isConnected = true,
+                            chatSessions = localSessions,
+                            chatSessionSearchQuery = "restore connectivity",
+                            chatSessionSearchResults = remoteResults,
+                        ),
+                        effectiveDestination = AppDestination.Chat,
+                        chatSearchQuery = "restore connectivity",
+                        hasAnyChatSessions = true,
+                        hasChatSearchQuery = true,
+                        hasChatSearchResults = selection.sessions.isNotEmpty(),
+                        filteredChatSessions = selection.sessions,
+                        chatSessionGroupingNowMillis = nowMillis,
+                        onChatSearchQueryChange = {},
+                        onClearChatSearch = {},
+                        onNewChat = {},
+                        onSelectChatSession = {},
+                        onRenameChatSession = {},
+                        onArchiveChatSession = {},
+                        onSelectSettings = {},
+                        usesRemoteChatSearchResults = selection.usesRemoteResults,
+                    )
+                }
+            }
+        }
+
+        val history = compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+        history.performScrollToNode(hasText("Best semantic result"))
+        compose.onNodeWithText("Best semantic result").assertIsDisplayed()
+        val firstResultTop = compose.onNodeWithTag(
+            drawerChatRowTestTag("remote-first"),
+            useUnmergedTree = true,
+        ).getUnclippedBoundsInRoot().top
+        val secondResultTop = compose.onNodeWithTag(
+            drawerChatRowTestTag("remote-second"),
+            useUnmergedTree = true,
+        ).getUnclippedBoundsInRoot().top
+        assertTrue("Remote rank 1 must render before rank 2 across date buckets.", firstResultTop < secondResultTop)
+        compose.onNodeWithTag(
+            drawerChatRowSubtitleTestTag("remote-first"),
+            useUnmergedTree = true,
+        )
+            .assertTextContains("Match 1", substring = true)
+            .assertTextContains("Restore connectivity with the latest route.", substring = true)
+        assertNoVisibleText("Relay recovery")
+        assertNoVisibleText("Archived semantic result")
     }
 
     @Test

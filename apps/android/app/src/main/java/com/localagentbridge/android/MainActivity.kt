@@ -38,6 +38,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -143,6 +145,7 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -172,6 +175,7 @@ import com.localagentbridge.android.ui.ChatScreen
 import com.localagentbridge.android.ui.SettingsScreen
 import com.localagentbridge.android.ui.aetherLinkHapticFeedbackType
 import com.localagentbridge.android.ui.chatHistorySessionModelDisplayName
+import com.localagentbridge.android.ui.chatHistoryRefreshEnabled
 import com.localagentbridge.android.ui.chatHistorySessionStatusRes
 import com.localagentbridge.android.ui.filterChatHistorySessions
 import com.localagentbridge.android.ui.runtimeProviderDisplayName
@@ -527,16 +531,24 @@ private fun LocalAgentBridgeApp(
             val trimmedChatSearchQuery = chatSearchQuery.trim()
             val hasChatSearchQuery = trimmedChatSearchQuery.isNotEmpty()
             val hasAnyChatSessions = state.chatSessions.isNotEmpty()
-            val filteredChatSessions = if (hasChatSearchQuery) {
-                filterChatHistorySessions(
+            val drawerChatSearchSelection = remember(
+                state.chatSessions,
+                state.models,
+                chatSearchQuery,
+                untitledChatTitle,
+                state.chatSessionSearchQuery,
+                state.chatSessionSearchResults,
+            ) {
+                selectDrawerChatSearchSessions(
                     sessions = state.chatSessions,
-                    query = trimmedChatSearchQuery,
+                    query = chatSearchQuery,
                     untitledTitle = untitledChatTitle,
                     models = state.models,
+                    remoteSearchQuery = state.chatSessionSearchQuery,
+                    remoteSearchResults = state.chatSessionSearchResults,
                 )
-            } else {
-                state.chatSessions
             }
+            val filteredChatSessions = drawerChatSearchSelection.sessions
             val hasChatSearchResults = filteredChatSessions.isNotEmpty()
             val attachmentPickerLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.OpenMultipleDocuments(),
@@ -699,6 +711,8 @@ private fun LocalAgentBridgeApp(
                         filteredChatSessions = filteredChatSessions,
                         onChatSearchQueryChange = { chatSearchQuery = it },
                         onClearChatSearch = { chatSearchQuery = "" },
+                        usesRemoteChatSearchResults = drawerChatSearchSelection.usesRemoteResults,
+                        onSearchChatHistory = viewModel::refreshRuntimeChatHistory,
                         onNewChat = {
                             viewModel.startNewChat()
                             destination = AppDestination.Chat
@@ -2097,6 +2111,51 @@ internal fun researchNotebookDrawerGroups(
     archived = notebooks.filter { it.archivedAt != null },
 )
 
+internal data class DrawerChatSearchSelection(
+    val sessions: List<RuntimeChatSession>,
+    val usesRemoteResults: Boolean,
+)
+
+internal fun selectDrawerChatSearchSessions(
+    sessions: List<RuntimeChatSession>,
+    query: String,
+    untitledTitle: String,
+    models: List<RuntimeModel> = emptyList(),
+    remoteSearchQuery: String? = null,
+    remoteSearchResults: List<RuntimeChatSession> = emptyList(),
+): DrawerChatSearchSelection {
+    val normalizedQuery = query.trim()
+    if (normalizedQuery.isEmpty()) {
+        return DrawerChatSearchSelection(
+            sessions = sessions,
+            usesRemoteResults = false,
+        )
+    }
+
+    val normalizedRemoteQuery = remoteSearchQuery?.trim()?.takeIf(String::isNotEmpty)
+    if (normalizedQuery == normalizedRemoteQuery) {
+        return DrawerChatSearchSelection(
+            sessions = remoteSearchResults
+                .filter { it.archivedAtMillis == null }
+                .sortedWith(
+                    compareBy<RuntimeChatSession> { it.searchRank ?: Int.MAX_VALUE }
+                        .thenByDescending(RuntimeChatSession::updatedAtMillis),
+                ),
+            usesRemoteResults = true,
+        )
+    }
+
+    return DrawerChatSearchSelection(
+        sessions = filterChatHistorySessions(
+            sessions = sessions,
+            query = normalizedQuery,
+            untitledTitle = untitledTitle,
+            models = models,
+        ),
+        usesRemoteResults = false,
+    )
+}
+
 internal fun drawerChatRowTestTag(sessionId: String): String = "$DRAWER_CHAT_ROW_TEST_TAG_PREFIX$sessionId"
 
 internal fun drawerChatRowTextTestTag(sessionId: String): String =
@@ -2157,6 +2216,8 @@ internal fun AetherLinkNavigationDrawerContent(
     onRenameChatSession: (RuntimeChatSession) -> Unit,
     onArchiveChatSession: (RuntimeChatSession) -> Unit,
     onSelectSettings: () -> Unit,
+    usesRemoteChatSearchResults: Boolean = false,
+    onSearchChatHistory: (String) -> Unit = {},
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val newChatEnabled = newChatActionEnabled(state)
@@ -2208,6 +2269,32 @@ internal fun AetherLinkNavigationDrawerContent(
                 researchNotebookDeleteTarget = null
                 onPermanentlyDeleteResearchNotebook(notebook)
             },
+        )
+    }
+
+    val chatSessionRow: @Composable (RuntimeChatSession) -> Unit = { session ->
+        ChatSessionDrawerItem(
+            session = session,
+            models = state.models,
+            selected = effectiveDestination == AppDestination.Chat &&
+                session.id == state.activeChatSessionId,
+            enabled = !state.isStreaming && !state.isChatHistoryActionPending,
+            onClick = { onSelectChatSession(session) },
+            onRename = {
+                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                onRenameChatSession(session)
+            },
+            onArchive = {
+                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
+                onArchiveChatSession(session)
+            },
+            onRestore = null,
+            onDelete = null,
+            menuExpanded = expandedChatSessionMenuId == session.id,
+            onMenuExpandedChange = { expanded ->
+                expandedChatSessionMenuId = if (expanded) session.id else null
+            },
+            showSearchMetadata = usesRemoteChatSearchResults,
         )
     }
 
@@ -2368,6 +2455,8 @@ internal fun AetherLinkNavigationDrawerContent(
                         ChatHistorySearchField(
                             query = chatSearchQuery,
                             onQueryChange = onChatSearchQueryChange,
+                            remoteSearchEnabled = chatHistoryRefreshEnabled(state),
+                            onSearch = onSearchChatHistory,
                             onClear = {
                                 hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                                 onClearChatSearch()
@@ -2413,6 +2502,14 @@ internal fun AetherLinkNavigationDrawerContent(
                                 },
                         )
                     }
+                } else if (usesRemoteChatSearchResults) {
+                    items(
+                        items = filteredChatSessions,
+                        key = { session -> "chat-session-${session.id}" },
+                        contentType = { "chat-session-search-result" },
+                    ) { session ->
+                        chatSessionRow(session)
+                    }
                 } else {
                     groupedChatSessions.forEach { group ->
                         item(
@@ -2426,28 +2523,7 @@ internal fun AetherLinkNavigationDrawerContent(
                             key = { session -> "chat-session-${session.id}" },
                             contentType = { "chat-session" },
                         ) { session ->
-                            ChatSessionDrawerItem(
-                                session = session,
-                                models = state.models,
-                                selected = effectiveDestination == AppDestination.Chat &&
-                                    session.id == state.activeChatSessionId,
-                                enabled = !state.isStreaming && !state.isChatHistoryActionPending,
-                                onClick = { onSelectChatSession(session) },
-                                onRename = {
-                                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                                    onRenameChatSession(session)
-                                },
-                                onArchive = {
-                                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
-                                    onArchiveChatSession(session)
-                                },
-                                onRestore = null,
-                                onDelete = null,
-                                menuExpanded = expandedChatSessionMenuId == session.id,
-                                onMenuExpandedChange = { expanded ->
-                                    expandedChatSessionMenuId = if (expanded) session.id else null
-                                },
-                            )
+                            chatSessionRow(session)
                         }
                     }
                 }
@@ -3138,9 +3214,12 @@ private fun DrawerRuntimeSummary(state: RuntimeUiState) {
 private fun ChatHistorySearchField(
     query: String,
     onQueryChange: (String) -> Unit,
+    remoteSearchEnabled: Boolean,
+    onSearch: (String) -> Unit,
     onClear: () -> Unit,
 ) {
-    val clearQuery = query.trim().ifBlank { query }
+    val trimmedQuery = query.trim()
+    val clearQuery = trimmedQuery.ifBlank { query }
     val clearChatSearchContentDescription = stringResource(R.string.clear_chat_search_named, clearQuery)
     OutlinedTextField(
         value = query,
@@ -3180,6 +3259,14 @@ private fun ChatHistorySearchField(
                 }
             }
         },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(
+            onSearch = {
+                if (remoteSearchEnabled && trimmedQuery.isNotEmpty()) {
+                    onSearch(trimmedQuery)
+                }
+            },
+        ),
         modifier = Modifier
             .fillMaxWidth()
             .testTag(DRAWER_CHAT_SEARCH_TEST_TAG)
@@ -3307,6 +3394,7 @@ internal fun ChatSessionDrawerItem(
     onDelete: (() -> Unit)?,
     menuExpanded: Boolean? = null,
     onMenuExpandedChange: ((Boolean) -> Unit)? = null,
+    showSearchMetadata: Boolean = false,
 ) {
     if (menuExpanded != null && onMenuExpandedChange != null) {
         ChatSessionDrawerItemContent(
@@ -3321,6 +3409,7 @@ internal fun ChatSessionDrawerItem(
             onDelete = onDelete,
             menuExpanded = menuExpanded,
             onMenuExpandedChange = onMenuExpandedChange,
+            showSearchMetadata = showSearchMetadata,
         )
     } else {
         var localMenuExpanded by rememberSaveable(session.id) { mutableStateOf(false) }
@@ -3336,6 +3425,7 @@ internal fun ChatSessionDrawerItem(
             onDelete = onDelete,
             menuExpanded = localMenuExpanded,
             onMenuExpandedChange = { localMenuExpanded = it },
+            showSearchMetadata = showSearchMetadata,
         )
     }
 }
@@ -3353,11 +3443,31 @@ private fun ChatSessionDrawerItemContent(
     onDelete: (() -> Unit)?,
     menuExpanded: Boolean,
     onMenuExpandedChange: (Boolean) -> Unit,
+    showSearchMetadata: Boolean,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val title = session.localizedTitle(stringResource(R.string.untitled_chat))
     val chatSessionOptionsContentDescription = stringResource(R.string.chat_session_more_named, title)
-    val baseSubtitle = when {
+    val searchRank = if (showSearchMetadata) {
+        session.searchRank
+            ?.takeIf { it > 0 }
+            ?.let { stringResource(R.string.chat_search_match_rank, it) }
+    } else {
+        null
+    }
+    val searchSnippet = if (showSearchMetadata) {
+        session.searchSnippet?.trim()?.takeIf(String::isNotBlank)
+    } else {
+        null
+    }
+    val searchSubtitle = when {
+        searchRank != null && searchSnippet != null ->
+            stringResource(R.string.chat_search_match_metadata, searchRank, searchSnippet)
+        searchRank != null -> searchRank
+        searchSnippet != null -> searchSnippet
+        else -> null
+    }
+    val baseSubtitle = searchSubtitle ?: when {
         session.archivedAtMillis != null -> stringResource(R.string.archived_chat)
         session.messageCount > 0 -> pluralStringResource(
             R.plurals.chat_message_count,
@@ -3450,7 +3560,7 @@ private fun ChatSessionDrawerItemContent(
                             text = subtitle,
                             style = MaterialTheme.typography.labelSmall,
                             color = subtitleColor,
-                            maxLines = 1,
+                            maxLines = if (searchSubtitle == null) 1 else 2,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.testTag(drawerChatRowSubtitleTestTag(session.id)),
                         )

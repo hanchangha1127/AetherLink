@@ -2182,6 +2182,83 @@ class AppNavigationTest {
     }
 
     @Test
+    fun drawerChatSearchUsesOnlyCurrentRankedRemoteActiveResultsAndFallsBackLocally() {
+        val localSessions = listOf(
+            RuntimeChatSession(
+                id = "local-relay",
+                title = "Relay recovery",
+                updatedAtMillis = 4_000L,
+                messageCount = 3,
+            ),
+            RuntimeChatSession(
+                id = "local-other",
+                title = "Travel plan",
+                updatedAtMillis = 3_000L,
+                messageCount = 2,
+            ),
+        )
+        val remoteResults = listOf(
+            RuntimeChatSession(
+                id = "remote-second",
+                title = "Earlier semantic result",
+                updatedAtMillis = 8_000L,
+                messageCount = 6,
+                searchRank = 2,
+                searchSnippet = "Recover the runtime route.",
+            ),
+            RuntimeChatSession(
+                id = "remote-archived",
+                title = "Archived semantic result",
+                updatedAtMillis = 9_000L,
+                messageCount = 8,
+                archivedAtMillis = 9_500L,
+                searchRank = 1,
+            ),
+            RuntimeChatSession(
+                id = "remote-first",
+                title = "Best semantic result",
+                updatedAtMillis = 7_000L,
+                messageCount = 5,
+                searchRank = 1,
+                searchSnippet = "Restore connectivity with the latest route.",
+            ),
+        )
+
+        val currentRemote = selectDrawerChatSearchSessions(
+            sessions = localSessions,
+            query = "  restore connectivity  ",
+            untitledTitle = "Untitled chat",
+            remoteSearchQuery = "restore connectivity",
+            remoteSearchResults = remoteResults,
+        )
+        assertTrue(currentRemote.usesRemoteResults)
+        assertEquals(
+            listOf("remote-first", "remote-second"),
+            currentRemote.sessions.map(RuntimeChatSession::id),
+        )
+
+        val staleRemote = selectDrawerChatSearchSessions(
+            sessions = localSessions,
+            query = "relay",
+            untitledTitle = "Untitled chat",
+            remoteSearchQuery = "restore connectivity",
+            remoteSearchResults = remoteResults,
+        )
+        assertFalse(staleRemote.usesRemoteResults)
+        assertEquals(listOf("local-relay"), staleRemote.sessions.map(RuntimeChatSession::id))
+
+        val blankQuery = selectDrawerChatSearchSessions(
+            sessions = localSessions,
+            query = " \n ",
+            untitledTitle = "Untitled chat",
+            remoteSearchQuery = "restore connectivity",
+            remoteSearchResults = remoteResults,
+        )
+        assertFalse(blankQuery.usesRemoteResults)
+        assertEquals(localSessions, blankQuery.sessions)
+    }
+
+    @Test
     fun chatTopBarActiveTitleHidesOnlyUnprovenanceDefaultTitle() {
         fun stateFor(session: RuntimeChatSession): RuntimeUiState {
             return RuntimeUiState(

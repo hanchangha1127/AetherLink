@@ -4,6 +4,83 @@ Last updated: 2026-07-29 KST.
 
 This document separates current verification evidence from historical captures.
 
+## 2026-07-29 Local V1 Build 11 Current-Source Release Checklist
+
+- [x] `release/version-ledger.tsv` ends at `1.0.0+11`; Builds 1 through 10
+  remain immutable historical records.
+- [x] The Build 11 archive is the latest ledger entry and its source-bound
+  snapshot matches the current release inputs.
+- [x] The 239-file `dirty-content-snapshot` has SHA-256
+  `da7dbf88cba5d5bc9f9d822e0f70fe7b21a9080add5e1b3718c60ef9dc341c84`;
+  HEAD and `origin/main` are both
+  `8955fb1c25ec483aaedad53793609311337605de`.
+- [x] Two complete qualification executions each used 101- and 109-byte
+  isolated source roots. All four builds produced the exact same
+  165,378,312-byte ZIP with SHA-256
+  `08505eaefa7f7ef035ad9ff644f1f7e6efa95ef924acccd23d2478e47d92c148`,
+  identical sidecars, and identical bytes and metadata for all 30 ZIP entries.
+- [x] The first 19,745-byte result has SHA-256
+  `65bb96a93008a077b95608611416e4c41cb91e27cb70d61facd66104748512f4`
+  and records immutable publication plus independent current-source readback.
+- [x] The separate 19,744-byte confirmation has SHA-256
+  `6da0148640ef5bb97d53369214103a90ea67c499cc2f2cf918591d19f2e87039`
+  and records `alreadyMatched=true`.
+- [x] The builder and independent readback each run AGP-pinned
+  `bundletool 1.18.3 validate` with a 60-second timeout, require the exact
+  `base` module set, and then independently verify the base manifest identity.
+- [x] Independent readback verifies all 29 payload members, Android unsigned
+  arm64-v8a `1.0.0+11` APK/AAB metadata and R8 outputs, plus the ad-hoc arm64
+  macOS app and UUID-matched dSYM.
+- [ ] Build 11 has no packaged-app lifecycle result. The historical Build 10
+  lifecycle result remains bound only to the Build 10 ZIP, manifest, and
+  executable; it is not Build 11 launch or recovery evidence.
+- [x] The historical 1,313-byte Build 10 result remains at
+  `dist/lifecycle/macos-packaged-app-build-10-lifecycle-v1.json` with SHA-256
+  `c0ea4dba08e74130f7aaa1e9855121d02459249ff5e6a0fc27cd1b01f46f0ded`.
+- [x] The historical 1,311-byte Build 9 result remains at
+  `dist/lifecycle/macos-packaged-app-build-9-lifecycle-v1.json` with SHA-256
+  `aad796ee3c768e37953f18eeea0e6642107750c3a8c398df798a46e96aabab53`.
+- [x] The main Build 4 process PID 59809 stayed alive at the same path; its
+  executable SHA-256 remained
+  `93cb550903f74e5018514870d1f4e7ac95ffc5df915fb8bde48c1ff512b382d0`.
+- [ ] Build 11 was not installed, launched, signed, notarized, stapled, or
+  exercised on a device, provider, live network, or clean machine. UI
+  correctness, listener readiness, state recovery, G6 exit, and G7 exit remain
+  open; security work remains excluded.
+- Current readback:
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+11-local-v1`.
+- Historical Build 10 readback:
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+10-local-v1 --historical`.
+
+## 2026-07-29 Android Drawer Semantic Chat Search UX Checklist
+
+- [x] The drawer's keyboard Search action submits exactly one trimmed,
+  nonblank query only when connected and not blocked by streaming or a bulk
+  chat-history mutation. Blank and unavailable-state IME actions do not
+  dispatch; the text field retains immediate local filtering.
+- [x] Drawer state adopts remote results only when the response query, after
+  trimming, exactly matches the current query. A stale or absent response falls
+  back to the existing local title/model/status filter.
+- [x] Current remote results exclude archived sessions and are ordered by
+  `searchRank` with update time as the tie-breaker. Remote result rendering
+  bypasses recency groups, preserving rank globally across date buckets.
+- [x] Remote rows expose the localized match rank and snippet in the visible
+  subtitle and accessibility summary.
+- [x] The clean affected run passes 167 `AppNavigationTest` cases plus 24
+  navigation-drawer/chat-drawer Compose cases with zero skips, failures, or
+  errors. The cross-bucket regression places a 30-day-old rank-1 result above a
+  current-day rank-2 result and checks their rendered coordinates.
+- [x] The subsequent complete `:app:testDebugUnitTest` gate passes 1,179 tests
+  with zero skips, failures, or errors; the full Compose class contributes 290
+  of those passing cases.
+- [x] `:app:lintRelease` passes with zero errors and the same three previously
+  recorded warnings; none points to the three changed Android files.
+- [x] Independent GPT-5.6 Sol review's sole P2, date grouping overriding remote
+  rank, is fixed. Final re-review reports no P0-P3 findings.
+- [ ] No physical keyboard, TalkBack, live provider/model, external network,
+  installation, signing, or production-release behavior was exercised.
+  Security work remains excluded, and Codex made no Git write.
+
 ## 2026-07-29 Multilingual Full-Matrix V3 Preparation Checklist
 
 - [x] The frozen V2 task, Swift scorer/live assertion, Python runner, schema-4
@@ -14,20 +91,29 @@ This document separates current verification evidence from historical captures.
   accumulate; invalid shape, dimension, finite-value, or zero-vector input still
   fails structurally.
 - [x] Ranking failure output is limited to the 20 frozen scenarios and records
-  only locale, ordinal, and failed batch ordinals. Repeatability output is
-  limited to 80 locale/input ordinals. Per-locale counts and all aggregate
-  counts are derived and cross-validated.
+  only locale, ordinal, and per-batch failed-comparison counts. Repeatability
+  output is limited to 80 locale/input ordinals. Aggregate pass counts and the
+  quality gate are derived rather than duplicated in the marker.
 - [x] The canonical marker retains no task ID/text, model name, vector,
   dimension, raw score, provider output, path, process identifier, or base URL.
-- [x] The opt-in live assertion emits its marker only after confirmed unload,
-  catalog identity preservation, installed/not-running state, and final health.
+- [x] The opt-in live assertion captures all primary failures, attempts unload
+  unconditionally, and emits its marker only after cleanup succeeds plus final
+  catalog identity, installed/not-running state, and health checks. Successful
+  primary work requires a confirmed unload transition; failed primary work may
+  finish already absent.
 - [x] The schema-5 runner requires one exact passed V3 XCTest and one marker,
   rejects duplicate JSON keys, bool-as-int counts, unknown fields, duplicate or
-  noncanonical coordinates, count/gate drift, retained inputs, source/task or
+  noncanonical coordinates, retained inputs, source/task or
   snapshot drift, and cleanup failures.
-- [x] Seven V3 Swift tests pass with one expected live skip; frozen V2 plus V3
-  passes 17 tests with two expected skips. Combined V2/V3 Python validation
-  passes 18 tests.
+- [x] Eight V3 Swift tests pass with one expected live skip; frozen V2 plus V3
+  passes 18 tests with two expected skips. Combined V2/V3 Python validation
+  passes 21 tests.
+- [x] The settled full Swift suite passes 2,074 tests with 11 expected
+  opt-in/live skips and zero failures in 315.439 test seconds.
+- [x] Codex made no Git write. The user-side Git state advanced during
+  verification to `main == origin/main == 8955fb1c25ec483aaedad53793609311337605de`;
+  the seven final V3 follow-up paths, three Android drawer-search paths, and the
+  corresponding copy-hygiene guard are modified and unstaged.
 - [ ] No V3 live model observation was executed. Japanese, Simplified Chinese,
   French, and repeatability results for the installed candidate therefore
   remain unknown, and V2 remains a failed partial observation rather than a
@@ -55,8 +141,9 @@ This document separates current verification evidence from historical captures.
   published semantic ranks are renumbered from one after filtering.
 - [x] Sixteen focused tests and the post-review 544-test broad router/search
   rerun pass with zero failures.
-- [x] The post-edit full Swift run executes 2,066 tests with zero failures and
-  ten expected opt-in/live skips in 310.6 seconds.
+- [x] The pre-V3 post-edit full Swift run executed 2,066 tests with zero
+  failures and ten expected opt-in/live skips in 310.6 seconds; the newer V3
+  aggregate above supersedes that count.
 - [ ] The frozen five-locale V2 gate remains an observed failure at Korean
   scenario ordinal 2 on both exact candidates. The reranker is separate product
   behavior and is not passing multilingual embedding qualification.
@@ -66,15 +153,14 @@ This document separates current verification evidence from historical captures.
 - [ ] No live provider, model load/download, physical device, camera QR,
   installation, signing, deployment, or production-readiness claim is made.
   Security work remains excluded.
-- [ ] Build 9 is still the latest immutable ledger entry, but its source-bound
-  snapshot predates this worktree. Its archive can be checked without comparing
-  current source, and that 29-payload-member readback passes; these changes
-  require a later source-bound release build.
+- [x] Build 10 binds this work to the current release-source snapshot and its
+  independent readback passes. Build 9 remains historical source-bound
+  evidence.
 
 ## 2026-07-29 Local V1 Build 9 Prior Source-Bound Release And Lifecycle Checklist
 
-- [x] `release/version-ledger.tsv` ends at `1.0.0+9`; Build 9 is current and
-  Builds 1 through 8 remain historical.
+- [x] At publication, `release/version-ledger.tsv` ended at `1.0.0+9`.
+  Builds 9 and 10 are now historical and Build 11 is current.
 - [x] The archive binds the settled role-aware embedding source to a 239-file
   `dirty-content-snapshot` with SHA-256
   `22e26f5ed62be9b7badcc01ff76db91f436d0a0cde9ad1587a6c27588962a5ec`.
@@ -91,7 +177,8 @@ This document separates current verification evidence from historical captures.
 - [x] Manifest schema 2 preserves compliance profile
   `aetherlink-release-compliance-v2`, 350 Maven packages, and 692 exact roles:
   202 runtime, 155 build dependency, and 335 build tool.
-- [x] The Build 9 archive remains the latest ledger entry but its source-bound snapshot predates the current two-stage reranker worktree.
+- [x] The Build 9 source-bound snapshot predates the two-stage reranker and
+  Android drawer-search release inputs now captured by Build 10.
 - [x] The exact Build 9 packaged macOS app reached AppKit finished-launch state,
   remained alive for at least five seconds, accepted identity-rechecked
   exact-PID termination, and exited zero in both runs.
@@ -106,8 +193,8 @@ This document separates current verification evidence from historical captures.
   live-provider behavior, installation, signing, deployment, clean-machine
   launch, identity persistence, legal compatibility, or production readiness.
   Security work was excluded.
-- Current readback:
-  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+9-local-v1 --no-current-source`.
+- Historical readback:
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+9-local-v1 --historical`.
 
 ## 2026-07-29 Historical Local V1 Build 7 SPDX And License Inventory Checklist
 
@@ -171,7 +258,7 @@ This document separates current verification evidence from historical captures.
 ## 2026-07-29 Historical Local V1 Build 6 Unequal-Length Two-Root Qualification Checklist
 
 - [x] At publication, `release/version-ledger.tsv` contained append-only builds
-  1 through 6 and ended at `1.0.0+6`; Build 9 is current now.
+  1 through 6 and ended at `1.0.0+6`; Build 11 is current now.
 - [x] Two isolated clean lane worktrees at source-root UTF-8 byte lengths 101
   and 109 independently built and packaged both platforms with the same host,
   fixed toolchains, paired clones of one byte-identical Gradle seed, and the
