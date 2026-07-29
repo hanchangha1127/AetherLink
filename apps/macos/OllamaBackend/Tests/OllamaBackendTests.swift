@@ -1432,6 +1432,68 @@ final class OllamaBackendTests: XCTestCase {
         XCTAssertNil(backend.takeProviderUsageSource(generationID: request.generationID))
     }
 
+    func testChatEncodesOnlyImageAttachmentsForOllama() async throws {
+        let imageDataBase64 = Self.liveOllamaVisionFixturePNGBase64
+        let backend = makeBackend { request in
+            XCTAssertEqual(request.url?.path, "/api/chat")
+            let body = try self.requestBodyData(from: request)
+            let payload = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: body) as? [String: Any]
+            )
+            let messages = try XCTUnwrap(
+                payload["messages"] as? [[String: Any]]
+            )
+            XCTAssertEqual(messages.count, 1)
+            XCTAssertEqual(messages[0]["role"] as? String, "user")
+            XCTAssertEqual(messages[0]["content"] as? String, "Inspect this.")
+            XCTAssertEqual(
+                messages[0]["images"] as? [String],
+                [imageDataBase64]
+            )
+            XCTAssertNil(messages[0]["attachments"])
+            XCTAssertFalse(
+                String(decoding: body, as: UTF8.self).contains(
+                    "not-an-image"
+                )
+            )
+            return self.response(
+                statusCode: 200,
+                body: #"{"done":true,"prompt_eval_count":1,"eval_count":1}"#
+            )
+        }
+        let request = ChatRequest(
+            generationID: "generation-image-attachment",
+            sessionID: "session-image-attachment",
+            model: "vision-model",
+            messages: [
+                ChatMessage(
+                    role: "user",
+                    content: "Inspect this.",
+                    attachments: [
+                        ChatAttachment(
+                            type: "image",
+                            mimeType: "image/png",
+                            dataBase64: imageDataBase64
+                        ),
+                        ChatAttachment(
+                            type: "document",
+                            mimeType: "text/plain",
+                            dataBase64: "not-an-image"
+                        ),
+                        ChatAttachment(
+                            type: "image",
+                            mimeType: "image/png"
+                        ),
+                    ]
+                )
+            ]
+        )
+
+        let events = try await collect(backend.chat(request: request))
+
+        XCTAssertEqual(events, [.done(inputTokens: 1, outputTokens: 1)])
+    }
+
     func testChatStreamsThinkingSeparatelyFromContent() async throws {
         let backend = makeBackend { request in
             XCTAssertEqual(request.url?.path, "/api/chat")
@@ -1648,7 +1710,7 @@ final class OllamaBackendTests: XCTestCase {
         await fulfillment(of: [stopped], timeout: 1)
     }
 
-    func testChatRejectsEmptyAndDeltaEOFWithoutTerminalMarker() async {
+    func testChatMapsTerminalLessEOFToRetryableTransportFailure() async {
         let cases: [(body: String, expectedEvents: [ChatStreamEvent])] = [
             ("", []),
             (#"{"message":{"content":"partial"},"done":false}"#, [.delta("partial")]),
@@ -1664,12 +1726,18 @@ final class OllamaBackendTests: XCTestCase {
                 }
                 XCTFail("Expected terminal-less stream rejection")
             } catch let error as OllamaBackendError {
-                guard case .responseDecoding(let endpoint, let reason) = error else {
+                guard case .transport(let endpoint, let reason) = error else {
                     return XCTFail("Unexpected Ollama error: \(error)")
                 }
                 XCTAssertEqual(endpoint, "POST /api/chat")
-                XCTAssertEqual(reason, "The provider stream violated a bounded response contract.")
-                XCTAssertEqual(error.backendError.code, "bad_backend_response")
+                XCTAssertEqual(
+                    reason,
+                    "The provider stream ended before its terminal marker."
+                )
+                XCTAssertEqual(error.code, "ollama_transport_error")
+                XCTAssertEqual(error.backendError.code, "transport_error")
+                XCTAssertTrue(error.retryable)
+                XCTAssertTrue(error.backendError.retryable)
             } catch {
                 XCTFail("Unexpected error: \(error)")
             }
@@ -1896,6 +1964,875 @@ final class OllamaBackendTests: XCTestCase {
         let models = try await backend.listModels()
         XCTAssertEqual(status, .available)
         XCTAssertTrue(models.isEmpty)
+    }
+
+    func testLiveOllamaExactVersionInstalledChatModelCompatibility() async throws {
+        let fixture = try await liveOllamaModelBackedFixture(
+            enableEnvironmentKey: (
+                "AETHERLINK_RUN_OLLAMA_LIVE_MODEL_BACKED_TEST"
+            ),
+            modelIDEnvironmentKey: (
+                "AETHERLINK_OLLAMA_LIVE_CHAT_MODEL_ID"
+            ),
+            temporaryDirectoryPrefix: (
+                "aetherlink-ollama-model-backed-"
+            )
+        )
+        let backend = fixture.backend
+        let chatModelID = fixture.modelID
+        let expectedCatalogCount = fixture.expectedCatalogCount
+        let healthBefore = await backend.healthCheck()
+        XCTAssertEqual(healthBefore, .available)
+        let catalogBefore = try await backend.listModels()
+        XCTAssertEqual(catalogBefore.count, expectedCatalogCount)
+        let selectedBefore = try XCTUnwrap(catalogBefore.first(where: {
+            Self.sameOllamaModel($0.id, chatModelID)
+        }))
+        XCTAssertTrue(selectedBefore.installed)
+        XCTAssertFalse(selectedBefore.running)
+        XCTAssertEqual(selectedBefore.kind, .chat)
+        XCTAssertTrue(
+            selectedBefore.capabilities.contains(where: {
+                let capability = $0.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                ).lowercased()
+                return capability == "completion" || capability == "chat"
+            })
+        )
+        let catalogIdentityBefore = catalogBefore.map(\.id).sorted()
+
+        let completion = try await liveOllamaChatCompletion(
+            backend: backend,
+            modelID: chatModelID,
+            generationID: "model-backed-natural-completion",
+            prompt: "Reply with exactly the single word OK."
+        )
+        XCTAssertGreaterThan(completion.answerByteCount, 0)
+        XCTAssertEqual(completion.doneCount, 1)
+        XCTAssertGreaterThan(completion.inputTokens ?? 0, 0)
+        XCTAssertGreaterThan(completion.outputTokens ?? 0, 0)
+        let usageSource = try XCTUnwrap(
+            backend.takeProviderUsageSource(
+                generationID: "model-backed-natural-completion"
+            )
+        )
+        XCTAssertEqual(usageSource.provider, .ollama)
+        XCTAssertEqual(usageSource.wireMode, .ollamaChat)
+        XCTAssertTrue(Self.sameOllamaModel(usageSource.providerModelID, chatModelID))
+
+        try await assertLiveOllamaCancellationAndRecovery(
+            backend: backend,
+            modelID: chatModelID,
+            idPrefix: "model-backed"
+        )
+
+        let catalogAfterChat = try await backend.listModels()
+        let selectedAfterChat = try XCTUnwrap(catalogAfterChat.first(where: {
+            Self.sameOllamaModel($0.id, chatModelID)
+        }))
+        XCTAssertTrue(selectedAfterChat.running)
+
+        let unloadResult = try await backend.unloadModel(
+            providerModelID: chatModelID
+        )
+        XCTAssertEqual(unloadResult.outcome, .confirmed)
+
+        let catalogAfterUnload = try await backend.listModels()
+        XCTAssertEqual(catalogAfterUnload.count, expectedCatalogCount)
+        XCTAssertTrue(
+            catalogAfterUnload.map(\.id).sorted() == catalogIdentityBefore
+        )
+        let selectedAfterUnload = try XCTUnwrap(catalogAfterUnload.first(where: {
+            Self.sameOllamaModel($0.id, chatModelID)
+        }))
+        XCTAssertTrue(selectedAfterUnload.installed)
+        XCTAssertFalse(selectedAfterUnload.running)
+        let healthAfter = await backend.healthCheck()
+        XCTAssertEqual(healthAfter, .available)
+    }
+
+    func testLiveOllamaExactVersionInstalledEmbeddingModelCompatibility() async throws {
+        let fixture = try await liveOllamaModelBackedFixture(
+            enableEnvironmentKey: (
+                "AETHERLINK_RUN_OLLAMA_LIVE_EMBEDDING_MODEL_BACKED_TEST"
+            ),
+            modelIDEnvironmentKey: (
+                "AETHERLINK_OLLAMA_LIVE_EMBEDDING_MODEL_ID"
+            ),
+            temporaryDirectoryPrefix: (
+                "aetherlink-ollama-embedding-model-backed-"
+            )
+        )
+        try await assertLiveOllamaEmbeddingCompatibility(fixture)
+    }
+
+    func testLiveOllamaExactVersionInstalledEmbeddingSemanticRecovery() async throws {
+        let fixture = try await liveOllamaModelBackedFixture(
+            enableEnvironmentKey: (
+                "AETHERLINK_RUN_OLLAMA_LIVE_EMBEDDING_SEMANTIC_RECOVERY_TEST"
+            ),
+            modelIDEnvironmentKey: (
+                "AETHERLINK_OLLAMA_LIVE_EMBEDDING_MODEL_ID"
+            ),
+            temporaryDirectoryPrefix: (
+                "aetherlink-ollama-embedding-semantic-quality-"
+            )
+        )
+        try await assertLiveOllamaEmbeddingCompatibility(fixture)
+    }
+
+    private func assertLiveOllamaEmbeddingCompatibility(
+        _ fixture: LiveOllamaModelBackedFixture
+    ) async throws {
+        let backend = fixture.backend
+        let embeddingModelID = fixture.modelID
+        let expectedCatalogCount = fixture.expectedCatalogCount
+
+        let healthBefore = await backend.healthCheck()
+        XCTAssertEqual(healthBefore, .available)
+        let catalogBefore = try await backend.listModels()
+        XCTAssertEqual(catalogBefore.count, expectedCatalogCount)
+        let selectedBefore = try XCTUnwrap(catalogBefore.first(where: {
+            Self.sameOllamaModel($0.id, embeddingModelID)
+        }))
+        XCTAssertTrue(selectedBefore.installed)
+        XCTAssertFalse(selectedBefore.running)
+        XCTAssertEqual(selectedBefore.kind, .embedding)
+        XCTAssertTrue(
+            selectedBefore.capabilities.contains(where: {
+                let capability = $0.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                ).lowercased()
+                return capability == "embedding" || capability == "embed"
+            })
+        )
+        let catalogIdentityBefore = catalogBefore.map(\.id).sorted()
+
+        let embeddingResult = try await backend.embed(
+            request: EmbeddingRequest(
+                model: embeddingModelID,
+                texts: [
+                    "AetherLink exact-version embedding input one.",
+                    "AetherLink exact-version embedding input two.",
+                ]
+            )
+        )
+        XCTAssertTrue(
+            Self.sameOllamaModel(embeddingResult.model, embeddingModelID)
+        )
+        XCTAssertEqual(embeddingResult.embeddings.count, 2)
+        let dimension = try XCTUnwrap(
+            embeddingResult.embeddings.first?.count
+        )
+        XCTAssertGreaterThan(dimension, 0)
+        XCTAssertTrue(
+            embeddingResult.embeddings.allSatisfy({ vector in
+                vector.count == dimension && vector.allSatisfy(\.isFinite)
+            })
+        )
+
+        let catalogAfterEmbedding = try await backend.listModels()
+        let selectedAfterEmbedding = try XCTUnwrap(
+            catalogAfterEmbedding.first(where: {
+                Self.sameOllamaModel($0.id, embeddingModelID)
+            })
+        )
+        XCTAssertTrue(selectedAfterEmbedding.running)
+
+        let unloadResult = try await backend.unloadModel(
+            providerModelID: embeddingModelID
+        )
+        XCTAssertEqual(unloadResult.outcome, .confirmed)
+
+        let catalogAfterUnload = try await backend.listModels()
+        XCTAssertEqual(catalogAfterUnload.count, expectedCatalogCount)
+        XCTAssertTrue(
+            catalogAfterUnload.map(\.id).sorted() == catalogIdentityBefore
+        )
+        let selectedAfterUnload = try XCTUnwrap(
+            catalogAfterUnload.first(where: {
+                Self.sameOllamaModel($0.id, embeddingModelID)
+            })
+        )
+        XCTAssertTrue(selectedAfterUnload.installed)
+        XCTAssertFalse(selectedAfterUnload.running)
+        let healthAfter = await backend.healthCheck()
+        XCTAssertEqual(healthAfter, .available)
+    }
+
+    func testLiveOllamaExactVersionInstalledEmbeddingSemanticQuality() async throws {
+        let fixture = try await liveOllamaModelBackedFixture(
+            enableEnvironmentKey: (
+                "AETHERLINK_RUN_OLLAMA_LIVE_EMBEDDING_SEMANTIC_QUALITY_TEST"
+            ),
+            modelIDEnvironmentKey: (
+                "AETHERLINK_OLLAMA_LIVE_EMBEDDING_MODEL_ID"
+            ),
+            temporaryDirectoryPrefix: (
+                "aetherlink-ollama-embedding-semantic-quality-"
+            )
+        )
+        let environment = ProcessInfo.processInfo.environment
+        guard
+            let taskSetPath = environment[
+                "AETHERLINK_OLLAMA_EMBEDDING_SEMANTIC_TASK_SET_PATH"
+            ],
+            taskSetPath.hasPrefix("/"),
+            let taskSetSHA256 = environment[
+                "AETHERLINK_OLLAMA_EMBEDDING_SEMANTIC_TASK_SET_SHA256"
+            ]
+        else {
+            XCTFail(
+                "The semantic-quality test requires the runner-owned task set."
+            )
+            return
+        }
+        let taskSetURL = URL(
+            fileURLWithPath: taskSetPath,
+            isDirectory: false
+        ).standardizedFileURL
+        guard
+            taskSetURL.lastPathComponent
+                == "ollama-embedding-semantic-quality-v1.json",
+            taskSetURL.pathComponents.contains(where: {
+                $0.hasPrefix(
+                    "aetherlink-ollama-embedding-semantic-quality-"
+                )
+            })
+        else {
+            XCTFail(
+                "The semantic-quality task set escaped its runner-owned boundary."
+            )
+            return
+        }
+        let taskSet = try OllamaEmbeddingSemanticTaskSet.load(
+            from: taskSetURL,
+            expectedSHA256: taskSetSHA256
+        )
+        let backend = fixture.backend
+        let modelID = fixture.modelID
+
+        let healthBefore = await backend.healthCheck()
+        XCTAssertEqual(healthBefore, .available)
+        let catalogBefore = try await backend.listModels()
+        XCTAssertEqual(
+            catalogBefore.count,
+            fixture.expectedCatalogCount
+        )
+        let selectedBefore = try XCTUnwrap(catalogBefore.first(where: {
+            Self.sameOllamaModel($0.id, modelID)
+        }))
+        XCTAssertTrue(selectedBefore.installed)
+        XCTAssertFalse(selectedBefore.running)
+        XCTAssertEqual(selectedBefore.kind, .embedding)
+        let catalogIdentityBefore = catalogBefore.map(\.id).sorted()
+
+        let firstResult = try await backend.embed(
+            request: EmbeddingRequest(
+                model: modelID,
+                texts: taskSet.firstCallTexts
+            )
+        )
+        let secondResult = try await backend.embed(
+            request: EmbeddingRequest(
+                model: modelID,
+                texts: taskSet.secondCallTexts
+            )
+        )
+        XCTAssertTrue(Self.sameOllamaModel(firstResult.model, modelID))
+        XCTAssertTrue(Self.sameOllamaModel(secondResult.model, modelID))
+        let assessment = try OllamaEmbeddingSemanticScorer.assess(
+            taskSet: taskSet,
+            firstEmbeddings: firstResult.embeddings,
+            secondEmbeddings: secondResult.embeddings
+        )
+        XCTAssertEqual(
+            assessment,
+            OllamaEmbeddingSemanticAssessment(
+                batchCalls: 2,
+                embeddingCount: 32,
+                scenarioCount: 4,
+                textCountPerBatch: 16
+            )
+        )
+
+        let catalogAfterEmbedding = try await backend.listModels()
+        let selectedAfterEmbedding = try XCTUnwrap(
+            catalogAfterEmbedding.first(where: {
+                Self.sameOllamaModel($0.id, modelID)
+            })
+        )
+        XCTAssertTrue(selectedAfterEmbedding.running)
+
+        let unloadResult = try await backend.unloadModel(
+            providerModelID: modelID
+        )
+        XCTAssertEqual(unloadResult.outcome, .confirmed)
+        let catalogAfterUnload = try await backend.listModels()
+        XCTAssertEqual(
+            catalogAfterUnload.map(\.id).sorted(),
+            catalogIdentityBefore
+        )
+        let selectedAfterUnload = try XCTUnwrap(
+            catalogAfterUnload.first(where: {
+                Self.sameOllamaModel($0.id, modelID)
+            })
+        )
+        XCTAssertTrue(selectedAfterUnload.installed)
+        XCTAssertFalse(selectedAfterUnload.running)
+        let healthAfter = await backend.healthCheck()
+        XCTAssertEqual(healthAfter, .available)
+    }
+
+    func testLiveOllamaExactVersionInstalledVisionModelCompatibility() async throws {
+        let fixture = try await liveOllamaModelBackedFixture(
+            enableEnvironmentKey: (
+                "AETHERLINK_RUN_OLLAMA_LIVE_VISION_MODEL_BACKED_TEST"
+            ),
+            modelIDEnvironmentKey: (
+                "AETHERLINK_OLLAMA_LIVE_VISION_MODEL_ID"
+            ),
+            temporaryDirectoryPrefix: (
+                "aetherlink-ollama-vision-model-backed-"
+            )
+        )
+        let backend = fixture.backend
+        let visionModelID = fixture.modelID
+        let expectedCatalogCount = fixture.expectedCatalogCount
+
+        let healthBefore = await backend.healthCheck()
+        XCTAssertEqual(healthBefore, .available)
+        let catalogBefore = try await backend.listModels()
+        XCTAssertEqual(catalogBefore.count, expectedCatalogCount)
+        let selectedBefore = try XCTUnwrap(catalogBefore.first(where: {
+            Self.sameOllamaModel($0.id, visionModelID)
+        }))
+        XCTAssertTrue(selectedBefore.installed)
+        XCTAssertFalse(selectedBefore.running)
+        XCTAssertEqual(selectedBefore.kind, .chat)
+        let normalizedCapabilities = Set(
+            selectedBefore.capabilities.map({
+                $0.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                ).lowercased()
+            })
+        )
+        XCTAssertTrue(normalizedCapabilities.contains("vision"))
+        XCTAssertTrue(
+            !normalizedCapabilities.isDisjoint(
+                with: ["chat", "completion"]
+            )
+        )
+        let catalogIdentityBefore = catalogBefore.map(\.id).sorted()
+
+        let textGenerationID = "vision-backed-text-completion"
+        let textCompletion = try await liveOllamaChatCompletion(
+            backend: backend,
+            modelID: visionModelID,
+            generationID: textGenerationID,
+            prompt: "Reply with exactly the single word OK."
+        )
+        XCTAssertGreaterThan(textCompletion.answerByteCount, 0)
+        XCTAssertEqual(textCompletion.doneCount, 1)
+        XCTAssertGreaterThan(textCompletion.inputTokens ?? 0, 0)
+        XCTAssertGreaterThan(textCompletion.outputTokens ?? 0, 0)
+        XCTAssertNotNil(
+            backend.takeProviderUsageSource(
+                generationID: textGenerationID
+            )
+        )
+
+        let imageGenerationID = "vision-backed-image-completion"
+        let imageCompletion = try await liveOllamaChatCompletion(
+            backend: backend,
+            modelID: visionModelID,
+            generationID: imageGenerationID,
+            prompt: "Describe the dominant color in this image.",
+            attachments: [
+                ChatAttachment(
+                    type: "image",
+                    mimeType: "image/png",
+                    name: "fixture.png",
+                    dataBase64: Self.liveOllamaVisionFixturePNGBase64
+                )
+            ]
+        )
+        XCTAssertGreaterThan(imageCompletion.answerByteCount, 0)
+        XCTAssertEqual(imageCompletion.doneCount, 1)
+        XCTAssertGreaterThan(imageCompletion.inputTokens ?? 0, 0)
+        XCTAssertGreaterThan(imageCompletion.outputTokens ?? 0, 0)
+        XCTAssertNotNil(
+            backend.takeProviderUsageSource(
+                generationID: imageGenerationID
+            )
+        )
+
+        try await assertLiveOllamaCancellationAndRecovery(
+            backend: backend,
+            modelID: visionModelID,
+            idPrefix: "vision-backed"
+        )
+
+        let catalogAfterChat = try await backend.listModels()
+        let selectedAfterChat = try XCTUnwrap(
+            catalogAfterChat.first(where: {
+                Self.sameOllamaModel($0.id, visionModelID)
+            })
+        )
+        XCTAssertTrue(selectedAfterChat.running)
+
+        let unloadResult = try await backend.unloadModel(
+            providerModelID: visionModelID
+        )
+        XCTAssertEqual(unloadResult.outcome, .confirmed)
+
+        let catalogAfterUnload = try await backend.listModels()
+        XCTAssertEqual(catalogAfterUnload.count, expectedCatalogCount)
+        XCTAssertEqual(
+            catalogAfterUnload.map(\.id).sorted(),
+            catalogIdentityBefore
+        )
+        let selectedAfterUnload = try XCTUnwrap(
+            catalogAfterUnload.first(where: {
+                Self.sameOllamaModel($0.id, visionModelID)
+            })
+        )
+        XCTAssertTrue(selectedAfterUnload.installed)
+        XCTAssertFalse(selectedAfterUnload.running)
+        let healthAfter = await backend.healthCheck()
+        XCTAssertEqual(healthAfter, .available)
+    }
+
+    func testLiveOllamaExactVersionProviderFaultInjection() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment[
+            "AETHERLINK_RUN_OLLAMA_LIVE_FAULT_INJECTION_TEST"
+        ] == "1" else {
+            throw XCTSkip(
+                "Set AETHERLINK_RUN_OLLAMA_LIVE_FAULT_INJECTION_TEST=1 to enable the isolated Ollama fault-injection test."
+            )
+        }
+        guard let scenario = environment[
+            "AETHERLINK_OLLAMA_LIVE_FAULT_SCENARIO"
+        ], [
+            "provider-unavailable-before-request",
+            "provider-exit-after-first-delta",
+        ].contains(scenario) else {
+            XCTFail("Set one exact runner-owned Ollama fault scenario.")
+            return
+        }
+        let fixture = try await liveOllamaModelBackedFixture(
+            enableEnvironmentKey: (
+                "AETHERLINK_RUN_OLLAMA_LIVE_FAULT_INJECTION_TEST"
+            ),
+            modelIDEnvironmentKey: (
+                "AETHERLINK_OLLAMA_LIVE_CHAT_MODEL_ID"
+            ),
+            temporaryDirectoryPrefix: (
+                "aetherlink-ollama-model-backed-"
+            ),
+            verifyProviderVersion: (
+                scenario != "provider-unavailable-before-request"
+            )
+        )
+        let backend = fixture.backend
+        let generationID = "live-provider-fault-injection"
+
+        if scenario == "provider-unavailable-before-request" {
+            let health = await backend.healthCheck()
+            guard case .unavailable(let healthError) = health else {
+                XCTFail("The stopped provider unexpectedly remained available.")
+                return
+            }
+            XCTAssertEqual(healthError.provider, .ollama)
+            XCTAssertEqual(healthError.code, "backend_unavailable")
+            XCTAssertTrue(healthError.retryable)
+
+            var sawEvent = false
+            var observedError: OllamaBackendError?
+            do {
+                for try await _ in backend.chat(
+                    request: ChatRequest(
+                        generationID: generationID,
+                        sessionID: "live-provider-fault-injection",
+                        model: fixture.modelID,
+                        messages: [
+                            ChatMessage(
+                                role: "user",
+                                content: "Reply with exactly the single word OK."
+                            )
+                        ]
+                    )
+                ) {
+                    sawEvent = true
+                }
+            } catch let error as OllamaBackendError {
+                observedError = error
+            }
+            XCTAssertFalse(sawEvent)
+            guard let observedError else {
+                XCTFail("The unavailable provider did not produce an adapter error.")
+                return
+            }
+            guard case .unreachable(let endpoint, _, _) = observedError else {
+                XCTFail("Unexpected unavailable-provider error: \(observedError.code)")
+                return
+            }
+            XCTAssertEqual(endpoint, "POST /api/chat")
+            XCTAssertTrue(observedError.retryable)
+            XCTAssertTrue(observedError.backendError.retryable)
+            XCTAssertNil(
+                backend.takeProviderUsageSource(generationID: generationID)
+            )
+            return
+        }
+
+        guard let controlDirectory = environment[
+            "AETHERLINK_OLLAMA_LIVE_FAULT_CONTROL_DIRECTORY"
+        ] else {
+            XCTFail("Set the runner-owned fault-control directory.")
+            return
+        }
+        let controlDirectoryURL = URL(
+            fileURLWithPath: controlDirectory,
+            isDirectory: true
+        ).standardizedFileURL
+        var isDirectory: ObjCBool = false
+        guard
+            controlDirectory.hasPrefix("/"),
+            controlDirectoryURL.lastPathComponent == "fault-control",
+            controlDirectoryURL.pathComponents.contains(where: {
+                $0.hasPrefix("aetherlink-ollama-model-backed-")
+            }),
+            FileManager.default.fileExists(
+                atPath: controlDirectoryURL.path,
+                isDirectory: &isDirectory
+            ),
+            isDirectory.boolValue
+        else {
+            XCTFail("The fault marker must stay in the runner-owned temporary root.")
+            return
+        }
+        let markerURL = controlDirectoryURL.appending(
+            path: "first-provider-delta",
+            directoryHint: .notDirectory
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: markerURL.path)
+        )
+
+        var sawProviderDelta = false
+        var sawDone = false
+        var observedError: OllamaBackendError?
+        do {
+            for try await event in backend.chat(
+                request: ChatRequest(
+                    generationID: generationID,
+                    sessionID: "live-provider-fault-injection",
+                    model: fixture.modelID,
+                    messages: [
+                        ChatMessage(
+                            role: "user",
+                            content: (
+                                "Write the integers from 1 through 10000, "
+                                + "one per line, without stopping early."
+                            )
+                        )
+                    ]
+                )
+            ) {
+                switch event {
+                case .delta(let text), .reasoningDelta(let text):
+                    guard !text.isEmpty, !sawProviderDelta else { continue }
+                    sawProviderDelta = true
+                    try Data().write(to: markerURL, options: .atomic)
+                case .done:
+                    sawDone = true
+                }
+            }
+        } catch let error as OllamaBackendError {
+            observedError = error
+        }
+        XCTAssertTrue(sawProviderDelta)
+        XCTAssertFalse(sawDone)
+        guard let observedError else {
+            XCTFail("Provider exit did not produce an adapter terminal error.")
+            return
+        }
+        switch observedError {
+        case .unreachable(let endpoint, _, _),
+             .transport(let endpoint, _):
+            XCTAssertEqual(endpoint, "POST /api/chat")
+        default:
+            XCTFail("Unexpected in-flight provider-loss error: \(observedError.code)")
+        }
+        XCTAssertTrue(observedError.retryable)
+        XCTAssertTrue(observedError.backendError.retryable)
+        XCTAssertTrue(
+            ["backend_unavailable", "transport_error"].contains(
+                observedError.backendError.code
+            )
+        )
+        XCTAssertNil(
+            backend.takeProviderUsageSource(generationID: generationID)
+        )
+    }
+
+    private struct LiveOllamaModelBackedFixture {
+        let backend: OllamaBackend
+        let modelID: String
+        let expectedCatalogCount: Int
+    }
+
+    private enum LiveOllamaModelBackedFixtureError: Error {
+        case invalidEnvironment
+        case invalidBoundary
+        case invalidSnapshot
+    }
+
+    private func liveOllamaModelBackedFixture(
+        enableEnvironmentKey: String,
+        modelIDEnvironmentKey: String,
+        temporaryDirectoryPrefix: String,
+        verifyProviderVersion: Bool = true
+    ) async throws -> LiveOllamaModelBackedFixture {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment[enableEnvironmentKey] == "1" else {
+            throw XCTSkip(
+                "Set \(enableEnvironmentKey)=1 to enable this isolated model-backed Ollama test."
+            )
+        }
+        guard
+            let baseURLValue = environment[
+                "AETHERLINK_OLLAMA_LIVE_BASE_URL"
+            ],
+            let baseURL = URL(string: baseURLValue),
+            let expectedVersion = environment[
+                "AETHERLINK_OLLAMA_LIVE_EXPECTED_VERSION"
+            ],
+            let archiveSHA256 = environment[
+                "AETHERLINK_OLLAMA_LIVE_ARCHIVE_SHA256"
+            ],
+            let modelsDirectory = environment[
+                "AETHERLINK_OLLAMA_LIVE_MODELS_DIRECTORY"
+            ],
+            let modelID = environment[modelIDEnvironmentKey],
+            let expectedCatalogCountValue = environment[
+                "AETHERLINK_OLLAMA_LIVE_EXPECTED_CATALOG_COUNT"
+            ],
+            let expectedCatalogCount = Int(expectedCatalogCountValue),
+            String(expectedCatalogCount) == expectedCatalogCountValue
+        else {
+            XCTFail(
+                "Set the exact candidate, isolated snapshot, selected model, and catalog count."
+            )
+            throw LiveOllamaModelBackedFixtureError.invalidEnvironment
+        }
+        let exactCandidateHashes = [
+            "0.32.5": "5789dd037a86adb328c72c11fc45e6c558452d07e5b50814a8bdb7b0fbdbcd81",
+            "0.32.4": "15383493225d5e7e7fda052dc103ab4d2835a22eabb41655f1d6302c6d1577bc",
+        ]
+        guard
+            baseURL.scheme == "http",
+            baseURL.host == "127.0.0.1",
+            let port = baseURL.port,
+            port != 11434,
+            baseURL.user == nil,
+            baseURL.password == nil,
+            baseURL.query == nil,
+            baseURL.fragment == nil,
+            baseURL.path.isEmpty || baseURL.path == "/",
+            exactCandidateHashes[expectedVersion] == archiveSHA256,
+            (1...ModelInfo.maximumCatalogModelCount).contains(
+                expectedCatalogCount
+            ),
+            !modelID.isEmpty,
+            modelID.utf8.count <= 1_024,
+            modelID.unicodeScalars.allSatisfy({
+                $0.value >= 0x20 && $0.value != 0x7f
+            })
+        else {
+            XCTFail(
+                "The model-backed test accepts only a recorded candidate, bounded model identity, and non-default loopback port."
+            )
+            throw LiveOllamaModelBackedFixtureError.invalidBoundary
+        }
+        var isDirectory: ObjCBool = false
+        let modelsDirectoryURL = URL(
+            fileURLWithPath: modelsDirectory,
+            isDirectory: true
+        ).standardizedFileURL
+        guard
+            modelsDirectory.hasPrefix("/"),
+            modelsDirectoryURL.lastPathComponent == "model-snapshot",
+            modelsDirectoryURL.pathComponents.contains(where: {
+                $0.hasPrefix(temporaryDirectoryPrefix)
+            }),
+            FileManager.default.fileExists(
+                atPath: modelsDirectoryURL.path,
+                isDirectory: &isDirectory
+            ),
+            isDirectory.boolValue
+        else {
+            XCTFail(
+                "The model-backed test requires the runner-owned copy-on-write model snapshot."
+            )
+            throw LiveOllamaModelBackedFixtureError.invalidSnapshot
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 120
+        configuration.timeoutIntervalForResource = 180
+        let session = URLSession(configuration: configuration)
+        if verifyProviderVersion {
+            let versionURL = baseURL.appending(path: "api/version")
+            let (versionData, versionResponse) = try await session.data(
+                from: versionURL
+            )
+            XCTAssertEqual(
+                (versionResponse as? HTTPURLResponse)?.statusCode,
+                200
+            )
+            let versionPayload = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: versionData) as? [String: Any]
+            )
+            XCTAssertEqual(
+                versionPayload["version"] as? String,
+                expectedVersion
+            )
+        }
+        return LiveOllamaModelBackedFixture(
+            backend: OllamaBackend(baseURL: baseURL, session: session),
+            modelID: modelID,
+            expectedCatalogCount: expectedCatalogCount
+        )
+    }
+
+    private static let liveOllamaVisionFixturePNGBase64 = (
+        "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAK0lEQVR42u3O"
+        + "IQEAAAwEoetfeovxBoGnq1tKQEBAQEBAQEBAQEBAQEBgHXhUDfhqeP5ugAAA"
+        + "AABJRU5ErkJggg=="
+    )
+
+    private func assertLiveOllamaCancellationAndRecovery(
+        backend: OllamaBackend,
+        modelID: String,
+        idPrefix: String
+    ) async throws {
+        let cancellationID = "\(idPrefix)-cancellation"
+        let cancellationRequest = ChatRequest(
+            generationID: cancellationID,
+            sessionID: "\(idPrefix)-compatibility",
+            model: modelID,
+            messages: [
+                ChatMessage(
+                    role: "user",
+                    content: "Write the integers from 1 through 10000, one per line, without stopping early."
+                )
+            ]
+        )
+        var sawProviderDelta = false
+        var cancellationIssued = false
+        var cancellationConfirmed = false
+        do {
+            for try await event in backend.chat(request: cancellationRequest) {
+                switch event {
+                case .delta(let text), .reasoningDelta(let text):
+                    guard !text.isEmpty, !cancellationIssued else { continue }
+                    sawProviderDelta = true
+                    cancellationIssued = true
+                    guard case .cancelled(let generationID) = backend.cancel(
+                        generationID: cancellationID
+                    ) else {
+                        XCTFail(
+                            "The active model-backed generation was not cancellable."
+                        )
+                        continue
+                    }
+                    XCTAssertEqual(generationID, cancellationID)
+                case .done:
+                    break
+                }
+            }
+        } catch let error as OllamaBackendError {
+            if case .generationCancelled(let generationID) = error {
+                cancellationConfirmed = generationID == cancellationID
+            } else {
+                throw error
+            }
+        }
+        XCTAssertTrue(sawProviderDelta)
+        XCTAssertTrue(cancellationIssued)
+        XCTAssertTrue(cancellationConfirmed)
+        XCTAssertNil(
+            backend.takeProviderUsageSource(generationID: cancellationID)
+        )
+
+        let recoveryID = "\(idPrefix)-post-cancel-recovery"
+        let recovery = try await liveOllamaChatCompletion(
+            backend: backend,
+            modelID: modelID,
+            generationID: recoveryID,
+            prompt: "Reply with exactly the single word READY."
+        )
+        XCTAssertGreaterThan(recovery.answerByteCount, 0)
+        XCTAssertEqual(recovery.doneCount, 1)
+        XCTAssertGreaterThan(recovery.inputTokens ?? 0, 0)
+        XCTAssertGreaterThan(recovery.outputTokens ?? 0, 0)
+        XCTAssertNotNil(
+            backend.takeProviderUsageSource(generationID: recoveryID)
+        )
+    }
+
+    private func liveOllamaChatCompletion(
+        backend: OllamaBackend,
+        modelID: String,
+        generationID: String,
+        prompt: String,
+        attachments: [ChatAttachment] = []
+    ) async throws -> (
+        answerByteCount: Int,
+        reasoningByteCount: Int,
+        doneCount: Int,
+        inputTokens: Int?,
+        outputTokens: Int?
+    ) {
+        let request = ChatRequest(
+            generationID: generationID,
+            sessionID: "model-backed-compatibility",
+            model: modelID,
+            messages: [
+                ChatMessage(
+                    role: "user",
+                    content: prompt,
+                    attachments: attachments
+                )
+            ]
+        )
+        var answerByteCount = 0
+        var reasoningByteCount = 0
+        var doneCount = 0
+        var inputTokens: Int?
+        var outputTokens: Int?
+        for try await event in backend.chat(request: request) {
+            switch event {
+            case .delta(let text):
+                answerByteCount += text.utf8.count
+            case .reasoningDelta(let text):
+                reasoningByteCount += text.utf8.count
+            case .done(let observedInputTokens, let observedOutputTokens):
+                doneCount += 1
+                inputTokens = observedInputTokens
+                outputTokens = observedOutputTokens
+            }
+        }
+        return (
+            answerByteCount,
+            reasoningByteCount,
+            doneCount,
+            inputTokens,
+            outputTokens
+        )
     }
 
     private func byteStream(_ value: String) -> AsyncStream<UInt8> {

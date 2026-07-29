@@ -17,6 +17,23 @@ SCRIPT_PATH = ROOT / "script/build_and_run.sh"
 
 
 class BuildAndRunModeTests(unittest.TestCase):
+    @staticmethod
+    def set_fixed_repro_scratch_path(script: Path, scratch: Path | str) -> None:
+        declaration = (
+            'REPRO_SWIFT_SCRATCH_PATH='
+            '"/private/tmp/aetherlink-g6-swift-scratch-v1"'
+        )
+        source = script.read_text(encoding="utf-8")
+        if source.count(declaration) != 1:
+            raise AssertionError("fixed reproducibility scratch declaration drifted")
+        script.write_text(
+            source.replace(
+                declaration,
+                f'REPRO_SWIFT_SCRATCH_PATH="{scratch}"',
+            ),
+            encoding="utf-8",
+        )
+
     def make_fake_package_workspace(
         self,
         temporary: str,
@@ -85,11 +102,15 @@ class BuildAndRunModeTests(unittest.TestCase):
             "#!/usr/bin/env bash\n"
             "set -euo pipefail\n"
             'printf "swift %s\\n" "$*" >>"$FAKE_TOOLCHAIN_LOG"\n'
-            'case "$*" in\n'
-            '  "build -c release --product AetherLink") exit 0 ;;\n'
-            '  "build -c release --show-bin-path") printf "%s\\n" "$FAKE_SWIFT_BIN_PATH"; exit 0 ;;\n'
-            "  *) exit 97 ;;\n"
-            "esac\n",
+            'expected_options="${FAKE_SWIFT_BUILD_OPTIONS:--c release}"\n'
+            'if [[ "$*" == "build $expected_options --product AetherLink" ]]; then\n'
+            "  exit 0\n"
+            "fi\n"
+            'if [[ "$*" == "build $expected_options --show-bin-path" ]]; then\n'
+            '  printf "%s\\n" "$FAKE_SWIFT_BIN_PATH"\n'
+            "  exit 0\n"
+            "fi\n"
+            "exit 97\n",
             encoding="utf-8",
         )
         fake_swift.chmod(0o755)
@@ -226,7 +247,7 @@ class BuildAndRunModeTests(unittest.TestCase):
             with (app_bundle / "Contents/Info.plist").open("rb") as handle:
                 info = plistlib.load(handle)
             self.assertEqual(info["CFBundleShortVersionString"], "1.0.0")
-            self.assertEqual(info["CFBundleVersion"], "1")
+            self.assertEqual(info["CFBundleVersion"], "6")
             invocations = invocation_log.read_text(encoding="utf-8")
             self.assertEqual(
                 invocations.splitlines(),
@@ -249,6 +270,114 @@ class BuildAndRunModeTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(verification.returncode, 0, verification)
+
+    def test_package_only_reproducibility_seam_uses_exact_fixed_flags(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace, environment, invocation_log = self.make_fake_package_workspace(
+                temporary,
+                resource_bundle_count=1,
+            )
+            script = workspace / "script/build_and_run.sh"
+            scratch = Path(temporary).resolve() / "repro-swift-scratch"
+            self.set_fixed_repro_scratch_path(script, scratch)
+            expected_options = (
+                f"-c release --jobs 1 --scratch-path {scratch} "
+                "-Xswiftc -file-prefix-map "
+                f"-Xswiftc {workspace.resolve()}=/aetherlink/source "
+                "-Xswiftc -file-compilation-dir "
+                "-Xswiftc /aetherlink/source "
+                "-Xswiftc -prefix-serialized-debugging-options "
+                "-Xcc -working-directory "
+                f"-Xcc {scratch} "
+                "-Xcc -Xclang "
+                "-Xcc -fdebug-compilation-dir=/aetherlink/source "
+                "-Xcc -Xclang -Xcc -fdisable-module-hash "
+                "-Xcc -Xclang -Xcc -fbuild-session-timestamp=0 "
+                "-Xcc -Xclang -Xcc -fno-pch-timestamp "
+                "-Xlinker -reproducible"
+            )
+            environment["AETHERLINK_REPRO_SWIFT_SCRATCH_PATH"] = str(scratch)
+            environment["FAKE_SWIFT_BUILD_OPTIONS"] = expected_options
+
+            result = subprocess.run(
+                ["/bin/bash", str(script), "--package-only"],
+                cwd=workspace,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result)
+            self.assertEqual(
+                invocation_log.read_text(encoding="utf-8").splitlines(),
+                [
+                    f"swift build {expected_options} --product AetherLink",
+                    f"swift build {expected_options} --show-bin-path",
+                ],
+            )
+            self.assertEqual(expected_options.count("-working-directory"), 1)
+            self.assertEqual(
+                expected_options.count(
+                    "-fdebug-compilation-dir=/aetherlink/source"
+                ),
+                1,
+            )
+            self.assertEqual(expected_options.count("-fno-pch-timestamp"), 1)
+
+    def test_package_only_reproducibility_seam_rejects_unsafe_scratch(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            existing = base / "existing"
+            existing.mkdir()
+            real_parent = base / "real-parent"
+            real_parent.mkdir()
+            linked_parent = base / "linked-parent"
+            linked_parent.symlink_to(real_parent, target_is_directory=True)
+            cases = {
+                "relative": "relative-scratch",
+                "root": "/",
+                "source_nested": "SOURCE_NESTED",
+                "existing": existing,
+                "symlink_parent": linked_parent / "scratch",
+            }
+            for label, configured in cases.items():
+                with self.subTest(label=label):
+                    workspace, environment, invocation_log = (
+                        self.make_fake_package_workspace(
+                            temporary=f"{temporary}/{label}",
+                            resource_bundle_count=1,
+                        )
+                    )
+                    if configured == "SOURCE_NESTED":
+                        scratch: Path | str = workspace / ".repro-scratch"
+                    else:
+                        scratch = configured
+                    script = workspace / "script/build_and_run.sh"
+                    self.set_fixed_repro_scratch_path(script, scratch)
+                    environment[
+                        "AETHERLINK_REPRO_SWIFT_SCRATCH_PATH"
+                    ] = str(scratch)
+
+                    result = subprocess.run(
+                        ["/bin/bash", str(script), "--package-only"],
+                        cwd=workspace,
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+
+                    self.assertEqual(result.returncode, 2, result)
+                    self.assertIn(
+                        "reproducible Swift scratch",
+                        result.stderr,
+                    )
+                    self.assertFalse(invocation_log.exists())
 
     def test_package_only_uses_latest_shared_release_ledger_entry(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

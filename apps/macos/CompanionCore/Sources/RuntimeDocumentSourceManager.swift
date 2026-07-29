@@ -301,6 +301,12 @@ public actor RuntimeDocumentSourceManager {
         let snapshotURL = directoryURL.appendingPathComponent(snapshotName, isDirectory: false)
         var coordinationError: NSError?
         var copyError: Error?
+        // Swift's escaping-closure diagnostic otherwise retains the physical
+        // source-path byte count even when -file-prefix-map rewrites the path.
+        // Give only this block a stable diagnostic alias so unequal checkout
+        // roots produce the same release Mach-O and dSYM without colliding
+        // with this file's normal #fileID.
+        #sourceLocation(file: "/aetherlink/source/apps/macos/CompanionCore/Sources/RuntimeDocumentSourceManager+Reproducibility.swift", line: 304)
         NSFileCoordinator().coordinate(
             readingItemAt: sourceURL,
             options: [.withoutChanges],
@@ -325,6 +331,7 @@ public actor RuntimeDocumentSourceManager {
                 copyError = error
             }
         }
+        #sourceLocation()
         if let copyError {
             try? FileManager.default.removeItem(at: directoryURL)
             if let managementError = copyError as? RuntimeDocumentSourceManagementError {

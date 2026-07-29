@@ -755,6 +755,12 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         } catch let error as URLError where error.code == .cancelled {
             bytes.task.cancel()
             throw CancellationError()
+        } catch OllamaStreamIngestionError.missingTerminal {
+            bytes.task.cancel()
+            throw OllamaBackendError.transport(
+                endpoint: endpoint,
+                reason: "The provider stream ended before its terminal marker."
+            )
         } catch is OllamaStreamIngestionError {
             bytes.task.cancel()
             throw badStreamResponse(endpoint: endpoint)

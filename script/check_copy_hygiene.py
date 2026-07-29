@@ -57435,7 +57435,9 @@ def bounded_script_hardening_guard_failures() -> list[str]:
             'kill -0 "$launch_pid"',
             "--package-only|package-only",
             'BUILD_CONFIGURATION="release"',
-            'swift build -c "$BUILD_CONFIGURATION" --product "$PRODUCT_NAME"',
+            'SWIFT_BUILD_OPTIONS=(-c "$BUILD_CONFIGURATION")',
+            "-Xcc -fno-pch-timestamp",
+            'swift build "${SWIFT_BUILD_OPTIONS[@]}" --product "$PRODUCT_NAME"',
             "RESOURCE_BUNDLE_CANDIDATES=()",
             '-name "*_${TARGET_EXECUTABLE_NAME}.bundle"',
             'cp -R "$RESOURCE_BUNDLE_SOURCE" "$APP_RESOURCES/"',
@@ -62674,7 +62676,7 @@ def provider_model_catalog_context_window_guard_failures() -> list[str]:
         "testChatResponseLimitsHonorContentLengthAndNoLengthExactPlusOne",
         "testChatRejectsStalledConsumerWhenBoundedEventBufferFills",
         "testChatRejectsAggregateOutputLimitAndCancelsURLTask",
-        "testChatRejectsEmptyAndDeltaEOFWithoutTerminalMarker",
+        "testChatMapsTerminalLessEOFToRetryableTransportFailure",
         "testChatCanonicalTerminalMarkerEmitsExactlyOneDone",
     )
     lm_studio_stream_bound_tests = (

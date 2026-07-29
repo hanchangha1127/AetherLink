@@ -27,49 +27,137 @@ ROOT = Path(__file__).resolve().parents[1]
 PHYSICAL_QR_OBSERVATION_MANIFEST = (
     ROOT / "docs/evidence/physical-qr-pairing-20260719.json"
 )
-LOCAL_RELEASE_ID = "aetherlink-1.0.0+1-local-v1"
-LOCAL_RELEASE_DOC = ROOT / "docs/releases/1.0.0-build-1-local-v1.md"
+LOCAL_RELEASE_MARKETING_VERSION = "1.0.0"
+LOCAL_RELEASE_BUILD_NUMBER = 6
+LOCAL_RELEASE_ID = (
+    f"aetherlink-{LOCAL_RELEASE_MARKETING_VERSION}"
+    f"+{LOCAL_RELEASE_BUILD_NUMBER}-local-v1"
+)
+LOCAL_RELEASE_CURRENT_DOC = ROOT / "docs/releases/1.0.0-build-6-local-v1.md"
+LOCAL_RELEASE_FIXTURE_BUILD_NUMBER = 3
+LOCAL_RELEASE_FIXTURE_ID = (
+    f"aetherlink-{LOCAL_RELEASE_MARKETING_VERSION}"
+    f"+{LOCAL_RELEASE_FIXTURE_BUILD_NUMBER}-local-v1"
+)
+LOCAL_RELEASE_FIXTURE_DOC = (
+    ROOT / "docs/releases/1.0.0-build-3-local-v1.md"
+)
+# Backward-compatible fixture handle for the focused fixture-mutation tests.
+LOCAL_RELEASE_DOC = LOCAL_RELEASE_FIXTURE_DOC
 LOCAL_RELEASE_ARCHIVE_DIR = ROOT / "dist/releases" / LOCAL_RELEASE_ID
+LOCAL_RELEASE_REPRODUCIBILITY_RESULT = (
+    ROOT / "dist/reproducibility/clean-release-two-root-v2.json"
+)
+MACOS_PACKAGED_LIFECYCLE_RESULT = (
+    ROOT
+    / "dist/lifecycle/macos-packaged-app-build-6-lifecycle-v1.json"
+)
 LOCAL_RELEASE_LEDGER = ROOT / "release/version-ledger.tsv"
 LOCAL_RELEASE_G0_DECISION = ROOT / "docs/v1/g0/decision-v1.json"
-LOCAL_RELEASE_EXPECTED_ZIP_SIZE = 164_775_328
+LOCAL_RELEASE_EXPECTED_ZIP_SIZE = 164_177_236
 LOCAL_RELEASE_EXPECTED_ZIP_SHA256 = (
-    "1944238784f7235b93e5e5889fdc903137ca6229bc39c870b5935cf3489c89ac"
+    "ac5294b7af4e8b5393ff1d0b6e2f60b39afc40bce0696549e4e9e6b871d919d4"
 )
-LOCAL_RELEASE_EXPECTED_MANIFEST_SIZE = 10_242
+LOCAL_RELEASE_EXPECTED_MANIFEST_SIZE = 10_328
 LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256 = (
-    "60baac0fa0567d3929370d401475d5a773d7541025017e68cc4b06def1b4ae8a"
+    "4dab491197abc0acfbd71dd794d4bb11f84b924f3253bcfbb85f6f3c161be527"
 )
-LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT = 234
+LOCAL_RELEASE_EXPECTED_CHECKSUM_SIZE = 98
+LOCAL_RELEASE_EXPECTED_CHECKSUM_SHA256 = (
+    "73b694ddbd113a1409c9ae27d25c003e774442d0de236b07bf56a664266344e1"
+)
+LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SIZE = 17_674
+LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SHA256 = (
+    "32ee3613318261f15512f9b4c878732a09038012998048c8a63caf0d2185d91a"
+)
+MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT_SIZE = 1_311
+MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT_SHA256 = (
+    "30d90827182e353d9f49fd1fa9edde846bc073f1af5113548f913c7b8af34447"
+)
+LOCAL_RELEASE_EXPECTED_SOURCE_ROOT_BYTE_LENGTHS = {
+    "build-a": 101,
+    "build-b": 109,
+}
+LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT = 235
 LOCAL_RELEASE_EXPECTED_SOURCE_SHA256 = (
-    "938b95c38c106aae73ecc7a8899364598780c21545bfcb73e5806befc6ac0282"
+    "767465297c3627d9a8a99eda232fed8fe3ff3b9b518aca9926b47038d74890ed"
 )
 LOCAL_RELEASE_EXPECTED_SOURCE_HEAD = (
-    "cde05acbaab0b77af6a3d87ea5c926f08597f7e6"
+    "7d6ecbf56827b1a7c999b3c7a339bebc53bbd421"
 )
 LOCAL_RELEASE_EXPECTED_MEMBER_COUNT = 25
-LOCAL_RELEASE_EXPECTED_MACOS_UUID = "6B5402D4-F853-3A12-AD51-94C892EC7BD5"
+LOCAL_RELEASE_EXPECTED_MACOS_UUID = "1D6CD3E2-5769-3BB2-9F11-CBFEF782D44F"
 LOCAL_RELEASE_EXPECTED_MEMBERS = {
     "android/apk/app-release-unsigned.apk": (
-        9_568_738,
-        "10a4e7f93786d24c519c53d59b383f1b875a4ced3e5a981603690e2ba63654e7",
+        9_568_742,
+        "6c47433ccaf35a6051672c112d5fccf8419542e505359871806870b71248abbf",
     ),
     "android/bundle/app-release.aab": (
         10_658_234,
-        "dec9eb9cf1397ccc58ddd57d7a7497c35966016fe78a96c8784592ec274b16e6",
+        "eb3522ca92c0c5bb5e99d1b4ba0be1a66386dfdb88f4ea6bb4f434464931ec83",
     ),
     "android/mapping/mapping.txt": (
         71_646_798,
         "cb41d4afe7c4f5c6e99640e11a41cc1d624652e8c8629ff3a39a70128c9ef1f9",
     ),
+    "android/mapping/resources.txt": (
+        134_228,
+        "c816b0f709eaa66526973bdda6fc0790afdebdfdecfe0a306cda82c742a686d5",
+    ),
     "macos/AetherLink.app/Contents/MacOS/AetherLink": (
-        18_171_648,
-        "f63193ff991fa7743dd74b2af0434006c842a864007a0f499abb8c590d899f59",
+        18_170_560,
+        "1405a06fd5e8491f647c6fc74bed4211eeabf22aca2307d08a14c71035ab2f34",
     ),
     "macos/AetherLink.dSYM/Contents/Resources/DWARF/AetherLink": (
-        31_535_883,
-        "b313e20ff5727b80f268250de72d3bcc305e470123a588137a48f5aaba715eab",
+        31_024_134,
+        "65becd00d15b4632269cfb5b585a28390a6f2aee727dd5c08b18dd2aaa3310a2",
     ),
+}
+MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT = {
+    "app": {
+        "buildNumber": LOCAL_RELEASE_BUILD_NUMBER,
+        "bundleIdentifier": "dev.aetherlink.companion",
+        "executableSha256": LOCAL_RELEASE_EXPECTED_MEMBERS[
+            "macos/AetherLink.app/Contents/MacOS/AetherLink"
+        ][1],
+        "marketingVersion": LOCAL_RELEASE_MARKETING_VERSION,
+        "uuid": LOCAL_RELEASE_EXPECTED_MACOS_UUID,
+    },
+    "isolation": {
+        "afInetBindDeniedByPreflight": True,
+        "nonTemporaryWriteDeniedByPreflight": True,
+        "profile": "allow-default-deny-network-and-non-temp-writes-v1",
+        "runtimeIdentity": (
+            "temporary-file-override-with-memory-fallback-allowed"
+        ),
+        "sandboxed": True,
+        "temporaryCFUserHomeConfigured": True,
+    },
+    "release": {
+        "archiveSha256": LOCAL_RELEASE_EXPECTED_ZIP_SHA256,
+        "manifestSha256": LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256,
+        "releaseId": LOCAL_RELEASE_ID,
+    },
+    "runs": [
+        {
+            "activationPolicy": 0,
+            "exitCode": 0,
+            "finishedLaunching": True,
+            "minimumObservationSeconds": 5.0,
+            "observationDeadlineReached": True,
+            "ordinal": ordinal,
+            "terminationAccepted": True,
+        }
+        for ordinal in (1, 2)
+    ],
+    "schemaVersion": 1,
+    "state": {
+        "expectedApplicationSupportFilesPresentAfterRuns": [True, True],
+        "identityFilePresentAfterRuns": [False, False],
+        "identityFileUnchangedAcrossRuns": False,
+        "runtimeIdentityFileOverrideConfigured": True,
+    },
+    "status": "passed",
 }
 LOCAL_RELEASE_TRANSITION_FIXTURE_START = (
     "<!-- aetherlink-release-transition-fixture-v1:start -->"
@@ -89,8 +177,88 @@ LOCAL_RELEASE_OLLAMA_RUNNER_FIXTURE_START = (
 LOCAL_RELEASE_OLLAMA_RUNNER_FIXTURE_END = (
     "<!-- aetherlink-ollama-exact-version-run-v1:end -->"
 )
+LOCAL_RELEASE_OLLAMA_MODEL_BACKED_FIXTURE_START = (
+    "<!-- aetherlink-ollama-model-backed-run-v1:start -->"
+)
+LOCAL_RELEASE_OLLAMA_MODEL_BACKED_FIXTURE_END = (
+    "<!-- aetherlink-ollama-model-backed-run-v1:end -->"
+)
+LOCAL_RELEASE_OLLAMA_ADDITIONAL_CHAT_SHAPE_FIXTURE_START = (
+    "<!-- aetherlink-ollama-additional-chat-shape-v1:start -->"
+)
+LOCAL_RELEASE_OLLAMA_ADDITIONAL_CHAT_SHAPE_FIXTURE_END = (
+    "<!-- aetherlink-ollama-additional-chat-shape-v1:end -->"
+)
+LOCAL_RELEASE_OLLAMA_EMBEDDING_MODEL_BACKED_FIXTURE_START = (
+    "<!-- aetherlink-ollama-embedding-model-backed-run-v1:start -->"
+)
+LOCAL_RELEASE_OLLAMA_EMBEDDING_MODEL_BACKED_FIXTURE_END = (
+    "<!-- aetherlink-ollama-embedding-model-backed-run-v1:end -->"
+)
+LOCAL_RELEASE_OLLAMA_EMBEDDING_SEMANTIC_QUALITY_FIXTURE_START = (
+    "<!-- aetherlink-ollama-embedding-semantic-quality-v1:start -->"
+)
+LOCAL_RELEASE_OLLAMA_EMBEDDING_SEMANTIC_QUALITY_FIXTURE_END = (
+    "<!-- aetherlink-ollama-embedding-semantic-quality-v1:end -->"
+)
+LOCAL_RELEASE_OLLAMA_EMBEDDING_MULTILINGUAL_SEMANTIC_QUALITY_FIXTURE_START = (
+    "<!-- aetherlink-ollama-embedding-multilingual-semantic-quality-v2:"
+    "start -->"
+)
+LOCAL_RELEASE_OLLAMA_EMBEDDING_MULTILINGUAL_SEMANTIC_QUALITY_FIXTURE_END = (
+    "<!-- aetherlink-ollama-embedding-multilingual-semantic-quality-v2:"
+    "end -->"
+)
+LOCAL_RELEASE_OLLAMA_VISION_MODEL_BACKED_FIXTURE_START = (
+    "<!-- aetherlink-ollama-vision-model-backed-run-v1:start -->"
+)
+LOCAL_RELEASE_OLLAMA_VISION_MODEL_BACKED_FIXTURE_END = (
+    "<!-- aetherlink-ollama-vision-model-backed-run-v1:end -->"
+)
+LOCAL_RELEASE_OLLAMA_DURATION_OBSERVATION_FIXTURE_START = (
+    "<!-- aetherlink-ollama-duration-observation-v1:start -->"
+)
+LOCAL_RELEASE_OLLAMA_DURATION_OBSERVATION_FIXTURE_END = (
+    "<!-- aetherlink-ollama-duration-observation-v1:end -->"
+)
+LOCAL_RELEASE_OLLAMA_LIVE_FAULT_INJECTION_FIXTURE_START = (
+    "<!-- aetherlink-ollama-live-fault-injection-v1:start -->"
+)
+LOCAL_RELEASE_OLLAMA_LIVE_FAULT_INJECTION_FIXTURE_END = (
+    "<!-- aetherlink-ollama-live-fault-injection-v1:end -->"
+)
 LOCAL_RELEASE_OLLAMA_RUNNER = (
     ROOT / "script/run_ollama_compatibility_matrix.py"
+)
+LOCAL_RELEASE_OLLAMA_ADDITIONAL_CHAT_SHAPE_RUNNER = (
+    ROOT / "script/run_ollama_additional_chat_shape_matrix.py"
+)
+LOCAL_RELEASE_OLLAMA_MULTILINGUAL_SEMANTIC_RUNNER = (
+    ROOT / "script/run_ollama_multilingual_semantic_matrix.py"
+)
+LOCAL_RELEASE_OLLAMA_EMBEDDING_SEMANTIC_SCORER_SOURCE = (
+    ROOT
+    / "apps"
+    / "macos"
+    / "OllamaBackend"
+    / "Tests"
+    / "OllamaEmbeddingSemanticQualityTests.swift"
+)
+LOCAL_RELEASE_OLLAMA_EMBEDDING_SEMANTIC_LIVE_ASSERTION_SOURCE = (
+    ROOT
+    / "apps"
+    / "macos"
+    / "OllamaBackend"
+    / "Tests"
+    / "OllamaBackendTests.swift"
+)
+LOCAL_RELEASE_OLLAMA_EMBEDDING_MULTILINGUAL_SEMANTIC_SOURCE = (
+    ROOT
+    / "apps"
+    / "macos"
+    / "OllamaBackend"
+    / "Tests"
+    / "OllamaEmbeddingMultilingualSemanticQualityTests.swift"
 )
 LOCAL_RELEASE_EXPECTED_TRANSITION_FIXTURE = {
     "android": {
@@ -101,9 +269,9 @@ LOCAL_RELEASE_EXPECTED_TRANSITION_FIXTURE = {
         "stateMigrationSupported": False,
     },
     "currentRelease": {
-        "buildNumber": 1,
-        "marketingVersion": "1.0.0",
-        "releaseId": LOCAL_RELEASE_ID,
+        "buildNumber": LOCAL_RELEASE_FIXTURE_BUILD_NUMBER,
+        "marketingVersion": LOCAL_RELEASE_MARKETING_VERSION,
+        "releaseId": LOCAL_RELEASE_FIXTURE_ID,
     },
     "evidenceBoundary": "policy-fixture-only-no-install-or-state-migration-executed",
     "fixtureId": "aetherlink-first-production-lineage-transition-v1",
@@ -124,8 +292,9 @@ LOCAL_RELEASE_EXPECTED_TRANSITION_FIXTURE = {
 }
 LOCAL_RELEASE_EXPECTED_PROVIDER_FIXTURE = {
     "evidenceBoundary": (
-        "exact-version-isolated-ollama-adapter-health-empty-catalog-restart-"
-        "plus-focused-default-tests-no-live-chat-or-model-lifecycle"
+        "exact-version-isolated-ollama-empty-catalog-and-existing-chat-plus-"
+        "embedding-plus-vision-model-cold-restart-plus-focused-default-tests-"
+        "no-lm-studio-live-or-semantic-qualification"
     ),
     "fixtureId": "aetherlink-provider-compatibility-baseline-v1",
     "lmStudio": {
@@ -184,6 +353,42 @@ LOCAL_RELEASE_EXPECTED_PROVIDER_FIXTURE = {
                 "restartPassed": True,
                 "stoppedEndpointUnavailable": True,
             },
+            "isolatedModelBackedSmoke": {
+                "catalogPopulated": True,
+                "chatCancellationPassed": True,
+                "chatCompletionPassed": True,
+                "coldStartPassed": True,
+                "installedStatePreserved": True,
+                "modelUnloadPassed": True,
+                "postCancellationRecoveryPassed": True,
+                "restartPassed": True,
+                "snapshotUnchanged": True,
+                "stoppedEndpointUnavailable": True,
+            },
+            "isolatedEmbeddingModelBackedSmoke": {
+                "catalogPopulated": True,
+                "coldStartPassed": True,
+                "embeddingBatchPassed": True,
+                "embeddingShapePassed": True,
+                "installedStatePreserved": True,
+                "modelUnloadPassed": True,
+                "restartPassed": True,
+                "snapshotUnchanged": True,
+                "stoppedEndpointUnavailable": True,
+            },
+            "isolatedVisionModelBackedSmoke": {
+                "catalogPopulated": True,
+                "chatCancellationPassed": True,
+                "coldStartPassed": True,
+                "imageAttachmentPassed": True,
+                "installedStatePreserved": True,
+                "modelUnloadPassed": True,
+                "postCancellationRecoveryPassed": True,
+                "restartPassed": True,
+                "snapshotUnchanged": True,
+                "stoppedEndpointUnavailable": True,
+                "textChatPassed": True,
+            },
             "qualified": False,
             "releaseDate": "2026-07-27",
             "schemaSmokeObserved": True,
@@ -224,6 +429,42 @@ LOCAL_RELEASE_EXPECTED_PROVIDER_FIXTURE = {
                 "restartPassed": True,
                 "stoppedEndpointUnavailable": True,
             },
+            "isolatedModelBackedSmoke": {
+                "catalogPopulated": True,
+                "chatCancellationPassed": True,
+                "chatCompletionPassed": True,
+                "coldStartPassed": True,
+                "installedStatePreserved": True,
+                "modelUnloadPassed": True,
+                "postCancellationRecoveryPassed": True,
+                "restartPassed": True,
+                "snapshotUnchanged": True,
+                "stoppedEndpointUnavailable": True,
+            },
+            "isolatedEmbeddingModelBackedSmoke": {
+                "catalogPopulated": True,
+                "coldStartPassed": True,
+                "embeddingBatchPassed": True,
+                "embeddingShapePassed": True,
+                "installedStatePreserved": True,
+                "modelUnloadPassed": True,
+                "restartPassed": True,
+                "snapshotUnchanged": True,
+                "stoppedEndpointUnavailable": True,
+            },
+            "isolatedVisionModelBackedSmoke": {
+                "catalogPopulated": True,
+                "chatCancellationPassed": True,
+                "coldStartPassed": True,
+                "imageAttachmentPassed": True,
+                "installedStatePreserved": True,
+                "modelUnloadPassed": True,
+                "postCancellationRecoveryPassed": True,
+                "restartPassed": True,
+                "snapshotUnchanged": True,
+                "stoppedEndpointUnavailable": True,
+                "textChatPassed": True,
+            },
             "qualified": False,
             "releaseDate": "2026-07-25",
             "schemaSmokeObserved": True,
@@ -235,10 +476,25 @@ LOCAL_RELEASE_EXPECTED_PROVIDER_FIXTURE = {
         ),
         "supportStatus": "unresolved-no-minimum-or-full-qualification",
     },
-    "recordedDate": "2026-07-28",
+    "recordedDate": "2026-07-29",
     "schemaVersion": 1,
     "tests": {
         "isolatedOllamaExactVersion": {
+            "executed": 4,
+            "failures": 0,
+            "passed": 4,
+        },
+        "isolatedOllamaModelBacked": {
+            "executed": 4,
+            "failures": 0,
+            "passed": 4,
+        },
+        "isolatedOllamaEmbeddingModelBacked": {
+            "executed": 4,
+            "failures": 0,
+            "passed": 4,
+        },
+        "isolatedOllamaVisionModelBacked": {
             "executed": 4,
             "failures": 0,
             "passed": 4,
@@ -250,18 +506,46 @@ LOCAL_RELEASE_EXPECTED_PROVIDER_FIXTURE = {
             "skipped": 1,
         },
         "ollama": {
-            "executed": 73,
+            "executed": 78,
             "failures": 0,
-            "passed": 71,
-            "skipped": 2,
+            "passed": 72,
+            "skipped": 6,
         },
-        "testKind": "focused-default-plus-opt-in-isolated-exact-version",
+        "testKind": (
+            "focused-default-plus-opt-in-isolated-exact-version-empty-and-"
+            "chat-plus-embedding-plus-vision-model-backed"
+        ),
     },
 }
 
 
 class DuplicateJSONKeyError(ValueError):
     pass
+
+
+LIVE_FAULT_RUNNER_SOURCE_DIGEST_PATTERN = re.compile(
+    r"(?m)^(RECORDED_LIVE_FAULT_INJECTION_RUNNER_SOURCE_SHA256 = \(\n"
+    r'    ")[0-9a-f]{64}("\n\))$'
+)
+
+
+def normalized_live_fault_runner_source_sha256(source: str) -> str:
+    normalized, replacement_count = (
+        LIVE_FAULT_RUNNER_SOURCE_DIGEST_PATTERN.subn(
+            lambda match: (
+                match.group(1)
+                + ("0" * 64)
+                + match.group(2)
+            ),
+            source,
+        )
+    )
+    if replacement_count != 1:
+        raise ValueError(
+            "runner must contain exactly one canonical live-fault source "
+            "SHA-256 declaration"
+        )
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def reject_duplicate_json_keys(
@@ -273,6 +557,30 @@ def reject_duplicate_json_keys(
             raise DuplicateJSONKeyError(f"duplicate JSON key {key!r}")
         result[key] = value
     return result
+
+
+def exact_json_values_equal(actual: object, expected: object) -> bool:
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return (
+            isinstance(actual, dict)
+            and set(actual) == set(expected)
+            and all(
+                exact_json_values_equal(actual[key], expected[key])
+                for key in expected
+            )
+        )
+    if isinstance(expected, list):
+        return (
+            isinstance(actual, list)
+            and len(actual) == len(expected)
+            and all(
+                exact_json_values_equal(actual_value, expected_value)
+                for actual_value, expected_value in zip(actual, expected)
+            )
+        )
+    return actual == expected
 
 
 @dataclass(frozen=True)
@@ -360,7 +668,10 @@ HYGIENE_TARGETS = (
     "docs/mvp-v0.1.md",
     "docs/protocol.md",
     "docs/qa-evidence.md",
-    "docs/releases/1.0.0-build-1-local-v1.md",
+    "docs/releases/1.0.0-build-3-local-v1.md",
+    "docs/releases/1.0.0-build-4-local-v1.md",
+    "docs/releases/1.0.0-build-5-local-v1.md",
+    "docs/releases/1.0.0-build-6-local-v1.md",
     "docs/roadmap.md",
     "docs/security.md",
     "examples/README.md",
@@ -441,7 +752,7 @@ CONTRACTS = (
 FILE_CONTRACTS = (
     DocsFileContract(
         "local-release-qualification-boundary",
-        "docs/releases/1.0.0-build-1-local-v1.md",
+        "docs/releases/1.0.0-build-6-local-v1.md",
         (
             re.compile(
                 r"\bStatus:\s*local release-engineering candidate,\s*not a production release\b",
@@ -464,10 +775,20 @@ FILE_CONTRACTS = (
                 re.IGNORECASE | re.DOTALL,
             ),
             re.compile(
-                r"\b1944238784f7235b93e5e5889fdc903137ca6229bc39c870b5935cf3489c89ac\b"
+                r"\bac5294b7af4e8b5393ff1d0b6e2f60b39afc40bce0696549e4e9e6b871d919d4\b"
             ),
             re.compile(
-                r"\b60baac0fa0567d3929370d401475d5a773d7541025017e68cc4b06def1b4ae8a\b"
+                r"\b4dab491197abc0acfbd71dd794d4bb11f84b924f3253bcfbb85f6f3c161be527\b"
+            ),
+            re.compile(
+                r"\b73b694ddbd113a1409c9ae27d25c003e774442d0de236b07bf56a664266344e1\b"
+            ),
+            re.compile(
+                r"\b32ee3613318261f15512f9b4c878732a09038012998048c8a63caf0d2185d91a\b"
+            ),
+            re.compile(
+                r"\b101-\s+and\s+109-byte source roots\b",
+                re.IGNORECASE,
             ),
         ),
         "The local release record must retain its exact artifact identity, non-production boundary, transition limits, and rollback posture.",
@@ -722,10 +1043,47 @@ FILE_CONTRACTS = (
 
 PROGRESS_DOC = ROOT / "docs/progress.md"
 QA_EVIDENCE_DOC = ROOT / "docs/qa-evidence.md"
+QA_CURRENT_RELEASE_READBACK_MARKER = (
+    "The current build 6 archive includes the terminal-less EOF fix and the "
+    "settled provider-quality source snapshot."
+)
+QA_STALE_RELEASE_READBACK_MARKERS = (
+    "The current build 5 archive includes the terminal-less EOF fix and the "
+    "settled provider-quality source snapshot.",
+    "The current build 3 archive includes the terminal-less EOF fix and the "
+    "settled provider-quality source snapshot.",
+    "The existing local release archive predates the terminal-less EOF fix"
+)
 
 
 def target_files() -> list[Path]:
     return [path for path in (ROOT / target for target in HYGIENE_TARGETS) if path.is_file()]
+
+
+def current_release_qa_evidence_failures(
+    document_text: str | None = None,
+) -> list[str]:
+    if document_text is None:
+        if not QA_EVIDENCE_DOC.is_file():
+            return ["docs/qa-evidence.md: missing current QA evidence file."]
+        document_text = QA_EVIDENCE_DOC.read_text(
+            encoding="utf-8",
+            errors="replace",
+        )
+    normalized_text = " ".join(document_text.split())
+    failures: list[str] = []
+    if QA_CURRENT_RELEASE_READBACK_MARKER not in normalized_text:
+        failures.append(
+            "docs/qa-evidence.md: current build 6 EOF/provider source "
+            "readback marker is missing."
+        )
+    for stale_marker in QA_STALE_RELEASE_READBACK_MARKERS:
+        if stale_marker in normalized_text:
+            failures.append(
+                "docs/qa-evidence.md: stale pre-build6 EOF readback claim "
+                "must not remain current."
+            )
+    return failures
 
 
 def contract_text() -> str:
@@ -766,7 +1124,7 @@ def embedded_json_fixture_body(
         return (
             None,
             [
-                "docs/releases/1.0.0-build-1-local-v1.md: expected exactly "
+                "docs/releases/1.0.0-build-3-local-v1.md: expected exactly "
                 f"one canonical {fixture_label} fixture block."
             ],
         )
@@ -782,7 +1140,7 @@ def embedded_json_fixture_body(
         return (
             None,
             [
-                "docs/releases/1.0.0-build-1-local-v1.md: invalid "
+                "docs/releases/1.0.0-build-3-local-v1.md: invalid "
                 f"{fixture_label} fixture JSON: {error}"
             ],
         )
@@ -811,7 +1169,7 @@ def local_release_transition_fixture_failures(
     )
     if fixture_body != expected_body:
         failures.append(
-            "docs/releases/1.0.0-build-1-local-v1.md: release-transition "
+            "docs/releases/1.0.0-build-3-local-v1.md: release-transition "
             "fixture must match the canonical first-lineage schema, exact "
             "values, JSON types, and key order."
         )
@@ -819,13 +1177,23 @@ def local_release_transition_fixture_failures(
     try:
         ledger_bytes = LOCAL_RELEASE_LEDGER.read_bytes()
         ledger_entries = parse_release_version_ledger(ledger_bytes)
-        current_entry = ledger_entries[-1]
-        ledger_current = {
-            "buildNumber": current_entry.build_number,
-            "marketingVersion": current_entry.marketing_version,
+        fixture_entries = [
+            entry
+            for entry in ledger_entries
+            if entry.build_number == LOCAL_RELEASE_FIXTURE_BUILD_NUMBER
+            and entry.marketing_version == LOCAL_RELEASE_MARKETING_VERSION
+        ]
+        if len(fixture_entries) != 1:
+            raise LedgerError(
+                "expected exactly one build 3 fixture entry in the release ledger"
+            )
+        fixture_entry = fixture_entries[0]
+        ledger_fixture = {
+            "buildNumber": fixture_entry.build_number,
+            "marketingVersion": fixture_entry.marketing_version,
             "releaseId": (
-                f"aetherlink-{current_entry.marketing_version}"
-                f"+{current_entry.build_number}-local-v1"
+                f"aetherlink-{fixture_entry.marketing_version}"
+                f"+{fixture_entry.build_number}-local-v1"
             ),
         }
     except (OSError, LedgerError) as error:
@@ -835,15 +1203,15 @@ def local_release_transition_fixture_failures(
         )
     else:
         if json.dumps(
-            ledger_current,
+            ledger_fixture,
             sort_keys=True,
         ) != json.dumps(
             LOCAL_RELEASE_EXPECTED_TRANSITION_FIXTURE["currentRelease"],
             sort_keys=True,
         ):
             failures.append(
-                "release/version-ledger.tsv: current entry differs from the "
-                "local release transition fixture."
+                "release/version-ledger.tsv: build 3 entry differs from the "
+                "historical local release transition fixture."
             )
 
     try:
@@ -953,7 +1321,7 @@ def local_release_provider_fixture_failures(
     )
     if fixture_body != expected_body:
         failures.append(
-            "docs/releases/1.0.0-build-1-local-v1.md: "
+            "docs/releases/1.0.0-build-3-local-v1.md: "
             "provider-compatibility fixture must match the canonical "
             "recorded-date schema, exact values, JSON types, and key order."
         )
@@ -1118,7 +1486,7 @@ def local_release_ollama_runner_fixture_failures(
     )
     if fixture_body != expected_body:
         failures.append(
-            "docs/releases/1.0.0-build-1-local-v1.md: "
+            "docs/releases/1.0.0-build-3-local-v1.md: "
             "ollama-exact-version-run fixture must match the runner's "
             "canonical exact values, JSON types, and key order."
         )
@@ -1134,7 +1502,6 @@ def local_release_ollama_runner_fixture_failures(
     for provider_candidate, runner_candidate in zip(
         provider_candidates,
         versions,
-        strict=True,
     ):
         if (
             provider_candidate["version"] != runner_candidate["version"]
@@ -1171,20 +1538,1305 @@ def local_release_ollama_runner_fixture_failures(
     return failures
 
 
+def local_release_ollama_model_backed_fixture_failures(
+    document_text: str,
+) -> list[str]:
+    fixture_body, failures = embedded_json_fixture_body(
+        document_text,
+        start_marker=LOCAL_RELEASE_OLLAMA_MODEL_BACKED_FIXTURE_START,
+        end_marker=LOCAL_RELEASE_OLLAMA_MODEL_BACKED_FIXTURE_END,
+        fixture_label="ollama-model-backed-run",
+    )
+    if fixture_body is None:
+        return failures
+
+    if not LOCAL_RELEASE_OLLAMA_RUNNER.is_file():
+        return failures + [
+            "script/run_ollama_compatibility_matrix.py: missing model-backed runner."
+        ]
+
+    try:
+        runner = runpy.run_path(str(LOCAL_RELEASE_OLLAMA_RUNNER))
+        live_test_filter = runner["MODEL_BACKED_LIVE_TEST_FILTER"]
+        fixture_builder = runner["recorded_model_backed_fixture"]
+        if live_test_filter != (
+            "OllamaBackendTests."
+            "testLiveOllamaExactVersionInstalledChatModelCompatibility"
+        ):
+            raise ValueError(
+                "MODEL_BACKED_LIVE_TEST_FILTER differs from the canonical test"
+            )
+        if not callable(fixture_builder):
+            raise TypeError("recorded_model_backed_fixture must be callable")
+        expected_fixture = fixture_builder()
+        if type(expected_fixture) is not dict:
+            raise TypeError("recorded model-backed fixture must be an object")
+        if (
+            expected_fixture.get("schemaVersion") != 1
+            or expected_fixture.get("snapshot", {}).get(
+                "modelDownloadAttempted"
+            )
+            is not False
+            or expected_fixture.get("snapshot", {}).get("modelNameRetained")
+            is not False
+            or expected_fixture.get("source", {}).get("modelNameRetained")
+            is not False
+        ):
+            raise ValueError(
+                "recorded model-backed fixture has an invalid evidence boundary"
+            )
+    except (
+        KeyError,
+        OSError,
+        TypeError,
+        ValueError,
+    ) as error:
+        return failures + [
+            "script/run_ollama_compatibility_matrix.py: "
+            f"cannot derive canonical model-backed fixture: {error}"
+        ]
+
+    expected_body = json.dumps(
+        expected_fixture,
+        ensure_ascii=True,
+        indent=2,
+        sort_keys=True,
+    )
+    if fixture_body != expected_body:
+        failures.append(
+            "docs/releases/1.0.0-build-3-local-v1.md: "
+            "ollama-model-backed-run fixture must match the runner's "
+            "canonical exact values, JSON types, and key order."
+        )
+
+    provider_candidates = (
+        LOCAL_RELEASE_EXPECTED_PROVIDER_FIXTURE["ollama"][
+            "currentCandidate"
+        ],
+        LOCAL_RELEASE_EXPECTED_PROVIDER_FIXTURE["ollama"][
+            "previousCandidate"
+        ],
+    )
+    runner_versions = expected_fixture.get("versions")
+    if type(runner_versions) is not list or len(runner_versions) != 2:
+        failures.append(
+            "model-backed runner fixture must contain exactly two versions."
+        )
+        return failures
+
+    for provider_candidate, runner_candidate in zip(
+        provider_candidates,
+        runner_versions,
+    ):
+        if type(runner_candidate) is not dict:
+            failures.append(
+                "model-backed runner version rows must be objects."
+            )
+            break
+        cold_start = runner_candidate.get("coldStart")
+        restart = runner_candidate.get("restart")
+        if type(cold_start) is not dict or type(restart) is not dict:
+            failures.append(
+                "model-backed runner phases must be objects."
+            )
+            break
+        expected_smoke = {
+            "catalogPopulated": (
+                cold_start.get("catalogPopulated") is True
+                and restart.get("catalogPopulated") is True
+            ),
+            "chatCancellationPassed": (
+                cold_start.get("chatCancellationConfirmed") is True
+                and restart.get("chatCancellationConfirmed") is True
+            ),
+            "chatCompletionPassed": (
+                cold_start.get("chatCompleted") is True
+                and restart.get("chatCompleted") is True
+            ),
+            "coldStartPassed": (
+                cold_start.get("adapterTestPassed") is True
+            ),
+            "installedStatePreserved": (
+                cold_start.get("installedStatePreserved") is True
+                and restart.get("installedStatePreserved") is True
+            ),
+            "modelUnloadPassed": (
+                cold_start.get("modelUnloadConfirmed") is True
+                and restart.get("modelUnloadConfirmed") is True
+            ),
+            "postCancellationRecoveryPassed": (
+                cold_start.get("postCancellationRecoveryPassed") is True
+                and restart.get("postCancellationRecoveryPassed") is True
+            ),
+            "restartPassed": restart.get("adapterTestPassed") is True,
+            "snapshotUnchanged": (
+                cold_start.get("snapshotUnchanged") is True
+                and restart.get("snapshotUnchanged") is True
+            ),
+            "stoppedEndpointUnavailable": (
+                cold_start.get("endpointUnavailableAfterStop") is True
+                and restart.get("endpointUnavailableAfterStop") is True
+            ),
+        }
+        if (
+            provider_candidate["version"] != runner_candidate.get("version")
+            or provider_candidate["darwinArchiveSha256"]
+            != runner_candidate.get("archiveSha256")
+            or provider_candidate["darwinArchiveUrl"]
+            != runner_candidate.get("archiveUrl")
+            or provider_candidate["isolatedModelBackedSmoke"]
+            != expected_smoke
+        ):
+            failures.append(
+                "provider-compatibility fixture and model-backed runner "
+                "fixture differ in Ollama version, archive identity, or "
+                "model-backed adapter result."
+            )
+            break
+
+    return failures
+
+
+def local_release_ollama_additional_chat_shape_fixture_failures(
+    document_text: str,
+) -> list[str]:
+    fixture_body, failures = embedded_json_fixture_body(
+        document_text,
+        start_marker=(
+            LOCAL_RELEASE_OLLAMA_ADDITIONAL_CHAT_SHAPE_FIXTURE_START
+        ),
+        end_marker=(
+            LOCAL_RELEASE_OLLAMA_ADDITIONAL_CHAT_SHAPE_FIXTURE_END
+        ),
+        fixture_label="ollama-additional-chat-shape",
+    )
+    if fixture_body is None:
+        return failures
+
+    runner_path = LOCAL_RELEASE_OLLAMA_ADDITIONAL_CHAT_SHAPE_RUNNER
+    if not runner_path.is_file():
+        return failures + [
+            "script/run_ollama_additional_chat_shape_matrix.py: "
+            "missing additional chat-shape runner."
+        ]
+
+    try:
+        runner = runpy.run_path(str(runner_path))
+        fixture_builder = runner["recorded_fixture"]
+        fixture_validator = runner["validate_recorded_fixture"]
+        source_assertion = runner["assert_bound_sources"]
+        profile = runner["PROFILE"]
+        if not all(
+            callable(value)
+            for value in (
+                fixture_builder,
+                fixture_validator,
+                source_assertion,
+            )
+        ):
+            raise TypeError(
+                "additional chat-shape fixture helpers must be callable"
+            )
+        if profile.live_test_filter != (
+            "OllamaBackendTests."
+            "testLiveOllamaExactVersionInstalledChatModelCompatibility"
+        ):
+            raise ValueError(
+                "additional chat-shape live filter differs from the "
+                "canonical chat assertion"
+            )
+        if profile.required_capabilities != frozenset({"completion"}):
+            raise ValueError(
+                "additional chat-shape profile must require completion"
+            )
+        source_assertion()
+        expected_fixture = fixture_builder()
+        fixture_validator(expected_fixture)
+        if (
+            type(expected_fixture) is not dict
+            or expected_fixture.get("schemaVersion") != 1
+            or expected_fixture.get("observationCount") != 4
+            or expected_fixture.get("profile") != "chat"
+            or expected_fixture.get("selection")
+            != {
+                "completionCandidateCount": 3,
+                "selectionOrdinal": 2,
+                "targetCapabilityCount": 3,
+                "targetInitiallyUnloaded": True,
+                "targetVisionCapable": False,
+            }
+            or expected_fixture.get("snapshot", {}).get(
+                "modelDownloadAttempted"
+            )
+            is not False
+            or expected_fixture.get("snapshot", {}).get(
+                "modelNameRetained"
+            )
+            is not False
+            or expected_fixture.get("source", {}).get(
+                "modelNameRetained"
+            )
+            is not False
+        ):
+            raise ValueError(
+                "recorded additional chat-shape fixture has an invalid "
+                "evidence boundary"
+            )
+    except Exception as error:
+        return failures + [
+            "script/run_ollama_additional_chat_shape_matrix.py: "
+            "cannot derive canonical additional chat-shape fixture: "
+            f"{error}"
+        ]
+
+    expected_body = json.dumps(
+        expected_fixture,
+        ensure_ascii=True,
+        indent=2,
+        sort_keys=True,
+    )
+    if fixture_body != expected_body:
+        failures.append(
+            "docs/releases/1.0.0-build-3-local-v1.md: "
+            "ollama-additional-chat-shape fixture must match the runner's "
+            "canonical exact values, JSON types, and key order."
+        )
+
+    provider_candidates = (
+        LOCAL_RELEASE_EXPECTED_PROVIDER_FIXTURE["ollama"][
+            "currentCandidate"
+        ],
+        LOCAL_RELEASE_EXPECTED_PROVIDER_FIXTURE["ollama"][
+            "previousCandidate"
+        ],
+    )
+    versions = expected_fixture.get("versions")
+    if type(versions) is not list or len(versions) != 2:
+        failures.append(
+            "additional chat-shape runner fixture must contain exactly "
+            "two versions."
+        )
+        return failures
+    for provider_candidate, runner_candidate in zip(
+        provider_candidates,
+        versions,
+    ):
+        if (
+            type(runner_candidate) is not dict
+            or provider_candidate["version"]
+            != runner_candidate.get("version")
+            or provider_candidate["darwinArchiveSha256"]
+            != runner_candidate.get("archiveSha256")
+            or provider_candidate["darwinArchiveUrl"]
+            != runner_candidate.get("archiveUrl")
+        ):
+            failures.append(
+                "provider-compatibility fixture and additional chat-shape "
+                "fixture differ in Ollama version or archive identity."
+            )
+            break
+
+    return failures
+
+
+def local_release_ollama_embedding_model_backed_fixture_failures(
+    document_text: str,
+) -> list[str]:
+    fixture_body, failures = embedded_json_fixture_body(
+        document_text,
+        start_marker=(
+            LOCAL_RELEASE_OLLAMA_EMBEDDING_MODEL_BACKED_FIXTURE_START
+        ),
+        end_marker=(
+            LOCAL_RELEASE_OLLAMA_EMBEDDING_MODEL_BACKED_FIXTURE_END
+        ),
+        fixture_label="ollama-embedding-model-backed-run",
+    )
+    if fixture_body is None:
+        return failures
+
+    if not LOCAL_RELEASE_OLLAMA_RUNNER.is_file():
+        return failures + [
+            "script/run_ollama_compatibility_matrix.py: "
+            "missing embedding-model-backed runner."
+        ]
+
+    try:
+        runner = runpy.run_path(str(LOCAL_RELEASE_OLLAMA_RUNNER))
+        live_test_filter = runner["EMBEDDING_BACKED_LIVE_TEST_FILTER"]
+        fixture_builder = runner[
+            "recorded_embedding_model_backed_fixture"
+        ]
+        if live_test_filter != (
+            "OllamaBackendTests."
+            "testLiveOllamaExactVersionInstalledEmbeddingModelCompatibility"
+        ):
+            raise ValueError(
+                "EMBEDDING_BACKED_LIVE_TEST_FILTER differs from the "
+                "canonical test"
+            )
+        if not callable(fixture_builder):
+            raise TypeError(
+                "recorded_embedding_model_backed_fixture must be callable"
+            )
+        expected_fixture = fixture_builder()
+        if type(expected_fixture) is not dict:
+            raise TypeError(
+                "recorded embedding-model-backed fixture must be an object"
+            )
+        if (
+            expected_fixture.get("schemaVersion") != 1
+            or expected_fixture.get("snapshot", {}).get(
+                "modelDownloadAttempted"
+            )
+            is not False
+            or expected_fixture.get("snapshot", {}).get(
+                "modelNameRetained"
+            )
+            is not False
+            or expected_fixture.get("source", {}).get(
+                "modelNameRetained"
+            )
+            is not False
+        ):
+            raise ValueError(
+                "recorded embedding-model-backed fixture has an invalid "
+                "evidence boundary"
+            )
+    except (
+        KeyError,
+        OSError,
+        TypeError,
+        ValueError,
+    ) as error:
+        return failures + [
+            "script/run_ollama_compatibility_matrix.py: "
+            "cannot derive canonical embedding-model-backed fixture: "
+            f"{error}"
+        ]
+
+    expected_body = json.dumps(
+        expected_fixture,
+        ensure_ascii=True,
+        indent=2,
+        sort_keys=True,
+    )
+    if fixture_body != expected_body:
+        failures.append(
+            "docs/releases/1.0.0-build-3-local-v1.md: "
+            "ollama-embedding-model-backed-run fixture must match the "
+            "runner's canonical exact values, JSON types, and key order."
+        )
+
+    provider_candidates = (
+        LOCAL_RELEASE_EXPECTED_PROVIDER_FIXTURE["ollama"][
+            "currentCandidate"
+        ],
+        LOCAL_RELEASE_EXPECTED_PROVIDER_FIXTURE["ollama"][
+            "previousCandidate"
+        ],
+    )
+    runner_versions = expected_fixture.get("versions")
+    if type(runner_versions) is not list or len(runner_versions) != 2:
+        failures.append(
+            "embedding-model-backed runner fixture must contain exactly "
+            "two versions."
+        )
+        return failures
+
+    for provider_candidate, runner_candidate in zip(
+        provider_candidates,
+        runner_versions,
+    ):
+        if type(runner_candidate) is not dict:
+            failures.append(
+                "embedding-model-backed runner version rows must be objects."
+            )
+            break
+        cold_start = runner_candidate.get("coldStart")
+        restart = runner_candidate.get("restart")
+        if type(cold_start) is not dict or type(restart) is not dict:
+            failures.append(
+                "embedding-model-backed runner phases must be objects."
+            )
+            break
+        expected_smoke = {
+            "catalogPopulated": (
+                cold_start.get("catalogPopulated") is True
+                and restart.get("catalogPopulated") is True
+            ),
+            "coldStartPassed": (
+                cold_start.get("adapterTestPassed") is True
+            ),
+            "embeddingBatchPassed": (
+                cold_start.get("embeddingBatchCompleted") is True
+                and restart.get("embeddingBatchCompleted") is True
+            ),
+            "embeddingShapePassed": (
+                cold_start.get("embeddingShapeValidated") is True
+                and restart.get("embeddingShapeValidated") is True
+            ),
+            "installedStatePreserved": (
+                cold_start.get("installedStatePreserved") is True
+                and restart.get("installedStatePreserved") is True
+            ),
+            "modelUnloadPassed": (
+                cold_start.get("modelUnloadConfirmed") is True
+                and restart.get("modelUnloadConfirmed") is True
+            ),
+            "restartPassed": restart.get("adapterTestPassed") is True,
+            "snapshotUnchanged": (
+                cold_start.get("snapshotUnchanged") is True
+                and restart.get("snapshotUnchanged") is True
+            ),
+            "stoppedEndpointUnavailable": (
+                cold_start.get("endpointUnavailableAfterStop") is True
+                and restart.get("endpointUnavailableAfterStop") is True
+            ),
+        }
+        if (
+            provider_candidate["version"]
+            != runner_candidate.get("version")
+            or provider_candidate["darwinArchiveSha256"]
+            != runner_candidate.get("archiveSha256")
+            or provider_candidate["darwinArchiveUrl"]
+            != runner_candidate.get("archiveUrl")
+            or provider_candidate["isolatedEmbeddingModelBackedSmoke"]
+            != expected_smoke
+        ):
+            failures.append(
+                "provider-compatibility fixture and "
+                "embedding-model-backed runner fixture differ in Ollama "
+                "version, archive identity, or adapter result."
+            )
+            break
+
+    return failures
+
+
+def local_release_ollama_embedding_semantic_quality_fixture_failures(
+    document_text: str,
+) -> list[str]:
+    fixture_body, failures = embedded_json_fixture_body(
+        document_text,
+        start_marker=(
+            LOCAL_RELEASE_OLLAMA_EMBEDDING_SEMANTIC_QUALITY_FIXTURE_START
+        ),
+        end_marker=(
+            LOCAL_RELEASE_OLLAMA_EMBEDDING_SEMANTIC_QUALITY_FIXTURE_END
+        ),
+        fixture_label="ollama-embedding-semantic-quality",
+    )
+    if fixture_body is None:
+        return failures
+    if not LOCAL_RELEASE_OLLAMA_RUNNER.is_file():
+        return failures + [
+            "script/run_ollama_compatibility_matrix.py: "
+            "missing embedding semantic-quality runner."
+        ]
+
+    try:
+        runner_source = LOCAL_RELEASE_OLLAMA_RUNNER.read_text(
+            encoding="utf-8"
+        )
+        runner = runpy.run_path(str(LOCAL_RELEASE_OLLAMA_RUNNER))
+        fixture_builder = runner[
+            "recorded_embedding_semantic_quality_fixture"
+        ]
+        validator = runner[
+            "validate_recorded_embedding_semantic_quality_fixture"
+        ]
+        task_set_validator = runner[
+            "validate_embedding_semantic_quality_task_set"
+        ]
+        expected_runner_source_sha256 = runner[
+            "RECORDED_LIVE_FAULT_INJECTION_RUNNER_SOURCE_SHA256"
+        ]
+        expected_task_set_sha256 = runner[
+            "EMBEDDING_SEMANTIC_QUALITY_TASK_SET_SHA256"
+        ]
+        expected_scorer_source_sha256 = runner[
+            "EMBEDDING_SEMANTIC_QUALITY_SCORER_SOURCE_SHA256"
+        ]
+        expected_live_assertion_source_sha256 = runner[
+            "EMBEDDING_SEMANTIC_QUALITY_LIVE_ASSERTION_SOURCE_SHA256"
+        ]
+        semantic_filter = runner[
+            "EMBEDDING_SEMANTIC_QUALITY_LIVE_TEST_FILTER"
+        ]
+        recovery_filter = runner[
+            "EMBEDDING_SEMANTIC_QUALITY_RECOVERY_TEST_FILTER"
+        ]
+        if (
+            not callable(fixture_builder)
+            or not callable(validator)
+            or not callable(task_set_validator)
+        ):
+            raise TypeError(
+                "embedding semantic-quality builders and validators "
+                "must be callable"
+            )
+        if semantic_filter != (
+            "OllamaBackendTests."
+            "testLiveOllamaExactVersionInstalledEmbeddingSemanticQuality"
+        ):
+            raise ValueError(
+                "embedding semantic-quality test filter drifted"
+            )
+        if recovery_filter != (
+            "OllamaBackendTests."
+            "testLiveOllamaExactVersionInstalledEmbeddingSemanticRecovery"
+        ):
+            raise ValueError(
+                "embedding semantic-quality recovery filter drifted"
+            )
+        for label, value in (
+            ("runner source", expected_runner_source_sha256),
+            ("task set", expected_task_set_sha256),
+            ("semantic scorer source", expected_scorer_source_sha256),
+            (
+                "semantic live assertion source",
+                expected_live_assertion_source_sha256,
+            ),
+        ):
+            if (
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in value
+                )
+            ):
+                raise ValueError(f"{label} SHA-256 was invalid")
+        expected_fixture = fixture_builder()
+        if type(expected_fixture) is not dict:
+            raise TypeError(
+                "recorded embedding semantic-quality fixture must be "
+                "an object"
+            )
+        fixture = json.loads(
+            fixture_body,
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+        task_set_path = (
+            ROOT
+            / "shared"
+            / "evaluation"
+            / "ollama-embedding-semantic-quality-v1.json"
+        )
+        task_set_data = task_set_path.read_bytes()
+        task_set = json.loads(
+            task_set_data,
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+        for label, source_path in (
+            (
+                "semantic scorer",
+                LOCAL_RELEASE_OLLAMA_EMBEDDING_SEMANTIC_SCORER_SOURCE,
+            ),
+            (
+                "semantic live assertion",
+                LOCAL_RELEASE_OLLAMA_EMBEDDING_SEMANTIC_LIVE_ASSERTION_SOURCE,
+            ),
+        ):
+            if source_path.is_symlink() or not source_path.is_file():
+                raise OSError(f"{label} source was not a regular file")
+        scorer_source_data = (
+            LOCAL_RELEASE_OLLAMA_EMBEDDING_SEMANTIC_SCORER_SOURCE.read_bytes()
+        )
+        live_assertion_source_data = (
+            LOCAL_RELEASE_OLLAMA_EMBEDDING_SEMANTIC_LIVE_ASSERTION_SOURCE
+            .read_bytes()
+        )
+    except (
+        DuplicateJSONKeyError,
+        KeyError,
+        OSError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as error:
+        return failures + [
+            "script/run_ollama_compatibility_matrix.py: "
+            "cannot derive canonical embedding semantic-quality fixture: "
+            f"{error}"
+        ]
+
+    observed_runner_source_sha256 = (
+        normalized_live_fault_runner_source_sha256(runner_source)
+    )
+    if observed_runner_source_sha256 != expected_runner_source_sha256:
+        failures.append(
+            "script/run_ollama_compatibility_matrix.py: embedding "
+            "semantic-quality runner source differs from the recorded "
+            "normalized SHA-256."
+        )
+    if hashlib.sha256(task_set_data).hexdigest() != (
+        expected_task_set_sha256
+    ):
+        failures.append(
+            "shared/evaluation/ollama-embedding-semantic-quality-v1.json: "
+            "task-set bytes differ from the recorded SHA-256."
+        )
+    if hashlib.sha256(scorer_source_data).hexdigest() != (
+        expected_scorer_source_sha256
+    ):
+        failures.append(
+            "apps/macos/OllamaBackend/Tests/"
+            "OllamaEmbeddingSemanticQualityTests.swift: semantic scorer "
+            "source bytes differ from the recorded SHA-256."
+        )
+    if hashlib.sha256(live_assertion_source_data).hexdigest() != (
+        expected_live_assertion_source_sha256
+    ):
+        failures.append(
+            "apps/macos/OllamaBackend/Tests/OllamaBackendTests.swift: "
+            "semantic live assertion source bytes differ from the recorded "
+            "SHA-256."
+        )
+    try:
+        task_set_validator(task_set)
+    except Exception as error:
+        failures.append(
+            "shared/evaluation/ollama-embedding-semantic-quality-v1.json: "
+            f"task-set schema is invalid: {error}"
+        )
+
+    try:
+        validator(fixture)
+    except Exception as error:
+        failures.append(
+            "docs/releases/1.0.0-build-3-local-v1.md: "
+            "ollama-embedding-semantic-quality fixture violates the "
+            f"runner schema: {error}"
+        )
+        return failures
+
+    canonical_body = json.dumps(
+        expected_fixture,
+        ensure_ascii=True,
+        indent=2,
+        sort_keys=True,
+    )
+    if fixture_body != canonical_body:
+        failures.append(
+            "docs/releases/1.0.0-build-3-local-v1.md: "
+            "ollama-embedding-semantic-quality fixture must match the "
+            "runner's canonical exact values, JSON types, and key order."
+        )
+    return failures
+
+
+def local_release_ollama_embedding_multilingual_semantic_quality_fixture_failures(
+    document_text: str,
+) -> list[str]:
+    fixture_body, failures = embedded_json_fixture_body(
+        document_text,
+        start_marker=(
+            LOCAL_RELEASE_OLLAMA_EMBEDDING_MULTILINGUAL_SEMANTIC_QUALITY_FIXTURE_START
+        ),
+        end_marker=(
+            LOCAL_RELEASE_OLLAMA_EMBEDDING_MULTILINGUAL_SEMANTIC_QUALITY_FIXTURE_END
+        ),
+        fixture_label=(
+            "ollama-embedding-multilingual-semantic-quality"
+        ),
+    )
+    if fixture_body is None:
+        return failures
+    runner_path = LOCAL_RELEASE_OLLAMA_MULTILINGUAL_SEMANTIC_RUNNER
+    if not runner_path.is_file():
+        return failures + [
+            "script/run_ollama_multilingual_semantic_matrix.py: "
+            "missing multilingual semantic-quality runner."
+        ]
+
+    try:
+        runner_source = runner_path.read_text(encoding="utf-8")
+        runner = runpy.run_path(str(runner_path))
+        fixture_builder = runner["recorded_fixture"]
+        fixture_validator = runner["validate_recorded_fixture"]
+        task_set_bytes_reader = runner["recorded_task_set_bytes"]
+        task_set_validator = runner["validate_task_set"]
+        source_validator = runner["assert_bound_sources"]
+        normalized_source_sha256 = runner[
+            "normalized_runner_source_sha256"
+        ]
+        expected_runner_source_sha256 = runner[
+            "RECORDED_RUNNER_SOURCE_SHA256"
+        ]
+        expected_task_set_sha256 = runner["TASK_SET_SHA256"]
+        expected_swift_source_sha256 = runner["SWIFT_SOURCE_SHA256"]
+        expected_base_runner_source_sha256 = runner[
+            "BASE_RUNNER_SOURCE_SHA256"
+        ]
+        expected_recovery_source_sha256 = runner[
+            "RECOVERY_SOURCE_SHA256"
+        ]
+        task_set_path = runner["TASK_SET_PATH"]
+        swift_source_path = runner["SWIFT_SOURCE_PATH"]
+        base_runner_source_path = runner["BASE_RUNNER_SOURCE_PATH"]
+        recovery_source_path = runner["RECOVERY_SOURCE_PATH"]
+        live_filter = runner["LIVE_TEST_FILTER"]
+        if (
+            not callable(fixture_builder)
+            or not callable(fixture_validator)
+            or not callable(task_set_bytes_reader)
+            or not callable(task_set_validator)
+            or not callable(source_validator)
+            or not callable(normalized_source_sha256)
+        ):
+            raise TypeError(
+                "multilingual semantic builders and validators must be "
+                "callable"
+            )
+        if live_filter != (
+            "OllamaEmbeddingMultilingualSemanticQualityTests."
+            "testLiveOllamaExactVersionInstalledEmbeddingMultilingual"
+            "SemanticQuality"
+        ):
+            raise ValueError(
+                "multilingual semantic live test filter drifted"
+            )
+        for label, value in (
+            ("runner source", expected_runner_source_sha256),
+            ("task set", expected_task_set_sha256),
+            ("Swift source", expected_swift_source_sha256),
+            ("base runner source", expected_base_runner_source_sha256),
+            ("recovery source", expected_recovery_source_sha256),
+        ):
+            if (
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in value
+                )
+            ):
+                raise ValueError(f"{label} SHA-256 was invalid")
+        source_validator()
+        expected_fixture = fixture_builder()
+        if type(expected_fixture) is not dict:
+            raise TypeError(
+                "recorded multilingual semantic fixture must be an object"
+            )
+        fixture = json.loads(
+            fixture_body,
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+        task_set_data = task_set_bytes_reader()
+        task_set = json.loads(
+            task_set_data,
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+        for label, path in (
+            ("task set", task_set_path),
+            ("Swift source", swift_source_path),
+            ("base runner source", base_runner_source_path),
+            ("recovery source", recovery_source_path),
+        ):
+            if (
+                not isinstance(path, Path)
+                or path.is_symlink()
+                or not path.is_file()
+            ):
+                raise OSError(f"{label} was not a regular file")
+    except (
+        DuplicateJSONKeyError,
+        KeyError,
+        OSError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as error:
+        return failures + [
+            "script/run_ollama_multilingual_semantic_matrix.py: "
+            "cannot derive canonical multilingual semantic fixture: "
+            f"{error}"
+        ]
+    except Exception as error:
+        return failures + [
+            "script/run_ollama_multilingual_semantic_matrix.py: "
+            "multilingual semantic source validation failed: "
+            f"{error}"
+        ]
+
+    if normalized_source_sha256(runner_source) != (
+        expected_runner_source_sha256
+    ):
+        failures.append(
+            "script/run_ollama_multilingual_semantic_matrix.py: "
+            "multilingual semantic runner source differs from the recorded "
+            "normalized SHA-256."
+        )
+    for label, path, expected_sha256 in (
+        (
+            "task-set",
+            task_set_path,
+            expected_task_set_sha256,
+        ),
+        (
+            "Swift scorer/live assertion",
+            swift_source_path,
+            expected_swift_source_sha256,
+        ),
+        (
+            "base runner",
+            base_runner_source_path,
+            expected_base_runner_source_sha256,
+        ),
+        (
+            "recovery assertion",
+            recovery_source_path,
+            expected_recovery_source_sha256,
+        ),
+    ):
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected_sha256:
+            failures.append(
+                f"{path.relative_to(ROOT)}: multilingual semantic "
+                f"{label} bytes differ from the recorded SHA-256."
+            )
+    try:
+        task_set_validator(task_set)
+    except Exception as error:
+        failures.append(
+            "shared/evaluation/"
+            "ollama-embedding-multilingual-semantic-quality-v2.json: "
+            f"task-set schema is invalid: {error}"
+        )
+    try:
+        fixture_validator(fixture)
+    except Exception as error:
+        failures.append(
+            "docs/releases/1.0.0-build-3-local-v1.md: "
+            "ollama-embedding-multilingual-semantic-quality fixture "
+            f"violates the runner schema: {error}"
+        )
+        return failures
+
+    canonical_body = json.dumps(
+        expected_fixture,
+        ensure_ascii=True,
+        indent=2,
+        sort_keys=True,
+    )
+    if fixture_body != canonical_body:
+        failures.append(
+            "docs/releases/1.0.0-build-3-local-v1.md: "
+            "ollama-embedding-multilingual-semantic-quality fixture must "
+            "match the runner's canonical exact values, JSON types, and "
+            "key order."
+        )
+    return failures
+
+
+def local_release_ollama_vision_model_backed_fixture_failures(
+    document_text: str,
+) -> list[str]:
+    fixture_body, failures = embedded_json_fixture_body(
+        document_text,
+        start_marker=LOCAL_RELEASE_OLLAMA_VISION_MODEL_BACKED_FIXTURE_START,
+        end_marker=LOCAL_RELEASE_OLLAMA_VISION_MODEL_BACKED_FIXTURE_END,
+        fixture_label="ollama-vision-model-backed-run",
+    )
+    if fixture_body is None:
+        return failures
+
+    if not LOCAL_RELEASE_OLLAMA_RUNNER.is_file():
+        return failures + [
+            "script/run_ollama_compatibility_matrix.py: "
+            "missing vision-model-backed runner."
+        ]
+
+    try:
+        runner = runpy.run_path(str(LOCAL_RELEASE_OLLAMA_RUNNER))
+        live_test_filter = runner["VISION_BACKED_LIVE_TEST_FILTER"]
+        fixture_builder = runner["recorded_vision_model_backed_fixture"]
+        if live_test_filter != (
+            "OllamaBackendTests."
+            "testLiveOllamaExactVersionInstalledVisionModelCompatibility"
+        ):
+            raise ValueError(
+                "VISION_BACKED_LIVE_TEST_FILTER differs from the canonical test"
+            )
+        if not callable(fixture_builder):
+            raise TypeError(
+                "recorded_vision_model_backed_fixture must be callable"
+            )
+        expected_fixture = fixture_builder()
+        if (
+            type(expected_fixture) is not dict
+            or expected_fixture.get("schemaVersion") != 1
+            or expected_fixture.get("snapshot", {}).get(
+                "modelDownloadAttempted"
+            )
+            is not False
+            or expected_fixture.get("snapshot", {}).get(
+                "modelNameRetained"
+            )
+            is not False
+            or expected_fixture.get("source", {}).get(
+                "modelNameRetained"
+            )
+            is not False
+        ):
+            raise ValueError(
+                "recorded vision-model-backed fixture has an invalid "
+                "evidence boundary"
+            )
+    except (
+        KeyError,
+        OSError,
+        TypeError,
+        ValueError,
+    ) as error:
+        return failures + [
+            "script/run_ollama_compatibility_matrix.py: "
+            "cannot derive canonical vision-model-backed fixture: "
+            f"{error}"
+        ]
+
+    expected_body = json.dumps(
+        expected_fixture,
+        ensure_ascii=True,
+        indent=2,
+        sort_keys=True,
+    )
+    if fixture_body != expected_body:
+        failures.append(
+            "docs/releases/1.0.0-build-3-local-v1.md: "
+            "ollama-vision-model-backed-run fixture must match the runner's "
+            "canonical exact values, JSON types, and key order."
+        )
+
+    provider_candidates = (
+        LOCAL_RELEASE_EXPECTED_PROVIDER_FIXTURE["ollama"][
+            "currentCandidate"
+        ],
+        LOCAL_RELEASE_EXPECTED_PROVIDER_FIXTURE["ollama"][
+            "previousCandidate"
+        ],
+    )
+    runner_versions = expected_fixture.get("versions")
+    if type(runner_versions) is not list or len(runner_versions) != 2:
+        failures.append(
+            "vision-model-backed runner fixture must contain exactly two versions."
+        )
+        return failures
+
+    phase_keys = {
+        "catalogPopulated": "catalogPopulated",
+        "chatCancellationPassed": "chatCancellationConfirmed",
+        "imageAttachmentPassed": "imageAttachmentCompleted",
+        "installedStatePreserved": "installedStatePreserved",
+        "modelUnloadPassed": "modelUnloadConfirmed",
+        "postCancellationRecoveryPassed": (
+            "postCancellationRecoveryPassed"
+        ),
+        "snapshotUnchanged": "snapshotUnchanged",
+        "stoppedEndpointUnavailable": "endpointUnavailableAfterStop",
+        "textChatPassed": "textChatCompleted",
+    }
+    for provider_candidate, runner_candidate in zip(
+        provider_candidates,
+        runner_versions,
+    ):
+        if type(runner_candidate) is not dict:
+            failures.append(
+                "vision-model-backed runner version rows must be objects."
+            )
+            break
+        cold_start = runner_candidate.get("coldStart")
+        restart = runner_candidate.get("restart")
+        if type(cold_start) is not dict or type(restart) is not dict:
+            failures.append(
+                "vision-model-backed runner phases must be objects."
+            )
+            break
+        expected_smoke = {
+            output_key: (
+                cold_start.get(phase_key) is True
+                and restart.get(phase_key) is True
+            )
+            for output_key, phase_key in phase_keys.items()
+        }
+        expected_smoke.update(
+            {
+                "coldStartPassed": (
+                    cold_start.get("adapterTestPassed") is True
+                ),
+                "restartPassed": (
+                    restart.get("adapterTestPassed") is True
+                ),
+            }
+        )
+        if (
+            provider_candidate["version"]
+            != runner_candidate.get("version")
+            or provider_candidate["darwinArchiveSha256"]
+            != runner_candidate.get("archiveSha256")
+            or provider_candidate["darwinArchiveUrl"]
+            != runner_candidate.get("archiveUrl")
+            or provider_candidate["isolatedVisionModelBackedSmoke"]
+            != expected_smoke
+        ):
+            failures.append(
+                "provider-compatibility fixture and vision-model-backed "
+                "runner fixture differ in Ollama version, archive identity, "
+                "or adapter result."
+            )
+            break
+
+    return failures
+
+
+def local_release_ollama_duration_observation_fixture_failures(
+    document_text: str,
+) -> list[str]:
+    fixture_body, failures = embedded_json_fixture_body(
+        document_text,
+        start_marker=(
+            LOCAL_RELEASE_OLLAMA_DURATION_OBSERVATION_FIXTURE_START
+        ),
+        end_marker=LOCAL_RELEASE_OLLAMA_DURATION_OBSERVATION_FIXTURE_END,
+        fixture_label="ollama-duration-observation",
+    )
+    if fixture_body is None:
+        return failures
+    if not LOCAL_RELEASE_OLLAMA_RUNNER.is_file():
+        return failures + [
+            "script/run_ollama_compatibility_matrix.py: "
+            "missing duration-observation runner."
+        ]
+
+    try:
+        runner = runpy.run_path(str(LOCAL_RELEASE_OLLAMA_RUNNER))
+        validator = runner[
+            "validate_recorded_duration_observation_fixture"
+        ]
+        expected_sha256 = runner[
+            "RECORDED_DURATION_OBSERVATION_SHA256"
+        ]
+        if not callable(validator):
+            raise TypeError(
+                "duration-observation validator must be callable"
+            )
+        if (
+            not isinstance(expected_sha256, str)
+            or len(expected_sha256) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in expected_sha256
+            )
+        ):
+            raise ValueError(
+                "RECORDED_DURATION_OBSERVATION_SHA256 must be a SHA-256"
+            )
+        fixture = json.loads(
+            fixture_body,
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+    except (
+        DuplicateJSONKeyError,
+        KeyError,
+        OSError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as error:
+        return failures + [
+            "script/run_ollama_compatibility_matrix.py: "
+            "cannot derive canonical duration-observation fixture: "
+            f"{error}"
+        ]
+
+    try:
+        validator(fixture)
+    except Exception as error:
+        failures.append(
+            "docs/releases/1.0.0-build-3-local-v1.md: "
+            "ollama-duration-observation fixture violates the runner schema: "
+            f"{error}"
+        )
+        return failures
+
+    canonical_body = json.dumps(
+        fixture,
+        ensure_ascii=True,
+        indent=2,
+        sort_keys=True,
+    )
+    if fixture_body != canonical_body:
+        failures.append(
+            "docs/releases/1.0.0-build-3-local-v1.md: "
+            "ollama-duration-observation fixture must use canonical JSON "
+            "types and key order."
+        )
+    observed_sha256 = hashlib.sha256(
+        fixture_body.encode("utf-8")
+    ).hexdigest()
+    if observed_sha256 != expected_sha256:
+        failures.append(
+            "docs/releases/1.0.0-build-3-local-v1.md: "
+            "ollama-duration-observation fixture differs from the recorded "
+            "runner SHA-256."
+        )
+    return failures
+
+
+def local_release_ollama_live_fault_injection_fixture_failures(
+    document_text: str,
+) -> list[str]:
+    fixture_body, failures = embedded_json_fixture_body(
+        document_text,
+        start_marker=(
+            LOCAL_RELEASE_OLLAMA_LIVE_FAULT_INJECTION_FIXTURE_START
+        ),
+        end_marker=(
+            LOCAL_RELEASE_OLLAMA_LIVE_FAULT_INJECTION_FIXTURE_END
+        ),
+        fixture_label="ollama-live-fault-injection",
+    )
+    if fixture_body is None:
+        return failures
+    if not LOCAL_RELEASE_OLLAMA_RUNNER.is_file():
+        return failures + [
+            "script/run_ollama_compatibility_matrix.py: "
+            "missing live-fault-injection runner."
+        ]
+
+    try:
+        runner_source = LOCAL_RELEASE_OLLAMA_RUNNER.read_text(
+            encoding="utf-8"
+        )
+        runner = runpy.run_path(str(LOCAL_RELEASE_OLLAMA_RUNNER))
+        validator = runner[
+            "validate_recorded_live_fault_injection_fixture"
+        ]
+        expected_sha256 = runner[
+            "RECORDED_LIVE_FAULT_INJECTION_SHA256"
+        ]
+        expected_runner_source_sha256 = runner[
+            "RECORDED_LIVE_FAULT_INJECTION_RUNNER_SOURCE_SHA256"
+        ]
+        if not callable(validator):
+            raise TypeError(
+                "live-fault-injection validator must be callable"
+            )
+        if (
+            not isinstance(expected_sha256, str)
+            or len(expected_sha256) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in expected_sha256
+            )
+        ):
+            raise ValueError(
+                "RECORDED_LIVE_FAULT_INJECTION_SHA256 must be a SHA-256"
+            )
+        if (
+            not isinstance(expected_runner_source_sha256, str)
+            or len(expected_runner_source_sha256) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in expected_runner_source_sha256
+            )
+        ):
+            raise ValueError(
+                "RECORDED_LIVE_FAULT_INJECTION_RUNNER_SOURCE_SHA256 "
+                "must be a SHA-256"
+            )
+        observed_runner_source_sha256 = (
+            normalized_live_fault_runner_source_sha256(runner_source)
+        )
+        fixture = json.loads(
+            fixture_body,
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+    except (
+        DuplicateJSONKeyError,
+        KeyError,
+        OSError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as error:
+        return failures + [
+            "script/run_ollama_compatibility_matrix.py: "
+            "cannot derive canonical live-fault-injection fixture: "
+            f"{error}"
+        ]
+
+    if observed_runner_source_sha256 != expected_runner_source_sha256:
+        failures.append(
+            "script/run_ollama_compatibility_matrix.py: "
+            "live-fault-injection runner source differs from the recorded "
+            "normalized SHA-256."
+        )
+
+    try:
+        validator(fixture)
+    except Exception as error:
+        failures.append(
+            "docs/releases/1.0.0-build-3-local-v1.md: "
+            "ollama-live-fault-injection fixture violates the runner schema: "
+            f"{error}"
+        )
+        return failures
+
+    canonical_body = json.dumps(
+        fixture,
+        ensure_ascii=True,
+        indent=2,
+        sort_keys=True,
+    )
+    if fixture_body != canonical_body:
+        failures.append(
+            "docs/releases/1.0.0-build-3-local-v1.md: "
+            "ollama-live-fault-injection fixture must use canonical JSON "
+            "types and key order."
+        )
+    observed_sha256 = hashlib.sha256(
+        fixture_body.encode("utf-8")
+    ).hexdigest()
+    if observed_sha256 != expected_sha256:
+        failures.append(
+            "docs/releases/1.0.0-build-3-local-v1.md: "
+            "ollama-live-fault-injection fixture differs from the recorded "
+            "runner SHA-256."
+        )
+    return failures
+
+
 def local_release_document_failures() -> list[str]:
     try:
-        relative_doc = LOCAL_RELEASE_DOC.relative_to(ROOT)
+        relative_doc = LOCAL_RELEASE_CURRENT_DOC.relative_to(ROOT)
     except ValueError:
-        relative_doc = LOCAL_RELEASE_DOC
-    if not LOCAL_RELEASE_DOC.is_file():
+        relative_doc = LOCAL_RELEASE_CURRENT_DOC
+    if not LOCAL_RELEASE_CURRENT_DOC.is_file():
         return [f"{relative_doc}: missing local release qualification record."]
 
     try:
-        document_text = LOCAL_RELEASE_DOC.read_text(encoding="utf-8")
+        document_text = LOCAL_RELEASE_CURRENT_DOC.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as error:
         return [f"{relative_doc}: unreadable local release qualification record: {error}"]
 
     failures: list[str] = []
+    try:
+        relative_fixture_doc = LOCAL_RELEASE_FIXTURE_DOC.relative_to(ROOT)
+    except ValueError:
+        relative_fixture_doc = LOCAL_RELEASE_FIXTURE_DOC
+    try:
+        fixture_document_text = LOCAL_RELEASE_FIXTURE_DOC.read_text(
+            encoding="utf-8"
+        )
+    except (OSError, UnicodeError) as error:
+        fixture_document_text = None
+        failures.append(
+            f"{relative_fixture_doc}: unreadable historical release fixture "
+            f"record: {error}"
+        )
+
     required_claims = (
         ("release ID", f"`{LOCAL_RELEASE_ID}`"),
         (
@@ -1199,6 +2851,73 @@ def local_release_document_failures() -> list[str]:
         (
             "manifest SHA-256",
             f"`{LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256}`",
+        ),
+        (
+            "checksum sidecar size",
+            f"{LOCAL_RELEASE_EXPECTED_CHECKSUM_SIZE:,} bytes",
+        ),
+        (
+            "checksum sidecar SHA-256",
+            f"`{LOCAL_RELEASE_EXPECTED_CHECKSUM_SHA256}`",
+        ),
+        (
+            "reproducibility result path",
+            "`dist/reproducibility/clean-release-two-root-v2.json`",
+        ),
+        (
+            "reproducibility result size",
+            f"{LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SIZE:,} bytes",
+        ),
+        (
+            "reproducibility result SHA-256",
+            f"`{LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SHA256}`",
+        ),
+        (
+            "packaged-app lifecycle result path",
+            (
+                "`dist/lifecycle/"
+                "macos-packaged-app-build-6-lifecycle-v1.json`"
+            ),
+        ),
+        (
+            "packaged-app lifecycle result size",
+            f"{MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT_SIZE:,} bytes",
+        ),
+        (
+            "packaged-app lifecycle result SHA-256",
+            f"`{MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT_SHA256}`",
+        ),
+        (
+            "packaged-app minimum observation",
+            "`minimumObservationSeconds=5.0`",
+        ),
+        (
+            "packaged-app observation deadline",
+            "`observationDeadlineReached=true`",
+        ),
+        (
+            "packaged-app identity-file observation",
+            "`identityFilePresentAfterRuns=[false, false]`",
+        ),
+        (
+            "unequal source-root byte lengths",
+            "101- and 109-byte source roots",
+        ),
+        (
+            "unequal source-root result",
+            "`sourceRootLengthsDiffer=true`",
+        ),
+        (
+            "independent publication readback",
+            "`independentReadback=true`",
+        ),
+        (
+            "published lane identity",
+            "`publishedBytesEqualLaneA=true`",
+        ),
+        (
+            "publication source freshness",
+            "`sourceSnapshotUnchanged=true`",
         ),
         (
             "source inventory count",
@@ -1227,9 +2946,58 @@ def local_release_document_failures() -> list[str]:
                 f"{relative_doc}: missing exact {label} claim {expected_text!r}."
             )
 
-    failures.extend(local_release_transition_fixture_failures(document_text))
-    failures.extend(local_release_provider_fixture_failures(document_text))
-    failures.extend(local_release_ollama_runner_fixture_failures(document_text))
+    if fixture_document_text is not None:
+        failures.extend(
+            local_release_transition_fixture_failures(fixture_document_text)
+        )
+        failures.extend(
+            local_release_provider_fixture_failures(fixture_document_text)
+        )
+        failures.extend(
+            local_release_ollama_runner_fixture_failures(
+                fixture_document_text
+            )
+        )
+        failures.extend(
+            local_release_ollama_model_backed_fixture_failures(
+                fixture_document_text
+            )
+        )
+        failures.extend(
+            local_release_ollama_additional_chat_shape_fixture_failures(
+                fixture_document_text
+            )
+        )
+        failures.extend(
+            local_release_ollama_embedding_model_backed_fixture_failures(
+                fixture_document_text
+            )
+        )
+        failures.extend(
+            local_release_ollama_embedding_semantic_quality_fixture_failures(
+                fixture_document_text
+            )
+        )
+        failures.extend(
+            local_release_ollama_embedding_multilingual_semantic_quality_fixture_failures(
+                fixture_document_text
+            )
+        )
+        failures.extend(
+            local_release_ollama_vision_model_backed_fixture_failures(
+                fixture_document_text
+            )
+        )
+        failures.extend(
+            local_release_ollama_duration_observation_fixture_failures(
+                fixture_document_text
+            )
+        )
+        failures.extend(
+            local_release_ollama_live_fault_injection_fixture_failures(
+                fixture_document_text
+            )
+        )
 
     if not LOCAL_RELEASE_ARCHIVE_DIR.exists():
         return failures
@@ -1306,15 +3074,27 @@ def local_release_document_failures() -> list[str]:
         (("source", "snapshotSha256"), LOCAL_RELEASE_EXPECTED_SOURCE_SHA256),
         (("source", "head"), LOCAL_RELEASE_EXPECTED_SOURCE_HEAD),
         (("platforms", "android", "applicationId"), "com.localagentbridge.android"),
-        (("platforms", "android", "versionCode"), 1),
-        (("platforms", "android", "versionName"), "1.0.0"),
+        (
+            ("platforms", "android", "versionCode"),
+            LOCAL_RELEASE_BUILD_NUMBER,
+        ),
+        (
+            ("platforms", "android", "versionName"),
+            LOCAL_RELEASE_MARKETING_VERSION,
+        ),
         (("platforms", "android", "minSdk"), 26),
         (("platforms", "android", "targetSdk"), 36),
         (("platforms", "android", "abis"), ["arm64-v8a"]),
         (("platforms", "android", "signatureState"), "unsigned"),
         (("platforms", "macos", "bundleId"), "dev.aetherlink.companion"),
-        (("platforms", "macos", "marketingVersion"), "1.0.0"),
-        (("platforms", "macos", "buildNumber"), 1),
+        (
+            ("platforms", "macos", "marketingVersion"),
+            LOCAL_RELEASE_MARKETING_VERSION,
+        ),
+        (
+            ("platforms", "macos", "buildNumber"),
+            LOCAL_RELEASE_BUILD_NUMBER,
+        ),
         (("platforms", "macos", "minimumSystemVersion"), "14.0"),
         (("platforms", "macos", "architectures"), ["arm64"]),
         (("platforms", "macos", "signatureState"), "ad-hoc-local"),
@@ -1393,6 +3173,171 @@ def local_release_document_failures() -> list[str]:
             f"{LOCAL_RELEASE_EXPECTED_ZIP_SHA256} and {archive_path.name}."
         )
 
+    checksum_bytes = checksum_path.read_bytes()
+    checksum_identity = (
+        len(checksum_bytes),
+        hashlib.sha256(checksum_bytes).hexdigest(),
+    )
+    expected_checksum_identity = (
+        LOCAL_RELEASE_EXPECTED_CHECKSUM_SIZE,
+        LOCAL_RELEASE_EXPECTED_CHECKSUM_SHA256,
+    )
+    if checksum_identity != expected_checksum_identity:
+        failures.append(
+            f"{checksum_path.relative_to(ROOT)}: expected checksum sidecar "
+            f"identity {expected_checksum_identity!r}, found "
+            f"{checksum_identity!r}."
+        )
+
+    result_relative = (
+        "dist/reproducibility/clean-release-two-root-v2.json"
+    )
+    if not LOCAL_RELEASE_REPRODUCIBILITY_RESULT.is_file():
+        failures.append(
+            f"{result_relative}: missing current reproducibility result."
+        )
+        return failures
+
+    try:
+        result_bytes = LOCAL_RELEASE_REPRODUCIBILITY_RESULT.read_bytes()
+        result = json.loads(
+            result_bytes.decode("utf-8"),
+            object_pairs_hook=reject_duplicate_keys,
+        )
+    except (
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+        DuplicateJSONKeyError,
+    ) as error:
+        failures.append(
+            f"{result_relative}: unreadable current reproducibility result: "
+            f"{error}"
+        )
+        return failures
+
+    result_identity = (
+        len(result_bytes),
+        hashlib.sha256(result_bytes).hexdigest(),
+    )
+    expected_result_identity = (
+        LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SIZE,
+        LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SHA256,
+    )
+    if result_identity != expected_result_identity:
+        failures.append(
+            f"{result_relative}: expected identity "
+            f"{expected_result_identity!r}, found {result_identity!r}."
+        )
+
+    if not isinstance(result, dict):
+        failures.append(
+            f"{result_relative}: result root must be a JSON object."
+        )
+        return failures
+
+    def read_result_path(path: tuple[str, ...]) -> object:
+        value: object = result
+        for key in path:
+            if not isinstance(value, dict) or key not in value:
+                return None
+            value = value[key]
+        return value
+
+    result_expectations = (
+        (("schemaVersion",), 2),
+        (("status",), "passed"),
+        (
+            ("scratch", "sourceRoots", "policy"),
+            "distinct-unequal-utf8-byte-length-v1",
+        ),
+        (
+            ("scratch", "sourceRoots", "sourceRootByteLengths"),
+            LOCAL_RELEASE_EXPECTED_SOURCE_ROOT_BYTE_LENGTHS,
+        ),
+        (("scratch", "sourceRoots", "sourceRootLengthsDiffer"), True),
+        (("comparison", "archiveBytesEqual"), True),
+        (("comparison", "memberSetEqual"), True),
+        (("comparison", "memberMetadataEqual"), True),
+        (("comparison", "memberBytesEqual"), True),
+        (("comparison", "differences"), []),
+        (("comparison", "memberDifferences"), []),
+        (
+            ("publication", "archiveSha256"),
+            LOCAL_RELEASE_EXPECTED_ZIP_SHA256,
+        ),
+        (
+            ("publication", "manifestSha256"),
+            LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256,
+        ),
+        (
+            ("publication", "checksumSha256"),
+            LOCAL_RELEASE_EXPECTED_CHECKSUM_SHA256,
+        ),
+        (("publication", "independentReadback"), True),
+        (("publication", "publishedBytesEqualLaneA"), True),
+        (("publication", "sourceSnapshotUnchanged"), True),
+        (("source", "fileCount"), LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT),
+        (("source", "sha256"), LOCAL_RELEASE_EXPECTED_SOURCE_SHA256),
+    )
+    for path, expected in result_expectations:
+        actual = read_result_path(path)
+        if type(actual) is not type(expected) or actual != expected:
+            failures.append(
+                f"{result_relative}: expected "
+                f"{'.'.join(path)}={expected!r}, found {actual!r}."
+            )
+
+    return failures
+
+
+def macos_packaged_lifecycle_evidence_failures(
+    result_bytes: bytes | None = None,
+) -> list[str]:
+    relative = "dist/lifecycle/macos-packaged-app-build-6-lifecycle-v1.json"
+    if result_bytes is None:
+        if not MACOS_PACKAGED_LIFECYCLE_RESULT.is_file():
+            return [f"{relative}: missing packaged-app lifecycle result."]
+        try:
+            result_bytes = MACOS_PACKAGED_LIFECYCLE_RESULT.read_bytes()
+        except OSError as error:
+            return [f"{relative}: unreadable packaged-app lifecycle result: {error}"]
+
+    failures: list[str] = []
+    identity = (len(result_bytes), hashlib.sha256(result_bytes).hexdigest())
+    expected_identity = (
+        MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT_SIZE,
+        MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT_SHA256,
+    )
+    if identity != expected_identity:
+        failures.append(
+            f"{relative}: expected identity {expected_identity!r}, "
+            f"found {identity!r}."
+        )
+
+    try:
+        result = json.loads(
+            result_bytes.decode("utf-8"),
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+    except (
+        UnicodeError,
+        json.JSONDecodeError,
+        DuplicateJSONKeyError,
+    ) as error:
+        failures.append(
+            f"{relative}: invalid packaged-app lifecycle JSON: {error}"
+        )
+        return failures
+
+    if not exact_json_values_equal(
+        result,
+        MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT,
+    ):
+        failures.append(
+            f"{relative}: result does not match the exact closed "
+            "Build 6 lifecycle contract."
+        )
     return failures
 
 
@@ -1586,6 +3531,199 @@ def syntax_only_no_device_gate_evidence_failures() -> list[str]:
                     f"docs/qa-evidence.md:{line_number}: `{syntax_command}` is shell syntax validation only; "
                     "label it as syntax only or record a real `bash script/check_no_device_quality.sh` run."
                 )
+
+    return failures
+
+
+def historical_local_release_document_failures(
+    *,
+    ledger_bytes: bytes | None = None,
+    document_text_by_build: dict[int, str] | None = None,
+) -> list[str]:
+    try:
+        raw_ledger = (
+            LOCAL_RELEASE_LEDGER.read_bytes()
+            if ledger_bytes is None
+            else ledger_bytes
+        )
+        entries = parse_release_version_ledger(raw_ledger)
+    except (OSError, LedgerError) as error:
+        return [
+            "release/version-ledger.tsv: cannot validate historical release "
+            f"document lineage: {error}"
+        ]
+
+    current = entries[-1]
+    current_doc_relative = (
+        "docs/releases/"
+        f"{current.marketing_version}-build-{current.build_number}-local-v1.md"
+    )
+    failures: list[str] = []
+    for entry in entries[:-1]:
+        relative = (
+            "docs/releases/"
+            f"{entry.marketing_version}-build-{entry.build_number}-local-v1.md"
+        )
+        if document_text_by_build is None:
+            path = ROOT / relative
+            if not path.is_file():
+                failures.append(
+                    f"{relative}: missing historical local release record."
+                )
+                continue
+            try:
+                document_text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as error:
+                failures.append(
+                    f"{relative}: unreadable historical local release "
+                    f"record: {error}"
+                )
+                continue
+        else:
+            document_text = document_text_by_build.get(entry.build_number)
+            if document_text is None:
+                failures.append(
+                    f"{relative}: missing injected historical release record."
+                )
+                continue
+
+        release_id = (
+            f"aetherlink-{entry.marketing_version}"
+            f"+{entry.build_number}-local-v1"
+        )
+        required_text = (
+            (
+                "current qualification record pointer",
+                f"`{current_doc_relative}`",
+            ),
+        )
+        for label, expected in required_text:
+            if expected not in document_text:
+                failures.append(
+                    f"{relative}: missing exact {label} {expected!r}."
+                )
+        expected_status = (
+            "superseded local release-engineering candidate, "
+            "not a production release."
+        )
+        status_claims = re.findall(
+            r"^Status:\s*(.+?)\s*$",
+            document_text,
+            re.MULTILINE,
+        )
+        if status_claims != [expected_status]:
+            failures.append(
+                f"{relative}: historical status must appear exactly once as "
+                f"{expected_status!r}; found {status_claims!r}."
+            )
+        release_id_claims = re.findall(
+            r"^Release ID:\s*`?([^`\s]+)`?\s*$",
+            document_text,
+            re.MULTILINE,
+        )
+        if release_id_claims != [release_id]:
+            failures.append(
+                f"{relative}: historical Release ID must appear exactly once "
+                f"as {release_id!r}; found {release_id_claims!r}."
+            )
+        readback_targets = re.findall(
+            r"--archive-dir\s+dist/releases/(aetherlink-[^\s`\\]+)",
+            document_text,
+        )
+        is_fixture_record = (
+            entry.build_number == LOCAL_RELEASE_FIXTURE_BUILD_NUMBER
+            and entry.marketing_version == LOCAL_RELEASE_MARKETING_VERSION
+        )
+        if is_fixture_record:
+            if readback_targets.count(release_id) != 1:
+                failures.append(
+                    f"{relative}: historical archive readback target must "
+                    f"include exactly one {release_id!r}; found "
+                    f"{readback_targets!r}."
+                )
+        elif readback_targets != [release_id]:
+            failures.append(
+                f"{relative}: historical archive readback target must appear "
+                f"exactly once as {release_id!r}; found "
+                f"{readback_targets!r}."
+            )
+        historical_mode_count = len(
+            re.findall(
+                r"(?<![\w-])--historical(?![\w-])",
+                document_text,
+            )
+        )
+        if not is_fixture_record and historical_mode_count != 1:
+            failures.append(
+                f"{relative}: historical readback mode must appear exactly "
+                f"once; found {historical_mode_count}."
+            )
+        release_doc_mentions = re.findall(
+            r"docs/releases/[0-9]+\.[0-9]+\.[0-9]+-build-"
+            r"[1-9][0-9]*-local-v1\.md",
+            document_text,
+        )
+        if is_fixture_record:
+            release_doc_pointer_valid = (
+                release_doc_mentions.count(current_doc_relative) == 1
+            )
+        else:
+            release_doc_pointer_valid = (
+                release_doc_mentions == [current_doc_relative]
+            )
+        if not release_doc_pointer_valid:
+            failures.append(
+                f"{relative}: current release document pointer must appear "
+                f"exactly once as {current_doc_relative!r}; found "
+                f"{release_doc_mentions!r}."
+            )
+        current_claim_builds = [
+            int(value)
+            for value in re.findall(
+                r"\bBuild\s+([1-9][0-9]*)\b"
+                r"(?:(?!\bBuild\s+[1-9][0-9]*\b).){0,180}?"
+                r"\bcurrent\s+local\s+qualification\s+record\b",
+                document_text,
+                re.IGNORECASE | re.DOTALL,
+            )
+        ]
+        if is_fixture_record:
+            current_claim_valid = (
+                current_claim_builds.count(current.build_number) == 1
+            )
+        else:
+            current_claim_valid = (
+                current_claim_builds == [current.build_number]
+            )
+        if not current_claim_valid:
+            failures.append(
+                f"{relative}: current qualification prose must name build "
+                f"{current.build_number} exactly once; found "
+                f"{current_claim_builds!r}."
+            )
+        contract_claim_builds = [
+            int(value)
+            for value in re.findall(
+                r"\bcontract\s+now\s+lives\s+in\s+the\s+build\s+"
+                r"([1-9][0-9]*)\s+record\b",
+                document_text,
+                re.IGNORECASE,
+            )
+        ]
+        if is_fixture_record:
+            contract_claim_valid = (
+                contract_claim_builds.count(current.build_number) == 1
+            )
+        else:
+            contract_claim_valid = (
+                contract_claim_builds == [current.build_number]
+            )
+        if not contract_claim_valid:
+            failures.append(
+                f"{relative}: fuller contract must point to current build "
+                f"{current.build_number} exactly once; found "
+                f"{contract_claim_builds!r}."
+            )
 
     return failures
 
@@ -1917,8 +4055,11 @@ def main() -> int:
 
     failures.extend(latest_progress_evidence_failures())
     failures.extend(latest_qa_evidence_failures())
+    failures.extend(current_release_qa_evidence_failures())
     failures.extend(syntax_only_no_device_gate_evidence_failures())
     failures.extend(local_release_document_failures())
+    failures.extend(macos_packaged_lifecycle_evidence_failures())
+    failures.extend(historical_local_release_document_failures())
     failures.extend(physical_qr_observation_manifest_failures())
 
     if failures:

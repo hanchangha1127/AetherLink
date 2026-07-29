@@ -21,6 +21,7 @@ validate_mode() {
 validate_mode "$MODE"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PHYSICAL_ROOT_DIR="$(cd "$ROOT_DIR" && pwd -P)"
 
 is_package_only() {
   case "$MODE" in
@@ -38,6 +39,7 @@ TARGET_EXECUTABLE_NAME="LocalAgentBridge"
 APP_NAME="AetherLink"
 BUNDLE_ID="dev.aetherlink.companion"
 MIN_SYSTEM_VERSION="14.0"
+REPRO_SWIFT_SCRATCH_PATH="/private/tmp/aetherlink-g6-swift-scratch-v1"
 RELEASE_VERSION_LEDGER="$ROOT_DIR/release/version-ledger.tsv"
 MAX_ANDROID_VERSION_CODE=2100000000
 MAX_MARKETING_VERSION_COMPONENT=2147483647
@@ -207,8 +209,66 @@ else
   pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 fi
 
-swift build -c "$BUILD_CONFIGURATION" --product "$PRODUCT_NAME"
-BUILD_BIN_PATH="$(swift build -c "$BUILD_CONFIGURATION" --show-bin-path)"
+SWIFT_BUILD_OPTIONS=(-c "$BUILD_CONFIGURATION")
+if is_package_only && [[ -n "${AETHERLINK_REPRO_SWIFT_SCRATCH_PATH:-}" ]]; then
+  if [[ "$AETHERLINK_REPRO_SWIFT_SCRATCH_PATH" != "$REPRO_SWIFT_SCRATCH_PATH" ]]; then
+    echo "error: reproducible Swift scratch path differs from the fixed release path" >&2
+    exit 2
+  fi
+  if [[ "$AETHERLINK_REPRO_SWIFT_SCRATCH_PATH" != /* ]]; then
+    echo "error: reproducible Swift scratch path must be absolute" >&2
+    exit 2
+  fi
+  scratch_parent="${AETHERLINK_REPRO_SWIFT_SCRATCH_PATH%/*}"
+  scratch_name="${AETHERLINK_REPRO_SWIFT_SCRATCH_PATH##*/}"
+  if [[ -z "$scratch_parent" || -z "$scratch_name" || "$scratch_name" == "." || "$scratch_name" == ".." ]]; then
+    echo "error: reproducible Swift scratch path is invalid" >&2
+    exit 2
+  fi
+  if [[ ! -d "$scratch_parent" || -L "$scratch_parent" ]]; then
+    echo "error: reproducible Swift scratch parent must be a physical directory" >&2
+    exit 2
+  fi
+  physical_scratch_parent="$(cd "$scratch_parent" && pwd -P)"
+  physical_scratch_path="$physical_scratch_parent/$scratch_name"
+  if [[ "$physical_scratch_path" != "$AETHERLINK_REPRO_SWIFT_SCRATCH_PATH" ]]; then
+    echo "error: reproducible Swift scratch path must use its physical parent" >&2
+    exit 2
+  fi
+  case "$physical_scratch_path/" in
+    "$PHYSICAL_ROOT_DIR/"*)
+      echo "error: reproducible Swift scratch path must be outside the source root" >&2
+      exit 2
+      ;;
+  esac
+  if [[ -e "$physical_scratch_path" || -L "$physical_scratch_path" ]]; then
+    echo "error: reproducible Swift scratch path must not already exist" >&2
+    exit 2
+  fi
+  SWIFT_BUILD_OPTIONS+=(
+    --jobs 1
+    --scratch-path "$physical_scratch_path"
+    -Xswiftc -file-prefix-map
+    -Xswiftc "$PHYSICAL_ROOT_DIR=/aetherlink/source"
+    -Xswiftc -file-compilation-dir
+    -Xswiftc /aetherlink/source
+    -Xswiftc -prefix-serialized-debugging-options
+    -Xcc -working-directory
+    -Xcc "$physical_scratch_path"
+    -Xcc -Xclang
+    -Xcc -fdebug-compilation-dir=/aetherlink/source
+    -Xcc -Xclang
+    -Xcc -fdisable-module-hash
+    -Xcc -Xclang
+    -Xcc -fbuild-session-timestamp=0
+    -Xcc -Xclang
+    -Xcc -fno-pch-timestamp
+    -Xlinker -reproducible
+  )
+fi
+
+swift build "${SWIFT_BUILD_OPTIONS[@]}" --product "$PRODUCT_NAME"
+BUILD_BIN_PATH="$(swift build "${SWIFT_BUILD_OPTIONS[@]}" --show-bin-path)"
 BUILD_BINARY="$BUILD_BIN_PATH/$PRODUCT_NAME"
 if [[ ! -x "$BUILD_BINARY" ]]; then
   BUILD_BINARY="$BUILD_BIN_PATH/$TARGET_EXECUTABLE_NAME"

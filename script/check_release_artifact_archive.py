@@ -24,7 +24,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from script.check_release_version_ledger import load_release_version_ledger
+from script.check_release_version_ledger import (
+    LedgerError,
+    load_release_version_ledger,
+)
 
 
 DEFAULT_OUTPUT_ROOT = ROOT / "dist/releases"
@@ -47,14 +50,76 @@ BUNDLETOOL_MAIN_CLASS = (
     "com.android.tools.build.bundletool.BundleToolMain"
 )
 BUNDLETOOL_VERSION = "1.18.3"
-ARCHIVE_NORMALIZATIONS = (
+LEGACY_ARCHIVE_NORMALIZATIONS_BUILD_1_TO_3 = (
     "android/mapping/mapping.prt:"
     "sorted-members-fixed-metadata-deflate-9",
     "android/mapping/resources.txt:bytewise-sorted-unique-lines",
     "android/mapping/seeds.txt:bytewise-sorted-unique-lines",
 )
+LEGACY_ARCHIVE_NORMALIZATIONS_BUILD_4 = (
+    "android/mapping/configuration.txt:"
+    "declared-extracted-file-root-markers",
+    "android/mapping/mapping.prt:"
+    "sorted-members-fixed-metadata-deflate-9",
+    "android/mapping/resources.txt:bytewise-sorted-unique-lines",
+    "android/mapping/seeds.txt:bytewise-sorted-unique-lines",
+)
+ARCHIVE_NORMALIZATIONS = (
+    "android/mapping/configuration.txt:"
+    "declared-extracted-file-root-markers",
+    "android/mapping/mapping.prt:"
+    "sorted-members-fixed-metadata-deflate-9",
+    "android/mapping/resources.txt:"
+    "semantic-reachability-sorted-unique-lines",
+    "android/mapping/seeds.txt:bytewise-sorted-unique-lines",
+)
 ANDROID_STUDIO_JAVA_HOME = Path(
     "/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+)
+SOURCE_REQUIRED_FILES = (
+    "Package.swift",
+    "build.gradle.kts",
+    "settings.gradle.kts",
+    "settings-gradle.lockfile",
+    "gradle.properties",
+    "gradlew",
+    "buildscript-gradle.lockfile",
+    "gradle/gradle-daemon-jvm.properties",
+    "gradle/libs.versions.toml",
+    "gradle/wrapper/gradle-wrapper.jar",
+    "gradle/wrapper/gradle-wrapper.properties",
+    "apps/android/app/build.gradle.kts",
+    "apps/android/app/gradle.lockfile",
+    "apps/android/core/pairing/build.gradle.kts",
+    "apps/android/core/pairing/gradle.lockfile",
+    "apps/android/core/protocol/build.gradle.kts",
+    "apps/android/core/protocol/gradle.lockfile",
+    "apps/android/core/transport/build.gradle.kts",
+    "apps/android/core/transport/gradle.lockfile",
+    "release/version-ledger.tsv",
+    "script/build_and_run.sh",
+    "script/build_release_artifacts.sh",
+    "script/check_release_version_ledger.py",
+    "script/package_release_artifacts.py",
+    "script/check_release_artifact_archive.py",
+    "script/run_clean_release_reproducibility.py",
+)
+SOURCE_OPTIONAL_FILES = ("Package.resolved",)
+SOURCE_ROOTS = (
+    "apps/android/app/src",
+    "apps/android/core/pairing/src",
+    "apps/android/core/protocol/src",
+    "apps/android/core/transport/src",
+    "apps/macos/P2PNATContracts/Sources",
+    "apps/macos/Protocol/Sources",
+    "apps/macos/TrustedDevices/Sources",
+    "apps/macos/Pairing/Sources",
+    "apps/macos/Transport/Sources",
+    "apps/macos/OllamaBackend/Sources",
+    "apps/macos/LMStudioBackend/Sources",
+    "apps/macos/DocumentIngestion/Sources",
+    "apps/macos/CompanionCore/Sources",
+    "apps/macos/LocalAgentBridgeApp/Sources",
 )
 
 
@@ -165,6 +230,161 @@ def canonicalize_r8_line_artifact(data: bytes, label: str) -> bytes:
             f"{label} must contain nonempty unique lines"
         )
     return b"\n".join(sorted(lines)) + b"\n"
+
+
+def canonicalize_r8_resources(data: bytes, label: str) -> bytes:
+    if not data or b"\r" in data or b"\0" in data or not data.endswith(b"\n"):
+        raise ReleaseArchiveVerificationError(
+            f"{label} must be nonempty LF-terminated ASCII text"
+        )
+    raw_lines = data[:-1].split(b"\n")
+    if not raw_lines or any(not line for line in raw_lines):
+        raise ReleaseArchiveVerificationError(
+            f"{label} must contain nonempty resource-state lines"
+        )
+
+    reachable_from = b" reachable from "
+    reachable_suffix = b" is reachable."
+    unreachable_suffix = b" is not reachable."
+    resource_key_pattern = re.compile(
+        rb"[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+:[0-9]+"
+    )
+    normalized: list[bytes] = []
+    for line in raw_lines:
+        if any(byte < 0x20 or byte > 0x7E for byte in line):
+            raise ReleaseArchiveVerificationError(
+                f"{label} contains a non-printable resource-state byte"
+            )
+        if line.count(reachable_from) == 1:
+            key, reason = line.split(reachable_from, 1)
+            if not reason:
+                raise ReleaseArchiveVerificationError(
+                    f"{label} contains an empty reachability reason"
+                )
+            suffix = reachable_suffix
+        elif line.endswith(reachable_suffix):
+            key = line[: -len(reachable_suffix)]
+            suffix = reachable_suffix
+        elif line.endswith(unreachable_suffix):
+            key = line[: -len(unreachable_suffix)]
+            suffix = unreachable_suffix
+        else:
+            raise ReleaseArchiveVerificationError(
+                f"{label} contains an unsupported resource-state line"
+            )
+        if resource_key_pattern.fullmatch(key) is None:
+            raise ReleaseArchiveVerificationError(
+                f"{label} contains an invalid resource identity"
+            )
+        normalized.append(key + suffix)
+
+    if len(normalized) != len(set(normalized)):
+        raise ReleaseArchiveVerificationError(
+            f"{label} contains duplicate canonical resource states"
+        )
+    return b"\n".join(sorted(normalized)) + b"\n"
+
+
+def archive_normalizations_for_build(build_number: int) -> tuple[str, ...]:
+    if build_number <= 3:
+        return LEGACY_ARCHIVE_NORMALIZATIONS_BUILD_1_TO_3
+    if build_number == 4:
+        return LEGACY_ARCHIVE_NORMALIZATIONS_BUILD_4
+    return ARCHIVE_NORMALIZATIONS
+
+
+def validate_canonical_r8_configuration(data: bytes, label: str) -> None:
+    if not data or b"\0" in data or not data.endswith(b"\n"):
+        raise ReleaseArchiveVerificationError(
+            f"{label} must be nonempty LF-terminated text without NUL"
+        )
+    extracted_token = b"(extracted file: "
+    opening_prefix = (
+        b"# The proguard configuration file for the following section is "
+    )
+    closing_prefix = b"# End of content from "
+    markers = (b"<SOURCE_ROOT>", b"<GRADLE_USER_HOME>")
+    marker_counts = {marker: 0 for marker in markers}
+    active_pair: tuple[bytes, bytes] | None = None
+    pair_count = 0
+    for line in data[:-1].split(b"\n"):
+        if extracted_token not in line:
+            continue
+        if (
+            b"\r" in line
+            or b"\\" in line
+            or line.count(extracted_token) != 1
+            or not line.endswith(b")")
+        ):
+            raise ReleaseArchiveVerificationError(
+                f"{label} contains a malformed extracted-file comment"
+            )
+        comment, extracted = line.split(extracted_token, 1)
+        if comment.startswith(opening_prefix):
+            identity = comment[len(opening_prefix):]
+            is_opening = True
+        elif comment.startswith(closing_prefix):
+            identity = comment[len(closing_prefix):]
+            is_opening = False
+        else:
+            raise ReleaseArchiveVerificationError(
+                f"{label} contains an unexpected extracted-file comment"
+            )
+        if not identity or not identity.endswith(b" "):
+            raise ReleaseArchiveVerificationError(
+                f"{label} contains an invalid extracted-file identity"
+            )
+        identity = identity[:-1]
+        if not identity or b"\0" in identity or b"\r" in identity:
+            raise ReleaseArchiveVerificationError(
+                f"{label} contains an invalid extracted-file identity"
+            )
+
+        path = extracted[:-1]
+        matches = [
+            marker
+            for marker in markers
+            if path.startswith(marker + b"/")
+        ]
+        if len(matches) != 1:
+            raise ReleaseArchiveVerificationError(
+                f"{label} contains a noncanonical extracted-file root"
+            )
+        marker = matches[0]
+        suffix = path[len(marker):]
+        components = suffix[1:].split(b"/")
+        if (
+            not suffix.startswith(b"/")
+            or not components
+            or any(component in (b"", b".", b"..") for component in components)
+        ):
+            raise ReleaseArchiveVerificationError(
+                f"{label} contains a noncanonical extracted-file path"
+            )
+        pair = (identity, path)
+        if is_opening:
+            if active_pair is not None:
+                raise ReleaseArchiveVerificationError(
+                    f"{label} contains nested extracted-file sections"
+                )
+            active_pair = pair
+        else:
+            if active_pair != pair:
+                raise ReleaseArchiveVerificationError(
+                    f"{label} extracted-file section endpoints differ"
+                )
+            active_pair = None
+            pair_count += 1
+        marker_counts[marker] += 1
+
+    if active_pair is not None or pair_count == 0:
+        raise ReleaseArchiveVerificationError(
+            f"{label} contains an incomplete extracted-file section"
+        )
+    if any(count == 0 for count in marker_counts.values()):
+        raise ReleaseArchiveVerificationError(
+            f"{label} must reference both canonical extracted-file roots"
+        )
 
 
 def canonicalize_r8_mapping_prt(data: bytes, label: str) -> bytes:
@@ -933,12 +1153,63 @@ def verify_canonical_container(
     return manifest, payload, modes
 
 
+def collect_current_source_paths(root: Path = ROOT) -> tuple[str, ...]:
+    candidates: set[Path] = set()
+    for relative in SOURCE_REQUIRED_FILES:
+        path = root / relative
+        if path.is_symlink() or not path.is_file():
+            raise ReleaseArchiveVerificationError(
+                f"required current source input is missing: {relative}"
+            )
+        candidates.add(path)
+    for relative in SOURCE_OPTIONAL_FILES:
+        path = root / relative
+        if path.is_symlink():
+            raise ReleaseArchiveVerificationError(
+                f"optional current source input is a symlink: {relative}"
+            )
+        if path.is_file():
+            candidates.add(path)
+    for relative in SOURCE_ROOTS:
+        source_root = root / relative
+        if source_root.is_symlink() or not source_root.is_dir():
+            raise ReleaseArchiveVerificationError(
+                f"required current source root is missing: {relative}"
+            )
+        for candidate in source_root.rglob("*"):
+            if candidate.is_symlink():
+                raise ReleaseArchiveVerificationError(
+                    "current source root contains a symlink: "
+                    f"{candidate.relative_to(root).as_posix()}"
+                )
+            if candidate.is_dir():
+                continue
+            if not candidate.is_file():
+                raise ReleaseArchiveVerificationError(
+                    "current source root contains a special file: "
+                    f"{candidate.relative_to(root).as_posix()}"
+                )
+            candidates.add(candidate)
+    relative_paths = tuple(
+        sorted(
+            (
+                candidate.relative_to(root).as_posix()
+                for candidate in candidates
+            ),
+            key=lambda item: item.encode("ascii"),
+        )
+    )
+    for relative in relative_paths:
+        validate_member_path(relative)
+    return relative_paths
+
+
 def verify_source_snapshot(
     manifest: dict[str, object],
     payload: dict[str, bytes],
     root: Path,
     compare_current_source: bool,
-) -> None:
+) -> dict[str, tuple[int, str]]:
     source_summary = manifest.get("source")
     if type(source_summary) is not dict:
         raise ReleaseArchiveVerificationError("manifest source must be an object")
@@ -962,6 +1233,10 @@ def verify_source_snapshot(
     if source_member != "source-files.json":
         raise ReleaseArchiveVerificationError(
             f"unexpected source manifest member: {source_member!r}"
+        )
+    if source_member not in payload:
+        raise ReleaseArchiveVerificationError(
+            f"source manifest member is absent from archive: {source_member}"
         )
     source_document = parse_canonical_json(
         payload[source_member],
@@ -1001,6 +1276,8 @@ def verify_source_snapshot(
             "source-files fileCount does not match entries"
         )
     records = bytearray()
+    archived_paths: list[str] = []
+    source_identities: dict[str, tuple[int, str]] = {}
     previous_path: bytes | None = None
     for index, record in enumerate(files):
         if type(record) is not dict:
@@ -1020,6 +1297,7 @@ def verify_source_snapshot(
                 "source file paths must be strictly ASCII-sorted"
             )
         previous_path = path_bytes
+        archived_paths.append(path)
         mode = require_string(record.get("mode"), f"source[{index}].mode")
         size = require_exact_int(record.get("size"), f"source[{index}].size")
         digest = require_string(
@@ -1033,6 +1311,7 @@ def verify_source_snapshot(
             raise ReleaseArchiveVerificationError(
                 f"source file metadata is invalid for {path}"
             )
+        source_identities[path] = (size, digest)
         records.extend(
             path_bytes
             + b"\0"
@@ -1059,6 +1338,17 @@ def verify_source_snapshot(
                 raise ReleaseArchiveVerificationError(
                     f"current source input differs from archive: {path}"
                 )
+    if compare_current_source:
+        current_paths = collect_current_source_paths(root)
+        archived_path_tuple = tuple(archived_paths)
+        if archived_path_tuple != current_paths:
+            archived_path_set = set(archived_path_tuple)
+            current_path_set = set(current_paths)
+            raise ReleaseArchiveVerificationError(
+                "current source path set differs from archive; "
+                f"missing={sorted(archived_path_set - current_path_set)}, "
+                f"extra={sorted(current_path_set - archived_path_set)}"
+            )
     calculated = sha256(bytes(records))
     if snapshot.get("sha256") != calculated:
         raise ReleaseArchiveVerificationError(
@@ -1094,12 +1384,27 @@ def verify_source_snapshot(
         raise ReleaseArchiveVerificationError(
             "manifest source worktreeState is unsupported"
         )
+    return source_identities
 
 
 def verify_android_relationships(
     manifest: dict[str, object],
     payload: dict[str, bytes],
 ) -> None:
+    release = manifest.get("release")
+    if type(release) is not dict:
+        raise ReleaseArchiveVerificationError(
+            "manifest release metadata is missing"
+        )
+    build_number = require_exact_int(
+        release.get("buildNumber"),
+        "release.buildNumber",
+    )
+    if build_number >= 4:
+        validate_canonical_r8_configuration(
+            payload["android/mapping/configuration.txt"],
+            "android/mapping/configuration.txt",
+        )
     mapping_prt_path = "android/mapping/mapping.prt"
     if (
         canonicalize_r8_mapping_prt(
@@ -1111,14 +1416,30 @@ def verify_android_relationships(
         raise ReleaseArchiveVerificationError(
             "archived R8 mapping partition ZIP is not canonical"
         )
-    for path in (
-        "android/mapping/resources.txt",
-        "android/mapping/seeds.txt",
+    resources_path = "android/mapping/resources.txt"
+    canonical_resources = (
+        canonicalize_r8_line_artifact(
+            payload[resources_path],
+            resources_path,
+        )
+        if build_number <= 4
+        else canonicalize_r8_resources(
+            payload[resources_path],
+            resources_path,
+        )
+    )
+    if canonical_resources != payload[resources_path]:
+        raise ReleaseArchiveVerificationError(
+            f"archived R8 resource artifact is not canonical: {resources_path}"
+        )
+    seeds_path = "android/mapping/seeds.txt"
+    if (
+        canonicalize_r8_line_artifact(payload[seeds_path], seeds_path)
+        != payload[seeds_path]
     ):
-        if canonicalize_r8_line_artifact(payload[path], path) != payload[path]:
-            raise ReleaseArchiveVerificationError(
-                f"archived R8 line artifact is not canonical: {path}"
-            )
+        raise ReleaseArchiveVerificationError(
+            f"archived R8 line artifact is not canonical: {seeds_path}"
+        )
 
     platforms = manifest.get("platforms")
     if type(platforms) is not dict or type(platforms.get("android")) is not dict:
@@ -1588,10 +1909,77 @@ def expected_release_id() -> str:
     )
 
 
+def ledger_prefix_bytes_for_release(
+    build_number: int,
+    marketing_version: str,
+    ledger_path: Path = ROOT / "release/version-ledger.tsv",
+) -> tuple[bytes, bool]:
+    try:
+        entries = load_release_version_ledger(ledger_path)
+        ledger_bytes = ledger_path.read_bytes()
+    except (LedgerError, OSError) as error:
+        raise ReleaseArchiveVerificationError(
+            f"cannot read canonical release ledger: {error}"
+        ) from error
+    matching_indices = [
+        index
+        for index, entry in enumerate(entries)
+        if (
+            entry.build_number == build_number
+            and entry.marketing_version == marketing_version
+        )
+    ]
+    if len(matching_indices) != 1:
+        raise ReleaseArchiveVerificationError(
+            "release archive version is not an exact ledger entry"
+        )
+    lines = ledger_bytes.splitlines(keepends=True)
+    if len(lines) != len(entries) + 1:
+        raise ReleaseArchiveVerificationError(
+            "canonical release ledger line count is inconsistent"
+        )
+    matching_index = matching_indices[0]
+    prefix = b"".join(lines[: matching_index + 2])
+    return prefix, matching_index == len(entries) - 1
+
+
+def verify_release_mode(
+    *,
+    is_current_release: bool,
+    require_current_release: bool,
+) -> None:
+    if is_current_release == require_current_release:
+        return
+    if require_current_release:
+        raise ReleaseArchiveVerificationError(
+            "release archive version differs from current ledger"
+        )
+    raise ReleaseArchiveVerificationError(
+        "historical readback requires a non-current ledger entry"
+    )
+
+
+def verify_dependency_lock_source_identity(
+    *,
+    path: str,
+    size: int,
+    digest: str,
+    source_identities: dict[str, tuple[int, str]],
+) -> None:
+    if source_identities.get(path) != (size, digest):
+        raise ReleaseArchiveVerificationError(
+            "manifest Gradle lock identity differs from archived source "
+            f"snapshot: {path}"
+        )
+
+
 def verify_manifest_header(
     manifest: dict[str, object],
     payload: dict[str, bytes],
     archive_id: str,
+    *,
+    require_current_release: bool,
+    source_identities: dict[str, tuple[int, str]],
 ) -> None:
     require_exact_keys(
         manifest,
@@ -1706,16 +2094,31 @@ def verify_manifest_header(
             raise ReleaseArchiveVerificationError(
                 "manifest Gradle lock record counts are inconsistent"
             )
-        if record.get("path") != GRADLE_LOCK_PATHS[index] or re.fullmatch(
-            r"[0-9a-f]{64}",
-            require_string(
-                record.get("sha256"),
-                f"dependencyLocking.gradle.lockFiles[{index}].sha256",
-            ),
-        ) is None:
+        lock_path = require_string(
+            record.get("path"),
+            f"dependencyLocking.gradle.lockFiles[{index}].path",
+        )
+        lock_digest = require_string(
+            record.get("sha256"),
+            f"dependencyLocking.gradle.lockFiles[{index}].sha256",
+        )
+        lock_size = require_exact_int(
+            record.get("size"),
+            f"dependencyLocking.gradle.lockFiles[{index}].size",
+        )
+        if (
+            lock_path != GRADLE_LOCK_PATHS[index]
+            or re.fullmatch(r"[0-9a-f]{64}", lock_digest) is None
+        ):
             raise ReleaseArchiveVerificationError(
                 "manifest Gradle lock identity is invalid"
             )
+        verify_dependency_lock_source_identity(
+            path=lock_path,
+            size=lock_size,
+            digest=lock_digest,
+            source_identities=source_identities,
+        )
     swift_locking = dependency_locking.get("swiftPackageManager")
     if type(swift_locking) is not dict:
         raise ReleaseArchiveVerificationError(
@@ -1739,7 +2142,10 @@ def verify_manifest_header(
         raise ReleaseArchiveVerificationError(
             "manifest SwiftPM zero-dependency state is unexpected"
         )
-    if dependency_locking != dependency_locking_metadata():
+    if (
+        require_current_release
+        and dependency_locking != dependency_locking_metadata()
+    ):
         raise ReleaseArchiveVerificationError(
             "manifest dependency-lock inventory differs from current readback"
         )
@@ -1761,14 +2167,21 @@ def verify_manifest_header(
         release.get("marketingVersion"),
         "release.marketingVersion",
     )
-    current = load_release_version_ledger()[-1]
-    if (
-        marketing_version != current.marketing_version
-        or build_number != current.build_number
-    ):
+    derived_archive_id = (
+        f"aetherlink-{marketing_version}+{build_number}-local-v1"
+    )
+    if archive_id != derived_archive_id:
         raise ReleaseArchiveVerificationError(
-            "release archive version differs from current ledger"
+            "release archive ID differs from its version fields"
         )
+    ledger_prefix, is_current_release = ledger_prefix_bytes_for_release(
+        build_number,
+        marketing_version,
+    )
+    verify_release_mode(
+        is_current_release=is_current_release,
+        require_current_release=require_current_release,
+    )
 
     archive = manifest.get("archive")
     if type(archive) is not dict:
@@ -1801,7 +2214,9 @@ def verify_manifest_header(
         "entryOrder": "manifest-first-then-ascii-path",
         "entryTimestamp": "1980-01-01T00:00:00",
         "extendedAttributesIncluded": False,
-        "normalizations": list(ARCHIVE_NORMALIZATIONS),
+        "normalizations": list(
+            archive_normalizations_for_build(build_number)
+        ),
         "reproducibilityScope": (
             "canonical-container-for-normalized-release-inputs"
         ),
@@ -1823,16 +2238,14 @@ def verify_manifest_header(
             "manifest ledger metadata must be an object"
         )
     require_exact_keys(ledger, {"path", "sha256", "size"}, "ledger")
-    ledger_path = ROOT / "release/version-ledger.tsv"
-    ledger_bytes = ledger_path.read_bytes()
     if (
         ledger.get("path") != "release/version-ledger.tsv"
         or require_exact_int(ledger.get("size"), "ledger.size")
-        != len(ledger_bytes)
-        or ledger.get("sha256") != sha256(ledger_bytes)
+        != len(ledger_prefix)
+        or ledger.get("sha256") != sha256(ledger_prefix)
     ):
         raise ReleaseArchiveVerificationError(
-            "manifest ledger identity differs from current ledger"
+            "manifest ledger identity differs from its exact append-only prefix"
         )
 
     toolchains = manifest.get("toolchains")
@@ -1870,9 +2283,14 @@ def verify_release_archive(
     archive_directory: Path,
     *,
     compare_current_source: bool = True,
+    require_current_release: bool = True,
 ) -> dict[str, object]:
     archive_id = archive_directory.name
-    if archive_id != expected_release_id():
+    if not require_current_release and compare_current_source:
+        raise ReleaseArchiveVerificationError(
+            "historical readback cannot compare against current source"
+        )
+    if require_current_release and archive_id != expected_release_id():
         raise ReleaseArchiveVerificationError(
             f"release archive directory name differs from ledger: {archive_id}"
         )
@@ -1911,12 +2329,18 @@ def verify_release_archive(
         archive_path,
         manifest_path,
     )
-    verify_manifest_header(manifest, payload, archive_id)
-    verify_source_snapshot(
+    source_identities = verify_source_snapshot(
         manifest,
         payload,
         ROOT,
         compare_current_source,
+    )
+    verify_manifest_header(
+        manifest,
+        payload,
+        archive_id,
+        require_current_release=require_current_release,
+        source_identities=source_identities,
     )
     verify_android_relationships(manifest, payload)
     verify_macos_relationships(manifest, payload, modes)
@@ -1930,16 +2354,28 @@ def main() -> int:
         type=Path,
         default=DEFAULT_OUTPUT_ROOT / expected_release_id(),
     )
-    parser.add_argument(
+    readback_mode = parser.add_mutually_exclusive_group()
+    readback_mode.add_argument(
         "--no-current-source",
         action="store_true",
         help="skip comparison with current build-input bytes",
+    )
+    readback_mode.add_argument(
+        "--historical",
+        action="store_true",
+        help=(
+            "verify a preserved non-current archive against its exact "
+            "append-only ledger prefix without comparing current source"
+        ),
     )
     arguments = parser.parse_args()
     try:
         manifest = verify_release_archive(
             arguments.archive_dir,
-            compare_current_source=not arguments.no_current_source,
+            compare_current_source=not (
+                arguments.no_current_source or arguments.historical
+            ),
+            require_current_release=not arguments.historical,
         )
     except ReleaseArchiveVerificationError as error:
         print(f"Release archive readback failed: {error}", file=os.sys.stderr)

@@ -651,7 +651,7 @@ same strict local ad-hoc seal used by development packaging. It is a local
 qualification artifact, not Developer ID signing, notarization, or a DMG.
 Both this package and the Android Release variant read
 `release/version-ledger.tsv`; its current entry is marketing version `1.0.0`
-and shared build number `1`. Android Debug deliberately remains `0.1.0+1`.
+and shared build number `3`. Android Debug deliberately remains `0.1.0+1`.
 Its Release metadata is backed by a lazy Gradle provider, so Debug still
 configures and builds when the release ledger is unavailable; a Release task
 validates the ledger's LF-only printable-ASCII/tab byte format when it needs
@@ -691,16 +691,55 @@ one command:
 ./script/build_release_artifacts.sh
 ```
 
+When release inputs have changed, append a strictly higher shared build number
+to `release/version-ledger.tsv` before running this command. Published local
+release IDs are immutable: the packager refuses to replace an existing ID with
+different bytes.
+
 The current output is
-`dist/releases/aetherlink-1.0.0+1-local-v1/`. It contains one canonical
+`dist/releases/aetherlink-1.0.0+6-local-v1/`. It contains one canonical
 normalized-input ZIP, an identical external manifest, and a ZIP SHA-256
 sidecar.
 Android Release is unsigned and `arm64-v8a`-only; the macOS app is a thin
 `arm64` local ad-hoc package accompanied by its UUID-matched dSYM. The container
-metadata is canonical. R8's unordered `resources.txt`/`seeds.txt` lines and
-per-build `mapping.prt` ZIP metadata are normalized while retaining their exact
-semantic payloads. Other raw AGP and debug-symbol payloads may retain build-host
-paths, so this is not a cross-checkout reproducible-build claim.
+metadata is canonical. R8's `resources.txt` uses a semantic reachability
+normalization; `seeds.txt`, `mapping.prt`, and extracted configuration roots
+use their separately declared normalizations while retaining the checked
+payload meaning.
+
+The Build 6 qualification runner created two isolated clean lane worktrees
+whose source-root UTF-8 byte lengths were 101 and 109. With the same host,
+fixed toolchains, paired clones of one byte-identical Gradle seed, and a fixed
+canonical Swift scratch policy, both lanes produced the exact 164,177,236-byte
+ZIP
+`ac5294b7af4e8b5393ff1d0b6e2f60b39afc40bce0696549e4e9e6b871d919d4`
+and the exact 10,328-byte manifest
+`4dab491197abc0acfbd71dd794d4bb11f84b924f3253bcfbb85f6f3c161be527`.
+The 17,674-byte result
+`dist/reproducibility/clean-release-two-root-v2.json` records exact lane
+comparison, immutable local publication, and independent current-source
+readback. This establishes bounded same-host reproducibility for that recorded
+unequal-length pair, not arbitrary-root, cross-host, clean-machine,
+signed-artifact, or physical-device qualification. Immutable builds 1 through
+5 remain available for historical readback. The verifier cross-binds every
+recorded Gradle lock identity to the archived source inventory and keeps
+current and historical readback modes mutually exclusive.
+
+A separate post-publication macOS lifecycle smoke now reads back that exact
+Build 6 ZIP, extracts its packaged app into a temporary root, and completes two
+AppKit finished-launch → minimum five-second observation → identity-rechecked
+exact-PID termination cycles. Both runs exit zero. The QA-only sandbox uses a
+temporary Core Foundation user home, denies non-temporary writes and AF_INET
+binds, and has no unisolated fallback. Its exact 1,311-byte result is
+`dist/lifecycle/macos-packaged-app-build-6-lifecycle-v1.json`, SHA-256
+`30d90827182e353d9f49fd1fa9edde846bc073f1af5113548f913c7b8af34447`.
+Expected Application Support files were present after each run, but the
+identity-file override used the in-memory fallback; the smoke therefore makes
+no identity-persistence or state-recovery claim. It also does not qualify
+installation, UI correctness, runtime listeners, providers, a clean machine,
+signed distribution, or physical-device behavior. Run it with
+`python3 -B script/run_macos_packaged_app_lifecycle_smoke.py`.
+
 Six generated Gradle lock files cover settings, the buildscript, and
 configurations resolved by the clean Release graph. Release uses strict
 read-only lock mode and never writes locks. The manifest declares the one
@@ -725,16 +764,109 @@ Current upstream JNI dependencies arrive pre-stripped; the manifest records
 that native-symbol archive as unavailable instead of claiming it was retained.
 This workflow does not sign, install, upload, launch, or deploy either app.
 The consolidated
-[1.0.0 build 1 local qualification record](docs/releases/1.0.0-build-1-local-v1.md)
+[1.0.0 build 6 local qualification record](docs/releases/1.0.0-build-6-local-v1.md)
 defines the current release notes, compatibility matrix, migration boundary,
-known limitations, support diagnostics, privacy boundary, rollback posture, and
+known limitations, rollback posture, exact artifact identity, and bounded
+two-root evidence. The fixture-rich
+[build 3 historical record](docs/releases/1.0.0-build-3-local-v1.md) preserves
 the canonical no-device first-lineage transition and recorded-date provider
-compatibility fixtures. The provider snapshot records official current/previous
+compatibility fixtures. The
+[build 1 historical record](docs/releases/1.0.0-build-1-local-v1.md) preserves
+its superseded archive identity, while the
+[build 2 historical record](docs/releases/1.0.0-build-2-local-v1.md) preserves
+its identity and historical-readback command. The
+[build 4 historical record](docs/releases/1.0.0-build-4-local-v1.md) preserves
+the diagnostic publication that preceded the first qualified two-root result.
+The
+[build 5 historical record](docs/releases/1.0.0-build-5-local-v1.md) preserves
+the valid equal-length two-root qualification superseded by Build 6. The
+provider snapshot records official current/previous
 candidates separately from local observations. Both exact Ollama candidates
 passed isolated adapter health, empty-catalog, restart, and stopped-endpoint
-checks from SHA-256-verified official archives. Exact LM Studio candidate
-testing, model-backed behavior, minimum versions, and full live-provider
-qualification remain unresolved.
+checks from SHA-256-verified official archives. The versioned runner reproduces
+that matrix on unique non-default loopback ports with temporary empty model
+directories and emits a bounded canonical readback. Its explicit model-backed
+mode copy-on-write snapshots one automatically selected, already-installed
+unloaded chat model without retaining its name or downloading a model. Both
+exact candidates pass cold-start and restart checks for populated catalog,
+streamed completion, first-delta cancellation, post-cancel recovery, confirmed
+unload, installed-state preservation, SHA-256 snapshot integrity, and
+stopped-endpoint unavailability. A dedicated additional-shape runner then
+selected the exact second of three installed completion-capable candidates,
+which reports `completion`, `thinking`, and `tools` but not `vision`. Its 991
+verified blobs and 213,712-byte manifest total 16,679,502,421 model-artifact
+bytes; both exact versions passed cold-start and restart for 4/4 chat,
+cancellation, recovery, unload, snapshot, and endpoint observations while the
+observed source catalog/capabilities, running set, and selected bytes remained
+unchanged. It attempted no model download and retained no model name, prompt,
+output, path, process identifier, or base URL. A separate embedding-backed mode
+snapshots the smallest already-installed unloaded embedding model without
+retaining its name, inputs, or vector values. Both exact candidates pass cold-start and restart
+checks for a two-input finite equal-dimension embedding batch, provider
+residency, confirmed unload, installed-state preservation, snapshot integrity,
+and stopped-endpoint unavailability. Its separate
+`--embedding-backed --semantic-quality` mode evaluates 16 fixed English texts
+in two permutations. Both exact candidates passed all four per-batch ranking
+scenarios at the fixed 200-basis-point positive margin, all 16 repeat checks at
+9,990 cosine basis points, and a fresh-provider embedding recovery. Each phase
+requires exactly one matching XCTest execution, and the fixture binds the
+semantic scorer and live assertion sources by SHA-256, with no retained model
+name, task text, vector, or raw score. This is a bounded fixed-task
+observation, not general semantic or retrieval qualification.
+
+A separate five-locale V2 observation keeps that English V1 evidence unchanged
+and predeclares the same 200-basis-point positive margin and 9,990-basis-point
+repeatability threshold across `en`, `ko`, `ja`, `zh-CN`, and `fr`. Both exact
+Ollama candidates completed and shape-validated both 80-text embedding
+batches, passed all four English rankings, then failed the positive-margin check
+at Korean scenario ordinal 2. The task set and thresholds were not changed
+after observing the failure. Each candidate was stopped and reaped, then passed
+a fresh ordinary embedding lifecycle recovery with confirmed unload and
+unchanged source/task/snapshot bindings. The canonical V2 result retains the
+failed locale and ordinal, but no model name, task text or ID, vector,
+dimension, score, provider output, path, PID, or base URL. Therefore the
+multilingual quality gate remains failed rather than qualified. An expected
+failure is accepted only from one bounded regular UTF-8 log with exactly one
+matching XCTest start/failure and one closed locale/ordinal diagnostic;
+provider stop or process-group cleanup errors remain fatal. Reproduce that
+bounded observation with:
+
+```bash
+python3 script/run_ollama_multilingual_semantic_matrix.py \
+  --source-model-store /Users/hanchangha/.ollama/models
+```
+
+A successful runner exit means the predeclared failure and both recovery
+records matched the canonical fixture; it does not mean the multilingual
+quality gate passed. A third vision-backed mode selects the
+smallest unloaded model that advertises both vision and chat/completion,
+copy-on-write snapshots its exact 997 blobs plus manifest, and retains no model
+name, prompt, fixed PNG bytes, or provider output. Both exact candidates pass
+text chat, fixed-image attachment, first-delta cancellation, post-cancel
+recovery, residency, unload, restart, snapshot-integrity, and stopped-endpoint
+checks. Deterministic failure injection also proves provider stop plus snapshot
+recheck after an adapter exception, temporary-root cleanup before failed-run
+source readback, and rejection of provider-version plus three observed-source
+drift classes; it does not claim OS-kill or power-loss behavior. An opt-in
+duration path uses one `time.monotonic_ns` clock for the absolute ready/stop
+budgets and observed boundaries. One dated run passed all 12
+chat/embedding/vision × exact-version × cold/restart observations, with maxima
+of 5,533ms ready, 54,784ms adapter, and 3ms stop. The pinned values are
+single-host execution observations, not an SLA, average, percentile,
+throughput, or cross-host qualification. An opt-in live fault path additionally
+exercised provider unavailability before
+request, process-group termination after the first non-empty chat delta, and
+forced termination after `SIGSTOP` against both exact Ollama versions. All six
+fault observations and six same-archive/same-snapshot adapter/unload recovery
+runs passed with process-group reap, endpoint shutdown, snapshot integrity, and
+source projection/byte preservation. Terminal-less stream EOF now maps to fixed
+retryable `ollama_transport_error`. This bounded chat evidence does not cover
+embedding/vision faults, power loss, OS crash, cleanup-permission failure,
+concurrency, soak, semantic quality, or an SLA. Exact LM Studio candidate
+execution remains deferred because the
+official tools expose no independent user-data/model-store path for a
+non-invasive run. Minimum versions, broader semantic quality, further
+model-shape coverage, and full live-provider qualification remain unresolved.
 
 For physical trusted-device development over USB, run the runtime host dev server
 in one terminal:

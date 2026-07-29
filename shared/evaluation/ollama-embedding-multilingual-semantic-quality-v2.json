@@ -1,0 +1,578 @@
+{
+  "firstCall": [
+    {
+      "id": "en-puppy-query",
+      "locale": "en",
+      "text": "A puppy runs through a grassy field."
+    },
+    {
+      "id": "en-puppy-positive",
+      "locale": "en",
+      "text": "A young dog sprints outdoors across the grass."
+    },
+    {
+      "id": "en-puppy-hard-negative",
+      "locale": "en",
+      "text": "A field manual describes lawn grass varieties without mentioning animals."
+    },
+    {
+      "id": "en-puppy-unrelated-negative",
+      "locale": "en",
+      "text": "A chef sharpens a knife beside the kitchen sink."
+    },
+    {
+      "id": "en-moon-query",
+      "locale": "en",
+      "text": "The moon orbits Earth."
+    },
+    {
+      "id": "en-moon-positive",
+      "locale": "en",
+      "text": "Earth's natural satellite circles the planet."
+    },
+    {
+      "id": "en-moon-hard-negative",
+      "locale": "en",
+      "text": "An Earth science calendar has a photograph of the moon on its cover."
+    },
+    {
+      "id": "en-moon-unrelated-negative",
+      "locale": "en",
+      "text": "A mechanic replaces the brake pads on a truck."
+    },
+    {
+      "id": "en-bread-query",
+      "locale": "en",
+      "text": "Bake the loaf until it develops a brown crust."
+    },
+    {
+      "id": "en-bread-positive",
+      "locale": "en",
+      "text": "Cook the bread with dry oven heat until its outside browns."
+    },
+    {
+      "id": "en-bread-hard-negative",
+      "locale": "en",
+      "text": "A brown loaf pan sits beside a cold oven."
+    },
+    {
+      "id": "en-bread-unrelated-negative",
+      "locale": "en",
+      "text": "A swimmer completes another lap in the pool."
+    },
+    {
+      "id": "en-weather-query",
+      "locale": "en",
+      "text": "Heavy rain is expected later today."
+    },
+    {
+      "id": "en-weather-positive",
+      "locale": "en",
+      "text": "The forecast predicts a downpour this afternoon."
+    },
+    {
+      "id": "en-weather-hard-negative",
+      "locale": "en",
+      "text": "A rain gauge appears in today's equipment catalog."
+    },
+    {
+      "id": "en-weather-unrelated-negative",
+      "locale": "en",
+      "text": "A violinist tunes each string before the concert."
+    },
+    {
+      "id": "ko-puppy-query",
+      "locale": "ko",
+      "text": "강아지가 풀밭을 가로질러 달린다."
+    },
+    {
+      "id": "ko-puppy-positive",
+      "locale": "ko",
+      "text": "어린 개가 야외의 잔디 위를 힘차게 내달린다."
+    },
+    {
+      "id": "ko-puppy-hard-negative",
+      "locale": "ko",
+      "text": "풀밭 관리 안내서에는 동물을 언급하지 않은 채 여러 잔디 품종이 설명되어 있다."
+    },
+    {
+      "id": "ko-puppy-unrelated-negative",
+      "locale": "ko",
+      "text": "요리사가 부엌 싱크대 옆에서 칼을 간다."
+    },
+    {
+      "id": "ko-moon-query",
+      "locale": "ko",
+      "text": "달은 지구 주위를 공전한다."
+    },
+    {
+      "id": "ko-moon-positive",
+      "locale": "ko",
+      "text": "지구의 자연위성이 지구 둘레를 돈다."
+    },
+    {
+      "id": "ko-moon-hard-negative",
+      "locale": "ko",
+      "text": "지구과학 달력의 표지에는 달 사진이 실려 있다."
+    },
+    {
+      "id": "ko-moon-unrelated-negative",
+      "locale": "ko",
+      "text": "정비사가 트럭의 브레이크 패드를 교체한다."
+    },
+    {
+      "id": "ko-bread-query",
+      "locale": "ko",
+      "text": "빵에 갈색 껍질이 생길 때까지 굽는다."
+    },
+    {
+      "id": "ko-bread-positive",
+      "locale": "ko",
+      "text": "오븐의 건열로 빵을 익혀 겉면이 갈색이 되게 한다."
+    },
+    {
+      "id": "ko-bread-hard-negative",
+      "locale": "ko",
+      "text": "갈색 빵틀이 차가운 오븐 옆에 놓여 있다."
+    },
+    {
+      "id": "ko-bread-unrelated-negative",
+      "locale": "ko",
+      "text": "수영 선수가 수영장에서 한 바퀴를 더 돈다."
+    },
+    {
+      "id": "ko-weather-query",
+      "locale": "ko",
+      "text": "오늘 늦게 폭우가 내릴 것으로 예상된다."
+    },
+    {
+      "id": "ko-weather-positive",
+      "locale": "ko",
+      "text": "일기예보에 따르면 오늘 오후에 거센 비가 쏟아질 전망이다."
+    },
+    {
+      "id": "ko-weather-hard-negative",
+      "locale": "ko",
+      "text": "오늘자 장비 카탈로그에는 비의 양을 재는 우량계가 실려 있다."
+    },
+    {
+      "id": "ko-weather-unrelated-negative",
+      "locale": "ko",
+      "text": "바이올리니스트가 공연 전에 줄을 하나씩 조율한다."
+    },
+    {
+      "id": "ja-puppy-query",
+      "locale": "ja",
+      "text": "子犬が草地を駆け抜ける。"
+    },
+    {
+      "id": "ja-puppy-positive",
+      "locale": "ja",
+      "text": "若い犬が屋外の芝生の上を勢いよく走る。"
+    },
+    {
+      "id": "ja-puppy-hard-negative",
+      "locale": "ja",
+      "text": "草地管理の手引きには、動物には触れず、芝草の品種だけが解説されている。"
+    },
+    {
+      "id": "ja-puppy-unrelated-negative",
+      "locale": "ja",
+      "text": "料理人が台所の流し台のそばで包丁を研ぐ。"
+    },
+    {
+      "id": "ja-moon-query",
+      "locale": "ja",
+      "text": "月は地球の周りを公転している。"
+    },
+    {
+      "id": "ja-moon-positive",
+      "locale": "ja",
+      "text": "地球の自然衛星が地球の周りを回っている。"
+    },
+    {
+      "id": "ja-moon-hard-negative",
+      "locale": "ja",
+      "text": "地球科学のカレンダーの表紙には月の写真が載っている。"
+    },
+    {
+      "id": "ja-moon-unrelated-negative",
+      "locale": "ja",
+      "text": "整備士がトラックのブレーキパッドを交換する。"
+    },
+    {
+      "id": "ja-bread-query",
+      "locale": "ja",
+      "text": "パンの表面に茶色い皮ができるまで焼く。"
+    },
+    {
+      "id": "ja-bread-positive",
+      "locale": "ja",
+      "text": "オーブンの乾いた熱でパンを加熱し、外側に焼き色をつける。"
+    },
+    {
+      "id": "ja-bread-hard-negative",
+      "locale": "ja",
+      "text": "茶色いパン型が、冷えたオーブンのそばに置かれている。"
+    },
+    {
+      "id": "ja-bread-unrelated-negative",
+      "locale": "ja",
+      "text": "水泳選手がプールでもう一往復泳ぐ。"
+    },
+    {
+      "id": "ja-weather-query",
+      "locale": "ja",
+      "text": "今日はこのあと激しい雨が降る見込みだ。"
+    },
+    {
+      "id": "ja-weather-positive",
+      "locale": "ja",
+      "text": "天気予報では今日の午後に土砂降りになるという。"
+    },
+    {
+      "id": "ja-weather-hard-negative",
+      "locale": "ja",
+      "text": "今日の機器カタログには、雨量計が掲載されている。"
+    },
+    {
+      "id": "ja-weather-unrelated-negative",
+      "locale": "ja",
+      "text": "バイオリニストが演奏会の前に弦を一本ずつ調整する。"
+    },
+    {
+      "id": "zh-cn-puppy-query",
+      "locale": "zh-CN",
+      "text": "一只小狗跑过一片草地。"
+    },
+    {
+      "id": "zh-cn-puppy-positive",
+      "locale": "zh-CN",
+      "text": "一只幼犬在户外的草地上飞奔。"
+    },
+    {
+      "id": "zh-cn-puppy-hard-negative",
+      "locale": "zh-CN",
+      "text": "一本草地养护手册只介绍草种，没有提到任何动物。"
+    },
+    {
+      "id": "zh-cn-puppy-unrelated-negative",
+      "locale": "zh-CN",
+      "text": "一名厨师在厨房水槽旁磨刀。"
+    },
+    {
+      "id": "zh-cn-moon-query",
+      "locale": "zh-CN",
+      "text": "月球绕地球运行。"
+    },
+    {
+      "id": "zh-cn-moon-positive",
+      "locale": "zh-CN",
+      "text": "地球的天然卫星绕着这颗行星运行。"
+    },
+    {
+      "id": "zh-cn-moon-hard-negative",
+      "locale": "zh-CN",
+      "text": "一本地球科学日历的封面上印有月球照片。"
+    },
+    {
+      "id": "zh-cn-moon-unrelated-negative",
+      "locale": "zh-CN",
+      "text": "一名修理工正在更换卡车的刹车片。"
+    },
+    {
+      "id": "zh-cn-bread-query",
+      "locale": "zh-CN",
+      "text": "把面包烤到表面形成棕色的脆皮。"
+    },
+    {
+      "id": "zh-cn-bread-positive",
+      "locale": "zh-CN",
+      "text": "用烤箱的干热把面包烤熟，直到外皮变成棕色。"
+    },
+    {
+      "id": "zh-cn-bread-hard-negative",
+      "locale": "zh-CN",
+      "text": "一个棕色的面包模具放在没有加热的烤箱旁边。"
+    },
+    {
+      "id": "zh-cn-bread-unrelated-negative",
+      "locale": "zh-CN",
+      "text": "一名游泳运动员又游完了一圈。"
+    },
+    {
+      "id": "zh-cn-weather-query",
+      "locale": "zh-CN",
+      "text": "今天晚些时候预计会下大雨。"
+    },
+    {
+      "id": "zh-cn-weather-positive",
+      "locale": "zh-CN",
+      "text": "天气预报称今天下午会有一场暴雨。"
+    },
+    {
+      "id": "zh-cn-weather-hard-negative",
+      "locale": "zh-CN",
+      "text": "今天的设备目录里收录了一款雨量计。"
+    },
+    {
+      "id": "zh-cn-weather-unrelated-negative",
+      "locale": "zh-CN",
+      "text": "一名小提琴手在音乐会前逐根调弦。"
+    },
+    {
+      "id": "fr-puppy-query",
+      "locale": "fr",
+      "text": "Un chiot traverse une prairie en courant."
+    },
+    {
+      "id": "fr-puppy-positive",
+      "locale": "fr",
+      "text": "Un jeune chien file dehors à toute allure sur l'herbe."
+    },
+    {
+      "id": "fr-puppy-hard-negative",
+      "locale": "fr",
+      "text": "Un manuel sur l'entretien des prairies décrit différentes variétés d'herbe sans mentionner d'animaux."
+    },
+    {
+      "id": "fr-puppy-unrelated-negative",
+      "locale": "fr",
+      "text": "Un chef aiguise un couteau près de l'évier de la cuisine."
+    },
+    {
+      "id": "fr-moon-query",
+      "locale": "fr",
+      "text": "La Lune tourne autour de la Terre."
+    },
+    {
+      "id": "fr-moon-positive",
+      "locale": "fr",
+      "text": "Le satellite naturel de la Terre gravite autour de cette planète."
+    },
+    {
+      "id": "fr-moon-hard-negative",
+      "locale": "fr",
+      "text": "La couverture d'un calendrier de sciences de la Terre montre une photo de la Lune."
+    },
+    {
+      "id": "fr-moon-unrelated-negative",
+      "locale": "fr",
+      "text": "Un mécanicien remplace les plaquettes de frein d'un camion."
+    },
+    {
+      "id": "fr-bread-query",
+      "locale": "fr",
+      "text": "Faites cuire la miche jusqu'à ce qu'une croûte brune se forme."
+    },
+    {
+      "id": "fr-bread-positive",
+      "locale": "fr",
+      "text": "Faites cuire le pain à la chaleur sèche du four jusqu'à ce que l'extérieur brunisse."
+    },
+    {
+      "id": "fr-bread-hard-negative",
+      "locale": "fr",
+      "text": "Un moule à pain de couleur brune est posé à côté d'un four froid."
+    },
+    {
+      "id": "fr-bread-unrelated-negative",
+      "locale": "fr",
+      "text": "Un nageur effectue une longueur de plus dans la piscine."
+    },
+    {
+      "id": "fr-weather-query",
+      "locale": "fr",
+      "text": "Plus tard aujourd'hui, de fortes pluies sont attendues."
+    },
+    {
+      "id": "fr-weather-positive",
+      "locale": "fr",
+      "text": "La météo annonce des pluies diluviennes cet après-midi."
+    },
+    {
+      "id": "fr-weather-hard-negative",
+      "locale": "fr",
+      "text": "Le catalogue d'équipements paru aujourd'hui présente un pluviomètre."
+    },
+    {
+      "id": "fr-weather-unrelated-negative",
+      "locale": "fr",
+      "text": "Une violoniste accorde chaque corde avant le concert."
+    }
+  ],
+  "fixtureId": "aetherlink-ollama-embedding-multilingual-semantic-task-set-v2",
+  "locales": [
+    "en",
+    "ko",
+    "ja",
+    "zh-CN",
+    "fr"
+  ],
+  "minimumPositiveMarginBasisPoints": 200,
+  "minimumRepeatCosineBasisPoints": 9990,
+  "scenarios": [
+    {
+      "hardNegativeId": "en-puppy-hard-negative",
+      "id": "en-puppy",
+      "locale": "en",
+      "positiveId": "en-puppy-positive",
+      "queryId": "en-puppy-query",
+      "unrelatedNegativeId": "en-puppy-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "en-moon-hard-negative",
+      "id": "en-moon",
+      "locale": "en",
+      "positiveId": "en-moon-positive",
+      "queryId": "en-moon-query",
+      "unrelatedNegativeId": "en-moon-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "en-bread-hard-negative",
+      "id": "en-bread",
+      "locale": "en",
+      "positiveId": "en-bread-positive",
+      "queryId": "en-bread-query",
+      "unrelatedNegativeId": "en-bread-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "en-weather-hard-negative",
+      "id": "en-weather",
+      "locale": "en",
+      "positiveId": "en-weather-positive",
+      "queryId": "en-weather-query",
+      "unrelatedNegativeId": "en-weather-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "ko-puppy-hard-negative",
+      "id": "ko-puppy",
+      "locale": "ko",
+      "positiveId": "ko-puppy-positive",
+      "queryId": "ko-puppy-query",
+      "unrelatedNegativeId": "ko-puppy-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "ko-moon-hard-negative",
+      "id": "ko-moon",
+      "locale": "ko",
+      "positiveId": "ko-moon-positive",
+      "queryId": "ko-moon-query",
+      "unrelatedNegativeId": "ko-moon-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "ko-bread-hard-negative",
+      "id": "ko-bread",
+      "locale": "ko",
+      "positiveId": "ko-bread-positive",
+      "queryId": "ko-bread-query",
+      "unrelatedNegativeId": "ko-bread-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "ko-weather-hard-negative",
+      "id": "ko-weather",
+      "locale": "ko",
+      "positiveId": "ko-weather-positive",
+      "queryId": "ko-weather-query",
+      "unrelatedNegativeId": "ko-weather-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "ja-puppy-hard-negative",
+      "id": "ja-puppy",
+      "locale": "ja",
+      "positiveId": "ja-puppy-positive",
+      "queryId": "ja-puppy-query",
+      "unrelatedNegativeId": "ja-puppy-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "ja-moon-hard-negative",
+      "id": "ja-moon",
+      "locale": "ja",
+      "positiveId": "ja-moon-positive",
+      "queryId": "ja-moon-query",
+      "unrelatedNegativeId": "ja-moon-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "ja-bread-hard-negative",
+      "id": "ja-bread",
+      "locale": "ja",
+      "positiveId": "ja-bread-positive",
+      "queryId": "ja-bread-query",
+      "unrelatedNegativeId": "ja-bread-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "ja-weather-hard-negative",
+      "id": "ja-weather",
+      "locale": "ja",
+      "positiveId": "ja-weather-positive",
+      "queryId": "ja-weather-query",
+      "unrelatedNegativeId": "ja-weather-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "zh-cn-puppy-hard-negative",
+      "id": "zh-cn-puppy",
+      "locale": "zh-CN",
+      "positiveId": "zh-cn-puppy-positive",
+      "queryId": "zh-cn-puppy-query",
+      "unrelatedNegativeId": "zh-cn-puppy-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "zh-cn-moon-hard-negative",
+      "id": "zh-cn-moon",
+      "locale": "zh-CN",
+      "positiveId": "zh-cn-moon-positive",
+      "queryId": "zh-cn-moon-query",
+      "unrelatedNegativeId": "zh-cn-moon-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "zh-cn-bread-hard-negative",
+      "id": "zh-cn-bread",
+      "locale": "zh-CN",
+      "positiveId": "zh-cn-bread-positive",
+      "queryId": "zh-cn-bread-query",
+      "unrelatedNegativeId": "zh-cn-bread-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "zh-cn-weather-hard-negative",
+      "id": "zh-cn-weather",
+      "locale": "zh-CN",
+      "positiveId": "zh-cn-weather-positive",
+      "queryId": "zh-cn-weather-query",
+      "unrelatedNegativeId": "zh-cn-weather-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "fr-puppy-hard-negative",
+      "id": "fr-puppy",
+      "locale": "fr",
+      "positiveId": "fr-puppy-positive",
+      "queryId": "fr-puppy-query",
+      "unrelatedNegativeId": "fr-puppy-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "fr-moon-hard-negative",
+      "id": "fr-moon",
+      "locale": "fr",
+      "positiveId": "fr-moon-positive",
+      "queryId": "fr-moon-query",
+      "unrelatedNegativeId": "fr-moon-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "fr-bread-hard-negative",
+      "id": "fr-bread",
+      "locale": "fr",
+      "positiveId": "fr-bread-positive",
+      "queryId": "fr-bread-query",
+      "unrelatedNegativeId": "fr-bread-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "fr-weather-hard-negative",
+      "id": "fr-weather",
+      "locale": "fr",
+      "positiveId": "fr-weather-positive",
+      "queryId": "fr-weather-query",
+      "unrelatedNegativeId": "fr-weather-unrelated-negative"
+    }
+  ],
+  "schemaVersion": 2,
+  "secondCallOrderPolicy": "reverse-first-call"
+}

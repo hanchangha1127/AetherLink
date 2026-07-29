@@ -1,0 +1,120 @@
+{
+  "firstCall": [
+    {
+      "id": "puppy-query",
+      "text": "A puppy runs through a grassy field."
+    },
+    {
+      "id": "puppy-positive",
+      "text": "A young dog sprints outdoors across the grass."
+    },
+    {
+      "id": "puppy-hard-negative",
+      "text": "A field manual describes lawn grass varieties without mentioning animals."
+    },
+    {
+      "id": "puppy-unrelated-negative",
+      "text": "A chef sharpens a knife beside the kitchen sink."
+    },
+    {
+      "id": "moon-query",
+      "text": "The moon orbits Earth."
+    },
+    {
+      "id": "moon-positive",
+      "text": "Earth's natural satellite circles the planet."
+    },
+    {
+      "id": "moon-hard-negative",
+      "text": "An Earth science calendar has a photograph of the moon on its cover."
+    },
+    {
+      "id": "moon-unrelated-negative",
+      "text": "A mechanic replaces the brake pads on a truck."
+    },
+    {
+      "id": "bread-query",
+      "text": "Bake the loaf until it develops a brown crust."
+    },
+    {
+      "id": "bread-positive",
+      "text": "Cook the bread with dry oven heat until its outside browns."
+    },
+    {
+      "id": "bread-hard-negative",
+      "text": "A brown loaf pan sits beside a cold oven."
+    },
+    {
+      "id": "bread-unrelated-negative",
+      "text": "A swimmer completes another lap in the pool."
+    },
+    {
+      "id": "weather-query",
+      "text": "Heavy rain is expected later today."
+    },
+    {
+      "id": "weather-positive",
+      "text": "The forecast predicts a downpour this afternoon."
+    },
+    {
+      "id": "weather-hard-negative",
+      "text": "A rain gauge appears in today's equipment catalog."
+    },
+    {
+      "id": "weather-unrelated-negative",
+      "text": "A violinist tunes each string before the concert."
+    }
+  ],
+  "fixtureId": "aetherlink-ollama-embedding-semantic-task-set-v1",
+  "minimumPositiveMarginBasisPoints": 200,
+  "minimumRepeatCosineBasisPoints": 9990,
+  "scenarios": [
+    {
+      "hardNegativeId": "puppy-hard-negative",
+      "id": "puppy",
+      "positiveId": "puppy-positive",
+      "queryId": "puppy-query",
+      "unrelatedNegativeId": "puppy-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "moon-hard-negative",
+      "id": "moon",
+      "positiveId": "moon-positive",
+      "queryId": "moon-query",
+      "unrelatedNegativeId": "moon-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "bread-hard-negative",
+      "id": "bread",
+      "positiveId": "bread-positive",
+      "queryId": "bread-query",
+      "unrelatedNegativeId": "bread-unrelated-negative"
+    },
+    {
+      "hardNegativeId": "weather-hard-negative",
+      "id": "weather",
+      "positiveId": "weather-positive",
+      "queryId": "weather-query",
+      "unrelatedNegativeId": "weather-unrelated-negative"
+    }
+  ],
+  "schemaVersion": 1,
+  "secondCallOrder": [
+    "weather-unrelated-negative",
+    "weather-hard-negative",
+    "weather-positive",
+    "weather-query",
+    "bread-unrelated-negative",
+    "bread-hard-negative",
+    "bread-positive",
+    "bread-query",
+    "moon-unrelated-negative",
+    "moon-hard-negative",
+    "moon-positive",
+    "moon-query",
+    "puppy-unrelated-negative",
+    "puppy-hard-negative",
+    "puppy-positive",
+    "puppy-query"
+  ]
+}

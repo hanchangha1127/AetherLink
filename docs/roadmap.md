@@ -2,7 +2,7 @@
 
 ## Canonical V1 Delivery Roadmap
 
-Last revised: 2026-07-28 KST.
+Last revised: 2026-07-29 KST.
 
 This section is the canonical forward plan for the first production release of
 AetherLink. It supersedes the shipping order implied by the historical feature
@@ -65,8 +65,8 @@ The first local G6 packaging defect is also closed: macOS package-only mode now
 uses a Swift Release build and embeds the SwiftPM localization bundle under the
 standard signed app resource directory. The app prefers that packaged bundle,
 version metadata is present, and strict local ad-hoc verification passes
-without launching the app. A new shared ledger now supplies the same
-`1.0.0+1` metadata to macOS packaging and Android Release while Android Debug
+without launching the app. The append-only shared ledger now supplies the same
+`1.0.0+6` metadata to macOS packaging and Android Release while Android Debug
 remains `0.1.0+1` and builds without the ledger; the three consumers share a
 strict LF-only byte boundary, monotonic guard, and semantic-regression guard.
 Final distribution identity, Developer ID signing, notarization, signed DMG,
@@ -76,25 +76,53 @@ Post-V1 and is not a G6 obligation.
 Android G6 release optimization is now explicit as well. Release-only R8 code
 shrinking/obfuscation and resource shrinking use the optimized Android defaults
 and dependency consumer rules without a broad app keep file. A clean offline
-APK/AAB/lint build passes. V1 Release is now `arm64-v8a`-only: the unsigned AAB
-is 10,658,234 bytes, contains one DEX, retains all five app locales and five JNI
-libraries, and embeds the generated mapping byte-for-byte. The ChromeOS x86_64
+APK/AAB/lint build passes. V1 Release is now `arm64-v8a`-only: the current
+unsigned AAB is 10,658,234 bytes, contains one DEX, retains all five app locales
+and five JNI libraries, and embeds the generated mapping byte-for-byte. The
+ChromeOS x86_64
 lint warning is narrowly excluded because ChromeOS is outside the V1 matrix.
 Final application ID, production signing, Play-generated delivery, physical
 release launch, and three SDK/policy notices remain open G6 requirements.
 
 One canonical local release container now retains the unsigned APK/AAB, R8
 outputs, dependency report, arm64 ad-hoc macOS app, and UUID-matched dSYM with
-an exact 234-file source snapshot, external checksum, immutable publication,
+an exact 235-file source snapshot, external checksum, immutable publication,
 and independent full readback. APK identity/version/SDK/ABI are independently
 read with aapt2. The builder and separate readback verifier now also execute
 AGP-pinned `bundletool 1.18.3` against their own AAB bytes and directly confirm
 the base manifest package, version code/name, and minimum/target SDK. Current
 dependency JNI inputs are already stripped, so Android native symbols remain
-explicitly unavailable rather than falsely complete. R8's three unstable
-metadata/order surfaces are canonicalized with an explicit manifest contract;
-other raw tool/debug paths still make this local normalized-input evidence, not
-a cross-checkout reproducible build or a completed G6 signed-release gate.
+explicitly unavailable rather than falsely complete. Build 5 introduced a
+closed semantic normalization for R8 `resources.txt` and remains a valid
+equal-length-root historical qualification. Build 6 retains that and the other
+declared archive normalizations, then builds and packages two isolated clean
+lane worktrees whose source-root UTF-8 byte lengths are 101 and 109. Under the
+same host, fixed toolchains, paired clones of one byte-identical Gradle seed,
+and the canonical Swift scratch policy, both lanes produced the exact same
+164,177,236-byte ZIP, 10,328-byte manifest, checksum sidecar, and 26-entry
+archive inventory. The current immutable archive is
+`aetherlink-1.0.0+6-local-v1`; independent current-source readback passes.
+Builds 1 through 5 remain separately readable historical archives. The
+verifier cross-binds each Gradle lock identity to the archived source inventory
+and rejects current releases in historical mode. This extends the local
+same-host two-root unsigned reproducibility slice to the recorded unequal-length
+pair, but does not establish arbitrary-root, cross-host, signed-release,
+clean-machine, or physical-device G6 qualification.
+
+A separate post-publication Build 6 macOS lifecycle slice is now locally
+qualified. The runner binds to the exact published ZIP and manifest, extracts
+the packaged app into a temporary root, and completes two AppKit
+finished-launch, minimum five-second observation, and identity-rechecked
+exact-PID termination cycles with zero exits. Its QA-only sandbox preflight
+permits a temporary-root write while denying a non-temporary write and AF_INET
+bind. The exact 1,311-byte result SHA-256 is
+`30d90827182e353d9f49fd1fa9edde846bc073f1af5113548f913c7b8af34447`.
+This closes only a bounded local packaged-process launch/relaunch gap. The
+observed Application Support file presence does not prove second-run readback,
+and the absent identity file leaves identity persistence and state recovery
+unqualified. Installation, UI correctness, listener/provider readiness,
+clean-machine behavior, signed distribution, and physical-device lifecycle
+remain open.
 
 Release-scoped dependency locking is now closed for the current checkout. Six
 generated Gradle locks cover settings, buildscript, and clean Release-resolved
@@ -107,24 +135,121 @@ dependencies, so no `Package.resolved` is required. Debug, test, androidTest,
 clean-machine, and cross-machine dependency resolution remain unclaimed. The
 versioned release notes/compatibility/migration/known-limitations/support/
 privacy/rollback pack is now consolidated in
-`docs/releases/1.0.0-build-1-local-v1.md`. It explicitly labels the current
+`docs/releases/1.0.0-build-6-local-v1.md`. It explicitly labels the current
 container as a local qualification candidate rather than a production release.
-That same document now embeds one canonical first-lineage transition fixture:
+`docs/releases/1.0.0-build-1-local-v1.md` retains the superseded build 1
+identity, and `docs/releases/1.0.0-build-2-local-v1.md` retains the superseded
+build 2 identity. Builds 3 through 5 are also historical; the fixture-rich
+`docs/releases/1.0.0-build-3-local-v1.md` remains the immutable source for the
+recorded provider and first-lineage transition fixtures, build 4 records the
+diagnostic publication before the first qualified two-root run, and build 5
+retains the superseded equal-length two-root qualification.
+The Build 3 fixture document embeds one canonical first-lineage transition fixture:
 there is no production predecessor, N/N-1 remains unproven, both development
 baselines require clean install plus fresh pairing, and no state migration or
 in-place upgrade is claimed. The checker cross-validates it against the current
 ledger and the G0 version/identity/migration/compatibility fields. A second
-canonical fixture now records the 2026-07-28 provider baseline: Ollama
+canonical fixture now records the 2026-07-29 provider baseline: Ollama
 `0.32.5`/`0.32.4` and LM Studio `0.4.20` build 1/`0.4.19` build 2 are the
 official current/previous candidates, while local schema smoke covered Ollama
 `0.32.4` and LM Studio `0.4.17-beta+3`. SHA-256-verified official Darwin
 archives for both exact Ollama candidates now pass the AetherLink adapter's
 health and empty-catalog checks after cold start and process restart, and their
-endpoints close after stop. Four opt-in exact-version runs pass. The default
-focused backend suites pass 141 of 144 executed tests, with the two live-unload
-tests and the new opt-in compatibility test skipped. Exact LM Studio candidate
-testing, minimum versions, model-backed chat/cancel/embedding/lifecycle, and
-complete candidate qualification remain unclaimed.
+endpoints close after stop. The versioned runner hash-verifies, isolates,
+executes, bounds, and cleans the entire four-run matrix without touching the
+installed app or default port. Its explicit model-backed mode also selects one
+already-installed, unloaded completion-capable model without retaining its
+name, verifies the selected blob bytes against their content-addressed SHA-256
+digests, snapshots only its exact manifest and 2,138 blobs through copy-on-write,
+and runs both exact candidates after cold start and restart. All four
+model-backed runs pass populated-catalog, bounded streamed completion,
+first-delta cancellation, post-cancel recovery, confirmed unload,
+installed-state preservation, health, byte-identical SHA-256 snapshot state,
+and stopped-endpoint checks without a model download. The source provider
+version, observed catalog `name`/`digest`/`size` projection, running-model
+identity set, and every selected source-file byte remain unchanged; unselected
+model-store bytes and unprojected catalog metadata are outside the comparison.
+The dedicated additional-shape runner also fixes the second of three installed
+completion-capable candidates to its exact snapshot and
+`completion`/`thinking`/`tools` capability tuple, requires it to be initially
+unloaded, and never falls back. Its 991 blobs, 213,712-byte manifest, and
+16,679,502,421 model-artifact bytes passed both exact versions after cold start
+and restart: all four chat, cancellation, recovery, unload, snapshot, and
+endpoint observations passed while the observed source catalog/capabilities,
+running set, selected bytes, and bound source files remained unchanged. The
+runner attempted no model download and retained no model name, prompt, output,
+path, process identifier, or base URL. The runner's separate
+embedding-backed profile applies the same exact archive, observed-source,
+copy-on-write, and non-retention boundaries to the smallest
+already-installed unloaded embedding-capable model. Its four-blob,
+621,875,917-byte snapshot plus 741-byte manifest passed another four exact
+cold-start/restart runs covering a two-input finite equal-dimension embedding
+batch, provider residency, confirmed unload, installed-state preservation,
+snapshot integrity, health, and stopped-endpoint unavailability without
+retaining a model name, input, or vector value. A separate semantic-quality
+mode now passes both exact candidates against four fixed English ranking
+scenarios: two 16-text permutations, a 200-basis-point positive margin against
+both negatives in every scenario, 9,990-basis-point repeatability for every
+logical text, and one fresh-provider embedding recovery per version. Each
+phase must execute exactly one matching XCTest, while the canonical result
+binds the semantic scorer and live assertion sources by SHA-256 and retains
+task-set identity, thresholds, counts, and booleans only. This does not
+generalize beyond that one local model and task set.
+
+A separate multilingual V2 task set preserves the passing English V1 record
+while predeclaring four within-locale scenarios each for `en`, `ko`, `ja`,
+`zh-CN`, and `fr`, using the same 200-basis-point positive-margin and
+9,990-basis-point repeatability thresholds. On both exact Ollama candidates,
+both 80-text batches completed with valid shapes and all four English rankings
+passed, but Korean scenario ordinal 2 failed the positive-margin
+check. Japanese, Simplified Chinese, French, and repeatability were not
+evaluated after that fail-closed result. The task set and thresholds were not
+weakened after observation. Both versions then passed a fresh ordinary
+embedding recovery with confirmed unload and unchanged source/task/snapshot
+bindings. The canonical failure record retains only the failed locale and
+ordinal—no model name, task text or ID, vector, dimension, score, or provider
+output. Its runner accepts the expected failure only from one bounded regular
+UTF-8 log with exactly one matching XCTest start/failure and one closed
+locale/ordinal diagnostic; cleanup errors cannot be converted into a quality
+observation. Multilingual qualification remains open.
+
+A third vision-backed profile
+requires vision plus chat/completion capability and copy-on-write snapshots the
+smallest matching unloaded model as 997 verified blobs totaling
+21,909,210,142 bytes plus one 207,279-byte manifest. Its four exact
+cold-start/restart runs pass non-empty text chat, a fixed 32 by 32 PNG
+attachment, first-delta cancellation, post-cancel recovery, residency,
+confirmed unload, installed-state preservation, snapshot integrity, health, and
+stopped-endpoint unavailability without retaining the model name, prompt, image,
+or output. An opt-in duration path now uses the same `time.monotonic_ns` clock
+for deadline enforcement and measurement, with a 20-second absolute
+process-start/readiness budget, one 10-second stop budget, and the existing
+300-second focused-adapter timeout. One dated local run passed all 12
+profile/version/cold-restart observations: provider-ready was at most 5,533ms,
+adapter execution at most 54,784ms, and stop at most 3ms. Phase total includes
+snapshot rehash and final endpoint readback without a release threshold. The
+SHA-256-pinned exact values are single-host observations, not an SLA, average,
+percentile, throughput, or cross-host qualification. Deterministic mocked
+failure regressions also prove provider stop plus snapshot recheck after an
+adapter exception,
+Popen/stop/snapshot-error precedence, temporary-root cleanup before post-failure
+source readback, and rejection of provider-version, catalog-projection,
+running-set, or selected-file drift. A separate live mode then exercised
+unavailability before request, process-group termination after the first
+non-empty chat delta, and forced termination after `SIGSTOP` against both exact
+versions. All six fault observations and six full adapter/unload recovery runs
+passed with process-group reap, endpoint shutdown, snapshot integrity, and
+source projection/byte preservation. It also drove the product fix that maps
+terminal-less stream EOF to fixed retryable `ollama_transport_error`. This
+live evidence does not cover power loss, OS crash, cleanup-permission failure,
+embedding/vision faults, concurrency, soak, or an SLA. The focused backend
+suites pass 148 of 157 executed tests with nine opt-in skips. Exact LM Studio
+candidate
+execution remains deferred because the
+official tools expose no independent user-data/model-store path for a
+non-invasive run. Minimum versions, a passing multilingual semantic-quality
+result, retrieval accuracy, further model-shape coverage, and complete
+candidate qualification remain unclaimed.
 
 Android Compose API and primitive-state cleanup now removes 15 release-lint
 issues without changing UI behavior. An independent GPT-5.6 Sol audit confirms

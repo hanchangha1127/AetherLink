@@ -73,8 +73,9 @@ ANDROID_STRIPPED_NATIVE_LIBS = (
     / "stripReleaseDebugSymbols/out/lib"
 )
 MACOS_APP = ROOT / "dist/AetherLink.app"
-MACOS_DSYM = (
-    ROOT / ".build/arm64-apple-macosx/release/AetherLink.dSYM"
+DEFAULT_MACOS_BUILD_ROOT = ROOT / ".build"
+REPRO_SWIFT_SCRATCH_PATH = Path(
+    "/private/tmp/aetherlink-g6-swift-scratch-v1"
 )
 LEDGER_PATH = ROOT / "release/version-ledger.tsv"
 GRADLE_LOCK_PATHS = (
@@ -107,9 +108,12 @@ MAPPING_FILES = (
     "usage.txt",
 )
 ARCHIVE_NORMALIZATIONS = (
+    "android/mapping/configuration.txt:"
+    "declared-extracted-file-root-markers",
     "android/mapping/mapping.prt:"
     "sorted-members-fixed-metadata-deflate-9",
-    "android/mapping/resources.txt:bytewise-sorted-unique-lines",
+    "android/mapping/resources.txt:"
+    "semantic-reachability-sorted-unique-lines",
     "android/mapping/seeds.txt:bytewise-sorted-unique-lines",
 )
 
@@ -139,6 +143,7 @@ SOURCE_REQUIRED_FILES = (
     "script/check_release_version_ledger.py",
     "script/package_release_artifacts.py",
     "script/check_release_artifact_archive.py",
+    "script/run_clean_release_reproducibility.py",
 )
 SOURCE_OPTIONAL_FILES = ("Package.resolved",)
 SOURCE_ROOTS = (
@@ -253,6 +258,45 @@ def read_stable_regular_file(path: Path) -> tuple[bytes, int]:
     return data, normalized_mode(before.st_mode)
 
 
+def resolve_macos_dsym_path() -> Path:
+    configured = os.environ.get("AETHERLINK_REPRO_SWIFT_SCRATCH_PATH")
+    if configured is None:
+        build_root = DEFAULT_MACOS_BUILD_ROOT
+    else:
+        if configured != str(REPRO_SWIFT_SCRATCH_PATH):
+            raise ReleaseArchiveError(
+                "reproducible Swift scratch path differs from the fixed "
+                "release path"
+            )
+        try:
+            scratch_status = REPRO_SWIFT_SCRATCH_PATH.lstat()
+            physical_scratch = REPRO_SWIFT_SCRATCH_PATH.resolve(strict=True)
+        except OSError as error:
+            raise ReleaseArchiveError(
+                f"cannot inspect reproducible Swift scratch path: {error}"
+            ) from error
+        if (
+            stat.S_ISLNK(scratch_status.st_mode)
+            or not stat.S_ISDIR(scratch_status.st_mode)
+            or scratch_status.st_uid != os.getuid()
+            or physical_scratch != REPRO_SWIFT_SCRATCH_PATH
+        ):
+            raise ReleaseArchiveError(
+                "reproducible Swift scratch path must be a physical "
+                "owner-controlled directory"
+            )
+        physical_root = ROOT.resolve()
+        if (
+            physical_scratch == physical_root
+            or physical_root in physical_scratch.parents
+        ):
+            raise ReleaseArchiveError(
+                "reproducible Swift scratch path must be outside the source root"
+            )
+        build_root = physical_scratch
+    return build_root / "arm64-apple-macosx/release/AetherLink.dSYM"
+
+
 def canonicalize_r8_line_artifact(data: bytes, label: str) -> bytes:
     if not data or b"\r" in data or not data.endswith(b"\n"):
         raise ReleaseArchiveError(
@@ -268,6 +312,188 @@ def canonicalize_r8_line_artifact(data: bytes, label: str) -> bytes:
             f"{label} must contain nonempty unique lines"
         )
     return b"\n".join(sorted(lines)) + b"\n"
+
+
+def canonicalize_r8_resources(data: bytes, label: str) -> bytes:
+    if not data or b"\r" in data or b"\0" in data or not data.endswith(b"\n"):
+        raise ReleaseArchiveError(
+            f"{label} must be nonempty LF-terminated ASCII text"
+        )
+    raw_lines = data[:-1].split(b"\n")
+    if not raw_lines or any(not line for line in raw_lines):
+        raise ReleaseArchiveError(
+            f"{label} must contain nonempty resource-state lines"
+        )
+
+    reachable_from = b" reachable from "
+    reachable_suffix = b" is reachable."
+    unreachable_suffix = b" is not reachable."
+    resource_key_pattern = re.compile(
+        rb"[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+:[0-9]+"
+    )
+    normalized: list[bytes] = []
+    for line in raw_lines:
+        if any(byte < 0x20 or byte > 0x7E for byte in line):
+            raise ReleaseArchiveError(
+                f"{label} contains a non-printable resource-state byte"
+            )
+        if line.count(reachable_from) == 1:
+            key, reason = line.split(reachable_from, 1)
+            if not reason:
+                raise ReleaseArchiveError(
+                    f"{label} contains an empty reachability reason"
+                )
+            suffix = reachable_suffix
+        elif line.endswith(reachable_suffix):
+            key = line[: -len(reachable_suffix)]
+            suffix = reachable_suffix
+        elif line.endswith(unreachable_suffix):
+            key = line[: -len(unreachable_suffix)]
+            suffix = unreachable_suffix
+        else:
+            raise ReleaseArchiveError(
+                f"{label} contains an unsupported resource-state line"
+            )
+        if resource_key_pattern.fullmatch(key) is None:
+            raise ReleaseArchiveError(
+                f"{label} contains an invalid resource identity"
+            )
+        normalized.append(key + suffix)
+
+    if len(normalized) != len(set(normalized)):
+        raise ReleaseArchiveError(
+            f"{label} contains duplicate canonical resource states"
+        )
+    return b"\n".join(sorted(normalized)) + b"\n"
+
+
+def canonicalize_r8_configuration(data: bytes, label: str) -> bytes:
+    if not data or b"\0" in data or not data.endswith(b"\n"):
+        raise ReleaseArchiveError(
+            f"{label} must be nonempty LF-terminated text without NUL"
+        )
+    extracted_token = b"(extracted file: "
+    opening_prefix = (
+        b"# The proguard configuration file for the following section is "
+    )
+    closing_prefix = b"# End of content from "
+    try:
+        root_markers = (
+            (os.fsencode(str(ROOT.resolve())), b"<SOURCE_ROOT>"),
+            (
+                os.fsencode(
+                    str(
+                        Path(
+                            os.environ.get(
+                                "GRADLE_USER_HOME",
+                                Path.home() / ".gradle",
+                            )
+                        ).resolve()
+                    )
+                ),
+                b"<GRADLE_USER_HOME>",
+            ),
+        )
+    except UnicodeEncodeError as error:
+        raise ReleaseArchiveError(
+            f"{label} normalization roots must be ASCII"
+        ) from error
+    if (
+        len({root for root, _ in root_markers}) != len(root_markers)
+        or any(not root.isascii() for root, _ in root_markers)
+    ):
+        raise ReleaseArchiveError(
+            f"{label} normalization roots must be distinct ASCII paths"
+        )
+
+    normalized_lines: list[bytes] = []
+    marker_counts = {marker: 0 for _, marker in root_markers}
+    active_pair: tuple[bytes, bytes] | None = None
+    pair_count = 0
+    for line in data[:-1].split(b"\n"):
+        if extracted_token not in line:
+            normalized_lines.append(line)
+            continue
+        if (
+            b"\r" in line
+            or b"\\" in line
+            or line.count(extracted_token) != 1
+            or not line.endswith(b")")
+        ):
+            raise ReleaseArchiveError(
+                f"{label} contains a malformed extracted-file comment"
+            )
+        comment, extracted = line.split(extracted_token, 1)
+        if comment.startswith(opening_prefix):
+            identity = comment[len(opening_prefix):]
+            is_opening = True
+        elif comment.startswith(closing_prefix):
+            identity = comment[len(closing_prefix):]
+            is_opening = False
+        else:
+            raise ReleaseArchiveError(
+                f"{label} contains an unexpected extracted-file comment"
+            )
+        if not identity or not identity.endswith(b" "):
+            raise ReleaseArchiveError(
+                f"{label} contains an invalid extracted-file identity"
+            )
+        identity = identity[:-1]
+        if not identity or b"\0" in identity or b"\r" in identity:
+            raise ReleaseArchiveError(
+                f"{label} contains an invalid extracted-file identity"
+            )
+
+        path = extracted[:-1]
+        matches = [
+            (root, marker)
+            for root, marker in root_markers
+            if path.startswith(root + b"/")
+        ]
+        if len(matches) != 1:
+            raise ReleaseArchiveError(
+                f"{label} extracted-file path is outside declared roots"
+            )
+        root, marker = matches[0]
+        suffix = path[len(root):]
+        components = suffix[1:].split(b"/")
+        if (
+            not suffix.startswith(b"/")
+            or not components
+            or any(component in (b"", b".", b"..") for component in components)
+        ):
+            raise ReleaseArchiveError(
+                f"{label} extracted-file path is not canonical"
+            )
+        canonical_path = marker + suffix
+        pair = (identity, canonical_path)
+        if is_opening:
+            if active_pair is not None:
+                raise ReleaseArchiveError(
+                    f"{label} contains nested extracted-file sections"
+                )
+            active_pair = pair
+        else:
+            if active_pair != pair:
+                raise ReleaseArchiveError(
+                    f"{label} extracted-file section endpoints differ"
+                )
+            active_pair = None
+            pair_count += 1
+        marker_counts[marker] += 1
+        normalized_lines.append(
+            comment + extracted_token + canonical_path + b")"
+        )
+
+    if active_pair is not None or pair_count == 0:
+        raise ReleaseArchiveError(
+            f"{label} contains an incomplete extracted-file section"
+        )
+    if any(count == 0 for count in marker_counts.values()):
+        raise ReleaseArchiveError(
+            f"{label} must reference both declared extracted-file roots"
+        )
+    return b"\n".join(normalized_lines) + b"\n"
 
 
 def canonicalize_r8_mapping_prt(data: bytes, label: str) -> bytes:
@@ -1239,7 +1465,10 @@ def android_metadata(
     }
 
 
-def macos_metadata(current: ReleaseVersion) -> dict[str, object]:
+def macos_metadata(
+    current: ReleaseVersion,
+    macos_dsym: Path,
+) -> dict[str, object]:
     info_path = MACOS_APP / "Contents/Info.plist"
     try:
         info = plistlib.loads(read_stable_regular_file(info_path)[0])
@@ -1260,7 +1489,7 @@ def macos_metadata(current: ReleaseVersion) -> dict[str, object]:
 
     executable = MACOS_APP / "Contents/MacOS/AetherLink"
     app_uuid, app_architecture = parse_dwarfdump_uuid(executable)
-    dsym_uuid, dsym_architecture = parse_dwarfdump_uuid(MACOS_DSYM)
+    dsym_uuid, dsym_architecture = parse_dwarfdump_uuid(macos_dsym)
     if (app_uuid, app_architecture) != (dsym_uuid, dsym_architecture):
         raise ReleaseArchiveError("macOS app and dSYM UUID/architecture differ")
     architectures = run_text(["/usr/bin/lipo", "-archs", str(executable)]).split()
@@ -1326,6 +1555,7 @@ def collect_release_members(
     current: ReleaseVersion,
     source: dict[str, object],
 ) -> tuple[list[ArchiveMember], dict[str, object], dict[str, object]]:
+    macos_dsym = resolve_macos_dsym_path()
     exact_files = {
         "android/apk/app-release-unsigned.apk": ANDROID_APK,
         "android/apk/output-metadata.json": ANDROID_APK_METADATA,
@@ -1346,12 +1576,13 @@ def collect_release_members(
         data, mode = read_stable_regular_file(source_path)
         if not data:
             raise ReleaseArchiveError(f"release artifact is empty: {source_path}")
-        if member_path == "android/mapping/mapping.prt":
+        if member_path == "android/mapping/configuration.txt":
+            data = canonicalize_r8_configuration(data, member_path)
+        elif member_path == "android/mapping/mapping.prt":
             data = canonicalize_r8_mapping_prt(data, member_path)
-        elif member_path in (
-            "android/mapping/resources.txt",
-            "android/mapping/seeds.txt",
-        ):
+        elif member_path == "android/mapping/resources.txt":
+            data = canonicalize_r8_resources(data, member_path)
+        elif member_path == "android/mapping/seeds.txt":
             data = canonicalize_r8_line_artifact(data, member_path)
         loaded[member_path] = data
         members.append(ArchiveMember(member_path, data, mode))
@@ -1362,7 +1593,7 @@ def collect_release_members(
         loaded["android/mapping/mapping.txt"],
         current,
     )
-    macos = macos_metadata(current)
+    macos = macos_metadata(current, macos_dsym)
     native_status_bytes = canonical_json_bytes(
         {
             "nativeLibraries": android["nativeLibraries"],
@@ -1385,7 +1616,7 @@ def collect_release_members(
     )
     members.append(ArchiveMember("source-files.json", source_bytes, 0o644))
     members.extend(collect_tree_members(MACOS_APP, "macos/AetherLink.app"))
-    members.extend(collect_tree_members(MACOS_DSYM, "macos/AetherLink.dSYM"))
+    members.extend(collect_tree_members(macos_dsym, "macos/AetherLink.dSYM"))
     members.sort(key=lambda member: member.path.encode("ascii"))
     if len({member.path for member in members}) != len(members):
         raise ReleaseArchiveError("release payload contains duplicate member paths")
@@ -1481,11 +1712,26 @@ def same_files(left: Path, right: Path) -> bool:
     ).digest()
 
 
+def file_size_and_sha256(path: Path) -> tuple[int, str]:
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            digest.update(chunk)
+    return size, digest.hexdigest()
+
+
 def publish_archive_directory(
     output_root: Path,
     archive_id: str,
     archive_bytes_path: Path,
     manifest_bytes: bytes,
+    *,
+    expected_sidecars: dict[str, tuple[int, str]] | None = None,
 ) -> tuple[Path, bool]:
     output_root.mkdir(parents=True, exist_ok=True)
     final_directory = output_root / archive_id
@@ -1507,6 +1753,32 @@ def publish_archive_directory(
             encoding="ascii",
         )
         expected_names = {archive_name, manifest_name, checksum_name}
+        if expected_sidecars is not None:
+            if (
+                type(expected_sidecars) is not dict
+                or set(expected_sidecars) != expected_names
+                or any(
+                    type(identity) is not tuple
+                    or len(identity) != 2
+                    or type(identity[0]) is not int
+                    or identity[0] < 0
+                    or type(identity[1]) is not str
+                    or re.fullmatch(r"[0-9a-f]{64}", identity[1]) is None
+                    for identity in expected_sidecars.values()
+                )
+            ):
+                raise ReleaseArchiveError(
+                    "expected release sidecar identities are invalid"
+                )
+            actual_sidecars = {
+                name: file_size_and_sha256(temporary_directory / name)
+                for name in sorted(expected_names)
+            }
+            if actual_sidecars != expected_sidecars:
+                raise ReleaseArchiveError(
+                    "release archive candidate differs from the qualified "
+                    "sidecar identities"
+                )
         if final_directory.exists():
             if not final_directory.is_dir() or final_directory.is_symlink():
                 raise ReleaseArchiveError(

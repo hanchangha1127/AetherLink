@@ -1,6 +1,6 @@
 # AetherLink Session Handoff
 
-Last updated: 2026-07-28 KST.
+Last updated: 2026-07-29 KST.
 
 This is the canonical first document for the next Codex session. Read it before
 editing, staging, rebuilding, or making claims from older QA logs. It describes
@@ -72,7 +72,7 @@ current user direction, not repository-owner identity proof.
 - Android release builds now enable R8 and resource shrinking with the
   optimized defaults and dependency consumer rules, without a broad app keep
   file. A clean offline APK/AAB/lint run passes. V1 Release is arm64-only: the
-  unsigned AAB is 10,658,234 bytes, has one DEX, embeds its mapping byte-for-byte,
+  unsigned AAB is 10,658,235 bytes, has one DEX, embeds its mapping byte-for-byte,
   and retains all five locales and five JNI libraries. Production signing,
   final ID, Play delivery, and physical release launch remain unclaimed.
 - Five Compose screen APIs now follow required-parameter/`modifier` ordering,
@@ -102,48 +102,165 @@ current user direction, not repository-owner identity proof.
   structure/signature verification. Final identity, Developer ID/notarization/
   DMG, and clean-machine launch remain unclaimed; Intel is Post-V1.
 - `release/version-ledger.tsv` is now the single version source for Android
-  Release and macOS packaging. Both read back as `1.0.0+1`; Android Debug stays
+  Release and macOS packaging. Both read back as `1.0.0+6`; Android Debug stays
   `0.1.0+1` and builds with the ledger absent. Python, Bash, and lazy Gradle
   consumers reject noncanonical control bytes; strict parser, source, artifact,
   and fake-toolchain checks pass.
   Production IDs remain unchanged pending actual account reservation.
-- `build_release_artifacts.sh` clean-builds both targets and creates
-  `dist/releases/aetherlink-1.0.0+1-local-v1/`. Its 164,775,328-byte canonical
+- The Build 6 qualification runner clean-builds both targets in two isolated
+  source roots whose UTF-8 byte lengths are 101 and 109, and publishes
+  `dist/releases/aetherlink-1.0.0+6-local-v1/`. Its 164,177,236-byte canonical
   normalized-input ZIP has SHA-256
-  `1944238784f7235b93e5e5889fdc903137ca6229bc39c870b5935cf3489c89ac`.
+  `ac5294b7af4e8b5393ff1d0b6e2f60b39afc40bce0696549e4e9e6b871d919d4`.
   Independent readback verifies 25 payload members, arm64-only APK badging,
   AAB mapping/JNI identity, direct base-manifest package/version/SDK through
   AGP-pinned `bundletool 1.18.3`, and the arm64 app/dSYM UUID
-  `6B5402D4-F853-3A12-AD51-94C892EC7BD5`. Android native symbols remain
+  `1D6CD3E2-5769-3BB2-9F11-CBFEF782D44F`. Android native symbols remain
   explicitly unavailable because all five upstream JNI inputs are pre-stripped.
-  Three byte-unstable R8 metadata/order surfaces are explicitly normalized.
+  R8 `resources.txt` now uses semantic reachability normalization; the other
+  declared metadata surfaces retain their independent normalization contracts.
   Six Gradle locks reached a writer fixed point and passed two strict read-only
   clean Release runs unchanged; the manifest declares the one
   `kotlin-stdlib-common` compatibility exception. SwiftPM has zero external
-  dependencies. Raw debug paths still make this local evidence, not
-  cross-checkout reproducibility.
+  dependencies. Fixed Clang importer and debug compilation directories plus a
+  canonical source-location alias remove the observed source-path-length byte
+  dependence while retaining the dSYM. Both lane builds produced
+  byte-identical ZIP, manifest, checksum sidecar, and 26-entry archive
+  inventory. This is bounded same-host, fixed-toolchain/cache-snapshot,
+  canonical-scratch evidence for the recorded unequal-length pair; arbitrary
+  roots or path lengths, cross-host reproducibility, signed artifacts,
+  clean-machine launch, and physical behavior remain unclaimed. Builds 1
+  through 5 remain immutable, independently readable historical archives. The
+  verifier now cross-binds Gradle lock identities to the archived source
+  inventory and rejects use of historical mode for the current release.
+- The separate
+  `script/run_macos_packaged_app_lifecycle_smoke.py` post-publication gate binds
+  itself to that exact Build 6 ZIP and manifest, extracts only the packaged
+  macOS app, and completes two AppKit finished-launch → five-second minimum
+  observation → identity-rechecked exact-PID termination cycles with zero
+  exits. Its QA-only sandbox uses a temporary Core Foundation user home,
+  verifies a temporary-root write, denies a non-temporary write and AF_INET
+  bind, and has no unisolated fallback. The exact 1,311-byte result at
+  `dist/lifecycle/macos-packaged-app-build-6-lifecycle-v1.json` has SHA-256
+  `30d90827182e353d9f49fd1fa9edde846bc073f1af5113548f913c7b8af34447`.
+  Expected Application Support files were present after both runs, but the
+  runtime identity file was absent after both. Do not claim identity
+  persistence, state recovery, UI correctness, listener/provider readiness,
+  installation, clean-machine behavior, signed distribution, or
+  physical-device behavior from this smoke.
 - The versioned
-  `docs/releases/1.0.0-build-1-local-v1.md` record now consolidates release
+  `docs/releases/1.0.0-build-6-local-v1.md` record now consolidates release
   notes, compatibility, migration, limitations, diagnostics, privacy/evidence
   boundaries, and rollback. It explicitly treats Android Debug `0.1.0+1` and
-  local ad-hoc macOS packages as non-upgrade lineages. Its canonical
-  first-lineage fixture now pins a null production predecessor, unproven N/N-1,
-  clean install plus fresh pairing, and false migration/in-place-upgrade claims
-  against the release ledger and G0 non-security release fields.
-- The same release record now embeds the dated provider fixture. Official
+  local ad-hoc macOS packages as non-upgrade lineages. The fixture-rich
+  `docs/releases/1.0.0-build-3-local-v1.md` historical record retains the
+  canonical first-lineage fixture, which pins a null production predecessor,
+  unproven N/N-1, clean install plus fresh pairing, and false
+  migration/in-place-upgrade claims against the release ledger and G0
+  non-security release fields.
+- The same Build 3 historical record embeds the dated provider fixture. Official
   current/previous candidates are Ollama `0.32.5`/`0.32.4` and LM Studio
   `0.4.20` build 1/`0.4.19` build 2. Local schema smoke covered Ollama
   `0.32.4` and LM Studio `0.4.17-beta+3`. SHA-256-verified official Darwin
-  archives for both exact Ollama candidates passed four isolated AetherLink
-  adapter runs covering cold start, exact version, health, empty catalog,
-  process restart, and stopped-endpoint unavailability. The default focused
-  suites passed 141 of 144 tests with three opt-in skips. Exact LM Studio
-  candidate testing, minimum versions, model-backed behavior, and full
+  archives for both exact Ollama candidates passed four isolated empty-catalog
+  adapter runs covering cold start, exact version, health, restart, and
+  stopped-endpoint unavailability. The same versioned runner's explicit
+  model-backed mode selects one already-installed unloaded chat model without
+  retaining its name, snapshots its manifest plus 2,138 content-addressed blobs
+  through copy-on-write, and passes another four exact-candidate runs covering
+  populated catalog, bounded completion, first-delta cancellation,
+  post-cancel recovery, confirmed unload, installed-state preservation, health,
+  byte-identical SHA-256 snapshot state, and stopped-endpoint unavailability.
+  The dedicated
+  `script/run_ollama_additional_chat_shape_matrix.py` runner fixes the exact
+  second of three completion-capable candidates, requires its recorded
+  `completion`/`thinking`/`tools` tuple and initially unloaded state, and never
+  falls back. Its 991 verified blobs plus 213,712-byte manifest total
+  16,679,502,421 model-artifact bytes. Both exact versions passed cold/restart
+  for 4/4 chat, first-delta cancellation, recovery, unload, snapshot, and
+  endpoint observations; the observed source catalog/capabilities, running set,
+  selected bytes, and bound source files remained unchanged, with no model
+  download or retained model name, prompt, output, path, PID, or base URL.
+  The runner's separate embedding-backed profile snapshots the smallest
+  already-installed unloaded embedding model as four verified blobs plus one
+  manifest and passes another four exact-candidate cold/restart runs covering
+  a two-input finite equal-dimension batch, residency, unload, installed-state
+  preservation, health, snapshot integrity, and endpoint shutdown. Its separate
+  semantic-quality gate now also passes both exact candidates against four
+  fixed English ranking scenarios in two 16-text permutations. Every positive
+  clears both negatives by at least 200 cosine basis points, all 16 repeated
+  texts reach at least 9,990 cosine basis points, and each version then passes
+  one fresh-provider ordinary embedding recovery. Each phase also proves
+  exactly one matching XCTest ran, and the canonical evidence binds the
+  semantic scorer plus live assertion sources by SHA-256. A third
+  five-locale V2 observation leaves that English V1 record unchanged. It fixes
+  four within-locale scenarios per locale and the same 200/9,990-basis-point
+  thresholds before execution. Both exact candidates completed and
+  shape-validated both 80-text batches, passed the four English rankings,
+  then failed the positive-margin check at Korean scenario ordinal 2.
+  Japanese, Simplified Chinese, French, and repeatability were not evaluated
+  after the fail-closed result, and neither the task set nor thresholds were
+  changed afterward. Both candidates then passed a fresh ordinary embedding
+  recovery with confirmed unload and unchanged source/task/snapshot bindings.
+  The V2 fixture retains only the failed locale and ordinal, not a model name,
+  task text or ID, vector, dimension, score, provider output, path, PID, or
+  base URL. Expected-failure classification requires one bounded regular
+  UTF-8 log, exactly one matching XCTest start/failure, and one closed
+  locale/ordinal diagnostic; cleanup errors always remain fatal.
+  Multilingual qualification therefore remains open. A third
+  vision-backed profile snapshots one already-installed unloaded
+  `vision + completion` model as 997 verified blobs plus one manifest and passes
+  four more cold/restart runs covering text chat, one fixed PNG attachment,
+  first-delta cancellation, post-cancel recovery, residency, unload,
+  installed-state preservation, health, snapshot integrity, and endpoint
+  shutdown. No model download or retained model name/input/image/output/vector
+  value occurred. The source provider version, observed catalog
+  `name`/`digest`/`size` projection, running-model identity set, and every
+  selected source-file byte remained unchanged; unselected model-store bytes
+  and unprojected catalog metadata were not compared. Seven deterministic
+  mocked failure regressions
+  additionally prove provider stop plus snapshot recheck after an adapter
+  exception, Popen/stop/snapshot-error priority, temporary-root removal before
+  post-failure source readback, and rejection of provider-version,
+  catalog-projection, running-set, or selected-file drift. This is mocked Python
+  failure evidence, not an OS kill, power-loss, or cleanup-permission test. The
+  same runner's
+  opt-in duration path uses one `time.monotonic_ns` clock for the absolute
+  20-second ready, 10-second stop, and observed execution boundaries. A dated
+  12-phase run passed all three profiles, both versions, and cold/restart:
+  provider-ready was at most 5,533ms, adapter execution at most 54,784ms, and
+  stop at most 3ms. The SHA-256-pinned exact observations are not an SLA,
+  average, percentile, throughput, or cross-host claim. A separate opt-in live
+  path exercised unavailable-before-request, process-group termination after
+  the first non-empty chat delta, and forced termination after `SIGSTOP` on
+  both exact versions. All six fault observations and six full adapter/unload
+  recoveries passed with process-group reap, endpoint shutdown, snapshot
+  integrity, and source projection/byte preservation. Terminal-less stream EOF
+  now maps to fixed retryable `ollama_transport_error`. This does not qualify
+  embedding/vision faults, power loss, OS crash, cleanup-permission failure,
+  concurrency, soak, or an SLA. The passing English V1 task does not establish
+  broader retrieval accuracy or other model shapes, and the separate V2
+  multilingual gate is an explicit failed-quality observation rather than a
+  qualification. The focused suites pass 148
+  of 157 tests with nine opt-in skips. Seventy-one runner tests, 42
+  documentation/handoff tests, and docs hygiene pass. Exact LM Studio
+  candidate execution remains deferred because the official tools expose no
+  independent user-data/model-store path for a non-invasive run. Minimum
+  versions, broader semantic quality, further model-shape coverage, and full
   live-provider qualification remain unresolved.
-- The post-edit full Swift run executed 2,032 tests with zero failures and the
-  three expected opt-in skips. Docs/copy hygiene, archive and ledger readback, 21
-  documentation/handoff tests, Python syntax, diff whitespace, and the empty
-  staging guard pass. No physical-device claim was made.
+- The post-edit full Swift run executed 2,045 tests with zero failures and the
+  nine expected opt-in skips. Docs/copy hygiene, ledger readback, 113 combined
+  runner/documentation tests, Python syntax, diff whitespace, and the empty
+  staging guard pass. The current Build 6 archive binds the settled source
+  snapshot and passes independent readback; superseded builds 1 through 5 pass
+  historical ledger-prefix readback. No physical-device
+  claim was made.
+- A separately user-authored commit appeared during the preceding verification:
+  `main` and `origin/main` both resolve to
+  `7d6ecbf56827b1a7c999b3c7a339bebc53bbd421`. This work did not stage,
+  commit, or push. Current post-commit implementation, runner-test,
+  documentation, and checker changes remain modified and unstaged; preserve
+  them when continuing.
 - Do not stage, commit, or push these local changes unless the user explicitly
   requests it.
 
@@ -2950,6 +3067,18 @@ swift test --filter AetherLinkRenderSmokeTests/testPrimaryCompanionSurfacesRende
 swift build -c release --product AetherLink
 ```
 
+### Exact Build 6 packaged macOS lifecycle
+
+This does not rebuild or replace `dist/AetherLink.app`. It reads back the
+immutable Build 6 ZIP, launches only temporary extracted copies under the
+QA-only sandbox, and terminates only executable-and-bundle-matched owned PIDs.
+It displays the temporary app briefly twice.
+
+```bash
+python3 -B -m unittest script.test_run_macos_packaged_app_lifecycle_smoke
+python3 -B script/run_macos_packaged_app_lifecycle_smoke.py
+```
+
 ### Android debug/release QR policy
 
 Use Android Studio's JBR:
@@ -2990,19 +3119,12 @@ The verifier prints the complete payload. Treat its output as sensitive and do
 not paste it into docs, logs, commits, or chat. Record only safe fields such as
 scheme, action, query-key count, route scope, host/port, and a payload digest.
 
-### Full no-device gate
+### Paused broad aggregate gate
 
-Run only when broad fresh-source evidence is needed. It is intentionally much
-slower than the focused commands:
-
-```bash
-JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
-ANDROID_HOME="$HOME/Library/Android/sdk" \
-bash script/check_no_device_quality.sh
-```
-
-Inspect the final log and exit status before claiming completion. A started or
-partially observed gate is not a passing final-source result.
+Do not run `script/check_no_device_quality.sh` under the current user
+direction. It mixes the active product-quality checks with paused work outside
+this lane. Use the focused non-security commands relevant to the changed files
+and report those exact results instead.
 
 ## Physical Device Procedure For A Future Session
 
@@ -3121,11 +3243,22 @@ Unless the user redirects the task, use this active non-security order:
 2. Run the focused static guards and
    `python3 script/check_release_artifact_archive.py` before using the current
    local ZIP as evidence.
-3. Continue the non-security provider matrix. Both exact Ollama candidates have
-   isolated empty-catalog/restart evidence; next add bounded model-backed
-   behavior without downloading a model, or test exact LM Studio candidates
-   only when their official builds can be isolated without changing the
-   installed app.
+3. Continue the non-security provider matrix. Both exact Ollama candidates now
+   have isolated empty-catalog plus two existing chat-model shapes, one
+   embedding-model shape, and one vision-model shape
+   cold/restart evidence plus bounded chat process-lifecycle fault and recovery
+   evidence. Their four-scenario fixed-task embedding semantic-quality and
+   fresh-provider recovery gate also passes for English V1. The separate
+   five-locale V2 observation fails the fixed positive-margin check at Korean
+   scenario ordinal 2 on both exact candidates; its task and thresholds remain
+   frozen, and both follow-up recovery phases pass. Treat this as an unresolved
+   multilingual qualification gap rather than a passing gate. Exact LM Studio
+   execution stays deferred until the official tools
+   expose an independent user-data/model-store path that cannot change the
+   installed app. Keep a passing multilingual result, retrieval accuracy,
+   minimum-version, further-model-shape,
+   embedding/vision fault, power-loss, concurrency, soak, SLA, and full
+   qualification claims open.
 4. Keep physical-device, production signing, store upload, and deployment work
    deferred until the user explicitly selects those technical slices.
 5. Do not start security, authentication, governance, or owner-proof work.
