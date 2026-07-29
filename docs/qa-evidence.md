@@ -4,53 +4,53 @@ Last updated: 2026-07-29 KST.
 
 This document separates current verification evidence from historical captures.
 
-## 2026-07-29 Local V1 Build 11 Current-Source Release Checklist
+## 2026-07-29 Local V1 Build 13 Current-Source Recovery Checklist
 
-- [x] `release/version-ledger.tsv` ends at `1.0.0+11`; Builds 1 through 10
+- [x] `release/version-ledger.tsv` ends at `1.0.0+13`; Builds 1 through 12
   remain immutable historical records.
-- [x] The Build 11 archive is the latest ledger entry and its source-bound
+- [x] The Build 13 archive is the latest ledger entry and its source-bound
   snapshot matches the current release inputs.
-- [x] The 239-file `dirty-content-snapshot` has SHA-256
-  `da7dbf88cba5d5bc9f9d822e0f70fe7b21a9080add5e1b3718c60ef9dc341c84`;
+- [x] The 240-file `dirty-content-snapshot` has SHA-256
+  `82651260cc440946b7f12cebfb4e5b4c13d59ba3bc56da79a1f54adc37eeffa1`;
   HEAD and `origin/main` are both
-  `8955fb1c25ec483aaedad53793609311337605de`.
+  `324872d36361212cbd6ac957116011f53b366327`.
 - [x] Two complete qualification executions each used 101- and 109-byte
   isolated source roots. All four builds produced the exact same
-  165,378,312-byte ZIP with SHA-256
-  `08505eaefa7f7ef035ad9ff644f1f7e6efa95ef924acccd23d2478e47d92c148`,
+  165,429,300-byte ZIP with SHA-256
+  `d48bf8f837c104624b14b1cdc223d5c62aa2c68d13ff6d830f0a394dcd953191`,
   identical sidecars, and identical bytes and metadata for all 30 ZIP entries.
 - [x] The first 19,745-byte result has SHA-256
-  `65bb96a93008a077b95608611416e4c41cb91e27cb70d61facd66104748512f4`
-  and records immutable publication plus independent current-source readback.
-- [x] The separate 19,744-byte confirmation has SHA-256
-  `6da0148640ef5bb97d53369214103a90ea67c499cc2f2cf918591d19f2e87039`
+  `d77477077059c45fe21c51cbcbd6d62b6412c8dabf6b22683f20ea6acbc30d2f`.
+  The separate 19,744-byte confirmation has SHA-256
+  `f1e5aa20c6d5e98b450f3501d9a30d38daa5ab1f57197778126a9ced039446b5`
   and records `alreadyMatched=true`.
-- [x] The builder and independent readback each run AGP-pinned
-  `bundletool 1.18.3 validate` with a 60-second timeout, require the exact
-  `base` module set, and then independently verify the base manifest identity.
-- [x] Independent readback verifies all 29 payload members, Android unsigned
-  arm64-v8a `1.0.0+11` APK/AAB metadata and R8 outputs, plus the ad-hoc arm64
-  macOS app and UUID-matched dSYM.
-- [ ] Build 11 has no packaged-app lifecycle result. The historical Build 10
-  lifecycle result remains bound only to the Build 10 ZIP, manifest, and
-  executable; it is not Build 11 launch or recovery evidence.
-- [x] The historical 1,313-byte Build 10 result remains at
-  `dist/lifecycle/macos-packaged-app-build-10-lifecycle-v1.json` with SHA-256
-  `c0ea4dba08e74130f7aaa1e9855121d02459249ff5e6a0fc27cd1b01f46f0ded`.
-- [x] The historical 1,311-byte Build 9 result remains at
-  `dist/lifecycle/macos-packaged-app-build-9-lifecycle-v1.json` with SHA-256
-  `aad796ee3c768e37953f18eeea0e6642107750c3a8c398df798a46e96aabab53`.
-- [x] The main Build 4 process PID 59809 stayed alive at the same path; its
-  executable SHA-256 remained
-  `93cb550903f74e5018514870d1f4e7ac95ffc5df915fb8bde48c1ff512b382d0`.
-- [ ] Build 11 was not installed, launched, signed, notarized, stapled, or
-  exercised on a device, provider, live network, or clean machine. UI
-  correctness, listener readiness, state recovery, G6 exit, and G7 exit remain
-  open; security work remains excluded.
+- [x] Builder and independent readback each run AGP-pinned `bundletool 1.18.3
+  validate`, require the exact `base` module set, and independently verify the
+  same AAB's base manifest identity.
+- [x] The exact 2,185-byte packaged-state recovery result has SHA-256
+  `21f30e0b60e81bcbfb7e8a198c68ef53d6f6c739a63c80a1339278b7565ea769`.
+  Its first isolated app process migrated the fixed legacy JSONL through the
+  production store and model projection. After that PID terminated and the
+  legacy source was removed, a second independent process recovered the same
+  exact single SQLite row.
+- [x] Both read-only SQLite checks report `integrityCheck=ok` and
+  `totalEventCount=1`; `legacyAbsentBeforeSecondRun=true`,
+  `legacyFixturePreservedUnchanged=true`, and
+  `sqliteCanaryUnchangedAcrossRuns=true`.
+- [x] Build 12's marker-file attempt failed closed and
+  `dist/lifecycle/macos-packaged-app-build-12-state-recovery-v1.json` remains
+  absent. Build 13 evidence is not Build 12 evidence. Historical Build 10/9
+  lifecycle results remain byte-bound to their original releases.
+- [x] The main Build 4 process PID 59809 stayed alive at the same path and was
+  not replaced or terminated.
+- [ ] This was no-device local proof. Arbitrary histories, crash/power-loss
+  recovery, concurrent old/new writers, installation, UI/provider readiness,
+  signing, notarization, clean-machine execution, physical devices, and G6/G7
+  exit remain open. Security work remains excluded.
 - Current readback:
-  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+11-local-v1`.
-- Historical Build 10 readback:
-  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+10-local-v1 --historical`.
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+13-local-v1`.
+- Historical Build 12 readback:
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+12-local-v1 --historical`.
 
 ## 2026-07-29 Android Drawer Semantic Chat Search UX Checklist
 
@@ -153,14 +153,14 @@ This document separates current verification evidence from historical captures.
 - [ ] No live provider, model load/download, physical device, camera QR,
   installation, signing, deployment, or production-readiness claim is made.
   Security work remains excluded.
-- [x] Build 10 binds this work to the current release-source snapshot and its
-  independent readback passes. Build 9 remains historical source-bound
-  evidence.
+- [x] Build 13 includes this work in the current release-source snapshot and
+  its independent readback passes. Builds 9 through 12 remain historical
+  source-bound evidence.
 
 ## 2026-07-29 Local V1 Build 9 Prior Source-Bound Release And Lifecycle Checklist
 
 - [x] At publication, `release/version-ledger.tsv` ended at `1.0.0+9`.
-  Builds 9 and 10 are now historical and Build 11 is current.
+  Builds 9 through 12 are now historical and Build 13 is current.
 - [x] The archive binds the settled role-aware embedding source to a 239-file
   `dirty-content-snapshot` with SHA-256
   `22e26f5ed62be9b7badcc01ff76db91f436d0a0cde9ad1587a6c27588962a5ec`.
@@ -258,7 +258,7 @@ This document separates current verification evidence from historical captures.
 ## 2026-07-29 Historical Local V1 Build 6 Unequal-Length Two-Root Qualification Checklist
 
 - [x] At publication, `release/version-ledger.tsv` contained append-only builds
-  1 through 6 and ended at `1.0.0+6`; Build 11 is current now.
+  1 through 6 and ended at `1.0.0+6`; Build 13 is current now.
 - [x] Two isolated clean lane worktrees at source-root UTF-8 byte lengths 101
   and 109 independently built and packaged both platforms with the same host,
   fixed toolchains, paired clones of one byte-identical Gradle seed, and the
@@ -3617,6 +3617,46 @@ JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_
 - Do not use an old screenshot or XML dump as proof that the current UI copy, route behavior, QR pairing, or localization is still correct.
 - No-device evidence does not prove physical Android rendering, TalkBack/VoiceOver traversal, optical/camera QR scan reliability, live provider-backed chat/cancel or chat-complete, or real different-network runtime connectivity.
 - New `artifacts/*.png` and `artifacts/*.xml` files are ignored by default so stale generated captures are not accidentally committed.
+
+## 2026-07-29 Local V1 Build 13 Packaged State Recovery Evidence
+
+- Proof boundary: this is exact no-device evidence for one fixed benign legacy
+  Runtime-chat event, production-store migration, startup model projection,
+  read-only SQLite integrity and one-row identity, legacy removal, and an
+  independent SQLite-only packaged-process reopen on this host.
+- Release evidence: two complete 101/109-byte-root qualifications produced the
+  same 165,429,300-byte ZIP SHA-256
+  `d48bf8f837c104624b14b1cdc223d5c62aa2c68d13ff6d830f0a394dcd953191`.
+  The second result records `alreadyMatched=true`.
+- Recovery evidence: the 2,185-byte result SHA-256 is
+  `21f30e0b60e81bcbfb7e8a198c68ef53d6f6c739a63c80a1339278b7565ea769`.
+  Both process runs finished launching, met the five-second observation floor,
+  terminated by exact PID, and projected the expected session. SQLite remained
+  `integrityCheck=ok`, `totalEventCount=1`, and byte-identical across runs.
+- Historical boundary: Build 12's marker-file attempt failed closed and
+  published no result. Its archive remains readable, but Build 13 recovery
+  evidence is not reinterpreted as Build 12 proof. Build 10/9 lifecycle result
+  bytes remain unchanged.
+- Device/runtime state: PID 59809 remained alive on the untouched main Build 4
+  app. The physical Android device was disconnected; no camera QR, UI
+  traversal, live-provider interaction, installation, or real
+  different-network path was used.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.6 Sol supplied
+  read-only design and final implementation review.
+- Caveat: this does not qualify arbitrary histories, crash or power-loss
+  recovery, concurrent old/new writers, UI correctness, provider readiness,
+  clean-machine launch, signed distribution, notarization, deployment,
+  physical-device behavior, or production readiness.
+
+Verification commands:
+
+- `python3 -B script/run_clean_release_reproducibility.py`
+- `python3 -B script/run_macos_packaged_app_state_recovery_smoke.py`
+- `python3 -B script/run_clean_release_reproducibility.py --result dist/reproducibility/aetherlink-1.0.0+13-local-v1-two-root-v2-confirmation.json`
+- `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+13-local-v1`
+- `python3 -B -m unittest script.test_run_macos_packaged_app_state_recovery_smoke script.test_documentation_handoff_guards`
+- `python3 -B script/check_docs_hygiene.py`
+- `git diff --check`
 
 ## 2026-07-29 Historical Local V1 Build 8 Exact-Role Compliance Evidence
 

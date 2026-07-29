@@ -28,12 +28,12 @@ PHYSICAL_QR_OBSERVATION_MANIFEST = (
     ROOT / "docs/evidence/physical-qr-pairing-20260719.json"
 )
 LOCAL_RELEASE_MARKETING_VERSION = "1.0.0"
-LOCAL_RELEASE_BUILD_NUMBER = 11
+LOCAL_RELEASE_BUILD_NUMBER = 13
 LOCAL_RELEASE_ID = (
     f"aetherlink-{LOCAL_RELEASE_MARKETING_VERSION}"
     f"+{LOCAL_RELEASE_BUILD_NUMBER}-local-v1"
 )
-LOCAL_RELEASE_CURRENT_DOC = ROOT / "docs/releases/1.0.0-build-11-local-v1.md"
+LOCAL_RELEASE_CURRENT_DOC = ROOT / "docs/releases/1.0.0-build-13-local-v1.md"
 LOCAL_RELEASE_FIXTURE_BUILD_NUMBER = 3
 LOCAL_RELEASE_FIXTURE_ID = (
     f"aetherlink-{LOCAL_RELEASE_MARKETING_VERSION}"
@@ -48,12 +48,26 @@ LOCAL_RELEASE_ARCHIVE_DIR = ROOT / "dist/releases" / LOCAL_RELEASE_ID
 LOCAL_RELEASE_REPRODUCIBILITY_RESULT = (
     ROOT
     / "dist/reproducibility/"
-    "aetherlink-1.0.0+11-local-v1-two-root-v2.json"
+    "aetherlink-1.0.0+13-local-v1-two-root-v2.json"
 )
 LOCAL_RELEASE_REPRODUCIBILITY_CONFIRMATION_RESULT = (
     ROOT
     / "dist/reproducibility/"
-    "aetherlink-1.0.0+11-local-v1-two-root-v2-confirmation.json"
+    "aetherlink-1.0.0+13-local-v1-two-root-v2-confirmation.json"
+)
+MACOS_PACKAGED_STATE_RECOVERY_RESULT = (
+    ROOT
+    / "dist/lifecycle/macos-packaged-app-build-13-state-recovery-v1.json"
+)
+HISTORICAL_BUILD12_STATE_RECOVERY_RESULT = (
+    ROOT
+    / "dist/lifecycle/macos-packaged-app-build-12-state-recovery-v1.json"
+)
+MACOS_PACKAGED_STATE_RECOVERY_RUNNER = (
+    ROOT / "script/run_macos_packaged_app_state_recovery_smoke.py"
+)
+MACOS_PACKAGED_STATE_RECOVERY_TEST = (
+    ROOT / "script/test_run_macos_packaged_app_state_recovery_smoke.py"
 )
 MACOS_PACKAGED_LIFECYCLE_RESULT = (
     ROOT
@@ -77,25 +91,35 @@ HISTORICAL_MACOS_PACKAGED_LIFECYCLE_TEST = (
 )
 LOCAL_RELEASE_LEDGER = ROOT / "release/version-ledger.tsv"
 LOCAL_RELEASE_G0_DECISION = ROOT / "docs/v1/g0/decision-v1.json"
-LOCAL_RELEASE_EXPECTED_ZIP_SIZE = 165_378_312
+LOCAL_RELEASE_EXPECTED_ZIP_SIZE = 165_429_300
 LOCAL_RELEASE_EXPECTED_ZIP_SHA256 = (
-    "08505eaefa7f7ef035ad9ff644f1f7e6efa95ef924acccd23d2478e47d92c148"
+    "d48bf8f837c104624b14b1cdc223d5c62aa2c68d13ff6d830f0a394dcd953191"
 )
 LOCAL_RELEASE_EXPECTED_MANIFEST_SIZE = 12_062
 LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256 = (
-    "04b4e387e09c9cebc72d72871689472d379435ecdbc288a69e2df99040471812"
+    "3f720d7119a9196b9a7db085313ac0c9e796ce903b8738bf04406e3fc87b384b"
 )
 LOCAL_RELEASE_EXPECTED_CHECKSUM_SIZE = 99
 LOCAL_RELEASE_EXPECTED_CHECKSUM_SHA256 = (
-    "9c12f8d1e378527a6f72f7a65410accf5861c4f6c9040ba356c2ba87c4bc9277"
+    "b44398d350fb6f903ec53745e7546101b49ba4dddecf96295387306c87fe6efe"
 )
 LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SIZE = 19_745
 LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SHA256 = (
-    "65bb96a93008a077b95608611416e4c41cb91e27cb70d61facd66104748512f4"
+    "d77477077059c45fe21c51cbcbd6d62b6412c8dabf6b22683f20ea6acbc30d2f"
 )
 LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_CONFIRMATION_SIZE = 19_744
 LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_CONFIRMATION_SHA256 = (
-    "6da0148640ef5bb97d53369214103a90ea67c499cc2f2cf918591d19f2e87039"
+    "f1e5aa20c6d5e98b450f3501d9a30d38daa5ab1f57197778126a9ced039446b5"
+)
+MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT_SIZE = 2_185
+MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT_SHA256 = (
+    "21f30e0b60e81bcbfb7e8a198c68ef53d6f6c739a63c80a1339278b7565ea769"
+)
+MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256 = (
+    "4f3094182ba3b87eb2bb89230df59a14ee10e1db15def87074e66c9ed68d2eca"
+)
+MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_TEST_SHA256 = (
+    "d40d3dac44606f2a1e17a44de5564894f68036a0ba0cf7778fba5574306de5db"
 )
 MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT_SIZE = 1_313
 MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT_SHA256 = (
@@ -121,23 +145,23 @@ LOCAL_RELEASE_EXPECTED_SOURCE_ROOT_BYTE_LENGTHS = {
     "build-a": 101,
     "build-b": 109,
 }
-LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT = 239
+LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT = 240
 LOCAL_RELEASE_EXPECTED_SOURCE_SHA256 = (
-    "da7dbf88cba5d5bc9f9d822e0f70fe7b21a9080add5e1b3718c60ef9dc341c84"
+    "82651260cc440946b7f12cebfb4e5b4c13d59ba3bc56da79a1f54adc37eeffa1"
 )
 LOCAL_RELEASE_EXPECTED_SOURCE_HEAD = (
-    "8955fb1c25ec483aaedad53793609311337605de"
+    "324872d36361212cbd6ac957116011f53b366327"
 )
 LOCAL_RELEASE_EXPECTED_MEMBER_COUNT = 29
-LOCAL_RELEASE_EXPECTED_MACOS_UUID = "415765ED-429A-36D9-BC1A-BAC6DDF18B45"
+LOCAL_RELEASE_EXPECTED_MACOS_UUID = "A16CB949-C7E9-3BD7-A1AB-AC5D0662437F"
 LOCAL_RELEASE_EXPECTED_MEMBERS = {
     "android/apk/app-release-unsigned.apk": (
         9_568_738,
-        "3b1254c17e5891354b7f7062fc9852020a0b905b2c9198b6d1ebc83e7191246c",
+        "bcfb77ce97bea2b0709baa60ae37bc47b6686abbd3ccd01064f124cdde0fa006",
     ),
     "android/bundle/app-release.aab": (
         10_660_783,
-        "fdf3a8d1834b013bb9458ca2146f087f0bc55e8cf55f5ca7775771fcd7e18707",
+        "5ad660d8d34ec14cadc412bd4b85a342945335d0952a7c9e8a3f03153358af5a",
     ),
     "android/mapping/mapping.txt": (
         71_726_855,
@@ -148,12 +172,12 @@ LOCAL_RELEASE_EXPECTED_MEMBERS = {
         "c816b0f709eaa66526973bdda6fc0790afdebdfdecfe0a306cda82c742a686d5",
     ),
     "macos/AetherLink.app/Contents/MacOS/AetherLink": (
-        18_248_464,
-        "143fcd8c54be37e99ce9a3d916967b68bacaa0694c4bbf012c52e5c57b1175ad",
+        18_271_968,
+        "e4b91c631e460dc23aba8ac0a6d83107326321341dd9f98042d6c712b85fd514",
     ),
     "macos/AetherLink.dSYM/Contents/Resources/DWARF/AetherLink": (
-        31_260_073,
-        "7238ee762f94bbdf74d71579a0fa731eb69b89ba5cf2157ef99a4462c5915e95",
+        31_282_885,
+        "fe13be1b9ec49760c4a0a5ae108d09b4da488acdd621f625113a290245c3d5ee",
     ),
     "compliance/THIRD_PARTY_LICENSE_INVENTORY.txt": (
         109_725,
@@ -165,15 +189,15 @@ LOCAL_RELEASE_EXPECTED_MEMBERS = {
     ),
     "compliance/sbom.spdx.json": (
         252_417,
-        "2a940d601c80f4fe21d601b0b81b01f2fcdbc590813f2ec2db1a1fb60bf28f1d",
+        "823b869a631a8fbe3ac5f97047ce534f21cc896ad54fd70b6fb136cdad160bcf",
     ),
     "compliance/third-party-license-inventory-v1.json": (
         411_087,
         "1f97b74e794e5e2b3092cc31ce8c67f634a299989658feca597bc301b67dcda5",
     ),
     "source-files.json": (
-        46_545,
-        "24dd2812d554cef2dcd09a50dc8e1ed43dccac9891ed47350e6f09e0494bef92",
+        46_730,
+        "78c3c1ba715ce032b62283719a39f4c11f09944d348c2d4a7b586a8775b9dd26",
     ),
 }
 MACOS_PACKAGED_LIFECYCLE_BUILD_NUMBER = 10
@@ -251,6 +275,92 @@ HISTORICAL_MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT = {
         ),
         "releaseId": "aetherlink-1.0.0+9-local-v1",
     },
+}
+MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT = {
+    "app": {
+        "buildNumber": LOCAL_RELEASE_BUILD_NUMBER,
+        "bundleIdentifier": "dev.aetherlink.companion",
+        "executableSha256": (
+            "e4b91c631e460dc23aba8ac0a6d83107326321341dd9f98042d6c712b85fd514"
+        ),
+        "marketingVersion": LOCAL_RELEASE_MARKETING_VERSION,
+        "uuid": LOCAL_RELEASE_EXPECTED_MACOS_UUID,
+    },
+    "canary": {
+        "eventID": "packaged-state-recovery-canary-event-v1",
+        "eventJsonSha256": (
+            "da3320c2cbdf9146b0ee21c084a9474715caf9f5e1d568853f6a2359cd9f4cef"
+        ),
+        "eventJsonSize": 344,
+        "legacyJsonlSha256": (
+            "0e51fc924836465c4c0921eb3b3709b387f89787aabf2e100c7cff338f0aea2e"
+        ),
+        "legacyJsonlSize": 345,
+        "model": "qa:packaged-state-recovery-canary-v1",
+        "requestID": "packaged-state-recovery-canary-request-v1",
+        "sessionID": "packaged-state-recovery-canary-session-v1",
+    },
+    "isolation": {
+        "profile": "allow-default-deny-network-and-non-temp-writes-v1",
+        "sandboxed": True,
+        "temporaryCFUserHomeConfigured": True,
+    },
+    "release": {
+        "archiveSha256": LOCAL_RELEASE_EXPECTED_ZIP_SHA256,
+        "manifestSha256": LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256,
+        "releaseId": LOCAL_RELEASE_ID,
+    },
+    "runs": [
+        {
+            "activationPolicy": 0,
+            "exitCode": 0,
+            "finishedLaunching": True,
+            "minimumObservationSeconds": 5.0,
+            "observationDeadlineReached": True,
+            "ordinal": ordinal,
+            "terminationAccepted": True,
+        }
+        for ordinal in (1, 2)
+    ],
+    "schemaVersion": 1,
+    "stateRecovery": {
+        "legacyAbsentBeforeSecondRun": True,
+        "legacyFixturePreservedUnchanged": True,
+        "migrationObservation": {
+            "mode": "migration-read-v1",
+            "sha256": (
+                "558fbc563c3f07474b4a28093290216a8fcfdade66cee5ee8354c8fc867fd5f9"
+            ),
+            "size": 70,
+            "status": "passed",
+        },
+        "migrationSQLite": {
+            "eventJsonSha256": (
+                "da3320c2cbdf9146b0ee21c084a9474715caf9f5e1d568853f6a2359cd9f4cef"
+            ),
+            "eventJsonSize": 344,
+            "integrityCheck": "ok",
+            "totalEventCount": 1,
+        },
+        "sqliteCanaryUnchangedAcrossRuns": True,
+        "sqliteReadbackObservation": {
+            "mode": "sqlite-readback-v1",
+            "sha256": (
+                "ab8c927b33c3f3b2350eefd357c696c92b076f8c950da9c46823859cddeaad07"
+            ),
+            "size": 71,
+            "status": "passed",
+        },
+        "sqliteReadbackSQLite": {
+            "eventJsonSha256": (
+                "da3320c2cbdf9146b0ee21c084a9474715caf9f5e1d568853f6a2359cd9f4cef"
+            ),
+            "eventJsonSize": 344,
+            "integrityCheck": "ok",
+            "totalEventCount": 1,
+        },
+    },
+    "status": "passed",
 }
 LOCAL_RELEASE_TRANSITION_FIXTURE_START = (
     "<!-- aetherlink-release-transition-fixture-v1:start -->"
@@ -772,6 +882,8 @@ HYGIENE_TARGETS = (
     "docs/releases/1.0.0-build-9-local-v1.md",
     "docs/releases/1.0.0-build-10-local-v1.md",
     "docs/releases/1.0.0-build-11-local-v1.md",
+    "docs/releases/1.0.0-build-12-local-v1.md",
+    "docs/releases/1.0.0-build-13-local-v1.md",
     "docs/roadmap.md",
     "docs/security.md",
     "examples/README.md",
@@ -852,7 +964,7 @@ CONTRACTS = (
 FILE_CONTRACTS = (
     DocsFileContract(
         "local-release-qualification-boundary",
-        "docs/releases/1.0.0-build-11-local-v1.md",
+        "docs/releases/1.0.0-build-13-local-v1.md",
         (
             re.compile(
                 r"\bStatus:\s*local release-engineering candidate,\s*not a production release\b",
@@ -875,16 +987,19 @@ FILE_CONTRACTS = (
                 re.IGNORECASE | re.DOTALL,
             ),
             re.compile(
-                r"\b08505eaefa7f7ef035ad9ff644f1f7e6efa95ef924acccd23d2478e47d92c148\b"
+                r"\bd48bf8f837c104624b14b1cdc223d5c62aa2c68d13ff6d830f0a394dcd953191\b"
             ),
             re.compile(
-                r"\b04b4e387e09c9cebc72d72871689472d379435ecdbc288a69e2df99040471812\b"
+                r"\b3f720d7119a9196b9a7db085313ac0c9e796ce903b8738bf04406e3fc87b384b\b"
             ),
             re.compile(
-                r"\b9c12f8d1e378527a6f72f7a65410accf5861c4f6c9040ba356c2ba87c4bc9277\b"
+                r"\bb44398d350fb6f903ec53745e7546101b49ba4dddecf96295387306c87fe6efe\b"
             ),
             re.compile(
-                r"\b65bb96a93008a077b95608611416e4c41cb91e27cb70d61facd66104748512f4\b"
+                r"\bd77477077059c45fe21c51cbcbd6d62b6412c8dabf6b22683f20ea6acbc30d2f\b"
+            ),
+            re.compile(
+                r"\b21f30e0b60e81bcbfb7e8a198c68ef53d6f6c739a63c80a1339278b7565ea769\b"
             ),
             re.compile(
                 r"\b101-\s+and\s+109-byte source roots\b",
@@ -1144,10 +1259,12 @@ FILE_CONTRACTS = (
 PROGRESS_DOC = ROOT / "docs/progress.md"
 QA_EVIDENCE_DOC = ROOT / "docs/qa-evidence.md"
 QA_CURRENT_RELEASE_READBACK_MARKER = (
-    "The Build 11 archive is the latest ledger entry and its source-bound "
+    "The Build 13 archive is the latest ledger entry and its source-bound "
     "snapshot matches the current release inputs."
 )
 QA_STALE_RELEASE_READBACK_MARKERS = (
+    "The Build 11 archive is the latest ledger entry and its source-bound "
+    "snapshot matches the current release inputs.",
     "The current build 6 archive includes the terminal-less EOF fix and the "
     "settled provider-quality source snapshot.",
     "The current build 5 archive includes the terminal-less EOF fix and the "
@@ -1180,7 +1297,7 @@ def current_release_qa_evidence_failures(
     failures: list[str] = []
     if QA_CURRENT_RELEASE_READBACK_MARKER not in normalized_text:
         failures.append(
-            "docs/qa-evidence.md: Build 11 current-source readback marker is "
+            "docs/qa-evidence.md: Build 13 current-source readback marker is "
             "missing."
         )
     for stale_marker in QA_STALE_RELEASE_READBACK_MARKERS:
@@ -3041,7 +3158,7 @@ def local_release_document_failures() -> list[str]:
             "reproducibility result path",
             (
                 "`dist/reproducibility/"
-                "aetherlink-1.0.0+11-local-v1-two-root-v2.json`"
+                "aetherlink-1.0.0+13-local-v1-two-root-v2.json`"
             ),
         ),
         (
@@ -3056,7 +3173,7 @@ def local_release_document_failures() -> list[str]:
             "reproducibility confirmation path",
             (
                 "`dist/reproducibility/"
-                "aetherlink-1.0.0+11-local-v1-two-root-v2-confirmation.json`"
+                "aetherlink-1.0.0+13-local-v1-two-root-v2-confirmation.json`"
             ),
         ),
         (
@@ -3075,6 +3192,66 @@ def local_release_document_failures() -> list[str]:
         (
             "reproducibility confirmation publication match",
             "`alreadyMatched=true`",
+        ),
+        (
+            "packaged state-recovery result path",
+            (
+                "`dist/lifecycle/"
+                "macos-packaged-app-build-13-state-recovery-v1.json`"
+            ),
+        ),
+        (
+            "packaged state-recovery result size",
+            f"{MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT_SIZE:,} bytes",
+        ),
+        (
+            "packaged state-recovery result SHA-256",
+            f"`{MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT_SHA256}`",
+        ),
+        (
+            "packaged state-recovery runner SHA-256",
+            f"`{MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256}`",
+        ),
+        (
+            "packaged state-recovery test SHA-256",
+            f"`{MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_TEST_SHA256}`",
+        ),
+        (
+            "packaged state-recovery legacy removal",
+            "`legacyAbsentBeforeSecondRun=true`",
+        ),
+        (
+            "packaged state-recovery legacy identity",
+            "`legacyFixturePreservedUnchanged=true`",
+        ),
+        (
+            "packaged state-recovery SQLite identity",
+            "`sqliteCanaryUnchangedAcrossRuns=true`",
+        ),
+        (
+            "packaged state-recovery event JSON identity",
+            (
+                "`da3320c2cbdf9146b0ee21c084a9474715caf9f5e1d568853f6a2359cd9f4cef`"
+            ),
+        ),
+        (
+            "packaged state-recovery migration observation identity",
+            (
+                "`558fbc563c3f07474b4a28093290216a8fcfdade66cee5ee8354c8fc867fd5f9`"
+            ),
+        ),
+        (
+            "packaged state-recovery readback observation identity",
+            (
+                "`ab8c927b33c3f3b2350eefd357c696c92b076f8c950da9c46823859cddeaad07`"
+            ),
+        ),
+        (
+            "Build 12 state-recovery non-transfer boundary",
+            (
+                "Build 12 state-recovery result was not published, and Build "
+                "13 evidence is not reinterpreted as Build 12 evidence."
+            ),
         ),
         (
             "packaged-app lifecycle result path",
@@ -3145,7 +3322,7 @@ def local_release_document_failures() -> list[str]:
             "Build 10 lifecycle non-transfer boundary",
             (
                 "Build 10 observations remain bound to Build 10 and are not "
-                "reinterpreted as Build 11 evidence."
+                "reinterpreted as Build 13 evidence."
             ),
         ),
         (
@@ -3498,7 +3675,7 @@ def local_release_document_failures() -> list[str]:
 
     result_relative = (
         "dist/reproducibility/"
-        "aetherlink-1.0.0+11-local-v1-two-root-v2.json"
+        "aetherlink-1.0.0+13-local-v1-two-root-v2.json"
     )
     if not LOCAL_RELEASE_REPRODUCIBILITY_RESULT.is_file():
         failures.append(
@@ -3607,7 +3784,7 @@ def current_release_reproducibility_confirmation_failures(
 ) -> list[str]:
     relative = (
         "dist/reproducibility/"
-        "aetherlink-1.0.0+11-local-v1-two-root-v2-confirmation.json"
+        "aetherlink-1.0.0+13-local-v1-two-root-v2-confirmation.json"
     )
     if result_bytes is None:
         if not LOCAL_RELEASE_REPRODUCIBILITY_CONFIRMATION_RESULT.is_file():
@@ -3799,6 +3976,39 @@ def macos_packaged_lifecycle_source_failures() -> list[str]:
     return failures
 
 
+def macos_packaged_state_recovery_source_failures() -> list[str]:
+    expected_sources = (
+        (
+            MACOS_PACKAGED_STATE_RECOVERY_RUNNER,
+            MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256,
+        ),
+        (
+            MACOS_PACKAGED_STATE_RECOVERY_TEST,
+            MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_TEST_SHA256,
+        ),
+    )
+    failures: list[str] = []
+    for path, expected_sha256 in expected_sources:
+        relative = path.relative_to(ROOT)
+        if not path.is_file():
+            failures.append(f"{relative}: missing state-recovery source.")
+            continue
+        try:
+            payload = path.read_bytes()
+        except OSError as error:
+            failures.append(
+                f"{relative}: unreadable state-recovery source: {error}"
+            )
+            continue
+        actual_sha256 = hashlib.sha256(payload).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{relative}: expected SHA-256 {expected_sha256}, "
+                f"found {actual_sha256}."
+            )
+    return failures
+
+
 def packaged_lifecycle_evidence_failures(
     *,
     result_path: Path,
@@ -3890,6 +4100,43 @@ def historical_macos_packaged_lifecycle_evidence_failures(
         build_label="Build 9",
         result_bytes=result_bytes,
     )
+
+
+def macos_packaged_state_recovery_evidence_failures(
+    result_bytes: bytes | None = None,
+) -> list[str]:
+    return packaged_lifecycle_evidence_failures(
+        result_path=MACOS_PACKAGED_STATE_RECOVERY_RESULT,
+        relative=(
+            "dist/lifecycle/"
+            "macos-packaged-app-build-13-state-recovery-v1.json"
+        ),
+        expected_size=MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT_SIZE,
+        expected_sha256=(
+            MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT_SHA256
+        ),
+        expected_result=MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT,
+        build_label="Build 13 state-recovery",
+        result_bytes=result_bytes,
+    )
+
+
+def historical_build12_state_recovery_absence_failures(
+    *,
+    result_exists: bool | None = None,
+) -> list[str]:
+    exists = (
+        HISTORICAL_BUILD12_STATE_RECOVERY_RESULT.exists()
+        if result_exists is None
+        else result_exists
+    )
+    if not exists:
+        return []
+    return [
+        "dist/lifecycle/macos-packaged-app-build-12-state-recovery-v1.json: "
+        "Build 12 failed closed and must not have a published state-recovery "
+        "result."
+    ]
 
 
 def latest_progress_entry() -> tuple[int, str]:
@@ -4611,9 +4858,14 @@ def main() -> int:
     failures.extend(syntax_only_no_device_gate_evidence_failures())
     failures.extend(local_release_document_failures())
     failures.extend(macos_packaged_lifecycle_source_failures())
+    failures.extend(macos_packaged_state_recovery_source_failures())
     failures.extend(macos_packaged_lifecycle_evidence_failures())
     failures.extend(
         historical_macos_packaged_lifecycle_evidence_failures()
+    )
+    failures.extend(macos_packaged_state_recovery_evidence_failures())
+    failures.extend(
+        historical_build12_state_recovery_absence_failures()
     )
     failures.extend(historical_local_release_document_failures())
     failures.extend(physical_qr_observation_manifest_failures())

@@ -742,6 +742,7 @@ private data class PendingResearchBriefCreate(
 data class RuntimeResearchNotebooksUiState(
     val notebooks: List<ResearchNotebookPayload> = emptyList(),
     val isLoading: Boolean = false,
+    val hasResolvedAuthoritativeSnapshot: Boolean = false,
 )
 
 
@@ -8030,6 +8031,7 @@ class RuntimeClientViewModel internal constructor(
         mutableResearchNotebooks.value = RuntimeResearchNotebooksUiState(
             notebooks = notebooks,
             isLoading = false,
+            hasResolvedAuthoritativeSnapshot = hasResolvedAuthoritativeResearchNotebookList,
         )
         val activeSessionToExit = authoritativeArchivedActiveSessionId ?: authoritativeRemovedActiveSessionId
         activeSessionToExit?.let(::clearTransientResearchSessionAfterLifecycleExit)

@@ -193,6 +193,7 @@ import com.localagentbridge.android.runtime.RuntimeModelResidencyUnloadFailureSt
 import com.localagentbridge.android.runtime.RuntimeModelResidencyStatus
 import com.localagentbridge.android.runtime.RuntimePendingAttachment
 import com.localagentbridge.android.runtime.RuntimeProviderStatus
+import com.localagentbridge.android.runtime.RuntimeResearchNotebooksUiState
 import com.localagentbridge.android.runtime.RuntimeSourceReview
 import com.localagentbridge.android.runtime.RuntimeTrustedSource
 import com.localagentbridge.android.runtime.RuntimeTrustedRuntime
@@ -3134,6 +3135,7 @@ class ClientScreensNoDeviceComposeTest {
                         isConnected = true,
                         runtimeStatus = "authenticated",
                         isStreaming = lifecycleActionsBlocked.value,
+                        trustedRuntime = researchNotebookTrustedRuntime(),
                     ),
                     researchNotebooks = listOf(activeNotebook, archivedNotebook),
                     effectiveDestination = AppDestination.Chat,
@@ -3272,6 +3274,306 @@ class ClientScreensNoDeviceComposeTest {
             )
             .performClick()
         assertEquals(archivedNotebook.sessionId, deletedSessionId)
+    }
+
+    @Test
+    fun navigationDrawerRestoresResearchNotebookDeleteConfirmationAcrossSavedState() {
+        val archivedNotebook = ResearchNotebookPayload(
+            notebookId = "research_notebook_1234567890abcdef1234567890abcdef",
+            sessionId = "research_session_1234567890abcdef1234567890abcdef",
+            title = "Restored deletion target",
+            model = "ollama:llama3.1:8b",
+            sourceCount = 2,
+            createdAt = "2026-07-29T00:00:00Z",
+            updatedAt = "2026-07-29T00:01:00Z",
+            archivedAt = "2026-07-29T00:02:00Z",
+        )
+        val updatedNotebook = archivedNotebook.copy(
+            title = "Restored current deletion target",
+            updatedAt = "2026-07-29T00:03:00Z",
+        )
+        val decoyNotebook = archivedNotebook.copy(
+            notebookId = "research_notebook_34567890abcdef1234567890abcdef12",
+            sessionId = "research_session_34567890abcdef1234567890abcdef12",
+            title = "Unrelated archived notebook",
+        )
+        val notebookState = mutableStateOf(
+            RuntimeResearchNotebooksUiState(
+                notebooks = listOf(archivedNotebook),
+                hasResolvedAuthoritativeSnapshot = true,
+            ),
+        )
+        val trustedRuntime = researchNotebookTrustedRuntime()
+        var deletedNotebook: ResearchNotebookPayload? = null
+        val restorationTester = StateRestorationTester(compose)
+        restorationTester.setContent {
+            MaterialTheme {
+                AetherLinkNavigationDrawerContent(
+                    state = RuntimeUiState(
+                        isConnected = true,
+                        runtimeStatus = "authenticated",
+                        trustedRuntime = trustedRuntime,
+                    ),
+                    researchNotebooks = notebookState.value.notebooks,
+                    isResearchNotebooksLoading = notebookState.value.isLoading,
+                    hasResolvedAuthoritativeResearchNotebooks = (
+                        notebookState.value.hasResolvedAuthoritativeSnapshot
+                    ),
+                    effectiveDestination = AppDestination.Chat,
+                    chatSearchQuery = "",
+                    hasAnyChatSessions = false,
+                    hasChatSearchQuery = false,
+                    hasChatSearchResults = false,
+                    filteredChatSessions = emptyList(),
+                    onChatSearchQueryChange = {},
+                    onClearChatSearch = {},
+                    onNewChat = {},
+                    onPermanentlyDeleteResearchNotebook = {
+                        deletedNotebook = it
+                    },
+                    onSelectChatSession = {},
+                    onRenameChatSession = {},
+                    onArchiveChatSession = {},
+                    onSelectSettings = {},
+                )
+            }
+        }
+
+        val history = compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+        val optionsTag = researchNotebookDrawerOptionsTestTag(archivedNotebook.sessionId)
+        history.performScrollToNode(hasTestTag(optionsTag))
+        compose.onNodeWithTag(optionsTag).performClick()
+        compose.onNodeWithTag(
+            researchNotebookDrawerMenuItemTestTag(archivedNotebook.sessionId, "delete"),
+        ).performClick()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_CONFIRM_TEST_TAG).performClick()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_MESSAGE_TEST_TAG)
+            .assertTextContains("This cannot be undone.", substring = true)
+
+        compose.runOnUiThread {
+            notebookState.value = RuntimeResearchNotebooksUiState()
+        }
+        compose.waitForIdle()
+        restorationTester.emulateSavedInstanceStateRestore()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG).assertDoesNotExist()
+        assertEquals(null, deletedNotebook)
+
+        compose.runOnUiThread {
+            notebookState.value = RuntimeResearchNotebooksUiState(isLoading = true)
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG).assertDoesNotExist()
+
+        compose.runOnUiThread {
+            notebookState.value = RuntimeResearchNotebooksUiState(
+                notebooks = listOf(decoyNotebook, updatedNotebook),
+                hasResolvedAuthoritativeSnapshot = true,
+            )
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG).assertIsDisplayed()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_MESSAGE_TEST_TAG)
+            .assertTextContains("This cannot be undone.", substring = true)
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_CONFIRM_TEST_TAG)
+            .assert(
+                hasContentDescription(
+                    "Confirm: Permanently delete research notebook Restored current deletion target",
+                ) and hasClickAction(),
+            )
+            .performClick()
+
+        assertEquals(updatedNotebook, deletedNotebook)
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG).assertDoesNotExist()
+    }
+
+    @Test
+    fun navigationDrawerDropsRestoredDeleteConfirmationWhenTargetLeavesArchivedCatalog() {
+        val archivedNotebook = ResearchNotebookPayload(
+            notebookId = "research_notebook_234567890abcdef1234567890abcdef1",
+            sessionId = "research_session_234567890abcdef1234567890abcdef1",
+            title = "Catalog-bound deletion target",
+            model = "ollama:llama3.1:8b",
+            sourceCount = 1,
+            createdAt = "2026-07-29T00:00:00Z",
+            updatedAt = "2026-07-29T00:01:00Z",
+            archivedAt = "2026-07-29T00:02:00Z",
+        )
+        val notebookState = mutableStateOf(
+            RuntimeResearchNotebooksUiState(
+                notebooks = listOf(archivedNotebook),
+                hasResolvedAuthoritativeSnapshot = true,
+            ),
+        )
+        val trustedRuntime = researchNotebookTrustedRuntime()
+        var deletedSessionId: String? = null
+        val restorationTester = StateRestorationTester(compose)
+        restorationTester.setContent {
+            MaterialTheme {
+                AetherLinkNavigationDrawerContent(
+                    state = RuntimeUiState(
+                        isConnected = true,
+                        runtimeStatus = "authenticated",
+                        trustedRuntime = trustedRuntime,
+                    ),
+                    researchNotebooks = notebookState.value.notebooks,
+                    isResearchNotebooksLoading = notebookState.value.isLoading,
+                    hasResolvedAuthoritativeResearchNotebooks = (
+                        notebookState.value.hasResolvedAuthoritativeSnapshot
+                    ),
+                    effectiveDestination = AppDestination.Chat,
+                    chatSearchQuery = "",
+                    hasAnyChatSessions = false,
+                    hasChatSearchQuery = false,
+                    hasChatSearchResults = false,
+                    filteredChatSessions = emptyList(),
+                    onChatSearchQueryChange = {},
+                    onClearChatSearch = {},
+                    onNewChat = {},
+                    onPermanentlyDeleteResearchNotebook = {
+                        deletedSessionId = it.sessionId
+                    },
+                    onSelectChatSession = {},
+                    onRenameChatSession = {},
+                    onArchiveChatSession = {},
+                    onSelectSettings = {},
+                )
+            }
+        }
+
+        val history = compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+        val optionsTag = researchNotebookDrawerOptionsTestTag(archivedNotebook.sessionId)
+        history.performScrollToNode(hasTestTag(optionsTag))
+        compose.onNodeWithTag(optionsTag).performClick()
+        compose.onNodeWithTag(
+            researchNotebookDrawerMenuItemTestTag(archivedNotebook.sessionId, "delete"),
+        ).performClick()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_CONFIRM_TEST_TAG).performClick()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG).assertIsDisplayed()
+
+        compose.runOnUiThread {
+            notebookState.value = RuntimeResearchNotebooksUiState(
+                notebooks = listOf(archivedNotebook.copy(archivedAt = null)),
+                hasResolvedAuthoritativeSnapshot = false,
+            )
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG).assertDoesNotExist()
+
+        restorationTester.emulateSavedInstanceStateRestore()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG).assertDoesNotExist()
+
+        compose.runOnUiThread {
+            notebookState.value = RuntimeResearchNotebooksUiState(
+                notebooks = listOf(archivedNotebook),
+                hasResolvedAuthoritativeSnapshot = true,
+            )
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG).assertDoesNotExist()
+        assertEquals(null, deletedSessionId)
+    }
+
+    @Test
+    fun navigationDrawerDoesNotRebindRestoredDeleteConfirmationAcrossRuntimes() {
+        val archivedNotebook = ResearchNotebookPayload(
+            notebookId = "research_notebook_4567890abcdef1234567890abcdef123",
+            sessionId = "research_session_4567890abcdef1234567890abcdef123",
+            title = "Runtime A deletion target",
+            model = "ollama:llama3.1:8b",
+            sourceCount = 1,
+            createdAt = "2026-07-29T00:00:00Z",
+            updatedAt = "2026-07-29T00:01:00Z",
+            archivedAt = "2026-07-29T00:02:00Z",
+        )
+        val runtimeA = researchNotebookTrustedRuntime(
+            deviceId = "runtime-a",
+            fingerprint = "runtime-a-fingerprint",
+        )
+        val runtimeB = researchNotebookTrustedRuntime(
+            deviceId = "runtime-b",
+            fingerprint = "runtime-b-fingerprint",
+        )
+        val currentRuntime = mutableStateOf(runtimeA)
+        val notebookState = mutableStateOf(
+            RuntimeResearchNotebooksUiState(
+                notebooks = listOf(archivedNotebook),
+                hasResolvedAuthoritativeSnapshot = true,
+            ),
+        )
+        var deletedNotebook: ResearchNotebookPayload? = null
+        val restorationTester = StateRestorationTester(compose)
+        restorationTester.setContent {
+            MaterialTheme {
+                AetherLinkNavigationDrawerContent(
+                    state = RuntimeUiState(
+                        isConnected = true,
+                        runtimeStatus = "authenticated",
+                        trustedRuntime = currentRuntime.value,
+                    ),
+                    researchNotebooks = notebookState.value.notebooks,
+                    isResearchNotebooksLoading = notebookState.value.isLoading,
+                    hasResolvedAuthoritativeResearchNotebooks = (
+                        notebookState.value.hasResolvedAuthoritativeSnapshot
+                    ),
+                    effectiveDestination = AppDestination.Chat,
+                    chatSearchQuery = "",
+                    hasAnyChatSessions = false,
+                    hasChatSearchQuery = false,
+                    hasChatSearchResults = false,
+                    filteredChatSessions = emptyList(),
+                    onChatSearchQueryChange = {},
+                    onClearChatSearch = {},
+                    onNewChat = {},
+                    onPermanentlyDeleteResearchNotebook = {
+                        deletedNotebook = it
+                    },
+                    onSelectChatSession = {},
+                    onRenameChatSession = {},
+                    onArchiveChatSession = {},
+                    onSelectSettings = {},
+                )
+            }
+        }
+
+        val history = compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+        val optionsTag = researchNotebookDrawerOptionsTestTag(archivedNotebook.sessionId)
+        history.performScrollToNode(hasTestTag(optionsTag))
+        compose.onNodeWithTag(optionsTag).performClick()
+        compose.onNodeWithTag(
+            researchNotebookDrawerMenuItemTestTag(archivedNotebook.sessionId, "delete"),
+        ).performClick()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_CONFIRM_TEST_TAG).performClick()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG).assertIsDisplayed()
+
+        compose.runOnUiThread {
+            notebookState.value = RuntimeResearchNotebooksUiState()
+        }
+        compose.waitForIdle()
+        restorationTester.emulateSavedInstanceStateRestore()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG).assertDoesNotExist()
+
+        compose.runOnUiThread {
+            currentRuntime.value = runtimeB
+            notebookState.value = RuntimeResearchNotebooksUiState(
+                notebooks = listOf(
+                    archivedNotebook.copy(title = "Runtime B collision"),
+                ),
+                hasResolvedAuthoritativeSnapshot = true,
+            )
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG).assertDoesNotExist()
+
+        compose.runOnUiThread {
+            currentRuntime.value = runtimeA
+            notebookState.value = RuntimeResearchNotebooksUiState(
+                notebooks = listOf(archivedNotebook),
+                hasResolvedAuthoritativeSnapshot = true,
+            )
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG).assertDoesNotExist()
+        assertEquals(null, deletedNotebook)
     }
 
     @Test
@@ -31208,6 +31510,15 @@ class ClientScreensNoDeviceComposeTest {
             )
         }
     }
+
+    private fun researchNotebookTrustedRuntime(
+        deviceId: String = "runtime-research-notebooks",
+        fingerprint: String = "runtime-research-notebooks-fingerprint",
+    ): RuntimeTrustedRuntime = RuntimeTrustedRuntime(
+        deviceId = deviceId,
+        name = "AetherLink Runtime",
+        fingerprint = fingerprint,
+    )
 
     private fun researchDialogSources(count: Int): List<RuntimeTrustedSource> {
         return (1..count).map { index ->

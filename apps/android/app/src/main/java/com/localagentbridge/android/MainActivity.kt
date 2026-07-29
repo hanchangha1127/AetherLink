@@ -113,10 +113,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -703,6 +703,9 @@ private fun LocalAgentBridgeApp(
                         state = state,
                         researchNotebooks = researchNotebookState.notebooks,
                         isResearchNotebooksLoading = researchNotebookState.isLoading,
+                        hasResolvedAuthoritativeResearchNotebooks = (
+                            researchNotebookState.hasResolvedAuthoritativeSnapshot
+                        ),
                         effectiveDestination = effectiveDestination,
                         chatSearchQuery = chatSearchQuery,
                         hasAnyChatSessions = hasAnyChatSessions,
@@ -2104,6 +2107,52 @@ internal data class ResearchNotebookDrawerGroups(
     val archived: List<ResearchNotebookPayload>,
 )
 
+internal data class ResearchNotebookDeleteConfirmationState(
+    val runtimeDeviceId: String,
+    val runtimeFingerprint: String,
+    val notebookId: String,
+    val sessionId: String,
+    val step: Int,
+) {
+    val isActive: Boolean
+        get() = runtimeDeviceId.isNotBlank() &&
+            notebookId.isNotBlank() &&
+            sessionId.isNotBlank() &&
+            step in 1..2
+
+    companion object {
+        val Empty = ResearchNotebookDeleteConfirmationState(
+            runtimeDeviceId = "",
+            runtimeFingerprint = "",
+            notebookId = "",
+            sessionId = "",
+            step = 0,
+        )
+
+        val Saver = listSaver<ResearchNotebookDeleteConfirmationState, Any>(
+            save = { state ->
+                listOf(
+                    state.runtimeDeviceId,
+                    state.runtimeFingerprint,
+                    state.notebookId,
+                    state.sessionId,
+                    state.step,
+                )
+            },
+            restore = { values ->
+                val restored = ResearchNotebookDeleteConfirmationState(
+                    runtimeDeviceId = values.getOrNull(0) as? String ?: "",
+                    runtimeFingerprint = values.getOrNull(1) as? String ?: "",
+                    notebookId = values.getOrNull(2) as? String ?: "",
+                    sessionId = values.getOrNull(3) as? String ?: "",
+                    step = values.getOrNull(4) as? Int ?: 0,
+                )
+                restored.takeIf(ResearchNotebookDeleteConfirmationState::isActive) ?: Empty
+            },
+        )
+    }
+}
+
 internal fun researchNotebookDrawerGroups(
     notebooks: List<ResearchNotebookPayload>,
 ): ResearchNotebookDrawerGroups = ResearchNotebookDrawerGroups(
@@ -2196,6 +2245,7 @@ internal fun AetherLinkNavigationDrawerContent(
     state: RuntimeUiState,
     researchNotebooks: List<ResearchNotebookPayload> = emptyList(),
     isResearchNotebooksLoading: Boolean = false,
+    hasResolvedAuthoritativeResearchNotebooks: Boolean = false,
     effectiveDestination: AppDestination,
     chatSearchQuery: String,
     hasAnyChatSessions: Boolean,
@@ -2238,13 +2288,66 @@ internal fun AetherLinkNavigationDrawerContent(
         !state.isChatHistoryActionPending
     var expandedResearchNotebookMenuSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var expandedChatSessionMenuId by rememberSaveable { mutableStateOf<String?>(null) }
-    var researchNotebookDeleteTarget by remember { mutableStateOf<ResearchNotebookPayload?>(null) }
-    var researchNotebookDeleteConfirmationStep by rememberSaveable { mutableIntStateOf(0) }
+    var researchNotebookDeleteConfirmation by rememberSaveable(
+        stateSaver = ResearchNotebookDeleteConfirmationState.Saver,
+    ) {
+        mutableStateOf(ResearchNotebookDeleteConfirmationState.Empty)
+    }
+    val matchingResearchNotebookDeleteTarget = remember(
+        researchNotebooks,
+        researchNotebookDeleteConfirmation.sessionId,
+    ) {
+        researchNotebookDeleteConfirmation
+            .takeIf(ResearchNotebookDeleteConfirmationState::isActive)
+            ?.let { confirmation ->
+                researchNotebooks.firstOrNull { notebook ->
+                    notebook.sessionId == confirmation.sessionId
+                }
+            }
+    }
+    val currentTrustedRuntime = state.trustedRuntime
+    val researchNotebookDeleteRuntimeMatches = currentTrustedRuntime != null &&
+        currentTrustedRuntime.deviceId == researchNotebookDeleteConfirmation.runtimeDeviceId &&
+        currentTrustedRuntime.fingerprint.orEmpty() ==
+        researchNotebookDeleteConfirmation.runtimeFingerprint
+    val researchNotebookDeleteTarget = matchingResearchNotebookDeleteTarget?.takeIf { notebook ->
+        researchNotebookDeleteRuntimeMatches &&
+            notebook.notebookId == researchNotebookDeleteConfirmation.notebookId &&
+            notebook.archivedAt != null
+    }
 
     LaunchedEffect(researchNotebooks) {
         val expandedSessionId = expandedResearchNotebookMenuSessionId ?: return@LaunchedEffect
         if (researchNotebooks.none { notebook -> notebook.sessionId == expandedSessionId }) {
             expandedResearchNotebookMenuSessionId = null
+        }
+    }
+    LaunchedEffect(
+        currentTrustedRuntime?.deviceId,
+        currentTrustedRuntime?.fingerprint,
+        matchingResearchNotebookDeleteTarget,
+        researchNotebookDeleteConfirmation,
+        hasResolvedAuthoritativeResearchNotebooks,
+    ) {
+        if (!researchNotebookDeleteConfirmation.isActive) return@LaunchedEffect
+        val trustedRuntime = currentTrustedRuntime ?: return@LaunchedEffect
+        val runtimeChanged = trustedRuntime.deviceId !=
+            researchNotebookDeleteConfirmation.runtimeDeviceId ||
+            trustedRuntime.fingerprint.orEmpty() !=
+            researchNotebookDeleteConfirmation.runtimeFingerprint
+        val explicitTargetInvalid = matchingResearchNotebookDeleteTarget?.let { notebook ->
+            notebook.notebookId != researchNotebookDeleteConfirmation.notebookId ||
+                notebook.archivedAt == null
+        } == true
+        val targetAbsentFromAuthoritativeSnapshot =
+            matchingResearchNotebookDeleteTarget == null &&
+                hasResolvedAuthoritativeResearchNotebooks
+        if (
+            runtimeChanged ||
+            explicitTargetInvalid ||
+            targetAbsentFromAuthoritativeSnapshot
+        ) {
+            researchNotebookDeleteConfirmation = ResearchNotebookDeleteConfirmationState.Empty
         }
     }
     LaunchedEffect(filteredChatSessions) {
@@ -2257,16 +2360,19 @@ internal fun AetherLinkNavigationDrawerContent(
     researchNotebookDeleteTarget?.let { notebook ->
         ResearchNotebookDeleteConfirmationDialog(
             notebook = notebook,
-            step = researchNotebookDeleteConfirmationStep,
+            step = researchNotebookDeleteConfirmation.step,
             enabled = researchActionsEnabled,
-            onStepChange = { researchNotebookDeleteConfirmationStep = it },
+            onStepChange = { step ->
+                researchNotebookDeleteConfirmation =
+                    researchNotebookDeleteConfirmation.copy(step = step)
+            },
             onDismiss = {
-                researchNotebookDeleteConfirmationStep = 0
-                researchNotebookDeleteTarget = null
+                researchNotebookDeleteConfirmation =
+                    ResearchNotebookDeleteConfirmationState.Empty
             },
             onConfirm = {
-                researchNotebookDeleteConfirmationStep = 0
-                researchNotebookDeleteTarget = null
+                researchNotebookDeleteConfirmation =
+                    ResearchNotebookDeleteConfirmationState.Empty
                 onPermanentlyDeleteResearchNotebook(notebook)
             },
         )
@@ -2429,9 +2535,17 @@ internal fun AetherLinkNavigationDrawerContent(
                         onRename = { onRenameResearchNotebook(notebook) },
                         onArchive = null,
                         onRestore = { onRestoreResearchNotebook(notebook) },
-                        onPermanentlyDelete = {
-                            researchNotebookDeleteTarget = notebook
-                            researchNotebookDeleteConfirmationStep = 1
+                        onPermanentlyDelete = currentTrustedRuntime?.let { trustedRuntime ->
+                            {
+                                researchNotebookDeleteConfirmation =
+                                    ResearchNotebookDeleteConfirmationState(
+                                        runtimeDeviceId = trustedRuntime.deviceId,
+                                        runtimeFingerprint = trustedRuntime.fingerprint.orEmpty(),
+                                        notebookId = notebook.notebookId,
+                                        sessionId = notebook.sessionId,
+                                        step = 1,
+                                    )
+                            }
                         },
                     )
                 }

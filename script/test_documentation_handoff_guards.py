@@ -110,8 +110,8 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
             [],
         )
         missing_current = document_text.replace(
-            "The Build 11 archive is the latest ledger entry",
-            "The Build 11 readback marker was removed.",
+            "The Build 13 archive is the latest ledger entry",
+            "The Build 13 readback marker was removed.",
             1,
         )
         self.assertTrue(
@@ -172,7 +172,7 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
 
         current_command = (
             "--archive-dir "
-            "dist/releases/aetherlink-1.0.0+11-local-v1"
+            "dist/releases/aetherlink-1.0.0+13-local-v1"
         )
         current_as_historical = dict(documents)
         current_as_historical[progress_path] = documents[
@@ -184,7 +184,7 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
         )
         self.assertTrue(
             any(
-                "current Build 11" in failure
+                "current Build 13" in failure
                 for failure in (
                     check_docs_hygiene
                     .release_readback_command_mode_failures(
@@ -647,6 +647,88 @@ private func generatePairingQR() {{
             [],
         )
 
+    def test_macos_packaged_state_recovery_result_matches_closed_contract(
+        self,
+    ) -> None:
+        self.assertEqual(
+            (
+                check_docs_hygiene
+                .macos_packaged_state_recovery_evidence_failures()
+            ),
+            [],
+        )
+        result = json.loads(
+            check_docs_hygiene.MACOS_PACKAGED_STATE_RECOVERY_RESULT.read_text(
+                encoding="utf-8"
+            )
+        )
+        result["stateRecovery"]["sqliteCanaryUnchangedAcrossRuns"] = 1
+        mutated = (
+            json.dumps(
+                result,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
+
+        failures = (
+            check_docs_hygiene
+            .macos_packaged_state_recovery_evidence_failures(mutated)
+        )
+
+        self.assertTrue(
+            any("expected identity" in failure for failure in failures)
+        )
+        self.assertTrue(any("exact closed" in failure for failure in failures))
+
+    def test_macos_packaged_state_recovery_sources_match_recorded_bytes(
+        self,
+    ) -> None:
+        self.assertEqual(
+            (
+                check_docs_hygiene
+                .macos_packaged_state_recovery_source_failures()
+            ),
+            [],
+        )
+        with patch.object(
+            check_docs_hygiene,
+            "MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256",
+            "0" * 64,
+        ):
+            failures = (
+                check_docs_hygiene
+                .macos_packaged_state_recovery_source_failures()
+            )
+        self.assertTrue(
+            any(
+                "run_macos_packaged_app_state_recovery_smoke.py"
+                in failure
+                for failure in failures
+            )
+        )
+
+    def test_build12_state_recovery_result_remains_unpublished(
+        self,
+    ) -> None:
+        self.assertEqual(
+            (
+                check_docs_hygiene
+                .historical_build12_state_recovery_absence_failures()
+            ),
+            [],
+        )
+        self.assertTrue(
+            (
+                check_docs_hygiene
+                .historical_build12_state_recovery_absence_failures(
+                    result_exists=True
+                )
+            )
+        )
+
     def test_historical_macos_packaged_lifecycle_result_is_preserved(
         self,
     ) -> None:
@@ -904,7 +986,7 @@ private func generatePairingQR() {{
             ),
             (
                 "`dist/reproducibility/"
-                "aetherlink-1.0.0+11-local-v1-two-root-v2-confirmation.json`"
+                "aetherlink-1.0.0+13-local-v1-two-root-v2-confirmation.json`"
             ),
             (
                 f"{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_CONFIRMATION_SIZE:,} "
@@ -914,6 +996,39 @@ private func generatePairingQR() {{
                 f"`{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_CONFIRMATION_SHA256}`"
             ),
             "`alreadyMatched=true`",
+            (
+                "`dist/lifecycle/"
+                "macos-packaged-app-build-13-state-recovery-v1.json`"
+            ),
+            (
+                f"{check_docs_hygiene.MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT_SIZE:,} "
+                "bytes"
+            ),
+            (
+                f"`{check_docs_hygiene.MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT_SHA256}`"
+            ),
+            (
+                f"`{check_docs_hygiene.MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256}`"
+            ),
+            (
+                f"`{check_docs_hygiene.MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_TEST_SHA256}`"
+            ),
+            "`legacyAbsentBeforeSecondRun=true`",
+            "`legacyFixturePreservedUnchanged=true`",
+            "`sqliteCanaryUnchangedAcrossRuns=true`",
+            (
+                "`da3320c2cbdf9146b0ee21c084a9474715caf9f5e1d568853f6a2359cd9f4cef`"
+            ),
+            (
+                "`558fbc563c3f07474b4a28093290216a8fcfdade66cee5ee8354c8fc867fd5f9`"
+            ),
+            (
+                "`ab8c927b33c3f3b2350eefd357c696c92b076f8c950da9c46823859cddeaad07`"
+            ),
+            (
+                "Build 12 state-recovery result was not published, and Build "
+                "13 evidence is not reinterpreted as Build 12 evidence."
+            ),
             (
                 "`dist/lifecycle/"
                 "macos-packaged-app-build-10-lifecycle-v1.json`"
@@ -939,7 +1054,7 @@ private func generatePairingQR() {{
             ),
             (
                 "Build 10 observations remain bound to Build 10 and are not "
-                "reinterpreted as Build 11 evidence."
+                "reinterpreted as Build 13 evidence."
             ),
             "`minimumObservationSeconds=5.0`",
             "`observationDeadlineReached=true`",

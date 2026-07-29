@@ -96,11 +96,19 @@ current user direction, not repository-owner identity proof.
   one. Its recorded router/fingerprint hashes remain historical, and the live
   V2 runner correctly rejects the changed product-source bytes until a future
   versioned observation is prepared.
-- Build 11 is now the latest immutable ledger archive and binds the settled
+- Build 13 is now the latest immutable ledger archive and binds the settled
   reranker, Android drawer-search release inputs, and the dual AAB structure
-  validation gate to a current 239-file source snapshot. Two independent
+  validation gate to a current 240-file source snapshot. Two independent
   two-root qualification executions reproduced the same archive, and
-  current-source readback passes. Builds 1 through 10 are historical.
+  current-source readback passes. Builds 1 through 12 are historical.
+- The exact packaged Build 13 app also passed a two-process state-recovery
+  smoke. The first isolated process migrated one fixed benign legacy JSONL
+  event through the production store and model projection. After exact-PID
+  termination and legacy removal, the second independent process recovered the
+  same single SQLite row. The 2,185-byte result SHA-256 is
+  `21f30e0b60e81bcbfb7e8a198c68ef53d6f6c739a63c80a1339278b7565ea769`.
+  Build 12's marker-file attempt failed closed and published no result; Build
+  13 evidence does not transfer to Build 12.
 - The current Android accessibility slice raises the existing Chat and Settings
   no-device multilingual regressions to font scale `2.0`, covering `en`, `ko`,
   `ja`, `zh-CN`, and `fr`.
@@ -151,27 +159,27 @@ current user direction, not repository-owner identity proof.
   DMG, and clean-machine launch remain unclaimed; Intel is Post-V1.
 - `release/version-ledger.tsv` is now the single version source for Android
   Release and macOS packaging. The latest published qualification reads back as
-  `1.0.0+11`; Android Debug stays `0.1.0+1` and builds with the ledger absent.
+  `1.0.0+13`; Android Debug stays `0.1.0+1` and builds with the ledger absent.
   Python, Bash, and lazy Gradle consumers reject noncanonical control bytes;
   strict parser, source, artifact, and fake-toolchain checks pass. The main
   `dist/AetherLink.app` remains the user-owned running Build 4 bundle and was
-  not replaced during Build 11 qualification.
-- The Build 11 qualification runner clean-builds both targets in two isolated
+  not replaced during Build 13 qualification.
+- The Build 13 qualification runner clean-builds both targets in two isolated
   source roots whose UTF-8 byte lengths are 101 and 109, and publishes
-  `dist/releases/aetherlink-1.0.0+11-local-v1/`. Its 165,378,312-byte canonical
+  `dist/releases/aetherlink-1.0.0+13-local-v1/`. Its 165,429,300-byte canonical
   normalized-input ZIP has SHA-256
-  `08505eaefa7f7ef035ad9ff644f1f7e6efa95ef924acccd23d2478e47d92c148`.
+  `d48bf8f837c104624b14b1cdc223d5c62aa2c68d13ff6d830f0a394dcd953191`.
   The 2-root result is
-  `dist/reproducibility/aetherlink-1.0.0+11-local-v1-two-root-v2.json`; it records
+  `dist/reproducibility/aetherlink-1.0.0+13-local-v1-two-root-v2.json`; it records
   byte-identical lane output, immutable publication, and independent readback.
   Independent readback verifies 29 payload members, arm64-only APK badging,
   AAB mapping/JNI identity, exact `base`-only structure through
   `bundletool 1.18.3 validate`, direct base-manifest package/version/SDK, and
   the arm64 app/dSYM UUID
-  `415765ED-429A-36D9-BC1A-BAC6DDF18B45`. Android native symbols remain
+  `A16CB949-C7E9-3BD7-A1AB-AC5D0662437F`. Android native symbols remain
   explicitly unavailable because all five upstream JNI inputs are pre-stripped.
-  The 239-file source is explicitly a `dirty-content-snapshot`; commit
-  `8955fb1c25ec483aaedad53793609311337605de` alone cannot reconstruct the
+  The 240-file source is explicitly a `dirty-content-snapshot`; commit
+  `324872d36361212cbd6ac957116011f53b366327` alone cannot reconstruct the
   archived bytes. Compliance profile `aetherlink-release-compliance-v2`
   requires a 350-package Gradle lock/POM catalog, fixed metadata, text
   inventory, and SPDX 2.3 JSON. It records 692 exact package roles: 202
@@ -193,12 +201,12 @@ current user direction, not repository-owner identity proof.
   dependence while retaining the dSYM. Two complete A/B qualifications produced
   a byte-identical ZIP, manifest, checksum sidecar, and 30-entry archive
   inventory. The 19,744-byte confirmation result has SHA-256
-  `6da0148640ef5bb97d53369214103a90ea67c499cc2f2cf918591d19f2e87039`
+  `f1e5aa20c6d5e98b450f3501d9a30d38daa5ab1f57197778126a9ced039446b5`
   and records `alreadyMatched=true`. This is bounded evidence for two recorded same-host,
   fixed-toolchain/cache-snapshot, canonical-scratch pair, not a claim that
   arbitrary repeats are variance-free. Arbitrary roots or path lengths,
   cross-host reproducibility, signed artifacts, clean-machine launch, and
-  physical behavior remain unclaimed. Builds 1 through 10 remain immutable,
+  physical behavior remain unclaimed. Builds 1 through 12 remain immutable,
   independently readable historical archives. The
   verifier now cross-binds Gradle lock identities to the archived source
   inventory and rejects use of historical mode for the current release.
@@ -223,13 +231,13 @@ current user direction, not repository-owner identity proof.
   `aad796ee3c768e37953f18eeea0e6642107750c3a8c398df798a46e96aabab53`.
   PID 59809 stayed alive at the same path with executable SHA-256
   `93cb550903f74e5018514870d1f4e7ac95ffc5df915fb8bde48c1ff512b382d0`.
-  Build 11 has no packaged-app lifecycle result. The Build 10 observations
-  remain bound to Build 10 and are not reinterpreted as Build 11 evidence.
-  Do not claim identity persistence, state recovery, UI correctness,
-  listener/provider readiness, installation, clean-machine behavior, signed
-  distribution, or physical-device behavior from this smoke.
+  The Build 10 observations remain bound to Build 10 and are not reinterpreted
+  as Build 13 evidence. Do not claim identity persistence, Runtime-chat
+  migration/readback, UI correctness, listener/provider readiness,
+  installation, clean-machine behavior, signed distribution, or
+  physical-device behavior from the historical smoke.
 - The versioned
-  `docs/releases/1.0.0-build-11-local-v1.md` record now consolidates release
+  `docs/releases/1.0.0-build-13-local-v1.md` record now consolidates release
   notes, compatibility, migration, limitations, diagnostics, privacy/evidence
   boundaries, and rollback. It explicitly treats Android Debug `0.1.0+1` and
   local ad-hoc macOS packages as non-upgrade lineages. Build 6 remains a
@@ -338,17 +346,16 @@ current user direction, not repository-owner identity proof.
   nine expected opt-in skips. Docs/copy hygiene, ledger readback, 113 combined
   runner/documentation tests, Python syntax, diff whitespace, and the empty
   staging guard pass. The Build 9 archive binds that earlier settled source
-  snapshot and passes historical readback. Build 11 now binds the current
-  reranker, Android drawer-search release inputs, and AAB validation gate;
-  Builds 1 through 10 pass
+  snapshot and passes historical readback. Build 13 now binds the current
+  reranker, Android drawer-search release inputs, AAB validation gate, and
+  packaged Runtime-chat state-recovery result; Builds 1 through 12 pass
   historical ledger-prefix readback. No physical-device claim was made.
 - A separately user-authored commit appeared during the preceding verification:
   `main` and `origin/main` both resolve to
-  `8955fb1c25ec483aaedad53793609311337605de`. Codex did not stage, commit,
-  or push. The current post-commit V3 Swift test, runner, runner test, and four
-  top-level documentation files plus the Android drawer source and two Android
-  test files and their copy-hygiene guard remain modified and unstaged;
-  preserve them when continuing.
+  `324872d36361212cbd6ac957116011f53b366327`. Codex did not stage, commit,
+  or push. Current Build 13 recovery implementation, runner, tests, release
+  records, and top-level documentation remain modified and unstaged; preserve
+  them when continuing.
 - Do not stage, commit, or push these local changes unless the user explicitly
   requests it.
 
@@ -3158,7 +3165,7 @@ swift build -c release --product AetherLink
 ### Historical Build 10 packaged macOS lifecycle
 
 The frozen runner's original observations remain exact Build 10 evidence only.
-Because Build 11 is now current, do not invoke that runner: its fixed
+Because Build 13 is now current, do not invoke that runner: its fixed
 current-source lane intentionally no longer matches the ledger. Verify the
 historical archive, preserved test contract, and immutable result bytes
 without launching the app.
@@ -3331,15 +3338,16 @@ Unless the user redirects the task, use this active non-security order:
 1. Re-read this handoff and refresh Git plus generated-artifact state. Do not
    infer device/process state from an older snapshot.
 2. Run the focused static guards. Use
-   `python3 script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+11-local-v1`
-   for current-source Build 11 evidence. Builds 1 through 10 require
+   `python3 script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+13-local-v1`
+   for current-source Build 13 evidence. Builds 1 through 12 require
    `--historical`.
 3. Preserve the historical Build 10 packaged-app lifecycle result and the
    exact Build 9 historical runner/test/result bytes. Do not run the frozen
-   Build 10 lifecycle command against the Build 11 ledger. The next bounded
-   no-device G6 candidate should prove benign state save followed by actual
-   second-process readback in a separately versioned runner; it must not claim
-   identity, pairing, authentication, or other security behavior.
+   Build 10 lifecycle command against the Build 13 ledger. Preserve Build 12's
+   failed-closed, non-published marker-file attempt. Build 13 already proves
+   the bounded benign legacy migration and second-process SQLite readback; do
+   not widen that result to arbitrary histories, UI, provider, identity,
+   pairing, authentication, or physical-device behavior.
 4. Continue the non-security provider matrix only when live provider execution
    is in scope. Both exact Ollama candidates now
    have isolated empty-catalog plus two existing chat-model shapes, one

@@ -36,7 +36,9 @@ RESULT_SCHEMA_VERSION = 1
 QA_MODE_ENVIRONMENT_KEY = "AETHERLINK_QA_PACKAGED_STATE_RECOVERY_MODE"
 MIGRATION_MODE = "migration-read-v1"
 SQLITE_READBACK_MODE = "sqlite-readback-v1"
-MARKER_DIRECTORY_NAME = "qa-packaged-state-recovery-v1"
+OBSERVATION_LINE_PREFIX = (
+    "AETHERLINK_QA_PACKAGED_STATE_RECOVERY_RESULT="
+)
 LEGACY_FILENAME = "runtime-chat-events.jsonl"
 DATABASE_FILENAME = "runtime-chat-events.sqlite"
 CANARY_EVENT_ID = "packaged-state-recovery-canary-event-v1"
@@ -332,52 +334,28 @@ def state_recovery_environment(
     return environment
 
 
-def expected_marker(mode: str) -> dict[str, object]:
+def expected_observation_line(mode: str) -> bytes:
     if mode not in (MIGRATION_MODE, SQLITE_READBACK_MODE):
         raise engine.LifecycleSmokeError(
             f"unsupported packaged-state recovery mode: {mode!r}"
         )
-    return {
-        "canary": {
-            "eventID": CANARY_EVENT_ID,
-            "model": CANARY_MODEL,
-            "requestID": CANARY_REQUEST_ID,
-            "sessionID": CANARY_SESSION_ID,
-            "timestampEpochMilliseconds": (
-                CANARY_TIMESTAMP_EPOCH_MILLISECONDS
-            ),
-        },
-        "mode": mode,
-        "observation": {
-            "lastActivityEpochMilliseconds": (
-                CANARY_TIMESTAMP_EPOCH_MILLISECONDS
-            ),
-            "lastEvent": "request",
-            "matchingSessionCount": 1,
-            "messageCount": 1,
-            "model": CANARY_MODEL,
-            "status": "active",
-        },
-        "schemaVersion": 1,
-        "status": "passed",
-    }
+    return f"{OBSERVATION_LINE_PREFIX}{mode}:passed\n".encode("ascii")
 
 
-def verify_marker(path: Path, mode: str) -> dict[str, object]:
+def verify_observation_log(path: Path, mode: str) -> dict[str, object]:
     if path.is_symlink() or not path.is_file():
         raise engine.LifecycleSmokeError(
-            f"packaged-state recovery marker is missing: {path.name}"
+            f"packaged-state recovery stdout log is missing: {path.name}"
         )
     payload = path.read_bytes()
-    marker = engine.strict_json_loads(payload, str(path))
-    expected = expected_marker(mode)
-    if marker != expected:
+    if len(payload) > 4_096:
         raise engine.LifecycleSmokeError(
-            f"packaged-state recovery marker differs for {mode!r}"
+            f"packaged-state recovery stdout is oversized for {mode!r}"
         )
-    if payload != engine.canonical_json_bytes(expected):
+    expected = expected_observation_line(mode)
+    if payload != expected:
         raise engine.LifecycleSmokeError(
-            f"packaged-state recovery marker is not canonical for {mode!r}"
+            f"packaged-state recovery observation differs for {mode!r}"
         )
     return {
         "mode": mode,
@@ -604,7 +582,6 @@ def execute(
         )
         legacy_path = application_support / LEGACY_FILENAME
         database_path = application_support / DATABASE_FILENAME
-        marker_directory = application_support / MARKER_DIRECTORY_NAME
         write_legacy_fixture(legacy_path)
 
         profile = engine.build_sandbox_profile(temporary_root)
@@ -627,10 +604,19 @@ def execute(
             observation_seconds=observation_seconds,
             termination_timeout_seconds=termination_timeout_seconds,
         )
-        first_marker = verify_marker(
-            marker_directory / f"{MIGRATION_MODE}.json",
-            MIGRATION_MODE,
-        )
+        try:
+            first_observation = verify_observation_log(
+                logs / "run-1-stdout.log",
+                MIGRATION_MODE,
+            )
+        except engine.LifecycleSmokeError as error:
+            raise engine.LifecycleSmokeError(
+                f"{error}; "
+                + engine.isolated_diagnostic_summary(
+                    temporary_root,
+                    logs,
+                )
+            ) from error
         first_sqlite = sqlite_canary_evidence(database_path)
 
         preserved_legacy = remove_legacy_before_readback(
@@ -659,10 +645,19 @@ def execute(
             raise engine.LifecycleSmokeError(
                 "legacy runtime-chat fixture reappeared during SQLite readback"
             )
-        second_marker = verify_marker(
-            marker_directory / f"{SQLITE_READBACK_MODE}.json",
-            SQLITE_READBACK_MODE,
-        )
+        try:
+            second_observation = verify_observation_log(
+                logs / "run-2-stdout.log",
+                SQLITE_READBACK_MODE,
+            )
+        except engine.LifecycleSmokeError as error:
+            raise engine.LifecycleSmokeError(
+                f"{error}; "
+                + engine.isolated_diagnostic_summary(
+                    temporary_root,
+                    logs,
+                )
+            ) from error
         second_sqlite = sqlite_canary_evidence(database_path)
         if first_sqlite != second_sqlite:
             raise engine.LifecycleSmokeError(
@@ -705,10 +700,10 @@ def execute(
             "stateRecovery": {
                 "legacyAbsentBeforeSecondRun": True,
                 "legacyFixturePreservedUnchanged": True,
-                "migrationMarker": first_marker,
+                "migrationObservation": first_observation,
                 "migrationSQLite": first_sqlite.record(),
                 "sqliteCanaryUnchangedAcrossRuns": True,
-                "sqliteReadbackMarker": second_marker,
+                "sqliteReadbackObservation": second_observation,
                 "sqliteReadbackSQLite": second_sqlite.record(),
             },
             "status": "passed",

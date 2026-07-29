@@ -96,14 +96,20 @@ class MacOSPackagedAppStateRecoverySmokeTests(unittest.TestCase):
                 mode="unknown",
             )
 
-    def test_verify_marker_accepts_only_exact_canonical_pass(self) -> None:
+    def test_verify_observation_log_accepts_only_exact_pass_line(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            path = Path(temporary) / "marker.json"
-            expected = smoke.expected_marker(smoke.MIGRATION_MODE)
-            payload = smoke.engine.canonical_json_bytes(expected)
+            path = Path(temporary) / "stdout.log"
+            payload = smoke.expected_observation_line(
+                smoke.MIGRATION_MODE
+            )
             path.write_bytes(payload)
 
-            record = smoke.verify_marker(path, smoke.MIGRATION_MODE)
+            record = smoke.verify_observation_log(
+                path,
+                smoke.MIGRATION_MODE,
+            )
 
             self.assertEqual(record["status"], "passed")
             self.assertEqual(record["size"], len(payload))
@@ -112,35 +118,45 @@ class MacOSPackagedAppStateRecoverySmokeTests(unittest.TestCase):
                 hashlib.sha256(payload).hexdigest(),
             )
 
+            path.write_bytes(payload + payload)
+            with self.assertRaisesRegex(
+                smoke.engine.LifecycleSmokeError,
+                "observation differs",
+            ):
+                smoke.verify_observation_log(
+                    path,
+                    smoke.MIGRATION_MODE,
+                )
+
             path.write_bytes(
-                json.dumps(expected, indent=2, sort_keys=True).encode("ascii")
-                + b"\n"
+                (
+                    smoke.OBSERVATION_LINE_PREFIX
+                    + smoke.MIGRATION_MODE
+                    + ":failed:canary-session-not-recovered\n"
+                ).encode("ascii")
             )
             with self.assertRaisesRegex(
                 smoke.engine.LifecycleSmokeError,
-                "not canonical",
+                "observation differs",
             ):
-                smoke.verify_marker(path, smoke.MIGRATION_MODE)
+                smoke.verify_observation_log(
+                    path,
+                    smoke.MIGRATION_MODE,
+                )
 
-            failed = smoke.expected_marker(smoke.MIGRATION_MODE)
-            failed["status"] = "failed"
-            path.write_bytes(smoke.engine.canonical_json_bytes(failed))
-            with self.assertRaisesRegex(
-                smoke.engine.LifecycleSmokeError,
-                "differs",
-            ):
-                smoke.verify_marker(path, smoke.MIGRATION_MODE)
-
-    def test_verify_marker_rejects_duplicate_json_key(self) -> None:
+    def test_verify_observation_log_rejects_oversized_output(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            path = Path(temporary) / "marker.json"
-            path.write_bytes(b'{"status":"passed","status":"passed"}\n')
+            path = Path(temporary) / "stdout.log"
+            path.write_bytes(b"x" * 4_097)
 
             with self.assertRaisesRegex(
                 smoke.engine.LifecycleSmokeError,
-                "invalid JSON",
+                "oversized",
             ):
-                smoke.verify_marker(path, smoke.MIGRATION_MODE)
+                smoke.verify_observation_log(
+                    path,
+                    smoke.MIGRATION_MODE,
+                )
 
     def test_write_and_remove_legacy_fixture_preserve_exact_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

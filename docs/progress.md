@@ -4,49 +4,54 @@ Last updated: 2026-07-29 KST.
 
 This document records what has been implemented so far and what should happen next. It is intentionally broader than the original v0.1 MVP because recent work has moved the prototype toward a more complete product shape.
 
-## 2026-07-29 Local V1 Build 11 Current-Source Release Qualification
+## 2026-07-29 Local V1 Build 13 Current-Source Recovery Qualification
 
-- The append-only release ledger now ends at `1.0.0+11`. Build 11 is the
-  current local qualification record; Builds 1 through 10 remain immutable
+- The append-only release ledger now ends at `1.0.0+13`. Build 13 is the
+  current local qualification record; Builds 1 through 12 remain immutable
   historical records.
-- The 239-file `dirty-content-snapshot` has SHA-256
-  `da7dbf88cba5d5bc9f9d822e0f70fe7b21a9080add5e1b3718c60ef9dc341c84`.
+- The 240-file `dirty-content-snapshot` has SHA-256
+  `82651260cc440946b7f12cebfb4e5b4c13d59ba3bc56da79a1f54adc37eeffa1`.
   HEAD and `origin/main` were both
-  `8955fb1c25ec483aaedad53793609311337605de`; the archived source inventory,
+  `324872d36361212cbd6ac957116011f53b366327`; the archived source inventory,
   not that commit alone, is the release source identity.
-- Two complete independent qualification runs each built Android Release and
-  macOS Release at 101- and 109-byte isolated roots. All four builds produced
-  the same 165,378,312-byte ZIP with SHA-256
-  `08505eaefa7f7ef035ad9ff644f1f7e6efa95ef924acccd23d2478e47d92c148`,
-  the same 12,062-byte manifest, 99-byte checksum sidecar, and every one of 30
-  ZIP entries byte-for-byte.
+- Two complete independent qualification executions each built Android
+  Release and macOS Release at 101- and 109-byte isolated roots. All four
+  builds produced the same 165,429,300-byte ZIP with SHA-256
+  `d48bf8f837c104624b14b1cdc223d5c62aa2c68d13ff6d830f0a394dcd953191`,
+  the same 12,062-byte manifest, 99-byte checksum sidecar, and all 30 ZIP
+  entries byte-for-byte.
 - The first 19,745-byte reproducibility result has SHA-256
-  `65bb96a93008a077b95608611416e4c41cb91e27cb70d61facd66104748512f4`
-  and published the immutable archive. The separate 19,744-byte confirmation
-  has SHA-256
-  `6da0148640ef5bb97d53369214103a90ea67c499cc2f2cf918591d19f2e87039`
+  `d77477077059c45fe21c51cbcbd6d62b6412c8dabf6b22683f20ea6acbc30d2f`.
+  The separate 19,744-byte confirmation has SHA-256
+  `f1e5aa20c6d5e98b450f3501d9a30d38daa5ab1f57197778126a9ced039446b5`
   and records `alreadyMatched=true`.
 - Builder and independent readback each run exact `bundletool 1.18.3
-  validate` with a 60-second timeout, require only the `base` module, and then
-  read the same AAB's base manifest. Independent current-source readback passes
-  for all 29 payload members, Android `1.0.0+11` unsigned arm64-v8a APK/AAB
-  identity, R8 outputs, five locales and JNI libraries, and the ad-hoc arm64
-  macOS app plus UUID-matched dSYM.
-- Build 11 has no packaged-app lifecycle result. The historical Build 10
-  lifecycle observation remains bound only to the Build 10 ZIP, manifest, and
-  executable. It is not reinterpreted as Build 11 launch, UI, persistence, or
-  recovery evidence.
-- This closes a bounded local current-source G6 AAB-structure and packaging
-  gap only. Installation, launch, UI correctness, listener/provider readiness,
-  production signing, notarization, signed DMG, Play delivery, physical
-  devices, provider/network behavior, clean-machine execution, and G6/G7 exit
-  remain unclaimed. PID 59809 stayed alive at the same path and its executable
-  SHA-256 remained
-  `93cb550903f74e5018514870d1f4e7ac95ffc5df915fb8bde48c1ff512b382d0`.
+  validate`, require only the `base` module, and verify the same AAB's base
+  manifest. Current readback passes for all 29 payload members, Android
+  `1.0.0+13` unsigned arm64-v8a APK/AAB identity, R8 outputs, five locales and
+  JNI libraries, and the ad-hoc arm64 macOS app plus UUID-matched dSYM.
+- The 2,185-byte packaged-state recovery result has SHA-256
+  `21f30e0b60e81bcbfb7e8a198c68ef53d6f6c739a63c80a1339278b7565ea769`.
+  A first isolated packaged process migrated the fixed legacy JSONL canary
+  through the production store and model projection. After exact-PID
+  termination and legacy removal, a second independent process recovered the
+  same single SQLite row. Both read-only checks returned `integrityCheck=ok`;
+  `legacyAbsentBeforeSecondRun=true`,
+  `legacyFixturePreservedUnchanged=true`, and
+  `sqliteCanaryUnchangedAcrossRuns=true`.
+- Build 12 remains a valid historical archive/reproducibility record, but its
+  marker-file state-recovery attempt failed closed and published no result.
+  Build 13 recovery evidence does not transfer to Build 12. Historical Build
+  10/9 lifecycle results also retain their original build bindings.
+- This closes one bounded no-device packaged migration/restart gap. Arbitrary
+  histories, crash/power-loss recovery, concurrent old/new writers,
+  installation, UI correctness, provider readiness, signing/notarization,
+  clean-machine execution, physical devices, and G6/G7 exit remain unclaimed.
+  PID 59809 stayed alive at the same path and was not replaced or terminated.
 - Current readback:
-  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+11-local-v1`.
-- Historical Build 10 readback:
-  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+10-local-v1 --historical`.
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+13-local-v1`.
+- Historical Build 12 readback:
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+12-local-v1 --historical`.
   No security work, staging, commit, or push occurred.
 
 ## 2026-07-29 Unreleased Android Drawer Semantic Chat Search UX
@@ -155,9 +160,9 @@ This document records what has been implemented so far and what should happen ne
   the observation. The live V2 runner now intentionally rejects the changed
   product sources instead of silently rebinding that historical result; no live
   retry was attempted.
-- Build 11 now binds these release inputs to a current source snapshot and
-  passes independent readback. Builds 9 and 10 remain readable only as historical
-  source-bound evidence.
+- Build 13 now binds these release inputs to the current source snapshot and
+  passes independent readback. Builds 9 through 12 remain readable only as
+  historical source-bound evidence.
 - This was no-device, mocked/deterministic, non-security product-quality work.
   No provider/model load, download, catalog mutation, installed-app change,
   staging, commit, or push occurred.
@@ -165,7 +170,7 @@ This document records what has been implemented so far and what should happen ne
 ## 2026-07-29 Local V1 Build 9 Prior Source-Bound Release And Lifecycle Qualification
 
 - At publication, the append-only release ledger ended at `1.0.0+9`. Build 9
-  is now a prior source-bound historical qualification; Build 11 is current.
+  is now a prior source-bound historical qualification; Build 13 is current.
 - The 239-file `dirty-content-snapshot` has SHA-256
   `22e26f5ed62be9b7badcc01ff76db91f436d0a0cde9ad1587a6c27588962a5ec`.
   It binds the settled role-aware embedding implementation; HEAD and
@@ -202,7 +207,7 @@ This document records what has been implemented so far and what should happen ne
 ## 2026-07-29 Historical Local V1 Build 7 SPDX And License Inventory Qualification
 
 - At the time of publication, the append-only release ledger ended at
-  `1.0.0+7`. Build 7 is now historical; Build 11 is the current local
+  `1.0.0+7`. Build 7 is now historical; Build 13 is the current local
   qualification record.
 - A source-controlled catalog exactly covers 350 unique Maven coordinates from
   six Gradle lock files, 379 exact POM byte identities, and zero external
@@ -263,7 +268,7 @@ This document records what has been implemented so far and what should happen ne
 ## 2026-07-29 Historical Local V1 Build 6 Unequal-Length Two-Root Qualification
 
 - At the time of publication, the append-only release ledger ended at
-  `1.0.0+6`. Build 6 is now historical; Build 11 is the current local
+  `1.0.0+6`. Build 6 is now historical; Build 13 is the current local
   qualification record.
 - One fixed dirty-content source snapshot with 235 production files was cloned
   into two isolated lane roots whose UTF-8 byte lengths are 101 and 109. The
@@ -3402,6 +3407,41 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 - The user will handle commits and pushes unless they explicitly ask otherwise.
 
 ## Implemented So Far
+
+### 2026-07-29 Local V1 Build 13 Packaged State Recovery Qualification
+
+- Scope: added an exact environment-gated packaged observation for the
+  production Runtime-chat startup projection and a no-device runner that uses
+  one isolated HOME across two independently terminated app processes.
+- Result: Build 13 passed two complete two-root release qualifications, current
+  archive readback, legacy JSONL migration, exact SQLite single-row readback,
+  legacy removal, and a second SQLite-only startup projection. The published
+  state-recovery result is 2,185 bytes with SHA-256
+  `21f30e0b60e81bcbfb7e8a198c68ef53d6f6c739a63c80a1339278b7565ea769`.
+- Historical boundary: Build 12's marker-file attempt failed closed and
+  published no state-recovery result. Build 13 evidence does not transfer to
+  Build 12, and the frozen Build 10/9 lifecycle results remain unchanged.
+- Device/runtime state: this was no-device verification. PID 59809 continued
+  running the untouched main Build 4 bundle. No physical device, camera QR,
+  live provider, or real different-network flow was used.
+- Caveat: the result covers one fixed benign legacy event, production-store
+  migration, model projection, exact SQLite identity, and SQLite-only reopen
+  on this host. It does not qualify arbitrary histories, crash or power-loss
+  recovery, concurrent old/new writers, UI behavior, clean-machine launch,
+  signing, notarization, deployment, or physical-device behavior.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.6 Sol supplied
+  read-only design and final review. Security, authentication, ownership, and
+  governance work were excluded.
+
+Verified after this change:
+
+- `python3 -B script/run_clean_release_reproducibility.py`
+- `python3 -B script/run_macos_packaged_app_state_recovery_smoke.py`
+- `python3 -B script/run_clean_release_reproducibility.py --result dist/reproducibility/aetherlink-1.0.0+13-local-v1-two-root-v2-confirmation.json`
+- `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+13-local-v1`
+- `python3 -B -m unittest script.test_run_macos_packaged_app_state_recovery_smoke script.test_documentation_handoff_guards`
+- `python3 -B script/check_docs_hygiene.py`
+- `git diff --check`
 
 ### 2026-07-29 Historical Local V1 Build 8 Exact-Role Compliance Qualification
 

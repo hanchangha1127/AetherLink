@@ -17,171 +17,99 @@ final class PackagedStateRecoveryProbeTests: XCTestCase {
         )
     }
 
-    func testMigrationModePublishesExactPassedObservation() throws {
-        try withTemporaryRoot { root in
-            let databaseURL = databaseURL(under: root)
-            let probe = try XCTUnwrap(
-                PackagedStateRecoveryProbe.prepareIfRequested(
-                    environment: modeEnvironment(.migrationRead),
-                    databaseURL: databaseURL
-                )
+    func testMigrationModePublishesExactPassedObservationLine() throws {
+        let probe = try XCTUnwrap(
+            PackagedStateRecoveryProbe.prepareIfRequested(
+                environment: modeEnvironment(.migrationRead)
             )
+        )
 
-            XCTAssertEqual(probe.mode, .migrationRead)
-            XCTAssertEqual(
-                probe.markerURL,
-                databaseURL
-                    .deletingLastPathComponent()
-                    .appendingPathComponent(
-                        PackagedStateRecoveryProbe.markerDirectoryName,
-                        isDirectory: true
-                    )
-                    .appendingPathComponent("migration-read-v1.json")
+        XCTAssertEqual(probe.mode, .migrationRead)
+        XCTAssertEqual(
+            probe.observationResultLine(
+                sessions: [matchingSession()],
+                storeError: nil
+            ),
+            Data(
+                "AETHERLINK_QA_PACKAGED_STATE_RECOVERY_RESULT=migration-read-v1:passed\n"
+                    .utf8
             )
-            XCTAssertTrue(
-                probe.recordObservation(
-                    sessions: [matchingSession()],
-                    storeError: nil
-                )
-            )
-            XCTAssertEqual(
-                try decodedMarker(at: probe.markerURL),
-                PackagedStateRecoveryProbe.Marker(
-                    canary: PackagedStateRecoveryProbe.canary,
-                    failureCode: nil,
-                    mode: "migration-read-v1",
-                    observation: matchingObservation(),
-                    schemaVersion: 1,
-                    status: "passed"
-                )
-            )
-            XCTAssertEqual(try probe.markerURL.readBytes().last, 0x0A)
-        }
+        )
     }
 
-    func testSQLiteReadbackModePublishesExactPassedObservation() throws {
-        try withTemporaryRoot { root in
-            let probe = try XCTUnwrap(
-                PackagedStateRecoveryProbe.prepareIfRequested(
-                    environment: modeEnvironment(.sqliteReadback),
-                    databaseURL: databaseURL(under: root)
-                )
+    func testSQLiteReadbackModePublishesExactPassedObservationLine() throws {
+        let probe = try XCTUnwrap(
+            PackagedStateRecoveryProbe.prepareIfRequested(
+                environment: modeEnvironment(.sqliteReadback)
             )
+        )
 
-            XCTAssertTrue(
-                probe.recordObservation(
-                    sessions: [matchingSession()],
-                    storeError: nil
-                )
+        XCTAssertEqual(
+            probe.observationResultLine(
+                sessions: [matchingSession()],
+                storeError: nil
+            ),
+            Data(
+                "AETHERLINK_QA_PACKAGED_STATE_RECOVERY_RESULT=sqlite-readback-v1:passed\n"
+                    .utf8
             )
-            let marker = try decodedMarker(at: probe.markerURL)
-            XCTAssertEqual(marker.mode, "sqlite-readback-v1")
-            XCTAssertEqual(marker.status, "passed")
-            XCTAssertNil(marker.failureCode)
-            XCTAssertEqual(marker.observation, matchingObservation())
-        }
+        )
     }
 
-    func testReadFailureIsContentFreeAndTakesPrecedence() throws {
-        try withTemporaryRoot { root in
-            let probe = try XCTUnwrap(
-                PackagedStateRecoveryProbe.prepareIfRequested(
-                    environment: modeEnvironment(.sqliteReadback),
-                    databaseURL: databaseURL(under: root)
-                )
+    func testReadFailureOutputIsContentFreeAndTakesPrecedence() throws {
+        let probe = try XCTUnwrap(
+            PackagedStateRecoveryProbe.prepareIfRequested(
+                environment: modeEnvironment(.sqliteReadback)
             )
+        )
+        let output = probe.observationResultLine(
+            sessions: [matchingSession()],
+            storeError: "sensitive fixture detail"
+        )
 
-            XCTAssertTrue(
-                probe.recordObservation(
-                    sessions: [matchingSession()],
-                    storeError: "sensitive fixture detail"
-                )
+        XCTAssertEqual(
+            output,
+            Data(
+                (
+                    "AETHERLINK_QA_PACKAGED_STATE_RECOVERY_RESULT="
+                    + "sqlite-readback-v1:failed:"
+                    + "runtime-chat-read-failed\n"
+                ).utf8
             )
-            let markerBytes = try probe.markerURL.readBytes()
-            let marker = try decodedMarker(at: probe.markerURL)
-            XCTAssertEqual(marker.status, "failed")
-            XCTAssertEqual(marker.failureCode, "runtime-chat-read-failed")
-            XCTAssertFalse(
-                String(decoding: markerBytes, as: UTF8.self)
-                    .contains("sensitive fixture detail")
-            )
-        }
+        )
+        XCTAssertFalse(
+            String(decoding: output, as: UTF8.self)
+                .contains("sensitive fixture detail")
+        )
     }
 
-    func testProjectionFailuresUseClosedCodes() throws {
-        try withTemporaryRoot { root in
-            let databaseURL = databaseURL(under: root)
-            let missingProbe = try XCTUnwrap(
-                PackagedStateRecoveryProbe.prepareIfRequested(
-                    environment: modeEnvironment(.sqliteReadback),
-                    databaseURL: databaseURL
-                )
+    func testProjectionFailuresUseClosedContentFreeCodes() throws {
+        let probe = try XCTUnwrap(
+            PackagedStateRecoveryProbe.prepareIfRequested(
+                environment: modeEnvironment(.sqliteReadback)
             )
-            XCTAssertTrue(
-                missingProbe.recordObservation(sessions: [], storeError: nil)
-            )
-            XCTAssertEqual(
-                try decodedMarker(at: missingProbe.markerURL).failureCode,
-                "canary-session-not-recovered"
-            )
+        )
 
-            let ambiguousProbe = try XCTUnwrap(
-                PackagedStateRecoveryProbe.prepareIfRequested(
-                    environment: modeEnvironment(.sqliteReadback),
-                    databaseURL: databaseURL
-                )
-            )
-            XCTAssertTrue(
-                ambiguousProbe.recordObservation(
-                    sessions: [matchingSession(), matchingSession()],
-                    storeError: nil
-                )
-            )
-            XCTAssertEqual(
-                try decodedMarker(at: ambiguousProbe.markerURL).failureCode,
-                "canary-session-ambiguous"
-            )
-
-            let mismatchedProbe = try XCTUnwrap(
-                PackagedStateRecoveryProbe.prepareIfRequested(
-                    environment: modeEnvironment(.sqliteReadback),
-                    databaseURL: databaseURL
-                )
-            )
-            var mismatch = matchingSession()
-            mismatch.messageCount = 0
-            XCTAssertTrue(
-                mismatchedProbe.recordObservation(
-                    sessions: [mismatch],
-                    storeError: nil
-                )
-            )
-            XCTAssertEqual(
-                try decodedMarker(at: mismatchedProbe.markerURL).failureCode,
-                "canary-projection-mismatch"
-            )
-        }
-    }
-
-    func testMarkerWriteFailureReturnsFalse() throws {
-        try withTemporaryRoot { root in
-            let applicationSupport = root / "AetherLink"
-            try Data("not-a-directory".utf8).write(to: applicationSupport)
-            let probe = try XCTUnwrap(
-                PackagedStateRecoveryProbe.prepareIfRequested(
-                    environment: modeEnvironment(.sqliteReadback),
-                    databaseURL: applicationSupport
-                        .appendingPathComponent("runtime-chat-events.sqlite")
-                )
-            )
-
-            XCTAssertFalse(
-                probe.recordObservation(
-                    sessions: [matchingSession()],
-                    storeError: nil
-                )
-            )
-        }
+        XCTAssertEqual(
+            probe.observationResultLine(sessions: [], storeError: nil),
+            resultLine("canary-session-not-recovered")
+        )
+        XCTAssertEqual(
+            probe.observationResultLine(
+                sessions: [matchingSession(), matchingSession()],
+                storeError: nil
+            ),
+            resultLine("canary-session-ambiguous")
+        )
+        var mismatch = matchingSession()
+        mismatch.messageCount = 0
+        XCTAssertEqual(
+            probe.observationResultLine(
+                sessions: [mismatch],
+                storeError: nil
+            ),
+            resultLine("canary-projection-mismatch")
+        )
     }
 
     func testLegacyFixtureMigratesThenReopensFromSQLiteOnly() throws {
@@ -219,7 +147,7 @@ final class PackagedStateRecoveryProbeTests: XCTestCase {
         }
     }
 
-    func testLegacyFixtureBytesAndIdentityStayExact() {
+    func testLegacyFixtureBytesStayExact() {
         XCTAssertEqual(Self.legacyFixture.count, 345)
         XCTAssertEqual(
             Self.legacyFixture,
@@ -239,6 +167,17 @@ final class PackagedStateRecoveryProbeTests: XCTestCase {
         """.utf8
     )
 
+    private func resultLine(_ failureCode: String) -> Data {
+        Data(
+            (
+                "AETHERLINK_QA_PACKAGED_STATE_RECOVERY_RESULT="
+                + "sqlite-readback-v1:failed:"
+                + failureCode
+                + "\n"
+            ).utf8
+        )
+    }
+
     private func modeEnvironment(
         _ mode: PackagedStateRecoveryProbe.Mode
     ) -> [String: String] {
@@ -252,40 +191,19 @@ final class PackagedStateRecoveryProbeTests: XCTestCase {
     }
 
     private func matchingSession() -> RuntimeChatStoredSession {
-        let canary = PackagedStateRecoveryProbe.canary
-        return RuntimeChatStoredSession(
-            sessionID: canary.sessionID,
+        RuntimeChatStoredSession(
+            sessionID: PackagedStateRecoveryProbe.canarySessionID,
             title: "New chat",
-            model: canary.model,
+            model: PackagedStateRecoveryProbe.canaryModel,
             lastActivityAt: Date(
                 timeIntervalSince1970: TimeInterval(
-                    canary.timestampEpochMilliseconds
+                    PackagedStateRecoveryProbe
+                        .canaryTimestampEpochMilliseconds
                 ) / 1_000
             ),
             messageCount: 1,
             status: "active",
             lastEvent: RuntimeChatStoredEventKind.request.rawValue
-        )
-    }
-
-    private func matchingObservation() -> PackagedStateRecoveryProbe.Observation {
-        let canary = PackagedStateRecoveryProbe.canary
-        return PackagedStateRecoveryProbe.Observation(
-            lastActivityEpochMilliseconds: canary.timestampEpochMilliseconds,
-            lastEvent: RuntimeChatStoredEventKind.request.rawValue,
-            matchingSessionCount: 1,
-            messageCount: 1,
-            model: canary.model,
-            status: "active"
-        )
-    }
-
-    private func decodedMarker(
-        at path: URL
-    ) throws -> PackagedStateRecoveryProbe.Marker {
-        try JSONDecoder().decode(
-            PackagedStateRecoveryProbe.Marker.self,
-            from: path.readBytes()
         )
     }
 
@@ -303,15 +221,5 @@ final class PackagedStateRecoveryProbeTests: XCTestCase {
         )
         defer { try? FileManager.default.removeItem(at: root) }
         try body(root)
-    }
-}
-
-private extension URL {
-    static func / (lhs: URL, rhs: String) -> URL {
-        lhs.appendingPathComponent(rhs)
-    }
-
-    func readBytes() throws -> Data {
-        try Data(contentsOf: self)
     }
 }

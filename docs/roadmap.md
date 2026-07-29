@@ -110,7 +110,7 @@ uses a Swift Release build and embeds the SwiftPM localization bundle under the
 standard signed app resource directory. The app prefers that packaged bundle,
 version metadata is present, and strict local ad-hoc verification passes
 without launching the app. The append-only shared ledger now supplies the same
-`1.0.0+11` metadata to the current isolated macOS and Android Release
+`1.0.0+13` metadata to the current isolated macOS and Android Release
 qualification while Android Debug
 remains `0.1.0+1` and builds without the ledger; the three consumers share a
 strict LF-only byte boundary, monotonic guard, and semantic-regression guard.
@@ -131,7 +131,7 @@ release launch, and three SDK/policy notices remain open G6 requirements.
 
 One canonical local release container now retains the unsigned APK/AAB, R8
 outputs, dependency report, arm64 ad-hoc macOS app, and UUID-matched dSYM with
-an exact 239-file source snapshot, external checksum, immutable publication,
+an exact 240-file source snapshot, external checksum, immutable publication,
 and independent full readback. APK identity/version/SDK/ABI are independently
 read with aapt2. The builder and separate readback verifier now each execute
 AGP-pinned `bundletool 1.18.3 validate` with a 60-second timeout against their
@@ -143,32 +143,39 @@ closed semantic normalization for R8 `resources.txt` and remains a valid
 equal-length-root historical qualification. Build 6 retained that and the
 other declared normalizations in its unequal-length-root qualification.
 The current manifest records `worktreeState=dirty-content-snapshot`, source
-SHA-256 `da7dbf88cba5d5bc9f9d822e0f70fe7b21a9080add5e1b3718c60ef9dc341c84`,
+SHA-256 `82651260cc440946b7f12cebfb4e5b4c13d59ba3bc56da79a1f54adc37eeffa1`,
 and HEAD/`origin/main`
-`8955fb1c25ec483aaedad53793609311337605de`. The commit alone cannot
+`324872d36361212cbd6ac957116011f53b366327`. The commit alone cannot
 reconstruct the release bytes; the archived source inventory is the source
 identity.
-Build 11 uses the same 101- and 109-byte isolated lane roots, host, fixed
+Build 13 uses the same 101- and 109-byte isolated lane roots, host, fixed
 toolchains, paired clones of one byte-identical Gradle seed, and canonical
 Swift scratch policy. Two complete qualification executions produced four
-builds with the exact same 165,378,312-byte ZIP, 12,062-byte manifest,
+builds with the exact same 165,429,300-byte ZIP, 12,062-byte manifest,
 checksum sidecar, and 30-entry archive inventory. The latest immutable ledger
-archive is `aetherlink-1.0.0+11-local-v1`, and independent current-source
+archive is `aetherlink-1.0.0+13-local-v1`, and independent current-source
 readback passes. The second execution matched the existing publication
-exactly. Builds 1 through 10 remain separately readable historical archives. The
+exactly. Builds 1 through 12 remain separately readable historical archives. The
 verifier cross-binds each Gradle lock identity to the archived source inventory
 and rejects current releases in historical mode. This proves only the two
 recorded successful same-host pairs; it does not establish variance-free
 arbitrary repetition, arbitrary roots, cross-host, signed-release,
 clean-machine, or physical-device G6 qualification.
 
-Build 11 closes the explicit current-source AAB structure-validation gap and
-retains the settled two-stage reranker and Android drawer search release
-inputs. Build 11 has no packaged-app lifecycle result. It does not qualify
-launch, UI correctness, listener/provider readiness, state recovery,
-clean-machine behavior, or physical-device behavior.
+Build 13 retains the explicit current-source AAB structure-validation gate,
+the settled two-stage reranker, and Android drawer search release inputs. Its
+packaged state-recovery result observes one fixed benign legacy JSONL event
+through production-store migration and model projection, terminates that
+process, removes the legacy source, and observes the same exact single SQLite
+row from a second independent packaged process. Both SQLite checks report
+`integrityCheck=ok`; the legacy source stays absent and the row stays unchanged.
+Build 12's marker-file attempt failed closed and published no state-recovery
+result, so Build 13 evidence does not transfer backward. Arbitrary histories,
+crash/power-loss recovery, concurrent old/new writers, UI correctness,
+listener/provider readiness, clean-machine behavior, and physical-device
+behavior remain unqualified.
 
-Build 11 preserves the exact-role local G6 package-inventory slice introduced by
+Build 13 preserves the exact-role local G6 package-inventory slice introduced by
 Build 8. The frozen
 catalog covers 350 unique Maven coordinates from the six Gradle locks, 379 POM
 byte identities, parsed POM-declared license names and URLs, and zero external
@@ -205,7 +212,7 @@ and the absent identity file leaves identity persistence and state recovery
 unqualified. Installation, UI correctness, listener/provider readiness,
 clean-machine behavior, signed distribution, and physical-device lifecycle
 remain open. These observations remain bound to Build 10 and are not
-reinterpreted as Build 11 evidence. PID 59809 stayed alive at the same path with executable SHA-256
+reinterpreted as Build 13 evidence. PID 59809 stayed alive at the same path with executable SHA-256
 `93cb550903f74e5018514870d1f4e7ac95ffc5df915fb8bde48c1ff512b382d0`;
 its existing main bundle is Build 4, not Build 10.
 
@@ -220,7 +227,7 @@ dependencies, so no `Package.resolved` is required. Debug, test, androidTest,
 clean-machine, and cross-machine dependency resolution remain unclaimed. The
 versioned release notes/compatibility/migration/known-limitations/support/
 privacy/rollback pack is now consolidated in
-`docs/releases/1.0.0-build-11-local-v1.md`. It explicitly labels the current
+`docs/releases/1.0.0-build-13-local-v1.md`. It explicitly labels the current
 container as a local qualification candidate rather than a production release.
 `docs/releases/1.0.0-build-1-local-v1.md` retains the superseded build 1
 identity, and `docs/releases/1.0.0-build-2-local-v1.md` retains the superseded
@@ -238,6 +245,9 @@ Build 9 retains the historical role-aware embedding source qualification and
 its separate packaged-app lifecycle evidence.
 Build 10 retains the historical reranker/drawer qualification and its separate
 packaged-app lifecycle evidence.
+Build 11 retains the first dual AAB-structure-validation qualification. Build
+12 retains its successful archive/reproducibility identity and failed-closed,
+non-published marker-file state-recovery attempt.
 The Build 3 fixture document embeds one canonical first-lineage transition fixture:
 there is no production predecessor, N/N-1 remains unproven, both development
 baselines require clean install plus fresh pairing, and no state migration or

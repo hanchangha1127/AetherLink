@@ -8,8 +8,21 @@ struct LocalAgentBridgeApp: App {
     @Environment(\.openWindow) private var openWindow
     @AppStorage(AetherLinkAppLanguageStorageKey) private var appLanguageTag = AetherLinkAppLanguage.defaultLanguage.rawValue
     @AppStorage(AetherLinkAppAppearanceStorageKey) private var appAppearance = AetherLinkAppAppearance.defaultAppearance.rawValue
-    @StateObject private var model = CompanionAppModel()
+    @StateObject private var model: CompanionAppModel
     @State private var requestedSection: CompanionSection?
+
+    init() {
+        let initializedModel = CompanionAppModel()
+        if let stateRecoveryProbe = PackagedStateRecoveryProbe.prepareIfRequested() {
+            FileHandle.standardOutput.write(
+                stateRecoveryProbe.observationResultLine(
+                    sessions: initializedModel.runtimeChatSessions,
+                    storeError: initializedModel.runtimeChatSessionsError
+                )
+            )
+        }
+        _model = StateObject(wrappedValue: initializedModel)
+    }
 
     var body: some Scene {
         WindowGroup(NSLocalizedString("AetherLink", comment: ""), id: "main") {
@@ -19,10 +32,6 @@ struct LocalAgentBridgeApp: App {
                 .preferredColorScheme(currentAppAppearance.preferredColorScheme)
                 .frame(minWidth: 860, minHeight: 560)
                 .task {
-                    PackagedStateRecoveryProbe.prepareIfRequested()?.recordObservation(
-                        sessions: model.runtimeChatSessions,
-                        storeError: model.runtimeChatSessionsError
-                    )
                     model.requestStartForUserInterface()
                 }
         }

@@ -38235,6 +38235,7 @@ class RuntimeClientViewModelTest {
                             RuntimeResearchNotebooksUiState(
                                 notebooks = notebooks,
                                 isLoading = false,
+                                hasResolvedAuthoritativeSnapshot = capable,
                             ),
                         ),
                         emissions,
