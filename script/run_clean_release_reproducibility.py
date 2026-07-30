@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
+import re
 import shutil
 import stat
 import subprocess
@@ -40,7 +41,15 @@ PROTECTED_RELEASE_RELATIVE = Path(
     "dist/releases/aetherlink-1.0.0+3-local-v1"
 )
 RESULT_ROOT = ROOT / "dist/reproducibility"
-RESULT_SCHEMA_VERSION = 2
+RESULT_SCHEMA_VERSION = 3
+RESULT_PATH_VERSION = 3
+COMPARISON_ONLY_MODE = "comparison-only"
+PUBLISH_QUALIFIED_MODE = "publish-qualified"
+PREPUBLICATION_RESULT_SUFFIX = "-prepublication.json"
+COMPARISON_ONLY_PUBLICATION_POLICY = "comparison-only-no-publication"
+PUBLISH_QUALIFIED_PUBLICATION_POLICY = (
+    "publish-qualified-build-a-after-exact-two-root-match"
+)
 SOURCE_ROOT_NAMES = ("lane-a", "lane-b-unequal")
 SOURCE_ROOT_POLICY = "distinct-unequal-utf8-byte-length-v1"
 SWIFT_REPRO_ARGUMENTS = (
@@ -48,6 +57,10 @@ SWIFT_REPRO_ARGUMENTS = (
     "1",
     "--scratch-path",
     str(SWIFT_SCRATCH),
+    "-Xswiftc",
+    "-num-threads",
+    "-Xswiftc",
+    "1",
     "-Xswiftc",
     "-file-prefix-map",
     "-Xswiftc",
@@ -709,7 +722,66 @@ def paths_overlap(first: Path, second: Path) -> bool:
     )
 
 
-def preflight_fixed_paths(result_path: Path) -> None:
+def validate_result_mode_path(
+    result_path: Path,
+    *,
+    publish_qualified: bool,
+) -> str:
+    try:
+        current = load_release_version_ledger()[-1]
+    except LedgerError as error:
+        raise ReproducibilityError(
+            2,
+            "invocation",
+            f"cannot resolve the current release ID: {error}",
+        ) from error
+    release_id = archive_builder.release_id(current)
+    prefix = (
+        f"{release_id}"
+        f"-two-root-v{RESULT_PATH_VERSION}"
+    )
+    if publish_qualified:
+        canonical_name = f"{prefix}.json"
+        label_prefix = f"{prefix}-"
+    else:
+        canonical_name = f"{prefix}{PREPUBLICATION_RESULT_SUFFIX}"
+        label_prefix = f"{prefix}-prepublication-"
+    if result_path.name == canonical_name:
+        valid = True
+    elif not (
+        result_path.name.startswith(label_prefix)
+        and result_path.name.endswith(".json")
+    ):
+        valid = False
+    else:
+        label = result_path.name[len(label_prefix) : -len(".json")]
+        valid = re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", label) is not None
+        if publish_qualified and label.split("-", 1)[0] == "prepublication":
+            valid = False
+    if not valid:
+        mode = (
+            PUBLISH_QUALIFIED_MODE
+            if publish_qualified
+            else COMPARISON_ONLY_MODE
+        )
+        raise ReproducibilityError(
+            2,
+            "invocation",
+            f"{mode} result basename violates the current release-qualified "
+            "mode namespace",
+        )
+    return release_id
+
+
+def preflight_fixed_paths(
+    result_path: Path,
+    *,
+    publish_qualified: bool = True,
+) -> str:
+    release_id = validate_result_mode_path(
+        result_path,
+        publish_qualified=publish_qualified,
+    )
     allowed_result_root = RESULT_ROOT.resolve()
     if (
         result_path.parent != allowed_result_root
@@ -767,6 +839,7 @@ def preflight_fixed_paths(result_path: Path) -> None:
             "scratch-preflight",
             f"fixed Swift scratch lease already exists: {SWIFT_LEASE_PATH}",
         )
+    return release_id
 
 
 def create_swift_lease(run_id: str) -> None:
@@ -1268,106 +1341,227 @@ def publish_qualified_archive(
     source_snapshot: dict[str, object],
     git_refs: GitRefs,
     protected_archive: tuple[str, dict[str, FileIdentity]],
+    *,
+    publication: dict[str, object],
 ) -> dict[str, object]:
-    release_id = qualified.archive_directory.name
-    current = load_release_version_ledger()[-1]
-    if release_id != archive_builder.release_id(current):
-        raise ReproducibilityError(
-            8,
-            "publication",
-            "qualified archive release ID differs from the current ledger",
-        )
-    if capture_git_refs() != git_refs:
-        raise ReproducibilityError(
-            8,
-            "publication",
-            "Git references changed during the reproducibility run",
-        )
-    if archive_builder.source_snapshot(ROOT) != source_snapshot:
-        raise ReproducibilityError(
-            8,
-            "publication",
-            "build source inputs changed during the reproducibility run",
-        )
-    if capture_protected_archive() != protected_archive:
-        raise ReproducibilityError(
-            9,
-            "protected-archive",
-            "protected build3 archive changed before publication",
-        )
-    qualified_identities = {
-        qualified.archive_path.name: (
-            qualified.archive_identity.size,
-            qualified.archive_identity.sha256,
-        ),
-        qualified.manifest_path.name: (
-            qualified.manifest_identity.size,
-            qualified.manifest_identity.sha256,
-        ),
-        qualified.checksum_path.name: (
-            qualified.checksum_identity.size,
-            qualified.checksum_identity.sha256,
-        ),
-    }
-    for path, expected in (
-        (qualified.archive_path, qualified.archive_identity),
-        (qualified.manifest_path, qualified.manifest_identity),
-        (qualified.checksum_path, qualified.checksum_identity),
-    ):
-        if stable_file_identity(path) != expected:
+    publication.update(
+        {
+            "attempted": True,
+            "independentReadback": False,
+            "outcome": "checking-qualified-candidate",
+            "qualifiedArchivePublished": False,
+        }
+    )
+    already_matched: bool | None = None
+    publication_call_active = False
+    try:
+        release_id = qualified.archive_directory.name
+        current = load_release_version_ledger()[-1]
+        if release_id != archive_builder.release_id(current):
             raise ReproducibilityError(
                 8,
                 "publication",
-                f"qualified sidecar changed before publication: {path.name}",
+                "qualified archive release ID differs from the current ledger",
             )
+        if capture_git_refs() != git_refs:
+            raise ReproducibilityError(
+                8,
+                "publication",
+                "Git references changed during the reproducibility run",
+            )
+        if archive_builder.source_snapshot(ROOT) != source_snapshot:
+            raise ReproducibilityError(
+                8,
+                "publication",
+                "build source inputs changed during the reproducibility run",
+            )
+        if capture_protected_archive() != protected_archive:
+            raise ReproducibilityError(
+                9,
+                "protected-archive",
+                "protected build3 archive changed before publication",
+            )
+        qualified_identities = {
+            qualified.archive_path.name: (
+                qualified.archive_identity.size,
+                qualified.archive_identity.sha256,
+            ),
+            qualified.manifest_path.name: (
+                qualified.manifest_identity.size,
+                qualified.manifest_identity.sha256,
+            ),
+            qualified.checksum_path.name: (
+                qualified.checksum_identity.size,
+                qualified.checksum_identity.sha256,
+            ),
+        }
+        for path, expected in (
+            (qualified.archive_path, qualified.archive_identity),
+            (qualified.manifest_path, qualified.manifest_identity),
+            (qualified.checksum_path, qualified.checksum_identity),
+        ):
+            if stable_file_identity(path) != expected:
+                raise ReproducibilityError(
+                    8,
+                    "publication",
+                    f"qualified sidecar changed before publication: "
+                    f"{path.name}",
+                )
+        try:
+            archive_reader.verify_release_archive(
+                qualified.archive_directory
+            )
+        except (
+            OSError,
+            archive_reader.ReleaseArchiveVerificationError,
+        ) as error:
+            raise ReproducibilityError(
+                8,
+                "publication",
+                f"qualified archive publication/readback failed: {error}",
+            ) from error
+
+        publication_call_active = True
+        publication.update(
+            {
+                "outcome": "archive-publication-call-in-progress",
+                "qualifiedArchivePublished": None,
+            }
+        )
+        try:
+            published_directory, already_matched = (
+                archive_builder.publish_archive_directory(
+                    archive_builder.DEFAULT_OUTPUT_ROOT,
+                    release_id,
+                    qualified.archive_path,
+                    qualified.manifest_path.read_bytes(),
+                    expected_sidecars=qualified_identities,
+                )
+            )
+        except (
+            OSError,
+            archive_builder.ReleaseArchiveError,
+        ) as error:
+            raise ReproducibilityError(
+                8,
+                "publication",
+                f"qualified archive publication/readback failed: {error}",
+            ) from error
+        publication_call_active = False
+        if type(already_matched) is not bool:
+            publication.update(
+                {
+                    "outcome": "archive-publication-call-outcome-uncertain",
+                    "qualifiedArchivePublished": None,
+                }
+            )
+            raise ReproducibilityError(
+                70,
+                "internal",
+                "archive publisher returned no exact already-matched boolean",
+            )
+        publication.update(
+            {
+                "outcome": (
+                    "matched-existing-postcheck-incomplete"
+                    if already_matched
+                    else "published-postcheck-incomplete"
+                ),
+                "qualifiedArchivePublished": not already_matched,
+            }
+        )
+        try:
+            archive_reader.verify_release_archive(published_directory)
+        except (
+            OSError,
+            archive_reader.ReleaseArchiveVerificationError,
+        ) as error:
+            raise ReproducibilityError(
+                8,
+                "publication",
+                f"qualified archive publication/readback failed: {error}",
+            ) from error
+        if archive_builder.source_snapshot(ROOT) != source_snapshot:
+            raise ReproducibilityError(
+                8,
+                "publication",
+                "build source inputs changed during publication readback",
+            )
+        published = capture_archive(ROOT, release_id)
+        comparison = compare_archives(qualified, published)
+        if comparison["differences"]:
+            raise ReproducibilityError(
+                8,
+                "publication",
+                "published archive differs from qualified build A: "
+                f"{comparison['differences']}",
+            )
+        publication.update(
+            {
+                "independentReadback": True,
+                "outcome": (
+                    "matched-existing-verified"
+                    if already_matched
+                    else "published-verified"
+                ),
+            }
+        )
+        return {
+            "alreadyMatched": already_matched,
+            "archiveDirectory": (
+                published_directory.relative_to(ROOT).as_posix()
+            ),
+            "archiveSha256": published.archive_identity.sha256,
+            "checksumSha256": published.checksum_identity.sha256,
+            "manifestSha256": published.manifest_identity.sha256,
+            "publishedBytesEqualLaneA": True,
+            "sourceLane": "build-a",
+            "sourceSnapshotUnchanged": True,
+        }
+    except BaseException:
+        if publication_call_active:
+            publication.update(
+                {
+                    "outcome": "archive-publication-call-outcome-uncertain",
+                    "qualifiedArchivePublished": None,
+                }
+            )
+        elif publication.get("qualifiedArchivePublished") is True:
+            publication["outcome"] = "published-postcheck-failed"
+        elif already_matched is True:
+            publication["outcome"] = "matched-existing-postcheck-failed"
+        elif publication.get("qualifiedArchivePublished") is None:
+            publication["outcome"] = (
+                "archive-publication-call-outcome-uncertain"
+            )
+        else:
+            publication.update(
+                {
+                    "outcome": "failed-before-archive-mutation",
+                    "qualifiedArchivePublished": False,
+                }
+            )
+        publication["independentReadback"] = False
+        raise
+
+
+def source_release_id(
+    source_root: Path,
+    *,
+    exit_code: int,
+    phase: str,
+) -> str:
     try:
-        archive_reader.verify_release_archive(qualified.archive_directory)
-        published_directory, already_matched = (
-            archive_builder.publish_archive_directory(
-                archive_builder.DEFAULT_OUTPUT_ROOT,
-                release_id,
-                qualified.archive_path,
-                qualified.manifest_path.read_bytes(),
-                expected_sidecars=qualified_identities,
-            )
-        )
-        archive_reader.verify_release_archive(published_directory)
-    except (
-        OSError,
-        archive_builder.ReleaseArchiveError,
-        archive_reader.ReleaseArchiveVerificationError,
-    ) as error:
+        current = load_release_version_ledger(
+            source_root / "release/version-ledger.tsv"
+        )[-1]
+    except LedgerError as error:
         raise ReproducibilityError(
-            8,
-            "publication",
-            f"qualified archive publication/readback failed: {error}",
+            exit_code,
+            phase,
+            f"cannot resolve materialized release ID: {error}",
         ) from error
-    if archive_builder.source_snapshot(ROOT) != source_snapshot:
-        raise ReproducibilityError(
-            8,
-            "publication",
-            "build source inputs changed during publication readback",
-        )
-    published = capture_archive(ROOT, release_id)
-    comparison = compare_archives(qualified, published)
-    if comparison["differences"]:
-        raise ReproducibilityError(
-            8,
-            "publication",
-            "published archive differs from qualified build A: "
-            f"{comparison['differences']}",
-        )
-    return {
-        "alreadyMatched": already_matched,
-        "archiveDirectory": published_directory.relative_to(ROOT).as_posix(),
-        "archiveSha256": published.archive_identity.sha256,
-        "checksumSha256": published.checksum_identity.sha256,
-        "independentReadback": True,
-        "manifestSha256": published.manifest_identity.sha256,
-        "publishedBytesEqualLaneA": True,
-        "sourceLane": "build-a",
-        "sourceSnapshotUnchanged": True,
-    }
+    return archive_builder.release_id(current)
 
 
 def run_lane(
@@ -1402,24 +1596,50 @@ def run_lane(
         exit_code=exit_code,
         phase=f"{lane_id}-readback",
     )
-    current = load_release_version_ledger()[-1]
-    release_id = archive_builder.release_id(current)
+    release_id = source_release_id(
+        clone_root,
+        exit_code=exit_code,
+        phase=f"{lane_id}-readback",
+    )
     return capture_archive(clone_root, release_id)
 
 
-def empty_result() -> dict[str, object]:
+def empty_result(
+    *,
+    publish_qualified: bool = True,
+) -> dict[str, object]:
+    if publish_qualified:
+        execution_mode = PUBLISH_QUALIFIED_MODE
+        publication = {
+            "attempted": False,
+            "independentReadback": False,
+            "outcome": "not-reached",
+            "policy": PUBLISH_QUALIFIED_PUBLICATION_POLICY,
+            "qualifiedArchivePublished": False,
+        }
+    else:
+        execution_mode = COMPARISON_ONLY_MODE
+        publication = {
+            "attempted": False,
+            "independentReadback": False,
+            "outcome": "disabled-comparison-only",
+            "policy": COMPARISON_ONLY_PUBLICATION_POLICY,
+            "qualifiedArchivePublished": False,
+        }
     return {
         "builds": [],
         "comparison": None,
+        "executionMode": execution_mode,
         "failure": None,
         "gradleCache": None,
-        "publication": None,
+        "publication": publication,
         "protectedArchive": {
             "afterIdentitySha256": None,
             "beforeIdentitySha256": None,
             "relativePath": PROTECTED_RELEASE_RELATIVE.as_posix(),
             "unchanged": False,
         },
+        "releaseId": None,
         "schemaVersion": RESULT_SCHEMA_VERSION,
         "scratch": {
             "fixedSwiftPath": str(SWIFT_SCRATCH),
@@ -1433,6 +1653,61 @@ def empty_result() -> dict[str, object]:
             "swiftArguments": list(SWIFT_REPRO_ARGUMENTS),
         },
     }
+
+
+def publish_and_record(
+    result: dict[str, object],
+    qualified: ArchiveEvidence,
+    source_snapshot: dict[str, object],
+    git_refs: GitRefs,
+    protected_archive: tuple[str, dict[str, FileIdentity]],
+) -> None:
+    publication = result.get("publication")
+    if (
+        result.get("executionMode") != PUBLISH_QUALIFIED_MODE
+        or not isinstance(publication, dict)
+    ):
+        raise ReproducibilityError(
+            70,
+            "internal",
+            "publication state is not initialized for publish-qualified mode",
+        )
+    publication.update(
+        {
+            "attempted": True,
+            "independentReadback": None,
+            "outcome": "publication-or-readback-incomplete",
+            "qualifiedArchivePublished": None,
+        }
+    )
+    details = publish_qualified_archive(
+        qualified,
+        source_snapshot,
+        git_refs,
+        protected_archive,
+        publication=publication,
+    )
+    already_matched = details.get("alreadyMatched")
+    if type(already_matched) is not bool:
+        raise ReproducibilityError(
+            70,
+            "internal",
+            "publication result has no exact alreadyMatched boolean",
+        )
+    publication.update(details)
+    publication.update(
+        {
+            "attempted": True,
+            "independentReadback": True,
+            "outcome": (
+                "matched-existing-verified"
+                if already_matched
+                else "published-verified"
+            ),
+            "policy": PUBLISH_QUALIFIED_PUBLICATION_POLICY,
+            "qualifiedArchivePublished": not already_matched,
+        }
+    )
 
 
 def write_result(path: Path, result: dict[str, object]) -> None:
@@ -1453,8 +1728,12 @@ def write_result(path: Path, result: dict[str, object]) -> None:
             temporary.unlink()
 
 
-def execute(result_path: Path) -> tuple[int, dict[str, object]]:
-    result = empty_result()
+def execute(
+    result_path: Path,
+    *,
+    publish_qualified: bool = True,
+) -> tuple[int, dict[str, object]]:
+    result = empty_result(publish_qualified=publish_qualified)
     exit_code = 70
     error: ReproducibilityError | None = None
     sentinel_before: tuple[str, dict[str, FileIdentity]] | None = None
@@ -1469,7 +1748,11 @@ def execute(result_path: Path) -> tuple[int, dict[str, object]]:
         result["protectedArchive"]["beforeIdentitySha256"] = sentinel_before[0]
         lock_manager.__enter__()
         lock_acquired = True
-        preflight_fixed_paths(result_path)
+        expected_release_id = preflight_fixed_paths(
+            result_path,
+            publish_qualified=publish_qualified,
+        )
+        result["releaseId"] = expected_release_id
         result_path_validated = True
         run_id = uuid.uuid4().hex
         run_root = WORK_ROOT / f"run-{run_id}"
@@ -1481,6 +1764,22 @@ def execute(result_path: Path) -> tuple[int, dict[str, object]]:
         git_refs = capture_git_refs()
         overlay = capture_source_overlay()
         source_snapshot = archive_builder.source_snapshot(ROOT)
+        try:
+            captured_release_id = source_release_id(
+                ROOT,
+                exit_code=4,
+                phase="source-capture",
+            )
+        except ReproducibilityError:
+            result_path_validated = False
+            raise
+        if captured_release_id != expected_release_id:
+            result_path_validated = False
+            raise ReproducibilityError(
+                4,
+                "source-capture",
+                "captured source release ID differs from the result basename",
+            )
         result["source"] = {
             "algorithm": source_snapshot["algorithm"],
             "fileCount": source_snapshot["fileCount"],
@@ -1497,10 +1796,27 @@ def execute(result_path: Path) -> tuple[int, dict[str, object]]:
             materialize_clone(clone_root, overlay, git_refs)
             clone_snapshot = archive_builder.source_snapshot(clone_root)
             if clone_snapshot != source_snapshot:
+                result_path_validated = False
                 raise ReproducibilityError(
                     4,
                     "source-materialization",
                     f"materialized source snapshot differs: {clone_root}",
+                )
+            try:
+                clone_release_id = source_release_id(
+                    clone_root,
+                    exit_code=4,
+                    phase="source-materialization",
+                )
+            except ReproducibilityError:
+                result_path_validated = False
+                raise
+            if clone_release_id != expected_release_id:
+                result_path_validated = False
+                raise ReproducibilityError(
+                    4,
+                    "source-materialization",
+                    "materialized release ID differs from the result basename",
                 )
 
         print("Cloning one Gradle cache seed into isolated A/B homes...", flush=True)
@@ -1538,6 +1854,16 @@ def execute(result_path: Path) -> tuple[int, dict[str, object]]:
         cleanup_swift_scratch(run_id, remove_lease=False)
 
         if (
+            build_a.archive_directory.name != expected_release_id
+            or build_b.archive_directory.name != expected_release_id
+        ):
+            result_path_validated = False
+            raise ReproducibilityError(
+                8,
+                "archive-comparison",
+                "built archive release ID differs from the result basename",
+            )
+        if (
             build_a.source_sha256 != source_snapshot["sha256"]
             or build_b.source_sha256 != source_snapshot["sha256"]
         ):
@@ -1555,13 +1881,20 @@ def execute(result_path: Path) -> tuple[int, dict[str, object]]:
                 "release archives differ: "
                 f"{result['comparison']['differences']}",
             )
-        print("Publishing and reading back qualified build A...", flush=True)
-        result["publication"] = publish_qualified_archive(
-            build_a,
-            source_snapshot,
-            git_refs,
-            sentinel_before,
-        )
+        if publish_qualified:
+            print("Publishing and reading back qualified build A...", flush=True)
+            publish_and_record(
+                result,
+                build_a,
+                source_snapshot,
+                git_refs,
+                sentinel_before,
+            )
+        else:
+            print(
+                "Comparison-only match passed; publication is disabled.",
+                flush=True,
+            )
         result["status"] = "passed"
         exit_code = 0
     except ReproducibilityError as caught:
@@ -1662,7 +1995,16 @@ def execute(result_path: Path) -> tuple[int, dict[str, object]]:
 def default_result_path() -> Path:
     current = load_release_version_ledger()[-1]
     return RESULT_ROOT / (
-        f"{archive_builder.release_id(current)}-two-root-v2.json"
+        f"{archive_builder.release_id(current)}"
+        f"-two-root-v{RESULT_PATH_VERSION}.json"
+    )
+
+
+def default_comparison_result_path() -> Path:
+    current = load_release_version_ledger()[-1]
+    return RESULT_ROOT / (
+        f"{archive_builder.release_id(current)}"
+        f"-two-root-v{RESULT_PATH_VERSION}-prepublication.json"
     )
 
 
@@ -1673,30 +2015,56 @@ def main() -> int:
         type=Path,
         default=None,
         help=(
-            "atomic canonical JSON result path outside the fixed scratch; "
-            "defaults to a release-ID-qualified file under dist/reproducibility"
+            "atomic canonical JSON result path under dist/reproducibility; "
+            "the basename must use the current release ID and the selected "
+            "publish or prepublication namespace"
+        ),
+    )
+    parser.add_argument(
+        "--comparison-only",
+        action="store_true",
+        help=(
+            "compare two complete isolated builds but never publish an "
+            "archive into the source workspace"
         ),
     )
     arguments = parser.parse_args()
+    publish_qualified = not arguments.comparison_only
     try:
         result_path = (
-            default_result_path()
+            (
+                default_comparison_result_path()
+                if arguments.comparison_only
+                else default_result_path()
+            )
             if arguments.result is None
             else arguments.result.resolve()
+        ).resolve()
+        validate_result_mode_path(
+            result_path,
+            publish_qualified=publish_qualified,
         )
-    except (LedgerError, OSError) as error:
+    except (LedgerError, OSError, ReproducibilityError) as error:
         print(
             f"Clean release reproducibility failed: invocation: {error}",
             file=os.sys.stderr,
             flush=True,
         )
         return 2
-    exit_code, result = execute(result_path.resolve())
+    exit_code, result = execute(
+        result_path,
+        publish_qualified=publish_qualified,
+    )
     if exit_code == 0:
         comparison = result["comparison"]
         archive_sha = result["builds"][0]["archive"]["sha256"]
+        mode = (
+            "comparison-only"
+            if arguments.comparison_only
+            else "reproducibility"
+        )
         print(
-            "Clean release reproducibility passed: "
+            f"Clean release {mode} passed: "
             f"archiveSha256={archive_sha}; "
             f"memberBytesEqual={comparison['memberBytesEqual']}",
             flush=True,

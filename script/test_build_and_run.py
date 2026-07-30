@@ -11,6 +11,10 @@ import subprocess
 import tempfile
 import unittest
 
+from script.check_release_version_ledger import (
+    parse_release_version_ledger,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = ROOT / "script/build_and_run.sh"
@@ -246,8 +250,17 @@ class BuildAndRunModeTests(unittest.TestCase):
             self.assertTrue((app_bundle / "Contents/MacOS/AetherLink").is_file())
             with (app_bundle / "Contents/Info.plist").open("rb") as handle:
                 info = plistlib.load(handle)
-            self.assertEqual(info["CFBundleShortVersionString"], "1.0.0")
-            self.assertEqual(info["CFBundleVersion"], "6")
+            current_release = parse_release_version_ledger(
+                (workspace / "release/version-ledger.tsv").read_bytes()
+            )[-1]
+            self.assertEqual(
+                info["CFBundleShortVersionString"],
+                current_release.marketing_version,
+            )
+            self.assertEqual(
+                info["CFBundleVersion"],
+                str(current_release.build_number),
+            )
             invocations = invocation_log.read_text(encoding="utf-8")
             self.assertEqual(
                 invocations.splitlines(),
@@ -284,6 +297,7 @@ class BuildAndRunModeTests(unittest.TestCase):
             self.set_fixed_repro_scratch_path(script, scratch)
             expected_options = (
                 f"-c release --jobs 1 --scratch-path {scratch} "
+                "-Xswiftc -num-threads -Xswiftc 1 "
                 "-Xswiftc -file-prefix-map "
                 f"-Xswiftc {workspace.resolve()}=/aetherlink/source "
                 "-Xswiftc -file-compilation-dir "

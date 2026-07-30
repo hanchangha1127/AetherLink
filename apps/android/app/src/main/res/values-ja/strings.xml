@@ -55,6 +55,13 @@
     <string name="chat_history_group_older">それ以前</string>
     <string name="no_previous_chats">以前のチャットはまだありません。</string>
     <string name="chat_search_label">チャットを検索</string>
+    <string name="search_chat_history_named">「%1$s」でチャット履歴を検索</string>
+    <string name="chat_search_action_state_enter_query">検索語を入力してください。</string>
+    <string name="chat_search_action_state_connect_first">チャット履歴を検索するには、信頼済み Runtime に接続してください。</string>
+    <string name="chat_search_action_state_wait_for_stream">現在の応答が完了してからチャット履歴を検索してください。</string>
+    <string name="chat_search_action_state_ready">信頼済み Runtime を検索できます。</string>
+    <string name="chat_search_action_state_loading">現在のチャット履歴リクエストが完了するまでお待ちください。</string>
+    <string name="searching_chats">チャットを検索中…</string>
     <string name="clear_chat_search_named">「%1$s」のチャット検索をクリア</string>
     <string name="no_chat_search_results">一致するチャットはありません。</string>
     <string name="chat_search_match_rank">一致 %1$d</string>

@@ -37,6 +37,7 @@ data class RuntimeUiState(
     val archivedChatSessions: List<RuntimeChatSession> = emptyList(),
     val chatSessionSearchQuery: String? = null,
     val chatSessionSearchResults: List<RuntimeChatSession> = emptyList(),
+    val chatSessionSearchPendingQuery: String? = null,
     val isLoadingChatSessions: Boolean = false,
     val isBulkMutatingChatSessions: Boolean = false,
     val activeChatSessionId: String? = null,

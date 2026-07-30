@@ -1,14 +1,324 @@
 # AetherLink Progress And Forward Plan
 
-Last updated: 2026-07-29 KST.
+Last updated: 2026-07-30 KST.
 
 This document records what has been implemented so far and what should happen next. It is intentionally broader than the original v0.1 MVP because recent work has moved the prototype toward a more complete product shape.
 
-## 2026-07-29 Local V1 Build 13 Current-Source Recovery Qualification
+## 2026-07-30 Local V1 Build 20 Qualification
 
-- The append-only release ledger now ends at `1.0.0+13`. Build 13 is the
-  current local qualification record; Builds 1 through 12 remain immutable
+- The append-only release ledger now ends at `1.0.0+20`. Build 20 is the
+  current local qualification record; Builds 1 through 19 are immutable
   historical records.
+- The release binds a 246-file `dirty-content-snapshot` with SHA-256
+  `22f14e60d522b2720660e41a645a3e9832dd723b8b93b147c51bbf6c9125998c`
+  at HEAD and `origin/main`
+  `dc5832b9f5926b44ccde87d11beb58355ecd9ece`.
+- Both v3 two-root runs used 101- and 109-byte source roots and produced the
+  exact 165,617,269-byte ZIP with SHA-256
+  `cba5a6531c35725aef7a2a3bf8b25d2155833b31b216906c80f8349249f6edf1`,
+  the exact 12,317-byte manifest with SHA-256
+  `c633bf2c2ccc9d007f08e73929eed3d7f6b247d08579fa3695bcbad04348c99d`,
+  and the exact 99-byte checksum sidecar with SHA-256
+  `dd803b0bc3313d833b0cdd1b2044c96a0f5873496ecdae94c5a4079bb02feaed`.
+- The 19,571-byte comparison-only result is
+  `dist/reproducibility/aetherlink-1.0.0+20-local-v1-two-root-v3-prepublication.json`,
+  SHA-256
+  `ad7e9b6e5f52a76d5a65b52bab5138ad86eb019b7b89fa7ee29c51b89c7cef2c`.
+  It records `executionMode=comparison-only`, exact archive/member equality,
+  and `publication.outcome=disabled-comparison-only`; it did not publish.
+- The 20,010-byte publish-qualified result is
+  `dist/reproducibility/aetherlink-1.0.0+20-local-v1-two-root-v3.json`,
+  SHA-256
+  `ca71f3ad64ea744275035891c5d41faae9778c6be4f1a6fbadac2c1cf2b59a1c`.
+  It records `alreadyMatched=false`, `outcome=published-verified`,
+  `independentReadback=true`, `publishedBytesEqualLaneA=true`, and
+  `sourceSnapshotUnchanged=true`.
+- Independent current-source readback passes all 29 payload members, packaged
+  Android backup-policy body checks, the `base`-only AAB structure, and the
+  UUID-matched macOS app/dSYM
+  `0AD0CBED-7293-3151-84D1-9BAF07654A93`.
+
+<!-- aetherlink-current-build20-lifecycle-v1:start -->
+
+- Build 20 lifecycle evidence is bound to the current packaged app and exact
+  archive/manifest identities above.
+- The clean-HOME installed-app result is
+  `dist/lifecycle/macos-packaged-app-build-20-clean-home-install-v1.json`,
+  2,250 bytes with SHA-256
+  `4ce047a318e47568d647e1167cbaeebc603626073e098451a29c949086aa3d72`.
+  Two distinct exact-path LaunchServices processes passed, the three SQLite
+  files passed integrity readback, Runtime chat remained empty, and installed
+  bytes and modes remained stable across relaunch.
+- The installed state-recovery result is
+  `dist/lifecycle/macos-packaged-app-build-20-clean-home-state-recovery-v1.json`,
+  3,364 bytes with SHA-256
+  `d12947e16e7b985515a90a13731947a5991bcd82a06039210e22bba43535bf0b`.
+  The fixed legacy canary migrated to one SQLite row and a distinct second
+  process recovered that row from SQLite-only state; auxiliary integrity and
+  installed-state identity checks passed.
+- The separate ephemeral local-DMG result is
+  `dist/lifecycle/macos-packaged-app-build-20-local-dmg-install-v1.json`,
+  2,434 bytes with SHA-256
+  `e78b605278d5c5b7f5601778c38f35270f1db4a9e95055ff434b71af4c33cf78`.
+  It verifies a temporary HFS+ UDZO image, one read-only fresh mount, an
+  `Applications` alias, exact `ditto` copy of the release tree, unmount before
+  two distinct launches, SQLite integrity, empty Runtime chat, and stable state.
+- Both clean-HOME runners were invoked twice and matched their canonical
+  results.
+- These same-host, per-user Build 20 observations do not qualify a clean
+  machine/account, signed/notarized distribution, UI/accessibility,
+  live-provider behavior, a physical device, arbitrary histories,
+  crash/power-loss, concurrent writers, backup/transfer, rollback, or
+  production readiness. The DMG run remains outside Finder UI, drag-and-drop,
+  Gatekeeper quarantine/download behavior, and system `/Applications`
+  evidence.
+
+<!-- aetherlink-current-build20-lifecycle-v1:end -->
+
+- This local result does not complete the full G6 exit.
+- Current readback:
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+20-local-v1`.
+- No staging, commit, or push was performed.
+
+## 2026-07-30 Historical Local V1 Build 19 Qualification
+
+- Build 19 is now immutable historical evidence. It first source-bound the
+  Runtime-chat SQLite cross-process helper/runner and retained Build 18's first
+  source binding of the Android drawer-search inputs.
+- Its archive, v2 two-root results, and clean-HOME install/state-recovery
+  observations remain bound only to Build 19.
+- Historical readback:
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+19-local-v1 --historical`.
+
+## 2026-07-30 Historical Local V1 Build 18 Qualification
+
+- Build 18 is an immutable historical record. It first source-bound the Android
+  drawer search inputs and preserves its own 243-file source snapshot,
+  165,615,149-byte archive, two-root results, and Build 18 lifecycle results.
+- Historical readback:
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+18-local-v1 --historical`.
+
+## 2026-07-30 Historical Local V1 Build 17 Reproducibility Qualification
+
+- At this qualification checkpoint, the append-only release ledger ended at
+  `1.0.0+17`; Builds 1 through 16 were historical. Build 17 is now historical.
+- The reproducible package-only Swift build retains `--jobs 1` and now passes
+  `-Xswiftc -num-threads -Xswiftc 1`, closing the frontend-internal ordering
+  gap observed during Build 16 repetition.
+- Two complete, separately invoked qualifications each built Android Release
+  and macOS Release from independent 101- and 109-byte source roots. All four
+  builds produced the identical 165,515,496-byte ZIP with SHA-256
+  `ff7e68ffa33ce54a312e2874592528cec0227f3200679f9df6531c06ca32c64e`
+  and identical bytes and metadata for every ZIP member.
+- The first 19,786-byte result has SHA-256
+  `f2582c6b84d305f34fe4d737604717f5ea9721d6ab8b1125354cbc1798464296`;
+  the separately invoked 19,785-byte confirmation has SHA-256
+  `616d70882ec8f09c78f7a57730366924c2cc6de28844b7f2c8763ee125f2867a`
+  and records `alreadyMatched=true`.
+- Independent readback validates the APK manifest and compiled backup-policy
+  XML bodies. It also validates the AAB, materializes a temporary universal
+  APK, and applies the same compiled XML body checks.
+- The 243-file `dirty-content-snapshot` has SHA-256
+  `0f57cd63e1fe2c27cfc567df742fe47c6bcb79109630e8830d250f0bd94f9187`;
+  its captured overlay SHA-256 is
+  `988b10890ccc6e9cf90e676221fd1e4d65b33c42fe4fe33f6bad0b0a894bb4fc`.
+- Build 16 remains historical: one qualification published
+  `81f89ba20db75fa542f5b4910c469b82d555be2835c1a6bbb66b8daf71d752e7`,
+  but the preceding attempt and later confirmation both recorded intermittent
+  Swift executable/dSYM variants. Build 17 does not retroactively qualify it.
+
+<!-- aetherlink-historical-build17-lifecycle-v1:start -->
+
+- A separate Build 17 clean-HOME installed-app run copied the exact packaged
+  app into an isolated per-user Applications path and exercised two distinct
+  exact-path LaunchServices processes. The 2,250-byte canonical result is
+  `dist/lifecycle/macos-packaged-app-build-17-clean-home-install-v1.json`,
+  SHA-256
+  `c04b13caf494ce7a07c5726e59208c14221578513a3bd554c786636afeaba355`.
+- A separate Build 17 installed recovery run migrated the fixed legacy JSONL
+  canary into Runtime-chat SQLite, removed the legacy source, and recovered the
+  same row from SQLite-only state in a distinct second process. The 3,364-byte
+  canonical result is
+  `dist/lifecycle/macos-packaged-app-build-17-clean-home-state-recovery-v1.json`,
+  SHA-256
+  `c81605c27312c3d0d99134f4c178bd884875e183ac62917378ef1e3f9b9cf180`.
+  Each runner was invoked twice and matched its canonical result.
+  Twenty-two focused tests pass, including a synthetic future-release
+  regression.
+- These same-host, per-user Build 17 observations do not qualify a clean
+  machine/account, DMG/Finder installation, signed/notarized distribution,
+  UI/accessibility, live-provider behavior, a physical device, arbitrary
+  histories, crash/power-loss, concurrent writers, backup/transfer, rollback,
+  or production readiness. PID 59809 remained alive at its original executable
+  path.
+
+<!-- aetherlink-historical-build17-lifecycle-v1:end -->
+
+- Historical readback:
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+17-local-v1 --historical`.
+  No security work, staging, commit, or push is part of this qualification.
+
+## 2026-07-30 Multilingual Full-Matrix V3 Observation
+
+- The separate V3 path completed all 80 ranking and 80 repeatability
+  comparisons for exact Ollama `0.32.5` and `0.32.4`, without changing the
+  frozen V2 task, scorer, runner, schema-4 fixture, or failed observation.
+- The first live attempt exposed a macOS `/var` versus `/private/var`
+  canonical-path defect after the semantic phase. The next attempt exposed a
+  V3 temporary prefix outside the frozen recovery assertion's admitted
+  snapshot namespace. V3 now resolves its temporary root before use and places
+  its distinct suffix below the existing recovery prefix. The frozen V2
+  runner and evidence remain unchanged.
+- Thirteen V3 Python tests pin canonical temporary-root handoff, recovery-prefix
+  compatibility, exact result structure, source bindings, candidate order,
+  complete failure accumulation, cleanup precedence, and input non-retention.
+  Combined frozen V2 plus V3 Python validation passes 23 tests.
+- The final live run completed both exact versions. Each passes 76/80 ranking
+  comparisons and 80/80 repeatability comparisons. Each records one failed
+  comparison in both batches for Korean scenario ordinal 2 and French scenario
+  ordinal 2. Both fresh-provider recovery phases pass.
+- The canonical 3,570-byte result is
+  `docs/evidence/ollama-embedding-multilingual-full-matrix-v3.json`, SHA-256
+  `ca8279bafbe04a6de820caf1b855e4a2b6a09eb561602dd7773f1bfc190bda47`.
+  It records `schemaVersion=5`, `qualityGatePassed=false`,
+  `sourceStatePreserved=true`, and runner SHA-256
+  `58b65494fd0817133649465d7784688724108a1b3842468f963cdeb1a25e670e`.
+- The run downloaded and hash-checked the two exact Ollama application
+  archives, but downloaded no model. It used an isolated copy-on-write model
+  snapshot, retained no model name, task text/ID, vector, dimension, score,
+  provider output, path, PID, or base URL, and preserved the source provider,
+  catalog, loaded-model set, and selected source bytes.
+- This closes the unknown Japanese, Simplified Chinese, French, and
+  repeatability observation coverage, but not the multilingual quality gate:
+  `qualityGatePassed=false` is the final result. No physical device, signing,
+  deployment, production-readiness, security, staging, commit, or push claim
+  is made.
+
+## 2026-07-30 Local V1 Build 15 Historical Android Backup Policy Qualification
+
+- At qualification time the append-only release ledger ended at `1.0.0+15`.
+  Build 15 is now an immutable historical record.
+- Android retains `allowBackup=false` and now names both packaged policy
+  resources: `fullBackupContent=@xml/backup_rules` and
+  `dataExtractionRules=@xml/data_extraction_rules`.
+- The legacy policy excludes `root`, `file`, `database`, `sharedpref`, and
+  `external`, all at `path="."`. Both Android 12+ `cloud-backup` and
+  `device-transfer` exclude those domains plus `device_root`, `device_file`,
+  `device_database`, and `device_sharedpref`, again at `path="."`; neither
+  resource contains an `include`.
+- Six exact resource/mutation tests pass. The complete Android app gate passes
+  1,189 tests with no failures, errors, or skips. Release lint reports 0 errors
+  and 2 SDK 37 availability warnings; unsigned Release APK and AAB generation
+  passes.
+- Builder and independent archive readback inspect the APK with
+  `aapt2 dump xmltree` plus `resources --no-values`, resolving compiled IDs
+  back to the two exact XML names. Their independent AAB path validates the
+  exact `base` module and reads the same three policy fields through
+  `bundletool 1.18.3`.
+- The 243-file `dirty-content-snapshot` has SHA-256
+  `86fe74f73946368735b4bca91b88d28cb2cccfeedb3d1f2d7a8d660014449395`;
+  HEAD and `origin/main` are
+  `dc5832b9f5926b44ccde87d11beb58355ecd9ece`.
+- Two complete qualification executions each used 101- and 109-byte source
+  roots. All four builds produced the identical 165,515,495-byte ZIP with
+  SHA-256
+  `74dc9a6441859822d8ad812e11b29f5365fce19c8c1bea254a45f162517b13f3`
+  and identical bytes and metadata for all 30 ZIP entries.
+- The 19,745-byte first result has SHA-256
+  `996aa9485efc363edb7385ce040c124396d04210c88044b35c7023a37ba3d1bf`;
+  the independent 19,744-byte confirmation has SHA-256
+  `fb7669b872cc6205fa0777f625b169814392a544cf7680df42bda585125ef0b1`
+  and records `alreadyMatched=true`.
+- Build 14 clean-HOME installation and installed state-recovery results remain
+  frozen historical Build 14 evidence. They were not rerun and do not transfer
+  to Build 15. PID 59809 remained alive at its original path.
+- This is packaged, no-device product evidence. It does not claim actual
+  vendor/cloud backup or device transfer, a physical-device run, installation,
+  signed distribution, or production readiness.
+- Historical readback:
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+15-local-v1 --historical`.
+  No security work, staging, commit, or push is part of this qualification.
+
+## 2026-07-29 Local V1 Build 14 Historical Android Lifecycle Qualification
+
+- At qualification time the append-only release ledger ended at `1.0.0+14`;
+  Build 14 was current and Builds 1 through 13 were historical. Build 14 is now
+  an immutable historical record.
+- Android Research Notebook permanent-delete confirmation now saves/restores
+  its full target atomically and rebinds only to the same trusted Runtime,
+  notebook, session, and archived state. It tolerates an unresolved catalog,
+  then rejects authoritative absence, an active target, a same-session
+  replacement notebook, or a different trusted Runtime without invoking
+  deletion.
+- The complete Android app gate passes 1,183 tests with zero skips, failures,
+  or errors. Release lint reports 0 errors and 3 existing warnings; unsigned
+  Release APK and AAB generation passes. Independent GPT-5.6 Sol review reports
+  no P0-P3 finding.
+- The 240-file `dirty-content-snapshot` has SHA-256
+  `c1798a580a1b2d7f43b6e3d0ce7a52122e2bdf4a2ff5537de189f0866ac29fb5`.
+  HEAD and `origin/main` were both
+  `dc5832b9f5926b44ccde87d11beb58355ecd9ece`; the archived inventory, not
+  that commit alone, is the source identity.
+- Two complete qualification executions each built Android and macOS Release
+  at 101- and 109-byte roots. All four builds produced the same
+  165,512,561-byte ZIP with SHA-256
+  `88769137aa024d193a27483522c1986d2d05acf3f03704e690b19b4c578629f4`
+  and identical bytes and metadata for all 30 ZIP entries. The 19,745-byte
+  first result has SHA-256
+  `79898b6c9f0bc63e035ecbffffb35e290f4ec785075e05e4012b4dc1d78ebcc5`;
+  the 19,744-byte confirmation has SHA-256
+  `12e5feaf8b98e46db4aa82ef32af03042a9c60de5a6e571e943810e2b4ff0301`
+  and records `alreadyMatched=true`.
+- Build 13's packaged state-recovery evidence remains historical and does not
+  transfer to Build 14. Build 14 now has its own separate installed
+  state-recovery observation.
+- Build 14 now has a same-host, per-user clean-HOME installation rehearsal.
+  A `ditto` copy at a temporary `Applications/AetherLink.app` matched all ten
+  manifest-bound files and its ad-hoc seal. Two exact-path LaunchServices runs
+  reached regular AppKit activation, completed five-second observations, used
+  distinct PIDs, and terminated cleanly. All three SQLite files returned
+  `integrityCheck=ok`, Runtime-chat remained empty, and isolated state bytes
+  and modes were unchanged across relaunch.
+- The 2,250-byte result at
+  `dist/lifecycle/macos-packaged-app-build-14-clean-home-install-v1.json` has
+  SHA-256
+  `dba559878af78be5057b50f4fb5a759e0308724f93b6c358ce2c5e6981d7f6c2`.
+  PID 59809 stayed alive at its original path and was never selected or
+  terminated. This does not prove a clean machine/account, DMG/Finder install,
+  signed distribution, UI/accessibility traversal, provider readiness, or
+  physical-device behavior.
+- The separate Build 14 installed state-recovery runner placed the fixed
+  345-byte legacy JSONL canary below the same isolated HOME, launched the
+  installed app through LaunchServices in migration mode, removed and
+  preserved the legacy bytes, then launched a distinct process in SQLite-only
+  readback mode. Both Runtime-chat checks returned `integrityCheck=ok` and one
+  exact event; the two auxiliary SQLite files also passed integrity readback.
+  The installed app tree and all remaining state-file bytes and modes were
+  unchanged across relaunch, and PID 59809 remained untouched.
+- The immutable 3,364-byte result at
+  `dist/lifecycle/macos-packaged-app-build-14-clean-home-state-recovery-v1.json`
+  has SHA-256
+  `434cec7c2fd396a56788abdcfa48edd913950331cedf91159a11f8acc02f657d`.
+  A second complete invocation reproduced the same result bytes. Its runner
+  and eleven-test source hashes are recorded in the Build 14 release document.
+  This same-host, per-user evidence does not establish arbitrary-history,
+  crash/power-loss, concurrent-writer, clean-machine/account, DMG/Finder,
+  UI/accessibility, live-provider, signed-distribution, or physical-device
+  behavior.
+- Post-qualification fake-toolchain coverage no longer hard-codes historical
+  macOS bundle build `6`; it derives both marketing and build versions from the
+  copied release ledger. All nine `script.test_build_and_run` cases pass. This
+  is an unreleased test-maintenance change and does not alter the archived
+  Build 14 source snapshot or package bytes.
+- Historical Build 14 readback:
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+14-local-v1 --historical`.
+  No security work, staging, commit, or push is part of this qualification.
+
+## 2026-07-29 Local V1 Build 13 Historical Recovery Qualification
+
+- At qualification time, the append-only release ledger ended at
+  `1.0.0+13`; Build 13 was the current record and Builds 1 through 12 were
+  historical.
 - The 240-file `dirty-content-snapshot` has SHA-256
   `82651260cc440946b7f12cebfb4e5b4c13d59ba3bc56da79a1f54adc37eeffa1`.
   HEAD and `origin/main` were both
@@ -48,37 +358,34 @@ This document records what has been implemented so far and what should happen ne
   installation, UI correctness, provider readiness, signing/notarization,
   clean-machine execution, physical devices, and G6/G7 exit remain unclaimed.
   PID 59809 stayed alive at the same path and was not replaced or terminated.
-- Current readback:
-  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+13-local-v1`.
+- Historical Build 13 readback:
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+13-local-v1 --historical`.
 - Historical Build 12 readback:
   `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+12-local-v1 --historical`.
   No security work, staging, commit, or push occurred.
 
 ## 2026-07-29 Unreleased Android Drawer Semantic Chat Search UX
 
-- The primary Android navigation drawer now exposes the existing Runtime chat
-  search path through the keyboard Search action. It submits one trimmed,
-  nonblank query only while the existing chat-history refresh policy permits a
-  Runtime request; typing still provides immediate local title/model/status
-  filtering while disconnected, streaming, or awaiting a matching response.
-- A remote response is selected only when its trimmed query exactly matches the
-  current drawer query. Stale or absent response state keeps the local result
-  set. Current remote results exclude archived sessions, sort globally by
-  Runtime rank and then update time, and bypass the normal recency buckets so a
-  newer lower-ranked result cannot move ahead of an older higher-ranked result.
-- Remote rows display the localized match rank and bounded result snippet in
-  the existing subtitle/accessibility summary. Search-only rows continue
-  through the existing ViewModel materialization path when opened.
-- The clean affected gate passes all 167 `AppNavigationTest` cases and 24
-  navigation-drawer/chat-drawer Compose cases with zero failures. The complete
-  Android app unit gate then passes 1,179 tests with zero skips, failures, or
-  errors. Release lint has zero errors and no new warning; its three previously
-  recorded project warnings remain. Independent GPT-5.6 Sol review found one
-  rank-versus-date ordering issue, which was fixed and re-reviewed with no
-  P0-P3 findings.
-- This is no-device, non-security UX work. It makes no physical keyboard,
-  screen-reader, live-provider, model-quality, network, installation, signing,
-  or release-readiness claim. Codex performed no Git write.
+<!-- aetherlink-current-android-drawer-search-ux-v2:start -->
+
+- The current unreleased Android drawer provides an explicit touch Search
+  action with localized accessibility semantics and the keyboard Search action
+  through one trimmed-query submission path.
+- Blank, disconnected, streaming, bulk-mutation, and exact same-query pending
+  states expose localized action-state descriptions without dispatching.
+- Only the exact current pending query shows a polite localized progress live
+  region and suppresses the no-results row; editing or clearing the query
+  closes that request and invalidates its transient search authority.
+- Only an exact current-query remote response is adopted; stale or absent
+  response state falls back to immediate local filtering, while current remote
+  results exclude archived sessions and retain global Runtime rank.
+- The current no-device gate passes 168 AppNavigationTest cases, 22
+  navigation-drawer Compose cases, 15 search-related RuntimeClientViewModelTest
+  cases, and the complete 1,194-test app JVM suite; release lint reports 0
+  errors and 2 SDK-version warnings.
+- This source/JVM/Compose evidence is not part of the immutable Build 17 archive and is first source-bound by the immutable Build 18 archive; it does not establish physical touch, TalkBack, provider, device, network, installation, signing, or release behavior.
+
+<!-- aetherlink-current-android-drawer-search-ux-v2:end -->
 
 ## 2026-07-29 Unreleased Multilingual Full-Matrix V3 Preparation
 
@@ -112,7 +419,7 @@ This document records what has been implemented so far and what should happen ne
 - Eight V3 Swift tests pass with one expected opt-in live skip. The combined
   frozen V2 plus V3 selection runs 18 tests with two expected skips and zero
   failures; 21 combined V2/V3 Python tests pass.
-- The settled full Swift suite runs 2,074 tests with 11 expected opt-in/live
+- The settled full Swift suite runs 2,081 tests with 11 expected opt-in/live
   skips and zero failures in 315.439 test seconds.
 - This is full-matrix observation preparation, not a live V3 observation or a
   passing multilingual qualification. No model/provider load, archive or model
@@ -160,9 +467,9 @@ This document records what has been implemented so far and what should happen ne
   the observation. The live V2 runner now intentionally rejects the changed
   product sources instead of silently rebinding that historical result; no live
   retry was attempted.
-- Build 13 now binds these release inputs to the current source snapshot and
-  passes independent readback. Builds 9 through 12 remain readable only as
-  historical source-bound evidence.
+- Build 15 now supersedes the Build 14 binding while preserving Build 14's
+  source snapshot and historical readback. Builds 9 through 14 remain readable
+  only as historical source-bound evidence.
 - This was no-device, mocked/deterministic, non-security product-quality work.
   No provider/model load, download, catalog mutation, installed-app change,
   staging, commit, or push occurred.
@@ -170,7 +477,7 @@ This document records what has been implemented so far and what should happen ne
 ## 2026-07-29 Local V1 Build 9 Prior Source-Bound Release And Lifecycle Qualification
 
 - At publication, the append-only release ledger ended at `1.0.0+9`. Build 9
-  is now a prior source-bound historical qualification; Build 13 is current.
+  is now a prior source-bound historical qualification; Build 19 is current.
 - The 239-file `dirty-content-snapshot` has SHA-256
   `22e26f5ed62be9b7badcc01ff76db91f436d0a0cde9ad1587a6c27588962a5ec`.
   It binds the settled role-aware embedding implementation; HEAD and
@@ -207,7 +514,7 @@ This document records what has been implemented so far and what should happen ne
 ## 2026-07-29 Historical Local V1 Build 7 SPDX And License Inventory Qualification
 
 - At the time of publication, the append-only release ledger ended at
-  `1.0.0+7`. Build 7 is now historical; Build 13 is the current local
+  `1.0.0+7`. Build 7 is now historical; Build 19 is the current local
   qualification record.
 - A source-controlled catalog exactly covers 350 unique Maven coordinates from
   six Gradle lock files, 379 exact POM byte identities, and zero external
@@ -268,7 +575,7 @@ This document records what has been implemented so far and what should happen ne
 ## 2026-07-29 Historical Local V1 Build 6 Unequal-Length Two-Root Qualification
 
 - At the time of publication, the append-only release ledger ended at
-  `1.0.0+6`. Build 6 is now historical; Build 13 is the current local
+  `1.0.0+6`. Build 6 is now historical; Build 19 is the current local
   qualification record.
 - One fixed dirty-content source snapshot with 235 production files was cloned
   into two isolated lane roots whose UTF-8 byte lengths are 101 and 109. The
@@ -3438,7 +3745,7 @@ Verified after this change:
 - `python3 -B script/run_clean_release_reproducibility.py`
 - `python3 -B script/run_macos_packaged_app_state_recovery_smoke.py`
 - `python3 -B script/run_clean_release_reproducibility.py --result dist/reproducibility/aetherlink-1.0.0+13-local-v1-two-root-v2-confirmation.json`
-- `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+13-local-v1`
+- `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+13-local-v1 --historical`
 - `python3 -B -m unittest script.test_run_macos_packaged_app_state_recovery_smoke script.test_documentation_handoff_guards`
 - `python3 -B script/check_docs_hygiene.py`
 - `git diff --check`

@@ -4145,6 +4145,15 @@ class RuntimeClientViewModel internal constructor(
         requestRuntimeChatSessions(query = query)
     }
 
+    fun clearRuntimeChatSearch() {
+        pendingChatSessionsListRun
+            ?.takeIf { it.query != null }
+            ?.let { run -> clearPendingChatSessionsListRun(run) }
+        heldRuntimeChatSessionsSnapshot = heldRuntimeChatSessionsSnapshot
+            ?.takeIf { it.requestedQuery == null }
+        clearRuntimeChatSearchAuthority()
+    }
+
     fun setTrustedRuntimeAutoReconnectEnabled(enabled: Boolean) {
         if (rejectUserMutationWhileStreaming()) return
         persistTrustedRuntimeAutoReconnectEnabled(enabled)
@@ -4948,6 +4957,7 @@ class RuntimeClientViewModel internal constructor(
         titleReconciliationGeneration?.let(::scheduleTitleReconciliationChatLegTimeout)
         mutableState.update {
             it.copy(
+                chatSessionSearchPendingQuery = normalizedQuery,
                 isLoadingChatSessions = true,
             )
         }
@@ -7395,7 +7405,12 @@ class RuntimeClientViewModel internal constructor(
             if (pendingChatSessionsListRun != null) return
             pendingChatSessionsRequestId = null
             pendingChatSessionsQuery = null
-            mutableState.update { it.copy(isLoadingChatSessions = false) }
+            mutableState.update {
+                it.copy(
+                    chatSessionSearchPendingQuery = null,
+                    isLoadingChatSessions = false,
+                )
+            }
             return
         }
         if (pendingChatSessionsListRun !== run) return
@@ -7403,7 +7418,12 @@ class RuntimeClientViewModel internal constructor(
         pendingChatSessionsListRun = null
         pendingChatSessionsRequestId = null
         pendingChatSessionsQuery = null
-        mutableState.update { it.copy(isLoadingChatSessions = false) }
+        mutableState.update {
+            it.copy(
+                chatSessionSearchPendingQuery = null,
+                isLoadingChatSessions = false,
+            )
+        }
         if (notifyTitleReconciliation) {
             terminalTitleReconciliationLeg(
                 generation = run.titleReconciliationGeneration,

@@ -1996,6 +1996,65 @@ class AppNavigationTest {
     }
 
     @Test
+    fun drawerChatSearchPendingAndActionStateTrackOnlyTheCurrentNormalizedQuery() {
+        val pending = RuntimeUiState(
+            isConnected = true,
+            isLoadingChatSessions = true,
+            chatSessionSearchPendingQuery = "relay route",
+        )
+        assertTrue(drawerChatSearchPending(pending, "  relay route  "))
+        assertFalse(drawerChatSearchPending(pending, "new query"))
+        assertFalse(drawerChatSearchPending(pending, "   "))
+        assertFalse(
+            drawerChatSearchPending(
+                pending.copy(isLoadingChatSessions = false),
+                "relay route",
+            )
+        )
+
+        assertEquals(
+            R.string.chat_search_action_state_enter_query,
+            drawerChatSearchActionStateDescriptionRes(
+                state = pending,
+                hasQuery = false,
+                isCurrentSearchPending = true,
+            ),
+        )
+        assertEquals(
+            R.string.chat_search_action_state_wait_for_stream,
+            drawerChatSearchActionStateDescriptionRes(
+                state = pending.copy(isStreaming = true),
+                hasQuery = true,
+                isCurrentSearchPending = true,
+            ),
+        )
+        assertEquals(
+            R.string.chat_search_action_state_loading,
+            drawerChatSearchActionStateDescriptionRes(
+                state = pending,
+                hasQuery = true,
+                isCurrentSearchPending = true,
+            ),
+        )
+        assertEquals(
+            R.string.chat_search_action_state_connect_first,
+            drawerChatSearchActionStateDescriptionRes(
+                state = RuntimeUiState(isConnected = false),
+                hasQuery = true,
+                isCurrentSearchPending = false,
+            ),
+        )
+        assertEquals(
+            R.string.chat_search_action_state_ready,
+            drawerChatSearchActionStateDescriptionRes(
+                state = RuntimeUiState(isConnected = true),
+                hasQuery = true,
+                isCurrentSearchPending = false,
+            ),
+        )
+    }
+
+    @Test
     fun chatHistoryBulkActionsOnlyAppearWhenChatsExist() {
         assertEquals(true, chatHistoryBulkActionsAvailable(activeSessionCount = 1, archivedSessionCount = 0))
         assertEquals(true, chatHistoryBulkActionsAvailable(activeSessionCount = 0, archivedSessionCount = 1))

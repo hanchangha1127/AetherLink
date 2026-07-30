@@ -79,6 +79,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -712,8 +713,16 @@ private fun LocalAgentBridgeApp(
                         hasChatSearchQuery = hasChatSearchQuery,
                         hasChatSearchResults = hasChatSearchResults,
                         filteredChatSessions = filteredChatSessions,
-                        onChatSearchQueryChange = { chatSearchQuery = it },
-                        onClearChatSearch = { chatSearchQuery = "" },
+                        onChatSearchQueryChange = { updatedQuery ->
+                            if (updatedQuery != chatSearchQuery) {
+                                viewModel.clearRuntimeChatSearch()
+                            }
+                            chatSearchQuery = updatedQuery
+                        },
+                        onClearChatSearch = {
+                            viewModel.clearRuntimeChatSearch()
+                            chatSearchQuery = ""
+                        },
                         usesRemoteChatSearchResults = drawerChatSearchSelection.usesRemoteResults,
                         onSearchChatHistory = viewModel::refreshRuntimeChatHistory,
                         onNewChat = {
@@ -2038,7 +2047,9 @@ private val modelDisplayProviderPrefixes = setOf(
 internal const val DRAWER_HISTORY_TEST_TAG = "aetherlink_drawer_history"
 internal const val DRAWER_EMPTY_HISTORY_TEST_TAG = "aetherlink_drawer_empty_history"
 internal const val DRAWER_CHAT_SEARCH_TEST_TAG = "aetherlink_drawer_chat_search"
+internal const val DRAWER_CHAT_SEARCH_SUBMIT_TEST_TAG = "aetherlink_drawer_chat_search_submit"
 internal const val DRAWER_CHAT_SEARCH_CLEAR_TEST_TAG = "aetherlink_drawer_chat_search_clear"
+internal const val DRAWER_CHAT_SEARCH_PROGRESS_TEST_TAG = "aetherlink_drawer_chat_search_progress"
 internal const val DRAWER_CHAT_SEARCH_NO_RESULTS_TEST_TAG = "aetherlink_drawer_chat_search_no_results"
 internal const val DRAWER_SETTINGS_FOOTER_TEST_TAG = "aetherlink_drawer_settings_footer"
 internal const val DRAWER_RUNTIME_SUMMARY_TEST_TAG = "aetherlink_drawer_runtime_summary"
@@ -2086,6 +2097,32 @@ internal const val RESEARCH_NOTEBOOK_DELETE_CONFIRM_TEST_TAG =
 internal const val RESEARCH_BRIEF_DIALOG_TEST_TAG = "aetherlink_research_brief_dialog"
 internal const val RESEARCH_BRIEF_MODEL_PICKER_TEST_TAG = "aetherlink_research_brief_model_picker"
 internal const val RESEARCH_SOURCE_SELECTOR_ROW_TEST_TAG = "aetherlink_research_source_selector_row"
+
+internal fun drawerChatSearchPending(
+    state: RuntimeUiState,
+    query: String,
+): Boolean {
+    val trimmedQuery = query.trim()
+    return trimmedQuery.isNotEmpty() &&
+        state.isLoadingChatSessions &&
+        state.chatSessionSearchPendingQuery == trimmedQuery
+}
+
+@StringRes
+internal fun drawerChatSearchActionStateDescriptionRes(
+    state: RuntimeUiState,
+    hasQuery: Boolean,
+    isCurrentSearchPending: Boolean,
+): Int {
+    return when {
+        !hasQuery -> R.string.chat_search_action_state_enter_query
+        state.isStreaming -> R.string.chat_search_action_state_wait_for_stream
+        state.isBulkMutatingChatSessions || isCurrentSearchPending ->
+            R.string.chat_search_action_state_loading
+        !state.isConnected -> R.string.chat_search_action_state_connect_first
+        else -> R.string.chat_search_action_state_ready
+    }
+}
 
 internal fun researchBriefModelMenuItemTestTag(modelId: String): String =
     "aetherlink_research_brief_model_item_$modelId"
@@ -2286,6 +2323,20 @@ internal fun AetherLinkNavigationDrawerContent(
     val researchActionsEnabled = state.isConnected &&
         !state.isStreaming &&
         !state.isChatHistoryActionPending
+    val isCurrentChatSearchPending = drawerChatSearchPending(
+        state = state,
+        query = chatSearchQuery,
+    )
+    val remoteChatSearchEnabled = chatHistoryRefreshEnabled(state) &&
+        !isCurrentChatSearchPending
+    val chatSearchActionStateDescription = stringResource(
+        drawerChatSearchActionStateDescriptionRes(
+            state = state,
+            hasQuery = hasChatSearchQuery,
+            isCurrentSearchPending = isCurrentChatSearchPending,
+        )
+    )
+    val searchingChatsText = stringResource(R.string.searching_chats)
     var expandedResearchNotebookMenuSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var expandedChatSessionMenuId by rememberSaveable { mutableStateOf<String?>(null) }
     var researchNotebookDeleteConfirmation by rememberSaveable(
@@ -2569,7 +2620,9 @@ internal fun AetherLinkNavigationDrawerContent(
                         ChatHistorySearchField(
                             query = chatSearchQuery,
                             onQueryChange = onChatSearchQueryChange,
-                            remoteSearchEnabled = chatHistoryRefreshEnabled(state),
+                            remoteSearchEnabled = remoteChatSearchEnabled,
+                            searchActionStateDescription =
+                                chatSearchActionStateDescription,
                             onSearch = onSearchChatHistory,
                             onClear = {
                                 hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
@@ -2578,7 +2631,39 @@ internal fun AetherLinkNavigationDrawerContent(
                         )
                     }
                 }
-                if (hasChatSearchQuery && !hasChatSearchResults) {
+                if (isCurrentChatSearchPending) {
+                    item(
+                        key = "chat-history-search-progress",
+                        contentType = "progress",
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .padding(horizontal = 28.dp, vertical = 8.dp)
+                                .testTag(DRAWER_CHAT_SEARCH_PROGRESS_TEST_TAG)
+                                .clearAndSetSemantics {
+                                    contentDescription = searchingChatsText
+                                    liveRegion = LiveRegionMode.Polite
+                                },
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = searchingChatsText,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                if (
+                    hasChatSearchQuery &&
+                    !hasChatSearchResults &&
+                    !isCurrentChatSearchPending
+                ) {
                     item(
                         key = "chat-history-no-search-results",
                         contentType = "empty-state",
@@ -3329,12 +3414,29 @@ private fun ChatHistorySearchField(
     query: String,
     onQueryChange: (String) -> Unit,
     remoteSearchEnabled: Boolean,
+    searchActionStateDescription: String,
     onSearch: (String) -> Unit,
     onClear: () -> Unit,
 ) {
+    val hapticFeedback = LocalHapticFeedback.current
     val trimmedQuery = query.trim()
+    val searchEnabled = remoteSearchEnabled && trimmedQuery.isNotEmpty()
+    val searchLabel = stringResource(R.string.chat_search_label)
+    val searchContentDescription = if (trimmedQuery.isEmpty()) {
+        searchLabel
+    } else {
+        stringResource(R.string.search_chat_history_named, trimmedQuery)
+    }
     val clearQuery = trimmedQuery.ifBlank { query }
     val clearChatSearchContentDescription = stringResource(R.string.clear_chat_search_named, clearQuery)
+    val submitSearch = {
+        if (searchEnabled) {
+            hapticFeedback.performAetherLinkFeedback(
+                AetherLinkInteractionFeedback.PrimaryAction
+            )
+            onSearch(trimmedQuery)
+        }
+    }
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
@@ -3348,10 +3450,25 @@ private fun ChatHistorySearchField(
             )
         },
         leadingIcon = {
-            Icon(
-                imageVector = Icons.Filled.Search,
-                contentDescription = null,
-            )
+            IconButton(
+                onClick = submitSearch,
+                enabled = searchEnabled,
+                modifier = Modifier
+                    .testTag(DRAWER_CHAT_SEARCH_SUBMIT_TEST_TAG)
+                    .semantics {
+                        contentDescription = searchContentDescription
+                        stateDescription = searchActionStateDescription
+                        onClick(
+                            label = searchContentDescription,
+                            action = null,
+                        )
+                    },
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Search,
+                    contentDescription = null,
+                )
+            }
         },
         trailingIcon = {
             if (query.isNotEmpty()) {
@@ -3376,9 +3493,7 @@ private fun ChatHistorySearchField(
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(
             onSearch = {
-                if (remoteSearchEnabled && trimmedQuery.isNotEmpty()) {
-                    onSearch(trimmedQuery)
-                }
+                submitSearch()
             },
         ),
         modifier = Modifier

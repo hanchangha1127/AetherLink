@@ -56,7 +56,8 @@ ENABLE_ENVIRONMENT_KEY = (
 )
 DIAGNOSTIC_PREFIX = "AETHERLINK_OLLAMA_MULTILINGUAL_FULL_MATRIX_V3="
 TEMPORARY_PREFIX = (
-    "aetherlink-ollama-embedding-semantic-full-matrix-v3-"
+    base.EMBEDDING_SEMANTIC_QUALITY_TEMPORARY_PREFIX
+    + "full-matrix-v3-"
 )
 V3_SWIFT_SOURCE_PATH = (
     ROOT
@@ -65,6 +66,12 @@ V3_SWIFT_SOURCE_PATH = (
     / "OllamaBackend"
     / "Tests"
     / "OllamaEmbeddingMultilingualFullMatrixV3Tests.swift"
+)
+RECORDED_RESULT_PATH = (
+    ROOT
+    / "docs"
+    / "evidence"
+    / "ollama-embedding-multilingual-full-matrix-v3.json"
 )
 V3_SWIFT_SOURCE_SHA256 = (
     "009360901ffd17390a90d5b480e50e9f8e659ae457aa732037b6c4e4d1bd2a9d"
@@ -76,7 +83,7 @@ V2_RUNNER_SOURCE_SHA256 = (
     "0c9f88794f53721c84be495363b626ce3f46786d703a3ebb2867c46239867be0"
 )
 RUNNER_SOURCE_SHA256 = (
-    "a371987625696ad601a3d428eab06ee3d4603a9a0121714646021c02d14720cb"
+    "58b65494fd0817133649465d7784688724108a1b3842468f963cdeb1a25e670e"
 )
 RUNNER_SOURCE_DIGEST_PATTERN = re.compile(
     r"(?m)^(RUNNER_SOURCE_SHA256 = \(\n"
@@ -695,6 +702,33 @@ def validate_result_v3(value: object) -> None:
         raise MatrixFailure("full-matrix V3 quality result was invalid")
 
 
+def recorded_result() -> dict[str, object]:
+    data = v2.exact_regular_file_bytes(
+        RECORDED_RESULT_PATH,
+        label="recorded full-matrix V3 result",
+        maximum_size=64 * 1_024,
+    )
+    value = base.strict_json_loads(
+        data,
+        label="recorded full-matrix V3 result",
+    )
+    validate_result_v3(value)
+    canonical = (
+        json.dumps(
+            value,
+            ensure_ascii=True,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode("utf-8")
+    if data != canonical:
+        raise MatrixFailure(
+            "recorded full-matrix V3 result was not canonical"
+        )
+    return value
+
+
 def result_for_observation(
     *,
     source_version: str,
@@ -771,7 +805,7 @@ def run_matrix(source_models_directory: Path) -> dict[str, object]:
         with tempfile.TemporaryDirectory(
             prefix=TEMPORARY_PREFIX
         ) as temporary_directory:
-            temporary_root = Path(temporary_directory)
+            temporary_root = Path(temporary_directory).resolve(strict=True)
             versions = [
                 run_candidate_v3(
                     candidate,

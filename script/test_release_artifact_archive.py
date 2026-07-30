@@ -22,6 +22,7 @@ from script.check_release_artifact_archive import (
     ledger_prefix_bytes_for_release,
     manifest_contract_for_build,
     archive_normalizations_for_build,
+    parse_aapt2_apk_backup_policy as parse_readback_apk_backup_policy,
     parse_aapt2_badging as parse_readback_aapt2_badging,
     parse_bundletool_manifest as parse_readback_bundletool_manifest,
     parse_gradle_lockfile as parse_readback_gradle_lockfile,
@@ -47,6 +48,7 @@ from script.package_release_artifacts import (
     canonicalize_r8_resources as canonicalize_builder_r8_resources,
     canonicalize_r8_mapping_prt as canonicalize_builder_r8_prt,
     member_record,
+    parse_aapt2_apk_backup_policy as parse_builder_apk_backup_policy,
     parse_aapt2_badging as parse_builder_aapt2_badging,
     parse_bundletool_manifest as parse_builder_bundletool_manifest,
     parse_gradle_lockfile as parse_builder_gradle_lockfile,
@@ -65,12 +67,121 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
         "targetSdkVersion:'36'\n"
         "native-code: 'arm64-v8a'\n"
     )
+    AAPT2_XMLTREE = (
+        "N: android=http://schemas.android.com/apk/res/android (line=2)\n"
+        "  E: manifest (line=2)\n"
+        "      E: application (line=27)\n"
+        "        A: http://schemas.android.com/apk/res/android:"
+        "allowBackup(0x01010280)=false\n"
+        "        A: http://schemas.android.com/apk/res/android:"
+        "fullBackupContent(0x010104eb)=@0x7f110000\n"
+        "        A: http://schemas.android.com/apk/res/android:"
+        "dataExtractionRules(0x0101063e)=@0x7f110001\n"
+        "          E: activity (line=38)\n"
+    )
+    AAPT2_RESOURCES = (
+        "Package name=com.localagentbridge.android id=7f\n"
+        "  type xml id=11 entryCount=3\n"
+        "    resource 0x7f110000 xml/backup_rules\n"
+        "    resource 0x7f110001 xml/data_extraction_rules\n"
+        "    resource 0x7f110002 xml/locales_config\n"
+    )
+    AAPT2_RESOURCES_WITH_VALUES = (
+        "Package name=com.localagentbridge.android id=7f\n"
+        "  type xml id=11 entryCount=3\n"
+        "    resource 0x7f110000 xml/backup_rules\n"
+        "      () (file) res/Qq.xml type=XML\n"
+        "    resource 0x7f110001 xml/data_extraction_rules\n"
+        "      () (file) res/4j.xml type=XML\n"
+        "    resource 0x7f110002 xml/locales_config\n"
+        "      () (file) res/Br.xml type=XML\n"
+    )
+    AAPT2_BACKUP_RULES_XMLTREE = (
+        "E: full-backup-content (line=2)\n"
+        "    E: exclude (line=3)\n"
+        '      A: domain="root" (Raw: "root")\n'
+        '      A: path="." (Raw: ".")\n'
+        "    E: exclude (line=4)\n"
+        '      A: domain="file" (Raw: "file")\n'
+        '      A: path="." (Raw: ".")\n'
+        "    E: exclude (line=5)\n"
+        '      A: domain="database" (Raw: "database")\n'
+        '      A: path="." (Raw: ".")\n'
+        "    E: exclude (line=6)\n"
+        '      A: domain="sharedpref" (Raw: "sharedpref")\n'
+        '      A: path="." (Raw: ".")\n'
+        "    E: exclude (line=7)\n"
+        '      A: domain="external" (Raw: "external")\n'
+        '      A: path="." (Raw: ".")\n'
+    )
+    AAPT2_DATA_EXTRACTION_RULES_XMLTREE = (
+        "E: data-extraction-rules (line=2)\n"
+        "    E: cloud-backup (line=3)\n"
+        "        E: exclude (line=4)\n"
+        '          A: domain="root" (Raw: "root")\n'
+        '          A: path="." (Raw: ".")\n'
+        "        E: exclude (line=5)\n"
+        '          A: domain="file" (Raw: "file")\n'
+        '          A: path="." (Raw: ".")\n'
+        "        E: exclude (line=6)\n"
+        '          A: domain="database" (Raw: "database")\n'
+        '          A: path="." (Raw: ".")\n'
+        "        E: exclude (line=7)\n"
+        '          A: domain="sharedpref" (Raw: "sharedpref")\n'
+        '          A: path="." (Raw: ".")\n'
+        "        E: exclude (line=8)\n"
+        '          A: domain="external" (Raw: "external")\n'
+        '          A: path="." (Raw: ".")\n'
+        "        E: exclude (line=9)\n"
+        '          A: domain="device_root" (Raw: "device_root")\n'
+        '          A: path="." (Raw: ".")\n'
+        "        E: exclude (line=10)\n"
+        '          A: domain="device_file" (Raw: "device_file")\n'
+        '          A: path="." (Raw: ".")\n'
+        "        E: exclude (line=11)\n"
+        '          A: domain="device_database" (Raw: "device_database")\n'
+        '          A: path="." (Raw: ".")\n'
+        "        E: exclude (line=12)\n"
+        '          A: domain="device_sharedpref" (Raw: "device_sharedpref")\n'
+        '          A: path="." (Raw: ".")\n'
+        "    E: device-transfer (line=14)\n"
+        "        E: exclude (line=15)\n"
+        '          A: domain="root" (Raw: "root")\n'
+        '          A: path="." (Raw: ".")\n'
+        "        E: exclude (line=16)\n"
+        '          A: domain="file" (Raw: "file")\n'
+        '          A: path="." (Raw: ".")\n'
+        "        E: exclude (line=17)\n"
+        '          A: domain="database" (Raw: "database")\n'
+        '          A: path="." (Raw: ".")\n'
+        "        E: exclude (line=18)\n"
+        '          A: domain="sharedpref" (Raw: "sharedpref")\n'
+        '          A: path="." (Raw: ".")\n'
+        "        E: exclude (line=19)\n"
+        '          A: domain="external" (Raw: "external")\n'
+        '          A: path="." (Raw: ".")\n'
+        "        E: exclude (line=20)\n"
+        '          A: domain="device_root" (Raw: "device_root")\n'
+        '          A: path="." (Raw: ".")\n'
+        "        E: exclude (line=21)\n"
+        '          A: domain="device_file" (Raw: "device_file")\n'
+        '          A: path="." (Raw: ".")\n'
+        "        E: exclude (line=22)\n"
+        '          A: domain="device_database" (Raw: "device_database")\n'
+        '          A: path="." (Raw: ".")\n'
+        "        E: exclude (line=23)\n"
+        '          A: domain="device_sharedpref" (Raw: "device_sharedpref")\n'
+        '          A: path="." (Raw: ".")\n'
+    )
     BUNDLETOOL_MANIFEST = (
         '<manifest xmlns:android="http://schemas.android.com/apk/res/android" '
         'android:versionCode="1" android:versionName="1.0.0" '
         'package="com.localagentbridge.android">'
         '<uses-sdk android:minSdkVersion="26" '
         'android:targetSdkVersion="36"/>'
+        '<application android:allowBackup="false" '
+        'android:dataExtractionRules="@xml/data_extraction_rules" '
+        'android:fullBackupContent="@xml/backup_rules"/>'
         "</manifest>"
     )
     BUNDLETOOL_VALIDATE_OUTPUT = (
@@ -1022,21 +1133,482 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                 with self.assertRaises(ReleaseArchiveVerificationError):
                     parse_readback_aapt2_badging(document)
 
+    def test_builder_and_readback_parse_exact_apk_backup_policy(self) -> None:
+        expected = {
+            "allowBackup": False,
+            "dataExtractionRules": "@xml/data_extraction_rules",
+            "fullBackupContent": "@xml/backup_rules",
+        }
+        self.assertEqual(
+            parse_builder_apk_backup_policy(
+                self.AAPT2_XMLTREE,
+                self.AAPT2_RESOURCES,
+            ),
+            expected,
+        )
+        self.assertEqual(
+            parse_readback_apk_backup_policy(
+                self.AAPT2_XMLTREE,
+                self.AAPT2_RESOURCES,
+            ),
+            expected,
+        )
+
+    def test_apk_backup_policy_parsers_reject_noncanonical_readback(
+        self,
+    ) -> None:
+        allow_backup = (
+            "        A: http://schemas.android.com/apk/res/android:"
+            "allowBackup(0x01010280)=false\n"
+        )
+        full_backup = (
+            "        A: http://schemas.android.com/apk/res/android:"
+            "fullBackupContent(0x010104eb)=@0x7f110000\n"
+        )
+        data_extraction = (
+            "        A: http://schemas.android.com/apk/res/android:"
+            "dataExtractionRules(0x0101063e)=@0x7f110001\n"
+        )
+        invalid = (
+            (self.AAPT2_XMLTREE.replace("  E: manifest (line=2)\n", ""), self.AAPT2_RESOURCES),
+            (
+                self.AAPT2_XMLTREE
+                + "      E: application (line=40)\n",
+                self.AAPT2_RESOURCES,
+            ),
+            (
+                self.AAPT2_XMLTREE.replace(
+                    "      E: application (line=27)",
+                    "        E: application (line=27)",
+                ),
+                self.AAPT2_RESOURCES,
+            ),
+            (self.AAPT2_XMLTREE.replace(allow_backup, ""), self.AAPT2_RESOURCES),
+            (
+                self.AAPT2_XMLTREE.replace(
+                    allow_backup,
+                    allow_backup + allow_backup,
+                ),
+                self.AAPT2_RESOURCES,
+            ),
+            (
+                self.AAPT2_XMLTREE.replace(
+                    "allowBackup(0x01010280)=false",
+                    "allowBackup(0x01010280)=true",
+                ),
+                self.AAPT2_RESOURCES,
+            ),
+            (self.AAPT2_XMLTREE.replace(full_backup, ""), self.AAPT2_RESOURCES),
+            (self.AAPT2_XMLTREE.replace(data_extraction, ""), self.AAPT2_RESOURCES),
+            (
+                self.AAPT2_XMLTREE.replace(
+                    "@0x7f110000",
+                    "@xml/backup_rules",
+                ),
+                self.AAPT2_RESOURCES,
+            ),
+            (
+                self.AAPT2_XMLTREE.replace(
+                    "fullBackupContent(0x010104eb)=@0x7f110000",
+                    "fullBackupContent(0x010104eb)=@0x7f110001",
+                ).replace(
+                    "dataExtractionRules(0x0101063e)=@0x7f110001",
+                    "dataExtractionRules(0x0101063e)=@0x7f110000",
+                ),
+                self.AAPT2_RESOURCES,
+            ),
+            (
+                self.AAPT2_XMLTREE.replace(
+                    "dataExtractionRules(0x0101063e)=@0x7f110001",
+                    "dataExtractionRules(0x0101063e)=@0x7f110000",
+                ),
+                self.AAPT2_RESOURCES,
+            ),
+            (
+                self.AAPT2_XMLTREE,
+                self.AAPT2_RESOURCES.replace(
+                    "    resource 0x7f110000 xml/backup_rules\n",
+                    "",
+                ),
+            ),
+            (
+                self.AAPT2_XMLTREE,
+                self.AAPT2_RESOURCES.replace(
+                    "xml/backup_rules",
+                    "xml/not_backup_rules",
+                ),
+            ),
+            (
+                self.AAPT2_XMLTREE,
+                self.AAPT2_RESOURCES
+                + "    resource 0x7f110000 xml/backup_rules\n",
+            ),
+            (
+                self.AAPT2_XMLTREE.replace(
+                    full_backup,
+                    "            " + full_backup.lstrip(),
+                ),
+                self.AAPT2_RESOURCES,
+            ),
+        )
+        for xmltree, resources in invalid:
+            with self.subTest(xmltree=xmltree, resources=resources):
+                with self.assertRaises(ReleaseArchiveError):
+                    parse_builder_apk_backup_policy(xmltree, resources)
+                with self.assertRaises(ReleaseArchiveVerificationError):
+                    parse_readback_apk_backup_policy(xmltree, resources)
+
+    def test_apk_backup_policy_parsers_accept_reordered_fields(self) -> None:
+        lines = self.AAPT2_XMLTREE.splitlines()
+        reordered = "\n".join(
+            [
+                *lines[:3],
+                lines[5],
+                lines[3],
+                lines[4],
+                *lines[6:],
+            ]
+        )
+        resource_lines = self.AAPT2_RESOURCES.splitlines()
+        reordered_resources = "\n".join(
+            [
+                *resource_lines[:2],
+                resource_lines[3],
+                resource_lines[2],
+                *resource_lines[4:],
+            ]
+        )
+        expected = {
+            "allowBackup": False,
+            "dataExtractionRules": "@xml/data_extraction_rules",
+            "fullBackupContent": "@xml/backup_rules",
+        }
+        self.assertEqual(
+            parse_builder_apk_backup_policy(
+                reordered,
+                reordered_resources,
+            ),
+            expected,
+        )
+        self.assertEqual(
+            parse_readback_apk_backup_policy(
+                reordered,
+                reordered_resources,
+            ),
+            expected,
+        )
+
+    def test_apk_backup_policy_inspectors_use_exact_dumps_and_cleanup(
+        self,
+    ) -> None:
+        modules = (
+            (builder_module, ReleaseArchiveError),
+            (readback_module, ReleaseArchiveVerificationError),
+        )
+        expected = {
+            "allowBackup": False,
+            "dataExtractionRules": "@xml/data_extraction_rules",
+            "fullBackupContent": "@xml/backup_rules",
+        }
+        for module, error_type in modules:
+            temporary_paths: list[Path] = []
+            commands: list[list[str]] = []
+
+            def fake_dump(command: list[str], root: Path) -> str:
+                commands.append(list(command))
+                temporary_path = Path(command[-1])
+                self.assertEqual(
+                    temporary_path.read_bytes(),
+                    b"fixture-apk",
+                )
+                temporary_paths.append(temporary_path)
+                if command[2] == "xmltree":
+                    file_name = command[4]
+                    if file_name == "AndroidManifest.xml":
+                        return self.AAPT2_XMLTREE
+                    if file_name == "res/Qq.xml":
+                        return self.AAPT2_BACKUP_RULES_XMLTREE
+                    if file_name == "res/4j.xml":
+                        return self.AAPT2_DATA_EXTRACTION_RULES_XMLTREE
+                    self.fail(f"unexpected aapt2 XML file {file_name!r}")
+                if "--no-values" in command:
+                    return self.AAPT2_RESOURCES
+                return self.AAPT2_RESOURCES_WITH_VALUES
+
+            with (
+                mock.patch.object(
+                    module,
+                    "find_android_build_tool",
+                    return_value=Path("/fixture/aapt2"),
+                ),
+                mock.patch.object(
+                    module,
+                    "run_aapt2_dump",
+                    side_effect=fake_dump,
+                ),
+            ):
+                self.assertEqual(
+                    module.inspect_apk_backup_policy(b"fixture-apk"),
+                    expected,
+                )
+            self.assertEqual(
+                [
+                    (
+                        command[2],
+                        command[4] if command[2] == "xmltree" else (
+                            "no-values"
+                            if "--no-values" in command
+                            else "values"
+                        ),
+                    )
+                    for command in commands
+                ],
+                [
+                    ("xmltree", "AndroidManifest.xml"),
+                    ("resources", "no-values"),
+                    ("resources", "values"),
+                    ("xmltree", "res/Qq.xml"),
+                    ("xmltree", "res/4j.xml"),
+                ],
+            )
+            self.assertEqual(len(set(temporary_paths)), 1)
+            self.assertTrue(
+                all(not path.exists() for path in temporary_paths)
+            )
+
+            for failing_stage in (
+                "manifest",
+                "resources-no-values",
+                "resources-values",
+                "backup-rules",
+                "data-extraction-rules",
+            ):
+                failed_paths: list[Path] = []
+
+                def fail_dump(command: list[str], root: Path) -> str:
+                    failed_paths.append(Path(command[-1]))
+                    if command[2] == "xmltree":
+                        file_name = command[4]
+                        stage = {
+                            "AndroidManifest.xml": "manifest",
+                            "res/Qq.xml": "backup-rules",
+                            "res/4j.xml": "data-extraction-rules",
+                        }[file_name]
+                        output = {
+                            "AndroidManifest.xml": self.AAPT2_XMLTREE,
+                            "res/Qq.xml": (
+                                self.AAPT2_BACKUP_RULES_XMLTREE
+                            ),
+                            "res/4j.xml": (
+                                self.AAPT2_DATA_EXTRACTION_RULES_XMLTREE
+                            ),
+                        }[file_name]
+                    elif "--no-values" in command:
+                        stage = "resources-no-values"
+                        output = self.AAPT2_RESOURCES
+                    else:
+                        stage = "resources-values"
+                        output = self.AAPT2_RESOURCES_WITH_VALUES
+                    if stage == failing_stage:
+                        raise error_type("fixture aapt2 failure")
+                    return output
+
+                with (
+                    self.subTest(
+                        module=module.__name__,
+                        failing_stage=failing_stage,
+                    ),
+                    mock.patch.object(
+                        module,
+                        "find_android_build_tool",
+                        return_value=Path("/fixture/aapt2"),
+                    ),
+                    mock.patch.object(
+                        module,
+                        "run_aapt2_dump",
+                        side_effect=fail_dump,
+                    ),
+                    self.assertRaises(error_type),
+                ):
+                    module.inspect_apk_backup_policy(b"fixture-apk")
+                self.assertTrue(failed_paths)
+                self.assertTrue(
+                    all(not path.exists() for path in failed_paths)
+                )
+
+    def test_packaged_backup_policy_body_parsers_fail_closed(self) -> None:
+        modules = (
+            (builder_module, ReleaseArchiveError),
+            (readback_module, ReleaseArchiveVerificationError),
+        )
+        expected_paths = {
+            "backup_rules": "res/Qq.xml",
+            "data_extraction_rules": "res/4j.xml",
+        }
+        for module, error_type in modules:
+            with self.subTest(module=module.__name__):
+                self.assertEqual(
+                    module.parse_aapt2_xml_resource_paths(
+                        self.AAPT2_RESOURCES_WITH_VALUES
+                    ),
+                    expected_paths,
+                )
+                module.validate_aapt2_backup_policy_xmltrees(
+                    self.AAPT2_BACKUP_RULES_XMLTREE,
+                    self.AAPT2_DATA_EXTRACTION_RULES_XMLTREE,
+                )
+
+            invalid_resources = (
+                self.AAPT2_RESOURCES_WITH_VALUES.replace(
+                    "      () (file) res/Qq.xml type=XML\n",
+                    "",
+                ),
+                self.AAPT2_RESOURCES_WITH_VALUES.replace(
+                    "res/4j.xml",
+                    "res/Qq.xml",
+                ),
+                self.AAPT2_RESOURCES_WITH_VALUES
+                + (
+                    "    resource 0x7f110003 xml/backup_rules\n"
+                    "      () (file) res/Xx.xml type=XML\n"
+                ),
+            )
+            for resources in invalid_resources:
+                with self.subTest(
+                    module=module.__name__,
+                    resources=resources,
+                ), self.assertRaises(error_type):
+                    module.parse_aapt2_xml_resource_paths(resources)
+
+            invalid_trees = (
+                (
+                    self.AAPT2_BACKUP_RULES_XMLTREE.replace(
+                        'domain="external" (Raw: "external")',
+                        'domain="file" (Raw: "file")',
+                    ),
+                    self.AAPT2_DATA_EXTRACTION_RULES_XMLTREE,
+                ),
+                (
+                    self.AAPT2_BACKUP_RULES_XMLTREE.replace(
+                        'path="." (Raw: ".")',
+                        'path="cache" (Raw: "cache")',
+                        1,
+                    ),
+                    self.AAPT2_DATA_EXTRACTION_RULES_XMLTREE,
+                ),
+                (
+                    self.AAPT2_BACKUP_RULES_XMLTREE
+                    + "    E: include (line=8)\n",
+                    self.AAPT2_DATA_EXTRACTION_RULES_XMLTREE,
+                ),
+                (
+                    self.AAPT2_BACKUP_RULES_XMLTREE,
+                    self.AAPT2_DATA_EXTRACTION_RULES_XMLTREE.replace(
+                        "    E: device-transfer (line=14)\n",
+                        "",
+                    ),
+                ),
+                (
+                    self.AAPT2_BACKUP_RULES_XMLTREE,
+                    self.AAPT2_DATA_EXTRACTION_RULES_XMLTREE.replace(
+                        'domain="device_sharedpref" '
+                        '(Raw: "device_sharedpref")\n',
+                        "",
+                        1,
+                    ),
+                ),
+            )
+            for backup_rules, data_extraction_rules in invalid_trees:
+                with self.subTest(
+                    module=module.__name__,
+                    backup_rules=backup_rules,
+                    data_extraction_rules=data_extraction_rules,
+                ), self.assertRaises(error_type):
+                    module.validate_aapt2_backup_policy_xmltrees(
+                        backup_rules,
+                        data_extraction_rules,
+                    )
+
+    def test_aapt2_dump_runner_fails_closed(self) -> None:
+        modules = (
+            (builder_module, ReleaseArchiveError),
+            (readback_module, ReleaseArchiveVerificationError),
+        )
+        command = ["/fixture/aapt2", "dump", "resources", "fixture.apk"]
+        for module, error_type in modules:
+            with mock.patch.object(
+                module.subprocess,
+                "run",
+                return_value=subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout="fixture",
+                    stderr="unexpected",
+                ),
+            ), self.assertRaisesRegex(error_type, "unexpected stderr"):
+                module.run_aapt2_dump(command)
+            with mock.patch.object(
+                module.subprocess,
+                "run",
+                side_effect=subprocess.TimeoutExpired(
+                    command,
+                    module.AAPT2_TIMEOUT_SECONDS,
+                ),
+            ), self.assertRaisesRegex(error_type, "timed out"):
+                module.run_aapt2_dump(command)
+            with mock.patch.object(
+                module.subprocess,
+                "run",
+                side_effect=subprocess.CalledProcessError(1, command),
+            ), self.assertRaisesRegex(error_type, "readback failed"):
+                module.run_aapt2_dump(command)
+
     def test_builder_and_readback_parse_exact_bundletool_manifest(self) -> None:
         expected = {
+            "allowBackup": False,
             "applicationId": "com.localagentbridge.android",
+            "dataExtractionRules": "@xml/data_extraction_rules",
+            "fullBackupContent": "@xml/backup_rules",
             "minSdk": 26,
             "targetSdk": 36,
             "versionCode": 1,
             "versionName": "1.0.0",
         }
         self.assertEqual(
-            parse_builder_bundletool_manifest(self.BUNDLETOOL_MANIFEST),
+            parse_builder_bundletool_manifest(
+                self.BUNDLETOOL_MANIFEST,
+                backup_policy_required=True,
+            ),
             expected,
         )
         self.assertEqual(
-            parse_readback_bundletool_manifest(self.BUNDLETOOL_MANIFEST),
+            parse_readback_bundletool_manifest(
+                self.BUNDLETOOL_MANIFEST,
+                backup_policy_required=True,
+            ),
             expected,
+        )
+        historical = self.BUNDLETOOL_MANIFEST.replace(
+            ' android:dataExtractionRules="@xml/data_extraction_rules"'
+            ' android:fullBackupContent="@xml/backup_rules"',
+            "",
+        )
+        expected_historical = {
+            key: value
+            for key, value in expected.items()
+            if key not in {
+                "allowBackup",
+                "dataExtractionRules",
+                "fullBackupContent",
+            }
+        }
+        self.assertEqual(
+            parse_builder_bundletool_manifest(historical),
+            expected_historical,
+        )
+        self.assertEqual(
+            parse_readback_bundletool_manifest(historical),
+            expected_historical,
         )
 
     def test_bundletool_manifest_parsers_reject_noncanonical_identity(
@@ -1074,6 +1646,39 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                 "",
             ),
             self.BUNDLETOOL_MANIFEST.replace(
+                '<application android:allowBackup="false" '
+                'android:dataExtractionRules="@xml/data_extraction_rules" '
+                'android:fullBackupContent="@xml/backup_rules"/>',
+                "",
+            ),
+            self.BUNDLETOOL_MANIFEST.replace(
+                "</manifest>",
+                '<application android:allowBackup="false" '
+                'android:dataExtractionRules="@xml/data_extraction_rules" '
+                'android:fullBackupContent="@xml/backup_rules"/>'
+                "</manifest>",
+            ),
+            self.BUNDLETOOL_MANIFEST.replace(
+                'android:allowBackup="false"',
+                'android:allowBackup="true"',
+            ),
+            self.BUNDLETOOL_MANIFEST.replace(
+                ' android:dataExtractionRules="@xml/data_extraction_rules"',
+                "",
+            ),
+            self.BUNDLETOOL_MANIFEST.replace(
+                ' android:fullBackupContent="@xml/backup_rules"',
+                "",
+            ),
+            self.BUNDLETOOL_MANIFEST.replace(
+                "@xml/data_extraction_rules",
+                "@xml/unexpected_rules",
+            ),
+            self.BUNDLETOOL_MANIFEST.replace(
+                "@xml/backup_rules",
+                "@xml/unexpected_rules",
+            ),
+            self.BUNDLETOOL_MANIFEST.replace(
                 "<manifest ",
                 "<application ",
             ).replace("</manifest>", "</application>"),
@@ -1082,9 +1687,25 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
         for document in invalid:
             with self.subTest(document=document):
                 with self.assertRaises(ReleaseArchiveError):
-                    parse_builder_bundletool_manifest(document)
+                    parse_builder_bundletool_manifest(
+                        document,
+                        backup_policy_required=True,
+                    )
                 with self.assertRaises(ReleaseArchiveVerificationError):
-                    parse_readback_bundletool_manifest(document)
+                    parse_readback_bundletool_manifest(
+                        document,
+                        backup_policy_required=True,
+                    )
+        with self.assertRaises(ReleaseArchiveError):
+            parse_builder_bundletool_manifest(
+                self.BUNDLETOOL_MANIFEST,
+                backup_policy_required=1,
+            )
+        with self.assertRaises(ReleaseArchiveVerificationError):
+            parse_readback_bundletool_manifest(
+                self.BUNDLETOOL_MANIFEST,
+                backup_policy_required=1,
+            )
 
     def test_bundletool_validate_output_requires_one_base_module(
         self,
@@ -1146,6 +1767,14 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
         self.assertIn(
             "bundleStructureValidation",
             readback_module.expected_android_manifest_keys(11),
+        )
+        self.assertNotIn(
+            "apkManifestReadback",
+            readback_module.expected_android_manifest_keys(14),
+        )
+        self.assertIn(
+            "apkManifestReadback",
+            readback_module.expected_android_manifest_keys(15),
         )
         readback_module.verify_bundle_structure_validation_claim(
             {"bundleStructureValidation": claim},
@@ -1311,6 +1940,11 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
             (builder_module, ReleaseArchiveError),
             (readback_module, ReleaseArchiveVerificationError),
         )
+        expected_policy = {
+            "allowBackup": False,
+            "dataExtractionRules": "@xml/data_extraction_rules",
+            "fullBackupContent": "@xml/backup_rules",
+        }
         for module, error_type in modules:
             with mock.patch.object(
                 module,
@@ -1366,15 +2000,40 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                 )
                 return self.BUNDLETOOL_MANIFEST
 
-            with mock.patch.object(
-                module,
-                "run_bundletool",
-                side_effect=fake_run,
+            inspected_policy_paths: list[Path] = []
+
+            def fake_policy_readback(
+                path: Path,
+                root: Path,
+            ) -> dict[str, object]:
+                self.assertEqual(path.read_bytes(), b"fixture-aab")
+                inspected_policy_paths.append(path)
+                return expected_policy
+
+            with (
+                mock.patch.object(
+                    module,
+                    "run_bundletool",
+                    side_effect=fake_run,
+                ),
+                mock.patch.object(
+                    module,
+                    "inspect_aab_backup_policy",
+                    side_effect=fake_policy_readback,
+                ),
             ):
                 self.assertEqual(
-                    module.inspect_aab_manifest(b"fixture-aab"),
+                    module.inspect_aab_manifest(
+                        b"fixture-aab",
+                        backup_policy_required=True,
+                    ),
                     {
+                        "allowBackup": False,
                         "applicationId": "com.localagentbridge.android",
+                        "dataExtractionRules": (
+                            "@xml/data_extraction_rules"
+                        ),
+                        "fullBackupContent": "@xml/backup_rules",
                         "minSdk": 26,
                         "targetSdk": 36,
                         "versionCode": 1,
@@ -1382,6 +2041,10 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                     },
                 )
             self.assertTrue(temporary_paths)
+            self.assertEqual(
+                inspected_policy_paths,
+                [temporary_paths[0]],
+            )
             self.assertEqual(
                 [command[0] for command in commands],
                 ["validate", "dump"],
@@ -1426,6 +2089,30 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                 self.assertTrue(failed_paths)
                 self.assertTrue(
                     all(not path.exists() for path in failed_paths)
+                )
+
+            with (
+                mock.patch.object(
+                    module,
+                    "run_bundletool",
+                    side_effect=fake_run,
+                ),
+                mock.patch.object(
+                    module,
+                    "inspect_aab_backup_policy",
+                    return_value={
+                        **expected_policy,
+                        "fullBackupContent": "@xml/not_backup_rules",
+                    },
+                ),
+                self.assertRaisesRegex(
+                    error_type,
+                    "differs from the bundle manifest",
+                ),
+            ):
+                module.inspect_aab_manifest(
+                    b"fixture-aab",
+                    backup_policy_required=True,
                 )
 
     def test_bundletool_subprocess_failure_and_stderr_fail_closed(

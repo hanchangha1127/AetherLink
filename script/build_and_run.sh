@@ -248,6 +248,8 @@ if is_package_only && [[ -n "${AETHERLINK_REPRO_SWIFT_SCRATCH_PATH:-}" ]]; then
   SWIFT_BUILD_OPTIONS+=(
     --jobs 1
     --scratch-path "$physical_scratch_path"
+    -Xswiftc -num-threads
+    -Xswiftc 1
     -Xswiftc -file-prefix-map
     -Xswiftc "$PHYSICAL_ROOT_DIR=/aetherlink/source"
     -Xswiftc -file-compilation-dir

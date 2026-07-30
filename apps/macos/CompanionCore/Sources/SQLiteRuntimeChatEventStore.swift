@@ -1308,8 +1308,12 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
             """
         )
         defer { sqlite3_finalize(statement) }
-        guard sqlite3_step(statement) == SQLITE_ROW else {
+        let result = sqlite3_step(statement)
+        if result == SQLITE_DONE {
             throw SQLiteRuntimeChatEventStoreError("Runtime chat incremental append state is missing.")
+        }
+        guard result == SQLITE_ROW else {
+            throw Self.failure(database, "Could not read runtime chat incremental append state.")
         }
         return RuntimeChatIncrementalAppendState(
             mutationRevision: sqlite3_column_int64(statement, 0),
@@ -2020,6 +2024,11 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
             sqlite3_close(openedDatabase)
             try? RuntimeEventLogFileProtection.secureFile(at: databaseURL)
         }
+        guard sqlite3_busy_timeout(openedDatabase, Self.busyTimeoutMilliseconds) == SQLITE_OK else {
+            throw SQLiteRuntimeChatEventStoreError(
+                "Could not configure runtime chat storage concurrency."
+            )
+        }
         try RuntimeEventLogFileProtection.secureFile(at: databaseURL)
         try Self.ensureSchema(openedDatabase)
         try importLegacyJSONLIfNeeded(
@@ -2562,9 +2571,13 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
 
     private static func execute(_ database: OpaquePointer, _ sql: String) throws {
         var error: UnsafeMutablePointer<CChar>?
-        if sqlite3_exec(database, sql, nil, nil, &error) != SQLITE_OK {
+        let result = sqlite3_exec(database, sql, nil, nil, &error)
+        if result != SQLITE_OK {
             let message = error.map { String(cString: $0) } ?? "unknown SQLite error"
             sqlite3_free(error)
+            if isBusyResult(result) {
+                throw busyError
+            }
             throw SQLiteRuntimeChatEventStoreError(message)
         }
     }
@@ -2622,8 +2635,16 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
     }
 
     private static func failure(_ database: OpaquePointer, _ fallback: String) -> SQLiteRuntimeChatEventStoreError {
+        if isBusyResult(sqlite3_extended_errcode(database)) {
+            return busyError
+        }
         let message = sqlite3_errmsg(database).map { String(cString: $0) } ?? fallback
         return SQLiteRuntimeChatEventStoreError(message.isEmpty ? fallback : message)
+    }
+
+    private static func isBusyResult(_ result: Int32) -> Bool {
+        let primaryResult = result & 0xFF
+        return primaryResult == SQLITE_BUSY || primaryResult == SQLITE_LOCKED
     }
 
     private static func timestampString(from date: Date) -> String {
@@ -2714,6 +2735,10 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
     private static let incrementalSearchTableName = "runtime_chat_event_fts_v2"
     private static let incrementalSearchProjectionVersion = 2
     private static let semanticEmbeddingDimensionLimit = 65_536
+    private static let busyTimeoutMilliseconds: Int32 = 5_000
+    private static let busyError = SQLiteRuntimeChatEventStoreError(
+        "Runtime chat history is temporarily busy. Try again."
+    )
 }
 
 private enum RuntimeChatRetentionScope {

@@ -1,0 +1,102 @@
+{
+  "evidenceBoundary": "new-versioned-no-device-full-matrix-observation-five-locales-twenty-scenarios-two-batches-eighty-ranking-and-eighty-repeatability-comparisons-two-exact-ollama-candidates-fresh-recovery-bounded-coordinate-only-output-no-v2-rewrite-no-model-download-or-quality-preclaim",
+  "fixtureId": "aetherlink-ollama-embedding-multilingual-full-matrix-v3",
+  "qualityGatePassed": false,
+  "runnerSourceSha256": "58b65494fd0817133649465d7784688724108a1b3842468f963cdeb1a25e670e",
+  "schemaVersion": 5,
+  "sourceBindings": {
+    "baseRunnerSha256": "7a7ff27b84387f56d712e7ed6fc3bd926796a159c76bfbd2e3b57878e2b23014",
+    "embeddingRequestContractSha256": "708a22934bb8f28218e5ddaeab6a7b469d8beddaa77e5887746e35be40125505",
+    "ollamaEmbeddingAdapterSha256": "5c10154d96c9c6e69f10bb214abaefdaded4646f85cacdc781c55ffb6e48a06d",
+    "recoveryAssertionSha256": "e48dc934496c0473866d7c819cffa20bacd8411271628ed55e52be5ba34881c0",
+    "v2RunnerSha256": "0c9f88794f53721c84be495363b626ce3f46786d703a3ebb2867c46239867be0",
+    "v2ScorerAndTaskLoaderSha256": "054639797cc9a07f336034f8858772017d63f43970a269f810c24fb3f23c8d40",
+    "v3ScorerAndLiveAssertionSha256": "009360901ffd17390a90d5b480e50e9f8e659ae457aa732037b6c4e4d1bd2a9d"
+  },
+  "sourceProviderVersion": "0.32.5",
+  "sourceStatePreserved": true,
+  "taskSet": {
+    "fixtureId": "aetherlink-ollama-embedding-multilingual-semantic-task-set-v2",
+    "sha256": "a4dde8d94f661fe9682103875ed53db703761722c19ec32b35ceba72ecae2e31"
+  },
+  "versions": [
+    {
+      "archiveSha256": "5789dd037a86adb328c72c11fc45e6c558452d07e5b50814a8bdb7b0fbdbcd81",
+      "observation": {
+        "rankingFailures": [
+          {
+            "failedBatches": [
+              {
+                "batchOrdinal": 1,
+                "comparisonFailureCount": 1
+              },
+              {
+                "batchOrdinal": 2,
+                "comparisonFailureCount": 1
+              }
+            ],
+            "locale": "ko",
+            "scenarioOrdinalWithinLocale": 2
+          },
+          {
+            "failedBatches": [
+              {
+                "batchOrdinal": 1,
+                "comparisonFailureCount": 1
+              },
+              {
+                "batchOrdinal": 2,
+                "comparisonFailureCount": 1
+              }
+            ],
+            "locale": "fr",
+            "scenarioOrdinalWithinLocale": 2
+          }
+        ],
+        "repeatabilityFailures": [],
+        "schemaVersion": 1
+      },
+      "recoveryPassed": true,
+      "version": "0.32.5"
+    },
+    {
+      "archiveSha256": "15383493225d5e7e7fda052dc103ab4d2835a22eabb41655f1d6302c6d1577bc",
+      "observation": {
+        "rankingFailures": [
+          {
+            "failedBatches": [
+              {
+                "batchOrdinal": 1,
+                "comparisonFailureCount": 1
+              },
+              {
+                "batchOrdinal": 2,
+                "comparisonFailureCount": 1
+              }
+            ],
+            "locale": "ko",
+            "scenarioOrdinalWithinLocale": 2
+          },
+          {
+            "failedBatches": [
+              {
+                "batchOrdinal": 1,
+                "comparisonFailureCount": 1
+              },
+              {
+                "batchOrdinal": 2,
+                "comparisonFailureCount": 1
+              }
+            ],
+            "locale": "fr",
+            "scenarioOrdinalWithinLocale": 2
+          }
+        ],
+        "repeatabilityFailures": [],
+        "schemaVersion": 1
+      },
+      "recoveryPassed": true,
+      "version": "0.32.4"
+    }
+  ]
+}

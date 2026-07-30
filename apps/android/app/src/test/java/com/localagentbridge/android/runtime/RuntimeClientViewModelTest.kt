@@ -24995,10 +24995,313 @@ class RuntimeClientViewModelTest {
             assertEquals(100, queryPayload.limit)
             assertTrue(queryPayload.includeArchived)
             assertEquals("relay route", queryPayload.query)
+            assertTrue(fixture.viewModel.state.value.isLoadingChatSessions)
+            assertEquals(
+                "relay route",
+                fixture.viewModel.state.value.chatSessionSearchPendingQuery,
+            )
         } finally {
             Dispatchers.resetMain()
         }
     }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun clearRuntimeChatSearchInvalidatesPendingLateAndCompletedResults() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val initialRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(sessions = emptyList()),
+                    requestId = initialRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fun searchResult(requestId: String) = envelope(
+                type = MessageType.ChatSessionsList,
+                serializer = ChatSessionsListResultPayload.serializer(),
+                payload = ChatSessionsListResultPayload(
+                    sessions = listOf(
+                        ChatSessionSummaryPayload(
+                            sessionId = "runtime-search-result",
+                            title = "Relay route",
+                            model = "ollama:llama3.1:8b",
+                            lastActivityAt = "2026-06-25T00:01:00Z",
+                            messageCount = 3,
+                            status = "active",
+                            search = ChatSessionSearchPayload(
+                                rank = 1,
+                                snippet = "Relay route recovery details",
+                                matchedFields = listOf("semantic"),
+                            ),
+                        ),
+                    ),
+                ),
+                requestId = requestId,
+            )
+
+            fixture.viewModel.refreshRuntimeChatHistory(query = "relay route")
+            advanceUntilIdle()
+            val canceledRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+
+            fixture.viewModel.clearRuntimeChatSearch()
+
+            val clearedPendingState = fixture.viewModel.state.value
+            assertFalse(clearedPendingState.isLoadingChatSessions)
+            assertNull(clearedPendingState.chatSessionSearchPendingQuery)
+            assertNull(clearedPendingState.chatSessionSearchQuery)
+            assertTrue(clearedPendingState.chatSessionSearchResults.isEmpty())
+
+            fixture.channel.enqueue(searchResult(canceledRequest.requestId))
+            advanceUntilIdle()
+
+            val lateResponseState = fixture.viewModel.state.value
+            assertNull(lateResponseState.chatSessionSearchQuery)
+            assertTrue(lateResponseState.chatSessionSearchResults.isEmpty())
+
+            fixture.viewModel.refreshRuntimeChatHistory(query = "relay route")
+            advanceUntilIdle()
+            val completedRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(searchResult(completedRequest.requestId))
+            advanceUntilIdle()
+
+            val completedState = fixture.viewModel.state.value
+            assertEquals("relay route", completedState.chatSessionSearchQuery)
+            assertEquals(
+                listOf("runtime-search-result"),
+                completedState.chatSessionSearchResults.map { it.id },
+            )
+
+            fixture.viewModel.clearRuntimeChatSearch()
+
+            val clearedCompletedState = fixture.viewModel.state.value
+            assertNull(clearedCompletedState.chatSessionSearchQuery)
+            assertTrue(clearedCompletedState.chatSessionSearchResults.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun clearRuntimeChatSearchRemovesHeldSearchButPreservesPendingFullHistory() =
+        runTest {
+            val mainDispatcher = StandardTestDispatcher(testScheduler)
+            Dispatchers.setMain(mainDispatcher)
+            try {
+                val searchFixture = createAuthenticatedRuntimeClientFixture(
+                    models = listOf(textChatModel()),
+                    leaveResearchNotebooksPending = true,
+                )
+                searchFixture.viewModel.refreshRuntimeChatHistory(query = "held search")
+                runCurrent()
+                val searchRequest = searchFixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.ChatSessionsList
+                }
+                searchFixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatSessionsList,
+                        serializer = ChatSessionsListResultPayload.serializer(),
+                        payload = ChatSessionsListResultPayload(
+                            sessions = listOf(
+                                runtimeHistorySummary(
+                                    sessionId = "held-search-result",
+                                    messageCount = 1,
+                                ),
+                            ),
+                            snapshotCount = 1,
+                        ),
+                        requestId = searchRequest.requestId,
+                    ),
+                )
+                runCurrent()
+
+                assertNotNull(
+                    searchFixture.viewModel.privateField<Any>(
+                        "heldRuntimeChatSessionsSnapshot",
+                    ),
+                )
+                assertNull(searchFixture.viewModel.state.value.chatSessionSearchQuery)
+
+                searchFixture.viewModel.clearRuntimeChatSearch()
+
+                assertNull(
+                    searchFixture.viewModel.privateField<Any>(
+                        "heldRuntimeChatSessionsSnapshot",
+                    ),
+                )
+                completeResearchNotebookList(searchFixture)
+                assertNull(searchFixture.viewModel.state.value.chatSessionSearchQuery)
+                assertTrue(
+                    searchFixture.viewModel.state.value.chatSessionSearchResults.isEmpty(),
+                )
+                assertTrue(searchFixture.viewModel.state.value.chatSessions.isEmpty())
+
+                val fullHistoryFixture = createAuthenticatedRuntimeClientFixture(
+                    models = listOf(textChatModel()),
+                    leaveResearchNotebooksPending = true,
+                )
+                val pendingFullHistoryRequestId = requireNotNull(
+                    fullHistoryFixture.viewModel.privateField<String>(
+                        "pendingChatSessionsRequestId",
+                    ),
+                )
+
+                fullHistoryFixture.viewModel.clearRuntimeChatSearch()
+
+                assertEquals(
+                    pendingFullHistoryRequestId,
+                    fullHistoryFixture.viewModel.privateField<String>(
+                        "pendingChatSessionsRequestId",
+                    ),
+                )
+                assertTrue(fullHistoryFixture.viewModel.state.value.isLoadingChatSessions)
+                fullHistoryFixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatSessionsList,
+                        serializer = ChatSessionsListResultPayload.serializer(),
+                        payload = ChatSessionsListResultPayload(
+                            sessions = listOf(
+                                runtimeHistorySummary(
+                                    sessionId = "preserved-pending-full-history",
+                                    messageCount = 1,
+                                ),
+                            ),
+                            snapshotCount = 1,
+                        ),
+                        requestId = pendingFullHistoryRequestId,
+                    ),
+                )
+                runCurrent()
+                assertNotNull(
+                    fullHistoryFixture.viewModel.privateField<Any>(
+                        "heldRuntimeChatSessionsSnapshot",
+                    ),
+                )
+
+                completeResearchNotebookList(fullHistoryFixture)
+
+                assertEquals(
+                    listOf("preserved-pending-full-history"),
+                    fullHistoryFixture.viewModel.state.value.chatSessions.map { it.id },
+                )
+                assertNull(
+                    fullHistoryFixture.viewModel.privateField<Any>(
+                        "heldRuntimeChatSessionsSnapshot",
+                    ),
+                )
+            } finally {
+                Dispatchers.resetMain()
+            }
+        }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun clearRuntimeChatSearchPreservesHeldFullHistoryWhileCancelingPendingSearch() =
+        runTest {
+            val mainDispatcher = StandardTestDispatcher(testScheduler)
+            Dispatchers.setMain(mainDispatcher)
+            try {
+                val fixture = createAuthenticatedRuntimeClientFixture(
+                    models = listOf(textChatModel()),
+                    leaveResearchNotebooksPending = true,
+                )
+                val fullHistoryRequest = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.ChatSessionsList
+                }
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatSessionsList,
+                        serializer = ChatSessionsListResultPayload.serializer(),
+                        payload = ChatSessionsListResultPayload(
+                            sessions = listOf(
+                                runtimeHistorySummary(
+                                    sessionId = "preserved-held-full-history",
+                                    messageCount = 1,
+                                ),
+                            ),
+                            snapshotCount = 1,
+                        ),
+                        requestId = fullHistoryRequest.requestId,
+                    ),
+                )
+                runCurrent()
+                assertNotNull(
+                    fixture.viewModel.privateField<Any>(
+                        "heldRuntimeChatSessionsSnapshot",
+                    ),
+                )
+
+                fixture.viewModel.refreshRuntimeChatHistory(query = "cancel this search")
+                runCurrent()
+                val searchRequest = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.ChatSessionsList
+                }
+                assertEquals(
+                    "cancel this search",
+                    fixture.viewModel.state.value.chatSessionSearchPendingQuery,
+                )
+
+                fixture.viewModel.clearRuntimeChatSearch()
+
+                assertFalse(fixture.viewModel.state.value.isLoadingChatSessions)
+                assertNull(fixture.viewModel.state.value.chatSessionSearchPendingQuery)
+                assertNotNull(
+                    fixture.viewModel.privateField<Any>(
+                        "heldRuntimeChatSessionsSnapshot",
+                    ),
+                )
+
+                completeResearchNotebookList(fixture)
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatSessionsList,
+                        serializer = ChatSessionsListResultPayload.serializer(),
+                        payload = ChatSessionsListResultPayload(
+                            sessions = listOf(
+                                runtimeHistorySummary(
+                                    sessionId = "late-canceled-search-result",
+                                    messageCount = 1,
+                                ),
+                            ),
+                            snapshotCount = 1,
+                        ),
+                        requestId = searchRequest.requestId,
+                    ),
+                )
+                runCurrent()
+
+                val state = fixture.viewModel.state.value
+                assertEquals(
+                    listOf("preserved-held-full-history"),
+                    state.chatSessions.map { it.id },
+                )
+                assertNull(state.chatSessionSearchQuery)
+                assertTrue(state.chatSessionSearchResults.isEmpty())
+                assertNull(
+                    fixture.viewModel.privateField<Any>(
+                        "heldRuntimeChatSessionsSnapshot",
+                    ),
+                )
+            } finally {
+                Dispatchers.resetMain()
+            }
+        }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
@@ -25086,6 +25389,8 @@ class RuntimeClientViewModelTest {
             val searchState = fixture.viewModel.state.value
             assertEquals("relay route", searchState.chatSessionSearchQuery)
             assertEquals(listOf("runtime-full-b"), searchState.chatSessionSearchResults.map { it.id })
+            assertFalse(searchState.isLoadingChatSessions)
+            assertNull(searchState.chatSessionSearchPendingQuery)
             assertEquals(1, searchState.chatSessionSearchResults.single().searchRank)
             assertEquals(
                 setOf("runtime-full-a", "runtime-full-b"),

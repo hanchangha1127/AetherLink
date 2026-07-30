@@ -10,7 +10,11 @@ let package = Package(
     products: [
         .executable(name: "AetherLink", targets: [macCompanionTarget]),
         .executable(name: "RuntimeDevServer", targets: ["RuntimeDevServer"]),
-        .executable(name: "AetherLinkRelay", targets: ["AetherLinkRelay"])
+        .executable(name: "AetherLinkRelay", targets: ["AetherLinkRelay"]),
+        .executable(
+            name: "RuntimeChatSQLiteCrossProcessQA",
+            targets: ["RuntimeChatSQLiteCrossProcessQA"]
+        )
     ],
     targets: [
         .target(
@@ -96,6 +100,12 @@ let package = Package(
             name: "AetherLinkRelay",
             dependencies: ["RelayServerCore"],
             path: "apps/macos/AetherLinkRelay/Sources"
+        ),
+        .executableTarget(
+            name: "RuntimeChatSQLiteCrossProcessQA",
+            dependencies: ["CompanionCore", "OllamaBackend"],
+            path: "apps/macos/RuntimeChatSQLiteCrossProcessQA/Sources",
+            linkerSettings: [.linkedLibrary("sqlite3")]
         ),
         .testTarget(
             name: "P2PNATContractsTests",

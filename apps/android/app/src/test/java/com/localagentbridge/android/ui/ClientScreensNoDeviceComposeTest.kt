@@ -106,6 +106,8 @@ import com.localagentbridge.android.ChatSessionDrawerItem
 import com.localagentbridge.android.ChatTopAppBarTitle
 import com.localagentbridge.android.DRAWER_CHAT_SEARCH_CLEAR_TEST_TAG
 import com.localagentbridge.android.DRAWER_CHAT_SEARCH_NO_RESULTS_TEST_TAG
+import com.localagentbridge.android.DRAWER_CHAT_SEARCH_PROGRESS_TEST_TAG
+import com.localagentbridge.android.DRAWER_CHAT_SEARCH_SUBMIT_TEST_TAG
 import com.localagentbridge.android.DRAWER_CHAT_SEARCH_TEST_TAG
 import com.localagentbridge.android.DRAWER_EMPTY_HISTORY_TEST_TAG
 import com.localagentbridge.android.DRAWER_HISTORY_TEST_TAG
@@ -3474,6 +3476,126 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun navigationDrawerDropsRestoredDeleteConfirmationForReplacementAndAuthoritativeAbsence() {
+        val archivedNotebook = ResearchNotebookPayload(
+            notebookId = "research_notebook_abcdef1234567890abcdef1234567890",
+            sessionId = "research_session_abcdef1234567890abcdef1234567890",
+            title = "Restored catalog target",
+            model = "ollama:llama3.1:8b",
+            sourceCount = 1,
+            createdAt = "2026-07-29T00:00:00Z",
+            updatedAt = "2026-07-29T00:01:00Z",
+            archivedAt = "2026-07-29T00:02:00Z",
+        )
+        val sameSessionReplacement = archivedNotebook.copy(
+            notebookId = "research_notebook_bcdef1234567890abcdef12345678901",
+            title = "Replacement catalog target",
+        )
+        val notebookState = mutableStateOf(
+            RuntimeResearchNotebooksUiState(
+                notebooks = listOf(archivedNotebook),
+                hasResolvedAuthoritativeSnapshot = true,
+            ),
+        )
+        var deletedNotebook: ResearchNotebookPayload? = null
+        val restorationTester = StateRestorationTester(compose)
+        restorationTester.setContent {
+            MaterialTheme {
+                AetherLinkNavigationDrawerContent(
+                    state = RuntimeUiState(
+                        isConnected = true,
+                        runtimeStatus = "authenticated",
+                        trustedRuntime = researchNotebookTrustedRuntime(),
+                    ),
+                    researchNotebooks = notebookState.value.notebooks,
+                    isResearchNotebooksLoading = notebookState.value.isLoading,
+                    hasResolvedAuthoritativeResearchNotebooks = (
+                        notebookState.value.hasResolvedAuthoritativeSnapshot
+                    ),
+                    effectiveDestination = AppDestination.Chat,
+                    chatSearchQuery = "",
+                    hasAnyChatSessions = false,
+                    hasChatSearchQuery = false,
+                    hasChatSearchResults = false,
+                    filteredChatSessions = emptyList(),
+                    onChatSearchQueryChange = {},
+                    onClearChatSearch = {},
+                    onNewChat = {},
+                    onPermanentlyDeleteResearchNotebook = {
+                        deletedNotebook = it
+                    },
+                    onSelectChatSession = {},
+                    onRenameChatSession = {},
+                    onArchiveChatSession = {},
+                    onSelectSettings = {},
+                )
+            }
+        }
+
+        fun openFinalDeleteConfirmation() {
+            val optionsTag = researchNotebookDrawerOptionsTestTag(archivedNotebook.sessionId)
+            compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+                .performScrollToNode(hasTestTag(optionsTag))
+            compose.onNodeWithTag(optionsTag).performClick()
+            compose.onNodeWithTag(
+                researchNotebookDrawerMenuItemTestTag(archivedNotebook.sessionId, "delete"),
+            ).performClick()
+            compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_CONFIRM_TEST_TAG).performClick()
+            compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG).assertIsDisplayed()
+        }
+
+        openFinalDeleteConfirmation()
+        compose.runOnUiThread {
+            notebookState.value = RuntimeResearchNotebooksUiState()
+        }
+        compose.waitForIdle()
+        restorationTester.emulateSavedInstanceStateRestore()
+
+        compose.runOnUiThread {
+            notebookState.value = RuntimeResearchNotebooksUiState(
+                notebooks = listOf(sameSessionReplacement),
+                hasResolvedAuthoritativeSnapshot = false,
+            )
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG).assertDoesNotExist()
+
+        compose.runOnUiThread {
+            notebookState.value = RuntimeResearchNotebooksUiState(
+                notebooks = listOf(archivedNotebook),
+                hasResolvedAuthoritativeSnapshot = true,
+            )
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG).assertDoesNotExist()
+
+        openFinalDeleteConfirmation()
+        compose.runOnUiThread {
+            notebookState.value = RuntimeResearchNotebooksUiState()
+        }
+        compose.waitForIdle()
+        restorationTester.emulateSavedInstanceStateRestore()
+
+        compose.runOnUiThread {
+            notebookState.value = RuntimeResearchNotebooksUiState(
+                hasResolvedAuthoritativeSnapshot = true,
+            )
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG).assertDoesNotExist()
+
+        compose.runOnUiThread {
+            notebookState.value = RuntimeResearchNotebooksUiState(
+                notebooks = listOf(archivedNotebook),
+                hasResolvedAuthoritativeSnapshot = true,
+            )
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG).assertDoesNotExist()
+        assertEquals(null, deletedNotebook)
+    }
+
+    @Test
     fun navigationDrawerDoesNotRebindRestoredDeleteConfirmationAcrossRuntimes() {
         val archivedNotebook = ResearchNotebookPayload(
             notebookId = "research_notebook_4567890abcdef1234567890abcdef123",
@@ -5288,7 +5410,7 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
-    fun navigationDrawerChatSearchImeSubmitsTrimmedQueryOnlyWhenRemoteSearchIsAvailable() {
+    fun navigationDrawerChatSearchTouchAndImeSubmitOnlyWhenRemoteSearchIsAvailable() {
         val query = mutableStateOf("")
         val connected = mutableStateOf(false)
         val streaming = mutableStateOf(false)
@@ -5339,6 +5461,14 @@ class ClientScreensNoDeviceComposeTest {
         compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
             .performScrollToNode(hasTestTag(DRAWER_CHAT_SEARCH_TEST_TAG))
         val searchField = compose.onNodeWithTag(DRAWER_CHAT_SEARCH_TEST_TAG)
+        val searchAction = compose.onNodeWithTag(
+            DRAWER_CHAT_SEARCH_SUBMIT_TEST_TAG,
+            useUnmergedTree = true,
+        )
+        searchAction
+            .assertIsNotEnabled()
+            .assert(hasContentDescription("Search chats"))
+            .assert(hasStateDescription("Enter a search term."))
         searchField.performTextInput("   ")
         searchField.performImeAction()
         compose.runOnIdle {
@@ -5347,6 +5477,14 @@ class ClientScreensNoDeviceComposeTest {
 
         searchField.performTextClearance()
         searchField.performTextInput("  relay route  ")
+        searchAction
+            .assertIsNotEnabled()
+            .assert(hasContentDescription("Search chat history for relay route"))
+            .assert(
+                hasStateDescription(
+                    "Connect to the trusted runtime before searching chat history."
+                )
+            )
         searchField.performImeAction()
         compose.runOnIdle {
             assertTrue(submittedQueries.isEmpty())
@@ -5357,6 +5495,13 @@ class ClientScreensNoDeviceComposeTest {
             streaming.value = true
         }
         compose.waitForIdle()
+        searchAction
+            .assertIsNotEnabled()
+            .assert(
+                hasStateDescription(
+                    "Wait for the current response before searching chat history."
+                )
+            )
         searchField.performImeAction()
         compose.runOnIdle {
             assertTrue(submittedQueries.isEmpty())
@@ -5366,10 +5511,115 @@ class ClientScreensNoDeviceComposeTest {
             streaming.value = false
         }
         compose.waitForIdle()
-        searchField.performImeAction()
+        searchAction
+            .assertIsEnabled()
+            .assert(hasStateDescription("Ready to search the trusted runtime."))
+            .assert(
+                hasClickActionLabel("Search chat history for relay route")
+            )
+            .performClick()
         compose.runOnIdle {
             assertEquals(listOf("relay route"), submittedQueries)
         }
+        searchField.performImeAction()
+        compose.runOnIdle {
+            assertEquals(
+                listOf("relay route", "relay route"),
+                submittedQueries,
+            )
+        }
+    }
+
+    @Test
+    fun navigationDrawerChatSearchPendingAnnouncesProgressAndSuppressesFalseEmptyState() {
+        val pendingQuery = mutableStateOf("missing")
+        val sessions = listOf(
+            RuntimeChatSession(
+                id = "session-relay",
+                title = "Relay route",
+                updatedAtMillis = 2_000L,
+                messageCount = 4,
+            ),
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    AetherLinkNavigationDrawerContent(
+                        state = RuntimeUiState(
+                            isConnected = true,
+                            chatSessions = sessions,
+                            chatSessionSearchPendingQuery = pendingQuery.value,
+                            isLoadingChatSessions = true,
+                        ),
+                        effectiveDestination = AppDestination.Chat,
+                        chatSearchQuery = "missing",
+                        hasAnyChatSessions = true,
+                        hasChatSearchQuery = true,
+                        hasChatSearchResults = false,
+                        filteredChatSessions = emptyList(),
+                        onChatSearchQueryChange = {},
+                        onClearChatSearch = {},
+                        onNewChat = {},
+                        onSelectChatSession = {},
+                        onRenameChatSession = {},
+                        onArchiveChatSession = {},
+                        onSelectSettings = {},
+                    )
+                }
+            }
+        }
+
+        val history = compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+        history.performScrollToNode(
+            hasTestTag(DRAWER_CHAT_SEARCH_PROGRESS_TEST_TAG)
+        )
+        compose.onNodeWithTag(
+            DRAWER_CHAT_SEARCH_PROGRESS_TEST_TAG,
+            useUnmergedTree = true,
+        )
+            .assertIsDisplayed()
+            .assert(hasContentDescription("Searching chats…"))
+            .assert(hasPoliteLiveRegion())
+        compose.onAllNodesWithTag(
+            DRAWER_CHAT_SEARCH_NO_RESULTS_TEST_TAG,
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
+        history.performScrollToNode(hasTestTag(DRAWER_CHAT_SEARCH_TEST_TAG))
+        compose.onNodeWithTag(
+            DRAWER_CHAT_SEARCH_SUBMIT_TEST_TAG,
+            useUnmergedTree = true,
+        )
+            .assertIsNotEnabled()
+            .assert(
+                hasStateDescription(
+                    "Wait for the current chat-history request to finish."
+                )
+            )
+
+        compose.runOnUiThread {
+            pendingQuery.value = "older query"
+        }
+        compose.waitForIdle()
+
+        history.performScrollToNode(
+            hasTestTag(DRAWER_CHAT_SEARCH_NO_RESULTS_TEST_TAG)
+        )
+        compose.onNodeWithTag(
+            DRAWER_CHAT_SEARCH_NO_RESULTS_TEST_TAG,
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
+        compose.onAllNodesWithTag(
+            DRAWER_CHAT_SEARCH_PROGRESS_TEST_TAG,
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
+        history.performScrollToNode(hasTestTag(DRAWER_CHAT_SEARCH_TEST_TAG))
+        compose.onNodeWithTag(
+            DRAWER_CHAT_SEARCH_SUBMIT_TEST_TAG,
+            useUnmergedTree = true,
+        )
+            .assertIsEnabled()
+            .assert(hasStateDescription("Ready to search the trusted runtime."))
     }
 
     @Test
@@ -5591,6 +5841,8 @@ class ClientScreensNoDeviceComposeTest {
         data class ExpectedSearchCopy(
             val languageTag: String,
             val searchLabel: String,
+            val submitLabel: String,
+            val readyState: String,
             val clearLabel: String,
             val noResults: String,
         )
@@ -5600,30 +5852,40 @@ class ClientScreensNoDeviceComposeTest {
             ExpectedSearchCopy(
                 languageTag = "en",
                 searchLabel = "Search chats",
+                submitLabel = "Search chat history for missing",
+                readyState = "Ready to search the trusted runtime.",
                 clearLabel = "Clear chat search for missing",
                 noResults = "No matching chats.",
             ),
             ExpectedSearchCopy(
                 languageTag = "ko",
                 searchLabel = "채팅 검색",
+                submitLabel = "missing 검색어로 채팅 기록 검색",
+                readyState = "신뢰하는 Runtime에서 검색할 준비가 되었습니다.",
                 clearLabel = "missing 검색어로 된 채팅 검색 지우기",
                 noResults = "일치하는 채팅이 없습니다.",
             ),
             ExpectedSearchCopy(
                 languageTag = "ja",
                 searchLabel = "チャットを検索",
+                submitLabel = "「missing」でチャット履歴を検索",
+                readyState = "信頼済み Runtime を検索できます。",
                 clearLabel = "「missing」のチャット検索をクリア",
                 noResults = "一致するチャットはありません。",
             ),
             ExpectedSearchCopy(
                 languageTag = "zh-CN",
                 searchLabel = "搜索聊天",
+                submitLabel = "在聊天记录中搜索“missing”",
+                readyState = "已可搜索受信任的 Runtime。",
                 clearLabel = "清除“missing”的聊天搜索",
                 noResults = "没有匹配的聊天。",
             ),
             ExpectedSearchCopy(
                 languageTag = "fr",
                 searchLabel = "Rechercher des chats",
+                submitLabel = "Rechercher « missing » dans l’historique des chats",
+                readyState = "Prêt à rechercher sur le Runtime approuvé.",
                 clearLabel = "Effacer la recherche de chats pour missing",
                 noResults = "Aucun chat correspondant.",
             ),
@@ -5684,6 +5946,15 @@ class ClientScreensNoDeviceComposeTest {
             compose.onNodeWithTag(DRAWER_CHAT_SEARCH_TEST_TAG)
                 .assertIsDisplayed()
             compose.onNodeWithText(expected.searchLabel).assertIsDisplayed()
+            compose.onNodeWithTag(
+                DRAWER_CHAT_SEARCH_SUBMIT_TEST_TAG,
+                useUnmergedTree = true,
+            )
+                .assertIsDisplayed()
+                .assertIsEnabled()
+                .assert(hasContentDescription(expected.submitLabel))
+                .assert(hasStateDescription(expected.readyState))
+                .assert(hasClickActionLabel(expected.submitLabel))
             val noResultsMatcher = hasText(expected.noResults) and hasPoliteLiveRegion()
             history.performScrollToNode(noResultsMatcher)
             compose.onNode(noResultsMatcher).assertIsDisplayed()
@@ -5698,6 +5969,7 @@ class ClientScreensNoDeviceComposeTest {
         data class ExpectedSearchLayout(
             val languageTag: String,
             val searchLabel: String,
+            val submitLabel: String,
             val clearLabel: String,
             val noResults: String,
         )
@@ -5707,30 +5979,35 @@ class ClientScreensNoDeviceComposeTest {
             ExpectedSearchLayout(
                 languageTag = "en",
                 searchLabel = "Search chats",
+                submitLabel = "Search chat history for missing",
                 clearLabel = "Clear chat search for missing",
                 noResults = "No matching chats.",
             ),
             ExpectedSearchLayout(
                 languageTag = "ko",
                 searchLabel = "채팅 검색",
+                submitLabel = "missing 검색어로 채팅 기록 검색",
                 clearLabel = "missing 검색어로 된 채팅 검색 지우기",
                 noResults = "일치하는 채팅이 없습니다.",
             ),
             ExpectedSearchLayout(
                 languageTag = "ja",
                 searchLabel = "チャットを検索",
+                submitLabel = "「missing」でチャット履歴を検索",
                 clearLabel = "「missing」のチャット検索をクリア",
                 noResults = "一致するチャットはありません。",
             ),
             ExpectedSearchLayout(
                 languageTag = "zh-CN",
                 searchLabel = "搜索聊天",
+                submitLabel = "在聊天记录中搜索“missing”",
                 clearLabel = "清除“missing”的聊天搜索",
                 noResults = "没有匹配的聊天。",
             ),
             ExpectedSearchLayout(
                 languageTag = "fr",
                 searchLabel = "Rechercher des chats",
+                submitLabel = "Rechercher « missing » dans l’historique des chats",
                 clearLabel = "Effacer la recherche de chats pour missing",
                 noResults = "Aucun chat correspondant.",
             ),
@@ -5802,6 +6079,15 @@ class ClientScreensNoDeviceComposeTest {
                 .onNodeWithTag(DRAWER_CHAT_SEARCH_TEST_TAG, useUnmergedTree = true)
                 .assertIsDisplayed()
                 .getUnclippedBoundsInRoot()
+            val submitBounds = compose
+                .onNodeWithTag(
+                    DRAWER_CHAT_SEARCH_SUBMIT_TEST_TAG,
+                    useUnmergedTree = true,
+                )
+                .assertIsDisplayed()
+                .assert(hasContentDescription(expected.submitLabel))
+                .assert(hasClickActionLabel(expected.submitLabel))
+                .getUnclippedBoundsInRoot()
             val clearBounds = compose
                 .onNodeWithTag(DRAWER_CHAT_SEARCH_CLEAR_TEST_TAG, useUnmergedTree = true)
                 .assertIsDisplayed()
@@ -5819,6 +6105,11 @@ class ClientScreensNoDeviceComposeTest {
                 .getUnclippedBoundsInRoot()
 
             assertBoundsInside("${expected.languageTag} drawer chat search field", searchBounds, rootBounds)
+            assertBoundsInside(
+                "${expected.languageTag} drawer chat search submit action",
+                submitBounds,
+                searchBounds,
+            )
             assertBoundsInside("${expected.languageTag} drawer chat search clear action", clearBounds, searchBounds)
             assertBoundsInside(
                 "${expected.languageTag} drawer chat search no-results row",

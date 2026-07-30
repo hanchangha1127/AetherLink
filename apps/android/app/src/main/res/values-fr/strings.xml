@@ -57,6 +57,13 @@
     <string name="chat_history_group_older">Plus ancien</string>
     <string name="no_previous_chats">Aucun chat précédent pour le moment.</string>
     <string name="chat_search_label">Rechercher des chats</string>
+    <string name="search_chat_history_named">Rechercher « %1$s » dans l’historique des chats</string>
+    <string name="chat_search_action_state_enter_query">Saisissez un terme de recherche.</string>
+    <string name="chat_search_action_state_connect_first">Connectez-vous au Runtime approuvé avant de rechercher dans l’historique des chats.</string>
+    <string name="chat_search_action_state_wait_for_stream">Attendez la fin de la réponse en cours avant de rechercher dans l’historique des chats.</string>
+    <string name="chat_search_action_state_ready">Prêt à rechercher sur le Runtime approuvé.</string>
+    <string name="chat_search_action_state_loading">Attendez la fin de la requête d’historique des chats en cours.</string>
+    <string name="searching_chats">Recherche dans les chats…</string>
     <string name="clear_chat_search_named">Effacer la recherche de chats pour %1$s</string>
     <string name="no_chat_search_results">Aucun chat correspondant.</string>
     <string name="chat_search_match_rank">Résultat %1$d</string>

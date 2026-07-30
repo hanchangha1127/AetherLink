@@ -24,16 +24,24 @@ else:
 
 
 ROOT = Path(__file__).resolve().parents[1]
+README_PATH = ROOT / "README.md"
 PHYSICAL_QR_OBSERVATION_MANIFEST = (
     ROOT / "docs/evidence/physical-qr-pairing-20260719.json"
 )
+OLLAMA_MULTILINGUAL_FULL_MATRIX_V3_RESULT = (
+    ROOT
+    / "docs"
+    / "evidence"
+    / "ollama-embedding-multilingual-full-matrix-v3.json"
+)
 LOCAL_RELEASE_MARKETING_VERSION = "1.0.0"
-LOCAL_RELEASE_BUILD_NUMBER = 13
+LOCAL_RELEASE_BUILD_NUMBER = 21
+CURRENT_REPRODUCIBILITY_RESULT_PATH_VERSION = 3
 LOCAL_RELEASE_ID = (
     f"aetherlink-{LOCAL_RELEASE_MARKETING_VERSION}"
     f"+{LOCAL_RELEASE_BUILD_NUMBER}-local-v1"
 )
-LOCAL_RELEASE_CURRENT_DOC = ROOT / "docs/releases/1.0.0-build-13-local-v1.md"
+LOCAL_RELEASE_CURRENT_DOC = ROOT / "docs/releases/1.0.0-build-21-local-v1.md"
 LOCAL_RELEASE_FIXTURE_BUILD_NUMBER = 3
 LOCAL_RELEASE_FIXTURE_ID = (
     f"aetherlink-{LOCAL_RELEASE_MARKETING_VERSION}"
@@ -42,18 +50,68 @@ LOCAL_RELEASE_FIXTURE_ID = (
 LOCAL_RELEASE_FIXTURE_DOC = (
     ROOT / "docs/releases/1.0.0-build-3-local-v1.md"
 )
+LOCAL_RELEASE_FIXTURE_READBACK_COMMAND = (
+    "python3 script/check_release_artifact_archive.py \\\n"
+    "  --archive-dir dist/releases/aetherlink-1.0.0+3-local-v1 \\\n"
+    "  --historical"
+)
 # Backward-compatible fixture handle for the focused fixture-mutation tests.
 LOCAL_RELEASE_DOC = LOCAL_RELEASE_FIXTURE_DOC
 LOCAL_RELEASE_ARCHIVE_DIR = ROOT / "dist/releases" / LOCAL_RELEASE_ID
 LOCAL_RELEASE_REPRODUCIBILITY_RESULT = (
     ROOT
     / "dist/reproducibility/"
-    "aetherlink-1.0.0+13-local-v1-two-root-v2.json"
+    "aetherlink-1.0.0+21-local-v1-two-root-v3.json"
 )
-LOCAL_RELEASE_REPRODUCIBILITY_CONFIRMATION_RESULT = (
+LOCAL_RELEASE_REPRODUCIBILITY_PREPUBLICATION_RESULT = (
     ROOT
     / "dist/reproducibility/"
-    "aetherlink-1.0.0+13-local-v1-two-root-v2-confirmation.json"
+    "aetherlink-1.0.0+21-local-v1-two-root-v3-prepublication.json"
+)
+MACOS_CLEAN_HOME_INSTALLED_APP_RESULT = (
+    ROOT
+    / "dist/lifecycle/"
+    "macos-packaged-app-build-14-clean-home-install-v1.json"
+)
+CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_RESULT = (
+    ROOT
+    / "dist/lifecycle/"
+    "macos-packaged-app-build-20-clean-home-install-v1.json"
+)
+MACOS_CLEAN_HOME_INSTALLED_APP_RUNNER = (
+    ROOT / "script/run_macos_clean_home_installed_app_smoke.py"
+)
+MACOS_CLEAN_HOME_INSTALLED_APP_TEST = (
+    ROOT / "script/test_run_macos_clean_home_installed_app_smoke.py"
+)
+MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_RESULT = (
+    ROOT
+    / "dist/lifecycle/"
+    "macos-packaged-app-build-14-clean-home-state-recovery-v1.json"
+)
+CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_RESULT = (
+    ROOT
+    / "dist/lifecycle/"
+    "macos-packaged-app-build-20-clean-home-state-recovery-v1.json"
+)
+CURRENT_MACOS_LOCAL_DMG_INSTALL_RESULT = (
+    ROOT
+    / "dist/lifecycle/"
+    "macos-packaged-app-build-20-local-dmg-install-v1.json"
+)
+CURRENT_MACOS_LOCAL_DMG_INSTALL_RUNNER = (
+    ROOT / "script/run_macos_local_dmg_install_smoke.py"
+)
+CURRENT_MACOS_LOCAL_DMG_INSTALL_TEST = (
+    ROOT / "script/test_run_macos_local_dmg_install_smoke.py"
+)
+MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_RUNNER = (
+    ROOT
+    / "script/run_macos_clean_home_installed_state_recovery_smoke.py"
+)
+MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_TEST = (
+    ROOT
+    / "script/test_run_macos_clean_home_installed_state_recovery_smoke.py"
 )
 MACOS_PACKAGED_STATE_RECOVERY_RESULT = (
     ROOT
@@ -91,25 +149,489 @@ HISTORICAL_MACOS_PACKAGED_LIFECYCLE_TEST = (
 )
 LOCAL_RELEASE_LEDGER = ROOT / "release/version-ledger.tsv"
 LOCAL_RELEASE_G0_DECISION = ROOT / "docs/v1/g0/decision-v1.json"
-LOCAL_RELEASE_EXPECTED_ZIP_SIZE = 165_429_300
+LOCAL_RELEASE_EXPECTED_ZIP_SIZE = 165_617_441
 LOCAL_RELEASE_EXPECTED_ZIP_SHA256 = (
-    "d48bf8f837c104624b14b1cdc223d5c62aa2c68d13ff6d830f0a394dcd953191"
+    "b7acd3eb6c4089306dd8e597eb9b952d8dc993535ec13de63099090f155ca9a6"
 )
-LOCAL_RELEASE_EXPECTED_MANIFEST_SIZE = 12_062
+LOCAL_RELEASE_EXPECTED_MANIFEST_SIZE = 12_317
 LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256 = (
-    "3f720d7119a9196b9a7db085313ac0c9e796ce903b8738bf04406e3fc87b384b"
+    "d12ceb13b60cbd165c5007d65dfcb50eb522e6df574b4de777d8a09aed815c5f"
 )
 LOCAL_RELEASE_EXPECTED_CHECKSUM_SIZE = 99
 LOCAL_RELEASE_EXPECTED_CHECKSUM_SHA256 = (
-    "b44398d350fb6f903ec53745e7546101b49ba4dddecf96295387306c87fe6efe"
+    "850145f90cdb3ecd1fac90b8623b42c15b0bc5b357c08f7b47cbdc1086163953"
 )
-LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SIZE = 19_745
+LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SIZE = 20_010
 LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SHA256 = (
-    "d77477077059c45fe21c51cbcbd6d62b6412c8dabf6b22683f20ea6acbc30d2f"
+    "b628ee84164ff7405e67520c2ca33d57aee19caad6875cbe61c361c2f3d7da70"
 )
-LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_CONFIRMATION_SIZE = 19_744
-LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_CONFIRMATION_SHA256 = (
-    "f1e5aa20c6d5e98b450f3501d9a30d38daa5ab1f57197778126a9ced039446b5"
+LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_PREPUBLICATION_SIZE = 19_571
+LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_PREPUBLICATION_SHA256 = (
+    "5267f145d8237c11fe5425a7148d62237fae942a6d8413eda7f0e9443a0d1c16"
+)
+HISTORICAL_BUILD18_RELEASE_ID = "aetherlink-1.0.0+18-local-v1"
+HISTORICAL_BUILD18_ARCHIVE_SIZE = 165_615_149
+HISTORICAL_BUILD18_ARCHIVE_SHA256 = (
+    "46e9b4884aa97291832e98aa4116a969ac54a7f217548f84a46c50dfeb4a3872"
+)
+HISTORICAL_BUILD18_MANIFEST_SIZE = 12_317
+HISTORICAL_BUILD18_MANIFEST_SHA256 = (
+    "0355cb648dc9e25db37c25aa97c286035baf1234e0353e33960c3ad01f1e2bed"
+)
+HISTORICAL_BUILD18_CHECKSUM_SIZE = 99
+HISTORICAL_BUILD18_CHECKSUM_SHA256 = (
+    "7ef07058256bfe453b998ef197c5a953c97b058140e086da6f47f412848460b1"
+)
+HISTORICAL_BUILD18_REPRODUCIBILITY_RESULT_SIZE = 19_786
+HISTORICAL_BUILD18_REPRODUCIBILITY_RESULT_SHA256 = (
+    "6d0a4921e7f1e750d8e828db4057869511a323871fd1f4b53cb2ec83603ebf1f"
+)
+HISTORICAL_BUILD18_REPRODUCIBILITY_CONFIRMATION_SIZE = 19_785
+HISTORICAL_BUILD18_REPRODUCIBILITY_CONFIRMATION_SHA256 = (
+    "abcb3619509acacb48f9102386f1762895fdf51f4b6afdc730e519067b4131d7"
+)
+HISTORICAL_BUILD18_SOURCE_FILE_COUNT = 243
+HISTORICAL_BUILD18_SOURCE_SNAPSHOT_SHA256 = (
+    "b894108c8ecfdf1a3a914a3bfa67a2c4cd1cbfa59010b6555d26f0be172863d1"
+)
+HISTORICAL_BUILD18_SOURCE_OVERLAY_SHA256 = (
+    "c979f1353df37d6833caf9aa9f0c28f4bc172624ca017c44f1ba2ca89937ce95"
+)
+HISTORICAL_BUILD18_SOURCE_INVENTORY_SIZE = 47_275
+HISTORICAL_BUILD18_SOURCE_INVENTORY_SHA256 = (
+    "6292d43773e6d890e17bc878d2874c5f2808b0593174ae9c5dcac56afc75663a"
+)
+HISTORICAL_BUILD18_MACOS_UUID = "A16CB949-C7E9-3BD7-A1AB-AC5D0662437F"
+HISTORICAL_BUILD18_INSTALLED_APP_RESULT_PATH = (
+    "dist/lifecycle/"
+    "macos-packaged-app-build-18-clean-home-install-v1.json"
+)
+HISTORICAL_BUILD18_INSTALLED_APP_RESULT_SIZE = 2_250
+HISTORICAL_BUILD18_INSTALLED_APP_RESULT_SHA256 = (
+    "b2b88a6fdf1649eab05b94e73b9d5b7f47baaefc9e352da3de982409ce201f62"
+)
+HISTORICAL_BUILD18_STATE_RECOVERY_RESULT_PATH = (
+    "dist/lifecycle/"
+    "macos-packaged-app-build-18-clean-home-state-recovery-v1.json"
+)
+HISTORICAL_BUILD18_STATE_RECOVERY_RESULT_SIZE = 3_364
+HISTORICAL_BUILD18_STATE_RECOVERY_RESULT_SHA256 = (
+    "4f5df0d7bf9b15a042bd4430da83019499d6d8b642c2780bef637f46d3e8ce3d"
+)
+HISTORICAL_BUILD19_RELEASE_ID = "aetherlink-1.0.0+19-local-v1"
+HISTORICAL_BUILD19_ARCHIVE_SIZE = 165_617_111
+HISTORICAL_BUILD19_ARCHIVE_SHA256 = (
+    "d792b3ab39a32b0076c97e206c773845cb1081a477ae1f309395c91699432ec8"
+)
+HISTORICAL_BUILD19_MANIFEST_SIZE = 12_317
+HISTORICAL_BUILD19_MANIFEST_SHA256 = (
+    "7379a910bf055813d02bc0ec9810dfee3443655d6c6e4d0f30e548a0cbe2a99a"
+)
+HISTORICAL_BUILD19_CHECKSUM_SIZE = 99
+HISTORICAL_BUILD19_CHECKSUM_SHA256 = (
+    "e4a5e593ecbe73e2db9ae6aa4633415635bcfd0c9a6c9386c69f5155fac76f76"
+)
+HISTORICAL_BUILD19_REPRODUCIBILITY_RESULT_SIZE = 19_786
+HISTORICAL_BUILD19_REPRODUCIBILITY_RESULT_SHA256 = (
+    "e4d041540c73083970a90f4001ec68362824fcd7012e476f57489f40db195fcc"
+)
+HISTORICAL_BUILD19_REPRODUCIBILITY_CONFIRMATION_SIZE = 19_785
+HISTORICAL_BUILD19_REPRODUCIBILITY_CONFIRMATION_SHA256 = (
+    "409272907289385d69509ab8f5f9b90911ab11b78deed405490ec823a5d90dca"
+)
+HISTORICAL_BUILD19_SOURCE_FILE_COUNT = 245
+HISTORICAL_BUILD19_SOURCE_SNAPSHOT_SHA256 = (
+    "1f38043525dc622bf839137e5da9bbcd4d3731403b3c32b62508da465655ffc5"
+)
+HISTORICAL_BUILD19_SOURCE_OVERLAY_SHA256 = (
+    "8619f1a4dc6c8bf671e8c574c0ebbe6437fb1bf579b1fd9b3eeb67d838a96749"
+)
+HISTORICAL_BUILD19_SOURCE_INVENTORY_SIZE = 47_645
+HISTORICAL_BUILD19_SOURCE_INVENTORY_SHA256 = (
+    "8c9c6f861391f3f6ef47f115e527aab81a22e78c99529113048683d7b4366215"
+)
+HISTORICAL_BUILD19_INSTALLED_APP_RESULT_SIZE = 2_250
+HISTORICAL_BUILD19_INSTALLED_APP_RESULT_SHA256 = (
+    "a89291227bde1f9f15caa3743339f569e9f7c79380f8f3a70df0a0fe8388b159"
+)
+HISTORICAL_BUILD19_STATE_RECOVERY_RESULT_SIZE = 3_364
+HISTORICAL_BUILD19_STATE_RECOVERY_RESULT_SHA256 = (
+    "1c72536188ce71388319d068489f4c351521f33d5431af36e7acc5ff76bdb2b7"
+)
+HISTORICAL_BUILD20_RELEASE_ID = "aetherlink-1.0.0+20-local-v1"
+HISTORICAL_BUILD20_ARCHIVE_SIZE = 165_617_269
+HISTORICAL_BUILD20_ARCHIVE_SHA256 = (
+    "cba5a6531c35725aef7a2a3bf8b25d2155833b31b216906c80f8349249f6edf1"
+)
+HISTORICAL_BUILD20_MANIFEST_SIZE = 12_317
+HISTORICAL_BUILD20_MANIFEST_SHA256 = (
+    "c633bf2c2ccc9d007f08e73929eed3d7f6b247d08579fa3695bcbad04348c99d"
+)
+HISTORICAL_BUILD20_CHECKSUM_SIZE = 99
+HISTORICAL_BUILD20_CHECKSUM_SHA256 = (
+    "dd803b0bc3313d833b0cdd1b2044c96a0f5873496ecdae94c5a4079bb02feaed"
+)
+HISTORICAL_BUILD20_REPRODUCIBILITY_RESULT_SIZE = 20_010
+HISTORICAL_BUILD20_REPRODUCIBILITY_RESULT_SHA256 = (
+    "ca71f3ad64ea744275035891c5d41faae9778c6be4f1a6fbadac2c1cf2b59a1c"
+)
+HISTORICAL_BUILD20_REPRODUCIBILITY_PREPUBLICATION_SIZE = 19_571
+HISTORICAL_BUILD20_REPRODUCIBILITY_PREPUBLICATION_SHA256 = (
+    "ad7e9b6e5f52a76d5a65b52bab5138ad86eb019b7b89fa7ee29c51b89c7cef2c"
+)
+HISTORICAL_BUILD20_SOURCE_FILE_COUNT = 246
+HISTORICAL_BUILD20_SOURCE_SNAPSHOT_SHA256 = (
+    "22f14e60d522b2720660e41a645a3e9832dd723b8b93b147c51bbf6c9125998c"
+)
+HISTORICAL_BUILD20_SOURCE_OVERLAY_SHA256 = (
+    "f5d3ef4601129d5cde4595c73157d07fe89a3efd9904b3b9c6002504a4583606"
+)
+HISTORICAL_BUILD20_PREPUBLICATION_SOURCE_OVERLAY_SHA256 = (
+    "0fdd31c2e1fcccb3915335b1cfc87c9a3b18c3c1b200f27463687014efc9ddba"
+)
+HISTORICAL_BUILD20_SOURCE_INVENTORY_SIZE = 47_803
+HISTORICAL_BUILD20_SOURCE_INVENTORY_SHA256 = (
+    "cb2a13fbc7e441fbad4b5841ca30545bf38ee52f4d1e9be8dfaadfd5f892a1d4"
+)
+HISTORICAL_BUILD20_RUNTIME_CHAT_HELPER_IDENTITY = (
+    11_570,
+    "137bcf0cb948f2d82718ef8c6df52147be5a9f713dd6743bc377a9940bece951",
+)
+HISTORICAL_BUILD20_RUNTIME_CHAT_RUNNER_IDENTITY = (
+    26_948,
+    "d5a7b11cbed4a0e04f3617a8cce7f69b09f285c95c5825f7ea7f415a811fde53",
+)
+HISTORICAL_BUILD20_RUNTIME_CHAT_TEST_IDENTITY = (
+    13_950,
+    "2a9d1add3ac6343aeeeb0b746f1182dbba148321f214a74211fe59b19e888e61",
+)
+HISTORICAL_BUILD14_MARKETING_VERSION = "1.0.0"
+HISTORICAL_BUILD14_RELEASE_ID = "aetherlink-1.0.0+14-local-v1"
+HISTORICAL_BUILD14_ARCHIVE_SHA256 = (
+    "88769137aa024d193a27483522c1986d2d05acf3f03704e690b19b4c578629f4"
+)
+HISTORICAL_BUILD14_MANIFEST_SHA256 = (
+    "e8f7f0ec0358f63bde6a03ff5d7ae50e08b14e530ebed4c5f962704894f8d914"
+)
+HISTORICAL_BUILD14_MACOS_UUID = "A16CB949-C7E9-3BD7-A1AB-AC5D0662437F"
+HISTORICAL_BUILD16_RELEASE_ID = "aetherlink-1.0.0+16-local-v1"
+HISTORICAL_BUILD16_ARCHIVE_SIZE = 165_515_492
+HISTORICAL_BUILD16_ARCHIVE_SHA256 = (
+    "81f89ba20db75fa542f5b4910c469b82d555be2835c1a6bbb66b8daf71d752e7"
+)
+HISTORICAL_BUILD16_RESULT_SIZE = 19_745
+HISTORICAL_BUILD16_RESULT_SHA256 = (
+    "b87208f330701f196b6645fa206e5e80e4d8f7367c81611381ed237fbaf5435d"
+)
+HISTORICAL_BUILD16_FAILED_ATTEMPT_SIZE = 20_976
+HISTORICAL_BUILD16_FAILED_ATTEMPT_SHA256 = (
+    "3e489daf520db42683df2852af3d8df917b8d8dd755e3bcda68d11be7090966b"
+)
+HISTORICAL_BUILD16_FAILED_CONFIRMATION_SIZE = 20_976
+HISTORICAL_BUILD16_FAILED_CONFIRMATION_SHA256 = (
+    "d86b0bbe803e90b0e844ccbae283e9711e50eb21ac4e8f3e94d485e263c4053e"
+)
+HISTORICAL_BUILD16_DOC = (
+    ROOT / "docs/releases/1.0.0-build-16-local-v1.md"
+)
+HISTORICAL_BUILD16_RESULT = (
+    ROOT
+    / "dist/reproducibility/"
+    "aetherlink-1.0.0+16-local-v1-two-root-v2.json"
+)
+HISTORICAL_BUILD16_FAILED_ATTEMPT = (
+    ROOT
+    / "dist/reproducibility/"
+    "aetherlink-1.0.0+16-local-v1-two-root-v2-attempt1-failed.json"
+)
+HISTORICAL_BUILD16_FAILED_CONFIRMATION = (
+    ROOT
+    / "dist/reproducibility/"
+    "aetherlink-1.0.0+16-local-v1-two-root-v2-confirmation.json"
+)
+HISTORICAL_BUILD17_BUILD_NUMBER = 17
+HISTORICAL_BUILD17_RELEASE_ID = "aetherlink-1.0.0+17-local-v1"
+HISTORICAL_BUILD17_ARCHIVE_SIZE = 165_515_496
+HISTORICAL_BUILD17_ARCHIVE_SHA256 = (
+    "ff7e68ffa33ce54a312e2874592528cec0227f3200679f9df6531c06ca32c64e"
+)
+HISTORICAL_BUILD17_MANIFEST_SIZE = 12_317
+HISTORICAL_BUILD17_MANIFEST_SHA256 = (
+    "5077da6e0d4c806a5df2112f9eb70ff53064fde7e4faf308662df30564a5cc6e"
+)
+HISTORICAL_BUILD17_SOURCE_FILE_COUNT = 243
+HISTORICAL_BUILD17_SOURCE_INVENTORY_SIZE = 47_275
+HISTORICAL_BUILD17_SOURCE_INVENTORY_SHA256 = (
+    "6c02c68a64639ade37d9102f62d1e277c4efea383bbd04b21d31996ff462580e"
+)
+HISTORICAL_BUILD17_SOURCE_SNAPSHOT_SHA256 = (
+    "0f57cd63e1fe2c27cfc567df742fe47c6bcb79109630e8830d250f0bd94f9187"
+)
+HISTORICAL_BUILD17_REPRODUCIBILITY_RESULT_PATH = (
+    "dist/reproducibility/"
+    "aetherlink-1.0.0+17-local-v1-two-root-v2.json"
+)
+HISTORICAL_BUILD17_REPRODUCIBILITY_RESULT_SIZE = 19_786
+HISTORICAL_BUILD17_REPRODUCIBILITY_RESULT_SHA256 = (
+    "f2582c6b84d305f34fe4d737604717f5ea9721d6ab8b1125354cbc1798464296"
+)
+HISTORICAL_BUILD17_REPRODUCIBILITY_CONFIRMATION_PATH = (
+    "dist/reproducibility/"
+    "aetherlink-1.0.0+17-local-v1-two-root-v2-confirmation.json"
+)
+HISTORICAL_BUILD17_REPRODUCIBILITY_CONFIRMATION_SIZE = 19_785
+HISTORICAL_BUILD17_REPRODUCIBILITY_CONFIRMATION_SHA256 = (
+    "616d70882ec8f09c78f7a57730366924c2cc6de28844b7f2c8763ee125f2867a"
+)
+HISTORICAL_BUILD17_LIFECYCLE_DOCUMENT_START = (
+    "<!-- aetherlink-historical-build17-lifecycle-v1:start -->"
+)
+HISTORICAL_BUILD17_LIFECYCLE_DOCUMENT_END = (
+    "<!-- aetherlink-historical-build17-lifecycle-v1:end -->"
+)
+HISTORICAL_BUILD17_INSTALLED_APP_RESULT_PATH = (
+    "dist/lifecycle/"
+    "macos-packaged-app-build-17-clean-home-install-v1.json"
+)
+HISTORICAL_BUILD17_INSTALLED_APP_RESULT_SIZE = 2_250
+HISTORICAL_BUILD17_INSTALLED_APP_RESULT_SHA256 = (
+    "c04b13caf494ce7a07c5726e59208c14221578513a3bd554c786636afeaba355"
+)
+HISTORICAL_BUILD17_STATE_RECOVERY_RESULT_PATH = (
+    "dist/lifecycle/"
+    "macos-packaged-app-build-17-clean-home-state-recovery-v1.json"
+)
+HISTORICAL_BUILD17_STATE_RECOVERY_RESULT_SIZE = 3_364
+HISTORICAL_BUILD17_STATE_RECOVERY_RESULT_SHA256 = (
+    "c81605c27312c3d0d99134f4c178bd884875e183ac62917378ef1e3f9b9cf180"
+)
+MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SIZE = 2_250
+MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SHA256 = (
+    "dba559878af78be5057b50f4fb5a759e0308724f93b6c358ce2c5e6981d7f6c2"
+)
+MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RUNNER_SHA256 = (
+    "55441bb84a9d8e4681af558dc7a1d017333c88fcdeb6ab2a84561c0ee093ca29"
+)
+MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_TEST_SHA256 = (
+    "56127b93951ede623f3b30a4149d83305104841717cd84b0541a44b357e6b161"
+)
+MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SIZE = 3_364
+MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SHA256 = (
+    "434cec7c2fd396a56788abdcfa48edd913950331cedf91159a11f8acc02f657d"
+)
+MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256 = (
+    "9d05896a5dcce7e3d7642b41acba2ee4bf6d28ffda85bc8f3b2b645f2a3b273a"
+)
+MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_TEST_SHA256 = (
+    "3a77f1773c927c9a1d7714138cb283bb2eaee5c93243dd9f558a3ca39e5245b2"
+)
+CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SIZE = 2_250
+CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SHA256 = (
+    "4ce047a318e47568d647e1167cbaeebc603626073e098451a29c949086aa3d72"
+)
+CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RUNNER_SHA256 = (
+    "55441bb84a9d8e4681af558dc7a1d017333c88fcdeb6ab2a84561c0ee093ca29"
+)
+CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_TEST_SHA256 = (
+    "55274ad4abc958d85c4df1193cfe1508d820768fbbe48eae71a4fee8c1c020aa"
+)
+CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SIZE = 3_364
+CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SHA256 = (
+    "d12947e16e7b985515a90a13731947a5991bcd82a06039210e22bba43535bf0b"
+)
+CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256 = (
+    "9d05896a5dcce7e3d7642b41acba2ee4bf6d28ffda85bc8f3b2b645f2a3b273a"
+)
+CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_TEST_SHA256 = (
+    "edfd6f89b2cecd6de5cbfcb337ba6f5643a8d74d7caf8735c467578488970664"
+)
+CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START = (
+    "<!-- aetherlink-historical-build20-lifecycle-v1:start -->"
+)
+CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END = (
+    "<!-- aetherlink-historical-build20-lifecycle-v1:end -->"
+)
+CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_REPEATABILITY_CLAIM = (
+    "Both clean-HOME runners were invoked twice and matched their canonical "
+    "results."
+)
+CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_BOUNDARY_CLAIM = (
+    "These historical same-host, per-user Build 20 observations do not "
+    "qualify a clean "
+    "machine/account, signed/notarized distribution, "
+    "UI/accessibility, live-provider behavior, a physical device, arbitrary "
+    "histories, crash/power-loss, concurrent writers, backup/transfer, "
+    "rollback, or production readiness."
+)
+CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_BOUNDARY_TERMS = (
+    "Build 20",
+    "clean machine/account",
+    "signed/notarized distribution",
+    "UI/accessibility",
+    "live-provider behavior",
+    "arbitrary histories",
+    "crash/power-loss",
+    "backup/transfer",
+    "rollback",
+    "production readiness",
+)
+CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SIZE = 2_434
+CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SHA256 = (
+    "e78b605278d5c5b7f5601778c38f35270f1db4a9e95055ff434b71af4c33cf78"
+)
+CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RUNNER_SHA256 = (
+    "e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb"
+)
+CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_TEST_SHA256 = (
+    "89e566ff26d22eced043ffa108f8719274f9608685d6ecd18e579291c021cf47"
+)
+CURRENT_RUNTIME_CHAT_SQLITE_SWIFT_TESTS = (
+    (
+        "testSQLiteCrossInstanceAppendWaitsForImmediateTransactionAnd"
+        "CommitsExactlyOnce"
+    ),
+    "testSQLiteCrossInstanceBusyTimeoutRollsBackAndLaterReopenSucceeds",
+    "testSQLiteBusyTimeoutAtCommitRollsBackEventAndFTSRowsBeforeReopen",
+)
+CURRENT_RUNTIME_CHAT_SQLITE_STABLE_BUSY_MESSAGE = (
+    "Runtime chat history is temporarily busy. Try again."
+)
+CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_RESULT = (
+    ROOT
+    / "dist/lifecycle/"
+    "macos-runtime-chat-sqlite-abrupt-process-recovery-build-21-v1.json"
+)
+CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_RESULT_SIZE = 2_223
+CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_RESULT_SHA256 = (
+    "db66614d7badd7a0f606c03f91a516dff6d77e539684dcb6daf52709bce0f16f"
+)
+CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_START = (
+    "<!-- aetherlink-current-build21-abrupt-recovery-v1:start -->"
+)
+CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_END = (
+    "<!-- aetherlink-current-build21-abrupt-recovery-v1:end -->"
+)
+CURRENT_RUNTIME_CHAT_SQLITE_DOCUMENT_REQUIRED_PATTERNS = (
+    (
+        "production 5-second busy timeout",
+        re.compile(
+            r"\bproduction\b.{0,100}\b(?:five-second|5-second)\b"
+            r".{0,50}\bbusy timeout\b.{0,80}\bevery\b.{0,40}"
+            r"\b(?:connection|database connection)\b",
+            re.IGNORECASE | re.DOTALL,
+        ),
+    ),
+    (
+        "three deterministic Swift contention tests",
+        re.compile(
+            r"\bthree deterministic Swift tests\b.{0,500}\bBEGIN\b"
+            r".{0,500}\bCOMMIT\b",
+            re.IGNORECASE | re.DOTALL,
+        ),
+    ),
+    (
+        "two independent 48-event writers",
+        re.compile(
+            r"\btwo independent\b.{0,80}\b(?:helper processes|writer "
+            r"processes|48-event writers)\b.{0,160}\b(?:each writer "
+            r"appended 48|48 events each|48-event)\b",
+            re.IGNORECASE | re.DOTALL,
+        ),
+    ),
+    (
+        "third-process readback",
+        re.compile(
+            r"\bthird(?: independent|-process)\b.{0,40}\breadback\b"
+            r".{0,60}\bprocess\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "96 disjoint exactly-once events",
+        re.compile(
+            r"\b48\+48=96\b.{0,160}\bdisjoint and exactly once\b",
+            re.IGNORECASE | re.DOTALL,
+        ),
+    ),
+    (
+        "owner and session isolation",
+        re.compile(r"\bowner/session isolation\b", re.IGNORECASE),
+    ),
+    (
+        "per-writer append order",
+        re.compile(
+            r"\bper-writer (?:append )?order(?:ing)?\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "SQLite integrity",
+        re.compile(
+            r"\bSQLite integrity\b.{0,80}\bchecks passed\b",
+            re.IGNORECASE | re.DOTALL,
+        ),
+    ),
+    (
+        "owner-only permissions",
+        re.compile(
+            r"\bpermissions\b.{0,80}`0700`.{0,40}`0600`",
+            re.IGNORECASE | re.DOTALL,
+        ),
+    ),
+    (
+        "live evidence is outside the archive",
+        re.compile(
+            r"\blive\b.{0,100}\bseparate execution evidence\b"
+            r".{0,80}\bnot an? (?:retained (?:Build 19 )?)?archive member\b",
+            re.IGNORECASE | re.DOTALL,
+        ),
+    ),
+    (
+        "non-production evidence boundary",
+        re.compile(
+            r"\bdoes not (?:establish|qualify)\b.{0,320}\bproduction (?:behavior|"
+            r"readiness)\b",
+            re.IGNORECASE | re.DOTALL,
+        ),
+    ),
+)
+CURRENT_ANDROID_DRAWER_SEARCH_DOCUMENT_START = (
+    "<!-- aetherlink-current-android-drawer-search-ux-v2:start -->"
+)
+CURRENT_ANDROID_DRAWER_SEARCH_DOCUMENT_END = (
+    "<!-- aetherlink-current-android-drawer-search-ux-v2:end -->"
+)
+CURRENT_ANDROID_DRAWER_SEARCH_BEHAVIOR_CLAIM = (
+    "The current unreleased Android drawer provides an explicit touch Search "
+    "action with localized accessibility semantics and the keyboard Search "
+    "action through one trimmed-query submission path."
+)
+CURRENT_ANDROID_DRAWER_SEARCH_ACTION_STATE_CLAIM = (
+    "Blank, disconnected, streaming, bulk-mutation, and exact same-query "
+    "pending states expose localized action-state descriptions without "
+    "dispatching."
+)
+CURRENT_ANDROID_DRAWER_SEARCH_PENDING_CLAIM = (
+    "Only the exact current pending query shows a polite localized progress "
+    "live region and suppresses the no-results row; editing or clearing the "
+    "query closes that request and invalidates its transient search authority."
+)
+CURRENT_ANDROID_DRAWER_SEARCH_RESULT_CLAIM = (
+    "Only an exact current-query remote response is adopted; stale or absent "
+    "response state falls back to immediate local filtering, while current "
+    "remote results exclude archived sessions and retain global Runtime rank."
+)
+CURRENT_ANDROID_DRAWER_SEARCH_EVIDENCE_CLAIM = (
+    "The current no-device gate passes 168 AppNavigationTest cases, 22 "
+    "navigation-drawer Compose cases, 15 search-related "
+    "RuntimeClientViewModelTest cases, and the complete 1,194-test app JVM "
+    "suite; release lint reports 0 errors and 2 SDK-version warnings."
+)
+CURRENT_ANDROID_DRAWER_SEARCH_BOUNDARY_CLAIM = (
+    "This source/JVM/Compose evidence is not part of the immutable Build 17 "
+    "archive and is first source-bound by the immutable Build 18 archive; it "
+    "does not establish physical touch, TalkBack, provider, device, network, "
+    "installation, signing, or release behavior."
 )
 MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT_SIZE = 2_185
 MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT_SHA256 = (
@@ -145,39 +667,70 @@ LOCAL_RELEASE_EXPECTED_SOURCE_ROOT_BYTE_LENGTHS = {
     "build-a": 101,
     "build-b": 109,
 }
-LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT = 240
+LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT = 247
 LOCAL_RELEASE_EXPECTED_SOURCE_SHA256 = (
-    "82651260cc440946b7f12cebfb4e5b4c13d59ba3bc56da79a1f54adc37eeffa1"
+    "d948d5abfed0ccfe72429b46104e30847840dd11a2f7a2380d75a29c3d1763b4"
+)
+LOCAL_RELEASE_EXPECTED_SOURCE_OVERLAY_SHA256 = (
+    "937a08747c539e9aac452ed5f9ab945876f800163196aa2a150eadcc3140ff4d"
+)
+LOCAL_RELEASE_EXPECTED_PREPUBLICATION_SOURCE_OVERLAY_SHA256 = (
+    "937a08747c539e9aac452ed5f9ab945876f800163196aa2a150eadcc3140ff4d"
 )
 LOCAL_RELEASE_EXPECTED_SOURCE_HEAD = (
-    "324872d36361212cbd6ac957116011f53b366327"
+    "dc5832b9f5926b44ccde87d11beb58355ecd9ece"
 )
+LOCAL_RELEASE_EXPECTED_RUNTIME_CHAT_SQLITE_SOURCE_MEMBERS = {
+    "Package.swift": (
+        5_893,
+        "446f45034b4093735aeab8bffab87b87642741a379502206307b4419ee2100d8",
+    ),
+    "apps/macos/CompanionCore/Sources/SQLiteRuntimeChatEventStore.swift": (
+        113_478,
+        "2365118d7ebb7c808ca42caa69366a2cbf10f631cc088dafe9a3ea618c3346bb",
+    ),
+    (
+        "apps/macos/RuntimeChatSQLiteCrossProcessQA/Sources/"
+        "RuntimeChatSQLiteCrossProcessQA.swift"
+    ): (
+        26_025,
+        "e4251d009e2ac5775d4ad4beaf8d4528c0812749dae64768760c4ce454c20946",
+    ),
+    "script/run_macos_runtime_chat_cross_process_smoke.py": (
+        52_697,
+        "f14021e368372dbf14713974277f62c28aa16bd5160bb9d57b964186e0aa0a78",
+    ),
+    "script/test_run_macos_runtime_chat_cross_process_smoke.py": (
+        25_065,
+        "1229600eebdf95317e303f81bc60727fce06b81ee3c8a17be6d0c359bd6a1034",
+    ),
+}
 LOCAL_RELEASE_EXPECTED_MEMBER_COUNT = 29
-LOCAL_RELEASE_EXPECTED_MACOS_UUID = "A16CB949-C7E9-3BD7-A1AB-AC5D0662437F"
+LOCAL_RELEASE_EXPECTED_MACOS_UUID = "0AD0CBED-7293-3151-84D1-9BAF07654A93"
 LOCAL_RELEASE_EXPECTED_MEMBERS = {
     "android/apk/app-release-unsigned.apk": (
-        9_568_738,
-        "bcfb77ce97bea2b0709baa60ae37bc47b6686abbd3ccd01064f124cdde0fa006",
+        9_575_138,
+        "5dd1779523cbfa51cfff7b3deac93a8a548246f073147e72a705ac23a1020cc6",
     ),
     "android/bundle/app-release.aab": (
-        10_660_783,
-        "5ad660d8d34ec14cadc412bd4b85a342945335d0952a7c9e8a3f03153358af5a",
+        10_676_638,
+        "37183dc60d0ca0068476f9225cade96d6c8f86efac6eaffc27e181623cee0c77",
     ),
     "android/mapping/mapping.txt": (
-        71_726_855,
-        "176c55122536220bf69bee28e7954b733ee2675fd6937adb4b034265042537e6",
+        71_878_918,
+        "2a2144d5220935030e2a9d58f8201d651066ae3614382986fa3b942da88f4b90",
     ),
     "android/mapping/resources.txt": (
-        134_228,
-        "c816b0f709eaa66526973bdda6fc0790afdebdfdecfe0a306cda82c742a686d5",
+        134_768,
+        "002f51ef322a3849b5c4671db6bb6dd89722dfacd0a3418e465939ac406c005a",
     ),
     "macos/AetherLink.app/Contents/MacOS/AetherLink": (
-        18_271_968,
-        "e4b91c631e460dc23aba8ac0a6d83107326321341dd9f98042d6c712b85fd514",
+        18_272_048,
+        "24c54d6ffc2ff49b24954a7e6ec4399774a32685edd26e3eb5ea1eba8af88037",
     ),
     "macos/AetherLink.dSYM/Contents/Resources/DWARF/AetherLink": (
-        31_282_885,
-        "fe13be1b9ec49760c4a0a5ae108d09b4da488acdd621f625113a290245c3d5ee",
+        31_284_396,
+        "091ed60e4b67ff8ce2d077c5c73d807ccbd3b48a8429d228040c15b9d2afb61b",
     ),
     "compliance/THIRD_PARTY_LICENSE_INVENTORY.txt": (
         109_725,
@@ -189,17 +742,64 @@ LOCAL_RELEASE_EXPECTED_MEMBERS = {
     ),
     "compliance/sbom.spdx.json": (
         252_417,
-        "823b869a631a8fbe3ac5f97047ce534f21cc896ad54fd70b6fb136cdad160bcf",
+        "69899ad4d464ab96cedc20dfb64ea1b3b0cb4883e7aa408661093145d0a77b18",
     ),
     "compliance/third-party-license-inventory-v1.json": (
         411_087,
         "1f97b74e794e5e2b3092cc31ce8c67f634a299989658feca597bc301b67dcda5",
     ),
     "source-files.json": (
-        46_730,
-        "78c3c1ba715ce032b62283719a39f4c11f09944d348c2d4a7b586a8775b9dd26",
+        47_975,
+        "620262cae041102653b455ac01bc75ebc42dccaf342e10f59244db842055c57e",
     ),
 }
+LOCAL_RELEASE_EXPECTED_APK_MANIFEST_READBACK = {
+    "member": "android/apk/app-release-unsigned.apk",
+    "tool": "aapt2 dump xmltree + resources --no-values",
+    "verifiedFields": [
+        "allowBackup",
+        "dataExtractionRules",
+        "fullBackupContent",
+    ],
+}
+LOCAL_RELEASE_EXPECTED_BUNDLE_MANIFEST_READBACK = {
+    "member": "android/bundle/app-release.aab",
+    "tool": "bundletool dump manifest",
+    "verifiedFields": [
+        "applicationId",
+        "minSdk",
+        "targetSdk",
+        "versionCode",
+        "versionName",
+        "allowBackup",
+        "dataExtractionRules",
+        "fullBackupContent",
+    ],
+}
+LOCAL_RELEASE_ANDROID_BACKUP_POLICY_REQUIRED_CLAIMS = (
+    "`allowBackup=false`",
+    "`dataExtractionRules=@xml/data_extraction_rules`",
+    "`fullBackupContent=@xml/backup_rules`",
+    "`cloud-backup`",
+    "`device-transfer`",
+    "`root`, `file`, `database`, `sharedpref`, and `external`",
+    (
+        "`device_root`, `device_file`, `device_database`, and "
+        "`device_sharedpref`"
+    ),
+    '`path="."`',
+    "No `<include>` rule is present.",
+    "`aapt2 dump xmltree + resources --no-values`",
+    "`bundletool dump manifest`",
+    (
+        "Build 15 is the first local release that requires both APK and AAB "
+        "backup-policy manifest readback."
+    ),
+    (
+        "Build 17 adds compiled XML body readback for both the APK and an "
+        "AAB-derived universal APK."
+    ),
+)
 MACOS_PACKAGED_LIFECYCLE_BUILD_NUMBER = 10
 MACOS_PACKAGED_LIFECYCLE_RELEASE_ID = "aetherlink-1.0.0+10-local-v1"
 MACOS_PACKAGED_LIFECYCLE_MACOS_UUID = "415765ED-429A-36D9-BC1A-BAC6DDF18B45"
@@ -217,7 +817,7 @@ MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT = {
         "buildNumber": MACOS_PACKAGED_LIFECYCLE_BUILD_NUMBER,
         "bundleIdentifier": "dev.aetherlink.companion",
         "executableSha256": MACOS_PACKAGED_LIFECYCLE_EXECUTABLE_SHA256,
-        "marketingVersion": LOCAL_RELEASE_MARKETING_VERSION,
+        "marketingVersion": HISTORICAL_BUILD14_MARKETING_VERSION,
         "uuid": MACOS_PACKAGED_LIFECYCLE_MACOS_UUID,
     },
     "isolation": {
@@ -278,13 +878,13 @@ HISTORICAL_MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT = {
 }
 MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT = {
     "app": {
-        "buildNumber": LOCAL_RELEASE_BUILD_NUMBER,
+        "buildNumber": 13,
         "bundleIdentifier": "dev.aetherlink.companion",
         "executableSha256": (
             "e4b91c631e460dc23aba8ac0a6d83107326321341dd9f98042d6c712b85fd514"
         ),
         "marketingVersion": LOCAL_RELEASE_MARKETING_VERSION,
-        "uuid": LOCAL_RELEASE_EXPECTED_MACOS_UUID,
+        "uuid": "A16CB949-C7E9-3BD7-A1AB-AC5D0662437F",
     },
     "canary": {
         "eventID": "packaged-state-recovery-canary-event-v1",
@@ -306,9 +906,13 @@ MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT = {
         "temporaryCFUserHomeConfigured": True,
     },
     "release": {
-        "archiveSha256": LOCAL_RELEASE_EXPECTED_ZIP_SHA256,
-        "manifestSha256": LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256,
-        "releaseId": LOCAL_RELEASE_ID,
+        "archiveSha256": (
+            "d48bf8f837c104624b14b1cdc223d5c62aa2c68d13ff6d830f0a394dcd953191"
+        ),
+        "manifestSha256": (
+            "3f720d7119a9196b9a7db085313ac0c9e796ce903b8738bf04406e3fc87b384b"
+        ),
+        "releaseId": "aetherlink-1.0.0+13-local-v1",
     },
     "runs": [
         {
@@ -361,6 +965,206 @@ MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT = {
         },
     },
     "status": "passed",
+}
+MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT = {
+    "app": {
+        "buildNumber": 14,
+        "bundleIdentifier": "dev.aetherlink.companion",
+        "executableSha256": (
+            "619d96c01723e512e9cc857540f9ef5db97232237e549a419e65b6a62eead1d2"
+        ),
+        "marketingVersion": HISTORICAL_BUILD14_MARKETING_VERSION,
+        "uuid": HISTORICAL_BUILD14_MACOS_UUID,
+    },
+    "installation": {
+        "codesignVerified": True,
+        "copyTool": "ditto",
+        "installedRelativePath": "Applications/AetherLink.app",
+        "regularFileTreeMatchesReleaseManifest": True,
+        "tree": {
+            "digestAlgorithm": (
+                "sha256(path-nul-mode-octal-nul-size-nul-sha256-lf)-v1"
+            ),
+            "regularFileCount": 10,
+            "sha256": (
+                "74be59c1986fe6a703c4648a82b8d1c3264ac8e568df7aace186b655edeacc54"
+            ),
+            "totalRegularFileBytes": 20_828_180,
+        },
+    },
+    "isolation": {
+        "cleanHomeConfigured": True,
+        "preexistingBundleApplicationsPreserved": True,
+        "runtimeIdentityFileOverrideConfigured": True,
+        "temporaryCFUserHomeConfigured": True,
+    },
+    "launchServices": {
+        "commandPolicy": (
+            "open-new-fresh-background-exact-app-path-v1"
+        ),
+        "distinctProcessIdentifiers": True,
+        "runs": [
+            {
+                "activationPolicy": 0,
+                "executablePathMatched": True,
+                "finishedLaunching": True,
+                "newProcessIdentifierDetected": True,
+                "observationDeadlineReached": True,
+                "ordinal": ordinal,
+                "terminationAccepted": True,
+            }
+            for ordinal in (1, 2)
+        ],
+    },
+    "limitations": [
+        "same-host-per-user-rehearsal-only",
+        "not-a-clean-machine-or-dmg-installation",
+        "not-developer-id-notarization-or-signed-distribution",
+        "not-physical-device-or-live-provider-evidence",
+    ],
+    "release": {
+        "archiveSha256": HISTORICAL_BUILD14_ARCHIVE_SHA256,
+        "manifestSha256": HISTORICAL_BUILD14_MANIFEST_SHA256,
+        "releaseId": HISTORICAL_BUILD14_RELEASE_ID,
+    },
+    "schemaVersion": 1,
+    "scope": "same-host-per-user-clean-home-launchservices-rehearsal-v1",
+    "state": {
+        "expectedSQLiteFiles": [
+            "runtime-chat-events.sqlite",
+            "runtime-document-index.sqlite",
+            "runtime-model-pull-approvals.sqlite",
+        ],
+        "regularFileBytesAndModesUnchangedAcrossRelaunch": True,
+        "runtimeIdentityFilePresent": True,
+        "sqlite": [
+            {
+                "filename": "runtime-chat-events.sqlite",
+                "integrityCheck": "ok",
+                "totalEventCount": 0,
+            },
+            {
+                "filename": "runtime-document-index.sqlite",
+                "integrityCheck": "ok",
+            },
+            {
+                "filename": "runtime-model-pull-approvals.sqlite",
+                "integrityCheck": "ok",
+            },
+        ],
+    },
+    "status": "passed",
+}
+MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT = {
+    "app": MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT["app"],
+    "canary": MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT["canary"],
+    "installation": MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT[
+        "installation"
+    ],
+    "isolation": MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT["isolation"],
+    "launchServices": {
+        "commandPolicy": (
+            "open-new-fresh-background-exact-app-path-captured-recovery-v1"
+        ),
+        "distinctProcessIdentifiers": True,
+        "runs": [
+            {
+                "activationPolicy": 0,
+                "executablePathMatched": True,
+                "finishedLaunching": True,
+                "minimumObservationSeconds": 5.0,
+                "newProcessIdentifierDetected": True,
+                "observationDeadlineReached": True,
+                "ordinal": ordinal,
+                "terminationAccepted": True,
+            }
+            for ordinal in (1, 2)
+        ],
+    },
+    "limitations": [
+        "same-host-per-user-rehearsal-only",
+        "not-a-clean-machine-account-or-dmg-installation",
+        "not-ui-accessibility-or-live-provider-evidence",
+        "not-physical-device-or-signed-distribution-evidence",
+    ],
+    "release": {
+        "archiveSha256": HISTORICAL_BUILD14_ARCHIVE_SHA256,
+        "manifestSha256": HISTORICAL_BUILD14_MANIFEST_SHA256,
+        "releaseId": HISTORICAL_BUILD14_RELEASE_ID,
+    },
+    "schemaVersion": 1,
+    "scope": (
+        "same-host-per-user-clean-home-launchservices-state-recovery-v1"
+    ),
+    "stateRecovery": {
+        "auxiliarySQLite": [
+            {
+                "filename": "runtime-document-index.sqlite",
+                "integrityCheck": "ok",
+            },
+            {
+                "filename": "runtime-model-pull-approvals.sqlite",
+                "integrityCheck": "ok",
+            },
+        ],
+        "installedStateBytesAndModesUnchangedAcrossRelaunch": True,
+        "legacyAbsentBeforeSecondRun": True,
+        "legacyFixturePreservedUnchanged": True,
+        "migrationObservation": MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT[
+            "stateRecovery"
+        ]["migrationObservation"],
+        "migrationSQLite": MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT[
+            "stateRecovery"
+        ]["migrationSQLite"],
+        "runtimeIdentityFilePresent": True,
+        "sqliteCanaryUnchangedAcrossRuns": True,
+        "sqliteReadbackObservation": (
+            MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT["stateRecovery"][
+                "sqliteReadbackObservation"
+            ]
+        ),
+        "sqliteReadbackSQLite": MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT[
+            "stateRecovery"
+        ]["sqliteReadbackSQLite"],
+    },
+    "status": "passed",
+}
+CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT = {
+    **MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT,
+    "app": {
+        "buildNumber": 20,
+        "bundleIdentifier": "dev.aetherlink.companion",
+        "executableSha256": (
+            "92070b85256532b23b327fec5b6a46df2d98f2de89f85750ea6189c838197fb6"
+        ),
+        "marketingVersion": LOCAL_RELEASE_MARKETING_VERSION,
+        "uuid": LOCAL_RELEASE_EXPECTED_MACOS_UUID,
+    },
+    "installation": {
+        **MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT["installation"],
+        "tree": {
+            **MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT["installation"][
+                "tree"
+            ],
+            "sha256": (
+                "937433afa0f493365bcb823b88f02dbc0eb52294ca15d235a420ed8498572e46"
+            ),
+            "totalRegularFileBytes": 20_828_260,
+        },
+    },
+    "release": {
+        "archiveSha256": HISTORICAL_BUILD20_ARCHIVE_SHA256,
+        "manifestSha256": HISTORICAL_BUILD20_MANIFEST_SHA256,
+        "releaseId": HISTORICAL_BUILD20_RELEASE_ID,
+    },
+}
+CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT = {
+    **MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT,
+    "app": CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT["app"],
+    "installation": (
+        CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT["installation"]
+    ),
+    "release": CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT["release"],
 }
 LOCAL_RELEASE_TRANSITION_FIXTURE_START = (
     "<!-- aetherlink-release-transition-fixture-v1:start -->"
@@ -884,6 +1688,14 @@ HYGIENE_TARGETS = (
     "docs/releases/1.0.0-build-11-local-v1.md",
     "docs/releases/1.0.0-build-12-local-v1.md",
     "docs/releases/1.0.0-build-13-local-v1.md",
+    "docs/releases/1.0.0-build-14-local-v1.md",
+    "docs/releases/1.0.0-build-15-local-v1.md",
+    "docs/releases/1.0.0-build-16-local-v1.md",
+    "docs/releases/1.0.0-build-17-local-v1.md",
+    "docs/releases/1.0.0-build-18-local-v1.md",
+    "docs/releases/1.0.0-build-19-local-v1.md",
+    "docs/releases/1.0.0-build-20-local-v1.md",
+    "docs/releases/1.0.0-build-21-local-v1.md",
     "docs/roadmap.md",
     "docs/security.md",
     "examples/README.md",
@@ -964,7 +1776,7 @@ CONTRACTS = (
 FILE_CONTRACTS = (
     DocsFileContract(
         "local-release-qualification-boundary",
-        "docs/releases/1.0.0-build-13-local-v1.md",
+        "docs/releases/1.0.0-build-21-local-v1.md",
         (
             re.compile(
                 r"\bStatus:\s*local release-engineering candidate,\s*not a production release\b",
@@ -987,19 +1799,19 @@ FILE_CONTRACTS = (
                 re.IGNORECASE | re.DOTALL,
             ),
             re.compile(
-                r"\bd48bf8f837c104624b14b1cdc223d5c62aa2c68d13ff6d830f0a394dcd953191\b"
+                rf"\b{LOCAL_RELEASE_EXPECTED_ZIP_SHA256}\b"
             ),
             re.compile(
-                r"\b3f720d7119a9196b9a7db085313ac0c9e796ce903b8738bf04406e3fc87b384b\b"
+                rf"\b{LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256}\b"
             ),
             re.compile(
-                r"\bb44398d350fb6f903ec53745e7546101b49ba4dddecf96295387306c87fe6efe\b"
+                rf"\b{LOCAL_RELEASE_EXPECTED_CHECKSUM_SHA256}\b"
             ),
             re.compile(
-                r"\bd77477077059c45fe21c51cbcbd6d62b6412c8dabf6b22683f20ea6acbc30d2f\b"
+                rf"\b{LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SHA256}\b"
             ),
             re.compile(
-                r"\b21f30e0b60e81bcbfb7e8a198c68ef53d6f6c739a63c80a1339278b7565ea769\b"
+                rf"\b{LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_PREPUBLICATION_SHA256}\b"
             ),
             re.compile(
                 r"\b101-\s+and\s+109-byte source roots\b",
@@ -1259,10 +2071,23 @@ FILE_CONTRACTS = (
 PROGRESS_DOC = ROOT / "docs/progress.md"
 QA_EVIDENCE_DOC = ROOT / "docs/qa-evidence.md"
 QA_CURRENT_RELEASE_READBACK_MARKER = (
-    "The Build 13 archive is the latest ledger entry and its source-bound "
-    "snapshot matches the current release inputs."
+    "The Build 20 archive is the latest ledger entry"
 )
 QA_STALE_RELEASE_READBACK_MARKERS = (
+    "The Build 19 archive is the latest ledger entry and its source-bound "
+    "snapshot matches the current release inputs.",
+    "The Build 18 archive is the latest ledger entry and its source-bound "
+    "snapshot matches the current release inputs.",
+    "The Build 17 archive is the latest ledger entry and its source-bound "
+    "snapshot matches the current release inputs.",
+    "The Build 16 archive is the latest ledger entry and its source-bound "
+    "snapshot matches the current release inputs.",
+    "The Build 15 archive is the latest ledger entry and its source-bound "
+    "snapshot matches the current release inputs.",
+    "The Build 14 archive is the latest ledger entry and its source-bound "
+    "snapshot matches the current release inputs.",
+    "The Build 13 archive is the latest ledger entry and its source-bound "
+    "snapshot matches the current release inputs.",
     "The Build 11 archive is the latest ledger entry and its source-bound "
     "snapshot matches the current release inputs.",
     "The current build 6 archive includes the terminal-less EOF fix and the "
@@ -1276,6 +2101,8 @@ QA_STALE_RELEASE_READBACK_MARKERS = (
 RELEASE_READBACK_COMMAND_DOCS = (
     PROGRESS_DOC,
     QA_EVIDENCE_DOC,
+    ROOT / "docs/handoff.md",
+    LOCAL_RELEASE_CURRENT_DOC,
 )
 
 
@@ -1297,7 +2124,7 @@ def current_release_qa_evidence_failures(
     failures: list[str] = []
     if QA_CURRENT_RELEASE_READBACK_MARKER not in normalized_text:
         failures.append(
-            "docs/qa-evidence.md: Build 13 current-source readback marker is "
+            "docs/qa-evidence.md: Build 20 current-source readback marker is "
             "missing."
         )
     for stale_marker in QA_STALE_RELEASE_READBACK_MARKERS:
@@ -3102,6 +3929,66 @@ def local_release_ollama_live_fault_injection_fixture_failures(
     return failures
 
 
+def current_release_android_backup_policy_document_failures(
+    document_text: str,
+    *,
+    relative: str = "docs/releases/1.0.0-build-21-local-v1.md",
+) -> list[str]:
+    failures: list[str] = []
+    normalized_document = re.sub(r"\s+", " ", document_text)
+    for index, claim in enumerate(
+        LOCAL_RELEASE_ANDROID_BACKUP_POLICY_REQUIRED_CLAIMS,
+        1,
+    ):
+        normalized_claim = re.sub(r"\s+", " ", claim)
+        if normalized_claim not in normalized_document:
+            failures.append(
+                f"{relative}: missing exact Android backup-policy claim "
+                f"{index} claim {claim!r}."
+            )
+    return failures
+
+
+def current_release_android_manifest_readback_failures(
+    manifest: object,
+    *,
+    relative: str = (
+        "dist/releases/aetherlink-1.0.0+21-local-v1/"
+        "aetherlink-1.0.0+21-local-v1.manifest.json"
+    ),
+) -> list[str]:
+    if not isinstance(manifest, dict):
+        return [f"{relative}: manifest root must be a JSON object."]
+
+    def read_path(path: tuple[str, ...]) -> object:
+        value: object = manifest
+        for key in path:
+            if not isinstance(value, dict) or key not in value:
+                return None
+            value = value[key]
+        return value
+
+    failures: list[str] = []
+    expectations = (
+        (
+            ("platforms", "android", "apkManifestReadback"),
+            LOCAL_RELEASE_EXPECTED_APK_MANIFEST_READBACK,
+        ),
+        (
+            ("platforms", "android", "bundleManifestReadback"),
+            LOCAL_RELEASE_EXPECTED_BUNDLE_MANIFEST_READBACK,
+        ),
+    )
+    for path, expected in expectations:
+        actual = read_path(path)
+        if type(actual) is not type(expected) or actual != expected:
+            failures.append(
+                f"{relative}: expected {'.'.join(path)}={expected!r}, "
+                f"found {actual!r}."
+            )
+    return failures
+
+
 def local_release_document_failures() -> list[str]:
     try:
         relative_doc = LOCAL_RELEASE_CURRENT_DOC.relative_to(ROOT)
@@ -3158,7 +4045,7 @@ def local_release_document_failures() -> list[str]:
             "reproducibility result path",
             (
                 "`dist/reproducibility/"
-                "aetherlink-1.0.0+13-local-v1-two-root-v2.json`"
+                "aetherlink-1.0.0+21-local-v1-two-root-v3.json`"
             ),
         ),
         (
@@ -3170,28 +4057,274 @@ def local_release_document_failures() -> list[str]:
             f"`{LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SHA256}`",
         ),
         (
-            "reproducibility confirmation path",
+            "reproducibility prepublication path",
             (
                 "`dist/reproducibility/"
-                "aetherlink-1.0.0+13-local-v1-two-root-v2-confirmation.json`"
+                "aetherlink-1.0.0+21-local-v1-two-root-v3-prepublication.json`"
             ),
         ),
         (
-            "reproducibility confirmation size",
+            "reproducibility prepublication size",
             (
-                f"{LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_CONFIRMATION_SIZE:,} "
+                f"{LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_PREPUBLICATION_SIZE:,} "
                 "bytes"
             ),
         ),
         (
-            "reproducibility confirmation SHA-256",
+            "reproducibility prepublication SHA-256",
             (
-                f"`{LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_CONFIRMATION_SHA256}`"
+                f"`{LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_PREPUBLICATION_SHA256}`"
             ),
         ),
         (
-            "reproducibility confirmation publication match",
-            "`alreadyMatched=true`",
+            "reproducibility comparison-only boundary",
+            "`executionMode=comparison-only`",
+        ),
+        (
+            "reproducibility publish-qualified boundary",
+            "`executionMode=publish-qualified`",
+        ),
+        (
+            "reproducibility verified publication outcome",
+            "`outcome=published-verified`",
+        ),
+        (
+            "reproducibility new publication state",
+            "`alreadyMatched=false`",
+        ),
+        (
+            "Swift frontend serialization",
+            "`-Xswiftc -num-threads -Xswiftc 1`",
+        ),
+        (
+            "current Build 20 clean-HOME installed-app result path",
+            (
+                "`dist/lifecycle/"
+                "macos-packaged-app-build-20-clean-home-install-v1.json`"
+            ),
+        ),
+        (
+            "current Build 20 clean-HOME installed-app result size",
+            (
+                f"{CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SIZE:,} "
+                "bytes"
+            ),
+        ),
+        (
+            "current Build 20 clean-HOME installed-app result SHA-256",
+            (
+                f"`{CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SHA256}`"
+            ),
+        ),
+        (
+            "current Build 20 clean-HOME installed-app runner SHA-256",
+            (
+                f"`{CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RUNNER_SHA256}`"
+            ),
+        ),
+        (
+            "current Build 20 clean-HOME installed-app test SHA-256",
+            (
+                f"`{CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_TEST_SHA256}`"
+            ),
+        ),
+        (
+            "current Build 20 installed state-recovery result path",
+            (
+                "`dist/lifecycle/"
+                "macos-packaged-app-build-20-clean-home-state-recovery-v1.json`"
+            ),
+        ),
+        (
+            "current Build 20 installed state-recovery result size",
+            (
+                f"{CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SIZE:,} "
+                "bytes"
+            ),
+        ),
+        (
+            "current Build 20 installed state-recovery result SHA-256",
+            (
+                f"`{CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SHA256}`"
+            ),
+        ),
+        (
+            "current Build 20 installed state-recovery runner SHA-256",
+            (
+                f"`{CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256}`"
+            ),
+        ),
+        (
+            "current Build 20 installed state-recovery test SHA-256",
+            (
+                f"`{CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_TEST_SHA256}`"
+            ),
+        ),
+        (
+            "current Build 20 lifecycle repeatability",
+            CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_REPEATABILITY_CLAIM,
+        ),
+        (
+            "current Build 20 local DMG result path",
+            (
+                "`dist/lifecycle/"
+                "macos-packaged-app-build-20-local-dmg-install-v1.json`"
+            ),
+        ),
+        (
+            "current Build 20 local DMG result size",
+            f"{CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SIZE:,} bytes",
+        ),
+        (
+            "current Build 20 local DMG result SHA-256",
+            f"`{CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SHA256}`",
+        ),
+        (
+            "current Build 20 local DMG runner SHA-256",
+            f"`{CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RUNNER_SHA256}`",
+        ),
+        (
+            "current Build 20 local DMG test SHA-256",
+            f"`{CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_TEST_SHA256}`",
+        ),
+        (
+            "historical Build 16 release ID",
+            f"`{HISTORICAL_BUILD16_RELEASE_ID}`",
+        ),
+        (
+            "historical Build 16 archive size",
+            f"{HISTORICAL_BUILD16_ARCHIVE_SIZE:,} bytes",
+        ),
+        (
+            "historical Build 16 archive SHA-256",
+            f"`{HISTORICAL_BUILD16_ARCHIVE_SHA256}`",
+        ),
+        (
+            "historical Build 16 successful result size",
+            f"{HISTORICAL_BUILD16_RESULT_SIZE:,} bytes",
+        ),
+        (
+            "historical Build 16 successful result SHA-256",
+            f"`{HISTORICAL_BUILD16_RESULT_SHA256}`",
+        ),
+        (
+            "historical Build 16 failed attempt size",
+            f"{HISTORICAL_BUILD16_FAILED_ATTEMPT_SIZE:,} bytes",
+        ),
+        (
+            "historical Build 16 failed attempt SHA-256",
+            f"`{HISTORICAL_BUILD16_FAILED_ATTEMPT_SHA256}`",
+        ),
+        (
+            "historical Build 16 failed confirmation size",
+            f"{HISTORICAL_BUILD16_FAILED_CONFIRMATION_SIZE:,} bytes",
+        ),
+        (
+            "historical Build 16 failed confirmation SHA-256",
+            f"`{HISTORICAL_BUILD16_FAILED_CONFIRMATION_SHA256}`",
+        ),
+        (
+            "historical Build 16 failed publication boundary",
+            "`publication=null`",
+        ),
+        (
+            "historical Build 16 non-transfer boundary",
+            (
+                "Build 17 does not retroactively qualify Build 16."
+            ),
+        ),
+        (
+            "historical Build 14 clean-HOME installed-app result path",
+            (
+                "`dist/lifecycle/"
+                "macos-packaged-app-build-14-clean-home-install-v1.json`"
+            ),
+        ),
+        (
+            "historical Build 14 clean-HOME installed-app result size",
+            (
+                f"{MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SIZE:,} "
+                "bytes"
+            ),
+        ),
+        (
+            "historical Build 14 clean-HOME installed-app result SHA-256",
+            (
+                f"`{MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SHA256}`"
+            ),
+        ),
+        (
+            "historical Build 14 clean-HOME installed-app runner SHA-256",
+            (
+                f"`{MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RUNNER_SHA256}`"
+            ),
+        ),
+        (
+            "historical Build 14 clean-HOME installed-app test SHA-256",
+            (
+                f"`{MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_TEST_SHA256}`"
+            ),
+        ),
+        (
+            "historical Build 14 clean-HOME distinct relaunch identifiers",
+            "`distinctProcessIdentifiers=true`",
+        ),
+        (
+            "historical Build 14 clean-HOME state identity",
+            (
+                "`regularFileBytesAndModesUnchangedAcrossRelaunch=true`"
+            ),
+        ),
+        (
+            "historical Build 14 clean-HOME empty chat state",
+            "`totalEventCount=0`",
+        ),
+        (
+            "historical Build 14 installed state-recovery result path",
+            (
+                "`dist/lifecycle/"
+                "macos-packaged-app-build-14-clean-home-state-recovery-v1.json`"
+            ),
+        ),
+        (
+            "historical Build 14 installed state-recovery result size",
+            (
+                f"{MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SIZE:,} "
+                "bytes"
+            ),
+        ),
+        (
+            "historical Build 14 installed state-recovery result SHA-256",
+            (
+                f"`{MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SHA256}`"
+            ),
+        ),
+        (
+            "historical Build 14 installed state-recovery runner SHA-256",
+            (
+                f"`{MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256}`"
+            ),
+        ),
+        (
+            "historical Build 14 installed state-recovery test SHA-256",
+            (
+                f"`{MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_TEST_SHA256}`"
+            ),
+        ),
+        (
+            "historical Build 14 installed state-recovery state identity",
+            "`installedStateBytesAndModesUnchangedAcrossRelaunch=true`",
+        ),
+        (
+            "historical Build 14 installed state-recovery identity file",
+            "`runtimeIdentityFilePresent=true`",
+        ),
+        (
+            "historical Build 14 installed state-recovery separation",
+            (
+                "Build 14 installed state-recovery evidence remains bound to "
+                "Build 14 and is not reinterpreted as Build 17 evidence."
+            ),
         ),
         (
             "packaged state-recovery result path",
@@ -3251,6 +4384,13 @@ def local_release_document_failures() -> list[str]:
             (
                 "Build 12 state-recovery result was not published, and Build "
                 "13 evidence is not reinterpreted as Build 12 evidence."
+            ),
+        ),
+        (
+            "Build 13 state-recovery non-transfer boundary",
+            (
+                "Build 13 state-recovery evidence remains bound to Build 13 "
+                "and is not reinterpreted as Build 17 evidence."
             ),
         ),
         (
@@ -3322,7 +4462,7 @@ def local_release_document_failures() -> list[str]:
             "Build 10 lifecycle non-transfer boundary",
             (
                 "Build 10 observations remain bound to Build 10 and are not "
-                "reinterpreted as Build 13 evidence."
+                "reinterpreted as Build 17 evidence."
             ),
         ),
         (
@@ -3357,6 +4497,10 @@ def local_release_document_failures() -> list[str]:
             "source inventory SHA-256",
             f"`{LOCAL_RELEASE_EXPECTED_SOURCE_SHA256}`",
         ),
+        (
+            "source overlay SHA-256",
+            f"`{LOCAL_RELEASE_EXPECTED_SOURCE_OVERLAY_SHA256}`",
+        ),
         ("source HEAD", f"`{LOCAL_RELEASE_EXPECTED_SOURCE_HEAD}`"),
         ("dirty source boundary", "`dirty-content-snapshot`"),
         (
@@ -3390,17 +4534,38 @@ def local_release_document_failures() -> list[str]:
         ),
         ("macOS app/dSYM UUID", f"`{LOCAL_RELEASE_EXPECTED_MACOS_UUID}`"),
     )
+    historical_claim_prefixes = (
+        "historical ",
+        "packaged state-recovery ",
+        "Build 12 state-recovery ",
+        "Build 13 state-recovery ",
+        "packaged-app ",
+        "Build 10 lifecycle ",
+    )
+    required_claims = tuple(
+        claim
+        for claim in required_claims
+        if not claim[0].startswith(historical_claim_prefixes)
+    )
     for member_path, (size, sha256) in LOCAL_RELEASE_EXPECTED_MEMBERS.items():
         required_claims += (
             (f"{member_path} size", f"{size:,} bytes"),
             (f"{member_path} SHA-256", f"`{sha256}`"),
         )
 
+    normalized_document = re.sub(r"\s+", " ", document_text)
     for label, expected_text in required_claims:
-        if expected_text not in document_text:
+        normalized_expected = re.sub(r"\s+", " ", expected_text)
+        if normalized_expected not in normalized_document:
             failures.append(
                 f"{relative_doc}: missing exact {label} claim {expected_text!r}."
             )
+    failures.extend(
+        current_release_android_backup_policy_document_failures(
+            document_text,
+            relative=str(relative_doc),
+        )
+    )
 
     if fixture_document_text is not None:
         failures.extend(
@@ -3511,6 +4676,12 @@ def local_release_document_failures() -> list[str]:
             f"{manifest_path.relative_to(ROOT)}: manifest root must be a JSON object."
         )
         return failures
+    failures.extend(
+        current_release_android_manifest_readback_failures(
+            manifest,
+            relative=str(manifest_path.relative_to(ROOT)),
+        )
+    )
 
     def read_path(path: tuple[str, ...]) -> object:
         value: object = manifest
@@ -3552,6 +4723,14 @@ def local_release_document_failures() -> list[str]:
                 "status": "passed",
                 "tool": "bundletool validate",
             },
+        ),
+        (
+            ("platforms", "android", "apkManifestReadback"),
+            LOCAL_RELEASE_EXPECTED_APK_MANIFEST_READBACK,
+        ),
+        (
+            ("platforms", "android", "bundleManifestReadback"),
+            LOCAL_RELEASE_EXPECTED_BUNDLE_MANIFEST_READBACK,
         ),
         (("platforms", "macos", "bundleId"), "dev.aetherlink.companion"),
         (
@@ -3675,7 +4854,7 @@ def local_release_document_failures() -> list[str]:
 
     result_relative = (
         "dist/reproducibility/"
-        "aetherlink-1.0.0+13-local-v1-two-root-v2.json"
+        "aetherlink-1.0.0+21-local-v1-two-root-v3.json"
     )
     if not LOCAL_RELEASE_REPRODUCIBILITY_RESULT.is_file():
         failures.append(
@@ -3730,7 +4909,9 @@ def local_release_document_failures() -> list[str]:
         return value
 
     result_expectations = (
-        (("schemaVersion",), 2),
+        (("schemaVersion",), 3),
+        (("executionMode",), "publish-qualified"),
+        (("releaseId",), LOCAL_RELEASE_ID),
         (("status",), "passed"),
         (
             ("scratch", "sourceRoots", "policy"),
@@ -3748,6 +4929,10 @@ def local_release_document_failures() -> list[str]:
         (("comparison", "differences"), []),
         (("comparison", "memberDifferences"), []),
         (
+            ("toolchainPolicy", "scope"),
+            "same-host-fixed-toolchain-cache-snapshot",
+        ),
+        (
             ("publication", "archiveSha256"),
             LOCAL_RELEASE_EXPECTED_ZIP_SHA256,
         ),
@@ -3759,10 +4944,18 @@ def local_release_document_failures() -> list[str]:
             ("publication", "checksumSha256"),
             LOCAL_RELEASE_EXPECTED_CHECKSUM_SHA256,
         ),
+        (("publication", "alreadyMatched"), False),
+        (("publication", "attempted"), True),
         (("publication", "independentReadback"), True),
+        (("publication", "outcome"), "published-verified"),
         (("publication", "publishedBytesEqualLaneA"), True),
+        (("publication", "qualifiedArchivePublished"), True),
         (("publication", "sourceSnapshotUnchanged"), True),
         (("source", "fileCount"), LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT),
+        (
+            ("source", "overlaySha256"),
+            LOCAL_RELEASE_EXPECTED_SOURCE_OVERLAY_SHA256,
+        ),
         (("source", "sha256"), LOCAL_RELEASE_EXPECTED_SOURCE_SHA256),
     )
     for path, expected in result_expectations:
@@ -3772,38 +4965,52 @@ def local_release_document_failures() -> list[str]:
                 f"{result_relative}: expected "
                 f"{'.'.join(path)}={expected!r}, found {actual!r}."
             )
+    swift_arguments = read_result_path(("toolchainPolicy", "swiftArguments"))
+    serialized_frontend = ["-Xswiftc", "-num-threads", "-Xswiftc", "1"]
+    if (
+        not isinstance(swift_arguments, list)
+        or not any(
+            swift_arguments[index : index + len(serialized_frontend)]
+            == serialized_frontend
+            for index in range(
+                len(swift_arguments) - len(serialized_frontend) + 1
+            )
+        )
+    ):
+        failures.append(
+            f"{result_relative}: toolchainPolicy.swiftArguments must include "
+            f"the exact contiguous sequence {serialized_frontend!r}."
+        )
 
-    failures.extend(
-        current_release_reproducibility_confirmation_failures()
-    )
+    failures.extend(current_release_reproducibility_prepublication_failures())
     return failures
 
 
-def current_release_reproducibility_confirmation_failures(
+def current_release_reproducibility_prepublication_failures(
     result_bytes: bytes | None = None,
 ) -> list[str]:
     relative = (
         "dist/reproducibility/"
-        "aetherlink-1.0.0+13-local-v1-two-root-v2-confirmation.json"
+        "aetherlink-1.0.0+21-local-v1-two-root-v3-prepublication.json"
     )
     if result_bytes is None:
-        if not LOCAL_RELEASE_REPRODUCIBILITY_CONFIRMATION_RESULT.is_file():
-            return [f"{relative}: missing reproducibility confirmation result."]
+        if not LOCAL_RELEASE_REPRODUCIBILITY_PREPUBLICATION_RESULT.is_file():
+            return [f"{relative}: missing reproducibility prepublication result."]
         try:
             result_bytes = (
-                LOCAL_RELEASE_REPRODUCIBILITY_CONFIRMATION_RESULT.read_bytes()
+                LOCAL_RELEASE_REPRODUCIBILITY_PREPUBLICATION_RESULT.read_bytes()
             )
         except OSError as error:
             return [
-                f"{relative}: unreadable reproducibility confirmation "
+                f"{relative}: unreadable reproducibility prepublication "
                 f"result: {error}"
             ]
 
     failures: list[str] = []
     identity = (len(result_bytes), hashlib.sha256(result_bytes).hexdigest())
     expected_identity = (
-        LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_CONFIRMATION_SIZE,
-        LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_CONFIRMATION_SHA256,
+        LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_PREPUBLICATION_SIZE,
+        LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_PREPUBLICATION_SHA256,
     )
     if identity != expected_identity:
         failures.append(
@@ -3822,12 +5029,12 @@ def current_release_reproducibility_confirmation_failures(
         DuplicateJSONKeyError,
     ) as error:
         failures.append(
-            f"{relative}: invalid reproducibility confirmation JSON: {error}"
+            f"{relative}: invalid reproducibility prepublication JSON: {error}"
         )
         return failures
     if not isinstance(result, dict):
         failures.append(
-            f"{relative}: reproducibility confirmation root must be an object."
+            f"{relative}: reproducibility prepublication root must be an object."
         )
         return failures
 
@@ -3840,7 +5047,9 @@ def current_release_reproducibility_confirmation_failures(
         return value
 
     expectations = (
-        (("schemaVersion",), 2),
+        (("schemaVersion",), 3),
+        (("executionMode",), "comparison-only"),
+        (("releaseId",), LOCAL_RELEASE_ID),
         (("status",), "passed"),
         (
             ("scratch", "sourceRoots", "policy"),
@@ -3857,27 +5066,20 @@ def current_release_reproducibility_confirmation_failures(
         (("comparison", "memberBytesEqual"), True),
         (("comparison", "differences"), []),
         (("comparison", "memberDifferences"), []),
-        (("publication", "alreadyMatched"), True),
         (
-            ("publication", "archiveDirectory"),
-            f"dist/releases/{LOCAL_RELEASE_ID}",
+            ("toolchainPolicy", "scope"),
+            "same-host-fixed-toolchain-cache-snapshot",
         ),
-        (
-            ("publication", "archiveSha256"),
-            LOCAL_RELEASE_EXPECTED_ZIP_SHA256,
-        ),
-        (
-            ("publication", "manifestSha256"),
-            LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256,
-        ),
-        (
-            ("publication", "checksumSha256"),
-            LOCAL_RELEASE_EXPECTED_CHECKSUM_SHA256,
-        ),
-        (("publication", "independentReadback"), True),
-        (("publication", "publishedBytesEqualLaneA"), True),
-        (("publication", "sourceSnapshotUnchanged"), True),
+        (("publication", "attempted"), False),
+        (("publication", "independentReadback"), False),
+        (("publication", "outcome"), "disabled-comparison-only"),
+        (("publication", "policy"), "comparison-only-no-publication"),
+        (("publication", "qualifiedArchivePublished"), False),
         (("source", "fileCount"), LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT),
+        (
+            ("source", "overlaySha256"),
+            LOCAL_RELEASE_EXPECTED_PREPUBLICATION_SOURCE_OVERLAY_SHA256,
+        ),
         (("source", "sha256"), LOCAL_RELEASE_EXPECTED_SOURCE_SHA256),
     )
     for path, expected in expectations:
@@ -3887,6 +5089,23 @@ def current_release_reproducibility_confirmation_failures(
                 f"{relative}: expected {'.'.join(path)}={expected!r}, "
                 f"found {actual!r}."
             )
+
+    swift_arguments = read_path(("toolchainPolicy", "swiftArguments"))
+    serialized_frontend = ["-Xswiftc", "-num-threads", "-Xswiftc", "1"]
+    if (
+        not isinstance(swift_arguments, list)
+        or not any(
+            swift_arguments[index : index + len(serialized_frontend)]
+            == serialized_frontend
+            for index in range(
+                len(swift_arguments) - len(serialized_frontend) + 1
+            )
+        )
+    ):
+        failures.append(
+            f"{relative}: toolchainPolicy.swiftArguments must include the "
+            f"exact contiguous sequence {serialized_frontend!r}."
+        )
 
     builds = result.get("builds")
     if not isinstance(builds, list) or len(builds) != 2:
@@ -3934,6 +5153,79 @@ def current_release_reproducibility_confirmation_failures(
                     f"{relative}: expected builds[{index}].archive.{key}="
                     f"{expected!r}, found {actual!r}."
                 )
+    return failures
+
+
+def macos_clean_home_installed_app_source_failures() -> list[str]:
+    expected_sources = (
+        (
+            MACOS_CLEAN_HOME_INSTALLED_APP_RUNNER,
+            CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RUNNER_SHA256,
+        ),
+        (
+            MACOS_CLEAN_HOME_INSTALLED_APP_TEST,
+            CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_TEST_SHA256,
+        ),
+    )
+    failures: list[str] = []
+    for path, expected_sha256 in expected_sources:
+        relative = path.relative_to(ROOT)
+        if not path.is_file():
+            failures.append(f"{relative}: missing clean-HOME source.")
+            continue
+        try:
+            payload = path.read_bytes()
+        except OSError as error:
+            failures.append(
+                f"{relative}: unreadable clean-HOME source: {error}"
+            )
+            continue
+        actual_sha256 = hashlib.sha256(payload).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{relative}: expected SHA-256 {expected_sha256}, "
+                f"found {actual_sha256}."
+            )
+    return failures
+
+
+def macos_clean_home_installed_state_recovery_source_failures() -> list[str]:
+    expected_sources = (
+        (
+            MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_RUNNER,
+            (
+                CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256
+            ),
+        ),
+        (
+            MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_TEST,
+            (
+                CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_TEST_SHA256
+            ),
+        ),
+    )
+    failures: list[str] = []
+    for path, expected_sha256 in expected_sources:
+        relative = path.relative_to(ROOT)
+        if not path.is_file():
+            failures.append(
+                f"{relative}: missing installed state-recovery source."
+            )
+            continue
+        try:
+            payload = path.read_bytes()
+        except OSError as error:
+            failures.append(
+                f"{relative}: unreadable installed state-recovery source: "
+                f"{error}"
+            )
+            continue
+        actual_sha256 = hashlib.sha256(payload).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{relative}: expected SHA-256 {expected_sha256}, "
+                f"found {actual_sha256}."
+            )
     return failures
 
 
@@ -4061,6 +5353,813 @@ def packaged_lifecycle_evidence_failures(
             f"{relative}: result does not match the exact closed "
             f"{build_label} lifecycle contract."
         )
+    return failures
+
+
+def macos_clean_home_installed_app_evidence_failures(
+    result_bytes: bytes | None = None,
+) -> list[str]:
+    return packaged_lifecycle_evidence_failures(
+        result_path=MACOS_CLEAN_HOME_INSTALLED_APP_RESULT,
+        relative=(
+            "dist/lifecycle/"
+            "macos-packaged-app-build-14-clean-home-install-v1.json"
+        ),
+        expected_size=(
+            MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SIZE
+        ),
+        expected_sha256=(
+            MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SHA256
+        ),
+        expected_result=MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT,
+        build_label="historical Build 14 clean-HOME installed-app",
+        result_bytes=result_bytes,
+    )
+
+
+def current_macos_clean_home_installed_app_evidence_failures(
+    result_bytes: bytes | None = None,
+) -> list[str]:
+    return packaged_lifecycle_evidence_failures(
+        result_path=CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_RESULT,
+        relative=(
+            "dist/lifecycle/"
+            "macos-packaged-app-build-20-clean-home-install-v1.json"
+        ),
+        expected_size=(
+            CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SIZE
+        ),
+        expected_sha256=(
+            CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SHA256
+        ),
+        expected_result=CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT,
+        build_label="historical Build 20 clean-HOME installed-app",
+        result_bytes=result_bytes,
+    )
+
+
+def macos_clean_home_installed_state_recovery_evidence_failures(
+    result_bytes: bytes | None = None,
+) -> list[str]:
+    return packaged_lifecycle_evidence_failures(
+        result_path=MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_RESULT,
+        relative=(
+            "dist/lifecycle/"
+            "macos-packaged-app-build-14-clean-home-state-recovery-v1.json"
+        ),
+        expected_size=(
+            MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SIZE
+        ),
+        expected_sha256=(
+            MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SHA256
+        ),
+        expected_result=(
+            MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT
+        ),
+        build_label="historical Build 14 clean-HOME installed state-recovery",
+        result_bytes=result_bytes,
+    )
+
+
+def current_macos_clean_home_installed_state_recovery_evidence_failures(
+    result_bytes: bytes | None = None,
+) -> list[str]:
+    return packaged_lifecycle_evidence_failures(
+        result_path=CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_RESULT,
+        relative=(
+            "dist/lifecycle/"
+            "macos-packaged-app-build-20-clean-home-state-recovery-v1.json"
+        ),
+        expected_size=(
+            CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SIZE
+        ),
+        expected_sha256=(
+            CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SHA256
+        ),
+        expected_result=(
+            CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT
+        ),
+        build_label="historical Build 20 clean-HOME installed state-recovery",
+        result_bytes=result_bytes,
+    )
+
+
+def current_macos_local_dmg_install_evidence_failures(
+    result_bytes: bytes | None = None,
+    source_bytes_by_path: dict[Path, bytes] | None = None,
+) -> list[str]:
+    relative = str(CURRENT_MACOS_LOCAL_DMG_INSTALL_RESULT.relative_to(ROOT))
+    failures: list[str] = []
+
+    for path, expected_sha256 in (
+        (
+            CURRENT_MACOS_LOCAL_DMG_INSTALL_RUNNER,
+            CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RUNNER_SHA256,
+        ),
+        (
+            CURRENT_MACOS_LOCAL_DMG_INSTALL_TEST,
+            CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_TEST_SHA256,
+        ),
+    ):
+        try:
+            payload = (
+                source_bytes_by_path[path]
+                if source_bytes_by_path is not None
+                else path.read_bytes()
+            )
+        except (KeyError, OSError) as error:
+            failures.append(
+                f"{path.relative_to(ROOT)}: cannot read local DMG source: "
+                f"{error}"
+            )
+            continue
+        actual_sha256 = hashlib.sha256(payload).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{path.relative_to(ROOT)}: expected local DMG source "
+                f"SHA-256 {expected_sha256}, found {actual_sha256}."
+            )
+
+    if result_bytes is None:
+        try:
+            result_bytes = CURRENT_MACOS_LOCAL_DMG_INSTALL_RESULT.read_bytes()
+        except OSError as error:
+            failures.append(f"{relative}: cannot read local DMG result: {error}")
+            return failures
+
+    identity = (len(result_bytes), hashlib.sha256(result_bytes).hexdigest())
+    expected_identity = (
+        CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SIZE,
+        CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SHA256,
+    )
+    if identity != expected_identity:
+        failures.append(
+            f"{relative}: expected identity {expected_identity!r}, "
+            f"found {identity!r}."
+        )
+
+    try:
+        result = json.loads(
+            result_bytes.decode("utf-8"),
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+    except (
+        UnicodeError,
+        json.JSONDecodeError,
+        DuplicateJSONKeyError,
+    ) as error:
+        failures.append(f"{relative}: invalid local DMG result JSON: {error}")
+        return failures
+    if not isinstance(result, dict):
+        failures.append(f"{relative}: local DMG result root must be an object.")
+        return failures
+
+    def read_path(path: tuple[str, ...]) -> object:
+        value: object = result
+        for key in path:
+            if not isinstance(value, dict) or key not in value:
+                return None
+            value = value[key]
+        return value
+
+    expectations = (
+        (("schemaVersion",), 1),
+        (("status",), "passed"),
+        (("scope",), "same-host-per-user-ephemeral-local-dmg-install-v1"),
+        (("release", "releaseId"), HISTORICAL_BUILD20_RELEASE_ID),
+        (
+            ("release", "archiveSha256"),
+            HISTORICAL_BUILD20_ARCHIVE_SHA256,
+        ),
+        (
+            ("release", "manifestSha256"),
+            HISTORICAL_BUILD20_MANIFEST_SHA256,
+        ),
+        (("image", "filesystem"), "HFS+"),
+        (("image", "format"), "UDZO"),
+        (("image", "verified"), True),
+        (("image", "ephemeral"), True),
+        (("image", "retained"), False),
+        (("mount", "readOnly"), True),
+        (("mount", "exactFreshMountpoint"), True),
+        (("mount", "detachedBeforeLaunch"), True),
+        (("mount", "unmountedVerified"), True),
+        (("installation", "exactReleaseTreeCopied"), True),
+        (("launchServices", "distinctProcessIdentifiers"), True),
+        (("state", "databaseCount"), 3),
+        (("state", "integrityChecks"), "passed"),
+        (("state", "stableAcrossRelaunch"), True),
+    )
+    for path, expected in expectations:
+        actual = read_path(path)
+        if type(actual) is not type(expected) or actual != expected:
+            failures.append(
+                f"{relative}: expected {'.'.join(path)}={expected!r}, "
+                f"found {actual!r}."
+            )
+
+    runs = read_path(("launchServices", "runs"))
+    if not isinstance(runs, list) or len(runs) != 2:
+        failures.append(
+            f"{relative}: launchServices.runs must contain two launches."
+        )
+    limitations = result.get("limitations")
+    required_limitations = {
+        "not-finder-ui-or-drag-and-drop-evidence",
+        "not-developer-id-notarized-or-stapled-distribution",
+        "not-gatekeeper-quarantine-or-download-evidence",
+        "not-clean-machine-account-or-system-applications",
+        "not-upgrade-n-or-n-minus-one-rollback-production-or-security-evidence",
+    }
+    if not isinstance(limitations, list) or not required_limitations.issubset(
+        {item for item in limitations if isinstance(item, str)}
+    ):
+        failures.append(
+            f"{relative}: local DMG result lost required scope limitations."
+        )
+    return failures
+
+
+def current_runtime_chat_sqlite_cross_process_document_failures(
+    document_text: str | None = None,
+    *,
+    relative: str = "docs/releases/1.0.0-build-21-local-v1.md",
+) -> list[str]:
+    if document_text is None:
+        try:
+            document_text = LOCAL_RELEASE_CURRENT_DOC.read_text(
+                encoding="utf-8"
+            )
+        except (OSError, UnicodeError) as error:
+            return [
+                f"{relative}: cannot validate current Runtime-chat SQLite "
+                f"cross-process evidence: {error}"
+            ]
+
+    normalized_text = re.sub(r"\s+", " ", document_text).strip()
+    failures: list[str] = []
+    for label, pattern in CURRENT_RUNTIME_CHAT_SQLITE_DOCUMENT_REQUIRED_PATTERNS:
+        if not pattern.search(normalized_text):
+            failures.append(
+                f"{relative}: current Build 21 Runtime-chat SQLite "
+                f"cross-process record is missing {label}."
+            )
+
+    stable_message_count = normalized_text.count(
+        CURRENT_RUNTIME_CHAT_SQLITE_STABLE_BUSY_MESSAGE
+    )
+    if stable_message_count != 1:
+        failures.append(
+            f"{relative}: current Build 21 Runtime-chat SQLite stable busy "
+            "message must appear exactly once; found "
+            f"{stable_message_count}."
+        )
+
+    for source_path in (
+        (
+            "apps/macos/RuntimeChatSQLiteCrossProcessQA/Sources/"
+            "RuntimeChatSQLiteCrossProcessQA.swift"
+        ),
+        "script/run_macos_runtime_chat_cross_process_smoke.py",
+        "script/test_run_macos_runtime_chat_cross_process_smoke.py",
+    ):
+        size, sha256 = (
+            LOCAL_RELEASE_EXPECTED_RUNTIME_CHAT_SQLITE_SOURCE_MEMBERS[
+                source_path
+            ]
+        )
+        required_source_bindings = (
+            f"`{source_path}`",
+            f"{size:,} bytes",
+            f"`{sha256}`",
+        )
+        for binding in required_source_bindings:
+            count = normalized_text.count(binding)
+            if count != 1:
+                failures.append(
+                    f"{relative}: Build 21 source inventory must bind "
+                    f"{source_path!r} with {binding!r} exactly once; found "
+                    f"{count}."
+                )
+    return failures
+
+
+def current_runtime_chat_sqlite_source_failures(
+    source_bytes_by_relative: dict[str, bytes] | None = None,
+) -> list[str]:
+    failures: list[str] = []
+    for relative, expected_identity in (
+        LOCAL_RELEASE_EXPECTED_RUNTIME_CHAT_SQLITE_SOURCE_MEMBERS.items()
+    ):
+        try:
+            source_bytes = (
+                source_bytes_by_relative[relative]
+                if source_bytes_by_relative is not None
+                else (ROOT / relative).read_bytes()
+            )
+        except (KeyError, OSError) as error:
+            failures.append(
+                f"{relative}: cannot validate Build 21 Runtime-chat SQLite "
+                f"source binding: {error}"
+            )
+            continue
+        identity = (
+            len(source_bytes),
+            hashlib.sha256(source_bytes).hexdigest(),
+        )
+        if identity != expected_identity:
+            failures.append(
+                f"{relative}: expected Build 21 source inventory identity "
+                f"{expected_identity!r}, found {identity!r}."
+            )
+
+    test_relative = (
+        "apps/macos/CompanionCore/Tests/SQLiteRuntimeChatEventStoreTests.swift"
+    )
+    try:
+        test_source = (
+            source_bytes_by_relative[test_relative]
+            if source_bytes_by_relative is not None
+            else (ROOT / test_relative).read_bytes()
+        ).decode("utf-8")
+    except (KeyError, OSError, UnicodeError) as error:
+        failures.append(
+            f"{test_relative}: cannot validate Build 21 Runtime-chat SQLite "
+            f"Swift regressions: {error}"
+        )
+        test_source = ""
+    for test_name in CURRENT_RUNTIME_CHAT_SQLITE_SWIFT_TESTS:
+        declaration = f"func {test_name}() throws"
+        count = test_source.count(declaration)
+        if count != 1:
+            failures.append(
+                f"{test_relative}: exact Swift regression {test_name!r} must "
+                f"appear once; found {count}."
+            )
+
+    store_relative = (
+        "apps/macos/CompanionCore/Sources/SQLiteRuntimeChatEventStore.swift"
+    )
+    try:
+        store_source = (
+            source_bytes_by_relative[store_relative]
+            if source_bytes_by_relative is not None
+            else (ROOT / store_relative).read_bytes()
+        ).decode("utf-8")
+    except (KeyError, OSError, UnicodeError):
+        store_source = ""
+    for binding in (
+        "private static let busyTimeoutMilliseconds: Int32 = 5_000",
+        "sqlite3_busy_timeout(openedDatabase, Self.busyTimeoutMilliseconds)",
+    ):
+        if store_source.count(binding) != 1:
+            failures.append(
+                f"{store_relative}: exact production busy-timeout binding "
+                f"{binding!r} must appear once."
+            )
+    return failures
+
+
+def current_macos_clean_home_lifecycle_document_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    required_once = (
+        (
+            "dist/lifecycle/"
+            "macos-packaged-app-build-20-clean-home-install-v1.json"
+        ),
+        CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SHA256,
+        (
+            "dist/lifecycle/"
+            "macos-packaged-app-build-20-clean-home-state-recovery-v1.json"
+        ),
+        CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SHA256,
+    )
+    required_claims = (
+        CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_REPEATABILITY_CLAIM,
+    )
+    dmg_required_once = (
+        (
+            "dist/lifecycle/"
+            "macos-packaged-app-build-20-local-dmg-install-v1.json"
+        ),
+        CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SHA256,
+    )
+    documentation_targets = (
+        README_PATH,
+        ROOT / "docs/roadmap.md",
+        ROOT / "docs/handoff.md",
+        ROOT / "docs/progress.md",
+        ROOT / "docs/qa-evidence.md",
+        LOCAL_RELEASE_CURRENT_DOC,
+    )
+    failures: list[str] = []
+    for path in documentation_targets:
+        relative = str(path.relative_to(ROOT))
+        try:
+            document_text = (
+                document_text_by_relative[relative]
+                if (
+                    document_text_by_relative is not None
+                    and relative in document_text_by_relative
+                )
+                else path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError) as error:
+            failures.append(
+                f"{relative}: cannot validate current Build 20 lifecycle "
+                f"bindings: {error}"
+            )
+            continue
+        start_count = document_text.count(
+            CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+        )
+        end_count = document_text.count(
+            CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+        )
+        if (start_count, end_count) != (1, 1):
+            failures.append(
+                f"{relative}: current Build 20 lifecycle block must contain "
+                f"exactly one start and end marker; found "
+                f"{start_count} and {end_count}."
+            )
+            continue
+        start_index = document_text.index(
+            CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+        )
+        body_start = start_index + len(
+            CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+        )
+        end_index = document_text.index(
+            CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+        )
+        if end_index <= body_start:
+            failures.append(
+                f"{relative}: current Build 20 lifecycle markers are "
+                "reversed or empty."
+            )
+            continue
+        block = document_text[body_start:end_index]
+        normalized_block = re.sub(r"\s+", " ", block).strip()
+        if "Build 20" not in normalized_block:
+            failures.append(
+                f"{relative}: current lifecycle block is not explicitly "
+                "bound to Build 20."
+            )
+        historical_build_mentions = {
+            int(value)
+            for value in re.findall(
+                r"\bBuild\s+([1-9][0-9]*)\b",
+                normalized_block,
+                re.IGNORECASE,
+            )
+            if int(value) < LOCAL_RELEASE_BUILD_NUMBER
+        }
+        historical_path_mentions = {
+            int(value)
+            for value in re.findall(
+                r"macos-packaged-app-build-([1-9][0-9]*)-",
+                normalized_block,
+                re.IGNORECASE,
+            )
+            if int(value) < LOCAL_RELEASE_BUILD_NUMBER
+        }
+        historical_contamination = sorted(
+            historical_build_mentions | historical_path_mentions
+        )
+        if historical_contamination:
+            failures.append(
+                f"{relative}: historical Build "
+                f"{historical_contamination!r} content entered the current "
+                "Build 20 lifecycle block."
+            )
+        block_required_once = list(required_once)
+        if path == LOCAL_RELEASE_CURRENT_DOC:
+            block_required_once.extend(
+                (
+                    CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RUNNER_SHA256,
+                    CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_TEST_SHA256,
+                    (
+                        CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256
+                    ),
+                    (
+                        CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_TEST_SHA256
+                    ),
+                )
+            )
+        for binding in block_required_once:
+            count = block.count(binding)
+            if count != 1:
+                failures.append(
+                    f"{relative}: current Build 20 lifecycle block must "
+                    f"contain binding {binding!r} exactly once; found {count}."
+                )
+        dmg_scope = document_text if path == LOCAL_RELEASE_CURRENT_DOC else block
+        for binding in dmg_required_once:
+            count = dmg_scope.count(binding)
+            if count != 1:
+                failures.append(
+                    f"{relative}: current Build 20 DMG evidence must contain "
+                    f"binding {binding!r} exactly once; found {count}."
+                )
+        size_expectations = (
+            CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SIZE,
+            CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SIZE,
+        )
+        for expected_size in size_expectations:
+            formatted_size = f"{expected_size:,}"
+            if not re.search(
+                rf"\b{re.escape(formatted_size)}(?:-byte| bytes)\b",
+                normalized_block,
+            ):
+                failures.append(
+                    f"{relative}: current Build 20 lifecycle block is "
+                    f"missing exact {formatted_size}-byte result size."
+                )
+        dmg_size_scope = (
+            re.sub(r"\s+", " ", document_text).strip()
+            if path == LOCAL_RELEASE_CURRENT_DOC
+            else normalized_block
+        )
+        dmg_size = f"{CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SIZE:,}"
+        if not re.search(
+            rf"\b{re.escape(dmg_size)}(?:-byte| bytes)\b",
+            dmg_size_scope,
+        ):
+            failures.append(
+                f"{relative}: current Build 20 DMG evidence is missing exact "
+                f"{dmg_size}-byte result size."
+            )
+        for claim in required_claims:
+            normalized_claim = re.sub(r"\s+", " ", claim).strip()
+            count = normalized_block.count(normalized_claim)
+            if count != 1:
+                failures.append(
+                    f"{relative}: current Build 20 lifecycle block is "
+                    f"required to contain exact bounded claim {claim!r} "
+                    f"once; found {count}."
+                )
+        boundary_match = re.search(
+            r"\bThese same-host, per-user Build 20\b.*?"
+            r"\bproduction readiness\.",
+            normalized_block,
+            re.IGNORECASE,
+        )
+        if boundary_match is None:
+            failures.append(
+                f"{relative}: current Build 20 lifecycle block is missing "
+                "its bounded non-production sentence."
+            )
+            block_without_boundary = normalized_block
+        else:
+            boundary = boundary_match.group(0)
+            for term in CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_BOUNDARY_TERMS:
+                if term.lower() not in boundary.lower():
+                    failures.append(
+                        f"{relative}: current Build 20 lifecycle boundary is "
+                        f"missing {term!r}."
+                    )
+            if not re.search(
+                r"\bdo not (?:themselves )?qualify\b",
+                boundary,
+                re.IGNORECASE,
+            ):
+                failures.append(
+                    f"{relative}: current Build 20 lifecycle boundary must "
+                    "remain explicitly non-qualifying."
+                )
+            block_without_boundary = (
+                normalized_block[: boundary_match.start()]
+                + normalized_block[boundary_match.end() :]
+            )
+        prohibited_positive_claims = (
+            r"\bqualif(?:y|ies|ied|ication)\b",
+            r"\bprov(?:e|es|ed|en)\b",
+            r"\bcertif(?:y|ies|ied|ication)\b",
+            r"\bproduction[- ]ready\b",
+            (
+                r"\b(?:clean[- ]machine|DMG/Finder|signed/notarized|"
+                r"physical[- ]device)\b.{0,100}\b(?:passes?|passed|"
+                r"supports?|supported)\b"
+            ),
+            (
+                r"\b(?:passes?|passed|supports?|supported)\b.{0,100}"
+                r"\b(?:clean[- ]machine|DMG/Finder|signed/notarized|"
+                r"physical[- ]device)\b"
+            ),
+        )
+        for pattern in prohibited_positive_claims:
+            if re.search(pattern, block_without_boundary, re.IGNORECASE):
+                failures.append(
+                    f"{relative}: current Build 20 lifecycle block contains "
+                    "a contradictory positive qualification claim."
+                )
+                break
+    return failures
+
+
+def current_android_drawer_search_document_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    documentation_targets = (
+        (
+            ROOT / "docs/roadmap.md",
+            "The current unreleased G5 product-quality slice",
+            "The current G5 accessibility slice",
+        ),
+        (
+            ROOT / "docs/handoff.md",
+            CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END,
+            "- The multilingual full-matrix V3 path",
+        ),
+        (
+            ROOT / "docs/progress.md",
+            "## 2026-07-29 Unreleased Android Drawer Semantic Chat Search UX",
+            "## 2026-07-29 Unreleased Multilingual Full-Matrix V3 Preparation",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "## 2026-07-29 Android Drawer Semantic Chat Search UX Checklist",
+            "## 2026-07-29 Multilingual Full-Matrix V3 Preparation Checklist",
+        ),
+    )
+    required_claims = (
+        CURRENT_ANDROID_DRAWER_SEARCH_BEHAVIOR_CLAIM,
+        CURRENT_ANDROID_DRAWER_SEARCH_ACTION_STATE_CLAIM,
+        CURRENT_ANDROID_DRAWER_SEARCH_PENDING_CLAIM,
+        CURRENT_ANDROID_DRAWER_SEARCH_RESULT_CLAIM,
+        CURRENT_ANDROID_DRAWER_SEARCH_EVIDENCE_CLAIM,
+    )
+    stale_current_markers = (
+        "1,179 tests",
+        "1,191-test",
+        "1,192-test",
+        "167 AppNavigationTest",
+        "167-test navigation",
+        "167 navigation-policy",
+        "12 search-related RuntimeClientViewModelTest",
+        "13 search-related RuntimeClientViewModelTest",
+        "24 drawer Compose",
+        "24-test drawer Compose",
+        "24 navigation-drawer",
+        "three previously recorded project warnings",
+    )
+    failures: list[str] = []
+
+    for path, current_section_start, next_section_start in documentation_targets:
+        relative = str(path.relative_to(ROOT))
+        try:
+            document_text = (
+                document_text_by_relative[relative]
+                if (
+                    document_text_by_relative is not None
+                    and relative in document_text_by_relative
+                )
+                else path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError) as error:
+            failures.append(
+                f"{relative}: cannot validate current Android drawer search "
+                f"documentation: {error}"
+            )
+            continue
+
+        start_count = document_text.count(
+            CURRENT_ANDROID_DRAWER_SEARCH_DOCUMENT_START
+        )
+        end_count = document_text.count(
+            CURRENT_ANDROID_DRAWER_SEARCH_DOCUMENT_END
+        )
+        if (start_count, end_count) != (1, 1):
+            failures.append(
+                f"{relative}: current Android drawer search block must "
+                f"contain exactly one start and end marker; found "
+                f"{start_count} and {end_count}."
+            )
+            continue
+
+        start_index = document_text.index(
+            CURRENT_ANDROID_DRAWER_SEARCH_DOCUMENT_START
+        )
+        body_start = start_index + len(
+            CURRENT_ANDROID_DRAWER_SEARCH_DOCUMENT_START
+        )
+        end_index = document_text.index(
+            CURRENT_ANDROID_DRAWER_SEARCH_DOCUMENT_END
+        )
+        if end_index <= body_start:
+            failures.append(
+                f"{relative}: current Android drawer search markers are "
+                "reversed or empty."
+            )
+            continue
+        current_section_index = document_text.find(current_section_start)
+        next_section_index = document_text.find(
+            next_section_start,
+            max(current_section_index, 0) + len(current_section_start),
+        )
+        if not (
+            current_section_index >= 0
+            and next_section_index >= 0
+            and current_section_index < start_index
+            and end_index < next_section_index
+        ):
+            failures.append(
+                f"{relative}: current Android drawer search block must remain "
+                "inside its canonical current section."
+            )
+
+        block = document_text[body_start:end_index]
+        normalized_block = re.sub(r"\s+", " ", block).strip()
+        closed_block_remainder = normalized_block
+        for claim in required_claims:
+            normalized_claim = re.sub(r"\s+", " ", claim).strip()
+            count = normalized_block.count(normalized_claim)
+            if count != 1:
+                failures.append(
+                    f"{relative}: current Android drawer search block must "
+                    f"contain exact claim {claim!r} once; found {count}."
+                )
+            else:
+                closed_block_remainder = closed_block_remainder.replace(
+                    normalized_claim,
+                    "",
+                    1,
+                )
+        boundary_match = re.search(
+            r"This source/JVM/Compose evidence is not part of the immutable "
+            r"Build 17 archive and (?:is|was) first source-bound by the "
+            r"immutable Build 18 archive; (?:Build 19 retains it\. )?It does "
+            r"not establish physical touch, TalkBack, provider, device, "
+            r"network, installation, signing, or release behavior\.",
+            normalized_block,
+            re.IGNORECASE,
+        )
+        if boundary_match is None:
+            failures.append(
+                f"{relative}: current Android drawer search block is missing "
+                "its Build 17/18/19 archive boundary."
+            )
+        else:
+            closed_block_remainder = closed_block_remainder.replace(
+                boundary_match.group(0),
+                "",
+                1,
+            )
+
+        closed_block_remainder = re.sub(
+            r"-\s*(?:\[[ xX]\]\s*)?",
+            " ",
+            closed_block_remainder,
+        ).strip()
+        if closed_block_remainder:
+            failures.append(
+                f"{relative}: current Android drawer search block is closed "
+                f"to additional claims; found {closed_block_remainder!r}."
+            )
+
+        for stale_marker in stale_current_markers:
+            if stale_marker in normalized_block:
+                failures.append(
+                    f"{relative}: current Android drawer search block retains "
+                    f"stale evidence marker {stale_marker!r}."
+                )
+
+        block_without_boundary = (
+            normalized_block[: boundary_match.start()]
+            + normalized_block[boundary_match.end() :]
+            if boundary_match is not None
+            else normalized_block
+        )
+        prohibited_positive_claims = (
+            (
+                r"\bphysical touch\b.{0,100}\b"
+                r"(?:pass(?:es|ed)?|prov(?:e|es|ed|en)|"
+                r"qualif(?:y|ies|ied|ication))\b"
+            ),
+            (
+                r"\bTalkBack\b.{0,100}\b"
+                r"(?:pass(?:es|ed)?|prov(?:e|es|ed|en)|"
+                r"qualif(?:y|ies|ied|ication))\b"
+            ),
+            (
+                r"\b(?:pass(?:es|ed)?|prov(?:e|es|ed|en)|"
+                r"qualif(?:y|ies|ied|ication))\b.{0,100}\bTalkBack\b"
+            ),
+            r"\bpart of the immutable Build 17 archive\b",
+            r"\bproduction[- ]ready\b",
+        )
+        if any(
+            re.search(pattern, block_without_boundary, re.IGNORECASE)
+            for pattern in prohibited_positive_claims
+        ):
+            failures.append(
+                f"{relative}: current Android drawer search block contains "
+                "a contradictory device, archive, or production claim."
+            )
+
     return failures
 
 
@@ -4333,6 +6432,461 @@ def syntax_only_no_device_gate_evidence_failures() -> list[str]:
     return failures
 
 
+def historical_build16_reproducibility_failures(
+    *,
+    document_text: str | None = None,
+    result_bytes_by_path: dict[str, bytes] | None = None,
+) -> list[str]:
+    relative_doc = HISTORICAL_BUILD16_DOC.relative_to(ROOT)
+    if document_text is None:
+        if not HISTORICAL_BUILD16_DOC.is_file():
+            return [f"{relative_doc}: missing Build 16 historical record."]
+        try:
+            document_text = HISTORICAL_BUILD16_DOC.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            return [
+                f"{relative_doc}: unreadable Build 16 historical record: "
+                f"{error}"
+            ]
+
+    failures: list[str] = []
+    required_document_claims = (
+        f"{HISTORICAL_BUILD16_ARCHIVE_SIZE:,} bytes",
+        f"`{HISTORICAL_BUILD16_ARCHIVE_SHA256}`",
+        f"{HISTORICAL_BUILD16_RESULT_SIZE:,} bytes",
+        f"`{HISTORICAL_BUILD16_RESULT_SHA256}`",
+        f"{HISTORICAL_BUILD16_FAILED_ATTEMPT_SIZE:,} bytes",
+        f"`{HISTORICAL_BUILD16_FAILED_ATTEMPT_SHA256}`",
+        f"{HISTORICAL_BUILD16_FAILED_CONFIRMATION_SIZE:,} bytes",
+        f"`{HISTORICAL_BUILD16_FAILED_CONFIRMATION_SHA256}`",
+        "`publication=null`",
+        "Build 17 does not retroactively qualify Build 16.",
+    )
+    for claim in required_document_claims:
+        if claim not in document_text:
+            failures.append(
+                f"{relative_doc}: missing exact Build 16 history claim "
+                f"{claim!r}."
+            )
+
+    result_specs = (
+        (
+            HISTORICAL_BUILD16_RESULT,
+            HISTORICAL_BUILD16_RESULT_SIZE,
+            HISTORICAL_BUILD16_RESULT_SHA256,
+            "passed",
+        ),
+        (
+            HISTORICAL_BUILD16_FAILED_ATTEMPT,
+            HISTORICAL_BUILD16_FAILED_ATTEMPT_SIZE,
+            HISTORICAL_BUILD16_FAILED_ATTEMPT_SHA256,
+            "failed",
+        ),
+        (
+            HISTORICAL_BUILD16_FAILED_CONFIRMATION,
+            HISTORICAL_BUILD16_FAILED_CONFIRMATION_SIZE,
+            HISTORICAL_BUILD16_FAILED_CONFIRMATION_SHA256,
+            "failed",
+        ),
+    )
+    expected_failed_member_paths = [
+        "macos/AetherLink.app/Contents/MacOS/AetherLink",
+        "macos/AetherLink.dSYM/Contents/Resources/DWARF/AetherLink",
+        "macos/AetherLink.dSYM/Contents/Resources/Relocations/aarch64/AetherLink.yml",
+        "manifest.json",
+    ]
+    expected_failure_categories = [
+        "checksum",
+        "manifest",
+        "member-bytes",
+        "member-metadata",
+        "zip",
+    ]
+    for path, expected_size, expected_sha256, expected_status in result_specs:
+        relative = path.relative_to(ROOT)
+        if result_bytes_by_path is None:
+            if not path.is_file():
+                failures.append(
+                    f"{relative}: missing Build 16 reproducibility result."
+                )
+                continue
+            try:
+                payload = path.read_bytes()
+            except OSError as error:
+                failures.append(
+                    f"{relative}: unreadable Build 16 result: {error}"
+                )
+                continue
+        else:
+            payload = result_bytes_by_path.get(str(relative))
+            if payload is None:
+                failures.append(
+                    f"{relative}: missing injected Build 16 result."
+                )
+                continue
+        try:
+            result = json.loads(
+                payload.decode("utf-8"),
+                object_pairs_hook=reject_duplicate_json_keys,
+            )
+        except (
+            UnicodeError,
+            json.JSONDecodeError,
+            DuplicateJSONKeyError,
+        ) as error:
+            failures.append(f"{relative}: unreadable Build 16 result: {error}")
+            continue
+        identity = (len(payload), hashlib.sha256(payload).hexdigest())
+        expected_identity = (expected_size, expected_sha256)
+        if identity != expected_identity:
+            failures.append(
+                f"{relative}: expected identity {expected_identity!r}, "
+                f"found {identity!r}."
+            )
+        if not isinstance(result, dict):
+            failures.append(f"{relative}: result root must be an object.")
+            continue
+        if result.get("status") != expected_status:
+            failures.append(
+                f"{relative}: expected status={expected_status!r}, found "
+                f"{result.get('status')!r}."
+            )
+        publication = result.get("publication")
+        if expected_status == "passed":
+            if (
+                not isinstance(publication, dict)
+                or publication.get("archiveSha256")
+                != HISTORICAL_BUILD16_ARCHIVE_SHA256
+            ):
+                failures.append(
+                    f"{relative}: successful Build 16 result must retain the "
+                    "published archive identity."
+                )
+            continue
+        if publication is not None:
+            failures.append(
+                f"{relative}: failed Build 16 result must retain publication=null."
+            )
+        comparison = result.get("comparison")
+        if not isinstance(comparison, dict):
+            failures.append(
+                f"{relative}: failed Build 16 result must retain comparison."
+            )
+            continue
+        member_differences = comparison.get("memberDifferences")
+        actual_member_paths = (
+            [
+                item.get("path")
+                for item in member_differences
+                if isinstance(item, dict)
+            ]
+            if isinstance(member_differences, list)
+            else None
+        )
+        if actual_member_paths != expected_failed_member_paths:
+            failures.append(
+                f"{relative}: expected failed member paths "
+                f"{expected_failed_member_paths!r}, found "
+                f"{actual_member_paths!r}."
+            )
+        if comparison.get("differences") != expected_failure_categories:
+            failures.append(
+                f"{relative}: expected failure categories "
+                f"{expected_failure_categories!r}, found "
+                f"{comparison.get('differences')!r}."
+            )
+    return failures
+
+
+def historical_build17_release_document_failures(
+    document_text: str | None = None,
+) -> list[str]:
+    relative = "docs/releases/1.0.0-build-17-local-v1.md"
+    if document_text is None:
+        path = ROOT / relative
+        try:
+            document_text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            return [
+                f"{relative}: cannot validate immutable Build 17 history: "
+                f"{error}"
+            ]
+
+    normalized_text = re.sub(r"\s+", " ", document_text).strip()
+    required_once = (
+        (
+            "archive directory",
+            f"`dist/releases/{HISTORICAL_BUILD17_RELEASE_ID}/`",
+        ),
+        (
+            "canonical ZIP identity",
+            (
+                f"| Canonical ZIP | {HISTORICAL_BUILD17_ARCHIVE_SIZE:,} bytes | "
+                f"`{HISTORICAL_BUILD17_ARCHIVE_SHA256}` |"
+            ),
+        ),
+        (
+            "manifest identity",
+            (
+                "| External/embedded manifest | "
+                f"{HISTORICAL_BUILD17_MANIFEST_SIZE:,} bytes | "
+                f"`{HISTORICAL_BUILD17_MANIFEST_SHA256}` |"
+            ),
+        ),
+        (
+            "source inventory identity",
+            (
+                "| Source inventory | "
+                f"{HISTORICAL_BUILD17_SOURCE_INVENTORY_SIZE:,} bytes | "
+                f"`{HISTORICAL_BUILD17_SOURCE_INVENTORY_SHA256}` |"
+            ),
+        ),
+        (
+            "source inventory duplicate identity",
+            (
+                f"- `source-files.json`: "
+                f"{HISTORICAL_BUILD17_SOURCE_INVENTORY_SIZE:,} bytes, "
+                f"`{HISTORICAL_BUILD17_SOURCE_INVENTORY_SHA256}`."
+            ),
+        ),
+        (
+            "source snapshot identity",
+            (
+                f"Its {HISTORICAL_BUILD17_SOURCE_FILE_COUNT}-file source "
+                "inventory has snapshot digest "
+                f"`{HISTORICAL_BUILD17_SOURCE_SNAPSHOT_SHA256}`."
+            ),
+        ),
+        (
+            "primary reproducibility identity",
+            (
+                "The first result is "
+                f"`{HISTORICAL_BUILD17_REPRODUCIBILITY_RESULT_PATH}`. "
+                f"It is {HISTORICAL_BUILD17_REPRODUCIBILITY_RESULT_SIZE:,} "
+                "bytes with SHA-256 "
+                f"`{HISTORICAL_BUILD17_REPRODUCIBILITY_RESULT_SHA256}`."
+            ),
+        ),
+        (
+            "reproducibility confirmation identity",
+            (
+                "The separate confirmation result is "
+                f"`{HISTORICAL_BUILD17_REPRODUCIBILITY_CONFIRMATION_PATH}`. "
+                "It is "
+                f"{HISTORICAL_BUILD17_REPRODUCIBILITY_CONFIRMATION_SIZE:,} "
+                "bytes with SHA-256 "
+                f"`{HISTORICAL_BUILD17_REPRODUCIBILITY_CONFIRMATION_SHA256}`."
+            ),
+        ),
+    )
+    failures: list[str] = []
+    for label, claim in required_once:
+        normalized_claim = re.sub(r"\s+", " ", claim).strip()
+        count = normalized_text.count(normalized_claim)
+        if count != 1:
+            failures.append(
+                f"{relative}: immutable Build 17 {label} must appear exactly "
+                f"once; found {count}."
+            )
+
+    start_count = document_text.count(
+        HISTORICAL_BUILD17_LIFECYCLE_DOCUMENT_START
+    )
+    end_count = document_text.count(
+        HISTORICAL_BUILD17_LIFECYCLE_DOCUMENT_END
+    )
+    if (start_count, end_count) != (1, 1):
+        failures.append(
+            f"{relative}: historical Build 17 lifecycle block must contain "
+            "exactly one distinct start and end marker; found "
+            f"{start_count} and {end_count}."
+        )
+        return failures
+
+    start_index = document_text.index(
+        HISTORICAL_BUILD17_LIFECYCLE_DOCUMENT_START
+    )
+    body_start = start_index + len(
+        HISTORICAL_BUILD17_LIFECYCLE_DOCUMENT_START
+    )
+    end_index = document_text.index(
+        HISTORICAL_BUILD17_LIFECYCLE_DOCUMENT_END
+    )
+    if end_index <= body_start:
+        failures.append(
+            f"{relative}: historical Build 17 lifecycle markers are reversed "
+            "or empty."
+        )
+        return failures
+
+    block = document_text[body_start:end_index]
+    normalized_block = re.sub(r"\s+", " ", block).strip()
+    lifecycle_claims = (
+        (
+            "installed-app result identity",
+            (
+                f"`{HISTORICAL_BUILD17_INSTALLED_APP_RESULT_PATH}`, "
+                f"{HISTORICAL_BUILD17_INSTALLED_APP_RESULT_SIZE:,} bytes with "
+                "SHA-256 "
+                f"`{HISTORICAL_BUILD17_INSTALLED_APP_RESULT_SHA256}`."
+            ),
+        ),
+        (
+            "state-recovery result identity",
+            (
+                f"`{HISTORICAL_BUILD17_STATE_RECOVERY_RESULT_PATH}`, "
+                f"{HISTORICAL_BUILD17_STATE_RECOVERY_RESULT_SIZE:,} bytes with "
+                "SHA-256 "
+                f"`{HISTORICAL_BUILD17_STATE_RECOVERY_RESULT_SHA256}`."
+            ),
+        ),
+    )
+    for label, claim in lifecycle_claims:
+        count = normalized_block.count(claim)
+        if count != 1:
+            failures.append(
+                f"{relative}: historical Build 17 lifecycle {label} must "
+                f"appear exactly once inside its distinct block; found {count}."
+            )
+    if (
+        CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START in document_text
+        or CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END in document_text
+    ):
+        failures.append(
+            f"{relative}: current Build 20 lifecycle markers must not enter "
+            "the immutable historical Build 17 record."
+        )
+    return failures
+
+
+def historical_build18_release_document_failures(
+    document_text: str | None = None,
+) -> list[str]:
+    relative = "docs/releases/1.0.0-build-18-local-v1.md"
+    if document_text is None:
+        try:
+            document_text = (ROOT / relative).read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            return [
+                f"{relative}: cannot validate immutable Build 18 history: "
+                f"{error}"
+            ]
+
+    required_bindings = (
+        HISTORICAL_BUILD18_RELEASE_ID,
+        f"{HISTORICAL_BUILD18_ARCHIVE_SIZE:,} bytes",
+        HISTORICAL_BUILD18_ARCHIVE_SHA256,
+        f"{HISTORICAL_BUILD18_MANIFEST_SIZE:,} bytes",
+        HISTORICAL_BUILD18_MANIFEST_SHA256,
+        f"{HISTORICAL_BUILD18_CHECKSUM_SIZE:,} bytes",
+        HISTORICAL_BUILD18_CHECKSUM_SHA256,
+        f"{HISTORICAL_BUILD18_REPRODUCIBILITY_RESULT_SIZE:,} bytes",
+        HISTORICAL_BUILD18_REPRODUCIBILITY_RESULT_SHA256,
+        (
+            f"{HISTORICAL_BUILD18_REPRODUCIBILITY_CONFIRMATION_SIZE:,} "
+            "bytes"
+        ),
+        HISTORICAL_BUILD18_REPRODUCIBILITY_CONFIRMATION_SHA256,
+        f"{HISTORICAL_BUILD18_SOURCE_FILE_COUNT}-file source inventory",
+        HISTORICAL_BUILD18_SOURCE_SNAPSHOT_SHA256,
+        HISTORICAL_BUILD18_SOURCE_OVERLAY_SHA256,
+        f"{HISTORICAL_BUILD18_SOURCE_INVENTORY_SIZE:,} bytes",
+        HISTORICAL_BUILD18_SOURCE_INVENTORY_SHA256,
+        HISTORICAL_BUILD18_MACOS_UUID,
+        HISTORICAL_BUILD18_INSTALLED_APP_RESULT_PATH,
+        HISTORICAL_BUILD18_INSTALLED_APP_RESULT_SHA256,
+        HISTORICAL_BUILD18_STATE_RECOVERY_RESULT_PATH,
+        HISTORICAL_BUILD18_STATE_RECOVERY_RESULT_SHA256,
+    )
+    failures = [
+        f"{relative}: immutable Build 18 binding {binding!r} is missing."
+        for binding in required_bindings
+        if binding not in document_text
+    ]
+    if (
+        CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START in document_text
+        or CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END in document_text
+    ):
+        failures.append(
+            f"{relative}: current Build 20 lifecycle markers must not enter "
+            "the immutable historical Build 18 record."
+        )
+    return failures
+
+
+def historical_build19_release_document_failures(
+    document_text: str | None = None,
+) -> list[str]:
+    relative = "docs/releases/1.0.0-build-19-local-v1.md"
+    if document_text is None:
+        try:
+            document_text = (ROOT / relative).read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            return [
+                f"{relative}: cannot validate immutable Build 19 history: "
+                f"{error}"
+            ]
+
+    required_bindings = (
+        "Build 19 is retained as an immutable historical qualification record.",
+        "Run this historical source-bound readback with historical mode:",
+        HISTORICAL_BUILD19_RELEASE_ID,
+        f"{HISTORICAL_BUILD19_ARCHIVE_SIZE:,} bytes",
+        HISTORICAL_BUILD19_ARCHIVE_SHA256,
+        f"{HISTORICAL_BUILD19_MANIFEST_SIZE:,} bytes",
+        HISTORICAL_BUILD19_MANIFEST_SHA256,
+        f"{HISTORICAL_BUILD19_CHECKSUM_SIZE:,} bytes",
+        HISTORICAL_BUILD19_CHECKSUM_SHA256,
+        f"{HISTORICAL_BUILD19_REPRODUCIBILITY_RESULT_SIZE:,} bytes",
+        HISTORICAL_BUILD19_REPRODUCIBILITY_RESULT_SHA256,
+        (
+            f"{HISTORICAL_BUILD19_REPRODUCIBILITY_CONFIRMATION_SIZE:,} "
+            "bytes"
+        ),
+        HISTORICAL_BUILD19_REPRODUCIBILITY_CONFIRMATION_SHA256,
+        f"{HISTORICAL_BUILD19_SOURCE_FILE_COUNT}-file source inventory",
+        HISTORICAL_BUILD19_SOURCE_SNAPSHOT_SHA256,
+        HISTORICAL_BUILD19_SOURCE_OVERLAY_SHA256,
+        f"{HISTORICAL_BUILD19_SOURCE_INVENTORY_SIZE:,} bytes",
+        HISTORICAL_BUILD19_SOURCE_INVENTORY_SHA256,
+        (
+            "dist/lifecycle/"
+            "macos-packaged-app-build-19-clean-home-install-v1.json"
+        ),
+        f"{HISTORICAL_BUILD19_INSTALLED_APP_RESULT_SIZE:,} bytes",
+        HISTORICAL_BUILD19_INSTALLED_APP_RESULT_SHA256,
+        (
+            "dist/lifecycle/"
+            "macos-packaged-app-build-19-clean-home-state-recovery-v1.json"
+        ),
+        f"{HISTORICAL_BUILD19_STATE_RECOVERY_RESULT_SIZE:,} bytes",
+        HISTORICAL_BUILD19_STATE_RECOVERY_RESULT_SHA256,
+    )
+    failures = [
+        f"{relative}: immutable Build 19 binding {binding!r} is missing."
+        for binding in required_bindings
+        if binding not in document_text
+    ]
+    if (
+        CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START in document_text
+        or CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END in document_text
+    ):
+        failures.append(
+            f"{relative}: current Build 20 lifecycle markers must not enter "
+            "the immutable historical Build 19 record."
+        )
+    for stale_claim in (
+        "Run the current source-bound readback without historical mode:",
+        "carries current same-host, per-user macOS installed-lifecycle",
+    ):
+        if stale_claim in document_text:
+            failures.append(
+                f"{relative}: immutable Build 19 record contains stale "
+                f"current-state claim {stale_claim!r}."
+            )
+    return failures
+
+
 def historical_local_release_document_failures(
     *,
     ledger_bytes: bytes | None = None,
@@ -4351,11 +6905,6 @@ def historical_local_release_document_failures(
             f"document lineage: {error}"
         ]
 
-    current = entries[-1]
-    current_doc_relative = (
-        "docs/releases/"
-        f"{current.marketing_version}-build-{current.build_number}-local-v1.md"
-    )
     failures: list[str] = []
     for entry in entries[:-1]:
         relative = (
@@ -4389,17 +6938,6 @@ def historical_local_release_document_failures(
             f"aetherlink-{entry.marketing_version}"
             f"+{entry.build_number}-local-v1"
         )
-        required_text = (
-            (
-                "current qualification record pointer",
-                f"`{current_doc_relative}`",
-            ),
-        )
-        for label, expected in required_text:
-            if expected not in document_text:
-                failures.append(
-                    f"{relative}: missing exact {label} {expected!r}."
-                )
         expected_status = (
             "superseded local release-engineering candidate, "
             "not a production release."
@@ -4433,10 +6971,19 @@ def historical_local_release_document_failures(
             and entry.marketing_version == LOCAL_RELEASE_MARKETING_VERSION
         )
         if is_fixture_record:
-            if readback_targets.count(release_id) != 1:
+            fixture_command_count = document_text.count(
+                LOCAL_RELEASE_FIXTURE_READBACK_COMMAND
+            )
+            if fixture_command_count != 2:
+                failures.append(
+                    f"{relative}: exact historical Build 3 readback command "
+                    "must appear twice; found "
+                    f"{fixture_command_count}."
+                )
+            if readback_targets.count(release_id) != 2:
                 failures.append(
                     f"{relative}: historical archive readback target must "
-                    f"include exactly one {release_id!r}; found "
+                    f"include exactly two {release_id!r}; found "
                     f"{readback_targets!r}."
                 )
         elif readback_targets != [release_id]:
@@ -4456,73 +7003,394 @@ def historical_local_release_document_failures(
                 f"{relative}: historical readback mode must appear exactly "
                 f"once; found {historical_mode_count}."
             )
-        release_doc_mentions = re.findall(
-            r"docs/releases/[0-9]+\.[0-9]+\.[0-9]+-build-"
-            r"[1-9][0-9]*-local-v1\.md",
-            document_text,
-        )
-        if is_fixture_record:
-            release_doc_pointer_valid = (
-                release_doc_mentions.count(current_doc_relative) == 1
+        if entry.build_number == HISTORICAL_BUILD17_BUILD_NUMBER:
+            failures.extend(
+                historical_build17_release_document_failures(document_text)
             )
-        else:
-            release_doc_pointer_valid = (
-                release_doc_mentions == [current_doc_relative]
+        if entry.build_number == 18:
+            failures.extend(
+                historical_build18_release_document_failures(document_text)
             )
-        if not release_doc_pointer_valid:
-            failures.append(
-                f"{relative}: current release document pointer must appear "
-                f"exactly once as {current_doc_relative!r}; found "
-                f"{release_doc_mentions!r}."
-            )
-        current_claim_builds = [
-            int(value)
-            for value in re.findall(
-                r"\bBuild\s+([1-9][0-9]*)\b"
-                r"(?:(?!\bBuild\s+[1-9][0-9]*\b).){0,180}?"
-                r"\bcurrent\s+local\s+qualification\s+record\b",
-                document_text,
-                re.IGNORECASE | re.DOTALL,
-            )
-        ]
-        if is_fixture_record:
-            current_claim_valid = (
-                current_claim_builds.count(current.build_number) == 1
-            )
-        else:
-            current_claim_valid = (
-                current_claim_builds == [current.build_number]
-            )
-        if not current_claim_valid:
-            failures.append(
-                f"{relative}: current qualification prose must name build "
-                f"{current.build_number} exactly once; found "
-                f"{current_claim_builds!r}."
-            )
-        contract_claim_builds = [
-            int(value)
-            for value in re.findall(
-                r"\bcontract\s+now\s+lives\s+in\s+the\s+build\s+"
-                r"([1-9][0-9]*)\s+record\b",
-                document_text,
-                re.IGNORECASE,
-            )
-        ]
-        if is_fixture_record:
-            contract_claim_valid = (
-                contract_claim_builds.count(current.build_number) == 1
-            )
-        else:
-            contract_claim_valid = (
-                contract_claim_builds == [current.build_number]
-            )
-        if not contract_claim_valid:
-            failures.append(
-                f"{relative}: fuller contract must point to current build "
-                f"{current.build_number} exactly once; found "
-                f"{contract_claim_builds!r}."
+        if entry.build_number == 19:
+            failures.extend(
+                historical_build19_release_document_failures(document_text)
             )
 
+    return failures
+
+
+def readme_current_local_release_failures(
+    *,
+    ledger_bytes: bytes | None = None,
+    readme_text: str | None = None,
+) -> list[str]:
+    try:
+        entries = parse_release_version_ledger(
+            LOCAL_RELEASE_LEDGER.read_bytes()
+            if ledger_bytes is None
+            else ledger_bytes
+        )
+    except (OSError, LedgerError) as error:
+        return [
+            "release/version-ledger.tsv: cannot validate README current "
+            f"release lineage: {error}"
+        ]
+    try:
+        document_text = (
+            README_PATH.read_text(encoding="utf-8")
+            if readme_text is None
+            else readme_text
+        )
+    except (OSError, UnicodeError) as error:
+        return [f"README.md: unreadable current release guidance: {error}"]
+
+    current = entries[-1]
+    current_release_id = (
+        f"aetherlink-{current.marketing_version}"
+        f"+{current.build_number}-local-v1"
+    )
+    current_doc = (
+        "docs/releases/"
+        f"{current.marketing_version}-build-"
+        f"{current.build_number}-local-v1.md"
+    )
+    failures: list[str] = []
+
+    ledger_claims = re.findall(
+        r"`release/version-ledger\.tsv`; its current entry is marketing "
+        r"version `([^`]+)`\s+and shared build number `([1-9][0-9]*)`\.",
+        document_text,
+    )
+    expected_ledger_claim = [
+        (current.marketing_version, str(current.build_number))
+    ]
+    if ledger_claims != expected_ledger_claim:
+        failures.append(
+            "README.md: current ledger claim must appear exactly once as "
+            f"{expected_ledger_claim[0]!r}; found {ledger_claims!r}."
+        )
+
+    output_claims = re.findall(
+        r"The current output is\s+"
+        r"`dist/releases/(aetherlink-[^`/]+)/`\.",
+        document_text,
+    )
+    if output_claims != [current_release_id]:
+        failures.append(
+            "README.md: current output must appear exactly once as "
+            f"{current_release_id!r}; found {output_claims!r}."
+        )
+
+    qualification_claims = [
+        int(value)
+        for value in re.findall(
+            r"\bThe Build ([1-9][0-9]*) qualification runner created "
+            r"two isolated lane worktrees\b",
+            document_text,
+        )
+    ]
+    if qualification_claims != [current.build_number]:
+        failures.append(
+            "README.md: current qualification runner must name build "
+            f"{current.build_number} exactly once; found "
+            f"{qualification_claims!r}."
+        )
+
+    current_record_claims = re.findall(
+        r"\[[^\]\n]*build ([1-9][0-9]*) local qualification record\]"
+        r"\((docs/releases/[0-9]+\.[0-9]+\.[0-9]+-build-"
+        r"[1-9][0-9]*-local-v1\.md)\)\s+defines the current release notes",
+        document_text,
+    )
+    expected_record_claim = [(str(current.build_number), current_doc)]
+    if current_record_claims != expected_record_claim:
+        failures.append(
+            "README.md: current release-record guidance must appear exactly "
+            f"once as {expected_record_claim[0]!r}; found "
+            f"{current_record_claims!r}."
+        )
+
+    historical_range_claims = [
+        int(value)
+        for value in re.findall(
+            r"\bImmutable Builds 1 through ([1-9][0-9]*) remain "
+            r"available for historical\s+readback\b",
+            document_text,
+        )
+    ]
+    expected_historical_upper = current.build_number - 1
+    if historical_range_claims != [expected_historical_upper]:
+        failures.append(
+            "README.md: historical release range must end at build "
+            f"{expected_historical_upper} exactly once; found "
+            f"{historical_range_claims!r}."
+        )
+
+    current_section_start_markers = [
+        match.start()
+        for match in re.finditer(
+            r"^The current output is$",
+            document_text,
+            re.MULTILINE,
+        )
+    ]
+    current_section_end_markers = [
+        match.start()
+        for match in re.finditer(
+            r"^Refresh public POM evidence only as an explicit maintenance "
+            r"action with$",
+            document_text,
+            re.MULTILINE,
+        )
+    ]
+    if (
+        len(current_section_start_markers) != 1
+        or len(current_section_end_markers) != 1
+        or current_section_end_markers[0] <= current_section_start_markers[0]
+    ):
+        failures.append(
+            "README.md: current local-release evidence section must have "
+            "exactly one ordered output and compliance boundary."
+        )
+        current_section = ""
+    else:
+        current_section = document_text[
+            current_section_start_markers[0]:
+            current_section_end_markers[0]
+        ]
+
+    result_claims = re.findall(
+        r"`dist/reproducibility/"
+        rf"(aetherlink-[^`/]+-two-root-v"
+        rf"{CURRENT_REPRODUCIBILITY_RESULT_PATH_VERSION}\.json)`",
+        current_section,
+    )
+    expected_result_claim = [
+        f"{current_release_id}-two-root-v"
+        f"{CURRENT_REPRODUCIBILITY_RESULT_PATH_VERSION}.json"
+    ]
+    if result_claims != expected_result_claim:
+        failures.append(
+            "README.md: current reproducibility result must appear exactly "
+            f"once as {expected_result_claim[0]!r}; found {result_claims!r}."
+        )
+
+    prepublication_claims = re.findall(
+        r"`dist/reproducibility/"
+        rf"(aetherlink-[^`/]+-two-root-v"
+        rf"{CURRENT_REPRODUCIBILITY_RESULT_PATH_VERSION}"
+        r"-prepublication\.json)`",
+        current_section,
+    )
+    expected_prepublication_claim = [
+        f"{current_release_id}-two-root-v"
+        f"{CURRENT_REPRODUCIBILITY_RESULT_PATH_VERSION}-prepublication.json"
+    ]
+    if prepublication_claims != expected_prepublication_claim:
+        failures.append(
+            "README.md: current reproducibility prepublication must appear "
+            f"exactly once as {expected_prepublication_claim[0]!r}; found "
+            f"{prepublication_claims!r}."
+        )
+
+    compliance_claims = [
+        int(value)
+        for value in re.findall(
+            r"\bBuild ([1-9][0-9]*) preserves compliance profile\b",
+            current_section,
+        )
+    ]
+    if compliance_claims != [current.build_number]:
+        failures.append(
+            "README.md: current compliance profile must name build "
+            f"{current.build_number} exactly once; found "
+            f"{compliance_claims!r}."
+        )
+    return failures
+
+
+def ollama_multilingual_full_matrix_v3_evidence_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    try:
+        if __package__:
+            from script import (
+                run_ollama_multilingual_semantic_matrix_v3 as runner,
+            )
+        else:
+            import run_ollama_multilingual_semantic_matrix_v3 as runner
+
+        result = runner.recorded_result()
+        data = OLLAMA_MULTILINGUAL_FULL_MATRIX_V3_RESULT.read_bytes()
+    except (OSError, UnicodeError, ValueError, RuntimeError) as error:
+        return [
+            "docs/evidence/ollama-embedding-multilingual-full-matrix-v3.json: "
+            f"recorded V3 result was invalid: {error}"
+        ]
+
+    failures: list[str] = []
+    if result.get("qualityGatePassed") is not False:
+        failures.append(
+            "docs/evidence/ollama-embedding-multilingual-full-matrix-v3.json: "
+            "the recorded product-quality gate must remain false."
+        )
+    versions = result["versions"]
+    summaries = [
+        runner.projection_summary(version["observation"])
+        for version in versions
+    ]
+    ranking_passed_values = {
+        summary["rankingComparisonsPassed"]
+        for summary in summaries
+    }
+    repeatability_passed_values = {
+        summary["repeatabilityComparisonsPassed"]
+        for summary in summaries
+    }
+    coordinate_sets = {
+        tuple(
+            (
+                row["locale"],
+                row["scenarioOrdinalWithinLocale"],
+            )
+            for row in version["observation"]["rankingFailures"]
+        )
+        for version in versions
+    }
+    if (
+        len(ranking_passed_values) != 1
+        or len(repeatability_passed_values) != 1
+        or len(coordinate_sets) != 1
+    ):
+        failures.append(
+            "docs/evidence/ollama-embedding-multilingual-full-matrix-v3.json: "
+            "exact candidates must share one documentable comparison summary "
+            "and ranking-failure coordinate set."
+        )
+        return failures
+    ranking_passed = next(iter(ranking_passed_values))
+    repeatability_passed = next(iter(repeatability_passed_values))
+    ranking_total = runner.RANKING_COMPARISON_COUNT
+    repeatability_total = runner.REPEATABILITY_COMPARISON_COUNT
+    failure_coordinates = next(iter(coordinate_sets))
+    locale_labels = {
+        "en": "English",
+        "ko": "Korean",
+        "ja": "Japanese",
+        "zh-CN": "Simplified Chinese",
+        "fr": "French",
+    }
+    if any(locale not in locale_labels for locale, _ in failure_coordinates):
+        failures.append(
+            "docs/evidence/ollama-embedding-multilingual-full-matrix-v3.json: "
+            "ranking-failure locale lacks a documentation label."
+        )
+        return failures
+    recoveries_passed = all(
+        version["recoveryPassed"] is True
+        for version in versions
+    )
+    relative = (
+        "docs/evidence/"
+        "ollama-embedding-multilingual-full-matrix-v3.json"
+    )
+    raw_sha256 = hashlib.sha256(data).hexdigest()
+    documentation_targets = (
+        README_PATH,
+        ROOT / "docs/roadmap.md",
+        ROOT / "docs/handoff.md",
+        ROOT / "docs/progress.md",
+        ROOT / "docs/qa-evidence.md",
+    )
+    for path in documentation_targets:
+        relative_path = str(path.relative_to(ROOT))
+        try:
+            text = (
+                document_text_by_relative[relative_path]
+                if (
+                    document_text_by_relative is not None
+                    and relative_path in document_text_by_relative
+                )
+                else path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError) as error:
+            failures.append(
+                f"{relative_path}: cannot validate V3 evidence "
+                f"guidance: {error}"
+            )
+            continue
+        missing = [
+            value
+            for value in (relative, raw_sha256)
+            if value not in text
+        ]
+        if missing:
+            failures.append(
+                f"{relative_path}: missing recorded V3 evidence "
+                f"binding(s) {missing!r}."
+            )
+            continue
+
+        anchor = text.index(raw_sha256)
+        claim_window = re.sub(
+            r"\s+",
+            " ",
+            text[max(0, anchor - 700):anchor + 700],
+        )
+        if not re.search(
+            rf"\b{ranking_passed}(?:/| of ){ranking_total} "
+            r"ranking\b",
+            claim_window,
+            re.IGNORECASE,
+        ):
+            failures.append(
+                f"{relative_path}: V3 claim must report exactly "
+                f"{ranking_passed}/{ranking_total} ranking comparisons."
+            )
+        if not re.search(
+            rf"(?:\b{repeatability_passed}/"
+            rf"{repeatability_total}\b|\ball "
+            rf"{repeatability_passed}\b) repeatability\b",
+            claim_window,
+            re.IGNORECASE,
+        ):
+            failures.append(
+                f"{relative_path}: V3 claim must report exactly "
+                f"{repeatability_passed}/{repeatability_total} "
+                "repeatability comparisons."
+            )
+        for locale, ordinal in failure_coordinates:
+            label = locale_labels[locale]
+            optional_shared_locale = (
+                r"(?:\s+and\s+French)?"
+                if locale == "ko" and ("fr", ordinal) in failure_coordinates
+                else ""
+            )
+            if not re.search(
+                rf"\b{re.escape(label)}\b"
+                rf"{optional_shared_locale}\s+scenario ordinal {ordinal}\b",
+                claim_window,
+                re.IGNORECASE,
+            ):
+                failures.append(
+                    f"{relative_path}: V3 claim must report the "
+                    f"{label} scenario ordinal {ordinal} ranking failure."
+                )
+        recovery_pass_pattern = (
+            r"(?:\bboth pass fresh-provider recover(?:y|ies)\b|"
+            r"\bboth fresh-provider recover(?:y|ies)"
+            r"(?: phases)? pass\b)"
+        )
+        if recoveries_passed and not re.search(
+            recovery_pass_pattern,
+            claim_window,
+            re.IGNORECASE,
+        ):
+            failures.append(
+                f"{relative_path}: V3 claim must report that both "
+                "fresh-provider recoveries pass."
+            )
     return failures
 
 
@@ -4857,8 +7725,29 @@ def main() -> int:
     failures.extend(release_readback_command_mode_failures())
     failures.extend(syntax_only_no_device_gate_evidence_failures())
     failures.extend(local_release_document_failures())
+    failures.extend(macos_clean_home_installed_app_source_failures())
+    failures.extend(
+        macos_clean_home_installed_state_recovery_source_failures()
+    )
     failures.extend(macos_packaged_lifecycle_source_failures())
     failures.extend(macos_packaged_state_recovery_source_failures())
+    failures.extend(
+        current_macos_clean_home_installed_app_evidence_failures()
+    )
+    failures.extend(
+        current_macos_clean_home_installed_state_recovery_evidence_failures()
+    )
+    failures.extend(current_macos_local_dmg_install_evidence_failures())
+    failures.extend(
+        current_runtime_chat_sqlite_cross_process_document_failures()
+    )
+    failures.extend(current_runtime_chat_sqlite_source_failures())
+    failures.extend(current_macos_clean_home_lifecycle_document_failures())
+    failures.extend(current_android_drawer_search_document_failures())
+    failures.extend(macos_clean_home_installed_app_evidence_failures())
+    failures.extend(
+        macos_clean_home_installed_state_recovery_evidence_failures()
+    )
     failures.extend(macos_packaged_lifecycle_evidence_failures())
     failures.extend(
         historical_macos_packaged_lifecycle_evidence_failures()
@@ -4867,7 +7756,10 @@ def main() -> int:
     failures.extend(
         historical_build12_state_recovery_absence_failures()
     )
+    failures.extend(historical_build16_reproducibility_failures())
     failures.extend(historical_local_release_document_failures())
+    failures.extend(readme_current_local_release_failures())
+    failures.extend(ollama_multilingual_full_matrix_v3_evidence_failures())
     failures.extend(physical_qr_observation_manifest_failures())
 
     if failures:

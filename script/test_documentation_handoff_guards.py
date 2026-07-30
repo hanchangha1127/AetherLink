@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from script import check_docs_hygiene
+from script import run_clean_release_reproducibility
 from script.check_copy_hygiene import macos_pairing_callback_wiring_failures
 
 
@@ -110,8 +112,8 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
             [],
         )
         missing_current = document_text.replace(
-            "The Build 13 archive is the latest ledger entry",
-            "The Build 13 readback marker was removed.",
+            check_docs_hygiene.QA_CURRENT_RELEASE_READBACK_MARKER,
+            "The Build 19 readback marker was removed.",
             1,
         )
         self.assertTrue(
@@ -172,7 +174,7 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
 
         current_command = (
             "--archive-dir "
-            "dist/releases/aetherlink-1.0.0+13-local-v1"
+            "dist/releases/aetherlink-1.0.0+20-local-v1"
         )
         current_as_historical = dict(documents)
         current_as_historical[progress_path] = documents[
@@ -184,7 +186,7 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
         )
         self.assertTrue(
             any(
-                "current Build 13" in failure
+                "current Build 20" in failure
                 for failure in (
                     check_docs_hygiene
                     .release_readback_command_mode_failures(
@@ -564,24 +566,24 @@ private func generatePairingQR() {{
             [],
         )
 
-    def test_current_reproducibility_confirmation_matches_closed_contract(
+    def test_current_reproducibility_prepublication_matches_closed_contract(
         self,
     ) -> None:
         self.assertEqual(
             (
                 check_docs_hygiene
-                .current_release_reproducibility_confirmation_failures()
+                .current_release_reproducibility_prepublication_failures()
             ),
             [],
         )
         result = json.loads(
             (
                 check_docs_hygiene
-                .LOCAL_RELEASE_REPRODUCIBILITY_CONFIRMATION_RESULT
+                .LOCAL_RELEASE_REPRODUCIBILITY_PREPUBLICATION_RESULT
                 .read_text(encoding="utf-8")
             )
         )
-        result["publication"]["alreadyMatched"] = False
+        result["publication"]["attempted"] = True
         mutated = (
             json.dumps(
                 result,
@@ -594,13 +596,43 @@ private func generatePairingQR() {{
 
         failures = (
             check_docs_hygiene
-            .current_release_reproducibility_confirmation_failures(mutated)
+            .current_release_reproducibility_prepublication_failures(mutated)
         )
 
         self.assertTrue(
             any(
                 "expected identity" in failure
-                or "publication.alreadyMatched" in failure
+                or "publication.attempted" in failure
+                for failure in failures
+            )
+        )
+
+        result = json.loads(
+            (
+                check_docs_hygiene
+                .LOCAL_RELEASE_REPRODUCIBILITY_PREPUBLICATION_RESULT
+                .read_text(encoding="utf-8")
+            )
+        )
+        arguments = result["toolchainPolicy"]["swiftArguments"]
+        sequence_start = arguments.index("-num-threads") - 1
+        del arguments[sequence_start : sequence_start + 4]
+        mutated = (
+            json.dumps(
+                result,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("ascii")
+        failures = (
+            check_docs_hygiene
+            .current_release_reproducibility_prepublication_failures(mutated)
+        )
+        self.assertTrue(
+            any(
+                "exact contiguous sequence" in failure
                 for failure in failures
             )
         )
@@ -645,6 +677,1143 @@ private func generatePairingQR() {{
         self.assertEqual(
             check_docs_hygiene.macos_packaged_lifecycle_source_failures(),
             [],
+        )
+
+    def test_macos_clean_home_result_matches_closed_contract(
+        self,
+    ) -> None:
+        self.assertEqual(
+            (
+                check_docs_hygiene
+                .macos_clean_home_installed_app_evidence_failures()
+            ),
+            [],
+        )
+        result = json.loads(
+            (
+                check_docs_hygiene
+                .MACOS_CLEAN_HOME_INSTALLED_APP_RESULT
+                .read_text(encoding="utf-8")
+            )
+        )
+        result["launchServices"]["distinctProcessIdentifiers"] = 1
+        mutated = (
+            json.dumps(
+                result,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
+
+        failures = (
+            check_docs_hygiene
+            .macos_clean_home_installed_app_evidence_failures(mutated)
+        )
+
+        self.assertTrue(
+            any("expected identity" in failure for failure in failures)
+        )
+        self.assertTrue(any("exact closed" in failure for failure in failures))
+
+    def test_macos_clean_home_sources_match_recorded_bytes(
+        self,
+    ) -> None:
+        self.assertEqual(
+            (
+                check_docs_hygiene
+                .macos_clean_home_installed_app_source_failures()
+            ),
+            [],
+        )
+        with patch.object(
+            check_docs_hygiene,
+            "CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RUNNER_SHA256",
+            "0" * 64,
+        ):
+            failures = (
+                check_docs_hygiene
+                .macos_clean_home_installed_app_source_failures()
+            )
+        self.assertTrue(
+            any(
+                "run_macos_clean_home_installed_app_smoke.py"
+                in failure
+                for failure in failures
+            )
+        )
+
+    def test_historical_build14_clean_home_contract_is_not_current_release_derived(
+        self,
+    ) -> None:
+        installed_app = (
+            check_docs_hygiene.MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT
+        )
+        state_recovery = (
+            check_docs_hygiene
+            .MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT
+        )
+
+        self.assertEqual(installed_app["app"]["buildNumber"], 14)
+        self.assertNotEqual(
+            installed_app["app"]["buildNumber"],
+            check_docs_hygiene.LOCAL_RELEASE_BUILD_NUMBER,
+        )
+        for expected_result in (installed_app, state_recovery):
+            with self.subTest(scope=expected_result["scope"]):
+                self.assertEqual(
+                    expected_result["app"]["marketingVersion"],
+                    (
+                        check_docs_hygiene
+                        .HISTORICAL_BUILD14_MARKETING_VERSION
+                    ),
+                )
+                self.assertEqual(
+                    expected_result["app"]["uuid"],
+                    check_docs_hygiene.HISTORICAL_BUILD14_MACOS_UUID,
+                )
+                self.assertEqual(
+                    expected_result["release"],
+                    {
+                        "archiveSha256": (
+                            check_docs_hygiene
+                            .HISTORICAL_BUILD14_ARCHIVE_SHA256
+                        ),
+                        "manifestSha256": (
+                            check_docs_hygiene
+                            .HISTORICAL_BUILD14_MANIFEST_SHA256
+                        ),
+                        "releaseId": (
+                            check_docs_hygiene.HISTORICAL_BUILD14_RELEASE_ID
+                        ),
+                    },
+                )
+                self.assertNotEqual(
+                    expected_result["release"]["releaseId"],
+                    check_docs_hygiene.LOCAL_RELEASE_ID,
+                )
+                self.assertNotEqual(
+                    expected_result["release"]["archiveSha256"],
+                    check_docs_hygiene.LOCAL_RELEASE_EXPECTED_ZIP_SHA256,
+                )
+                self.assertNotEqual(
+                    expected_result["release"]["manifestSha256"],
+                    check_docs_hygiene.LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256,
+                )
+
+    def test_current_build20_clean_home_contract_tracks_current_release(
+        self,
+    ) -> None:
+        installed_app = (
+            check_docs_hygiene
+            .CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT
+        )
+        state_recovery = (
+            check_docs_hygiene
+            .CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT
+        )
+
+        for expected_result in (installed_app, state_recovery):
+            with self.subTest(scope=expected_result["scope"]):
+                self.assertEqual(
+                    expected_result["app"]["buildNumber"],
+                    check_docs_hygiene.LOCAL_RELEASE_BUILD_NUMBER,
+                )
+                self.assertEqual(
+                    expected_result["app"]["marketingVersion"],
+                    check_docs_hygiene.LOCAL_RELEASE_MARKETING_VERSION,
+                )
+                self.assertEqual(
+                    expected_result["release"],
+                    {
+                        "archiveSha256": (
+                            check_docs_hygiene
+                            .LOCAL_RELEASE_EXPECTED_ZIP_SHA256
+                        ),
+                        "manifestSha256": (
+                            check_docs_hygiene
+                            .LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256
+                        ),
+                        "releaseId": check_docs_hygiene.LOCAL_RELEASE_ID,
+                    },
+                )
+
+    def test_current_build20_clean_home_results_match_closed_contracts(
+        self,
+    ) -> None:
+        cases = (
+            (
+                check_docs_hygiene
+                .CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_RESULT,
+                check_docs_hygiene
+                .current_macos_clean_home_installed_app_evidence_failures,
+                ("launchServices", "distinctProcessIdentifiers"),
+                1,
+            ),
+            (
+                check_docs_hygiene
+                .CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_RESULT,
+                (
+                    check_docs_hygiene
+                    .current_macos_clean_home_installed_state_recovery_evidence_failures
+                ),
+                (
+                    "stateRecovery",
+                    "installedStateBytesAndModesUnchangedAcrossRelaunch",
+                ),
+                1,
+            ),
+        )
+
+        for result_path, validator, mutation_path, replacement in cases:
+            with self.subTest(path=result_path.name):
+                self.assertEqual(validator(), [])
+                result = json.loads(result_path.read_text(encoding="utf-8"))
+                result[mutation_path[0]][mutation_path[1]] = replacement
+                mutated = (
+                    json.dumps(
+                        result,
+                        ensure_ascii=True,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    )
+                    + "\n"
+                ).encode("utf-8")
+
+                failures = validator(mutated)
+
+                self.assertTrue(
+                    any("expected identity" in failure for failure in failures)
+                )
+                self.assertTrue(
+                    any("exact closed" in failure for failure in failures)
+                )
+
+    def test_current_build20_local_dmg_result_and_sources_are_bound(
+        self,
+    ) -> None:
+        self.assertEqual(
+            check_docs_hygiene.current_macos_local_dmg_install_evidence_failures(),
+            [],
+        )
+        result = json.loads(
+            check_docs_hygiene.CURRENT_MACOS_LOCAL_DMG_INSTALL_RESULT.read_text(
+                encoding="utf-8"
+            )
+        )
+        result["mount"]["readOnly"] = False
+        mutated_result = (
+            json.dumps(
+                result,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
+        result_failures = (
+            check_docs_hygiene.current_macos_local_dmg_install_evidence_failures(
+                result_bytes=mutated_result
+            )
+        )
+        self.assertTrue(
+            any(
+                "expected identity" in failure
+                or "mount.readOnly" in failure
+                for failure in result_failures
+            )
+        )
+
+        runner = check_docs_hygiene.CURRENT_MACOS_LOCAL_DMG_INSTALL_RUNNER
+        test = check_docs_hygiene.CURRENT_MACOS_LOCAL_DMG_INSTALL_TEST
+        source_failures = (
+            check_docs_hygiene.current_macos_local_dmg_install_evidence_failures(
+                source_bytes_by_path={
+                    runner: runner.read_bytes() + b"\n",
+                    test: test.read_bytes(),
+                }
+            )
+        )
+        self.assertTrue(
+            any(
+                "local DMG source SHA-256" in failure
+                for failure in source_failures
+            )
+        )
+
+    def test_historical_and_current_clean_home_test_hashes_are_separate(
+        self,
+    ) -> None:
+        self.assertNotEqual(
+            (
+                check_docs_hygiene
+                .MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_TEST_SHA256
+            ),
+            (
+                check_docs_hygiene
+                .CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_TEST_SHA256
+            ),
+        )
+        self.assertNotEqual(
+            (
+                check_docs_hygiene
+                .MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_TEST_SHA256
+            ),
+            (
+                check_docs_hygiene
+                .CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_TEST_SHA256
+            ),
+        )
+
+    def test_current_build20_lifecycle_document_bindings_reject_drift(
+        self,
+    ) -> None:
+        self.assertEqual(
+            (
+                check_docs_hygiene
+                .current_macos_clean_home_lifecycle_document_failures()
+            ),
+            [],
+        )
+        targets = (
+            "README.md",
+            "docs/roadmap.md",
+            "docs/handoff.md",
+            "docs/progress.md",
+            "docs/qa-evidence.md",
+            "docs/releases/1.0.0-build-20-local-v1.md",
+        )
+        for relative in targets:
+            with self.subTest(relative=relative):
+                text = (
+                    check_docs_hygiene.ROOT / relative
+                ).read_text(encoding="utf-8")
+                start_marker = (
+                    check_docs_hygiene
+                    .CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+                )
+                end_marker = (
+                    check_docs_hygiene
+                    .CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+                )
+                start = text.index(start_marker) + len(start_marker)
+                end = text.index(end_marker)
+                block = text[start:end]
+                mutations = {
+                    "result_sha": block.replace(
+                        (
+                            check_docs_hygiene
+                            .CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SHA256
+                        ),
+                        "0" * 64,
+                        1,
+                    ),
+                    "result_size": re.sub(
+                        r"3,364(?:-byte| bytes)",
+                        "3,365-byte",
+                        block,
+                        count=1,
+                    ),
+                    "repeatability": re.sub(
+                        r"Both\s+clean-HOME\s+runners\s+were\s+invoked\s+"
+                        r"twice\s+and\s+matched\s+their\s+canonical\s+"
+                        r"results\.",
+                        "One clean-HOME runner was invoked once.",
+                        block,
+                        count=1,
+                    ),
+                    "overclaim_boundary": re.sub(
+                        r"production\s+readiness",
+                        "production qualification",
+                        block,
+                        count=1,
+                    ),
+                    "historical_contamination": (
+                        block
+                        + "\nHistorical Build 14 is current lifecycle evidence.\n"
+                    ),
+                    "immediate_history_contamination": (
+                        block
+                        + "\nBuild 19 is part of this current lifecycle evidence.\n"
+                    ),
+                    "build14_relabel": (
+                        block
+                        + "\nBuild 14 is part of this current lifecycle evidence.\n"
+                    ),
+                    "build14_path": (
+                        block
+                        + "\nmacos-packaged-app-build-14-clean-home-install-v1.json\n"
+                    ),
+                    "build19_path": (
+                        block
+                        + "\nmacos-packaged-app-build-19-clean-home-install-v1.json\n"
+                    ),
+                    "contradictory_overclaim": (
+                        block
+                        + (
+                            "\nThis current Build 20 evidence qualifies "
+                            "clean-machine/account, DMG/Finder, "
+                            "signed/notarized distribution, physical-device "
+                            "behavior, and production readiness.\n"
+                        )
+                    ),
+                }
+                if (
+                    "macos-packaged-app-build-20-local-dmg-install-v1.json"
+                    in block
+                ):
+                    mutations.update(
+                        {
+                            "dmg_path": block.replace(
+                                (
+                                    "macos-packaged-app-build-20-"
+                                    "local-dmg-install-v1.json"
+                                ),
+                                "removed-current-dmg-result.json",
+                                1,
+                            ),
+                            "dmg_sha": block.replace(
+                                (
+                                    check_docs_hygiene
+                                    .CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SHA256
+                                ),
+                                "2" * 64,
+                                1,
+                            ),
+                            "dmg_size": re.sub(
+                                r"2,434(?:-byte| bytes)",
+                                "2,435-byte",
+                                block,
+                                count=1,
+                            ),
+                        }
+                    )
+                if relative == "docs/releases/1.0.0-build-20-local-v1.md":
+                    mutations["runner_sha"] = block.replace(
+                        (
+                            check_docs_hygiene
+                            .CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256
+                        ),
+                        "1" * 64,
+                        1,
+                    )
+                for label, mutated_block in mutations.items():
+                    with self.subTest(relative=relative, label=label):
+                        self.assertNotEqual(mutated_block, block)
+                        mutated = (
+                            text[:start] + mutated_block + text[end:]
+                        )
+
+                        failures = (
+                            check_docs_hygiene
+                            .current_macos_clean_home_lifecycle_document_failures(
+                                document_text_by_relative={relative: mutated}
+                            )
+                        )
+
+                        self.assertTrue(
+                            any(
+                                relative in failure
+                                and "current Build 20" in failure
+                                for failure in failures
+                            ),
+                            (
+                                "lifecycle document mutation was accepted: "
+                                f"{failures!r}"
+                            ),
+                        )
+
+                without_start_marker = text.replace(start_marker, "", 1)
+                marker_failures = (
+                    check_docs_hygiene
+                    .current_macos_clean_home_lifecycle_document_failures(
+                        document_text_by_relative={
+                            relative: without_start_marker
+                        }
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "exactly one start and end marker" in failure
+                        for failure in marker_failures
+                    )
+                )
+
+    def test_current_build20_dmg_document_bindings_reject_drift(self) -> None:
+        targets = (
+            "README.md",
+            "docs/roadmap.md",
+            "docs/handoff.md",
+            "docs/progress.md",
+            "docs/qa-evidence.md",
+            "docs/releases/1.0.0-build-20-local-v1.md",
+        )
+        bindings = (
+            "macos-packaged-app-build-20-local-dmg-install-v1.json",
+            (
+                check_docs_hygiene
+                .CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SHA256
+            ),
+            "2,434",
+        )
+        for relative in targets:
+            text = (check_docs_hygiene.ROOT / relative).read_text(
+                encoding="utf-8"
+            )
+            for binding in bindings:
+                with self.subTest(relative=relative, binding=binding):
+                    mutated = text.replace(binding, "REMOVED_DMG_BINDING", 1)
+                    self.assertNotEqual(mutated, text)
+                    failures = (
+                        check_docs_hygiene
+                        .current_macos_clean_home_lifecycle_document_failures(
+                            document_text_by_relative={relative: mutated}
+                        )
+                    )
+                    self.assertTrue(
+                        any(
+                            relative in failure
+                            and "current Build 20 DMG evidence" in failure
+                            for failure in failures
+                        ),
+                        f"DMG document mutation was accepted: {failures!r}",
+                    )
+
+    def test_current_build19_runtime_chat_sqlite_cross_process_record_rejects_drift(
+        self,
+    ) -> None:
+        document_text = (
+            check_docs_hygiene.LOCAL_RELEASE_CURRENT_DOC.read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(
+            (
+                check_docs_hygiene
+                .current_runtime_chat_sqlite_cross_process_document_failures(
+                    document_text
+                )
+            ),
+            [],
+        )
+
+        helper_path = (
+            "apps/macos/RuntimeChatSQLiteCrossProcessQA/Sources/"
+            "RuntimeChatSQLiteCrossProcessQA.swift"
+        )
+        runner_path = "script/run_macos_runtime_chat_cross_process_smoke.py"
+        helper_sha = (
+            check_docs_hygiene
+            .LOCAL_RELEASE_EXPECTED_RUNTIME_CHAT_SQLITE_SOURCE_MEMBERS[
+                helper_path
+            ][1]
+        )
+        runner_sha = (
+            check_docs_hygiene
+            .LOCAL_RELEASE_EXPECTED_RUNTIME_CHAT_SQLITE_SOURCE_MEMBERS[
+                runner_path
+            ][1]
+        )
+        mutations = {
+            "busy_timeout": re.sub(
+                r"(\bproduction\b.{0,100})(?:five-second|5-second)",
+                r"\1unbounded",
+                document_text,
+                count=1,
+                flags=re.IGNORECASE | re.DOTALL,
+            ),
+            "stable_message": document_text.replace(
+                (
+                    check_docs_hygiene
+                    .CURRENT_RUNTIME_CHAT_SQLITE_STABLE_BUSY_MESSAGE
+                ),
+                "Runtime chat history failed.",
+                1,
+            ),
+            "helper_identity": document_text.replace(helper_sha, "0" * 64, 1),
+            "runner_identity": document_text.replace(runner_sha, "1" * 64, 1),
+            "live_count": document_text.replace(
+                "48+48=96",
+                "48+48=95",
+                1,
+            ),
+            "third_process": re.sub(
+                r"third(?: independent|-process).{0,40}readback"
+                r".{0,40}process",
+                "in-process readback",
+                document_text,
+                count=1,
+                flags=re.IGNORECASE | re.DOTALL,
+            ),
+            "archive_overclaim": re.sub(
+                r"not an? (?:retained (?:Build 19 )?)?archive member",
+                "a retained Build 19 archive member",
+                document_text,
+                count=1,
+                flags=re.IGNORECASE,
+            ),
+        }
+        for label, mutated in mutations.items():
+            with self.subTest(label=label):
+                self.assertNotEqual(mutated, document_text)
+                failures = (
+                    check_docs_hygiene
+                    .current_runtime_chat_sqlite_cross_process_document_failures(
+                        mutated
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        "Runtime-chat SQLite" in failure
+                        or "source inventory" in failure
+                        for failure in failures
+                    ),
+                    f"Runtime-chat SQLite mutation {label!r} was accepted",
+                )
+
+    def test_current_build19_runtime_chat_sqlite_source_bindings_reject_drift(
+        self,
+    ) -> None:
+        self.assertEqual(
+            check_docs_hygiene.current_runtime_chat_sqlite_source_failures(),
+            [],
+        )
+        source_paths = tuple(
+            (
+                check_docs_hygiene
+                .LOCAL_RELEASE_EXPECTED_RUNTIME_CHAT_SQLITE_SOURCE_MEMBERS
+            )
+        )
+        test_path = (
+            "apps/macos/CompanionCore/Tests/"
+            "SQLiteRuntimeChatEventStoreTests.swift"
+        )
+        sources = {
+            relative: (
+                check_docs_hygiene.ROOT / relative
+            ).read_bytes()
+            for relative in source_paths + (test_path,)
+        }
+
+        missing_test = dict(sources)
+        test_name = check_docs_hygiene.CURRENT_RUNTIME_CHAT_SQLITE_SWIFT_TESTS[1]
+        missing_test[test_path] = sources[test_path].replace(
+            test_name.encode("utf-8"),
+            b"removedSQLiteBusyRegression",
+            1,
+        )
+        self.assertTrue(
+            any(
+                "exact Swift regression" in failure
+                for failure in (
+                    check_docs_hygiene
+                    .current_runtime_chat_sqlite_source_failures(missing_test)
+                )
+            )
+        )
+
+        changed_runner = dict(sources)
+        runner_path = "script/run_macos_runtime_chat_cross_process_smoke.py"
+        changed_runner[runner_path] = sources[runner_path] + b"\n"
+        self.assertTrue(
+            any(
+                runner_path in failure
+                and "source inventory identity" in failure
+                for failure in (
+                    check_docs_hygiene
+                    .current_runtime_chat_sqlite_source_failures(changed_runner)
+                )
+            )
+        )
+
+    def test_current_android_drawer_search_document_bindings_reject_drift(
+        self,
+    ) -> None:
+        self.assertEqual(
+            (
+                check_docs_hygiene
+                .current_android_drawer_search_document_failures()
+            ),
+            [],
+        )
+        targets = (
+            "docs/roadmap.md",
+            "docs/handoff.md",
+            "docs/progress.md",
+            "docs/qa-evidence.md",
+        )
+        for relative in targets:
+            with self.subTest(relative=relative):
+                text = (
+                    check_docs_hygiene.ROOT / relative
+                ).read_text(encoding="utf-8")
+                start_marker = (
+                    check_docs_hygiene
+                    .CURRENT_ANDROID_DRAWER_SEARCH_DOCUMENT_START
+                )
+                end_marker = (
+                    check_docs_hygiene
+                    .CURRENT_ANDROID_DRAWER_SEARCH_DOCUMENT_END
+                )
+                start = text.index(start_marker) + len(start_marker)
+                end = text.index(end_marker)
+                block = text[start:end]
+                normalized_block = re.sub(r"\s+", " ", block).strip()
+                mutations = {
+                    "touch_action": normalized_block.replace(
+                        "explicit touch Search action",
+                        "keyboard-only Search action",
+                        1,
+                    ),
+                    "action_state": normalized_block.replace(
+                        "exact same-query pending states",
+                        "every pending state",
+                        1,
+                    ),
+                    "pending_query": normalized_block.replace(
+                        "Only the exact current pending query",
+                        "Every pending query",
+                        1,
+                    ),
+                    "result_authority": normalized_block.replace(
+                        "Only an exact current-query remote response",
+                        "Any remote response",
+                        1,
+                    ),
+                    "full_test_count": normalized_block.replace(
+                        "1,194-test",
+                        "1,193-test",
+                        1,
+                    ),
+                    "search_test_count": normalized_block.replace(
+                        "15 search-related RuntimeClientViewModelTest",
+                        "14 search-related RuntimeClientViewModelTest",
+                        1,
+                    ),
+                    "lint_warning_count": normalized_block.replace(
+                        "2 SDK-version warnings",
+                        "3 SDK-version warnings",
+                        1,
+                    ),
+                    "archive_boundary": re.sub(
+                        r"is not part of the immutable Build 17 archive and "
+                        r"(?:is|was) first source-bound by the immutable "
+                        r"Build 18 archive",
+                        "is part of the immutable Build 17 archive and is "
+                        "not source-bound by the immutable Build 18 archive",
+                        normalized_block,
+                        count=1,
+                    ),
+                    "stale_evidence": (
+                        normalized_block
+                        + "\nThe previous gate still passes 1,179 tests.\n"
+                    ),
+                    "stale_response_overclaim": (
+                        normalized_block
+                        + "\nStale remote responses are adopted.\n"
+                    ),
+                    "archived_session_overclaim": (
+                        normalized_block
+                        + "\nArchived sessions are included in current results.\n"
+                    ),
+                    "provider_device_overclaim": (
+                        normalized_block
+                        + (
+                            "\nProvider, device, network, and signing behavior "
+                            "passed qualification.\n"
+                        )
+                    ),
+                    "contradictory_device_claim": (
+                        normalized_block
+                        + "\nPhysical touch and TalkBack pass qualification.\n"
+                    ),
+                }
+                for label, mutated_block in mutations.items():
+                    with self.subTest(relative=relative, label=label):
+                        self.assertNotEqual(mutated_block, normalized_block)
+                        mutated = (
+                            text[:start]
+                            + "\n"
+                            + mutated_block
+                            + "\n"
+                            + text[end:]
+                        )
+
+                        failures = (
+                            check_docs_hygiene
+                            .current_android_drawer_search_document_failures(
+                                document_text_by_relative={relative: mutated}
+                            )
+                        )
+
+                        self.assertTrue(
+                            any(
+                                relative in failure
+                                and "current Android drawer search" in failure
+                                for failure in failures
+                            ),
+                            (
+                                "Android drawer search document mutation was "
+                                f"accepted: {failures!r}"
+                            ),
+                        )
+
+                without_start_marker = text.replace(start_marker, "", 1)
+                marker_failures = (
+                    check_docs_hygiene
+                    .current_android_drawer_search_document_failures(
+                        document_text_by_relative={
+                            relative: without_start_marker
+                        }
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "exactly one start and end marker" in failure
+                        for failure in marker_failures
+                    )
+                )
+                without_end_marker = text.replace(end_marker, "", 1)
+                end_marker_failures = (
+                    check_docs_hygiene
+                    .current_android_drawer_search_document_failures(
+                        document_text_by_relative={
+                            relative: without_end_marker
+                        }
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "exactly one start and end marker" in failure
+                        for failure in end_marker_failures
+                    )
+                )
+
+                marker_start = text.index(start_marker)
+                marker_end = text.index(end_marker) + len(end_marker)
+                marked_block = text[marker_start:marker_end]
+                duplicate_marker_failures = (
+                    check_docs_hygiene
+                    .current_android_drawer_search_document_failures(
+                        document_text_by_relative={
+                            relative: text + "\n" + marked_block + "\n"
+                        }
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "exactly one start and end marker" in failure
+                        for failure in duplicate_marker_failures
+                    )
+                )
+                relocated = (
+                    text[:marker_start]
+                    + text[marker_end:]
+                    + "\n## Historical Checkpoint\n\n"
+                    + marked_block
+                    + "\n"
+                )
+                relocation_failures = (
+                    check_docs_hygiene
+                    .current_android_drawer_search_document_failures(
+                        document_text_by_relative={relative: relocated}
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "canonical current section" in failure
+                        for failure in relocation_failures
+                    ),
+                    (
+                        "historically relocated Android drawer search block "
+                        f"was accepted: {relocation_failures!r}"
+                    ),
+                )
+
+    def test_historical_build14_clean_home_current_identity_mutations_are_rejected(
+        self,
+    ) -> None:
+        cases = (
+            (
+                (
+                    check_docs_hygiene
+                    .MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT
+                ),
+                (
+                    check_docs_hygiene
+                    .macos_clean_home_installed_app_evidence_failures
+                ),
+            ),
+            (
+                (
+                    check_docs_hygiene
+                    .MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT
+                ),
+                (
+                    check_docs_hygiene
+                    .macos_clean_home_installed_state_recovery_evidence_failures
+                ),
+            ),
+        )
+        mutations = (
+            (
+                ("app", "buildNumber"),
+                check_docs_hygiene.LOCAL_RELEASE_BUILD_NUMBER,
+            ),
+            (
+                ("release", "releaseId"),
+                check_docs_hygiene.LOCAL_RELEASE_ID,
+            ),
+            (
+                ("release", "archiveSha256"),
+                check_docs_hygiene.LOCAL_RELEASE_EXPECTED_ZIP_SHA256,
+            ),
+            (
+                ("release", "manifestSha256"),
+                check_docs_hygiene.LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256,
+            ),
+        )
+
+        for expected_result, validator in cases:
+            for path, replacement in mutations:
+                with self.subTest(scope=expected_result["scope"], path=path):
+                    mutated_result = json.loads(json.dumps(expected_result))
+                    mutated_result[path[0]][path[1]] = replacement
+                    result_bytes = (
+                        json.dumps(
+                            mutated_result,
+                            ensure_ascii=True,
+                            separators=(",", ":"),
+                            sort_keys=True,
+                        )
+                        + "\n"
+                    ).encode("utf-8")
+
+                    failures = validator(result_bytes)
+
+                    self.assertTrue(
+                        any(
+                            "expected identity" in failure
+                            for failure in failures
+                        )
+                    )
+                    self.assertTrue(
+                        any("exact closed" in failure for failure in failures)
+                    )
+
+    def test_historical_build14_marketing_version_is_frozen_in_source(
+        self,
+    ) -> None:
+        source = (
+            check_docs_hygiene.ROOT
+            / "script/check_docs_hygiene.py"
+        ).read_text(encoding="utf-8")
+        expected_result_start = source.index(
+            "MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT = {"
+        )
+        expected_result_end = source.index(
+            "MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT = {"
+        )
+        installed_app_contract = source[
+            expected_result_start:expected_result_end
+        ]
+
+        self.assertIn(
+            '"marketingVersion": HISTORICAL_BUILD14_MARKETING_VERSION',
+            installed_app_contract,
+        )
+        self.assertNotIn(
+            '"marketingVersion": LOCAL_RELEASE_MARKETING_VERSION',
+            installed_app_contract,
+        )
+
+    def test_current_android_manifest_readback_contract_rejects_mutations(
+        self,
+    ) -> None:
+        manifest_path = (
+            check_docs_hygiene.LOCAL_RELEASE_ARCHIVE_DIR
+            / f"{check_docs_hygiene.LOCAL_RELEASE_ID}.manifest.json"
+        )
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            (
+                check_docs_hygiene
+                .current_release_android_manifest_readback_failures(manifest)
+            ),
+            [],
+        )
+        mutations = {
+            "apk_missing_policy_field": (
+                "apkManifestReadback",
+                {
+                    **check_docs_hygiene.LOCAL_RELEASE_EXPECTED_APK_MANIFEST_READBACK,
+                    "verifiedFields": [
+                        "allowBackup",
+                        "dataExtractionRules",
+                    ],
+                },
+            ),
+            "apk_wrong_tool": (
+                "apkManifestReadback",
+                {
+                    **check_docs_hygiene.LOCAL_RELEASE_EXPECTED_APK_MANIFEST_READBACK,
+                    "tool": "aapt2 dump xmltree",
+                },
+            ),
+            "bundle_reordered_fields": (
+                "bundleManifestReadback",
+                {
+                    **check_docs_hygiene.LOCAL_RELEASE_EXPECTED_BUNDLE_MANIFEST_READBACK,
+                    "verifiedFields": list(
+                        reversed(
+                            check_docs_hygiene
+                            .LOCAL_RELEASE_EXPECTED_BUNDLE_MANIFEST_READBACK[
+                                "verifiedFields"
+                            ]
+                        )
+                    ),
+                },
+            ),
+            "bundle_wrong_member": (
+                "bundleManifestReadback",
+                {
+                    **check_docs_hygiene.LOCAL_RELEASE_EXPECTED_BUNDLE_MANIFEST_READBACK,
+                    "member": "android/apk/app-release-unsigned.apk",
+                },
+            ),
+        }
+
+        for label, (readback_key, replacement) in mutations.items():
+            with self.subTest(label=label):
+                mutated_manifest = json.loads(json.dumps(manifest))
+                mutated_manifest["platforms"]["android"][
+                    readback_key
+                ] = replacement
+
+                failures = (
+                    check_docs_hygiene
+                    .current_release_android_manifest_readback_failures(
+                        mutated_manifest
+                    )
+                )
+
+                self.assertTrue(
+                    any(readback_key in failure for failure in failures),
+                    f"manifest readback mutation {label!r} was accepted",
+                )
+
+    def test_build15_backup_policy_document_claim_mutations_are_rejected(
+        self,
+    ) -> None:
+        claims = (
+            check_docs_hygiene
+            .LOCAL_RELEASE_ANDROID_BACKUP_POLICY_REQUIRED_CLAIMS
+        )
+        document_text = "\n".join(claims)
+        self.assertEqual(
+            (
+                check_docs_hygiene
+                .current_release_android_backup_policy_document_failures(
+                    document_text
+                )
+            ),
+            [],
+        )
+
+        for claim in claims:
+            with self.subTest(claim=claim):
+                mutated = document_text.replace(
+                    claim,
+                    "REMOVED_BACKUP_POLICY_CLAIM",
+                    1,
+                )
+                failures = (
+                    check_docs_hygiene
+                    .current_release_android_backup_policy_document_failures(
+                        mutated
+                    )
+                )
+                self.assertTrue(
+                    any("missing exact" in failure for failure in failures),
+                    f"backup-policy claim mutation {claim!r} was accepted",
+                )
+
+    def test_macos_clean_home_installed_state_recovery_result_matches_closed_contract(
+        self,
+    ) -> None:
+        self.assertEqual(
+            (
+                check_docs_hygiene
+                .macos_clean_home_installed_state_recovery_evidence_failures()
+            ),
+            [],
+        )
+        result = json.loads(
+            (
+                check_docs_hygiene
+                .MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_RESULT
+                .read_text(encoding="utf-8")
+            )
+        )
+        result["stateRecovery"][
+            "installedStateBytesAndModesUnchangedAcrossRelaunch"
+        ] = 1
+        mutated = (
+            json.dumps(
+                result,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
+
+        failures = (
+            check_docs_hygiene
+            .macos_clean_home_installed_state_recovery_evidence_failures(
+                mutated
+            )
+        )
+
+        self.assertTrue(
+            any("expected identity" in failure for failure in failures)
+        )
+        self.assertTrue(any("exact closed" in failure for failure in failures))
+
+    def test_macos_clean_home_installed_state_recovery_sources_match_recorded_bytes(
+        self,
+    ) -> None:
+        self.assertEqual(
+            (
+                check_docs_hygiene
+                .macos_clean_home_installed_state_recovery_source_failures()
+            ),
+            [],
+        )
+        with patch.object(
+            check_docs_hygiene,
+            (
+                "CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_"
+                "EXPECTED_RUNNER_SHA256"
+            ),
+            "0" * 64,
+        ):
+            failures = (
+                check_docs_hygiene
+                .macos_clean_home_installed_state_recovery_source_failures()
+            )
+        self.assertTrue(
+            any(
+                "run_macos_clean_home_installed_state_recovery_smoke.py"
+                in failure
+                for failure in failures
+            )
         )
 
     def test_macos_packaged_state_recovery_result_matches_closed_contract(
@@ -769,14 +1938,573 @@ private func generatePairingQR() {{
             [],
         )
 
-    def test_historical_release_document_stale_current_pointers_are_rejected(
+    def test_historical_build17_immutable_identities_are_pinned(self) -> None:
+        document_text = (
+            check_docs_hygiene.ROOT
+            / "docs/releases/1.0.0-build-17-local-v1.md"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(
+            check_docs_hygiene
+            .historical_build17_release_document_failures(document_text),
+            [],
+        )
+
+        mutations = {
+            "archive": check_docs_hygiene.HISTORICAL_BUILD17_ARCHIVE_SHA256,
+            "manifest": (
+                check_docs_hygiene.HISTORICAL_BUILD17_MANIFEST_SHA256
+            ),
+            "source_inventory": (
+                check_docs_hygiene
+                .HISTORICAL_BUILD17_SOURCE_INVENTORY_SHA256
+            ),
+            "source_snapshot": (
+                check_docs_hygiene
+                .HISTORICAL_BUILD17_SOURCE_SNAPSHOT_SHA256
+            ),
+            "primary_result": (
+                check_docs_hygiene
+                .HISTORICAL_BUILD17_REPRODUCIBILITY_RESULT_SHA256
+            ),
+            "confirmation": (
+                check_docs_hygiene
+                .HISTORICAL_BUILD17_REPRODUCIBILITY_CONFIRMATION_SHA256
+            ),
+            "lifecycle_install": (
+                check_docs_hygiene
+                .HISTORICAL_BUILD17_INSTALLED_APP_RESULT_SHA256
+            ),
+            "lifecycle_recovery": (
+                check_docs_hygiene
+                .HISTORICAL_BUILD17_STATE_RECOVERY_RESULT_SHA256
+            ),
+        }
+        for label, identity in mutations.items():
+            with self.subTest(label=label):
+                mutated = document_text.replace(identity, "0" * 64)
+                self.assertNotEqual(mutated, document_text)
+                failures = (
+                    check_docs_hygiene
+                    .historical_build17_release_document_failures(mutated)
+                )
+                self.assertTrue(
+                    any("Build 17" in failure for failure in failures),
+                    f"Build 17 identity mutation {label!r} was accepted",
+                )
+
+    def test_historical_build17_lifecycle_markers_remain_distinct(self) -> None:
+        document_text = (
+            check_docs_hygiene.ROOT
+            / "docs/releases/1.0.0-build-17-local-v1.md"
+        ).read_text(encoding="utf-8")
+        start = (
+            check_docs_hygiene
+            .HISTORICAL_BUILD17_LIFECYCLE_DOCUMENT_START
+        )
+        end = (
+            check_docs_hygiene.HISTORICAL_BUILD17_LIFECYCLE_DOCUMENT_END
+        )
+        current_start = (
+            check_docs_hygiene
+            .CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+        )
+        current_end = (
+            check_docs_hygiene
+            .CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+        )
+        mutations = {
+            "missing_start": document_text.replace(start, "", 1),
+            "missing_end": document_text.replace(end, "", 1),
+            "duplicate": document_text + f"\n{start}\n{end}\n",
+            "current_build19_markers": document_text.replace(
+                start,
+                current_start,
+                1,
+            ).replace(end, current_end, 1),
+        }
+        for label, mutated in mutations.items():
+            with self.subTest(label=label):
+                failures = (
+                    check_docs_hygiene
+                    .historical_build17_release_document_failures(mutated)
+                )
+                self.assertTrue(
+                    any(
+                        "historical Build 17 lifecycle block" in failure
+                        for failure in failures
+                    ),
+                    f"Build 17 lifecycle marker mutation {label!r} was accepted",
+                )
+
+    def test_historical_build18_immutable_identities_survive_build19(self) -> None:
+        document_text = (
+            check_docs_hygiene.ROOT
+            / "docs/releases/1.0.0-build-18-local-v1.md"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(
+            check_docs_hygiene.historical_build18_release_document_failures(
+                document_text
+            ),
+            [],
+        )
+        identities = {
+            "archive": check_docs_hygiene.HISTORICAL_BUILD18_ARCHIVE_SHA256,
+            "manifest": check_docs_hygiene.HISTORICAL_BUILD18_MANIFEST_SHA256,
+            "sidecar": check_docs_hygiene.HISTORICAL_BUILD18_CHECKSUM_SHA256,
+            "source": (
+                check_docs_hygiene
+                .HISTORICAL_BUILD18_SOURCE_SNAPSHOT_SHA256
+            ),
+            "source_inventory": (
+                check_docs_hygiene
+                .HISTORICAL_BUILD18_SOURCE_INVENTORY_SHA256
+            ),
+            "installed_app": (
+                check_docs_hygiene
+                .HISTORICAL_BUILD18_INSTALLED_APP_RESULT_SHA256
+            ),
+            "state_recovery": (
+                check_docs_hygiene
+                .HISTORICAL_BUILD18_STATE_RECOVERY_RESULT_SHA256
+            ),
+        }
+        for label, identity in identities.items():
+            with self.subTest(label=label):
+                mutated = document_text.replace(identity, "0" * 64)
+                self.assertNotEqual(mutated, document_text)
+                failures = (
+                    check_docs_hygiene
+                    .historical_build18_release_document_failures(mutated)
+                )
+                self.assertTrue(
+                    any("Build 18 binding" in failure for failure in failures),
+                    f"Build 18 identity mutation {label!r} was accepted",
+                )
+
+    def test_historical_build19_immutable_identities_survive_build20(self) -> None:
+        document_text = (
+            check_docs_hygiene.ROOT
+            / "docs/releases/1.0.0-build-19-local-v1.md"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(
+            check_docs_hygiene.historical_build19_release_document_failures(
+                document_text
+            ),
+            [],
+        )
+        identities = {
+            "archive": check_docs_hygiene.HISTORICAL_BUILD19_ARCHIVE_SHA256,
+            "manifest": check_docs_hygiene.HISTORICAL_BUILD19_MANIFEST_SHA256,
+            "sidecar": check_docs_hygiene.HISTORICAL_BUILD19_CHECKSUM_SHA256,
+            "primary": (
+                check_docs_hygiene
+                .HISTORICAL_BUILD19_REPRODUCIBILITY_RESULT_SHA256
+            ),
+            "confirmation": (
+                check_docs_hygiene
+                .HISTORICAL_BUILD19_REPRODUCIBILITY_CONFIRMATION_SHA256
+            ),
+            "source": (
+                check_docs_hygiene
+                .HISTORICAL_BUILD19_SOURCE_SNAPSHOT_SHA256
+            ),
+            "installed_app": (
+                check_docs_hygiene
+                .HISTORICAL_BUILD19_INSTALLED_APP_RESULT_SHA256
+            ),
+            "state_recovery": (
+                check_docs_hygiene
+                .HISTORICAL_BUILD19_STATE_RECOVERY_RESULT_SHA256
+            ),
+        }
+        for label, identity in identities.items():
+            with self.subTest(label=label):
+                mutated = document_text.replace(identity, "0" * 64)
+                self.assertNotEqual(mutated, document_text)
+                failures = (
+                    check_docs_hygiene
+                    .historical_build19_release_document_failures(mutated)
+                )
+                self.assertTrue(
+                    any("Build 19 binding" in failure for failure in failures),
+                    f"Build 19 identity mutation {label!r} was accepted",
+                )
+        marker_mutation = (
+            document_text
+            + "\n"
+            + check_docs_hygiene.CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+            + "\n"
+            + check_docs_hygiene.CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+            + "\n"
+        )
+        marker_failures = (
+            check_docs_hygiene.historical_build19_release_document_failures(
+                marker_mutation
+            )
+        )
+        self.assertTrue(
+            any(
+                "current Build 20 lifecycle markers" in failure
+                for failure in marker_failures
+            )
+        )
+        stale_readback = document_text.replace(
+            "Run this historical source-bound readback with historical mode:",
+            "Run the current source-bound readback without historical mode:",
+            1,
+        )
+        stale_readback_failures = (
+            check_docs_hygiene.historical_build19_release_document_failures(
+                stale_readback
+            )
+        )
+        self.assertTrue(
+            any(
+                "stale current-state claim" in failure
+                for failure in stale_readback_failures
+            )
+        )
+
+    def test_readme_current_release_guidance_follows_ledger(self) -> None:
+        self.assertEqual(
+            check_docs_hygiene.CURRENT_REPRODUCIBILITY_RESULT_PATH_VERSION,
+            run_clean_release_reproducibility.RESULT_PATH_VERSION,
+        )
+        ledger_bytes = check_docs_hygiene.LOCAL_RELEASE_LEDGER.read_bytes()
+        entries = check_docs_hygiene.parse_release_version_ledger(
+            ledger_bytes
+        )
+        current = entries[-1]
+        previous = entries[-2]
+        readme = check_docs_hygiene.README_PATH.read_text(encoding="utf-8")
+        self.assertEqual(
+            check_docs_hygiene.readme_current_local_release_failures(
+                ledger_bytes=ledger_bytes,
+                readme_text=readme,
+            ),
+            [],
+        )
+
+        current_id = (
+            f"aetherlink-{current.marketing_version}"
+            f"+{current.build_number}-local-v1"
+        )
+        previous_id = (
+            f"aetherlink-{previous.marketing_version}"
+            f"+{previous.build_number}-local-v1"
+        )
+        current_doc = (
+            "docs/releases/"
+            f"{current.marketing_version}-build-"
+            f"{current.build_number}-local-v1.md"
+        )
+        previous_doc = (
+            "docs/releases/"
+            f"{previous.marketing_version}-build-"
+            f"{previous.build_number}-local-v1.md"
+        )
+        mutations = {
+            "ledger": (
+                f"shared build number `{current.build_number}`",
+                f"shared build number `{previous.build_number}`",
+                "current ledger claim",
+            ),
+            "output": (
+                f"dist/releases/{current_id}/",
+                f"dist/releases/{previous_id}/",
+                "current output",
+            ),
+            "qualification": (
+                f"The Build {current.build_number} qualification runner",
+                f"The Build {previous.build_number} qualification runner",
+                "current qualification runner",
+            ),
+            "record": (
+                current_doc,
+                previous_doc,
+                "current release-record guidance",
+            ),
+            "historical-range": (
+                f"Builds 1 through {current.build_number - 1}",
+                f"Builds 1 through {previous.build_number - 1}",
+                "historical release range",
+            ),
+        }
+        for label, (before, after, expected_failure) in mutations.items():
+            with self.subTest(label=label):
+                mutated = readme.replace(before, after, 1)
+                self.assertNotEqual(mutated, readme)
+                failures = (
+                    check_docs_hygiene
+                    .readme_current_local_release_failures(
+                        ledger_bytes=ledger_bytes,
+                        readme_text=mutated,
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        expected_failure in failure
+                        for failure in failures
+                    ),
+                    f"README mutation {label!r} was accepted: "
+                    f"{failures!r}",
+                )
+
+        future_build_number = current.build_number + 1
+        future_id = (
+            f"aetherlink-{current.marketing_version}"
+            f"+{future_build_number}-local-v1"
+        )
+        future_doc = (
+            "docs/releases/"
+            f"{current.marketing_version}-build-"
+            f"{future_build_number}-local-v1.md"
+        )
+        future_ledger = (
+            ledger_bytes
+            + f"{future_build_number}\t{current.marketing_version}\n".encode(
+                "ascii"
+            )
+        )
+        future_readme = readme
+        future_replacements = (
+            (
+                f"shared build number `{current.build_number}`",
+                f"shared build number `{future_build_number}`",
+            ),
+            (current_id, future_id),
+            (
+                f"The Build {current.build_number} qualification runner",
+                f"The Build {future_build_number} qualification runner",
+            ),
+            (
+                f"Build {current.build_number} preserves compliance profile",
+                f"Build {future_build_number} preserves compliance profile",
+            ),
+            (
+                f"Builds 1 through {current.build_number - 1}",
+                f"Builds 1 through {future_build_number - 1}",
+            ),
+            (
+                f"build {current.build_number} local qualification record",
+                f"build {future_build_number} local qualification record",
+            ),
+            (current_doc, future_doc),
+        )
+        for before, after in future_replacements:
+            mutated = future_readme.replace(before, after)
+            self.assertNotEqual(
+                mutated,
+                future_readme,
+                f"future README replacement was absent: {before!r}",
+            )
+            future_readme = mutated
+        self.assertEqual(
+            check_docs_hygiene.readme_current_local_release_failures(
+                ledger_bytes=future_ledger,
+                readme_text=future_readme,
+            ),
+            [],
+        )
+
+        future_result = (
+            f"{future_id}-two-root-v"
+            f"{check_docs_hygiene.CURRENT_REPRODUCIBILITY_RESULT_PATH_VERSION}"
+            ".json"
+        )
+        future_prepublication = (
+            f"{future_id}-two-root-v"
+            f"{check_docs_hygiene.CURRENT_REPRODUCIBILITY_RESULT_PATH_VERSION}"
+            "-prepublication.json"
+        )
+        future_mutations = {
+            "result": (
+                future_result,
+                f"{current_id}-two-root-v"
+                f"{check_docs_hygiene.CURRENT_REPRODUCIBILITY_RESULT_PATH_VERSION}"
+                ".json",
+                "current reproducibility result",
+            ),
+            "prepublication": (
+                future_prepublication,
+                f"{current_id}-two-root-v"
+                f"{check_docs_hygiene.CURRENT_REPRODUCIBILITY_RESULT_PATH_VERSION}"
+                "-prepublication.json",
+                "current reproducibility prepublication",
+            ),
+            "compliance": (
+                f"Build {future_build_number} preserves compliance profile",
+                f"Build {current.build_number} preserves compliance profile",
+                "current compliance profile",
+            ),
+        }
+        for label, (before, after, expected_failure) in (
+            future_mutations.items()
+        ):
+            with self.subTest(future_build_mutation=label):
+                mutated = future_readme.replace(before, after, 1)
+                self.assertNotEqual(mutated, future_readme)
+                failures = (
+                    check_docs_hygiene
+                    .readme_current_local_release_failures(
+                        ledger_bytes=future_ledger,
+                        readme_text=mutated,
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        expected_failure in failure
+                        for failure in failures
+                    ),
+                    f"future README mutation {label!r} was accepted: "
+                    f"{failures!r}",
+                )
+
+    def test_multilingual_full_matrix_v3_evidence_is_current(self) -> None:
+        self.assertEqual(
+            check_docs_hygiene
+            .ollama_multilingual_full_matrix_v3_evidence_failures(),
+            [],
+        )
+        relative = "docs/handoff.md"
+        handoff = (
+            check_docs_hygiene.ROOT / relative
+        ).read_text(encoding="utf-8")
+        mutations = {
+            "ranking": (
+                "76/80 ranking",
+                "75/80 ranking",
+                "76/80 ranking comparisons",
+            ),
+            "repeatability": (
+                "80/80 repeatability",
+                "79/80 repeatability",
+                "80/80 repeatability comparisons",
+            ),
+            "Korean coordinate": (
+                "Korean and French scenario ordinal 2",
+                "Japanese and French scenario ordinal 2",
+                "Korean scenario ordinal 2",
+            ),
+            "French coordinate": (
+                "Korean and French scenario ordinal 2",
+                "Korean and English scenario ordinal 2",
+                "French scenario ordinal 2",
+            ),
+            "ordinal": (
+                "Korean and French scenario ordinal 2",
+                "Korean and French scenario ordinal 3",
+                "Korean scenario ordinal 2",
+            ),
+            "recovery": (
+                "Both\n  fresh-provider recoveries pass",
+                "Both\n  fresh-provider recoveries fail",
+                "fresh-provider recoveries pass",
+            ),
+        }
+        for label, (before, after, expected_failure) in mutations.items():
+            with self.subTest(v3_claim_mutation=label):
+                mutated = handoff.replace(before, after, 1)
+                self.assertNotEqual(mutated, handoff)
+                failures = (
+                    check_docs_hygiene
+                    .ollama_multilingual_full_matrix_v3_evidence_failures(
+                        document_text_by_relative={relative: mutated}
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        expected_failure in failure
+                        for failure in failures
+                    ),
+                    f"V3 claim mutation {label!r} was accepted: "
+                    f"{failures!r}",
+                )
+
+    def test_build16_success_and_failed_repetition_history_is_preserved(
+        self,
+    ) -> None:
+        self.assertEqual(
+            check_docs_hygiene
+            .historical_build16_reproducibility_failures(),
+            [],
+        )
+        document_text = (
+            check_docs_hygiene.HISTORICAL_BUILD16_DOC.read_text(
+                encoding="utf-8"
+            )
+        )
+        result_paths = (
+            check_docs_hygiene.HISTORICAL_BUILD16_RESULT,
+            check_docs_hygiene.HISTORICAL_BUILD16_FAILED_ATTEMPT,
+            check_docs_hygiene.HISTORICAL_BUILD16_FAILED_CONFIRMATION,
+        )
+        result_bytes = {
+            str(path.relative_to(check_docs_hygiene.ROOT)): path.read_bytes()
+            for path in result_paths
+        }
+
+        missing_nontransfer = document_text.replace(
+            "Build 17 does not retroactively qualify Build 16.",
+            "Build 16 history boundary removed.",
+            1,
+        )
+        self.assertTrue(
+            any(
+                "missing exact Build 16 history claim" in failure
+                for failure in (
+                    check_docs_hygiene
+                    .historical_build16_reproducibility_failures(
+                        document_text=missing_nontransfer,
+                        result_bytes_by_path=result_bytes,
+                    )
+                )
+            )
+        )
+
+        attempt_relative = str(
+            check_docs_hygiene.HISTORICAL_BUILD16_FAILED_ATTEMPT.relative_to(
+                check_docs_hygiene.ROOT
+            )
+        )
+        mutated_attempt = json.loads(
+            result_bytes[attempt_relative].decode("utf-8")
+        )
+        mutated_attempt["publication"] = {}
+        mutated_attempt["comparison"]["memberDifferences"] = (
+            mutated_attempt["comparison"]["memberDifferences"][:-1]
+        )
+        mutated_result_bytes = dict(result_bytes)
+        mutated_result_bytes[attempt_relative] = (
+            json.dumps(
+                mutated_attempt,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
+        failures = (
+            check_docs_hygiene
+            .historical_build16_reproducibility_failures(
+                document_text=document_text,
+                result_bytes_by_path=mutated_result_bytes,
+            )
+        )
+        self.assertTrue(
+            any("publication=null" in failure for failure in failures)
+        )
+        self.assertTrue(
+            any("expected failed member paths" in failure for failure in failures)
+        )
+
+    def test_historical_release_documents_preserve_own_identity_and_readback(
         self,
     ) -> None:
         ledger_bytes = check_docs_hygiene.LOCAL_RELEASE_LEDGER.read_bytes()
         entries = check_docs_hygiene.parse_release_version_ledger(
             ledger_bytes
         )
-        current = entries[-1]
         previous = entries[-2]
         documents = {
             entry.build_number: (
@@ -790,16 +2518,6 @@ private func generatePairingQR() {{
             ).read_text(encoding="utf-8")
             for entry in entries[:-1]
         }
-        current_doc = (
-            "docs/releases/"
-            f"{current.marketing_version}-build-"
-            f"{current.build_number}-local-v1.md"
-        )
-        previous_doc = (
-            "docs/releases/"
-            f"{previous.marketing_version}-build-"
-            f"{previous.build_number}-local-v1.md"
-        )
         oldest = entries[0]
         oldest_release_id = (
             f"aetherlink-{oldest.marketing_version}"
@@ -847,39 +2565,6 @@ private func generatePairingQR() {{
                 "  --historical\n  --historical",
                 "historical readback mode must appear exactly once",
             ),
-            "current_prose": (
-                f"Build {current.build_number} is the current local",
-                f"Build {previous.build_number} is the current local",
-                "current qualification prose must name build",
-            ),
-            "additional_stale_qualification_record": (
-                f"`{current_doc}`",
-                (
-                    f"`{current_doc}`\n"
-                    f"Stale current qualification record: `{previous_doc}`."
-                ),
-                "current release document pointer must appear exactly once",
-            ),
-            "qualification_record": (
-                f"`{current_doc}`",
-                f"`{previous_doc}`",
-                "current qualification record pointer",
-            ),
-            "additional_stale_fuller_contract": (
-                f"contract now lives in the Build {current.build_number} record",
-                (
-                    f"contract now lives in the build "
-                    f"{current.build_number} record.\n"
-                    f"The fuller compatibility contract now lives in the "
-                    f"build {previous.build_number} record"
-                ),
-                "fuller contract must point to current build",
-            ),
-            "fuller_contract": (
-                f"Build {current.build_number} record",
-                f"Build {previous.build_number} record",
-                "fuller contract must point to current build",
-            ),
         }
         for label, (before, after, expected_failure) in mutations.items():
             with self.subTest(label=label):
@@ -907,7 +2592,7 @@ private func generatePairingQR() {{
                     f"unexpected failures: {failures!r}",
                 )
 
-    def test_build3_fixture_record_requires_one_own_historical_readback(
+    def test_build3_fixture_record_requires_every_own_historical_readback(
         self,
     ) -> None:
         ledger_bytes = check_docs_hygiene.LOCAL_RELEASE_LEDGER.read_bytes()
@@ -929,17 +2614,37 @@ private func generatePairingQR() {{
         fixture_build = check_docs_hygiene.LOCAL_RELEASE_FIXTURE_BUILD_NUMBER
         fixture_release_id = check_docs_hygiene.LOCAL_RELEASE_FIXTURE_ID
         target = f"--archive-dir dist/releases/{fixture_release_id}"
+        exact_command = (
+            check_docs_hygiene.LOCAL_RELEASE_FIXTURE_READBACK_COMMAND
+        )
+        fixture_text = documents[fixture_build]
+        self.assertEqual(fixture_text.count(exact_command), 2)
+        second_command_index = fixture_text.rfind(exact_command)
+        self.assertGreater(second_command_index, fixture_text.find(exact_command))
+
+        def replace_second_command(replacement: str) -> str:
+            return (
+                fixture_text[:second_command_index]
+                + replacement
+                + fixture_text[second_command_index + len(exact_command):]
+            )
 
         mutations = {
-            "missing": documents[fixture_build].replace(
+            "missing": fixture_text.replace(
                 target,
                 "--archive-dir dist/releases/removed-build3-target",
                 1,
             ),
-            "duplicate": documents[fixture_build].replace(
+            "duplicate": fixture_text.replace(
                 target,
                 f"{target}\n{target}",
                 1,
+            ),
+            "bare_second_command": replace_second_command(
+                "python3 script/check_release_artifact_archive.py",
+            ),
+            "second_command_without_historical_mode": replace_second_command(
+                exact_command.removesuffix(" \\\n  --historical"),
             ),
         }
         for label, mutated_fixture in mutations.items():
@@ -955,8 +2660,11 @@ private func generatePairingQR() {{
                 )
                 self.assertTrue(
                     any(
-                        "historical archive readback target must include "
-                        "exactly one" in failure
+                        (
+                            "exact historical Build 3 readback command must "
+                            "appear twice"
+                        )
+                        in failure
                         for failure in failures
                     ),
                     f"build 3 readback mutation {label!r} was accepted: "
@@ -986,16 +2694,105 @@ private func generatePairingQR() {{
             ),
             (
                 "`dist/reproducibility/"
-                "aetherlink-1.0.0+13-local-v1-two-root-v2-confirmation.json`"
+                "aetherlink-1.0.0+20-local-v1-two-root-v3-prepublication.json`"
             ),
             (
-                f"{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_CONFIRMATION_SIZE:,} "
+                f"{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_PREPUBLICATION_SIZE:,} "
                 "bytes"
             ),
             (
-                f"`{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_CONFIRMATION_SHA256}`"
+                f"`{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_PREPUBLICATION_SHA256}`"
             ),
-            "`alreadyMatched=true`",
+            "`alreadyMatched=false`",
+            "`-Xswiftc -num-threads -Xswiftc 1`",
+            (
+                "`dist/lifecycle/"
+                "macos-packaged-app-build-20-clean-home-install-v1.json`"
+            ),
+            (
+                f"`{check_docs_hygiene.CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SHA256}`"
+            ),
+            (
+                f"`{check_docs_hygiene.CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_TEST_SHA256}`"
+            ),
+            (
+                "`dist/lifecycle/"
+                "macos-packaged-app-build-20-clean-home-state-recovery-v1.json`"
+            ),
+            (
+                f"`{check_docs_hygiene.CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SHA256}`"
+            ),
+            (
+                f"`{check_docs_hygiene.CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_TEST_SHA256}`"
+            ),
+            (
+                check_docs_hygiene
+                .CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_REPEATABILITY_CLAIM
+            ),
+            f"`{check_docs_hygiene.HISTORICAL_BUILD16_RELEASE_ID}`",
+            (
+                f"{check_docs_hygiene.HISTORICAL_BUILD16_ARCHIVE_SIZE:,} "
+                "bytes"
+            ),
+            f"`{check_docs_hygiene.HISTORICAL_BUILD16_ARCHIVE_SHA256}`",
+            (
+                f"{check_docs_hygiene.HISTORICAL_BUILD16_RESULT_SIZE:,} "
+                "bytes"
+            ),
+            f"`{check_docs_hygiene.HISTORICAL_BUILD16_RESULT_SHA256}`",
+            (
+                f"{check_docs_hygiene.HISTORICAL_BUILD16_FAILED_ATTEMPT_SIZE:,} "
+                "bytes"
+            ),
+            f"`{check_docs_hygiene.HISTORICAL_BUILD16_FAILED_ATTEMPT_SHA256}`",
+            (
+                f"`{check_docs_hygiene.HISTORICAL_BUILD16_FAILED_CONFIRMATION_SHA256}`"
+            ),
+            "`publication=null`",
+            "Build 17 does not retroactively qualify Build 16.",
+            (
+                "`dist/lifecycle/"
+                "macos-packaged-app-build-14-clean-home-install-v1.json`"
+            ),
+            (
+                f"{check_docs_hygiene.MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SIZE:,} "
+                "bytes"
+            ),
+            (
+                f"`{check_docs_hygiene.MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SHA256}`"
+            ),
+            (
+                f"`{check_docs_hygiene.MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RUNNER_SHA256}`"
+            ),
+            (
+                f"`{check_docs_hygiene.MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_TEST_SHA256}`"
+            ),
+            "`distinctProcessIdentifiers=true`",
+            "`regularFileBytesAndModesUnchangedAcrossRelaunch=true`",
+            "`totalEventCount=0`",
+            (
+                "`dist/lifecycle/"
+                "macos-packaged-app-build-14-clean-home-state-recovery-v1.json`"
+            ),
+            (
+                f"{check_docs_hygiene.MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SIZE:,} "
+                "bytes"
+            ),
+            (
+                f"`{check_docs_hygiene.MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SHA256}`"
+            ),
+            (
+                f"`{check_docs_hygiene.MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256}`"
+            ),
+            (
+                f"`{check_docs_hygiene.MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_TEST_SHA256}`"
+            ),
+            "`installedStateBytesAndModesUnchangedAcrossRelaunch=true`",
+            "`runtimeIdentityFilePresent=true`",
+            (
+                "Build 14 installed state-recovery evidence remains bound to "
+                "Build 14 and is not reinterpreted as Build 17 evidence."
+            ),
             (
                 "`dist/lifecycle/"
                 "macos-packaged-app-build-13-state-recovery-v1.json`"
@@ -1030,6 +2827,10 @@ private func generatePairingQR() {{
                 "13 evidence is not reinterpreted as Build 12 evidence."
             ),
             (
+                "Build 13 state-recovery evidence remains bound to Build 13 "
+                "and is not reinterpreted as Build 17 evidence."
+            ),
+            (
                 "`dist/lifecycle/"
                 "macos-packaged-app-build-10-lifecycle-v1.json`"
             ),
@@ -1054,7 +2855,7 @@ private func generatePairingQR() {{
             ),
             (
                 "Build 10 observations remain bound to Build 10 and are not "
-                "reinterpreted as Build 13 evidence."
+                "reinterpreted as Build 17 evidence."
             ),
             "`minimumObservationSeconds=5.0`",
             "`observationDeadlineReached=true`",
@@ -1071,6 +2872,9 @@ private func generatePairingQR() {{
                 f"`{check_docs_hygiene.HISTORICAL_MACOS_PACKAGED_LIFECYCLE_EXPECTED_RESULT_SHA256}`"
             ),
             f"`{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_SOURCE_SHA256}`",
+            (
+                f"`{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_SOURCE_OVERLAY_SHA256}`"
+            ),
             f"`{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_SOURCE_HEAD}`",
             f"`{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_MACOS_UUID}`",
             "101- and 109-byte source roots",
@@ -1078,6 +2882,7 @@ private func generatePairingQR() {{
             "`independentReadback=true`",
             "`publishedBytesEqualLaneA=true`",
             "`sourceSnapshotUnchanged=true`",
+            *check_docs_hygiene.LOCAL_RELEASE_ANDROID_BACKUP_POLICY_REQUIRED_CLAIMS,
             *(
                 f"{size:,} bytes"
                 for size, _ in check_docs_hygiene.LOCAL_RELEASE_EXPECTED_MEMBERS.values()
@@ -1089,10 +2894,16 @@ private func generatePairingQR() {{
         )
 
         for identity_snippet in identity_snippets:
+            identity_pattern = r"\s+".join(
+                re.escape(part) for part in identity_snippet.split()
+            )
+            if re.search(identity_pattern, document_text) is None:
+                continue
             with self.subTest(identity=identity_snippet):
-                mutated = document_text.replace(
-                    identity_snippet,
+                mutated = re.sub(
+                    identity_pattern,
                     "INVALID_RELEASE_IDENTITY",
+                    document_text,
                 )
                 self.assertNotEqual(mutated, document_text)
                 self.assertTrue(

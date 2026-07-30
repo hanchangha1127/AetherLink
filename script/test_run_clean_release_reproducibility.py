@@ -69,6 +69,50 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             readback_module.SOURCE_REQUIRED_FILES,
         )
 
+    def test_source_inventory_includes_runtime_chat_cross_process_qa_closure(
+        self,
+    ) -> None:
+        runner_relative = (
+            "script/run_macos_runtime_chat_cross_process_smoke.py"
+        )
+        test_relative = (
+            "script/test_run_macos_runtime_chat_cross_process_smoke.py"
+        )
+        helper_root = (
+            "apps/macos/RuntimeChatSQLiteCrossProcessQA/Sources"
+        )
+        self.assertEqual(
+            builder_module.SOURCE_REQUIRED_FILES.count(runner_relative),
+            1,
+        )
+        self.assertEqual(
+            builder_module.SOURCE_REQUIRED_FILES.count(test_relative),
+            1,
+        )
+        self.assertEqual(
+            builder_module.SOURCE_ROOTS.count(helper_root),
+            1,
+        )
+        self.assertEqual(
+            builder_module.SOURCE_REQUIRED_FILES,
+            readback_module.SOURCE_REQUIRED_FILES,
+        )
+        self.assertEqual(
+            builder_module.SOURCE_ROOTS,
+            readback_module.SOURCE_ROOTS,
+        )
+
+    def test_source_inventory_includes_local_dmg_runner_once(self) -> None:
+        runner_relative = "script/run_macos_local_dmg_install_smoke.py"
+        self.assertEqual(
+            builder_module.SOURCE_REQUIRED_FILES.count(runner_relative),
+            1,
+        )
+        self.assertEqual(
+            builder_module.SOURCE_REQUIRED_FILES,
+            readback_module.SOURCE_REQUIRED_FILES,
+        )
+
     def test_swift_closure_diagnostic_uses_canonical_source_location(
         self,
     ) -> None:
@@ -101,6 +145,7 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result)
         self.assertIn("--result", result.stdout)
+        self.assertIn("--comparison-only", result.stdout)
 
     def test_default_result_path_is_release_id_qualified(self) -> None:
         current = mock.Mock(
@@ -115,8 +160,152 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             self.assertEqual(
                 runner.default_result_path(),
                 runner.RESULT_ROOT
-                / "aetherlink-1.0.0+8-local-v1-two-root-v2.json",
+                / "aetherlink-1.0.0+8-local-v1-two-root-v3.json",
             )
+            self.assertEqual(
+                runner.default_comparison_result_path(),
+                runner.RESULT_ROOT
+                / (
+                    "aetherlink-1.0.0+8-local-v1"
+                    "-two-root-v3-prepublication.json"
+                ),
+            )
+
+    def test_result_mode_namespaces_are_current_release_qualified(self) -> None:
+        current = mock.Mock(
+            build_number=8,
+            marketing_version="1.0.0",
+        )
+        publish_names = (
+            "aetherlink-1.0.0+8-local-v1-two-root-v3.json",
+            "aetherlink-1.0.0+8-local-v1-two-root-v3-confirmation.json",
+            "aetherlink-1.0.0+8-local-v1-two-root-v3-attempt1-failed.json",
+        )
+        comparison_names = (
+            "aetherlink-1.0.0+8-local-v1-two-root-v3-prepublication.json",
+            (
+                "aetherlink-1.0.0+8-local-v1-two-root-v3-"
+                "prepublication-confirmation.json"
+            ),
+            (
+                "aetherlink-1.0.0+8-local-v1-two-root-v3-"
+                "prepublication-attempt1-interrupted.json"
+            ),
+        )
+        rejected = (
+            (publish_names[0], False),
+            (comparison_names[0], True),
+            ("aetherlink-1.0.0+7-local-v1-two-root-v3.json", True),
+            ("result.json", True),
+            (
+                "aetherlink-1.0.0+8-local-v1-two-root-v3-"
+                "prepublication-confirmation.json",
+                True,
+            ),
+            (
+                "aetherlink-1.0.0+8-local-v1-two-root-v3-"
+                "prepublication-.json",
+                False,
+            ),
+        )
+        with mock.patch.object(
+            runner,
+            "load_release_version_ledger",
+            return_value=(current,),
+        ):
+            for name in publish_names:
+                with self.subTest(name=name, publish=True):
+                    runner.validate_result_mode_path(
+                        runner.RESULT_ROOT / name,
+                        publish_qualified=True,
+                    )
+            for name in comparison_names:
+                with self.subTest(name=name, publish=False):
+                    runner.validate_result_mode_path(
+                        runner.RESULT_ROOT / name,
+                        publish_qualified=False,
+                    )
+            for name, publish_qualified in rejected:
+                with self.subTest(
+                    name=name,
+                    publish=publish_qualified,
+                ), self.assertRaisesRegex(
+                    runner.ReproducibilityError,
+                    "mode namespace",
+                ):
+                    runner.validate_result_mode_path(
+                        runner.RESULT_ROOT / name,
+                        publish_qualified=publish_qualified,
+                    )
+
+    def test_main_wires_comparison_mode_and_rejects_cross_mode_result(
+        self,
+    ) -> None:
+        current = mock.Mock(
+            build_number=8,
+            marketing_version="1.0.0",
+        )
+        comparison_path = (
+            runner.RESULT_ROOT
+            / "aetherlink-1.0.0+8-local-v1-two-root-v3-prepublication.json"
+        )
+        canonical_path = (
+            runner.RESULT_ROOT
+            / "aetherlink-1.0.0+8-local-v1-two-root-v3.json"
+        )
+        passed = {
+            "builds": [{"archive": {"sha256": "a" * 64}}],
+            "comparison": {"memberBytesEqual": True},
+        }
+        with (
+            mock.patch.object(
+                runner,
+                "load_release_version_ledger",
+                return_value=(current,),
+            ),
+            mock.patch.object(
+                sys,
+                "argv",
+                ["runner", "--comparison-only"],
+            ),
+            mock.patch.object(
+                runner,
+                "execute",
+                return_value=(0, passed),
+            ) as execute_mock,
+            mock.patch("builtins.print"),
+        ):
+            self.assertEqual(runner.main(), 0)
+        execute_mock.assert_called_once_with(
+            comparison_path.resolve(),
+            publish_qualified=False,
+        )
+
+        for arguments in (
+            [
+                "runner",
+                "--comparison-only",
+                "--result",
+                str(canonical_path),
+            ],
+            [
+                "runner",
+                "--result",
+                str(comparison_path),
+            ],
+        ):
+            with (
+                mock.patch.object(
+                    runner,
+                    "load_release_version_ledger",
+                    return_value=(current,),
+                ),
+                mock.patch.object(sys, "argv", arguments),
+                mock.patch.object(runner, "execute") as rejected_execute,
+                mock.patch("builtins.print"),
+            ):
+                self.assertEqual(runner.main(), 2)
+            rejected_execute.assert_not_called()
 
     def test_git_refs_capture_head_and_origin_independently(self) -> None:
         with mock.patch.object(
@@ -131,9 +320,42 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
     def test_canonical_result_and_swift_policy_are_exact(self) -> None:
         result = runner.empty_result()
         encoded = runner.canonical_json_bytes(result)
-        self.assertEqual(result["schemaVersion"], 2)
+        self.assertEqual(result["schemaVersion"], 3)
+        self.assertEqual(
+            runner.RESULT_PATH_VERSION,
+            result["schemaVersion"],
+        )
+        self.assertEqual(
+            result["executionMode"],
+            runner.PUBLISH_QUALIFIED_MODE,
+        )
+        self.assertIsNone(result["releaseId"])
         self.assertIsNone(result["scratch"]["sourceRoots"])
-        self.assertIsNone(result["publication"])
+        self.assertEqual(
+            result["publication"],
+            {
+                "attempted": False,
+                "independentReadback": False,
+                "outcome": "not-reached",
+                "policy": runner.PUBLISH_QUALIFIED_PUBLICATION_POLICY,
+                "qualifiedArchivePublished": False,
+            },
+        )
+        comparison_only = runner.empty_result(publish_qualified=False)
+        self.assertEqual(
+            comparison_only["executionMode"],
+            runner.COMPARISON_ONLY_MODE,
+        )
+        self.assertEqual(
+            comparison_only["publication"],
+            {
+                "attempted": False,
+                "independentReadback": False,
+                "outcome": "disabled-comparison-only",
+                "policy": runner.COMPARISON_ONLY_PUBLICATION_POLICY,
+                "qualifiedArchivePublished": False,
+            },
+        )
         self.assertTrue(encoded.endswith(b"\n"))
         self.assertEqual(
             encoded,
@@ -147,6 +369,11 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
         )
         arguments = result["toolchainPolicy"]["swiftArguments"]
         self.assertEqual(arguments.count("--jobs"), 1)
+        self.assertEqual(arguments.count("-num-threads"), 1)
+        self.assertEqual(
+            arguments[arguments.index("-num-threads") + 2],
+            "1",
+        )
         self.assertEqual(arguments.count("-fdisable-module-hash"), 1)
         self.assertEqual(arguments.count("-working-directory"), 1)
         self.assertEqual(arguments.count(str(runner.SWIFT_SCRATCH)), 2)
@@ -510,6 +737,270 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 },
             )
 
+    def test_publication_state_tracks_archive_mutation_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            release_id = "fixture-release"
+            qualified_root = base / "qualified" / release_id
+            qualified_root.mkdir(parents=True)
+            archive_path = qualified_root / f"{release_id}.zip"
+            manifest_path = qualified_root / f"{release_id}.manifest.json"
+            checksum_path = qualified_root / f"{release_id}.zip.sha256"
+            archive_path.write_bytes(b"fixture archive\n")
+            manifest_path.write_bytes(b'{"fixture":true}\n')
+            checksum_path.write_text(
+                f"{hashlib.sha256(archive_path.read_bytes()).hexdigest()}  "
+                f"{archive_path.name}\n",
+                encoding="ascii",
+            )
+            evidence = runner.ArchiveEvidence(
+                archive_directory=qualified_root,
+                archive_path=archive_path,
+                manifest_path=manifest_path,
+                checksum_path=checksum_path,
+                archive_identity=runner.stable_file_identity(archive_path),
+                manifest_identity=runner.stable_file_identity(manifest_path),
+                checksum_identity=runner.stable_file_identity(checksum_path),
+                zip_entry_count=0,
+                payload_member_count=0,
+                normalizations=(),
+                source_sha256="a" * 64,
+                member_inventory=(),
+            )
+            source_snapshot = {
+                "algorithm": "fixture-v1",
+                "fileCount": 1,
+                "files": [],
+                "sha256": "a" * 64,
+            }
+            git_refs = runner.GitRefs("1" * 40, "2" * 40)
+            sentinel = ("b" * 64, {"fixture": self.identity()})
+            current = mock.Mock()
+            real_publisher = builder_module.publish_archive_directory
+
+            def invoke(
+                *,
+                output_name: str,
+                after_publish: str | None = None,
+                verify_side_effect: tuple[object, ...] = (None, None),
+            ) -> tuple[
+                dict[str, object],
+                dict[str, object] | None,
+                BaseException | None,
+                Path,
+            ]:
+                output_root = base / output_name
+                final_directory = output_root / release_id
+                publication = runner.empty_result()["publication"]
+                details: dict[str, object] | None = None
+                caught: BaseException | None = None
+
+                def publish_fixture(
+                    *args: object,
+                    **kwargs: object,
+                ) -> tuple[Path, bool]:
+                    published = real_publisher(*args, **kwargs)
+                    if after_publish == "oserror":
+                        raise OSError("fixture post-mutation cleanup failure")
+                    if after_publish == "interrupt":
+                        raise KeyboardInterrupt
+                    return published
+
+                with (
+                    mock.patch.object(runner, "ROOT", base),
+                    mock.patch.object(
+                        runner,
+                        "load_release_version_ledger",
+                        return_value=(current,),
+                    ),
+                    mock.patch.object(
+                        runner.archive_builder,
+                        "release_id",
+                        return_value=release_id,
+                    ),
+                    mock.patch.object(
+                        runner,
+                        "capture_git_refs",
+                        return_value=git_refs,
+                    ),
+                    mock.patch.object(
+                        runner.archive_builder,
+                        "source_snapshot",
+                        return_value=source_snapshot,
+                    ),
+                    mock.patch.object(
+                        runner,
+                        "capture_protected_archive",
+                        return_value=sentinel,
+                    ),
+                    mock.patch.object(
+                        runner.archive_reader,
+                        "verify_release_archive",
+                        side_effect=verify_side_effect,
+                    ),
+                    mock.patch.object(
+                        runner.archive_builder,
+                        "DEFAULT_OUTPUT_ROOT",
+                        output_root,
+                    ),
+                    mock.patch.object(
+                        runner.archive_builder,
+                        "publish_archive_directory",
+                        side_effect=publish_fixture,
+                    ),
+                    mock.patch.object(
+                        runner,
+                        "capture_archive",
+                        return_value=evidence,
+                    ),
+                    mock.patch.object(
+                        runner,
+                        "compare_archives",
+                        return_value={"differences": []},
+                    ),
+                ):
+                    try:
+                        details = runner.publish_qualified_archive(
+                            evidence,
+                            source_snapshot,
+                            git_refs,
+                            sentinel,
+                            publication=publication,
+                        )
+                    except BaseException as error:
+                        caught = error
+                return publication, details, caught, final_directory
+
+            publication, details, caught, final_directory = invoke(
+                output_name="precheck-failure",
+                verify_side_effect=(
+                    readback_module.ReleaseArchiveVerificationError(
+                        "fixture candidate failure"
+                    ),
+                ),
+            )
+            self.assertIsInstance(caught, runner.ReproducibilityError)
+            self.assertIsNone(details)
+            self.assertFalse(final_directory.exists())
+            self.assertEqual(
+                (
+                    publication["attempted"],
+                    publication["outcome"],
+                    publication["qualifiedArchivePublished"],
+                ),
+                (True, "failed-before-archive-mutation", False),
+            )
+
+            publication, details, caught, final_directory = invoke(
+                output_name="successful",
+            )
+            self.assertIsNone(caught)
+            self.assertIsNotNone(details)
+            self.assertFalse(details["alreadyMatched"])
+            self.assertTrue(final_directory.is_dir())
+            self.assertEqual(
+                {path.name for path in final_directory.iterdir()},
+                {
+                    archive_path.name,
+                    manifest_path.name,
+                    checksum_path.name,
+                },
+            )
+            self.assertEqual(
+                (
+                    publication["attempted"],
+                    publication["outcome"],
+                    publication["qualifiedArchivePublished"],
+                ),
+                (True, "published-verified", True),
+            )
+            self.assertTrue(publication["independentReadback"])
+
+            publication, details, caught, final_directory = invoke(
+                output_name="successful",
+            )
+            self.assertIsNone(caught)
+            self.assertIsNotNone(details)
+            self.assertTrue(details["alreadyMatched"])
+            self.assertTrue(final_directory.is_dir())
+            self.assertEqual(
+                (
+                    publication["attempted"],
+                    publication["outcome"],
+                    publication["qualifiedArchivePublished"],
+                ),
+                (True, "matched-existing-verified", False),
+            )
+
+            publication, details, caught, final_directory = invoke(
+                output_name="new-postcheck-failure",
+                verify_side_effect=(
+                    None,
+                    readback_module.ReleaseArchiveVerificationError(
+                        "fixture readback failure"
+                    ),
+                ),
+            )
+            self.assertIsInstance(caught, runner.ReproducibilityError)
+            self.assertIsNone(details)
+            self.assertTrue(final_directory.is_dir())
+            self.assertEqual(
+                (
+                    publication["attempted"],
+                    publication["outcome"],
+                    publication["qualifiedArchivePublished"],
+                ),
+                (True, "published-postcheck-failed", True),
+            )
+            self.assertFalse(publication["independentReadback"])
+
+            publication, details, caught, final_directory = invoke(
+                output_name="successful",
+                verify_side_effect=(
+                    None,
+                    readback_module.ReleaseArchiveVerificationError(
+                        "fixture existing readback failure"
+                    ),
+                ),
+            )
+            self.assertIsInstance(caught, runner.ReproducibilityError)
+            self.assertIsNone(details)
+            self.assertTrue(final_directory.is_dir())
+            self.assertEqual(
+                (
+                    publication["attempted"],
+                    publication["outcome"],
+                    publication["qualifiedArchivePublished"],
+                ),
+                (True, "matched-existing-postcheck-failed", False),
+            )
+
+            for after_publish, expected_error in (
+                ("oserror", runner.ReproducibilityError),
+                ("interrupt", KeyboardInterrupt),
+            ):
+                with self.subTest(after_publish=after_publish):
+                    publication, details, caught, final_directory = invoke(
+                        output_name=f"post-mutation-{after_publish}",
+                        after_publish=after_publish,
+                    )
+                    self.assertIsInstance(caught, expected_error)
+                    self.assertIsNone(details)
+                    self.assertTrue(final_directory.is_dir())
+                    self.assertEqual(
+                        (
+                            publication["attempted"],
+                            publication["outcome"],
+                            publication["qualifiedArchivePublished"],
+                        ),
+                        (
+                            True,
+                            "archive-publication-call-outcome-uncertain",
+                            None,
+                        ),
+                    )
+                    self.assertFalse(publication["independentReadback"])
+
     def test_execute_never_builds_from_original_and_holds_lock_through_cleanup(
         self,
     ) -> None:
@@ -527,6 +1018,7 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             }
             sentinel = ("b" * 64, {"fixture": self.identity()})
             events: list[str] = []
+            fail_publication = [False]
 
             @contextmanager
             def fake_lock() -> object:
@@ -541,6 +1033,12 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
 
             def fake_publish(*args: object, **kwargs: object) -> dict[str, object]:
                 events.append("publish")
+                if fail_publication[0]:
+                    raise runner.ReproducibilityError(
+                        8,
+                        "publication",
+                        "fixture publication failure",
+                    )
                 return {
                     "alreadyMatched": False,
                     "archiveDirectory": "dist/releases/fixture",
@@ -558,10 +1056,14 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 mock.patch.object(
                     runner,
                     "capture_protected_archive",
-                    side_effect=(sentinel, sentinel),
+                    side_effect=(sentinel,) * 6,
                 ),
                 mock.patch.object(runner, "acquire_run_lock", fake_lock),
-                mock.patch.object(runner, "preflight_fixed_paths"),
+                mock.patch.object(
+                    runner,
+                    "preflight_fixed_paths",
+                    return_value=base.name,
+                ),
                 mock.patch.object(runner, "create_swift_lease"),
                 mock.patch.object(
                     runner,
@@ -582,6 +1084,11 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     "source_snapshot",
                     return_value=source_snapshot,
                 ),
+                mock.patch.object(
+                    runner,
+                    "source_release_id",
+                    return_value=base.name,
+                ),
                 mock.patch.object(runner, "materialize_clone"),
                 mock.patch.object(
                     runner,
@@ -596,7 +1103,7 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 mock.patch.object(
                     runner,
                     "run_lane",
-                    side_effect=(evidence, evidence),
+                    side_effect=(evidence,) * 6,
                 ) as run_lane_mock,
                 mock.patch.object(
                     runner,
@@ -620,8 +1127,50 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     runner,
                     "publish_qualified_archive",
                     side_effect=fake_publish,
-                ),
+                ) as publish_mock,
             ):
+                comparison_code, comparison_result = runner.execute(
+                    base / "result/result-prepublication.json",
+                    publish_qualified=False,
+                )
+                self.assertEqual(comparison_code, 0, comparison_result)
+                self.assertEqual(
+                    comparison_result["publication"],
+                    {
+                        "attempted": False,
+                        "independentReadback": False,
+                        "outcome": "disabled-comparison-only",
+                        "policy": "comparison-only-no-publication",
+                        "qualifiedArchivePublished": False,
+                    },
+                )
+                publish_mock.assert_not_called()
+                run_lane_mock.reset_mock()
+                events.clear()
+                fail_publication[0] = True
+                failed_code, failed_result = runner.execute(
+                    base / "result/result-attempt1-failed.json"
+                )
+                self.assertEqual(failed_code, 8, failed_result)
+                self.assertEqual(
+                    failed_result["publication"],
+                    {
+                        "attempted": True,
+                        "independentReadback": None,
+                        "outcome": "publication-or-readback-incomplete",
+                        "policy": (
+                            runner.PUBLISH_QUALIFIED_PUBLICATION_POLICY
+                        ),
+                        "qualifiedArchivePublished": None,
+                    },
+                )
+                self.assertEqual(
+                    failed_result["failure"]["phase"],
+                    "publication",
+                )
+                run_lane_mock.reset_mock()
+                events.clear()
+                fail_publication[0] = False
                 exit_code, result = runner.execute(result_path)
 
             self.assertEqual(exit_code, 0, result)
@@ -663,7 +1212,7 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
         for path in (protected_result, source_result):
             with self.subTest(path=path), self.assertRaisesRegex(
                 runner.ReproducibilityError,
-                "result path must be",
+                "result basename|result path must be",
             ):
                 runner.preflight_fixed_paths(path)
 
@@ -691,6 +1240,317 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
         self.assertEqual(result["failure"]["phase"], "invocation")
         write_mock.assert_not_called()
 
+    def test_execute_rejects_cross_mode_result_without_build_or_write(
+        self,
+    ) -> None:
+        sentinel = ("b" * 64, {"fixture": self.identity()})
+        canonical_path = runner.default_result_path().resolve()
+        with (
+            mock.patch.object(
+                runner,
+                "capture_protected_archive",
+                side_effect=(sentinel, sentinel),
+            ),
+            mock.patch.object(runner, "acquire_run_lock"),
+            mock.patch.object(runner, "run_lane") as run_lane_mock,
+            mock.patch.object(
+                runner,
+                "publish_qualified_archive",
+            ) as publish_mock,
+            mock.patch.object(runner, "write_result") as write_mock,
+        ):
+            exit_code, result = runner.execute(
+                canonical_path,
+                publish_qualified=False,
+            )
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(result["failure"]["phase"], "invocation")
+        self.assertEqual(
+            result["executionMode"],
+            runner.COMPARISON_ONLY_MODE,
+        )
+        self.assertEqual(
+            result["publication"]["outcome"],
+            "disabled-comparison-only",
+        )
+        run_lane_mock.assert_not_called()
+        publish_mock.assert_not_called()
+        write_mock.assert_not_called()
+
+    def test_release_id_change_after_path_validation_blocks_build_and_write(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            work_root = base / "work"
+            work_root.mkdir(mode=0o700)
+            sentinel = ("b" * 64, {"fixture": self.identity()})
+            source_snapshot = {
+                "algorithm": "fixture-v1",
+                "fileCount": 1,
+                "files": [],
+                "sha256": "a" * 64,
+            }
+
+            @contextmanager
+            def fake_lock() -> object:
+                yield
+
+            with (
+                mock.patch.object(runner, "WORK_ROOT", work_root),
+                mock.patch.object(
+                    runner,
+                    "capture_protected_archive",
+                    side_effect=(sentinel, sentinel),
+                ),
+                mock.patch.object(runner, "acquire_run_lock", fake_lock),
+                mock.patch.object(
+                    runner,
+                    "preflight_fixed_paths",
+                    return_value="fixture-build20",
+                ),
+                mock.patch.object(runner, "create_swift_lease"),
+                mock.patch.object(runner, "cleanup_swift_scratch"),
+                mock.patch.object(
+                    runner,
+                    "capture_git_refs",
+                    return_value=runner.GitRefs("1" * 40, "2" * 40),
+                ),
+                mock.patch.object(
+                    runner,
+                    "capture_source_overlay",
+                    return_value=runner.SourceOverlay((), (), "c" * 64),
+                ),
+                mock.patch.object(
+                    runner.archive_builder,
+                    "source_snapshot",
+                    return_value=source_snapshot,
+                ),
+                mock.patch.object(
+                    runner,
+                    "source_release_id",
+                    return_value="fixture-build21",
+                ),
+                mock.patch.object(
+                    runner,
+                    "materialize_clone",
+                ) as materialize_mock,
+                mock.patch.object(runner, "run_lane") as run_lane_mock,
+                mock.patch.object(
+                    runner,
+                    "publish_qualified_archive",
+                ) as publish_mock,
+                mock.patch.object(runner, "write_result") as write_mock,
+            ):
+                exit_code, result = runner.execute(base / "result.json")
+
+            self.assertEqual(exit_code, 4)
+            self.assertEqual(result["releaseId"], "fixture-build20")
+            self.assertEqual(result["failure"]["phase"], "source-capture")
+            materialize_mock.assert_not_called()
+            run_lane_mock.assert_not_called()
+            publish_mock.assert_not_called()
+            write_mock.assert_not_called()
+
+    def test_materialized_clone_release_id_mismatch_blocks_build_and_write(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            work_root = base / "work"
+            work_root.mkdir(mode=0o700)
+            sentinel = ("b" * 64, {"fixture": self.identity()})
+            source_snapshot = {
+                "algorithm": "fixture-v1",
+                "fileCount": 1,
+                "files": [],
+                "sha256": "a" * 64,
+            }
+
+            @contextmanager
+            def fake_lock() -> object:
+                yield
+
+            with (
+                mock.patch.object(runner, "WORK_ROOT", work_root),
+                mock.patch.object(
+                    runner,
+                    "capture_protected_archive",
+                    side_effect=(sentinel, sentinel),
+                ),
+                mock.patch.object(runner, "acquire_run_lock", fake_lock),
+                mock.patch.object(
+                    runner,
+                    "preflight_fixed_paths",
+                    return_value="fixture-build20",
+                ),
+                mock.patch.object(runner, "create_swift_lease"),
+                mock.patch.object(runner, "cleanup_swift_scratch"),
+                mock.patch.object(
+                    runner,
+                    "capture_git_refs",
+                    return_value=runner.GitRefs("1" * 40, "2" * 40),
+                ),
+                mock.patch.object(
+                    runner,
+                    "capture_source_overlay",
+                    return_value=runner.SourceOverlay((), (), "c" * 64),
+                ),
+                mock.patch.object(
+                    runner.archive_builder,
+                    "source_snapshot",
+                    return_value=source_snapshot,
+                ),
+                mock.patch.object(
+                    runner,
+                    "source_release_id",
+                    side_effect=("fixture-build20", "fixture-build21"),
+                ),
+                mock.patch.object(
+                    runner,
+                    "materialize_clone",
+                ) as materialize_mock,
+                mock.patch.object(runner, "run_lane") as run_lane_mock,
+                mock.patch.object(
+                    runner,
+                    "publish_qualified_archive",
+                ) as publish_mock,
+                mock.patch.object(runner, "write_result") as write_mock,
+            ):
+                exit_code, result = runner.execute(base / "result.json")
+
+            self.assertEqual(exit_code, 4)
+            self.assertEqual(result["releaseId"], "fixture-build20")
+            self.assertEqual(
+                result["failure"]["phase"],
+                "source-materialization",
+            )
+            self.assertEqual(materialize_mock.call_count, 1)
+            run_lane_mock.assert_not_called()
+            publish_mock.assert_not_called()
+            write_mock.assert_not_called()
+
+    def test_lane_archive_release_id_mismatch_blocks_publication_and_write(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            work_root = base / "work"
+            work_root.mkdir(mode=0o700)
+            evidence = self.evidence(base / "fixture-build21")
+            source_snapshot = {
+                "algorithm": "fixture-v1",
+                "fileCount": 1,
+                "files": [],
+                "sha256": "a" * 64,
+            }
+            sentinel = ("b" * 64, {"fixture": self.identity()})
+
+            @contextmanager
+            def fake_lock() -> object:
+                yield
+
+            with (
+                mock.patch.object(runner, "WORK_ROOT", work_root),
+                mock.patch.object(
+                    runner,
+                    "capture_protected_archive",
+                    side_effect=(sentinel, sentinel),
+                ),
+                mock.patch.object(runner, "acquire_run_lock", fake_lock),
+                mock.patch.object(
+                    runner,
+                    "preflight_fixed_paths",
+                    return_value="fixture-build20",
+                ),
+                mock.patch.object(runner, "create_swift_lease"),
+                mock.patch.object(runner, "cleanup_swift_scratch"),
+                mock.patch.object(
+                    runner,
+                    "capture_git_refs",
+                    return_value=runner.GitRefs("1" * 40, "2" * 40),
+                ),
+                mock.patch.object(
+                    runner,
+                    "capture_source_overlay",
+                    return_value=runner.SourceOverlay((), (), "c" * 64),
+                ),
+                mock.patch.object(
+                    runner.archive_builder,
+                    "source_snapshot",
+                    return_value=source_snapshot,
+                ),
+                mock.patch.object(
+                    runner,
+                    "source_release_id",
+                    return_value="fixture-build20",
+                ),
+                mock.patch.object(runner, "materialize_clone"),
+                mock.patch.object(
+                    runner,
+                    "prepare_gradle_caches",
+                    return_value=(base / "ga", base / "gb", 1, "d" * 64),
+                ),
+                mock.patch.object(
+                    runner,
+                    "resolve_android_sdk",
+                    return_value=base / "sdk",
+                ),
+                mock.patch.object(
+                    runner,
+                    "run_lane",
+                    side_effect=(evidence, evidence),
+                ),
+                mock.patch.object(
+                    runner,
+                    "compare_archives",
+                ) as compare_mock,
+                mock.patch.object(
+                    runner,
+                    "publish_qualified_archive",
+                ) as publish_mock,
+                mock.patch.object(runner, "write_result") as write_mock,
+            ):
+                exit_code, result = runner.execute(base / "result.json")
+
+            self.assertEqual(exit_code, 8)
+            self.assertEqual(result["releaseId"], "fixture-build20")
+            self.assertEqual(result["failure"]["phase"], "archive-comparison")
+            self.assertEqual(len(result["builds"]), 2)
+            compare_mock.assert_not_called()
+            publish_mock.assert_not_called()
+            write_mock.assert_not_called()
+
+    def test_run_lane_reads_release_id_from_materialized_clone(self) -> None:
+        clone_root = Path("/fixture/lane/project")
+        evidence = self.evidence(Path("/fixture/archive/clone-release"))
+        with (
+            mock.patch.object(runner, "run_checked"),
+            mock.patch.object(
+                runner,
+                "source_release_id",
+                return_value="clone-release",
+            ) as release_id_mock,
+            mock.patch.object(
+                runner,
+                "capture_archive",
+                return_value=evidence,
+            ) as capture_mock,
+        ):
+            result = runner.run_lane(
+                clone_root,
+                Path("/fixture/gradle"),
+                Path("/fixture/android-sdk"),
+                lane_id="build-a",
+            )
+        self.assertIs(result, evidence)
+        release_id_mock.assert_called_once_with(
+            clone_root,
+            exit_code=6,
+            phase="build-a-readback",
+        )
+        capture_mock.assert_called_once_with(clone_root, "clone-release")
+
     def test_result_write_failure_returns_controlled_internal_failure(
         self,
     ) -> None:
@@ -712,7 +1572,11 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     side_effect=(sentinel, sentinel),
                 ),
                 mock.patch.object(runner, "acquire_run_lock", fake_lock),
-                mock.patch.object(runner, "preflight_fixed_paths"),
+                mock.patch.object(
+                    runner,
+                    "preflight_fixed_paths",
+                    return_value="fixture-release",
+                ),
                 mock.patch.object(runner, "create_swift_lease"),
                 mock.patch.object(runner, "cleanup_swift_scratch"),
                 mock.patch.object(
@@ -757,7 +1621,11 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     side_effect=(sentinel, sentinel),
                 ),
                 mock.patch.object(runner, "acquire_run_lock", fake_lock),
-                mock.patch.object(runner, "preflight_fixed_paths"),
+                mock.patch.object(
+                    runner,
+                    "preflight_fixed_paths",
+                    return_value="fixture-release",
+                ),
                 mock.patch.object(runner, "create_swift_lease"),
                 mock.patch.object(
                     runner,
@@ -777,13 +1645,31 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     ),
                 ),
             ):
-                exit_code, result = runner.execute(base / "result.json")
+                result_path = base / "result-prepublication.json"
+                exit_code, result = runner.execute(
+                    result_path,
+                    publish_qualified=False,
+                )
 
             self.assertEqual(exit_code, 130)
             self.assertEqual(result["failure"]["phase"], "interrupted")
             self.assertEqual(cleaned, ["scratch"])
             self.assertEqual(
-                json.loads((base / "result.json").read_text(encoding="ascii")),
+                result["executionMode"],
+                runner.COMPARISON_ONLY_MODE,
+            )
+            self.assertEqual(
+                result["publication"],
+                {
+                    "attempted": False,
+                    "independentReadback": False,
+                    "outcome": "disabled-comparison-only",
+                    "policy": runner.COMPARISON_ONLY_PUBLICATION_POLICY,
+                    "qualifiedArchivePublished": False,
+                },
+            )
+            self.assertEqual(
+                json.loads(result_path.read_text(encoding="ascii")),
                 result,
             )
 
@@ -809,7 +1695,11 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     side_effect=(before, after),
                 ),
                 mock.patch.object(runner, "acquire_run_lock"),
-                mock.patch.object(runner, "preflight_fixed_paths"),
+                mock.patch.object(
+                    runner,
+                    "preflight_fixed_paths",
+                    return_value=base.name,
+                ),
                 mock.patch.object(runner, "create_swift_lease"),
                 mock.patch.object(
                     runner,
@@ -825,6 +1715,11 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     runner.archive_builder,
                     "source_snapshot",
                     return_value=source_snapshot,
+                ),
+                mock.patch.object(
+                    runner,
+                    "source_release_id",
+                    return_value=base.name,
                 ),
                 mock.patch.object(runner, "materialize_clone"),
                 mock.patch.object(

@@ -4311,6 +4311,10 @@ run check_python_syntax \
   script/package_release_artifacts.py \
   script/check_release_artifact_archive.py \
   script/test_release_artifact_archive.py \
+  script/run_macos_clean_home_installed_app_smoke.py \
+  script/test_run_macos_clean_home_installed_app_smoke.py \
+  script/run_macos_clean_home_installed_state_recovery_smoke.py \
+  script/test_run_macos_clean_home_installed_state_recovery_smoke.py \
   script/check_android_string_parity.py \
   script/check_macos_localization.py \
 	  script/check_protocol_schema.py \
@@ -4468,6 +4472,8 @@ run python3 -m unittest \
   script/test_v1_g0_repository_remote_sources.py \
   script/test_release_version_ledger.py \
   script/test_release_artifact_archive.py \
+  script/test_run_macos_clean_home_installed_app_smoke.py \
+  script/test_run_macos_clean_home_installed_state_recovery_smoke.py \
   script/test_production_relay_security_design.py \
   script/test_relay_allocation_preflight.py \
   script/test_build_and_run.py \
@@ -5430,10 +5436,11 @@ run ./gradlew --offline --no-daemon \
 		  :app:testDebugUnitTest \
 		  --tests com.localagentbridge.android.AppNavigationTest \
 		  --tests com.localagentbridge.android.ResearchNotebookDrawerTest \
-					  --tests com.localagentbridge.android.PairingQrScanResultTest \
+		  --tests com.localagentbridge.android.PairingQrScanResultTest \
 				  --tests com.localagentbridge.android.AetherLinkThemeNoDeviceComposeTest \
 			  --tests com.localagentbridge.android.PairingQrScannerChromeNoDeviceComposeTest \
 				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest \
+  --tests com.localagentbridge.android.AndroidBackupPolicyResourceTest \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.compactRelayQrPairingUsesRealRelayTcpClientAndPersistsTrustedRelay \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.privateOverlayRelayQrPairingUsesRealRelayTcpClientAndPersistsOverlayRoute \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.trustedPrivateOverlayRelayReconnectUsesRealRelayTcpClientAndAuthenticatedSession \
@@ -5581,6 +5588,7 @@ run check_android_memory_mutation_authority_junit
 --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerSeparatesResearchNotebooksAndRunsLifecycleConfirmation
 --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerRestoresResearchNotebookDeleteConfirmationAcrossSavedState
 --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerDropsRestoredDeleteConfirmationWhenTargetLeavesArchivedCatalog
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerDropsRestoredDeleteConfirmationForReplacementAndAuthoritativeAbsence
 --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerDoesNotRebindRestoredDeleteConfirmationAcrossRuntimes
 --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.researchNotebookDrawerFitsCompactHeightAtLargeFontScale
 --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.researchBriefDialogKeepsContentReachableAtCompactHeightAndLargeFont

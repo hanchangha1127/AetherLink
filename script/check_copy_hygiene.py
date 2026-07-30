@@ -11872,23 +11872,61 @@ def android_chat_search_no_results_live_region_guard_failures() -> list[str]:
     failures: list[str] = []
     main_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt"
     ui_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt"
+    view_model_path = ROOT / (
+        "apps/android/app/src/main/java/com/localagentbridge/android/runtime/"
+        "RuntimeClientViewModel.kt"
+    )
     compose_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt"
     app_navigation_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt"
+    view_model_test_path = ROOT / (
+        "apps/android/app/src/test/java/com/localagentbridge/android/runtime/"
+        "RuntimeClientViewModelTest.kt"
+    )
     strings_path = ROOT / "apps/android/app/src/main/res/values/strings.xml"
+    string_paths = sorted(ROOT.glob("apps/android/app/src/main/res/values*/strings.xml"))
 
-    for path in (main_path, ui_path, compose_test_path, app_navigation_test_path, strings_path):
+    for path in (
+        main_path,
+        ui_path,
+        view_model_path,
+        compose_test_path,
+        app_navigation_test_path,
+        view_model_test_path,
+        strings_path,
+    ):
         if not path.exists():
             failures.append(f"{path.relative_to(ROOT)}: missing Android chat search no-results live-region guard file.")
             return failures
 
     main_text = main_path.read_text(encoding="utf-8", errors="replace")
     ui_text = ui_path.read_text(encoding="utf-8", errors="replace")
+    view_model_text = view_model_path.read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
     compose_test_text = compose_test_path.read_text(encoding="utf-8", errors="replace")
     app_navigation_test_text = app_navigation_test_path.read_text(encoding="utf-8", errors="replace")
+    view_model_test_text = view_model_test_path.read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
     strings_text = strings_path.read_text(encoding="utf-8", errors="replace")
 
     required_drawer_snippets = (
-        "if (hasChatSearchQuery && !hasChatSearchResults) {",
+        "val isCurrentChatSearchPending = drawerChatSearchPending(",
+        "state.chatSessionSearchPendingQuery == trimmedQuery",
+        "val remoteChatSearchEnabled = chatHistoryRefreshEnabled(state) &&\n        !isCurrentChatSearchPending",
+        "DRAWER_CHAT_SEARCH_SUBMIT_TEST_TAG",
+        ".testTag(DRAWER_CHAT_SEARCH_SUBMIT_TEST_TAG)",
+        "stateDescription = searchActionStateDescription",
+        "onClick(\n                            label = searchContentDescription",
+        "onChatSearchQueryChange = { updatedQuery ->",
+        "if (updatedQuery != chatSearchQuery) {\n                                viewModel.clearRuntimeChatSearch()",
+        "onClearChatSearch = {\n                            viewModel.clearRuntimeChatSearch()",
+        "DRAWER_CHAT_SEARCH_PROGRESS_TEST_TAG",
+        ".testTag(DRAWER_CHAT_SEARCH_PROGRESS_TEST_TAG)",
+        "contentDescription = searchingChatsText",
+        "hasChatSearchQuery &&\n                    !hasChatSearchResults &&\n                    !isCurrentChatSearchPending",
         "val noSearchResultsText = stringResource(R.string.no_chat_search_results)",
         "DRAWER_CHAT_SEARCH_CLEAR_TEST_TAG",
         "DRAWER_CHAT_SEARCH_NO_RESULTS_TEST_TAG",
@@ -11977,9 +12015,14 @@ def android_chat_search_no_results_live_region_guard_failures() -> list[str]:
     required_compose_snippets = (
         "navigationDrawerChatSearchLocalizesClearAndNoResultsAcrossSupportedLanguages",
         "navigationDrawerChatSearchNoResultsStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "navigationDrawerChatSearchTouchAndImeSubmitOnlyWhenRemoteSearchIsAvailable",
+        "navigationDrawerChatSearchPendingAnnouncesProgressAndSuppressesFalseEmptyState",
+        "DRAWER_CHAT_SEARCH_SUBMIT_TEST_TAG",
+        "DRAWER_CHAT_SEARCH_PROGRESS_TEST_TAG",
         "DRAWER_CHAT_SEARCH_CLEAR_TEST_TAG",
         "DRAWER_CHAT_SEARCH_NO_RESULTS_TEST_TAG",
         "drawerChatSearchNoResultsNarrowRootTestTag",
+        "assertBoundsInside(\n                \"${expected.languageTag} drawer chat search submit action\"",
         "assertBoundsInside(\"${expected.languageTag} drawer chat search clear action\", clearBounds, searchBounds)",
         "assertBoundsInside(\n                \"${expected.languageTag} drawer chat search no-results row\"",
         "settingsChatHistorySearchLocalizesClearAndNoResultsAcrossSupportedLanguages",
@@ -12021,6 +12064,53 @@ def android_chat_search_no_results_live_region_guard_failures() -> list[str]:
         failures.append(
             f"{compose_test_path.relative_to(ROOT)}: Drawer and Settings no-results tests must both assert polite live regions."
         )
+
+    if "drawerChatSearchPendingAndActionStateTrackOnlyTheCurrentNormalizedQuery" not in app_navigation_test_text:
+        failures.append(
+            f"{app_navigation_test_path.relative_to(ROOT)}: Missing exact-query drawer search pending/action-state regression."
+        )
+
+    required_view_model_snippets = (
+        "fun clearRuntimeChatSearch() {",
+        "?.takeIf { it.query != null }",
+        "?.takeIf { it.requestedQuery == null }",
+        "clearRuntimeChatSearchAuthority()",
+    )
+    for snippet in required_view_model_snippets:
+        if snippet not in view_model_text:
+            failures.append(
+                f"{view_model_path.relative_to(ROOT)}: Missing drawer search clear-authority policy {snippet}."
+            )
+    required_view_model_test_snippets = (
+        "clearRuntimeChatSearchInvalidatesPendingLateAndCompletedResults",
+        "clearRuntimeChatSearchRemovesHeldSearchButPreservesPendingFullHistory",
+        (
+            "clearRuntimeChatSearchPreservesHeldFullHistoryWhileCanceling"
+            "PendingSearch"
+        ),
+    )
+    for snippet in required_view_model_test_snippets:
+        if view_model_test_text.count(snippet) != 1:
+            failures.append(
+                f"{view_model_test_path.relative_to(ROOT)}: Missing drawer search clear-authority regression {snippet}."
+            )
+
+    required_search_resource_names = (
+        "search_chat_history_named",
+        "chat_search_action_state_enter_query",
+        "chat_search_action_state_connect_first",
+        "chat_search_action_state_wait_for_stream",
+        "chat_search_action_state_ready",
+        "chat_search_action_state_loading",
+        "searching_chats",
+    )
+    for path in string_paths:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for resource_name in required_search_resource_names:
+            if f'name="{resource_name}"' not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Missing localized drawer chat search resource {resource_name}."
+                )
 
     return failures
 
@@ -41501,6 +41591,11 @@ def runtime_research_notebook_guard_failures() -> list[str]:
             "DRAWER_RESEARCH_NOTEBOOKS_ACTIVE_TEST_TAG",
             "DRAWER_RESEARCH_NOTEBOOKS_ARCHIVED_TEST_TAG",
             "RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG",
+            "ResearchNotebookDeleteConfirmationState",
+            "runtimeDeviceId",
+            "runtimeFingerprint",
+            "hasResolvedAuthoritativeResearchNotebooks",
+            "targetAbsentFromAuthoritativeSnapshot",
             "enabled = enabled",
             "onRenameResearchNotebook",
             "R.string.rename_research_notebook_named",
@@ -41562,6 +41657,10 @@ def runtime_research_notebook_guard_failures() -> list[str]:
         ),
         ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt": (
             "navigationDrawerSeparatesResearchNotebooksAndRunsLifecycleConfirmation",
+            "navigationDrawerRestoresResearchNotebookDeleteConfirmationAcrossSavedState",
+            "navigationDrawerDropsRestoredDeleteConfirmationWhenTargetLeavesArchivedCatalog",
+            "navigationDrawerDropsRestoredDeleteConfirmationForReplacementAndAuthoritativeAbsence",
+            "navigationDrawerDoesNotRebindRestoredDeleteConfirmationAcrossRuntimes",
             "navigationDrawerKeepsNotebookMenuBoundToSessionAcrossActiveArchivedMove",
             "navigationDrawerHoistedChatMenuTracksStreamingLockoutAndFilteredAuthority",
             "navigationDrawerVirtualizesAuthoritativeTenThousandNotebookSnapshot",
@@ -41691,6 +41790,10 @@ def runtime_research_notebook_guard_failures() -> list[str]:
             "--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerVirtualizesAuthoritativeTenThousandNotebookSnapshot",
             "--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerKeepsNotebookMenuBoundToSessionAcrossActiveArchivedMove",
             "--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerHoistedChatMenuTracksStreamingLockoutAndFilteredAuthority",
+            "--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerRestoresResearchNotebookDeleteConfirmationAcrossSavedState",
+            "--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerDropsRestoredDeleteConfirmationWhenTargetLeavesArchivedCatalog",
+            "--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerDropsRestoredDeleteConfirmationForReplacementAndAuthoritativeAbsence",
+            "--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerDoesNotRebindRestoredDeleteConfirmationAcrossRuntimes",
             "--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.researchBriefDialogModelPickerProjectsRuntimeCapabilitiesAndLocksDuringStreaming",
             "--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.researchBriefDialogModelRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
             "--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.researchBriefCreateRejectsNonRuntimeHostLocalChatModelsBeforeDispatch",
@@ -58709,6 +58812,201 @@ def runtime_chat_retention_production_ownership_guard_failures() -> list[str]:
     return failures
 
 
+def runtime_chat_sqlite_cross_process_quality_guard_failures() -> list[str]:
+    """Keep the non-security Runtime-chat SQLite cross-process QA slice source-bound."""
+
+    failures: list[str] = []
+    required_snippets = {
+        "apps/macos/CompanionCore/Sources/SQLiteRuntimeChatEventStore.swift": (
+            "sqlite3_busy_timeout(openedDatabase, Self.busyTimeoutMilliseconds)",
+            "private static let busyTimeoutMilliseconds: Int32 = 5_000",
+            'return primaryResult == SQLITE_BUSY || primaryResult == SQLITE_LOCKED',
+            '"Runtime chat history is temporarily busy. Try again."',
+        ),
+        "apps/macos/CompanionCore/Tests/SQLiteRuntimeChatEventStoreTests.swift": (
+            "testSQLiteCrossInstanceAppendWaitsForImmediateTransactionAndCommitsExactlyOnce",
+            "testSQLiteCrossInstanceBusyTimeoutRollsBackAndLaterReopenSucceeds",
+            "testSQLiteBusyTimeoutAtCommitRollsBackEventAndFTSRowsBeforeReopen",
+            '"Runtime chat history is temporarily busy. Try again."',
+        ),
+        "Package.swift": (
+            '.executable(\n            name: "RuntimeChatSQLiteCrossProcessQA",',
+            '.executableTarget(\n            name: "RuntimeChatSQLiteCrossProcessQA",',
+            'dependencies: ["CompanionCore", "OllamaBackend"]',
+            'path: "apps/macos/RuntimeChatSQLiteCrossProcessQA/Sources"',
+            'linkerSettings: [.linkedLibrary("sqlite3")]',
+        ),
+        "apps/macos/RuntimeChatSQLiteCrossProcessQA/Sources/RuntimeChatSQLiteCrossProcessQA.swift": (
+            "private let eventCountPerWriter = 48",
+            'private let sharedSessionID = "qa-shared-session"',
+            'case writerA = "writer-a"',
+            'case writerB = "writer-b"',
+            'case "write":',
+            'case "abrupt-prefix":',
+            'case "resume":',
+            'case "read":',
+            "let store = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)",
+            "sqlite3_db_cacheflush(openedDatabase)",
+            '"ready-for-abrupt-termination"',
+            "SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX",
+            '"PRAGMA query_only = ON"',
+            "ORDER BY sequence ASC",
+        ),
+        "script/run_macos_runtime_chat_cross_process_smoke.py": (
+            'HELPER_PRODUCT = "RuntimeChatSQLiteCrossProcessQA"',
+            "MAXIMUM_HELPER_OUTPUT_BYTES = 65_536",
+            "start_new_session=True",
+            "group_killer(process.pid, signal.SIGKILL)",
+            "_terminate_and_reap(",
+            "def validate_readback(readback: dict[str, Any]) -> None:",
+            "def sqlite_integrity(",
+            "def observe_hot_rollback_journal(",
+            "def observe_unrecovered_dirty_database(",
+            "def qualify_abrupt_recovery(",
+            '"not-production-append-crash-point"',
+            "def validate_owner_only_permissions(database_root: Path) -> None:",
+            '"eventSets": "disjoint-exactly-once"',
+            '"ownerSessionIsolation": "passed"',
+            '"readbackProcess": "independent"',
+            '"databaseRoot": "0700"',
+            '"sqliteFiles": "0600"',
+        ),
+        "script/package_release_artifacts.py": (
+            '"script/run_macos_runtime_chat_cross_process_smoke.py",',
+            '"script/test_run_macos_runtime_chat_cross_process_smoke.py",',
+            '"apps/macos/RuntimeChatSQLiteCrossProcessQA/Sources",',
+        ),
+        "script/check_release_artifact_archive.py": (
+            '"script/run_macos_runtime_chat_cross_process_smoke.py",',
+            '"script/test_run_macos_runtime_chat_cross_process_smoke.py",',
+            '"apps/macos/RuntimeChatSQLiteCrossProcessQA/Sources",',
+        ),
+        "docs/releases/1.0.0-build-19-local-v1.md": (
+            "passing 90/90 `SQLiteRuntimeChatEventStoreTests` suite",
+            "bounded Python orchestration suite passes 12/12 tests",
+            "`48+48=96`",
+            "third-process readback",
+            "disjoint and exactly once",
+            "owner/session isolation",
+            "SQLite integrity and\nforeign-key checks passed",
+            "`0700` and `0600`",
+            "separate execution evidence, not an archive member",
+            "does not qualify crash or power-loss recovery",
+            "It adds no security qualification claim.",
+        ),
+        "docs/roadmap.md": (
+            "Build 19 first source-binds a Runtime-chat SQLite cross-process quality slice.",
+            "all 96 events exactly once with disjoint IDs, owner/session",
+            "SQLite integrity, `0700` directory mode",
+            "`0600` database-file mode",
+            "That live result is separate execution evidence,\nnot a retained archive member.",
+            "Crash/power-loss, mixed old/new binaries,",
+        ),
+        "docs/progress.md": (
+            "Build 19 first source-binds the Runtime-chat SQLite cross-process QA helper",
+            "store suite passes 90/90",
+            "96 disjoint exactly-once events, owner/session",
+            "`integrity_check=ok`, directory mode `0700`",
+            "SQLite file mode `0600`",
+            "The live result is separate execution\n  evidence, not a retained Build 19 archive member.",
+            "do not qualify arbitrary histories, crash/power-loss",
+        ),
+        "docs/qa-evidence.md": (
+            "Build 19 first source-binds the Runtime-chat SQLite cross-process QA",
+            "Python orchestration suite passes 12/12",
+            "96 disjoint exactly-once events, owner/session isolation",
+            "`integrity_check=ok`, directory mode `0700`",
+            "SQLite file\n  mode `0600`",
+            "execution evidence, not a retained Build 19\n  archive member",
+            "crash/power-loss,\n  mixed old/new binaries",
+        ),
+        "docs/handoff.md": (
+            "Build 19 first source-binds the Runtime-chat SQLite cross-process QA closure.",
+            "Production connections use a 5-second busy timeout",
+            "Three deterministic Swift tests\n  cover wait-and-release success and rollback after `BEGIN` or `COMMIT`",
+            "96 disjoint events exactly once with owner/session isolation",
+            "order, SQLite integrity, `0700` directory mode, and `0600` file mode",
+            "live result is separate execution evidence, not an archive member",
+            "crash/power-loss, concurrent writers, backup/transfer, rollback",
+        ),
+    }
+    for relative, snippets in required_snippets.items():
+        path = ROOT / relative
+        if not path.is_file():
+            failures.append(
+                f"{relative}: missing Runtime-chat SQLite cross-process quality artifact."
+            )
+            continue
+        contents = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in contents:
+                failures.append(
+                    f"{relative}: missing Runtime-chat SQLite cross-process quality snippet {snippet!r}."
+                )
+
+    unique_snippets = {
+        "apps/macos/CompanionCore/Sources/SQLiteRuntimeChatEventStore.swift": (
+            '"Runtime chat history is temporarily busy. Try again."',
+        ),
+        "apps/macos/CompanionCore/Tests/SQLiteRuntimeChatEventStoreTests.swift": (
+            "func testSQLiteCrossInstanceAppendWaitsForImmediateTransactionAndCommitsExactlyOnce() throws",
+            "func testSQLiteCrossInstanceBusyTimeoutRollsBackAndLaterReopenSucceeds() throws",
+            "func testSQLiteBusyTimeoutAtCommitRollsBackEventAndFTSRowsBeforeReopen() throws",
+        ),
+    }
+    for relative, snippets in unique_snippets.items():
+        path = ROOT / relative
+        if not path.is_file():
+            continue
+        contents = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if contents.count(snippet) != 1:
+                failures.append(
+                    f"{relative}: expected one Runtime-chat SQLite cross-process quality snippet {snippet!r}."
+                )
+
+    python_test_relative = "script/test_run_macos_runtime_chat_cross_process_smoke.py"
+    python_test_path = ROOT / python_test_relative
+    if not python_test_path.is_file():
+        failures.append(
+            f"{python_test_relative}: missing Runtime-chat SQLite cross-process runner tests."
+        )
+        return failures
+    python_test_text = python_test_path.read_text(encoding="utf-8", errors="replace")
+    required_python_tests = (
+        "test_helper_commands_bind_exact_root_mode_and_writer",
+        "test_two_injected_commands_launch_before_gate_and_parse",
+        "test_timeout_kills_and_drains_both_injected_processes",
+        "test_oversize_real_writer_output_is_terminated_at_hard_cap",
+        "test_oversize_real_readback_output_is_terminated_at_hard_cap",
+        "test_bounded_command_timeout_kills_process_group_and_reaps",
+        "test_cleanup_continues_when_one_child_cleanup_action_fails",
+        "test_temporary_filesystem_error_is_normalized",
+        "test_readback_accepts_exactly_once_interleaving",
+        "test_readback_rejects_duplicate_and_owner_bleed",
+        "test_abrupt_checkpoint_is_exact_typed_and_duplicate_closed",
+        "test_hot_journal_requires_owner_only_magic_header",
+        "test_abrupt_prefix_kills_only_new_session_group_and_reaps",
+        "test_abrupt_prefix_rejects_group_drift_without_group_signal",
+        "test_abrupt_partial_and_final_readback_contracts",
+        "test_real_helper_abrupt_recovery_is_exact_and_repeatable",
+        "test_result_publication_is_immutable_and_repeatable",
+        "test_build_uses_injected_bounded_commands",
+        "test_canonical_result_has_no_path_or_environment",
+    )
+    for test_name in required_python_tests:
+        if python_test_text.count(f"def {test_name}(") != 1:
+            failures.append(
+                f"{python_test_relative}: missing unique Runtime-chat SQLite cross-process regression {test_name!r}."
+            )
+    if python_test_text.count("\n    def test_") != len(required_python_tests):
+        failures.append(
+            f"{python_test_relative}: expected exactly {len(required_python_tests)} Runtime-chat SQLite cross-process tests."
+        )
+
+    return failures
+
+
 def review_only_memory_duplicate_suggestions_guard_failures() -> list[str]:
     failures: list[str] = []
     required_snippets = {
@@ -66632,6 +66930,12 @@ def main() -> int:
         return 1
 
     if report_guard_failures("Runtime chat retention production ownership guard failed:", runtime_chat_retention_production_ownership_guard_failures):
+        return 1
+
+    if report_guard_failures(
+        "Runtime-chat SQLite cross-process quality guard failed:",
+        runtime_chat_sqlite_cross_process_quality_guard_failures,
+    ):
         return 1
 
     if report_guard_failures("macOS runtime connection-manager guard failed:", macos_runtime_connection_manager_guard_failures):

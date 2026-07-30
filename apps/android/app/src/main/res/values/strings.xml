@@ -56,6 +56,13 @@
     <string name="chat_history_group_older">Older</string>
     <string name="no_previous_chats">No previous chats yet.</string>
     <string name="chat_search_label">Search chats</string>
+    <string name="search_chat_history_named">Search chat history for %1$s</string>
+    <string name="chat_search_action_state_enter_query">Enter a search term.</string>
+    <string name="chat_search_action_state_connect_first">Connect to the trusted runtime before searching chat history.</string>
+    <string name="chat_search_action_state_wait_for_stream">Wait for the current response before searching chat history.</string>
+    <string name="chat_search_action_state_ready">Ready to search the trusted runtime.</string>
+    <string name="chat_search_action_state_loading">Wait for the current chat-history request to finish.</string>
+    <string name="searching_chats">Searching chats…</string>
     <string name="clear_chat_search_named">Clear chat search for %1$s</string>
     <string name="no_chat_search_results">No matching chats.</string>
     <string name="chat_search_match_rank">Match %1$d</string>

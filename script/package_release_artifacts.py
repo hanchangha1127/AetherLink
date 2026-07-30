@@ -101,6 +101,39 @@ BUNDLETOOL_MAIN_CLASS = (
 )
 BUNDLETOOL_VERSION = "1.18.3"
 BUNDLETOOL_TIMEOUT_SECONDS = 60
+AAPT2_TIMEOUT_SECONDS = 60
+ANDROID_BACKUP_POLICY_BUILD = 15
+BASE_BUNDLE_MANIFEST_VERIFIED_FIELDS = (
+    "applicationId",
+    "minSdk",
+    "targetSdk",
+    "versionCode",
+    "versionName",
+)
+BACKUP_POLICY_BUNDLE_MANIFEST_VERIFIED_FIELDS = (
+    "allowBackup",
+    "dataExtractionRules",
+    "fullBackupContent",
+)
+BACKUP_POLICY_APK_MANIFEST_VERIFIED_FIELDS = (
+    "allowBackup",
+    "dataExtractionRules",
+    "fullBackupContent",
+)
+LEGACY_BACKUP_EXCLUDE_DOMAINS = (
+    "root",
+    "file",
+    "database",
+    "sharedpref",
+    "external",
+)
+DATA_EXTRACTION_EXCLUDE_DOMAINS = (
+    *LEGACY_BACKUP_EXCLUDE_DOMAINS,
+    "device_root",
+    "device_file",
+    "device_database",
+    "device_sharedpref",
+)
 ANDROID_STUDIO_JAVA_HOME = Path(
     "/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 )
@@ -154,6 +187,9 @@ SOURCE_REQUIRED_FILES = (
     "script/package_release_artifacts.py",
     "script/check_release_artifact_archive.py",
     "script/run_clean_release_reproducibility.py",
+    "script/run_macos_local_dmg_install_smoke.py",
+    "script/run_macos_runtime_chat_cross_process_smoke.py",
+    "script/test_run_macos_runtime_chat_cross_process_smoke.py",
 )
 SOURCE_OPTIONAL_FILES = ("Package.resolved",)
 SOURCE_ROOTS = (
@@ -170,6 +206,7 @@ SOURCE_ROOTS = (
     "apps/macos/LMStudioBackend/Sources",
     "apps/macos/DocumentIngestion/Sources",
     "apps/macos/CompanionCore/Sources",
+    "apps/macos/RuntimeChatSQLiteCrossProcessQA/Sources",
     "apps/macos/LocalAgentBridgeApp/Sources",
 )
 
@@ -689,6 +726,37 @@ def run_text(command: list[str], *, root: Path = ROOT) -> str:
     ).strip()
 
 
+def run_aapt2_dump(command: list[str], root: Path = ROOT) -> str:
+    environment = os.environ.copy()
+    environment["LC_ALL"] = "C"
+    try:
+        result = subprocess.run(
+            command,
+            cwd=root,
+            check=True,
+            capture_output=True,
+            env=environment,
+            text=True,
+            timeout=AAPT2_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise ReleaseArchiveError(
+            "aapt2 APK manifest readback timed out after "
+            f"{AAPT2_TIMEOUT_SECONDS} seconds"
+        ) from error
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise ReleaseArchiveError(
+            f"aapt2 APK manifest readback failed: {command!r}: {error}"
+        ) from error
+    if result.stderr:
+        raise ReleaseArchiveError(
+            "aapt2 APK manifest readback emitted unexpected stderr"
+        )
+    return "\n".join(
+        line.rstrip() for line in result.stdout.splitlines()
+    ).strip()
+
+
 def parse_gradle_lockfile(
     data: bytes,
     label: str,
@@ -1022,7 +1090,15 @@ def bundle_structure_validation_claim_for_build(
     }
 
 
-def parse_bundletool_manifest(output: str) -> dict[str, object]:
+def parse_bundletool_manifest(
+    output: str,
+    *,
+    backup_policy_required: bool = False,
+) -> dict[str, object]:
+    if type(backup_policy_required) is not bool:
+        raise ReleaseArchiveError(
+            "bundletool backup-policy requirement must be a boolean"
+        )
     try:
         manifest = ET.fromstring(output)
     except ET.ParseError as error:
@@ -1041,7 +1117,16 @@ def parse_bundletool_manifest(output: str) -> dict[str, object]:
         raise ReleaseArchiveError(
             "bundletool manifest output must contain one uses-sdk element"
         )
+    applications = [
+        child for child in manifest
+        if child.tag == "application"
+    ]
+    if len(applications) != 1:
+        raise ReleaseArchiveError(
+            "bundletool manifest output must contain one application element"
+        )
     android_attribute = f"{{{ANDROID_XML_NAMESPACE}}}"
+    application = applications[0]
     application_id = manifest.get("package")
     version_code_text = manifest.get(
         f"{android_attribute}versionCode"
@@ -1052,6 +1137,13 @@ def parse_bundletool_manifest(output: str) -> dict[str, object]:
     )
     target_sdk_text = uses_sdk[0].get(
         f"{android_attribute}targetSdkVersion"
+    )
+    allow_backup = application.get(f"{android_attribute}allowBackup")
+    full_backup_content = application.get(
+        f"{android_attribute}fullBackupContent"
+    )
+    data_extraction_rules = application.get(
+        f"{android_attribute}dataExtractionRules"
     )
     for value, label in (
         (version_code_text, "versionCode"),
@@ -1073,21 +1165,55 @@ def parse_bundletool_manifest(output: str) -> dict[str, object]:
         raise ReleaseArchiveError(
             "bundletool manifest versionName is missing"
         )
+    if allow_backup != "false":
+        raise ReleaseArchiveError(
+            "bundletool manifest allowBackup must be exactly false"
+        )
+    expected_policy_references = (
+        "@xml/backup_rules",
+        "@xml/data_extraction_rules",
+    )
+    actual_policy_references = (
+        full_backup_content,
+        data_extraction_rules,
+    )
+    if backup_policy_required:
+        if actual_policy_references != expected_policy_references:
+            raise ReleaseArchiveError(
+                "bundletool manifest backup-policy references differ "
+                "from the V1 contract"
+            )
+    elif actual_policy_references != (None, None):
+        raise ReleaseArchiveError(
+            "historical bundletool manifest unexpectedly contains "
+            "backup-policy references"
+        )
     assert isinstance(version_code_text, str)
     assert isinstance(min_sdk_text, str)
     assert isinstance(target_sdk_text, str)
-    return {
+    result: dict[str, object] = {
         "applicationId": application_id,
         "minSdk": int(min_sdk_text),
         "targetSdk": int(target_sdk_text),
         "versionCode": int(version_code_text),
         "versionName": version_name,
     }
+    if backup_policy_required:
+        result.update(
+            {
+                "allowBackup": False,
+                "dataExtractionRules": data_extraction_rules,
+                "fullBackupContent": full_backup_content,
+            }
+        )
+    return result
 
 
 def inspect_aab_manifest(
     aab_data: bytes,
     root: Path = ROOT,
+    *,
+    backup_policy_required: bool = False,
 ) -> dict[str, object]:
     file_descriptor, temporary_name = tempfile.mkstemp(
         prefix="aetherlink-release-bundle-",
@@ -1113,9 +1239,128 @@ def inspect_aab_manifest(
             ],
             root=root,
         )
-        return parse_bundletool_manifest(manifest)
+        parsed_manifest = parse_bundletool_manifest(
+            manifest,
+            backup_policy_required=backup_policy_required,
+        )
+        if backup_policy_required:
+            packaged_policy = inspect_aab_backup_policy(
+                Path(temporary_name),
+                root,
+            )
+            expected_policy = {
+                "allowBackup": parsed_manifest["allowBackup"],
+                "dataExtractionRules": (
+                    parsed_manifest["dataExtractionRules"]
+                ),
+                "fullBackupContent": (
+                    parsed_manifest["fullBackupContent"]
+                ),
+            }
+            if packaged_policy != expected_policy:
+                raise ReleaseArchiveError(
+                    "AAB universal-APK backup-policy readback differs "
+                    "from the bundle manifest"
+                )
+        return parsed_manifest
     finally:
         Path(temporary_name).unlink(missing_ok=True)
+
+
+def create_ephemeral_aab_readback_keystore(
+    path: Path,
+    root: Path = ROOT,
+) -> None:
+    keytool = java_executable().with_name("keytool")
+    if not keytool.is_file() or not os.access(keytool, os.X_OK):
+        raise ReleaseArchiveError(
+            "cannot locate keytool beside the bundletool Java runtime"
+        )
+    command = [
+        str(keytool),
+        "-genkeypair",
+        "-keystore",
+        str(path),
+        "-storetype",
+        "PKCS12",
+        "-storepass",
+        "aetherlink-readback",
+        "-keypass",
+        "aetherlink-readback",
+        "-alias",
+        "readback",
+        "-dname",
+        "CN=AetherLink Local Readback",
+        "-keyalg",
+        "RSA",
+        "-keysize",
+        "2048",
+        "-validity",
+        "1",
+        "-noprompt",
+    ]
+    try:
+        subprocess.run(
+            command,
+            cwd=root,
+            check=True,
+            capture_output=True,
+            env={**os.environ, "LC_ALL": "C"},
+            text=True,
+            timeout=BUNDLETOOL_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise ReleaseArchiveError(
+            "ephemeral AAB readback key generation timed out"
+        ) from error
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise ReleaseArchiveError(
+            "ephemeral AAB readback key generation failed"
+        ) from error
+
+
+def inspect_aab_backup_policy(
+    aab_path: Path,
+    root: Path = ROOT,
+) -> dict[str, object]:
+    aapt2 = find_android_build_tool("aapt2", root)
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix="aetherlink-release-aab-policy-"
+        ) as directory:
+            temporary_root = Path(directory)
+            keystore = temporary_root / "readback.p12"
+            apks_path = temporary_root / "readback.apks"
+            create_ephemeral_aab_readback_keystore(keystore, root)
+            run_bundletool(
+                [
+                    "build-apks",
+                    f"--bundle={aab_path}",
+                    f"--output={apks_path}",
+                    "--mode=universal",
+                    "--overwrite",
+                    f"--aapt2={aapt2}",
+                    f"--ks={keystore}",
+                    "--ks-pass=pass:aetherlink-readback",
+                    "--ks-key-alias=readback",
+                    "--key-pass=pass:aetherlink-readback",
+                ],
+                root=root,
+            )
+            with zipfile.ZipFile(apks_path, "r") as archive:
+                if archive.namelist().count("universal.apk") != 1:
+                    raise ReleaseArchiveError(
+                        "bundletool readback APKS must contain exactly one "
+                        "universal.apk"
+                    )
+                universal_apk = archive.read("universal.apk")
+    except ReleaseArchiveError:
+        raise
+    except (KeyError, OSError, zipfile.BadZipFile) as error:
+        raise ReleaseArchiveError(
+            "cannot read bundletool universal-APK policy output"
+        ) from error
+    return inspect_apk_backup_policy(universal_apk, root)
 
 
 def bundletool_version(root: Path = ROOT) -> str:
@@ -1212,6 +1457,311 @@ def parse_aapt2_badging(output: str) -> dict[str, object]:
     }
 
 
+def parse_aapt2_apk_backup_policy(
+    xmltree_output: str,
+    resources_output: str,
+) -> dict[str, object]:
+    lines = xmltree_output.splitlines()
+    manifest_entries: list[tuple[int, int]] = []
+    application_entries: list[tuple[int, int]] = []
+    for index, line in enumerate(lines):
+        manifest_match = re.fullmatch(
+            r"( *)E: manifest \(line=[1-9][0-9]*\)",
+            line,
+        )
+        if manifest_match is not None:
+            manifest_entries.append((index, len(manifest_match.group(1))))
+        match = re.fullmatch(
+            r"( *)E: application \(line=[1-9][0-9]*\)",
+            line,
+        )
+        if match is not None:
+            application_entries.append((index, len(match.group(1))))
+    if len(manifest_entries) != 1:
+        raise ReleaseArchiveError(
+            "aapt2 APK manifest output must contain exactly one manifest root"
+        )
+    if len(application_entries) != 1:
+        raise ReleaseArchiveError(
+            "aapt2 APK manifest must contain exactly one application element"
+        )
+
+    manifest_index, manifest_indent = manifest_entries[0]
+    application_index, application_indent = application_entries[0]
+    if (
+        application_index <= manifest_index
+        or application_indent != manifest_indent + 4
+    ):
+        raise ReleaseArchiveError(
+            "aapt2 APK application must be a direct manifest child"
+        )
+    attribute_prefix = " " * (application_indent + 2)
+    attribute_pattern = re.compile(
+        r"^"
+        + re.escape(attribute_prefix)
+        + r"A: "
+        + re.escape(ANDROID_XML_NAMESPACE)
+        + r":(allowBackup|dataExtractionRules|fullBackupContent)"
+        + r"\(0x[0-9a-f]{8}\)=([^ ]+)$"
+    )
+    attributes: dict[str, list[str]] = {}
+    for line in lines[application_index + 1 :]:
+        element = re.match(r"^( *)E: ", line)
+        if (
+            element is not None
+            and len(element.group(1)) <= application_indent
+        ):
+            break
+        match = attribute_pattern.fullmatch(line)
+        if match is not None:
+            attributes.setdefault(match.group(1), []).append(match.group(2))
+
+    expected_attribute_names = {
+        "allowBackup",
+        "dataExtractionRules",
+        "fullBackupContent",
+    }
+    if (
+        set(attributes) != expected_attribute_names
+        or any(len(values) != 1 for values in attributes.values())
+    ):
+        raise ReleaseArchiveError(
+            "aapt2 APK manifest backup-policy attributes differ "
+            "from the V1 contract"
+        )
+    if attributes["allowBackup"] != ["false"]:
+        raise ReleaseArchiveError(
+            "aapt2 APK manifest allowBackup must be exactly false"
+        )
+
+    resource_entries = re.findall(
+        r"^\s*resource (0x[0-9a-f]{8}) xml/([a-z][a-z0-9_]*)$",
+        resources_output,
+        re.MULTILINE,
+    )
+    resources: dict[str, str] = {}
+    for resource_id, resource_name in resource_entries:
+        if resource_id in resources:
+            raise ReleaseArchiveError(
+                "aapt2 APK resources contain a duplicate XML resource ID"
+            )
+        resources[resource_id] = resource_name
+
+    resolved: dict[str, str] = {}
+    for attribute_name, expected_resource_name in (
+        ("dataExtractionRules", "data_extraction_rules"),
+        ("fullBackupContent", "backup_rules"),
+    ):
+        encoded_reference = attributes[attribute_name][0]
+        match = re.fullmatch(r"@(0x[0-9a-f]{8})", encoded_reference)
+        if match is None:
+            raise ReleaseArchiveError(
+                "aapt2 APK manifest backup-policy reference "
+                "is not a compiled resource ID"
+            )
+        resource_name = resources.get(match.group(1))
+        if resource_name != expected_resource_name:
+            raise ReleaseArchiveError(
+                "aapt2 APK manifest backup-policy resource mapping differs "
+                "from the V1 contract"
+            )
+        resolved[attribute_name] = f"@xml/{resource_name}"
+
+    return {
+        "allowBackup": False,
+        "dataExtractionRules": resolved["dataExtractionRules"],
+        "fullBackupContent": resolved["fullBackupContent"],
+    }
+
+
+def parse_aapt2_xml_resource_paths(
+    resources_output: str,
+) -> dict[str, str]:
+    expected_names = {"backup_rules", "data_extraction_rules"}
+    resources: dict[str, list[str]] = {}
+    active_name: str | None = None
+    active_indent = -1
+    resource_pattern = re.compile(
+        r"^( *)resource 0x[0-9a-f]{8} "
+        r"xml/(backup_rules|data_extraction_rules)$"
+    )
+    file_pattern = re.compile(
+        r"^( *)\(\) \(file\) "
+        r"(res/[A-Za-z0-9_./-]+\.xml) type=XML$"
+    )
+    for line in resources_output.splitlines():
+        resource_match = resource_pattern.fullmatch(line)
+        if resource_match is not None:
+            active_name = resource_match.group(2)
+            active_indent = len(resource_match.group(1))
+            if active_name in resources:
+                raise ReleaseArchiveError(
+                    "aapt2 APK resources contain a duplicate backup-policy "
+                    "resource"
+                )
+            resources[active_name] = []
+            continue
+        file_match = file_pattern.fullmatch(line)
+        if (
+            file_match is not None
+            and active_name is not None
+            and len(file_match.group(1)) > active_indent
+        ):
+            resources[active_name].append(file_match.group(2))
+            continue
+        next_entry = re.match(r"^( *)resource ", line)
+        if (
+            next_entry is not None
+            and active_name is not None
+            and len(next_entry.group(1)) <= active_indent
+        ):
+            active_name = None
+            active_indent = -1
+
+    if set(resources) != expected_names:
+        raise ReleaseArchiveError(
+            "aapt2 APK resources omit a backup-policy file path"
+        )
+    if any(len(paths) != 1 for paths in resources.values()):
+        raise ReleaseArchiveError(
+            "aapt2 APK backup-policy resources must each resolve to one "
+            "default XML file"
+        )
+    resolved = {name: paths[0] for name, paths in resources.items()}
+    if len(set(resolved.values())) != len(resolved):
+        raise ReleaseArchiveError(
+            "aapt2 APK backup-policy resources share one compiled XML file"
+        )
+    return resolved
+
+
+def parse_aapt2_xmltree_document(
+    output: str,
+    *,
+    label: str,
+) -> dict[str, object]:
+    roots: list[dict[str, object]] = []
+    stack: list[tuple[int, dict[str, object]]] = []
+    element_pattern = re.compile(
+        r"^( *)E: ([a-z][a-z0-9-]*) \(line=[1-9][0-9]*\)$"
+    )
+    attribute_pattern = re.compile(
+        r'^( *)A: (domain|path)="([^"]*)" \(Raw: "([^"]*)"\)$'
+    )
+    for line in output.splitlines():
+        element_match = element_pattern.fullmatch(line)
+        if element_match is not None:
+            indent = len(element_match.group(1))
+            while stack and stack[-1][0] >= indent:
+                stack.pop()
+            node: dict[str, object] = {
+                "attributes": {},
+                "children": [],
+                "name": element_match.group(2),
+            }
+            if stack:
+                if indent != stack[-1][0] + 4:
+                    raise ReleaseArchiveError(
+                        f"aapt2 {label} XML tree has invalid nesting"
+                    )
+                parent_children = stack[-1][1]["children"]
+                assert isinstance(parent_children, list)
+                parent_children.append(node)
+            else:
+                if indent != 0 or roots:
+                    raise ReleaseArchiveError(
+                        f"aapt2 {label} XML tree has multiple roots"
+                    )
+                roots.append(node)
+            stack.append((indent, node))
+            continue
+
+        attribute_match = attribute_pattern.fullmatch(line)
+        if attribute_match is not None:
+            indent = len(attribute_match.group(1))
+            if not stack or indent != stack[-1][0] + 2:
+                raise ReleaseArchiveError(
+                    f"aapt2 {label} XML tree has an unbound attribute"
+                )
+            name = attribute_match.group(2)
+            value = attribute_match.group(3)
+            if value != attribute_match.group(4):
+                raise ReleaseArchiveError(
+                    f"aapt2 {label} XML tree has mismatched raw attributes"
+                )
+            attributes = stack[-1][1]["attributes"]
+            assert isinstance(attributes, dict)
+            if name in attributes:
+                raise ReleaseArchiveError(
+                    f"aapt2 {label} XML tree has a duplicate attribute"
+                )
+            attributes[name] = value
+            continue
+
+        raise ReleaseArchiveError(
+            f"aapt2 {label} XML tree contains an unexpected line"
+        )
+
+    if len(roots) != 1:
+        raise ReleaseArchiveError(
+            f"aapt2 {label} XML tree must contain exactly one root"
+        )
+    return roots[0]
+
+
+def validate_aapt2_backup_policy_xmltrees(
+    backup_rules_output: str,
+    data_extraction_rules_output: str,
+) -> None:
+    def exclude_node(domain: str) -> dict[str, object]:
+        return {
+            "attributes": {"domain": domain, "path": "."},
+            "children": [],
+            "name": "exclude",
+        }
+
+    expected_backup = {
+        "attributes": {},
+        "children": [
+            exclude_node(domain)
+            for domain in LEGACY_BACKUP_EXCLUDE_DOMAINS
+        ],
+        "name": "full-backup-content",
+    }
+    expected_extraction = {
+        "attributes": {},
+        "children": [
+            {
+                "attributes": {},
+                "children": [
+                    exclude_node(domain)
+                    for domain in DATA_EXTRACTION_EXCLUDE_DOMAINS
+                ],
+                "name": section,
+            }
+            for section in ("cloud-backup", "device-transfer")
+        ],
+        "name": "data-extraction-rules",
+    }
+    actual_backup = parse_aapt2_xmltree_document(
+        backup_rules_output,
+        label="backup_rules",
+    )
+    actual_extraction = parse_aapt2_xmltree_document(
+        data_extraction_rules_output,
+        label="data_extraction_rules",
+    )
+    if actual_backup != expected_backup:
+        raise ReleaseArchiveError(
+            "packaged backup_rules XML differs from the V1 exclusion contract"
+        )
+    if actual_extraction != expected_extraction:
+        raise ReleaseArchiveError(
+            "packaged data_extraction_rules XML differs from the V1 "
+            "exclusion contract"
+        )
+
+
 def inspect_apk_badging(apk_data: bytes, root: Path = ROOT) -> dict[str, object]:
     aapt2 = find_android_build_tool("aapt2", root)
     file_descriptor, temporary_name = tempfile.mkstemp(
@@ -1226,6 +1776,86 @@ def inspect_apk_badging(apk_data: bytes, root: Path = ROOT) -> dict[str, object]
             root=root,
         )
         return parse_aapt2_badging(badging)
+    finally:
+        Path(temporary_name).unlink(missing_ok=True)
+
+
+def inspect_apk_backup_policy(
+    apk_data: bytes,
+    root: Path = ROOT,
+) -> dict[str, object]:
+    aapt2 = find_android_build_tool("aapt2", root)
+    file_descriptor, temporary_name = tempfile.mkstemp(
+        prefix="aetherlink-release-apk-policy-",
+        suffix=".apk",
+    )
+    try:
+        with os.fdopen(file_descriptor, "wb") as output:
+            output.write(apk_data)
+        xmltree = run_aapt2_dump(
+            [
+                str(aapt2),
+                "dump",
+                "xmltree",
+                "--file",
+                "AndroidManifest.xml",
+                temporary_name,
+            ],
+            root,
+        )
+        resources = run_aapt2_dump(
+            [
+                str(aapt2),
+                "dump",
+                "resources",
+                "--no-values",
+                temporary_name,
+            ],
+            root,
+        )
+        manifest_policy = parse_aapt2_apk_backup_policy(
+            xmltree,
+            resources,
+        )
+        resources_with_values = run_aapt2_dump(
+            [
+                str(aapt2),
+                "dump",
+                "resources",
+                temporary_name,
+            ],
+            root,
+        )
+        resource_paths = parse_aapt2_xml_resource_paths(
+            resources_with_values
+        )
+        backup_rules = run_aapt2_dump(
+            [
+                str(aapt2),
+                "dump",
+                "xmltree",
+                "--file",
+                resource_paths["backup_rules"],
+                temporary_name,
+            ],
+            root,
+        )
+        data_extraction_rules = run_aapt2_dump(
+            [
+                str(aapt2),
+                "dump",
+                "xmltree",
+                "--file",
+                resource_paths["data_extraction_rules"],
+                temporary_name,
+            ],
+            root,
+        )
+        validate_aapt2_backup_policy_xmltrees(
+            backup_rules,
+            data_extraction_rules,
+        )
+        return manifest_policy
     finally:
         Path(temporary_name).unlink(missing_ok=True)
 
@@ -1371,6 +2001,9 @@ def android_metadata(
         raise ReleaseArchiveError("Android APK versionCode does not match ledger")
     if apk_element.get("versionName") != current.marketing_version:
         raise ReleaseArchiveError("Android APK versionName does not match ledger")
+    backup_policy_required = (
+        current.build_number >= ANDROID_BACKUP_POLICY_BUILD
+    )
     apk_badging = inspect_apk_badging(apk_data, root)
     expected_badging = {
         "applicationId": "com.localagentbridge.android",
@@ -1384,6 +2017,18 @@ def android_metadata(
         raise ReleaseArchiveError(
             f"Android APK badging differs from V1 contract: {apk_badging!r}"
         )
+    if backup_policy_required:
+        apk_backup_policy = inspect_apk_backup_policy(apk_data, root)
+        expected_apk_backup_policy = {
+            "allowBackup": False,
+            "dataExtractionRules": "@xml/data_extraction_rules",
+            "fullBackupContent": "@xml/backup_rules",
+        }
+        if apk_backup_policy != expected_apk_backup_policy:
+            raise ReleaseArchiveError(
+                "Android APK backup policy differs from the V1 contract: "
+                f"{apk_backup_policy!r}"
+            )
     expected_bundle_manifest = {
         "applicationId": expected_badging["applicationId"],
         "minSdk": expected_badging["minSdk"],
@@ -1391,7 +2036,19 @@ def android_metadata(
         "versionCode": expected_badging["versionCode"],
         "versionName": expected_badging["versionName"],
     }
-    aab_manifest = inspect_aab_manifest(aab_data, root)
+    if backup_policy_required:
+        expected_bundle_manifest.update(
+            {
+                "allowBackup": False,
+                "dataExtractionRules": "@xml/data_extraction_rules",
+                "fullBackupContent": "@xml/backup_rules",
+            }
+        )
+    aab_manifest = inspect_aab_manifest(
+        aab_data,
+        root,
+        backup_policy_required=backup_policy_required,
+    )
     if aab_manifest != expected_bundle_manifest:
         raise ReleaseArchiveError(
             "Android AAB manifest differs from the V1 contract: "
@@ -1507,11 +2164,12 @@ def android_metadata(
             "member": "android/bundle/app-release.aab",
             "tool": "bundletool dump manifest",
             "verifiedFields": [
-                "applicationId",
-                "minSdk",
-                "targetSdk",
-                "versionCode",
-                "versionName",
+                *BASE_BUNDLE_MANIFEST_VERIFIED_FIELDS,
+                *(
+                    BACKUP_POLICY_BUNDLE_MANIFEST_VERIFIED_FIELDS
+                    if backup_policy_required
+                    else ()
+                ),
             ],
         },
         "mappingEmbeddedByteIdentical": True,
@@ -1531,6 +2189,14 @@ def android_metadata(
         "versionCode": current.build_number,
         "versionName": current.marketing_version,
     }
+    if backup_policy_required:
+        metadata["apkManifestReadback"] = {
+            "member": "android/apk/app-release-unsigned.apk",
+            "tool": "aapt2 dump xmltree + resources --no-values",
+            "verifiedFields": [
+                *BACKUP_POLICY_APK_MANIFEST_VERIFIED_FIELDS,
+            ],
+        }
     bundle_structure_validation = (
         bundle_structure_validation_claim_for_build(
             current.build_number

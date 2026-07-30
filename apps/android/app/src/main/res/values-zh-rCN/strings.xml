@@ -55,6 +55,13 @@
     <string name="chat_history_group_older">更早</string>
     <string name="no_previous_chats">还没有历史聊天。</string>
     <string name="chat_search_label">搜索聊天</string>
+    <string name="search_chat_history_named">在聊天记录中搜索“%1$s”</string>
+    <string name="chat_search_action_state_enter_query">请输入搜索词。</string>
+    <string name="chat_search_action_state_connect_first">请先连接受信任的 Runtime，再搜索聊天记录。</string>
+    <string name="chat_search_action_state_wait_for_stream">请等待当前回复完成后再搜索聊天记录。</string>
+    <string name="chat_search_action_state_ready">已可搜索受信任的 Runtime。</string>
+    <string name="chat_search_action_state_loading">请等待当前聊天记录请求完成。</string>
+    <string name="searching_chats">正在搜索聊天…</string>
     <string name="clear_chat_search_named">清除“%1$s”的聊天搜索</string>
     <string name="no_chat_search_results">没有匹配的聊天。</string>
     <string name="chat_search_match_rank">匹配 %1$d</string>

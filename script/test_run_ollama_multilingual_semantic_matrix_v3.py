@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -122,6 +123,15 @@ class OllamaMultilingualSemanticFullMatrixV3Tests(unittest.TestCase):
                     ),
                     expected,
                 )
+
+    def test_v3_temporary_prefix_stays_within_recovery_boundary(self) -> None:
+        self.assertEqual(
+            runner.TEMPORARY_PREFIX,
+            (
+                runner.base.EMBEDDING_SEMANTIC_QUALITY_TEMPORARY_PREFIX
+                + "full-matrix-v3-"
+            ),
+        )
 
     def test_projection_rejects_noncanonical_or_inexact_values(self) -> None:
         mutations = {
@@ -430,12 +440,13 @@ class OllamaMultilingualSemanticFullMatrixV3Tests(unittest.TestCase):
 
         def run_candidate(
             candidate: dict[str, str],
-            _root: Path,
+            root: Path,
             *,
             selected: runner.base.SelectedLocalModel,
         ) -> dict[str, object]:
             del selected
             candidate_order.append(candidate["version"])
+            candidate_roots.append(root)
             return {
                 "archiveSha256": candidate["archiveSha256"],
                 "observation": deepcopy(self.failing_projection()),
@@ -445,6 +456,14 @@ class OllamaMultilingualSemanticFullMatrixV3Tests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             source_root = Path(directory).resolve()
+            canonical_temporary_root = source_root / "canonical-temporary-root"
+            canonical_temporary_root.mkdir()
+            temporary_root_alias = source_root / "temporary-root-alias"
+            temporary_root_alias.symlink_to(
+                canonical_temporary_root,
+                target_is_directory=True,
+            )
+            candidate_roots: list[Path] = []
             with (
                 patch.object(
                     runner,
@@ -486,6 +505,11 @@ class OllamaMultilingualSemanticFullMatrixV3Tests(unittest.TestCase):
                     "run_candidate_v3",
                     side_effect=run_candidate,
                 ),
+                patch.object(
+                    runner.tempfile,
+                    "TemporaryDirectory",
+                    return_value=nullcontext(str(temporary_root_alias)),
+                ),
             ):
                 result = runner.run_matrix(source_root)
 
@@ -494,6 +518,10 @@ class OllamaMultilingualSemanticFullMatrixV3Tests(unittest.TestCase):
             for candidate in runner.base.EXACT_CANDIDATES
         ]
         self.assertEqual(candidate_order, expected)
+        self.assertEqual(
+            candidate_roots,
+            [canonical_temporary_root, canonical_temporary_root],
+        )
         self.assertEqual(
             [row["version"] for row in result["versions"]],
             expected,
@@ -581,6 +609,48 @@ class OllamaMultilingualSemanticFullMatrixV3Tests(unittest.TestCase):
             ).hexdigest(),
             runner.v2.TASK_SET_SHA256,
         )
+
+    def test_recorded_result_preserves_complete_failed_observation(
+        self,
+    ) -> None:
+        result = runner.recorded_result()
+        self.assertFalse(result["qualityGatePassed"])
+        self.assertTrue(result["sourceStatePreserved"])
+        expected_failures = [
+            {
+                "failedBatches": [
+                    {
+                        "batchOrdinal": 1,
+                        "comparisonFailureCount": 1,
+                    },
+                    {
+                        "batchOrdinal": 2,
+                        "comparisonFailureCount": 1,
+                    },
+                ],
+                "locale": locale,
+                "scenarioOrdinalWithinLocale": 2,
+            }
+            for locale in ("ko", "fr")
+        ]
+        for version in result["versions"]:
+            self.assertTrue(version["recoveryPassed"])
+            self.assertEqual(
+                version["observation"],
+                {
+                    "rankingFailures": expected_failures,
+                    "repeatabilityFailures": [],
+                    "schemaVersion": 1,
+                },
+            )
+            self.assertEqual(
+                runner.projection_summary(version["observation"]),
+                {
+                    "qualityGatePassed": False,
+                    "rankingComparisonsPassed": 76,
+                    "repeatabilityComparisonsPassed": 80,
+                },
+            )
 
 
 if __name__ == "__main__":

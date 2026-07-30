@@ -651,7 +651,7 @@ same strict local ad-hoc seal used by development packaging. It is a local
 qualification artifact, not Developer ID signing, notarization, or a DMG.
 Both this package and the Android Release variant read
 `release/version-ledger.tsv`; its current entry is marketing version `1.0.0`
-and shared build number `9`. Android Debug deliberately remains `0.1.0+1`.
+and shared build number `20`. Android Debug deliberately remains `0.1.0+1`.
 Its Release metadata is backed by a lazy Gradle provider, so Debug still
 configures and builds when the release ledger is unavailable; a Release task
 validates the ledger's LF-only printable-ASCII/tab byte format when it needs
@@ -697,7 +697,7 @@ release IDs are immutable: the packager refuses to replace an existing ID with
 different bytes.
 
 The current output is
-`dist/releases/aetherlink-1.0.0+9-local-v1/`. It contains one canonical
+`dist/releases/aetherlink-1.0.0+20-local-v1/`. It contains one canonical
 normalized-input ZIP, an identical external manifest, and a ZIP SHA-256
 sidecar.
 Android Release is unsigned and `arm64-v8a`-only; the macOS app is a thin
@@ -707,33 +707,109 @@ normalization; `seeds.txt`, `mapping.prt`, and extracted configuration roots
 use their separately declared normalizations while retaining the checked
 payload meaning.
 
-The Build 9 qualification runner created two isolated lane worktrees from one
-239-file `dirty-content-snapshot`
-whose source-root UTF-8 byte lengths were 101 and 109. With the same host,
-fixed toolchains, paired clones of one byte-identical Gradle seed, and a fixed
-canonical Swift scratch policy, two complete A/B runs produced the exact
-165,065,657-byte
-ZIP
-`e2cbd350bf031d04b6e29054ceb387bbe453e60244b47919c54f6d3c13ba7e1a`
-and the exact 11,918-byte manifest
-`56380c239f916ba9d400cc73824ebbda111f61e0baa4d0dc66e8d14e044d05a5`.
-The 19,744-byte result
-`dist/reproducibility/aetherlink-1.0.0+9-local-v1-two-root-v2.json` records exact lane
-comparison, immutable local publication, and independent current-source
-readback. The 19,743-byte
-`dist/reproducibility/aetherlink-1.0.0+9-local-v1-two-root-v2-confirmation.json`
+The Build 20 qualification runner created two isolated lane worktrees from one
+246-file `dirty-content-snapshot` whose source-root UTF-8 byte lengths were 101
+and 109. With the same host, fixed toolchains, paired clones of one
+byte-identical Gradle seed, and a fixed canonical Swift scratch policy with
+serialized frontend work, the separately invoked comparison-only and
+publish-qualified A/B runs produced the exact 165,617,269-byte ZIP
+`cba5a6531c35725aef7a2a3bf8b25d2155833b31b216906c80f8349249f6edf1`,
+the exact 12,317-byte manifest
+`c633bf2c2ccc9d007f08e73929eed3d7f6b247d08579fa3695bcbad04348c99d`,
+and the exact 99-byte checksum sidecar
+`dd803b0bc3313d833b0cdd1b2044c96a0f5873496ecdae94c5a4079bb02feaed`.
+The 19,571-byte prepublication result
+`dist/reproducibility/aetherlink-1.0.0+20-local-v1-two-root-v3-prepublication.json`
 has SHA-256
-`eeac49b926261a5cfaed806b4db6e03b3a9e4028e55cbcf7a26408d466053246`
-and recorded `alreadyMatched=true`. The claim is limited to the two recorded
-successful pairs, not variance-free arbitrary repeats,
-arbitrary-root, cross-host, clean-machine, signed-artifact, or physical-device
-qualification. The Git commit alone cannot reconstruct the dirty release
-snapshot. Immutable Builds 1 through 8 remain available for historical
-readback. The verifier cross-binds every
-recorded Gradle lock identity to the archived source inventory and keeps
-current and historical readback modes mutually exclusive.
+`ad7e9b6e5f52a76d5a65b52bab5138ad86eb019b7b89fa7ee29c51b89c7cef2c`
+and records `executionMode=comparison-only`,
+`publication.outcome=disabled-comparison-only`, and
+`qualifiedArchivePublished=false`; it did not publish an archive. The
+separately invoked 20,010-byte canonical result
+`dist/reproducibility/aetherlink-1.0.0+20-local-v1-two-root-v3.json` has
+SHA-256
+`ca71f3ad64ea744275035891c5d41faae9778c6be4f1a6fbadac2c1cf2b59a1c`
+and records `executionMode=publish-qualified`,
+`publication.outcome=published-verified`, `alreadyMatched=false`,
+`qualifiedArchivePublished=true`, and independent readback. The claim is
+limited to these two recorded successful same-host pairs, not variance-free
+arbitrary repeats, arbitrary-root, cross-host, clean-machine, signed-artifact,
+or physical-device qualification. The Git commit alone cannot reconstruct the
+dirty release snapshot. The exact 246-file source digest is
+`22f14e60d522b2720660e41a645a3e9832dd723b8b93b147c51bbf6c9125998c`.
+Immutable Builds 1 through 19 remain available for historical readback. The
+verifier cross-binds every recorded Gradle lock identity to the archived source
+inventory and keeps current and historical readback modes mutually exclusive.
 
-Build 9 preserves compliance profile `aetherlink-release-compliance-v2` and four
+Build 18 first source-binds the Android drawer search release inputs. The
+historical Build 19 archive retained those inputs, and Build 20 retains them.
+The bound no-device evidence includes
+the complete 1,194-test app JVM suite, and release lint reports 0 errors and 2
+SDK 37 availability warnings.
+This source/JVM/Compose evidence is not part of the immutable Build 17 archive and is first source-bound by the immutable Build 18 archive; it does not establish physical touch, TalkBack, provider, device, network, installation, signing, or release behavior.
+
+Build 19 first source-bound the Runtime-chat SQLite cross-process QA closure;
+Build 20 retains that source-bound closure.
+Every production connection installs a 5-second SQLite busy timeout, and
+`SQLITE_BUSY`/`SQLITE_LOCKED` normalize to the stable retry message
+`Runtime chat history is temporarily busy. Try again.` Three deterministic
+Swift tests cover wait-and-release success, `BEGIN` timeout rollback, and
+`COMMIT` timeout rollback; all 90 store tests and the full 2,084-test Swift
+suite pass with 11 expected opt-in/live skips. A separate live QA run launched
+two independent writer processes for 48 events each and a third independent
+readback process. It observed 96 disjoint exactly-once events, owner/session
+isolation, per-writer append ordering, `integrity_check=ok`, directory mode
+`0700`, and SQLite file mode `0600`. The live result is execution evidence,
+not a retained archive member. It does not establish crash/power-loss,
+arbitrary histories, mixed old/new binaries, clean-machine, signed/notarized,
+physical-device, or production behavior.
+
+The historical Build 19 same-host, per-user clean-HOME observations remain
+bound to Build 19. Its 2,250-byte installed-app result is
+`dist/lifecycle/macos-packaged-app-build-19-clean-home-install-v1.json`,
+SHA-256
+`a89291227bde1f9f15caa3743339f569e9f7c79380f8f3a70df0a0fe8388b159`;
+its 3,364-byte installed state-recovery result is
+`dist/lifecycle/macos-packaged-app-build-19-clean-home-state-recovery-v1.json`,
+SHA-256
+`1c72536188ce71388319d068489f4c351521f33d5431af36e7acc5ff76bdb2b7`.
+Those historical observations are not reinterpreted as Build 20 evidence.
+
+<!-- aetherlink-current-build20-lifecycle-v1:start -->
+
+Build 20 has current same-host, per-user macOS installed-lifecycle
+evidence. The clean-HOME runner copied the exact packaged app into an isolated
+Applications path and exercised two distinct exact-path LaunchServices
+processes. Its canonical 2,250-byte result is
+`dist/lifecycle/macos-packaged-app-build-20-clean-home-install-v1.json`,
+SHA-256
+`4ce047a318e47568d647e1167cbaeebc603626073e098451a29c949086aa3d72`.
+The separate legacy-to-SQLite-to-SQLite-only runner produced the canonical
+3,364-byte
+`dist/lifecycle/macos-packaged-app-build-20-clean-home-state-recovery-v1.json`,
+SHA-256
+`d12947e16e7b985515a90a13731947a5991bcd82a06039210e22bba43535bf0b`.
+A separate ephemeral local-DMG run created and verified an HFS+ UDZO image,
+mounted it read-only and without browsing, checked the Applications alias,
+copied the exact release tree with `ditto`, detached the image before launch,
+and exercised two distinct installed-app processes. Its canonical 2,434-byte
+result is
+`dist/lifecycle/macos-packaged-app-build-20-local-dmg-install-v1.json`,
+SHA-256
+`e78b605278d5c5b7f5601778c38f35270f1db4a9e95055ff434b71af4c33cf78`.
+The image was ephemeral and was not retained. Both clean-HOME runners were
+invoked twice and matched their canonical results.
+These same-host, per-user Build 20 observations do not qualify a clean
+machine/account, signed/notarized distribution, UI/accessibility,
+live-provider behavior, a physical device, arbitrary histories,
+crash/power-loss, concurrent writers, backup/transfer, rollback, or production
+readiness. The DMG run remains outside Finder UI, drag-and-drop, Gatekeeper
+quarantine/download behavior, TCC, Keychain, network behavior, and system
+Applications installation evidence.
+
+<!-- aetherlink-current-build20-lifecycle-v1:end -->
+
+Build 20 preserves compliance profile `aetherlink-release-compliance-v2` and four
 deterministic members: a
 350-coordinate Gradle lock/POM catalog, fixed creation metadata, a text
 third-party license inventory, and SPDX 2.3 JSON. It emits 692 exact
@@ -751,7 +827,7 @@ Refresh public POM evidence only as an explicit maintenance action with
 checked-in catalog offline with
 `python3 -B script/generate_release_compliance.py check`.
 
-A post-publication macOS lifecycle smoke reads back the exact current Build 9
+The historical Build 9 macOS lifecycle smoke reads back the exact Build 9
 ZIP, extracts its packaged app into a temporary root, and completes two
 AppKit finished-launch → minimum five-second observation → identity-rechecked
 exact-PID termination cycles. Both runs exit zero. The QA-only sandbox uses a
@@ -790,7 +866,7 @@ Current upstream JNI dependencies arrive pre-stripped; the manifest records
 that native-symbol archive as unavailable instead of claiming it was retained.
 This workflow does not sign, install, upload, launch, or deploy either app.
 The consolidated
-[1.0.0 build 9 local qualification record](docs/releases/1.0.0-build-9-local-v1.md)
+[1.0.0 build 20 local qualification record](docs/releases/1.0.0-build-20-local-v1.md)
 defines the current release notes, compatibility matrix, migration boundary,
 known limitations, rollback posture, exact artifact identity, and bounded
 two-root evidence. The fixture-rich
@@ -815,6 +891,9 @@ relationship limitation superseded by Build 8. The
 [build 8 historical record](docs/releases/1.0.0-build-8-local-v1.md) preserves
 the first exact-role compliance qualification and its recorded repeated-run
 boundary. The
+[build 9 historical record](docs/releases/1.0.0-build-9-local-v1.md) preserves
+the role-aware embedding source qualification and its separately bound
+packaged-app lifecycle result. The
 provider snapshot records official current/previous
 candidates separately from local observations. Both exact Ollama candidates
 passed isolated adapter health, empty-catalog, restart, and stopped-endpoint
@@ -873,7 +952,26 @@ python3 script/run_ollama_multilingual_semantic_matrix.py \
 
 A successful runner exit means the predeclared failure and both recovery
 records matched the canonical fixture; it does not mean the multilingual
-quality gate passed. A third vision-backed mode selects the
+quality gate passed.
+
+The separate V3 runner completes the full five-locale matrix instead of
+stopping at the first quality miss. Both exact candidates pass 76/80 ranking
+comparisons and 80/80 repeatability comparisons, with identical Korean and
+French scenario ordinal 2 ranking misses. Both fresh-provider recovery phases
+pass and the source provider/catalog/loaded-model/selected-byte state remains
+unchanged. The canonical bounded result is
+[`docs/evidence/ollama-embedding-multilingual-full-matrix-v3.json`](docs/evidence/ollama-embedding-multilingual-full-matrix-v3.json),
+3,570 bytes with SHA-256
+`ca8279bafbe04a6de820caf1b855e4a2b6a09eb561602dd7773f1bfc190bda47`.
+It records `qualityGatePassed=false`; complete observation is not a passing
+quality result. Reproduce it without downloading a model with:
+
+```bash
+python3 -B script/run_ollama_multilingual_semantic_matrix_v3.py \
+  --source-model-store /Users/hanchangha/.ollama/models
+```
+
+A third vision-backed mode selects the
 smallest unloaded model that advertises both vision and chat/completion,
 copy-on-write snapshots its exact 997 blobs plus manifest, and retains no model
 name, prompt, fixed PNG bytes, or provider output. Both exact candidates pass

@@ -5848,6 +5848,367 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         XCTAssertFalse(remainingLegacyEvents.contains { $0.sessionID == "coordination-deleted" })
     }
 
+    func testSQLiteCrossInstanceAppendWaitsForImmediateTransactionAndCommitsExactlyOnce() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let holderEnteredTransaction = DispatchSemaphore(value: 0)
+        let allowHolderCommit = DispatchSemaphore(value: 0)
+        let holderFinished = DispatchSemaphore(value: 0)
+        let contenderStarted = DispatchSemaphore(value: 0)
+        let contenderFinished = DispatchSemaphore(value: 0)
+        let holderHookWait = SQLiteRuntimeChatConcurrentResultBox<DispatchTimeoutResult>()
+        let holderResult = SQLiteRuntimeChatConcurrentResultBox<Result<Void, Error>>()
+        let contenderResult = SQLiteRuntimeChatConcurrentResultBox<Result<Void, Error>>()
+        let holderStore = SQLiteRuntimeChatEventStore(
+            databaseURL: databaseURL,
+            appendInstrumentation: SQLiteRuntimeChatEventStoreAppendInstrumentation(
+                didInsertSearchDocument: {
+                    holderEnteredTransaction.signal()
+                    holderHookWait.store(
+                        allowHolderCommit.wait(timeout: .now() + .seconds(2))
+                    )
+                }
+            )
+        )
+        let contenderStore = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        let holderEvent = RuntimeChatStoredEvent(
+            id: "cross-instance-busy-holder",
+            timestamp: Date(timeIntervalSince1970: 700),
+            kind: .request,
+            requestID: "cross-instance-busy-holder-turn",
+            sessionID: "cross-instance-busy-holder-session",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Hold the writer transaction.")],
+            ownerDeviceID: "device-a"
+        )
+        let contenderEvent = RuntimeChatStoredEvent(
+            id: "cross-instance-busy-contender",
+            timestamp: Date(timeIntervalSince1970: 701),
+            kind: .request,
+            requestID: "cross-instance-busy-contender-turn",
+            sessionID: "cross-instance-busy-contender-session",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Wait and commit once.")],
+            ownerDeviceID: "device-b"
+        )
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            holderResult.store(Result {
+                try holderStore.append(holderEvent)
+            })
+            holderFinished.signal()
+        }
+        XCTAssertEqual(
+            holderEnteredTransaction.wait(timeout: .now() + .seconds(2)),
+            .success
+        )
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            contenderStarted.signal()
+            contenderResult.store(Result {
+                try contenderStore.append(contenderEvent)
+            })
+            contenderFinished.signal()
+        }
+        XCTAssertEqual(contenderStarted.wait(timeout: .now() + .seconds(2)), .success)
+        XCTAssertEqual(
+            contenderFinished.wait(timeout: .now() + .milliseconds(50)),
+            .timedOut
+        )
+        allowHolderCommit.signal()
+
+        XCTAssertEqual(holderFinished.wait(timeout: .now() + .seconds(2)), .success)
+        XCTAssertEqual(contenderFinished.wait(timeout: .now() + .seconds(2)), .success)
+        XCTAssertEqual(holderHookWait.load(), .success)
+        try XCTUnwrap(holderResult.load()).get()
+        try XCTUnwrap(contenderResult.load()).get()
+        XCTAssertEqual(
+            try rawSQLiteInt(
+                "SELECT COUNT(*) FROM runtime_chat_events WHERE event_id = 'cross-instance-busy-contender'",
+                at: databaseURL
+            ),
+            1
+        )
+        XCTAssertEqual(
+            try SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+                .listAllSessions(limit: 10, includeArchived: true)
+                .map(\.sessionID)
+                .sorted(),
+            [
+                "cross-instance-busy-contender-session",
+                "cross-instance-busy-holder-session",
+            ]
+        )
+    }
+
+    func testSQLiteCrossInstanceBusyTimeoutRollsBackAndLaterReopenSucceeds() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let holderEnteredTransaction = DispatchSemaphore(value: 0)
+        let allowHolderCommit = DispatchSemaphore(value: 0)
+        let holderFinished = DispatchSemaphore(value: 0)
+        let contenderFinished = DispatchSemaphore(value: 0)
+        let holderHookWait = SQLiteRuntimeChatConcurrentResultBox<DispatchTimeoutResult>()
+        let holderResult = SQLiteRuntimeChatConcurrentResultBox<Result<Void, Error>>()
+        let contenderResult = SQLiteRuntimeChatConcurrentResultBox<Result<Void, Error>>()
+        let holderStore = SQLiteRuntimeChatEventStore(
+            databaseURL: databaseURL,
+            appendInstrumentation: SQLiteRuntimeChatEventStoreAppendInstrumentation(
+                didInsertSearchDocument: {
+                    holderEnteredTransaction.signal()
+                    holderHookWait.store(
+                        allowHolderCommit.wait(timeout: .now() + .seconds(10))
+                    )
+                }
+            )
+        )
+        let contenderStore = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        let holderEvent = RuntimeChatStoredEvent(
+            id: "cross-instance-timeout-holder",
+            timestamp: Date(timeIntervalSince1970: 710),
+            kind: .request,
+            requestID: "cross-instance-timeout-holder-turn",
+            sessionID: "cross-instance-timeout-holder-session",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Hold through the bounded timeout.")],
+            ownerDeviceID: "device-a"
+        )
+        let timedOutEvent = RuntimeChatStoredEvent(
+            id: "cross-instance-timeout-contender",
+            timestamp: Date(timeIntervalSince1970: 711),
+            kind: .request,
+            requestID: "cross-instance-timeout-contender-turn",
+            sessionID: "cross-instance-timeout-contender-session",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "This write must time out atomically.")],
+            ownerDeviceID: "device-b"
+        )
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            holderResult.store(Result {
+                try holderStore.append(holderEvent)
+            })
+            holderFinished.signal()
+        }
+        XCTAssertEqual(
+            holderEnteredTransaction.wait(timeout: .now() + .seconds(2)),
+            .success
+        )
+        defer { allowHolderCommit.signal() }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            contenderResult.store(Result {
+                try contenderStore.append(timedOutEvent)
+            })
+            contenderFinished.signal()
+        }
+        XCTAssertEqual(contenderFinished.wait(timeout: .now() + .seconds(8)), .success)
+        XCTAssertThrowsError(try XCTUnwrap(contenderResult.load()).get()) { error in
+            XCTAssertEqual(
+                error.localizedDescription,
+                "Runtime chat history is temporarily busy. Try again."
+            )
+            XCTAssertFalse(error.localizedDescription.contains(databaseURL.path))
+            XCTAssertFalse(error.localizedDescription.localizedCaseInsensitiveContains("database is locked"))
+            XCTAssertFalse(error.localizedDescription.localizedCaseInsensitiveContains("sqlite"))
+        }
+        XCTAssertEqual(
+            try rawSQLiteInt(
+                "SELECT COUNT(*) FROM runtime_chat_events WHERE event_id = 'cross-instance-timeout-contender'",
+                at: databaseURL
+            ),
+            0
+        )
+        XCTAssertEqual(
+            try rawSQLiteInt("SELECT COUNT(*) FROM runtime_chat_events", at: databaseURL),
+            0
+        )
+        XCTAssertEqual(
+            try rawSQLiteInt("SELECT COUNT(*) FROM runtime_chat_event_fts_v2", at: databaseURL),
+            0
+        )
+
+        allowHolderCommit.signal()
+        XCTAssertEqual(holderFinished.wait(timeout: .now() + .seconds(2)), .success)
+        XCTAssertEqual(holderHookWait.load(), .success)
+        try XCTUnwrap(holderResult.load()).get()
+
+        let reopenedStore = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        try reopenedStore.append(RuntimeChatStoredEvent(
+            id: "cross-instance-timeout-reopened",
+            timestamp: Date(timeIntervalSince1970: 712),
+            kind: .request,
+            requestID: "cross-instance-timeout-reopened-turn",
+            sessionID: "cross-instance-timeout-reopened-session",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Reopen after timeout.")],
+            ownerDeviceID: "device-c"
+        ))
+        XCTAssertEqual(
+            try rawSQLiteInt("SELECT COUNT(*) FROM runtime_chat_events", at: databaseURL),
+            2
+        )
+        XCTAssertEqual(
+            try rawSQLiteInt(
+                "SELECT COUNT(*) FROM runtime_chat_events WHERE event_id = 'cross-instance-timeout-contender'",
+                at: databaseURL
+            ),
+            0
+        )
+    }
+
+    func testSQLiteBusyTimeoutAtCommitRollsBackEventAndFTSRowsBeforeReopen() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let schemaStore = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        XCTAssertTrue(try schemaStore.listAllSessions(limit: 1, includeArchived: true).isEmpty)
+
+        let readerReady = DispatchSemaphore(value: 0)
+        let appendFinished = DispatchSemaphore(value: 0)
+        let appendResult = SQLiteRuntimeChatConcurrentResultBox<Result<Void, Error>>()
+        let readerDatabase = SQLiteRuntimeChatConcurrentResultBox<OpaquePointer>()
+        let readerSetupResult = SQLiteRuntimeChatConcurrentResultBox<Result<Void, Error>>()
+        let appendingStore = SQLiteRuntimeChatEventStore(
+            databaseURL: databaseURL,
+            appendInstrumentation: SQLiteRuntimeChatEventStoreAppendInstrumentation(
+                didInsertSearchDocument: {
+                    var candidateReaderDatabase: OpaquePointer?
+                    do {
+                        let readerFlags = SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX
+                        guard sqlite3_open_v2(
+                            databaseURL.path,
+                            &candidateReaderDatabase,
+                            readerFlags,
+                            nil
+                        ) == SQLITE_OK,
+                              let openedReaderDatabase = candidateReaderDatabase else {
+                            throw NSError(
+                                domain: "SQLiteRuntimeChatEventStoreTests",
+                                code: 48
+                            )
+                        }
+                        guard sqlite3_exec(
+                            openedReaderDatabase,
+                            "BEGIN; SELECT COUNT(*) FROM runtime_chat_events;",
+                            nil,
+                            nil,
+                            nil
+                        ) == SQLITE_OK,
+                              sqlite3_get_autocommit(openedReaderDatabase) == 0 else {
+                            throw NSError(
+                                domain: "SQLiteRuntimeChatEventStoreTests",
+                                code: 49
+                            )
+                        }
+                        readerDatabase.store(openedReaderDatabase)
+                        candidateReaderDatabase = nil
+                        readerSetupResult.store(.success(()))
+                    } catch {
+                        if let candidateReaderDatabase {
+                            _ = sqlite3_exec(
+                                candidateReaderDatabase,
+                                "ROLLBACK",
+                                nil,
+                                nil,
+                                nil
+                            )
+                            sqlite3_close(candidateReaderDatabase)
+                        }
+                        readerSetupResult.store(.failure(error))
+                    }
+                    readerReady.signal()
+                }
+            )
+        )
+        let event = RuntimeChatStoredEvent(
+            id: "commit-busy-timeout-event",
+            timestamp: Date(timeIntervalSince1970: 713),
+            kind: .request,
+            requestID: "commit-busy-timeout-turn",
+            sessionID: "commit-busy-timeout-session",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Commit must time out atomically.")],
+            ownerDeviceID: "device-a"
+        )
+
+        var readerReleased = false
+        var readerSetupFinished = false
+        var appendStarted = false
+        defer {
+            if appendStarted, !readerSetupFinished {
+                _ = readerReady.wait(timeout: .now() + .seconds(2))
+            }
+            if !readerReleased, let openedReaderDatabase = readerDatabase.load() {
+                _ = sqlite3_exec(openedReaderDatabase, "ROLLBACK", nil, nil, nil)
+                sqlite3_close(openedReaderDatabase)
+            }
+            if appendStarted {
+                _ = appendFinished.wait(timeout: .now() + .seconds(2))
+            }
+        }
+
+        appendStarted = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            appendResult.store(Result {
+                try appendingStore.append(event)
+            })
+            appendFinished.signal()
+        }
+        let readerReadyWait = readerReady.wait(timeout: .now() + .seconds(2))
+        readerSetupFinished = readerReadyWait == .success
+        XCTAssertEqual(readerReadyWait, .success)
+        try XCTUnwrap(readerSetupResult.load()).get()
+        let openedReaderDatabase = try XCTUnwrap(readerDatabase.load())
+        let appendWait = appendFinished.wait(timeout: .now() + .seconds(8))
+        XCTAssertEqual(appendWait, .success)
+        if appendWait == .success {
+            appendStarted = false
+        }
+        XCTAssertThrowsError(try XCTUnwrap(appendResult.load()).get()) { error in
+            XCTAssertEqual(
+                error.localizedDescription,
+                "Runtime chat history is temporarily busy. Try again."
+            )
+        }
+
+        XCTAssertEqual(
+            sqlite3_exec(openedReaderDatabase, "ROLLBACK", nil, nil, nil),
+            SQLITE_OK
+        )
+        let readerCloseResult = sqlite3_close(openedReaderDatabase)
+        XCTAssertEqual(readerCloseResult, SQLITE_OK)
+        readerReleased = readerCloseResult == SQLITE_OK
+
+        XCTAssertEqual(
+            try rawSQLiteInt(
+                "SELECT COUNT(*) FROM runtime_chat_events WHERE event_id = 'commit-busy-timeout-event'",
+                at: databaseURL
+            ),
+            0
+        )
+        XCTAssertEqual(
+            try rawSQLiteInt(
+                "SELECT COUNT(*) FROM runtime_chat_event_fts_v2 WHERE event_id = 'commit-busy-timeout-event'",
+                at: databaseURL
+            ),
+            0
+        )
+
+        let reopenedStore = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        try reopenedStore.append(event)
+        XCTAssertEqual(
+            try rawSQLiteInt(
+                "SELECT COUNT(*) FROM runtime_chat_events WHERE event_id = 'commit-busy-timeout-event'",
+                at: databaseURL
+            ),
+            1
+        )
+        XCTAssertEqual(
+            try rawSQLiteInt(
+                "SELECT COUNT(*) FROM runtime_chat_event_fts_v2 WHERE event_id = 'commit-busy-timeout-event'",
+                at: databaseURL
+            ),
+            1
+        )
+    }
+
     func testProductionRetentionDefersLegacyCompactionUntilFinalBatchDrain() throws {
         let databaseURL = try temporaryDatabaseURL()
         let legacyURL = try temporaryJSONLURL()
