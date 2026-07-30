@@ -4,16 +4,22 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject private var model: CompanionAppModel
     @Binding private var requestedSection: CompanionSection?
+    @Binding private var pairingFocusSequence: Int
+    @Binding private var pairingFocusIntent: PairingFocusIntent?
     @SceneStorage("selectedSection") private var selectedSection = CompanionSection.status
     @AppStorage(AetherLinkAppLanguageStorageKey) private var appLanguageTag = AetherLinkAppLanguage.defaultLanguage.rawValue
     @AppStorage(AetherLinkAppAppearanceStorageKey) private var appAppearance = AetherLinkAppAppearance.defaultAppearance.rawValue
 
     init(
         model: CompanionAppModel,
-        requestedSection: Binding<CompanionSection?> = .constant(nil)
+        requestedSection: Binding<CompanionSection?> = .constant(nil),
+        pairingFocusSequence: Binding<Int> = .constant(0),
+        pairingFocusIntent: Binding<PairingFocusIntent?> = .constant(nil)
     ) {
         self.model = model
         self._requestedSection = requestedSection
+        self._pairingFocusSequence = pairingFocusSequence
+        self._pairingFocusIntent = pairingFocusIntent
     }
 
     var body: some View {
@@ -69,16 +75,21 @@ struct ContentView: View {
                 StatusView(
                     model: model,
                     onGenerateRelayQRCode: {
-                        model.requestPairingForUserInterface()
-                        selectedSection = .pairing
+                        requestPairingAndShow {
+                            model.requestPairingForUserInterface()
+                        }
                     },
                     onGenerateRemoteRelayQRCode: {
-                        model.requestRemotePairingForUserInterface()
-                        selectedSection = .pairing
+                        requestPairingAndShow {
+                            model.requestRemotePairingForUserInterface()
+                        }
                     }
                 )
             case .pairing:
-                PairingView(model: model)
+                PairingView(
+                    model: model,
+                    focusIntent: $pairingFocusIntent
+                )
             case .trustedDevices:
                 TrustedDevicesView(model: model)
             case .logs:
@@ -98,21 +109,39 @@ struct ContentView: View {
             }
         }
         .onAppear {
-            selectedSection = companionSectionAfterExternalRequest(
+            let nextSection = companionSectionAfterExternalRequest(
                 current: selectedSection,
                 trustedDeviceCount: model.trustedDevices.count,
                 requested: requestedSection
             )
+            if requestedSection == .pairing, nextSection == .pairing {
+                requestPairingAndEnqueueFocusIntent {
+                    model.requestPairingForUserInterface()
+                }
+            }
+            selectedSection = nextSection
             requestedSection = nil
         }
         .onChange(of: requestedSection) { _, requested in
             guard let requested else { return }
-            selectedSection = companionSectionAfterExternalRequest(
+            let nextSection = companionSectionAfterExternalRequest(
                 current: selectedSection,
                 trustedDeviceCount: model.trustedDevices.count,
                 requested: requested
             )
+            if requested == .pairing, nextSection == .pairing {
+                requestPairingAndEnqueueFocusIntent {
+                    model.requestPairingForUserInterface()
+                }
+            }
+            selectedSection = nextSection
             requestedSection = nil
+        }
+        .onChange(of: selectedSection) { _, section in
+            pairingFocusIntent = pairingFocusIntentAfterSectionChange(
+                pairingFocusIntent,
+                currentSection: section
+            )
         }
         .onChange(of: model.trustedDevices.count) { previousTrustedDeviceCount, trustedDeviceCount in
             selectedSection = companionSectionAfterTrustedDeviceCountChange(
@@ -176,8 +205,9 @@ struct ContentView: View {
 
         case .pairingQR:
             Button {
-                model.requestPairingForUserInterface()
-                selectedSection = .pairing
+                requestPairingAndShow {
+                    model.requestPairingForUserInterface()
+                }
             } label: {
                 if model.pairingSession == nil {
                     Label(NSLocalizedString("Generate Pairing QR", comment: ""), systemImage: "qrcode")
@@ -210,6 +240,40 @@ struct ContentView: View {
             )
         }
     }
+
+    private func requestPairingAndShow(_ request: () -> Bool) {
+        requestPairingAndEnqueueFocusIntent(request)
+        selectedSection = .pairing
+    }
+
+    private func requestPairingAndEnqueueFocusIntent(_ request: () -> Bool) {
+        let baselineSessionID = model.pairingSession?.id
+        let requestAccepted = request()
+        enqueuePairingFocusIntent(
+            baselineSessionID: baselineSessionID,
+            waitsForNewSession: requestAccepted
+                && model.pairingSession?.id == baselineSessionID
+        )
+    }
+
+    private func enqueuePairingFocusIntent(
+        baselineSessionID: String?,
+        waitsForNewSession: Bool
+    ) {
+        pairingFocusSequence &+= 1
+        pairingFocusIntent = PairingFocusIntent(
+            id: pairingFocusSequence,
+            baselineSessionID: baselineSessionID,
+            waitsForNewSession: waitsForNewSession
+        )
+    }
+}
+
+func pairingFocusIntentAfterSectionChange(
+    _ intent: PairingFocusIntent?,
+    currentSection: CompanionSection
+) -> PairingFocusIntent? {
+    currentSection == .pairing ? intent : nil
 }
 
 func companionToolbarPrimaryActionOrder(

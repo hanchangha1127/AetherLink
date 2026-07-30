@@ -26,6 +26,7 @@ private func generateRuntimeLocalRelaySecret() -> String {
 public struct CompanionTransportStatus: Equatable, Sendable {
     public enum State: Equatable, Sendable {
         case stopped
+        case starting
         case advertising
         case failed
     }
@@ -48,6 +49,10 @@ public struct CompanionTransportStatus: Equatable, Sendable {
     }
 
     public static let stopped = CompanionTransportStatus(state: .stopped)
+
+    public static func starting(port: UInt16) -> CompanionTransportStatus {
+        CompanionTransportStatus(state: .starting, port: port)
+    }
 
     public static func advertising(serviceName: String, port: UInt16) -> CompanionTransportStatus {
         CompanionTransportStatus(state: .advertising, serviceName: serviceName, port: port)
@@ -946,6 +951,8 @@ public final class CompanionAppModel: ObservableObject {
     private let runtimeIdentityWarning: String?
     private var runtimePort: UInt16 = 43170
     private var isRuntimeStarted = false
+    private var activeRuntimeStartAttemptID: UUID?
+    private var pendingRuntimeStartRoutePreparation: CompanionRuntimeStartRoutePreparation?
     private var hasScheduledRuntimeChatRetentionMaintenance = false
     private var runtimeChatRetentionMaintenanceTask: Task<Void, Never>?
     private let modelIdleUnloadPolicyUpdateQueue = RuntimeModelIdleUnloadPolicyUpdateQueue()
@@ -1268,7 +1275,8 @@ public final class CompanionAppModel: ObservableObject {
 
     @discardableResult
     public func requestStartForUserInterface(port: UInt16 = 43170) -> Bool {
-        guard !isRuntimeStarted || runtimePort != port else {
+        guard runtimePort != port ||
+                (!isRuntimeStarted && transportState.state != .starting) else {
             return false
         }
         startRuntime(port: port, routePreparation: .asynchronous)
@@ -1280,59 +1288,30 @@ public final class CompanionAppModel: ObservableObject {
         routePreparation: CompanionRuntimeStartRoutePreparation
     ) {
         runtimePort = port
+        let startAttemptID = UUID()
+        activeRuntimeStartAttemptID = startAttemptID
+        pendingRuntimeStartRoutePreparation = routePreparation
         let router = runtimeRouter!
         let localStatus = runtimeConnectionManager.startLocal(
             port: port,
-            metadata: runtimeAdvertisementMetadata
+            metadata: runtimeAdvertisementMetadata,
+            onStatusChange: { [weak self] status in
+                self?.handleObservedLocalListenerStatus(
+                    status,
+                    expectedStartAttemptID: startAttemptID
+                )
+            }
         ) { [router, weak self] envelope, sink in
             Task { @MainActor in
                 self?.log("Received \(envelope.type)")
             }
             router.handle(envelope, sink: sink)
         }
-        transportState = Self.transportStatus(from: localStatus)
-        isRuntimeStarted = transportState.state == .advertising
-        refreshTransportStatusText()
-        switch transportState.state {
-        case .advertising:
-            log("AetherLink runtime started")
-            if let relayConfiguration {
-                log("Remote route enabled: \(relayConfiguration.host):\(relayConfiguration.port)")
-            }
-        case .failed:
-            let message = transportState.failureMessage ?? "Runtime listener failed"
-            transportStatus = "Runtime listener failed: \(message)"
-            log(transportStatus)
-        case .stopped:
-            transportStatus = "Stopped"
-            log("AetherLink runtime stopped")
-        }
-        if isRuntimeStarted {
-            switch routePreparation {
-            case .asynchronous:
-                if shouldRenewSavedBootstrapRelayRoute && !hasRouteAllocationWorkerInFlight {
-                    if !requestAutomaticRemoteRelayRouteAllocation(
-                        restartRelayClientIfRunning: false,
-                        startRelayAfterCompletion: true,
-                        pairingRequest: false
-                    ) {
-                        startRelayClientIfConfigured()
-                    }
-                } else {
-                    startRelayClientIfConfigured()
-                }
-            case .none:
-                startRelayClientIfConfigured()
-            }
-        }
-        let didStartRuntime = isRuntimeStarted
-        let startedRuntimeLifecycleGeneration = runtimeLifecycleGeneration
+        handleObservedLocalListenerStatus(
+            localStatus,
+            expectedStartAttemptID: startAttemptID
+        )
         Task {
-            if didStartRuntime {
-                await startRestoredPairScopedTransports(
-                    expectedRuntimeLifecycleGeneration: startedRuntimeLifecycleGeneration
-                )
-            }
             await refreshBackendStatus()
         }
         if !hasScheduledRuntimeChatRetentionMaintenance {
@@ -1366,9 +1345,93 @@ public final class CompanionAppModel: ObservableObject {
         }
     }
 
+    private func handleObservedLocalListenerStatus(
+        _ localStatus: PeerServerStatus,
+        expectedStartAttemptID: UUID
+    ) {
+        guard activeRuntimeStartAttemptID == expectedStartAttemptID else { return }
+        let nextTransportState = Self.transportStatus(from: localStatus)
+        switch nextTransportState.state {
+        case .starting:
+            guard !isRuntimeStarted else { return }
+            let didChangeState = transportState != nextTransportState
+            transportState = nextTransportState
+            refreshTransportStatusText()
+            if didChangeState {
+                log("AetherLink runtime starting")
+            }
+        case .advertising:
+            let didStart = !isRuntimeStarted
+            isRuntimeStarted = true
+            transportState = nextTransportState
+            refreshTransportStatusText()
+            if didStart {
+                completeRuntimeStartIfNeeded()
+            }
+        case .failed, .stopped:
+            invalidateRouteAllocationRequests(routeStateChanged: true)
+            isRuntimeStarted = false
+            activeRuntimeStartAttemptID = nil
+            pendingRuntimeStartRoutePreparation = nil
+            cancelPendingRemotePairingPreparation()
+            runtimeLifecycleGeneration = UUID()
+            pendingPairedRelayActivations.removeAll()
+            runtimeConnectionManager.stopAll()
+            developmentRelayConnectionStatus = CompanionDevelopmentRelayStatus(
+                status: .stopped,
+                endpoint: developmentRelaySettings.endpointLabel
+            )
+            transportState = nextTransportState
+            refreshTransportStatusText()
+            if nextTransportState.state == .failed {
+                let message = nextTransportState.failureMessage ?? "Runtime listener failed"
+                transportStatus = "Runtime listener failed: \(message)"
+                log(transportStatus)
+            } else {
+                transportStatus = "Stopped"
+                log("AetherLink runtime stopped")
+            }
+        }
+    }
+
+    private func completeRuntimeStartIfNeeded() {
+        guard let routePreparation = pendingRuntimeStartRoutePreparation else {
+            return
+        }
+        pendingRuntimeStartRoutePreparation = nil
+        log("AetherLink runtime started")
+        if let relayConfiguration {
+            log("Remote route enabled: \(relayConfiguration.host):\(relayConfiguration.port)")
+        }
+        switch routePreparation {
+        case .asynchronous:
+            if shouldRenewSavedBootstrapRelayRoute && !hasRouteAllocationWorkerInFlight {
+                if !requestAutomaticRemoteRelayRouteAllocation(
+                    restartRelayClientIfRunning: false,
+                    startRelayAfterCompletion: true,
+                    pairingRequest: false
+                ) {
+                    startRelayClientIfConfigured()
+                }
+            } else {
+                startRelayClientIfConfigured()
+            }
+        case .none:
+            startRelayClientIfConfigured()
+        }
+        let startedRuntimeLifecycleGeneration = runtimeLifecycleGeneration
+        Task {
+            await startRestoredPairScopedTransports(
+                expectedRuntimeLifecycleGeneration: startedRuntimeLifecycleGeneration
+            )
+        }
+    }
+
     public func stop() {
         invalidateRouteAllocationRequests(routeStateChanged: true)
         isRuntimeStarted = false
+        activeRuntimeStartAttemptID = nil
+        pendingRuntimeStartRoutePreparation = nil
         cancelPendingRemotePairingPreparation()
         runtimeLifecycleGeneration = UUID()
         pendingPairedRelayActivations.removeAll()
@@ -3659,8 +3722,12 @@ public final class CompanionAppModel: ObservableObject {
             let localStatus = runtimeConnectionManager.refreshLocalAdvertisement(
                 metadata: runtimeAdvertisementMetadata
             )
-            transportState = Self.transportStatus(from: localStatus)
-            refreshTransportStatusText()
+            if let activeRuntimeStartAttemptID {
+                handleObservedLocalListenerStatus(
+                    localStatus,
+                    expectedStartAttemptID: activeRuntimeStartAttemptID
+                )
+            }
         }
     }
 
@@ -3838,6 +3905,8 @@ public final class CompanionAppModel: ObservableObject {
 
     private func refreshTransportStatusText() {
         switch transportState.state {
+        case .starting:
+            transportStatus = "Starting AetherLink Runtime"
         case .advertising:
             if let relayConfiguration {
                 let endpoint = "\(relayConfiguration.host):\(relayConfiguration.port)"
@@ -4360,6 +4429,8 @@ public final class CompanionAppModel: ObservableObject {
         switch status {
         case .stopped:
             return .stopped
+        case .starting(let port):
+            return .starting(port: port)
         case .listening(let port):
             return .advertising(serviceName: "_aetherlink._tcp.local.", port: port)
         case .failed(let message):

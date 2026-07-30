@@ -43,9 +43,12 @@ struct ModelPullApprovalPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             if let errorKey = approvalErrorLocalizationKey {
                 let error = localizedModelPullApprovalError(errorKey)
-                Label(error, systemImage: "exclamationmark.triangle.fill")
+                CompanionStatusMessageLabel(
+                    text: error,
+                    systemImage: "exclamationmark.triangle.fill",
+                    tone: .warning
+                )
                     .font(.callout)
-                    .foregroundStyle(.orange)
                     .padding(.bottom, 12)
                     .accessibilityLabel(
                         Text(
@@ -91,6 +94,7 @@ struct ModelPullApprovalPanel: View {
                             Image(systemName: modelPullAuditSymbol(event.event))
                                 .foregroundStyle(modelPullAuditColor(event.event))
                                 .frame(width: 18)
+                                .accessibilityHidden(true)
                             Text(localizedModelPullAuditEvent(event.event))
                                 .font(.callout)
                             Spacer(minLength: 12)
@@ -113,10 +117,13 @@ struct ModelPullApprovalPanel: View {
     private func modelPullReviewRow(_ review: CompanionPendingModelPullReview) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "arrow.down.square")
+                CompanionStatusIcon(
+                    systemImage: "arrow.down.square",
+                    tone: .warning
+                )
                     .font(.title3)
-                    .foregroundStyle(.orange)
                     .frame(width: 24)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(review.model)
                         .font(.headline)

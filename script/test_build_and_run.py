@@ -107,6 +107,9 @@ class BuildAndRunModeTests(unittest.TestCase):
             "set -euo pipefail\n"
             'printf "swift %s\\n" "$*" >>"$FAKE_TOOLCHAIN_LOG"\n'
             'expected_options="${FAKE_SWIFT_BUILD_OPTIONS:--c release}"\n'
+            'if [[ "$*" == "package clean" ]]; then\n'
+            "  exit 0\n"
+            "fi\n"
             'if [[ "$*" == "build $expected_options --product AetherLink" ]]; then\n'
             "  exit 0\n"
             "fi\n"
@@ -230,7 +233,7 @@ class BuildAndRunModeTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result)
-            app_bundle = workspace / "dist/AetherLink.app"
+            app_bundle = workspace / "dist/package-only/AetherLink.app"
             self.assertTrue(
                 (
                     app_bundle
@@ -265,6 +268,7 @@ class BuildAndRunModeTests(unittest.TestCase):
             self.assertEqual(
                 invocations.splitlines(),
                 [
+                    "swift package clean",
                     "swift build -c release --product AetherLink",
                     "swift build -c release --show-bin-path",
                 ],
@@ -417,11 +421,117 @@ class BuildAndRunModeTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result)
             with (
-                workspace / "dist/AetherLink.app/Contents/Info.plist"
+                workspace
+                / "dist/package-only/AetherLink.app/Contents/Info.plist"
             ).open("rb") as handle:
                 info = plistlib.load(handle)
             self.assertEqual(info["CFBundleShortVersionString"], "1.2.3")
             self.assertEqual(info["CFBundleVersion"], "42")
+
+    def test_package_only_preserves_development_bundle_and_supports_isolated_output(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace, environment, _ = self.make_fake_package_workspace(
+                temporary,
+                resource_bundle_count=1,
+            )
+            development_app = workspace / "dist/AetherLink.app"
+            development_app.mkdir(parents=True)
+            sentinel = development_app / "running-build.txt"
+            sentinel.write_bytes(b"preserve-running-build")
+            before = sentinel.read_bytes()
+            custom_output = workspace / "dist/release-package"
+            environment["AETHERLINK_PACKAGE_OUTPUT_ROOT"] = str(
+                custom_output
+            )
+
+            result = subprocess.run(
+                [
+                    "/bin/bash",
+                    str(workspace / "script/build_and_run.sh"),
+                    "--package-only",
+                ],
+                cwd=workspace,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result)
+            self.assertEqual(sentinel.read_bytes(), before)
+            self.assertTrue(
+                (custom_output / "AetherLink.app/Contents/Info.plist").is_file()
+            )
+            self.assertFalse(
+                (workspace / "dist/package-only/AetherLink.app").exists()
+            )
+
+    def test_package_only_rejects_unsafe_output_roots_before_toolchain(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            cases = {
+                "relative": Path("dist/package-only"),
+                "legacy_bundle_parent": None,
+                "development_bundle_root": None,
+                "other_bundle_root": None,
+                "uppercase_bundle_root": None,
+                "tab_control": None,
+                "vertical_tab_control": None,
+                "form_feed_control": None,
+                "delete_control": None,
+                "outside_source": base / "outside",
+                "nested": None,
+            }
+            for label, configured in cases.items():
+                with self.subTest(label=label):
+                    workspace, environment, invocation_log = (
+                        self.make_fake_package_workspace(
+                            f"{temporary}/{label}",
+                            resource_bundle_count=1,
+                        )
+                    )
+                    if label == "legacy_bundle_parent":
+                        configured = workspace / "dist"
+                    elif label == "development_bundle_root":
+                        configured = workspace / "dist/AetherLink.app"
+                    elif label == "other_bundle_root":
+                        configured = workspace / "dist/LocalAgentBridge.app"
+                    elif label == "uppercase_bundle_root":
+                        configured = workspace / "dist/Other.APP"
+                    elif label == "tab_control":
+                        configured = workspace / "dist/bad\troot"
+                    elif label == "vertical_tab_control":
+                        configured = workspace / "dist/bad\vroot"
+                    elif label == "form_feed_control":
+                        configured = workspace / "dist/bad\froot"
+                    elif label == "delete_control":
+                        configured = workspace / "dist/bad\x7froot"
+                    elif label == "nested":
+                        configured = workspace / "dist/nested/output"
+                    environment["AETHERLINK_PACKAGE_OUTPUT_ROOT"] = str(
+                        configured
+                    )
+
+                    result = subprocess.run(
+                        [
+                            "/bin/bash",
+                            str(workspace / "script/build_and_run.sh"),
+                            "--package-only",
+                        ],
+                        cwd=workspace,
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+
+                    self.assertEqual(result.returncode, 2, result)
+                    self.assertIn("package output root", result.stderr)
+                    self.assertFalse(invocation_log.exists())
 
     def test_invalid_release_ledger_fails_before_toolchain_side_effects(self) -> None:
         invalid_ledgers = {

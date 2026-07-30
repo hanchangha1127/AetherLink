@@ -3,6 +3,157 @@ import Foundation
 import OllamaBackend
 import SwiftUI
 
+private struct CompanionReduceMotionOverrideKey: EnvironmentKey {
+    static let defaultValue: Bool? = nil
+}
+
+private struct CompanionIncreaseContrastOverrideKey: EnvironmentKey {
+    static let defaultValue: Bool? = nil
+}
+
+private struct CompanionDifferentiateWithoutColorOverrideKey: EnvironmentKey {
+    static let defaultValue: Bool? = nil
+}
+
+extension EnvironmentValues {
+    var companionReduceMotionOverride: Bool? {
+        get { self[CompanionReduceMotionOverrideKey.self] }
+        set { self[CompanionReduceMotionOverrideKey.self] = newValue }
+    }
+
+    var companionIncreaseContrastOverride: Bool? {
+        get { self[CompanionIncreaseContrastOverrideKey.self] }
+        set { self[CompanionIncreaseContrastOverrideKey.self] = newValue }
+    }
+
+    var companionDifferentiateWithoutColorOverride: Bool? {
+        get { self[CompanionDifferentiateWithoutColorOverrideKey.self] }
+        set { self[CompanionDifferentiateWithoutColorOverrideKey.self] = newValue }
+    }
+}
+
+func companionShouldReduceMotion(
+    systemValue: Bool,
+    override: Bool?
+) -> Bool {
+    systemValue || override == true
+}
+
+func companionShortTransitionAnimation(reduceMotion: Bool) -> Animation? {
+    reduceMotion ? nil : .easeInOut(duration: 0.2)
+}
+
+func companionShouldIncreaseContrast(
+    systemValue: ColorSchemeContrast,
+    override: Bool?
+) -> Bool {
+    systemValue == .increased || override == true
+}
+
+func companionShouldDifferentiateWithoutColor(
+    systemValue: Bool,
+    override: Bool?
+) -> Bool {
+    systemValue || override == true
+}
+
+struct CompanionSRGBColor: Equatable {
+    let red: Double
+    let green: Double
+    let blue: Double
+
+    var color: Color {
+        Color(.sRGB, red: red, green: green, blue: blue, opacity: 1)
+    }
+
+    static let black = CompanionSRGBColor(red: 0, green: 0, blue: 0)
+    static let white = CompanionSRGBColor(red: 1, green: 1, blue: 1)
+}
+
+func companionIncreasedContrastStatusColor(
+    tone: StatusTone,
+    colorScheme: ColorScheme
+) -> CompanionSRGBColor {
+    switch (tone, colorScheme) {
+    case (.ready, .light):
+        return CompanionSRGBColor(red: 0 / 255, green: 107 / 255, blue: 46 / 255)
+    case (.warning, .light):
+        return CompanionSRGBColor(red: 138 / 255, green: 60 / 255, blue: 0 / 255)
+    case (.inactive, .light):
+        return CompanionSRGBColor(red: 74 / 255, green: 74 / 255, blue: 74 / 255)
+    case (.neutral, .light):
+        return CompanionSRGBColor(red: 0 / 255, green: 94 / 255, blue: 168 / 255)
+    case (.ready, .dark):
+        return CompanionSRGBColor(red: 101 / 255, green: 211 / 255, blue: 126 / 255)
+    case (.warning, .dark):
+        return CompanionSRGBColor(red: 255 / 255, green: 180 / 255, blue: 91 / 255)
+    case (.inactive, .dark):
+        return CompanionSRGBColor(red: 199 / 255, green: 199 / 255, blue: 204 / 255)
+    case (.neutral, .dark):
+        return CompanionSRGBColor(red: 100 / 255, green: 181 / 255, blue: 246 / 255)
+    @unknown default:
+        return colorScheme == .dark
+            ? CompanionSRGBColor(red: 199 / 255, green: 199 / 255, blue: 204 / 255)
+            : CompanionSRGBColor(red: 74 / 255, green: 74 / 255, blue: 74 / 255)
+    }
+}
+
+func companionContrastRatio(
+    foreground: CompanionSRGBColor,
+    background: CompanionSRGBColor
+) -> Double {
+    func relativeLuminance(_ color: CompanionSRGBColor) -> Double {
+        func linearized(_ component: Double) -> Double {
+            component <= 0.04045
+                ? component / 12.92
+                : pow((component + 0.055) / 1.055, 2.4)
+        }
+
+        return (0.2126 * linearized(color.red))
+            + (0.7152 * linearized(color.green))
+            + (0.0722 * linearized(color.blue))
+    }
+
+    let foregroundLuminance = relativeLuminance(foreground)
+    let backgroundLuminance = relativeLuminance(background)
+    let lighter = max(foregroundLuminance, backgroundLuminance)
+    let darker = min(foregroundLuminance, backgroundLuminance)
+    return (lighter + 0.05) / (darker + 0.05)
+}
+
+struct CompanionStatusSurfaceStyle: Equatable {
+    let backgroundOpacity: Double
+    let borderOpacity: Double
+    let borderWidth: CGFloat
+}
+
+func companionStatusSurfaceStyle(increasedContrast: Bool) -> CompanionStatusSurfaceStyle {
+    increasedContrast
+        ? CompanionStatusSurfaceStyle(
+            backgroundOpacity: 0.22,
+            borderOpacity: 0.90,
+            borderWidth: 2
+        )
+        : CompanionStatusSurfaceStyle(
+            backgroundOpacity: 0.14,
+            borderOpacity: 0.24,
+            borderWidth: 1
+        )
+}
+
+func companionResolvedStatusColor(
+    tone: StatusTone,
+    colorScheme: ColorScheme,
+    increasedContrast: Bool
+) -> Color {
+    increasedContrast
+        ? companionIncreasedContrastStatusColor(
+            tone: tone,
+            colorScheme: colorScheme
+        ).color
+        : tone.color
+}
+
 struct CompanionPageHeader: View {
     let title: String
     let subtitle: String
@@ -111,6 +262,8 @@ struct CompanionPanel<Content: View>: View {
     let title: String
     let systemImage: String
     let content: Content
+    @Environment(\.colorSchemeContrast) private var systemContrast
+    @Environment(\.companionIncreaseContrastOverride) private var contrastOverride
 
     init(
         title: String,
@@ -123,6 +276,11 @@ struct CompanionPanel<Content: View>: View {
     }
 
     var body: some View {
+        let increasedContrast = companionShouldIncreaseContrast(
+            systemValue: systemContrast,
+            override: contrastOverride
+        )
+
         VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: systemImage)
                 .font(.headline)
@@ -138,7 +296,10 @@ struct CompanionPanel<Content: View>: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(.separator.opacity(0.5), lineWidth: 1)
+                .strokeBorder(
+                    .separator.opacity(increasedContrast ? 1 : 0.5),
+                    lineWidth: increasedContrast ? 2 : 1
+                )
         }
     }
 }
@@ -150,27 +311,144 @@ func companionPanelHeaderAccessibilityLabel(title: String) -> String {
 struct StatusPill: View {
     let text: String
     let tone: StatusTone
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var systemContrast
+    @Environment(\.companionIncreaseContrastOverride) private var contrastOverride
 
     var body: some View {
+        let increasedContrast = companionShouldIncreaseContrast(
+            systemValue: systemContrast,
+            override: contrastOverride
+        )
+        let color = companionResolvedStatusColor(
+            tone: tone,
+            colorScheme: colorScheme,
+            increasedContrast: increasedContrast
+        )
+        let surfaceStyle = companionStatusSurfaceStyle(
+            increasedContrast: increasedContrast
+        )
+
         Label {
             Text(text)
                 .lineLimit(1)
+                .foregroundStyle(.primary)
         } icon: {
             Image(systemName: tone.systemImage)
-                .foregroundStyle(tone.color)
+                .foregroundStyle(color)
         }
         .font(.callout.weight(.medium))
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
-        .background(tone.color.opacity(0.14), in: Capsule())
+        .background(color.opacity(surfaceStyle.backgroundOpacity), in: Capsule())
         .overlay {
             Capsule()
-                .strokeBorder(tone.color.opacity(0.24), lineWidth: 1)
+                .strokeBorder(
+                    color.opacity(surfaceStyle.borderOpacity),
+                    lineWidth: surfaceStyle.borderWidth
+                )
         }
     }
 }
 
-enum StatusTone {
+struct CompanionStatusMessageLabel: View {
+    let text: String
+    let systemImage: String
+    let tone: StatusTone
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var systemContrast
+    @Environment(\.companionIncreaseContrastOverride) private var contrastOverride
+
+    var body: some View {
+        let increasedContrast = companionShouldIncreaseContrast(
+            systemValue: systemContrast,
+            override: contrastOverride
+        )
+
+        Label {
+            Text(text)
+                .foregroundStyle(.primary)
+        } icon: {
+            Image(systemName: systemImage)
+                .foregroundStyle(
+                    companionResolvedStatusColor(
+                        tone: tone,
+                        colorScheme: colorScheme,
+                        increasedContrast: increasedContrast
+                    )
+                )
+        }
+    }
+}
+
+struct CompanionStatusIcon: View {
+    let systemImage: String
+    let tone: StatusTone
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var systemContrast
+    @Environment(\.companionIncreaseContrastOverride) private var contrastOverride
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .foregroundStyle(
+                companionResolvedStatusColor(
+                    tone: tone,
+                    colorScheme: colorScheme,
+                    increasedContrast: companionShouldIncreaseContrast(
+                        systemValue: systemContrast,
+                        override: contrastOverride
+                    )
+                )
+            )
+    }
+}
+
+struct CompanionWarningBanner: View {
+    let message: String
+    let accessibilityLabel: String
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var systemContrast
+    @Environment(\.companionIncreaseContrastOverride) private var contrastOverride
+
+    var body: some View {
+        let increasedContrast = companionShouldIncreaseContrast(
+            systemValue: systemContrast,
+            override: contrastOverride
+        )
+        let color = companionResolvedStatusColor(
+            tone: .warning,
+            colorScheme: colorScheme,
+            increasedContrast: increasedContrast
+        )
+        let surfaceStyle = companionStatusSurfaceStyle(
+            increasedContrast: increasedContrast
+        )
+
+        CompanionStatusMessageLabel(
+            text: message,
+            systemImage: StatusTone.warning.systemImage,
+            tone: .warning
+        )
+        .font(.callout)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            color.opacity(surfaceStyle.backgroundOpacity),
+            in: RoundedRectangle(cornerRadius: 8)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(
+                    color.opacity(surfaceStyle.borderOpacity),
+                    lineWidth: surfaceStyle.borderWidth
+                )
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(accessibilityLabel))
+    }
+}
+
+enum StatusTone: CaseIterable, Hashable {
     case ready
     case warning
     case inactive
@@ -207,6 +485,8 @@ func localizedTransportStatus(_ status: CompanionTransportStatus) -> String {
     switch status.state {
     case .stopped:
         return NSLocalizedString("Stopped", comment: "")
+    case .starting:
+        return NSLocalizedString("Starting AetherLink Runtime", comment: "")
     case .advertising:
         return NSLocalizedString("Ready for devices", comment: "")
     case .failed:
@@ -216,6 +496,8 @@ func localizedTransportStatus(_ status: CompanionTransportStatus) -> String {
 
 func transportTone(for status: CompanionTransportStatus) -> StatusTone {
     switch status.state {
+    case .starting:
+        return .neutral
     case .advertising:
         return .ready
     case .failed:

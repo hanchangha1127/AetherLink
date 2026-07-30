@@ -3,12 +3,14 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ANDROID_STUDIO_JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+RELEASE_MACOS_PACKAGE_OUTPUT_ROOT="$ROOT_DIR/dist/release-package"
 
 cd "$ROOT_DIR"
 
 if [[ -z "${JAVA_HOME:-}" && -d "$ANDROID_STUDIO_JAVA_HOME" ]]; then
   export JAVA_HOME="$ANDROID_STUDIO_JAVA_HOME"
 fi
+export AETHERLINK_PACKAGE_OUTPUT_ROOT="$RELEASE_MACOS_PACKAGE_OUTPUT_ROOT"
 
 source_before="$(
   python3 script/package_release_artifacts.py source-digest

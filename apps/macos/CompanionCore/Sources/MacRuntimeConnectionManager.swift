@@ -71,6 +71,7 @@ private final class MacRuntimeStopLease: @unchecked Sendable {
 @MainActor
 public final class MacRuntimeConnectionManager {
     public typealias StatusHandler = @MainActor @Sendable (RelayPeerStatus) -> Void
+    public typealias LocalStatusHandler = @MainActor @Sendable (PeerServerStatus) -> Void
     public typealias PrivateOverlayStatusHandler = @MainActor @Sendable (
         MacRuntimePrivateOverlayStatus
     ) -> Void
@@ -107,7 +108,10 @@ public final class MacRuntimeConnectionManager {
         MacRuntimeProductionRawSessionAttachments()
 
     private var activeLocalPort: UInt16?
+    private var activeLocalGenerationID: UUID?
+    private var activeLocalAdvertisementMetadata: RuntimeAdvertisementMetadata?
     private var localMessageLease: MacRuntimeCallbackLease?
+    private var localStatusHandler: LocalStatusHandler?
     private var isAdvertisingLocalPort = false
     private var bootstrapState = BootstrapState.inactive
     private var bootstrapMessageLease: MacRuntimeCallbackLease?
@@ -139,19 +143,47 @@ public final class MacRuntimeConnectionManager {
     public func startLocal(
         port: UInt16,
         metadata: RuntimeAdvertisementMetadata,
+        onStatusChange: LocalStatusHandler? = nil,
         onMessage: @escaping LocalPeerMessageHandler
     ) -> PeerServerStatus {
         let stoppedAdvertisement = stopLocalOwnership()
 
+        let generationID = UUID()
         let messageLease = MacRuntimeCallbackLease()
+        activeLocalGenerationID = generationID
         localMessageLease = messageLease
+        localStatusHandler = onStatusChange
         activeLocalPort = port
+        activeLocalAdvertisementMetadata = metadata
+        if let statusReporting = localTransport as? any RuntimeStatusReporting {
+            statusReporting.onStatusChange = { [weak self] status in
+                Task { @MainActor in
+                    self?.handleLocalStatusChange(
+                        status,
+                        expectedGenerationID: generationID
+                    )
+                }
+            }
+        }
         localTransport.start(port: port) { envelope, sink in
             messageLease.performIfActive {
                 onMessage(envelope, sink)
             }
         }
         let status = localTransport.status
+        if status == .starting(port: port) {
+            guard localTransport is any RuntimeStatusReporting else {
+                let failure = PeerServerStatus.failed(
+                    "Local transport cannot report listener readiness."
+                )
+                let stoppedFailedAdvertisement = stopLocalOwnership()
+                if !stoppedAdvertisement && !stoppedFailedAdvertisement {
+                    advertiser.stop()
+                }
+                return failure
+            }
+            return status
+        }
         guard status == .listening(port: port) else {
             let stoppedFailedAdvertisement = stopLocalOwnership()
             if !stoppedAdvertisement && !stoppedFailedAdvertisement {
@@ -160,9 +192,47 @@ public final class MacRuntimeConnectionManager {
             return status
         }
 
-        advertiser.start(port: Int32(port), metadata: metadata)
-        isAdvertisingLocalPort = true
+        startLocalAdvertisementIfNeeded(port: port, metadata: metadata)
         return status
+    }
+
+    private func handleLocalStatusChange(
+        _ status: PeerServerStatus,
+        expectedGenerationID: UUID
+    ) {
+        guard
+            activeLocalGenerationID == expectedGenerationID,
+            let activeLocalPort
+        else {
+            return
+        }
+
+        if status == .starting(port: activeLocalPort) {
+            guard !isAdvertisingLocalPort else { return }
+            localStatusHandler?(status)
+            return
+        }
+
+        if status == .listening(port: activeLocalPort),
+           let activeLocalAdvertisementMetadata {
+            startLocalAdvertisementIfNeeded(
+                port: activeLocalPort,
+                metadata: activeLocalAdvertisementMetadata
+            )
+            localStatusHandler?(status)
+            return
+        }
+
+        let reportedStatus: PeerServerStatus
+        switch status {
+        case .starting, .listening:
+            reportedStatus = .failed("Local listener reported an unexpected port.")
+        case .stopped, .failed:
+            reportedStatus = status
+        }
+        let statusHandler = localStatusHandler
+        stopLocalOwnership()
+        statusHandler?(reportedStatus)
     }
 
     @discardableResult
@@ -171,6 +241,11 @@ public final class MacRuntimeConnectionManager {
     ) -> PeerServerStatus {
         let status = localTransport.status
         let hasLocalOwnership = activeLocalPort != nil || localMessageLease != nil || isAdvertisingLocalPort
+        if let port = activeLocalPort,
+           status == .starting(port: port) {
+            activeLocalAdvertisementMetadata = metadata
+            return status
+        }
         guard
             let port = activeLocalPort,
             status == .listening(port: port)
@@ -181,13 +256,22 @@ public final class MacRuntimeConnectionManager {
             return status
         }
 
+        activeLocalAdvertisementMetadata = metadata
         if isAdvertisingLocalPort {
             isAdvertisingLocalPort = false
             advertiser.stop()
         }
+        startLocalAdvertisementIfNeeded(port: port, metadata: metadata)
+        return status
+    }
+
+    private func startLocalAdvertisementIfNeeded(
+        port: UInt16,
+        metadata: RuntimeAdvertisementMetadata
+    ) {
+        guard !isAdvertisingLocalPort else { return }
         advertiser.start(port: Int32(port), metadata: metadata)
         isAdvertisingLocalPort = true
-        return status
     }
 
     public func startBootstrap(
@@ -483,8 +567,14 @@ public final class MacRuntimeConnectionManager {
     @discardableResult
     private func stopLocalOwnership() -> Bool {
         let stoppedAdvertisement = isAdvertisingLocalPort
+        activeLocalGenerationID = nil
         localMessageLease?.invalidate()
         localMessageLease = nil
+        localStatusHandler = nil
+        activeLocalAdvertisementMetadata = nil
+        if let statusReporting = localTransport as? any RuntimeStatusReporting {
+            statusReporting.onStatusChange = nil
+        }
         if isAdvertisingLocalPort {
             isAdvertisingLocalPort = false
             advertiser.stop()

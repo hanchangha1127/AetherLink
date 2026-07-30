@@ -29617,7 +29617,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         defaults.set(43171, forKey: "aetherlink.relay.port")
         defaults.set("relay-start-stale", forKey: "aetherlink.relay.id")
         defaults.set("secret-start-stale", forKey: "aetherlink.relay.secret")
-        let peerServer = FakeRuntimeTransport()
+        let peerServer = FakeRuntimeTransport(
+            statusAfterStart: .starting(port: 43210)
+        )
         let allocator = BlockingRemoteRelayRouteAllocator(outcomes: [
             .allocation(remoteRouteAllocation(
                 host: "relay.start-fresh.test",
@@ -29642,6 +29644,10 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertTrue(model.requestStartForUserInterface(port: 43210))
         XCTAssertFalse(model.requestStartForUserInterface(port: 43210))
         XCTAssertEqual(peerServer.startedPort, 43210)
+        XCTAssertEqual(model.transportState, .starting(port: 43210))
+        XCTAssertEqual(allocator.recordedCalls.count, 0)
+
+        peerServer.emitStatus(.listening(port: 43210), start: 0)
         let allocationStarted = await allocator.waitUntilStarted(call: 0)
         XCTAssertTrue(allocationStarted)
         XCTAssertEqual(allocator.recordedCalls.count, 1)
@@ -29725,6 +29731,76 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertTrue(routeApplied)
         XCTAssertFalse(model.isRemoteRoutePreparationInFlight)
         XCTAssertEqual(allocator.recordedCalls.count, 1)
+    }
+
+    @MainActor
+    func testCompanionAppModelLateListenerFailureAllowsSamePortRetryAndIgnoresStaleCallback() async throws {
+        let peerServer = FakeRuntimeTransport(statusesAfterStart: [
+            .starting(port: 43211),
+            .starting(port: 43211),
+        ])
+        let advertiser = FakeRuntimeAdvertiser()
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: peerServer,
+            advertiser: advertiser,
+            relayClient: FakeRelayPeerClient(),
+            environment: [:],
+            userDefaults: try isolatedDefaults()
+        )
+        defer { model.stop() }
+
+        XCTAssertTrue(model.requestStartForUserInterface(port: 43211))
+        XCTAssertEqual(model.transportState, .starting(port: 43211))
+        XCTAssertFalse(model.requestStartForUserInterface(port: 43211))
+        XCTAssertNil(advertiser.startedPort)
+
+        peerServer.emitStatus(.listening(port: 43211), start: 0)
+        assertAsyncTrue(await waitForCondition {
+            model.transportState == .advertising(
+                serviceName: "_aetherlink._tcp.local.",
+                port: 43211
+            )
+        })
+        XCTAssertEqual(
+            model.transportState,
+            .advertising(serviceName: "_aetherlink._tcp.local.", port: 43211)
+        )
+        XCTAssertEqual(advertiser.startCount, 1)
+
+        peerServer.emitStatus(.failed("Listener stopped unexpectedly."), start: 0)
+        assertAsyncTrue(await waitForCondition {
+            model.transportState == .failed("Listener stopped unexpectedly.")
+        })
+
+        XCTAssertEqual(model.transportStatus, "Runtime listener failed: Listener stopped unexpectedly.")
+        XCTAssertTrue(advertiser.didStop)
+        XCTAssertTrue(model.requestStartForUserInterface(port: 43211))
+        XCTAssertEqual(peerServer.startedPorts, [43211, 43211])
+        XCTAssertEqual(model.transportState, .starting(port: 43211))
+        XCTAssertEqual(advertiser.startCount, 1)
+
+        peerServer.emitStatus(.listening(port: 43211), start: 1)
+        assertAsyncTrue(await waitForCondition {
+            model.transportState == .advertising(
+                serviceName: "_aetherlink._tcp.local.",
+                port: 43211
+            )
+        })
+        XCTAssertEqual(
+            model.transportState,
+            .advertising(serviceName: "_aetherlink._tcp.local.", port: 43211)
+        )
+        XCTAssertEqual(advertiser.startCount, 2)
+
+        peerServer.emitStatus(.failed("Stale first listener."), start: 0)
+        await Task.yield()
+        await Task.yield()
+
+        XCTAssertEqual(
+            model.transportState,
+            .advertising(serviceName: "_aetherlink._tcp.local.", port: 43211)
+        )
     }
 
     @MainActor
@@ -38560,14 +38636,16 @@ private final class ChangingTransportBindingSink: RuntimeMessageSink, @unchecked
     }
 }
 
-private final class FakeRuntimeTransport: RuntimeTransport {
+private final class FakeRuntimeTransport: RuntimeTransport, RuntimeStatusReporting {
     private let defaultStatusAfterStart: PeerServerStatus?
     private var statusesAfterStart: [PeerServerStatus]
+    private var statusHandlers: [(@Sendable (PeerServerStatus) -> Void)?] = []
     private(set) var status = PeerServerStatus.stopped
     private(set) var startedPort: UInt16?
     private(set) var startedPorts: [UInt16] = []
     private(set) var didStop = false
     private(set) var onMessage: LocalPeerMessageHandler?
+    var onStatusChange: (@Sendable (PeerServerStatus) -> Void)?
 
     init(statusAfterStart: PeerServerStatus? = nil) {
         defaultStatusAfterStart = statusAfterStart
@@ -38583,6 +38661,7 @@ private final class FakeRuntimeTransport: RuntimeTransport {
         startedPort = port
         startedPorts.append(port)
         self.onMessage = onMessage
+        statusHandlers.append(onStatusChange)
         didStop = false
         if !statusesAfterStart.isEmpty {
             status = statusesAfterStart.removeFirst()
@@ -38596,17 +38675,24 @@ private final class FakeRuntimeTransport: RuntimeTransport {
         onMessage = nil
         status = .stopped
     }
+
+    func emitStatus(_ status: PeerServerStatus, start index: Int) {
+        self.status = status
+        statusHandlers[index]?(status)
+    }
 }
 
 private final class FakeRuntimeAdvertiser: RuntimeAdvertiser {
     private(set) var startedPort: Int32?
     private(set) var startedMetadata: RuntimeAdvertisementMetadata?
     private(set) var didStop = false
+    private(set) var startCount = 0
 
     func start(port: Int32, metadata: RuntimeAdvertisementMetadata) {
         startedPort = port
         startedMetadata = metadata
         didStop = false
+        startCount += 1
     }
 
     func stop() {

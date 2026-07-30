@@ -1042,7 +1042,8 @@ def check_activity_log_redaction() -> list[str]:
     failures.extend(missing_source_snippets(
         ACTIVITY_LOGS_SOURCE,
         (
-            "Image(systemName: tone.systemImage)",
+            "CompanionStatusIcon(",
+            "systemImage: tone.systemImage",
             ".accessibilityHidden(true)",
             "logTechnicalDetailsAccessibilityLabel(summary: display.summary)",
             "logTechnicalDetailsAccessibilityValue(isExpanded: diagnosticsExpanded)",
@@ -1134,7 +1135,7 @@ def check_activity_log_redaction() -> list[str]:
 
 
 def check_menu_bar_localization_helpers() -> list[str]:
-    return [
+    failures = [
         *missing_source_snippets(
             COMPANION_CHROME_SOURCE,
             (
@@ -1192,6 +1193,18 @@ def check_menu_bar_localization_helpers() -> list[str]:
                 .help(modelProviderCheckActionAccessibilityHint())
                 .accessibilityValue(Text(modelProviderCheckActionAccessibilityValue()))
                 .accessibilityHint(Text(modelProviderCheckActionAccessibilityHint()))""",
+                'Window(NSLocalizedString("AetherLink", comment: ""), id: "main")',
+                """@State private var requestedSection: CompanionSection?
+    @State private var pairingFocusSequence = 0
+    @State private var pairingFocusIntent: PairingFocusIntent?""",
+                """ContentView(
+                model: model,
+                requestedSection: $requestedSection,
+                pairingFocusSequence: $pairingFocusSequence,
+                pairingFocusIntent: $pairingFocusIntent
+            )
+                .environment(\\.locale, Locale(identifier: currentAppLanguage.localeIdentifier))
+                .id(currentAppLanguage.rawValue)""",
                 "let commandTitles = menuBarCommandTitles()",
                 "Text(menuBarRuntimeStatusText(model.transportState))",
                 ".accessibilityLabel(Text(menuBarRuntimeStatusAccessibilityLabel(model.transportState)))",
@@ -1223,7 +1236,11 @@ def check_menu_bar_localization_helpers() -> list[str]:
                 "model.unloadResidentModelNow()",
                 "unloadResidentModelActionAccessibilityValue(",
                 "unloadResidentModelActionAccessibilityHint(",
-                "Button(pairingQRGenerationCommandTitle(hasActiveSession: model.pairingSession != nil))",
+                """Button(pairingQRGenerationCommandTitle(hasActiveSession: model.pairingSession != nil)) {
+                requestedSection = .pairing
+                openWindow(id: "main")
+                NSApp.activate(ignoringOtherApps: true)
+            }""",
                 "Button(commandTitles.quit)",
                 ".help(menuBarQuitAccessibilityHint())",
                 ".accessibilityHint(Text(menuBarQuitAccessibilityHint()))",
@@ -1307,6 +1324,30 @@ def check_menu_bar_localization_helpers() -> list[str]:
             "macOS menu-bar localization tests",
         ),
     ]
+    app_entry_source = APP_ENTRY_SOURCE.read_text(encoding="utf-8", errors="replace")
+    if 'WindowGroup(NSLocalizedString("AetherLink", comment: ""), id: "main")' in app_entry_source:
+        failures.append(
+            "apps/macos/LocalAgentBridgeApp/Sources/LocalAgentBridgeApp.swift: "
+            "the shared menu navigation request requires one main Window consumer"
+        )
+    pairing_button_marker = (
+        "Button(pairingQRGenerationCommandTitle(hasActiveSession: "
+        "model.pairingSession != nil))"
+    )
+    if pairing_button_marker in app_entry_source:
+        pairing_button_body = app_entry_source.split(pairing_button_marker, 1)[1].split(
+            ".disabled(!canGeneratePairingQR)",
+            1,
+        )[0]
+        if (
+            "model.requestPairingForUserInterface()" in pairing_button_body
+            or "model.requestRemotePairingForUserInterface()" in pairing_button_body
+        ):
+            failures.append(
+                "apps/macos/LocalAgentBridgeApp/Sources/LocalAgentBridgeApp.swift: "
+                "menu-bar pairing must delegate generation to ContentView so async focus intent is retained"
+            )
+    return failures
 
 
 def check_model_idle_unload_picker() -> list[str]:
@@ -1455,7 +1496,9 @@ def check_provider_status_redaction() -> list[str]:
             "providerStatusRowAccessibilityLabel(",
             "func providerStatusRowAccessibilityLabel(providerName: String, status: String, detail: String) -> String",
             "Provider %@. Status %@. %@",
-            "Image(systemName: status.systemImage)",
+            "CompanionStatusIcon(",
+            "systemImage: item.tone.systemImage",
+            "systemImage: status.systemImage",
             ".accessibilityHidden(true)",
         ),
         "macOS Status readiness and Model Providers decorative-icon accessibility labels",
@@ -1552,8 +1595,103 @@ def check_remote_route_preparation_issue_display() -> list[str]:
         (
             "model.remoteRoutePreparationIssue",
             "remoteRoutePreparationIssueText(issue)",
+            "@Binding private var focusIntent: PairingFocusIntent?",
+            """struct PairingFocusDeliveryKey: Hashable {
+    let intentID: Int?
+    let currentSessionID: String?
+    let isPreparationInFlight: Bool
+    let canGeneratePairingQR: Bool
+}""",
+            """func pairingFocusDeliveryKey(
+    intent: PairingFocusIntent?,
+    currentSessionID: String?,
+    isPreparationInFlight: Bool,
+    canGeneratePairingQR: Bool
+) -> PairingFocusDeliveryKey {
+    PairingFocusDeliveryKey(
+        intentID: intent?.id,
+        currentSessionID: currentSessionID,
+        isPreparationInFlight: isPreparationInFlight,
+        canGeneratePairingQR: canGeneratePairingQR
+    )
+}""",
+            """private var focusDeliveryKey: PairingFocusDeliveryKey {
+        pairingFocusDeliveryKey(
+            intent: focusIntent,
+            currentSessionID: model.pairingSession?.id,
+            isPreparationInFlight: model.isRemoteRoutePreparationInFlight,
+            canGeneratePairingQR: canGeneratePairingQR
+        )
+    }""",
+            """.task(id: focusDeliveryKey) {
+            await deliverPairingFocusIntentIfNeeded()
+        }""",
+            """@MainActor
+    private func deliverPairingFocusIntentIfNeeded() async {
+        guard let requestedIntent = focusIntent else { return }
+        await Task.yield()
+        guard !Task.isCancelled,
+              focusIntent?.id == requestedIntent.id
+        else {
+            return
+        }
+        let resolution = pairingFocusIntentResolution(
+            intent: requestedIntent,
+            currentSessionID: model.pairingSession?.id,
+            isPreparationInFlight: model.isRemoteRoutePreparationInFlight,
+            canGeneratePairingQR: canGeneratePairingQR
+        )
+        keyboardFocusTarget = resolution.focusPlan.keyboardTarget
+        accessibilityFocusTarget = resolution.focusPlan.accessibilityTarget
+        if resolution.shouldConsume,
+           focusIntent?.id == requestedIntent.id {
+            focusIntent = nil
+        }
+    }""",
+            """.accessibilityIdentifier("pairing-active-qr")
+            .accessibilityFocused(
+                accessibilityFocus,
+                equals: .activeQRCode
+            )""",
+            """.disabled(!canGenerateNewQR)
+        .focused(keyboardFocus, equals: .activeRenewalAction)
+        .reportPairingTaskFrame(.renewalAction)""",
+            """.accessibilityIdentifier("pairing-empty-status")
+            .accessibilityFocused(
+                accessibilityFocus,
+                equals: .emptyStatus
+            )""",
+            """.disabled(!canGeneratePairingQR)
+            .focused(keyboardFocus, equals: .emptyPrimaryAction)""",
+            """.politeAccessibilityAnnouncement(
+                for: pairingQRExpiryAccessibilityAnnouncement(isExpired: isExpired),
+                scopePriority: .childResult
+            )""",
         ),
-        "macOS Pairing QR preparation issue display",
+        "macOS Pairing QR preparation issue and consumable focus-intent wiring",
+    ))
+    failures.extend(missing_source_snippets(
+        APP_CONTENT_SOURCE,
+        (
+            "@Binding private var pairingFocusSequence: Int",
+            "@Binding private var pairingFocusIntent: PairingFocusIntent?",
+            "focusIntent: $pairingFocusIntent",
+            "requestPairingAndEnqueueFocusIntent",
+            "waitsForNewSession: requestAccepted",
+            "&& model.pairingSession?.id == baselineSessionID",
+            """pairingFocusSequence &+= 1
+        pairingFocusIntent = PairingFocusIntent(
+            id: pairingFocusSequence,
+            baselineSessionID: baselineSessionID,
+            waitsForNewSession: waitsForNewSession
+        )""",
+            """.onChange(of: selectedSection) { _, section in
+            pairingFocusIntent = pairingFocusIntentAfterSectionChange(
+                pairingFocusIntent,
+                currentSection: section
+            )""",
+        ),
+        "macOS Pairing consumable focus-intent source wiring",
     ))
     failures.extend(missing_source_snippets(
         SOURCE_ROOT / "PairingView.swift",

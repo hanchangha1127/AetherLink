@@ -16,10 +16,10 @@ from typing import Optional
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github/workflows/product-quality.yml"
 CANONICAL_WORKFLOW_SHA256 = (
-    "efdc353abcd1b4eb62fe0e437b199677f675698efe9da4624e3985e08b76aea0"
+    "7f24adee31748522469daee3c4be17fd2d474dde3b9edcae79e95f3cc362571d"
 )
 CANONICAL_PARSED_WORKFLOW_SHA256 = (
-    "a52031f1cd703a72cd6d4833864479e733767ca81d901e830049f42653e44ab8"
+    "843b003fb1fb16c60003ff920db4a95ec23e24b96dc1eee2e453717bbc529384"
 )
 
 REQUIRED_WORKFLOW_PREFIX = """name: Product quality (non-security subset)
@@ -71,8 +71,26 @@ SWIFT_FILTER = (
     "AggregatingLlmBackendResidencyTests|RuntimeModelIdleUnloadPolicyTests|"
     "RuntimeChatContextCompactionPlannerTests|"
     "RuntimeSemanticChatSessionSearchTests|RuntimeSemanticMemorySearchTests|"
+    "LocalPeerServerTests/"
+    "testLocalPeerServerReportsListenerStartAndExplicitStop|"
+    "LocalPeerServerTests/"
+    "testLocalPeerServerOccupiedPortFailsThenSameInstanceRetries|"
+    "LocalPeerServerTests/"
+    "testPeerAdmissionCannotCrossListenerStopGenerationBoundary|"
+    "MacRuntimeConnectionManagerTests/"
+    "testStartLocalDefersAdvertisementUntilListenerIsReady|"
+    "MacRuntimeConnectionManagerTests/"
+    "testConcreteLocalListenerDefersAdvertisementAndRetriesAfterOccupiedPort|"
+    "MacRuntimeConnectionManagerTests/"
+    "testLateLocalFailureStopsOwnershipAndReportsStatus|"
+    "MacRuntimeConnectionManagerTests/"
+    "testSupersededLocalStatusCallbackCannotStopReplacement|"
+    "MacRuntimeConnectionManagerTests/"
+    "testStoppedLocalStatusCallbackIsIgnoredAfterExplicitStop|"
     "LocalRuntimeMessageRouterTests/"
     "testCompanionAppModelUserInterfaceStartCanRetryAfterListenerFailure|"
+    "LocalRuntimeMessageRouterTests/"
+    "testCompanionAppModelLateListenerFailureAllowsSamePortRetryAndIgnoresStaleCallback|"
     "LocalRuntimeMessageRouterTests/"
     "testCompanionAppModelUserInterfaceStartIsIdempotentDuringRouteAllocation|"
     "LocalRuntimeMessageRouterTests/"
@@ -83,8 +101,28 @@ SWIFT_FILTER = (
     "testStatusOverviewMapsEachFocusToOnePrimaryAction|"
     "AetherLinkLocalizationTests/"
     "testStatusOverviewRuntimeStartAndRetryActionsUseSelectedLanguage|"
+    "AetherLinkLocalizationTests/"
+    "testShortTransitionAnimationHonorsReducedMotion|"
+    "AetherLinkLocalizationTests/"
+    "testVisualAccessibilityOverridesCannotDisableSystemPreferences|"
+    "AetherLinkLocalizationTests/"
+    "testIncreasedContrastStatusPaletteAndSurfacesRemainLegible|"
+    "AetherLinkLocalizationTests/"
+    "testRuntimeHistorySelectionUsesNonColorMarkerAndReconcilesKeyboardList|"
+    "AetherLinkLocalizationTests/"
+    "testConnectionRecoveryExpansionTargetsFirstEditableField|"
+    "AetherLinkLocalizationTests/"
+    "testPairingDestinationFocusPlanSeparatesKeyboardAndVoiceOverTargets|"
+    "AetherLinkLocalizationTests/"
+    "testRuntimeTranscriptReasoningUsesFullOpacityAtIncreasedContrast|"
+    "AccessibilityAnnouncementTests/"
+    "testPairingQRExpiryAnnouncementFiresOnceWithoutCountdownSpam|"
     "AetherLinkRenderSmokeTests/"
-    "testRuntimeOverviewPrimaryActionFitsCompactAccessibilityLayoutAcrossLanguages"
+    "testRuntimeOverviewPrimaryActionFitsCompactAccessibilityLayoutAcrossLanguages|"
+    "AetherLinkRenderSmokeTests/"
+    "testReducedMotionStatusAndActivePairingSurfacesRender|"
+    "AetherLinkRenderSmokeTests/"
+    "testIncreasedContrastAndColorIndependentHistorySurfacesRender"
 )
 
 ANDROID_TESTS = (
@@ -197,6 +235,7 @@ MACOS_STEPS = (
     (
         "Run product static checks",
         "        run: |\n"
+        "          python3 -B script/check_copy_hygiene.py --product-copy-only\n"
         "          python3 -B script/check_release_version_ledger.py\n"
         "          python3 -B script/check_app_icons.py\n"
         "          python3 -B script/check_license.py\n",
@@ -614,6 +653,7 @@ def workflow_failures(
             'git diff --check "$BASE_SHA" "$HEAD_SHA"',
             "python3 -B script/check_product_ci.py",
             "python3 -B script/check_product_ci.py --self-test",
+            "python3 -B script/check_copy_hygiene.py --product-copy-only",
             "python3 -B script/check_release_version_ledger.py",
             "python3 -B script/check_app_icons.py",
             "python3 -B script/check_license.py",
@@ -649,6 +689,13 @@ def workflow_failures(
 
     if workflow.count("swift test") != 1:
         failures.append("workflow must contain one focused Swift test command")
+    product_copy_command = (
+        "python3 -B script/check_copy_hygiene.py --product-copy-only"
+    )
+    if workflow.count(product_copy_command) != 1:
+        failures.append(
+            "workflow must contain one exact non-security product copy command"
+        )
     if f"'{SWIFT_FILTER}'" not in macos:
         failures.append("Swift tests must use the exact product allowlist")
     if (
@@ -837,6 +884,140 @@ def self_test(workflow: str) -> list[str]:
                 1,
             ),
             "exact command body",
+        ),
+        "missing late Runtime failure regression": (
+            workflow.replace(
+                "LocalRuntimeMessageRouterTests/"
+                "testCompanionAppModelLateListenerFailureAllowsSamePortRetryAndIgnoresStaleCallback|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing listener admission race regression": (
+            workflow.replace(
+                "LocalPeerServerTests/"
+                "testPeerAdmissionCannotCrossListenerStopGenerationBoundary|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing occupied-port listener regression": (
+            workflow.replace(
+                "LocalPeerServerTests/"
+                "testLocalPeerServerOccupiedPortFailsThenSameInstanceRetries|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing concrete occupied-port manager regression": (
+            workflow.replace(
+                "MacRuntimeConnectionManagerTests/"
+                "testConcreteLocalListenerDefersAdvertisementAndRetriesAfterOccupiedPort|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing reduced-motion policy regression": (
+            workflow.replace(
+                "AetherLinkLocalizationTests/"
+                "testShortTransitionAnimationHonorsReducedMotion|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing reduced-motion render regression": (
+            workflow.replace(
+                "|AetherLinkRenderSmokeTests/"
+                "testReducedMotionStatusAndActivePairingSurfacesRender",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing visual-preference precedence regression": (
+            workflow.replace(
+                "AetherLinkLocalizationTests/"
+                "testVisualAccessibilityOverridesCannotDisableSystemPreferences|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing increased-contrast palette regression": (
+            workflow.replace(
+                "AetherLinkLocalizationTests/"
+                "testIncreasedContrastStatusPaletteAndSurfacesRemainLegible|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing color-independent history regression": (
+            workflow.replace(
+                "AetherLinkLocalizationTests/"
+                "testRuntimeHistorySelectionUsesNonColorMarkerAndReconcilesKeyboardList|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing recovery focus regression": (
+            workflow.replace(
+                "AetherLinkLocalizationTests/"
+                "testConnectionRecoveryExpansionTargetsFirstEditableField|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing pairing focus regression": (
+            workflow.replace(
+                "AetherLinkLocalizationTests/"
+                "testPairingDestinationFocusPlanSeparatesKeyboardAndVoiceOverTargets|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing increased-contrast reasoning regression": (
+            workflow.replace(
+                "AetherLinkLocalizationTests/"
+                "testRuntimeTranscriptReasoningUsesFullOpacityAtIncreasedContrast|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing QR expiry announcement regression": (
+            workflow.replace(
+                "AccessibilityAnnouncementTests/"
+                "testPairingQRExpiryAnnouncementFiresOnceWithoutCountdownSpam|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing increased-contrast render regression": (
+            workflow.replace(
+                "|AetherLinkRenderSmokeTests/"
+                "testIncreasedContrastAndColorIndependentHistorySurfacesRender",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing product copy command": (
+            workflow.replace(
+                "          python3 -B script/check_copy_hygiene.py --product-copy-only\n",
+                "",
+                1,
+            ),
+            "one exact non-security product copy command",
         ),
         "Swift skip option": (
             workflow.replace(

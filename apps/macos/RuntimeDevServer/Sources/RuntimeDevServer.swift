@@ -148,9 +148,33 @@ struct RuntimeDevServer {
         RuntimeDevServerState.advertiser = advertiser
         RuntimeDevServerState.relayClient = relayClient
 
+        let localListenerReadiness = RuntimeDevLocalListenerReadiness()
+        server.onStatusChange = { status in
+            localListenerReadiness.update(status)
+            switch status {
+            case .failed, .stopped:
+                advertiser.stop()
+            case .starting, .listening:
+                break
+            }
+        }
         server.start(port: port) { envelope, sink in
             logReceivedEnvelope(envelope, route: nil)
             routerBox.handle(envelope, sink: LoggingSink(wrapped: sink))
+        }
+        guard let initialLocalStatus = localListenerReadiness.waitForTerminalStartStatus() else {
+            server.stop()
+            fputs("[runtime] Local listener start timed out.\n", stderr)
+            exit(EXIT_FAILURE)
+        }
+        guard initialLocalStatus == .listening(port: port) else {
+            server.stop()
+            if case .failed(let message) = initialLocalStatus {
+                fputs("[runtime] Local listener failed: \(message)\n", stderr)
+            } else {
+                fputs("[runtime] Local listener stopped before becoming ready.\n", stderr)
+            }
+            exit(EXIT_FAILURE)
         }
         if shouldAdvertiseBonjour {
             advertiser.start(port: Int32(port), metadata: identity.advertisementMetadata)
@@ -978,6 +1002,37 @@ private enum RuntimeDevServerState {
     static var server: LocalPeerServer?
     static var advertiser: BonjourAdvertiser?
     static var relayClient: RelayPeerClient?
+}
+
+private final class RuntimeDevLocalListenerReadiness: @unchecked Sendable {
+    private let lock = NSLock()
+    private let terminalStartStatus = DispatchSemaphore(value: 0)
+    private var storedTerminalStartStatus: PeerServerStatus?
+
+    func update(_ status: PeerServerStatus) {
+        switch status {
+        case .listening, .failed, .stopped:
+            let didStore = lock.withLock {
+                guard storedTerminalStartStatus == nil else { return false }
+                storedTerminalStartStatus = status
+                return true
+            }
+            if didStore {
+                terminalStartStatus.signal()
+            }
+        case .starting:
+            break
+        }
+    }
+
+    func waitForTerminalStartStatus(
+        timeout: DispatchTime = .now() + 5
+    ) -> PeerServerStatus? {
+        guard terminalStartStatus.wait(timeout: timeout) == .success else {
+            return nil
+        }
+        return lock.withLock { storedTerminalStartStatus }
+    }
 }
 
 private final class RuntimeRouterBox: @unchecked Sendable {

@@ -6,6 +6,8 @@ import SwiftUI
 
 struct StatusView: View {
     @ObservedObject var model: CompanionAppModel
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.companionReduceMotionOverride) private var reduceMotionOverride
     @StateObject private var announcementScope = AccessibilityAnnouncementScope()
     var onGenerateRelayQRCode: (() -> Void)?
     var onGenerateRemoteRelayQRCode: (() -> Void)? = nil
@@ -310,7 +312,14 @@ struct StatusView: View {
             Task { await model.loadModels() }
         case .connectionRecovery:
             connectionRecoveryExpansionRequest &+= 1
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(
+                companionShortTransitionAnimation(
+                    reduceMotion: companionShouldReduceMotion(
+                        systemValue: systemReduceMotion,
+                        override: reduceMotionOverride
+                    )
+                )
+            ) {
                 scrollProxy.scrollTo(StatusViewAnchor.connectionRecovery, anchor: .top)
             }
         }
@@ -318,6 +327,8 @@ struct StatusView: View {
 
     private var runtimeDetail: String {
         switch model.transportState.state {
+        case .starting:
+            return NSLocalizedString("AetherLink Runtime is starting.", comment: "")
         case .advertising:
             return NSLocalizedString("Trusted devices can find this AetherLink Runtime nearby after pairing.", comment: "")
         case .failed:
@@ -337,6 +348,9 @@ struct StatusView: View {
     }
 
     private var connectionRouteDetail: String {
+        if model.transportState.state == .starting {
+            return NSLocalizedString("AetherLink Runtime is starting.", comment: "")
+        }
         guard model.transportState.state == .advertising else {
             return NSLocalizedString("Start AetherLink Runtime before devices can connect.", comment: "")
         }
@@ -545,6 +559,8 @@ struct StatusView: View {
 
     private var runtimeReadinessDetail: String {
         switch model.transportState.state {
+        case .starting:
+            return NSLocalizedString("AetherLink Runtime is starting.", comment: "")
         case .advertising:
             return NSLocalizedString("Ready for paired devices.", comment: "")
         case .failed:
@@ -567,6 +583,15 @@ struct StatusView: View {
 
         switch focus {
         case .runtimeSetup:
+            if model.transportState.state == .starting {
+                return RuntimeOverview(
+                    focus: focus,
+                    title: NSLocalizedString("Starting AetherLink Runtime", comment: ""),
+                    detail: NSLocalizedString("AetherLink Runtime is starting.", comment: ""),
+                    footnote: NSLocalizedString("Devices can connect after startup finishes.", comment: ""),
+                    tone: .neutral
+                )
+            }
             return RuntimeOverview(
                 focus: focus,
                 title: NSLocalizedString("Setup needed", comment: ""),
@@ -1099,6 +1124,19 @@ func runtimeOverviewPrimaryActionPresentation(
 ) -> RuntimeOverviewPrimaryActionPresentation? {
     switch focus {
     case .runtimeSetup:
+        if runtimeState == .starting {
+            return RuntimeOverviewPrimaryActionPresentation(
+                action: .startRuntime,
+                title: NSLocalizedString("Starting AetherLink Runtime", comment: ""),
+                systemImage: "hourglass",
+                accessibilityValue: NSLocalizedString("In progress", comment: ""),
+                accessibilityHint: NSLocalizedString(
+                    "Wait for AetherLink Runtime to finish starting.",
+                    comment: ""
+                ),
+                isEnabled: false
+            )
+        }
         if runtimeState == .failed {
             return RuntimeOverviewPrimaryActionPresentation(
                 action: .startRuntime,
@@ -1118,7 +1156,7 @@ func runtimeOverviewPrimaryActionPresentation(
             systemImage: "play.fill",
             accessibilityValue: NSLocalizedString("Available", comment: ""),
             accessibilityHint: NSLocalizedString(
-                "Start AetherLink Runtime on this Mac.",
+                "Start AetherLink Runtime on this runtime host.",
                 comment: ""
             ),
             isEnabled: true
@@ -1252,6 +1290,9 @@ struct RuntimeOverviewPanel: View {
     let primaryAction: RuntimeOverviewPrimaryActionPresentation?
     let onPrimaryAction: (StatusRuntimeOverviewAction) -> Void
     let layoutObserver: RuntimeOverviewLayoutObserver?
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var systemContrast
+    @Environment(\.companionIncreaseContrastOverride) private var contrastOverride
 
     init(
         overview: RuntimeOverview,
@@ -1263,6 +1304,25 @@ struct RuntimeOverviewPanel: View {
         self.primaryAction = primaryAction
         self.onPrimaryAction = onPrimaryAction
         self.layoutObserver = layoutObserver
+    }
+
+    private var increasedContrast: Bool {
+        companionShouldIncreaseContrast(
+            systemValue: systemContrast,
+            override: contrastOverride
+        )
+    }
+
+    private var resolvedToneColor: Color {
+        companionResolvedStatusColor(
+            tone: overview.tone,
+            colorScheme: colorScheme,
+            increasedContrast: increasedContrast
+        )
+    }
+
+    private var statusSurfaceStyle: CompanionStatusSurfaceStyle {
+        companionStatusSurfaceStyle(increasedContrast: increasedContrast)
     }
 
     var body: some View {
@@ -1281,7 +1341,10 @@ struct RuntimeOverviewPanel: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(overview.tone.color.opacity(0.22), lineWidth: 1)
+                .strokeBorder(
+                    resolvedToneColor.opacity(statusSurfaceStyle.borderOpacity),
+                    lineWidth: statusSurfaceStyle.borderWidth
+                )
         }
         .coordinateSpace(name: RuntimeOverviewLayoutCoordinateSpace.name)
         .onPreferenceChange(RuntimeOverviewFramePreferenceKey.self) { frames in
@@ -1292,11 +1355,16 @@ struct RuntimeOverviewPanel: View {
 
     private var overviewSummary: some View {
         HStack(alignment: .top, spacing: 16) {
-            Image(systemName: overview.tone.systemImage)
+            CompanionStatusIcon(
+                systemImage: overview.tone.systemImage,
+                tone: overview.tone
+            )
                 .font(.system(size: 26, weight: .semibold))
-                .foregroundStyle(overview.tone.color)
                 .frame(width: 44, height: 44)
-                .background(overview.tone.color.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
+                .background(
+                    resolvedToneColor.opacity(statusSurfaceStyle.backgroundOpacity),
+                    in: RoundedRectangle(cornerRadius: 8)
+                )
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 8) {
@@ -1593,21 +1661,14 @@ struct RuntimeChatCompactionCalibrationSheet: View {
                         Text(NSLocalizedString("Refresh Compaction Calibration", comment: ""))
                     )
             } else if let cleanError = trimmedNonEmpty(errorMessage ?? "") {
-                Label(cleanError, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .foregroundStyle(.orange)
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
-                    .accessibilityLabel(
-                        Text(
-                            String(
-                                format: NSLocalizedString("Compaction calibration warning. %@", comment: ""),
-                                cleanError
-                            )
-                        )
+                CompanionWarningBanner(
+                    message: cleanError,
+                    accessibilityLabel: String(
+                        format: NSLocalizedString("Compaction calibration warning. %@", comment: ""),
+                        cleanError
                     )
-                    .frame(maxWidth: .infinity, minHeight: 260, alignment: .topLeading)
+                )
+                .frame(maxWidth: .infinity, minHeight: 260, alignment: .topLeading)
             } else if report.groups.isEmpty {
                 let emptyTitle = NSLocalizedString("No calibration samples", comment: "")
                 let emptyDescription = NSLocalizedString(
@@ -1772,6 +1833,19 @@ struct RuntimeHistoryInspectorSheet: View {
         return transcriptErrors[selectedSessionID]
     }
 
+    private var sessionSelection: Binding<String?> {
+        Binding(
+            get: { selectedSessionID },
+            set: { selection in
+                guard selection != selectedSessionID else { return }
+                selectedSessionID = selection
+                if let selection {
+                    onLoadTranscriptPreview(selection)
+                }
+            }
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center, spacing: 12) {
@@ -1809,20 +1883,13 @@ struct RuntimeHistoryInspectorSheet: View {
             )
 
             if let cleanError = trimmedNonEmpty(errorMessage ?? "") {
-                Label(cleanError, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .foregroundStyle(.orange)
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
-                    .accessibilityLabel(
-                        Text(
-                            String(
-                                format: NSLocalizedString("Runtime history inspector warning. %@", comment: ""),
-                                cleanError
-                            )
-                        )
+                CompanionWarningBanner(
+                    message: cleanError,
+                    accessibilityLabel: String(
+                        format: NSLocalizedString("Runtime history inspector warning. %@", comment: ""),
+                        cleanError
                     )
+                )
             }
 
             if sessions.isEmpty {
@@ -1851,38 +1918,31 @@ struct RuntimeHistoryInspectorSheet: View {
                     )
 
                     HStack(alignment: .top, spacing: 14) {
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 10) {
-                                ForEach(sessions, id: \.sessionID) { session in
-                                    let isSelected = selectedSessionID == session.sessionID
-                                    Button {
-                                        selectedSessionID = session.sessionID
-                                        onLoadTranscriptPreview(session.sessionID)
-                                    } label: {
-                                        RuntimeHistoryInspectorRow(
-                                            session: session,
-                                            isSelected: isSelected
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                    .help(NSLocalizedString("Load transcript preview", comment: ""))
-                                    .accessibilityLabel(
-                                        Text(
-                                            runtimeChatSessionAccessibilityLabel(
-                                                title: session.title,
-                                                status: localizedRuntimeChatSessionStatus(session.status),
-                                                model: session.model,
-                                                messageCount: localizedRuntimeChatMessageCount(session.messageCount),
-                                                updatedAt: localizedCompanionDateString(from: session.lastActivityAt)
-                                            )
+                        List(selection: sessionSelection) {
+                            ForEach(sessions, id: \.sessionID) { session in
+                                let isSelected = selectedSessionID == session.sessionID
+                                RuntimeHistoryInspectorRow(
+                                    session: session,
+                                    isSelected: isSelected
+                                )
+                                .tag(session.sessionID)
+                                .help(NSLocalizedString("Load transcript preview", comment: ""))
+                                .accessibilityLabel(
+                                    Text(
+                                        runtimeChatSessionAccessibilityLabel(
+                                            title: session.title,
+                                            status: localizedRuntimeChatSessionStatus(session.status),
+                                            model: session.model,
+                                            messageCount: localizedRuntimeChatMessageCount(session.messageCount),
+                                            updatedAt: localizedCompanionDateString(from: session.lastActivityAt)
                                         )
                                     )
-                                    .accessibilityValue(Text(runtimeChatSessionSelectionAccessibilityValue(isSelected: isSelected)))
-                                    .accessibilityHint(Text(runtimeTranscriptPreviewLoadAccessibilityHint()))
-                                }
+                                )
+                                .accessibilityValue(Text(runtimeChatSessionSelectionAccessibilityValue(isSelected: isSelected)))
+                                .accessibilityHint(Text(runtimeTranscriptPreviewLoadAccessibilityHint()))
                             }
-                            .padding(.vertical, 2)
                         }
+                        .listStyle(.inset)
                         .frame(minWidth: 300, maxWidth: 360)
 
                         Divider()
@@ -1901,26 +1961,33 @@ struct RuntimeHistoryInspectorSheet: View {
                     }
                 }
                 .onAppear {
-                    if selectedSessionID == nil, let firstSession = sessions.first {
-                        selectedSessionID = firstSession.sessionID
-                        onLoadTranscriptPreview(firstSession.sessionID)
-                    }
+                    sessionSelection.wrappedValue = reconciledRuntimeHistorySelection(
+                        current: selectedSessionID,
+                        sessionIDs: sessions.map(\.sessionID)
+                    )
                 }
                 .onChange(of: sessions.map(\.sessionID)) { _, sessionIDs in
-                    guard !sessionIDs.isEmpty else {
-                        selectedSessionID = nil
-                        return
-                    }
-                    if selectedSessionID.map({ !sessionIDs.contains($0) }) != false {
-                        selectedSessionID = sessionIDs[0]
-                        onLoadTranscriptPreview(sessionIDs[0])
-                    }
+                    sessionSelection.wrappedValue = reconciledRuntimeHistorySelection(
+                        current: selectedSessionID,
+                        sessionIDs: sessionIDs
+                    )
                 }
             }
         }
         .padding(24)
         .frame(minWidth: 760, minHeight: 500)
     }
+}
+
+func reconciledRuntimeHistorySelection(
+    current: String?,
+    sessionIDs: [String]
+) -> String? {
+    guard !sessionIDs.isEmpty else { return nil }
+    guard let current, sessionIDs.contains(current) else {
+        return sessionIDs[0]
+    }
+    return current
 }
 
 private struct RuntimeHistoryRetentionControl: View {
@@ -1935,12 +2002,16 @@ private struct RuntimeHistoryRetentionControl: View {
                         .font(.headline)
                     Text(runtimeHistoryRetentionDetail(status))
                         .font(.callout)
-                        .foregroundStyle(status.state == .failed ? .orange : .secondary)
+                        .foregroundStyle(status.state == .failed ? Color.primary : Color.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } icon: {
-                Image(systemName: status.state == .failed ? "exclamationmark.triangle" : "clock.arrow.circlepath")
-                    .foregroundStyle(status.state == .failed ? .orange : .secondary)
+                CompanionStatusIcon(
+                    systemImage: status.state == .failed
+                        ? "exclamationmark.triangle"
+                        : "clock.arrow.circlepath",
+                    tone: status.state == .failed ? .warning : .inactive
+                )
             }
 
             Spacer(minLength: 12)
@@ -2037,6 +2108,10 @@ func runtimeHistoryInspectorSummaryAccessibilityLabel(value: String, detail: Str
 private struct RuntimeHistoryInspectorRow: View {
     let session: RuntimeChatStoredSession
     let isSelected: Bool
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var systemDifferentiateWithoutColor
+    @Environment(\.companionDifferentiateWithoutColorOverride) private var differentiateWithoutColorOverride
+    @Environment(\.colorSchemeContrast) private var systemContrast
+    @Environment(\.companionIncreaseContrastOverride) private var contrastOverride
 
     private var statusText: String {
         localizedRuntimeChatSessionStatus(session.status)
@@ -2051,6 +2126,18 @@ private struct RuntimeHistoryInspectorRow: View {
     }
 
     var body: some View {
+        let selectionStyle = runtimeHistorySelectionVisualStyle(
+            isSelected: isSelected,
+            differentiateWithoutColor: companionShouldDifferentiateWithoutColor(
+                systemValue: systemDifferentiateWithoutColor,
+                override: differentiateWithoutColorOverride
+            ),
+            increasedContrast: companionShouldIncreaseContrast(
+                systemValue: systemContrast,
+                override: contrastOverride
+            )
+        )
+
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 StatusPill(text: statusText, tone: tone)
@@ -2061,6 +2148,12 @@ private struct RuntimeHistoryInspectorRow: View {
                 Text(String(format: NSLocalizedString("Updated %@", comment: ""), localizedCompanionDateString(from: session.lastActivityAt)))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if let selectionSystemImage = selectionStyle.selectionSystemImage {
+                    Image(systemName: selectionSystemImage)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .accessibilityHidden(true)
+                }
             }
 
             HStack(spacing: 12) {
@@ -2075,26 +2168,34 @@ private struct RuntimeHistoryInspectorRow: View {
             .lineLimit(1)
 
             if let errorCode = session.lastErrorCode.flatMap(trimmedNonEmpty) {
-                Label(
-                    String(format: NSLocalizedString("Last error %@", comment: ""), errorCode),
-                    systemImage: "exclamationmark.triangle.fill"
+                CompanionStatusMessageLabel(
+                    text: String(format: NSLocalizedString("Last error %@", comment: ""), errorCode),
+                    systemImage: "exclamationmark.triangle.fill",
+                    tone: .warning
                 )
                 .font(.caption)
-                .foregroundStyle(.orange)
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
         .background(
-            isSelected ? Color.accentColor.opacity(0.14) : Color.clear,
+            isSelected
+                ? Color.accentColor.opacity(selectionStyle.backgroundOpacity)
+                : Color.clear,
             in: RoundedRectangle(cornerRadius: 8)
         )
         .overlay {
             RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(
-                    isSelected ? Color.accentColor.opacity(0.7) : Color.secondary.opacity(0.22),
-                    lineWidth: 1
+                    selectionStyle.usesPrimaryBorder
+                        ? Color.primary.opacity(selectionStyle.borderOpacity)
+                        : (
+                            isSelected
+                                ? Color.accentColor.opacity(selectionStyle.borderOpacity)
+                                : Color.secondary.opacity(selectionStyle.borderOpacity)
+                        ),
+                    lineWidth: selectionStyle.borderWidth
                 )
         }
         .accessibilityElement(children: .ignore)
@@ -2110,6 +2211,29 @@ private struct RuntimeHistoryInspectorRow: View {
             )
         )
     }
+}
+
+struct RuntimeHistorySelectionVisualStyle: Equatable {
+    let selectionSystemImage: String?
+    let backgroundOpacity: Double
+    let borderOpacity: Double
+    let borderWidth: CGFloat
+    let usesPrimaryBorder: Bool
+}
+
+func runtimeHistorySelectionVisualStyle(
+    isSelected: Bool,
+    differentiateWithoutColor: Bool,
+    increasedContrast: Bool
+) -> RuntimeHistorySelectionVisualStyle {
+    let strengthened = differentiateWithoutColor || increasedContrast
+    return RuntimeHistorySelectionVisualStyle(
+        selectionSystemImage: isSelected ? "checkmark.circle.fill" : nil,
+        backgroundOpacity: isSelected ? (strengthened ? 0.20 : 0.14) : 0,
+        borderOpacity: strengthened ? 0.90 : (isSelected ? 0.70 : 0.22),
+        borderWidth: strengthened ? 2 : 1,
+        usesPrimaryBorder: strengthened
+    )
 }
 
 enum RuntimeTranscriptMessageIdentityKey: Hashable {
@@ -2199,20 +2323,13 @@ private struct RuntimeTranscriptPreviewPane: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let cleanError = trimmedNonEmpty(errorMessage ?? "") {
-                    Label(cleanError, systemImage: "exclamationmark.triangle.fill")
-                        .font(.callout)
-                        .foregroundStyle(.orange)
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
-                        .accessibilityLabel(
-                            Text(
-                                String(
-                                    format: NSLocalizedString("Runtime transcript preview warning. %@", comment: ""),
-                                    cleanError
-                                )
-                            )
+                    CompanionWarningBanner(
+                        message: cleanError,
+                        accessibilityLabel: String(
+                            format: NSLocalizedString("Runtime transcript preview warning. %@", comment: ""),
+                            cleanError
                         )
+                    )
                 }
 
                 if let messages {
@@ -2342,18 +2459,25 @@ private struct RuntimeTranscriptPreviewMessageRow: View {
 private struct RuntimeTranscriptReasoningBlock: View {
     let reasoning: String
     @State private var isExpanded = false
+    @Environment(\.colorSchemeContrast) private var systemContrast
+    @Environment(\.companionIncreaseContrastOverride) private var contrastOverride
 
     var body: some View {
+        let increasedContrast = companionShouldIncreaseContrast(
+            systemValue: systemContrast,
+            override: contrastOverride
+        )
         let policy = runtimeTranscriptReasoningDisplayPolicy(
             reasoning: reasoning,
-            expanded: isExpanded
+            expanded: isExpanded,
+            increasedContrast: increasedContrast
         )
 
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(NSLocalizedString("Thinking", comment: ""))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(increasedContrast ? Color.primary : Color.secondary)
 
                 Spacer(minLength: 0)
 
@@ -2365,7 +2489,7 @@ private struct RuntimeTranscriptReasoningBlock: View {
                     }
                     .buttonStyle(.plain)
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(increasedContrast ? Color.primary : Color.secondary)
                     .accessibilityLabel(Text(runtimeTranscriptReasoningToggleTitle(isExpanded: policy.isExpanded)))
                     .accessibilityValue(Text(runtimeTranscriptReasoningToggleAccessibilityValue(isExpanded: policy.isExpanded)))
                     .accessibilityHint(Text(runtimeTranscriptReasoningToggleAccessibilityHint(isExpanded: policy.isExpanded)))
@@ -2374,7 +2498,7 @@ private struct RuntimeTranscriptReasoningBlock: View {
 
             Text(policy.text)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(increasedContrast ? Color.primary : Color.secondary)
                 .opacity(policy.contentOpacity)
                 .lineLimit(policy.maxLines)
                 .fixedSize(horizontal: false, vertical: true)
@@ -2396,17 +2520,21 @@ let runtimeTranscriptReasoningPreviewMaxLines = 3
 let runtimeTranscriptReasoningSingleLinePreviewLimit = 180
 let runtimeTranscriptReasoningCollapsedOpacity = 0.58
 let runtimeTranscriptReasoningExpandedOpacity = 0.86
+let runtimeTranscriptReasoningIncreasedContrastOpacity = 1.0
 
 func runtimeTranscriptReasoningDisplayPolicy(
     reasoning: String,
-    expanded: Bool
+    expanded: Bool,
+    increasedContrast: Bool = false
 ) -> RuntimeTranscriptReasoningDisplayPolicy {
     let expandable = runtimeTranscriptReasoningNeedsExpansion(reasoning)
     let isExpanded = expanded && expandable
     return RuntimeTranscriptReasoningDisplayPolicy(
         text: isExpanded ? reasoning.trimmingCharacters(in: .whitespacesAndNewlines) : runtimeTranscriptReasoningPreview(reasoning),
         maxLines: isExpanded ? nil : runtimeTranscriptReasoningPreviewMaxLines,
-        contentOpacity: isExpanded ? runtimeTranscriptReasoningExpandedOpacity : runtimeTranscriptReasoningCollapsedOpacity,
+        contentOpacity: increasedContrast
+            ? runtimeTranscriptReasoningIncreasedContrastOpacity
+            : (isExpanded ? runtimeTranscriptReasoningExpandedOpacity : runtimeTranscriptReasoningCollapsedOpacity),
         expandable: expandable,
         isExpanded: isExpanded
     )
@@ -2606,20 +2734,13 @@ struct RuntimeMemoryInspectorSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if let cleanError = trimmedNonEmpty(errorMessage ?? "") {
-                Label(cleanError, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .foregroundStyle(.orange)
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
-                    .accessibilityLabel(
-                        Text(
-                            String(
-                                format: NSLocalizedString("Runtime memory inspector warning. %@", comment: ""),
-                                cleanError
-                            )
-                        )
+                CompanionWarningBanner(
+                    message: cleanError,
+                    accessibilityLabel: String(
+                        format: NSLocalizedString("Runtime memory inspector warning. %@", comment: ""),
+                        cleanError
                     )
+                )
             }
 
             if entries.isEmpty {
@@ -3260,9 +3381,11 @@ private struct ReadinessRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Image(systemName: item.tone.systemImage)
+            CompanionStatusIcon(
+                systemImage: item.tone.systemImage,
+                tone: item.tone
+            )
                 .font(.body)
-                .foregroundStyle(item.tone.color)
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -3333,9 +3456,11 @@ private struct ProviderStatusRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Image(systemName: status.systemImage)
+            CompanionStatusIcon(
+                systemImage: status.systemImage,
+                tone: status.tone
+            )
                 .font(.body)
-                .foregroundStyle(status.tone.color)
                 .frame(width: 22)
                 .accessibilityHidden(true)
 

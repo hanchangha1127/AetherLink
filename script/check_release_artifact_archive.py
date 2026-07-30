@@ -59,6 +59,7 @@ BUNDLETOOL_VERSION = "1.18.3"
 BUNDLETOOL_TIMEOUT_SECONDS = 60
 AAPT2_TIMEOUT_SECONDS = 60
 ANDROID_BACKUP_POLICY_BUILD = 15
+ANDROID_ENTRY_POINT_TOPOLOGY_BUILD = 23
 BASE_BUNDLE_MANIFEST_VERIFIED_FIELDS = (
     "applicationId",
     "minSdk",
@@ -75,6 +76,14 @@ BACKUP_POLICY_APK_MANIFEST_VERIFIED_FIELDS = (
     "allowBackup",
     "dataExtractionRules",
     "fullBackupContent",
+)
+ENTRY_POINT_TOPOLOGY_MANIFEST_VERIFIED_FIELDS = (
+    "entryPointTopology",
+)
+ANDROID_MAIN_ACTIVITY = "com.localagentbridge.android.MainActivity"
+ANDROID_SHARE_MIME_TYPE_COUNT = 44
+ANDROID_SHARE_MIME_TYPES_CANONICAL_SHA256 = (
+    "a04e83ed785b94ca4160981bb069104949742c6102008a452f650118f7902a8f"
 )
 LEGACY_BACKUP_EXCLUDE_DOMAINS = (
     "root",
@@ -147,6 +156,8 @@ SOURCE_REQUIRED_FILES = (
     "script/package_release_artifacts.py",
     "script/check_release_artifact_archive.py",
     "script/run_clean_release_reproducibility.py",
+    "script/run_macos_isolated_uninstall_reinstall_smoke.py",
+    "script/test_run_macos_isolated_uninstall_reinstall_smoke.py",
     "script/run_macos_local_dmg_install_smoke.py",
     "script/run_macos_runtime_chat_cross_process_smoke.py",
     "script/test_run_macos_runtime_chat_cross_process_smoke.py",
@@ -538,7 +549,104 @@ def expected_android_manifest_keys(build_number: int) -> set[str]:
         keys.add("bundleStructureValidation")
     if build_number >= ANDROID_BACKUP_POLICY_BUILD:
         keys.add("apkManifestReadback")
+    if build_number >= ANDROID_ENTRY_POINT_TOPOLOGY_BUILD:
+        keys.add("entryPointTopology")
     return keys
+
+
+def verify_android_entry_point_topology_claim(
+    value: object,
+) -> dict[str, object]:
+    if type(value) is not dict:
+        raise ReleaseArchiveVerificationError(
+            "Android entry-point topology claim must be an object"
+        )
+    require_exact_keys(
+        value,
+        {"activity", "deepLink", "launcher", "share"},
+        "platforms.android.entryPointTopology",
+    )
+    expected_fixed_sections = {
+        "activity": {
+            "documentLaunchMode": "never",
+            "exported": True,
+            "launchMode": "singleTask",
+            "name": ANDROID_MAIN_ACTIVITY,
+        },
+        "deepLink": {
+            "action": "android.intent.action.VIEW",
+            "categories": [
+                "android.intent.category.BROWSABLE",
+                "android.intent.category.DEFAULT",
+            ],
+            "host": "pair",
+            "scheme": "aetherlink",
+        },
+        "launcher": {
+            "action": "android.intent.action.MAIN",
+            "category": "android.intent.category.LAUNCHER",
+        },
+    }
+    for section_name, expected in expected_fixed_sections.items():
+        actual = value.get(section_name)
+        if type(actual) is not dict:
+            raise ReleaseArchiveVerificationError(
+                f"Android entry-point {section_name} must be an object"
+            )
+        require_exact_keys(
+            actual,
+            set(expected),
+            f"platforms.android.entryPointTopology.{section_name}",
+        )
+        for key, expected_value in expected.items():
+            actual_value = actual.get(key)
+            if (
+                type(actual_value) is not type(expected_value)
+                or actual_value != expected_value
+            ):
+                raise ReleaseArchiveVerificationError(
+                    "Android entry-point topology differs for "
+                    f"{section_name}.{key}"
+                )
+
+    share = value.get("share")
+    if type(share) is not dict:
+        raise ReleaseArchiveVerificationError(
+            "Android entry-point share claim must be an object"
+        )
+    require_exact_keys(
+        share,
+        {"actions", "category", "mimeTypes"},
+        "platforms.android.entryPointTopology.share",
+    )
+    if (
+        type(share.get("actions")) is not list
+        or share["actions"]
+        != [
+            "android.intent.action.SEND",
+            "android.intent.action.SEND_MULTIPLE",
+        ]
+        or any(type(action) is not str for action in share["actions"])
+        or type(share.get("category")) is not str
+        or share["category"] != "android.intent.category.DEFAULT"
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android entry-point share action/category claim differs"
+        )
+    mime_types = share.get("mimeTypes")
+    if (
+        type(mime_types) is not list
+        or any(type(mime_type) is not str for mime_type in mime_types)
+        or mime_types != sorted(mime_types)
+        or len(mime_types) != len(set(mime_types))
+        or len(mime_types) != ANDROID_SHARE_MIME_TYPE_COUNT
+        or hashlib.sha256(canonical_json_bytes(mime_types)).hexdigest()
+        != ANDROID_SHARE_MIME_TYPES_CANONICAL_SHA256
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android entry-point share MIME claim differs from V1"
+        )
+    return value
 
 
 def verify_bundle_structure_validation_claim(
@@ -957,14 +1065,460 @@ def validate_bundletool_validation_output(output: str) -> None:
         )
 
 
+def _bundletool_manifest_node(
+    element: ET.Element,
+) -> dict[str, object]:
+    android_prefix = f"{{{ANDROID_XML_NAMESPACE}}}"
+    attributes: dict[str, object] = {}
+    for raw_name, value in element.attrib.items():
+        if raw_name.startswith(android_prefix):
+            name = raw_name.removeprefix(android_prefix)
+        elif raw_name.startswith("{"):
+            name = raw_name
+        else:
+            name = f"unqualified:{raw_name}"
+        if name in attributes:
+            raise ReleaseArchiveVerificationError(
+                "bundletool manifest has duplicate normalized attributes"
+            )
+        attributes[name] = value
+    return {
+        "attributes": attributes,
+        "children": [
+            _bundletool_manifest_node(child)
+            for child in element
+        ],
+        "name": element.tag,
+    }
+
+
+def _manifest_node_parts(
+    node: dict[str, object],
+    *,
+    label: str,
+) -> tuple[str, dict[str, object], list[dict[str, object]]]:
+    if set(node) != {"attributes", "children", "name"}:
+        raise ReleaseArchiveVerificationError(
+            f"{label} manifest node has an unexpected shape"
+        )
+    name = node["name"]
+    attributes = node["attributes"]
+    children = node["children"]
+    if (
+        type(name) is not str
+        or type(attributes) is not dict
+        or type(children) is not list
+        or any(type(child) is not dict for child in children)
+    ):
+        raise ReleaseArchiveVerificationError(
+            f"{label} manifest node has invalid field types"
+        )
+    return name, attributes, children
+
+
+def _android_entry_point_topology(
+    application: dict[str, object],
+) -> dict[str, object]:
+    application_name, _, application_children = _manifest_node_parts(
+        application,
+        label="application",
+    )
+    if application_name != "application":
+        raise ReleaseArchiveVerificationError(
+            "entry-point topology input must be an application element"
+        )
+    if any(
+        _manifest_node_parts(child, label="application child")[0]
+        == "activity-alias"
+        for child in application_children
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android V1 entry-point topology must not contain activity aliases"
+        )
+
+    target_activities: list[dict[str, object]] = []
+    for child in application_children:
+        child_name, child_attributes, _ = _manifest_node_parts(
+            child,
+            label="application child",
+        )
+        if (
+            child_name == "activity"
+            and child_attributes.get("name") == ANDROID_MAIN_ACTIVITY
+        ):
+            target_activities.append(child)
+    if len(target_activities) != 1:
+        raise ReleaseArchiveVerificationError(
+            "Android V1 manifest must contain exactly one MainActivity"
+        )
+
+    _, activity_attributes, activity_children = _manifest_node_parts(
+        target_activities[0],
+        label="MainActivity",
+    )
+    if set(activity_attributes) != {
+        "documentLaunchMode",
+        "exported",
+        "launchMode",
+        "name",
+    }:
+        raise ReleaseArchiveVerificationError(
+            "Android MainActivity attributes differ from the V1 contract"
+        )
+    if activity_attributes["name"] != ANDROID_MAIN_ACTIVITY:
+        raise ReleaseArchiveVerificationError(
+            "Android MainActivity name differs from the V1 contract"
+        )
+    exported = activity_attributes["exported"]
+    if not (
+        (type(exported) is bool and exported is True)
+        or (type(exported) is str and exported == "true")
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android MainActivity exported must be exactly true"
+        )
+    launch_mode = activity_attributes["launchMode"]
+    if not (
+        (type(launch_mode) is int and launch_mode == 2)
+        or (type(launch_mode) is str and launch_mode == "2")
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android MainActivity launchMode must compile as singleTask"
+        )
+    document_launch_mode = activity_attributes["documentLaunchMode"]
+    if not (
+        (type(document_launch_mode) is int and document_launch_mode == 3)
+        or (
+            type(document_launch_mode) is str
+            and document_launch_mode == "3"
+        )
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android MainActivity documentLaunchMode must compile as never"
+        )
+    if len(activity_children) != 4:
+        raise ReleaseArchiveVerificationError(
+            "Android MainActivity must contain exactly four intent filters"
+        )
+
+    filters: dict[str, dict[str, object]] = {}
+    for intent_filter in activity_children:
+        filter_name, filter_attributes, filter_children = (
+            _manifest_node_parts(
+                intent_filter,
+                label="MainActivity child",
+            )
+        )
+        if filter_name != "intent-filter" or filter_attributes:
+            raise ReleaseArchiveVerificationError(
+                "Android MainActivity may contain only un-attributed "
+                "intent-filter children"
+            )
+        actions: list[str] = []
+        categories: list[str] = []
+        data: list[dict[str, str]] = []
+        for child in filter_children:
+            child_name, child_attributes, child_children = (
+                _manifest_node_parts(
+                    child,
+                    label="intent-filter child",
+                )
+            )
+            if child_children:
+                raise ReleaseArchiveVerificationError(
+                    "Android intent-filter leaf contains nested elements"
+                )
+            if child_name in ("action", "category"):
+                if (
+                    set(child_attributes) != {"name"}
+                    or type(child_attributes["name"]) is not str
+                    or not child_attributes["name"]
+                ):
+                    raise ReleaseArchiveVerificationError(
+                        f"Android {child_name} has invalid attributes"
+                    )
+                if child_name == "action":
+                    actions.append(child_attributes["name"])
+                else:
+                    categories.append(child_attributes["name"])
+                continue
+            if child_name == "data":
+                if (
+                    not child_attributes
+                    or any(
+                        type(key) is not str
+                        or type(value) is not str
+                        or not value
+                        for key, value in child_attributes.items()
+                    )
+                ):
+                    raise ReleaseArchiveVerificationError(
+                        "Android intent-filter data has invalid attributes"
+                    )
+                data.append(dict(child_attributes))
+                continue
+            raise ReleaseArchiveVerificationError(
+                "Android intent-filter contains an unexpected child"
+            )
+        if len(actions) != 1 or len(set(categories)) != len(categories):
+            raise ReleaseArchiveVerificationError(
+                "Android intent-filter action/category cardinality is invalid"
+            )
+        action = actions[0]
+        if action in filters:
+            raise ReleaseArchiveVerificationError(
+                "Android MainActivity contains a duplicate action filter"
+            )
+        encoded_data = [
+            canonical_json_bytes(record)
+            for record in data
+        ]
+        if len(encoded_data) != len(set(encoded_data)):
+            raise ReleaseArchiveVerificationError(
+                "Android intent-filter contains duplicate data records"
+            )
+        filters[action] = {
+            "categories": sorted(categories),
+            "data": data,
+        }
+
+    launcher_action = "android.intent.action.MAIN"
+    view_action = "android.intent.action.VIEW"
+    send_action = "android.intent.action.SEND"
+    send_multiple_action = "android.intent.action.SEND_MULTIPLE"
+    if set(filters) != {
+        launcher_action,
+        view_action,
+        send_action,
+        send_multiple_action,
+    }:
+        raise ReleaseArchiveVerificationError(
+            "Android MainActivity action set differs from the V1 contract"
+        )
+    if filters[launcher_action] != {
+        "categories": ["android.intent.category.LAUNCHER"],
+        "data": [],
+    }:
+        raise ReleaseArchiveVerificationError(
+            "Android launcher filter differs from the V1 contract"
+        )
+    if filters[view_action] != {
+        "categories": [
+            "android.intent.category.BROWSABLE",
+            "android.intent.category.DEFAULT",
+        ],
+        "data": [{"host": "pair", "scheme": "aetherlink"}],
+    }:
+        raise ReleaseArchiveVerificationError(
+            "Android pairing deep-link filter differs from the V1 contract"
+        )
+
+    share_mime_types: dict[str, list[str]] = {}
+    for action in (send_action, send_multiple_action):
+        share_filter = filters[action]
+        if share_filter["categories"] != [
+            "android.intent.category.DEFAULT"
+        ]:
+            raise ReleaseArchiveVerificationError(
+                "Android share filter category differs from the V1 contract"
+            )
+        records = share_filter["data"]
+        assert isinstance(records, list)
+        mime_types: list[str] = []
+        for record in records:
+            if (
+                type(record) is not dict
+                or set(record) != {"mimeType"}
+                or type(record["mimeType"]) is not str
+            ):
+                raise ReleaseArchiveVerificationError(
+                    "Android share filter data must contain only MIME types"
+                )
+            mime_types.append(record["mimeType"])
+        if len(mime_types) != len(set(mime_types)):
+            raise ReleaseArchiveVerificationError(
+                "Android share filter contains duplicate MIME types"
+            )
+        ordered_mime_types = sorted(mime_types)
+        if (
+            len(ordered_mime_types) != ANDROID_SHARE_MIME_TYPE_COUNT
+            or hashlib.sha256(
+                canonical_json_bytes(ordered_mime_types)
+            ).hexdigest()
+            != ANDROID_SHARE_MIME_TYPES_CANONICAL_SHA256
+        ):
+            raise ReleaseArchiveVerificationError(
+                "Android share MIME set differs from the V1 contract"
+            )
+        share_mime_types[action] = ordered_mime_types
+    if share_mime_types[send_action] != share_mime_types[
+        send_multiple_action
+    ]:
+        raise ReleaseArchiveVerificationError(
+            "Android single and multiple share MIME sets differ"
+        )
+
+    return {
+        "activity": {
+            "documentLaunchMode": "never",
+            "exported": True,
+            "launchMode": "singleTask",
+            "name": ANDROID_MAIN_ACTIVITY,
+        },
+        "deepLink": {
+            "action": view_action,
+            "categories": [
+                "android.intent.category.BROWSABLE",
+                "android.intent.category.DEFAULT",
+            ],
+            "host": "pair",
+            "scheme": "aetherlink",
+        },
+        "launcher": {
+            "action": launcher_action,
+            "category": "android.intent.category.LAUNCHER",
+        },
+        "share": {
+            "actions": [
+                send_action,
+                send_multiple_action,
+            ],
+            "category": "android.intent.category.DEFAULT",
+            "mimeTypes": share_mime_types[send_action],
+        },
+    }
+
+
+def parse_aapt2_entry_point_topology(
+    output: str,
+) -> dict[str, object]:
+    roots: list[dict[str, object]] = []
+    stack: list[tuple[int, dict[str, object]]] = []
+    element_pattern = re.compile(
+        r"^( *)E: ([a-z][a-z0-9-]*) \(line=[1-9][0-9]*\)$"
+    )
+    attribute_pattern = re.compile(
+        r"^( *)A: "
+        r"(?:(http://schemas\.android\.com/apk/res/android):)?"
+        r"([A-Za-z][A-Za-z0-9]*)"
+        r"(?:\(0x[0-9a-f]{8}\))?=(.*)$"
+    )
+    namespace_pattern = re.compile(
+        r"^N: [A-Za-z][A-Za-z0-9_-]*="
+        r"[^ ]+ \(line=[1-9][0-9]*\)$"
+    )
+    for line in output.splitlines():
+        if not line or namespace_pattern.fullmatch(line) is not None:
+            continue
+        element_match = element_pattern.fullmatch(line)
+        if element_match is not None:
+            indent = len(element_match.group(1))
+            while stack and stack[-1][0] >= indent:
+                stack.pop()
+            node: dict[str, object] = {
+                "attributes": {},
+                "children": [],
+                "name": element_match.group(2),
+            }
+            if stack:
+                if indent != stack[-1][0] + 4:
+                    raise ReleaseArchiveVerificationError(
+                        "aapt2 Android manifest has invalid nesting"
+                    )
+                parent_children = stack[-1][1]["children"]
+                assert isinstance(parent_children, list)
+                parent_children.append(node)
+            else:
+                if roots:
+                    raise ReleaseArchiveVerificationError(
+                        "aapt2 Android manifest has multiple roots"
+                    )
+                roots.append(node)
+            stack.append((indent, node))
+            continue
+
+        attribute_match = attribute_pattern.fullmatch(line)
+        if attribute_match is not None:
+            indent = len(attribute_match.group(1))
+            if not stack or indent != stack[-1][0] + 2:
+                raise ReleaseArchiveVerificationError(
+                    "aapt2 Android manifest has an unbound attribute"
+                )
+            name = attribute_match.group(3)
+            if attribute_match.group(2) is None:
+                name = f"unqualified:{name}"
+            encoded_value = attribute_match.group(4)
+            quoted = re.fullmatch(
+                r'"(.*)" \(Raw: "(.*)"\)',
+                encoded_value,
+            )
+            if quoted is not None:
+                if quoted.group(1) != quoted.group(2):
+                    raise ReleaseArchiveVerificationError(
+                        "aapt2 Android manifest decoded/raw values differ"
+                    )
+                value: object = quoted.group(1)
+            elif encoded_value == "true":
+                value = True
+            elif encoded_value == "false":
+                value = False
+            elif re.fullmatch(r"[0-9]+", encoded_value) is not None:
+                value = int(encoded_value)
+            else:
+                value = encoded_value
+            attributes = stack[-1][1]["attributes"]
+            assert isinstance(attributes, dict)
+            if name in attributes:
+                raise ReleaseArchiveVerificationError(
+                    "aapt2 Android manifest has a duplicate attribute"
+                )
+            attributes[name] = value
+            continue
+        raise ReleaseArchiveVerificationError(
+            "aapt2 Android manifest contains an unrecognized line"
+        )
+
+    if len(roots) != 1:
+        raise ReleaseArchiveVerificationError(
+            "aapt2 Android manifest must contain one root"
+        )
+    root_name, _, root_children = _manifest_node_parts(
+        roots[0],
+        label="manifest root",
+    )
+    if root_name != "manifest":
+        raise ReleaseArchiveVerificationError(
+            "aapt2 Android manifest root element is unexpected"
+        )
+    applications = [
+        child
+        for child in root_children
+        if _manifest_node_parts(
+            child,
+            label="manifest child",
+        )[0]
+        == "application"
+    ]
+    if len(applications) != 1:
+        raise ReleaseArchiveVerificationError(
+            "aapt2 Android manifest must contain one application element"
+        )
+    return _android_entry_point_topology(applications[0])
+
+
 def parse_bundletool_manifest(
     output: str,
     *,
     backup_policy_required: bool = False,
+    entry_point_topology_required: bool = False,
 ) -> dict[str, object]:
     if type(backup_policy_required) is not bool:
         raise ReleaseArchiveVerificationError(
             "bundletool backup-policy requirement must be a boolean"
+        )
+    if type(entry_point_topology_required) is not bool:
+        raise ReleaseArchiveVerificationError(
+            "bundletool entry-point topology requirement must be a boolean"
         )
     try:
         manifest = ET.fromstring(output)
@@ -1073,6 +1627,10 @@ def parse_bundletool_manifest(
                 "fullBackupContent": full_backup_content,
             }
         )
+    if entry_point_topology_required:
+        result["entryPointTopology"] = _android_entry_point_topology(
+            _bundletool_manifest_node(application)
+        )
     return result
 
 
@@ -1081,6 +1639,7 @@ def inspect_aab_manifest(
     root: Path = ROOT,
     *,
     backup_policy_required: bool = False,
+    entry_point_topology_required: bool = False,
 ) -> dict[str, object]:
     file_descriptor, temporary_name = tempfile.mkstemp(
         prefix="aetherlink-release-readback-bundle-",
@@ -1109,6 +1668,9 @@ def inspect_aab_manifest(
         parsed_manifest = parse_bundletool_manifest(
             manifest,
             backup_policy_required=backup_policy_required,
+            entry_point_topology_required=(
+                entry_point_topology_required
+            ),
         )
         if backup_policy_required:
             packaged_policy = inspect_aab_backup_policy(
@@ -1657,7 +2219,13 @@ def inspect_apk_badging(apk_data: bytes, root: Path = ROOT) -> dict[str, object]
 def inspect_apk_backup_policy(
     apk_data: bytes,
     root: Path = ROOT,
+    *,
+    entry_point_topology_required: bool = False,
 ) -> dict[str, object]:
+    if type(entry_point_topology_required) is not bool:
+        raise ReleaseArchiveVerificationError(
+            "APK entry-point topology requirement must be a boolean"
+        )
     aapt2 = find_android_build_tool("aapt2", root)
     file_descriptor, temporary_name = tempfile.mkstemp(
         prefix="aetherlink-release-readback-apk-policy-",
@@ -1729,6 +2297,10 @@ def inspect_apk_backup_policy(
             backup_rules,
             data_extraction_rules,
         )
+        if entry_point_topology_required:
+            manifest_policy["entryPointTopology"] = (
+                parse_aapt2_entry_point_topology(xmltree)
+            )
         return manifest_policy
     finally:
         Path(temporary_name).unlink(missing_ok=True)
@@ -2256,11 +2828,26 @@ def verify_android_relationships(
     backup_policy_required = (
         build_number >= ANDROID_BACKUP_POLICY_BUILD
     )
+    entry_point_topology_required = (
+        build_number >= ANDROID_ENTRY_POINT_TOPOLOGY_BUILD
+    )
+    entry_point_topology: dict[str, object] | None = None
+    if entry_point_topology_required:
+        entry_point_topology = (
+            verify_android_entry_point_topology_claim(
+                android.get("entryPointTopology")
+            )
+        )
     expected_verified_fields = [
         *BASE_BUNDLE_MANIFEST_VERIFIED_FIELDS,
         *(
             BACKUP_POLICY_BUNDLE_MANIFEST_VERIFIED_FIELDS
             if backup_policy_required
+            else ()
+        ),
+        *(
+            ENTRY_POINT_TOPOLOGY_MANIFEST_VERIFIED_FIELDS
+            if entry_point_topology_required
             else ()
         ),
     ]
@@ -2288,6 +2875,11 @@ def verify_android_relationships(
             "tool": "aapt2 dump xmltree + resources --no-values",
             "verifiedFields": [
                 *BACKUP_POLICY_APK_MANIFEST_VERIFIED_FIELDS,
+                *(
+                    ENTRY_POINT_TOPOLOGY_MANIFEST_VERIFIED_FIELDS
+                    if entry_point_topology_required
+                    else ()
+                ),
             ],
         }:
             raise ReleaseArchiveVerificationError(
@@ -2347,15 +2939,23 @@ def verify_android_relationships(
         )
     if backup_policy_required:
         apk_backup_policy = inspect_apk_backup_policy(
-            payload["android/apk/app-release-unsigned.apk"]
+            payload["android/apk/app-release-unsigned.apk"],
+            entry_point_topology_required=(
+                entry_point_topology_required
+            ),
         )
-        if apk_backup_policy != {
+        expected_apk_manifest: dict[str, object] = {
             "allowBackup": False,
             "dataExtractionRules": "@xml/data_extraction_rules",
             "fullBackupContent": "@xml/backup_rules",
-        }:
+        }
+        if entry_point_topology_required:
+            expected_apk_manifest["entryPointTopology"] = (
+                entry_point_topology
+            )
+        if apk_backup_policy != expected_apk_manifest:
             raise ReleaseArchiveVerificationError(
-                "independent archived APK backup policy differs "
+                "independent archived APK manifest differs "
                 "from the V1 contract"
             )
 
@@ -2364,6 +2964,7 @@ def verify_android_relationships(
     aab_manifest = inspect_aab_manifest(
         aab,
         backup_policy_required=backup_policy_required,
+        entry_point_topology_required=entry_point_topology_required,
     )
     expected_aab_manifest = {
         "applicationId": android["applicationId"],
@@ -2379,6 +2980,10 @@ def verify_android_relationships(
                 "dataExtractionRules": "@xml/data_extraction_rules",
                 "fullBackupContent": "@xml/backup_rules",
             }
+        )
+    if entry_point_topology_required:
+        expected_aab_manifest["entryPointTopology"] = (
+            entry_point_topology
         )
     if aab_manifest != expected_aab_manifest:
         raise ReleaseArchiveVerificationError(

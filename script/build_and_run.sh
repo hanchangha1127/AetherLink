@@ -41,6 +41,7 @@ BUNDLE_ID="dev.aetherlink.companion"
 MIN_SYSTEM_VERSION="14.0"
 REPRO_SWIFT_SCRATCH_PATH="/private/tmp/aetherlink-g6-swift-scratch-v1"
 RELEASE_VERSION_LEDGER="$ROOT_DIR/release/version-ledger.tsv"
+DEFAULT_PACKAGE_OUTPUT_ROOT="$ROOT_DIR/dist/package-only"
 MAX_ANDROID_VERSION_CODE=2100000000
 MAX_MARKETING_VERSION_COMPONENT=2147483647
 MARKETING_VERSION=""
@@ -186,11 +187,75 @@ validate_version_metadata() {
   fi
 }
 
+validate_package_output_root() {
+  local output_root="$1"
+  local expected_parent="$ROOT_DIR/dist"
+  local expected_physical_parent="$PHYSICAL_ROOT_DIR/dist"
+  local LC_ALL=C
+  local output_name
+  local physical_output
+
+  if [[ "$output_root" != /* || "$output_root" == "/" ]]; then
+    echo "error: package output root must be an absolute path" >&2
+    return 2
+  fi
+  case "$output_root" in
+    *[[:cntrl:]]*)
+      echo "error: package output root contains a control character" >&2
+      return 2
+      ;;
+  esac
+  output_name="${output_root##*/}"
+  if [[ -z "$output_name" || "$output_name" == "." || "$output_name" == ".." ]]; then
+    echo "error: package output root has an invalid final component" >&2
+    return 2
+  fi
+  case "$output_name" in
+    *.[aA][pP][pP])
+      echo "error: package output root must be a non-app directory" >&2
+      return 2
+      ;;
+  esac
+  if [[ "${output_root%/*}" != "$expected_parent" ]]; then
+    echo "error: package output root must be one dedicated directory below $expected_parent" >&2
+    return 2
+  fi
+  if [[ -e "$expected_parent" || -L "$expected_parent" ]]; then
+    if [[ ! -d "$expected_parent" || -L "$expected_parent" ]]; then
+      echo "error: package output parent must be a physical directory" >&2
+      return 2
+    fi
+    if [[ "$(cd "$expected_parent" && pwd -P)" != "$expected_physical_parent" ]]; then
+      echo "error: package output parent must use its physical path" >&2
+      return 2
+    fi
+  fi
+  if [[ -e "$output_root" || -L "$output_root" ]]; then
+    if [[ ! -d "$output_root" || -L "$output_root" ]]; then
+      echo "error: package output root must be a physical directory" >&2
+      return 2
+    fi
+    physical_output="$(cd "$output_root" && pwd -P)"
+    if [[ "$physical_output" != "$expected_physical_parent/$output_name" ]]; then
+      echo "error: package output root must use its physical path" >&2
+      return 2
+    fi
+  fi
+}
+
 load_release_version_metadata "$RELEASE_VERSION_LEDGER"
 validate_version_metadata
 
 DIST_DIR="$ROOT_DIR/dist"
-APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
+DEVELOPMENT_APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
+PACKAGE_OUTPUT_ROOT=""
+if is_package_only; then
+  PACKAGE_OUTPUT_ROOT="${AETHERLINK_PACKAGE_OUTPUT_ROOT:-$DEFAULT_PACKAGE_OUTPUT_ROOT}"
+  validate_package_output_root "$PACKAGE_OUTPUT_ROOT"
+  APP_BUNDLE="$PACKAGE_OUTPUT_ROOT/$APP_NAME.app"
+else
+  APP_BUNDLE="$DEVELOPMENT_APP_BUNDLE"
+fi
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
@@ -269,6 +334,9 @@ if is_package_only && [[ -n "${AETHERLINK_REPRO_SWIFT_SCRATCH_PATH:-}" ]]; then
   )
 fi
 
+if is_package_only && [[ -z "${AETHERLINK_REPRO_SWIFT_SCRATCH_PATH:-}" ]]; then
+  swift package clean
+fi
 swift build "${SWIFT_BUILD_OPTIONS[@]}" --product "$PRODUCT_NAME"
 BUILD_BIN_PATH="$(swift build "${SWIFT_BUILD_OPTIONS[@]}" --show-bin-path)"
 BUILD_BINARY="$BUILD_BIN_PATH/$PRODUCT_NAME"
@@ -298,6 +366,16 @@ fi
 RESOURCE_BUNDLE_SOURCE="${RESOURCE_BUNDLE_CANDIDATES[0]}"
 RESOURCE_BUNDLE_DESTINATION="$APP_RESOURCES/$(basename "$RESOURCE_BUNDLE_SOURCE")"
 
+if is_package_only; then
+  if [[ ! -e "$DIST_DIR" && ! -L "$DIST_DIR" ]]; then
+    mkdir "$DIST_DIR"
+  fi
+  validate_package_output_root "$PACKAGE_OUTPUT_ROOT"
+  if [[ ! -e "$PACKAGE_OUTPUT_ROOT" && ! -L "$PACKAGE_OUTPUT_ROOT" ]]; then
+    mkdir "$PACKAGE_OUTPUT_ROOT"
+  fi
+  validate_package_output_root "$PACKAGE_OUTPUT_ROOT"
+fi
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"

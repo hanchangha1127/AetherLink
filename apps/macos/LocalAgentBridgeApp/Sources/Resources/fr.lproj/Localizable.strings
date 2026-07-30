@@ -297,7 +297,7 @@
 "Setup needed" = "Configuration requise";
 "Start AetherLink Runtime before devices can connect." = "Démarrez AetherLink Runtime avant que les appareils puissent se connecter.";
 "Start AetherLink Runtime" = "Démarrer AetherLink Runtime";
-"Start AetherLink Runtime on this Mac." = "Démarrer AetherLink Runtime sur ce Mac.";
+"Start AetherLink Runtime on this runtime host." = "Démarrer AetherLink Runtime sur cet hôte d’exécution.";
 "Retry AetherLink Runtime" = "Réessayer de démarrer AetherLink Runtime";
 "Try starting AetherLink Runtime again." = "Réessayer de démarrer AetherLink Runtime.";
 "Model service needs attention" = "Le service de modèles demande une vérification";
@@ -408,6 +408,7 @@
 "Model list failed: %@" = "Échec de la liste des modèles : %@";
 "Remove trusted device failed: %@" = "Échec du retrait de l’appareil approuvé : %@";
 "Trusted device load failed: %@" = "Échec du chargement des appareils approuvés : %@";
+"Starting AetherLink Runtime" = "Démarrage d’AetherLink Runtime";
 "Ready for devices" = "Prêt pour les appareils";
 "AetherLink Runtime needs attention" = "AetherLink Runtime demande une vérification";
 "No activity yet" = "Aucune activité pour l’instant";
@@ -515,6 +516,9 @@
 "Model unload failed. Check Activity." = "Échec du déchargement du modèle. Consultez Activité.";
 "Manual model unload failed. Check Activity." = "Échec du déchargement manuel du modèle. Consultez Activité.";
 "Ready for paired devices." = "Prêt pour les appareils jumelés.";
+"AetherLink Runtime is starting." = "AetherLink Runtime est en cours de démarrage.";
+"Devices can connect after startup finishes." = "Les appareils pourront se connecter une fois le démarrage terminé.";
+"Wait for AetherLink Runtime to finish starting." = "Attendez la fin du démarrage d’AetherLink Runtime.";
 "Start AetherLink Runtime." = "Démarrez AetherLink Runtime.";
 "Connection details not ready for QR" = "Informations de connexion non prêtes pour le QR";
 "Connection details are prepared, but the connection is stopped. Start AetherLink Runtime, then generate the latest QR." = "Les informations de connexion sont prêtes, mais la connexion est arrêtée. Démarrez AetherLink Runtime, puis générez le dernier QR.";

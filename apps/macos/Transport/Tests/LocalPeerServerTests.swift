@@ -73,14 +73,19 @@ final class LocalPeerServerTests: XCTestCase {
     func testLocalPeerServerReportsDisconnectOnceWhenPeerClosesBeforeFrame() throws {
         let port = try Self.freeTCPPort()
         let disconnectRecorder = LocalPeerDisconnectRecorder()
+        let statusRecorder = LocalPeerStatusRecorder()
         let server = LocalPeerServer()
         server.onDisconnect = { id in
             disconnectRecorder.append(id)
         }
+        server.onStatusChange = { statusRecorder.append($0) }
         defer { server.stop() }
 
         server.start(port: port, onMessage: { _, _ in })
-        XCTAssertEqual(server.status, .listening(port: port))
+        XCTAssertEqual(
+            statusRecorder.waitForCount(2),
+            [.starting(port: port), .listening(port: port)]
+        )
 
         let socket = try Self.connectWithRetry(port: port)
         Darwin.close(socket)
@@ -88,6 +93,102 @@ final class LocalPeerServerTests: XCTestCase {
         XCTAssertEqual(disconnectRecorder.waitForCount(1), 1)
         Thread.sleep(forTimeInterval: 0.2)
         XCTAssertEqual(disconnectRecorder.count, 1)
+    }
+
+    func testLocalPeerServerReportsListenerStartAndExplicitStop() throws {
+        let port = try Self.freeTCPPort()
+        let statusRecorder = LocalPeerStatusRecorder()
+        let server = LocalPeerServer()
+        server.onStatusChange = { statusRecorder.append($0) }
+
+        server.start(port: port, onMessage: { _, _ in })
+        XCTAssertEqual(
+            statusRecorder.waitForCount(2),
+            [.starting(port: port), .listening(port: port)]
+        )
+
+        server.stop()
+        XCTAssertEqual(
+            statusRecorder.waitForCount(3),
+            [.starting(port: port), .listening(port: port), .stopped]
+        )
+    }
+
+    func testLocalPeerServerOccupiedPortFailsThenSameInstanceRetries() throws {
+        let occupied = try Self.occupyTCPPort()
+        var occupiedSocket: Int32? = occupied.socket
+        let statusRecorder = LocalPeerStatusRecorder()
+        let server = LocalPeerServer()
+        server.onStatusChange = { statusRecorder.append($0) }
+        defer {
+            if let occupiedSocket {
+                Darwin.close(occupiedSocket)
+            }
+            server.stop()
+        }
+
+        server.start(port: occupied.port, onMessage: { _, _ in })
+
+        let failedStatuses = statusRecorder.waitForCount(2)
+        XCTAssertEqual(failedStatuses.first, .starting(port: occupied.port))
+        guard failedStatuses.count == 2,
+              case .failed = failedStatuses[1] else {
+            return XCTFail("An occupied port must transition from starting to failed: \(failedStatuses)")
+        }
+        guard case .failed = server.status else {
+            return XCTFail("Expected failed status for occupied port, got \(server.status)")
+        }
+
+        Darwin.close(occupied.socket)
+        occupiedSocket = nil
+        server.start(port: occupied.port, onMessage: { _, _ in })
+
+        XCTAssertEqual(
+            statusRecorder.waitForCount(4).suffix(2),
+            [.starting(port: occupied.port), .listening(port: occupied.port)]
+        )
+        XCTAssertEqual(
+            server.status,
+            .listening(port: occupied.port)
+        )
+        let socket = try Self.connectWithRetry(port: occupied.port)
+        Darwin.close(socket)
+    }
+
+    func testPeerAdmissionCannotCrossListenerStopGenerationBoundary() throws {
+        let port = try Self.freeTCPPort()
+        let admissionReached = DispatchSemaphore(value: 0)
+        let releaseAdmission = DispatchSemaphore(value: 0)
+        let admissionRecorder = LocalPeerAdmissionRecorder()
+        let disconnectRecorder = LocalPeerDisconnectRecorder()
+        let server = LocalPeerServer(
+            beforePeerAdmission: {
+                admissionReached.signal()
+                _ = releaseAdmission.wait(timeout: .now() + 2)
+            },
+            afterPeerAdmissionAttempt: { admitted in
+                admissionRecorder.append(admitted)
+            }
+        )
+        server.onDisconnect = { id in
+            disconnectRecorder.append(id)
+        }
+        defer {
+            releaseAdmission.signal()
+            server.stop()
+        }
+
+        server.start(port: port, onMessage: { _, _ in })
+        let socket = try Self.connectWithRetry(port: port)
+        defer { Darwin.close(socket) }
+        XCTAssertEqual(admissionReached.wait(timeout: .now() + 2), .success)
+
+        server.stop()
+        releaseAdmission.signal()
+
+        XCTAssertEqual(admissionRecorder.waitForValue(), false)
+        server.stop()
+        XCTAssertEqual(disconnectRecorder.count, 0)
     }
 
     private static func freeTCPPort() throws -> UInt16 {
@@ -125,6 +226,45 @@ final class LocalPeerServerTests: XCTestCase {
             throw LocalPeerServerTestError.socket(String(cString: strerror(errno)))
         }
         return UInt16(bigEndian: boundAddress.sin_port)
+    }
+
+    private static func occupyTCPPort() throws -> (socket: Int32, port: UInt16) {
+        let socket = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+        guard socket >= 0 else {
+            throw LocalPeerServerTestError.socket(String(cString: strerror(errno)))
+        }
+
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = UInt16(0).bigEndian
+        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        let bound = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                Darwin.bind(socket, sockaddrPointer, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard bound == 0 else {
+            Darwin.close(socket)
+            throw LocalPeerServerTestError.socket(String(cString: strerror(errno)))
+        }
+        guard Darwin.listen(socket, 1) == 0 else {
+            Darwin.close(socket)
+            throw LocalPeerServerTestError.socket(String(cString: strerror(errno)))
+        }
+
+        var boundAddress = sockaddr_in()
+        var boundAddressLength = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let named = withUnsafeMutablePointer(to: &boundAddress) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                Darwin.getsockname(socket, sockaddrPointer, &boundAddressLength)
+            }
+        }
+        guard named == 0 else {
+            Darwin.close(socket)
+            throw LocalPeerServerTestError.socket(String(cString: strerror(errno)))
+        }
+        return (socket, UInt16(bigEndian: boundAddress.sin_port))
     }
 
     private static func connectWithRetry(port: UInt16) throws -> Int32 {
@@ -341,6 +481,45 @@ private final class LocalPeerDisconnectRecorder: @unchecked Sendable {
             }
         }
         return count
+    }
+}
+
+private final class LocalPeerStatusRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private let semaphore = DispatchSemaphore(value: 0)
+    private var statuses: [PeerServerStatus] = []
+
+    func append(_ status: PeerServerStatus) {
+        lock.withLock { statuses.append(status) }
+        semaphore.signal()
+    }
+
+    func waitForCount(
+        _ expectedCount: Int,
+        timeout: DispatchTime = .now() + 2
+    ) -> [PeerServerStatus] {
+        while lock.withLock({ statuses.count }) < expectedCount {
+            if semaphore.wait(timeout: timeout) != .success {
+                break
+            }
+        }
+        return lock.withLock { statuses }
+    }
+}
+
+private final class LocalPeerAdmissionRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private let semaphore = DispatchSemaphore(value: 0)
+    private var values: [Bool] = []
+
+    func append(_ value: Bool) {
+        lock.withLock { values.append(value) }
+        semaphore.signal()
+    }
+
+    func waitForValue(timeout: DispatchTime = .now() + 2) -> Bool? {
+        guard semaphore.wait(timeout: timeout) == .success else { return nil }
+        return lock.withLock { values.first }
     }
 }
 

@@ -2,18 +2,102 @@ import CompanionCore
 import CoreImage.CIFilterBuiltins
 import SwiftUI
 
+enum PairingDestinationFocusTarget: Hashable {
+    case activeQRCode
+    case activeRenewalAction
+    case emptyStatus
+    case emptyPrimaryAction
+}
+
+struct PairingDestinationFocusPlan: Equatable {
+    let keyboardTarget: PairingDestinationFocusTarget?
+    let accessibilityTarget: PairingDestinationFocusTarget
+}
+
+struct PairingFocusIntent: Equatable {
+    let id: Int
+    let baselineSessionID: String?
+    let waitsForNewSession: Bool
+}
+
+struct PairingFocusIntentResolution: Equatable {
+    let focusPlan: PairingDestinationFocusPlan
+    let shouldConsume: Bool
+}
+
+struct PairingFocusDeliveryKey: Hashable {
+    let intentID: Int?
+    let currentSessionID: String?
+    let isPreparationInFlight: Bool
+    let canGeneratePairingQR: Bool
+}
+
+func pairingDestinationFocusPlan(
+    hasActiveSession: Bool,
+    canGeneratePairingQR: Bool
+) -> PairingDestinationFocusPlan {
+    if hasActiveSession {
+        return PairingDestinationFocusPlan(
+            keyboardTarget: canGeneratePairingQR ? .activeRenewalAction : nil,
+            accessibilityTarget: .activeQRCode
+        )
+    }
+    return PairingDestinationFocusPlan(
+        keyboardTarget: canGeneratePairingQR ? .emptyPrimaryAction : nil,
+        accessibilityTarget: .emptyStatus
+    )
+}
+
+func pairingFocusIntentResolution(
+    intent: PairingFocusIntent,
+    currentSessionID: String?,
+    isPreparationInFlight: Bool,
+    canGeneratePairingQR: Bool
+) -> PairingFocusIntentResolution {
+    let focusPlan = pairingDestinationFocusPlan(
+        hasActiveSession: currentSessionID != nil,
+        canGeneratePairingQR: canGeneratePairingQR
+    )
+    let stillWaitingForNewSession = intent.waitsForNewSession
+        && currentSessionID == intent.baselineSessionID
+        && isPreparationInFlight
+    return PairingFocusIntentResolution(
+        focusPlan: focusPlan,
+        shouldConsume: !stillWaitingForNewSession
+    )
+}
+
+func pairingFocusDeliveryKey(
+    intent: PairingFocusIntent?,
+    currentSessionID: String?,
+    isPreparationInFlight: Bool,
+    canGeneratePairingQR: Bool
+) -> PairingFocusDeliveryKey {
+    PairingFocusDeliveryKey(
+        intentID: intent?.id,
+        currentSessionID: currentSessionID,
+        isPreparationInFlight: isPreparationInFlight,
+        canGeneratePairingQR: canGeneratePairingQR
+    )
+}
+
 struct PairingView: View {
     @ObservedObject var model: CompanionAppModel
     @StateObject private var announcementScope = AccessibilityAnnouncementScope()
+    @Binding private var focusIntent: PairingFocusIntent?
     let layoutObserver: PairingTaskLayoutObserver?
     let qrImageRenderer: (String) -> NSImage?
+    @FocusState private var keyboardFocusTarget: PairingDestinationFocusTarget?
+    @AccessibilityFocusState private var accessibilityFocusTarget: PairingDestinationFocusTarget?
 
     init(
         model: CompanionAppModel,
+        focusIntent: Binding<PairingFocusIntent?> = .constant(nil),
         layoutObserver: PairingTaskLayoutObserver? = nil,
         qrImageRenderer: @escaping (String) -> NSImage? = pairingQRCodeImage
     ) {
         self.model = model
+        self._focusIntent = focusIntent
         self.layoutObserver = layoutObserver
         self.qrImageRenderer = qrImageRenderer
     }
@@ -39,7 +123,9 @@ struct PairingView: View {
                             canGenerateNewQR: canGeneratePairingQR,
                             isPreparingConnectionDetails: model.isRemoteRoutePreparationInFlight,
                             qrImageRenderer: qrImageRenderer,
-                            onGenerateNewQR: generatePairingQR
+                            onGenerateNewQR: generatePairingQR,
+                            keyboardFocus: $keyboardFocusTarget,
+                            accessibilityFocus: $accessibilityFocusTarget
                         )
                         .id(session.id)
                     } else {
@@ -49,7 +135,9 @@ struct PairingView: View {
                             routeNotice: pairingRouteNotice,
                             canGeneratePairingQR: canGeneratePairingQR,
                             isPreparingConnectionDetails: model.isRemoteRoutePreparationInFlight,
-                            onGeneratePairingQR: generatePairingQR
+                            onGeneratePairingQR: generatePairingQR,
+                            keyboardFocus: $keyboardFocusTarget,
+                            accessibilityFocus: $accessibilityFocusTarget
                         )
                     }
                 }
@@ -77,6 +165,9 @@ struct PairingView: View {
             for: pairingRouteStatusAccessibilityAnnouncement(pairingRouteNotice.text)
         )
         .accessibilityAnnouncementScope(announcementScope)
+        .task(id: focusDeliveryKey) {
+            await deliverPairingFocusIntentIfNeeded()
+        }
     }
 
     private var pairingRouteNotice: PairingRouteNotice {
@@ -115,6 +206,38 @@ struct PairingView: View {
 
     private func generatePairingQR() {
         model.requestPairingForUserInterface()
+    }
+
+    private var focusDeliveryKey: PairingFocusDeliveryKey {
+        pairingFocusDeliveryKey(
+            intent: focusIntent,
+            currentSessionID: model.pairingSession?.id,
+            isPreparationInFlight: model.isRemoteRoutePreparationInFlight,
+            canGeneratePairingQR: canGeneratePairingQR
+        )
+    }
+
+    @MainActor
+    private func deliverPairingFocusIntentIfNeeded() async {
+        guard let requestedIntent = focusIntent else { return }
+        await Task.yield()
+        guard !Task.isCancelled,
+              focusIntent?.id == requestedIntent.id
+        else {
+            return
+        }
+        let resolution = pairingFocusIntentResolution(
+            intent: requestedIntent,
+            currentSessionID: model.pairingSession?.id,
+            isPreparationInFlight: model.isRemoteRoutePreparationInFlight,
+            canGeneratePairingQR: canGeneratePairingQR
+        )
+        keyboardFocusTarget = resolution.focusPlan.keyboardTarget
+        accessibilityFocusTarget = resolution.focusPlan.accessibilityTarget
+        if resolution.shouldConsume,
+           focusIntent?.id == requestedIntent.id {
+            focusIntent = nil
+        }
     }
 }
 
@@ -193,6 +316,12 @@ func pairingRouteStatusAccessibilityAnnouncement(_ status: String) -> String {
         .joined(separator: ". ")
 }
 
+func pairingQRExpiryAccessibilityAnnouncement(isExpired: Bool) -> String? {
+    isExpired
+        ? NSLocalizedString("Pairing QR expired. Generate a new QR.", comment: "")
+        : nil
+}
+
 private struct ActivePairingCard: View {
     let qrPayload: String
     let expiresAt: Date
@@ -201,6 +330,13 @@ private struct ActivePairingCard: View {
     let canGenerateNewQR: Bool
     let isPreparingConnectionDetails: Bool
     let onGenerateNewQR: () -> Void
+    let keyboardFocus: FocusState<PairingDestinationFocusTarget?>.Binding
+    let accessibilityFocus: AccessibilityFocusState<PairingDestinationFocusTarget?>.Binding
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.companionReduceMotionOverride) private var reduceMotionOverride
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var systemContrast
+    @Environment(\.companionIncreaseContrastOverride) private var contrastOverride
     @State private var sessionStartedAt = Date()
     @StateObject private var qrImageCache: PairingQRCodeImageCache
 
@@ -212,7 +348,9 @@ private struct ActivePairingCard: View {
         canGenerateNewQR: Bool,
         isPreparingConnectionDetails: Bool,
         qrImageRenderer: @escaping (String) -> NSImage?,
-        onGenerateNewQR: @escaping () -> Void
+        onGenerateNewQR: @escaping () -> Void,
+        keyboardFocus: FocusState<PairingDestinationFocusTarget?>.Binding,
+        accessibilityFocus: AccessibilityFocusState<PairingDestinationFocusTarget?>.Binding
     ) {
         self.qrPayload = qrPayload
         self.expiresAt = expiresAt
@@ -221,6 +359,8 @@ private struct ActivePairingCard: View {
         self.canGenerateNewQR = canGenerateNewQR
         self.isPreparingConnectionDetails = isPreparingConnectionDetails
         self.onGenerateNewQR = onGenerateNewQR
+        self.keyboardFocus = keyboardFocus
+        self.accessibilityFocus = accessibilityFocus
         _qrImageCache = StateObject(
             wrappedValue: PairingQRCodeImageCache(renderer: qrImageRenderer)
         )
@@ -252,7 +392,19 @@ private struct ActivePairingCard: View {
                     isQRCodeAvailable: isQRCodeAvailable
                 )
             }
-            .animation(.easeInOut(duration: 0.2), value: isExpired)
+            .animation(
+                companionShortTransitionAnimation(
+                    reduceMotion: companionShouldReduceMotion(
+                        systemValue: systemReduceMotion,
+                        override: reduceMotionOverride
+                    )
+                ),
+                value: isExpired
+            )
+            .politeAccessibilityAnnouncement(
+                for: pairingQRExpiryAccessibilityAnnouncement(isExpired: isExpired),
+                scopePriority: .childResult
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -308,12 +460,12 @@ private struct ActivePairingCard: View {
             }
             .overlay {
                 if isExpired && isAvailable {
-                    Label(
-                        NSLocalizedString("Pairing QR expired. Generate a new QR.", comment: ""),
-                        systemImage: "exclamationmark.triangle.fill"
+                    CompanionStatusMessageLabel(
+                        text: NSLocalizedString("Pairing QR expired. Generate a new QR.", comment: ""),
+                        systemImage: "exclamationmark.triangle.fill",
+                        tone: .warning
                     )
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(.orange)
                     .multilineTextAlignment(.center)
                     .padding(12)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
@@ -324,6 +476,10 @@ private struct ActivePairingCard: View {
             .reportPairingTaskFrame(.qrCode)
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("pairing-active-qr")
+            .accessibilityFocused(
+                accessibilityFocus,
+                equals: .activeQRCode
+            )
             .accessibilityAddTraits(.isImage)
             .accessibilityLabel(Text(pairingQRCodeAccessibilityLabel()))
             .accessibilityValue(Text(pairingQRCodeAccessibilityValue(isExpired: isExpired, isAvailable: isAvailable)))
@@ -358,11 +514,17 @@ private struct ActivePairingCard: View {
                 VStack(alignment: .leading, spacing: 7) {
                     PairingRouteNoticeLabel(routeNotice: routeNotice)
                     if let remoteRouteExpiresAt {
-                        Label(remoteRouteExpirationText(remoteRouteExpiresAt), systemImage: "timer")
-                            .foregroundStyle(routeNotice.tone.color)
+                        CompanionStatusMessageLabel(
+                            text: remoteRouteExpirationText(remoteRouteExpiresAt),
+                            systemImage: "timer",
+                            tone: routeNotice.tone
+                        )
                     }
-                    Label(expirationText(at: date), systemImage: expirationSystemImage(at: date))
-                        .foregroundStyle(expiresAt <= date ? .orange : .secondary)
+                    CompanionStatusMessageLabel(
+                        text: expirationText(at: date),
+                        systemImage: expirationSystemImage(at: date),
+                        tone: expiresAt <= date ? .warning : .inactive
+                    )
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(Text(pairingQRExpirationAccessibilityLabel()))
                         .accessibilityValue(Text(expirationText(at: date)))
@@ -391,19 +553,31 @@ private struct ActivePairingCard: View {
     }
 
     private func expirationProgress(at date: Date) -> some View {
-        GeometryReader { geometry in
+        let increasedContrast = companionShouldIncreaseContrast(
+            systemValue: systemContrast,
+            override: contrastOverride
+        )
+        return GeometryReader { geometry in
             let progress = expirationProgressValue(at: date)
             let width = max(0, geometry.size.width * progress)
 
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color.secondary.opacity(0.16))
+                    .fill(Color.secondary.opacity(increasedContrast ? 0.34 : 0.16))
                 Capsule()
-                    .fill(expiresAt <= date ? Color.orange : Color.accentColor)
+                    .fill(
+                        expiresAt <= date
+                            ? companionResolvedStatusColor(
+                                tone: .warning,
+                                colorScheme: colorScheme,
+                                increasedContrast: increasedContrast
+                            )
+                            : Color.accentColor
+                    )
                     .frame(width: width)
             }
         }
-        .frame(height: 6)
+        .frame(height: increasedContrast ? 8 : 6)
         .frame(maxWidth: 360)
     }
 
@@ -444,6 +618,7 @@ private struct ActivePairingCard: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .disabled(!canGenerateNewQR)
+        .focused(keyboardFocus, equals: .activeRenewalAction)
         .reportPairingTaskFrame(.renewalAction)
         .accessibilityIdentifier("pairing-renew-action")
         .help(
@@ -584,16 +759,34 @@ private struct PairingEmptyStateCard: View {
     let canGeneratePairingQR: Bool
     let isPreparingConnectionDetails: Bool
     let onGeneratePairingQR: () -> Void
+    let keyboardFocus: FocusState<PairingDestinationFocusTarget?>.Binding
+    let accessibilityFocus: AccessibilityFocusState<PairingDestinationFocusTarget?>.Binding
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var systemContrast
+    @Environment(\.companionIncreaseContrastOverride) private var contrastOverride
 
     var body: some View {
+        let increasedContrast = companionShouldIncreaseContrast(
+            systemValue: systemContrast,
+            override: contrastOverride
+        )
+        let color = companionResolvedStatusColor(
+            tone: routeNotice.tone,
+            colorScheme: colorScheme,
+            increasedContrast: increasedContrast
+        )
+        let surfaceStyle = companionStatusSurfaceStyle(
+            increasedContrast: increasedContrast
+        )
+
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 14) {
                 Image(systemName: routeNotice.systemImage)
                     .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(routeNotice.tone.color)
+                    .foregroundStyle(color)
                     .frame(width: 42, height: 42)
                     .background(
-                        routeNotice.tone.color.opacity(0.14),
+                        color.opacity(surfaceStyle.backgroundOpacity),
                         in: RoundedRectangle(cornerRadius: 8)
                     )
                     .accessibilityHidden(true)
@@ -611,6 +804,10 @@ private struct PairingEmptyStateCard: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("pairing-empty-status")
+            .accessibilityFocused(
+                accessibilityFocus,
+                equals: .emptyStatus
+            )
             .accessibilityLabel(
                 Text(
                     companionEmptyStateAccessibilityLabel(
@@ -628,6 +825,7 @@ private struct PairingEmptyStateCard: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(!canGeneratePairingQR)
+            .focused(keyboardFocus, equals: .emptyPrimaryAction)
             .help(
                 pairingQRGenerationActionAccessibilityHint(
                     isAvailable: canGeneratePairingQR,
@@ -655,12 +853,15 @@ private struct PairingEmptyStateCard: View {
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            routeNotice.tone.color.opacity(0.07),
+            color.opacity(increasedContrast ? 0.14 : 0.07),
             in: RoundedRectangle(cornerRadius: 8)
         )
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(routeNotice.tone.color.opacity(0.22), lineWidth: 1)
+                .strokeBorder(
+                    color.opacity(surfaceStyle.borderOpacity),
+                    lineWidth: surfaceStyle.borderWidth
+                )
         }
         .accessibilityElement(children: .contain)
     }
@@ -668,17 +869,39 @@ private struct PairingEmptyStateCard: View {
 
 private struct PairingRouteSetupNotice: View {
     let routeNotice: PairingRouteNotice
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var systemContrast
+    @Environment(\.companionIncreaseContrastOverride) private var contrastOverride
 
     var body: some View {
+        let increasedContrast = companionShouldIncreaseContrast(
+            systemValue: systemContrast,
+            override: contrastOverride
+        )
+        let color = companionResolvedStatusColor(
+            tone: routeNotice.tone,
+            colorScheme: colorScheme,
+            increasedContrast: increasedContrast
+        )
+        let surfaceStyle = companionStatusSurfaceStyle(
+            increasedContrast: increasedContrast
+        )
+
         PairingRouteNoticeLabel(routeNotice: routeNotice)
             .font(.callout)
             .fixedSize(horizontal: false, vertical: true)
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(routeNotice.tone.color.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            .background(
+                color.opacity(increasedContrast ? 0.14 : 0.08),
+                in: RoundedRectangle(cornerRadius: 8)
+            )
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(routeNotice.tone.color.opacity(0.22), lineWidth: 1)
+                    .strokeBorder(
+                        color.opacity(surfaceStyle.borderOpacity),
+                        lineWidth: surfaceStyle.borderWidth
+                    )
             }
     }
 }
@@ -687,8 +910,11 @@ private struct PairingRouteNoticeLabel: View {
     let routeNotice: PairingRouteNotice
 
     var body: some View {
-        Label(routeNotice.text, systemImage: routeNotice.systemImage)
-            .foregroundStyle(routeNotice.tone.color)
+        CompanionStatusMessageLabel(
+            text: routeNotice.text,
+            systemImage: routeNotice.systemImage,
+            tone: routeNotice.tone
+        )
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(pairingRouteNoticeAccessibilityLabel()))
             .accessibilityValue(Text(routeNotice.text))

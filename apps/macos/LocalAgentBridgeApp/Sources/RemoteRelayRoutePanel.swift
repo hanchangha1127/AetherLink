@@ -142,6 +142,19 @@ func connectionRecoveryResultAllowsDraftResync(_ result: CompanionRelayConfigura
     }
 }
 
+enum ConnectionRecoveryFocusTarget: Hashable {
+    case bootstrapRelayEndpoints
+}
+
+func connectionRecoveryFocusTarget(
+    previousExpansionRequest: Int,
+    currentExpansionRequest: Int
+) -> ConnectionRecoveryFocusTarget? {
+    previousExpansionRequest == currentExpansionRequest
+        ? nil
+        : .bootstrapRelayEndpoints
+}
+
 struct RemoteRelayRoutePanel: View {
     @ObservedObject var model: CompanionAppModel
     var onGenerateRemotePairingQRCode: (() -> Void)?
@@ -164,6 +177,8 @@ struct RemoteRelayRoutePanel: View {
     @State private var pendingPairingRefresh: PendingConnectionRecoveryPairingRefresh?
     @State private var bootstrapDraftRevision: ConnectionRecoveryDraftRevision<ConnectionRecoveryBootstrapDraft>
     @State private var developmentDraftRevision: ConnectionRecoveryDraftRevision<ConnectionRecoveryDevelopmentDraft>
+    @FocusState private var keyboardFocusTarget: ConnectionRecoveryFocusTarget?
+    @AccessibilityFocusState private var accessibilityFocusTarget: ConnectionRecoveryFocusTarget?
 
     init(
         model: CompanionAppModel,
@@ -204,9 +219,12 @@ struct RemoteRelayRoutePanel: View {
                 advancedRouteSettings
 
                 if let message {
-                    Label(message, systemImage: messageTone.systemImage)
+                    CompanionStatusMessageLabel(
+                        text: message,
+                        systemImage: messageTone.systemImage,
+                        tone: messageTone
+                    )
                         .font(.caption)
-                        .foregroundStyle(messageTone.color)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(
@@ -242,8 +260,19 @@ struct RemoteRelayRoutePanel: View {
         .onChange(of: model.pairingSession?.id) { _, _ in
             resolvePendingPairingRefresh()
         }
-        .onChange(of: advancedSettingsExpansionRequest) { _, _ in
+        .onChange(of: advancedSettingsExpansionRequest) { previousRequest, currentRequest in
             isAdvancedRouteSettingsExpanded = true
+            guard let focusTarget = connectionRecoveryFocusTarget(
+                previousExpansionRequest: previousRequest,
+                currentExpansionRequest: currentRequest
+            ) else {
+                return
+            }
+            Task { @MainActor in
+                await Task.yield()
+                keyboardFocusTarget = focusTarget
+                accessibilityFocusTarget = focusTarget
+            }
         }
         .politeAccessibilityAnnouncement(
             for: message.map {
@@ -395,6 +424,11 @@ struct RemoteRelayRoutePanel: View {
                             .fixedSize(horizontal: false, vertical: true)
                         TextField(NSLocalizedString("Bootstrap relay endpoints", comment: ""), text: $bootstrapEndpoints)
                             .textFieldStyle(.roundedBorder)
+                            .focused($keyboardFocusTarget, equals: .bootstrapRelayEndpoints)
+                            .accessibilityFocused(
+                                $accessibilityFocusTarget,
+                                equals: .bootstrapRelayEndpoints
+                            )
                             .accessibilityLabel(Text(NSLocalizedString("Bootstrap relay endpoints", comment: "")))
                             .accessibilityValue(Text(connectionRecoveryTextFieldAccessibilityValue(bootstrapEndpoints)))
                         SecureField(NSLocalizedString("Bootstrap allocation token", comment: ""), text: $bootstrapAllocationToken, prompt: Text(NSLocalizedString("Optional", comment: "")))
@@ -412,9 +446,12 @@ struct RemoteRelayRoutePanel: View {
                             endpoints: bootstrapEndpoints,
                             allocationToken: bootstrapAllocationToken
                         ) {
-                            Label(allocationTokenWarning, systemImage: "exclamationmark.triangle")
+                            CompanionStatusMessageLabel(
+                                text: allocationTokenWarning,
+                                systemImage: "exclamationmark.triangle",
+                                tone: .warning
+                            )
                                 .font(.caption)
-                                .foregroundStyle(.orange)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .accessibilityLabel(Text(allocationTokenWarning))
                         }
@@ -574,9 +611,12 @@ struct RemoteRelayRoutePanel: View {
     private func relayHostWarning(settings: CompanionDevelopmentRelaySettings) -> some View {
         if let warning = settings.hostReachabilityWarning {
             let warningText = relayHostWarningText(warning)
-            Label(warningText, systemImage: "exclamationmark.triangle")
+            CompanionStatusMessageLabel(
+                text: warningText,
+                systemImage: "exclamationmark.triangle",
+                tone: .warning
+            )
                 .font(.caption)
-                .foregroundStyle(StatusTone.warning.color)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text(connectionRecoveryHostWarningAccessibilityLabel(message: warningText)))
@@ -632,9 +672,12 @@ struct RemoteRelayRoutePanel: View {
             }
 
             if let issue = model.remoteRoutePreparationIssue {
-                Label(remoteRoutePreparationIssueText(issue), systemImage: "exclamationmark.triangle")
+                CompanionStatusMessageLabel(
+                    text: remoteRoutePreparationIssueText(issue),
+                    systemImage: "exclamationmark.triangle",
+                    tone: .warning
+                )
                     .font(.caption)
-                    .foregroundStyle(StatusTone.warning.color)
                     .fixedSize(horizontal: false, vertical: true)
                 if let diagnostic = issue.message.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
                     DiagnosticDisclosure(

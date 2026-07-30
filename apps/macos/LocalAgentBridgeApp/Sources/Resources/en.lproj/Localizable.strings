@@ -297,7 +297,7 @@
 "Setup needed" = "Setup needed";
 "Start AetherLink Runtime before devices can connect." = "Start AetherLink Runtime before devices can connect.";
 "Start AetherLink Runtime" = "Start AetherLink Runtime";
-"Start AetherLink Runtime on this Mac." = "Start AetherLink Runtime on this Mac.";
+"Start AetherLink Runtime on this runtime host." = "Start AetherLink Runtime on this runtime host.";
 "Retry AetherLink Runtime" = "Retry AetherLink Runtime";
 "Try starting AetherLink Runtime again." = "Try starting AetherLink Runtime again.";
 "Model service needs attention" = "Model service needs attention";
@@ -408,6 +408,7 @@
 "Model list failed: %@" = "Model list failed: %@";
 "Remove trusted device failed: %@" = "Remove trusted device failed: %@";
 "Trusted device load failed: %@" = "Trusted device load failed: %@";
+"Starting AetherLink Runtime" = "Starting AetherLink Runtime";
 "Ready for devices" = "Ready for devices";
 "AetherLink Runtime needs attention" = "AetherLink Runtime needs attention";
 "No activity yet" = "No activity yet";
@@ -515,6 +516,9 @@
 "Model unload failed. Check Activity." = "Model unload failed. Check Activity.";
 "Manual model unload failed. Check Activity." = "Manual model unload failed. Check Activity.";
 "Ready for paired devices." = "Ready for paired devices.";
+"AetherLink Runtime is starting." = "AetherLink Runtime is starting.";
+"Devices can connect after startup finishes." = "Devices can connect after startup finishes.";
+"Wait for AetherLink Runtime to finish starting." = "Wait for AetherLink Runtime to finish starting.";
 "Start AetherLink Runtime." = "Start AetherLink Runtime.";
 "Connection details not ready for QR" = "Connection details not ready for QR";
 "Connection details are prepared, but the connection is stopped. Start AetherLink Runtime, then generate the latest QR." = "Connection details are prepared, but the connection is stopped. Start AetherLink Runtime, then generate the latest QR.";

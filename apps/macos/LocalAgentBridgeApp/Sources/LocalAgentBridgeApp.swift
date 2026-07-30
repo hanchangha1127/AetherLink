@@ -10,6 +10,8 @@ struct LocalAgentBridgeApp: App {
     @AppStorage(AetherLinkAppAppearanceStorageKey) private var appAppearance = AetherLinkAppAppearance.defaultAppearance.rawValue
     @StateObject private var model: CompanionAppModel
     @State private var requestedSection: CompanionSection?
+    @State private var pairingFocusSequence = 0
+    @State private var pairingFocusIntent: PairingFocusIntent?
 
     init() {
         let initializedModel = CompanionAppModel()
@@ -25,8 +27,13 @@ struct LocalAgentBridgeApp: App {
     }
 
     var body: some Scene {
-        WindowGroup(NSLocalizedString("AetherLink", comment: ""), id: "main") {
-            ContentView(model: model, requestedSection: $requestedSection)
+        Window(NSLocalizedString("AetherLink", comment: ""), id: "main") {
+            ContentView(
+                model: model,
+                requestedSection: $requestedSection,
+                pairingFocusSequence: $pairingFocusSequence,
+                pairingFocusIntent: $pairingFocusIntent
+            )
                 .environment(\.locale, Locale(identifier: currentAppLanguage.localeIdentifier))
                 .id(currentAppLanguage.rawValue)
                 .preferredColorScheme(currentAppAppearance.preferredColorScheme)
@@ -144,7 +151,6 @@ struct LocalAgentBridgeApp: App {
 
         case .pairingQR:
             Button(pairingQRGenerationCommandTitle(hasActiveSession: model.pairingSession != nil)) {
-                model.requestPairingForUserInterface()
                 requestedSection = .pairing
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)

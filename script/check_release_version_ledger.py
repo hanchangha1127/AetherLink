@@ -6,9 +6,11 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import plistlib
 import re
+import stat
 import sys
 
 
@@ -20,7 +22,7 @@ G0_DECISION_PATH = ROOT / "docs/v1/g0/decision-v1.json"
 ANDROID_RELEASE_METADATA_PATH = (
     ROOT / "apps/android/app/build/outputs/apk/release/output-metadata.json"
 )
-MACOS_INFO_PLIST_PATH = ROOT / "dist/AetherLink.app/Contents/Info.plist"
+DEFAULT_MACOS_PACKAGE_OUTPUT_ROOT = ROOT / "dist/package-only"
 
 LEDGER_HEADER = "build_number\tmarketing_version"
 MAX_ANDROID_VERSION_CODE = 2_100_000_000
@@ -40,6 +42,72 @@ class ReleaseVersion:
 
 class LedgerError(ValueError):
     """Raised when the release version ledger violates its closed format."""
+
+
+def resolve_macos_package_output_root(
+    root: Path = ROOT,
+    configured: str | None = None,
+) -> Path:
+    try:
+        physical_root = root.resolve(strict=True)
+    except OSError as error:
+        raise LedgerError(
+            f"cannot resolve release source root: {error}"
+        ) from error
+    raw = (
+        os.environ.get("AETHERLINK_PACKAGE_OUTPUT_ROOT")
+        if configured is None
+        else configured
+    )
+    candidate = (
+        physical_root / "dist/package-only"
+        if raw is None
+        else Path(raw)
+    )
+    if (
+        not candidate.is_absolute()
+        or candidate == Path("/")
+        or any(
+            ord(character) < 0x20 or ord(character) == 0x7F
+            for character in str(candidate)
+        )
+    ):
+        raise LedgerError(
+            "macOS package output root must be an absolute path without "
+            "control characters"
+        )
+    expected_parent = physical_root / "dist"
+    if (
+        candidate.parent != expected_parent
+        or candidate.name in ("", ".", "..")
+        or candidate.name.casefold().endswith(".app")
+    ):
+        raise LedgerError(
+            "macOS package output root must be one dedicated non-app "
+            f"directory below {expected_parent}"
+        )
+    try:
+        physical_candidate = candidate.resolve(strict=False)
+    except OSError as error:
+        raise LedgerError(
+            f"cannot resolve macOS package output root: {error}"
+        ) from error
+    if physical_candidate != candidate:
+        raise LedgerError(
+            "macOS package output root must use a physical path"
+        )
+    if candidate.exists() or candidate.is_symlink():
+        try:
+            status = candidate.lstat()
+        except OSError as error:
+            raise LedgerError(
+                f"cannot inspect macOS package output root: {error}"
+            ) from error
+        if stat.S_ISLNK(status.st_mode) or not stat.S_ISDIR(status.st_mode):
+            raise LedgerError(
+                "macOS package output root must be a physical directory"
+            )
+    return candidate
 
 
 def parse_release_version_ledger(raw: bytes) -> tuple[ReleaseVersion, ...]:
@@ -187,6 +255,8 @@ def source_contract_failures(current: ReleaseVersion) -> list[str]:
             "release version ledger may contain only printable ASCII, tab, and LF",
             "MAX_ANDROID_VERSION_CODE=2100000000",
             'BUNDLE_ID="dev.aetherlink.companion"',
+            'DEFAULT_PACKAGE_OUTPUT_ROOT="$ROOT_DIR/dist/package-only"',
+            "AETHERLINK_PACKAGE_OUTPUT_ROOT",
             "CFBundleShortVersionString",
             "CFBundleVersion",
         ):
@@ -206,7 +276,11 @@ def source_contract_failures(current: ReleaseVersion) -> list[str]:
     return failures
 
 
-def artifact_contract_failures(current: ReleaseVersion) -> list[str]:
+def artifact_contract_failures(
+    current: ReleaseVersion,
+    *,
+    macos_info_plist_path: Path | None = None,
+) -> list[str]:
     failures: list[str] = []
 
     try:
@@ -243,11 +317,23 @@ def artifact_contract_failures(current: ReleaseVersion) -> list[str]:
             )
 
     try:
-        with MACOS_INFO_PLIST_PATH.open("rb") as handle:
+        resolved_macos_info_plist_path = (
+            resolve_macos_package_output_root()
+            / "AetherLink.app/Contents/Info.plist"
+            if macos_info_plist_path is None
+            else macos_info_plist_path
+        )
+        with resolved_macos_info_plist_path.open("rb") as handle:
             info = plistlib.load(handle)
         macos_marketing_version = info["CFBundleShortVersionString"]
         macos_build_number = info["CFBundleVersion"]
-    except (OSError, plistlib.InvalidFileException, KeyError, TypeError) as error:
+    except (
+        LedgerError,
+        OSError,
+        plistlib.InvalidFileException,
+        KeyError,
+        TypeError,
+    ) as error:
         failures.append(f"cannot read macOS release Info.plist: {error}")
     else:
         if macos_marketing_version != current.marketing_version:

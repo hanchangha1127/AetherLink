@@ -297,7 +297,7 @@
 "Setup needed" = "需要设置";
 "Start AetherLink Runtime before devices can connect." = "设备连接前，请先启动 AetherLink Runtime。";
 "Start AetherLink Runtime" = "启动 AetherLink Runtime";
-"Start AetherLink Runtime on this Mac." = "在此 Mac 上启动 AetherLink Runtime。";
+"Start AetherLink Runtime on this runtime host." = "在此运行时主机上启动 AetherLink Runtime。";
 "Retry AetherLink Runtime" = "重试启动 AetherLink Runtime";
 "Try starting AetherLink Runtime again." = "重试启动 AetherLink Runtime。";
 "Model service needs attention" = "模型服务需要处理";
@@ -408,6 +408,7 @@
 "Model list failed: %@" = "模型列表失败：%@";
 "Remove trusted device failed: %@" = "移除受信任设备失败：%@";
 "Trusted device load failed: %@" = "加载受信任设备失败：%@";
+"Starting AetherLink Runtime" = "正在启动 AetherLink Runtime";
 "Ready for devices" = "已准备连接设备";
 "AetherLink Runtime needs attention" = "AetherLink Runtime 需要检查";
 "No activity yet" = "暂无活动";
@@ -515,6 +516,9 @@
 "Model unload failed. Check Activity." = "模型卸载失败。请查看活动。";
 "Manual model unload failed. Check Activity." = "手动卸载模型失败。请查看活动。";
 "Ready for paired devices." = "已准备好连接已配对设备。";
+"AetherLink Runtime is starting." = "AetherLink Runtime 正在启动。";
+"Devices can connect after startup finishes." = "启动完成后，设备即可连接。";
+"Wait for AetherLink Runtime to finish starting." = "请等待 AetherLink Runtime 启动完成。";
 "Start AetherLink Runtime." = "启动 AetherLink Runtime。";
 "Connection details not ready for QR" = "二维码连接信息尚未就绪";
 "Connection details are prepared, but the connection is stopped. Start AetherLink Runtime, then generate the latest QR." = "连接信息已准备好，但连接已停止。请启动 AetherLink Runtime，然后生成最新二维码。";

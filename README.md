@@ -648,7 +648,12 @@ running app:
 ./script/build_and_run.sh --package-only
 ```
 
-This mode embeds the SwiftPM localization bundle under
+This mode cleans the default Swift build workspace, writes the package to
+`dist/package-only/AetherLink.app`, and leaves the development bundle at
+`dist/AetherLink.app` untouched. Set `AETHERLINK_PACKAGE_OUTPUT_ROOT` only to
+an absolute, dedicated non-app direct child of `dist/` when a separate package
+lane is needed; the reserved development bundle path `dist/AetherLink.app`
+is rejected before the toolchain runs. The mode embeds the SwiftPM localization bundle under
 `Contents/Resources`, writes semantic/build version metadata, and applies the
 same strict local ad-hoc seal used by development packaging. It is a local
 qualification artifact, not Developer ID signing, notarization, or a DMG.
@@ -659,6 +664,14 @@ Its Release metadata is backed by a lazy Gradle provider, so Debug still
 configures and builds when the release ledger is unavailable; a Release task
 validates the ledger's LF-only printable-ASCII/tab byte format when it needs
 the version.
+Build 23 and later archives additionally require the compiled APK and AAB to
+agree on one normalized Android `entryPointTopology`: the exact MainActivity
+launch behavior, launcher and `aetherlink://pair` filters, and identical
+single/multiple-share sets of 44 MIME types. Unrelated activities merged from
+dependencies are outside this MainActivity claim. The builder and readback
+checker parse the two artifact formats independently and validate a closed,
+exact-type claim. This forward gate does not alter the current Build 22 ledger
+or archive.
 The development application and bundle identifiers remain unchanged until
 their production replacements are reserved in the selected distribution
 accounts.
@@ -693,6 +706,10 @@ one command:
 ```bash
 ./script/build_release_artifacts.sh
 ```
+
+The wrapper uses `dist/release-package/AetherLink.app` as its private macOS
+staging bundle, so it never removes or replaces the development app at
+`dist/AetherLink.app`.
 
 When release inputs have changed, append a strictly higher shared build number
 to `release/version-ledger.tsv` before running this command. Published local
@@ -1308,7 +1325,7 @@ protection, NAT traversal, and hardened rendezvous are implemented.
 
 ## Verification
 
-Repository automation is prepared in
+Repository automation is implemented in
 `.github/workflows/product-quality.yml` as a bounded G7 non-security CI subset.
 Pull requests run read-only macOS and Android jobs with exact product-test
 allowlists and affected compilation. Pushes to `main` additionally compile the
@@ -1339,17 +1356,41 @@ guard.
 
 The macOS Status overview also supports local Runtime recovery without an app
 restart. A failed listener start leaves a localized Retry action available;
-route allocation, relay startup, and restored pair transports begin only after
-the listener reports advertising. The focused lifecycle, action, localization,
-and compact accessibility render regressions are included in the exact CI
-Swift selector.
+if an accepted listener fails later, the Runtime clears its started state,
+stops stale advertisement ownership, and allows the same port to be retried.
+Listener callbacks are generation-bound so an older listener cannot stop a
+replacement. Route allocation, relay startup, and restored pair transports
+begin only after the listener reports advertising. The focused lifecycle,
+action, localization, and compact accessibility render regressions are
+included in the exact CI Swift selector.
+
+The macOS app also follows the system Reduce Motion preference for its two
+custom transitions. Connection-recovery scrolling becomes immediate, and the
+pairing QR expiry state changes without the app's 0.2-second animation. Native
+system progress/status behavior is unchanged.
+
+macOS status and warning surfaces also honor Increase Contrast with a fixed
+light/dark palette, primary warning text, and stronger custom borders. Runtime
+History selection always includes a checkmark and uses one native arrow-key
+selection list instead of one Tab stop per session. Action-driven recovery and
+Pairing transitions carry explicit keyboard and accessibility focus targets.
+The Pairing intent survives asynchronous QR preparation, is canceled when the
+screen is left, survives in-app language-driven view recreation, and the
+menu-bar request has one main-window consumer. QR expiry announces once per QR
+lifecycle without countdown spam. The exact
+159-test product selector and complete 186-test accessibility run pass. These
+are deterministic source, unit, and render results; physical keyboard and
+VoiceOver traversal remain unclaimed.
 
 This subset intentionally does not call the mixed aggregate gate below and
-does not by itself satisfy canonical G7 `PR fast` or `Merge full`. A local
-parity pass also is not a GitHub Actions result; hosted-runner evidence begins
-only after the workflow is committed and pushed. Test selectors limit which
-tests execute, while SwiftPM and Gradle still compile their complete
-package/app test-source graphs.
+does not by itself satisfy canonical G7 `PR fast` or `Merge full`. The first
+hosted `main` run succeeded for baseline commit
+`0f59c757d745d0b95c37c9b93aec8d354bcfef9f` in both jobs
+([run 30525374687](https://github.com/hanchangha1127/AetherLink/actions/runs/30525374687)).
+That run does not cover later uncommitted worktree changes; their 159-test
+Swift selector and product-copy check currently have local evidence only. Test
+selectors limit which tests execute, while SwiftPM and Gradle still compile
+their complete package/app test-source graphs.
 
 Run these lightweight checks from the repository root before handing off changes
 that touch localization, protocol schema, or platform runtime behavior:

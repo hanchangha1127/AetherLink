@@ -240,13 +240,10 @@ struct RuntimeDocumentSourcesView: View {
     }
 
     private func warningBanner(_ message: String) -> some View {
-        Label(message, systemImage: "exclamationmark.triangle.fill")
-            .font(.callout)
-            .foregroundStyle(.orange)
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
-            .accessibilityLabel(Text(message))
+        CompanionWarningBanner(
+            message: message,
+            accessibilityLabel: message
+        )
     }
 
     private func handleFileImport(_ result: Result<[URL], Error>) {
@@ -460,12 +457,10 @@ struct RuntimeDocumentReviewSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if let errorMessage, !errorMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .foregroundStyle(.orange)
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+                CompanionWarningBanner(
+                    message: errorMessage,
+                    accessibilityLabel: errorMessage
+                )
             }
 
             VStack(alignment: .leading, spacing: 10) {

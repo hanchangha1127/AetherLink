@@ -563,6 +563,117 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
         }
     }
 
+    func testReducedMotionStatusAndActivePairingSurfacesRender() throws {
+        try withStoredPreferences(language: .english, appearance: .system) {
+            let model = renderSmokeModel()
+            defer { model.stop() }
+
+            let statusBitmap = try render(
+                StatusView(model: model, onGenerateRelayQRCode: {})
+                    .environment(\.locale, Locale(identifier: "en"))
+                    .environment(\.companionReduceMotionOverride, true),
+                size: compactDetailSize
+            )
+            assertMeaningfulRender(
+                statusBitmap,
+                label: "Reduced-motion StatusView"
+            )
+
+            model.beginPairing(routePolicy: .allowLocalDiagnostic)
+            XCTAssertNotNil(model.pairingSession)
+            let pairingBitmap = try render(
+                PairingView(model: model)
+                    .environment(\.locale, Locale(identifier: "en"))
+                    .environment(\.companionReduceMotionOverride, true),
+                size: compactDetailSize
+            )
+            assertMeaningfulRender(
+                pairingBitmap,
+                label: "Reduced-motion PairingView"
+            )
+        }
+    }
+
+    func testIncreasedContrastAndColorIndependentHistorySurfacesRender() throws {
+        try withStoredPreferences(language: .english, appearance: .system) {
+            for colorScheme in [ColorScheme.light, .dark] {
+                let statusBitmap = try render(
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(StatusTone.allCases, id: \.self) { tone in
+                            StatusPill(
+                                text: String(describing: tone),
+                                tone: tone
+                            )
+                        }
+                        CompanionWarningBanner(
+                            message: "Connection needs attention",
+                            accessibilityLabel: "Connection warning. Connection needs attention"
+                        )
+                    }
+                    .padding(24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                    .preferredColorScheme(colorScheme)
+                    .environment(\.companionIncreaseContrastOverride, true)
+                    .environment(\.companionDifferentiateWithoutColorOverride, true),
+                    size: CGSize(width: 420, height: 300)
+                )
+                assertMeaningfulRender(
+                    statusBitmap,
+                    label: "Increased-contrast status surfaces \(colorScheme)"
+                )
+
+                var loadedSessionIDs: [String] = []
+                let historyBitmap = try render(
+                    RuntimeHistoryInspectorSheet(
+                        sessions: [
+                            RuntimeChatStoredSession(
+                                sessionID: "session-selected",
+                                title: "Selected history",
+                                model: "ollama:llama3.1:8b",
+                                lastActivityAt: Date(timeIntervalSince1970: 120),
+                                messageCount: 4,
+                                status: "active",
+                                lastEvent: "done",
+                                lastFinishReason: "stop"
+                            ),
+                            RuntimeChatStoredSession(
+                                sessionID: "session-archived",
+                                title: "Archived history",
+                                model: "lmstudio:local/vision",
+                                lastActivityAt: Date(timeIntervalSince1970: 90),
+                                messageCount: 2,
+                                status: "archived",
+                                archivedAt: Date(timeIntervalSince1970: 100),
+                                lastEvent: "archived"
+                            ),
+                        ],
+                        transcriptMessages: [:],
+                        transcriptErrors: [:],
+                        errorMessage: "History refresh needs attention",
+                        retentionStatus: CompanionRuntimeChatRetentionStatus(),
+                        onRefresh: {},
+                        onRunRetentionMaintenance: {},
+                        onLoadTranscriptPreview: { loadedSessionIDs.append($0) }
+                    )
+                    .preferredColorScheme(colorScheme)
+                    .environment(\.companionIncreaseContrastOverride, true)
+                    .environment(\.companionDifferentiateWithoutColorOverride, true),
+                    size: minimumDetailSize
+                )
+                assertMeaningfulRender(
+                    historyBitmap,
+                    label: "Color-independent Runtime History \(colorScheme)"
+                )
+                XCTAssertEqual(
+                    loadedSessionIDs,
+                    ["session-selected"],
+                    "Runtime History should select and load the first session once"
+                )
+            }
+        }
+    }
+
     func testUnavailablePairingQRCodeStateRendersAcrossLanguagesAndAppearances() throws {
         for language in AetherLinkAppLanguage.allCases {
             for appearance in AetherLinkAppAppearance.pickerOptions {
@@ -712,6 +823,17 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
                             tone: .warning
                         ),
                         .failed
+                    ),
+                    (
+                        "runtime starting",
+                        RuntimeOverview(
+                            focus: .runtimeSetup,
+                            title: NSLocalizedString("Starting AetherLink Runtime", comment: ""),
+                            detail: NSLocalizedString("AetherLink Runtime is starting.", comment: ""),
+                            footnote: NSLocalizedString("Devices can connect after startup finishes.", comment: ""),
+                            tone: .neutral
+                        ),
+                        .starting
                     ),
                 ]
 

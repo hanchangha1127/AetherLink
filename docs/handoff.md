@@ -53,12 +53,66 @@ current user direction, not repository-owner identity proof.
 - Continue only feature, UX, accessibility, performance, build, documentation,
   and release-quality work. Do not resume security findings, threat analysis,
   owner authentication, or authority-evidence work.
+- The current Android release-quality slice adds a Build 23-forward compiled
+  entry-point topology contract. Independent builder and readback parsers
+  require the APK and AAB to agree on exactly one exported
+  `singleTask`/`never` MainActivity and exactly four launcher, pairing deep-link,
+  `SEND`, and `SEND_MULTIPLE` filters with the same canonical 44 MIME types.
+  Unrelated merged dependency activities are accepted and explicitly outside
+  this MainActivity claim. The archive claim is closed and exact-typed; 52
+  release-archive tests pass.
+  Locally present Build 21 compiled outputs exercise both real formats but are
+  not current release evidence. Builds 1 through 22, the ledger, and the Build
+  22 archive remain unchanged, and Build 22 archive-only readback passes.
+  This slice includes no device run, signing, publication, permission
+  analysis, or network claim.
+- The current G6 macOS packaging lane no longer targets the running
+  `dist/AetherLink.app` during package-only or release assembly.
+  `build_and_run.sh --package-only` cleans and writes
+  `dist/package-only/AetherLink.app`; `build_release_artifacts.sh` selects
+  `dist/release-package/AetherLink.app`. Eleven fake-toolchain regressions pass
+  and PID 59809 remains alive at the original development path.
+  The Build 22 post-archive uninstall/reinstall harness also passed twice with
+  the same 2,474-byte result and SHA-256
+  `eae0cc7e6060fa8418f01c059556d2b73059234ecc0eab7c6ec0f2bf2d041a5e`.
+  It removed only the exact temporary-HOME app, retained identical Application
+  Support state, reinstalled and relaunched the same artifact under a distinct
+  PID, then removed it again. This is not N/N-1, rollback, automatic data
+  cleanup, clean-machine/Finder, provider/network, UI, or physical evidence.
+- The current unreleased macOS accessibility slice adds an Increase
+  Contrast-aware status palette and stronger custom borders, keeps warning text
+  primary, and makes Runtime History selection non-color-only with a checkmark.
+  Runtime History is now one native arrow-key selection list instead of one Tab
+  stop per session. Status recovery moves keyboard and VoiceOver focus to the
+  first expanded recovery field; Pairing action/menu-bar transitions use a
+  consumable intent that survives asynchronous QR preparation, targets the
+  keyboard action and accessibility summary, and is canceled when Pairing is
+  left. The menu bar delegates generation to one main `Window`, and pending
+  focus state survives locale-driven `ContentView` recreation. QR expiry
+  announces once per QR lifecycle, and decorative Model Download icons are
+  hidden. Eight new focused regressions, the exact 159-test product CI Swift
+  selector, and the complete 186-test accessibility run pass; Debug and Release
+  AetherLink builds pass.
+  The Mac was locked during attempted UI observation, so physical
+  keyboard/VoiceOver traversal remains unclaimed.
+- The current unreleased macOS UI routes both explicit custom animations
+  through one Reduce Motion policy. Status recovery scrolls immediately and
+  pairing QR expiry changes without the app animation when the OS preference is
+  enabled. The test-only environment override can force reduction on but cannot
+  disable a true system preference. The complete 147-test localization suite
+  and 24-test render suite pass.
 - The current unreleased macOS Runtime no longer latches a failed listener as
   started. Only an advertising listener enables route allocation, relay
   startup, or restored pair transports; a failed attempt leaves a localized
-  Status Retry action available. The focused lifecycle/action/render checks and
-  exact 143-test CI Swift selector pass with zero skips or failures.
-- The current worktree prepares `.github/workflows/product-quality.yml` as a
+  Status Retry action available. If an accepted listener later fails, the
+  manager releases local advertisement ownership, the app model clears its
+  started state, and the same port can be retried. Exact listener generations
+  keep a superseded listener callback from stopping its replacement. Peer
+  admission validates and inserts under the same generation lock, so a
+  connection cannot cross a concurrent stop/failure cleanup boundary. The
+  focused lifecycle/action/render checks and exact 159-test CI Swift selector
+  pass with zero skips or failures.
+- The repository includes `.github/workflows/product-quality.yml` as a
   bounded G7 non-security CI subset. Pull requests run two read-only hosted
   jobs with exact Swift and Android product allowlists; pushes to `main` add a
   macOS Release product build and strict-lock Android Release APK assembly plus
@@ -72,19 +126,25 @@ current user direction, not repository-owner identity proof.
   missing rule. Safe YAML parsing plus a canonical parsed-semantic fingerprint
   closes the exact top-level/job mappings and complete step arrays, while raw
   checks close both job preambles and every named step body, including the
-  changed-byte and platform compile commands. A Psych AST pre-pass requires one
-  YAML document and rejects duplicate or explicitly tagged mapping keys before
-  safe loading. The reviewed workflow byte SHA-256 is
-  `efdc353abcd1b4eb62fe0e437b199677f675698efe9da4624e3985e08b76aea0`;
+  changed-byte and platform compile commands. Its static lane also runs the
+  product-only copy check before the release-ledger, icon, and license checks,
+  without entering the paused mixed security checker path. A Psych AST pre-pass
+  requires one YAML document and rejects duplicate or explicitly tagged
+  mapping keys before safe loading. The reviewed workflow byte SHA-256 is
+  `7f24adee31748522469daee3c4be17fd2d474dde3b9edcae79e95f3cc362571d`;
   its parsed-semantic SHA-256 is
-  `a52031f1cd703a72cd6d4833864479e733767ca81d901e830049f42653e44ab8`.
-  Local parity passes 143 selected Swift tests and seven selected Android tests
+  `843b003fb1fb16c60003ff920db4a95ec23e24b96dc1eee2e453717bbc529384`.
+  Local parity passes 159 selected Swift tests and seven selected Android tests
   with zero skips or failures, both platform compile lanes, Release builds,
-  lint, three static checks, YAML parsing, and the guard's mutation suite. The
+  lint, four static checks, YAML parsing, and the guard's mutation suite. The
   Android allowlist now directly executes the changed-session scroll-boundary
-  regression rather than only compiling its test source. The workflow itself
-  has not run remotely because the files are uncommitted and unpushed;
-  canonical G7 completion and hosted-runner evidence remain unclaimed. The
+  regression rather than only compiling its test source. Hosted run
+  `30525374687` completed successfully for both jobs at baseline commit
+  `0f59c757d745d0b95c37c9b93aec8d354bcfef9f`. The current listener-recovery,
+  reduced-motion, visual/focus accessibility, product-copy, selector, and
+  checker changes remain uncommitted and therefore are not covered by that run;
+  canonical G7
+  completion remains unclaimed. The
   selectors constrain test execution, not compilation of the complete Swift
   package and Android app test-source graphs, and the Android hosted lane still
   depends on its image's preinstalled SDK 36 plus ordinary dependency

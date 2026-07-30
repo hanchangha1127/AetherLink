@@ -57390,6 +57390,23 @@ def bounded_script_hardening_guard_failures() -> list[str]:
         ),
         "build": ROOT / "script/build_and_run.sh",
         "build_test": ROOT / "script/test_build_and_run.py",
+        "uninstall": ROOT / (
+            "script/run_macos_isolated_uninstall_reinstall_smoke.py"
+        ),
+        "uninstall_test": ROOT / (
+            "script/test_run_macos_isolated_uninstall_reinstall_smoke.py"
+        ),
+        "uninstall_result": ROOT / (
+            "dist/lifecycle/"
+            "macos-packaged-app-build-22-isolated-uninstall-reinstall-v1.json"
+        ),
+        "current_release_doc": ROOT / (
+            "docs/releases/1.0.0-build-22-local-v1.md"
+        ),
+        "progress": ROOT / "docs/progress.md",
+        "qa": ROOT / "docs/qa-evidence.md",
+        "roadmap": ROOT / "docs/roadmap.md",
+        "handoff": ROOT / "docs/handoff.md",
         "localization": ROOT / (
             "apps/macos/LocalAgentBridgeApp/Sources/AetherLinkLocalization.swift"
         ),
@@ -57404,6 +57421,35 @@ def bounded_script_hardening_guard_failures() -> list[str]:
             failures.append(f"Missing bounded script-hardening file: {path.relative_to(ROOT)}")
             continue
         texts[name] = path.read_text(encoding="utf-8", errors="replace")
+
+    expected_uninstall_evidence_sha256 = {
+        "uninstall": (
+            "36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa"
+        ),
+        "uninstall_test": (
+            "ad4472a82ad7178e56f3fcb80fce4e80db1015dc845c5469e2b6832432b2b3bf"
+        ),
+        "uninstall_result": (
+            "eae0cc7e6060fa8418f01c059556d2b73059234ecc0eab7c6ec0f2bf2d041a5e"
+        ),
+    }
+    for name, expected_sha256 in expected_uninstall_evidence_sha256.items():
+        path = paths[name]
+        if not path.is_file():
+            continue
+        raw = path.read_bytes()
+        actual_sha256 = hashlib.sha256(raw).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{path.relative_to(ROOT)}: post-archive uninstall evidence "
+                f"SHA-256 drifted; expected {expected_sha256}, found "
+                f"{actual_sha256}."
+            )
+        if name == "uninstall_result" and len(raw) != 2_474:
+            failures.append(
+                f"{path.relative_to(ROOT)}: post-archive uninstall result "
+                f"must remain exactly 2474 bytes; found {len(raw)}."
+            )
 
     required_snippets = {
         "preflight": (
@@ -57433,6 +57479,7 @@ def bounded_script_hardening_guard_failures() -> list[str]:
         "readme": (
             "`release/version-ledger.tsv`",
             "Android Debug deliberately remains `0.1.0+1`",
+            "Build 23 and later archives additionally require",
             "python3 script/check_release_version_ledger.py --artifacts",
             "./script/build_release_artifacts.sh",
             "normalized-input ZIP",
@@ -57447,6 +57494,10 @@ def bounded_script_hardening_guard_failures() -> list[str]:
         ),
         "release_check": (
             "def parse_release_version_ledger(",
+            "def resolve_macos_package_output_root(",
+            'os.environ.get("AETHERLINK_PACKAGE_OUTPUT_ROOT")',
+            'candidate.name.casefold().endswith(".app")',
+            "resolved_macos_info_plist_path = (",
             "MAX_ANDROID_VERSION_CODE = 2_100_000_000",
             "ledger may contain only printable ASCII, tab, and LF",
             "build_number must be strictly increasing",
@@ -57463,6 +57514,8 @@ def bounded_script_hardening_guard_failures() -> list[str]:
         ),
         "release_builder": (
             "source_before=",
+            'RELEASE_MACOS_PACKAGE_OUTPUT_ROOT="$ROOT_DIR/dist/release-package"',
+            'export AETHERLINK_PACKAGE_OUTPUT_ROOT="$RELEASE_MACOS_PACKAGE_OUTPUT_ROOT"',
             "-PaetherlinkStrictReleaseDependencyLocks=true",
             ":app:clean",
             ":core:pairing:clean",
@@ -57478,11 +57531,18 @@ def bounded_script_hardening_guard_failures() -> list[str]:
         ),
         "release_archive": (
             "FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)",
+            "ANDROID_ENTRY_POINT_TOPOLOGY_BUILD = 23",
+            "def resolve_macos_package_output_root(",
+            "resolve_macos_package_output_root as resolve_ledger_output_root",
+            'MACOS_APP = MACOS_PACKAGE_OUTPUT_ROOT / "AetherLink.app"',
             "SOURCE_REQUIRED_FILES = (",
             "def read_stable_regular_file(",
             "def source_snapshot(",
             "def parse_aapt2_badging(",
+            "def parse_aapt2_entry_point_topology(",
             "def inspect_apk_badging(",
+            "entry_point_topology_required",
+            '"entryPointTopology"',
             "def parse_gradle_lockfile(",
             "def dependency_locking_metadata(",
             "def canonicalize_r8_line_artifact(",
@@ -57493,14 +57553,21 @@ def bounded_script_hardening_guard_failures() -> list[str]:
             "unavailable-upstream-prestripped",
             "increment the shared build number instead of overwriting",
             "macos/AetherLink.dSYM",
+            '"script/run_macos_isolated_uninstall_reinstall_smoke.py",',
+            '"script/test_run_macos_isolated_uninstall_reinstall_smoke.py",',
         ),
         "release_archive_check": (
+            "ANDROID_ENTRY_POINT_TOPOLOGY_BUILD = 23",
             "def reject_duplicate_keys(",
             "def require_exact_keys(",
+            "def verify_android_entry_point_topology_claim(",
             "def verify_canonical_container(",
             "def verify_source_snapshot(",
             "def verify_android_relationships(",
             "def verify_macos_relationships(",
+            "def parse_aapt2_entry_point_topology(",
+            "entry_point_topology_required",
+            '"entryPointTopology"',
             "def parse_gradle_lockfile(",
             "def dependency_locking_metadata(",
             "def canonicalize_r8_line_artifact(",
@@ -57509,15 +57576,25 @@ def bounded_script_hardening_guard_failures() -> list[str]:
             "manifest members must be strictly ASCII-sorted",
             "ZIP timestamp is not canonical",
             "archived AAB mapping differs from archived mapping.txt",
+            '"script/run_macos_isolated_uninstall_reinstall_smoke.py",',
+            '"script/test_run_macos_isolated_uninstall_reinstall_smoke.py",',
         ),
         "release_archive_test": (
             "test_builder_and_readback_parse_exact_apk_badging",
+            "test_builder_and_readback_parse_exact_entry_point_topology",
+            "test_entry_point_topology_parsers_canonicalize_mime_order",
+            "test_aapt2_entry_point_topology_mutations_fail_closed",
+            "test_bundletool_entry_point_topology_mutations_fail_closed",
+            "test_entry_point_topology_claim_is_exact_typed_and_build_gated",
+            "test_android_metadata_and_readback_wire_build22_and_build23",
+            "test_android_readback_rejects_build23_topology_wiring_drift",
             "test_apk_badging_parsers_reject_missing_duplicate_and_nondecimal_fields",
             "test_canonical_zip_is_reproducible_and_reads_back",
             "test_r8_unordered_line_artifacts_are_canonicalized",
             "test_r8_mapping_partition_zip_is_canonicalized",
             "test_dependency_lock_inventory_tracks_gradle_and_swiftpm_state",
             "test_release_script_requires_strict_read_only_dependency_locks",
+            "test_macos_package_output_root_is_dedicated_and_physical",
             "test_readback_rejects_payload_tampering",
             "test_readback_rejects_noncanonical_zip_metadata",
             "test_readback_reports_unicode_zip_member_as_a_controlled_error",
@@ -57529,6 +57606,12 @@ def bounded_script_hardening_guard_failures() -> list[str]:
             "validate_mode() {",
             'validate_mode "$MODE"',
             'RELEASE_VERSION_LEDGER="$ROOT_DIR/release/version-ledger.tsv"',
+            'DEFAULT_PACKAGE_OUTPUT_ROOT="$ROOT_DIR/dist/package-only"',
+            "validate_package_output_root() {",
+            "*[[:cntrl:]]*)",
+            "*.[aA][pP][pP])",
+            'PACKAGE_OUTPUT_ROOT="${AETHERLINK_PACKAGE_OUTPUT_ROOT:-$DEFAULT_PACKAGE_OUTPUT_ROOT}"',
+            "swift package clean",
             "load_release_version_metadata() {",
             'load_release_version_metadata "$RELEASE_VERSION_LEDGER"',
             '/usr/bin/od -An -v -t u1 "$ledger_path"',
@@ -57556,12 +57639,81 @@ def bounded_script_hardening_guard_failures() -> list[str]:
             "test_invalid_mode_invokes_no_fake_toolchain_commands",
             "test_debug_launch_uses_file_backed_runtime_identity",
             "test_package_only_builds_self_contained_release_without_launch",
+            "test_package_only_preserves_development_bundle_and_supports_isolated_output",
+            "test_package_only_rejects_unsafe_output_roots_before_toolchain",
             "test_package_only_uses_latest_shared_release_ledger_entry",
             "test_invalid_release_ledger_fails_before_toolchain_side_effects",
             "test_package_only_rejects_missing_or_ambiguous_resource_bundle",
             "Contents/Resources/AetherLink_LocalAgentBridge.bundle",
+            "dist/package-only/AetherLink.app",
+            "swift package clean",
             'environment["FAKE_TOOLCHAIN_LOG"]',
             'environment["PATH"] = f"{fake_bin}:/usr/bin:/bin"',
+        ),
+        "uninstall": (
+            'RESULT_SCOPE = "same-host-per-user-isolated-uninstall-reinstall-v1"',
+            'ARCHIVE_READBACK_MODE = "archive-only-no-current-source"',
+            "def validate_uninstall_target(",
+            "def install_exact_temporary_app(",
+            "def remove_exact_installed_app(",
+            '"--no-current-source"',
+            '"same-build-reinstall-not-upgrade-or-rollback"',
+            '"application-support-retained-no-automatic-data-cleanup"',
+            '"applicationSupportCleanupPerformed": False',
+            '"exactTemporaryAppPathOnly": True',
+        ),
+        "uninstall_test": (
+            "test_archive_readback_is_explicitly_archive_only",
+            "test_exact_temporary_app_removal_preserves_sibling_state",
+            "test_removal_rejects_wrong_path_symlink_and_running_instance",
+            "test_execute_models_remove_reinstall_remove_without_state_drift",
+            "test_default_result_tracks_current_and_future_release",
+        ),
+        "uninstall_result": (
+            '"archiveSha256":"478bd4210c11f7e2204e80a333bc8053b0d01b8deff3d0a3d2dd6795df1366c3"',
+            '"applicationSupportPreservedAcrossRemovalAndReinstall":true',
+            '"applicationSupportCleanupPerformed":false',
+            '"exactTemporaryAppPathOnly":true',
+            '"removalCount":2',
+            '"scope":"same-host-per-user-isolated-uninstall-reinstall-v1"',
+            '"status":"passed"',
+        ),
+        "current_release_doc": (
+            "Post-Archive Isolated Uninstall/Reinstall Evidence",
+            "macos-packaged-app-build-22-isolated-uninstall-reinstall-v1.json",
+            "2,474 bytes",
+            "eae0cc7e6060fa8418f01c059556d2b73059234ecc0eab7c6ec0f2bf2d041a5e",
+            "36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa",
+            "ad4472a82ad7178e56f3fcb80fce4e80db1015dc845c5469e2b6832432b2b3bf",
+            "exclusive harness execution",
+            "post-archive harness evidence",
+        ),
+        "progress": (
+            "Android Build 23 Entry-Point Topology Contract",
+            "expected == APK == AAB == archived claim",
+            "G6 macOS Package Isolation And Uninstall/Reinstall",
+            "dist/package-only/AetherLink.app",
+            "dist/release-package/AetherLink.app",
+            "eae0cc7e6060fa8418f01c059556d2b73059234ecc0eab7c6ec0f2bf2d041a5e",
+        ),
+        "qa": (
+            "Android Build 23 Entry-Point Topology Checklist",
+            "The immutable Build 22 archive continues to pass independent",
+            "G6 macOS Package Isolation And Uninstall/Reinstall Checklist",
+            "automatic Application Support",
+            "PID 59809 stayed alive",
+        ),
+        "roadmap": (
+            "The current Android G6 release-quality slice adds a Build 23-forward",
+            "expected == APK == AAB == archived claim",
+            "The current G6 non-security slice isolates macOS packaging",
+            "temporary-HOME install, launch/termination, exact app removal",
+        ),
+        "handoff": (
+            "The current Android release-quality slice adds a Build 23-forward",
+            "Locally present Build 21 compiled outputs exercise both real formats",
+            "The current G6 macOS packaging lane no longer targets the running",
+            "The Build 22 post-archive uninstall/reinstall harness also passed twice",
         ),
         "localization": (
             "func resolveAetherLinkResourceBundle(",
@@ -57576,6 +57728,8 @@ def bounded_script_hardening_guard_failures() -> list[str]:
         "gate": (
             "check_python_syntax() {",
             "ast.parse(source, filename=str(path))",
+            "script/run_macos_isolated_uninstall_reinstall_smoke.py",
+            "script/test_run_macos_isolated_uninstall_reinstall_smoke.py",
             "Covered shared release version ledger addendum:",
             "macOS self-contained release package-only",
         ),
@@ -67017,7 +67171,49 @@ def report_guard_failures(
     return True
 
 
+def product_copy_failures() -> list[str]:
+    failures: list[str] = []
+    for path in target_files():
+        relative = path.relative_to(ROOT)
+        for line_number, line in enumerate(
+            path.read_text(encoding="utf-8", errors="replace").splitlines(),
+            1,
+        ):
+            for rule in RULES:
+                if rule.pattern.search(line) and not is_allowed_match(path, line, rule.name):
+                    failures.append(
+                        f"{relative}:{line_number}: {rule.name}: {rule.guidance}"
+                    )
+    return failures
+
+
+def report_product_copy_failures() -> bool:
+    failures = product_copy_failures()
+    if not failures:
+        return False
+    print("Copy hygiene check failed:", file=sys.stderr)
+    for failure in failures:
+        print(f" - {failure}", file=sys.stderr)
+    return True
+
+
 def main() -> int:
+    arguments = sys.argv[1:]
+    if arguments:
+        if arguments != ["--product-copy-only"]:
+            print(
+                "usage: check_copy_hygiene.py [--product-copy-only]",
+                file=sys.stderr,
+            )
+            return 2
+        if report_product_copy_failures():
+            return 1
+        print(
+            f"Product copy hygiene OK across {len(target_files())} "
+            "user-facing source/resource file(s)."
+        )
+        return 0
+
     if report_guard_failures("Android authenticated read authority guard failed:", android_authenticated_read_authority_guard_failures):
         return 1
 
@@ -67119,19 +67315,7 @@ def main() -> int:
 
     if report_guard_failures("Initial pairing mutual proof guard failed:", initial_pairing_mutual_proof_guard_failures):
         return 1
-    failures: list[str] = []
-
-    for path in target_files():
-        relative = path.relative_to(ROOT)
-        for line_number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-            for rule in RULES:
-                if rule.pattern.search(line) and not is_allowed_match(path, line, rule.name):
-                    failures.append(f"{relative}:{line_number}: {rule.name}: {rule.guidance}")
-
-    if failures:
-        print("Copy hygiene check failed:", file=sys.stderr)
-        for failure in failures:
-            print(f" - {failure}", file=sys.stderr)
+    if report_product_copy_failures():
         return 1
 
     if report_guard_failures("Cloud model-source copy guard failed:", cloud_model_source_copy_guard_failures):

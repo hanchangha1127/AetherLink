@@ -2,10 +2,362 @@ import AppKit
 import XCTest
 import CompanionCore
 import OllamaBackend
+import SwiftUI
 @testable import LocalAgentBridge
 import TrustedDevices
 
 final class AetherLinkLocalizationTests: XCTestCase {
+    func testShortTransitionAnimationHonorsReducedMotion() {
+        XCTAssertTrue(
+            companionShouldReduceMotion(systemValue: false, override: true)
+        )
+        XCTAssertTrue(
+            companionShouldReduceMotion(systemValue: true, override: false)
+        )
+        XCTAssertFalse(
+            companionShouldReduceMotion(systemValue: false, override: false)
+        )
+        XCTAssertTrue(
+            companionShouldReduceMotion(systemValue: true, override: nil)
+        )
+        XCTAssertFalse(
+            companionShouldReduceMotion(systemValue: false, override: nil)
+        )
+        XCTAssertNil(
+            companionShortTransitionAnimation(reduceMotion: true)
+        )
+        XCTAssertNotNil(
+            companionShortTransitionAnimation(reduceMotion: false)
+        )
+    }
+
+    func testVisualAccessibilityOverridesCannotDisableSystemPreferences() {
+        XCTAssertTrue(
+            companionShouldIncreaseContrast(
+                systemValue: .increased,
+                override: false
+            )
+        )
+        XCTAssertTrue(
+            companionShouldIncreaseContrast(
+                systemValue: .standard,
+                override: true
+            )
+        )
+        XCTAssertFalse(
+            companionShouldIncreaseContrast(
+                systemValue: .standard,
+                override: false
+            )
+        )
+        XCTAssertFalse(
+            companionShouldIncreaseContrast(
+                systemValue: .standard,
+                override: nil
+            )
+        )
+
+        XCTAssertTrue(
+            companionShouldDifferentiateWithoutColor(
+                systemValue: true,
+                override: false
+            )
+        )
+        XCTAssertTrue(
+            companionShouldDifferentiateWithoutColor(
+                systemValue: false,
+                override: true
+            )
+        )
+        XCTAssertFalse(
+            companionShouldDifferentiateWithoutColor(
+                systemValue: false,
+                override: false
+            )
+        )
+        XCTAssertFalse(
+            companionShouldDifferentiateWithoutColor(
+                systemValue: false,
+                override: nil
+            )
+        )
+    }
+
+    func testIncreasedContrastStatusPaletteAndSurfacesRemainLegible() {
+        for tone in StatusTone.allCases {
+            let lightColor = companionIncreasedContrastStatusColor(
+                tone: tone,
+                colorScheme: .light
+            )
+            let darkColor = companionIncreasedContrastStatusColor(
+                tone: tone,
+                colorScheme: .dark
+            )
+
+            XCTAssertGreaterThanOrEqual(
+                companionContrastRatio(
+                    foreground: lightColor,
+                    background: .white
+                ),
+                4.5,
+                "Light increased-contrast palette for \(tone)"
+            )
+            XCTAssertGreaterThanOrEqual(
+                companionContrastRatio(
+                    foreground: darkColor,
+                    background: .black
+                ),
+                4.5,
+                "Dark increased-contrast palette for \(tone)"
+            )
+        }
+
+        let standard = companionStatusSurfaceStyle(increasedContrast: false)
+        let increased = companionStatusSurfaceStyle(increasedContrast: true)
+        XCTAssertGreaterThan(increased.backgroundOpacity, standard.backgroundOpacity)
+        XCTAssertGreaterThan(increased.borderOpacity, standard.borderOpacity)
+        XCTAssertGreaterThan(increased.borderWidth, standard.borderWidth)
+    }
+
+    func testRuntimeHistorySelectionUsesNonColorMarkerAndReconcilesKeyboardList() {
+        let selected = runtimeHistorySelectionVisualStyle(
+            isSelected: true,
+            differentiateWithoutColor: false,
+            increasedContrast: false
+        )
+        let differentiated = runtimeHistorySelectionVisualStyle(
+            isSelected: true,
+            differentiateWithoutColor: true,
+            increasedContrast: false
+        )
+        let unselected = runtimeHistorySelectionVisualStyle(
+            isSelected: false,
+            differentiateWithoutColor: true,
+            increasedContrast: true
+        )
+
+        XCTAssertEqual(selected.selectionSystemImage, "checkmark.circle.fill")
+        XCTAssertEqual(differentiated.selectionSystemImage, "checkmark.circle.fill")
+        XCTAssertNil(unselected.selectionSystemImage)
+        XCTAssertGreaterThan(differentiated.borderWidth, selected.borderWidth)
+        XCTAssertTrue(differentiated.usesPrimaryBorder)
+        XCTAssertTrue(unselected.usesPrimaryBorder)
+
+        XCTAssertEqual(
+            reconciledRuntimeHistorySelection(
+                current: "session-b",
+                sessionIDs: ["session-a", "session-b"]
+            ),
+            "session-b"
+        )
+        XCTAssertEqual(
+            reconciledRuntimeHistorySelection(
+                current: "missing",
+                sessionIDs: ["session-a", "session-b"]
+            ),
+            "session-a"
+        )
+        XCTAssertNil(
+            reconciledRuntimeHistorySelection(
+                current: "session-a",
+                sessionIDs: []
+            )
+        )
+    }
+
+    func testConnectionRecoveryExpansionTargetsFirstEditableField() {
+        XCTAssertNil(
+            connectionRecoveryFocusTarget(
+                previousExpansionRequest: 7,
+                currentExpansionRequest: 7
+            )
+        )
+        XCTAssertEqual(
+            connectionRecoveryFocusTarget(
+                previousExpansionRequest: 7,
+                currentExpansionRequest: 8
+            ),
+            .bootstrapRelayEndpoints
+        )
+    }
+
+    func testPairingDestinationFocusPlanSeparatesKeyboardAndVoiceOverTargets() {
+        XCTAssertEqual(
+            pairingDestinationFocusPlan(
+                hasActiveSession: true,
+                canGeneratePairingQR: true
+            ),
+            PairingDestinationFocusPlan(
+                keyboardTarget: .activeRenewalAction,
+                accessibilityTarget: .activeQRCode
+            )
+        )
+        XCTAssertEqual(
+            pairingDestinationFocusPlan(
+                hasActiveSession: false,
+                canGeneratePairingQR: true
+            ),
+            PairingDestinationFocusPlan(
+                keyboardTarget: .emptyPrimaryAction,
+                accessibilityTarget: .emptyStatus
+            )
+        )
+        XCTAssertEqual(
+            pairingDestinationFocusPlan(
+                hasActiveSession: false,
+                canGeneratePairingQR: false
+            ),
+            PairingDestinationFocusPlan(
+                keyboardTarget: nil,
+                accessibilityTarget: .emptyStatus
+            )
+        )
+
+        let pendingIntent = PairingFocusIntent(
+            id: 7,
+            baselineSessionID: "old-session",
+            waitsForNewSession: true
+        )
+        XCTAssertEqual(
+            pairingFocusIntentResolution(
+                intent: pendingIntent,
+                currentSessionID: "old-session",
+                isPreparationInFlight: true,
+                canGeneratePairingQR: false
+            ),
+            PairingFocusIntentResolution(
+                focusPlan: PairingDestinationFocusPlan(
+                    keyboardTarget: nil,
+                    accessibilityTarget: .activeQRCode
+                ),
+                shouldConsume: false
+            )
+        )
+        XCTAssertEqual(
+            pairingFocusIntentResolution(
+                intent: pendingIntent,
+                currentSessionID: "new-session",
+                isPreparationInFlight: false,
+                canGeneratePairingQR: true
+            ),
+            PairingFocusIntentResolution(
+                focusPlan: PairingDestinationFocusPlan(
+                    keyboardTarget: .activeRenewalAction,
+                    accessibilityTarget: .activeQRCode
+                ),
+                shouldConsume: true
+            )
+        )
+        XCTAssertTrue(
+            pairingFocusIntentResolution(
+                intent: pendingIntent,
+                currentSessionID: "old-session",
+                isPreparationInFlight: false,
+                canGeneratePairingQR: true
+            ).shouldConsume
+        )
+        XCTAssertTrue(
+            pairingFocusIntentResolution(
+                intent: PairingFocusIntent(
+                    id: 8,
+                    baselineSessionID: nil,
+                    waitsForNewSession: false
+                ),
+                currentSessionID: nil,
+                isPreparationInFlight: false,
+                canGeneratePairingQR: true
+            ).shouldConsume
+        )
+        XCTAssertEqual(
+            pairingFocusIntentAfterSectionChange(
+                pendingIntent,
+                currentSection: .pairing
+            ),
+            pendingIntent
+        )
+        XCTAssertNil(
+            pairingFocusIntentAfterSectionChange(
+                pendingIntent,
+                currentSection: .status
+            )
+        )
+
+        let pendingDeliveryKey = pairingFocusDeliveryKey(
+            intent: pendingIntent,
+            currentSessionID: "old-session",
+            isPreparationInFlight: true,
+            canGeneratePairingQR: false
+        )
+        XCTAssertNotEqual(
+            pendingDeliveryKey,
+            pairingFocusDeliveryKey(
+                intent: PairingFocusIntent(
+                    id: 8,
+                    baselineSessionID: "old-session",
+                    waitsForNewSession: true
+                ),
+                currentSessionID: "old-session",
+                isPreparationInFlight: true,
+                canGeneratePairingQR: false
+            )
+        )
+        XCTAssertNotEqual(
+            pendingDeliveryKey,
+            pairingFocusDeliveryKey(
+                intent: pendingIntent,
+                currentSessionID: "new-session",
+                isPreparationInFlight: true,
+                canGeneratePairingQR: false
+            )
+        )
+        XCTAssertNotEqual(
+            pendingDeliveryKey,
+            pairingFocusDeliveryKey(
+                intent: pendingIntent,
+                currentSessionID: "old-session",
+                isPreparationInFlight: false,
+                canGeneratePairingQR: false
+            )
+        )
+        XCTAssertNotEqual(
+            pendingDeliveryKey,
+            pairingFocusDeliveryKey(
+                intent: pendingIntent,
+                currentSessionID: "old-session",
+                isPreparationInFlight: true,
+                canGeneratePairingQR: true
+            )
+        )
+        XCTAssertNotEqual(
+            pendingDeliveryKey,
+            pairingFocusDeliveryKey(
+                intent: nil,
+                currentSessionID: "old-session",
+                isPreparationInFlight: true,
+                canGeneratePairingQR: false
+            )
+        )
+    }
+
+    func testRuntimeTranscriptReasoningUsesFullOpacityAtIncreasedContrast() {
+        let standard = runtimeTranscriptReasoningDisplayPolicy(
+            reasoning: "first\nsecond\nthird\nfourth",
+            expanded: false
+        )
+        let increased = runtimeTranscriptReasoningDisplayPolicy(
+            reasoning: "first\nsecond\nthird\nfourth",
+            expanded: false,
+            increasedContrast: true
+        )
+
+        XCTAssertEqual(standard.contentOpacity, runtimeTranscriptReasoningCollapsedOpacity)
+        XCTAssertEqual(
+            increased.contentOpacity,
+            runtimeTranscriptReasoningIncreasedContrastOpacity
+        )
+        XCTAssertGreaterThan(increased.contentOpacity, standard.contentOpacity)
+    }
+
     func testModelPullApprovalCopyLocalizesAcrossSupportedLanguages() {
         let expectations: [(String, String, String, String, String)] = [
             ("en", "Download completed", "Download request cancelled after authentication changed", "Download request cancelled after permission policy changed", "This model download review is no longer available."),
@@ -3927,41 +4279,53 @@ final class AetherLinkLocalizationTests: XCTestCase {
             languageTag: String,
             startTitle: String,
             startHint: String,
+            startingTitle: String,
+            startingHint: String,
             retryTitle: String,
             retryHint: String
         )] = [
             (
                 "en",
                 "Start AetherLink Runtime",
-                "Start AetherLink Runtime on this Mac.",
+                "Start AetherLink Runtime on this runtime host.",
+                "Starting AetherLink Runtime",
+                "Wait for AetherLink Runtime to finish starting.",
                 "Retry AetherLink Runtime",
                 "Try starting AetherLink Runtime again."
             ),
             (
                 "ko",
                 "AetherLink Runtime 시작",
-                "이 Mac에서 AetherLink Runtime을 시작합니다.",
+                "이 런타임 호스트에서 AetherLink Runtime을 시작합니다.",
+                "AetherLink Runtime 시작 중",
+                "AetherLink Runtime 시작이 완료될 때까지 기다리세요.",
                 "AetherLink Runtime 다시 시도",
                 "AetherLink Runtime 시작을 다시 시도합니다."
             ),
             (
                 "ja",
                 "AetherLink Runtime を開始",
-                "この Mac で AetherLink Runtime を開始します。",
+                "このランタイムホストで AetherLink Runtime を開始します。",
+                "AetherLink Runtime を起動中",
+                "AetherLink Runtime の起動が完了するまでお待ちください。",
                 "AetherLink Runtime を再試行",
                 "AetherLink Runtime の開始を再試行します。"
             ),
             (
                 "zh-Hans",
                 "启动 AetherLink Runtime",
-                "在此 Mac 上启动 AetherLink Runtime。",
+                "在此运行时主机上启动 AetherLink Runtime。",
+                "正在启动 AetherLink Runtime",
+                "请等待 AetherLink Runtime 启动完成。",
                 "重试启动 AetherLink Runtime",
                 "重试启动 AetherLink Runtime。"
             ),
             (
                 "fr",
                 "Démarrer AetherLink Runtime",
-                "Démarrer AetherLink Runtime sur ce Mac.",
+                "Démarrer AetherLink Runtime sur cet hôte d’exécution.",
+                "Démarrage d’AetherLink Runtime",
+                "Attendez la fin du démarrage d’AetherLink Runtime.",
                 "Réessayer de démarrer AetherLink Runtime",
                 "Réessayer de démarrer AetherLink Runtime."
             ),
@@ -3982,6 +4346,19 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 XCTAssertEqual(start?.title, expectation.startTitle)
                 XCTAssertEqual(start?.accessibilityHint, expectation.startHint)
                 XCTAssertEqual(start?.isEnabled, true)
+
+                let starting = runtimeOverviewPrimaryActionPresentation(
+                    focus: .runtimeSetup,
+                    runtimeState: .starting,
+                    canGeneratePairingQR: false,
+                    hasPairingAction: false,
+                    hasActivePairingSession: false,
+                    isPreparingPairingRoute: false
+                )
+                XCTAssertEqual(starting?.action, .startRuntime)
+                XCTAssertEqual(starting?.title, expectation.startingTitle)
+                XCTAssertEqual(starting?.accessibilityHint, expectation.startingHint)
+                XCTAssertEqual(starting?.isEnabled, false)
 
                 let retry = runtimeOverviewPrimaryActionPresentation(
                     focus: .runtimeSetup,

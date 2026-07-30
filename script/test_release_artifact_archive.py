@@ -53,13 +53,257 @@ from script.package_release_artifacts import (
     parse_bundletool_manifest as parse_builder_bundletool_manifest,
     parse_gradle_lockfile as parse_builder_gradle_lockfile,
     publish_archive_directory,
+    resolve_macos_package_output_root,
     resolve_macos_dsym_path,
     validate_member_path,
     write_canonical_zip,
 )
 
 
+ENTRY_POINT_SHARE_MIME_TYPES = (
+    "application/epub+zip",
+    "application/haansofthwp",
+    "application/hwp+zip",
+    "application/json",
+    "application/jsonl",
+    "application/msword",
+    "application/pdf",
+    "application/rtf",
+    "application/toml",
+    "application/vnd.apple.keynote",
+    "application/vnd.apple.numbers",
+    "application/vnd.apple.pages",
+    "application/vnd.hancom.hwpml",
+    "application/vnd.hancom.hwpx",
+    "application/vnd.ms-excel",
+    "application/vnd.ms-excel.sheet.macroenabled.12",
+    "application/vnd.ms-excel.template.macroenabled.12",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.ms-powerpoint.presentation.macroenabled.12",
+    "application/vnd.ms-powerpoint.slideshow.macroenabled.12",
+    "application/vnd.ms-powerpoint.template.macroenabled.12",
+    "application/vnd.ms-word.document.macroenabled.12",
+    "application/vnd.ms-word.template.macroenabled.12",
+    "application/vnd.oasis.opendocument.presentation",
+    "application/vnd.oasis.opendocument.spreadsheet",
+    "application/vnd.oasis.opendocument.text",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+    "application/vnd.openxmlformats-officedocument.presentationml.template",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.template",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+    "application/x-hwp",
+    "application/x-hwpml",
+    "application/x-ndjson",
+    "application/x-toml",
+    "application/x-webarchive",
+    "application/x-yaml",
+    "application/xhtml+xml",
+    "application/xml",
+    "application/yaml",
+    "image/*",
+    "text/*",
+)
+
+
+def expected_entry_point_topology() -> dict[str, object]:
+    return {
+        "activity": {
+            "documentLaunchMode": "never",
+            "exported": True,
+            "launchMode": "singleTask",
+            "name": "com.localagentbridge.android.MainActivity",
+        },
+        "deepLink": {
+            "action": "android.intent.action.VIEW",
+            "categories": [
+                "android.intent.category.BROWSABLE",
+                "android.intent.category.DEFAULT",
+            ],
+            "host": "pair",
+            "scheme": "aetherlink",
+        },
+        "launcher": {
+            "action": "android.intent.action.MAIN",
+            "category": "android.intent.category.LAUNCHER",
+        },
+        "share": {
+            "actions": [
+                "android.intent.action.SEND",
+                "android.intent.action.SEND_MULTIPLE",
+            ],
+            "category": "android.intent.category.DEFAULT",
+            "mimeTypes": list(ENTRY_POINT_SHARE_MIME_TYPES),
+        },
+    }
+
+
+def aapt2_entry_point_xmltree(
+    mime_types: tuple[str, ...] = ENTRY_POINT_SHARE_MIME_TYPES,
+) -> str:
+    android = "http://schemas.android.com/apk/res/android:"
+
+    def string_attribute(
+        indent: str,
+        name: str,
+        resource_id: str,
+        value: str,
+    ) -> str:
+        return (
+            f'{indent}A: {android}{name}({resource_id})="{value}" '
+            f'(Raw: "{value}")\n'
+        )
+
+    def action_filter(
+        line: int,
+        action: str,
+        categories: tuple[str, ...],
+        data: tuple[
+            tuple[tuple[str, str, str], ...],
+            ...,
+        ] = (),
+    ) -> str:
+        result = f"              E: intent-filter (line={line})\n"
+        result += f"                  E: action (line={line + 1})\n"
+        result += string_attribute(
+            "                    ",
+            "name",
+            "0x01010003",
+            action,
+        )
+        next_line = line + 2
+        for category in categories:
+            result += f"                  E: category (line={next_line})\n"
+            result += string_attribute(
+                "                    ",
+                "name",
+                "0x01010003",
+                category,
+            )
+            next_line += 1
+        for record in data:
+            result += f"                  E: data (line={next_line})\n"
+            for name, resource_id, value in record:
+                result += string_attribute(
+                    "                    ",
+                    name,
+                    resource_id,
+                    value,
+                )
+            next_line += 1
+        return result
+
+    mime_data = tuple(
+        (("mimeType", "0x01010026", mime_type),)
+        for mime_type in mime_types
+    )
+    return (
+        "N: android=http://schemas.android.com/apk/res/android (line=2)\n"
+        "  E: manifest (line=2)\n"
+        "      E: application (line=27)\n"
+        "        A: http://schemas.android.com/apk/res/android:"
+        "allowBackup(0x01010280)=false\n"
+        "        A: http://schemas.android.com/apk/res/android:"
+        "fullBackupContent(0x010104eb)=@0x7f110000\n"
+        "        A: http://schemas.android.com/apk/res/android:"
+        "dataExtractionRules(0x0101063e)=@0x7f110001\n"
+        "          E: activity (line=38)\n"
+        + string_attribute(
+            "            ",
+            "name",
+            "0x01010003",
+            "com.localagentbridge.android.MainActivity",
+        )
+        + "            A: http://schemas.android.com/apk/res/android:"
+        "exported(0x01010010)=true\n"
+        + "            A: http://schemas.android.com/apk/res/android:"
+        "launchMode(0x0101001d)=2\n"
+        + "            A: http://schemas.android.com/apk/res/android:"
+        "documentLaunchMode(0x01010445)=3\n"
+        + action_filter(
+            43,
+            "android.intent.action.MAIN",
+            ("android.intent.category.LAUNCHER",),
+        )
+        + action_filter(
+            48,
+            "android.intent.action.VIEW",
+            (
+                "android.intent.category.DEFAULT",
+                "android.intent.category.BROWSABLE",
+            ),
+            (
+                (
+                    ("scheme", "0x01010027", "aetherlink"),
+                    ("host", "0x01010028", "pair"),
+                ),
+            ),
+        )
+        + action_filter(
+            58,
+            "android.intent.action.SEND",
+            ("android.intent.category.DEFAULT",),
+            mime_data,
+        )
+        + action_filter(
+            108,
+            "android.intent.action.SEND_MULTIPLE",
+            ("android.intent.category.DEFAULT",),
+            mime_data,
+        )
+    )
+
+
+def bundletool_entry_point_manifest(
+    mime_types: tuple[str, ...] = ENTRY_POINT_SHARE_MIME_TYPES,
+) -> str:
+    mime_data = "".join(
+        f'<data android:mimeType="{mime_type}"/>'
+        for mime_type in mime_types
+    )
+    return (
+        '<manifest xmlns:android="http://schemas.android.com/apk/res/android" '
+        'android:versionCode="1" android:versionName="1.0.0" '
+        'package="com.localagentbridge.android">'
+        '<uses-sdk android:minSdkVersion="26" '
+        'android:targetSdkVersion="36"/>'
+        '<application android:allowBackup="false" '
+        'android:dataExtractionRules="@xml/data_extraction_rules" '
+        'android:fullBackupContent="@xml/backup_rules">'
+        '<activity android:documentLaunchMode="3" android:exported="true" '
+        'android:launchMode="2" '
+        'android:name="com.localagentbridge.android.MainActivity">'
+        '<intent-filter>'
+        '<action android:name="android.intent.action.MAIN"/>'
+        '<category android:name="android.intent.category.LAUNCHER"/>'
+        '</intent-filter>'
+        '<intent-filter>'
+        '<action android:name="android.intent.action.VIEW"/>'
+        '<category android:name="android.intent.category.DEFAULT"/>'
+        '<category android:name="android.intent.category.BROWSABLE"/>'
+        '<data android:host="pair" android:scheme="aetherlink"/>'
+        '</intent-filter>'
+        '<intent-filter>'
+        '<action android:name="android.intent.action.SEND"/>'
+        '<category android:name="android.intent.category.DEFAULT"/>'
+        f"{mime_data}"
+        '</intent-filter>'
+        '<intent-filter>'
+        '<action android:name="android.intent.action.SEND_MULTIPLE"/>'
+        '<category android:name="android.intent.category.DEFAULT"/>'
+        f"{mime_data}"
+        '</intent-filter>'
+        '</activity>'
+        '</application>'
+        '</manifest>'
+    )
+
+
 class ReleaseArtifactArchiveTests(unittest.TestCase):
+    AAPT2_ENTRY_POINT_XMLTREE = aapt2_entry_point_xmltree()
+    BUNDLETOOL_ENTRY_POINT_MANIFEST = bundletool_entry_point_manifest()
     AAPT2_BADGING = (
         "package: name='com.localagentbridge.android' versionCode='1' "
         "versionName='1.0.0' platformBuildVersionName='16'\n"
@@ -219,6 +463,372 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
             "schemaVersion": 1,
         }
         return members, canonical_json_bytes(manifest)
+
+    def android_metadata_fixture(
+        self,
+        build_number: int,
+    ) -> tuple[
+        dict[str, object],
+        bytes,
+        bytes,
+        bytes,
+        list[bool],
+        list[tuple[bool, bool]],
+    ]:
+        mapping = b"fixture-mapping\n"
+        native = b"\x7fELFfixture-native"
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, "w") as bundle:
+            bundle.writestr(
+                (
+                    "BUNDLE-METADATA/com.android.tools.build.obfuscation/"
+                    "proguard.map"
+                ),
+                mapping,
+            )
+            bundle.writestr(
+                "base/lib/arm64-v8a/libfixture.so",
+                native,
+            )
+        aab = output.getvalue()
+        current = builder_module.ReleaseVersion(
+            build_number=build_number,
+            marketing_version="1.0.0",
+            semantic_version=(1, 0, 0),
+        )
+        topology = expected_entry_point_topology()
+        apk_requirements: list[bool] = []
+        aab_requirements: list[tuple[bool, bool]] = []
+
+        def inspect_apk_policy(
+            apk_data: bytes,
+            root: Path,
+            *,
+            entry_point_topology_required: bool = False,
+        ) -> dict[str, object]:
+            self.assertEqual(apk_data, b"fixture-apk")
+            apk_requirements.append(entry_point_topology_required)
+            result: dict[str, object] = {
+                "allowBackup": False,
+                "dataExtractionRules": "@xml/data_extraction_rules",
+                "fullBackupContent": "@xml/backup_rules",
+            }
+            if entry_point_topology_required:
+                result["entryPointTopology"] = copy.deepcopy(topology)
+            return result
+
+        def inspect_aab(
+            aab_data: bytes,
+            root: Path,
+            *,
+            backup_policy_required: bool = False,
+            entry_point_topology_required: bool = False,
+        ) -> dict[str, object]:
+            self.assertEqual(aab_data, aab)
+            aab_requirements.append(
+                (
+                    backup_policy_required,
+                    entry_point_topology_required,
+                )
+            )
+            result: dict[str, object] = {
+                "allowBackup": False,
+                "applicationId": "com.localagentbridge.android",
+                "dataExtractionRules": "@xml/data_extraction_rules",
+                "fullBackupContent": "@xml/backup_rules",
+                "minSdk": 26,
+                "targetSdk": 36,
+                "versionCode": build_number,
+                "versionName": "1.0.0",
+            }
+            if entry_point_topology_required:
+                result["entryPointTopology"] = copy.deepcopy(topology)
+            return result
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output_metadata = root / "output-metadata.json"
+            output_metadata.write_bytes(
+                canonical_json_bytes(
+                    {
+                        "applicationId": "com.localagentbridge.android",
+                        "elements": [
+                            {
+                                "versionCode": build_number,
+                                "versionName": "1.0.0",
+                            }
+                        ],
+                        "variantName": "release",
+                    }
+                )
+            )
+            with (
+                mock.patch.object(
+                    builder_module,
+                    "ANDROID_APK_METADATA",
+                    output_metadata,
+                ),
+                mock.patch.object(
+                    builder_module,
+                    "ANDROID_NATIVE_SYMBOL_ARCHIVE",
+                    root / "missing-native-symbols.zip",
+                ),
+                mock.patch.object(
+                    builder_module,
+                    "inspect_apk_badging",
+                    return_value={
+                        "applicationId": "com.localagentbridge.android",
+                        "minSdk": 26,
+                        "nativeAbis": ["arm64-v8a"],
+                        "targetSdk": 36,
+                        "versionCode": build_number,
+                        "versionName": "1.0.0",
+                    },
+                ),
+                mock.patch.object(
+                    builder_module,
+                    "inspect_apk_backup_policy",
+                    side_effect=inspect_apk_policy,
+                ),
+                mock.patch.object(
+                    builder_module,
+                    "inspect_aab_manifest",
+                    side_effect=inspect_aab,
+                ),
+                mock.patch.object(
+                    builder_module,
+                    "find_llvm_readelf",
+                    return_value=Path("/fixture/llvm-readelf"),
+                ),
+                mock.patch.object(
+                    builder_module,
+                    "inspect_elf",
+                    return_value=("0123456789abcdef", False),
+                ),
+                mock.patch.object(
+                    builder_module,
+                    "read_stable_regular_file",
+                    return_value=(native, 0o644),
+                ),
+            ):
+                metadata = builder_module.android_metadata(
+                    b"fixture-apk",
+                    aab,
+                    mapping,
+                    current,
+                )
+        return (
+            metadata,
+            aab,
+            mapping,
+            native,
+            apk_requirements,
+            aab_requirements,
+        )
+
+    def verify_android_metadata_fixture(
+        self,
+        metadata: dict[str, object],
+        *,
+        build_number: int,
+        aab: bytes,
+        mapping: bytes,
+        native: bytes,
+        apk_topology: dict[str, object] | None = None,
+        aab_topology: dict[str, object] | None = None,
+    ) -> tuple[list[bool], list[tuple[bool, bool]]]:
+        topology = expected_entry_point_topology()
+        apk_topology = (
+            copy.deepcopy(topology)
+            if apk_topology is None
+            else apk_topology
+        )
+        aab_topology = (
+            copy.deepcopy(topology)
+            if aab_topology is None
+            else aab_topology
+        )
+        apk_requirements: list[bool] = []
+        aab_requirements: list[tuple[bool, bool]] = []
+
+        def inspect_apk_policy(
+            apk_data: bytes,
+            *,
+            entry_point_topology_required: bool = False,
+        ) -> dict[str, object]:
+            self.assertEqual(apk_data, b"fixture-apk")
+            apk_requirements.append(entry_point_topology_required)
+            result: dict[str, object] = {
+                "allowBackup": False,
+                "dataExtractionRules": "@xml/data_extraction_rules",
+                "fullBackupContent": "@xml/backup_rules",
+            }
+            if entry_point_topology_required:
+                result["entryPointTopology"] = copy.deepcopy(
+                    apk_topology
+                )
+            return result
+
+        def inspect_aab(
+            aab_data: bytes,
+            *,
+            backup_policy_required: bool = False,
+            entry_point_topology_required: bool = False,
+        ) -> dict[str, object]:
+            self.assertEqual(aab_data, aab)
+            aab_requirements.append(
+                (
+                    backup_policy_required,
+                    entry_point_topology_required,
+                )
+            )
+            result: dict[str, object] = {
+                "allowBackup": False,
+                "applicationId": "com.localagentbridge.android",
+                "dataExtractionRules": "@xml/data_extraction_rules",
+                "fullBackupContent": "@xml/backup_rules",
+                "minSdk": 26,
+                "targetSdk": 36,
+                "versionCode": build_number,
+                "versionName": "1.0.0",
+            }
+            if entry_point_topology_required:
+                result["entryPointTopology"] = copy.deepcopy(
+                    aab_topology
+                )
+            return result
+
+        output_metadata = canonical_json_bytes(
+            {
+                "applicationId": "com.localagentbridge.android",
+                "elements": [
+                    {
+                        "versionCode": build_number,
+                        "versionName": "1.0.0",
+                    }
+                ],
+                "variantName": "release",
+            }
+        )
+        payload = {
+            "android/apk/app-release-unsigned.apk": b"fixture-apk",
+            "android/apk/output-metadata.json": output_metadata,
+            "android/bundle/app-release.aab": aab,
+            "android/mapping/configuration.txt": b"fixture-configuration\n",
+            "android/mapping/mapping.prt": b"fixture-prt\n",
+            "android/mapping/mapping.txt": mapping,
+            "android/mapping/resources.txt": b"fixture-resources\n",
+            "android/mapping/seeds.txt": b"fixture-seeds\n",
+            "android/native-symbol-status.json": canonical_json_bytes(
+                {
+                    "nativeLibraries": metadata["nativeLibraries"],
+                    "nativeSymbols": metadata["nativeSymbols"],
+                    "schemaVersion": 1,
+                }
+            ),
+        }
+        manifest = {
+            "platforms": {
+                "android": copy.deepcopy(metadata),
+                "macos": {},
+            },
+            "release": {
+                "buildNumber": build_number,
+                "marketingVersion": "1.0.0",
+            },
+        }
+        with (
+            mock.patch.object(
+                readback_module,
+                "validate_canonical_r8_configuration",
+            ),
+            mock.patch.object(
+                readback_module,
+                "canonicalize_r8_mapping_prt",
+                side_effect=lambda data, label: data,
+            ),
+            mock.patch.object(
+                readback_module,
+                "canonicalize_r8_resources",
+                side_effect=lambda data, label: data,
+            ),
+            mock.patch.object(
+                readback_module,
+                "canonicalize_r8_line_artifact",
+                side_effect=lambda data, label: data,
+            ),
+            mock.patch.object(
+                readback_module,
+                "inspect_apk_badging",
+                return_value={
+                    "applicationId": "com.localagentbridge.android",
+                    "minSdk": 26,
+                    "nativeAbis": ["arm64-v8a"],
+                    "targetSdk": 36,
+                    "versionCode": build_number,
+                    "versionName": "1.0.0",
+                },
+            ),
+            mock.patch.object(
+                readback_module,
+                "inspect_apk_backup_policy",
+                side_effect=inspect_apk_policy,
+            ),
+            mock.patch.object(
+                readback_module,
+                "inspect_aab_manifest",
+                side_effect=inspect_aab,
+            ),
+        ):
+            readback_module.verify_android_relationships(
+                manifest,
+                payload,
+            )
+        self.assertEqual(
+            hashlib.sha256(native).hexdigest(),
+            metadata["nativeLibraries"][0]["sha256"],
+        )
+        return apk_requirements, aab_requirements
+
+    def test_macos_package_output_root_is_dedicated_and_physical(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            (root / "dist").mkdir()
+            expected = root / "dist/package-only"
+            with mock.patch.dict(os.environ, {}, clear=True):
+                self.assertEqual(
+                    resolve_macos_package_output_root(root, None),
+                    expected,
+                )
+            custom = root / "dist/release-package"
+            self.assertEqual(
+                resolve_macos_package_output_root(root, str(custom)),
+                custom,
+            )
+            outside = root.parent / "outside-package"
+            for configured in (
+                "relative/package",
+                str(root / "dist"),
+                str(root / "dist/AetherLink.app"),
+                str(root / "dist/LocalAgentBridge.app"),
+                str(root / "dist/Other.APP"),
+                str(root / "dist/bad\troot"),
+                str(root / "dist/bad\vroot"),
+                str(root / "dist/bad\froot"),
+                str(root / "dist/bad\x7froot"),
+                str(root / "dist/nested/package"),
+                str(outside),
+            ):
+                with self.subTest(configured=configured):
+                    with self.assertRaises(ReleaseArchiveError):
+                        resolve_macos_package_output_root(root, configured)
+
+            physical = root / "dist/physical"
+            physical.mkdir()
+            linked = root / "dist/linked"
+            linked.symlink_to(physical, target_is_directory=True)
+            with self.assertRaises(ReleaseArchiveError):
+                resolve_macos_package_output_root(root, str(linked))
 
     def test_canonical_zip_is_reproducible_and_reads_back(self) -> None:
         members, manifest = self.fixture()
@@ -1308,6 +1918,7 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
         expected = {
             "allowBackup": False,
             "dataExtractionRules": "@xml/data_extraction_rules",
+            "entryPointTopology": expected_entry_point_topology(),
             "fullBackupContent": "@xml/backup_rules",
         }
         for module, error_type in modules:
@@ -1325,7 +1936,7 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                 if command[2] == "xmltree":
                     file_name = command[4]
                     if file_name == "AndroidManifest.xml":
-                        return self.AAPT2_XMLTREE
+                        return self.AAPT2_ENTRY_POINT_XMLTREE
                     if file_name == "res/Qq.xml":
                         return self.AAPT2_BACKUP_RULES_XMLTREE
                     if file_name == "res/4j.xml":
@@ -1348,7 +1959,10 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                 ),
             ):
                 self.assertEqual(
-                    module.inspect_apk_backup_policy(b"fixture-apk"),
+                    module.inspect_apk_backup_policy(
+                        b"fixture-apk",
+                        entry_point_topology_required=True,
+                    ),
                     expected,
                 )
             self.assertEqual(
@@ -1610,6 +2224,501 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
             parse_readback_bundletool_manifest(historical),
             expected_historical,
         )
+
+    def test_builder_and_readback_parse_exact_entry_point_topology(
+        self,
+    ) -> None:
+        expected = expected_entry_point_topology()
+        modules = (
+            (builder_module, ReleaseArchiveError),
+            (readback_module, ReleaseArchiveVerificationError),
+        )
+        for module, error_type in modules:
+            with self.subTest(module=module.__name__):
+                self.assertEqual(
+                    module.parse_aapt2_entry_point_topology(
+                        self.AAPT2_ENTRY_POINT_XMLTREE
+                    ),
+                    expected,
+                )
+                parsed = module.parse_bundletool_manifest(
+                    self.BUNDLETOOL_ENTRY_POINT_MANIFEST,
+                    backup_policy_required=True,
+                    entry_point_topology_required=True,
+                )
+                self.assertEqual(
+                    parsed["entryPointTopology"],
+                    expected,
+                )
+                historical = module.parse_bundletool_manifest(
+                    self.BUNDLETOOL_ENTRY_POINT_MANIFEST,
+                    backup_policy_required=True,
+                )
+                self.assertNotIn("entryPointTopology", historical)
+                apk_with_dependency_activity = (
+                    self.AAPT2_ENTRY_POINT_XMLTREE
+                    + "          E: activity (line=200)\n"
+                    + "            A: "
+                    + "http://schemas.android.com/apk/res/android:"
+                    + 'name(0x01010003)="com.example.OtherActivity" '
+                    + '(Raw: "com.example.OtherActivity")\n'
+                )
+                self.assertEqual(
+                    module.parse_aapt2_entry_point_topology(
+                        apk_with_dependency_activity
+                    ),
+                    expected,
+                )
+                aab_with_dependency_activity = (
+                    self.BUNDLETOOL_ENTRY_POINT_MANIFEST.replace(
+                        "</application>",
+                        '<activity android:exported="false" '
+                        'android:name="com.example.OtherActivity"/>'
+                        "</application>",
+                    )
+                )
+                self.assertEqual(
+                    module.parse_bundletool_manifest(
+                        aab_with_dependency_activity,
+                        backup_policy_required=True,
+                        entry_point_topology_required=True,
+                    )["entryPointTopology"],
+                    expected,
+                )
+                with self.assertRaises(error_type):
+                    module.parse_bundletool_manifest(
+                        self.BUNDLETOOL_ENTRY_POINT_MANIFEST,
+                        backup_policy_required=True,
+                        entry_point_topology_required=1,
+                    )
+
+    def test_entry_point_topology_parsers_canonicalize_mime_order(
+        self,
+    ) -> None:
+        expected = expected_entry_point_topology()
+        reversed_mime_types = tuple(
+            reversed(ENTRY_POINT_SHARE_MIME_TYPES)
+        )
+        aapt2 = aapt2_entry_point_xmltree(reversed_mime_types)
+        bundletool = bundletool_entry_point_manifest(
+            reversed_mime_types
+        )
+        for module in (builder_module, readback_module):
+            with self.subTest(module=module.__name__):
+                self.assertEqual(
+                    module.parse_aapt2_entry_point_topology(aapt2),
+                    expected,
+                )
+                self.assertEqual(
+                    module.parse_bundletool_manifest(
+                        bundletool,
+                        backup_policy_required=True,
+                        entry_point_topology_required=True,
+                    )["entryPointTopology"],
+                    expected,
+                )
+
+    def test_aapt2_entry_point_topology_mutations_fail_closed(
+        self,
+    ) -> None:
+        base = self.AAPT2_ENTRY_POINT_XMLTREE
+        invalid = (
+            base.replace(
+                "exported(0x01010010)=true",
+                "exported(0x01010010)=false",
+            ),
+            base.replace(
+                "http://schemas.android.com/apk/res/android:"
+                "exported(0x01010010)=true",
+                "exported(0x01010010)=true",
+            ),
+            base.replace(
+                "exported(0x01010010)=true\n",
+                "exported(0x01010010)=true\n"
+                "            A: "
+                "http://schemas.android.com/apk/res/android:"
+                "exported(0x01010010)=true\n",
+            ),
+            base.replace(
+                "            A: http://schemas.android.com/apk/res/android:"
+                "launchMode(0x0101001d)=2\n",
+                "",
+            ),
+            base.replace(
+                "documentLaunchMode(0x01010445)=3",
+                "documentLaunchMode(0x01010445)=0",
+            ),
+            base.replace(
+                "android.intent.action.MAIN",
+                "android.intent.action.UNKNOWN",
+            ),
+            base.replace(
+                "android.intent.category.LAUNCHER",
+                "android.intent.category.DEFAULT",
+            ),
+            base.replace(
+                '"pair" (Raw: "pair")',
+                '"other" (Raw: "other")',
+            ),
+            base.replace(
+                '"application/pdf" (Raw: "application/pdf")',
+                '"application/zip" (Raw: "application/zip")',
+                1,
+            ),
+            base.replace(
+                '"application/pdf" (Raw: "application/pdf")',
+                '"text/*" (Raw: "text/*")',
+                1,
+            ),
+            base.replace(
+                '(Raw: "pair")',
+                '(Raw: "other")',
+                1,
+            ),
+            base
+            + "          E: activity-alias (line=200)\n",
+            base
+            + "              E: intent-filter (line=200)\n"
+            + "                  E: action (line=201)\n"
+            + "                    A: "
+            + "http://schemas.android.com/apk/res/android:"
+            + 'name(0x01010003)="android.intent.action.UNKNOWN" '
+            + '(Raw: "android.intent.action.UNKNOWN")\n',
+        )
+        for module, error_type in (
+            (builder_module, ReleaseArchiveError),
+            (readback_module, ReleaseArchiveVerificationError),
+        ):
+            for document in invalid:
+                with (
+                    self.subTest(
+                        module=module.__name__,
+                        document=document,
+                    ),
+                    self.assertRaises(error_type),
+                ):
+                    module.parse_aapt2_entry_point_topology(document)
+
+    def test_bundletool_entry_point_topology_mutations_fail_closed(
+        self,
+    ) -> None:
+        base = self.BUNDLETOOL_ENTRY_POINT_MANIFEST
+        invalid = (
+            base.replace(
+                'android:exported="true"',
+                'android:exported="false"',
+            ),
+            base.replace(
+                'android:exported="true"',
+                'exported="true"',
+            ),
+            base.replace(
+                'android:exported="true"',
+                'android:exported="true" android:exported="true"',
+            ),
+            base.replace(' android:launchMode="2"', ""),
+            base.replace(
+                'android:documentLaunchMode="3"',
+                'android:documentLaunchMode="0"',
+            ),
+            base.replace(
+                "android.intent.action.MAIN",
+                "android.intent.action.UNKNOWN",
+            ),
+            base.replace(
+                "android.intent.category.LAUNCHER",
+                "android.intent.category.DEFAULT",
+            ),
+            base.replace(
+                'android:host="pair"',
+                'android:host="other"',
+            ),
+            base.replace(
+                '<data android:mimeType="application/pdf"/>',
+                "",
+                1,
+            ),
+            base.replace(
+                '<data android:mimeType="application/pdf"/>',
+                '<data android:mimeType="text/*"/>',
+                1,
+            ),
+            base.replace(
+                '<data android:host="pair" android:scheme="aetherlink"/>',
+                '<data android:host="pair" android:path="/" '
+                'android:scheme="aetherlink"/>',
+            ),
+            base.replace(
+                "</application>",
+                '<activity-alias android:name="Alias" '
+                'android:targetActivity="'
+                'com.localagentbridge.android.MainActivity"/>'
+                "</application>",
+            ),
+            base.replace(
+                "</activity>",
+                '<intent-filter><action android:name="'
+                'android.intent.action.UNKNOWN"/></intent-filter>'
+                "</activity>",
+            ),
+            base.replace(
+                "</application>",
+                '<activity android:documentLaunchMode="3" '
+                'android:exported="true" android:launchMode="2" '
+                'android:name="com.localagentbridge.android.MainActivity"/>'
+                "</application>",
+            ),
+        )
+        for module, error_type in (
+            (builder_module, ReleaseArchiveError),
+            (readback_module, ReleaseArchiveVerificationError),
+        ):
+            for document in invalid:
+                with (
+                    self.subTest(
+                        module=module.__name__,
+                        document=document,
+                    ),
+                    self.assertRaises(error_type),
+                ):
+                    module.parse_bundletool_manifest(
+                        document,
+                        backup_policy_required=True,
+                        entry_point_topology_required=True,
+                    )
+
+    def test_entry_point_topology_claim_is_exact_typed_and_build_gated(
+        self,
+    ) -> None:
+        expected = expected_entry_point_topology()
+        self.assertEqual(
+            readback_module.verify_android_entry_point_topology_claim(
+                copy.deepcopy(expected)
+            ),
+            expected,
+        )
+        invalid: list[object] = []
+        wrong_exported = copy.deepcopy(expected)
+        wrong_exported["activity"]["exported"] = 1
+        invalid.append(wrong_exported)
+        tuple_mime_types = copy.deepcopy(expected)
+        tuple_mime_types["share"]["mimeTypes"] = tuple(
+            tuple_mime_types["share"]["mimeTypes"]
+        )
+        invalid.append(tuple_mime_types)
+        unsorted_mime_types = copy.deepcopy(expected)
+        unsorted_mime_types["share"]["mimeTypes"] = list(
+            reversed(unsorted_mime_types["share"]["mimeTypes"])
+        )
+        invalid.append(unsorted_mime_types)
+        extra_key = copy.deepcopy(expected)
+        extra_key["launcher"]["data"] = []
+        invalid.append(extra_key)
+        for value in invalid:
+            with self.subTest(value=value), self.assertRaises(
+                ReleaseArchiveVerificationError
+            ):
+                readback_module.verify_android_entry_point_topology_claim(
+                    value
+                )
+
+        self.assertNotIn(
+            "entryPointTopology",
+            readback_module.expected_android_manifest_keys(22),
+        )
+        self.assertIn(
+            "entryPointTopology",
+            readback_module.expected_android_manifest_keys(23),
+        )
+        self.assertEqual(
+            builder_module.ANDROID_ENTRY_POINT_TOPOLOGY_BUILD,
+            23,
+        )
+        self.assertEqual(
+            readback_module.ANDROID_ENTRY_POINT_TOPOLOGY_BUILD,
+            23,
+        )
+
+    def test_android_metadata_and_readback_wire_build22_and_build23(
+        self,
+    ) -> None:
+        for build_number in (22, 23):
+            with self.subTest(build_number=build_number):
+                (
+                    metadata,
+                    aab,
+                    mapping,
+                    native,
+                    builder_apk_requirements,
+                    builder_aab_requirements,
+                ) = self.android_metadata_fixture(build_number)
+                topology_required = build_number >= 23
+                self.assertEqual(
+                    set(metadata),
+                    readback_module.expected_android_manifest_keys(
+                        build_number
+                    ),
+                )
+                self.assertEqual(
+                    "entryPointTopology" in metadata,
+                    topology_required,
+                )
+                self.assertEqual(
+                    builder_apk_requirements,
+                    [topology_required],
+                )
+                self.assertEqual(
+                    builder_aab_requirements,
+                    [(True, topology_required)],
+                )
+                expected_bundle_fields = [
+                    *builder_module.BASE_BUNDLE_MANIFEST_VERIFIED_FIELDS,
+                    *builder_module
+                    .BACKUP_POLICY_BUNDLE_MANIFEST_VERIFIED_FIELDS,
+                    *(
+                        builder_module
+                        .ENTRY_POINT_TOPOLOGY_MANIFEST_VERIFIED_FIELDS
+                        if topology_required
+                        else ()
+                    ),
+                ]
+                self.assertEqual(
+                    metadata["bundleManifestReadback"][
+                        "verifiedFields"
+                    ],
+                    expected_bundle_fields,
+                )
+                expected_apk_fields = [
+                    *builder_module
+                    .BACKUP_POLICY_APK_MANIFEST_VERIFIED_FIELDS,
+                    *(
+                        builder_module
+                        .ENTRY_POINT_TOPOLOGY_MANIFEST_VERIFIED_FIELDS
+                        if topology_required
+                        else ()
+                    ),
+                ]
+                self.assertEqual(
+                    metadata["apkManifestReadback"]["verifiedFields"],
+                    expected_apk_fields,
+                )
+                (
+                    readback_apk_requirements,
+                    readback_aab_requirements,
+                ) = self.verify_android_metadata_fixture(
+                    metadata,
+                    build_number=build_number,
+                    aab=aab,
+                    mapping=mapping,
+                    native=native,
+                )
+                self.assertEqual(
+                    readback_apk_requirements,
+                    [topology_required],
+                )
+                self.assertEqual(
+                    readback_aab_requirements,
+                    [(True, topology_required)],
+                )
+
+    def test_android_readback_rejects_build23_topology_wiring_drift(
+        self,
+    ) -> None:
+        (
+            metadata,
+            aab,
+            mapping,
+            native,
+            _,
+            _,
+        ) = self.android_metadata_fixture(23)
+
+        def changed_topology() -> dict[str, object]:
+            value = expected_entry_point_topology()
+            value["deepLink"]["host"] = "other"
+            return value
+
+        changed_claim = copy.deepcopy(metadata)
+        changed_claim["entryPointTopology"] = changed_topology()
+        with self.assertRaises(ReleaseArchiveVerificationError):
+            self.verify_android_metadata_fixture(
+                changed_claim,
+                build_number=23,
+                aab=aab,
+                mapping=mapping,
+                native=native,
+            )
+
+        with self.assertRaises(ReleaseArchiveVerificationError):
+            self.verify_android_metadata_fixture(
+                metadata,
+                build_number=23,
+                aab=aab,
+                mapping=mapping,
+                native=native,
+                apk_topology=changed_topology(),
+            )
+
+        with self.assertRaises(ReleaseArchiveVerificationError):
+            self.verify_android_metadata_fixture(
+                metadata,
+                build_number=23,
+                aab=aab,
+                mapping=mapping,
+                native=native,
+                aab_topology=changed_topology(),
+            )
+
+        for readback_key in (
+            "bundleManifestReadback",
+            "apkManifestReadback",
+        ):
+            missing_verified_field = copy.deepcopy(metadata)
+            missing_verified_field[readback_key][
+                "verifiedFields"
+            ].remove("entryPointTopology")
+            with (
+                self.subTest(readback_key=readback_key),
+                self.assertRaises(ReleaseArchiveVerificationError),
+            ):
+                self.verify_android_metadata_fixture(
+                    missing_verified_field,
+                    build_number=23,
+                    aab=aab,
+                    mapping=mapping,
+                    native=native,
+                )
+
+        missing_claim = copy.deepcopy(metadata)
+        del missing_claim["entryPointTopology"]
+        with self.assertRaises(ReleaseArchiveVerificationError):
+            self.verify_android_metadata_fixture(
+                missing_claim,
+                build_number=23,
+                aab=aab,
+                mapping=mapping,
+                native=native,
+            )
+
+        (
+            historical_metadata,
+            historical_aab,
+            historical_mapping,
+            historical_native,
+            _,
+            _,
+        ) = self.android_metadata_fixture(22)
+        historical_metadata["entryPointTopology"] = (
+            expected_entry_point_topology()
+        )
+        with self.assertRaises(ReleaseArchiveVerificationError):
+            self.verify_android_metadata_fixture(
+                historical_metadata,
+                build_number=22,
+                aab=historical_aab,
+                mapping=historical_mapping,
+                native=historical_native,
+            )
 
     def test_bundletool_manifest_parsers_reject_noncanonical_identity(
         self,
@@ -2400,6 +3509,18 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn(
             "-PaetherlinkStrictReleaseDependencyLocks=true",
+            release_script,
+        )
+        self.assertIn(
+            'RELEASE_MACOS_PACKAGE_OUTPUT_ROOT="$ROOT_DIR/dist/release-package"',
+            release_script,
+        )
+        self.assertIn(
+            'export AETHERLINK_PACKAGE_OUTPUT_ROOT="$RELEASE_MACOS_PACKAGE_OUTPUT_ROOT"',
+            release_script,
+        )
+        self.assertNotIn(
+            'RELEASE_MACOS_PACKAGE_OUTPUT_ROOT="$ROOT_DIR/dist"',
             release_script,
         )
         self.assertNotIn("--write-locks", release_script)

@@ -108,9 +108,11 @@ private struct LogRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: tone.systemImage)
+            CompanionStatusIcon(
+                systemImage: tone.systemImage,
+                tone: tone
+            )
                 .font(.caption)
-                .foregroundStyle(tone.color)
                 .frame(width: 16)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {

@@ -297,7 +297,7 @@
 "Setup needed" = "설정 필요";
 "Start AetherLink Runtime before devices can connect." = "기기가 연결되기 전에 AetherLink Runtime을 시작하세요.";
 "Start AetherLink Runtime" = "AetherLink Runtime 시작";
-"Start AetherLink Runtime on this Mac." = "이 Mac에서 AetherLink Runtime을 시작합니다.";
+"Start AetherLink Runtime on this runtime host." = "이 런타임 호스트에서 AetherLink Runtime을 시작합니다.";
 "Retry AetherLink Runtime" = "AetherLink Runtime 다시 시도";
 "Try starting AetherLink Runtime again." = "AetherLink Runtime 시작을 다시 시도합니다.";
 "Model service needs attention" = "모델 서비스 확인 필요";
@@ -408,6 +408,7 @@
 "Model list failed: %@" = "모델 목록 불러오기 실패: %@";
 "Remove trusted device failed: %@" = "신뢰 기기 삭제 실패: %@";
 "Trusted device load failed: %@" = "신뢰 기기 불러오기 실패: %@";
+"Starting AetherLink Runtime" = "AetherLink Runtime 시작 중";
 "Ready for devices" = "기기 연결 준비됨";
 "AetherLink Runtime needs attention" = "AetherLink Runtime 확인 필요";
 "No activity yet" = "아직 활동 없음";
@@ -515,6 +516,9 @@
 "Model unload failed. Check Activity." = "모델 내리기에 실패했습니다. 활동을 확인하세요.";
 "Manual model unload failed. Check Activity." = "수동 모델 언로드에 실패했습니다. 활동을 확인하세요.";
 "Ready for paired devices." = "페어링된 기기 연결 준비됨.";
+"AetherLink Runtime is starting." = "AetherLink Runtime을 시작하고 있습니다.";
+"Devices can connect after startup finishes." = "시작이 완료되면 기기를 연결할 수 있습니다.";
+"Wait for AetherLink Runtime to finish starting." = "AetherLink Runtime 시작이 완료될 때까지 기다리세요.";
 "Start AetherLink Runtime." = "AetherLink Runtime을 시작하세요.";
 "Connection details not ready for QR" = "QR용 연결 정보가 준비되지 않음";
 "Connection details are prepared, but the connection is stopped. Start AetherLink Runtime, then generate the latest QR." = "연결 정보는 준비되었지만 연결이 중지되어 있습니다. AetherLink Runtime을 시작한 뒤 최신 QR을 생성하세요.";

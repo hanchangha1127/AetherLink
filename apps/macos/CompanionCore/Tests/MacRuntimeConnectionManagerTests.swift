@@ -1,14 +1,18 @@
 import BridgeProtocol
 @testable import CompanionCore
+import Darwin
 import Foundation
 import Transport
 import XCTest
 
 final class MacRuntimeConnectionManagerTests: XCTestCase {
     @MainActor
-    func testStartLocalStartsListenerBeforeAdvertisingWithExactValues() {
+    func testStartLocalDefersAdvertisementUntilListenerIsReady() async {
         let events = LocalOwnershipEventRecorder()
-        let local = RecordingRuntimeTransport(events: events)
+        let local = RecordingRuntimeTransport(
+            statusesAfterStart: [.starting(port: 43171)],
+            events: events
+        )
         let advertiser = RecordingRuntimeAdvertiser(events: events)
         let manager = makeManager(local: local, advertiser: advertiser)
         let metadata = RuntimeAdvertisementMetadata(
@@ -25,8 +29,16 @@ final class MacRuntimeConnectionManagerTests: XCTestCase {
             onMessage: unusedMessageHandler
         )
 
-        XCTAssertEqual(status, .listening(port: 43171))
+        XCTAssertEqual(status, .starting(port: 43171))
         XCTAssertEqual(local.startedPorts, [43171])
+        XCTAssertTrue(advertiser.starts.isEmpty)
+        XCTAssertEqual(events.events, [
+            .localStart(port: 43171),
+        ])
+
+        local.emitStatus(.listening(port: 43171), start: 0)
+        await flushStatusCallbacks()
+
         XCTAssertEqual(advertiser.starts, [.init(port: 43171, metadata: metadata)])
         XCTAssertEqual(events.events, [
             .localStart(port: 43171),
@@ -102,6 +114,37 @@ final class MacRuntimeConnectionManagerTests: XCTestCase {
     }
 
     @MainActor
+    func testRefreshWhileListenerStartsUsesLatestMetadataAfterReady() async {
+        let local = RecordingRuntimeTransport(
+            statusesAfterStart: [.starting(port: 43178)]
+        )
+        let advertiser = RecordingRuntimeAdvertiser()
+        let manager = makeManager(local: local, advertiser: advertiser)
+        let refreshedMetadata = RuntimeAdvertisementMetadata(version: "refreshed")
+
+        manager.startLocal(
+            port: 43178,
+            metadata: RuntimeAdvertisementMetadata(version: "initial"),
+            onMessage: unusedMessageHandler
+        )
+        let refreshStatus = manager.refreshLocalAdvertisement(
+            metadata: refreshedMetadata
+        )
+
+        XCTAssertEqual(refreshStatus, .starting(port: 43178))
+        XCTAssertTrue(advertiser.starts.isEmpty)
+        XCTAssertEqual(advertiser.stopCount, 0)
+
+        local.emitStatus(.listening(port: 43178), start: 0)
+        await flushStatusCallbacks()
+
+        XCTAssertEqual(
+            advertiser.starts,
+            [.init(port: 43178, metadata: refreshedMetadata)]
+        )
+    }
+
+    @MainActor
     func testRefreshLocalAdvertisementIsInertForStoppedAndFailedStarts() {
         for status in [PeerServerStatus.stopped, .failed("unavailable")] {
             let local = RecordingRuntimeTransport(statusesAfterStart: [status])
@@ -145,6 +188,148 @@ final class MacRuntimeConnectionManagerTests: XCTestCase {
         XCTAssertEqual(local.stopCount, 1)
         XCTAssertEqual(advertiser.starts.count, 1)
         XCTAssertEqual(advertiser.stopCount, 1)
+    }
+
+    @MainActor
+    func testLateLocalFailureStopsOwnershipAndReportsStatus() async {
+        let local = RecordingRuntimeTransport()
+        let advertiser = RecordingRuntimeAdvertiser()
+        let manager = makeManager(local: local, advertiser: advertiser)
+        var observedStatuses: [PeerServerStatus] = []
+
+        manager.startLocal(
+            port: 43180,
+            metadata: RuntimeAdvertisementMetadata(version: "late-failure"),
+            onStatusChange: { observedStatuses.append($0) },
+            onMessage: unusedMessageHandler
+        )
+        local.emitStatus(.failed("listener-failed"), start: 0)
+        await flushStatusCallbacks()
+
+        XCTAssertEqual(observedStatuses, [.failed("listener-failed")])
+        XCTAssertEqual(local.stopCount, 1)
+        XCTAssertEqual(advertiser.starts.count, 1)
+        XCTAssertEqual(advertiser.stopCount, 1)
+    }
+
+    @MainActor
+    func testConcreteLocalListenerDefersAdvertisementAndRetriesAfterOccupiedPort() async throws {
+        let occupied = try Self.occupyTCPPort()
+        var occupiedSocket: Int32? = occupied.socket
+        let local = LocalPeerServer()
+        let advertiser = RecordingRuntimeAdvertiser()
+        let manager = makeManager(local: local, advertiser: advertiser)
+        var observedStatuses: [PeerServerStatus] = []
+        defer {
+            if let occupiedSocket {
+                Darwin.close(occupiedSocket)
+            }
+            manager.stopAll()
+        }
+
+        let firstStatus = manager.startLocal(
+            port: occupied.port,
+            metadata: RuntimeAdvertisementMetadata(version: "occupied"),
+            onStatusChange: { observedStatuses.append($0) },
+            onMessage: unusedMessageHandler
+        )
+
+        XCTAssertNotEqual(firstStatus, .listening(port: occupied.port))
+        XCTAssertTrue(advertiser.starts.isEmpty)
+        let didFail = await waitForCondition {
+            if case .failed = firstStatus {
+                return true
+            }
+            return observedStatuses.contains { status in
+                if case .failed = status { return true }
+                return false
+            }
+        }
+        XCTAssertTrue(didFail)
+        XCTAssertFalse(
+            observedStatuses.contains(.listening(port: occupied.port))
+        )
+        XCTAssertTrue(advertiser.starts.isEmpty)
+
+        Darwin.close(occupied.socket)
+        occupiedSocket = nil
+        observedStatuses.removeAll()
+        let retryMetadata = RuntimeAdvertisementMetadata(version: "retry")
+        let retryStatus = manager.startLocal(
+            port: occupied.port,
+            metadata: retryMetadata,
+            onStatusChange: { observedStatuses.append($0) },
+            onMessage: unusedMessageHandler
+        )
+
+        if case .failed(let message) = retryStatus {
+            XCTFail("Retry unexpectedly failed: \(message)")
+        }
+        let didAdvertise = await waitForCondition {
+            advertiser.starts.count == 1
+        }
+        XCTAssertTrue(didAdvertise)
+        XCTAssertEqual(
+            advertiser.starts,
+            [.init(port: Int32(occupied.port), metadata: retryMetadata)]
+        )
+        XCTAssertEqual(local.status, .listening(port: occupied.port))
+    }
+
+    @MainActor
+    func testSupersededLocalStatusCallbackCannotStopReplacement() async {
+        let local = RecordingRuntimeTransport()
+        let advertiser = RecordingRuntimeAdvertiser()
+        let manager = makeManager(local: local, advertiser: advertiser)
+        var observedStatuses: [PeerServerStatus] = []
+
+        manager.startLocal(
+            port: 43180,
+            metadata: RuntimeAdvertisementMetadata(version: "first"),
+            onStatusChange: { observedStatuses.append($0) },
+            onMessage: unusedMessageHandler
+        )
+        manager.startLocal(
+            port: 43181,
+            metadata: RuntimeAdvertisementMetadata(version: "second"),
+            onStatusChange: { observedStatuses.append($0) },
+            onMessage: unusedMessageHandler
+        )
+
+        local.emitStatus(.failed("stale-listener"), start: 0)
+        await flushStatusCallbacks()
+
+        XCTAssertTrue(observedStatuses.isEmpty)
+        XCTAssertEqual(local.stopCount, 1)
+        XCTAssertEqual(advertiser.starts.count, 2)
+        XCTAssertEqual(advertiser.stopCount, 1)
+
+        local.emitStatus(.failed("current-listener"), start: 1)
+        await flushStatusCallbacks()
+
+        XCTAssertEqual(observedStatuses, [.failed("current-listener")])
+        XCTAssertEqual(local.stopCount, 2)
+        XCTAssertEqual(advertiser.stopCount, 2)
+    }
+
+    @MainActor
+    func testStoppedLocalStatusCallbackIsIgnoredAfterExplicitStop() async {
+        let local = RecordingRuntimeTransport()
+        let manager = makeManager(local: local)
+        var observedStatuses: [PeerServerStatus] = []
+
+        manager.startLocal(
+            port: 43180,
+            metadata: RuntimeAdvertisementMetadata(version: "explicit-stop"),
+            onStatusChange: { observedStatuses.append($0) },
+            onMessage: unusedMessageHandler
+        )
+        manager.stopAll()
+        local.emitStatus(.failed("after-stop"), start: 0)
+        await flushStatusCallbacks()
+
+        XCTAssertTrue(observedStatuses.isEmpty)
+        XCTAssertEqual(local.stopCount, 1)
     }
 
     @MainActor
@@ -831,6 +1016,62 @@ final class MacRuntimeConnectionManagerTests: XCTestCase {
         RelayPeerConfiguration(host: "relay.example", port: 443, relayID: relayID)
     }
 
+    private static func occupyTCPPort() throws -> (socket: Int32, port: UInt16) {
+        let socket = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+        guard socket >= 0 else {
+            throw socketError()
+        }
+
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = UInt16(0).bigEndian
+        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        let bound = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                Darwin.bind(socket, sockaddrPointer, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard bound == 0, Darwin.listen(socket, 1) == 0 else {
+            Darwin.close(socket)
+            throw socketError()
+        }
+
+        var boundAddress = sockaddr_in()
+        var boundAddressLength = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let named = withUnsafeMutablePointer(to: &boundAddress) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                Darwin.getsockname(socket, sockaddrPointer, &boundAddressLength)
+            }
+        }
+        guard named == 0 else {
+            Darwin.close(socket)
+            throw socketError()
+        }
+        return (socket, UInt16(bigEndian: boundAddress.sin_port))
+    }
+
+    private static func socketError() -> NSError {
+        NSError(
+            domain: NSPOSIXErrorDomain,
+            code: Int(errno),
+            userInfo: [NSLocalizedDescriptionKey: String(cString: strerror(errno))]
+        )
+    }
+
+    @MainActor
+    private func waitForCondition(
+        timeout: TimeInterval = 2,
+        _ condition: @escaping () -> Bool
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return condition()
+    }
+
     @MainActor
     private func flushStatusCallbacks() async {
         await Task.yield()
@@ -853,11 +1094,15 @@ private final class LocalOwnershipEventRecorder {
     }
 }
 
-private final class RecordingRuntimeTransport: RuntimeTransport, RuntimeDisconnectReporting, @unchecked Sendable {
+private final class RecordingRuntimeTransport: RuntimeTransport, RuntimeDisconnectReporting,
+    RuntimeStatusReporting, @unchecked Sendable
+{
     private var statusesAfterStart: [PeerServerStatus]
     private let events: LocalOwnershipEventRecorder?
     private var messageHandlers: [LocalPeerMessageHandler] = []
+    private var statusHandlers: [(@Sendable (PeerServerStatus) -> Void)?] = []
     var onDisconnect: (@Sendable (UUID) -> Void)?
+    var onStatusChange: (@Sendable (PeerServerStatus) -> Void)?
 
     private(set) var status = PeerServerStatus.stopped
     private(set) var startedPorts: [UInt16] = []
@@ -874,6 +1119,7 @@ private final class RecordingRuntimeTransport: RuntimeTransport, RuntimeDisconne
     func start(port: UInt16, onMessage: @escaping LocalPeerMessageHandler) {
         startedPorts.append(port)
         messageHandlers.append(onMessage)
+        statusHandlers.append(onStatusChange)
         status = statusesAfterStart.isEmpty
             ? .listening(port: port)
             : statusesAfterStart.removeFirst()
@@ -892,6 +1138,11 @@ private final class RecordingRuntimeTransport: RuntimeTransport, RuntimeDisconne
 
     func setStatus(_ status: PeerServerStatus) {
         self.status = status
+    }
+
+    func emitStatus(_ status: PeerServerStatus, start index: Int) {
+        self.status = status
+        statusHandlers[index]?(status)
     }
 }
 

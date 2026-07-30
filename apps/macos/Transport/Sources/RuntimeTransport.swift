@@ -5,6 +5,10 @@ public protocol RuntimeDisconnectReporting: AnyObject {
     var onDisconnect: (@Sendable (UUID) -> Void)? { get set }
 }
 
+public protocol RuntimeStatusReporting: AnyObject {
+    var onStatusChange: (@Sendable (PeerServerStatus) -> Void)? { get set }
+}
+
 public protocol RuntimeTransport {
     var status: PeerServerStatus { get }
 

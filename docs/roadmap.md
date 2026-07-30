@@ -21,13 +21,77 @@ performance, build, and release-quality work at the user's direction. The G2
 security track below is paused and retained as historical roadmap context; it
 is not the next action.
 
+The current Android G6 release-quality slice adds a Build 23-forward compiled
+entry-point topology contract. The builder and independent readback checker
+each parse the APK `aapt2 xmltree` and AAB bundletool manifest, require one
+`singleTask`/`never` exported `MainActivity`, and close its filters to launcher,
+`aetherlink://pair`, `SEND`, and `SEND_MULTIPLE` with the same canonical 44
+MIME types. The stored claim must satisfy
+`expected == APK == AAB == archived claim`, including closed keys and exact
+types. Fifty-two release-archive regressions pass, and locally present historical
+Build 21 compiled outputs produce the same topology through both formats. The
+claim intentionally excludes unrelated activities merged from dependencies;
+it is a closed MainActivity entry-point contract rather than a complete
+application-component inventory. The
+gate is deliberately inactive for immutable Builds 1 through 22; Build 22
+archive-only readback still passes. No Build 23 release, ledger bump, archive
+rewrite, device run, signing, publication, permission analysis, or network
+claim is part of this slice.
+
+The current G6 non-security slice isolates macOS packaging from the running
+development app. Package-only performs a clean default Swift build into
+`dist/package-only/AetherLink.app`, while the release wrapper stages at
+`dist/release-package/AetherLink.app`; strict direct-child path validation
+prevents either flow from deleting `dist/AetherLink.app`. Eleven
+fake-toolchain regressions pass. A separate Build 22 post-archive harness then
+completed temporary-HOME install, launch/termination, exact app removal,
+Application Support preservation, same-build reinstall/relaunch, and final
+removal twice with byte-identical evidence. All three initialized SQLite files
+passed integrity readback and retained state bytes and modes did not change.
+This closes one bounded macOS uninstall/reinstall and packaging-isolation gap.
+It does not qualify N/N-1 upgrade, rollback, automatic data cleanup,
+clean-machine/Finder installation, signing/distribution, providers, networks,
+UI, or physical devices.
+The latest immutable ledger archive is `aetherlink-1.0.0+22-local-v1`.
+Builds 1 through 21 remain separately readable historical archives.
+
 The current macOS G5 Runtime slice closes failed-start recovery. A listener
 failure no longer latches the app into an already-started state; only an
 advertising listener activates route allocation, relay startup, and restored
 pair transports. Status exposes localized Start and Retry actions, and the
 focused lifecycle, action, localization, and compact accessibility render
-regressions pass. This is deterministic no-device evidence, not live socket,
+regressions pass. An accepted listener that fails later now releases local
+advertisement ownership and clears the app model's started state for a
+same-port retry; exact listener generations make superseded callbacks inert.
+Connection admission validates and inserts under the same generation lock, and
+listener failure retires that generation before publishing status.
+This is deterministic no-device evidence, not live socket,
 physical-device, signing, deployment, security, or production proof.
+
+The current macOS G5 accessibility slice closes the explicit custom-animation
+part of Reduce Motion. Status recovery scrolling and pairing QR expiry share
+one system-driven policy; reduced mode removes the app transition while normal
+mode retains the short 0.2-second animation. A force-on-only render override
+cannot disable a true OS preference. Policy and reduced-motion Status/Pairing
+render regressions pass. Physical assistive-technology traversal and an
+observed OS-toggle session remain later G5 evidence.
+
+The current macOS G5 accessibility slice closes deterministic contrast,
+color-independence, focus, list-navigation, and QR-expiry gaps. Custom status
+and warning surfaces use an Increase Contrast-aware light/dark palette and
+stronger borders while warning text remains primary. Runtime History selection
+always has a checkmark and uses one native arrow-key list rather than one Tab
+stop per session. Status recovery and action-driven Pairing transitions carry
+separate keyboard and accessibility focus targets. Pairing intents survive
+asynchronous QR preparation, are consumed on success or terminal failure, and
+are canceled when the screen is left. Menu-bar generation is owned by one main
+`Window`, and locale-driven view recreation preserves a pending focus handoff.
+QR expiry announces once per QR lifecycle without countdown spam, and
+decorative Model Download icons are hidden from the accessibility tree.
+Eight new policy/announcement/render regressions, the exact 159-test product CI
+selector, and the complete 186-test accessibility run pass. Physical keyboard
+and VoiceOver traversal remain unclaimed because the Mac was locked during
+attempted UI observation.
 
 The current G7 repository-automation slice prepares a two-job non-security CI
 subset. Pull requests run exact macOS and Android product allowlists and
@@ -40,11 +104,17 @@ tests run independently of the complete-byte pin. Safe YAML parsing plus a
 canonical parsed-semantic fingerprint closes the top-level/job mappings and
 complete step arrays; raw checks close both job preambles and every named step
 body, and a Psych AST pre-pass requires one document and rejects duplicate
-or explicitly tagged mapping keys. The Android allowlist directly executes the
+or explicitly tagged mapping keys. The isolated product-copy mode is included
+in the macOS static lane and returns before the paused mixed security checks.
+The Android allowlist directly executes the
 changed-session scroll-boundary regression; the exact Android lane passes seven
 tests across four result classes with zero skips, failures, or errors. Local
-parity passes, but the workflow is still uncommitted and unpushed, so no hosted
-run is claimed. This does not complete canonical G7 `PR fast`, `Merge full`,
+parity passes with 159 selected Swift tests. Hosted run `30525374687` completed
+both jobs successfully for baseline commit
+`0f59c757d745d0b95c37c9b93aec8d354bcfef9f`; the current uncommitted listener,
+reduced-motion, visual/focus accessibility, copy, selector, and checker changes
+are not covered by that baseline run. This
+does not complete canonical G7 `PR fast`, `Merge full`,
 nightly, controlled network, resilience, RC, or GA tiers.
 
 The current macOS G5 Runtime slice removes unrelated-provider catalog work from
@@ -3202,19 +3272,22 @@ CI and evidence tiers:
 | Weekly resilience | Staging | Long soak, load, descriptor/memory/thread stability, relay restart/failover, signer rotation, backup/restore, abuse and chaos drills. |
 | RC | Tagged source | Reproducible unsigned payload/build manifests plus provenance-traceable signed artifacts, release-to-release physical/device/network matrix, full security review closure, runbook rehearsal, and rollback proof. |
 
-Current implementation status: the worktree contains only a bounded G7
+Current implementation status: the repository contains only a bounded G7
 non-security CI subset. It covers read-only pull-request static checks, exact
 Swift/Android product test allowlists, affected compilation, and `main`-only
-Release compilation/lint. The canonical rows above deliberately remain
-unsatisfied: excluded security/authentication/cryptography checks are not
-silently relabeled, broad mixed suites are not invoked, and no nightly,
-physical-device, network, signing, publication, deployment, or hosted-runner
-evidence is claimed. SwiftPM and Gradle still compile their complete
-package/app test-source graphs before applying the execution selectors, so
-this is not a separately built non-security test target. The Android hosted
-lane also depends on its runner image's SDK 36/Build Tools 36.0.0 inventory and
-normal dependency downloads; clean-runner and dependency-byte evidence remain
-open.
+Release compilation/lint. Hosted run `30525374687` proves that the two baseline
+jobs passed at commit `0f59c757d745d0b95c37c9b93aec8d354bcfef9f`; it does not
+cover the current uncommitted listener-recovery, reduced-motion, visual/focus
+accessibility, product-copy, selector, or checker changes. The canonical rows
+above deliberately remain unsatisfied:
+excluded security/authentication/cryptography checks are not silently
+relabeled, broad mixed suites are not invoked, and no nightly, physical-device,
+network, signing, publication, or deployment evidence is claimed. SwiftPM and
+Gradle still compile their complete package/app test-source graphs before
+applying the execution selectors, so this is not a separately built
+non-security test target. The Android hosted lane also depends on its runner
+image's SDK 36/Build Tools 36.0.0 inventory and normal dependency downloads;
+dependency-byte hermeticity remains open.
 
 Privacy-safe observability may record aggregate route attempt/success, fallback
 reason class, setup/reconnect latency, ICE restart or consent loss, relay

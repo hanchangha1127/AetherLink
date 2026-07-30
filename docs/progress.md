@@ -4,7 +4,149 @@ Last updated: 2026-07-30 KST.
 
 This document records what has been implemented so far and what should happen next. It is intentionally broader than the original v0.1 MVP because recent work has moved the prototype toward a more complete product shape.
 
-## 2026-07-30 macOS Runtime Start Retry
+## 2026-07-30 Android Build 23 Entry-Point Topology Contract
+
+- Scope: add a forward release-quality gate for Android's compiled functional
+  entry points without changing the app manifest, release ledger, or any
+  immutable archive.
+- Release continuity: Local V1 Build 22 Qualification remains current.
+  Build 22 is the current local qualification record; Builds 1 through 21 are
+  immutable historical records. Both v4 two-root runs remain bound to
+  `aetherlink-1.0.0+22-local-v1`.
+- Contract: Build 23 and later archives must contain exactly one exported
+  `MainActivity` compiled as `singleTask` with document launch mode `never`.
+  Its four intent filters must be the launcher, `aetherlink://pair` deep link,
+  single-item share, and multiple-item share. Both share filters must expose
+  the same canonical set of 44 MIME types.
+- Independent readback: the archive builder reads the APK's compiled
+  `aapt2 xmltree` and the AAB's bundletool manifest, requires them to agree,
+  and records one normalized `entryPointTopology` claim. The archive checker
+  independently parses both archived artifacts, validates the claim with
+  closed keys and exact scalar/container types, and requires
+  `expected == APK == AAB == archived claim`.
+- Regression result: 52 release-archive tests pass. Mutation coverage rejects
+  missing, duplicate, unqualified, or changed activity attributes; altered
+  actions, categories, deep-link data, or MIME sets; aliases and extra
+  MainActivity filters; decoded/raw divergence; noncanonical ordering claims; and
+  boolean/integer or list/tuple type confusion. APK inspection reuses its one
+  compiled-manifest dump rather than starting another tool process.
+- Scope precision: unrelated activities merged from dependencies are accepted
+  and excluded from `entryPointTopology`; both APK and AAB fixtures cover that
+  compatibility. This claim closes MainActivity's functional entry points, not
+  the application's complete component inventory.
+- Compiled-format observation: the locally present APK and AAB are historical
+  Build 21 outputs, not current release evidence. Both independent parsers
+  read the same four-filter topology and the same 44-MIME share set from those
+  compiled artifacts.
+- Boundary: this is a Build 23-forward packaging contract, not a Build 23
+  release. Builds 1 through 22 remain unchanged and the immutable Build 22
+  archive still passes archive-only readback. No ledger bump, archive rewrite,
+  device run, signing, publication, permission analysis, or network claim is
+  part of this slice.
+
+## 2026-07-30 G6 macOS Package Isolation And Uninstall/Reinstall
+
+- Scope: continue only the locally executable, non-security portion of G6.
+  Signing, notarization, credentials, production distribution, and physical
+  device work remain outside this slice.
+- Packaging result: `build_and_run.sh --package-only` now cleans the default
+  Swift build workspace and writes to
+  `dist/package-only/AetherLink.app`. The release wrapper uses the separate
+  `dist/release-package/AetherLink.app` staging root. Both paths are validated
+  as dedicated direct children of `dist/`, and neither path can resolve to the
+  running development bundle at `dist/AetherLink.app`. The shared version
+  checker and archive packager resolve that same selected output root, so the
+  release wrapper does not accidentally validate or archive the development
+  bundle.
+- Regression result: 11 fake-toolchain tests prove package-only never invokes
+  `pkill`, preserves an existing development-bundle sentinel byte-for-byte,
+  supports one explicit isolated output root, rejects relative, legacy,
+  nested, outside-source, and linked roots before the toolchain runs, and
+  performs a clean Swift package build when no fixed reproducibility scratch
+  is supplied.
+- Lifecycle result: the new exact-path runner independently read back the
+  immutable Build 22 archive without comparing later source, extracted that
+  app into a temporary HOME, launched and terminated it, removed only
+  `home/Applications/AetherLink.app`, verified Application Support state,
+  reinstalled the same Build 22 app, relaunched it under a distinct PID, and
+  removed it again.
+- Evidence: two complete invocations produced the same 2,474-byte result at
+  `dist/lifecycle/macos-packaged-app-build-22-isolated-uninstall-reinstall-v1.json`
+  with SHA-256
+  `eae0cc7e6060fa8418f01c059556d2b73059234ecc0eab7c6ec0f2bf2d041a5e`.
+  The app tree contained 10 regular files and 20,858,061 bytes. All three
+  SQLite files passed integrity readback, Runtime chat stayed empty, and state
+  bytes and modes were unchanged after both removals and the reinstall.
+- Safety boundary: the runner rejects a wrong path, symlinked layout, changed
+  app tree, or still-running exact-path process before deletion. Existing PID
+  59809 remained alive at the original `dist/AetherLink.app` path. Application
+  Support is deliberately retained; this is same-build reinstall evidence, not
+  N/N-1 upgrade, rollback, automatic data cleanup, clean-machine, Finder,
+  provider, network, UI, or physical-device evidence.
+- Historical Local V1 Build 21 Qualification remains the immediately previous
+  immutable release record and is not relabeled by this Build 22 harness.
+
+## 2026-07-30 macOS Contrast, Color, Focus, And Expiry Accessibility
+
+- Scope: close the locally reproducible G5 visual and keyboard/accessibility
+  gaps without changing navigation destinations, pairing payloads, Runtime
+  behavior, or any security/authentication policy.
+- Visual result: custom status icons, pills, warning banners, route notices,
+  overview panels, and pairing progress now honor Increase Contrast. The fixed
+  high-contrast palette exceeds 4.5:1 against its light or dark reference
+  background, warning text remains primary text, and low-alpha borders become
+  stronger. Internal render overrides are force-on-only and cannot disable a
+  true OS preference.
+- Color independence: the selected Runtime History session always includes a
+  checkmark, while Differentiate Without Color or Increase Contrast strengthens
+  its primary outline. History now uses native single-selection `List`
+  navigation, so arrow keys move between sessions instead of making every
+  session a separate Tab stop.
+- Focus and announcements: the Status recovery action moves keyboard and
+  VoiceOver focus to the first expanded recovery field. Pairing actions and
+  menu-bar Pairing requests carry a consumable focus intent: keyboard focus
+  goes to the available primary action while accessibility focus goes to the
+  QR or empty-state summary. Asynchronous generation retains the intent until
+  the new QR or a terminal result arrives; leaving Pairing cancels it so a
+  later ordinary visit cannot steal focus. The menu bar delegates generation
+  to one main `Window`, preventing duplicate consumers, and the pending intent
+  lives above locale-driven `ContentView` identity so an in-app language change
+  cannot drop the eventual handoff. QR expiry announces once per QR lifecycle
+  instead of repeating with every countdown tick.
+  Decorative Model Download icons are hidden from the accessibility tree.
+- Verification: eight new focused policy/announcement/render regressions pass.
+  The exact product CI selector passes 159 tests with zero failures. The
+  complete accessibility run passes 186 tests with zero failures: 153
+  localization/state tests, eight announcement tests, and 25 render tests.
+  Debug and Release AetherLink builds pass, as do the strengthened focus-wiring
+  and five-locale checks.
+- Boundary: source-level focus policy, compilation, and rendered views do not
+  prove physical keyboard traversal or VoiceOver behavior. The Mac was locked
+  during attempted UI observation, so a user-observed assistive-technology
+  session remains future G5 evidence.
+
+## 2026-07-30 macOS Reduced Motion Closure
+
+- Scope: close the locally executable part of the G5 reduced-motion requirement
+  without changing layout, copy, navigation destinations, countdown cadence, or
+  native system progress behavior.
+- Result: the app's only two explicit custom animations now share one policy
+  driven by the macOS `accessibilityReduceMotion` environment value. Connection
+  recovery scrolls immediately, and pairing QR expiry changes without the
+  0.2-second transition when Reduce Motion is enabled.
+- Test seam: an optional internal environment override exists only for
+  deterministic rendering. It can force motion reduction on but cannot disable
+  a true OS preference.
+- Verification: the policy regression proves reduced mode returns no animation
+  and the normal mode retains the short transition. A render regression covers
+  both Status and active Pairing surfaces with reduction forced on. The current
+  localization, announcement, and render suites are reverified together by the
+  newer accessibility slice above.
+- Boundary: this is no-device policy and render evidence, not physical
+  assistive-technology traversal, a user-observed OS toggle, signing,
+  publication, or deployment evidence.
+
+## 2026-07-30 macOS Runtime Start And Late-Failure Retry
 
 - Scope: close one non-security G5 lifecycle and recovery-UX defect without
   changing transport protocol, pairing payload, persistence, provider behavior,
@@ -18,14 +160,21 @@ This document records what has been implemented so far and what should happen ne
   transports; failure leaves the start action available and performs none of
   that downstream work. A failed attempt cannot later schedule restored
   transports after a successful retry.
+- Post-start recovery: if an accepted listener later reports `failed` or
+  `stopped`, the connection manager releases its local and advertisement
+  ownership, and the app model clears the started state so the same port can be
+  retried. Every callback is bound to the exact listener generation, so a
+  delayed callback from a replaced listener is inert. Generation validation and
+  peer insertion are one locked admission step; listener failure retires the
+  generation and current peers before it publishes status.
 - UI: the Status overview now offers localized Start and Retry actions with
   distinct play/retry icons and accessibility hints in all five macOS
   languages. Failure copy directs the user to Activity and an immediate retry.
 - Verification: the first fake attempt fails with zero route allocations and no
   advertiser; the second succeeds with exactly one route allocation; the third
-  is idempotently rejected. Four focused Runtime lifecycle regressions, two
+  is idempotently rejected. Ten focused Runtime lifecycle regressions, two
   Status action regressions, the five-language compact accessibility render,
-  macOS localization parity, and the exact 143-test CI Swift selector pass with
+  macOS localization parity, and the exact 159-test CI Swift selector pass with
   zero skips or failures.
 - Boundary: this is deterministic no-device evidence, not a live port-conflict,
   physical-device, external-provider, signing, deployment, security, or Git
@@ -45,8 +194,8 @@ This document records what has been implemented so far and what should happen ne
 - macOS lane: `macos-26` pins
   `/Applications/Xcode_26.6.app/Contents/Developer`, matching the local Xcode
   26.6 build 17F113. It checks the event byte range, validates the bounded CI
-  contract plus release-ledger/icon/license invariants, builds the AetherLink
-  Debug product, and runs an exact non-security Swift allowlist. A `main` push
+  contract plus product-copy/release-ledger/icon/license invariants, builds the
+  AetherLink Debug product, and runs an exact non-security Swift allowlist. A `main` push
   additionally compiles the Release AetherLink product. The earlier
   `macos-14` draft was replaced because that runner entered deprecation on
   2026-07-06 and is scheduled to become unsupported on 2026-11-02.
@@ -67,11 +216,13 @@ This document records what has been implemented so far and what should happen ne
   arrays plus their canonical semantic fingerprint, full job preambles, every
   named step body, focused selectors, and main-only Release steps. A Psych AST
   pre-pass requires one YAML document and rejects duplicate keys at every
-  mapping level plus all explicitly tagged mapping keys. Its SHA-256 byte pin
+  mapping level plus all explicitly tagged mapping keys. The product-copy
+  command uses its isolated mode and returns before the paused mixed security
+  checks. Its SHA-256 byte pin
   is
-  `efdc353abcd1b4eb62fe0e437b199677f675698efe9da4624e3985e08b76aea0`;
+  `7f24adee31748522469daee3c4be17fd2d474dde3b9edcae79e95f3cc362571d`;
   the parsed-semantic fingerprint is
-  `a52031f1cd703a72cd6d4833864479e733767ca81d901e830049f42653e44ab8`.
+  `843b003fb1fb16c60003ff920db4a95ec23e24b96dc1eee2e453717bbc529384`.
   The built-in suite checks the byte pin once, then disables only that pin for
   each controlled mutation and requires its expected semantic diagnostic.
   Trigger, permission-map, job-condition, runner/Xcode, action, selector,
@@ -82,9 +233,9 @@ This document records what has been implemented so far and what should happen ne
   session-boundary selector are therefore tested independently of a generic
   hash mismatch.
 - Local verification: the contract and self-test pass under Python 3.9, Ruby
-  parses the workflow into exactly two jobs, and all three workflow static
-  product checks pass. The exact Swift lane passes 143 selected tests with zero
-  skips or failures, including four direct Runtime lifecycle regressions, two
+  parses the workflow into exactly two jobs, and all four workflow static
+  product checks pass. The exact Swift lane passes 159 selected tests with zero
+  skips or failures, including ten direct Runtime lifecycle regressions, two
   Status action regressions, and the compact accessibility render regression,
   plus Debug and Release product builds.
   The exact Android lane passes seven selected tests with zero skips, failures,
@@ -92,10 +243,15 @@ This document records what has been implemented so far and what should happen ne
   latest-row reset, deferred loading completion, saved-state restoration, and
   same-session streaming position preservation. Debug compilation, strict-lock
   Release assembly, and Release lint pass.
-- Boundary: the workflow has not run on GitHub because these files remain
-  uncommitted and unpushed. Local parity does not prove a clean hosted runner,
-  required-check configuration, canonical G7 completion, a physical device,
-  signing, publication, deployment, external networking, or production
+- Hosted baseline: GitHub Actions run `30525374687` completed successfully for
+  both jobs at commit
+  `0f59c757d745d0b95c37c9b93aec8d354bcfef9f` on 2026-07-30. This proves that
+  bounded baseline on the hosted runners, not the current uncommitted
+  listener-recovery, reduced-motion, visual/focus accessibility, product-copy,
+  selector, or checker changes.
+- Boundary: current local parity does not prove a clean hosted run for the
+  worktree changes, required-check configuration, canonical G7 completion, a
+  physical device, signing, publication, deployment, external networking, or production
   readiness. SwiftPM and Gradle still compile their complete package/app test
   source graphs before filtering execution; the non-security label describes
   the executed checks, not a physically separated test-source target. The

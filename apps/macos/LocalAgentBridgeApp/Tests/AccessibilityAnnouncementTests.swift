@@ -46,6 +46,49 @@ final class AccessibilityAnnouncementTests: XCTestCase {
         XCTAssertTrue(poster.messages.isEmpty)
     }
 
+    func testPairingQRExpiryAnnouncementFiresOnceWithoutCountdownSpam() {
+        let poster = AccessibilityAnnouncementPosterSpy()
+        var observer = AccessibilityAnnouncementObserver()
+
+        observer.observe(
+            pairingQRExpiryAccessibilityAnnouncement(isExpired: false),
+            using: poster
+        )
+        for _ in 0..<3 {
+            observer.observe(
+                pairingQRExpiryAccessibilityAnnouncement(isExpired: false),
+                using: poster
+            )
+        }
+        observer.observe(
+            pairingQRExpiryAccessibilityAnnouncement(isExpired: true),
+            using: poster
+        )
+        for _ in 0..<3 {
+            observer.observe(
+                pairingQRExpiryAccessibilityAnnouncement(isExpired: true),
+                using: poster
+            )
+        }
+        observer.observe(
+            pairingQRExpiryAccessibilityAnnouncement(isExpired: false),
+            using: poster
+        )
+        observer.observe(
+            pairingQRExpiryAccessibilityAnnouncement(isExpired: true),
+            using: poster
+        )
+
+        XCTAssertEqual(
+            poster.messages,
+            [
+                NSLocalizedString("Pairing QR expired. Generate a new QR.", comment: ""),
+                NSLocalizedString("Pairing QR expired. Generate a new QR.", comment: ""),
+            ]
+        )
+        XCTAssertEqual(poster.priorities, [.medium, .medium])
+    }
+
     func testScreenScopeCoalescesParentAndChildInFavorOfChildResult() {
         let poster = AccessibilityAnnouncementPosterSpy()
         let scheduler = AccessibilityAnnouncementSchedulerSpy()

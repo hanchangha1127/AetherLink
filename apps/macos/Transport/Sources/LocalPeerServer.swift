@@ -751,6 +751,7 @@ final class LocalPeerAcceptedRawSessionAcceptor: @unchecked Sendable {
 
 public enum PeerServerStatus: Equatable, Sendable {
     case stopped
+    case starting(port: UInt16)
     case listening(port: UInt16)
     case failed(String)
 }
@@ -795,7 +796,7 @@ public extension RuntimeMessageSink {
 public typealias LocalPeerMessageHandler = @Sendable (ProtocolEnvelope, any RuntimeMessageSink) -> Void
 
 public final class LocalPeerServer: RuntimeTransport, RuntimeRawFrameBodyTransport,
-    RuntimeAcceptedRawSessionTransport, RuntimeDisconnectReporting,
+    RuntimeAcceptedRawSessionTransport, RuntimeDisconnectReporting, RuntimeStatusReporting,
     @unchecked Sendable
 {
     private var listener: NWListener?
@@ -803,11 +804,39 @@ public final class LocalPeerServer: RuntimeTransport, RuntimeRawFrameBodyTranspo
     private let lock = NSLock()
     private var connections: [UUID: LocalPeerConnection] = [:]
     private var acceptedRawAcceptor: LocalPeerAcceptedRawSessionAcceptor?
+    private var activeListenerGenerationID: UUID?
+    private var storedStatus: PeerServerStatus = .stopped
+    private var statusChangeHandler: (@Sendable (PeerServerStatus) -> Void)?
+    private let beforePeerAdmission: @Sendable () -> Void
+    private let afterPeerAdmissionAttempt: @Sendable (Bool) -> Void
 
-    public private(set) var status: PeerServerStatus = .stopped
+    public var status: PeerServerStatus {
+        lock.withLock { storedStatus }
+    }
+
+    public var onStatusChange: (@Sendable (PeerServerStatus) -> Void)? {
+        get {
+            lock.withLock { statusChangeHandler }
+        }
+        set {
+            lock.withLock { statusChangeHandler = newValue }
+        }
+    }
+
     public var onDisconnect: (@Sendable (UUID) -> Void)?
 
-    public init() {}
+    public init() {
+        beforePeerAdmission = {}
+        afterPeerAdmissionAttempt = { _ in }
+    }
+
+    init(
+        beforePeerAdmission: @escaping @Sendable () -> Void,
+        afterPeerAdmissionAttempt: @escaping @Sendable (Bool) -> Void
+    ) {
+        self.beforePeerAdmission = beforePeerAdmission
+        self.afterPeerAdmissionAttempt = afterPeerAdmissionAttempt
+    }
 
     public func start(port: UInt16 = 43170, onMessage: @escaping LocalPeerMessageHandler) {
         startListener(port: port, receiveMode: .protocolEnvelope(onMessage))
@@ -826,7 +855,7 @@ public final class LocalPeerServer: RuntimeTransport, RuntimeRawFrameBodyTranspo
             any RuntimeAcceptedRawSession
         ) -> Void
     ) {
-        stop()
+        stop(notifyStatusChange: false)
         let acceptor = LocalPeerAcceptedRawSessionAcceptor(
             onAccepted: onAcceptedSession,
             onDisconnect: { [weak self] connectionID in
@@ -838,6 +867,7 @@ public final class LocalPeerServer: RuntimeTransport, RuntimeRawFrameBodyTranspo
                 port: port
             )
             let listener = try NWListener(using: parameters)
+            let generationID = UUID()
 
             listener.newConnectionHandler = { connection in
                 let io = LocalPeerNWAcceptedRawConnectionIO(connection: connection)
@@ -850,17 +880,21 @@ public final class LocalPeerServer: RuntimeTransport, RuntimeRawFrameBodyTranspo
                 }
                 self?.failAcceptedRawListener(
                     acceptor,
+                    generationID: generationID,
                     message: error.localizedDescription
                 )
             }
 
-            self.listener = listener
-            lock.withLock { acceptedRawAcceptor = acceptor }
+            lock.withLock {
+                self.listener = listener
+                activeListenerGenerationID = generationID
+                acceptedRawAcceptor = acceptor
+            }
+            publishStatus(.listening(port: port), expectedGenerationID: generationID)
             listener.start(queue: .global(qos: .userInitiated))
-            status = .listening(port: port)
         } catch {
             acceptor.stop()
-            status = .failed(error.localizedDescription)
+            publishStatus(.failed(error.localizedDescription))
         }
     }
 
@@ -877,12 +911,13 @@ public final class LocalPeerServer: RuntimeTransport, RuntimeRawFrameBodyTranspo
 
     private func startListener(port: UInt16, receiveMode: LocalPeerReceiveMode) {
         do {
-            stop()
+            stop(notifyStatusChange: false)
 
             let parameters = NWParameters.tcp
             parameters.allowLocalEndpointReuse = true
             let nwPort = NWEndpoint.Port(rawValue: port) ?? .any
             let listener = try NWListener(using: parameters, on: nwPort)
+            let generationID = UUID()
 
             listener.newConnectionHandler = { [weak self, codec] connection in
                 guard let self else {
@@ -896,7 +931,16 @@ public final class LocalPeerServer: RuntimeTransport, RuntimeRawFrameBodyTranspo
                     mode: receiveMode.connectionMode
                 )
                 Self.debugLog("accepted peer \(peer.id)")
-                self.insert(peer)
+                self.beforePeerAdmission()
+                let admitted = self.insert(
+                    peer,
+                    expectedListenerGenerationID: generationID
+                )
+                self.afterPeerAdmissionAttempt(admitted)
+                guard admitted else {
+                    peer.close()
+                    return
+                }
 
                 connection.stateUpdateHandler = { [weak self, weak peer] state in
                     switch state {
@@ -932,43 +976,84 @@ public final class LocalPeerServer: RuntimeTransport, RuntimeRawFrameBodyTranspo
             }
 
             listener.stateUpdateHandler = { [weak self] state in
-                if case .failed(let error) = state {
-                    self?.status = .failed(error.localizedDescription)
+                switch state {
+                case .ready:
+                    self?.publishStatus(
+                        .listening(port: port),
+                        expectedGenerationID: generationID
+                    )
+                case .waiting(let error), .failed(let error):
+                    self?.failListenerGeneration(
+                        generationID,
+                        message: error.localizedDescription
+                    )
+                default:
+                    break
                 }
             }
 
+            lock.withLock {
+                self.listener = listener
+                activeListenerGenerationID = generationID
+            }
+            publishStatus(.starting(port: port), expectedGenerationID: generationID)
             listener.start(queue: .global(qos: .userInitiated))
-            self.listener = listener
-            self.status = .listening(port: port)
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(
+                deadline: .now() + 5
+            ) { [weak self] in
+                self?.failListenerGeneration(
+                    generationID,
+                    message: "Listener start timed out.",
+                    expectedStartingPort: port
+                )
+            }
         } catch {
-            status = .failed(error.localizedDescription)
+            publishStatus(.failed(error.localizedDescription))
         }
     }
 
     public func stop() {
-        listener?.cancel()
-        listener = nil
+        stop(notifyStatusChange: true)
+    }
+
+    private func stop(notifyStatusChange: Bool) {
         let snapshot: (
+            NWListener?,
             [LocalPeerConnection],
-            LocalPeerAcceptedRawSessionAcceptor?
+            LocalPeerAcceptedRawSessionAcceptor?,
+            (@Sendable (PeerServerStatus) -> Void)?
         ) = lock.withLock {
+            let listener = self.listener
+            self.listener = nil
+            activeListenerGenerationID = nil
             let values = Array(connections.values)
             connections.removeAll()
             let acceptedRawAcceptor = self.acceptedRawAcceptor
             self.acceptedRawAcceptor = nil
-            return (values, acceptedRawAcceptor)
+            storedStatus = .stopped
+            return (listener, values, acceptedRawAcceptor, statusChangeHandler)
         }
-        snapshot.1?.stop()
-        snapshot.0.forEach { peer in
+        snapshot.0?.cancel()
+        snapshot.2?.stop()
+        snapshot.1.forEach { peer in
             onDisconnect?(peer.id)
             peer.close()
         }
-        status = .stopped
+        if notifyStatusChange {
+            snapshot.3?(.stopped)
+        }
     }
 
-    private func insert(_ peer: LocalPeerConnection) {
+    private func insert(
+        _ peer: LocalPeerConnection,
+        expectedListenerGenerationID: UUID
+    ) -> Bool {
         lock.withLock {
+            guard activeListenerGenerationID == expectedListenerGenerationID else {
+                return false
+            }
             connections[peer.id] = peer
+            return true
         }
     }
 
@@ -983,17 +1068,77 @@ public final class LocalPeerServer: RuntimeTransport, RuntimeRawFrameBodyTranspo
 
     private func failAcceptedRawListener(
         _ expectedAcceptor: LocalPeerAcceptedRawSessionAcceptor,
+        generationID: UUID,
         message: String
     ) {
-        let shouldStop = lock.withLock {
-            guard acceptedRawAcceptor === expectedAcceptor else { return false }
+        let update: (Bool, (@Sendable (PeerServerStatus) -> Void)?) = lock.withLock {
+            guard
+                acceptedRawAcceptor === expectedAcceptor,
+                activeListenerGenerationID == generationID
+            else {
+                return (false, nil)
+            }
             acceptedRawAcceptor = nil
             listener = nil
-            return true
+            activeListenerGenerationID = nil
+            let status = PeerServerStatus.failed(message)
+            storedStatus = status
+            return (true, statusChangeHandler)
         }
-        guard shouldStop else { return }
+        guard update.0 else { return }
         expectedAcceptor.stop()
-        status = .failed(message)
+        update.1?(.failed(message))
+    }
+
+    private func failListenerGeneration(
+        _ expectedGenerationID: UUID,
+        message: String,
+        expectedStartingPort: UInt16? = nil
+    ) {
+        let failure = PeerServerStatus.failed(message)
+        let update: (
+            NWListener?,
+            [LocalPeerConnection],
+            (@Sendable (PeerServerStatus) -> Void)?
+        )? = lock.withLock {
+            guard activeListenerGenerationID == expectedGenerationID else {
+                return nil
+            }
+            if let expectedStartingPort,
+               storedStatus != .starting(port: expectedStartingPort) {
+                return nil
+            }
+            let listener = self.listener
+            self.listener = nil
+            activeListenerGenerationID = nil
+            let peers = Array(connections.values)
+            connections.removeAll()
+            storedStatus = failure
+            return (listener, peers, statusChangeHandler)
+        }
+        guard let update else { return }
+        update.0?.cancel()
+        update.1.forEach { peer in
+            onDisconnect?(peer.id)
+            peer.close()
+        }
+        update.2?(failure)
+    }
+
+    private func publishStatus(
+        _ status: PeerServerStatus,
+        expectedGenerationID: UUID? = nil
+    ) {
+        let update: (Bool, (@Sendable (PeerServerStatus) -> Void)?) = lock.withLock {
+            if let expectedGenerationID,
+               activeListenerGenerationID != expectedGenerationID {
+                return (false, nil)
+            }
+            storedStatus = status
+            return (true, statusChangeHandler)
+        }
+        guard update.0 else { return }
+        update.1?(status)
     }
 
     private static func receiveNextFrame(
