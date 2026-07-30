@@ -296,6 +296,10 @@
 "Authenticated devices can request runtime sessions." = "Authenticated devices can request runtime sessions.";
 "Setup needed" = "Setup needed";
 "Start AetherLink Runtime before devices can connect." = "Start AetherLink Runtime before devices can connect.";
+"Start AetherLink Runtime" = "Start AetherLink Runtime";
+"Start AetherLink Runtime on this Mac." = "Start AetherLink Runtime on this Mac.";
+"Retry AetherLink Runtime" = "Retry AetherLink Runtime";
+"Try starting AetherLink Runtime again." = "Try starting AetherLink Runtime again.";
 "Model service needs attention" = "Model service needs attention";
 "Start a model provider for AetherLink Runtime, then check again." = "Start a model provider for AetherLink Runtime, then check again.";
 "Pair a Device to Continue" = "Pair a Device to Continue";
@@ -506,7 +510,7 @@
 "Connection details need a secure connection secret before they can be included in a QR." = "Connection details need a secure connection secret before they can be included in a QR.";
 "Connection through %@ failed. Check Connection Recovery, then generate a fresh QR." = "Connection through %@ failed. Check Connection Recovery, then generate a fresh QR.";
 "Connection failed. Check Connection Recovery, then generate a fresh QR." = "Connection failed. Check Connection Recovery, then generate a fresh QR.";
-"AetherLink Runtime needs attention. Check Activity or restart AetherLink Runtime." = "AetherLink Runtime needs attention. Check Activity or restart AetherLink Runtime.";
+"AetherLink Runtime needs attention. Check Activity, then try again." = "AetherLink Runtime needs attention. Check Activity, then try again.";
 "Connection details need a secure connection secret before sharing sensitive content." = "Connection details need a secure connection secret before sharing sensitive content.";
 "Model unload failed. Check Activity." = "Model unload failed. Check Activity.";
 "Manual model unload failed. Check Activity." = "Manual model unload failed. Check Activity.";

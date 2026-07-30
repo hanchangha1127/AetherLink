@@ -296,6 +296,10 @@
 "Authenticated devices can request runtime sessions." = "Les appareils authentifiés peuvent demander des sessions de runtime.";
 "Setup needed" = "Configuration requise";
 "Start AetherLink Runtime before devices can connect." = "Démarrez AetherLink Runtime avant que les appareils puissent se connecter.";
+"Start AetherLink Runtime" = "Démarrer AetherLink Runtime";
+"Start AetherLink Runtime on this Mac." = "Démarrer AetherLink Runtime sur ce Mac.";
+"Retry AetherLink Runtime" = "Réessayer de démarrer AetherLink Runtime";
+"Try starting AetherLink Runtime again." = "Réessayer de démarrer AetherLink Runtime.";
 "Model service needs attention" = "Le service de modèles demande une vérification";
 "Start a model provider for AetherLink Runtime, then check again." = "Démarrez un fournisseur de modèles pour AetherLink Runtime, puis vérifiez à nouveau.";
 "Pair a Device to Continue" = "Jumeler un appareil pour continuer";
@@ -506,7 +510,7 @@
 "Connection details need a secure connection secret before they can be included in a QR." = "Les informations de connexion nécessitent un secret de connexion sécurisé avant de pouvoir être incluses dans un QR.";
 "Connection through %@ failed. Check Connection Recovery, then generate a fresh QR." = "La connexion via %@ a échoué. Vérifiez la récupération de connexion, puis générez un nouveau QR.";
 "Connection failed. Check Connection Recovery, then generate a fresh QR." = "La connexion a échoué. Vérifiez la récupération de connexion, puis générez un nouveau QR.";
-"AetherLink Runtime needs attention. Check Activity or restart AetherLink Runtime." = "AetherLink Runtime demande une vérification. Consultez Activité ou redémarrez AetherLink Runtime.";
+"AetherLink Runtime needs attention. Check Activity, then try again." = "AetherLink Runtime demande une vérification. Consultez Activité, puis réessayez.";
 "Connection details need a secure connection secret before sharing sensitive content." = "Les informations de connexion nécessitent un secret de connexion sécurisé avant de partager du contenu sensible.";
 "Model unload failed. Check Activity." = "Échec du déchargement du modèle. Consultez Activité.";
 "Manual model unload failed. Check Activity." = "Échec du déchargement manuel du modèle. Consultez Activité.";

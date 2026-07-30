@@ -3894,7 +3894,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
 
     func testStatusOverviewMapsEachFocusToOnePrimaryAction() {
         let expectations: [(StatusRuntimeOverviewFocus, StatusRuntimeOverviewAction?)] = [
-            (.runtimeSetup, nil),
+            (.runtimeSetup, .startRuntime),
             (.pairing, .pairing),
             (.backend, .refreshProviders),
             (.models, .loadModels),
@@ -3906,6 +3906,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
         for (focus, expectedAction) in expectations {
             let presentation = runtimeOverviewPrimaryActionPresentation(
                 focus: focus,
+                runtimeState: .stopped,
                 canGeneratePairingQR: true,
                 hasPairingAction: true,
                 hasActivePairingSession: false,
@@ -3921,9 +3922,87 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testStatusOverviewRuntimeStartAndRetryActionsUseSelectedLanguage() {
+        let expectations: [(
+            languageTag: String,
+            startTitle: String,
+            startHint: String,
+            retryTitle: String,
+            retryHint: String
+        )] = [
+            (
+                "en",
+                "Start AetherLink Runtime",
+                "Start AetherLink Runtime on this Mac.",
+                "Retry AetherLink Runtime",
+                "Try starting AetherLink Runtime again."
+            ),
+            (
+                "ko",
+                "AetherLink Runtime 시작",
+                "이 Mac에서 AetherLink Runtime을 시작합니다.",
+                "AetherLink Runtime 다시 시도",
+                "AetherLink Runtime 시작을 다시 시도합니다."
+            ),
+            (
+                "ja",
+                "AetherLink Runtime を開始",
+                "この Mac で AetherLink Runtime を開始します。",
+                "AetherLink Runtime を再試行",
+                "AetherLink Runtime の開始を再試行します。"
+            ),
+            (
+                "zh-Hans",
+                "启动 AetherLink Runtime",
+                "在此 Mac 上启动 AetherLink Runtime。",
+                "重试启动 AetherLink Runtime",
+                "重试启动 AetherLink Runtime。"
+            ),
+            (
+                "fr",
+                "Démarrer AetherLink Runtime",
+                "Démarrer AetherLink Runtime sur ce Mac.",
+                "Réessayer de démarrer AetherLink Runtime",
+                "Réessayer de démarrer AetherLink Runtime."
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                let start = runtimeOverviewPrimaryActionPresentation(
+                    focus: .runtimeSetup,
+                    runtimeState: .stopped,
+                    canGeneratePairingQR: false,
+                    hasPairingAction: false,
+                    hasActivePairingSession: false,
+                    isPreparingPairingRoute: false
+                )
+                XCTAssertEqual(start?.action, .startRuntime)
+                XCTAssertEqual(start?.title, expectation.startTitle)
+                XCTAssertEqual(start?.accessibilityHint, expectation.startHint)
+                XCTAssertEqual(start?.isEnabled, true)
+
+                let retry = runtimeOverviewPrimaryActionPresentation(
+                    focus: .runtimeSetup,
+                    runtimeState: .failed,
+                    canGeneratePairingQR: false,
+                    hasPairingAction: false,
+                    hasActivePairingSession: false,
+                    isPreparingPairingRoute: false
+                )
+                XCTAssertEqual(retry?.action, .startRuntime)
+                XCTAssertEqual(retry?.title, expectation.retryTitle)
+                XCTAssertEqual(retry?.accessibilityHint, expectation.retryHint)
+                XCTAssertEqual(retry?.isEnabled, true)
+            }
+        }
+    }
+
     func testStatusOverviewPairingActionPreservesPreparationAvailabilityContract() {
         let presentation = runtimeOverviewPrimaryActionPresentation(
             focus: .pairing,
+            runtimeState: .advertising,
             canGeneratePairingQR: false,
             hasPairingAction: true,
             hasActivePairingSession: true,
@@ -3944,6 +4023,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
 
         let missingActionPresentation = runtimeOverviewPrimaryActionPresentation(
             focus: .pairing,
+            runtimeState: .advertising,
             canGeneratePairingQR: true,
             hasPairingAction: false,
             hasActivePairingSession: false,
@@ -3975,6 +4055,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
             withStoredAppLanguage(languageTag) {
                 let presentation = runtimeOverviewPrimaryActionPresentation(
                     focus: .routeIssue,
+                    runtimeState: .advertising,
                     canGeneratePairingQR: false,
                     hasPairingAction: false,
                     hasActivePairingSession: false,

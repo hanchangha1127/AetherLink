@@ -583,6 +583,10 @@ public protocol RuntimeModelServingBackend: Sendable {
     func takeProviderUsageSource(generationID: String) -> ChatProviderUsageSource?
 }
 
+public protocol ProviderScopedModelCatalogListing: RuntimeModelServingBackend {
+    func listModels(for provider: ModelProvider) async throws -> [ModelInfo]
+}
+
 public protocol ModelPullDispatching: Sendable {
     func pullModel(name: String) async throws -> ModelPullResult
 }

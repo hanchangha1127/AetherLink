@@ -296,6 +296,10 @@
 "Authenticated devices can request runtime sessions." = "已认证设备可以请求运行时会话。";
 "Setup needed" = "需要设置";
 "Start AetherLink Runtime before devices can connect." = "设备连接前，请先启动 AetherLink Runtime。";
+"Start AetherLink Runtime" = "启动 AetherLink Runtime";
+"Start AetherLink Runtime on this Mac." = "在此 Mac 上启动 AetherLink Runtime。";
+"Retry AetherLink Runtime" = "重试启动 AetherLink Runtime";
+"Try starting AetherLink Runtime again." = "重试启动 AetherLink Runtime。";
 "Model service needs attention" = "模型服务需要处理";
 "Start a model provider for AetherLink Runtime, then check again." = "启动供 AetherLink Runtime 使用的模型提供方，然后再次检查。";
 "Pair a Device to Continue" = "配对设备以继续";
@@ -506,7 +510,7 @@
 "Connection details need a secure connection secret before they can be included in a QR." = "连接信息需要安全连接密钥后才能写入二维码。";
 "Connection through %@ failed. Check Connection Recovery, then generate a fresh QR." = "通过 %@ 的连接失败。请检查连接恢复，然后生成新的二维码。";
 "Connection failed. Check Connection Recovery, then generate a fresh QR." = "连接失败。请检查连接恢复，然后生成新的二维码。";
-"AetherLink Runtime needs attention. Check Activity or restart AetherLink Runtime." = "AetherLink Runtime 需要检查。请查看活动或重启 AetherLink Runtime。";
+"AetherLink Runtime needs attention. Check Activity, then try again." = "AetherLink Runtime 需要检查。请查看活动记录，然后重试。";
 "Connection details need a secure connection secret before sharing sensitive content." = "共享敏感内容前，连接信息需要安全连接密钥。";
 "Model unload failed. Check Activity." = "模型卸载失败。请查看活动。";
 "Manual model unload failed. Check Activity." = "手动卸载模型失败。请查看活动。";

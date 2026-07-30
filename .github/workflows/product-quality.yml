@@ -1,0 +1,126 @@
+name: Product quality (non-security subset)
+
+"on":
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: >-
+    product-quality-${{ github.workflow }}-${{
+    github.event_name == 'pull_request' &&
+    github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  macos-product-quality:
+    name: macOS product quality subset
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Report toolchain
+        run: |
+          xcodebuild -version
+          python3 --version
+          ruby --version
+          swift --version
+      - name: Check changed bytes
+        env:
+          BASE_SHA: >-
+            ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [[ -n "$BASE_SHA" && ! "$BASE_SHA" =~ ^0+$ ]]; then
+            git diff --check "$BASE_SHA" "$HEAD_SHA"
+          elif git rev-parse "$HEAD_SHA^" >/dev/null 2>&1; then
+            git diff --check "$HEAD_SHA^" "$HEAD_SHA"
+          else
+            git show --check --format= "$HEAD_SHA"
+          fi
+      - name: Validate bounded CI contract
+        run: |
+          python3 -B script/check_product_ci.py
+          python3 -B script/check_product_ci.py --self-test
+      - name: Run product static checks
+        run: |
+          python3 -B script/check_release_version_ledger.py
+          python3 -B script/check_app_icons.py
+          python3 -B script/check_license.py
+      - name: Compile macOS app
+        run: swift build --product AetherLink
+      - name: Run focused product units
+        run: >-
+          swift test
+          --filter
+          'DocumentIngestorTests|DocumentTextExtractorTests|DocumentChunkerTests|AggregatingLlmBackendResidencyTests|RuntimeModelIdleUnloadPolicyTests|RuntimeChatContextCompactionPlannerTests|RuntimeSemanticChatSessionSearchTests|RuntimeSemanticMemorySearchTests|LocalRuntimeMessageRouterTests/testCompanionAppModelUserInterfaceStartCanRetryAfterListenerFailure|LocalRuntimeMessageRouterTests/testCompanionAppModelUserInterfaceStartIsIdempotentDuringRouteAllocation|LocalRuntimeMessageRouterTests/testCompanionAppModelDebugUserInterfaceDoesNotGenerateQRCodeWhenRuntimeListenerFails|LocalRuntimeMessageRouterTests/testCompanionAppModelReportsFailedTransportWithoutAdvertising|AetherLinkLocalizationTests/testStatusOverviewMapsEachFocusToOnePrimaryAction|AetherLinkLocalizationTests/testStatusOverviewRuntimeStartAndRetryActionsUseSelectedLanguage|AetherLinkRenderSmokeTests/testRuntimeOverviewPrimaryActionFitsCompactAccessibilityLayoutAcrossLanguages'
+      - name: Compile macOS Release app on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: swift build -c release --product AetherLink
+
+  android-product-quality:
+    name: Android product quality subset
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+      - name: Verify Android toolchain
+        run: |
+          java -version
+          test -d "$ANDROID_HOME/platforms/android-36"
+          test -d "$ANDROID_HOME/build-tools/36.0.0"
+          ./gradlew --version
+      - name: Compile Android and run focused product units
+        run: >-
+          ./gradlew
+          --no-daemon
+          --console=plain
+          -Pkotlin.incremental=false
+          :app:compileDebugKotlin
+          :app:compileDebugUnitTestKotlin
+          :app:testDebugUnitTest
+          --tests com.localagentbridge.android.AetherLinkThemeNoDeviceComposeTest
+          --tests com.localagentbridge.android.ResearchNotebookDrawerTest
+          --tests com.localagentbridge.android.runtime.RuntimeAttachmentPromptResourceTest
+          --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenSessionBoundaryResetsLatestWhileSameSessionUpdatesKeepPosition
+      - name: Compile and lint Android Release app on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: >-
+          ./gradlew
+          --no-daemon
+          --console=plain
+          -PaetherlinkStrictReleaseDependencyLocks=true
+          -Pkotlin.incremental=false
+          :app:assembleRelease
+          :app:lintRelease

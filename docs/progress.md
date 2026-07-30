@@ -4,44 +4,307 @@ Last updated: 2026-07-30 KST.
 
 This document records what has been implemented so far and what should happen next. It is intentionally broader than the original v0.1 MVP because recent work has moved the prototype toward a more complete product shape.
 
-## 2026-07-30 Local V1 Build 20 Qualification
+## 2026-07-30 macOS Runtime Start Retry
 
-- The append-only release ledger now ends at `1.0.0+20`. Build 20 is the
-  current local qualification record; Builds 1 through 19 are immutable
+- Scope: close one non-security G5 lifecycle and recovery-UX defect without
+  changing transport protocol, pairing payload, persistence, provider behavior,
+  release identity, or security policy.
+- Reproduction: after the local listener reported failure, the app had already
+  latched `isRuntimeStarted`. A second same-port Status action was therefore
+  rejected even though no listener was advertising, so the UI told the user to
+  restart the app.
+- Result: the listener status now decides whether the Runtime started.
+  Advertising enables route allocation, relay startup, and restored pair
+  transports; failure leaves the start action available and performs none of
+  that downstream work. A failed attempt cannot later schedule restored
+  transports after a successful retry.
+- UI: the Status overview now offers localized Start and Retry actions with
+  distinct play/retry icons and accessibility hints in all five macOS
+  languages. Failure copy directs the user to Activity and an immediate retry.
+- Verification: the first fake attempt fails with zero route allocations and no
+  advertiser; the second succeeds with exactly one route allocation; the third
+  is idempotently rejected. Four focused Runtime lifecycle regressions, two
+  Status action regressions, the five-language compact accessibility render,
+  macOS localization parity, and the exact 143-test CI Swift selector pass with
+  zero skips or failures.
+- Boundary: this is deterministic no-device evidence, not a live port-conflict,
+  physical-device, external-provider, signing, deployment, security, or Git
+  publication claim. No staging, commit, or push was performed.
+
+## 2026-07-30 G7 Non-Security CI Subset
+
+- Scope: begin the repository CI portion of G7 without reopening security,
+  authentication, authorization, cryptography, owner governance, signing,
+  artifact publication, deployment, device, emulator, external-network, or
+  live-provider work. This is explicitly a non-security subset, not the
+  canonical G7 `PR fast` or `Merge full` gate.
+- Result: `.github/workflows/product-quality.yml` runs on pull requests and
+  pushes to `main` with read-only repository contents permission. PR runs share
+  a cancelable PR-number concurrency group; each `main` run uses its unique run
+  ID so an accepted push is not canceled by a later push.
+- macOS lane: `macos-26` pins
+  `/Applications/Xcode_26.6.app/Contents/Developer`, matching the local Xcode
+  26.6 build 17F113. It checks the event byte range, validates the bounded CI
+  contract plus release-ledger/icon/license invariants, builds the AetherLink
+  Debug product, and runs an exact non-security Swift allowlist. A `main` push
+  additionally compiles the Release AetherLink product. The earlier
+  `macos-14` draft was replaced because that runner entered deprecation on
+  2026-07-06 and is scheduled to become unsupported on 2026-11-02.
+- Android lane: `ubuntu-24.04`, JDK 21, SDK platform 36, and Build Tools 36.0.0
+  compile the app and run three exact UI/resource JVM classes plus the exact
+  `ClientScreensNoDeviceComposeTest` session-boundary method without strict
+  debug locks. A `main` push additionally assembles the unsigned Release APK
+  and runs Release lint with strict dependency locks. The initial draft's
+  `bundleRelease` path was removed after local execution exposed its
+  `signReleaseBundle` task; the final workflow contains no bundle, credential,
+  signing, upload, or deployment step.
+- Action refs: public remote readback confirms `actions/checkout@v7`,
+  `actions/setup-java@v5`, and `gradle/actions/setup-gradle@v6`. The untagged
+  `setup-java` V6 development line is deliberately not used.
+- Guardrail: `script/check_product_ci.py` requires the exact two-job shape,
+  triggers, permissions, runners, timeouts, concurrency, current action majors,
+  JDK/SDK prerequisites, safely parsed YAML top-level/job keys and complete step
+  arrays plus their canonical semantic fingerprint, full job preambles, every
+  named step body, focused selectors, and main-only Release steps. A Psych AST
+  pre-pass requires one YAML document and rejects duplicate keys at every
+  mapping level plus all explicitly tagged mapping keys. Its SHA-256 byte pin
+  is
+  `efdc353abcd1b4eb62fe0e437b199677f675698efe9da4624e3985e08b76aea0`;
+  the parsed-semantic fingerprint is
+  `a52031f1cd703a72cd6d4833864479e733767ca81d901e830049f42653e44ab8`.
+  The built-in suite checks the byte pin once, then disables only that pin for
+  each controlled mutation and requires its expected semantic diagnostic.
+  Trigger, permission-map, job-condition, runner/Xcode, action, selector,
+  Gradle-task/invocation, skip/dry-run, ignored-failure, disabled required
+  commands, named or anonymous extra steps, quoted/flow-style extra jobs, and
+  quoted/flow-style or tagged duplicate jobs, a second YAML document, and named
+  scope changes and removal of either the direct Runtime retry or Android
+  session-boundary selector are therefore tested independently of a generic
+  hash mismatch.
+- Local verification: the contract and self-test pass under Python 3.9, Ruby
+  parses the workflow into exactly two jobs, and all three workflow static
+  product checks pass. The exact Swift lane passes 143 selected tests with zero
+  skips or failures, including four direct Runtime lifecycle regressions, two
+  Status action regressions, and the compact accessibility render regression,
+  plus Debug and Release product builds.
+  The exact Android lane passes seven selected tests with zero skips, failures,
+  or errors. Its new single-method selector directly covers changed-session
+  latest-row reset, deferred loading completion, saved-state restoration, and
+  same-session streaming position preservation. Debug compilation, strict-lock
+  Release assembly, and Release lint pass.
+- Boundary: the workflow has not run on GitHub because these files remain
+  uncommitted and unpushed. Local parity does not prove a clean hosted runner,
+  required-check configuration, canonical G7 completion, a physical device,
+  signing, publication, deployment, external networking, or production
+  readiness. SwiftPM and Gradle still compile their complete package/app test
+  source graphs before filtering execution; the non-security label describes
+  the executed checks, not a physically separated test-source target. The
+  Android job also relies on the pinned hosted image already containing SDK 36
+  and Build Tools 36.0.0 and uses normal wrapper/repository dependency
+  downloads. Clean-runner and dependency-byte evidence remain unclaimed. No
+  staging, commit, or push was performed.
+
+## 2026-07-30 Qualified Provider Catalog Isolation
+
+- Scope: close one no-device, non-security G5 Runtime responsiveness gap
+  without changing provider URLs, model-selection UI, protocol/schema,
+  persistence, or release identity.
+- Reproduction: a provider-qualified chat or embedding request still performed
+  a sequential aggregate catalog read. Chat performed that read once in
+  `LocalRuntimeMessageRouter` and again while `AggregatingLlmBackend` resolved
+  the exact provider route. With the existing 60-second provider request
+  bounds, an unrelated provider that accepted a connection but did not answer
+  could add roughly two timeout windows before selected-provider chat
+  dispatch. The new aggregate chat and embedding regressions failed before the
+  change because the unrelated provider was called once; Router chat and
+  semantic-search regressions independently observed the same coupling.
+- Result: `ProviderScopedModelCatalogListing` gives aggregate callers a
+  provider-scoped catalog capability. Qualified chat resolution, aggregate
+  chat/embedding dispatch, and semantic embedding descriptor lookup now query
+  only the selected Ollama or LM Studio backend. Unqualified legacy chat keeps
+  the existing full aggregate search.
+- Compatibility: installed/local, model-kind, capability, and exact
+  `providerModelID` checks remain unchanged. Errors from the selected provider
+  still propagate, and both `CancellationError` and provider
+  `URLError.cancelled` retain the existing cancellation meaning.
+- Static guard: the provider catalog portion of `check_copy_hygiene.py` now
+  requires the scoped protocol, aggregate provider filter, both Router scoped
+  call/fallback pairs, their exact counts, and five aggregate plus two Router
+  regression names. The isolated guard and all seven named regressions pass.
+- Verification: all 49 `AggregatingLlmBackendResidencyTests` and three focused
+  Router/provider-isolation regressions pass. The complete Swift suite passes
+  2,093 tests with 11 expected opt-in/live skips and zero failures in 330.605
+  seconds. `swift build -c release --product AetherLink` and
+  `git diff --check` pass.
+- Review and boundary: GPT-5.6 Sol found the cancellation-normalization gap; it
+  was fixed, and final re-review reports no P0-P3 finding. The deterministic
+  tests prove zero unrelated-provider catalog calls, not a measured 120-second
+  latency improvement. No live provider was stopped or changed, no model was
+  downloaded, and no physical device, external network, signing, deployment,
+  security work, staging, commit, or push is claimed. The full mixed copy
+  hygiene command now advances beyond this provider guard and stops only on two
+  historical G2 documentation expectations in the user-excluded security
+  scope; those expectations were left untouched.
+
+## 2026-07-30 Android Chat Session Scroll Boundary
+
+- Scope: close one no-device, non-security chat-navigation defect and one
+  adjacent list-composition cost without changing persistence, transport,
+  protocol, or release identity.
+- Reproduction: after scrolling an older conversation upward, switching to a
+  different conversation with the same message count and the same final
+  content/reasoning left the new conversation at the old list position. The
+  regression failed on the new conversation's final-row visibility before the
+  product change.
+- Result: `ChatScreen` now treats `activeChatSessionId` as a transcript
+  boundary. A changed session schedules one immediate latest-row scroll,
+  defers it while that session's messages are loading, and preserves the
+  pending reset across saved-state restoration. Empty and same-session states
+  continue through the existing policy.
+- Compatibility: within one conversation, streaming content/reasoning updates
+  still preserve an intentionally earlier reading position and expose the
+  existing jump-to-latest action. The latest assistant, user, and overall
+  message IDs are now computed once per `ChatScreen` composition rather than
+  rescanned inside every composed row.
+- Verification: the focused session-boundary and existing jump-to-latest tests
+  pass; all 296 `ClientScreensNoDeviceComposeTest` cases pass; the complete app
+  JVM suite passes 1,195 tests with zero skips, failures, or errors; and
+  `:app:assembleRelease :app:lintRelease` passes with 0 errors and the two
+  existing SDK-version warnings.
+- Review and boundary: GPT-5.6 Sol found saved-state and test-observability gaps;
+  both were fixed, and final review reports no P0-P3 finding. This is
+  deterministic no-device Compose and Release-build evidence, not physical
+  touch, device rendering, frame-time measurement, signing, deployment, or
+  production behavior. No security work, staging, commit, or push was
+  performed.
+- The previously queued Release-test fixture refactor is not an active item
+  because its affected types belong to the excluded authorization path.
+
+## 2026-07-30 Strict JSON Validator Allocation Reduction
+
+- Scope: complete the next no-device, non-security performance item without
+  changing JSON syntax, decoded key equality, protocol/schema shape, or any
+  release authority.
+- Result: `JSONDuplicateKeyValidator` now borrows each input `Data` only for
+  the synchronous `withUnsafeBytes` validation scope instead of materializing
+  a document-sized `[UInt8]`. `true`, `false`, and `null` matching reads the
+  `StaticString` UTF-8 buffer directly instead of creating a `String` and byte
+  array for every literal. JSON whitespace scanning now uses a fixed switch
+  instead of an array-literal lookup.
+- Compatibility: the existing per-token `JSONDecoder` string path remains
+  unchanged, preserving malformed UTF-8, escape, surrogate, canonical Unicode
+  key equality, and duplicate-key error behavior. The 128-level array and
+  mixed object/array boundary also remains unchanged.
+- Differential evidence: the new corpus compares accepted and rejected syntax
+  with Foundation, separately pins AetherLink's stricter trailing-comma
+  rejection, and covers direct, escaped-equivalent, slash, raw/escaped Unicode,
+  canonically equivalent Unicode, first-error, sibling-object, invalid UTF-8,
+  invalid surrogate, literal-heavy, and sliced-`Data` cases.
+- Verification: `BridgeProtocolTests` passes 54/54; the three strict-JSON tests
+  pass under AddressSanitizer; the Release `BridgeProtocol` target builds; and
+  the complete Swift suite passes 2,086 tests with 11 expected opt-in/live
+  skips and zero failures. A full Release test build remains unavailable
+  because an unrelated existing Transport test references Debug-only
+  `.testing` helpers; the product target itself builds in Release. Independent
+  GPT-5.6 Sol read-only reviews report no P0-P3 finding.
+- Proof boundary: this proves removal of the named explicit allocation paths
+  and behavior preservation over the recorded corpus. It is not a claim of
+  measured device latency, peak RSS, provider throughput, physical-device
+  behavior, signing, deployment, or production readiness. No security work,
+  staging, commit, or push was performed.
+
+## 2026-07-30 Local V1 Build 22 Qualification
+
+- The append-only release ledger now ends at `1.0.0+22`. Build 22 is the
+  current local qualification record; Builds 1 through 21 are immutable
   historical records.
-- The release binds a 246-file `dirty-content-snapshot` with SHA-256
-  `22f14e60d522b2720660e41a645a3e9832dd723b8b93b147c51bbf6c9125998c`
-  at HEAD and `origin/main`
-  `dc5832b9f5926b44ccde87d11beb58355ecd9ece`.
-- Both v3 two-root runs used 101- and 109-byte source roots and produced the
-  exact 165,617,269-byte ZIP with SHA-256
-  `cba5a6531c35725aef7a2a3bf8b25d2155833b31b216906c80f8349249f6edf1`,
+- The release binds a 247-file `dirty-content-snapshot` with SHA-256
+  `d0ee21c6f288cafad0a0f634de2116b48c8a4716389f2d52daacd4e90c591eb6`.
+  Its manifest captured source HEAD and `origin/main` as
+  `88c0282722eb0afb3ce2d6f394fedb1f22a7ec7c`.
+- Both v4 two-root runs used 101- and 109-byte source roots and produced the
+  exact 165,705,774-byte ZIP with SHA-256
+  `478bd4210c11f7e2204e80a333bc8053b0d01b8deff3d0a3d2dd6795df1366c3`,
   the exact 12,317-byte manifest with SHA-256
-  `c633bf2c2ccc9d007f08e73929eed3d7f6b247d08579fa3695bcbad04348c99d`,
+  `a92ee387be3a900bad1682093b653da1fea1a8e1dd1580153bed91c01e2ff1c5`,
   and the exact 99-byte checksum sidecar with SHA-256
-  `dd803b0bc3313d833b0cdd1b2044c96a0f5873496ecdae94c5a4079bb02feaed`.
-- The 19,571-byte comparison-only result is
-  `dist/reproducibility/aetherlink-1.0.0+20-local-v1-two-root-v3-prepublication.json`,
+  `5711d5926f1c3e053f864f55bccf93a3986fb8bb5a6bcc8818161ef686d75991`.
+- The 19,645-byte comparison-only result is
+  `dist/reproducibility/aetherlink-1.0.0+22-local-v1-two-root-v4-prepublication.json`,
   SHA-256
-  `ad7e9b6e5f52a76d5a65b52bab5138ad86eb019b7b89fa7ee29c51b89c7cef2c`.
+  `9293c578b2ca409966c79028ea2b8e9d5e717ae64159b58bd35b90c007d3d26b`.
+  It records exact archive/member equality and no publication.
+- The 20,353-byte publish-qualified result is
+  `dist/reproducibility/aetherlink-1.0.0+22-local-v1-two-root-v4.json`,
+  SHA-256
+  `330b671475c0769a0579a0af7cb7f82c746a5df4bb0aba4b305510e597d4081d`.
+  It records exact prepublication binding, `alreadyMatched=false`,
+  `outcome=published-verified`, independent readback, and an unchanged
+  protected Build 21 archive identity
+  `8959b4891658101c218e9bf4cefb6ce6dbd894f238992f6a601bcc4f8a72f03a`.
+- Current readback passes:
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+22-local-v1`.
+- No staging, commit, or push was performed.
+
+## 2026-07-30 Historical Local V1 Build 21 Qualification
+
+- Build 21 is an immutable historical qualification record. Its ledger,
+  source, artifact, and v3 result identities remain frozen.
+- The release binds a 247-file `dirty-content-snapshot` with SHA-256
+  `d948d5abfed0ccfe72429b46104e30847840dd11a2f7a2380d75a29c3d1763b4`
+  whose manifest captured source HEAD and `origin/main` as
+  `dc5832b9f5926b44ccde87d11beb58355ecd9ece` at qualification time. A later
+  user-authored commit moved the live `main` and `origin/main` refs to
+  `88c0282722eb0afb3ce2d6f394fedb1f22a7ec7c` at the latest recorded refresh.
+- Both v3 two-root runs used 101- and 109-byte source roots and produced the
+  exact 165,617,441-byte ZIP with SHA-256
+  `b7acd3eb6c4089306dd8e597eb9b952d8dc993535ec13de63099090f155ca9a6`,
+  the exact 12,317-byte manifest with SHA-256
+  `d12ceb13b60cbd165c5007d65dfcb50eb522e6df574b4de777d8a09aed815c5f`,
+  and the exact 99-byte checksum sidecar with SHA-256
+  `850145f90cdb3ecd1fac90b8623b42c15b0bc5b357c08f7b47cbdc1086163953`.
+- The 19,571-byte comparison-only result is
+  `dist/reproducibility/aetherlink-1.0.0+21-local-v1-two-root-v3-prepublication.json`,
+  SHA-256
+  `5267f145d8237c11fe5425a7148d62237fae942a6d8413eda7f0e9443a0d1c16`.
   It records `executionMode=comparison-only`, exact archive/member equality,
   and `publication.outcome=disabled-comparison-only`; it did not publish.
 - The 20,010-byte publish-qualified result is
-  `dist/reproducibility/aetherlink-1.0.0+20-local-v1-two-root-v3.json`,
+  `dist/reproducibility/aetherlink-1.0.0+21-local-v1-two-root-v3.json`,
   SHA-256
-  `ca71f3ad64ea744275035891c5d41faae9778c6be4f1a6fbadac2c1cf2b59a1c`.
+  `b628ee84164ff7405e67520c2ca33d57aee19caad6875cbe61c361c2f3d7da70`.
   It records `alreadyMatched=false`, `outcome=published-verified`,
   `independentReadback=true`, `publishedBytesEqualLaneA=true`, and
   `sourceSnapshotUnchanged=true`.
-- Independent current-source readback passes all 29 payload members, packaged
-  Android backup-policy body checks, the `base`-only AAB structure, and the
-  UUID-matched macOS app/dSYM
+- At Build 21 qualification time, independent then-current-source readback
+  passed all 29 payload members, packaged Android backup-policy body checks,
+  the `base`-only AAB structure, and the UUID-matched macOS app/dSYM
   `0AD0CBED-7293-3151-84D1-9BAF07654A93`.
+- Historical readback passes with the explicit historical selector:
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+21-local-v1 --historical`.
 
-<!-- aetherlink-current-build20-lifecycle-v1:start -->
+<!-- aetherlink-current-build21-abrupt-recovery-v1:start -->
 
-- Build 20 lifecycle evidence is bound to the current packaged app and exact
-  archive/manifest identities above.
+- Build 21 source-binds the extended Runtime-chat SQLite cross-process QA
+  helper, runner, and 19-test Python regression source. The canonical
+  2,223-byte abrupt-process result at
+  `dist/lifecycle/macos-runtime-chat-sqlite-abrupt-process-recovery-build-21-v1.json`
+  has SHA-256
+  `db66614d7badd7a0f606c03f91a516dff6d77e539684dcb6daf52709bce0f16f`.
+  It records 24 committed events, a dirty uncommitted 25th event and FTS row after
+  exact child `SIGKILL`, journal recovery to 24, and production-store resume to
+  48 contiguous exactly-once events. This is bounded same-host abrupt child-
+  process `SIGKILL` recovery evidence, explicitly
+  `not-production-append-crash-point`, not power-loss or kernel-crash evidence,
+  not arbitrary-history or long-soak evidence, and not clean-machine,
+  signed-distribution, or physical-device evidence.
+
+<!-- aetherlink-current-build21-abrupt-recovery-v1:end -->
+
+<!-- aetherlink-historical-build20-lifecycle-v1:start -->
+
+- Build 20 lifecycle evidence remains historical and bound only to the exact
+  Build 20 packaged app and archive/manifest identities.
 - The clean-HOME installed-app result is
   `dist/lifecycle/macos-packaged-app-build-20-clean-home-install-v1.json`,
   2,250 bytes with SHA-256
@@ -65,7 +328,7 @@ This document records what has been implemented so far and what should happen ne
   two distinct launches, SQLite integrity, empty Runtime chat, and stable state.
 - Both clean-HOME runners were invoked twice and matched their canonical
   results.
-- These same-host, per-user Build 20 observations do not qualify a clean
+- These historical same-host, per-user Build 20 observations do not qualify a clean
   machine/account, signed/notarized distribution, UI/accessibility,
   live-provider behavior, a physical device, arbitrary histories,
   crash/power-loss, concurrent writers, backup/transfer, rollback, or
@@ -73,18 +336,30 @@ This document records what has been implemented so far and what should happen ne
   Gatekeeper quarantine/download behavior, and system `/Applications`
   evidence.
 
-<!-- aetherlink-current-build20-lifecycle-v1:end -->
+<!-- aetherlink-historical-build20-lifecycle-v1:end -->
 
-- This local result does not complete the full G6 exit.
-- Current readback:
-  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+20-local-v1`.
-- No staging, commit, or push was performed.
+- This historical local result does not complete the full G6 exit.
+
+## 2026-07-30 Historical Local V1 Build 20 Qualification
+
+- Build 20 is immutable historical package and lifecycle evidence. Its
+  clean-HOME, state-recovery, and local-DMG results remain bound only to Build
+  20 and are not reinterpreted as Build 21 evidence.
+- Historical readback:
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+20-local-v1 --historical`.
 
 ## 2026-07-30 Historical Local V1 Build 19 Qualification
 
 - Build 19 is now immutable historical evidence. It first source-bound the
   Runtime-chat SQLite cross-process helper/runner and retained Build 18's first
   source binding of the Android drawer-search inputs.
+- Its bounded Python orchestration suite passed 12/12 tests. The separate
+  two-writer/third-process run observed 48+48=96 disjoint exactly-once events,
+  owner/session isolation, per-writer order, `integrity_check=ok`, directory
+  mode `0700`, and SQLite file mode `0600`. That live result is separate
+  execution evidence, not a retained Build 19 archive member, and does not
+  qualify arbitrary histories, crash/power-loss, mixed binaries, or
+  production behavior.
 - Its archive, v2 two-root results, and clean-HOME install/state-recovery
   observations remain bound only to Build 19.
 - Historical readback:

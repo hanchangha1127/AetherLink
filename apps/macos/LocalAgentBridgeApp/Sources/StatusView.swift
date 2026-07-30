@@ -33,6 +33,7 @@ struct StatusView: View {
                         overview: overview,
                         primaryAction: runtimeOverviewPrimaryActionPresentation(
                             focus: overview.focus,
+                            runtimeState: model.transportState.state,
                             canGeneratePairingQR: canGeneratePairingQR,
                             hasPairingAction: onGenerateRelayQRCode != nil,
                             hasActivePairingSession: model.pairingSession != nil,
@@ -299,6 +300,8 @@ struct StatusView: View {
         scrollProxy: ScrollViewProxy
     ) {
         switch action {
+        case .startRuntime:
+            model.requestStartForUserInterface()
         case .pairing:
             onGenerateRelayQRCode?()
         case .refreshProviders:
@@ -318,7 +321,7 @@ struct StatusView: View {
         case .advertising:
             return NSLocalizedString("Trusted devices can find this AetherLink Runtime nearby after pairing.", comment: "")
         case .failed:
-            return NSLocalizedString("AetherLink Runtime needs attention. Check Activity or restart AetherLink Runtime.", comment: "")
+            return NSLocalizedString("AetherLink Runtime needs attention. Check Activity, then try again.", comment: "")
         case .stopped:
             return NSLocalizedString("AetherLink Runtime is not active.", comment: "")
         }
@@ -545,7 +548,7 @@ struct StatusView: View {
         case .advertising:
             return NSLocalizedString("Ready for paired devices.", comment: "")
         case .failed:
-            return NSLocalizedString("AetherLink Runtime needs attention. Check Activity or restart AetherLink Runtime.", comment: "")
+            return NSLocalizedString("AetherLink Runtime needs attention. Check Activity, then try again.", comment: "")
         case .stopped:
             return NSLocalizedString("Start AetherLink Runtime.", comment: "")
         }
@@ -1070,6 +1073,7 @@ enum StatusRuntimeOverviewFocus: Equatable {
 }
 
 enum StatusRuntimeOverviewAction: Equatable {
+    case startRuntime
     case pairing
     case refreshProviders
     case loadModels
@@ -1087,13 +1091,39 @@ struct RuntimeOverviewPrimaryActionPresentation: Equatable {
 
 func runtimeOverviewPrimaryActionPresentation(
     focus: StatusRuntimeOverviewFocus,
+    runtimeState: CompanionTransportStatus.State,
     canGeneratePairingQR: Bool,
     hasPairingAction: Bool,
     hasActivePairingSession: Bool,
     isPreparingPairingRoute: Bool
 ) -> RuntimeOverviewPrimaryActionPresentation? {
     switch focus {
-    case .runtimeSetup, .ready:
+    case .runtimeSetup:
+        if runtimeState == .failed {
+            return RuntimeOverviewPrimaryActionPresentation(
+                action: .startRuntime,
+                title: NSLocalizedString("Retry AetherLink Runtime", comment: ""),
+                systemImage: "arrow.clockwise",
+                accessibilityValue: NSLocalizedString("Available", comment: ""),
+                accessibilityHint: NSLocalizedString(
+                    "Try starting AetherLink Runtime again.",
+                    comment: ""
+                ),
+                isEnabled: true
+            )
+        }
+        return RuntimeOverviewPrimaryActionPresentation(
+            action: .startRuntime,
+            title: NSLocalizedString("Start AetherLink Runtime", comment: ""),
+            systemImage: "play.fill",
+            accessibilityValue: NSLocalizedString("Available", comment: ""),
+            accessibilityHint: NSLocalizedString(
+                "Start AetherLink Runtime on this Mac.",
+                comment: ""
+            ),
+            isEnabled: true
+        )
+    case .ready:
         return nil
     case .pairing:
         return RuntimeOverviewPrimaryActionPresentation(

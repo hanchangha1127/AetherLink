@@ -2702,8 +2702,15 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         _ requestedModel: String,
         backend: any RuntimeModelServingBackend
     ) async throws -> ResolvedRuntimeModel {
-        let models = try await backend.listModels()
-        if let resolved = ModelProvider.splitQualifiedModelID(requestedModel) {
+        let qualifiedModel = ModelProvider.splitQualifiedModelID(requestedModel)
+        let models = try await {
+            if let qualifiedModel,
+               let scopedCatalog = backend as? any ProviderScopedModelCatalogListing {
+                return try await scopedCatalog.listModels(for: qualifiedModel.provider)
+            }
+            return try await backend.listModels()
+        }()
+        if let resolved = qualifiedModel {
             if let model = models.first(where: { model in
                 model.installed
                     && model.source == .local
@@ -3768,7 +3775,12 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         guard let qualified = ModelProvider.splitQualifiedModelID(modelID) else {
             return nil
         }
-        let models = try? await backend.listModels()
+        let models = try? await {
+            if let scopedCatalog = backend as? any ProviderScopedModelCatalogListing {
+                return try await scopedCatalog.listModels(for: qualified.provider)
+            }
+            return try await backend.listModels()
+        }()
         let descriptor = models.flatMap { models -> RuntimeSemanticEmbeddingModelDescriptor? in
             let eligible = models.filter { candidate in
                 candidate.provider == qualified.provider &&

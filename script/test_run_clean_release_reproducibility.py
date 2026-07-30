@@ -160,14 +160,14 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             self.assertEqual(
                 runner.default_result_path(),
                 runner.RESULT_ROOT
-                / "aetherlink-1.0.0+8-local-v1-two-root-v3.json",
+                / "aetherlink-1.0.0+8-local-v1-two-root-v4.json",
             )
             self.assertEqual(
                 runner.default_comparison_result_path(),
                 runner.RESULT_ROOT
                 / (
                     "aetherlink-1.0.0+8-local-v1"
-                    "-two-root-v3-prepublication.json"
+                    "-two-root-v4-prepublication.json"
                 ),
             )
 
@@ -177,33 +177,33 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             marketing_version="1.0.0",
         )
         publish_names = (
-            "aetherlink-1.0.0+8-local-v1-two-root-v3.json",
-            "aetherlink-1.0.0+8-local-v1-two-root-v3-confirmation.json",
-            "aetherlink-1.0.0+8-local-v1-two-root-v3-attempt1-failed.json",
+            "aetherlink-1.0.0+8-local-v1-two-root-v4.json",
+            "aetherlink-1.0.0+8-local-v1-two-root-v4-confirmation.json",
+            "aetherlink-1.0.0+8-local-v1-two-root-v4-attempt1-failed.json",
         )
         comparison_names = (
-            "aetherlink-1.0.0+8-local-v1-two-root-v3-prepublication.json",
+            "aetherlink-1.0.0+8-local-v1-two-root-v4-prepublication.json",
             (
-                "aetherlink-1.0.0+8-local-v1-two-root-v3-"
+                "aetherlink-1.0.0+8-local-v1-two-root-v4-"
                 "prepublication-confirmation.json"
             ),
             (
-                "aetherlink-1.0.0+8-local-v1-two-root-v3-"
+                "aetherlink-1.0.0+8-local-v1-two-root-v4-"
                 "prepublication-attempt1-interrupted.json"
             ),
         )
         rejected = (
             (publish_names[0], False),
             (comparison_names[0], True),
-            ("aetherlink-1.0.0+7-local-v1-two-root-v3.json", True),
+            ("aetherlink-1.0.0+7-local-v1-two-root-v4.json", True),
             ("result.json", True),
             (
-                "aetherlink-1.0.0+8-local-v1-two-root-v3-"
+                "aetherlink-1.0.0+8-local-v1-two-root-v4-"
                 "prepublication-confirmation.json",
                 True,
             ),
             (
-                "aetherlink-1.0.0+8-local-v1-two-root-v3-"
+                "aetherlink-1.0.0+8-local-v1-two-root-v4-"
                 "prepublication-.json",
                 False,
             ),
@@ -247,11 +247,11 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
         )
         comparison_path = (
             runner.RESULT_ROOT
-            / "aetherlink-1.0.0+8-local-v1-two-root-v3-prepublication.json"
+            / "aetherlink-1.0.0+8-local-v1-two-root-v4-prepublication.json"
         )
         canonical_path = (
             runner.RESULT_ROOT
-            / "aetherlink-1.0.0+8-local-v1-two-root-v3.json"
+            / "aetherlink-1.0.0+8-local-v1-two-root-v4.json"
         )
         passed = {
             "builds": [{"archive": {"sha256": "a" * 64}}],
@@ -320,7 +320,7 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
     def test_canonical_result_and_swift_policy_are_exact(self) -> None:
         result = runner.empty_result()
         encoded = runner.canonical_json_bytes(result)
-        self.assertEqual(result["schemaVersion"], 3)
+        self.assertEqual(result["schemaVersion"], 4)
         self.assertEqual(
             runner.RESULT_PATH_VERSION,
             result["schemaVersion"],
@@ -330,7 +330,18 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             runner.PUBLISH_QUALIFIED_MODE,
         )
         self.assertIsNone(result["releaseId"])
+        self.assertIsNone(result["prepublicationBinding"])
         self.assertIsNone(result["scratch"]["sourceRoots"])
+        self.assertEqual(
+            result["protectedArchive"],
+            {
+                "afterIdentitySha256": None,
+                "beforeIdentitySha256": None,
+                "policy": runner.PROTECTED_RELEASE_POLICY,
+                "relativePath": None,
+                "unchanged": False,
+            },
+        )
         self.assertEqual(
             result["publication"],
             {
@@ -388,6 +399,170 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             1,
         )
         self.assertEqual(arguments.count("-fno-pch-timestamp"), 1)
+
+    def test_publish_binding_requires_exact_canonical_comparison_result(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+22-local-v1"
+        protected_relative = Path(
+            "dist/releases/aetherlink-1.0.0+21-local-v1"
+        )
+        protected_identity = "b" * 64
+        source = {
+            "overlaySha256": "c" * 64,
+            "snapshotSha256": "d" * 64,
+        }
+        builds = [
+            {
+                "archive": {
+                    "members": [
+                        {"path": "payload.bin", "sha256": "e" * 64}
+                    ],
+                    "sha256": "f" * 64,
+                },
+                "lane": "build-a",
+            },
+            {
+                "archive": {
+                    "members": [
+                        {"path": "payload.bin", "sha256": "e" * 64}
+                    ],
+                    "sha256": "f" * 64,
+                },
+                "lane": "build-b",
+            },
+        ]
+        comparison = {
+            "archiveBytesEqual": True,
+            "differences": [],
+            "memberBytesEqual": True,
+        }
+        result = runner.empty_result(publish_qualified=False)
+        result.update(
+            {
+                "builds": builds,
+                "comparison": comparison,
+                "releaseId": release_id,
+                "source": source,
+                "status": "passed",
+            }
+        )
+        result["protectedArchive"].update(
+            {
+                "afterIdentitySha256": protected_identity,
+                "beforeIdentitySha256": protected_identity,
+                "relativePath": protected_relative.as_posix(),
+                "unchanged": True,
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_root = Path(temporary) / "root"
+            result_root = temporary_root / "dist/reproducibility"
+            result_root.mkdir(parents=True)
+            with (
+                mock.patch.object(runner, "ROOT", temporary_root),
+                mock.patch.object(runner, "RESULT_ROOT", result_root),
+            ):
+                path = runner.canonical_prepublication_result_path(release_id)
+                path.write_bytes(runner.canonical_json_bytes(result))
+                binding, bound_path, identity = (
+                    runner.load_matching_prepublication_result(
+                        release_id,
+                        expected_source=source,
+                        expected_builds=builds,
+                        expected_comparison=comparison,
+                        protected_release_relative=protected_relative,
+                        protected_archive_identity_sha256=(
+                            protected_identity
+                        ),
+                    )
+                )
+
+                self.assertEqual(bound_path, path)
+                self.assertEqual(identity, runner.stable_file_identity(path))
+                self.assertEqual(
+                    binding,
+                    {
+                        "matched": True,
+                        "path": path.relative_to(runner.ROOT).as_posix(),
+                        "policy": runner.PREPUBLICATION_BINDING_POLICY,
+                        "sha256": identity.sha256,
+                        "size": identity.size,
+                    },
+                )
+
+                mismatches = (
+                    (
+                        "source",
+                        {"overlaySha256": "0" * 64},
+                        builds,
+                        comparison,
+                        protected_identity,
+                    ),
+                    (
+                        "archive-member",
+                        source,
+                        [
+                            {
+                                "archive": {
+                                    "members": [
+                                        {
+                                            "path": "payload.bin",
+                                            "sha256": "0" * 64,
+                                        }
+                                    ],
+                                    "sha256": "f" * 64,
+                                },
+                                "lane": "build-a",
+                            },
+                            builds[1],
+                        ],
+                        comparison,
+                        protected_identity,
+                    ),
+                    (
+                        "comparison",
+                        source,
+                        builds,
+                        {
+                            **comparison,
+                            "memberBytesEqual": False,
+                        },
+                        protected_identity,
+                    ),
+                    (
+                        "previous-archive",
+                        source,
+                        builds,
+                        comparison,
+                        "0" * 64,
+                    ),
+                )
+                for (
+                    label,
+                    expected_source,
+                    expected_builds,
+                    expected_comparison,
+                    expected_protected_identity,
+                ) in mismatches:
+                    with self.subTest(label=label), self.assertRaises(
+                        runner.ReproducibilityError
+                    ) as caught:
+                        runner.load_matching_prepublication_result(
+                            release_id,
+                            expected_source=expected_source,
+                            expected_builds=expected_builds,
+                            expected_comparison=expected_comparison,
+                            protected_release_relative=protected_relative,
+                            protected_archive_identity_sha256=(
+                                expected_protected_identity
+                            ),
+                        )
+                    self.assertEqual(
+                        caught.exception.phase,
+                        "prepublication-binding",
+                    )
 
     def test_source_roots_require_exact_unequal_length_evidence(self) -> None:
         roots = tuple(
@@ -595,10 +770,15 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     self.assertFalse(os.path.lexists(scratch))
                     self.assertFalse(os.path.lexists(lease))
 
-    def test_protected_build3_detects_byte_and_inode_change(self) -> None:
+    def test_previous_release_archive_detects_byte_and_inode_change(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            directory = root / runner.PROTECTED_RELEASE_RELATIVE
+            relative = Path(
+                "dist/releases/aetherlink-1.0.0+7-local-v1"
+            )
+            directory = root / relative
             directory.mkdir(parents=True)
             archive_id = directory.name
             files = (
@@ -608,16 +788,50 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             )
             for name in files:
                 (directory / name).write_bytes(name.encode("ascii"))
-            before = runner.capture_protected_archive(root)
+            before = runner.capture_protected_archive(relative, root)
             target = directory / files[0]
             target.write_bytes(b"changed\n")
-            after_bytes = runner.capture_protected_archive(root)
+            after_bytes = runner.capture_protected_archive(relative, root)
             self.assertNotEqual(before, after_bytes)
             replacement = directory / ".replacement"
             replacement.write_bytes(b"changed\n")
             os.replace(replacement, target)
-            after_inode = runner.capture_protected_archive(root)
+            after_inode = runner.capture_protected_archive(relative, root)
             self.assertNotEqual(after_bytes, after_inode)
+
+    def test_previous_release_path_comes_from_penultimate_ledger_entry(
+        self,
+    ) -> None:
+        previous = builder_module.ReleaseVersion(
+            build_number=21,
+            marketing_version="1.0.0",
+            semantic_version=(1, 0, 0),
+        )
+        current = builder_module.ReleaseVersion(
+            build_number=22,
+            marketing_version="1.0.0",
+            semantic_version=(1, 0, 0),
+        )
+        with mock.patch.object(
+            runner,
+            "load_release_version_ledger",
+            return_value=(previous, current),
+        ):
+            self.assertEqual(
+                runner.previous_release_relative(),
+                Path("dist/releases/aetherlink-1.0.0+21-local-v1"),
+            )
+
+        with (
+            mock.patch.object(
+                runner,
+                "load_release_version_ledger",
+                return_value=(current,),
+            ),
+            self.assertRaises(runner.ReproducibilityError) as caught,
+        ):
+            runner.previous_release_relative()
+        self.assertEqual(caught.exception.phase, "protected-archive")
 
     def test_tree_digest_detects_non_root_byte_difference(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -774,6 +988,9 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 "sha256": "a" * 64,
             }
             git_refs = runner.GitRefs("1" * 40, "2" * 40)
+            protected_relative = Path(
+                "dist/releases/aetherlink-1.0.0+7-local-v1"
+            )
             sentinel = ("b" * 64, {"fixture": self.identity()})
             current = mock.Mock()
             real_publisher = builder_module.publish_archive_directory
@@ -864,6 +1081,7 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                             evidence,
                             source_snapshot,
                             git_refs,
+                            protected_relative,
                             sentinel,
                             publication=publication,
                         )
@@ -1001,6 +1219,71 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     )
                     self.assertFalse(publication["independentReadback"])
 
+    def test_execute_resolves_one_release_context_under_the_lock(
+        self,
+    ) -> None:
+        result_path = Path(
+            "/fixture/dist/reproducibility/"
+            "aetherlink-1.0.0+22-local-v1-two-root-v4-prepublication.json"
+        )
+        release_context = runner.ReleaseContext(
+            release_id="aetherlink-1.0.0+22-local-v1",
+            previous_release_relative=Path(
+                "dist/releases/aetherlink-1.0.0+21-local-v1"
+            ),
+        )
+        events: list[str] = []
+
+        @contextmanager
+        def fake_lock() -> object:
+            events.append("lock-enter")
+            try:
+                yield
+            finally:
+                events.append("lock-exit")
+
+        with (
+            mock.patch.object(runner, "acquire_run_lock", fake_lock),
+            mock.patch.object(
+                runner,
+                "resolve_release_context",
+                return_value=release_context,
+            ) as context_mock,
+            mock.patch.object(
+                runner,
+                "preflight_fixed_paths",
+                side_effect=runner.ReproducibilityError(
+                    2,
+                    "invocation",
+                    "fixture preflight failure",
+                ),
+            ) as preflight_mock,
+            mock.patch.object(
+                runner,
+                "capture_protected_archive",
+            ) as capture_mock,
+            mock.patch.object(runner, "write_result") as write_mock,
+        ):
+            exit_code, result = runner.execute(
+                result_path,
+                publish_qualified=False,
+            )
+
+        self.assertEqual(exit_code, 2, result)
+        self.assertEqual(result["failure"]["phase"], "invocation")
+        self.assertEqual(events, ["lock-enter", "lock-exit"])
+        context_mock.assert_called_once_with()
+        preflight_mock.assert_called_once_with(
+            result_path,
+            publish_qualified=False,
+            expected_release_id=release_context.release_id,
+            protected_release_relative=(
+                release_context.previous_release_relative
+            ),
+        )
+        capture_mock.assert_not_called()
+        write_mock.assert_not_called()
+
     def test_execute_never_builds_from_original_and_holds_lock_through_cleanup(
         self,
     ) -> None:
@@ -1017,8 +1300,22 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 "sha256": "a" * 64,
             }
             sentinel = ("b" * 64, {"fixture": self.identity()})
+            prepublication_path = base / "prepublication.json"
+            prepublication_path.write_bytes(b"fixture\n")
+            prepublication_identity = runner.stable_file_identity(
+                prepublication_path
+            )
+            prepublication_binding = {
+                "matched": True,
+                "path": "dist/reproducibility/fixture.json",
+                "policy": runner.PREPUBLICATION_BINDING_POLICY,
+                "sha256": prepublication_identity.sha256,
+                "size": prepublication_identity.size,
+            }
             events: list[str] = []
+            fail_binding = [False]
             fail_publication = [False]
+            mutate_prepublication = [False]
 
             @contextmanager
             def fake_lock() -> object:
@@ -1039,6 +1336,8 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                         "publication",
                         "fixture publication failure",
                     )
+                if mutate_prepublication[0]:
+                    prepublication_path.write_bytes(b"changed\n")
                 return {
                     "alreadyMatched": False,
                     "archiveDirectory": "dist/releases/fixture",
@@ -1051,12 +1350,28 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     "sourceSnapshotUnchanged": True,
                 }
 
+            def fake_load_matching(
+                *args: object,
+                **kwargs: object,
+            ) -> tuple[dict[str, object], Path, runner.FileIdentity]:
+                if fail_binding[0]:
+                    raise runner.ReproducibilityError(
+                        8,
+                        "prepublication-binding",
+                        "fixture binding failure",
+                    )
+                return (
+                    prepublication_binding,
+                    prepublication_path,
+                    prepublication_identity,
+                )
+
             with (
                 mock.patch.object(runner, "WORK_ROOT", work_root),
                 mock.patch.object(
                     runner,
                     "capture_protected_archive",
-                    side_effect=(sentinel,) * 6,
+                    side_effect=(sentinel,) * 10,
                 ),
                 mock.patch.object(runner, "acquire_run_lock", fake_lock),
                 mock.patch.object(
@@ -1103,7 +1418,7 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 mock.patch.object(
                     runner,
                     "run_lane",
-                    side_effect=(evidence,) * 6,
+                    side_effect=(evidence,) * 10,
                 ) as run_lane_mock,
                 mock.patch.object(
                     runner,
@@ -1117,6 +1432,11 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                         "memberSetEqual": True,
                         "normalizations": [],
                     },
+                ),
+                mock.patch.object(
+                    runner,
+                    "load_matching_prepublication_result",
+                    side_effect=fake_load_matching,
                 ),
                 mock.patch.object(
                     runner,
@@ -1147,6 +1467,31 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 publish_mock.assert_not_called()
                 run_lane_mock.reset_mock()
                 events.clear()
+                fail_binding[0] = True
+                binding_code, binding_result = runner.execute(
+                    base / "result/result-binding-failed.json"
+                )
+                self.assertEqual(binding_code, 8, binding_result)
+                self.assertEqual(
+                    binding_result["failure"]["phase"],
+                    "prepublication-binding",
+                )
+                self.assertEqual(
+                    binding_result["publication"],
+                    {
+                        "attempted": False,
+                        "independentReadback": False,
+                        "outcome": "not-reached",
+                        "policy": (
+                            runner.PUBLISH_QUALIFIED_PUBLICATION_POLICY
+                        ),
+                        "qualifiedArchivePublished": False,
+                    },
+                )
+                publish_mock.assert_not_called()
+                run_lane_mock.reset_mock()
+                events.clear()
+                fail_binding[0] = False
                 fail_publication[0] = True
                 failed_code, failed_result = runner.execute(
                     base / "result/result-attempt1-failed.json"
@@ -1172,9 +1517,29 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 events.clear()
                 fail_publication[0] = False
                 exit_code, result = runner.execute(result_path)
+                successful_build_roots = [
+                    call.args[0]
+                    for call in run_lane_mock.call_args_list
+                ]
+                successful_events = list(events)
+
+                run_lane_mock.reset_mock()
+                events.clear()
+                mutate_prepublication[0] = True
+                mutation_code, mutation_result = runner.execute(
+                    base / "result/result-binding-mutated.json"
+                )
+                self.assertEqual(mutation_code, 8, mutation_result)
+                self.assertEqual(
+                    mutation_result["failure"]["phase"],
+                    "prepublication-binding",
+                )
+                self.assertTrue(
+                    mutation_result["publication"]["independentReadback"]
+                )
 
             self.assertEqual(exit_code, 0, result)
-            build_roots = [call.args[0] for call in run_lane_mock.call_args_list]
+            build_roots = successful_build_roots
             self.assertEqual(len(build_roots), 2)
             self.assertTrue(all(work_root in path.parents for path in build_roots))
             self.assertTrue(all(path != runner.ROOT for path in build_roots))
@@ -1195,29 +1560,52 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             self.assertTrue(
                 result["scratch"]["sourceRoots"]["sourceRootLengthsDiffer"]
             )
+            self.assertEqual(
+                result["prepublicationBinding"],
+                prepublication_binding,
+            )
             self.assertTrue(result["publication"]["independentReadback"])
-            self.assertLess(events.index("publish"), events.index("lock-exit"))
-            self.assertLess(events.index("scratch-cleanup"), events.index("lock-exit"))
+            self.assertLess(
+                successful_events.index("publish"),
+                successful_events.index("lock-exit"),
+            )
+            self.assertLess(
+                successful_events.index("scratch-cleanup"),
+                successful_events.index("lock-exit"),
+            )
             self.assertTrue(result["protectedArchive"]["unchanged"])
 
     def test_protected_or_source_result_path_is_rejected_without_write(
         self,
     ) -> None:
+        protected_relative = Path(
+            "dist/releases/aetherlink-1.0.0+7-local-v1"
+        )
         protected_result = (
             runner.ROOT
-            / runner.PROTECTED_RELEASE_RELATIVE
-            / "aetherlink-1.0.0+3-local-v1.manifest.json"
+            / protected_relative
+            / "aetherlink-1.0.0+7-local-v1.manifest.json"
         ).resolve()
         source_result = (runner.ROOT / "release/version-ledger.tsv").resolve()
-        for path in (protected_result, source_result):
-            with self.subTest(path=path), self.assertRaisesRegex(
-                runner.ReproducibilityError,
-                "result basename|result path must be",
-            ):
-                runner.preflight_fixed_paths(path)
+        with mock.patch.object(
+            runner,
+            "previous_release_relative",
+            return_value=protected_relative,
+        ):
+            for path in (protected_result, source_result):
+                with self.subTest(path=path), self.assertRaisesRegex(
+                    runner.ReproducibilityError,
+                    "result basename|result path must be",
+                ):
+                    runner.preflight_fixed_paths(path)
 
         sentinel = ("b" * 64, {"fixture": self.identity()})
         with (
+            mock.patch.object(
+                runner,
+                "previous_release_relative",
+                return_value=protected_relative,
+            ),
             mock.patch.object(
                 runner,
                 "capture_protected_archive",

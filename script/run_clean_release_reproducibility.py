@@ -37,15 +37,16 @@ WORK_ROOT = Path("/private/tmp/aetherlink-g6-clean-release-repro-v1")
 SWIFT_SCRATCH = Path("/private/tmp/aetherlink-g6-swift-scratch-v1")
 LOCK_PATH = WORK_ROOT / ".runner.lock"
 SWIFT_LEASE_PATH = WORK_ROOT / ".swift-scratch-lease.json"
-PROTECTED_RELEASE_RELATIVE = Path(
-    "dist/releases/aetherlink-1.0.0+3-local-v1"
-)
 RESULT_ROOT = ROOT / "dist/reproducibility"
-RESULT_SCHEMA_VERSION = 3
-RESULT_PATH_VERSION = 3
+RESULT_SCHEMA_VERSION = 4
+RESULT_PATH_VERSION = 4
 COMPARISON_ONLY_MODE = "comparison-only"
 PUBLISH_QUALIFIED_MODE = "publish-qualified"
 PREPUBLICATION_RESULT_SUFFIX = "-prepublication.json"
+PREPUBLICATION_BINDING_POLICY = (
+    "canonical-comparison-result-exact-source-builds-and-comparison-v1"
+)
+PROTECTED_RELEASE_POLICY = "previous-ledger-entry-archive-v1"
 COMPARISON_ONLY_PUBLICATION_POLICY = "comparison-only-no-publication"
 PUBLISH_QUALIFIED_PUBLICATION_POLICY = (
     "publish-qualified-build-a-after-exact-two-root-match"
@@ -101,6 +102,49 @@ class ReproducibilityError(RuntimeError):
         super().__init__(message)
         self.exit_code = exit_code
         self.phase = phase
+
+
+@dataclass(frozen=True)
+class ReleaseContext:
+    release_id: str
+    previous_release_relative: Path
+
+
+def resolve_release_context(
+    root: Path = ROOT,
+    *,
+    phase: str = "invocation",
+) -> ReleaseContext:
+    try:
+        entries = load_release_version_ledger(
+            root / "release/version-ledger.tsv"
+        )
+    except LedgerError as error:
+        raise ReproducibilityError(
+            2,
+            phase,
+            f"cannot resolve the current and previous releases: {error}",
+        ) from error
+    if len(entries) < 2:
+        raise ReproducibilityError(
+            2,
+            phase,
+            "the release ledger has no previous entry to protect",
+        )
+    return ReleaseContext(
+        release_id=archive_builder.release_id(entries[-1]),
+        previous_release_relative=(
+            Path("dist/releases")
+            / archive_builder.release_id(entries[-2])
+        ),
+    )
+
+
+def previous_release_relative(root: Path = ROOT) -> Path:
+    return resolve_release_context(
+        root,
+        phase="protected-archive",
+    ).previous_release_relative
 
 
 @dataclass(frozen=True)
@@ -726,16 +770,20 @@ def validate_result_mode_path(
     result_path: Path,
     *,
     publish_qualified: bool,
+    expected_release_id: str | None = None,
 ) -> str:
-    try:
-        current = load_release_version_ledger()[-1]
-    except LedgerError as error:
-        raise ReproducibilityError(
-            2,
-            "invocation",
-            f"cannot resolve the current release ID: {error}",
-        ) from error
-    release_id = archive_builder.release_id(current)
+    if expected_release_id is None:
+        try:
+            current = load_release_version_ledger()[-1]
+        except LedgerError as error:
+            raise ReproducibilityError(
+                2,
+                "invocation",
+                f"cannot resolve the current release ID: {error}",
+            ) from error
+        release_id = archive_builder.release_id(current)
+    else:
+        release_id = expected_release_id
     prefix = (
         f"{release_id}"
         f"-two-root-v{RESULT_PATH_VERSION}"
@@ -777,10 +825,29 @@ def preflight_fixed_paths(
     result_path: Path,
     *,
     publish_qualified: bool = True,
+    expected_release_id: str | None = None,
+    protected_release_relative: Path | None = None,
 ) -> str:
+    if (expected_release_id is None) != (
+        protected_release_relative is None
+    ):
+        raise ReproducibilityError(
+            70,
+            "internal",
+            "release context must provide both current and previous releases",
+        )
+    release_context = (
+        resolve_release_context()
+        if expected_release_id is None
+        else ReleaseContext(
+            release_id=expected_release_id,
+            previous_release_relative=protected_release_relative,
+        )
+    )
     release_id = validate_result_mode_path(
         result_path,
         publish_qualified=publish_qualified,
+        expected_release_id=release_context.release_id,
     )
     allowed_result_root = RESULT_ROOT.resolve()
     if (
@@ -820,7 +887,11 @@ def preflight_fixed_paths(
                 f"existing result is not an owner-controlled regular file: "
                 f"{result_path}",
             )
-    for protected in (ROOT, ROOT / PROTECTED_RELEASE_RELATIVE, result_path.parent):
+    for protected in (
+        ROOT,
+        ROOT / release_context.previous_release_relative,
+        result_path.parent,
+    ):
         if paths_overlap(SWIFT_SCRATCH, protected):
             raise ReproducibilityError(
                 3,
@@ -1050,14 +1121,25 @@ def resolve_android_sdk(environment: dict[str, str]) -> Path:
 
 
 def capture_protected_archive(
+    relative_path: Path,
     root: Path = ROOT,
 ) -> tuple[str, dict[str, FileIdentity]]:
-    directory = root / PROTECTED_RELEASE_RELATIVE
+    if (
+        relative_path.is_absolute()
+        or ".." in relative_path.parts
+        or relative_path.parent != Path("dist/releases")
+    ):
+        raise ReproducibilityError(
+            2,
+            "protected-archive",
+            f"protected release path is invalid: {relative_path}",
+        )
+    directory = root / relative_path
     if directory.is_symlink() or not directory.is_dir():
         raise ReproducibilityError(
             2,
             "protected-archive",
-            f"protected build3 archive directory is unavailable: {directory}",
+            f"previous release archive directory is unavailable: {directory}",
         )
     archive_id = directory.name
     expected = {
@@ -1070,7 +1152,7 @@ def capture_protected_archive(
         raise ReproducibilityError(
             2,
             "protected-archive",
-            f"protected build3 sidecar set differs: {sorted(actual)}",
+            f"previous release archive sidecar set differs: {sorted(actual)}",
         )
     identities = {
         name: stable_file_identity(directory / name)
@@ -1336,10 +1418,107 @@ def compare_archives(
     }
 
 
+def canonical_prepublication_result_path(release_id: str) -> Path:
+    return RESULT_ROOT / (
+        f"{release_id}-two-root-v{RESULT_PATH_VERSION}"
+        f"{PREPUBLICATION_RESULT_SUFFIX}"
+    )
+
+
+def load_matching_prepublication_result(
+    release_id: str,
+    *,
+    expected_source: object,
+    expected_builds: object,
+    expected_comparison: object,
+    protected_release_relative: Path,
+    protected_archive_identity_sha256: str,
+) -> tuple[dict[str, object], Path, FileIdentity]:
+    path = canonical_prepublication_result_path(release_id)
+    try:
+        identity_before = stable_file_identity(path)
+        raw = path.read_bytes()
+        identity_after = stable_file_identity(path)
+    except (OSError, ReproducibilityError) as error:
+        raise ReproducibilityError(
+            8,
+            "prepublication-binding",
+            f"cannot read canonical comparison-only result: {error}",
+        ) from error
+    if (
+        identity_before != identity_after
+        or identity_before.uid != os.getuid()
+        or len(raw) != identity_before.size
+    ):
+        raise ReproducibilityError(
+            8,
+            "prepublication-binding",
+            "canonical comparison-only result changed while being read",
+        )
+    try:
+        parsed = json.loads(raw.decode("ascii"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ReproducibilityError(
+            8,
+            "prepublication-binding",
+            f"canonical comparison-only result is not ASCII JSON: {error}",
+        ) from error
+    if type(parsed) is not dict or canonical_json_bytes(parsed) != raw:
+        raise ReproducibilityError(
+            8,
+            "prepublication-binding",
+            "canonical comparison-only result is not canonical JSON",
+        )
+    expected_publication = empty_result(
+        publish_qualified=False
+    )["publication"]
+    protected = parsed.get("protectedArchive")
+    if (
+        set(parsed) != set(empty_result(publish_qualified=False))
+        or parsed.get("schemaVersion") != RESULT_SCHEMA_VERSION
+        or parsed.get("executionMode") != COMPARISON_ONLY_MODE
+        or parsed.get("releaseId") != release_id
+        or parsed.get("status") != "passed"
+        or parsed.get("failure") is not None
+        or parsed.get("prepublicationBinding") is not None
+        or parsed.get("publication") != expected_publication
+        or parsed.get("source") != expected_source
+        or parsed.get("builds") != expected_builds
+        or parsed.get("comparison") != expected_comparison
+        or type(protected) is not dict
+        or protected.get("policy") != PROTECTED_RELEASE_POLICY
+        or protected.get("relativePath")
+        != protected_release_relative.as_posix()
+        or protected.get("unchanged") is not True
+        or protected.get("beforeIdentitySha256")
+        != protected_archive_identity_sha256
+        or protected.get("afterIdentitySha256")
+        != protected_archive_identity_sha256
+    ):
+        raise ReproducibilityError(
+            8,
+            "prepublication-binding",
+            "canonical comparison-only result does not exactly match the "
+            "current source, builds, comparison, and previous archive",
+        )
+    return (
+        {
+            "matched": True,
+            "path": path.relative_to(ROOT).as_posix(),
+            "policy": PREPUBLICATION_BINDING_POLICY,
+            "sha256": identity_before.sha256,
+            "size": identity_before.size,
+        },
+        path,
+        identity_before,
+    )
+
+
 def publish_qualified_archive(
     qualified: ArchiveEvidence,
     source_snapshot: dict[str, object],
     git_refs: GitRefs,
+    protected_release_relative: Path,
     protected_archive: tuple[str, dict[str, FileIdentity]],
     *,
     publication: dict[str, object],
@@ -1375,11 +1554,14 @@ def publish_qualified_archive(
                 "publication",
                 "build source inputs changed during the reproducibility run",
             )
-        if capture_protected_archive() != protected_archive:
+        if (
+            capture_protected_archive(protected_release_relative)
+            != protected_archive
+        ):
             raise ReproducibilityError(
                 9,
                 "protected-archive",
-                "protected build3 archive changed before publication",
+                "previous release archive changed before publication",
             )
         qualified_identities = {
             qualified.archive_path.name: (
@@ -1632,11 +1814,13 @@ def empty_result(
         "executionMode": execution_mode,
         "failure": None,
         "gradleCache": None,
+        "prepublicationBinding": None,
         "publication": publication,
         "protectedArchive": {
             "afterIdentitySha256": None,
             "beforeIdentitySha256": None,
-            "relativePath": PROTECTED_RELEASE_RELATIVE.as_posix(),
+            "policy": PROTECTED_RELEASE_POLICY,
+            "relativePath": None,
             "unchanged": False,
         },
         "releaseId": None,
@@ -1660,6 +1844,7 @@ def publish_and_record(
     qualified: ArchiveEvidence,
     source_snapshot: dict[str, object],
     git_refs: GitRefs,
+    protected_release_relative: Path,
     protected_archive: tuple[str, dict[str, FileIdentity]],
 ) -> None:
     publication = result.get("publication")
@@ -1684,6 +1869,7 @@ def publish_and_record(
         qualified,
         source_snapshot,
         git_refs,
+        protected_release_relative,
         protected_archive,
         publication=publication,
     )
@@ -1736,6 +1922,7 @@ def execute(
     result = empty_result(publish_qualified=publish_qualified)
     exit_code = 70
     error: ReproducibilityError | None = None
+    protected_release_relative: Path | None = None
     sentinel_before: tuple[str, dict[str, FileIdentity]] | None = None
     run_root: Path | None = None
     run_id: str | None = None
@@ -1744,16 +1931,27 @@ def execute(
     lock_manager = acquire_run_lock()
     lock_acquired = False
     try:
-        sentinel_before = capture_protected_archive()
-        result["protectedArchive"]["beforeIdentitySha256"] = sentinel_before[0]
         lock_manager.__enter__()
         lock_acquired = True
+        release_context = resolve_release_context()
+        protected_release_relative = (
+            release_context.previous_release_relative
+        )
+        result["protectedArchive"]["relativePath"] = (
+            protected_release_relative.as_posix()
+        )
         expected_release_id = preflight_fixed_paths(
             result_path,
             publish_qualified=publish_qualified,
+            expected_release_id=release_context.release_id,
+            protected_release_relative=protected_release_relative,
         )
         result["releaseId"] = expected_release_id
         result_path_validated = True
+        sentinel_before = capture_protected_archive(
+            protected_release_relative
+        )
+        result["protectedArchive"]["beforeIdentitySha256"] = sentinel_before[0]
         run_id = uuid.uuid4().hex
         run_root = WORK_ROOT / f"run-{run_id}"
         run_root.mkdir(mode=0o700)
@@ -1882,14 +2080,37 @@ def execute(
                 f"{result['comparison']['differences']}",
             )
         if publish_qualified:
+            (
+                prepublication_binding,
+                prepublication_path,
+                prepublication_identity,
+            ) = load_matching_prepublication_result(
+                expected_release_id,
+                expected_source=result["source"],
+                expected_builds=result["builds"],
+                expected_comparison=result["comparison"],
+                protected_release_relative=protected_release_relative,
+                protected_archive_identity_sha256=sentinel_before[0],
+            )
+            result["prepublicationBinding"] = prepublication_binding
             print("Publishing and reading back qualified build A...", flush=True)
             publish_and_record(
                 result,
                 build_a,
                 source_snapshot,
                 git_refs,
+                protected_release_relative,
                 sentinel_before,
             )
+            if (
+                stable_file_identity(prepublication_path)
+                != prepublication_identity
+            ):
+                raise ReproducibilityError(
+                    8,
+                    "prepublication-binding",
+                    "canonical comparison-only result changed during publication",
+                )
         else:
             print(
                 "Comparison-only match passed; publication is disabled.",
@@ -1936,9 +2157,14 @@ def execute(
             error = cleanup_error
             exit_code = cleanup_error.exit_code
 
-        if sentinel_before is not None:
+        if (
+            sentinel_before is not None
+            and protected_release_relative is not None
+        ):
             try:
-                sentinel_after = capture_protected_archive()
+                sentinel_after = capture_protected_archive(
+                    protected_release_relative
+                )
                 unchanged = sentinel_after == sentinel_before
                 result["protectedArchive"]["afterIdentitySha256"] = (
                     sentinel_after[0]
@@ -1948,7 +2174,7 @@ def execute(
                     error = ReproducibilityError(
                         9,
                         "protected-archive",
-                        "protected build3 archive identity changed",
+                        "previous release archive identity changed",
                     )
                     exit_code = 9
             except ReproducibilityError as caught:
@@ -2002,9 +2228,8 @@ def default_result_path() -> Path:
 
 def default_comparison_result_path() -> Path:
     current = load_release_version_ledger()[-1]
-    return RESULT_ROOT / (
-        f"{archive_builder.release_id(current)}"
-        f"-two-root-v{RESULT_PATH_VERSION}-prepublication.json"
+    return canonical_prepublication_result_path(
+        archive_builder.release_id(current)
     )
 
 

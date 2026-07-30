@@ -53,36 +53,125 @@ current user direction, not repository-owner identity proof.
 - Continue only feature, UX, accessibility, performance, build, documentation,
   and release-quality work. Do not resume security findings, threat analysis,
   owner authentication, or authority-evidence work.
-- Build 20 is the latest immutable ledger archive. It binds a 246-file source
+- The current unreleased macOS Runtime no longer latches a failed listener as
+  started. Only an advertising listener enables route allocation, relay
+  startup, or restored pair transports; a failed attempt leaves a localized
+  Status Retry action available. The focused lifecycle/action/render checks and
+  exact 143-test CI Swift selector pass with zero skips or failures.
+- The current worktree prepares `.github/workflows/product-quality.yml` as a
+  bounded G7 non-security CI subset. Pull requests run two read-only hosted
+  jobs with exact Swift and Android product allowlists; pushes to `main` add a
+  macOS Release product build and strict-lock Android Release APK assembly plus
+  lint. `script/check_product_ci.py` pins that shape and rejects broad,
+  device/network, bundle/signing, publication, deployment, offline, or
+  `main-full` scope expansion.
+  The macOS lane uses supported `macos-26` and pins the exact Xcode 26.6
+  toolchain used locally; the deprecated `macos-14` draft was removed. The
+  self-test validates controlled mutations semantically with the byte pin
+  disabled only for that mutation, so a generic hash mismatch cannot mask a
+  missing rule. Safe YAML parsing plus a canonical parsed-semantic fingerprint
+  closes the exact top-level/job mappings and complete step arrays, while raw
+  checks close both job preambles and every named step body, including the
+  changed-byte and platform compile commands. A Psych AST pre-pass requires one
+  YAML document and rejects duplicate or explicitly tagged mapping keys before
+  safe loading. The reviewed workflow byte SHA-256 is
+  `efdc353abcd1b4eb62fe0e437b199677f675698efe9da4624e3985e08b76aea0`;
+  its parsed-semantic SHA-256 is
+  `a52031f1cd703a72cd6d4833864479e733767ca81d901e830049f42653e44ab8`.
+  Local parity passes 143 selected Swift tests and seven selected Android tests
+  with zero skips or failures, both platform compile lanes, Release builds,
+  lint, three static checks, YAML parsing, and the guard's mutation suite. The
+  Android allowlist now directly executes the changed-session scroll-boundary
+  regression rather than only compiling its test source. The workflow itself
+  has not run remotely because the files are uncommitted and unpushed;
+  canonical G7 completion and hosted-runner evidence remain unclaimed. The
+  selectors constrain test execution, not compilation of the complete Swift
+  package and Android app test-source graphs, and the Android hosted lane still
+  depends on its image's preinstalled SDK 36 plus ordinary dependency
+  downloads.
+- The current unreleased macOS Runtime isolates provider-qualified catalog
+  work. Qualified chat resolution, aggregate chat/embedding dispatch, and
+  semantic embedding descriptor lookup query only the selected Ollama or LM
+  Studio backend; unqualified chat still searches the complete aggregate
+  catalog. Exact provider-model validation and cancellation meaning are
+  preserved. All 49 aggregate/residency tests, three focused Router regressions,
+  the complete 2,093-test Swift suite, and the Release `AetherLink` build pass;
+  11 opt-in/live tests are skipped. The refreshed provider catalog copy-hygiene
+  subguard pins the scoped protocol, both Router call/fallback pairs, aggregate
+  filtering, exact call counts, and seven named regressions; the subguard and
+  all seven tests pass. The full mixed copy-hygiene command then stops only on
+  two historical G2 document expectations in the user-excluded security scope,
+  which remain untouched. Final GPT-5.6 Sol re-review reports no P0-P3 finding.
+  This proves deterministic no-device call isolation, not measured provider
+  latency or live-provider behavior.
+- The current unreleased Android chat treats `activeChatSessionId` as a
+  transcript scroll boundary. Immediate and delayed conversation switches,
+  including saved-state restoration while cached messages remain loading,
+  return to the selected conversation's latest row exactly once. Same-session
+  streaming updates preserve an earlier reading position and the
+  jump-to-latest action. Latest assistant/user/overall message IDs are computed
+  once per screen composition. The focused checks, all 296 Compose screen
+  tests, the complete 1,195-test app JVM suite, Release assembly, and Release
+  lint pass; lint has 0 errors and the two existing SDK-version warnings.
+  Final GPT-5.6 Sol review reports no P0-P3 finding. This is no-device evidence,
+  not physical rendering or measured frame-time proof.
+- The previously queued Release-test fixture refactor is inactive because its
+  affected accepted-endpoint types are inside the user-excluded authorization
+  scope.
+- Build 22 is the latest immutable ledger archive. It binds a 247-file source
   snapshot with SHA-256
-  `22f14e60d522b2720660e41a645a3e9832dd723b8b93b147c51bbf6c9125998c`
-  to the 165,617,269-byte ZIP with SHA-256
-  `cba5a6531c35725aef7a2a3bf8b25d2155833b31b216906c80f8349249f6edf1`.
+  `d0ee21c6f288cafad0a0f634de2116b48c8a4716389f2d52daacd4e90c591eb6`
+  to the 165,705,774-byte ZIP with SHA-256
+  `478bd4210c11f7e2204e80a333bc8053b0d01b8deff3d0a3d2dd6795df1366c3`.
   The 12,317-byte manifest SHA-256 is
-  `c633bf2c2ccc9d007f08e73929eed3d7f6b247d08579fa3695bcbad04348c99d`.
-- The v3 comparison-only prepublication result is
-  `dist/reproducibility/aetherlink-1.0.0+20-local-v1-two-root-v3-prepublication.json`,
-  19,571 bytes with SHA-256
-  `ad7e9b6e5f52a76d5a65b52bab5138ad86eb019b7b89fa7ee29c51b89c7cef2c`;
-  it records exact two-root equality and no publication. The v3
+  `a92ee387be3a900bad1682093b653da1fea1a8e1dd1580153bed91c01e2ff1c5`.
+- The v4 comparison-only prepublication result is
+  `dist/reproducibility/aetherlink-1.0.0+22-local-v1-two-root-v4-prepublication.json`,
+  19,645 bytes with SHA-256
+  `9293c578b2ca409966c79028ea2b8e9d5e717ae64159b58bd35b90c007d3d26b`;
+  it records exact two-root equality and no publication. The v4
   publish-qualified result is
-  `dist/reproducibility/aetherlink-1.0.0+20-local-v1-two-root-v3.json`,
-  20,010 bytes with SHA-256
-  `ca71f3ad64ea744275035891c5d41faae9778c6be4f1a6fbadac2c1cf2b59a1c`;
-  it records published/verified lane-A bytes and independent readback.
+  `dist/reproducibility/aetherlink-1.0.0+22-local-v1-two-root-v4.json`,
+  20,353 bytes with SHA-256
+  `330b671475c0769a0579a0af7cb7f82c746a5df4bb0aba4b305510e597d4081d`;
+  it records exact prepublication binding, an unchanged protected Build 21
+  archive, published/verified lane-A bytes, and independent readback.
 - Current readback is
-  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+20-local-v1`.
-  Builds 1 through 19 are historical; Build 19 readback now requires
-  `--historical`.
+  `python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+22-local-v1`.
+  Builds 1 through 21 are historical; their readback requires `--historical`.
 - Build 19 remains the first archive to source-bind the Runtime-chat SQLite
   cross-process helper/runner. Its deterministic timeout/rollback coverage and
   separate 48+48 writer/third-process readback observation remain Build 19
-  evidence and are not relabeled as Build 20 work. Build 18 remains the first
+  evidence and are not relabeled as Build 22 work. Build 18 remains the first
   archive to source-bind the Android drawer-search inputs.
+- Production connections use a 5-second busy timeout and normalize busy/locked
+  failures to one stable retry message. Three deterministic Swift tests cover
+  wait-and-release success and rollback after `BEGIN` or `COMMIT`.
+- The historical live result observed 96 disjoint events exactly once with
+  owner/session isolation, per-writer order, SQLite integrity, `0700`
+  directory mode, and `0600` file mode. It is separate execution evidence, not
+  an archive member, and does not qualify crash/power-loss, arbitrary
+  histories, mixed binaries, or production behavior.
 
-<!-- aetherlink-current-build20-lifecycle-v1:start -->
+<!-- aetherlink-current-build21-abrupt-recovery-v1:start -->
 
-- Build 20 has current same-host, per-user clean-HOME installed lifecycle
+- Build 21 adds the canonical 2,223-byte abrupt-process recovery result at
+  `dist/lifecycle/macos-runtime-chat-sqlite-abrupt-process-recovery-build-21-v1.json`,
+  SHA-256
+  `db66614d7badd7a0f606c03f91a516dff6d77e539684dcb6daf52709bce0f16f`.
+  Two identical executions record 24 committed events, one dirty uncommitted
+  25th event and FTS row after exact child `SIGKILL`, rollback-journal recovery to
+  24, and production-store resume to 48 contiguous exactly-once events. This
+  is bounded same-host abrupt child-process `SIGKILL` recovery evidence,
+  explicitly `not-production-append-crash-point`, not power-loss or
+  kernel-crash evidence, not arbitrary-history or long-soak evidence, and not
+  clean-machine, signed-distribution, or physical-device evidence.
+
+<!-- aetherlink-current-build21-abrupt-recovery-v1:end -->
+
+<!-- aetherlink-historical-build20-lifecycle-v1:start -->
+
+- Build 20 retains historical same-host, per-user clean-HOME installed lifecycle
   evidence. The 2,250-byte install/relaunch result is
   `dist/lifecycle/macos-packaged-app-build-20-clean-home-install-v1.json`,
   SHA-256
@@ -100,7 +189,7 @@ current user direction, not repository-owner identity proof.
   SQLite integrity, empty Runtime chat, and stable installed state.
 - Both clean-HOME runners were invoked twice and matched their canonical
   results.
-- These same-host, per-user Build 20 observations do not qualify a clean
+- These historical same-host, per-user Build 20 observations do not qualify a clean
   machine/account, signed/notarized distribution, UI/accessibility,
   live-provider behavior, a physical device, arbitrary histories,
   crash/power-loss, concurrent writers, backup/transfer, rollback, or
@@ -108,7 +197,7 @@ current user direction, not repository-owner identity proof.
   Gatekeeper quarantine/download behavior, and system `/Applications`
   evidence. PID 59809 remained alive.
 
-<!-- aetherlink-current-build20-lifecycle-v1:end -->
+<!-- aetherlink-historical-build20-lifecycle-v1:end -->
 
 - Build 16 preserves one successful publication separately from a failed
   preceding attempt and failed confirmation. The two failures observed the same
@@ -277,34 +366,37 @@ current user direction, not repository-owner identity proof.
   target SwiftPM localization bundle inside `Contents/Resources`, semantic and
   build versions, and a strict local ad-hoc seal. Five packaging regressions and
   the complete 145-test localization class pass, as does real package
-  structure/signature verification. Build 20 adds separate ephemeral local-DMG
-  evidence; Developer ID/notarization, downloaded/quarantined Gatekeeper,
+  structure/signature verification. Build 20 retains separate historical
+  ephemeral local-DMG evidence; Developer ID/notarization,
+  downloaded/quarantined Gatekeeper,
   Finder UI/drag-and-drop, and clean-machine launch remain unclaimed. Intel is
   Post-V1.
 - `release/version-ledger.tsv` is now the single version source for Android
   Release and macOS packaging. The latest published qualification reads back as
-  `1.0.0+20`; Android Debug stays `0.1.0+1` and builds with the ledger absent.
+  `1.0.0+22`; Android Debug stays `0.1.0+1` and builds with the ledger absent.
   Python, Bash, and lazy Gradle consumers reject noncanonical control bytes;
   strict parser, source, artifact, and fake-toolchain checks pass. The main
   `dist/AetherLink.app` remains the user-owned running Build 4 bundle and was
-  not replaced during Build 20 qualification.
-- The Build 20 qualification runner clean-builds both targets in two isolated
+  not replaced during Build 22 qualification.
+- The Build 22 qualification runner clean-builds both targets in two isolated
   source roots whose UTF-8 byte lengths are 101 and 109, and publishes
-  `dist/releases/aetherlink-1.0.0+20-local-v1/`. Its 165,617,269-byte canonical
+  `dist/releases/aetherlink-1.0.0+22-local-v1/`. Its 165,705,774-byte canonical
   normalized-input ZIP has SHA-256
-  `cba5a6531c35725aef7a2a3bf8b25d2155833b31b216906c80f8349249f6edf1`.
-  The exact v3 comparison-only and publish-qualified results listed at the start
+  `478bd4210c11f7e2204e80a333bc8053b0d01b8deff3d0a3d2dd6795df1366c3`.
+  The exact v4 comparison-only and publish-qualified results listed at the start
   of this lane both record byte-identical lane output; only the canonical result
-  publishes and independently reads back the archive.
+  publishes and independently reads back the archive. The publish-qualified
+  result also binds the exact prepublication result and proves the protected
+  Build 21 archive identity remained unchanged.
   Independent readback verifies 29 payload members, arm64-only APK badging,
   AAB mapping/JNI identity, exact `base`-only structure through
   `bundletool 1.18.3 validate`, direct base-manifest package/version/SDK and
   backup-policy fields, independent APK policy-resource resolution, and
   the arm64 app/dSYM UUID
-  `0AD0CBED-7293-3151-84D1-9BAF07654A93`. Android native symbols remain
+  `E8178DE8-6DC5-3E3D-A8EA-5721BC4F70CA`. Android native symbols remain
   explicitly unavailable because all five upstream JNI inputs are pre-stripped.
-  The 246-file source is explicitly a `dirty-content-snapshot`; commit
-  `dc5832b9f5926b44ccde87d11beb58355ecd9ece` alone cannot reconstruct the
+  The 247-file source is explicitly a `dirty-content-snapshot`; commit
+  `88c0282722eb0afb3ce2d6f394fedb1f22a7ec7c` alone cannot reconstruct the
   archived bytes. Compliance profile `aetherlink-release-compliance-v2`
   requires a 350-package Gradle lock/POM catalog, fixed metadata, text
   inventory, and SPDX 2.3 JSON. It records 692 exact package roles: 202
@@ -323,14 +415,14 @@ current user direction, not repository-owner identity proof.
   `kotlin-stdlib-common` compatibility exception. SwiftPM has zero external
   dependencies. Fixed Clang importer and debug compilation directories plus a
   canonical source-location alias remove the observed source-path-length byte
-  dependence while retaining the dSYM. The two recorded v3 A/B executions
+  dependence while retaining the dSYM. The two recorded v4 A/B executions
   produced a byte-identical ZIP, manifest, checksum sidecar, and 30-entry
   archive inventory. This is bounded evidence for two recorded same-host,
   fixed-toolchain/cache-snapshot, canonical-scratch pairs with serialized Swift
   frontend work, not a claim that
   arbitrary repeats are variance-free. Arbitrary roots or path lengths,
   cross-host reproducibility, signed artifacts, clean-machine launch, and
-  physical behavior remain unclaimed. Builds 1 through 19 remain immutable,
+  physical behavior remain unclaimed. Builds 1 through 21 remain immutable,
   independently readable historical archives. The
   verifier now cross-binds Gradle lock identities to the archived source
   inventory and rejects use of historical mode for the current release.
@@ -361,7 +453,7 @@ current user direction, not repository-owner identity proof.
   installation, clean-machine behavior, signed distribution, or
   physical-device behavior from the historical smoke.
 - The versioned
-  `docs/releases/1.0.0-build-20-local-v1.md` record now consolidates release
+  `docs/releases/1.0.0-build-22-local-v1.md` record now consolidates release
   notes, compatibility, migration, limitations, diagnostics, privacy/evidence
   boundaries, and rollback. It explicitly treats Android Debug `0.1.0+1` and
   local ad-hoc macOS packages as non-upgrade lineages. Build 6 remains a
@@ -470,19 +562,23 @@ current user direction, not repository-owner identity proof.
   nine expected opt-in skips. Docs/copy hygiene, ledger readback, 113 combined
   runner/documentation tests, Python syntax, diff whitespace, and the empty
   staging guard pass. The Build 9 archive binds that earlier settled source
-  snapshot and passes historical readback. Build 20 now binds the current
+  snapshot and passes historical readback. Build 22 now binds the current
   reranker, Android drawer-search inputs, APK/AAB backup-policy validation, and
   Research Notebook deletion lifecycle plus the Runtime-chat SQLite
   cross-process QA sources. Build 19 remains the first archive to bind that
-  cross-process QA closure; Builds 1 through 19 pass historical ledger-prefix
+  cross-process QA closure; Builds 1 through 21 pass historical ledger-prefix
   readback. Build 14 and Build 13 retain only their own packaged lifecycle
   observations. No physical-device claim was made.
-- A separately user-authored commit appeared during the preceding verification:
-  `main` and `origin/main` both resolve to
-  `dc5832b9f5926b44ccde87d11beb58355ecd9ece`. Codex did not stage, commit,
-  or push. The current Build 20 release record and current documentation are
-  local workspace changes; preserve them and all historical release/lifecycle
-  evidence when continuing.
+- The Build 22 manifest captured source HEAD and `origin/main` as
+  `88c0282722eb0afb3ce2d6f394fedb1f22a7ec7c` at qualification time. The
+  recorded checkout was also refreshed: at the 2026-07-30 11:44 KST refresh,
+  `main` and `origin/main` both resolved to
+  `88c0282722eb0afb3ce2d6f394fedb1f22a7ec7c`. The archived source inventory,
+  not either commit alone, remains the Build 22 source identity. Run
+  `git rev-parse HEAD` and `git rev-parse origin/main` before making any new
+  current-state claim. Codex did not stage, commit, or push. The current
+  documentation remains a local workspace change; preserve it and all
+  historical release/lifecycle evidence when continuing.
 - Do not stage, commit, or push these local changes unless the user explicitly
   requests it.
 
@@ -2167,7 +2263,7 @@ sed -n '1,530p;/^## Not Yet Proven$/,/^## Handoff Maintenance Rule$/p' docs/hand
 sed -n '1,90p' docs/progress.md
 sed -n '1,90p' docs/qa-evidence.md
 sed -n '1,230p' docs/roadmap.md
-sed -n '1,380p' docs/releases/1.0.0-build-20-local-v1.md
+sed -n '1,420p' docs/releases/1.0.0-build-22-local-v1.md
 ```
 
 Then run the cheap integrity checks:
@@ -2176,8 +2272,8 @@ Then run the cheap integrity checks:
 python3 script/check_docs_hygiene.py
 python3 script/check_macos_localization.py
 python3 script/check_release_version_ledger.py
-python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+20-local-v1
-python3 -B script/run_macos_runtime_chat_cross_process_smoke.py
+python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+22-local-v1
+python3 -B script/run_macos_runtime_chat_cross_process_smoke.py --abrupt-recovery
 python3 -B -m unittest script.test_run_macos_runtime_chat_cross_process_smoke
 python3 -m unittest script.test_build_and_run
 python3 -m unittest script.test_documentation_handoff_guards
@@ -3457,9 +3553,10 @@ Unless the user redirects the task, use this active non-security order:
 1. Re-read this handoff and refresh Git plus generated-artifact state. Do not
    infer device/process state from an older snapshot.
 2. Run the focused static guards. Use
-   `python3 script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+20-local-v1`
-   for current-source Build 20 evidence. Builds 1 through 19 require
-   `--historical`.
+   `python3 script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+22-local-v1`
+   for the current Build 22 source-bound archive. Use the same command with the
+   Build 21 archive path and `--historical` for frozen Build 21 integrity.
+   Builds 1 through 21 require `--historical`.
 3. Preserve both frozen historical Build 14 clean-HOME runner/test/result
    identities. The
    first proves two exact-path launches with stable empty SQLite state. The

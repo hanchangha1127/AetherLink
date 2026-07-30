@@ -1807,6 +1807,9 @@ fun ChatScreen(
     val canSend = chatComposerCanSend(state)
     val jumpToLatestStateDescription = stringResource(R.string.jump_to_latest_state_ready)
     val jumpToLatestActionLabel = stringResource(R.string.content_desc_jump_to_latest)
+    val latestAssistantMessageId = state.messages.lastAssistantMessageId()
+    val latestUserMessageId = state.messages.lastUserMessageId()
+    val latestMessageId = state.messages.lastOrNull()?.id
     val density = LocalDensity.current
     val keyboardDockPadding = if (WindowInsets.ime.getBottom(density) > 0) 64.dp else 0.dp
     val emptyStateScroll = rememberScrollState()
@@ -1817,6 +1820,10 @@ fun ChatScreen(
             !state.routeRefreshNoticeRuntimeName.isNullOrBlank() ||
             showChatBottomError
     var previousMessageCount by rememberSaveable { mutableIntStateOf(0) }
+    var observedChatSessionId by rememberSaveable {
+        mutableStateOf<String?>(state.activeChatSessionId)
+    }
+    var pendingSessionLatestScroll by rememberSaveable { mutableStateOf(false) }
     var copyAnnouncement by remember { mutableStateOf<CopySuccessAnnouncement?>(null) }
     var copyAnnouncementId by remember { mutableIntStateOf(0) }
     val announceCopySuccess: (String) -> Unit = { message ->
@@ -1836,38 +1843,53 @@ fun ChatScreen(
     }
 
     LaunchedEffect(
+        state.activeChatSessionId,
         state.messages.size,
         state.messages.lastOrNull()?.content,
         state.messages.lastOrNull()?.reasoning,
         state.isStreaming,
+        state.isLoadingActiveChatMessages,
         reduceMotion,
     ) {
+        if (observedChatSessionId != state.activeChatSessionId) {
+            observedChatSessionId = state.activeChatSessionId
+            previousMessageCount = 0
+            pendingSessionLatestScroll = true
+        }
         if (state.messages.isNotEmpty()) {
-            val layoutInfo = listState.layoutInfo
-            val lastVisibleItemIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index
-            val totalItemsCount = layoutInfo.totalItemsCount.takeIf { it > 0 } ?: state.messages.size
-            val messageCountChanged = previousMessageCount != state.messages.size
-            val newUserMessageAdded = newUserMessageAddedSince(
-                previousMessageCount = previousMessageCount,
-                messages = state.messages,
-                isStreaming = state.isStreaming,
-            )
-            if (
-                shouldAutoScrollChat(
-                    lastVisibleItemIndex = lastVisibleItemIndex,
-                    totalItemsCount = totalItemsCount,
-                    messageCountChanged = messageCountChanged,
-                    newUserMessageAdded = newUserMessageAdded,
+            if (pendingSessionLatestScroll && !state.isLoadingActiveChatMessages) {
+                listState.scrollToItem(state.messages.lastIndex)
+                pendingSessionLatestScroll = false
+            } else if (!pendingSessionLatestScroll) {
+                val layoutInfo = listState.layoutInfo
+                val lastVisibleItemIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index
+                val totalItemsCount =
+                    layoutInfo.totalItemsCount.takeIf { it > 0 } ?: state.messages.size
+                val messageCountChanged = previousMessageCount != state.messages.size
+                val newUserMessageAdded = newUserMessageAddedSince(
+                    previousMessageCount = previousMessageCount,
+                    messages = state.messages,
+                    isStreaming = state.isStreaming,
                 )
-            ) {
-                if (reduceMotion) {
-                    listState.scrollToItem(state.messages.lastIndex)
-                } else {
-                    listState.animateScrollToItem(state.messages.lastIndex)
+                if (
+                    shouldAutoScrollChat(
+                        lastVisibleItemIndex = lastVisibleItemIndex,
+                        totalItemsCount = totalItemsCount,
+                        messageCountChanged = messageCountChanged,
+                        newUserMessageAdded = newUserMessageAdded,
+                    )
+                ) {
+                    if (reduceMotion) {
+                        listState.scrollToItem(state.messages.lastIndex)
+                    } else {
+                        listState.animateScrollToItem(state.messages.lastIndex)
+                    }
                 }
             }
         }
-        previousMessageCount = state.messages.size
+        if (!pendingSessionLatestScroll) {
+            previousMessageCount = state.messages.size
+        }
     }
 
     copyAnnouncement?.let { announcement ->
@@ -1965,9 +1987,9 @@ fun ChatScreen(
                                 key = { _, message -> message.id },
                             ) { index, message ->
                                 val isLatestAssistant = message.role == "assistant" &&
-                                    message.id == state.messages.lastAssistantMessageId()
+                                    message.id == latestAssistantMessageId
                                 val isLatestUser = message.role == "user" &&
-                                    message.id == state.messages.lastUserMessageId()
+                                    message.id == latestUserMessageId
                                 if (index > 0) {
                                     Spacer(
                                         modifier = Modifier.height(
@@ -1982,7 +2004,7 @@ fun ChatScreen(
                                     message = message,
                                     isStreaming = state.isStreaming &&
                                         message.role == "assistant" &&
-                                        message.id == state.messages.lastOrNull()?.id,
+                                        message.id == latestMessageId,
                                     reduceMotion = reduceMotion,
                                     showRegenerateAction = isLatestAssistant &&
                                         message.content.isNotBlank() &&

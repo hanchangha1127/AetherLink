@@ -100,12 +100,18 @@ private struct JSONDuplicateKeyValidator {
     // endpoint but reject it on the other solely because of parser depth.
     private static let maximumNestingDepth = 128
 
-    private let bytes: [UInt8]
+    private let bytes: UnsafeBufferPointer<UInt8>
     private var index = 0
 
     static func validate(_ data: Data) throws {
-        var parser = JSONDuplicateKeyValidator(bytes: Array(data))
-        try parser.parseDocument()
+        // The parser and its borrowed buffer remain inside this closure so
+        // validation does not need a document-sized Data-to-Array copy.
+        try data.withUnsafeBytes { (rawBytes: UnsafeRawBufferPointer) in
+            var parser = JSONDuplicateKeyValidator(
+                bytes: rawBytes.bindMemory(to: UInt8.self)
+            )
+            try parser.parseDocument()
+        }
     }
 
     private mutating func parseDocument() throws {
@@ -240,12 +246,21 @@ private struct JSONDuplicateKeyValidator {
     }
 
     private mutating func consumeLiteral(_ literal: StaticString) throws {
-        let literalBytes = Array(String(describing: literal).utf8)
-        guard index + literalBytes.count <= bytes.count,
-              bytes[index..<(index + literalBytes.count)].elementsEqual(literalBytes) else {
+        let consumedCount = literal.withUTF8Buffer { literalBytes -> Int? in
+            guard index <= bytes.count,
+                  literalBytes.count <= bytes.count - index else {
+                return nil
+            }
+            for offset in literalBytes.indices
+            where bytes[index + offset] != literalBytes[offset] {
+                return nil
+            }
+            return literalBytes.count
+        }
+        guard let consumedCount else {
             throw ProtocolCodecError.invalidJSON
         }
-        index += literalBytes.count
+        index += consumedCount
     }
 
     private mutating func consume(_ byte: UInt8) -> Bool {
@@ -265,8 +280,13 @@ private struct JSONDuplicateKeyValidator {
     }
 
     private mutating func skipWhitespace() {
-        while index < bytes.count, [0x20, 0x09, 0x0a, 0x0d].contains(bytes[index]) {
-            index += 1
+        while index < bytes.count {
+            switch bytes[index] {
+            case 0x20, 0x09, 0x0a, 0x0d:
+                index += 1
+            default:
+                return
+            }
         }
     }
 }

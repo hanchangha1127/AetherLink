@@ -21,23 +21,104 @@ performance, build, and release-quality work at the user's direction. The G2
 security track below is paused and retained as historical roadmap context; it
 is not the next action.
 
-Build 20 is the current local G6 package qualification. It retains Android
-backup/device-transfer exclusions and independently verifies both compiled APK
-policy bodies and the same bodies in an AAB-derived universal APK. The
+The current macOS G5 Runtime slice closes failed-start recovery. A listener
+failure no longer latches the app into an already-started state; only an
+advertising listener activates route allocation, relay startup, and restored
+pair transports. Status exposes localized Start and Retry actions, and the
+focused lifecycle, action, localization, and compact accessibility render
+regressions pass. This is deterministic no-device evidence, not live socket,
+physical-device, signing, deployment, security, or production proof.
+
+The current G7 repository-automation slice prepares a two-job non-security CI
+subset. Pull requests run exact macOS and Android product allowlists and
+affected compilation; pushes to `main` add the macOS Release product and
+strict-lock Android Release APK assembly plus lint. A self-testing source guard
+pins the triggers, read-only permission, concurrency, runners, toolchains,
+action majors, selectors, and excluded scopes. The macOS job uses `macos-26`
+with Xcode 26.6, matching the current local toolchain; its semantic mutation
+tests run independently of the complete-byte pin. Safe YAML parsing plus a
+canonical parsed-semantic fingerprint closes the top-level/job mappings and
+complete step arrays; raw checks close both job preambles and every named step
+body, and a Psych AST pre-pass requires one document and rejects duplicate
+or explicitly tagged mapping keys. The Android allowlist directly executes the
+changed-session scroll-boundary regression; the exact Android lane passes seven
+tests across four result classes with zero skips, failures, or errors. Local
+parity passes, but the workflow is still uncommitted and unpushed, so no hosted
+run is claimed. This does not complete canonical G7 `PR fast`, `Merge full`,
+nightly, controlled network, resilience, RC, or GA tiers.
+
+The current macOS G5 Runtime slice removes unrelated-provider catalog work from
+provider-qualified operations. A small model-serving capability lets
+`AggregatingLlmBackend` list one exact provider. Router chat resolution,
+aggregate chat/embedding routing, and semantic embedding descriptor lookup use
+that scoped path for qualified IDs, while unqualified chat preserves complete
+aggregate discovery. Exact provider-model validation, selected-provider error
+propagation, and cancellation normalization remain intact. Pre-fix regressions
+observed the unwanted calls; the final 49 aggregate/residency tests, three
+focused Router regressions, 2,093-test full Swift suite, Release product build,
+and GPT-5.6 Sol re-review pass. The provider catalog copy-hygiene subguard now
+pins the scoped protocol, aggregate filtering, both Router scoped
+call/fallback pairs, exact call counts, and seven named regressions; the
+subguard and all seven tests pass. The full mixed copy-hygiene command next
+stops on two historical G2 documentation expectations inside the user-excluded
+security scope, which remain untouched. This closes a deterministic
+call-isolation gap, not measured latency, live-provider behavior,
+physical-device evidence, signing, deployment, or production proof.
+
+The current Android G5 UX slice closes a transcript-boundary scroll defect.
+`ChatScreen` now observes `activeChatSessionId`, schedules one immediate
+latest-row reset for a changed conversation, defers that reset while the
+selected conversation is loading, and retains the pending reset across saved
+state restoration. Same-session streaming updates still preserve an earlier
+reading position and the jump-to-latest action. Latest assistant, user, and
+overall message IDs are computed once per screen composition instead of inside
+every composed row. The regression first failed against the old behavior, then
+the focused checks, all 296 Compose screen tests, and the complete 1,195-test
+app JVM suite passed. Android Release assembly and lint also pass with zero
+errors and the two existing SDK-version warnings. This is no-device source and
+build evidence, not physical rendering, measured frame time, signing,
+deployment, or production proof.
+
+The current unreleased performance slice completes the queued
+`StrictJSONDocumentValidator` allocation reduction. The validator now borrows
+the input `Data` inside one synchronous `withUnsafeBytes` scope, compares JSON
+literals through their static UTF-8 buffers, and scans whitespace without an
+array literal. It retains the existing `JSONDecoder` Unicode/string path and
+128-level nesting policy. A differential corpus pins Foundation-compatible
+syntax, AetherLink's stricter trailing-comma behavior, decoded duplicate keys,
+canonical Unicode equality, malformed UTF-8/surrogates, literal-heavy input,
+mixed 128/129 nesting, and non-zero-offset `Data` slices. BridgeProtocol passes
+54/54, the focused AddressSanitizer run passes 3/3, the Release product target
+builds, and the complete Swift suite passes 2,086 tests with 11 expected
+opt-in/live skips and zero failures. This is source-level explicit-allocation
+and no-device behavior evidence, not measured physical-device performance,
+signing, deployment, or production-release evidence.
+
+The previously queued Release-test fixture refactor is not active because the
+affected accepted-endpoint types belong to the security and authorization
+scope excluded by the user. It remains untouched and does not block the active
+non-security quality lane.
+
+Build 22 is the latest immutable local G6 package qualification record for its
+qualification-time source snapshot. It retains Android backup/device-transfer
+exclusions and
+independently verifies both compiled APK policy bodies and the same bodies in
+an AAB-derived universal APK. The
 reproducible package-only Swift path now supplies
 `-Xswiftc -num-threads -Xswiftc 1`. Separate comparison-only and
-publish-qualified schema-v3 executions reproduced the same 165,617,269-byte
+publish-qualified schema-v4 executions reproduced the same 165,705,774-byte
 archive
 with SHA-256
-`cba5a6531c35725aef7a2a3bf8b25d2155833b31b216906c80f8349249f6edf1`.
+`478bd4210c11f7e2204e80a333bc8053b0d01b8deff3d0a3d2dd6795df1366c3`.
 The comparison-only record did not publish; the publish-qualified record
-published and independently read back the exact archive. This closes the
-current same-host package boundary, not arbitrary cross-host reproducibility,
-clean-machine installation, signed distribution, vendor backup/transfer
-behavior, or physical-device proof.
+exactly binds that prepublication result, proves the protected Build 21 archive
+identity remained unchanged, then publishes and independently reads back the
+exact Build 22 archive. This closes the current same-host package boundary,
+not arbitrary cross-host reproducibility, clean-machine installation, signed
+distribution, vendor backup/transfer behavior, or physical-device proof.
 
-Build 19 first source-binds a Runtime-chat SQLite cross-process quality slice;
-Build 20 retains those sources.
+Build 19 first source-binds a Runtime-chat SQLite cross-process quality slice.
+Build 22 retains and extends those sources.
 All production store connections install a 5-second SQLite busy timeout and
 normalize busy/locked failures to one stable retry message. Three deterministic
 Swift regressions cover wait-and-release success, `BEGIN` timeout rollback, and
@@ -51,9 +132,26 @@ not a retained archive member. Crash/power-loss, mixed old/new binaries,
 arbitrary histories, clean-machine, signed/notarized, device, and production
 behavior remain unqualified.
 
-<!-- aetherlink-current-build20-lifecycle-v1:start -->
+<!-- aetherlink-current-build21-abrupt-recovery-v1:start -->
 
-Build 20 closes its bounded same-host, per-user macOS
+Build 21 adds one canonical bounded same-host abrupt child-process recovery
+result at
+`dist/lifecycle/macos-runtime-chat-sqlite-abrupt-process-recovery-build-21-v1.json`.
+Two identical executions produced the 2,223-byte result with SHA-256
+`db66614d7badd7a0f606c03f91a516dff6d77e539684dcb6daf52709bce0f16f`.
+The exact QA sequence commits 24 events through the production store, observes
+one dirty uncommitted 25th event and FTS row after child-only `SIGKILL`, recovers to
+24, then resumes through the production store to 48 contiguous exactly-once
+events. This is bounded same-host abrupt child-process `SIGKILL` recovery
+evidence and is explicitly `not-production-append-crash-point`, not power-loss
+or kernel-crash evidence, not arbitrary-history or long-soak evidence, and not
+clean-machine, signed-distribution, or physical-device evidence.
+
+<!-- aetherlink-current-build21-abrupt-recovery-v1:end -->
+
+<!-- aetherlink-historical-build20-lifecycle-v1:start -->
+
+Build 20 historically closed its bounded same-host, per-user macOS
 installation/relaunch and installed state-recovery gap. Two invocations of the
 clean-HOME runner matched the 2,250-byte
 `dist/lifecycle/macos-packaged-app-build-20-clean-home-install-v1.json`
@@ -71,7 +169,7 @@ SHA-256
 It verifies one read-only fresh HFS+ mount, exact release-tree copy, pre-launch
 unmount, two distinct installed launches, SQLite integrity, and stable state.
 Both clean-HOME runners were invoked twice and matched their canonical results.
-These same-host, per-user Build 20 observations do not qualify a clean
+These historical same-host, per-user Build 20 observations do not qualify a clean
 machine/account, signed/notarized distribution, UI/accessibility,
 live-provider behavior, a physical device, arbitrary histories,
 crash/power-loss, concurrent writers, backup/transfer, rollback, or production
@@ -79,7 +177,7 @@ readiness. The DMG run remains outside Finder UI, drag-and-drop, Gatekeeper
 quarantine/download behavior, and system `/Applications` evidence. The
 observations preserved PID 59809.
 
-<!-- aetherlink-current-build20-lifecycle-v1:end -->
+<!-- aetherlink-historical-build20-lifecycle-v1:end -->
 
 The separate V3 observation path has now completed the unresolved five-locale
 matrix without rewriting V2. The frozen V2 task, scorer, runner, schema-4
@@ -191,7 +289,7 @@ uses a Swift Release build and embeds the SwiftPM localization bundle under the
 standard signed app resource directory. The app prefers that packaged bundle,
 version metadata is present, and strict local ad-hoc verification passes
 without launching the app. The append-only shared ledger now supplies the same
-`1.0.0+19` metadata to the current isolated macOS and Android Release
+`1.0.0+22` metadata to the current isolated macOS and Android Release
 qualification while Android Debug
 remains `0.1.0+1` and builds without the ledger; the three consumers share a
 strict LF-only byte boundary, monotonic guard, and semantic-regression guard.
@@ -203,7 +301,7 @@ Android G6 release optimization is now explicit as well. Release-only R8 code
 shrinking/obfuscation and resource shrinking use the optimized Android defaults
 and dependency consumer rules without a broad app keep file. A clean offline
 APK/AAB/lint build passes. V1 Release is now `arm64-v8a`-only: the current
-unsigned AAB is 10,676,638 bytes, contains one DEX, retains all five app locales
+unsigned AAB is 10,677,980 bytes, contains one DEX, retains all five app locales
 and five JNI libraries, and embeds the generated mapping byte-for-byte. The
 ChromeOS x86_64
 lint warning is narrowly excluded because ChromeOS is outside the V1 matrix.
@@ -213,7 +311,7 @@ require the locally unavailable SDK 37.
 
 One canonical local release container now retains the unsigned APK/AAB, R8
 outputs, dependency report, arm64 ad-hoc macOS app, and UUID-matched dSYM with
-an exact 245-file source snapshot, external checksum, immutable publication,
+an exact 247-file source snapshot, external checksum, immutable publication,
 and independent full readback. APK identity/version/SDK/ABI and the three
 backup-policy fields are independently read with aapt2; compiled policy IDs
 must resolve to `xml/backup_rules` and `xml/data_extraction_rules`. The builder
@@ -229,34 +327,36 @@ closed semantic normalization for R8 `resources.txt` and remains a valid
 equal-length-root historical qualification. Build 6 retained that and the
 other declared normalizations in its unequal-length-root qualification.
 The current manifest records `worktreeState=dirty-content-snapshot`, source
-SHA-256 `1f38043525dc622bf839137e5da9bbcd4d3731403b3c32b62508da465655ffc5`,
-and HEAD/`origin/main`
-`dc5832b9f5926b44ccde87d11beb58355ecd9ece`. The commit alone cannot
+SHA-256 `d0ee21c6f288cafad0a0f634de2116b48c8a4716389f2d52daacd4e90c591eb6`,
+and the qualification-time source HEAD/`origin/main`
+`88c0282722eb0afb3ce2d6f394fedb1f22a7ec7c`. The commit alone cannot
 reconstruct the release bytes; the archived source inventory is the source
 identity.
-Build 19 uses the same 101- and 109-byte isolated lane roots, host, fixed
+Build 22 uses the same 101- and 109-byte isolated lane roots, host, fixed
 toolchains, paired clones of one byte-identical Gradle seed, canonical Swift
 scratch policy, and frontend serialization. Two complete qualification
-executions produced four builds with the exact same 165,617,111-byte ZIP,
+executions produced four builds with the exact same 165,705,774-byte ZIP,
 12,317-byte manifest, checksum sidecar, and 30-entry archive inventory. The
-latest immutable ledger archive is `aetherlink-1.0.0+19-local-v1`, and
-independent current-source
-readback passes. The second execution matched the existing publication
-exactly. Builds 1 through 18 remain separately readable historical archives. The
+latest immutable ledger archive is `aetherlink-1.0.0+22-local-v1`, and
+independent current-source readback passes. The comparison-only execution did
+not publish; the separate publish-qualified execution exactly bound its
+prepublication result, protected the prior Build 21 archive, published lane A,
+and independently read it back.
+Builds 1 through 21 remain separately readable historical archives. The
 verifier cross-binds each Gradle lock identity to the archived source inventory
 and rejects current releases in historical mode. This proves only the two
 recorded successful same-host pairs; it does not establish variance-free
 arbitrary repetition, arbitrary roots, cross-host, signed-release,
 clean-machine, or physical-device G6 qualification.
 
-Build 19 retains the explicit current-source AAB structure-validation gate and
-the settled two-stage reranker. Build 18 first bound the Android drawer search
-release inputs, which Build 19 retains. It
+Build 22 retains the qualification-time source-bound AAB structure-validation
+evidence and the settled two-stage reranker. Build 18 first bound the Android
+drawer search release inputs, which Builds 19 through 22 retain. It
 also binds the Research Notebook permanent-delete confirmation's atomic
 saved-state target, trusted-Runtime/notebook/session rebind checks, unresolved
 catalog tolerance, and authoritative invalidation regressions. The complete
-Android app gate passes 1,194 tests with zero failures and release lint reports
-0 errors and 2 SDK 37 availability warnings. Build 19 additionally binds the
+Android app gate passes 1,195 tests with zero failures and release lint reports
+0 errors and 2 SDK 37 availability warnings. Build 22 additionally binds the
 exact backup/cloud/device-transfer exclusion resources, APK/AAB manifest
 readback, and compiled XML body readback.
 
@@ -3101,6 +3201,20 @@ CI and evidence tiers:
 | Controlled-network nightly | Authorized environment | Local direct, P2P, every approved-profile fallback route, network handoff, revoke/expiry, packet privacy, and route-metric correlation. |
 | Weekly resilience | Staging | Long soak, load, descriptor/memory/thread stability, relay restart/failover, signer rotation, backup/restore, abuse and chaos drills. |
 | RC | Tagged source | Reproducible unsigned payload/build manifests plus provenance-traceable signed artifacts, release-to-release physical/device/network matrix, full security review closure, runbook rehearsal, and rollback proof. |
+
+Current implementation status: the worktree contains only a bounded G7
+non-security CI subset. It covers read-only pull-request static checks, exact
+Swift/Android product test allowlists, affected compilation, and `main`-only
+Release compilation/lint. The canonical rows above deliberately remain
+unsatisfied: excluded security/authentication/cryptography checks are not
+silently relabeled, broad mixed suites are not invoked, and no nightly,
+physical-device, network, signing, publication, deployment, or hosted-runner
+evidence is claimed. SwiftPM and Gradle still compile their complete
+package/app test-source graphs before applying the execution selectors, so
+this is not a separately built non-security test target. The Android hosted
+lane also depends on its runner image's SDK 36/Build Tools 36.0.0 inventory and
+normal dependency downloads; clean-runner and dependency-byte evidence remain
+open.
 
 Privacy-safe observability may record aggregate route attempt/success, fallback
 reason class, setup/reconnect latency, ICE restart or consent loss, relay

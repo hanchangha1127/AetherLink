@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 import re
@@ -172,9 +173,33 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
             )
         )
 
+        build21_command = (
+            "--archive-dir "
+            "dist/releases/aetherlink-1.0.0+21-local-v1 --historical"
+        )
+        without_build21_historical = dict(documents)
+        without_build21_historical[progress_path] = documents[
+            progress_path
+        ].replace(
+            build21_command,
+            build21_command.removesuffix(" --historical"),
+            1,
+        )
+        self.assertTrue(
+            any(
+                "historical Build 21" in failure
+                for failure in (
+                    check_docs_hygiene
+                    .release_readback_command_mode_failures(
+                        without_build21_historical
+                    )
+                )
+            )
+        )
+
         current_command = (
             "--archive-dir "
-            "dist/releases/aetherlink-1.0.0+20-local-v1"
+            f"dist/releases/{check_docs_hygiene.LOCAL_RELEASE_ID}"
         )
         current_as_historical = dict(documents)
         current_as_historical[progress_path] = documents[
@@ -186,13 +211,54 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
         )
         self.assertTrue(
             any(
-                "current Build 20" in failure
+                "current Build 22" in failure
                 for failure in (
                     check_docs_hygiene
                     .release_readback_command_mode_failures(
                         current_as_historical
                     )
                 )
+            )
+        )
+
+    def test_handoff_separates_build_capture_head_from_recorded_live_refs(
+        self,
+    ) -> None:
+        handoff = (
+            check_docs_hygiene.ROOT / "docs/handoff.md"
+        ).read_text(encoding="utf-8")
+        validator = check_docs_hygiene.current_handoff_git_attribution_failures
+        self.assertEqual(validator(handoff), [])
+
+        stale_live_head = re.sub(
+            (
+                rf"(at the "
+                rf"{re.escape(check_docs_hygiene.LATEST_RECORDED_GIT_REFRESH_LABEL)} "
+                rf"refresh,\s+`main`\s+and `origin/main` both resolved to\s+)"
+                rf"`{check_docs_hygiene.LATEST_RECORDED_GIT_REFRESH_HEAD}`"
+            ),
+            lambda match: match.group(1) + f"`{'0' * 40}`",
+            handoff,
+            count=1,
+        )
+        self.assertNotEqual(stale_live_head, handoff)
+        self.assertTrue(
+            any(
+                "timestamped post-qualification Git refresh" in failure
+                for failure in validator(stale_live_head)
+            )
+        )
+
+        missing_refresh_command = handoff.replace(
+            "`git rev-parse origin/main`",
+            "`git status --short`",
+            1,
+        )
+        self.assertNotEqual(missing_refresh_command, handoff)
+        self.assertTrue(
+            any(
+                "live origin/main refresh command" in failure
+                for failure in validator(missing_refresh_command)
             )
         )
 
@@ -555,6 +621,119 @@ private func generatePairingQR() {{
             [],
         )
 
+    def test_current_release_summary_documents_follow_ledger(self) -> None:
+        validator = (
+            check_docs_hygiene.current_release_summary_document_failures
+        )
+        self.assertEqual(validator(), [])
+        mutations = {
+            "docs/handoff.md": (
+                "Build 22 is the latest immutable ledger archive.",
+                "Build 21 is the latest immutable ledger archive.",
+            ),
+            "docs/progress.md": (
+                "Local V1 Build 22 Qualification",
+                "Local V1 Build 21 Qualification",
+            ),
+            "docs/qa-evidence.md": (
+                "The Build 22 archive is the latest ledger entry",
+                "The Build 21 archive is the latest ledger entry",
+            ),
+            "docs/roadmap.md": (
+                "publish-qualified schema-v4 executions",
+                "publish-qualified schema-v3 executions",
+            ),
+        }
+        for relative, (current_claim, stale_claim) in mutations.items():
+            with self.subTest(relative=relative):
+                document_text = (
+                    check_docs_hygiene.ROOT / relative
+                ).read_text(encoding="utf-8")
+                mutated = document_text.replace(
+                    current_claim,
+                    stale_claim,
+                    1,
+                )
+                self.assertNotEqual(mutated, document_text)
+                failures = validator(
+                    document_text_by_relative={relative: mutated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "ledger-derived current release summary claim"
+                        in failure
+                        for failure in failures
+                    ),
+                    f"stale current-release summary in {relative} was accepted",
+                )
+
+        competing_stale_claims = {
+            "docs/handoff.md": (
+                "Build 21 is the latest immutable ledger archive."
+            ),
+            "docs/progress.md": (
+                "Build 21 is the current local qualification record."
+            ),
+            "docs/qa-evidence.md": (
+                "The Build 21 archive is the latest ledger entry."
+            ),
+            "docs/roadmap.md": (
+                "Build 21 is the latest immutable local G6 package "
+                "qualification record."
+            ),
+        }
+        for relative, stale_claim in competing_stale_claims.items():
+            with self.subTest(relative=relative, mode="competing-stale-claim"):
+                document_text = (
+                    check_docs_hygiene.ROOT / relative
+                ).read_text(encoding="utf-8")
+                mutated = stale_claim + "\n\n" + document_text
+                failures = validator(
+                    document_text_by_relative={relative: mutated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "stale previous-release summary claim" in failure
+                        for failure in failures
+                    ),
+                    f"competing stale summary in {relative} was accepted",
+                )
+
+        semantic_stale_claims = {
+            "docs/handoff.md": (
+                "The v3 comparison-only prepublication result remains current."
+            ),
+            "docs/progress.md": (
+                "Build 21 remains the latest local qualification record."
+            ),
+            "docs/qa-evidence.md": (
+                "Build 21 continues as the current ledger qualification."
+            ),
+            "docs/roadmap.md": (
+                "Separate publish-qualified schema-v3 executions remain the "
+                "current package evidence."
+            ),
+        }
+        for relative, stale_claim in semantic_stale_claims.items():
+            with self.subTest(relative=relative, mode="semantic-stale-claim"):
+                document_text = (
+                    check_docs_hygiene.ROOT / relative
+                ).read_text(encoding="utf-8")
+                mutated = stale_claim + "\n\n" + document_text
+                failures = validator(
+                    document_text_by_relative={relative: mutated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "semantically re-attributed" in failure
+                        for failure in failures
+                    ),
+                    f"semantic stale summary in {relative} was accepted",
+                )
+
     def test_current_local_release_document_cross_checks_archive_when_present(
         self,
     ) -> None:
@@ -635,6 +814,90 @@ private func generatePairingQR() {{
                 "exact contiguous sequence" in failure
                 for failure in failures
             )
+        )
+
+        for nullable_key in ("failure", "prepublicationBinding"):
+            with self.subTest(nullable_key=nullable_key):
+                result = json.loads(
+                    (
+                        check_docs_hygiene
+                        .LOCAL_RELEASE_REPRODUCIBILITY_PREPUBLICATION_RESULT
+                        .read_text(encoding="utf-8")
+                    )
+                )
+                self.assertIsNone(result.pop(nullable_key))
+                mutated = (
+                    json.dumps(
+                        result,
+                        ensure_ascii=True,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    )
+                    + "\n"
+                ).encode("ascii")
+                failures = (
+                    check_docs_hygiene
+                    .current_release_reproducibility_prepublication_failures(
+                        mutated
+                    )
+                )
+                self.assertTrue(
+                    any(nullable_key in failure for failure in failures),
+                    f"missing nullable key {nullable_key!r} was accepted",
+                )
+
+    def test_current_publish_result_semantic_fields_reject_drift(self) -> None:
+        source_result = json.loads(
+            check_docs_hygiene.LOCAL_RELEASE_REPRODUCIBILITY_RESULT.read_text(
+                encoding="utf-8"
+            )
+        )
+
+        def failures_for(result: dict[str, object]) -> list[str]:
+            payload = (
+                json.dumps(
+                    result,
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+                + "\n"
+            )
+            with tempfile.TemporaryDirectory() as temporary:
+                result_path = Path(temporary) / "publish-result.json"
+                result_path.write_text(payload, encoding="ascii")
+                with patch.object(
+                    check_docs_hygiene,
+                    "LOCAL_RELEASE_REPRODUCIBILITY_RESULT",
+                    result_path,
+                ):
+                    return check_docs_hygiene.local_release_document_failures()
+
+        for path in (
+            ("failure",),
+            ("publication", "archiveDirectory"),
+            ("publication", "policy"),
+            ("publication", "sourceLane"),
+        ):
+            with self.subTest(path=path):
+                result = copy.deepcopy(source_result)
+                parent = result
+                for key in path[:-1]:
+                    parent = parent[key]
+                del parent[path[-1]]
+                failures = failures_for(result)
+                label = ".".join(path)
+                self.assertTrue(
+                    any(label in failure for failure in failures),
+                    f"missing publish field {label!r} was accepted",
+                )
+
+        result = copy.deepcopy(source_result)
+        result["builds"][0]["archive"]["size"] += 1
+        failures = failures_for(result)
+        self.assertTrue(
+            any("builds[0].archive.size" in failure for failure in failures),
+            "publish build archive-size drift was accepted",
         )
 
     def test_macos_packaged_lifecycle_result_matches_closed_contract(
@@ -802,7 +1065,7 @@ private func generatePairingQR() {{
                     check_docs_hygiene.LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256,
                 )
 
-    def test_current_build20_clean_home_contract_tracks_current_release(
+    def test_historical_build20_clean_home_contract_is_not_current_release(
         self,
     ) -> None:
         installed_app = (
@@ -818,7 +1081,7 @@ private func generatePairingQR() {{
             with self.subTest(scope=expected_result["scope"]):
                 self.assertEqual(
                     expected_result["app"]["buildNumber"],
-                    check_docs_hygiene.LOCAL_RELEASE_BUILD_NUMBER,
+                    20,
                 )
                 self.assertEqual(
                     expected_result["app"]["marketingVersion"],
@@ -829,17 +1092,23 @@ private func generatePairingQR() {{
                     {
                         "archiveSha256": (
                             check_docs_hygiene
-                            .LOCAL_RELEASE_EXPECTED_ZIP_SHA256
+                            .HISTORICAL_BUILD20_ARCHIVE_SHA256
                         ),
                         "manifestSha256": (
                             check_docs_hygiene
-                            .LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256
+                            .HISTORICAL_BUILD20_MANIFEST_SHA256
                         ),
-                        "releaseId": check_docs_hygiene.LOCAL_RELEASE_ID,
+                        "releaseId": (
+                            check_docs_hygiene.HISTORICAL_BUILD20_RELEASE_ID
+                        ),
                     },
                 )
+                self.assertNotEqual(
+                    expected_result["release"]["releaseId"],
+                    check_docs_hygiene.LOCAL_RELEASE_ID,
+                )
 
-    def test_current_build20_clean_home_results_match_closed_contracts(
+    def test_historical_build20_clean_home_results_match_closed_contracts(
         self,
     ) -> None:
         cases = (
@@ -890,7 +1159,7 @@ private func generatePairingQR() {{
                     any("exact closed" in failure for failure in failures)
                 )
 
-    def test_current_build20_local_dmg_result_and_sources_are_bound(
+    def test_historical_build20_local_dmg_result_and_sources_are_bound(
         self,
     ) -> None:
         self.assertEqual(
@@ -966,7 +1235,7 @@ private func generatePairingQR() {{
             ),
         )
 
-    def test_current_build20_lifecycle_document_bindings_reject_drift(
+    def test_historical_build20_lifecycle_document_bindings_reject_drift(
         self,
     ) -> None:
         self.assertEqual(
@@ -983,6 +1252,7 @@ private func generatePairingQR() {{
             "docs/progress.md",
             "docs/qa-evidence.md",
             "docs/releases/1.0.0-build-20-local-v1.md",
+            "docs/releases/1.0.0-build-22-local-v1.md",
         )
         for relative in targets:
             with self.subTest(relative=relative):
@@ -1049,6 +1319,13 @@ private func generatePairingQR() {{
                         block
                         + "\nmacos-packaged-app-build-19-clean-home-install-v1.json\n"
                     ),
+                    "build21_transfer": (
+                        block
+                        + (
+                            "\nThis historical lifecycle evidence is current "
+                            "Build 21 evidence and transfers to Build 21.\n"
+                        )
+                    ),
                     "contradictory_overclaim": (
                         block
                         + (
@@ -1089,7 +1366,10 @@ private func generatePairingQR() {{
                             ),
                         }
                     )
-                if relative == "docs/releases/1.0.0-build-20-local-v1.md":
+                if relative in {
+                    "docs/releases/1.0.0-build-20-local-v1.md",
+                    "docs/releases/1.0.0-build-22-local-v1.md",
+                }:
                     mutations["runner_sha"] = block.replace(
                         (
                             check_docs_hygiene
@@ -1141,7 +1421,7 @@ private func generatePairingQR() {{
                     )
                 )
 
-    def test_current_build20_dmg_document_bindings_reject_drift(self) -> None:
+    def test_historical_build20_dmg_document_bindings_reject_drift(self) -> None:
         targets = (
             "README.md",
             "docs/roadmap.md",
@@ -1149,6 +1429,7 @@ private func generatePairingQR() {{
             "docs/progress.md",
             "docs/qa-evidence.md",
             "docs/releases/1.0.0-build-20-local-v1.md",
+            "docs/releases/1.0.0-build-22-local-v1.md",
         )
         bindings = (
             "macos-packaged-app-build-20-local-dmg-install-v1.json",
@@ -1180,6 +1461,96 @@ private func generatePairingQR() {{
                         ),
                         f"DMG document mutation was accepted: {failures!r}",
                     )
+
+    def test_historical_build20_release_rejects_build21_transfer_claims(
+        self,
+    ) -> None:
+        document_text = (
+            check_docs_hygiene.HISTORICAL_BUILD20_RELEASE_DOC.read_text(
+                encoding="utf-8"
+            )
+        )
+        end_marker = (
+            check_docs_hygiene
+            .CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+        )
+        lifecycle_transfer = document_text.replace(
+            end_marker,
+            (
+                "This historical lifecycle evidence is current Build 21 "
+                "evidence and transfers to Build 21.\n\n"
+                + end_marker
+            ),
+            1,
+        )
+        transfer_claims = (
+            (
+                "dmg_current_evidence",
+                "This Build 20 DMG observation is current Build 21 DMG evidence.",
+            ),
+            (
+                "dmg_belongs",
+                "This Build 20 DMG observation belongs to Build 21.",
+            ),
+            (
+                "dmg_is_evidence",
+                "This Build 20 DMG observation is Build 21 evidence.",
+            ),
+            (
+                "dmg_inherited",
+                "Build 21 inherits this Build 20 DMG observation.",
+            ),
+            (
+                "record_validates",
+                "This record validates Build 21.",
+            ),
+            (
+                "qualification_relies",
+                "Build 21 relies on this record for qualification.",
+            ),
+            (
+                "negation_smuggling",
+                "This observation is not Build 21 evidence, but Build 21 "
+                "inherits it.",
+            ),
+            (
+                "unrelated_negation",
+                "This Build 20 DMG observation belongs to Build 21, not "
+                "Build 22.",
+            ),
+        )
+        mutations = [("lifecycle", lifecycle_transfer)]
+        mutations.extend(
+            (
+                label,
+                document_text.replace(
+                    "## Compatibility And Transition Boundary",
+                    (
+                        claim
+                        + "\n\n"
+                        + "## Compatibility And Transition Boundary"
+                    ),
+                    1,
+                ),
+            )
+            for label, claim in transfer_claims
+        )
+
+        for label, mutated in mutations:
+            with self.subTest(label=label):
+                self.assertNotEqual(mutated, document_text)
+                failures = (
+                    check_docs_hygiene
+                    .historical_build20_release_document_failures(mutated)
+                )
+                self.assertTrue(
+                    any(
+                        "transfer or relabeling claim" in failure
+                        or "exact immutable document SHA-256" in failure
+                        for failure in failures
+                    ),
+                    f"Build 20 transfer overclaim was accepted: {failures!r}",
+                )
 
     def test_current_build19_runtime_chat_sqlite_cross_process_record_rejects_drift(
         self,
@@ -1327,6 +1698,193 @@ private func generatePairingQR() {{
                 )
             )
         )
+
+    def test_historical_build21_abrupt_recovery_documents_reject_overclaims(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_runtime_chat_sqlite_abrupt_recovery_document_failures
+        )
+        self.assertEqual(validator(), [])
+        targets = (
+            "README.md",
+            "docs/roadmap.md",
+            "docs/handoff.md",
+            "docs/progress.md",
+            "docs/qa-evidence.md",
+            "docs/releases/1.0.0-build-22-local-v1.md",
+        )
+        start_marker = (
+            check_docs_hygiene
+            .CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_START
+        )
+        end_marker = (
+            check_docs_hygiene
+            .CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_END
+        )
+
+        for relative in targets:
+            text = (check_docs_hygiene.ROOT / relative).read_text(
+                encoding="utf-8"
+            )
+            overclaims = (
+                (
+                    "production_and_power_loss",
+                    "It proves the production append crash point and "
+                    "power-loss recovery.",
+                ),
+                ("power_loss_passed", "Power-loss recovery passed."),
+                (
+                    "power_loss_evidence",
+                    "This is power-loss recovery evidence.",
+                ),
+                (
+                    "kernel_crash_supported",
+                    "Kernel-crash recovery is supported.",
+                ),
+                (
+                    "clause_negation_smuggling",
+                    "Power-loss recovery is not yet qualified, but "
+                    "kernel-crash recovery passed.",
+                ),
+                (
+                    "unrelated_negation",
+                    "Power-loss recovery passed, not merely simulated.",
+                ),
+                (
+                    "production_append_synonym",
+                    "Production append recovery passed.",
+                ),
+                (
+                    "loss_of_power_synonym",
+                    "Recovery after loss of power passed.",
+                ),
+            )
+            for label, claim in overclaims:
+                with self.subTest(
+                    relative=relative,
+                    mutation=f"overclaim_{label}",
+                ):
+                    overclaim = text.replace(
+                        end_marker,
+                        claim + "\n\n" + end_marker,
+                        1,
+                    )
+                    self.assertNotEqual(overclaim, text)
+                    failures = validator(
+                        document_text_by_relative={relative: overclaim}
+                    )
+                    self.assertTrue(
+                        any(
+                            relative in failure
+                            and (
+                                "forbidden-scope claim" in failure
+                                or "exact bounded block SHA-256" in failure
+                            )
+                            for failure in failures
+                        ),
+                        (
+                            "abrupt-recovery overclaim was accepted: "
+                            f"{failures!r}"
+                        ),
+                    )
+
+            with self.subTest(relative=relative, mutation="marker"):
+                without_start = text.replace(start_marker, "", 1)
+                self.assertNotEqual(without_start, text)
+                failures = validator(
+                    document_text_by_relative={relative: without_start}
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "exactly one start and end marker" in failure
+                        for failure in failures
+                    )
+                )
+
+            with self.subTest(relative=relative, mutation="limitation"):
+                block_start = text.index(start_marker) + len(start_marker)
+                block_end = text.index(end_marker)
+                block = text[block_start:block_end]
+                mutated_block = re.sub(
+                    r"not\s+clean-machine,\s+signed-distribution,\s+or\s+"
+                    r"physical-device\s+evidence",
+                    "clean-machine and device evidence",
+                    block,
+                    count=1,
+                )
+                self.assertNotEqual(mutated_block, block)
+                missing_limitation = (
+                    text[:block_start]
+                    + mutated_block
+                    + text[block_end:]
+                )
+                failures = validator(
+                    document_text_by_relative={
+                        relative: missing_limitation
+                    }
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "distribution and device exclusion" in failure
+                        for failure in failures
+                    )
+                )
+
+    def test_current_build21_abrupt_recovery_result_is_exact_and_typed(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_runtime_chat_sqlite_abrupt_recovery_evidence_failures
+        )
+        self.assertEqual(validator(), [])
+        result = json.loads(
+            check_docs_hygiene
+            .CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_RESULT.read_text(
+                encoding="ascii"
+            )
+        )
+
+        mutations = []
+        boolean_schema = copy.deepcopy(result)
+        boolean_schema["schemaVersion"] = True
+        mutations.append(boolean_schema)
+
+        missing_limitation = copy.deepcopy(result)
+        missing_limitation["limitations"].remove(
+            "not-production-append-crash-point"
+        )
+        mutations.append(missing_limitation)
+
+        false_reap = copy.deepcopy(result)
+        false_reap["abruptTermination"][
+            "writerProcessReapedBeforeJournalObservation"
+        ] = False
+        mutations.append(false_reap)
+
+        for index, mutated in enumerate(mutations):
+            with self.subTest(index=index):
+                payload = (
+                    json.dumps(
+                        mutated,
+                        ensure_ascii=True,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    )
+                    + "\n"
+                ).encode("ascii")
+                failures = validator(payload)
+                self.assertTrue(
+                    any("expected abrupt recovery identity" in item
+                        for item in failures)
+                )
+                self.assertTrue(
+                    any("exact closed abrupt" in item for item in failures)
+                )
 
     def test_current_android_drawer_search_document_bindings_reject_drift(
         self,
@@ -2165,6 +2723,67 @@ private func generatePairingQR() {{
             )
         )
 
+    def test_historical_build21_immutable_identities_survive_build22(self) -> None:
+        document_text = (
+            check_docs_hygiene.ROOT
+            / "docs/releases/1.0.0-build-21-local-v1.md"
+        ).read_text(encoding="utf-8")
+        validator = (
+            check_docs_hygiene.historical_build21_release_document_failures
+        )
+        self.assertEqual(validator(document_text), [])
+
+        identities = {
+            "archive": check_docs_hygiene.HISTORICAL_BUILD21_ARCHIVE_SHA256,
+            "manifest": (
+                check_docs_hygiene.HISTORICAL_BUILD21_MANIFEST_SHA256
+            ),
+            "sidecar": (
+                check_docs_hygiene.HISTORICAL_BUILD21_CHECKSUM_SHA256
+            ),
+            "prepublication": (
+                check_docs_hygiene
+                .HISTORICAL_BUILD21_REPRODUCIBILITY_PREPUBLICATION_SHA256
+            ),
+            "publication": (
+                check_docs_hygiene
+                .HISTORICAL_BUILD21_REPRODUCIBILITY_RESULT_SHA256
+            ),
+            "source": (
+                check_docs_hygiene
+                .HISTORICAL_BUILD21_SOURCE_SNAPSHOT_SHA256
+            ),
+            "source_inventory": (
+                check_docs_hygiene
+                .HISTORICAL_BUILD21_SOURCE_INVENTORY_SHA256
+            ),
+        }
+        for label, identity in identities.items():
+            with self.subTest(label=label):
+                mutated = document_text.replace(identity, "0" * 64, 1)
+                self.assertNotEqual(mutated, document_text)
+                self.assertTrue(
+                    any(
+                        "immutable Build 21 binding" in failure
+                        for failure in validator(mutated)
+                    ),
+                    f"Build 21 identity mutation {label!r} was accepted",
+                )
+
+        historical_claim = (
+            "Build 21 is an immutable historical local qualification record"
+        )
+        current_claim = "Build 21 is the current local qualification record"
+        mutated = document_text.replace(historical_claim, current_claim, 1)
+        self.assertNotEqual(mutated, document_text)
+        failures = validator(mutated)
+        self.assertTrue(
+            any("immutable Build 21 binding" in failure for failure in failures)
+        )
+        self.assertTrue(
+            any("stale current-state claim" in failure for failure in failures)
+        )
+
     def test_readme_current_release_guidance_follows_ledger(self) -> None:
         self.assertEqual(
             check_docs_hygiene.CURRENT_REPRODUCIBILITY_RESULT_PATH_VERSION,
@@ -2694,7 +3313,9 @@ private func generatePairingQR() {{
             ),
             (
                 "`dist/reproducibility/"
-                "aetherlink-1.0.0+20-local-v1-two-root-v3-prepublication.json`"
+                f"{check_docs_hygiene.LOCAL_RELEASE_ID}-two-root-"
+                f"v{check_docs_hygiene.CURRENT_REPRODUCIBILITY_RESULT_PATH_VERSION}"
+                "-prepublication.json`"
             ),
             (
                 f"{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_PREPUBLICATION_SIZE:,} "
@@ -2704,6 +3325,11 @@ private func generatePairingQR() {{
                 f"`{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_PREPUBLICATION_SHA256}`"
             ),
             "`alreadyMatched=false`",
+            "`prepublicationBinding.matched=true`",
+            "`previous-ledger-entry-archive-v1`",
+            (
+                f"`{check_docs_hygiene.LOCAL_RELEASE_EXPECTED_PROTECTED_ARCHIVE_IDENTITY_SHA256}`"
+            ),
             "`-Xswiftc -num-threads -Xswiftc 1`",
             (
                 "`dist/lifecycle/"

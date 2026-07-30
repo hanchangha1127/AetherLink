@@ -1048,7 +1048,7 @@ public final class CompanionAppModel: ObservableObject {
         else {
             return false
         }
-        if isRuntimeStarted, transportState.state != .advertising {
+        if transportState.state == .failed {
             return false
         }
         return localDiagnosticPairingRouteHostCandidate != nil
@@ -1280,7 +1280,6 @@ public final class CompanionAppModel: ObservableObject {
         routePreparation: CompanionRuntimeStartRoutePreparation
     ) {
         runtimePort = port
-        isRuntimeStarted = true
         let router = runtimeRouter!
         let localStatus = runtimeConnectionManager.startLocal(
             port: port,
@@ -1291,23 +1290,8 @@ public final class CompanionAppModel: ObservableObject {
             }
             router.handle(envelope, sink: sink)
         }
-        switch routePreparation {
-        case .asynchronous:
-            if shouldRenewSavedBootstrapRelayRoute && !hasRouteAllocationWorkerInFlight {
-                if !requestAutomaticRemoteRelayRouteAllocation(
-                    restartRelayClientIfRunning: false,
-                    startRelayAfterCompletion: true,
-                    pairingRequest: false
-                ) {
-                    startRelayClientIfConfigured()
-                }
-            } else {
-                startRelayClientIfConfigured()
-            }
-        case .none:
-            startRelayClientIfConfigured()
-        }
         transportState = Self.transportStatus(from: localStatus)
+        isRuntimeStarted = transportState.state == .advertising
         refreshTransportStatusText()
         switch transportState.state {
         case .advertising:
@@ -1323,11 +1307,32 @@ public final class CompanionAppModel: ObservableObject {
             transportStatus = "Stopped"
             log("AetherLink runtime stopped")
         }
+        if isRuntimeStarted {
+            switch routePreparation {
+            case .asynchronous:
+                if shouldRenewSavedBootstrapRelayRoute && !hasRouteAllocationWorkerInFlight {
+                    if !requestAutomaticRemoteRelayRouteAllocation(
+                        restartRelayClientIfRunning: false,
+                        startRelayAfterCompletion: true,
+                        pairingRequest: false
+                    ) {
+                        startRelayClientIfConfigured()
+                    }
+                } else {
+                    startRelayClientIfConfigured()
+                }
+            case .none:
+                startRelayClientIfConfigured()
+            }
+        }
+        let didStartRuntime = isRuntimeStarted
         let startedRuntimeLifecycleGeneration = runtimeLifecycleGeneration
         Task {
-            await startRestoredPairScopedTransports(
-                expectedRuntimeLifecycleGeneration: startedRuntimeLifecycleGeneration
-            )
+            if didStartRuntime {
+                await startRestoredPairScopedTransports(
+                    expectedRuntimeLifecycleGeneration: startedRuntimeLifecycleGeneration
+                )
+            }
             await refreshBackendStatus()
         }
         if !hasScheduledRuntimeChatRetentionMaintenance {

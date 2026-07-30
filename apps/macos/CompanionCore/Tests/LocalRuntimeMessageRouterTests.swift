@@ -4786,6 +4786,51 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(store.semanticEmbeddingWriteBatches.map(\.count), [2])
     }
 
+    func testQualifiedSemanticSearchSkipsUnrelatedProviderCatalog() async throws {
+        let sink = RecordingSink()
+        let ollama = MockBackend(
+            provider: .ollama,
+            models: [semanticEmbeddingModel(revision: "provider-isolation-v1")]
+        )
+        let lmStudio = MockBackend(
+            provider: .lmStudio,
+            models: [ModelInfo(
+                id: "lm-studio-embedding",
+                name: "lm-studio-embedding",
+                provider: .lmStudio,
+                kind: .embedding
+            )]
+        )
+        let store = SearchHintRecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: "semantic-provider-isolation",
+                title: "Provider-scoped semantic search",
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(),
+                messageCount: 1
+            )
+        ])
+        let router = makeRouter(
+            backend: AggregatingLlmBackend([ollama, lmStudio]),
+            chatEventStore: store
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "semantic-provider-isolation",
+            payload: [
+                "query": .string("provider scoped"),
+                "embedding_model_id": .string("ollama:nomic-embed-text:latest")
+            ]
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(response?.type, MessageType.chatSessionsList)
+        XCTAssertFalse(ollama.embeddingRequests.isEmpty)
+        XCTAssertEqual(lmStudio.listModelsCallCount, 0)
+        XCTAssertTrue(lmStudio.embeddingRequests.isEmpty)
+    }
+
     func testChatSessionsListDoesNotPersistEmbeddingsWithoutStrongModelRevision() async throws {
         let sink = RecordingSink()
         let backend = MockBackend(models: [semanticEmbeddingModel(revision: nil)])
@@ -9159,7 +9204,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let ollama = MockBackend(
             provider: .ollama,
             models: [],
-            modelListBatches: [[ollamaInitial], [ollamaExact], [], []],
+            modelListBatches: [[ollamaInitial], [ollamaExact], []],
             chatEventBatches: [[]],
             chatStreamFinishBatches: [false],
             onChatRequest: { request in
@@ -9169,7 +9214,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let lmStudio = MockBackend(
             provider: .lmStudio,
             models: [],
-            modelListBatches: [[], [], [lmStudioInitial], [lmStudioExact]],
+            modelListBatches: [[], [lmStudioInitial], [lmStudioExact]],
             chatEventBatches: [[]],
             chatStreamFinishBatches: [false],
             onChatRequest: { request in
@@ -16893,6 +16938,48 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(message?.type, MessageType.chatDone)
         XCTAssertEqual(message?.payload["finish_reason"], .string("stop"))
         XCTAssertEqual(routedModel.value, "qwen-local")
+    }
+
+    func testQualifiedChatSendSkipsUnrelatedProviderCatalog() async throws {
+        let ollama = MockBackend(
+            provider: .ollama,
+            models: [ModelInfo(
+                id: "qwen-local",
+                name: "Qwen Local",
+                provider: .ollama,
+                installed: true
+            )],
+            chatEvents: [.done(inputTokens: 2, outputTokens: 3)]
+        )
+        let lmStudio = MockBackend(
+            provider: .lmStudio,
+            models: [ModelInfo(
+                id: "gemma-local",
+                name: "Gemma Local",
+                provider: .lmStudio,
+                installed: true
+            )]
+        )
+        let router = makeRouter(backend: AggregatingLlmBackend([ollama, lmStudio]))
+        let sink = RecordingSink()
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "qualified-chat-provider-isolation",
+            payload: [
+                "session_id": .string("qualified-chat-provider-isolation-session"),
+                "model": .string("ollama:qwen-local"),
+                "messages": .array([.object([
+                    "role": .string("user"),
+                    "content": .string("Use only the selected provider catalog."),
+                ])]),
+            ]
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(response?.type, MessageType.chatDone)
+        XCTAssertEqual(ollama.listModelsCallCount, 2)
+        XCTAssertEqual(lmStudio.listModelsCallCount, 0)
     }
 
     func testQualifiedChatRequestDoesNotResolveDisplayAliasForDirectOrAggregateBackend()
@@ -29576,6 +29663,71 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
+    func testCompanionAppModelUserInterfaceStartCanRetryAfterListenerFailure() async throws {
+        let defaults = try isolatedDefaults()
+        defaults.set("relay.retry-stale.test", forKey: "aetherlink.relay.host")
+        defaults.set(43171, forKey: "aetherlink.relay.port")
+        defaults.set("relay-retry-stale", forKey: "aetherlink.relay.id")
+        defaults.set("secret-retry-stale", forKey: "aetherlink.relay.secret")
+        let peerServer = FakeRuntimeTransport(statusesAfterStart: [
+            .failed("Port is already in use."),
+            .listening(port: 43210),
+        ])
+        let advertiser = FakeRuntimeAdvertiser()
+        let allocator = BlockingRemoteRelayRouteAllocator(outcomes: [
+            .allocation(remoteRouteAllocation(
+                host: "relay.retry-fresh.test",
+                relayID: "relay-retry-fresh",
+                relaySecret: "secret-retry-stale",
+                relayNonce: "nonce-retry-fresh"
+            ))
+        ])
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: peerServer,
+            advertiser: advertiser,
+            relayClient: FakeRelayPeerClient(),
+            remoteRelayRouteAllocator: allocator,
+            environment: [
+                "AETHERLINK_BOOTSTRAP_RELAY_ENDPOINTS": "relay.retry-bootstrap.test:443"
+            ],
+            userDefaults: defaults,
+            relaySecretStore: FakeCompanionRelaySecretStore()
+        )
+        defer { model.stop() }
+
+        XCTAssertTrue(model.requestStartForUserInterface(port: 43210))
+        XCTAssertEqual(model.transportState, .failed("Port is already in use."))
+        XCTAssertEqual(peerServer.startedPorts, [43210])
+        XCTAssertNil(advertiser.startedPort)
+        XCTAssertEqual(allocator.recordedCalls.count, 0)
+        XCTAssertFalse(model.isRemoteRoutePreparationInFlight)
+
+        XCTAssertTrue(model.requestStartForUserInterface(port: 43210))
+        XCTAssertEqual(
+            model.transportState,
+            .advertising(serviceName: "_aetherlink._tcp.local.", port: 43210)
+        )
+        XCTAssertEqual(peerServer.startedPorts, [43210, 43210])
+        XCTAssertEqual(advertiser.startedPort, 43210)
+        let allocationStarted = await allocator.waitUntilStarted(call: 0)
+        XCTAssertTrue(allocationStarted)
+        XCTAssertEqual(allocator.recordedCalls.count, 1)
+
+        XCTAssertFalse(model.requestStartForUserInterface(port: 43210))
+        XCTAssertEqual(peerServer.startedPorts, [43210, 43210])
+        XCTAssertEqual(allocator.recordedCalls.count, 1)
+
+        allocator.release(call: 0)
+        let routeApplied = await waitForCondition {
+            model.developmentRelaySettings.relayID == "relay-retry-fresh"
+        }
+        XCTAssertTrue(routeApplied)
+        XCTAssertFalse(model.isRemoteRoutePreparationInFlight)
+        XCTAssertEqual(allocator.recordedCalls.count, 1)
+    }
+
+    @MainActor
     func testCompanionAppModelManualRouteAllocationTimeoutPreservesStaticSettingsAndIgnoresLateResult() async throws {
         let allocator = BlockingRelayServiceRouteAllocator(
             host: "relay.manual-late.test",
@@ -38409,21 +38561,34 @@ private final class ChangingTransportBindingSink: RuntimeMessageSink, @unchecked
 }
 
 private final class FakeRuntimeTransport: RuntimeTransport {
-    private let statusAfterStart: PeerServerStatus?
+    private let defaultStatusAfterStart: PeerServerStatus?
+    private var statusesAfterStart: [PeerServerStatus]
     private(set) var status = PeerServerStatus.stopped
     private(set) var startedPort: UInt16?
+    private(set) var startedPorts: [UInt16] = []
     private(set) var didStop = false
     private(set) var onMessage: LocalPeerMessageHandler?
 
     init(statusAfterStart: PeerServerStatus? = nil) {
-        self.statusAfterStart = statusAfterStart
+        defaultStatusAfterStart = statusAfterStart
+        statusesAfterStart = []
+    }
+
+    init(statusesAfterStart: [PeerServerStatus]) {
+        defaultStatusAfterStart = nil
+        self.statusesAfterStart = statusesAfterStart
     }
 
     func start(port: UInt16, onMessage: @escaping LocalPeerMessageHandler) {
         startedPort = port
+        startedPorts.append(port)
         self.onMessage = onMessage
         didStop = false
-        status = statusAfterStart ?? .listening(port: port)
+        if !statusesAfterStart.isEmpty {
+            status = statusesAfterStart.removeFirst()
+        } else {
+            status = defaultStatusAfterStart ?? .listening(port: port)
+        }
     }
 
     func stop() {

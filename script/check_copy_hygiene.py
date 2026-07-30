@@ -58881,6 +58881,24 @@ def runtime_chat_sqlite_cross_process_quality_guard_failures() -> list[str]:
             '"script/test_run_macos_runtime_chat_cross_process_smoke.py",',
             '"apps/macos/RuntimeChatSQLiteCrossProcessQA/Sources",',
         ),
+        "script/check_docs_hygiene.py": (
+            "def current_handoff_git_attribution_failures(",
+            "def current_runtime_chat_sqlite_abrupt_recovery_document_failures(",
+            "HISTORICAL_BUILD20_RELEASE_DOC",
+            "HISTORICAL_BUILD20_RELEASE_DOCUMENT_SHA256",
+            "CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_START",
+            "CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_END",
+            "CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_BLOCK_SHA256",
+            "exact bounded block SHA-256",
+            "exact immutable document SHA-256",
+            "unbounded or contradictory forbidden-scope claim",
+            "unnegated transfer or relabeling claim into Build 21",
+        ),
+        "script/test_documentation_handoff_guards.py": (
+            "test_handoff_separates_build_capture_head_from_recorded_live_refs",
+            "test_historical_build20_release_rejects_build21_transfer_claims",
+            "test_current_build21_abrupt_recovery_documents_reject_overclaims",
+        ),
         "docs/releases/1.0.0-build-19-local-v1.md": (
             "passing 90/90 `SQLiteRuntimeChatEventStoreTests` suite",
             "bounded Python orchestration suite passes 12/12 tests",
@@ -58895,6 +58913,8 @@ def runtime_chat_sqlite_cross_process_quality_guard_failures() -> list[str]:
             "It adds no security qualification claim.",
         ),
         "docs/roadmap.md": (
+            "<!-- aetherlink-current-build21-abrupt-recovery-v1:start -->",
+            "<!-- aetherlink-current-build21-abrupt-recovery-v1:end -->",
             "Build 19 first source-binds a Runtime-chat SQLite cross-process quality slice.",
             "all 96 events exactly once with disjoint IDs, owner/session",
             "SQLite integrity, `0700` directory mode",
@@ -58903,31 +58923,68 @@ def runtime_chat_sqlite_cross_process_quality_guard_failures() -> list[str]:
             "Crash/power-loss, mixed old/new binaries,",
         ),
         "docs/progress.md": (
-            "Build 19 first source-binds the Runtime-chat SQLite cross-process QA helper",
-            "store suite passes 90/90",
-            "96 disjoint exactly-once events, owner/session",
-            "`integrity_check=ok`, directory mode `0700`",
-            "SQLite file mode `0600`",
-            "The live result is separate execution\n  evidence, not a retained Build 19 archive member.",
-            "do not qualify arbitrary histories, crash/power-loss",
+            "<!-- aetherlink-current-build21-abrupt-recovery-v1:start -->",
+            "<!-- aetherlink-current-build21-abrupt-recovery-v1:end -->",
+            "Build 19 is now immutable historical evidence. It first source-bound the",
+            "Runtime-chat SQLite cross-process helper/runner",
+            "passed 12/12 tests",
+            "48+48=96 disjoint exactly-once events",
+            "`integrity_check=ok`, directory",
+            "mode `0700`, and SQLite file mode `0600`",
+            "execution evidence, not a retained Build 19 archive member",
+            "qualify arbitrary histories, crash/power-loss",
+            "macos-runtime-chat-sqlite-abrupt-process-recovery-build-21-v1.json",
+            "not-production-append-crash-point",
         ),
         "docs/qa-evidence.md": (
-            "Build 19 first source-binds the Runtime-chat SQLite cross-process QA",
-            "Python orchestration suite passes 12/12",
-            "96 disjoint exactly-once events, owner/session isolation",
-            "`integrity_check=ok`, directory mode `0700`",
-            "SQLite file\n  mode `0600`",
-            "execution evidence, not a retained Build 19\n  archive member",
-            "crash/power-loss,\n  mixed old/new binaries",
+            "<!-- aetherlink-current-build21-abrupt-recovery-v1:start -->",
+            "<!-- aetherlink-current-build21-abrupt-recovery-v1:end -->",
+            "Build 19 is immutable historical evidence. It first source-bound the",
+            "Runtime-chat SQLite cross-process helper/runner",
+            "Python orchestration suite passed 12/12 tests",
+            "48+48=96 disjoint exactly-once events",
+            "`integrity_check=ok`, directory",
+            "mode `0700`, and SQLite file mode `0600`",
+            "retained Build 19 archive member",
+            "does not qualify crash/power-loss",
+            "macos-runtime-chat-sqlite-abrupt-process-recovery-build-21-v1.json",
+            "not-production-append-crash-point",
         ),
         "docs/handoff.md": (
-            "Build 19 first source-binds the Runtime-chat SQLite cross-process QA closure.",
+            "<!-- aetherlink-current-build21-abrupt-recovery-v1:start -->",
+            "<!-- aetherlink-current-build21-abrupt-recovery-v1:end -->",
+            "Build 19 remains the first archive to source-bind the Runtime-chat SQLite",
             "Production connections use a 5-second busy timeout",
-            "Three deterministic Swift tests\n  cover wait-and-release success and rollback after `BEGIN` or `COMMIT`",
-            "96 disjoint events exactly once with owner/session isolation",
-            "order, SQLite integrity, `0700` directory mode, and `0600` file mode",
-            "live result is separate execution evidence, not an archive member",
-            "crash/power-loss, concurrent writers, backup/transfer, rollback",
+            "Three deterministic Swift tests cover",
+            "96 disjoint events exactly once with",
+            "owner/session isolation, per-writer order, SQLite integrity",
+            "directory mode, and `0600` file mode",
+            "separate execution evidence, not",
+            "does not qualify crash/power-loss",
+            "macos-runtime-chat-sqlite-abrupt-process-recovery-build-21-v1.json",
+            "not-production-append-crash-point",
+        ),
+        "docs/releases/1.0.0-build-21-local-v1.md": (
+            "<!-- aetherlink-current-build21-abrupt-recovery-v1:start -->",
+            "<!-- aetherlink-current-build21-abrupt-recovery-v1:end -->",
+            "Runtime-Chat SQLite Abrupt Child-Process Recovery Evidence",
+            "2,223 bytes",
+            "db66614d7badd7a0f606c03f91a516dff6d77e539684dcb6daf52709bce0f16f",
+            "writerProcessReapedBeforeJournalObservation",
+            "not-production-append-crash-point",
+        ),
+        "docs/releases/1.0.0-build-20-local-v1.md": (
+            "Build 20 is retained as an immutable historical qualification record.",
+            "<!-- aetherlink-historical-build20-lifecycle-v1:start -->",
+            "<!-- aetherlink-historical-build20-lifecycle-v1:end -->",
+            "no Build 20\nobservation is relabeled as Build 21 evidence",
+        ),
+        "README.md": (
+            "<!-- aetherlink-current-build21-abrupt-recovery-v1:start -->",
+            "<!-- aetherlink-current-build21-abrupt-recovery-v1:end -->",
+            "macos-runtime-chat-sqlite-abrupt-process-recovery-build-21-v1.json",
+            "db66614d7badd7a0f606c03f91a516dff6d77e539684dcb6daf52709bce0f16f",
+            "not-production-append-crash-point",
         ),
     }
     for relative, snippets in required_snippets.items():
@@ -62684,6 +62741,8 @@ def provider_model_catalog_context_window_guard_failures() -> list[str]:
             "public static func validatedContextWindowTokens(decimal value: Decimal) -> Int?",
             "NSDecimalRound(&integral, &candidate, 0, .down)",
             "guard integral == value else",
+            "public protocol ProviderScopedModelCatalogListing: RuntimeModelServingBackend {",
+            "func listModels(for provider: ModelProvider) async throws -> [ModelInfo]",
         ),
         "strict_json": (
             "public static func validateNoDuplicateObjectKeys(in data: Data) throws",
@@ -62812,12 +62871,19 @@ def provider_model_catalog_context_window_guard_failures() -> list[str]:
         ),
         "aggregate": (
             "public func listModels() async throws -> [ModelInfo]",
+            "ProviderScopedModelCatalogListing,",
+            "public func listModels(for provider: ModelProvider) async throws -> [ModelInfo]",
+            "let providerModels = try await backend(for: provider).listModels()",
+            "return providerModels.filter { $0.provider == provider }",
             "try Task.checkCancellation()",
             "catch is CancellationError",
             "catch let error as URLError where error.code == .cancelled",
         ),
         "router": (
-            "let models = try await backend.listModels()",
+            "let scopedCatalog = backend as? any ProviderScopedModelCatalogListing",
+            "return try await scopedCatalog.listModels(for: qualifiedModel.provider)",
+            "return try await scopedCatalog.listModels(for: qualified.provider)",
+            "return try await backend.listModels()",
             "static let maximumConcurrentModelCatalogWaiters = 8",
             "let modelCatalogCoordinator: RuntimeModelCatalogCoordinator",
             "modelCatalogCoordinator.listModels(",
@@ -62902,6 +62968,36 @@ def provider_model_catalog_context_window_guard_failures() -> list[str]:
         failures.append(
             "apps/macos/LMStudioBackend/Sources/LMStudioBackend.swift: native chat must require "
             "chat.end through the shared handler in both the main stream loop and parser.finish() path."
+        )
+    if (
+        texts["router"].count(
+            "let scopedCatalog = backend as? any ProviderScopedModelCatalogListing"
+        )
+        != 2
+        or texts["router"].count("return try await backend.listModels()") != 2
+        or texts["router"].count(
+            "return try await scopedCatalog.listModels(for: qualifiedModel.provider)"
+        )
+        != 1
+        or texts["router"].count(
+            "return try await scopedCatalog.listModels(for: qualified.provider)"
+        )
+        != 1
+    ):
+        failures.append(
+            "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift: "
+            "qualified chat and semantic search must each use one provider-scoped "
+            "catalog path with one unsupported-backend full-catalog fallback."
+        )
+    if (
+        texts["aggregate"].count(
+            "let models = try await listModels(for: resolved.provider)"
+        )
+        != 2
+    ):
+        failures.append(
+            "apps/macos/CompanionCore/Sources/AggregatingLlmBackend.swift: "
+            "qualified chat and embedding must both use provider-scoped catalog lookup."
         )
 
     ollama_tests = (
@@ -63011,6 +63107,26 @@ def provider_model_catalog_context_window_guard_failures() -> list[str]:
     aggregate_tests = (
         "testListModelsPropagatesCancellationInsteadOfReturningPartialCatalog",
     )
+    provider_scoped_catalog_tests = {
+        "aggregate_tests": (
+            "testQualifiedChatListsOnlySelectedProvider",
+            "testQualifiedEmbeddingListsOnlySelectedProvider",
+            "testQualifiedChatNormalizesCancelledProviderCatalogError",
+            "testQualifiedChatPropagatesSelectedProviderErrorWithoutListingUnrelatedProvider",
+            "testUnqualifiedChatStillListsEveryProvider",
+        ),
+        "router_tests": (
+            "testQualifiedSemanticSearchSkipsUnrelatedProviderCatalog",
+            "testQualifiedChatSendSkipsUnrelatedProviderCatalog",
+        ),
+    }
+    for label, test_names in provider_scoped_catalog_tests.items():
+        for test_name in test_names:
+            if f"func {test_name}" not in texts[label]:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: missing provider-scoped "
+                    f"catalog regression {test_name}."
+                )
     for label, test_names, helper in (
         ("protocol_tests", protocol_tests, None),
         ("ollama_tests", ollama_tests, "assertCatalogRejected("),

@@ -351,6 +351,20 @@ final class ProtocolCodecTests: XCTestCase {
                     + String(repeating: "]", count: depth)
             ).utf8)
         }
+        func mixedContainers(depth: Int) -> Data {
+            var prefix = ""
+            var suffix = ""
+            for level in 0..<depth {
+                if level.isMultiple(of: 2) {
+                    prefix += #"{"value":"#
+                    suffix = "}" + suffix
+                } else {
+                    prefix += "["
+                    suffix = "]" + suffix
+                }
+            }
+            return Data((prefix + "0" + suffix).utf8)
+        }
 
         XCTAssertNoThrow(
             try StrictJSONDocumentValidator.validate(nestedArray(depth: 128))
@@ -360,6 +374,176 @@ final class ProtocolCodecTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? ProtocolCodecError, .invalidJSON)
         }
+        XCTAssertNoThrow(
+            try StrictJSONDocumentValidator.validate(mixedContainers(depth: 128))
+        )
+        XCTAssertThrowsError(
+            try StrictJSONDocumentValidator.validate(mixedContainers(depth: 129))
+        ) { error in
+            XCTAssertEqual(error as? ProtocolCodecError, .invalidJSON)
+        }
+    }
+
+    func testStrictJSONDifferentialCorpusMatchesFoundationSyntax() throws {
+        let acceptedDocuments: [(label: String, data: Data)] = [
+            ("null literal", Data("null".utf8)),
+            ("true literal", Data("true".utf8)),
+            ("false literal", Data("false".utf8)),
+            ("integer zero", Data("0".utf8)),
+            ("negative zero", Data("-0".utf8)),
+            ("fraction", Data("-12.34".utf8)),
+            ("exponent", Data("6.022e23".utf8)),
+            ("empty string", Data(#""""#.utf8)),
+            ("escaped string", Data(#""quote:\" slash:\/ reverse:\\ controls:\b\f\n\r\t""#.utf8)),
+            ("unicode escape", Data(#""\uD55C\uAE00""#.utf8)),
+            ("surrogate pair", Data(#""\uD83D\uDE00""#.utf8)),
+            ("raw Unicode", Data(#""한글 😀""#.utf8)),
+            ("empty array", Data("[]".utf8)),
+            ("empty object", Data("{}".utf8)),
+            (
+                "nested mixed document",
+                Data(
+                    #"{"message":"한글","values":[true,false,null,-12.5e+2,{"escaped\/key":"\uD83D\uDE00"}]}"#
+                        .utf8
+                )
+            ),
+            (
+                "JSON whitespace",
+                Data(" \t\r\n [ true , false , null ] \n".utf8)
+            ),
+            (
+                "literal-heavy array",
+                Data(
+                    ("[" + Array(repeating: "true,false,null", count: 64).joined(separator: ",") + "]")
+                        .utf8
+                )
+            ),
+        ]
+        let rejectedByBoth: [(label: String, data: Data)] = [
+            ("empty input", Data()),
+            ("whitespace only", Data(" \t\r\n".utf8)),
+            ("trailing document", Data("null false".utf8)),
+            ("capitalized literal", Data("True".utf8)),
+            ("truncated true", Data("tru".utf8)),
+            ("extended true", Data("true0".utf8)),
+            ("extended false", Data("falsee".utf8)),
+            ("truncated null", Data("nul".utf8)),
+            ("extended null", Data("nullx".utf8)),
+            ("leading plus", Data("+1".utf8)),
+            ("missing integer", Data("-".utf8)),
+            ("leading zero", Data("01".utf8)),
+            ("missing fraction", Data("1.".utf8)),
+            ("missing exponent", Data("1e".utf8)),
+            ("missing signed exponent", Data("1e+".utf8)),
+            ("array missing value", Data("[1,,2]".utf8)),
+            ("object missing colon", Data(#"{"key" 1}"#.utf8)),
+            ("invalid escape", Data(#""\x""#.utf8)),
+            ("truncated escape", Data([0x22, 0x5c])),
+            ("truncated Unicode escape", Data(#""\u12""#.utf8)),
+            ("invalid Unicode escape", Data(#""\uZZZZ""#.utf8)),
+            ("isolated high surrogate", Data(#""\uD800""#.utf8)),
+            ("isolated low surrogate", Data(#""\uDC00""#.utf8)),
+            ("reversed surrogate pair", Data(#""\uDC00\uD800""#.utf8)),
+            ("unescaped control", Data([0x22, 0x0a, 0x22])),
+            ("invalid UTF-8", Data([0x22, 0xc3, 0x28, 0x22])),
+            ("non-JSON whitespace", Data([0x5b, 0x31, 0x0b, 0x5d])),
+        ]
+        let strictPolicyRejections: [(label: String, data: Data)] = [
+            ("array trailing comma", Data("[1,]".utf8)),
+            ("object trailing comma", Data(#"{"key":1,}"#.utf8)),
+        ]
+
+        for document in acceptedDocuments {
+            XCTAssertNoThrow(
+                try JSONSerialization.jsonObject(
+                    with: document.data,
+                    options: [.fragmentsAllowed]
+                ),
+                "Foundation rejected accepted corpus entry: \(document.label)"
+            )
+            XCTAssertNoThrow(
+                try StrictJSONDocumentValidator.validate(document.data),
+                "strict validator rejected accepted corpus entry: \(document.label)"
+            )
+        }
+
+        for document in rejectedByBoth {
+            XCTAssertThrowsError(
+                try JSONSerialization.jsonObject(
+                    with: document.data,
+                    options: [.fragmentsAllowed]
+                ),
+                "Foundation accepted rejected corpus entry: \(document.label)"
+            )
+            XCTAssertThrowsError(
+                try StrictJSONDocumentValidator.validate(document.data),
+                "strict validator accepted rejected corpus entry: \(document.label)"
+            ) { error in
+                XCTAssertEqual(
+                    error as? ProtocolCodecError,
+                    .invalidJSON,
+                    "unexpected error for corpus entry: \(document.label)"
+                )
+            }
+        }
+
+        for document in strictPolicyRejections {
+            XCTAssertThrowsError(
+                try StrictJSONDocumentValidator.validate(document.data),
+                "strict validator accepted its stricter corpus entry: \(document.label)"
+            ) { error in
+                XCTAssertEqual(
+                    error as? ProtocolCodecError,
+                    .invalidJSON,
+                    "unexpected strict-only error for corpus entry: \(document.label)"
+                )
+            }
+        }
+    }
+
+    func testStrictJSONDifferentialCorpusPinsDecodedDuplicateKeysAndDataSlices() throws {
+        let duplicateDocuments: [(label: String, key: String, data: Data)] = [
+            ("direct duplicate", "key", Data(#"{"key":1,"key":2}"#.utf8)),
+            ("escaped-equivalent duplicate", "key", Data(#"{"key":1,"\u006bey":2}"#.utf8)),
+            ("escaped slash duplicate", "/", Data(#"{"\/":1,"/":2}"#.utf8)),
+            (
+                "nested raw and escaped Unicode duplicate",
+                "한",
+                Data(#"{"outer":{"한":1,"\uD55C":2}}"#.utf8)
+            ),
+            (
+                "canonically equivalent Unicode duplicate",
+                "é",
+                Data(#"{"é":1,"e\u0301":2}"#.utf8)
+            ),
+            (
+                "first duplicate remains the reported error",
+                "first",
+                Data(#"{"first":1,"first":2,"second":3,"second":4}"#.utf8)
+            ),
+        ]
+
+        for document in duplicateDocuments {
+            XCTAssertThrowsError(
+                try StrictJSONDocumentValidator.validate(document.data),
+                "strict validator accepted duplicate corpus entry: \(document.label)"
+            ) { error in
+                XCTAssertEqual(
+                    error as? ProtocolCodecError,
+                    .duplicateJSONObjectKey(document.key),
+                    "unexpected duplicate error for corpus entry: \(document.label)"
+                )
+            }
+        }
+
+        let storage = Data("xx{\"key\":[true,false,null,\"한글\"]}yy".utf8)
+        let slicedDocument = storage[2..<(storage.count - 2)]
+        XCTAssertNoThrow(try StrictJSONDocumentValidator.validate(slicedDocument))
+        XCTAssertNoThrow(
+            try StrictJSONDocumentValidator.validate(
+                Data(#"[{"same":1},{"same":2}]"#.utf8)
+            )
+        )
     }
 
     func testProtocolEnvelopeDecodeAcceptsNormalResearchEnvelope() throws {

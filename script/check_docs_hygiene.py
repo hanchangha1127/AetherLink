@@ -35,13 +35,23 @@ OLLAMA_MULTILINGUAL_FULL_MATRIX_V3_RESULT = (
     / "ollama-embedding-multilingual-full-matrix-v3.json"
 )
 LOCAL_RELEASE_MARKETING_VERSION = "1.0.0"
-LOCAL_RELEASE_BUILD_NUMBER = 21
-CURRENT_REPRODUCIBILITY_RESULT_PATH_VERSION = 3
+LOCAL_RELEASE_BUILD_NUMBER = 22
+CURRENT_REPRODUCIBILITY_RESULT_PATH_VERSION = 4
 LOCAL_RELEASE_ID = (
     f"aetherlink-{LOCAL_RELEASE_MARKETING_VERSION}"
     f"+{LOCAL_RELEASE_BUILD_NUMBER}-local-v1"
 )
-LOCAL_RELEASE_CURRENT_DOC = ROOT / "docs/releases/1.0.0-build-21-local-v1.md"
+LOCAL_RELEASE_CURRENT_DOC = ROOT / "docs/releases/1.0.0-build-22-local-v1.md"
+HISTORICAL_BUILD20_RELEASE_DOC = (
+    ROOT / "docs/releases/1.0.0-build-20-local-v1.md"
+)
+HISTORICAL_BUILD20_RELEASE_DOCUMENT_SHA256 = (
+    "fd0082f3bbc6922e25cd490d32c7b0c82e4b7ffd1e622f9951cc63813f8d1615"
+)
+LATEST_RECORDED_GIT_REFRESH_HEAD = (
+    "88c0282722eb0afb3ce2d6f394fedb1f22a7ec7c"
+)
+LATEST_RECORDED_GIT_REFRESH_LABEL = "2026-07-30 11:44 KST"
 LOCAL_RELEASE_FIXTURE_BUILD_NUMBER = 3
 LOCAL_RELEASE_FIXTURE_ID = (
     f"aetherlink-{LOCAL_RELEASE_MARKETING_VERSION}"
@@ -61,12 +71,12 @@ LOCAL_RELEASE_ARCHIVE_DIR = ROOT / "dist/releases" / LOCAL_RELEASE_ID
 LOCAL_RELEASE_REPRODUCIBILITY_RESULT = (
     ROOT
     / "dist/reproducibility/"
-    "aetherlink-1.0.0+21-local-v1-two-root-v3.json"
+    "aetherlink-1.0.0+22-local-v1-two-root-v4.json"
 )
 LOCAL_RELEASE_REPRODUCIBILITY_PREPUBLICATION_RESULT = (
     ROOT
     / "dist/reproducibility/"
-    "aetherlink-1.0.0+21-local-v1-two-root-v3-prepublication.json"
+    "aetherlink-1.0.0+22-local-v1-two-root-v4-prepublication.json"
 )
 MACOS_CLEAN_HOME_INSTALLED_APP_RESULT = (
     ROOT
@@ -149,25 +159,31 @@ HISTORICAL_MACOS_PACKAGED_LIFECYCLE_TEST = (
 )
 LOCAL_RELEASE_LEDGER = ROOT / "release/version-ledger.tsv"
 LOCAL_RELEASE_G0_DECISION = ROOT / "docs/v1/g0/decision-v1.json"
-LOCAL_RELEASE_EXPECTED_ZIP_SIZE = 165_617_441
+LOCAL_RELEASE_EXPECTED_ZIP_SIZE = 165_705_774
 LOCAL_RELEASE_EXPECTED_ZIP_SHA256 = (
-    "b7acd3eb6c4089306dd8e597eb9b952d8dc993535ec13de63099090f155ca9a6"
+    "478bd4210c11f7e2204e80a333bc8053b0d01b8deff3d0a3d2dd6795df1366c3"
 )
 LOCAL_RELEASE_EXPECTED_MANIFEST_SIZE = 12_317
 LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256 = (
-    "d12ceb13b60cbd165c5007d65dfcb50eb522e6df574b4de777d8a09aed815c5f"
+    "a92ee387be3a900bad1682093b653da1fea1a8e1dd1580153bed91c01e2ff1c5"
 )
 LOCAL_RELEASE_EXPECTED_CHECKSUM_SIZE = 99
 LOCAL_RELEASE_EXPECTED_CHECKSUM_SHA256 = (
-    "850145f90cdb3ecd1fac90b8623b42c15b0bc5b357c08f7b47cbdc1086163953"
+    "5711d5926f1c3e053f864f55bccf93a3986fb8bb5a6bcc8818161ef686d75991"
 )
-LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SIZE = 20_010
+LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SIZE = 20_353
 LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SHA256 = (
-    "b628ee84164ff7405e67520c2ca33d57aee19caad6875cbe61c361c2f3d7da70"
+    "330b671475c0769a0579a0af7cb7f82c746a5df4bb0aba4b305510e597d4081d"
 )
-LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_PREPUBLICATION_SIZE = 19_571
+LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_PREPUBLICATION_SIZE = 19_645
 LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_PREPUBLICATION_SHA256 = (
-    "5267f145d8237c11fe5425a7148d62237fae942a6d8413eda7f0e9443a0d1c16"
+    "9293c578b2ca409966c79028ea2b8e9d5e717ae64159b58bd35b90c007d3d26b"
+)
+LOCAL_RELEASE_EXPECTED_PROTECTED_ARCHIVE_RELATIVE = (
+    "dist/releases/aetherlink-1.0.0+21-local-v1"
+)
+LOCAL_RELEASE_EXPECTED_PROTECTED_ARCHIVE_IDENTITY_SHA256 = (
+    "8959b4891658101c218e9bf4cefb6ce6dbd894f238992f6a601bcc4f8a72f03a"
 )
 HISTORICAL_BUILD18_RELEASE_ID = "aetherlink-1.0.0+18-local-v1"
 HISTORICAL_BUILD18_ARCHIVE_SIZE = 165_615_149
@@ -279,6 +295,7 @@ HISTORICAL_BUILD20_REPRODUCIBILITY_PREPUBLICATION_SIZE = 19_571
 HISTORICAL_BUILD20_REPRODUCIBILITY_PREPUBLICATION_SHA256 = (
     "ad7e9b6e5f52a76d5a65b52bab5138ad86eb019b7b89fa7ee29c51b89c7cef2c"
 )
+HISTORICAL_BUILD20_MACOS_UUID = "0AD0CBED-7293-3151-84D1-9BAF07654A93"
 HISTORICAL_BUILD20_SOURCE_FILE_COUNT = 246
 HISTORICAL_BUILD20_SOURCE_SNAPSHOT_SHA256 = (
     "22f14e60d522b2720660e41a645a3e9832dd723b8b93b147c51bbf6c9125998c"
@@ -305,6 +322,35 @@ HISTORICAL_BUILD20_RUNTIME_CHAT_TEST_IDENTITY = (
     13_950,
     "2a9d1add3ac6343aeeeb0b746f1182dbba148321f214a74211fe59b19e888e61",
 )
+HISTORICAL_BUILD21_RELEASE_ID = "aetherlink-1.0.0+21-local-v1"
+HISTORICAL_BUILD21_ARCHIVE_SIZE = 165_617_441
+HISTORICAL_BUILD21_ARCHIVE_SHA256 = (
+    "b7acd3eb6c4089306dd8e597eb9b952d8dc993535ec13de63099090f155ca9a6"
+)
+HISTORICAL_BUILD21_MANIFEST_SIZE = 12_317
+HISTORICAL_BUILD21_MANIFEST_SHA256 = (
+    "d12ceb13b60cbd165c5007d65dfcb50eb522e6df574b4de777d8a09aed815c5f"
+)
+HISTORICAL_BUILD21_CHECKSUM_SHA256 = (
+    "850145f90cdb3ecd1fac90b8623b42c15b0bc5b357c08f7b47cbdc1086163953"
+)
+HISTORICAL_BUILD21_REPRODUCIBILITY_RESULT_SIZE = 20_010
+HISTORICAL_BUILD21_REPRODUCIBILITY_RESULT_SHA256 = (
+    "b628ee84164ff7405e67520c2ca33d57aee19caad6875cbe61c361c2f3d7da70"
+)
+HISTORICAL_BUILD21_REPRODUCIBILITY_PREPUBLICATION_SIZE = 19_571
+HISTORICAL_BUILD21_REPRODUCIBILITY_PREPUBLICATION_SHA256 = (
+    "5267f145d8237c11fe5425a7148d62237fae942a6d8413eda7f0e9443a0d1c16"
+)
+HISTORICAL_BUILD21_SOURCE_FILE_COUNT = 247
+HISTORICAL_BUILD21_SOURCE_SNAPSHOT_SHA256 = (
+    "d948d5abfed0ccfe72429b46104e30847840dd11a2f7a2380d75a29c3d1763b4"
+)
+HISTORICAL_BUILD21_SOURCE_INVENTORY_SIZE = 47_975
+HISTORICAL_BUILD21_SOURCE_INVENTORY_SHA256 = (
+    "620262cae041102653b455ac01bc75ebc42dccaf342e10f59244db842055c57e"
+)
+HISTORICAL_BUILD21_MACOS_UUID = "0AD0CBED-7293-3151-84D1-9BAF07654A93"
 HISTORICAL_BUILD14_MARKETING_VERSION = "1.0.0"
 HISTORICAL_BUILD14_RELEASE_ID = "aetherlink-1.0.0+14-local-v1"
 HISTORICAL_BUILD14_ARCHIVE_SHA256 = (
@@ -511,6 +557,26 @@ CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_START = (
 CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_END = (
     "<!-- aetherlink-current-build21-abrupt-recovery-v1:end -->"
 )
+CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_BLOCK_SHA256 = {
+    "README.md": (
+        "3fe613780130d575fc083d721d1b45677569661f7fffa8b4163386112c9cb06f"
+    ),
+    "docs/roadmap.md": (
+        "bb63e6f5198d25908ac010ceb3a2b132462602398bf3f621530131bcccf49ceb"
+    ),
+    "docs/handoff.md": (
+        "61af0160afd46516126d7b453edd689e6b091d394de2e2c80fd82e225b098f42"
+    ),
+    "docs/progress.md": (
+        "c5906554dcc3ddec0b3fc8587f05d89639c6d61d4c3ab3670a67a33d58c52748"
+    ),
+    "docs/qa-evidence.md": (
+        "69ce082b9bc2d0ffdfe63138c80012d375c80871fcbd37da3d80d9859e0a3ac7"
+    ),
+    "docs/releases/1.0.0-build-22-local-v1.md": (
+        "d3a5e47b36a8a444f07c4a307e910141be4ae7784e5ea05ab00acad90a8361b2"
+    ),
+}
 CURRENT_RUNTIME_CHAT_SQLITE_DOCUMENT_REQUIRED_PATTERNS = (
     (
         "production 5-second busy timeout",
@@ -669,16 +735,16 @@ LOCAL_RELEASE_EXPECTED_SOURCE_ROOT_BYTE_LENGTHS = {
 }
 LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT = 247
 LOCAL_RELEASE_EXPECTED_SOURCE_SHA256 = (
-    "d948d5abfed0ccfe72429b46104e30847840dd11a2f7a2380d75a29c3d1763b4"
+    "d0ee21c6f288cafad0a0f634de2116b48c8a4716389f2d52daacd4e90c591eb6"
 )
 LOCAL_RELEASE_EXPECTED_SOURCE_OVERLAY_SHA256 = (
-    "937a08747c539e9aac452ed5f9ab945876f800163196aa2a150eadcc3140ff4d"
+    "c259c24c88e5f88dacfa5eca2c4c6651f5347b10b6fb08f3698dd0822b4028f2"
 )
 LOCAL_RELEASE_EXPECTED_PREPUBLICATION_SOURCE_OVERLAY_SHA256 = (
-    "937a08747c539e9aac452ed5f9ab945876f800163196aa2a150eadcc3140ff4d"
+    "c259c24c88e5f88dacfa5eca2c4c6651f5347b10b6fb08f3698dd0822b4028f2"
 )
 LOCAL_RELEASE_EXPECTED_SOURCE_HEAD = (
-    "dc5832b9f5926b44ccde87d11beb58355ecd9ece"
+    "88c0282722eb0afb3ce2d6f394fedb1f22a7ec7c"
 )
 LOCAL_RELEASE_EXPECTED_RUNTIME_CHAT_SQLITE_SOURCE_MEMBERS = {
     "Package.swift": (
@@ -706,31 +772,31 @@ LOCAL_RELEASE_EXPECTED_RUNTIME_CHAT_SQLITE_SOURCE_MEMBERS = {
     ),
 }
 LOCAL_RELEASE_EXPECTED_MEMBER_COUNT = 29
-LOCAL_RELEASE_EXPECTED_MACOS_UUID = "0AD0CBED-7293-3151-84D1-9BAF07654A93"
+LOCAL_RELEASE_EXPECTED_MACOS_UUID = "E8178DE8-6DC5-3E3D-A8EA-5721BC4F70CA"
 LOCAL_RELEASE_EXPECTED_MEMBERS = {
     "android/apk/app-release-unsigned.apk": (
         9_575_138,
-        "5dd1779523cbfa51cfff7b3deac93a8a548246f073147e72a705ac23a1020cc6",
+        "31dc15d5f6af6fcaa57227818731af332e558a032a5e39b8d5cdc94b28c2af4a",
     ),
     "android/bundle/app-release.aab": (
-        10_676_638,
-        "37183dc60d0ca0068476f9225cade96d6c8f86efac6eaffc27e181623cee0c77",
+        10_677_980,
+        "324e1487978cef9d1397dfeae00a112ef0bcf37e4c20242cfb1d81cb3f37d410",
     ),
     "android/mapping/mapping.txt": (
-        71_878_918,
-        "2a2144d5220935030e2a9d58f8201d651066ae3614382986fa3b942da88f4b90",
+        71_910_079,
+        "df11c4119f7ddcab82084d93f377d50cd14a1c33d06eae30192df00a0fcc7514",
     ),
     "android/mapping/resources.txt": (
         134_768,
         "002f51ef322a3849b5c4671db6bb6dd89722dfacd0a3418e465939ac406c005a",
     ),
     "macos/AetherLink.app/Contents/MacOS/AetherLink": (
-        18_272_048,
-        "24c54d6ffc2ff49b24954a7e6ec4399774a32685edd26e3eb5ea1eba8af88037",
+        18_300_464,
+        "71c0273479e7121a47f0d788b19229dd8fe39b9c420108cb81a8b59580e251cd",
     ),
     "macos/AetherLink.dSYM/Contents/Resources/DWARF/AetherLink": (
-        31_284_396,
-        "091ed60e4b67ff8ce2d077c5c73d807ccbd3b48a8429d228040c15b9d2afb61b",
+        31_306_138,
+        "b72230a02d95073c02b45a8666c20ceceb57d7f302f06944b0ce7bbcfe6b8d8c",
     ),
     "compliance/THIRD_PARTY_LICENSE_INVENTORY.txt": (
         109_725,
@@ -742,7 +808,7 @@ LOCAL_RELEASE_EXPECTED_MEMBERS = {
     ),
     "compliance/sbom.spdx.json": (
         252_417,
-        "69899ad4d464ab96cedc20dfb64ea1b3b0cb4883e7aa408661093145d0a77b18",
+        "73befa74fc1a5892a656996dcc226d166540d47ae2f165fc7c5914972795d32a",
     ),
     "compliance/third-party-license-inventory-v1.json": (
         411_087,
@@ -750,7 +816,7 @@ LOCAL_RELEASE_EXPECTED_MEMBERS = {
     ),
     "source-files.json": (
         47_975,
-        "620262cae041102653b455ac01bc75ebc42dccaf342e10f59244db842055c57e",
+        "623a822a77eb033e4c827fc4ef875a5dfd238fe7a933c7a3a9801d966ed1d7e3",
     ),
 }
 LOCAL_RELEASE_EXPECTED_APK_MANIFEST_READBACK = {
@@ -1138,7 +1204,7 @@ CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT = {
             "92070b85256532b23b327fec5b6a46df2d98f2de89f85750ea6189c838197fb6"
         ),
         "marketingVersion": LOCAL_RELEASE_MARKETING_VERSION,
-        "uuid": LOCAL_RELEASE_EXPECTED_MACOS_UUID,
+        "uuid": HISTORICAL_BUILD20_MACOS_UUID,
     },
     "installation": {
         **MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT["installation"],
@@ -1696,6 +1762,7 @@ HYGIENE_TARGETS = (
     "docs/releases/1.0.0-build-19-local-v1.md",
     "docs/releases/1.0.0-build-20-local-v1.md",
     "docs/releases/1.0.0-build-21-local-v1.md",
+    "docs/releases/1.0.0-build-22-local-v1.md",
     "docs/roadmap.md",
     "docs/security.md",
     "examples/README.md",
@@ -1776,7 +1843,7 @@ CONTRACTS = (
 FILE_CONTRACTS = (
     DocsFileContract(
         "local-release-qualification-boundary",
-        "docs/releases/1.0.0-build-21-local-v1.md",
+        "docs/releases/1.0.0-build-22-local-v1.md",
         (
             re.compile(
                 r"\bStatus:\s*local release-engineering candidate,\s*not a production release\b",
@@ -2071,9 +2138,11 @@ FILE_CONTRACTS = (
 PROGRESS_DOC = ROOT / "docs/progress.md"
 QA_EVIDENCE_DOC = ROOT / "docs/qa-evidence.md"
 QA_CURRENT_RELEASE_READBACK_MARKER = (
-    "The Build 20 archive is the latest ledger entry"
+    "The Build 22 archive is the latest ledger entry"
 )
 QA_STALE_RELEASE_READBACK_MARKERS = (
+    "The Build 21 archive is the latest ledger entry",
+    "The Build 20 archive is the latest ledger entry",
     "The Build 19 archive is the latest ledger entry and its source-bound "
     "snapshot matches the current release inputs.",
     "The Build 18 archive is the latest ledger entry and its source-bound "
@@ -2124,7 +2193,7 @@ def current_release_qa_evidence_failures(
     failures: list[str] = []
     if QA_CURRENT_RELEASE_READBACK_MARKER not in normalized_text:
         failures.append(
-            "docs/qa-evidence.md: Build 20 current-source readback marker is "
+            "docs/qa-evidence.md: Build 22 current-source readback marker is "
             "missing."
         )
     for stale_marker in QA_STALE_RELEASE_READBACK_MARKERS:
@@ -2133,6 +2202,223 @@ def current_release_qa_evidence_failures(
                 "docs/qa-evidence.md: stale current-release EOF readback claim "
                 "must not remain current."
             )
+    return failures
+
+
+def current_release_summary_document_failures(
+    *,
+    ledger_bytes: bytes | None = None,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    try:
+        entries = parse_release_version_ledger(
+            LOCAL_RELEASE_LEDGER.read_bytes()
+            if ledger_bytes is None
+            else ledger_bytes
+        )
+    except (OSError, LedgerError) as error:
+        return [
+            "release/version-ledger.tsv: cannot validate current release "
+            f"summary documents: {error}"
+        ]
+    if len(entries) < 2:
+        return [
+            "release/version-ledger.tsv: current release summary validation "
+            "requires a current and previous entry."
+        ]
+
+    current = entries[-1]
+    previous = entries[-2]
+    current_id = (
+        f"aetherlink-{current.marketing_version}"
+        f"+{current.build_number}-local-v1"
+    )
+    previous_id = (
+        f"aetherlink-{previous.marketing_version}"
+        f"+{previous.build_number}-local-v1"
+    )
+    result_version = CURRENT_REPRODUCIBILITY_RESULT_PATH_VERSION
+    required_claims_by_relative = {
+        "docs/handoff.md": (
+            f"Build {current.build_number} is the latest immutable ledger archive.",
+            f"v{result_version} comparison-only prepublication result",
+            f"v{result_version} publish-qualified result",
+            current_id,
+            f"Builds 1 through {previous.build_number} are historical",
+        ),
+        "docs/progress.md": (
+            f"Local V1 Build {current.build_number} Qualification",
+            (
+                f"Build {current.build_number} is the current local "
+                "qualification record; Builds 1 through "
+                f"{previous.build_number} are immutable historical records."
+            ),
+            f"Both v{result_version} two-root runs",
+            current_id,
+            f"Historical Local V1 Build {previous.build_number} Qualification",
+        ),
+        "docs/qa-evidence.md": (
+            f"Local V1 Build {current.build_number} Qualification Checklist",
+            (
+                f"The Build {current.build_number} archive is the latest "
+                "ledger entry"
+            ),
+            f"Builds 1 through {previous.build_number} remain immutable historical records.",
+            current_id,
+            (
+                f"Historical Local V1 Build {previous.build_number} "
+                "Qualification Checklist"
+            ),
+        ),
+        "docs/roadmap.md": (
+            (
+                f"Build {current.build_number} is the latest immutable local "
+                "G6 package qualification record"
+            ),
+            f"publish-qualified schema-v{result_version} executions",
+            f"latest immutable ledger archive is `{current_id}`",
+            (
+                f"Builds 1 through {previous.build_number} remain separately "
+                "readable historical archives."
+            ),
+        ),
+    }
+    forbidden_claims_by_relative = {
+        "docs/handoff.md": (
+            (
+                f"Build {previous.build_number} is the latest immutable "
+                "ledger archive."
+            ),
+            f"The v{result_version - 1} comparison-only prepublication result is",
+            f"The v{result_version - 1} publish-qualified result is",
+        ),
+        "docs/progress.md": (
+            (
+                f"Build {previous.build_number} is the current local "
+                "qualification record"
+            ),
+        ),
+        "docs/qa-evidence.md": (
+            (
+                f"The Build {previous.build_number} archive is the latest "
+                "ledger entry"
+            ),
+        ),
+        "docs/roadmap.md": (
+            (
+                f"Build {previous.build_number} is the latest immutable local "
+                "G6 package qualification record"
+            ),
+            f"latest immutable ledger archive is `{previous_id}`",
+            (
+                f"publish-qualified schema-v{result_version - 1} executions "
+                "reproduced the same"
+            ),
+        ),
+    }
+    summary_line_limits = {
+        "docs/handoff.md": 650,
+        "docs/progress.md": 360,
+        "docs/qa-evidence.md": 330,
+        "docs/roadmap.md": 380,
+    }
+
+    failures: list[str] = []
+    for relative, required_claims in required_claims_by_relative.items():
+        try:
+            document_text = (
+                document_text_by_relative[relative]
+                if (
+                    document_text_by_relative is not None
+                    and relative in document_text_by_relative
+                )
+                else (ROOT / relative).read_text(encoding="utf-8")
+            )
+        except (KeyError, OSError, UnicodeError) as error:
+            failures.append(
+                f"{relative}: cannot validate current release summary: {error}"
+            )
+            continue
+        summary_text = "\n".join(
+            document_text.splitlines()[: summary_line_limits[relative]]
+        )
+        normalized_text = " ".join(summary_text.split())
+        for claim in required_claims:
+            normalized_claim = " ".join(claim.split())
+            if normalized_claim not in normalized_text:
+                failures.append(
+                    f"{relative}: missing ledger-derived current release "
+                    f"summary claim {claim!r}."
+                )
+        for claim in forbidden_claims_by_relative[relative]:
+            normalized_claim = " ".join(claim.split())
+            if normalized_claim in normalized_text:
+                failures.append(
+                    f"{relative}: stale previous-release summary claim "
+                    f"{claim!r} must not coexist with the current release."
+                )
+        previous_build_reference = re.compile(
+            rf"\bBuild\s+{previous.build_number}\b",
+            re.IGNORECASE,
+        )
+        release_context = re.compile(
+            r"\b(?:qualification|ledger|archive|release|package|record|"
+            r"entry|evidence|result|prepublication|publication)\b",
+            re.IGNORECASE,
+        )
+        current_or_latest = re.compile(
+            r"(?<!then-)\b(?:current|latest)\b",
+            re.IGNORECASE,
+        )
+        state_verb = re.compile(
+            r"\b(?:is|remain|remains|continues|serves)\b",
+            re.IGNORECASE,
+        )
+        negated_current = re.compile(
+            r"\b(?:not|no longer)\b.{0,24}\b(?:current|latest)\b",
+            re.IGNORECASE,
+        )
+        previous_result_version = result_version - 1
+        stale_result_version = re.compile(
+            (
+                rf"(?:\bschema-v{previous_result_version}\b|"
+                rf"\bv{previous_result_version}\b.{{0,80}}"
+                r"\b(?:comparison-only|publish-qualified)\b|"
+                r"\b(?:comparison-only|publish-qualified)\b.{0,80}"
+                rf"\bv{previous_result_version}\b)"
+            ),
+            re.IGNORECASE,
+        )
+        for sentence in re.split(r"(?<=[.!?])\s+", normalized_text):
+            if (
+                previous_build_reference.search(sentence)
+                and release_context.search(sentence)
+                and current_or_latest.search(sentence)
+                and state_verb.search(sentence)
+                and "historical" not in sentence.lower()
+                and not negated_current.search(sentence)
+            ):
+                failures.append(
+                    f"{relative}: previous Build {previous.build_number} "
+                    "must not be semantically re-attributed as the current "
+                    "or latest release summary."
+                )
+                break
+        for sentence in re.split(r"(?<=[.!?])\s+", normalized_text):
+            if (
+                stale_result_version.search(sentence)
+                and release_context.search(sentence)
+                and current_or_latest.search(sentence)
+                and state_verb.search(sentence)
+                and "historical" not in sentence.lower()
+                and not negated_current.search(sentence)
+            ):
+                failures.append(
+                    f"{relative}: reproducibility result schema v"
+                    f"{previous_result_version} must not be semantically "
+                    "re-attributed as current release evidence."
+                )
+                break
     return failures
 
 
@@ -3932,7 +4218,7 @@ def local_release_ollama_live_fault_injection_fixture_failures(
 def current_release_android_backup_policy_document_failures(
     document_text: str,
     *,
-    relative: str = "docs/releases/1.0.0-build-21-local-v1.md",
+    relative: str = "docs/releases/1.0.0-build-22-local-v1.md",
 ) -> list[str]:
     failures: list[str] = []
     normalized_document = re.sub(r"\s+", " ", document_text)
@@ -3953,8 +4239,8 @@ def current_release_android_manifest_readback_failures(
     manifest: object,
     *,
     relative: str = (
-        "dist/releases/aetherlink-1.0.0+21-local-v1/"
-        "aetherlink-1.0.0+21-local-v1.manifest.json"
+        "dist/releases/aetherlink-1.0.0+22-local-v1/"
+        "aetherlink-1.0.0+22-local-v1.manifest.json"
     ),
 ) -> list[str]:
     if not isinstance(manifest, dict):
@@ -3985,6 +4271,79 @@ def current_release_android_manifest_readback_failures(
             failures.append(
                 f"{relative}: expected {'.'.join(path)}={expected!r}, "
                 f"found {actual!r}."
+            )
+    return failures
+
+
+def current_handoff_git_attribution_failures(
+    document_text: str | None = None,
+) -> list[str]:
+    relative = "docs/handoff.md"
+    if document_text is None:
+        try:
+            document_text = (ROOT / relative).read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            return [
+                f"{relative}: cannot validate Git-state attribution: {error}"
+            ]
+
+    normalized = re.sub(r"\s+", " ", document_text).strip()
+    required_bindings = (
+        (
+            "Build 22 qualification-time source attribution",
+            (
+                "The Build 22 manifest captured source HEAD and "
+                "`origin/main` as "
+                f"`{LOCAL_RELEASE_EXPECTED_SOURCE_HEAD}` at qualification time."
+            ),
+        ),
+        (
+            "timestamped post-qualification Git refresh",
+            (
+                f"at the {LATEST_RECORDED_GIT_REFRESH_LABEL} refresh, `main` "
+                "and `origin/main` both resolved to "
+                f"`{LATEST_RECORDED_GIT_REFRESH_HEAD}`."
+            ),
+        ),
+        (
+            "live HEAD refresh command",
+            "`git rev-parse HEAD`",
+        ),
+        (
+            "live origin/main refresh command",
+            "`git rev-parse origin/main`",
+        ),
+        (
+            "archive source identity boundary",
+            (
+                "The archived source inventory, not either commit alone, "
+                "remains the Build 22 source identity."
+            ),
+        ),
+    )
+    failures: list[str] = []
+    for label, binding in required_bindings:
+        normalized_binding = re.sub(r"\s+", " ", binding).strip()
+        if normalized.count(normalized_binding) != 1:
+            failures.append(
+                f"{relative}: {label} must appear exactly once."
+            )
+
+    stale_live_claims = (
+        (
+            "`main` and `origin/main` both resolve to "
+            f"`{LOCAL_RELEASE_EXPECTED_SOURCE_HEAD}`"
+        ),
+        (
+            "HEAD and `origin/main` are "
+            f"`{LOCAL_RELEASE_EXPECTED_SOURCE_HEAD}`"
+        ),
+    )
+    for claim in stale_live_claims:
+        if claim in normalized:
+            failures.append(
+                f"{relative}: qualification-time source HEAD is presented "
+                "as a live Git-state claim."
             )
     return failures
 
@@ -4045,7 +4404,7 @@ def local_release_document_failures() -> list[str]:
             "reproducibility result path",
             (
                 "`dist/reproducibility/"
-                "aetherlink-1.0.0+21-local-v1-two-root-v3.json`"
+                "aetherlink-1.0.0+22-local-v1-two-root-v4.json`"
             ),
         ),
         (
@@ -4060,7 +4419,7 @@ def local_release_document_failures() -> list[str]:
             "reproducibility prepublication path",
             (
                 "`dist/reproducibility/"
-                "aetherlink-1.0.0+21-local-v1-two-root-v3-prepublication.json`"
+                "aetherlink-1.0.0+22-local-v1-two-root-v4-prepublication.json`"
             ),
         ),
         (
@@ -4093,8 +4452,46 @@ def local_release_document_failures() -> list[str]:
             "`alreadyMatched=false`",
         ),
         (
+            "reproducibility exact prepublication binding",
+            "`prepublicationBinding.matched=true`",
+        ),
+        (
+            "protected previous-archive policy",
+            "`previous-ledger-entry-archive-v1`",
+        ),
+        (
+            "protected previous-archive identity",
+            (
+                f"`{LOCAL_RELEASE_EXPECTED_PROTECTED_ARCHIVE_IDENTITY_SHA256}`"
+            ),
+        ),
+        (
             "Swift frontend serialization",
             "`-Xswiftc -num-threads -Xswiftc 1`",
+        ),
+        (
+            "Build 21 abrupt recovery result path",
+            (
+                "`dist/lifecycle/"
+                "macos-runtime-chat-sqlite-abrupt-process-recovery-"
+                "build-21-v1.json`"
+            ),
+        ),
+        (
+            "Build 21 abrupt recovery result size",
+            f"{CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_RESULT_SIZE:,} bytes",
+        ),
+        (
+            "Build 21 abrupt recovery result SHA-256",
+            f"`{CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_RESULT_SHA256}`",
+        ),
+        (
+            "Build 21 abrupt recovery boundary",
+            "bounded same-host abrupt child-process `SIGKILL` recovery evidence",
+        ),
+        (
+            "Build 21 production append crash-point exclusion",
+            "`not-production-append-crash-point`",
         ),
         (
             "current Build 20 clean-HOME installed-app result path",
@@ -4854,7 +5251,7 @@ def local_release_document_failures() -> list[str]:
 
     result_relative = (
         "dist/reproducibility/"
-        "aetherlink-1.0.0+21-local-v1-two-root-v3.json"
+        "aetherlink-1.0.0+22-local-v1-two-root-v4.json"
     )
     if not LOCAL_RELEASE_REPRODUCIBILITY_RESULT.is_file():
         failures.append(
@@ -4900,19 +5297,22 @@ def local_release_document_failures() -> list[str]:
         )
         return failures
 
+    missing_result_path = object()
+
     def read_result_path(path: tuple[str, ...]) -> object:
         value: object = result
         for key in path:
             if not isinstance(value, dict) or key not in value:
-                return None
+                return missing_result_path
             value = value[key]
         return value
 
     result_expectations = (
-        (("schemaVersion",), 3),
+        (("schemaVersion",), 4),
         (("executionMode",), "publish-qualified"),
         (("releaseId",), LOCAL_RELEASE_ID),
         (("status",), "passed"),
+        (("failure",), None),
         (
             ("scratch", "sourceRoots", "policy"),
             "distinct-unequal-utf8-byte-length-v1",
@@ -4928,6 +5328,44 @@ def local_release_document_failures() -> list[str]:
         (("comparison", "memberBytesEqual"), True),
         (("comparison", "differences"), []),
         (("comparison", "memberDifferences"), []),
+        (("prepublicationBinding", "matched"), True),
+        (
+            ("prepublicationBinding", "path"),
+            (
+                "dist/reproducibility/"
+                "aetherlink-1.0.0+22-local-v1-two-root-v4-"
+                "prepublication.json"
+            ),
+        ),
+        (
+            ("prepublicationBinding", "policy"),
+            "canonical-comparison-result-exact-source-builds-and-comparison-v1",
+        ),
+        (
+            ("prepublicationBinding", "sha256"),
+            LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_PREPUBLICATION_SHA256,
+        ),
+        (
+            ("prepublicationBinding", "size"),
+            LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_PREPUBLICATION_SIZE,
+        ),
+        (
+            ("protectedArchive", "policy"),
+            "previous-ledger-entry-archive-v1",
+        ),
+        (
+            ("protectedArchive", "relativePath"),
+            LOCAL_RELEASE_EXPECTED_PROTECTED_ARCHIVE_RELATIVE,
+        ),
+        (
+            ("protectedArchive", "beforeIdentitySha256"),
+            LOCAL_RELEASE_EXPECTED_PROTECTED_ARCHIVE_IDENTITY_SHA256,
+        ),
+        (
+            ("protectedArchive", "afterIdentitySha256"),
+            LOCAL_RELEASE_EXPECTED_PROTECTED_ARCHIVE_IDENTITY_SHA256,
+        ),
+        (("protectedArchive", "unchanged"), True),
         (
             ("toolchainPolicy", "scope"),
             "same-host-fixed-toolchain-cache-snapshot",
@@ -4944,12 +5382,21 @@ def local_release_document_failures() -> list[str]:
             ("publication", "checksumSha256"),
             LOCAL_RELEASE_EXPECTED_CHECKSUM_SHA256,
         ),
+        (
+            ("publication", "archiveDirectory"),
+            f"dist/releases/{LOCAL_RELEASE_ID}",
+        ),
         (("publication", "alreadyMatched"), False),
         (("publication", "attempted"), True),
         (("publication", "independentReadback"), True),
         (("publication", "outcome"), "published-verified"),
+        (
+            ("publication", "policy"),
+            "publish-qualified-build-a-after-exact-two-root-match",
+        ),
         (("publication", "publishedBytesEqualLaneA"), True),
         (("publication", "qualifiedArchivePublished"), True),
+        (("publication", "sourceLane"), "build-a"),
         (("publication", "sourceSnapshotUnchanged"), True),
         (("source", "fileCount"), LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT),
         (
@@ -4982,7 +5429,74 @@ def local_release_document_failures() -> list[str]:
             f"the exact contiguous sequence {serialized_frontend!r}."
         )
 
+    failures.extend(
+        current_release_reproducibility_build_failures(
+            result,
+            result_relative,
+        )
+    )
     failures.extend(current_release_reproducibility_prepublication_failures())
+    return failures
+
+
+def current_release_reproducibility_build_failures(
+    result: dict[str, object],
+    relative: str,
+) -> list[str]:
+    failures: list[str] = []
+    builds = result.get("builds")
+    if not isinstance(builds, list) or len(builds) != 2:
+        return [
+            f"{relative}: builds must contain exact build-a/build-b results."
+        ]
+    for index, expected_id in enumerate(("build-a", "build-b")):
+        build = builds[index]
+        if not isinstance(build, dict):
+            failures.append(
+                f"{relative}: builds[{index}] must be an object."
+            )
+            continue
+        build_expectations = (
+            ("id", expected_id),
+            ("status", "passed"),
+            ("commandExitCode", 0),
+        )
+        for key, expected in build_expectations:
+            actual = build.get(key)
+            if type(actual) is not type(expected) or actual != expected:
+                failures.append(
+                    f"{relative}: expected builds[{index}].{key}="
+                    f"{expected!r}, found {actual!r}."
+                )
+        archive = build.get("archive")
+        if not isinstance(archive, dict):
+            failures.append(
+                f"{relative}: builds[{index}].archive must be an object."
+            )
+            continue
+        archive_expectations = (
+            ("size", LOCAL_RELEASE_EXPECTED_ZIP_SIZE),
+            ("sha256", LOCAL_RELEASE_EXPECTED_ZIP_SHA256),
+            ("manifestSha256", LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256),
+            ("checksumSha256", LOCAL_RELEASE_EXPECTED_CHECKSUM_SHA256),
+            ("sourceSha256", LOCAL_RELEASE_EXPECTED_SOURCE_SHA256),
+            ("payloadMemberCount", LOCAL_RELEASE_EXPECTED_MEMBER_COUNT),
+            ("zipEntryCount", LOCAL_RELEASE_EXPECTED_MEMBER_COUNT + 1),
+        )
+        for key, expected in archive_expectations:
+            actual = archive.get(key)
+            if type(actual) is not type(expected) or actual != expected:
+                failures.append(
+                    f"{relative}: expected builds[{index}].archive.{key}="
+                    f"{expected!r}, found {actual!r}."
+                )
+        members = archive.get("members")
+        expected_member_count = LOCAL_RELEASE_EXPECTED_MEMBER_COUNT + 1
+        if not isinstance(members, list) or len(members) != expected_member_count:
+            failures.append(
+                f"{relative}: builds[{index}].archive.members must contain "
+                f"exactly {expected_member_count} entries."
+            )
     return failures
 
 
@@ -4991,7 +5505,7 @@ def current_release_reproducibility_prepublication_failures(
 ) -> list[str]:
     relative = (
         "dist/reproducibility/"
-        "aetherlink-1.0.0+21-local-v1-two-root-v3-prepublication.json"
+        "aetherlink-1.0.0+22-local-v1-two-root-v4-prepublication.json"
     )
     if result_bytes is None:
         if not LOCAL_RELEASE_REPRODUCIBILITY_PREPUBLICATION_RESULT.is_file():
@@ -5038,19 +5552,22 @@ def current_release_reproducibility_prepublication_failures(
         )
         return failures
 
+    missing_result_path = object()
+
     def read_path(path: tuple[str, ...]) -> object:
         value: object = result
         for key in path:
             if not isinstance(value, dict) or key not in value:
-                return None
+                return missing_result_path
             value = value[key]
         return value
 
     expectations = (
-        (("schemaVersion",), 3),
+        (("schemaVersion",), 4),
         (("executionMode",), "comparison-only"),
         (("releaseId",), LOCAL_RELEASE_ID),
         (("status",), "passed"),
+        (("failure",), None),
         (
             ("scratch", "sourceRoots", "policy"),
             "distinct-unequal-utf8-byte-length-v1",
@@ -5066,6 +5583,24 @@ def current_release_reproducibility_prepublication_failures(
         (("comparison", "memberBytesEqual"), True),
         (("comparison", "differences"), []),
         (("comparison", "memberDifferences"), []),
+        (("prepublicationBinding",), None),
+        (
+            ("protectedArchive", "policy"),
+            "previous-ledger-entry-archive-v1",
+        ),
+        (
+            ("protectedArchive", "relativePath"),
+            LOCAL_RELEASE_EXPECTED_PROTECTED_ARCHIVE_RELATIVE,
+        ),
+        (
+            ("protectedArchive", "beforeIdentitySha256"),
+            LOCAL_RELEASE_EXPECTED_PROTECTED_ARCHIVE_IDENTITY_SHA256,
+        ),
+        (
+            ("protectedArchive", "afterIdentitySha256"),
+            LOCAL_RELEASE_EXPECTED_PROTECTED_ARCHIVE_IDENTITY_SHA256,
+        ),
+        (("protectedArchive", "unchanged"), True),
         (
             ("toolchainPolicy", "scope"),
             "same-host-fixed-toolchain-cache-snapshot",
@@ -5107,52 +5642,9 @@ def current_release_reproducibility_prepublication_failures(
             f"exact contiguous sequence {serialized_frontend!r}."
         )
 
-    builds = result.get("builds")
-    if not isinstance(builds, list) or len(builds) != 2:
-        failures.append(
-            f"{relative}: builds must contain exact build-a/build-b results."
-        )
-        return failures
-    for index, expected_id in enumerate(("build-a", "build-b")):
-        build = builds[index]
-        if not isinstance(build, dict):
-            failures.append(
-                f"{relative}: builds[{index}] must be an object."
-            )
-            continue
-        build_expectations = (
-            ("id", expected_id),
-            ("status", "passed"),
-            ("commandExitCode", 0),
-        )
-        for key, expected in build_expectations:
-            actual = build.get(key)
-            if type(actual) is not type(expected) or actual != expected:
-                failures.append(
-                    f"{relative}: expected builds[{index}].{key}="
-                    f"{expected!r}, found {actual!r}."
-                )
-        archive = build.get("archive")
-        if not isinstance(archive, dict):
-            failures.append(
-                f"{relative}: builds[{index}].archive must be an object."
-            )
-            continue
-        archive_expectations = (
-            ("sha256", LOCAL_RELEASE_EXPECTED_ZIP_SHA256),
-            ("manifestSha256", LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256),
-            ("checksumSha256", LOCAL_RELEASE_EXPECTED_CHECKSUM_SHA256),
-            ("sourceSha256", LOCAL_RELEASE_EXPECTED_SOURCE_SHA256),
-            ("payloadMemberCount", LOCAL_RELEASE_EXPECTED_MEMBER_COUNT),
-            ("zipEntryCount", LOCAL_RELEASE_EXPECTED_MEMBER_COUNT + 1),
-        )
-        for key, expected in archive_expectations:
-            actual = archive.get(key)
-            if type(actual) is not type(expected) or actual != expected:
-                failures.append(
-                    f"{relative}: expected builds[{index}].archive.{key}="
-                    f"{expected!r}, found {actual!r}."
-                )
+    failures.extend(
+        current_release_reproducibility_build_failures(result, relative)
+    )
     return failures
 
 
@@ -5580,10 +6072,214 @@ def current_macos_local_dmg_install_evidence_failures(
     return failures
 
 
+def current_runtime_chat_sqlite_abrupt_recovery_document_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    documentation_targets = (
+        README_PATH,
+        ROOT / "docs/roadmap.md",
+        ROOT / "docs/handoff.md",
+        ROOT / "docs/progress.md",
+        ROOT / "docs/qa-evidence.md",
+        LOCAL_RELEASE_CURRENT_DOC,
+    )
+    result_path = (
+        "dist/lifecycle/"
+        "macos-runtime-chat-sqlite-abrupt-process-recovery-build-21-v1.json"
+    )
+    common_patterns = (
+        (
+            "bounded recovery claim",
+            re.compile(
+                r"\bbounded same-host abrupt child-\s*process "
+                r"`SIGKILL` recovery evidence\b",
+                re.IGNORECASE,
+            ),
+        ),
+        (
+            "committed prefix",
+            re.compile(
+                r"\b(?:24 committed events|(?:committed|commits) 24 events)\b",
+                re.IGNORECASE,
+            ),
+        ),
+        (
+            "in-flight event and FTS row",
+            re.compile(
+                r"\b(?:dirty uncommitted|QA-only raw SQLite transaction)"
+                r".{0,120}\b25th event and FTS row\b",
+                re.IGNORECASE,
+            ),
+        ),
+        (
+            "recovery to the committed prefix",
+            re.compile(r"\brecover(?:y|ed|s)?\b.{0,100}\b24\b", re.IGNORECASE),
+        ),
+        (
+            "production-store resume",
+            re.compile(
+                r"\b(?:production-store resume|"
+                r"resumes? through the production store)\b",
+                re.IGNORECASE,
+            ),
+        ),
+        (
+            "final contiguous exactly-once event set",
+            re.compile(r"\b48 contiguous exactly-once events\b", re.IGNORECASE),
+        ),
+        (
+            "power-loss and kernel-crash exclusion",
+            re.compile(
+                r"\bnot power-loss or kernel-crash evidence\b",
+                re.IGNORECASE,
+            ),
+        ),
+        (
+            "arbitrary-history and long-soak exclusion",
+            re.compile(
+                r"\bnot arbitrary-history or long-soak evidence\b",
+                re.IGNORECASE,
+            ),
+        ),
+        (
+            "distribution and device exclusion",
+            re.compile(
+                r"\bnot clean-machine, signed-distribution, or "
+                r"physical-device evidence\b",
+                re.IGNORECASE,
+            ),
+        ),
+    )
+    forbidden_scope = re.compile(
+        r"\b(?:production[- ]append[- ]crash[- ]point|"
+        r"power[- ]loss(?: recovery)?|kernel[- ]crash(?: recovery)?|"
+        r"clean[- ]machine(?: recovery)?|signed[- ]distribution|"
+        r"physical[- ]device(?: behavior)?)\b",
+        re.IGNORECASE,
+    )
+    explicit_scope_boundary = re.compile(
+        r"\b(?:not|no|never|cannot|does not|do not|is not|are not|"
+        r"unqualified|unproven|unknown|deferred|remains? open|"
+        r"requires? future)\b",
+        re.IGNORECASE,
+    )
+
+    failures: list[str] = []
+    for path in documentation_targets:
+        relative = str(path.relative_to(ROOT))
+        try:
+            document_text = (
+                document_text_by_relative[relative]
+                if (
+                    document_text_by_relative is not None
+                    and relative in document_text_by_relative
+                )
+                else path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError) as error:
+            failures.append(
+                f"{relative}: cannot validate Build 21 abrupt recovery "
+                f"documentation: {error}"
+            )
+            continue
+
+        start_count = document_text.count(
+            CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_START
+        )
+        end_count = document_text.count(
+            CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_END
+        )
+        if (start_count, end_count) != (1, 1):
+            failures.append(
+                f"{relative}: Build 21 abrupt recovery block must contain "
+                "exactly one start and end marker; found "
+                f"{start_count} and {end_count}."
+            )
+            continue
+        start_index = document_text.index(
+            CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_START
+        ) + len(CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_START)
+        end_index = document_text.index(
+            CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_END
+        )
+        if end_index <= start_index:
+            failures.append(
+                f"{relative}: Build 21 abrupt recovery markers are reversed "
+                "or empty."
+            )
+            continue
+
+        block = document_text[start_index:end_index]
+        block_sha256 = hashlib.sha256(block.encode("utf-8")).hexdigest()
+        expected_block_sha256 = (
+            CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_BLOCK_SHA256[relative]
+        )
+        if block_sha256 != expected_block_sha256:
+            failures.append(
+                f"{relative}: Build 21 abrupt recovery block must retain "
+                "its exact bounded block SHA-256 "
+                f"{expected_block_sha256}; found {block_sha256}."
+            )
+        normalized_block = re.sub(r"\s+", " ", block).strip()
+        for binding in (
+            result_path,
+            CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_RESULT_SHA256,
+            "`not-production-append-crash-point`",
+        ):
+            count = normalized_block.count(binding)
+            if count != 1:
+                failures.append(
+                    f"{relative}: Build 21 abrupt recovery block must contain "
+                    f"{binding!r} exactly once; found {count}."
+                )
+        formatted_size = f"{CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_RESULT_SIZE:,}"
+        if not re.search(
+            rf"\b{re.escape(formatted_size)}(?:-byte| bytes)\b",
+            normalized_block,
+        ):
+            failures.append(
+                f"{relative}: Build 21 abrupt recovery block is missing "
+                f"the exact {formatted_size}-byte result size."
+            )
+        for label, pattern in common_patterns:
+            if not pattern.search(normalized_block):
+                failures.append(
+                    f"{relative}: Build 21 abrupt recovery block is missing "
+                    f"its {label}."
+                )
+
+        if path == LOCAL_RELEASE_CURRENT_DOC:
+            for binding in (
+                "`writerProcessReapedBeforeJournalObservation=true`",
+                "25 event rows",
+                "mutation revision 25",
+                "validated revision 24",
+            ):
+                if normalized_block.count(binding) != 1:
+                    failures.append(
+                        f"{relative}: detailed abrupt recovery record must "
+                        f"contain {binding!r} exactly once."
+                    )
+
+        for sentence in re.split(r"(?<=[.!?])\s+", normalized_block):
+            plain_sentence = sentence.replace("`", "")
+            scope_match = forbidden_scope.search(plain_sentence)
+            if scope_match and not explicit_scope_boundary.search(
+                plain_sentence
+            ):
+                failures.append(
+                    f"{relative}: Build 21 abrupt recovery block contains "
+                    "an unbounded or contradictory forbidden-scope claim."
+                )
+                break
+    return failures
+
+
 def current_runtime_chat_sqlite_cross_process_document_failures(
     document_text: str | None = None,
     *,
-    relative: str = "docs/releases/1.0.0-build-21-local-v1.md",
+    relative: str = "docs/releases/1.0.0-build-22-local-v1.md",
 ) -> list[str]:
     if document_text is None:
         try:
@@ -5601,7 +6297,7 @@ def current_runtime_chat_sqlite_cross_process_document_failures(
     for label, pattern in CURRENT_RUNTIME_CHAT_SQLITE_DOCUMENT_REQUIRED_PATTERNS:
         if not pattern.search(normalized_text):
             failures.append(
-                f"{relative}: current Build 21 Runtime-chat SQLite "
+                f"{relative}: current Build 22 Runtime-chat SQLite "
                 f"cross-process record is missing {label}."
             )
 
@@ -5610,7 +6306,7 @@ def current_runtime_chat_sqlite_cross_process_document_failures(
     )
     if stable_message_count != 1:
         failures.append(
-            f"{relative}: current Build 21 Runtime-chat SQLite stable busy "
+            f"{relative}: current Build 22 Runtime-chat SQLite stable busy "
             "message must appear exactly once; found "
             f"{stable_message_count}."
         )
@@ -5637,7 +6333,7 @@ def current_runtime_chat_sqlite_cross_process_document_failures(
             count = normalized_text.count(binding)
             if count != 1:
                 failures.append(
-                    f"{relative}: Build 21 source inventory must bind "
+                    f"{relative}: Build 22 source inventory must bind "
                     f"{source_path!r} with {binding!r} exactly once; found "
                     f"{count}."
                 )
@@ -5659,7 +6355,7 @@ def current_runtime_chat_sqlite_source_failures(
             )
         except (KeyError, OSError) as error:
             failures.append(
-                f"{relative}: cannot validate Build 21 Runtime-chat SQLite "
+                f"{relative}: cannot validate Build 22 Runtime-chat SQLite "
                 f"source binding: {error}"
             )
             continue
@@ -5669,7 +6365,7 @@ def current_runtime_chat_sqlite_source_failures(
         )
         if identity != expected_identity:
             failures.append(
-                f"{relative}: expected Build 21 source inventory identity "
+                f"{relative}: expected Build 22 source inventory identity "
                 f"{expected_identity!r}, found {identity!r}."
             )
 
@@ -5684,7 +6380,7 @@ def current_runtime_chat_sqlite_source_failures(
         ).decode("utf-8")
     except (KeyError, OSError, UnicodeError) as error:
         failures.append(
-            f"{test_relative}: cannot validate Build 21 Runtime-chat SQLite "
+            f"{test_relative}: cannot validate Build 22 Runtime-chat SQLite "
             f"Swift regressions: {error}"
         )
         test_source = ""
@@ -5720,6 +6416,156 @@ def current_runtime_chat_sqlite_source_failures(
     return failures
 
 
+def current_runtime_chat_sqlite_abrupt_recovery_evidence_failures(
+    result_bytes: bytes | None = None,
+) -> list[str]:
+    relative = str(
+        CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_RESULT.relative_to(ROOT)
+    )
+    if result_bytes is None:
+        try:
+            result_bytes = CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_RESULT.read_bytes()
+        except OSError as error:
+            return [f"{relative}: cannot read abrupt recovery result: {error}"]
+
+    failures: list[str] = []
+    identity = (len(result_bytes), hashlib.sha256(result_bytes).hexdigest())
+    expected_identity = (
+        CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_RESULT_SIZE,
+        CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_RESULT_SHA256,
+    )
+    if identity != expected_identity:
+        failures.append(
+            f"{relative}: expected abrupt recovery identity "
+            f"{expected_identity!r}, found {identity!r}."
+        )
+
+    try:
+        result = json.loads(
+            result_bytes.decode("ascii"),
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+    except (
+        UnicodeError,
+        json.JSONDecodeError,
+        DuplicateJSONKeyError,
+    ) as error:
+        failures.append(f"{relative}: invalid abrupt recovery JSON: {error}")
+        return failures
+
+    expected_result = {
+        "abruptTermination": {
+            "checkpoint": {
+                "committedPrefixCount": 24,
+                "databaseCacheFlushed": True,
+                "inFlightEventID": (
+                    "qa-writer-a-inflight-uncommitted-v1"
+                ),
+                "insideTransactionEventCount": 25,
+                "insideTransactionFTSEventCount": 25,
+                "insideTransactionMutationRevision": 25,
+                "insideTransactionValidatedRevision": 24,
+                "journalMode": "delete",
+                "schemaVersion": 1,
+                "status": "ready-for-abrupt-termination",
+                "transactionOpen": True,
+                "writer": "writer-a",
+            },
+            "dirtyDatabaseBeforeRecovery": {
+                "appendStateMutationRevision": 25,
+                "appendStateValidatedRevision": 24,
+                "eventCount": 25,
+                "ftsEventCount": 25,
+                "immutableReadIgnoredJournal": True,
+                "inFlightEventAndFTSPresent": True,
+            },
+            "journal": {
+                "hotJournalHeaderObserved": True,
+                "journalMode": "delete",
+                "ownerOnlyMode": "0600",
+                "pageRecordCountPositive": True,
+                "pageSize": 4_096,
+                "sectorSize": 512,
+            },
+            "processGroup": "new-session-exact-child-only",
+            "terminationSignal": "SIGKILL",
+            "writerProcessReapedBeforeJournalObservation": True,
+        },
+        "cleanup": "passed",
+        "committedPrefixCount": 24,
+        "committedPrefixWritePath": (
+            "production-SQLiteRuntimeChatEventStore"
+        ),
+        "final": {
+            "appendStateRevision": 48,
+            "eventCount": 48,
+            "ftsEventCount": 48,
+            "hotJournalCleared": True,
+            "inFlightEventAndFTSAbsent": True,
+            "integrityCheck": "ok",
+            "residualJournalHeaderZeroed": False,
+            "sequencesContiguous": True,
+        },
+        "finalReadbackProcess": "independent",
+        "inFlightEventID": "qa-writer-a-inflight-uncommitted-v1",
+        "inFlightTransactionWritePath": "qa-raw-sql-event-plus-fts-v1",
+        "limitations": [
+            "same-host-abrupt-child-process-termination-only",
+            "not-production-append-crash-point",
+            "not-power-loss-or-kernel-crash-evidence",
+            "not-arbitrary-history-or-long-soak-evidence",
+            "not-clean-machine-signed-distribution-or-device-evidence",
+        ],
+        "permissions": {
+            "checkpointAndSQLiteFiles": "0600",
+            "databaseRoot": "0700",
+        },
+        "recovered": {
+            "appendStateRevision": 24,
+            "eventCount": 24,
+            "ftsEventCount": 24,
+            "hotJournalCleared": True,
+            "inFlightEventAndFTSAbsent": True,
+            "integrityCheck": "ok",
+            "residualJournalHeaderZeroed": False,
+            "sequencesContiguous": True,
+        },
+        "recoveryReadbackProcess": "independent",
+        "resume": {
+            "endExclusive": 48,
+            "eventCount": 24,
+            "startOrdinal": 24,
+            "status": "passed",
+            "writer": "writer-a",
+        },
+        "resumeWritePath": "production-SQLiteRuntimeChatEventStore",
+        "schemaVersion": 1,
+        "scope": "macos-runtime-chat-sqlite-abrupt-process-recovery-v1",
+        "status": "passed",
+    }
+    if not exact_json_values_equal(result, expected_result):
+        failures.append(
+            f"{relative}: result does not match the exact closed abrupt "
+            "child-process recovery contract."
+        )
+
+    canonical = (
+        json.dumps(
+            result,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+        + b"\n"
+    )
+    if result_bytes != canonical:
+        failures.append(
+            f"{relative}: result must be canonical sorted compact ASCII JSON "
+            "with one final LF."
+        )
+    return failures
+
+
 def current_macos_clean_home_lifecycle_document_failures(
     *,
     document_text_by_relative: dict[str, str] | None = None,
@@ -5752,8 +6598,13 @@ def current_macos_clean_home_lifecycle_document_failures(
         ROOT / "docs/handoff.md",
         ROOT / "docs/progress.md",
         ROOT / "docs/qa-evidence.md",
+        HISTORICAL_BUILD20_RELEASE_DOC,
         LOCAL_RELEASE_CURRENT_DOC,
     )
+    release_document_paths = {
+        HISTORICAL_BUILD20_RELEASE_DOC,
+        LOCAL_RELEASE_CURRENT_DOC,
+    }
     failures: list[str] = []
     for path in documentation_targets:
         relative = str(path.relative_to(ROOT))
@@ -5814,7 +6665,7 @@ def current_macos_clean_home_lifecycle_document_failures(
                 normalized_block,
                 re.IGNORECASE,
             )
-            if int(value) < LOCAL_RELEASE_BUILD_NUMBER
+            if int(value) < 20
         }
         historical_path_mentions = {
             int(value)
@@ -5823,7 +6674,7 @@ def current_macos_clean_home_lifecycle_document_failures(
                 normalized_block,
                 re.IGNORECASE,
             )
-            if int(value) < LOCAL_RELEASE_BUILD_NUMBER
+            if int(value) < 20
         }
         historical_contamination = sorted(
             historical_build_mentions | historical_path_mentions
@@ -5834,8 +6685,22 @@ def current_macos_clean_home_lifecycle_document_failures(
                 f"{historical_contamination!r} content entered the current "
                 "Build 20 lifecycle block."
             )
+        future_build_mentions = {
+            int(value)
+            for value in re.findall(
+                r"\bBuild\s+([1-9][0-9]*)\b",
+                normalized_block,
+                re.IGNORECASE,
+            )
+            if int(value) > 20
+        }
+        if future_build_mentions:
+            failures.append(
+                f"{relative}: current Build 20 lifecycle block contains future "
+                f"Build {sorted(future_build_mentions)!r} content."
+            )
         block_required_once = list(required_once)
-        if path == LOCAL_RELEASE_CURRENT_DOC:
+        if path in release_document_paths:
             block_required_once.extend(
                 (
                     CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RUNNER_SHA256,
@@ -5855,7 +6720,7 @@ def current_macos_clean_home_lifecycle_document_failures(
                     f"{relative}: current Build 20 lifecycle block must "
                     f"contain binding {binding!r} exactly once; found {count}."
                 )
-        dmg_scope = document_text if path == LOCAL_RELEASE_CURRENT_DOC else block
+        dmg_scope = document_text if path in release_document_paths else block
         for binding in dmg_required_once:
             count = dmg_scope.count(binding)
             if count != 1:
@@ -5879,7 +6744,7 @@ def current_macos_clean_home_lifecycle_document_failures(
                 )
         dmg_size_scope = (
             re.sub(r"\s+", " ", document_text).strip()
-            if path == LOCAL_RELEASE_CURRENT_DOC
+            if path in release_document_paths
             else normalized_block
         )
         dmg_size = f"{CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SIZE:,}"
@@ -5901,7 +6766,7 @@ def current_macos_clean_home_lifecycle_document_failures(
                     f"once; found {count}."
                 )
         boundary_match = re.search(
-            r"\bThese same-host, per-user Build 20\b.*?"
+            r"\bThese historical same-host, per-user Build 20\b.*?"
             r"\bproduction readiness\.",
             normalized_block,
             re.IGNORECASE,
@@ -6887,6 +7752,203 @@ def historical_build19_release_document_failures(
     return failures
 
 
+def historical_build20_release_document_failures(
+    document_text: str | None = None,
+) -> list[str]:
+    relative = "docs/releases/1.0.0-build-20-local-v1.md"
+    if document_text is None:
+        try:
+            document_text = (ROOT / relative).read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            return [
+                f"{relative}: cannot validate immutable Build 20 history: "
+                f"{error}"
+            ]
+
+    helper_size, helper_sha256 = (
+        HISTORICAL_BUILD20_RUNTIME_CHAT_HELPER_IDENTITY
+    )
+    runner_size, runner_sha256 = (
+        HISTORICAL_BUILD20_RUNTIME_CHAT_RUNNER_IDENTITY
+    )
+    test_size, test_sha256 = HISTORICAL_BUILD20_RUNTIME_CHAT_TEST_IDENTITY
+    required_bindings = (
+        "Build 20 is retained as an immutable historical qualification record.",
+        "Run this historical source-bound readback with historical mode:",
+        HISTORICAL_BUILD20_RELEASE_ID,
+        f"{HISTORICAL_BUILD20_ARCHIVE_SIZE:,} bytes",
+        HISTORICAL_BUILD20_ARCHIVE_SHA256,
+        f"{HISTORICAL_BUILD20_MANIFEST_SIZE:,} bytes",
+        HISTORICAL_BUILD20_MANIFEST_SHA256,
+        f"{HISTORICAL_BUILD20_CHECKSUM_SIZE:,} bytes",
+        HISTORICAL_BUILD20_CHECKSUM_SHA256,
+        f"{HISTORICAL_BUILD20_REPRODUCIBILITY_RESULT_SIZE:,} bytes",
+        HISTORICAL_BUILD20_REPRODUCIBILITY_RESULT_SHA256,
+        (
+            f"{HISTORICAL_BUILD20_REPRODUCIBILITY_PREPUBLICATION_SIZE:,} "
+            "bytes"
+        ),
+        HISTORICAL_BUILD20_REPRODUCIBILITY_PREPUBLICATION_SHA256,
+        f"{HISTORICAL_BUILD20_SOURCE_FILE_COUNT}-file source inventory",
+        HISTORICAL_BUILD20_SOURCE_SNAPSHOT_SHA256,
+        HISTORICAL_BUILD20_SOURCE_OVERLAY_SHA256,
+        HISTORICAL_BUILD20_PREPUBLICATION_SOURCE_OVERLAY_SHA256,
+        f"{HISTORICAL_BUILD20_SOURCE_INVENTORY_SIZE:,} bytes",
+        HISTORICAL_BUILD20_SOURCE_INVENTORY_SHA256,
+        (
+            "dist/lifecycle/"
+            "macos-packaged-app-build-20-clean-home-install-v1.json"
+        ),
+        CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SHA256,
+        (
+            "dist/lifecycle/"
+            "macos-packaged-app-build-20-clean-home-state-recovery-v1.json"
+        ),
+        CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SHA256,
+        (
+            "dist/lifecycle/"
+            "macos-packaged-app-build-20-local-dmg-install-v1.json"
+        ),
+        CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SHA256,
+        f"{helper_size:,} bytes",
+        helper_sha256,
+        f"{runner_size:,} bytes",
+        runner_sha256,
+        f"{test_size:,}-byte test source",
+        test_sha256,
+        CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START,
+        CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END,
+    )
+    failures: list[str] = []
+    document_sha256 = hashlib.sha256(
+        document_text.encode("utf-8")
+    ).hexdigest()
+    if document_sha256 != HISTORICAL_BUILD20_RELEASE_DOCUMENT_SHA256:
+        failures.append(
+            f"{relative}: exact immutable document SHA-256 must remain "
+            f"{HISTORICAL_BUILD20_RELEASE_DOCUMENT_SHA256}; found "
+            f"{document_sha256}."
+        )
+    failures.extend(
+        f"{relative}: immutable Build 20 binding {binding!r} is missing."
+        for binding in required_bindings
+        if binding not in document_text
+    )
+    for stale_claim in (
+        "Build 20 is the current local qualification record.",
+        "Run the current source-bound readback without historical mode:",
+        "aetherlink-current-build20-lifecycle-v1",
+    ):
+        if stale_claim in document_text:
+            failures.append(
+                f"{relative}: immutable Build 20 record contains stale "
+                f"current-state claim {stale_claim!r}."
+            )
+    build21_evidence_association = re.compile(
+        r"\b(?:evidence|observation|lifecycle|DMG|"
+        r"belong(?:s|ed)?|inherit(?:s|ed)?|"
+        r"transfer(?:s|red|ring)?|relabel(?:s|ed|led)?|"
+        r"reinterpret(?:s|ed)?|part of)\b",
+        re.IGNORECASE,
+    )
+    explicit_negation = re.compile(
+        r"\b(?:no|not|never|cannot|does not|do not|is not|are not)\b",
+        re.IGNORECASE,
+    )
+    normalized_document = re.sub(r"\s+", " ", document_text).strip()
+    for sentence in re.split(r"(?<=[.!?])\s+", normalized_document):
+        if (
+            re.search(r"\bBuild\s+21\b", sentence, re.IGNORECASE)
+            and build21_evidence_association.search(sentence)
+            and not explicit_negation.search(sentence)
+        ):
+            failures.append(
+                f"{relative}: immutable Build 20 record contains an "
+                "unnegated transfer or relabeling claim into Build 21."
+            )
+            break
+    return failures
+
+
+def historical_build21_release_document_failures(
+    document_text: str | None = None,
+) -> list[str]:
+    relative = "docs/releases/1.0.0-build-21-local-v1.md"
+    if document_text is None:
+        try:
+            document_text = (ROOT / relative).read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            return [
+                f"{relative}: cannot validate immutable Build 21 history: "
+                f"{error}"
+            ]
+
+    required_binding_counts = (
+        (
+            "Build 21 is an immutable historical local qualification record",
+            1,
+        ),
+        (HISTORICAL_BUILD21_RELEASE_ID, 5),
+        (f"{HISTORICAL_BUILD21_ARCHIVE_SIZE:,} bytes", 1),
+        (f"{HISTORICAL_BUILD21_ARCHIVE_SIZE:,}-byte", 1),
+        (HISTORICAL_BUILD21_ARCHIVE_SHA256, 2),
+        (f"{HISTORICAL_BUILD21_MANIFEST_SIZE:,} bytes", 1),
+        (f"{HISTORICAL_BUILD21_MANIFEST_SIZE:,}-byte", 1),
+        (HISTORICAL_BUILD21_MANIFEST_SHA256, 1),
+        (HISTORICAL_BUILD21_CHECKSUM_SHA256, 1),
+        (
+            "dist/reproducibility/"
+            "aetherlink-1.0.0+21-local-v1-two-root-v3.json",
+            1,
+        ),
+        (f"{HISTORICAL_BUILD21_REPRODUCIBILITY_RESULT_SIZE:,} bytes", 1),
+        (HISTORICAL_BUILD21_REPRODUCIBILITY_RESULT_SHA256, 1),
+        (
+            "dist/reproducibility/"
+            "aetherlink-1.0.0+21-local-v1-two-root-v3-prepublication.json",
+            1,
+        ),
+        (
+            f"{HISTORICAL_BUILD21_REPRODUCIBILITY_PREPUBLICATION_SIZE:,} "
+            "bytes",
+            1,
+        ),
+        (HISTORICAL_BUILD21_REPRODUCIBILITY_PREPUBLICATION_SHA256, 1),
+        (f"{HISTORICAL_BUILD21_SOURCE_FILE_COUNT}-file source inventory", 1),
+        (HISTORICAL_BUILD21_SOURCE_SNAPSHOT_SHA256, 2),
+        (f"{HISTORICAL_BUILD21_SOURCE_INVENTORY_SIZE:,} bytes", 2),
+        (HISTORICAL_BUILD21_SOURCE_INVENTORY_SHA256, 2),
+        (HISTORICAL_BUILD21_MACOS_UUID, 1),
+        (
+            "dist/lifecycle/"
+            "macos-runtime-chat-sqlite-abrupt-process-recovery-build-21-v1.json",
+            1,
+        ),
+        (CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_RESULT_SHA256, 1),
+    )
+    failures = [
+        (
+            f"{relative}: immutable Build 21 binding {binding!r} must appear "
+            f"exactly {expected_count} time(s); found "
+            f"{document_text.count(binding)}."
+        )
+        for binding, expected_count in required_binding_counts
+        if document_text.count(binding) != expected_count
+    ]
+    for stale_claim in (
+        "Build 21 is the current local qualification record",
+        "The Build 21 archive is the latest ledger entry",
+        "Build 21 is the latest immutable ledger archive",
+        "Run the current source-bound readback without historical mode",
+    ):
+        if stale_claim in document_text:
+            failures.append(
+                f"{relative}: immutable Build 21 record contains stale "
+                f"current-state claim {stale_claim!r}."
+            )
+    return failures
+
+
 def historical_local_release_document_failures(
     *,
     ledger_bytes: bytes | None = None,
@@ -7014,6 +8076,14 @@ def historical_local_release_document_failures(
         if entry.build_number == 19:
             failures.extend(
                 historical_build19_release_document_failures(document_text)
+            )
+        if entry.build_number == 20:
+            failures.extend(
+                historical_build20_release_document_failures(document_text)
+            )
+        if entry.build_number == 21:
+            failures.extend(
+                historical_build21_release_document_failures(document_text)
             )
 
     return failures
@@ -7722,8 +8792,10 @@ def main() -> int:
     failures.extend(latest_progress_evidence_failures())
     failures.extend(latest_qa_evidence_failures())
     failures.extend(current_release_qa_evidence_failures())
+    failures.extend(current_release_summary_document_failures())
     failures.extend(release_readback_command_mode_failures())
     failures.extend(syntax_only_no_device_gate_evidence_failures())
+    failures.extend(current_handoff_git_attribution_failures())
     failures.extend(local_release_document_failures())
     failures.extend(macos_clean_home_installed_app_source_failures())
     failures.extend(
@@ -7741,7 +8813,13 @@ def main() -> int:
     failures.extend(
         current_runtime_chat_sqlite_cross_process_document_failures()
     )
+    failures.extend(
+        current_runtime_chat_sqlite_abrupt_recovery_document_failures()
+    )
     failures.extend(current_runtime_chat_sqlite_source_failures())
+    failures.extend(
+        current_runtime_chat_sqlite_abrupt_recovery_evidence_failures()
+    )
     failures.extend(current_macos_clean_home_lifecycle_document_failures())
     failures.extend(current_android_drawer_search_document_failures())
     failures.extend(macos_clean_home_installed_app_evidence_failures())

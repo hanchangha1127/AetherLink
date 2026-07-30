@@ -296,6 +296,10 @@
 "Authenticated devices can request runtime sessions." = "認証済みデバイスはランタイムセッションをリクエストできます。";
 "Setup needed" = "設定が必要";
 "Start AetherLink Runtime before devices can connect." = "デバイスが接続する前に AetherLink Runtime を開始してください。";
+"Start AetherLink Runtime" = "AetherLink Runtime を開始";
+"Start AetherLink Runtime on this Mac." = "この Mac で AetherLink Runtime を開始します。";
+"Retry AetherLink Runtime" = "AetherLink Runtime を再試行";
+"Try starting AetherLink Runtime again." = "AetherLink Runtime の開始を再試行します。";
 "Model service needs attention" = "モデルサービスの確認が必要です";
 "Start a model provider for AetherLink Runtime, then check again." = "AetherLink Runtime 用のモデルプロバイダーを起動し、もう一度確認してください。";
 "Pair a Device to Continue" = "続行するにはデバイスをペアリング";
@@ -506,7 +510,7 @@
 "Connection details need a secure connection secret before they can be included in a QR." = "接続情報を QR に含めるには、先に安全な接続シークレットが必要です。";
 "Connection through %@ failed. Check Connection Recovery, then generate a fresh QR." = "%@ 経由の接続に失敗しました。接続の復旧を確認してから、新しい QR を生成してください。";
 "Connection failed. Check Connection Recovery, then generate a fresh QR." = "接続に失敗しました。接続の復旧を確認してから、新しい QR を生成してください。";
-"AetherLink Runtime needs attention. Check Activity or restart AetherLink Runtime." = "AetherLink Runtime の確認が必要です。アクティビティを確認するか、AetherLink Runtime を再起動してください。";
+"AetherLink Runtime needs attention. Check Activity, then try again." = "AetherLink Runtime の確認が必要です。アクティビティを確認してから、もう一度お試しください。";
 "Connection details need a secure connection secret before sharing sensitive content." = "機密コンテンツを共有する前に、接続情報には安全な接続シークレットが必要です。";
 "Model unload failed. Check Activity." = "モデルのアンロードに失敗しました。アクティビティを確認してください。";
 "Manual model unload failed. Check Activity." = "手動モデルのアンロードに失敗しました。アクティビティを確認してください。";

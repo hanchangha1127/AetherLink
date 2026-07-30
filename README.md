@@ -618,6 +618,9 @@ script/           Project-local build/run and QA entrypoints
 - Installed Ollama models come from AetherLink Runtime querying Ollama `/api/tags` on the runtime host.
 - Running Ollama models may be detected by AetherLink Runtime through `/api/ps` when available.
 - Installed LM Studio models come from AetherLink Runtime querying LM Studio's local REST API on the runtime host. The adapter prefers native `/api/v1/models` and `/api/v1/chat`, with fallback to OpenAI-compatible `/v1/models` and `/v1/chat/completions` if native endpoint shape differs.
+- Provider-qualified chat and embedding operations query only the selected
+  Ollama or LM Studio catalog. Unqualified legacy chat still searches the full
+  aggregate catalog.
 - Local models are the main path.
 - The normal chat picker shows installed runtime-host-local chat models. Ollama cloud/source metadata can remain in protocol data for compatibility, but it is not presented as a default, recommendation, or normal chat selection path.
 - If backend model lists are empty, the runtime returns an empty model list and does not invent recommended/default local or cloud model cards.
@@ -651,7 +654,7 @@ same strict local ad-hoc seal used by development packaging. It is a local
 qualification artifact, not Developer ID signing, notarization, or a DMG.
 Both this package and the Android Release variant read
 `release/version-ledger.tsv`; its current entry is marketing version `1.0.0`
-and shared build number `20`. Android Debug deliberately remains `0.1.0+1`.
+and shared build number `22`. Android Debug deliberately remains `0.1.0+1`.
 Its Release metadata is backed by a lazy Gradle provider, so Debug still
 configures and builds when the release ledger is unavailable; a Release task
 validates the ledger's LF-only printable-ASCII/tab byte format when it needs
@@ -697,7 +700,7 @@ release IDs are immutable: the packager refuses to replace an existing ID with
 different bytes.
 
 The current output is
-`dist/releases/aetherlink-1.0.0+20-local-v1/`. It contains one canonical
+`dist/releases/aetherlink-1.0.0+22-local-v1/`. It contains one canonical
 normalized-input ZIP, an identical external manifest, and a ZIP SHA-256
 sidecar.
 Android Release is unsigned and `arm64-v8a`-only; the macOS app is a thin
@@ -707,49 +710,64 @@ normalization; `seeds.txt`, `mapping.prt`, and extracted configuration roots
 use their separately declared normalizations while retaining the checked
 payload meaning.
 
-The Build 20 qualification runner created two isolated lane worktrees from one
-246-file `dirty-content-snapshot` whose source-root UTF-8 byte lengths were 101
+The Build 22 qualification runner created two isolated lane worktrees from one
+247-file `dirty-content-snapshot` whose source-root UTF-8 byte lengths were 101
 and 109. With the same host, fixed toolchains, paired clones of one
 byte-identical Gradle seed, and a fixed canonical Swift scratch policy with
 serialized frontend work, the separately invoked comparison-only and
-publish-qualified A/B runs produced the exact 165,617,269-byte ZIP
-`cba5a6531c35725aef7a2a3bf8b25d2155833b31b216906c80f8349249f6edf1`,
+publish-qualified A/B runs produced the exact 165,705,774-byte ZIP
+`478bd4210c11f7e2204e80a333bc8053b0d01b8deff3d0a3d2dd6795df1366c3`,
 the exact 12,317-byte manifest
-`c633bf2c2ccc9d007f08e73929eed3d7f6b247d08579fa3695bcbad04348c99d`,
+`a92ee387be3a900bad1682093b653da1fea1a8e1dd1580153bed91c01e2ff1c5`,
 and the exact 99-byte checksum sidecar
-`dd803b0bc3313d833b0cdd1b2044c96a0f5873496ecdae94c5a4079bb02feaed`.
-The 19,571-byte prepublication result
-`dist/reproducibility/aetherlink-1.0.0+20-local-v1-two-root-v3-prepublication.json`
+`5711d5926f1c3e053f864f55bccf93a3986fb8bb5a6bcc8818161ef686d75991`.
+The 19,645-byte prepublication result
+`dist/reproducibility/aetherlink-1.0.0+22-local-v1-two-root-v4-prepublication.json`
 has SHA-256
-`ad7e9b6e5f52a76d5a65b52bab5138ad86eb019b7b89fa7ee29c51b89c7cef2c`
+`9293c578b2ca409966c79028ea2b8e9d5e717ae64159b58bd35b90c007d3d26b`
 and records `executionMode=comparison-only`,
 `publication.outcome=disabled-comparison-only`, and
 `qualifiedArchivePublished=false`; it did not publish an archive. The
-separately invoked 20,010-byte canonical result
-`dist/reproducibility/aetherlink-1.0.0+20-local-v1-two-root-v3.json` has
+separately invoked 20,353-byte canonical result
+`dist/reproducibility/aetherlink-1.0.0+22-local-v1-two-root-v4.json` has
 SHA-256
-`ca71f3ad64ea744275035891c5d41faae9778c6be4f1a6fbadac2c1cf2b59a1c`
+`330b671475c0769a0579a0af7cb7f82c746a5df4bb0aba4b305510e597d4081d`
 and records `executionMode=publish-qualified`,
 `publication.outcome=published-verified`, `alreadyMatched=false`,
 `qualifiedArchivePublished=true`, and independent readback. The claim is
 limited to these two recorded successful same-host pairs, not variance-free
 arbitrary repeats, arbitrary-root, cross-host, clean-machine, signed-artifact,
-or physical-device qualification. The Git commit alone cannot reconstruct the
-dirty release snapshot. The exact 246-file source digest is
-`22f14e60d522b2720660e41a645a3e9832dd723b8b93b147c51bbf6c9125998c`.
-Immutable Builds 1 through 19 remain available for historical readback. The
+or physical-device qualification. Publication is bound to the exact canonical
+prepublication result, and the immediately previous Build 21 archive identity
+remained unchanged. The Git commit alone cannot reconstruct the dirty release
+snapshot. The exact 247-file source digest is
+`d0ee21c6f288cafad0a0f634de2116b48c8a4716389f2d52daacd4e90c591eb6`.
+Immutable Builds 1 through 21 remain available for historical readback. The
 verifier cross-binds every recorded Gradle lock identity to the archived source
 inventory and keeps current and historical readback modes mutually exclusive.
 
 Build 18 first source-binds the Android drawer search release inputs. The
-historical Build 19 archive retained those inputs, and Build 20 retains them.
+historical Builds 19 through 21 retained those inputs, and Build 22 retains
+them.
 The bound no-device evidence includes
 the complete 1,194-test app JVM suite, and release lint reports 0 errors and 2
 SDK 37 availability warnings.
 This source/JVM/Compose evidence is not part of the immutable Build 17 archive and is first source-bound by the immutable Build 18 archive; it does not establish physical touch, TalkBack, provider, device, network, installation, signing, or release behavior.
 
+Current unreleased Android source also resets chat scrolling at an actual
+conversation boundary. Immediate and delayed session switches return to the
+new transcript's latest row, including a saved-state restore while cached
+messages are loading, while same-session streaming updates preserve an earlier
+reading position. Latest-message action targets are computed once per screen
+composition. The current no-device app suite passes 1,195 tests; Release
+assembly and lint pass with 0 errors and the two existing SDK 37 availability
+warnings. Build 22 source-binds the product inputs for this behavior; the
+separate unit, Compose, CI, and documentation evidence is not an archive
+member and does not establish physical-device rendering or measured frame-time
+behavior.
+
 Build 19 first source-bound the Runtime-chat SQLite cross-process QA closure;
-Build 20 retains that source-bound closure.
+Build 22 retains that source-bound closure.
 Every production connection installs a 5-second SQLite busy timeout, and
 `SQLITE_BUSY`/`SQLITE_LOCKED` normalize to the stable retry message
 `Runtime chat history is temporarily busy. Try again.` Three deterministic
@@ -764,6 +782,22 @@ not a retained archive member. It does not establish crash/power-loss,
 arbitrary histories, mixed old/new binaries, clean-machine, signed/notarized,
 physical-device, or production behavior.
 
+<!-- aetherlink-current-build21-abrupt-recovery-v1:start -->
+
+Build 21 adds a bounded same-host abrupt child-process recovery result at
+`dist/lifecycle/macos-runtime-chat-sqlite-abrupt-process-recovery-build-21-v1.json`.
+The canonical result is 2,223 bytes with SHA-256
+`db66614d7badd7a0f606c03f91a516dff6d77e539684dcb6daf52709bce0f16f`.
+It proves the exact QA sequence of 24 committed events, one dirty uncommitted
+25th event and FTS row after child-only `SIGKILL`, rollback-journal recovery to 24,
+and production-store resume to 48 contiguous exactly-once events. This is
+bounded same-host abrupt child-process `SIGKILL` recovery evidence, explicitly
+`not-production-append-crash-point`, not power-loss or kernel-crash evidence,
+not arbitrary-history or long-soak evidence, and not clean-machine,
+signed-distribution, or physical-device evidence.
+
+<!-- aetherlink-current-build21-abrupt-recovery-v1:end -->
+
 The historical Build 19 same-host, per-user clean-HOME observations remain
 bound to Build 19. Its 2,250-byte installed-app result is
 `dist/lifecycle/macos-packaged-app-build-19-clean-home-install-v1.json`,
@@ -773,11 +807,11 @@ its 3,364-byte installed state-recovery result is
 `dist/lifecycle/macos-packaged-app-build-19-clean-home-state-recovery-v1.json`,
 SHA-256
 `1c72536188ce71388319d068489f4c351521f33d5431af36e7acc5ff76bdb2b7`.
-Those historical observations are not reinterpreted as Build 20 evidence.
+Those historical observations are not reinterpreted as Build 21 evidence.
 
-<!-- aetherlink-current-build20-lifecycle-v1:start -->
+<!-- aetherlink-historical-build20-lifecycle-v1:start -->
 
-Build 20 has current same-host, per-user macOS installed-lifecycle
+Build 20 retains historical same-host, per-user macOS installed-lifecycle
 evidence. The clean-HOME runner copied the exact packaged app into an isolated
 Applications path and exercised two distinct exact-path LaunchServices
 processes. Its canonical 2,250-byte result is
@@ -799,7 +833,7 @@ SHA-256
 `e78b605278d5c5b7f5601778c38f35270f1db4a9e95055ff434b71af4c33cf78`.
 The image was ephemeral and was not retained. Both clean-HOME runners were
 invoked twice and matched their canonical results.
-These same-host, per-user Build 20 observations do not qualify a clean
+These historical same-host, per-user Build 20 observations do not qualify a clean
 machine/account, signed/notarized distribution, UI/accessibility,
 live-provider behavior, a physical device, arbitrary histories,
 crash/power-loss, concurrent writers, backup/transfer, rollback, or production
@@ -807,9 +841,9 @@ readiness. The DMG run remains outside Finder UI, drag-and-drop, Gatekeeper
 quarantine/download behavior, TCC, Keychain, network behavior, and system
 Applications installation evidence.
 
-<!-- aetherlink-current-build20-lifecycle-v1:end -->
+<!-- aetherlink-historical-build20-lifecycle-v1:end -->
 
-Build 20 preserves compliance profile `aetherlink-release-compliance-v2` and four
+Build 22 preserves compliance profile `aetherlink-release-compliance-v2` and four
 deterministic members: a
 350-coordinate Gradle lock/POM catalog, fixed creation metadata, a text
 third-party license inventory, and SPDX 2.3 JSON. It emits 692 exact
@@ -866,7 +900,7 @@ Current upstream JNI dependencies arrive pre-stripped; the manifest records
 that native-symbol archive as unavailable instead of claiming it was retained.
 This workflow does not sign, install, upload, launch, or deploy either app.
 The consolidated
-[1.0.0 build 20 local qualification record](docs/releases/1.0.0-build-20-local-v1.md)
+[1.0.0 build 22 local qualification record](docs/releases/1.0.0-build-22-local-v1.md)
 defines the current release notes, compatibility matrix, migration boundary,
 known limitations, rollback posture, exact artifact identity, and bounded
 two-root evidence. The fixture-rich
@@ -1273,6 +1307,49 @@ Use this only for development until production end-to-end session setup, replay
 protection, NAT traversal, and hardened rendezvous are implemented.
 
 ## Verification
+
+Repository automation is prepared in
+`.github/workflows/product-quality.yml` as a bounded G7 non-security CI subset.
+Pull requests run read-only macOS and Android jobs with exact product-test
+allowlists and affected compilation. Pushes to `main` additionally compile the
+macOS Release app and assemble/lint the unsigned Android Release APK with
+strict dependency locks. The macOS job uses the supported `macos-26` image and
+the exact Xcode 26.6 toolchain used by the current local verification. The
+workflow does not use a device, emulator, live provider, external-network
+smoke, credential, bundle/signing step, artifact upload, release publication,
+or deployment environment.
+
+Validate the workflow contract locally with:
+
+```bash
+python3 -B script/check_product_ci.py
+python3 -B script/check_product_ci.py --self-test
+```
+
+The checker pins the complete reviewed workflow byte stream and separately
+parses the YAML safely to validate the exact top-level/job mappings and complete
+step arrays against a canonical parsed-semantic fingerprint, then validates
+both job preambles plus every named step body. A pre-parse syntax-tree pass
+requires one YAML document and rejects duplicate mapping keys instead of
+accepting the last value; mapping keys with explicit YAML tags are also
+rejected before tag resolution can create an equivalent key. Its self-test
+bypasses only the byte pin for controlled mutations, then verifies the expected
+semantic diagnostic, so an unrelated hash mismatch cannot conceal a broken
+guard.
+
+The macOS Status overview also supports local Runtime recovery without an app
+restart. A failed listener start leaves a localized Retry action available;
+route allocation, relay startup, and restored pair transports begin only after
+the listener reports advertising. The focused lifecycle, action, localization,
+and compact accessibility render regressions are included in the exact CI
+Swift selector.
+
+This subset intentionally does not call the mixed aggregate gate below and
+does not by itself satisfy canonical G7 `PR fast` or `Merge full`. A local
+parity pass also is not a GitHub Actions result; hosted-runner evidence begins
+only after the workflow is committed and pushed. Test selectors limit which
+tests execute, while SwiftPM and Gradle still compile their complete
+package/app test-source graphs.
 
 Run these lightweight checks from the repository root before handing off changes
 that touch localization, protocol schema, or platform runtime behavior:

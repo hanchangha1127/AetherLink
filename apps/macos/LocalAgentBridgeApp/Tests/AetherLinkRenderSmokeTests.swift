@@ -690,50 +690,69 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
     func testRuntimeOverviewPrimaryActionFitsCompactAccessibilityLayoutAcrossLanguages() throws {
         for language in AetherLinkAppLanguage.allCases {
             try withStoredPreferences(language: language, appearance: .system) {
-                let overview = RuntimeOverview(
-                    focus: .routeQRCode,
-                    title: NSLocalizedString("Connection details not ready for QR", comment: ""),
-                    detail: NSLocalizedString("Connection details are prepared. AetherLink Runtime is reconnecting; generate the latest QR after the connection is ready.", comment: ""),
-                    footnote: NSLocalizedString("Devices control sessions; all model access stays inside AetherLink Runtime.", comment: ""),
-                    tone: .neutral
-                )
-                let action = try XCTUnwrap(
-                    runtimeOverviewPrimaryActionPresentation(
-                        focus: overview.focus,
-                        canGeneratePairingQR: true,
-                        hasPairingAction: true,
-                        hasActivePairingSession: false,
-                        isPreparingPairingRoute: false
-                    )
-                )
-                let layoutObserver = RuntimeOverviewLayoutObserver()
+                let scenarios: [(label: String, overview: RuntimeOverview, state: CompanionTransportStatus.State)] = [
+                    (
+                        "route recovery",
+                        RuntimeOverview(
+                            focus: .routeQRCode,
+                            title: NSLocalizedString("Connection details not ready for QR", comment: ""),
+                            detail: NSLocalizedString("Connection details are prepared. AetherLink Runtime is reconnecting; generate the latest QR after the connection is ready.", comment: ""),
+                            footnote: NSLocalizedString("Devices control sessions; all model access stays inside AetherLink Runtime.", comment: ""),
+                            tone: .neutral
+                        ),
+                        .advertising
+                    ),
+                    (
+                        "runtime retry",
+                        RuntimeOverview(
+                            focus: .runtimeSetup,
+                            title: NSLocalizedString("Setup needed", comment: ""),
+                            detail: NSLocalizedString("Start AetherLink Runtime before devices can connect.", comment: ""),
+                            footnote: NSLocalizedString("AetherLink Runtime mediates device requests. Model providers stay private.", comment: ""),
+                            tone: .warning
+                        ),
+                        .failed
+                    ),
+                ]
 
-                let bitmap = try render(
-                    RuntimeOverviewPanel(
-                        overview: overview,
-                        primaryAction: action,
-                        onPrimaryAction: { _ in },
-                        layoutObserver: layoutObserver
+                for scenario in scenarios {
+                    let action = try XCTUnwrap(
+                        runtimeOverviewPrimaryActionPresentation(
+                            focus: scenario.overview.focus,
+                            runtimeState: scenario.state,
+                            canGeneratePairingQR: true,
+                            hasPairingAction: true,
+                            hasActivePairingSession: false,
+                            isPreparingPairingRoute: false
+                        )
                     )
-                    .frame(
-                        width: compactDetailSize.width,
-                        height: compactDetailSize.height,
-                        alignment: .topLeading
-                    )
-                    .environment(\.locale, Locale(identifier: language.localeIdentifier))
-                    .environment(\.dynamicTypeSize, .accessibility3),
-                    size: compactDetailSize
-                )
+                    let layoutObserver = RuntimeOverviewLayoutObserver()
+                    let label = "Runtime overview \(scenario.label) accessibility action \(language.rawValue)"
 
-                assertMeaningfulRender(
-                    bitmap,
-                    label: "Runtime overview accessibility action \(language.rawValue)"
-                )
-                assertRuntimeOverviewActionLayout(
-                    layoutObserver,
-                    viewportSize: compactDetailSize,
-                    label: "Runtime overview accessibility action \(language.rawValue)"
-                )
+                    let bitmap = try render(
+                        RuntimeOverviewPanel(
+                            overview: scenario.overview,
+                            primaryAction: action,
+                            onPrimaryAction: { _ in },
+                            layoutObserver: layoutObserver
+                        )
+                        .frame(
+                            width: compactDetailSize.width,
+                            height: compactDetailSize.height,
+                            alignment: .topLeading
+                        )
+                        .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                        .environment(\.dynamicTypeSize, .accessibility3),
+                        size: compactDetailSize
+                    )
+
+                    assertMeaningfulRender(bitmap, label: label)
+                    assertRuntimeOverviewActionLayout(
+                        layoutObserver,
+                        viewportSize: compactDetailSize,
+                        label: label
+                    )
+                }
             }
         }
     }

@@ -131,7 +131,11 @@ private enum RuntimeResidencyPreparation {
     case ready(activeChanged: Bool)
 }
 
-public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
+public final class AggregatingLlmBackend:
+    LlmBackend,
+    ProviderScopedModelCatalogListing,
+    @unchecked Sendable
+{
     public let provider = ModelProvider.aggregate
 
     private static let bufferedChatEventLimit = 64
@@ -312,6 +316,22 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
             throw firstError
         }
         return models
+    }
+
+    public func listModels(for provider: ModelProvider) async throws -> [ModelInfo] {
+        guard provider != .aggregate else {
+            return try await listModels()
+        }
+        do {
+            try Task.checkCancellation()
+            let providerModels = try await backend(for: provider).listModels()
+            try Task.checkCancellation()
+            return providerModels.filter { $0.provider == provider }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
+        }
     }
 
     public func pullModel(name: String) async throws -> ModelPullResult {
@@ -517,8 +537,8 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
     }
 
     private func resolveChatRoute(for model: String) async throws -> (provider: ModelProvider, modelID: String) {
-        let models = try await listModels()
         if let resolved = ModelProvider.splitQualifiedModelID(model) {
+            let models = try await listModels(for: resolved.provider)
             if let match = Self.matchingInstalledProviderModelID(
                 resolved.modelID,
                 provider: resolved.provider,
@@ -529,6 +549,7 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
             throw Self.modelNotInstalledError(model, provider: resolved.provider)
         }
 
+        let models = try await listModels()
         if let match = Self.matchingInstalledModel(requestedModel: model, models: models) {
             return (match.provider, match.providerModelID)
         }
@@ -537,19 +558,21 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
     }
 
     private func resolveEmbeddingRoute(for model: String) async throws -> (provider: ModelProvider, modelID: String) {
-        let models = try await listModels()
-        if let resolved = ModelProvider.splitQualifiedModelID(model),
-           let match = Self.matchingInstalledProviderModelID(
-               resolved.modelID,
-               provider: resolved.provider,
-               requiredKind: .embedding,
-               models: models
-           ) {
-            return (match.provider, match.providerModelID)
+        if let resolved = ModelProvider.splitQualifiedModelID(model) {
+            let models = try await listModels(for: resolved.provider)
+            if let match = Self.matchingInstalledProviderModelID(
+                resolved.modelID,
+                provider: resolved.provider,
+                requiredKind: .embedding,
+                models: models
+            ) {
+                return (match.provider, match.providerModelID)
+            }
+            throw Self.modelNotInstalledError(model, provider: resolved.provider)
         }
 
-        let provider = ModelProvider.splitQualifiedModelID(model)?.provider ?? .aggregate
-        throw Self.modelNotInstalledError(model, provider: provider)
+        _ = try await listModels()
+        throw Self.modelNotInstalledError(model, provider: .aggregate)
     }
 
     private func resolveModelReference(_ model: String) -> (provider: ModelProvider, modelID: String) {

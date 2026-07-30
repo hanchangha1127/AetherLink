@@ -19959,6 +19959,145 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun chatScreenSessionBoundaryResetsLatestWhileSameSessionUpdatesKeepPosition() {
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        fun messagesFor(sessionId: String): List<RuntimeChatMessage> {
+            return (1..28).map { index ->
+                RuntimeChatMessage(
+                    id = "$sessionId-message-$index",
+                    role = if (index % 2 == 0) "assistant" else "user",
+                    content = if (index == 28) {
+                        "Shared final message keeps the effect inputs equal across sessions."
+                    } else {
+                        "$sessionId scroll message $index keeps enough height for the chat list."
+                    },
+                )
+            }
+        }
+
+        val currentState = mutableStateOf(
+            RuntimeUiState(
+                isConnected = true,
+                runtimeStatus = "authenticated",
+                trustedRuntime = RuntimeTrustedRuntime(
+                    deviceId = "runtime-1",
+                    name = "AetherLink Runtime",
+                ),
+                backendAvailable = true,
+                selectedModelId = chatModel.id,
+                models = listOf(chatModel),
+                activeChatSessionId = "session-a",
+                messages = messagesFor("session-a"),
+            ),
+        )
+
+        val restorationTester = StateRestorationTester(compose)
+        restorationTester.setContent {
+            CompositionLocalProvider(LocalAetherLinkReducedMotionOverride provides true) {
+                MaterialTheme {
+                    Surface(modifier = Modifier.width(360.dp).height(640.dp)) {
+                        ChatScreen(
+                            state = currentState.value,
+                            onInputChange = {},
+                            onSend = {},
+                            onCancel = {},
+                            onConnect = {},
+                            onScanPairingQr = {},
+                            onRefreshHealth = {},
+                            onAttachFiles = {},
+                            onRemoveAttachment = {},
+                            onScanLatestQr = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        compose.waitForIdle()
+        compose.onNodeWithTag(CHAT_MESSAGE_LIST_TEST_TAG)
+            .performScrollToIndex(0)
+        compose.waitForIdle()
+        compose.onNodeWithTag(chatMessageRowTestTag("session-a-message-1"))
+            .assertIsDisplayed()
+
+        compose.runOnUiThread {
+            currentState.value = currentState.value.copy(
+                activeChatSessionId = "session-b",
+                messages = messagesFor("session-b"),
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(chatMessageRowTestTag("session-b-message-28"))
+            .assertIsDisplayed()
+        compose.onAllNodesWithContentDescription("Jump to latest message")
+            .assertCountEquals(0)
+
+        compose.onNodeWithTag(CHAT_MESSAGE_LIST_TEST_TAG)
+            .performScrollToIndex(0)
+        compose.waitForIdle()
+        compose.runOnUiThread {
+            currentState.value = currentState.value.copy(
+                activeChatSessionId = "session-c",
+                loadingChatSessionId = "session-c",
+                messages = messagesFor("session-c"),
+            )
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag(chatMessageRowTestTag("session-c-message-1"))
+            .assertIsDisplayed()
+
+        restorationTester.emulateSavedInstanceStateRestore()
+        compose.waitForIdle()
+        compose.onNodeWithTag(chatMessageRowTestTag("session-c-message-1"))
+            .assertIsDisplayed()
+        compose.runOnUiThread {
+            currentState.value = currentState.value.copy(
+                loadingChatSessionId = null,
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(chatMessageRowTestTag("session-c-message-28"))
+            .assertIsDisplayed()
+        compose.onAllNodesWithContentDescription("Jump to latest message")
+            .assertCountEquals(0)
+
+        compose.onNodeWithTag(CHAT_MESSAGE_LIST_TEST_TAG)
+            .performScrollToIndex(0)
+        compose.waitForIdle()
+        compose.runOnUiThread {
+            currentState.value = currentState.value.copy(
+                isStreaming = true,
+                activeRequestId = "session-c-stream",
+                messages = currentState.value.messages.mapIndexed { index, message ->
+                    if (index == currentState.value.messages.lastIndex) {
+                        message.copy(
+                            content = "${message.content} Streaming delta.",
+                            reasoning = "Streaming reasoning delta.",
+                        )
+                    } else {
+                        message
+                    }
+                },
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(chatMessageRowTestTag("session-c-message-1"))
+            .assertIsDisplayed()
+        compose.onNodeWithContentDescription("Jump to latest message")
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun chatScreenJumpToLatestActionExplainsStateAcrossSupportedLanguages() {
         data class ExpectedCopy(
             val languageTag: String,

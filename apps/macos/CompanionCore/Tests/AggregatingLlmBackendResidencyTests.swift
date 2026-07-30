@@ -33,6 +33,126 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
         XCTAssertEqual(lmStudio.modelListCallCount, 1)
     }
 
+    func testQualifiedChatListsOnlySelectedProvider() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)]
+        )
+        let lmStudio = ResidencyTestBackend(
+            provider: .lmStudio,
+            models: [ModelInfo(id: "gemma-local", name: "gemma-local", provider: .lmStudio)]
+        )
+        let backend = AggregatingLlmBackend([ollama, lmStudio])
+
+        _ = try await collect(backend.chat(request: chatRequest(model: "ollama:qwen-local")))
+
+        XCTAssertEqual(ollama.modelListCallCount, 1)
+        XCTAssertEqual(lmStudio.modelListCallCount, 0)
+        XCTAssertEqual(ollama.routedModels, ["qwen-local"])
+        XCTAssertTrue(lmStudio.routedModels.isEmpty)
+    }
+
+    func testQualifiedEmbeddingListsOnlySelectedProvider() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(
+                id: "nomic-embed",
+                name: "nomic-embed",
+                provider: .ollama,
+                kind: .embedding
+            )]
+        )
+        let lmStudio = ResidencyTestBackend(
+            provider: .lmStudio,
+            models: [ModelInfo(
+                id: "text-embedding-local",
+                name: "text-embedding-local",
+                provider: .lmStudio,
+                kind: .embedding
+            )]
+        )
+        let backend = AggregatingLlmBackend([ollama, lmStudio])
+
+        _ = try await backend.embed(request: EmbeddingRequest(
+            model: "lm_studio:text-embedding-local",
+            texts: ["hello"]
+        ))
+
+        XCTAssertEqual(ollama.modelListCallCount, 0)
+        XCTAssertEqual(lmStudio.modelListCallCount, 1)
+        XCTAssertTrue(ollama.embeddingRequests.isEmpty)
+        XCTAssertEqual(lmStudio.embeddingRequests.count, 1)
+    }
+
+    func testQualifiedChatNormalizesCancelledProviderCatalogError() async {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            modelListError: URLError(.cancelled)
+        )
+        let lmStudio = ResidencyTestBackend(
+            provider: .lmStudio,
+            models: [ModelInfo(id: "gemma-local", name: "gemma-local", provider: .lmStudio)]
+        )
+        let backend = AggregatingLlmBackend([ollama, lmStudio])
+
+        do {
+            _ = try await collect(backend.chat(request: chatRequest(model: "ollama:qwen-local")))
+            XCTFail("Expected provider catalog cancellation.")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        XCTAssertEqual(ollama.modelListCallCount, 1)
+        XCTAssertEqual(lmStudio.modelListCallCount, 0)
+    }
+
+    func testQualifiedChatPropagatesSelectedProviderErrorWithoutListingUnrelatedProvider() async {
+        let providerError = BackendError(
+            provider: .ollama,
+            code: "provider_catalog_unavailable",
+            message: "The selected provider catalog is unavailable.",
+            retryable: true
+        )
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            modelListError: providerError
+        )
+        let lmStudio = ResidencyTestBackend(
+            provider: .lmStudio,
+            models: [ModelInfo(id: "gemma-local", name: "gemma-local", provider: .lmStudio)]
+        )
+        let backend = AggregatingLlmBackend([ollama, lmStudio])
+
+        do {
+            _ = try await collect(backend.chat(request: chatRequest(model: "ollama:qwen-local")))
+            XCTFail("Expected selected provider catalog failure.")
+        } catch let error as BackendError {
+            XCTAssertEqual(error, providerError)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        XCTAssertEqual(ollama.modelListCallCount, 1)
+        XCTAssertEqual(lmStudio.modelListCallCount, 0)
+    }
+
+    func testUnqualifiedChatStillListsEveryProvider() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)]
+        )
+        let lmStudio = ResidencyTestBackend(
+            provider: .lmStudio,
+            models: [ModelInfo(id: "gemma-local", name: "gemma-local", provider: .lmStudio)]
+        )
+        let backend = AggregatingLlmBackend([ollama, lmStudio])
+
+        _ = try await collect(backend.chat(request: chatRequest(model: "gemma-local")))
+
+        XCTAssertEqual(ollama.modelListCallCount, 1)
+        XCTAssertEqual(lmStudio.modelListCallCount, 1)
+        XCTAssertEqual(lmStudio.routedModels, ["gemma-local"])
+    }
+
     func testSwitchingModelsUnloadsPreviousInactiveModel() async throws {
         let ollama = ResidencyTestBackend(
             provider: .ollama,
@@ -1541,6 +1661,7 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
     private let holdsUnloadsOpen: Bool
     private let controlledChatEventBurst: ControlledChatEventBurst?
     private let providerUsageSource: ChatProviderUsageSource?
+    private let modelListError: Error?
     private let modelListStarted = DispatchSemaphore(value: 0)
     private let unloadStarted = DispatchSemaphore(value: 0)
     private var modelListReleased = false
@@ -1584,7 +1705,8 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
         holdsModelListingOpen: Bool = false,
         holdsUnloadsOpen: Bool = false,
         controlledChatEventBurst: ControlledChatEventBurst? = nil,
-        providerUsageSource: ChatProviderUsageSource? = nil
+        providerUsageSource: ChatProviderUsageSource? = nil,
+        modelListError: Error? = nil
     ) {
         self.provider = provider
         self.models = models
@@ -1596,6 +1718,7 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
         self.holdsUnloadsOpen = holdsUnloadsOpen
         self.controlledChatEventBurst = controlledChatEventBurst
         self.providerUsageSource = providerUsageSource
+        self.modelListError = modelListError
     }
 
     func healthCheck() async -> BackendStatus {
@@ -1618,6 +1741,9 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
                 }
             }
             try Task.checkCancellation()
+        }
+        if let modelListError {
+            throw modelListError
         }
         return models
     }
