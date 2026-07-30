@@ -53,19 +53,49 @@ current user direction, not repository-owner identity proof.
 - Continue only feature, UX, accessibility, performance, build, documentation,
   and release-quality work. Do not resume security findings, threat analysis,
   owner authentication, or authority-evidence work.
-- The current Android release-quality slice adds a Build 23-forward compiled
-  entry-point topology contract. Independent builder and readback parsers
+- The current macOS Runtime lifecycle publishes
+  `starting(port) -> listening(port) | failed(message)` only after listener and
+  Bonjour readiness. Network.framework `.ready` starts Bonjour; `NetService`
+  `didPublish` is now the only transition to advertising. Publication failure,
+  a five-second timeout, or a late stop releases local ownership and permits
+  same-port Retry. Listener and advertisement generations reject stale
+  callbacks, and refresh while publishing uses only the latest TXT metadata.
+  Reentrant or concurrent advertiser replacement is serialized, a racing
+  timeout cannot overwrite confirmed publication, and an immediate
+  advertisement failure after asynchronous listener readiness is still
+  forwarded before cleanup. Status handlers run after lifecycle-lock release,
+  allowing cross-queue stop coordination without lock inversion.
+  Pairing, route allocation, relay startup, and restored-pair work stay pending
+  until publication. `RuntimeDevServer` also waits to print advertising or emit
+  optional development pairing and exits on publication failure. Late listener
+  loss terminalizes the shared advertisement gate before stop, rejecting a
+  previously captured publish callback. Seven
+  advertiser tests, all 39 manager tests, two focused AppModel regressions, and
+  the exact 180-test product selector pass. This is no-device local lifecycle
+  evidence; no external network discovery, device, performance, security,
+  signing, deployment, or release is claimed.
+- The current Android release-quality slice adds Build 23-forward compiled
+  entry-point topology and application-shell contracts. Independent builder
+  and readback parsers
   require the APK and AAB to agree on exactly one exported
   `singleTask`/`never` MainActivity and exactly four launcher, pairing deep-link,
   `SEND`, and `SEND_MULTIPLE` filters with the same canonical 44 MIME types.
+  They also resolve the exact label/icon/round-icon/theme/locale-config
+  resources, the ordered five-locale config, and the default plus five localized
+  `status_title` payloads. Direct AAB readback confirms the five references,
+  localized payload, and disabled language splitting. A universal APK derived
+  from that same AAB confirms the locale-config body/order and completes the
+  composite AAB claim compared with the standalone APK.
   Unrelated merged dependency activities are accepted and explicitly outside
-  this MainActivity claim. The archive claim is closed and exact-typed; 52
+  the MainActivity claim. The archive claims are closed and exact-typed; 59
   release-archive tests pass.
   Locally present Build 21 compiled outputs exercise both real formats but are
   not current release evidence. Builds 1 through 22, the ledger, and the Build
-  22 archive remain unchanged, and Build 22 archive-only readback passes.
-  This slice includes no device run, signing, publication, permission
-  analysis, or network claim.
+  22 archive remain unchanged. Preserved Builds 1 through 21 pass historical
+  readback and Build 22 passes archive-only readback.
+  The bounded Android product CI lane runs the complete contract suite. This
+  slice includes no device run, launcher/theme visual observation, signing,
+  publication, permission analysis, or network claim.
 - The current G6 macOS packaging lane no longer targets the running
   `dist/AetherLink.app` during package-only or release assembly.
   `build_and_run.sh --package-only` cleans and writes
@@ -90,7 +120,7 @@ current user direction, not repository-owner identity proof.
   left. The menu bar delegates generation to one main `Window`, and pending
   focus state survives locale-driven `ContentView` recreation. QR expiry
   announces once per QR lifecycle, and decorative Model Download icons are
-  hidden. Eight new focused regressions, the exact 159-test product CI Swift
+  hidden. Eight new focused regressions, the current exact 180-test product CI Swift
   selector, and the complete 186-test accessibility run pass; Debug and Release
   AetherLink builds pass.
   The Mac was locked during attempted UI observation, so physical
@@ -100,7 +130,7 @@ current user direction, not repository-owner identity proof.
   pairing QR expiry changes without the app animation when the OS preference is
   enabled. The test-only environment override can force reduction on but cannot
   disable a true system preference. The complete 147-test localization suite
-  and 24-test render suite pass.
+  and 25-test render suite pass.
 - The current unreleased macOS Runtime no longer latches a failed listener as
   started. Only an advertising listener enables route allocation, relay
   startup, or restored pair transports; a failed attempt leaves a localized
@@ -110,7 +140,7 @@ current user direction, not repository-owner identity proof.
   keep a superseded listener callback from stopping its replacement. Peer
   admission validates and inserts under the same generation lock, so a
   connection cannot cross a concurrent stop/failure cleanup boundary. The
-  focused lifecycle/action/render checks and exact 159-test CI Swift selector
+  focused lifecycle/action/render checks and current exact 180-test CI Swift selector
   pass with zero skips or failures.
 - The repository includes `.github/workflows/product-quality.yml` as a
   bounded G7 non-security CI subset. Pull requests run two read-only hosted
@@ -131,20 +161,24 @@ current user direction, not repository-owner identity proof.
   without entering the paused mixed security checker path. A Psych AST pre-pass
   requires one YAML document and rejects duplicate or explicitly tagged
   mapping keys before safe loading. The reviewed workflow byte SHA-256 is
-  `7f24adee31748522469daee3c4be17fd2d474dde3b9edcae79e95f3cc362571d`;
+  `2b37513e5a8e6ef92220abb8bad47f433fb75f4bf908bea72a559921dab1b8ac`;
   its parsed-semantic SHA-256 is
-  `843b003fb1fb16c60003ff920db4a95ec23e24b96dc1eee2e453717bbc529384`.
-  Local parity passes 159 selected Swift tests and seven selected Android tests
+  `b19d82f91cf167ee7915a16fdc63caa9a8c5814b94d89c9586f9d5f4137633f9`.
+  Current local parity passes 180 selected Swift tests and seven selected Android tests
   with zero skips or failures, both platform compile lanes, Release builds,
   lint, four static checks, YAML parsing, and the guard's mutation suite. The
   Android allowlist now directly executes the changed-session scroll-boundary
   regression rather than only compiling its test source. Hosted run
   `30525374687` completed successfully for both jobs at baseline commit
-  `0f59c757d745d0b95c37c9b93aec8d354bcfef9f`. The current listener-recovery,
-  reduced-motion, visual/focus accessibility, product-copy, selector, and
-  checker changes remain uncommitted and therefore are not covered by that run;
-  canonical G7
-  completion remains unclaimed. The
+  `0f59c757d745d0b95c37c9b93aec8d354bcfef9f`. That historical 159-test
+  baseline also predates commit
+  `53f45d4e9909dd77520a450170eb87c7d260ea89`, which contains the first
+  listener-readiness and accessibility/product-copy expansion. The current
+  listener and Bonjour publication lifecycle, publication timeout/retry,
+  development-server publication handling, fourteen added tests, checker, and
+  documentation remain unstaged and uncommitted and are not covered by a hosted
+  run.
+  Canonical G7 completion remains unclaimed. The
   selectors constrain test execution, not compilation of the complete Swift
   package and Android app test-source graphs, and the Android hosted lane still
   depends on its image's preinstalled SDK 36 plus ordinary dependency

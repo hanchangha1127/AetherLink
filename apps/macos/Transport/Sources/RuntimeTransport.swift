@@ -378,6 +378,20 @@ public protocol RuntimeAdvertiser {
     func stop()
 }
 
+public enum RuntimeAdvertisementStatus: Equatable, Sendable {
+    case stopped
+    case publishing
+    case published
+    case failed(String)
+}
+
+public protocol RuntimeAdvertisementStatusReporting: AnyObject {
+    var advertisementStatus: RuntimeAdvertisementStatus { get }
+    var onAdvertisementStatusChange: (
+        @Sendable (RuntimeAdvertisementStatus) -> Void
+    )? { get set }
+}
+
 public extension RuntimeAdvertiser {
     func start(port: Int32) {
         start(port: port, metadata: RuntimeAdvertisementMetadata())

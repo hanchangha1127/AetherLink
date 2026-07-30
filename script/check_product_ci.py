@@ -16,10 +16,10 @@ from typing import Optional
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github/workflows/product-quality.yml"
 CANONICAL_WORKFLOW_SHA256 = (
-    "7f24adee31748522469daee3c4be17fd2d474dde3b9edcae79e95f3cc362571d"
+    "2b37513e5a8e6ef92220abb8bad47f433fb75f4bf908bea72a559921dab1b8ac"
 )
 CANONICAL_PARSED_WORKFLOW_SHA256 = (
-    "843b003fb1fb16c60003ff920db4a95ec23e24b96dc1eee2e453717bbc529384"
+    "b19d82f91cf167ee7915a16fdc63caa9a8c5814b94d89c9586f9d5f4137633f9"
 )
 
 REQUIRED_WORKFLOW_PREFIX = """name: Product quality (non-security subset)
@@ -71,6 +71,7 @@ SWIFT_FILTER = (
     "AggregatingLlmBackendResidencyTests|RuntimeModelIdleUnloadPolicyTests|"
     "RuntimeChatContextCompactionPlannerTests|"
     "RuntimeSemanticChatSessionSearchTests|RuntimeSemanticMemorySearchTests|"
+    "BonjourAdvertiserTests|"
     "LocalPeerServerTests/"
     "testLocalPeerServerReportsListenerStartAndExplicitStop|"
     "LocalPeerServerTests/"
@@ -80,7 +81,19 @@ SWIFT_FILTER = (
     "MacRuntimeConnectionManagerTests/"
     "testStartLocalDefersAdvertisementUntilListenerIsReady|"
     "MacRuntimeConnectionManagerTests/"
+    "testStartLocalDefersReadyUntilAdvertisementIsPublished|"
+    "MacRuntimeConnectionManagerTests/"
+    "testAsyncListenerReadyForwardsImmediateAdvertisementFailure|"
+    "MacRuntimeConnectionManagerTests/"
+    "testAdvertisementFailureAllowsSamePortRetryAndIgnoresStaleSuccess|"
+    "MacRuntimeConnectionManagerTests/"
+    "testRefreshWhileAdvertisementPublishesUsesLatestMetadataOnly|"
+    "MacRuntimeConnectionManagerTests/"
+    "testUnexpectedAdvertisementStopClearsFalseReadyOwnership|"
+    "MacRuntimeConnectionManagerTests/"
     "testConcreteLocalListenerDefersAdvertisementAndRetriesAfterOccupiedPort|"
+    "MacRuntimeConnectionManagerTests/"
+    "testUnexpectedLocalPortCannotRemainStartingOrAdvertising|"
     "MacRuntimeConnectionManagerTests/"
     "testLateLocalFailureStopsOwnershipAndReportsStatus|"
     "MacRuntimeConnectionManagerTests/"
@@ -90,13 +103,23 @@ SWIFT_FILTER = (
     "LocalRuntimeMessageRouterTests/"
     "testCompanionAppModelUserInterfaceStartCanRetryAfterListenerFailure|"
     "LocalRuntimeMessageRouterTests/"
+    "testCompanionAppModelCanRetryAfterBonjourPublicationFailure|"
+    "LocalRuntimeMessageRouterTests/"
     "testCompanionAppModelLateListenerFailureAllowsSamePortRetryAndIgnoresStaleCallback|"
+    "LocalRuntimeMessageRouterTests/"
+    "testCompanionAppModelPortReplacementShowsStartingUntilReady|"
     "LocalRuntimeMessageRouterTests/"
     "testCompanionAppModelUserInterfaceStartIsIdempotentDuringRouteAllocation|"
     "LocalRuntimeMessageRouterTests/"
     "testCompanionAppModelDebugUserInterfaceDoesNotGenerateQRCodeWhenRuntimeListenerFails|"
     "LocalRuntimeMessageRouterTests/"
+    "testCompanionAppModelBeginLocalPairingWaitsForListenerReadiness|"
+    "LocalRuntimeMessageRouterTests/"
+    "testCompanionAppModelPairingWaitsForBonjourPublication|"
+    "LocalRuntimeMessageRouterTests/"
     "testCompanionAppModelReportsFailedTransportWithoutAdvertising|"
+    "PairingRouteNoticeTests/"
+    "testRuntimeStartingUsesNeutralReadinessNotice|"
     "AetherLinkLocalizationTests/"
     "testStatusOverviewMapsEachFocusToOnePrimaryAction|"
     "AetherLinkLocalizationTests/"
@@ -281,6 +304,11 @@ ANDROID_STEPS = (
         '          test -d "$ANDROID_HOME/platforms/android-36"\n'
         '          test -d "$ANDROID_HOME/build-tools/36.0.0"\n'
         "          ./gradlew --version\n",
+    ),
+    (
+        "Run release archive contract units",
+        "        run: PYTHONPATH=. python3 -B "
+        "script/test_release_artifact_archive.py\n",
     ),
     (
         "Compile Android and run focused product units",
@@ -916,6 +944,42 @@ def self_test(workflow: str) -> list[str]:
             workflow.replace(
                 "MacRuntimeConnectionManagerTests/"
                 "testConcreteLocalListenerDefersAdvertisementAndRetriesAfterOccupiedPort|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing unexpected-port manager regression": (
+            workflow.replace(
+                "MacRuntimeConnectionManagerTests/"
+                "testUnexpectedLocalPortCannotRemainStartingOrAdvertising|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing Runtime port-replacement regression": (
+            workflow.replace(
+                "LocalRuntimeMessageRouterTests/"
+                "testCompanionAppModelPortReplacementShowsStartingUntilReady|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing pairing listener-readiness regression": (
+            workflow.replace(
+                "LocalRuntimeMessageRouterTests/"
+                "testCompanionAppModelBeginLocalPairingWaitsForListenerReadiness|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing pairing starting-notice regression": (
+            workflow.replace(
+                "PairingRouteNoticeTests/"
+                "testRuntimeStartingUsesNeutralReadinessNotice|",
                 "",
                 1,
             ),

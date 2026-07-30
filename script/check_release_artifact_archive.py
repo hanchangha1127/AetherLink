@@ -60,6 +60,7 @@ BUNDLETOOL_TIMEOUT_SECONDS = 60
 AAPT2_TIMEOUT_SECONDS = 60
 ANDROID_BACKUP_POLICY_BUILD = 15
 ANDROID_ENTRY_POINT_TOPOLOGY_BUILD = 23
+ANDROID_APPLICATION_SHELL_BUILD = 23
 BASE_BUNDLE_MANIFEST_VERIFIED_FIELDS = (
     "applicationId",
     "minSdk",
@@ -80,11 +81,37 @@ BACKUP_POLICY_APK_MANIFEST_VERIFIED_FIELDS = (
 ENTRY_POINT_TOPOLOGY_MANIFEST_VERIFIED_FIELDS = (
     "entryPointTopology",
 )
+APPLICATION_SHELL_MANIFEST_VERIFIED_FIELDS = (
+    "applicationShell",
+)
 ANDROID_MAIN_ACTIVITY = "com.localagentbridge.android.MainActivity"
 ANDROID_SHARE_MIME_TYPE_COUNT = 44
 ANDROID_SHARE_MIME_TYPES_CANONICAL_SHA256 = (
     "a04e83ed785b94ca4160981bb069104949742c6102008a452f650118f7902a8f"
 )
+ANDROID_APPLICATION_SHELL_MANIFEST_RESOURCES = {
+    "icon": "@mipmap/ic_launcher",
+    "label": "@string/app_name",
+    "localeConfig": "@xml/locales_config",
+    "roundIcon": "@mipmap/ic_launcher_round",
+    "theme": "@style/AppTheme",
+}
+ANDROID_LOCALE_CONFIG_LOCALES = (
+    "en",
+    "ko",
+    "ja",
+    "zh-CN",
+    "fr",
+)
+ANDROID_LOCALIZED_STRING_RESOURCE = "@string/status_title"
+ANDROID_LOCALIZED_STRING_VALUES = {
+    "default": "Pairing & Connection",
+    "en": "Pairing & Connection",
+    "fr": "Jumelage et connexion",
+    "ja": "ペアリングと接続",
+    "ko": "페어링 및 연결",
+    "zh-CN": "配对与连接",
+}
 LEGACY_BACKUP_EXCLUDE_DOMAINS = (
     "root",
     "file",
@@ -551,7 +578,96 @@ def expected_android_manifest_keys(build_number: int) -> set[str]:
         keys.add("apkManifestReadback")
     if build_number >= ANDROID_ENTRY_POINT_TOPOLOGY_BUILD:
         keys.add("entryPointTopology")
+    if build_number >= ANDROID_APPLICATION_SHELL_BUILD:
+        keys.add("applicationShell")
     return keys
+
+
+def verify_android_application_shell_claim(
+    value: object,
+) -> dict[str, object]:
+    if type(value) is not dict:
+        raise ReleaseArchiveVerificationError(
+            "Android application-shell claim must be an object"
+        )
+    require_exact_keys(
+        value,
+        {
+            "localeConfigLocales",
+            "localizedString",
+            "manifestResources",
+        },
+        "platforms.android.applicationShell",
+    )
+
+    manifest_resources = value.get("manifestResources")
+    if type(manifest_resources) is not dict:
+        raise ReleaseArchiveVerificationError(
+            "Android application-shell manifestResources must be an object"
+        )
+    require_exact_keys(
+        manifest_resources,
+        set(ANDROID_APPLICATION_SHELL_MANIFEST_RESOURCES),
+        "platforms.android.applicationShell.manifestResources",
+    )
+    for name, expected in (
+        ANDROID_APPLICATION_SHELL_MANIFEST_RESOURCES.items()
+    ):
+        actual = manifest_resources.get(name)
+        if type(actual) is not str or actual != expected:
+            raise ReleaseArchiveVerificationError(
+                "Android application-shell manifest resource differs "
+                f"for {name}"
+            )
+
+    locales = value.get("localeConfigLocales")
+    if (
+        type(locales) is not list
+        or any(type(locale) is not str for locale in locales)
+        or locales != list(ANDROID_LOCALE_CONFIG_LOCALES)
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android application-shell localeConfigLocales differ "
+            "from the V1 contract"
+        )
+
+    localized_string = value.get("localizedString")
+    if type(localized_string) is not dict:
+        raise ReleaseArchiveVerificationError(
+            "Android application-shell localizedString must be an object"
+        )
+    require_exact_keys(
+        localized_string,
+        {"resource", "values"},
+        "platforms.android.applicationShell.localizedString",
+    )
+    if (
+        type(localized_string.get("resource")) is not str
+        or localized_string["resource"]
+        != ANDROID_LOCALIZED_STRING_RESOURCE
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android application-shell localized resource differs "
+            "from the V1 contract"
+        )
+    values = localized_string.get("values")
+    if type(values) is not dict:
+        raise ReleaseArchiveVerificationError(
+            "Android application-shell localized values must be an object"
+        )
+    require_exact_keys(
+        values,
+        set(ANDROID_LOCALIZED_STRING_VALUES),
+        "platforms.android.applicationShell.localizedString.values",
+    )
+    for locale, expected in ANDROID_LOCALIZED_STRING_VALUES.items():
+        actual = values.get(locale)
+        if type(actual) is not str or actual != expected:
+            raise ReleaseArchiveVerificationError(
+                "Android application-shell localized value differs "
+                f"for {locale}"
+            )
+    return value
 
 
 def verify_android_entry_point_topology_claim(
@@ -1004,11 +1120,12 @@ def run_bundletool(
     root: Path = ROOT,
 ) -> str:
     environment = os.environ.copy()
-    environment["LC_ALL"] = "C"
+    environment["LC_ALL"] = "C.UTF-8"
     try:
         result = subprocess.run(
             [
                 str(java_executable()),
+                "-Dfile.encoding=UTF-8",
                 "-cp",
                 bundletool_runtime_classpath(root),
                 BUNDLETOOL_MAIN_CLASS,
@@ -1506,11 +1623,117 @@ def parse_aapt2_entry_point_topology(
     return _android_entry_point_topology(applications[0])
 
 
+def parse_bundletool_localized_string(output: str) -> dict[str, object]:
+    lines = output.splitlines()
+    if (
+        len(lines) != 8
+        or lines[0] != "Package 'com.localagentbridge.android':"
+        or re.fullmatch(
+            r"0x[0-9a-f]{8} - string/status_title",
+            lines[1],
+        )
+        is None
+    ):
+        raise ReleaseArchiveVerificationError(
+            "bundletool localized-string output has an unexpected shape"
+        )
+
+    values: dict[str, str] = {}
+    config_pattern = re.compile(
+        r'^\t(?:(\(default\))|locale: ("(?:[^"\\]|\\.)*")) '
+        r'- \[STR\] ("(?:[^"\\]|\\.)*")$'
+    )
+    for line in lines[2:]:
+        match = config_pattern.fullmatch(line)
+        if match is None:
+            raise ReleaseArchiveVerificationError(
+                "bundletool localized-string output contains an invalid config"
+            )
+        if match.group(1) is not None:
+            config = "default"
+        else:
+            try:
+                config = json.loads(match.group(2))
+            except json.JSONDecodeError as error:
+                raise ReleaseArchiveVerificationError(
+                    "bundletool localized-string locale is invalid JSON"
+                ) from error
+        try:
+            value = json.loads(match.group(3))
+        except json.JSONDecodeError as error:
+            raise ReleaseArchiveVerificationError(
+                "bundletool localized-string value is invalid JSON"
+            ) from error
+        if (
+            type(config) is not str
+            or type(value) is not str
+            or config in values
+        ):
+            raise ReleaseArchiveVerificationError(
+                "bundletool localized-string configs are not unique strings"
+            )
+        values[config] = value
+
+    if values != ANDROID_LOCALIZED_STRING_VALUES:
+        raise ReleaseArchiveVerificationError(
+            "bundletool localized-string payload differs from the V1 contract"
+        )
+    return {
+        "resource": ANDROID_LOCALIZED_STRING_RESOURCE,
+        "values": values,
+    }
+
+
+def parse_bundletool_language_split_contract(output: str) -> None:
+    try:
+        value = json.loads(output)
+    except json.JSONDecodeError as error:
+        raise ReleaseArchiveVerificationError(
+            "bundletool config output is invalid JSON"
+        ) from error
+    if type(value) is not dict:
+        raise ReleaseArchiveVerificationError(
+            "bundletool config output root must be an object"
+        )
+    try:
+        optimizations = value["optimizations"]
+        splits_config = optimizations["splitsConfig"]
+        dimensions = splits_config["splitDimension"]
+    except (KeyError, TypeError) as error:
+        raise ReleaseArchiveVerificationError(
+            "bundletool config omits the split-dimension contract"
+        ) from error
+    if (
+        type(optimizations) is not dict
+        or type(splits_config) is not dict
+        or type(dimensions) is not list
+    ):
+        raise ReleaseArchiveVerificationError(
+            "bundletool split-dimension contract has invalid types"
+        )
+    language_dimensions = [
+        dimension
+        for dimension in dimensions
+        if type(dimension) is dict
+        and dimension.get("value") == "LANGUAGE"
+    ]
+    if (
+        any(type(dimension) is not dict for dimension in dimensions)
+        or len(language_dimensions) != 1
+        or set(language_dimensions[0]) != {"negate", "value"}
+        or language_dimensions[0]["negate"] is not True
+    ):
+        raise ReleaseArchiveVerificationError(
+            "bundletool language splitting must be exactly disabled"
+        )
+
+
 def parse_bundletool_manifest(
     output: str,
     *,
     backup_policy_required: bool = False,
     entry_point_topology_required: bool = False,
+    application_shell_required: bool = False,
 ) -> dict[str, object]:
     if type(backup_policy_required) is not bool:
         raise ReleaseArchiveVerificationError(
@@ -1519,6 +1742,10 @@ def parse_bundletool_manifest(
     if type(entry_point_topology_required) is not bool:
         raise ReleaseArchiveVerificationError(
             "bundletool entry-point topology requirement must be a boolean"
+        )
+    if type(application_shell_required) is not bool:
+        raise ReleaseArchiveVerificationError(
+            "bundletool application-shell requirement must be a boolean"
         )
     try:
         manifest = ET.fromstring(output)
@@ -1566,6 +1793,10 @@ def parse_bundletool_manifest(
     data_extraction_rules = application.get(
         f"{android_attribute}dataExtractionRules"
     )
+    application_shell_resources = {
+        name: application.get(f"{android_attribute}{name}")
+        for name in ANDROID_APPLICATION_SHELL_MANIFEST_RESOURCES
+    }
     for value, label in (
         (version_code_text, "versionCode"),
         (min_sdk_text, "minSdk"),
@@ -1631,6 +1862,32 @@ def parse_bundletool_manifest(
         result["entryPointTopology"] = _android_entry_point_topology(
             _bundletool_manifest_node(application)
         )
+    if application_shell_required:
+        unexpected_namespaces = [
+            attribute
+            for attribute in application.attrib
+            if (
+                attribute.rsplit("}", 1)[-1]
+                in ANDROID_APPLICATION_SHELL_MANIFEST_RESOURCES
+                and not attribute.startswith(f"{{{ANDROID_XML_NAMESPACE}}}")
+            )
+        ]
+        if unexpected_namespaces:
+            raise ReleaseArchiveVerificationError(
+                "bundletool application-shell resources use an "
+                "unexpected namespace"
+            )
+        if (
+            application_shell_resources
+            != ANDROID_APPLICATION_SHELL_MANIFEST_RESOURCES
+        ):
+            raise ReleaseArchiveVerificationError(
+                "bundletool application-shell resources differ "
+                "from the V1 contract"
+            )
+        result["applicationShell"] = {
+            "manifestResources": dict(application_shell_resources),
+        }
     return result
 
 
@@ -1640,6 +1897,7 @@ def inspect_aab_manifest(
     *,
     backup_policy_required: bool = False,
     entry_point_topology_required: bool = False,
+    application_shell_required: bool = False,
 ) -> dict[str, object]:
     file_descriptor, temporary_name = tempfile.mkstemp(
         prefix="aetherlink-release-readback-bundle-",
@@ -1671,12 +1929,41 @@ def inspect_aab_manifest(
             entry_point_topology_required=(
                 entry_point_topology_required
             ),
+            application_shell_required=application_shell_required,
         )
-        if backup_policy_required:
+        if application_shell_required:
+            localized_string = parse_bundletool_localized_string(
+                run_bundletool(
+                    [
+                        "dump",
+                        "resources",
+                        f"--bundle={temporary_name}",
+                        "--resource=string/status_title",
+                        "--values",
+                    ],
+                    root=root,
+                )
+            )
+            parse_bundletool_language_split_contract(
+                run_bundletool(
+                    [
+                        "dump",
+                        "config",
+                        f"--bundle={temporary_name}",
+                    ],
+                    root=root,
+                )
+            )
+            direct_shell = parsed_manifest["applicationShell"]
+            assert isinstance(direct_shell, dict)
+            direct_shell["localizedString"] = localized_string
+        if backup_policy_required or application_shell_required:
             packaged_policy = inspect_aab_backup_policy(
                 Path(temporary_name),
                 root,
+                application_shell_required=application_shell_required,
             )
+        if backup_policy_required:
             expected_policy = {
                 "allowBackup": parsed_manifest["allowBackup"],
                 "dataExtractionRules": (
@@ -1686,11 +1973,36 @@ def inspect_aab_manifest(
                     parsed_manifest["fullBackupContent"]
                 ),
             }
-            if packaged_policy != expected_policy:
+            actual_policy = {
+                name: packaged_policy.get(name)
+                for name in expected_policy
+            }
+            if actual_policy != expected_policy:
                 raise ReleaseArchiveVerificationError(
                     "AAB universal-APK backup-policy readback differs "
                     "from the bundle manifest"
                 )
+        if application_shell_required:
+            packaged_shell = packaged_policy.get("applicationShell")
+            direct_shell = parsed_manifest["applicationShell"]
+            if (
+                type(packaged_shell) is not dict
+                or type(direct_shell) is not dict
+                or {
+                    "localizedString": packaged_shell.get(
+                        "localizedString"
+                    ),
+                    "manifestResources": packaged_shell.get(
+                        "manifestResources"
+                    ),
+                }
+                != direct_shell
+            ):
+                raise ReleaseArchiveVerificationError(
+                    "AAB direct application-shell readback differs "
+                    "from its universal APK"
+                )
+            parsed_manifest["applicationShell"] = packaged_shell
         return parsed_manifest
     finally:
         Path(temporary_name).unlink(missing_ok=True)
@@ -1751,7 +2063,13 @@ def create_ephemeral_aab_readback_keystore(
 def inspect_aab_backup_policy(
     aab_path: Path,
     root: Path = ROOT,
+    *,
+    application_shell_required: bool = False,
 ) -> dict[str, object]:
+    if type(application_shell_required) is not bool:
+        raise ReleaseArchiveVerificationError(
+            "AAB application-shell requirement must be a boolean"
+        )
     aapt2 = find_android_build_tool("aapt2", root)
     try:
         with tempfile.TemporaryDirectory(
@@ -1789,7 +2107,11 @@ def inspect_aab_backup_policy(
         raise ReleaseArchiveVerificationError(
             "cannot read bundletool universal-APK policy output"
         ) from error
-    return inspect_apk_backup_policy(universal_apk, root)
+    return inspect_apk_backup_policy(
+        universal_apk,
+        root,
+        application_shell_required=application_shell_required,
+    )
 
 
 def bundletool_version(root: Path = ROOT) -> str:
@@ -2010,16 +2332,246 @@ def parse_aapt2_apk_backup_policy(
     }
 
 
-def parse_aapt2_xml_resource_paths(
+def parse_aapt2_application_shell_manifest(
+    xmltree_output: str,
     resources_output: str,
 ) -> dict[str, str]:
+    lines = xmltree_output.splitlines()
+    manifest_entries: list[tuple[int, int]] = []
+    application_entries: list[tuple[int, int]] = []
+    for index, line in enumerate(lines):
+        manifest_match = re.fullmatch(
+            r"( *)E: manifest \(line=[1-9][0-9]*\)",
+            line,
+        )
+        if manifest_match is not None:
+            manifest_entries.append((index, len(manifest_match.group(1))))
+        application_match = re.fullmatch(
+            r"( *)E: application \(line=[1-9][0-9]*\)",
+            line,
+        )
+        if application_match is not None:
+            application_entries.append(
+                (index, len(application_match.group(1)))
+            )
+    if len(manifest_entries) != 1 or len(application_entries) != 1:
+        raise ReleaseArchiveVerificationError(
+            "aapt2 application-shell manifest must contain one "
+            "manifest and one application"
+        )
+    manifest_index, manifest_indent = manifest_entries[0]
+    application_index, application_indent = application_entries[0]
+    if (
+        application_index <= manifest_index
+        or application_indent != manifest_indent + 4
+    ):
+        raise ReleaseArchiveVerificationError(
+            "aapt2 application-shell application is not a direct child"
+        )
+
+    attribute_names = tuple(
+        ANDROID_APPLICATION_SHELL_MANIFEST_RESOURCES
+    )
+    attribute_pattern = re.compile(
+        r"^"
+        + re.escape(" " * (application_indent + 2))
+        + r"A: "
+        + re.escape(ANDROID_XML_NAMESPACE)
+        + r":("
+        + "|".join(re.escape(name) for name in attribute_names)
+        + r")\(0x[0-9a-f]{8}\)=(@0x[0-9a-f]{8})$"
+    )
+    selected_attribute_pattern = re.compile(
+        r"^"
+        + re.escape(" " * (application_indent + 2))
+        + r"A: (?:(?:"
+        + re.escape(ANDROID_XML_NAMESPACE)
+        + r"):)?("
+        + "|".join(re.escape(name) for name in attribute_names)
+        + r")(?:\(0x[0-9a-f]{8}\))?=.*$"
+    )
+    attributes: dict[str, list[str]] = {}
+    for line in lines[application_index + 1 :]:
+        element = re.match(r"^( *)E: ", line)
+        if (
+            element is not None
+            and len(element.group(1)) <= application_indent
+        ):
+            break
+        match = attribute_pattern.fullmatch(line)
+        if match is not None:
+            attributes.setdefault(match.group(1), []).append(match.group(2))
+        elif selected_attribute_pattern.fullmatch(line) is not None:
+            raise ReleaseArchiveVerificationError(
+                "aapt2 application-shell attribute is malformed "
+                "or unqualified"
+            )
+    if (
+        set(attributes) != set(attribute_names)
+        or any(len(values) != 1 for values in attributes.values())
+    ):
+        raise ReleaseArchiveVerificationError(
+            "aapt2 application-shell attributes differ from the V1 contract"
+        )
+
+    resource_pattern = re.compile(
+        r"^\s*resource (0x[0-9a-f]{8}) "
+        r"([a-z][a-z0-9_]*)/([A-Za-z][A-Za-z0-9_]*)$"
+    )
+    resources_by_id: dict[str, str] = {}
+    ids_by_resource: dict[str, list[str]] = {}
+    for line in resources_output.splitlines():
+        match = resource_pattern.fullmatch(line)
+        if match is None:
+            continue
+        resource_id = match.group(1)
+        resource = f"{match.group(2)}/{match.group(3)}"
+        if resource_id in resources_by_id:
+            raise ReleaseArchiveVerificationError(
+                "aapt2 application-shell resources contain a duplicate ID"
+            )
+        resources_by_id[resource_id] = resource
+        ids_by_resource.setdefault(resource, []).append(resource_id)
+
+    resolved: dict[str, str] = {}
+    for attribute_name, expected_reference in (
+        ANDROID_APPLICATION_SHELL_MANIFEST_RESOURCES.items()
+    ):
+        expected_resource = expected_reference.removeprefix("@")
+        if len(ids_by_resource.get(expected_resource, [])) != 1:
+            raise ReleaseArchiveVerificationError(
+                "aapt2 application-shell resource name is not unique"
+            )
+        resource_id = attributes[attribute_name][0].removeprefix("@")
+        if resources_by_id.get(resource_id) != expected_resource:
+            raise ReleaseArchiveVerificationError(
+                "aapt2 application-shell resource mapping differs "
+                "from the V1 contract"
+            )
+        resolved[attribute_name] = expected_reference
+    return resolved
+
+
+def parse_aapt2_locale_config(output: str) -> list[str]:
+    lines = output.splitlines()
+    if (
+        len(lines) != 2 + 2 * len(ANDROID_LOCALE_CONFIG_LOCALES)
+        or re.fullmatch(
+            r"N: android="
+            + re.escape(ANDROID_XML_NAMESPACE)
+            + r" \(line=[1-9][0-9]*\)",
+            lines[0] if lines else "",
+        )
+        is None
+        or re.fullmatch(
+            r"  E: locale-config \(line=[1-9][0-9]*\)",
+            lines[1] if len(lines) > 1 else "",
+        )
+        is None
+    ):
+        raise ReleaseArchiveVerificationError(
+            "aapt2 localeConfig XML has an unexpected document shape"
+        )
+    locale_pattern = re.compile(
+        r'        A: '
+        + re.escape(ANDROID_XML_NAMESPACE)
+        + r':name\(0x[0-9a-f]{8}\)="([^"]+)" '
+        r'\(Raw: "([^"]+)"\)'
+    )
+    locales: list[str] = []
+    for offset in range(2, len(lines), 2):
+        if re.fullmatch(
+            r"      E: locale \(line=[1-9][0-9]*\)",
+            lines[offset],
+        ) is None:
+            raise ReleaseArchiveVerificationError(
+                "aapt2 localeConfig contains an unexpected child"
+            )
+        match = locale_pattern.fullmatch(lines[offset + 1])
+        if match is None or match.group(1) != match.group(2):
+            raise ReleaseArchiveVerificationError(
+                "aapt2 localeConfig locale name is invalid"
+            )
+        locales.append(match.group(1))
+    if locales != list(ANDROID_LOCALE_CONFIG_LOCALES):
+        raise ReleaseArchiveVerificationError(
+            "aapt2 localeConfig locales differ from the V1 contract"
+        )
+    return locales
+
+
+def parse_aapt2_localized_string(output: str) -> dict[str, object]:
+    lines = output.splitlines()
+    resource_pattern = re.compile(
+        r"^( *)resource 0x[0-9a-f]{8} string/status_title$"
+    )
+    entries = [
+        (index, len(match.group(1)))
+        for index, line in enumerate(lines)
+        if (match := resource_pattern.fullmatch(line)) is not None
+    ]
+    if len(entries) != 1:
+        raise ReleaseArchiveVerificationError(
+            "aapt2 localized-string resource must appear exactly once"
+        )
+    resource_index, resource_indent = entries[0]
+    config_pattern = re.compile(
+        r'^( *)\(([^)]*)\) "([^"\r\n]*)"$'
+    )
+    values: dict[str, str] = {}
+    config_names = {
+        "": "default",
+        "en": "en",
+        "fr": "fr",
+        "ja": "ja",
+        "ko": "ko",
+        "zh-rCN": "zh-CN",
+    }
+    for line in lines[resource_index + 1 :]:
+        if not line:
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent <= resource_indent:
+            break
+        match = config_pattern.fullmatch(line)
+        if match is None:
+            raise ReleaseArchiveVerificationError(
+                "aapt2 localized-string config has an unsupported shape"
+            )
+        canonical_config = config_names.get(match.group(2))
+        if canonical_config is None or canonical_config in values:
+            raise ReleaseArchiveVerificationError(
+                "aapt2 localized-string configs differ from the V1 contract"
+            )
+        values[canonical_config] = match.group(3)
+    if values != ANDROID_LOCALIZED_STRING_VALUES:
+        raise ReleaseArchiveVerificationError(
+            "aapt2 localized-string payload differs from the V1 contract"
+        )
+    return {
+        "resource": ANDROID_LOCALIZED_STRING_RESOURCE,
+        "values": values,
+    }
+
+
+def parse_aapt2_xml_resource_paths(
+    resources_output: str,
+    *,
+    application_shell_required: bool = False,
+) -> dict[str, str]:
+    if type(application_shell_required) is not bool:
+        raise ReleaseArchiveVerificationError(
+            "APK application-shell resource-path requirement must be a boolean"
+        )
     expected_names = {"backup_rules", "data_extraction_rules"}
+    if application_shell_required:
+        expected_names.add("locales_config")
     resources: dict[str, list[str]] = {}
     active_name: str | None = None
     active_indent = -1
     resource_pattern = re.compile(
         r"^( *)resource 0x[0-9a-f]{8} "
-        r"xml/(backup_rules|data_extraction_rules)$"
+        r"xml/(backup_rules|data_extraction_rules|locales_config)$"
     )
     file_pattern = re.compile(
         r"^( *)\(\) \(file\) "
@@ -2028,11 +2580,16 @@ def parse_aapt2_xml_resource_paths(
     for line in resources_output.splitlines():
         resource_match = resource_pattern.fullmatch(line)
         if resource_match is not None:
-            active_name = resource_match.group(2)
+            selected_name = resource_match.group(2)
+            if selected_name not in expected_names:
+                active_name = None
+                active_indent = -1
+                continue
+            active_name = selected_name
             active_indent = len(resource_match.group(1))
             if active_name in resources:
                 raise ReleaseArchiveVerificationError(
-                    "aapt2 APK resources contain a duplicate backup-policy "
+                    "aapt2 APK resources contain a duplicate selected XML "
                     "resource"
                 )
             resources[active_name] = []
@@ -2056,17 +2613,17 @@ def parse_aapt2_xml_resource_paths(
 
     if set(resources) != expected_names:
         raise ReleaseArchiveVerificationError(
-            "aapt2 APK resources omit a backup-policy file path"
+            "aapt2 APK resources omit a selected XML file path"
         )
     if any(len(paths) != 1 for paths in resources.values()):
         raise ReleaseArchiveVerificationError(
-            "aapt2 APK backup-policy resources must each resolve to one "
+            "aapt2 APK selected XML resources must each resolve to one "
             "default XML file"
         )
     resolved = {name: paths[0] for name, paths in resources.items()}
     if len(set(resolved.values())) != len(resolved):
         raise ReleaseArchiveVerificationError(
-            "aapt2 APK backup-policy resources share one compiled XML file"
+            "aapt2 APK selected XML resources share one compiled XML file"
         )
     return resolved
 
@@ -2221,10 +2778,15 @@ def inspect_apk_backup_policy(
     root: Path = ROOT,
     *,
     entry_point_topology_required: bool = False,
+    application_shell_required: bool = False,
 ) -> dict[str, object]:
     if type(entry_point_topology_required) is not bool:
         raise ReleaseArchiveVerificationError(
             "APK entry-point topology requirement must be a boolean"
+        )
+    if type(application_shell_required) is not bool:
+        raise ReleaseArchiveVerificationError(
+            "APK application-shell requirement must be a boolean"
         )
     aapt2 = find_android_build_tool("aapt2", root)
     file_descriptor, temporary_name = tempfile.mkstemp(
@@ -2269,7 +2831,8 @@ def inspect_apk_backup_policy(
             root,
         )
         resource_paths = parse_aapt2_xml_resource_paths(
-            resources_with_values
+            resources_with_values,
+            application_shell_required=application_shell_required,
         )
         backup_rules = run_aapt2_dump(
             [
@@ -2297,6 +2860,32 @@ def inspect_apk_backup_policy(
             backup_rules,
             data_extraction_rules,
         )
+        if application_shell_required:
+            locale_config = run_aapt2_dump(
+                [
+                    str(aapt2),
+                    "dump",
+                    "xmltree",
+                    "--file",
+                    resource_paths["locales_config"],
+                    temporary_name,
+                ],
+                root,
+            )
+            manifest_policy["applicationShell"] = {
+                "localeConfigLocales": parse_aapt2_locale_config(
+                    locale_config
+                ),
+                "localizedString": parse_aapt2_localized_string(
+                    resources_with_values
+                ),
+                "manifestResources": (
+                    parse_aapt2_application_shell_manifest(
+                        xmltree,
+                        resources,
+                    )
+                ),
+            }
         if entry_point_topology_required:
             manifest_policy["entryPointTopology"] = (
                 parse_aapt2_entry_point_topology(xmltree)
@@ -2831,12 +3420,20 @@ def verify_android_relationships(
     entry_point_topology_required = (
         build_number >= ANDROID_ENTRY_POINT_TOPOLOGY_BUILD
     )
+    application_shell_required = (
+        build_number >= ANDROID_APPLICATION_SHELL_BUILD
+    )
     entry_point_topology: dict[str, object] | None = None
     if entry_point_topology_required:
         entry_point_topology = (
             verify_android_entry_point_topology_claim(
                 android.get("entryPointTopology")
             )
+        )
+    application_shell: dict[str, object] | None = None
+    if application_shell_required:
+        application_shell = verify_android_application_shell_claim(
+            android.get("applicationShell")
         )
     expected_verified_fields = [
         *BASE_BUNDLE_MANIFEST_VERIFIED_FIELDS,
@@ -2850,10 +3447,20 @@ def verify_android_relationships(
             if entry_point_topology_required
             else ()
         ),
+        *(
+            APPLICATION_SHELL_MANIFEST_VERIFIED_FIELDS
+            if application_shell_required
+            else ()
+        ),
     ]
     if bundle_manifest_readback != {
         "member": "android/bundle/app-release.aab",
-        "tool": "bundletool dump manifest",
+        "tool": (
+            "bundletool dump manifest + resources + config + "
+            "universal APK readback"
+            if application_shell_required
+            else "bundletool dump manifest"
+        ),
         "verifiedFields": expected_verified_fields,
     }:
         raise ReleaseArchiveVerificationError(
@@ -2872,12 +3479,21 @@ def verify_android_relationships(
         )
         if apk_manifest_readback != {
             "member": "android/apk/app-release-unsigned.apk",
-            "tool": "aapt2 dump xmltree + resources --no-values",
+            "tool": (
+                "aapt2 dump xmltree + resources"
+                if application_shell_required
+                else "aapt2 dump xmltree + resources --no-values"
+            ),
             "verifiedFields": [
                 *BACKUP_POLICY_APK_MANIFEST_VERIFIED_FIELDS,
                 *(
                     ENTRY_POINT_TOPOLOGY_MANIFEST_VERIFIED_FIELDS
                     if entry_point_topology_required
+                    else ()
+                ),
+                *(
+                    APPLICATION_SHELL_MANIFEST_VERIFIED_FIELDS
+                    if application_shell_required
                     else ()
                 ),
             ],
@@ -2943,6 +3559,7 @@ def verify_android_relationships(
             entry_point_topology_required=(
                 entry_point_topology_required
             ),
+            application_shell_required=application_shell_required,
         )
         expected_apk_manifest: dict[str, object] = {
             "allowBackup": False,
@@ -2953,6 +3570,8 @@ def verify_android_relationships(
             expected_apk_manifest["entryPointTopology"] = (
                 entry_point_topology
             )
+        if application_shell_required:
+            expected_apk_manifest["applicationShell"] = application_shell
         if apk_backup_policy != expected_apk_manifest:
             raise ReleaseArchiveVerificationError(
                 "independent archived APK manifest differs "
@@ -2965,6 +3584,7 @@ def verify_android_relationships(
         aab,
         backup_policy_required=backup_policy_required,
         entry_point_topology_required=entry_point_topology_required,
+        application_shell_required=application_shell_required,
     )
     expected_aab_manifest = {
         "applicationId": android["applicationId"],
@@ -2985,6 +3605,8 @@ def verify_android_relationships(
         expected_aab_manifest["entryPointTopology"] = (
             entry_point_topology
         )
+    if application_shell_required:
+        expected_aab_manifest["applicationShell"] = application_shell
     if aab_manifest != expected_aab_manifest:
         raise ReleaseArchiveVerificationError(
             "independent archived AAB manifest differs from release metadata"

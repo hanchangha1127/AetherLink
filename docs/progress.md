@@ -4,11 +4,100 @@ Last updated: 2026-07-30 KST.
 
 This document records what has been implemented so far and what should happen next. It is intentionally broader than the original v0.1 MVP because recent work has moved the prototype toward a more complete product shape.
 
-## 2026-07-30 Android Build 23 Entry-Point Topology Contract
+## 2026-07-30 macOS Bonjour Publication Readiness And Recovery
 
-- Scope: add a forward release-quality gate for Android's compiled functional
-  entry points without changing the app manifest, release ledger, or any
-  immutable archive.
+- Scope: continue the non-security local Runtime lifecycle after listener
+  readiness without changing pairing payloads, trust policy, cryptography,
+  permissions, release artifacts, or Git history.
+- Root cause: `BonjourAdvertiser.start()` called `NetService.publish()` without
+  observing `netServiceDidPublish`, `didNotPublish`, or `netServiceDidStop`.
+  The manager therefore reported `.listening` and the app started downstream
+  route work before local discovery was actually published.
+- Transport result: `BonjourAdvertiser` now exposes
+  `publishing -> published | failed` plus `stopped`, binds callbacks to the
+  current service, and fails a publication that remains pending for five
+  seconds. Replaced-service callbacks cannot stop or fail the current service.
+  Reentrant and concurrent lifecycle operations serialize publication, and
+  only the still-current publishing generation can schedule or invoke publish.
+  A timeout racing confirmed publication cannot overwrite `.published`.
+  User status handlers run after the lifecycle lock is released, preventing a
+  handler that coordinates cross-queue stop work from waiting on its own lock.
+- Runtime result: `MacRuntimeConnectionManager` keeps the existing neutral
+  `.starting(port)` result while publication is pending and forwards
+  `.listening(port)` only after confirmed publication. Failure, timeout, and
+  unexpected late stop clear listener and advertisement ownership, preserve
+  same-port Retry, and ignore stale success/failure callbacks. Refresh during
+  publication restarts only Bonjour and uses the latest metadata. If an
+  asynchronously ready listener observes an immediate advertisement failure,
+  the pre-cleanup status handler still forwards that failure instead of leaving
+  the app in `.starting`.
+- App and development-server result: pairing remains unavailable until
+  publication succeeds. `CompanionAppModel` exposes failure and same-port retry
+  without scheduling downstream work from false readiness. `RuntimeDevServer`
+  prints Bonjour readiness and permits optional development pairing only after
+  publication, while initial/late publication failure terminates the process.
+  Late listener failure marks the advertisement lifecycle terminal before
+  clearing and stopping it, so a captured publish callback cannot emit stale
+  advertising or development-pairing output.
+- Verification: all seven `BonjourAdvertiserTests`, all 39
+  `MacRuntimeConnectionManagerTests`, and two focused AppModel publication
+  regressions pass. The exact non-security product CI selector passes 180 tests;
+  its workflow byte SHA-256 is
+  `2b37513e5a8e6ef92220abb8bad47f433fb75f4bf908bea72a559921dab1b8ac`
+  and parsed-semantic SHA-256 is
+  `b19d82f91cf167ee7915a16fdc63caa9a8c5814b94d89c9586f9d5f4137633f9`.
+- Boundary: this is deterministic same-process/no-device publication lifecycle
+  evidence. It does not prove a discovery client on a LAN, physical pairing,
+  external networking, performance, signing, packaging, deployment, security,
+  or production release readiness.
+
+## 2026-07-30 macOS Listener Readiness And Same-Process Retry
+
+- Scope: correct the non-security local Runtime lifecycle without changing
+  pairing payloads, trust policy, cryptography, permissions, or any release
+  artifact.
+- Root cause: `LocalPeerServer` published `.listening` before
+  `NWListener.start()` reached the operating system's `.ready` state. A real
+  occupied loopback port therefore appeared ready long enough for the manager
+  to start Bonjour and for the app model to schedule route work.
+- Runtime result: the listener now reports
+  `starting(port) -> listening(port) | failed(message)`. Ready, waiting,
+  failure, timeout, stop, and replacement callbacks are generation-fenced.
+  `MacRuntimeConnectionManager` retains the latest pending advertisement
+  metadata but starts Bonjour exactly once and only after `.listening`.
+  Starting refreshes update that metadata without stopping the listener.
+- App and development-server result: `CompanionAppModel` carries one
+  start-attempt ID, defers route allocation, relay startup, and restored-pair
+  work until advertising begins, and ignores stale attempt callbacks. Status
+  shows a localized neutral “Starting AetherLink Runtime” state in all five
+  locales, disables the duplicate Start action, and prevents local pairing from
+  creating a QR while startup is pending. The Pairing screen uses the neutral
+  readiness notice in that state. Replacing an advertising port completes for
+  both asynchronous and synchronous-ready transports; an unexpected callback
+  port fails the attempt instead of leaving it pending. `RuntimeDevServer` also waits for
+  a terminal initial listener result before advertising, printing readiness, or
+  emitting follow-on development work, and terminates if the ready listener
+  later fails or stops.
+- Real loopback evidence: a regression first observed `.listening` on an
+  actually occupied `127.0.0.1` port. The final Transport and manager tests
+  observe failure with zero advertisements, release the held socket, retry the
+  same port with the same server/manager instances, and observe one
+  advertisement after readiness.
+- Verification: all seven `LocalPeerServerTests`, all 34
+  `MacRuntimeConnectionManagerTests`, seven focused app-model lifecycle tests,
+  the starting Pairing-notice regression, the five-locale starting-action test,
+  and the compact accessibility render pass. At that listener-only checkpoint,
+  the exact product CI selector passed 166 tests. The product CI
+  contract/self-test and macOS localization parity checks also pass.
+- Boundary: this is same-process local-loopback lifecycle evidence. It is not
+  an external-network, physical-device, Bonjour-discovery-client, performance,
+  signing, packaging, deployment, security, or production-release claim.
+
+## 2026-07-30 Android Build 23 Entry-Point And Application-Shell Contract
+
+- Scope: add forward release-quality gates for Android's compiled functional
+  entry points and application shell without changing the app manifest, release
+  ledger, or any immutable archive.
 - Release continuity: Local V1 Build 22 Qualification remains current.
   Build 22 is the current local qualification record; Builds 1 through 21 are
   immutable historical records. Both v4 two-root runs remain bound to
@@ -18,18 +107,29 @@ This document records what has been implemented so far and what should happen ne
   Its four intent filters must be the launcher, `aetherlink://pair` deep link,
   single-item share, and multiple-item share. Both share filters must expose
   the same canonical set of 44 MIME types.
+- Application-shell contract: the compiled manifest must resolve the exact
+  `@string/app_name`, `@mipmap/ic_launcher`,
+  `@mipmap/ic_launcher_round`, `@style/AppTheme`, and
+  `@xml/locales_config` references. The compiled locale-config body preserves
+  `en`, `ko`, `ja`, `zh-CN`, `fr` in that order, and the default plus all five
+  localized `status_title` payloads must match the fixed V1 copy.
 - Independent readback: the archive builder reads the APK's compiled
-  `aapt2 xmltree` and the AAB's bundletool manifest, requires them to agree,
-  and records one normalized `entryPointTopology` claim. The archive checker
-  independently parses both archived artifacts, validates the claim with
-  closed keys and exact scalar/container types, and requires
-  `expected == APK == AAB == archived claim`.
-- Regression result: 52 release-archive tests pass. Mutation coverage rejects
+  `aapt2` manifest/resource/XML views and the AAB's bundletool
+  manifest/resource/config views. It also derives one universal APK from that
+  AAB, requires language splitting to be disabled, and records normalized
+  `entryPointTopology` and `applicationShell` claims. The archive checker
+  independently repeats the same observations, validates closed keys and exact
+  scalar/container types, and requires claim parity across the standalone APK,
+  the composite direct-plus-derived AAB observation, and archive metadata.
+- Regression result: 59 release-archive tests pass. Mutation coverage rejects
   missing, duplicate, unqualified, or changed activity attributes; altered
   actions, categories, deep-link data, or MIME sets; aliases and extra
-  MainActivity filters; decoded/raw divergence; noncanonical ordering claims; and
-  boolean/integer or list/tuple type confusion. APK inspection reuses its one
-  compiled-manifest dump rather than starting another tool process.
+  MainActivity filters; app-shell resource ID/type/name drift; locale-config
+  structure/order drift; missing, extra, duplicated, or changed localized
+  payloads; enabled/ambiguous language splitting; direct/derived AAB drift;
+  decoded/raw divergence; noncanonical ordering claims; and boolean/integer or
+  list/tuple type confusion. The bounded Android product CI lane now runs this
+  complete contract module before Gradle compilation.
 - Scope precision: unrelated activities merged from dependencies are accepted
   and excluded from `entryPointTopology`; both APK and AAB fixtures cover that
   compatibility. This claim closes MainActivity's functional entry points, not
@@ -37,12 +137,17 @@ This document records what has been implemented so far and what should happen ne
 - Compiled-format observation: the locally present APK and AAB are historical
   Build 21 outputs, not current release evidence. Both independent parsers
   read the same four-filter topology and the same 44-MIME share set from those
-  compiled artifacts.
+  compiled artifacts. The standalone APK reads all five application resources,
+  locale-config body/order, and localized payload. Direct AAB readback confirms
+  the five symbolic references, localized payload, and disabled language
+  splitting; its derived universal APK confirms the locale-config body/order
+  and completes an equal composite application-shell claim.
 - Boundary: this is a Build 23-forward packaging contract, not a Build 23
-  release. Builds 1 through 22 remain unchanged and the immutable Build 22
-  archive still passes archive-only readback. No ledger bump, archive rewrite,
-  device run, signing, publication, permission analysis, or network claim is
-  part of this slice.
+  release. Builds 1 through 22 remain unchanged. Independent readback passes
+  preserved Builds 1 through 21 in historical mode and immutable Build 22 in
+  archive-only mode. No ledger bump, archive rewrite, device run, visual
+  launcher/theme rendering, signing, publication, permission analysis, or
+  network claim is part of this slice.
 
 ## 2026-07-30 G6 macOS Package Isolation And Uninstall/Reinstall
 
@@ -115,7 +220,8 @@ This document records what has been implemented so far and what should happen ne
   instead of repeating with every countdown tick.
   Decorative Model Download icons are hidden from the accessibility tree.
 - Verification: eight new focused policy/announcement/render regressions pass.
-  The exact product CI selector passes 159 tests with zero failures. The
+  The historical local product CI checkpoint passed 159 tests with zero
+  failures. The
   complete accessibility run passes 186 tests with zero failures: 153
   localization/state tests, eight announcement tests, and 25 render tests.
   Debug and Release AetherLink builds pass, as do the strengthened focus-wiring
@@ -174,8 +280,8 @@ This document records what has been implemented so far and what should happen ne
   advertiser; the second succeeds with exactly one route allocation; the third
   is idempotently rejected. Ten focused Runtime lifecycle regressions, two
   Status action regressions, the five-language compact accessibility render,
-  macOS localization parity, and the exact 159-test CI Swift selector pass with
-  zero skips or failures.
+  macOS localization parity, and the exact 166-test CI Swift selector at that
+  listener-only checkpoint passed with zero skips or failures.
 - Boundary: this is deterministic no-device evidence, not a live port-conflict,
   physical-device, external-provider, signing, deployment, security, or Git
   publication claim. No staging, commit, or push was performed.
@@ -220,9 +326,9 @@ This document records what has been implemented so far and what should happen ne
   command uses its isolated mode and returns before the paused mixed security
   checks. Its SHA-256 byte pin
   is
-  `7f24adee31748522469daee3c4be17fd2d474dde3b9edcae79e95f3cc362571d`;
+  `2b37513e5a8e6ef92220abb8bad47f433fb75f4bf908bea72a559921dab1b8ac`;
   the parsed-semantic fingerprint is
-  `843b003fb1fb16c60003ff920db4a95ec23e24b96dc1eee2e453717bbc529384`.
+  `b19d82f91cf167ee7915a16fdc63caa9a8c5814b94d89c9586f9d5f4137633f9`.
   The built-in suite checks the byte pin once, then disables only that pin for
   each controlled mutation and requires its expected semantic diagnostic.
   Trigger, permission-map, job-condition, runner/Xcode, action, selector,
@@ -234,10 +340,11 @@ This document records what has been implemented so far and what should happen ne
   hash mismatch.
 - Local verification: the contract and self-test pass under Python 3.9, Ruby
   parses the workflow into exactly two jobs, and all four workflow static
-  product checks pass. The exact Swift lane passes 159 selected tests with zero
-  skips or failures, including ten direct Runtime lifecycle regressions, two
-  Status action regressions, and the compact accessibility render regression,
-  plus Debug and Release product builds.
+  product checks pass. The current exact Swift lane passes 180 selected tests
+  with zero skips or failures, including direct Runtime listener and Bonjour
+  publication lifecycle regressions, two Status action regressions, and the
+  compact accessibility render regression, plus Debug and Release product
+  builds.
   The exact Android lane passes seven selected tests with zero skips, failures,
   or errors. Its new single-method selector directly covers changed-session
   latest-row reset, deferred loading completion, saved-state restoration, and
@@ -246,9 +353,12 @@ This document records what has been implemented so far and what should happen ne
 - Hosted baseline: GitHub Actions run `30525374687` completed successfully for
   both jobs at commit
   `0f59c757d745d0b95c37c9b93aec8d354bcfef9f` on 2026-07-30. This proves that
-  bounded baseline on the hosted runners, not the current uncommitted
-  listener-recovery, reduced-motion, visual/focus accessibility, product-copy,
-  selector, or checker changes.
+  bounded 159-test baseline on the hosted runners. It predates commit
+  `53f45d4e9909dd77520a450170eb87c7d260ea89`, which contains the first
+  listener-readiness and accessibility/product-copy expansion, and does not
+  cover the current unstaged wrong-port/port-replacement, startup pairing gate,
+  development-server late-failure, Bonjour publication readiness, selector,
+  checker, or documentation follow-ups.
 - Boundary: current local parity does not prove a clean hosted run for the
   worktree changes, required-check configuration, canonical G7 completion, a
   physical device, signing, publication, deployment, external networking, or production
@@ -257,8 +367,9 @@ This document records what has been implemented so far and what should happen ne
   the executed checks, not a physically separated test-source target. The
   Android job also relies on the pinned hosted image already containing SDK 36
   and Build Tools 36.0.0 and uses normal wrapper/repository dependency
-  downloads. Clean-runner and dependency-byte evidence remain unclaimed. No
-  staging, commit, or push was performed.
+  downloads. Clean-runner and dependency-byte evidence remain unclaimed. The
+  current follow-ups remain unstaged; this editing pass performed no staging,
+  commit, or push.
 
 ## 2026-07-30 Qualified Provider Catalog Isolation
 

@@ -1,9 +1,46 @@
+import CompanionCore
+import Transport
 import XCTest
 @testable import LocalAgentBridge
 
 final class PairingRouteNoticeTests: XCTestCase {
+    @MainActor
+    func testRuntimeStartingUsesNeutralReadinessNotice() throws {
+        let suiteName = "PairingRouteNoticeTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let model = CompanionAppModel(
+            peerServer: PairingNoticeStartingTransport(),
+            advertiser: PairingNoticeAdvertiser(),
+            userDefaults: defaults,
+            runtimeRouteHostProvider: { "192.168.1.44" },
+            allowsLocalDiagnosticPairingFromUserInterface: true
+        )
+        defer { model.stop() }
+
+        XCTAssertTrue(model.requestStartForUserInterface())
+        XCTAssertEqual(
+            model.transportState.state,
+            CompanionTransportStatus.State.starting
+        )
+        XCTAssertFalse(model.canRequestPairingForUserInterface)
+
+        let notice = PairingView(model: model).pairingRouteNotice
+
+        XCTAssertEqual(
+            notice.text,
+            NSLocalizedString("AetherLink Runtime is starting.", comment: "")
+        )
+        XCTAssertEqual(notice.systemImage, "hourglass")
+        XCTAssertEqual(notice.tone, StatusTone.neutral)
+    }
+
     func testRepresentativePairingRouteStatesUseExactNoticeText() {
         withStoredAppLanguage("en") {
+            XCTAssertEqual(
+                makePairingRouteNotice(for: .runtimeStarting).text,
+                "AetherLink Runtime is starting."
+            )
             XCTAssertEqual(
                 makePairingRouteNotice(for: .preparing).text,
                 "Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready."
@@ -88,4 +125,24 @@ final class PairingRouteNoticeTests: XCTestCase {
         }
         assertions()
     }
+}
+
+private final class PairingNoticeStartingTransport: RuntimeTransport, RuntimeStatusReporting {
+    var onStatusChange: (@Sendable (PeerServerStatus) -> Void)?
+    private(set) var status = PeerServerStatus.stopped
+
+    func start(port: UInt16, onMessage: @escaping LocalPeerMessageHandler) {
+        status = .starting(port: port)
+        onStatusChange?(status)
+    }
+
+    func stop() {
+        status = .stopped
+        onStatusChange?(status)
+    }
+}
+
+private final class PairingNoticeAdvertiser: RuntimeAdvertiser {
+    func start(port: Int32, metadata: RuntimeAdvertisementMetadata) {}
+    func stop() {}
 }

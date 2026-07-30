@@ -170,7 +170,10 @@ struct PairingView: View {
         }
     }
 
-    private var pairingRouteNotice: PairingRouteNotice {
+    var pairingRouteNotice: PairingRouteNotice {
+        if model.transportState.state == .starting {
+            return makePairingRouteNotice(for: .runtimeStarting)
+        }
         if model.isRemoteRoutePreparationInFlight {
             return makePairingRouteNotice(for: .preparing)
         }
@@ -655,6 +658,7 @@ func pairingQRRenewalActionIsProminent(
 }
 
 enum PairingRouteNoticeState {
+    case runtimeStarting
     case preparing
     case localDiagnostic(String)
     case issue(String)
@@ -676,6 +680,12 @@ struct PairingRouteNotice {
 
 func makePairingRouteNotice(for state: PairingRouteNoticeState) -> PairingRouteNotice {
     switch state {
+    case .runtimeStarting:
+        return PairingRouteNotice(
+            text: NSLocalizedString("AetherLink Runtime is starting.", comment: ""),
+            systemImage: "hourglass",
+            tone: .neutral
+        )
     case .preparing:
         return PairingRouteNotice(
             text: NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: ""),

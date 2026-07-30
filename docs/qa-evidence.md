@@ -4,7 +4,96 @@ Last updated: 2026-07-30 KST.
 
 This document separates current verification evidence from historical captures.
 
-## 2026-07-30 Android Build 23 Entry-Point Topology Checklist
+## 2026-07-30 macOS Bonjour Publication Lifecycle Checklist
+
+- [x] The pre-fix source path called `NetService.publish()` but did not implement
+  publish-success, publish-failure, or service-stop delegate callbacks. The
+  manager treated the method call itself as local-discovery readiness.
+- [x] `RuntimeAdvertisementStatusReporting` exposes exact `publishing`,
+  `published`, `failed`, and `stopped` states. `BonjourAdvertiser` keeps those
+  states and its callback under a lock and binds timeout/failure handling to the
+  current service generation.
+- [x] Publication has a five-second bound. Timeout and `didNotPublish` stop the
+  exact current service and report a stable failure; a stale service callback
+  cannot stop or change its replacement. A timeout that races confirmed
+  publication cannot overwrite `.published`.
+- [x] Reentrant and concurrent advertiser lifecycle operations are serialized.
+  A replacement requested from the `publishing` callback stops the old service
+  and invokes publish only for the replacement generation.
+- [x] Status handlers are invoked after releasing the lifecycle lock. A
+  deterministic regression has the published handler wait for a stop on
+  another queue and proves that stop completes without lock inversion.
+- [x] The manager maps publication pending to the existing neutral
+  `.starting(port)` state and maps only confirmed publication to
+  `.listening(port)`. Publication failure, timeout, or an unexpected late stop
+  releases local ownership and permits a same-port retry.
+- [x] A publication refresh replaces only the current advertiser, retains the
+  listener, publishes the latest metadata, and ignores the prior service's late
+  success.
+- [x] An immediate advertisement failure observed after asynchronous listener
+  readiness is forwarded through the pre-cleanup handler, so the UI cannot
+  remain stuck in the neutral starting state.
+- [x] Pairing remains unavailable while Bonjour is pending. Publication success
+  enables the existing local pairing path; publication failure reaches the
+  failed Runtime state and a same-port UI retry can succeed.
+- [x] `RuntimeDevServer` no longer prints Bonjour readiness or emits optional
+  development pairing before publication. Initial timeout/failure and a late
+  service stop terminate instead of leaving false-ready output. Late listener
+  failure claims the shared terminal advertisement gate before clearing and
+  stopping the advertiser, rejecting an already captured publish callback.
+- [x] All seven `BonjourAdvertiserTests`, all 39
+  `MacRuntimeConnectionManagerTests`, and the two focused AppModel publication
+  tests pass. The exact current product selector passes 180 tests with zero
+  failures or skips. CI contract and mutation self-test pass with workflow byte
+  SHA-256
+  `2b37513e5a8e6ef92220abb8bad47f433fb75f4bf908bea72a559921dab1b8ac`
+  and parsed-semantic SHA-256
+  `b19d82f91cf167ee7915a16fdc63caa9a8c5814b94d89c9586f9d5f4137633f9`.
+- [ ] No live LAN discovery client, external-network peer, physical device,
+  performance measurement, signing, packaging, deployment, security, or
+  production-release claim is made.
+
+## 2026-07-30 macOS Listener Readiness And Retry Checklist
+
+- [x] The pre-fix real-loopback regression reproduced the defect: a port held
+  by a live TCP socket was reported as `.listening` before Network.framework
+  returned its failure.
+- [x] `LocalPeerServer` exposes an explicit `.starting(port)` state and
+  publishes `.listening(port)` only from the current listener generation's
+  `.ready` callback.
+- [x] A fixed-port `.waiting` or `.failed` state and the bounded asynchronous
+  start timeout clean up the listener and publish failure. A timeout cannot
+  fail a generation that has already become ready.
+- [x] The manager retains local ownership and the latest advertisement
+  metadata while starting, starts Bonjour exactly once after readiness, and
+  releases ownership on failure. Wrong-port and superseded callbacks cannot
+  activate or stop the replacement.
+- [x] The concrete manager regression holds a real `127.0.0.1` port, observes
+  failure and zero advertiser starts, releases the port, then succeeds on the
+  same port with the same `LocalPeerServer` and manager instances and exactly
+  one advertiser start.
+- [x] `CompanionAppModel` exposes a localized neutral starting state, rejects a
+  duplicate same-port Start request, defers route allocation until ready, and
+  permits same-port retry after failure while ignoring the first attempt's
+  stale callback. Pairing entry points cannot create a QR while starting, the
+  Pairing screen shows a neutral readiness notice, and port replacement
+  completes for asynchronous and synchronous-ready transports.
+- [x] The Status primary action is disabled while starting. English, Korean,
+  Japanese, Simplified Chinese, and French title/hint coverage and compact
+  accessibility rendering pass.
+- [x] `RuntimeDevServer` waits for listener readiness before Bonjour,
+  listening output, relay startup, or development pairing work, exits on an
+  initial listener failure or timeout, and terminates if a ready listener later
+  fails or stops.
+- [x] Seven Transport tests, 34 manager tests, seven focused app-model tests,
+  starting-notice, localization/action, and compact render coverage passed at
+  that listener-only checkpoint. Its exact local CI Swift selector passed 166
+  tests; the later Bonjour checklist above records the current selector.
+- [ ] No physical device, external-network peer, discovery client, performance
+  measurement, signing, packaging, deployment, security, or production release
+  is claimed by this loopback-only evidence.
+
+## 2026-07-30 Android Build 23 Entry-Point And Application-Shell Checklist
 
 - [x] Release continuity remains explicit: the Local V1 Build 22 Qualification
   Checklist is current. The Build 22 archive is the latest ledger entry at
@@ -15,28 +104,47 @@ This document separates current verification evidence from historical captures.
 - [x] The accepted filter set is closed to launcher, `aetherlink://pair`,
   `SEND`, and `SEND_MULTIPLE`; the two share filters carry the same canonical
   44 unique MIME types.
+- [x] The compiled application shell resolves the exact app label, icon, round
+  icon, theme, and locale-config resources. The locale-config body contains
+  `en`, `ko`, `ja`, `zh-CN`, and `fr` in the declared order, and
+  `status_title` has the fixed default plus five localized payloads.
 - [x] The builder parses compiled APK and AAB manifests through independent
-  tools, requires them to agree, and records a normalized
-  `entryPointTopology` claim.
+  tools, requires them to agree, and records normalized `entryPointTopology`
+  and `applicationShell` claims.
 - [x] The readback checker has its own parser and exact-type claim validator.
-  It requires `expected == APK == AAB == archived claim`.
+  It compares the standalone APK with a composite AAB observation and the
+  archived claim. The composite uses direct AAB manifest/resources/config for
+  references, localized payload, and split policy, plus the AAB-derived
+  universal APK for the compiled locale-config body/order.
+- [x] The AAB bundle config contains exactly one `LANGUAGE` split dimension
+  with `negate=true`; universal mode therefore cannot hide a language-delivery
+  drift.
 - [x] Both parsers preserve the Android attribute namespace and fail if a
   required attribute is unqualified, duplicated, absent, or changed.
-- [x] The 52 release-archive tests cover Build 22/23 end-to-end wiring,
+- [x] The 59 release-archive tests cover Build 22/23 end-to-end wiring,
   APK/AAB/claim parity, MIME-order
   canonicalization, activity and intent-filter mutations, aliases, extra
-  MainActivity filters, decoded/raw mismatches, and claim type confusion.
+  MainActivity filters, app-shell resource mappings, locale-config
+  structure/order, localized payload mutations, language-split drift,
+  direct/derived AAB mismatch, decoded/raw mismatches, and claim type confusion.
+- [x] The bounded Android product CI job runs the complete release-archive
+  contract module after toolchain verification and before Gradle compilation.
 - [x] APK and AAB fixtures also contain an unrelated merged dependency activity
   and retain the same normalized result. `entryPointTopology` is explicitly a
   MainActivity contract, not a complete application-component inventory.
 - [x] The locally present historical Build 21 APK and AAB both parse to four
-  filters and the same 44-MIME share set. This checks real tool-output
-  compatibility only; it is not current release evidence.
-- [x] The immutable Build 22 archive continues to pass independent
-  `--no-current-source` readback, proving the Build 23 gate is not retroactive.
+  filters and the same 44-MIME share set. The standalone APK yields the full
+  application-shell claim; direct AAB readback confirms its five references,
+  localized payload, and split policy, while the derived universal APK confirms
+  the locale-config body/order and completes an equal composite claim. This
+  checks real tool-output compatibility only; it is not current release
+  evidence.
+- [x] Independent readback passes preserved Builds 1 through 21 with
+  `--historical` and immutable Build 22 with `--no-current-source`, proving the
+  Build 23 gate is not retroactive.
 - [ ] No Build 23 release was produced. The ledger and Builds 1 through 22
-  remain unchanged; device, signing, publication, permission, and network
-  behavior remain outside this evidence.
+  remain unchanged; device behavior, launcher/theme rendering, signing,
+  publication, permission, and network behavior remain outside this evidence.
 
 ## 2026-07-30 G6 macOS Package Isolation And Uninstall/Reinstall Checklist
 
@@ -111,7 +219,8 @@ This document separates current verification evidence from historical captures.
 - [x] Decorative Model Download status icons are hidden from the accessibility
   tree.
 - [x] Eight new focused policy, announcement, and render regressions pass. The
-  exact product CI Swift selector passes 159 tests with zero failures.
+  historical local product CI checkpoint passed 159 Swift tests with zero
+  failures.
 - [x] The complete current accessibility run passes 186 tests with zero
   failures: 153 localization/state, eight announcement, and 25 render tests.
   Debug and Release AetherLink builds, five-locale parity, focus-wiring source
@@ -161,10 +270,12 @@ This document separates current verification evidence from historical captures.
   crosses the cleanup snapshot.
 - [x] The ten focused Runtime lifecycle regressions, two Status action
   regressions, compact render regression, localization parity check, and the
-  exact 159-test CI Swift selector pass with zero skips or failures.
-- [ ] This is deterministic in-process fake-transport and rendered-view
-  evidence. It does not claim a live socket conflict, physical device,
-  external provider, signing, deployment, security work, or Git publication.
+  exact 166-test CI Swift selector at that listener-only checkpoint passed with
+  zero skips or failures.
+- [ ] This older fake-transport slice is now complemented by the live loopback
+  occupied-port evidence in the checklist above. Neither slice claims a
+  physical device, external provider, signing, deployment, security work, or
+  Git publication.
 
 ## 2026-07-30 G7 Non-Security CI Subset Checklist
 
@@ -195,9 +306,9 @@ This document separates current verification evidence from historical captures.
   upload, release publication, or deployment environment.
 - [x] `script/check_product_ci.py` pins the complete reviewed workflow to
   SHA-256
-  `7f24adee31748522469daee3c4be17fd2d474dde3b9edcae79e95f3cc362571d`
+  `2b37513e5a8e6ef92220abb8bad47f433fb75f4bf908bea72a559921dab1b8ac`
   and its parsed-semantic form to
-  `843b003fb1fb16c60003ff920db4a95ec23e24b96dc1eee2e453717bbc529384`,
+  `b19d82f91cf167ee7915a16fdc63caa9a8c5814b94d89c9586f9d5f4137633f9`,
   while also exposing the semantic checks independently of those pins.
 - [x] `python3 -B script/check_product_ci.py` and `--self-test` pass. The
   mutation suite first proves the hash guard, then bypasses only that guard and
@@ -215,11 +326,11 @@ This document separates current verification evidence from historical captures.
   the YAML as a mapping with exactly two jobs; Python byte compilation and
   `git diff --check` pass.
 - [x] All four workflow static product checks pass, including the isolated
-  `--product-copy-only` copy gate. The exact Swift selector passes 159 tests
-  with zero skips or failures, including the direct
-  Runtime start lifecycle regressions, two Status action regressions, and the
-  compact accessibility render regression; Debug and Release AetherLink builds
-  pass.
+  `--product-copy-only` copy gate. The current exact Swift selector passes 180
+  tests with zero skips or failures, including the direct Runtime listener and
+  Bonjour publication lifecycle regressions, two Status action regressions, and
+  the compact accessibility render regression; Debug and Release AetherLink
+  builds pass.
 - [x] The exact Android selector passes seven tests across four result classes
   with zero skips, failures, or errors. The added exact method directly covers
   changed-session latest-row reset, deferred loading completion, saved-state
@@ -228,9 +339,11 @@ This document separates current verification evidence from historical captures.
 - [x] Hosted run `30525374687` completed both macOS and Android jobs
   successfully for baseline commit
   `0f59c757d745d0b95c37c9b93aec8d354bcfef9f`.
-- [ ] The hosted baseline does not cover the current uncommitted
-  listener-recovery, reduced-motion, visual/focus accessibility, product-copy,
-  selector, or checker changes. This is not
+- [ ] The hosted result is a historical 159-test baseline. It predates commit
+  `53f45d4e9909dd77520a450170eb87c7d260ea89` and does not cover the current
+  unstaged wrong-port/port-replacement, startup pairing gate, development-server
+  late-failure, Bonjour publication readiness, selector, checker, or
+  documentation follow-ups. This is not
   the canonical G7 `PR fast` or `Merge full` gate and does not prove
   current-change clean-runner dependency acquisition, required-check
   configuration, a physical device,
@@ -239,7 +352,8 @@ This document separates current verification evidence from historical captures.
   compile their complete package/app test source graphs. The Android hosted
   lane relies on the runner image's preinstalled SDK 36/Build Tools 36.0.0 and
   normal wrapper/repository downloads; dependency-byte hermeticity is not
-  claimed. No staging, commit, or push was performed.
+  claimed. The current follow-ups remain unstaged; this editing pass performed
+  no staging, commit, or push.
 
 ## 2026-07-30 Qualified Provider Catalog Isolation Checklist
 

@@ -29180,6 +29180,72 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
+    func testCompanionAppModelBeginLocalPairingWaitsForListenerReadiness() async throws {
+        let peerServer = FakeRuntimeTransport(
+            statusAfterStart: .starting(port: 43_170)
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: peerServer,
+            advertiser: FakeRuntimeAdvertiser(),
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+        defer { model.stop() }
+
+        model.beginPairing(routePolicy: .allowLocalDiagnostic)
+
+        XCTAssertEqual(model.transportState, .starting(port: 43_170))
+        XCTAssertEqual(peerServer.startedPorts, [43_170])
+        XCTAssertNil(model.pairingSession)
+
+        peerServer.emitStatus(.listening(port: 43_170), start: 0)
+        assertAsyncTrue(await waitForCondition {
+            model.transportState.state == .advertising
+        })
+
+        model.beginPairing(routePolicy: .allowLocalDiagnostic)
+
+        let session = try XCTUnwrap(model.pairingSession)
+        XCTAssertEqual(session.host, "192.168.1.44")
+        XCTAssertEqual(session.port, 43_170)
+    }
+
+    @MainActor
+    func testCompanionAppModelPairingWaitsForBonjourPublication() async throws {
+        let peerServer = FakeRuntimeTransport()
+        let advertiser = ReportingFakeRuntimeAdvertiser(
+            statusesAfterStart: [.publishing]
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: peerServer,
+            advertiser: advertiser,
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+        defer { model.stop() }
+
+        model.beginPairing(routePolicy: .allowLocalDiagnostic)
+
+        XCTAssertEqual(model.transportState, .starting(port: 43_170))
+        XCTAssertFalse(model.canRequestPairingForUserInterface)
+        XCTAssertNil(model.pairingSession)
+
+        advertiser.emitStatus(.published, start: 0)
+        assertAsyncTrue(await waitForCondition {
+            model.transportState == .advertising(
+                serviceName: "_aetherlink._tcp.local.",
+                port: 43_170
+            )
+        })
+
+        model.beginPairing(routePolicy: .allowLocalDiagnostic)
+
+        let session = try XCTUnwrap(model.pairingSession)
+        XCTAssertEqual(session.host, "192.168.1.44")
+        XCTAssertEqual(session.port, 43_170)
+    }
+
+    @MainActor
     func testCompanionAppModelReleaseUserInterfaceDoesNotEnableLocalDiagnosticFallback() {
         XCTAssertFalse(CompanionAppModel.resolveLocalDiagnosticPairingUIAllowance(
             requestedOverride: true,
@@ -29646,6 +29712,13 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(peerServer.startedPort, 43210)
         XCTAssertEqual(model.transportState, .starting(port: 43210))
         XCTAssertEqual(allocator.recordedCalls.count, 0)
+        XCTAssertFalse(model.canRequestPairingForUserInterface)
+        XCTAssertFalse(model.canRequestRemotePairingForUserInterface)
+        XCTAssertFalse(model.requestPairingForUserInterface())
+        XCTAssertFalse(model.requestRemotePairingForUserInterface())
+        model.beginPairing(routePolicy: .allowLocalDiagnostic)
+        XCTAssertEqual(peerServer.startedPorts, [43210])
+        XCTAssertEqual(allocator.recordedCalls.count, 0)
 
         peerServer.emitStatus(.listening(port: 43210), start: 0)
         let allocationStarted = await allocator.waitUntilStarted(call: 0)
@@ -29734,6 +29807,58 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
+    func testCompanionAppModelCanRetryAfterBonjourPublicationFailure()
+        async throws
+    {
+        let peerServer = FakeRuntimeTransport(statusesAfterStart: [
+            .listening(port: 43_216),
+            .listening(port: 43_216),
+        ])
+        let advertiser = ReportingFakeRuntimeAdvertiser(
+            statusesAfterStart: [.publishing, .publishing]
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: peerServer,
+            advertiser: advertiser,
+            environment: [:],
+            userDefaults: try isolatedDefaults()
+        )
+        defer { model.stop() }
+
+        XCTAssertTrue(model.requestStartForUserInterface(port: 43_216))
+        XCTAssertEqual(model.transportState, .starting(port: 43_216))
+        XCTAssertFalse(model.requestStartForUserInterface(port: 43_216))
+
+        advertiser.emitStatus(
+            .failed("Local discovery publication failed."),
+            start: 0
+        )
+        assertAsyncTrue(await waitForCondition {
+            model.transportState
+                == .failed("Local discovery publication failed.")
+        })
+        XCTAssertTrue(advertiser.didStop)
+
+        XCTAssertTrue(model.requestStartForUserInterface(port: 43_216))
+        XCTAssertEqual(model.transportState, .starting(port: 43_216))
+        advertiser.emitStatus(.published, start: 0)
+        await Task.yield()
+        await Task.yield()
+        XCTAssertEqual(model.transportState, .starting(port: 43_216))
+
+        advertiser.emitStatus(.published, start: 1)
+        assertAsyncTrue(await waitForCondition {
+            model.transportState == .advertising(
+                serviceName: "_aetherlink._tcp.local.",
+                port: 43_216
+            )
+        })
+        XCTAssertEqual(peerServer.startedPorts, [43_216, 43_216])
+        XCTAssertEqual(advertiser.startCount, 2)
+    }
+
+    @MainActor
     func testCompanionAppModelLateListenerFailureAllowsSamePortRetryAndIgnoresStaleCallback() async throws {
         let peerServer = FakeRuntimeTransport(statusesAfterStart: [
             .starting(port: 43211),
@@ -29800,6 +29925,72 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(
             model.transportState,
             .advertising(serviceName: "_aetherlink._tcp.local.", port: 43211)
+        )
+    }
+
+    @MainActor
+    func testCompanionAppModelPortReplacementShowsStartingUntilReady() async throws {
+        let peerServer = FakeRuntimeTransport(statusesAfterStart: [
+            .listening(port: 43212),
+            .starting(port: 43213),
+        ])
+        let advertiser = FakeRuntimeAdvertiser()
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: peerServer,
+            advertiser: advertiser,
+            relayClient: FakeRelayPeerClient(),
+            environment: [:],
+            userDefaults: try isolatedDefaults()
+        )
+        defer { model.stop() }
+
+        XCTAssertTrue(model.requestStartForUserInterface(port: 43212))
+        XCTAssertEqual(
+            model.transportState,
+            .advertising(serviceName: "_aetherlink._tcp.local.", port: 43212)
+        )
+        XCTAssertEqual(advertiser.startCount, 1)
+
+        XCTAssertTrue(model.requestStartForUserInterface(port: 43213))
+        XCTAssertEqual(model.transportState, .starting(port: 43213))
+        XCTAssertFalse(model.requestStartForUserInterface(port: 43213))
+        XCTAssertEqual(advertiser.startCount, 1)
+
+        peerServer.emitStatus(.listening(port: 43213), start: 1)
+        assertAsyncTrue(await waitForCondition {
+            model.transportState == .advertising(
+                serviceName: "_aetherlink._tcp.local.",
+                port: 43213
+            )
+        })
+        XCTAssertEqual(advertiser.startCount, 2)
+
+        let synchronousPeerServer = FakeRuntimeTransport(statusesAfterStart: [
+            .listening(port: 43214),
+            .listening(port: 43215),
+        ])
+        let synchronousAdvertiser = FakeRuntimeAdvertiser()
+        let synchronousModel = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: synchronousPeerServer,
+            advertiser: synchronousAdvertiser,
+            relayClient: FakeRelayPeerClient(),
+            environment: [:],
+            userDefaults: try isolatedDefaults()
+        )
+        defer { synchronousModel.stop() }
+
+        XCTAssertTrue(synchronousModel.requestStartForUserInterface(port: 43214))
+        XCTAssertTrue(synchronousModel.requestStartForUserInterface(port: 43215))
+        XCTAssertEqual(
+            synchronousModel.transportState,
+            .advertising(serviceName: "_aetherlink._tcp.local.", port: 43215)
+        )
+        XCTAssertEqual(synchronousAdvertiser.startCount, 2)
+        XCTAssertEqual(
+            synchronousModel.logs.filter { $0 == "AetherLink runtime started" }.count,
+            2
         )
     }
 
@@ -38697,6 +38888,47 @@ private final class FakeRuntimeAdvertiser: RuntimeAdvertiser {
 
     func stop() {
         didStop = true
+    }
+}
+
+private final class ReportingFakeRuntimeAdvertiser: RuntimeAdvertiser,
+    RuntimeAdvertisementStatusReporting
+{
+    private var statusesAfterStart: [RuntimeAdvertisementStatus]
+    private var statusHandlers: [
+        (@Sendable (RuntimeAdvertisementStatus) -> Void)?
+    ] = []
+    private(set) var advertisementStatus = RuntimeAdvertisementStatus.stopped
+    private(set) var didStop = false
+    private(set) var startCount = 0
+    var onAdvertisementStatusChange: (
+        @Sendable (RuntimeAdvertisementStatus) -> Void
+    )?
+
+    init(statusesAfterStart: [RuntimeAdvertisementStatus]) {
+        self.statusesAfterStart = statusesAfterStart
+    }
+
+    func start(port: Int32, metadata: RuntimeAdvertisementMetadata) {
+        statusHandlers.append(onAdvertisementStatusChange)
+        didStop = false
+        startCount += 1
+        advertisementStatus = statusesAfterStart.isEmpty
+            ? .published
+            : statusesAfterStart.removeFirst()
+    }
+
+    func stop() {
+        didStop = true
+        advertisementStatus = .stopped
+    }
+
+    func emitStatus(
+        _ status: RuntimeAdvertisementStatus,
+        start index: Int
+    ) {
+        advertisementStatus = status
+        statusHandlers[index]?(status)
     }
 }
 

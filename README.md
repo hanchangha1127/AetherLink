@@ -6,6 +6,17 @@ For continuation in a new Codex session, read [`docs/handoff.md`](docs/handoff.m
 first. The [canonical V1 roadmap](docs/roadmap.md#canonical-v1-delivery-roadmap)
 is active.
 
+The current non-security macOS Runtime lifecycle reports
+`starting(port) -> listening(port) | failed(message)` only after both local
+listener readiness and Bonjour publication succeed. Network.framework
+listener readiness starts Bonjour, but the app stays in its localized,
+non-interactive starting state until `NetService` confirms publication.
+Publication failure, a five-second timeout, or an unexpected late stop releases
+local ownership and preserves same-port Retry. Generation fences make callbacks
+from replaced services inert. This is local no-device lifecycle behavior, not
+external-network discovery, device, signing, deployment, security, or release
+evidence.
+
 This is a personal, single-owner project. Owner identity authentication is not
 required for this personal project. Direct user instruction is sufficient for
 repository reads, edits, builds, tests, and G1a no-network implementation. SSH
@@ -665,13 +676,21 @@ configures and builds when the release ledger is unavailable; a Release task
 validates the ledger's LF-only printable-ASCII/tab byte format when it needs
 the version.
 Build 23 and later archives additionally require the compiled APK and AAB to
-agree on one normalized Android `entryPointTopology`: the exact MainActivity
-launch behavior, launcher and `aetherlink://pair` filters, and identical
-single/multiple-share sets of 44 MIME types. Unrelated activities merged from
-dependencies are outside this MainActivity claim. The builder and readback
-checker parse the two artifact formats independently and validate a closed,
-exact-type claim. This forward gate does not alter the current Build 22 ledger
-or archive.
+agree on two normalized Android claims. `entryPointTopology` closes the exact
+MainActivity launch behavior, launcher and `aetherlink://pair` filters, and
+identical single/multiple-share sets of 44 MIME types. `applicationShell`
+resolves the compiled label, icon, round icon, theme, and locale-config
+references; preserves the exact `en`, `ko`, `ja`, `zh-CN`, `fr` locale-config
+order; and reads the default plus five localized `status_title` payloads.
+The direct AAB check resolves the five manifest references and localized
+payload and requires language splitting to remain disabled. A universal APK
+derived from that same AAB independently supplies the compiled locale-config
+body/order and must agree with those direct observations before the composite
+AAB result is compared with the standalone APK claim.
+Unrelated dependency activities remain outside the MainActivity claim. The
+builder and readback checker implement these parsers independently and validate
+closed, exact-type claims. This forward gate does not alter the current Build
+22 ledger or archive.
 The development application and bundle identifiers remain unchanged until
 their production replacements are reserved in the selected distribution
 accounts.
@@ -1355,14 +1374,24 @@ semantic diagnostic, so an unrelated hash mismatch cannot conceal a broken
 guard.
 
 The macOS Status overview also supports local Runtime recovery without an app
-restart. A failed listener start leaves a localized Retry action available;
-if an accepted listener fails later, the Runtime clears its started state,
-stops stale advertisement ownership, and allows the same port to be retried.
-Listener callbacks are generation-bound so an older listener cannot stop a
-replacement. Route allocation, relay startup, and restored pair transports
-begin only after the listener reports advertising. The focused lifecycle,
-action, localization, and compact accessibility render regressions are
-included in the exact CI Swift selector.
+restart. Listener and Bonjour publication startup share one explicit neutral
+state; downstream route work and pairing remain unavailable until both are
+ready. A listener or publication failure leaves a localized Retry action
+available, and a late failure or publication stop clears stale local ownership
+for same-port retry. Listener and advertisement callbacks are generation-bound
+so an older attempt cannot stop its replacement. Refreshing metadata while
+publication is pending replaces only that advertisement and publishes the
+latest TXT data. Reentrant or concurrent advertiser replacement is serialized
+before publication, a canceled timeout cannot overwrite confirmed publication,
+and an immediate publication failure after asynchronous listener readiness is
+still forwarded to the app. Advertisement status handlers run after the
+lifecycle lock is released, so a cross-queue stop cannot deadlock behind its own
+callback. The development server marks advertisement lifecycle terminal before
+handling a late listener loss, preventing an already captured publish callback
+from emitting stale advertising or development-pairing output. The pending
+Pairing screen continues to use the neutral readiness notice. The real-loopback,
+publication lifecycle, focused action, notice, localization, and compact
+accessibility regressions are included in the exact 180-test CI Swift selector.
 
 The macOS app also follows the system Reduce Motion preference for its two
 custom transitions. Connection-recovery scrolling becomes immediate, and the
@@ -1377,8 +1406,8 @@ Pairing transitions carry explicit keyboard and accessibility focus targets.
 The Pairing intent survives asynchronous QR preparation, is canceled when the
 screen is left, survives in-app language-driven view recreation, and the
 menu-bar request has one main-window consumer. QR expiry announces once per QR
-lifecycle without countdown spam. The exact
-159-test product selector and complete 186-test accessibility run pass. These
+lifecycle without countdown spam. The current exact
+180-test product selector and complete 186-test accessibility run pass. These
 are deterministic source, unit, and render results; physical keyboard and
 VoiceOver traversal remain unclaimed.
 
@@ -1387,10 +1416,11 @@ does not by itself satisfy canonical G7 `PR fast` or `Merge full`. The first
 hosted `main` run succeeded for baseline commit
 `0f59c757d745d0b95c37c9b93aec8d354bcfef9f` in both jobs
 ([run 30525374687](https://github.com/hanchangha1127/AetherLink/actions/runs/30525374687)).
-That run does not cover later uncommitted worktree changes; their 159-test
-Swift selector and product-copy check currently have local evidence only. Test
-selectors limit which tests execute, while SwiftPM and Gradle still compile
-their complete package/app test-source graphs.
+That run is a historical 159-test baseline and predates later commit
+`53f45d4e9909dd77520a450170eb87c7d260ea89` as well as the current working-tree
+follow-ups. The current 180-test Swift selector and product-copy check have
+local evidence only. Test selectors limit which tests execute, while SwiftPM
+and Gradle still compile their complete package/app test-source graphs.
 
 Run these lightweight checks from the repository root before handing off changes
 that touch localization, protocol schema, or platform runtime behavior:

@@ -47,6 +47,201 @@ final class MacRuntimeConnectionManagerTests: XCTestCase {
     }
 
     @MainActor
+    func testStartLocalDefersReadyUntilAdvertisementIsPublished() async {
+        let local = RecordingRuntimeTransport()
+        let advertiser = RecordingRuntimeAdvertiser(
+            statusesAfterStart: [.publishing]
+        )
+        let manager = makeManager(local: local, advertiser: advertiser)
+        var observedStatuses: [PeerServerStatus] = []
+
+        let status = manager.startLocal(
+            port: 43_191,
+            metadata: RuntimeAdvertisementMetadata(version: "publishing"),
+            onStatusChange: { observedStatuses.append($0) },
+            onMessage: unusedMessageHandler
+        )
+
+        XCTAssertEqual(status, .starting(port: 43_191))
+        XCTAssertTrue(observedStatuses.isEmpty)
+
+        advertiser.emitStatus(.published, start: 0)
+        await flushStatusCallbacks()
+
+        XCTAssertEqual(observedStatuses, [.listening(port: 43_191)])
+        XCTAssertEqual(local.stopCount, 0)
+        XCTAssertEqual(advertiser.stopCount, 0)
+    }
+
+    @MainActor
+    func testAsyncListenerReadyForwardsImmediateAdvertisementFailure() async {
+        let port: UInt16 = 43_195
+        let failure = PeerServerStatus.failed(
+            "Local discovery publication failed immediately."
+        )
+        let local = RecordingRuntimeTransport(
+            statusesAfterStart: [.starting(port: port)]
+        )
+        let advertiser = RecordingRuntimeAdvertiser(
+            statusesAfterStart: [
+                .failed("Local discovery publication failed immediately."),
+            ]
+        )
+        let manager = makeManager(local: local, advertiser: advertiser)
+        var observedStatuses: [PeerServerStatus] = []
+
+        XCTAssertEqual(
+            manager.startLocal(
+                port: port,
+                metadata: RuntimeAdvertisementMetadata(version: "immediate-failure"),
+                onStatusChange: { observedStatuses.append($0) },
+                onMessage: unusedMessageHandler
+            ),
+            .starting(port: port)
+        )
+
+        local.emitStatus(.listening(port: port), start: 0)
+        await flushStatusCallbacks()
+
+        XCTAssertEqual(observedStatuses, [failure])
+        XCTAssertEqual(local.stopCount, 1)
+        XCTAssertEqual(advertiser.stopCount, 1)
+    }
+
+    @MainActor
+    func testAdvertisementFailureAllowsSamePortRetryAndIgnoresStaleSuccess()
+        async
+    {
+        let local = RecordingRuntimeTransport()
+        let advertiser = RecordingRuntimeAdvertiser(
+            statusesAfterStart: [.publishing, .publishing]
+        )
+        let manager = makeManager(local: local, advertiser: advertiser)
+        var observedStatuses: [PeerServerStatus] = []
+
+        XCTAssertEqual(
+            manager.startLocal(
+                port: 43_192,
+                metadata: RuntimeAdvertisementMetadata(version: "first"),
+                onStatusChange: { observedStatuses.append($0) },
+                onMessage: unusedMessageHandler
+            ),
+            .starting(port: 43_192)
+        )
+        advertiser.emitStatus(
+            .failed("Local discovery publication failed."),
+            start: 0
+        )
+        await flushStatusCallbacks()
+
+        XCTAssertEqual(
+            observedStatuses,
+            [.failed("Local discovery publication failed.")]
+        )
+        XCTAssertEqual(local.stopCount, 1)
+        XCTAssertEqual(advertiser.stopCount, 1)
+
+        XCTAssertEqual(
+            manager.startLocal(
+                port: 43_192,
+                metadata: RuntimeAdvertisementMetadata(version: "retry"),
+                onStatusChange: { observedStatuses.append($0) },
+                onMessage: unusedMessageHandler
+            ),
+            .starting(port: 43_192)
+        )
+        advertiser.emitStatus(.published, start: 0)
+        await flushStatusCallbacks()
+        XCTAssertEqual(
+            observedStatuses,
+            [.failed("Local discovery publication failed.")]
+        )
+
+        advertiser.emitStatus(.published, start: 1)
+        await flushStatusCallbacks()
+
+        XCTAssertEqual(
+            observedStatuses,
+            [
+                .failed("Local discovery publication failed."),
+                .listening(port: 43_192),
+            ]
+        )
+        XCTAssertEqual(
+            advertiser.starts.map(\.metadata.version),
+            ["first", "retry"]
+        )
+    }
+
+    @MainActor
+    func testRefreshWhileAdvertisementPublishesUsesLatestMetadataOnly() async {
+        let local = RecordingRuntimeTransport()
+        let advertiser = RecordingRuntimeAdvertiser(
+            statusesAfterStart: [.publishing, .publishing]
+        )
+        let manager = makeManager(local: local, advertiser: advertiser)
+        var observedStatuses: [PeerServerStatus] = []
+
+        XCTAssertEqual(
+            manager.startLocal(
+                port: 43_193,
+                metadata: RuntimeAdvertisementMetadata(version: "initial"),
+                onStatusChange: { observedStatuses.append($0) },
+                onMessage: unusedMessageHandler
+            ),
+            .starting(port: 43_193)
+        )
+        XCTAssertEqual(
+            manager.refreshLocalAdvertisement(
+                metadata: RuntimeAdvertisementMetadata(version: "latest")
+            ),
+            .starting(port: 43_193)
+        )
+
+        advertiser.emitStatus(.published, start: 0)
+        await flushStatusCallbacks()
+        XCTAssertTrue(observedStatuses.isEmpty)
+
+        advertiser.emitStatus(.published, start: 1)
+        await flushStatusCallbacks()
+
+        XCTAssertEqual(observedStatuses, [.listening(port: 43_193)])
+        XCTAssertEqual(
+            advertiser.starts.map(\.metadata.version),
+            ["initial", "latest"]
+        )
+        XCTAssertEqual(advertiser.stopCount, 1)
+    }
+
+    @MainActor
+    func testUnexpectedAdvertisementStopClearsFalseReadyOwnership() async {
+        let local = RecordingRuntimeTransport()
+        let advertiser = RecordingRuntimeAdvertiser()
+        let manager = makeManager(local: local, advertiser: advertiser)
+        var observedStatuses: [PeerServerStatus] = []
+
+        XCTAssertEqual(
+            manager.startLocal(
+                port: 43_194,
+                metadata: RuntimeAdvertisementMetadata(version: "published"),
+                onStatusChange: { observedStatuses.append($0) },
+                onMessage: unusedMessageHandler
+            ),
+            .listening(port: 43_194)
+        )
+
+        advertiser.emitStatus(.stopped, start: 0)
+        await flushStatusCallbacks()
+
+        XCTAssertEqual(
+            observedStatuses,
+            [.failed("Local discovery publication stopped unexpectedly.")]
+        )
+        XCTAssertEqual(local.stopCount, 1)
+        XCTAssertEqual(advertiser.stopCount, 1)
+    }
+
+    @MainActor
     func testFailedLocalStartSuppressesAdvertisement() {
         let local = RecordingRuntimeTransport(statusesAfterStart: [.failed("unavailable")])
         let advertiser = RecordingRuntimeAdvertiser()
@@ -60,6 +255,51 @@ final class MacRuntimeConnectionManagerTests: XCTestCase {
 
         XCTAssertEqual(status, .failed("unavailable"))
         XCTAssertTrue(advertiser.starts.isEmpty)
+        XCTAssertEqual(advertiser.stopCount, 1)
+        XCTAssertEqual(local.stopCount, 1)
+    }
+
+    @MainActor
+    func testUnexpectedLocalPortCannotRemainStartingOrAdvertising() {
+        let unexpectedPortFailure = PeerServerStatus.failed(
+            "Local listener reported an unexpected port."
+        )
+        for status in [
+            PeerServerStatus.starting(port: 43190),
+            .listening(port: 43190),
+        ] {
+            let local = RecordingRuntimeTransport(statusesAfterStart: [status])
+            let advertiser = RecordingRuntimeAdvertiser()
+            let manager = makeManager(local: local, advertiser: advertiser)
+
+            let result = manager.startLocal(
+                port: 43189,
+                metadata: RuntimeAdvertisementMetadata(version: "unexpected"),
+                onMessage: unusedMessageHandler
+            )
+
+            XCTAssertEqual(result, unexpectedPortFailure)
+            XCTAssertTrue(advertiser.starts.isEmpty)
+            XCTAssertEqual(advertiser.stopCount, 1)
+            XCTAssertEqual(local.stopCount, 1)
+        }
+
+        let local = RecordingRuntimeTransport()
+        let advertiser = RecordingRuntimeAdvertiser()
+        let manager = makeManager(local: local, advertiser: advertiser)
+        manager.startLocal(
+            port: 43189,
+            metadata: RuntimeAdvertisementMetadata(version: "initial"),
+            onMessage: unusedMessageHandler
+        )
+        local.setStatus(.starting(port: 43190))
+
+        let refreshResult = manager.refreshLocalAdvertisement(
+            metadata: RuntimeAdvertisementMetadata(version: "refresh")
+        )
+
+        XCTAssertEqual(refreshResult, unexpectedPortFailure)
+        XCTAssertEqual(advertiser.starts.count, 1)
         XCTAssertEqual(advertiser.stopCount, 1)
         XCTAssertEqual(local.stopCount, 1)
     }
@@ -1146,28 +1386,55 @@ private final class RecordingRuntimeTransport: RuntimeTransport, RuntimeDisconne
     }
 }
 
-private final class RecordingRuntimeAdvertiser: RuntimeAdvertiser {
+private final class RecordingRuntimeAdvertiser: RuntimeAdvertiser,
+    RuntimeAdvertisementStatusReporting
+{
     struct Start: Equatable {
         let port: Int32
         let metadata: RuntimeAdvertisementMetadata
     }
 
     private let events: LocalOwnershipEventRecorder?
+    private var statusesAfterStart: [RuntimeAdvertisementStatus]
+    private var statusHandlers: [
+        (@Sendable (RuntimeAdvertisementStatus) -> Void)?
+    ] = []
     private(set) var starts: [Start] = []
     private(set) var stopCount = 0
+    private(set) var advertisementStatus = RuntimeAdvertisementStatus.stopped
+    var onAdvertisementStatusChange: (
+        @Sendable (RuntimeAdvertisementStatus) -> Void
+    )?
 
-    init(events: LocalOwnershipEventRecorder? = nil) {
+    init(
+        events: LocalOwnershipEventRecorder? = nil,
+        statusesAfterStart: [RuntimeAdvertisementStatus] = []
+    ) {
         self.events = events
+        self.statusesAfterStart = statusesAfterStart
     }
 
     func start(port: Int32, metadata: RuntimeAdvertisementMetadata) {
         starts.append(.init(port: port, metadata: metadata))
+        statusHandlers.append(onAdvertisementStatusChange)
+        advertisementStatus = statusesAfterStart.isEmpty
+            ? .published
+            : statusesAfterStart.removeFirst()
         events?.record(.advertiserStart(port: port, metadata: metadata))
     }
 
     func stop() {
         stopCount += 1
+        advertisementStatus = .stopped
         events?.record(.advertiserStop)
+    }
+
+    func emitStatus(
+        _ status: RuntimeAdvertisementStatus,
+        start index: Int
+    ) {
+        advertisementStatus = status
+        statusHandlers[index]?(status)
     }
 }
 

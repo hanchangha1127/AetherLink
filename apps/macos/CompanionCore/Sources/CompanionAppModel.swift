@@ -1033,6 +1033,7 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     public var canRequestRemotePairingForUserInterface: Bool {
+        guard transportState.state != .starting else { return false }
         guard !isRemoteRoutePreparationInFlight else { return false }
         if shouldIncludeDevelopmentRelayInPairingQRCode || hasCanonicalFreshRemoteRouteMaterialForQRCode {
             return true
@@ -1050,7 +1051,8 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     public var canRequestLocalDiagnosticPairingForUserInterface: Bool {
-        guard allowsLocalDiagnosticPairingFromUserInterface,
+        guard transportState.state != .starting,
+              allowsLocalDiagnosticPairingFromUserInterface,
               !isRemoteRoutePreparationInFlight
         else {
             return false
@@ -1287,6 +1289,7 @@ public final class CompanionAppModel: ObservableObject {
         port: UInt16,
         routePreparation: CompanionRuntimeStartRoutePreparation
     ) {
+        isRuntimeStarted = false
         runtimePort = port
         let startAttemptID = UUID()
         activeRuntimeStartAttemptID = startAttemptID
@@ -1353,7 +1356,7 @@ public final class CompanionAppModel: ObservableObject {
         let nextTransportState = Self.transportStatus(from: localStatus)
         switch nextTransportState.state {
         case .starting:
-            guard !isRuntimeStarted else { return }
+            isRuntimeStarted = false
             let didChangeState = transportState != nextTransportState
             transportState = nextTransportState
             refreshTransportStatusText()
@@ -1925,6 +1928,7 @@ public final class CompanionAppModel: ObservableObject {
 
     @discardableResult
     public func requestPairingForUserInterface() -> Bool {
+        guard transportState.state != .starting else { return false }
         if !shouldUseLocalDiagnosticPairingForUserInterface,
            canRequestRemotePairingForUserInterface {
             return requestRemotePairingForUserInterface()
@@ -1951,6 +1955,7 @@ public final class CompanionAppModel: ObservableObject {
 
     @discardableResult
     public func requestRemotePairingForUserInterface() -> Bool {
+        guard transportState.state != .starting else { return false }
         guard !isRemoteRoutePreparationInFlight else {
             return false
         }
@@ -2010,6 +2015,7 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     public func beginPairing(routePolicy: CompanionPairingRoutePolicy = .remoteRequired) {
+        guard transportState.state != .starting else { return }
         if routePolicy == .remoteRequired {
             _ = requestRemotePairingForUserInterface()
             return
@@ -2017,6 +2023,7 @@ public final class CompanionAppModel: ObservableObject {
         if !isRuntimeStarted {
             startRuntime(port: runtimePort, routePreparation: .none)
         }
+        guard transportState.state == .advertising else { return }
         generatePairingSession(routePolicy: routePolicy)
     }
 

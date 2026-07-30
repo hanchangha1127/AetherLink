@@ -110,6 +110,7 @@ public final class MacRuntimeConnectionManager {
     private var activeLocalPort: UInt16?
     private var activeLocalGenerationID: UUID?
     private var activeLocalAdvertisementMetadata: RuntimeAdvertisementMetadata?
+    private var activeLocalAdvertisementGenerationID: UUID?
     private var localMessageLease: MacRuntimeCallbackLease?
     private var localStatusHandler: LocalStatusHandler?
     private var isAdvertisingLocalPort = false
@@ -171,29 +172,40 @@ public final class MacRuntimeConnectionManager {
             }
         }
         let status = localTransport.status
+        if case .starting(let reportedPort) = status,
+           reportedPort != port {
+            return rejectLocalStart(
+                .failed("Local listener reported an unexpected port."),
+                stoppedAdvertisement: stoppedAdvertisement
+            )
+        }
+        if case .listening(let reportedPort) = status,
+           reportedPort != port {
+            return rejectLocalStart(
+                .failed("Local listener reported an unexpected port."),
+                stoppedAdvertisement: stoppedAdvertisement
+            )
+        }
         if status == .starting(port: port) {
             guard localTransport is any RuntimeStatusReporting else {
-                let failure = PeerServerStatus.failed(
-                    "Local transport cannot report listener readiness."
+                return rejectLocalStart(
+                    .failed("Local transport cannot report listener readiness."),
+                    stoppedAdvertisement: stoppedAdvertisement
                 )
-                let stoppedFailedAdvertisement = stopLocalOwnership()
-                if !stoppedAdvertisement && !stoppedFailedAdvertisement {
-                    advertiser.stop()
-                }
-                return failure
             }
             return status
         }
         guard status == .listening(port: port) else {
-            let stoppedFailedAdvertisement = stopLocalOwnership()
-            if !stoppedAdvertisement && !stoppedFailedAdvertisement {
-                advertiser.stop()
-            }
-            return status
+            return rejectLocalStart(
+                status,
+                stoppedAdvertisement: stoppedAdvertisement
+            )
         }
 
-        startLocalAdvertisementIfNeeded(port: port, metadata: metadata)
-        return status
+        return startLocalAdvertisementIfNeeded(
+            port: port,
+            metadata: metadata
+        )
     }
 
     private func handleLocalStatusChange(
@@ -215,11 +227,12 @@ public final class MacRuntimeConnectionManager {
 
         if status == .listening(port: activeLocalPort),
            let activeLocalAdvertisementMetadata {
-            startLocalAdvertisementIfNeeded(
+            let statusHandler = localStatusHandler
+            let reportedStatus = startLocalAdvertisementIfNeeded(
                 port: activeLocalPort,
                 metadata: activeLocalAdvertisementMetadata
             )
-            localStatusHandler?(status)
+            statusHandler?(reportedStatus)
             return
         }
 
@@ -240,7 +253,21 @@ public final class MacRuntimeConnectionManager {
         metadata: RuntimeAdvertisementMetadata
     ) -> PeerServerStatus {
         let status = localTransport.status
-        let hasLocalOwnership = activeLocalPort != nil || localMessageLease != nil || isAdvertisingLocalPort
+        let hasLocalOwnership = activeLocalPort != nil
+            || localMessageLease != nil
+            || activeLocalAdvertisementGenerationID != nil
+        if let activeLocalPort {
+            if case .starting(let reportedPort) = status,
+               reportedPort != activeLocalPort {
+                stopLocalOwnership()
+                return .failed("Local listener reported an unexpected port.")
+            }
+            if case .listening(let reportedPort) = status,
+               reportedPort != activeLocalPort {
+                stopLocalOwnership()
+                return .failed("Local listener reported an unexpected port.")
+            }
+        }
         if let port = activeLocalPort,
            status == .starting(port: port) {
             activeLocalAdvertisementMetadata = metadata
@@ -257,21 +284,120 @@ public final class MacRuntimeConnectionManager {
         }
 
         activeLocalAdvertisementMetadata = metadata
-        if isAdvertisingLocalPort {
-            isAdvertisingLocalPort = false
+        if activeLocalAdvertisementGenerationID != nil {
+            stopLocalAdvertisement()
             advertiser.stop()
         }
-        startLocalAdvertisementIfNeeded(port: port, metadata: metadata)
+        return startLocalAdvertisementIfNeeded(
+            port: port,
+            metadata: metadata
+        )
+    }
+
+    private func rejectLocalStart(
+        _ status: PeerServerStatus,
+        stoppedAdvertisement: Bool
+    ) -> PeerServerStatus {
+        let stoppedFailedAdvertisement = stopLocalOwnership()
+        if !stoppedAdvertisement && !stoppedFailedAdvertisement {
+            advertiser.stop()
+        }
         return status
     }
 
     private func startLocalAdvertisementIfNeeded(
         port: UInt16,
         metadata: RuntimeAdvertisementMetadata
-    ) {
-        guard !isAdvertisingLocalPort else { return }
+    ) -> PeerServerStatus {
+        if activeLocalAdvertisementGenerationID != nil {
+            return isAdvertisingLocalPort
+                ? .listening(port: port)
+                : .starting(port: port)
+        }
+        guard let localGenerationID = activeLocalGenerationID else {
+            return .failed("Local listener ownership ended before discovery publication.")
+        }
+        let advertisementGenerationID = UUID()
+        activeLocalAdvertisementGenerationID = advertisementGenerationID
+        isAdvertisingLocalPort = false
+        if let statusReporting = advertiser as? any RuntimeAdvertisementStatusReporting {
+            statusReporting.onAdvertisementStatusChange = { [weak self] status in
+                Task { @MainActor in
+                    self?.handleLocalAdvertisementStatusChange(
+                        status,
+                        expectedLocalGenerationID: localGenerationID,
+                        expectedAdvertisementGenerationID: advertisementGenerationID
+                    )
+                }
+            }
+        }
         advertiser.start(port: Int32(port), metadata: metadata)
-        isAdvertisingLocalPort = true
+        guard
+            activeLocalGenerationID == localGenerationID,
+            activeLocalAdvertisementGenerationID == advertisementGenerationID
+        else {
+            return .failed("Local discovery publication was superseded.")
+        }
+        guard
+            let statusReporting = advertiser as? any RuntimeAdvertisementStatusReporting
+        else {
+            isAdvertisingLocalPort = true
+            return .listening(port: port)
+        }
+        switch statusReporting.advertisementStatus {
+        case .publishing:
+            return .starting(port: port)
+        case .published:
+            isAdvertisingLocalPort = true
+            return .listening(port: port)
+        case .failed(let message):
+            stopLocalOwnership()
+            return .failed(message)
+        case .stopped:
+            stopLocalOwnership()
+            return .failed("Local discovery publication stopped before becoming ready.")
+        }
+    }
+
+    private func handleLocalAdvertisementStatusChange(
+        _ status: RuntimeAdvertisementStatus,
+        expectedLocalGenerationID: UUID,
+        expectedAdvertisementGenerationID: UUID
+    ) {
+        guard
+            activeLocalGenerationID == expectedLocalGenerationID,
+            activeLocalAdvertisementGenerationID == expectedAdvertisementGenerationID,
+            let activeLocalPort
+        else {
+            return
+        }
+
+        switch status {
+        case .publishing:
+            return
+        case .published:
+            guard !isAdvertisingLocalPort else { return }
+            isAdvertisingLocalPort = true
+            localStatusHandler?(.listening(port: activeLocalPort))
+        case .failed(let message):
+            let statusHandler = localStatusHandler
+            stopLocalOwnership()
+            statusHandler?(.failed(message))
+        case .stopped:
+            let statusHandler = localStatusHandler
+            stopLocalOwnership()
+            statusHandler?(
+                .failed("Local discovery publication stopped unexpectedly.")
+            )
+        }
+    }
+
+    private func stopLocalAdvertisement() {
+        activeLocalAdvertisementGenerationID = nil
+        isAdvertisingLocalPort = false
+        if let statusReporting = advertiser as? any RuntimeAdvertisementStatusReporting {
+            statusReporting.onAdvertisementStatusChange = nil
+        }
     }
 
     public func startBootstrap(
@@ -566,7 +692,7 @@ public final class MacRuntimeConnectionManager {
 
     @discardableResult
     private func stopLocalOwnership() -> Bool {
-        let stoppedAdvertisement = isAdvertisingLocalPort
+        let stoppedAdvertisement = activeLocalAdvertisementGenerationID != nil
         activeLocalGenerationID = nil
         localMessageLease?.invalidate()
         localMessageLease = nil
@@ -575,8 +701,8 @@ public final class MacRuntimeConnectionManager {
         if let statusReporting = localTransport as? any RuntimeStatusReporting {
             statusReporting.onStatusChange = nil
         }
-        if isAdvertisingLocalPort {
-            isAdvertisingLocalPort = false
+        if activeLocalAdvertisementGenerationID != nil {
+            stopLocalAdvertisement()
             advertiser.stop()
         }
         guard activeLocalPort != nil else { return stoppedAdvertisement }

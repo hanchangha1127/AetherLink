@@ -1675,6 +1675,8 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
         }
         return CompanionAppModel(
             backend: backend ?? RenderSmokeBackend(models: []),
+            peerServer: RenderSmokeRuntimeTransport(),
+            advertiser: RenderSmokeRuntimeAdvertiser(),
             environment: isolatedRuntimeIdentityEnvironment(),
             userDefaults: defaults,
             trustedDeviceStore: trustedDeviceStore ?? isolatedTrustedDeviceStore(),

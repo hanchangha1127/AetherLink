@@ -149,11 +149,30 @@ struct RuntimeDevServer {
         RuntimeDevServerState.relayClient = relayClient
 
         let localListenerReadiness = RuntimeDevLocalListenerReadiness()
+        let advertisementLifecycle = RuntimeDevAdvertisementLifecycle()
         server.onStatusChange = { status in
+            let hadReachedReady = localListenerReadiness.hasReachedReady
             localListenerReadiness.update(status)
             switch status {
-            case .failed, .stopped:
+            case .failed(let message):
+                _ = advertisementLifecycle.claimTerminalFailure()
+                advertiser.onAdvertisementStatusChange = nil
                 advertiser.stop()
+                if hadReachedReady {
+                    fputs(
+                        "[runtime] Local listener failed after startup: \(message)\n",
+                        stderr
+                    )
+                    exit(EXIT_FAILURE)
+                }
+            case .stopped:
+                _ = advertisementLifecycle.claimTerminalFailure()
+                advertiser.onAdvertisementStatusChange = nil
+                advertiser.stop()
+                if hadReachedReady {
+                    fputs("[runtime] Local listener stopped after startup.\n", stderr)
+                    exit(EXIT_FAILURE)
+                }
             case .starting, .listening:
                 break
             }
@@ -176,9 +195,6 @@ struct RuntimeDevServer {
             }
             exit(EXIT_FAILURE)
         }
-        if shouldAdvertiseBonjour {
-            advertiser.start(port: Int32(port), metadata: identity.advertisementMetadata)
-        }
         if let relayConfiguration, let relayClient {
             if relayConfiguration.runtimeIdentity != nil,
                relayConfiguration.identityAuthorizationSigner != nil {
@@ -194,11 +210,6 @@ struct RuntimeDevServer {
 
         print("[runtime] AetherLink dev server listening on 127.0.0.1:\(port)")
         print("[runtime] Backend: \(useMockBackend ? (useAggregateMockBackend ? "dev aggregate mock" : "dev mock") : "Ollama + LM Studio")")
-        if shouldAdvertiseBonjour {
-            print("[runtime] Advertising _aetherlink._tcp.local. on port \(port)")
-        } else {
-            print("[runtime] Bonjour advertising disabled for this development run.")
-        }
         if let relayConfiguration {
             let relayScope = Self.relayScope(for: relayConfiguration.host) ?? "unknown"
             print("[runtime] Relay route enabled: \(relayConfiguration.host):\(relayConfiguration.port) scope=\(relayScope)")
@@ -209,7 +220,10 @@ struct RuntimeDevServer {
             directHost: devPairingDirectHost
         )
 
-        if environment["AETHERLINK_DEV_PAIRING"] == "1" {
+        let startDevelopmentPairingIfRequested = {
+            guard environment["AETHERLINK_DEV_PAIRING"] == "1" else {
+                return
+            }
             if relayRouteRequested && relayConfiguration == nil && devPairingDirectHost == nil {
                 print("[runtime] Development pairing QR not emitted: relay route allocation failed and no explicit direct pairing host was set.")
                 print("[runtime] Fix the allocation relay or set AETHERLINK_DEV_PAIRING_HOST only for local diagnostics.")
@@ -228,6 +242,55 @@ struct RuntimeDevServer {
                     directHost: devPairingDirectHost
                 )
             }
+        }
+        if shouldAdvertiseBonjour {
+            advertiser.onAdvertisementStatusChange = { status in
+                switch status {
+                case .publishing:
+                    break
+                case .published:
+                    guard advertisementLifecycle.claimPublished() else {
+                        return
+                    }
+                    print(
+                        "[runtime] Advertising _aetherlink._tcp.local. "
+                            + "on port \(port)"
+                    )
+                    startDevelopmentPairingIfRequested()
+                case .failed(let message):
+                    guard advertisementLifecycle.claimTerminalFailure() else {
+                        return
+                    }
+                    advertiser.onAdvertisementStatusChange = nil
+                    server.onStatusChange = nil
+                    advertiser.stop()
+                    server.stop()
+                    fputs(
+                        "[runtime] Bonjour advertisement failed: \(message)\n",
+                        stderr
+                    )
+                    exit(EXIT_FAILURE)
+                case .stopped:
+                    guard advertisementLifecycle.claimTerminalFailure() else {
+                        return
+                    }
+                    advertiser.onAdvertisementStatusChange = nil
+                    server.onStatusChange = nil
+                    server.stop()
+                    fputs(
+                        "[runtime] Bonjour advertisement stopped unexpectedly.\n",
+                        stderr
+                    )
+                    exit(EXIT_FAILURE)
+                }
+            }
+            advertiser.start(
+                port: Int32(port),
+                metadata: identity.advertisementMetadata
+            )
+        } else {
+            print("[runtime] Bonjour advertising disabled for this development run.")
+            startDevelopmentPairingIfRequested()
         }
 
         dispatchMain()
@@ -1008,11 +1071,19 @@ private final class RuntimeDevLocalListenerReadiness: @unchecked Sendable {
     private let lock = NSLock()
     private let terminalStartStatus = DispatchSemaphore(value: 0)
     private var storedTerminalStartStatus: PeerServerStatus?
+    private var didReachReady = false
+
+    var hasReachedReady: Bool {
+        lock.withLock { didReachReady }
+    }
 
     func update(_ status: PeerServerStatus) {
         switch status {
         case .listening, .failed, .stopped:
             let didStore = lock.withLock {
+                if case .listening = status {
+                    didReachReady = true
+                }
                 guard storedTerminalStartStatus == nil else { return false }
                 storedTerminalStartStatus = status
                 return true
@@ -1032,6 +1103,28 @@ private final class RuntimeDevLocalListenerReadiness: @unchecked Sendable {
             return nil
         }
         return lock.withLock { storedTerminalStartStatus }
+    }
+}
+
+private final class RuntimeDevAdvertisementLifecycle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var didPublish = false
+    private var isTerminal = false
+
+    func claimPublished() -> Bool {
+        lock.withLock {
+            guard !didPublish, !isTerminal else { return false }
+            didPublish = true
+            return true
+        }
+    }
+
+    func claimTerminalFailure() -> Bool {
+        lock.withLock {
+            guard !isTerminal else { return false }
+            isTerminal = true
+            return true
+        }
     }
 }
 

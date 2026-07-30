@@ -140,6 +140,36 @@ def expected_entry_point_topology() -> dict[str, object]:
     }
 
 
+def expected_application_shell() -> dict[str, object]:
+    return {
+        "manifestResources": {
+            "icon": "@mipmap/ic_launcher",
+            "label": "@string/app_name",
+            "localeConfig": "@xml/locales_config",
+            "roundIcon": "@mipmap/ic_launcher_round",
+            "theme": "@style/AppTheme",
+        },
+        "localeConfigLocales": [
+            "en",
+            "ko",
+            "ja",
+            "zh-CN",
+            "fr",
+        ],
+        "localizedString": {
+            "resource": "@string/status_title",
+            "values": {
+                "default": "Pairing & Connection",
+                "en": "Pairing & Connection",
+                "fr": "Jumelage et connexion",
+                "ja": "ペアリングと接続",
+                "ko": "페어링 및 연결",
+                "zh-CN": "配对与连接",
+            },
+        },
+    }
+
+
 def aapt2_entry_point_xmltree(
     mime_types: tuple[str, ...] = ENTRY_POINT_SHARE_MIME_TYPES,
 ) -> str:
@@ -301,9 +331,109 @@ def bundletool_entry_point_manifest(
     )
 
 
+def aapt2_application_shell_xmltree() -> str:
+    android = "http://schemas.android.com/apk/res/android:"
+    return (
+        "N: android=http://schemas.android.com/apk/res/android (line=2)\n"
+        "  E: manifest (line=2)\n"
+        "      E: application (line=27)\n"
+        f"        A: {android}icon(0x01010002)=@0x7f0e0000\n"
+        f"        A: {android}label(0x01010001)=@0x7f120000\n"
+        f"        A: {android}localeConfig(0x01010654)=@0x7f110002\n"
+        f"        A: {android}roundIcon(0x0101052c)=@0x7f0e0001\n"
+        f"        A: {android}theme(0x01010000)=@0x7f130000\n"
+    )
+
+
+def bundletool_application_shell_manifest() -> str:
+    return (
+        '<manifest xmlns:android="http://schemas.android.com/apk/res/android" '
+        'android:versionCode="1" android:versionName="1.0.0" '
+        'package="com.localagentbridge.android">'
+        '<uses-sdk android:minSdkVersion="26" '
+        'android:targetSdkVersion="36"/>'
+        '<application android:allowBackup="false" '
+        'android:dataExtractionRules="@xml/data_extraction_rules" '
+        'android:fullBackupContent="@xml/backup_rules" '
+        'android:icon="@mipmap/ic_launcher" '
+        'android:label="@string/app_name" '
+        'android:localeConfig="@xml/locales_config" '
+        'android:roundIcon="@mipmap/ic_launcher_round" '
+        'android:theme="@style/AppTheme"/>'
+        "</manifest>"
+    )
+
+
 class ReleaseArtifactArchiveTests(unittest.TestCase):
     AAPT2_ENTRY_POINT_XMLTREE = aapt2_entry_point_xmltree()
     BUNDLETOOL_ENTRY_POINT_MANIFEST = bundletool_entry_point_manifest()
+    AAPT2_APPLICATION_SHELL_XMLTREE = (
+        aapt2_application_shell_xmltree()
+    )
+    BUNDLETOOL_APPLICATION_SHELL_MANIFEST = (
+        bundletool_application_shell_manifest()
+    )
+    AAPT2_APPLICATION_SHELL_RESOURCES = (
+        "Package name=com.localagentbridge.android id=7f\n"
+        "  type mipmap id=0e entryCount=2\n"
+        "    resource 0x7f0e0000 mipmap/ic_launcher\n"
+        "    resource 0x7f0e0001 mipmap/ic_launcher_round\n"
+        "  type string id=12 entryCount=2\n"
+        "    resource 0x7f120000 string/app_name\n"
+        "    resource 0x7f120001 string/status_title\n"
+        "  type style id=13 entryCount=1\n"
+        "    resource 0x7f130000 style/AppTheme\n"
+        "  type xml id=11 entryCount=3\n"
+        "    resource 0x7f110000 xml/backup_rules\n"
+        "    resource 0x7f110001 xml/data_extraction_rules\n"
+        "    resource 0x7f110002 xml/locales_config\n"
+    )
+    AAPT2_LOCALE_CONFIG_XMLTREE = (
+        "N: android=http://schemas.android.com/apk/res/android (line=2)\n"
+        "  E: locale-config (line=2)\n"
+        "      E: locale (line=3)\n"
+        "        A: http://schemas.android.com/apk/res/android:"
+        'name(0x01010003)="en" (Raw: "en")\n'
+        "      E: locale (line=4)\n"
+        "        A: http://schemas.android.com/apk/res/android:"
+        'name(0x01010003)="ko" (Raw: "ko")\n'
+        "      E: locale (line=5)\n"
+        "        A: http://schemas.android.com/apk/res/android:"
+        'name(0x01010003)="ja" (Raw: "ja")\n'
+        "      E: locale (line=6)\n"
+        "        A: http://schemas.android.com/apk/res/android:"
+        'name(0x01010003)="zh-CN" (Raw: "zh-CN")\n'
+        "      E: locale (line=7)\n"
+        "        A: http://schemas.android.com/apk/res/android:"
+        'name(0x01010003)="fr" (Raw: "fr")\n'
+    )
+    AAPT2_LOCALIZED_STRING_RESOURCES = (
+        "Package name=com.localagentbridge.android id=7f\n"
+        "  type string id=12 entryCount=2\n"
+        "    resource 0x7f120000 string/app_name\n"
+        '      () "AetherLink"\n'
+        "    resource 0x7f120001 string/status_title\n"
+        '      () "Pairing & Connection"\n'
+        '      (en) "Pairing & Connection"\n'
+        '      (fr) "Jumelage et connexion"\n'
+        '      (ja) "ペアリングと接続"\n'
+        '      (ko) "페어링 및 연결"\n'
+        '      (zh-rCN) "配对与连接"\n'
+    )
+    BUNDLETOOL_LOCALIZED_STRING = (
+        "Package 'com.localagentbridge.android':\n"
+        "0x7f120001 - string/status_title\n"
+        '\t(default) - [STR] "Pairing & Connection"\n'
+        '\tlocale: "en" - [STR] "Pairing & Connection"\n'
+        '\tlocale: "fr" - [STR] "Jumelage et connexion"\n'
+        '\tlocale: "ja" - [STR] "ペアリングと接続"\n'
+        '\tlocale: "ko" - [STR] "페어링 및 연결"\n'
+        '\tlocale: "zh-CN" - [STR] "配对与连接"\n'
+    )
+    BUNDLETOOL_LANGUAGE_SPLIT_CONFIG = (
+        '{"optimizations":{"splitsConfig":{"splitDimension":'
+        '[{"negate":true,"value":"LANGUAGE"}]}}}'
+    )
     AAPT2_BADGING = (
         "package: name='com.localagentbridge.android' versionCode='1' "
         "versionName='1.0.0' platformBuildVersionName='16'\n"
@@ -339,6 +469,37 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
         "      () (file) res/4j.xml type=XML\n"
         "    resource 0x7f110002 xml/locales_config\n"
         "      () (file) res/Br.xml type=XML\n"
+    )
+    AAPT2_COMPILED_APPLICATION_SHELL_XMLTREE = (
+        AAPT2_ENTRY_POINT_XMLTREE.replace(
+            "        A: http://schemas.android.com/apk/res/android:"
+            "dataExtractionRules(0x0101063e)=@0x7f110001\n",
+            "        A: http://schemas.android.com/apk/res/android:"
+            "dataExtractionRules(0x0101063e)=@0x7f110001\n"
+            "        A: http://schemas.android.com/apk/res/android:"
+            "icon(0x01010002)=@0x7f0e0000\n"
+            "        A: http://schemas.android.com/apk/res/android:"
+            "label(0x01010001)=@0x7f120000\n"
+            "        A: http://schemas.android.com/apk/res/android:"
+            "localeConfig(0x01010654)=@0x7f110002\n"
+            "        A: http://schemas.android.com/apk/res/android:"
+            "roundIcon(0x0101052c)=@0x7f0e0001\n"
+            "        A: http://schemas.android.com/apk/res/android:"
+            "theme(0x01010000)=@0x7f130000\n",
+        )
+    )
+    AAPT2_APPLICATION_SHELL_RESOURCES_WITH_VALUES = (
+        AAPT2_RESOURCES_WITH_VALUES
+        + "  type string id=12 entryCount=2\n"
+        + "    resource 0x7f120000 string/app_name\n"
+        + '      () "AetherLink"\n'
+        + "    resource 0x7f120001 string/status_title\n"
+        + '      () "Pairing & Connection"\n'
+        + '      (en) "Pairing & Connection"\n'
+        + '      (fr) "Jumelage et connexion"\n'
+        + '      (ja) "ペアリングと接続"\n'
+        + '      (ko) "페어링 및 연결"\n'
+        + '      (zh-rCN) "配对与连接"\n'
     )
     AAPT2_BACKUP_RULES_XMLTREE = (
         "E: full-backup-content (line=2)\n"
@@ -472,8 +633,8 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
         bytes,
         bytes,
         bytes,
-        list[bool],
         list[tuple[bool, bool]],
+        list[tuple[bool, bool, bool]],
     ]:
         mapping = b"fixture-mapping\n"
         native = b"\x7fELFfixture-native"
@@ -497,17 +658,24 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
             semantic_version=(1, 0, 0),
         )
         topology = expected_entry_point_topology()
-        apk_requirements: list[bool] = []
-        aab_requirements: list[tuple[bool, bool]] = []
+        application_shell = expected_application_shell()
+        apk_requirements: list[tuple[bool, bool]] = []
+        aab_requirements: list[tuple[bool, bool, bool]] = []
 
         def inspect_apk_policy(
             apk_data: bytes,
             root: Path,
             *,
             entry_point_topology_required: bool = False,
+            application_shell_required: bool = False,
         ) -> dict[str, object]:
             self.assertEqual(apk_data, b"fixture-apk")
-            apk_requirements.append(entry_point_topology_required)
+            apk_requirements.append(
+                (
+                    entry_point_topology_required,
+                    application_shell_required,
+                )
+            )
             result: dict[str, object] = {
                 "allowBackup": False,
                 "dataExtractionRules": "@xml/data_extraction_rules",
@@ -515,6 +683,10 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
             }
             if entry_point_topology_required:
                 result["entryPointTopology"] = copy.deepcopy(topology)
+            if application_shell_required:
+                result["applicationShell"] = copy.deepcopy(
+                    application_shell
+                )
             return result
 
         def inspect_aab(
@@ -523,12 +695,14 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
             *,
             backup_policy_required: bool = False,
             entry_point_topology_required: bool = False,
+            application_shell_required: bool = False,
         ) -> dict[str, object]:
             self.assertEqual(aab_data, aab)
             aab_requirements.append(
                 (
                     backup_policy_required,
                     entry_point_topology_required,
+                    application_shell_required,
                 )
             )
             result: dict[str, object] = {
@@ -543,6 +717,10 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
             }
             if entry_point_topology_required:
                 result["entryPointTopology"] = copy.deepcopy(topology)
+            if application_shell_required:
+                result["applicationShell"] = copy.deepcopy(
+                    application_shell
+                )
             return result
 
         with tempfile.TemporaryDirectory() as temporary:
@@ -636,8 +814,14 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
         native: bytes,
         apk_topology: dict[str, object] | None = None,
         aab_topology: dict[str, object] | None = None,
-    ) -> tuple[list[bool], list[tuple[bool, bool]]]:
+        apk_application_shell: dict[str, object] | None = None,
+        aab_application_shell: dict[str, object] | None = None,
+    ) -> tuple[
+        list[tuple[bool, bool]],
+        list[tuple[bool, bool, bool]],
+    ]:
         topology = expected_entry_point_topology()
+        application_shell = expected_application_shell()
         apk_topology = (
             copy.deepcopy(topology)
             if apk_topology is None
@@ -648,16 +832,32 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
             if aab_topology is None
             else aab_topology
         )
-        apk_requirements: list[bool] = []
-        aab_requirements: list[tuple[bool, bool]] = []
+        apk_application_shell = (
+            copy.deepcopy(application_shell)
+            if apk_application_shell is None
+            else apk_application_shell
+        )
+        aab_application_shell = (
+            copy.deepcopy(application_shell)
+            if aab_application_shell is None
+            else aab_application_shell
+        )
+        apk_requirements: list[tuple[bool, bool]] = []
+        aab_requirements: list[tuple[bool, bool, bool]] = []
 
         def inspect_apk_policy(
             apk_data: bytes,
             *,
             entry_point_topology_required: bool = False,
+            application_shell_required: bool = False,
         ) -> dict[str, object]:
             self.assertEqual(apk_data, b"fixture-apk")
-            apk_requirements.append(entry_point_topology_required)
+            apk_requirements.append(
+                (
+                    entry_point_topology_required,
+                    application_shell_required,
+                )
+            )
             result: dict[str, object] = {
                 "allowBackup": False,
                 "dataExtractionRules": "@xml/data_extraction_rules",
@@ -667,6 +867,10 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                 result["entryPointTopology"] = copy.deepcopy(
                     apk_topology
                 )
+            if application_shell_required:
+                result["applicationShell"] = copy.deepcopy(
+                    apk_application_shell
+                )
             return result
 
         def inspect_aab(
@@ -674,12 +878,14 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
             *,
             backup_policy_required: bool = False,
             entry_point_topology_required: bool = False,
+            application_shell_required: bool = False,
         ) -> dict[str, object]:
             self.assertEqual(aab_data, aab)
             aab_requirements.append(
                 (
                     backup_policy_required,
                     entry_point_topology_required,
+                    application_shell_required,
                 )
             )
             result: dict[str, object] = {
@@ -695,6 +901,10 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
             if entry_point_topology_required:
                 result["entryPointTopology"] = copy.deepcopy(
                     aab_topology
+                )
+            if application_shell_required:
+                result["applicationShell"] = copy.deepcopy(
+                    aab_application_shell
                 )
             return result
 
@@ -2050,6 +2260,89 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                     all(not path.exists() for path in failed_paths)
                 )
 
+    def test_apk_inspectors_read_exact_compiled_application_shell(
+        self,
+    ) -> None:
+        expected = {
+            "allowBackup": False,
+            "applicationShell": expected_application_shell(),
+            "dataExtractionRules": "@xml/data_extraction_rules",
+            "entryPointTopology": expected_entry_point_topology(),
+            "fullBackupContent": "@xml/backup_rules",
+        }
+        for module in (builder_module, readback_module):
+            temporary_paths: list[Path] = []
+            commands: list[tuple[str, str]] = []
+
+            def fake_dump(command: list[str], root: Path) -> str:
+                temporary_path = Path(command[-1])
+                self.assertEqual(
+                    temporary_path.read_bytes(),
+                    b"fixture-apk",
+                )
+                temporary_paths.append(temporary_path)
+                if command[2] == "xmltree":
+                    file_name = command[4]
+                    commands.append(("xmltree", file_name))
+                    return {
+                        "AndroidManifest.xml": (
+                            self.AAPT2_COMPILED_APPLICATION_SHELL_XMLTREE
+                        ),
+                        "res/Qq.xml": self.AAPT2_BACKUP_RULES_XMLTREE,
+                        "res/4j.xml": (
+                            self.AAPT2_DATA_EXTRACTION_RULES_XMLTREE
+                        ),
+                        "res/Br.xml": self.AAPT2_LOCALE_CONFIG_XMLTREE,
+                    }[file_name]
+                stage = (
+                    "no-values"
+                    if "--no-values" in command
+                    else "values"
+                )
+                commands.append(("resources", stage))
+                return (
+                    self.AAPT2_APPLICATION_SHELL_RESOURCES
+                    if stage == "no-values"
+                    else self.AAPT2_APPLICATION_SHELL_RESOURCES_WITH_VALUES
+                )
+
+            with (
+                self.subTest(module=module.__name__),
+                mock.patch.object(
+                    module,
+                    "find_android_build_tool",
+                    return_value=Path("/fixture/aapt2"),
+                ),
+                mock.patch.object(
+                    module,
+                    "run_aapt2_dump",
+                    side_effect=fake_dump,
+                ),
+            ):
+                self.assertEqual(
+                    module.inspect_apk_backup_policy(
+                        b"fixture-apk",
+                        entry_point_topology_required=True,
+                        application_shell_required=True,
+                    ),
+                    expected,
+                )
+            self.assertEqual(
+                commands,
+                [
+                    ("xmltree", "AndroidManifest.xml"),
+                    ("resources", "no-values"),
+                    ("resources", "values"),
+                    ("xmltree", "res/Qq.xml"),
+                    ("xmltree", "res/4j.xml"),
+                    ("xmltree", "res/Br.xml"),
+                ],
+            )
+            self.assertEqual(len(set(temporary_paths)), 1)
+            self.assertTrue(
+                all(not path.exists() for path in temporary_paths)
+            )
+
     def test_packaged_backup_policy_body_parsers_fail_closed(self) -> None:
         modules = (
             (builder_module, ReleaseArchiveError),
@@ -2067,10 +2360,25 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                     ),
                     expected_paths,
                 )
+                self.assertEqual(
+                    module.parse_aapt2_xml_resource_paths(
+                        self.AAPT2_RESOURCES_WITH_VALUES,
+                        application_shell_required=True,
+                    ),
+                    {
+                        **expected_paths,
+                        "locales_config": "res/Br.xml",
+                    },
+                )
                 module.validate_aapt2_backup_policy_xmltrees(
                     self.AAPT2_BACKUP_RULES_XMLTREE,
                     self.AAPT2_DATA_EXTRACTION_RULES_XMLTREE,
                 )
+                with self.assertRaises(error_type):
+                    module.parse_aapt2_xml_resource_paths(
+                        self.AAPT2_RESOURCES_WITH_VALUES,
+                        application_shell_required=1,
+                    )
 
             invalid_resources = (
                 self.AAPT2_RESOURCES_WITH_VALUES.replace(
@@ -2224,6 +2532,359 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
             parse_readback_bundletool_manifest(historical),
             expected_historical,
         )
+
+    def test_builder_and_readback_parse_exact_application_shell(
+        self,
+    ) -> None:
+        expected = expected_application_shell()
+        for module, error_type in (
+            (builder_module, ReleaseArchiveError),
+            (readback_module, ReleaseArchiveVerificationError),
+        ):
+            with self.subTest(module=module.__name__):
+                self.assertEqual(
+                    module.parse_aapt2_application_shell_manifest(
+                        self.AAPT2_APPLICATION_SHELL_XMLTREE,
+                        self.AAPT2_APPLICATION_SHELL_RESOURCES,
+                    ),
+                    expected["manifestResources"],
+                )
+                self.assertEqual(
+                    module.parse_aapt2_locale_config(
+                        self.AAPT2_LOCALE_CONFIG_XMLTREE
+                    ),
+                    expected["localeConfigLocales"],
+                )
+                self.assertEqual(
+                    module.parse_aapt2_localized_string(
+                        self.AAPT2_LOCALIZED_STRING_RESOURCES
+                    ),
+                    expected["localizedString"],
+                )
+                self.assertEqual(
+                    module.parse_bundletool_localized_string(
+                        self.BUNDLETOOL_LOCALIZED_STRING
+                    ),
+                    expected["localizedString"],
+                )
+                self.assertIsNone(
+                    module.parse_bundletool_language_split_contract(
+                        self.BUNDLETOOL_LANGUAGE_SPLIT_CONFIG
+                    )
+                )
+                parsed_manifest = module.parse_bundletool_manifest(
+                    self.BUNDLETOOL_APPLICATION_SHELL_MANIFEST,
+                    backup_policy_required=True,
+                    application_shell_required=True,
+                )
+                self.assertEqual(
+                    parsed_manifest["applicationShell"],
+                    {
+                        "manifestResources": (
+                            expected["manifestResources"]
+                        )
+                    },
+                )
+                historical = module.parse_bundletool_manifest(
+                    self.BUNDLETOOL_APPLICATION_SHELL_MANIFEST,
+                    backup_policy_required=True,
+                )
+                self.assertNotIn("applicationShell", historical)
+                with self.assertRaises(error_type):
+                    module.parse_bundletool_manifest(
+                        self.BUNDLETOOL_APPLICATION_SHELL_MANIFEST,
+                        backup_policy_required=True,
+                        application_shell_required=1,
+                    )
+
+    def test_aapt2_application_shell_parsers_reject_mutations(
+        self,
+    ) -> None:
+        expected = expected_application_shell()
+        manifest = self.AAPT2_APPLICATION_SHELL_XMLTREE
+        resources = self.AAPT2_APPLICATION_SHELL_RESOURCES
+        android = "http://schemas.android.com/apk/res/android:"
+        manifest_lines = {
+            "icon": f"        A: {android}icon(0x01010002)=@0x7f0e0000\n",
+            "label": f"        A: {android}label(0x01010001)=@0x7f120000\n",
+            "localeConfig": (
+                f"        A: {android}localeConfig(0x01010654)"
+                "=@0x7f110002\n"
+            ),
+            "roundIcon": (
+                f"        A: {android}roundIcon(0x0101052c)"
+                "=@0x7f0e0001\n"
+            ),
+            "theme": (
+                f"        A: {android}theme(0x01010000)=@0x7f130000\n"
+            ),
+        }
+        invalid_manifest_pairs: list[tuple[str, str]] = []
+        for line in manifest_lines.values():
+            invalid_manifest_pairs.extend(
+                (
+                    (manifest.replace(line, ""), resources),
+                    (
+                        manifest.replace(
+                            line,
+                            line.replace(android, ""),
+                        ),
+                        resources,
+                    ),
+                    (manifest.replace(line, line + line), resources),
+                    (
+                        manifest.replace(
+                            line,
+                            line + line.replace(android, ""),
+                        ),
+                        resources,
+                    ),
+                )
+            )
+        invalid_manifest_pairs.extend(
+            (
+                (
+                    manifest.replace("@0x7f0e0000", "@0x7f0e0001"),
+                    resources,
+                ),
+                (
+                    manifest,
+                    resources.replace(
+                        "mipmap/ic_launcher\n",
+                        "drawable/ic_launcher\n",
+                    ),
+                ),
+                (
+                    manifest,
+                    resources.replace(
+                        "    resource 0x7f130000 style/AppTheme\n",
+                        "",
+                    ),
+                ),
+                (
+                    manifest,
+                    resources
+                    + "    resource 0x7f130000 style/AppTheme\n",
+                ),
+            )
+        )
+
+        invalid_locale_configs = (
+            self.AAPT2_LOCALE_CONFIG_XMLTREE.replace(
+                "      E: locale (line=7)\n"
+                "        A: http://schemas.android.com/apk/res/android:"
+                'name(0x01010003)="fr" (Raw: "fr")\n',
+                "",
+            ),
+            self.AAPT2_LOCALE_CONFIG_XMLTREE
+            + "      E: locale (line=8)\n"
+            + "        A: http://schemas.android.com/apk/res/android:"
+            + 'name(0x01010003)="de" (Raw: "de")\n',
+            self.AAPT2_LOCALE_CONFIG_XMLTREE.replace(
+                'name(0x01010003)="fr" (Raw: "fr")',
+                'name(0x01010003)="zh-CN" (Raw: "zh-CN")',
+            ),
+            self.AAPT2_LOCALE_CONFIG_XMLTREE.replace(
+                'name(0x01010003)="en" (Raw: "en")',
+                "__LOCALE_PLACEHOLDER__",
+            ).replace(
+                'name(0x01010003)="ko" (Raw: "ko")',
+                'name(0x01010003)="en" (Raw: "en")',
+            ).replace(
+                "__LOCALE_PLACEHOLDER__",
+                'name(0x01010003)="ko" (Raw: "ko")',
+            ),
+            self.AAPT2_LOCALE_CONFIG_XMLTREE.replace(
+                "http://schemas.android.com/apk/res/android:name",
+                "name",
+                1,
+            ),
+            self.AAPT2_LOCALE_CONFIG_XMLTREE.replace(
+                '(Raw: "zh-CN")',
+                '(Raw: "zh-rCN")',
+            ),
+        )
+        invalid_localized_resources = (
+            self.AAPT2_LOCALIZED_STRING_RESOURCES.replace(
+                '      (fr) "Jumelage et connexion"\n',
+                "",
+            ),
+            self.AAPT2_LOCALIZED_STRING_RESOURCES
+            + '      (de) "Kopplung und Verbindung"\n',
+            self.AAPT2_LOCALIZED_STRING_RESOURCES.replace(
+                '      (en) "Pairing & Connection"\n',
+                '      (en) "Pairing & Connection"\n'
+                '      (en) "Pairing & Connection"\n',
+            ),
+            self.AAPT2_LOCALIZED_STRING_RESOURCES.replace(
+                '      (ko) "페어링 및 연결"',
+                '      (ko) "연결"',
+            ),
+            self.AAPT2_LOCALIZED_STRING_RESOURCES.replace(
+                "string/status_title",
+                "string/status",
+            ),
+            self.AAPT2_LOCALIZED_STRING_RESOURCES.replace(
+                "(zh-rCN)",
+                "(zh-CN)",
+            ),
+        )
+
+        for module, error_type in (
+            (builder_module, ReleaseArchiveError),
+            (readback_module, ReleaseArchiveVerificationError),
+        ):
+            for changed_manifest, changed_resources in (
+                invalid_manifest_pairs
+            ):
+                with (
+                    self.subTest(
+                        module=module.__name__,
+                        manifest=changed_manifest,
+                        resources=changed_resources,
+                    ),
+                    self.assertRaises(error_type),
+                ):
+                    module.parse_aapt2_application_shell_manifest(
+                        changed_manifest,
+                        changed_resources,
+                    )
+            for changed_locale_config in invalid_locale_configs:
+                with (
+                    self.subTest(
+                        module=module.__name__,
+                        locale_config=changed_locale_config,
+                    ),
+                    self.assertRaises(error_type),
+                ):
+                    module.parse_aapt2_locale_config(
+                        changed_locale_config
+                    )
+            for changed_resources in invalid_localized_resources:
+                with (
+                    self.subTest(
+                        module=module.__name__,
+                        resources=changed_resources,
+                    ),
+                    self.assertRaises(error_type),
+                ):
+                    module.parse_aapt2_localized_string(
+                        changed_resources
+                    )
+
+        self.assertEqual(
+            expected["localeConfigLocales"],
+            ["en", "ko", "ja", "zh-CN", "fr"],
+        )
+
+    def test_bundletool_application_shell_parsers_reject_mutations(
+        self,
+    ) -> None:
+        manifest = self.BUNDLETOOL_APPLICATION_SHELL_MANIFEST
+        manifest_attributes = (
+            'android:icon="@mipmap/ic_launcher"',
+            'android:label="@string/app_name"',
+            'android:localeConfig="@xml/locales_config"',
+            'android:roundIcon="@mipmap/ic_launcher_round"',
+            'android:theme="@style/AppTheme"',
+        )
+        invalid_manifests: list[str] = []
+        for attribute in manifest_attributes:
+            invalid_manifests.extend(
+                (
+                    manifest.replace(f" {attribute}", ""),
+                    manifest.replace(attribute, attribute.replace("android:", "")),
+                    manifest.replace(attribute, f"{attribute} {attribute}"),
+                    manifest.replace(
+                        attribute,
+                        f"{attribute} {attribute.replace('android:', '')}",
+                    ),
+                    manifest.replace(
+                        attribute,
+                        attribute.replace("@", "@drawable/changed#", 1),
+                    ),
+                )
+            )
+
+        localized_string = self.BUNDLETOOL_LOCALIZED_STRING
+        invalid_localized_strings = (
+            localized_string.replace(
+                '\tlocale: "fr" - [STR] "Jumelage et connexion"\n',
+                "",
+            ),
+            localized_string
+            + '\tlocale: "de" - [STR] "Kopplung und Verbindung"\n',
+            localized_string.replace(
+                '\tlocale: "en" - [STR] "Pairing & Connection"\n',
+                '\tlocale: "en" - [STR] "Pairing & Connection"\n'
+                '\tlocale: "en" - [STR] "Pairing & Connection"\n',
+            ),
+            localized_string.replace(
+                '"ja" - [STR] "ペアリングと接続"',
+                '"ja" - [STR] "接続"',
+            ),
+            localized_string.replace(
+                "string/status_title",
+                "string/status",
+            ),
+            localized_string.replace(
+                'locale: "zh-CN"',
+                'locale: "zh-rCN"',
+            ),
+        )
+        invalid_language_configs = (
+            '{"optimizations":{"splitsConfig":{"splitDimension":'
+            '[{"value":"LANGUAGE"}]}}}',
+            '{"optimizations":{"splitsConfig":{"splitDimension":'
+            '[{"negate":false,"value":"LANGUAGE"}]}}}',
+            '{"optimizations":{"splitsConfig":{"splitDimension":'
+            '[{"negate":true,"value":"ABI"}]}}}',
+            '{"optimizations":{"splitsConfig":{"splitDimension":'
+            '[{"negate":true,"value":"LANGUAGE"},'
+            '{"negate":true,"value":"LANGUAGE"}]}}}',
+            '{"optimizations":{"splitsConfig":{"splitDimension":'
+            '[0,{"negate":true,"value":"LANGUAGE"}]}}}',
+        )
+
+        for module, error_type in (
+            (builder_module, ReleaseArchiveError),
+            (readback_module, ReleaseArchiveVerificationError),
+        ):
+            for changed_manifest in invalid_manifests:
+                with (
+                    self.subTest(
+                        module=module.__name__,
+                        manifest=changed_manifest,
+                    ),
+                    self.assertRaises(error_type),
+                ):
+                    module.parse_bundletool_manifest(
+                        changed_manifest,
+                        backup_policy_required=True,
+                        application_shell_required=True,
+                    )
+            for changed_localized_string in invalid_localized_strings:
+                with (
+                    self.subTest(
+                        module=module.__name__,
+                        localized_string=changed_localized_string,
+                    ),
+                    self.assertRaises(error_type),
+                ):
+                    module.parse_bundletool_localized_string(
+                        changed_localized_string
+                    )
+            for changed_config in invalid_language_configs:
+                with (
+                    self.subTest(
+                        module=module.__name__,
+                        config=changed_config,
+                    ),
+                    self.assertRaises(error_type),
+                ):
+                    module.parse_bundletool_language_split_contract(
+                        changed_config
+                    )
 
     def test_builder_and_readback_parse_exact_entry_point_topology(
         self,
@@ -2539,6 +3200,125 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
             23,
         )
 
+    def test_application_shell_claim_is_exact_typed_and_build_gated(
+        self,
+    ) -> None:
+        expected = expected_application_shell()
+        self.assertEqual(
+            readback_module.verify_android_application_shell_claim(
+                copy.deepcopy(expected)
+            ),
+            expected,
+        )
+
+        invalid: list[object] = [None, [], "applicationShell"]
+        for key in expected:
+            missing = copy.deepcopy(expected)
+            del missing[key]
+            invalid.append(missing)
+        extra_root = copy.deepcopy(expected)
+        extra_root["renderedOnDevice"] = True
+        invalid.append(extra_root)
+
+        manifest_resources = expected["manifestResources"]
+        assert isinstance(manifest_resources, dict)
+        non_object_manifest = copy.deepcopy(expected)
+        non_object_manifest["manifestResources"] = []
+        invalid.append(non_object_manifest)
+        for key in manifest_resources:
+            missing = copy.deepcopy(expected)
+            del missing["manifestResources"][key]
+            invalid.append(missing)
+            wrong = copy.deepcopy(expected)
+            wrong["manifestResources"][key] = True
+            invalid.append(wrong)
+        extra_manifest_key = copy.deepcopy(expected)
+        extra_manifest_key["manifestResources"]["banner"] = (
+            "@drawable/banner"
+        )
+        invalid.append(extra_manifest_key)
+
+        tuple_locales = copy.deepcopy(expected)
+        tuple_locales["localeConfigLocales"] = tuple(
+            tuple_locales["localeConfigLocales"]
+        )
+        invalid.append(tuple_locales)
+        for locales in (
+            ["en", "ko", "ja", "fr"],
+            ["en", "ko", "ja", "zh-CN", "fr", "de"],
+            ["en", "ko", "ja", "zh-CN", "zh-CN"],
+            ["fr", "zh-CN", "ja", "ko", "en"],
+            ["en", "ko", "ja", "zh-rCN", "fr"],
+            ["en", "ko", "ja", "zh-CN", 1],
+        ):
+            changed = copy.deepcopy(expected)
+            changed["localeConfigLocales"] = locales
+            invalid.append(changed)
+
+        localized_string = expected["localizedString"]
+        assert isinstance(localized_string, dict)
+        non_object_localized = copy.deepcopy(expected)
+        non_object_localized["localizedString"] = []
+        invalid.append(non_object_localized)
+        for key in localized_string:
+            missing = copy.deepcopy(expected)
+            del missing["localizedString"][key]
+            invalid.append(missing)
+        extra_localized_key = copy.deepcopy(expected)
+        extra_localized_key["localizedString"]["formatted"] = False
+        invalid.append(extra_localized_key)
+        wrong_resource = copy.deepcopy(expected)
+        wrong_resource["localizedString"]["resource"] = (
+            "@string/app_name"
+        )
+        invalid.append(wrong_resource)
+        non_object_values = copy.deepcopy(expected)
+        non_object_values["localizedString"]["values"] = []
+        invalid.append(non_object_values)
+        localized_values = localized_string["values"]
+        assert isinstance(localized_values, dict)
+        for key in localized_values:
+            missing = copy.deepcopy(expected)
+            del missing["localizedString"]["values"][key]
+            invalid.append(missing)
+            wrong = copy.deepcopy(expected)
+            wrong["localizedString"]["values"][key] = True
+            invalid.append(wrong)
+        extra_value = copy.deepcopy(expected)
+        extra_value["localizedString"]["values"]["de"] = (
+            "Kopplung und Verbindung"
+        )
+        invalid.append(extra_value)
+
+        for value in invalid:
+            with self.subTest(value=value), self.assertRaises(
+                ReleaseArchiveVerificationError
+            ):
+                readback_module.verify_android_application_shell_claim(
+                    value
+                )
+
+        for build_number in range(1, 23):
+            with self.subTest(build_number=build_number):
+                self.assertNotIn(
+                    "applicationShell",
+                    readback_module.expected_android_manifest_keys(
+                        build_number
+                    ),
+                )
+        self.assertIn(
+            "applicationShell",
+            readback_module.expected_android_manifest_keys(23),
+        )
+        self.assertEqual(
+            builder_module.ANDROID_APPLICATION_SHELL_BUILD,
+            23,
+        )
+        self.assertEqual(
+            readback_module.ANDROID_APPLICATION_SHELL_BUILD,
+            23,
+        )
+
     def test_android_metadata_and_readback_wire_build22_and_build23(
         self,
     ) -> None:
@@ -2553,6 +3333,7 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                     builder_aab_requirements,
                 ) = self.android_metadata_fixture(build_number)
                 topology_required = build_number >= 23
+                application_shell_required = build_number >= 23
                 self.assertEqual(
                     set(metadata),
                     readback_module.expected_android_manifest_keys(
@@ -2564,12 +3345,27 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                     topology_required,
                 )
                 self.assertEqual(
+                    "applicationShell" in metadata,
+                    application_shell_required,
+                )
+                self.assertEqual(
                     builder_apk_requirements,
-                    [topology_required],
+                    [
+                        (
+                            topology_required,
+                            application_shell_required,
+                        )
+                    ],
                 )
                 self.assertEqual(
                     builder_aab_requirements,
-                    [(True, topology_required)],
+                    [
+                        (
+                            True,
+                            topology_required,
+                            application_shell_required,
+                        )
+                    ],
                 )
                 expected_bundle_fields = [
                     *builder_module.BASE_BUNDLE_MANIFEST_VERIFIED_FIELDS,
@@ -2579,6 +3375,12 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                         builder_module
                         .ENTRY_POINT_TOPOLOGY_MANIFEST_VERIFIED_FIELDS
                         if topology_required
+                        else ()
+                    ),
+                    *(
+                        builder_module
+                        .APPLICATION_SHELL_MANIFEST_VERIFIED_FIELDS
+                        if application_shell_required
                         else ()
                     ),
                 ]
@@ -2595,6 +3397,12 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                         builder_module
                         .ENTRY_POINT_TOPOLOGY_MANIFEST_VERIFIED_FIELDS
                         if topology_required
+                        else ()
+                    ),
+                    *(
+                        builder_module
+                        .APPLICATION_SHELL_MANIFEST_VERIFIED_FIELDS
+                        if application_shell_required
                         else ()
                     ),
                 ]
@@ -2614,11 +3422,22 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     readback_apk_requirements,
-                    [topology_required],
+                    [
+                        (
+                            topology_required,
+                            application_shell_required,
+                        )
+                    ],
                 )
                 self.assertEqual(
                     readback_aab_requirements,
-                    [(True, topology_required)],
+                    [
+                        (
+                            True,
+                            topology_required,
+                            application_shell_required,
+                        )
+                    ],
                 )
 
     def test_android_readback_rejects_build23_topology_wiring_drift(
@@ -2710,6 +3529,105 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
         ) = self.android_metadata_fixture(22)
         historical_metadata["entryPointTopology"] = (
             expected_entry_point_topology()
+        )
+        with self.assertRaises(ReleaseArchiveVerificationError):
+            self.verify_android_metadata_fixture(
+                historical_metadata,
+                build_number=22,
+                aab=historical_aab,
+                mapping=historical_mapping,
+                native=historical_native,
+            )
+
+    def test_android_readback_rejects_build23_application_shell_wiring_drift(
+        self,
+    ) -> None:
+        (
+            metadata,
+            aab,
+            mapping,
+            native,
+            _,
+            _,
+        ) = self.android_metadata_fixture(23)
+
+        def changed_application_shell() -> dict[str, object]:
+            value = expected_application_shell()
+            value["localizedString"]["values"]["fr"] = "Connexion"
+            return value
+
+        changed_claim = copy.deepcopy(metadata)
+        changed_claim["applicationShell"] = changed_application_shell()
+        with self.assertRaises(ReleaseArchiveVerificationError):
+            self.verify_android_metadata_fixture(
+                changed_claim,
+                build_number=23,
+                aab=aab,
+                mapping=mapping,
+                native=native,
+            )
+
+        with self.assertRaises(ReleaseArchiveVerificationError):
+            self.verify_android_metadata_fixture(
+                metadata,
+                build_number=23,
+                aab=aab,
+                mapping=mapping,
+                native=native,
+                apk_application_shell=changed_application_shell(),
+            )
+
+        with self.assertRaises(ReleaseArchiveVerificationError):
+            self.verify_android_metadata_fixture(
+                metadata,
+                build_number=23,
+                aab=aab,
+                mapping=mapping,
+                native=native,
+                aab_application_shell=changed_application_shell(),
+            )
+
+        for readback_key in (
+            "bundleManifestReadback",
+            "apkManifestReadback",
+        ):
+            missing_verified_field = copy.deepcopy(metadata)
+            missing_verified_field[readback_key][
+                "verifiedFields"
+            ].remove("applicationShell")
+            with (
+                self.subTest(readback_key=readback_key),
+                self.assertRaises(ReleaseArchiveVerificationError),
+            ):
+                self.verify_android_metadata_fixture(
+                    missing_verified_field,
+                    build_number=23,
+                    aab=aab,
+                    mapping=mapping,
+                    native=native,
+                )
+
+        missing_claim = copy.deepcopy(metadata)
+        del missing_claim["applicationShell"]
+        with self.assertRaises(ReleaseArchiveVerificationError):
+            self.verify_android_metadata_fixture(
+                missing_claim,
+                build_number=23,
+                aab=aab,
+                mapping=mapping,
+                native=native,
+            )
+
+        (
+            historical_metadata,
+            historical_aab,
+            historical_mapping,
+            historical_native,
+            _,
+            _,
+        ) = self.android_metadata_fixture(22)
+        historical_metadata["applicationShell"] = (
+            expected_application_shell()
         )
         with self.assertRaises(ReleaseArchiveVerificationError):
             self.verify_android_metadata_fixture(
@@ -3114,8 +4032,11 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
             def fake_policy_readback(
                 path: Path,
                 root: Path,
+                *,
+                application_shell_required: bool = False,
             ) -> dict[str, object]:
                 self.assertEqual(path.read_bytes(), b"fixture-aab")
+                self.assertFalse(application_shell_required)
                 inspected_policy_paths.append(path)
                 return expected_policy
 
@@ -3222,6 +4143,147 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                 module.inspect_aab_manifest(
                     b"fixture-aab",
                     backup_policy_required=True,
+                )
+
+    def test_aab_inspectors_read_direct_and_universal_application_shell(
+        self,
+    ) -> None:
+        application_shell = expected_application_shell()
+        expected = {
+            "allowBackup": False,
+            "applicationId": "com.localagentbridge.android",
+            "applicationShell": application_shell,
+            "dataExtractionRules": "@xml/data_extraction_rules",
+            "fullBackupContent": "@xml/backup_rules",
+            "minSdk": 26,
+            "targetSdk": 36,
+            "versionCode": 1,
+            "versionName": "1.0.0",
+        }
+        for module, error_type in (
+            (builder_module, ReleaseArchiveError),
+            (readback_module, ReleaseArchiveVerificationError),
+        ):
+            commands: list[list[str]] = []
+            temporary_paths: list[Path] = []
+
+            def fake_run(
+                arguments: list[str],
+                *,
+                root: Path,
+            ) -> str:
+                commands.append(list(arguments))
+                bundle_argument = next(
+                    argument
+                    for argument in arguments
+                    if argument.startswith("--bundle=")
+                )
+                bundle_path = Path(
+                    bundle_argument.removeprefix("--bundle=")
+                )
+                self.assertEqual(bundle_path.read_bytes(), b"fixture-aab")
+                temporary_paths.append(bundle_path)
+                if arguments[0] == "validate":
+                    return self.BUNDLETOOL_VALIDATE_OUTPUT
+                if arguments[1] == "manifest":
+                    return self.BUNDLETOOL_APPLICATION_SHELL_MANIFEST
+                if arguments[1] == "resources":
+                    return self.BUNDLETOOL_LOCALIZED_STRING
+                if arguments[1] == "config":
+                    return self.BUNDLETOOL_LANGUAGE_SPLIT_CONFIG
+                self.fail(f"unexpected bundletool arguments: {arguments!r}")
+
+            universal_requirements: list[bool] = []
+
+            def fake_universal_readback(
+                path: Path,
+                root: Path,
+                *,
+                application_shell_required: bool = False,
+            ) -> dict[str, object]:
+                self.assertEqual(path.read_bytes(), b"fixture-aab")
+                universal_requirements.append(
+                    application_shell_required
+                )
+                return {
+                    "allowBackup": False,
+                    "applicationShell": copy.deepcopy(
+                        application_shell
+                    ),
+                    "dataExtractionRules": (
+                        "@xml/data_extraction_rules"
+                    ),
+                    "fullBackupContent": "@xml/backup_rules",
+                }
+
+            with (
+                self.subTest(module=module.__name__),
+                mock.patch.object(
+                    module,
+                    "run_bundletool",
+                    side_effect=fake_run,
+                ),
+                mock.patch.object(
+                    module,
+                    "inspect_aab_backup_policy",
+                    side_effect=fake_universal_readback,
+                ),
+            ):
+                self.assertEqual(
+                    module.inspect_aab_manifest(
+                        b"fixture-aab",
+                        backup_policy_required=True,
+                        application_shell_required=True,
+                    ),
+                    expected,
+                )
+            self.assertEqual(universal_requirements, [True])
+            self.assertEqual(
+                [command[:2] for command in commands],
+                [
+                    ["validate", commands[0][1]],
+                    ["dump", "manifest"],
+                    ["dump", "resources"],
+                    ["dump", "config"],
+                ],
+            )
+            self.assertIn(
+                "--resource=string/status_title",
+                commands[2],
+            )
+            self.assertIn("--values", commands[2])
+            self.assertEqual(len(set(temporary_paths)), 1)
+            self.assertTrue(
+                all(not path.exists() for path in temporary_paths)
+            )
+
+            changed_shell = copy.deepcopy(application_shell)
+            changed_shell["localizedString"]["values"]["ko"] = "연결"
+            with (
+                self.subTest(module=module.__name__, drift="universal"),
+                mock.patch.object(
+                    module,
+                    "run_bundletool",
+                    side_effect=fake_run,
+                ),
+                mock.patch.object(
+                    module,
+                    "inspect_aab_backup_policy",
+                    return_value={
+                        "allowBackup": False,
+                        "applicationShell": changed_shell,
+                        "dataExtractionRules": (
+                            "@xml/data_extraction_rules"
+                        ),
+                        "fullBackupContent": "@xml/backup_rules",
+                    },
+                ),
+                self.assertRaises(error_type),
+            ):
+                module.inspect_aab_manifest(
+                    b"fixture-aab",
+                    backup_policy_required=True,
+                    application_shell_required=True,
                 )
 
     def test_bundletool_subprocess_failure_and_stderr_fail_closed(

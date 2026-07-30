@@ -21,22 +21,55 @@ performance, build, and release-quality work at the user's direction. The G2
 security track below is paused and retained as historical roadmap context; it
 is not the next action.
 
-The current Android G6 release-quality slice adds a Build 23-forward compiled
-entry-point topology contract. The builder and independent readback checker
+The current macOS G5/G6 lifecycle slice closes both listener and Bonjour false
+readiness. `LocalPeerServer` reports `.listening` only after the operating system
+reports `.ready`; `BonjourAdvertiser` then reports
+`publishing -> published | failed` with a five-second timeout. The connection
+manager keeps the app in the existing neutral `starting` state until publication
+is confirmed. Only then can route allocation, relay startup, restored-pair work,
+or pairing proceed. Publication failure, timeout, or unexpected late stop
+releases local ownership and retains same-port Retry. Separate listener and
+advertisement generations reject callbacks from replaced attempts, and a
+metadata refresh during publication restarts only the advertisement with the
+latest TXT data. `RuntimeDevServer` prints advertisement readiness and permits
+development pairing only after publication, and exits on initial or late
+publication failure. A late listener loss terminalizes its advertisement gate
+before stop, so an already captured publish callback cannot emit stale
+advertising or pairing output. Publication operations serialize reentrant or concurrent
+replacement, confirmed publication cannot be overwritten by a racing timeout,
+and immediate advertisement failure after asynchronous listener readiness is
+forwarded before ownership cleanup. Status handlers run outside the lifecycle
+lock so a handler can coordinate a stop on another queue without lock
+inversion. Seven advertiser tests, all 39 manager tests, two focused AppModel
+regressions, and the exact 180-test non-security product
+selector pass.
+This is local no-device lifecycle evidence only, not external-network discovery,
+device, performance, security, signing, deployment, or release qualification.
+
+The current Android G6 release-quality slice adds Build 23-forward compiled
+entry-point topology and application-shell contracts. The builder and
+independent readback checker
 each parse the APK `aapt2 xmltree` and AAB bundletool manifest, require one
 `singleTask`/`never` exported `MainActivity`, and close its filters to launcher,
 `aetherlink://pair`, `SEND`, and `SEND_MULTIPLE` with the same canonical 44
-MIME types. The stored claim must satisfy
-`expected == APK == AAB == archived claim`, including closed keys and exact
-types. Fifty-two release-archive regressions pass, and locally present historical
-Build 21 compiled outputs produce the same topology through both formats. The
+MIME types. They also resolve the exact five application-shell references,
+ordered five-locale config, and default plus five localized `status_title`
+payloads. The AAB bundle config must disable language splitting, and direct AAB
+manifest/resource observations must match its derived universal APK where they
+overlap; that derived APK supplies the locale-config body/order for the
+composite AAB claim. Stored claims use closed keys and exact types. Fifty-nine
+release-archive regressions pass, and the bounded
+Android product CI lane executes the whole contract module. Locally present
+historical Build 21 outputs produce the same topology and application shell
+through the standalone APK and composite direct-plus-derived AAB paths. The
 claim intentionally excludes unrelated activities merged from dependencies;
 it is a closed MainActivity entry-point contract rather than a complete
 application-component inventory. The
 gate is deliberately inactive for immutable Builds 1 through 22; Build 22
-archive-only readback still passes. No Build 23 release, ledger bump, archive
-rewrite, device run, signing, publication, permission analysis, or network
-claim is part of this slice.
+archive-only readback and Builds 1 through 21 historical readback all pass. No
+Build 23 release, ledger bump, archive rewrite, device run, visual
+launcher/theme observation, signing, publication, permission analysis, or
+network claim is part of this slice.
 
 The current G6 non-security slice isolates macOS packaging from the running
 development app. Package-only performs a clean default Swift build into
@@ -88,7 +121,7 @@ are canceled when the screen is left. Menu-bar generation is owned by one main
 `Window`, and locale-driven view recreation preserves a pending focus handoff.
 QR expiry announces once per QR lifecycle without countdown spam, and
 decorative Model Download icons are hidden from the accessibility tree.
-Eight new policy/announcement/render regressions, the exact 159-test product CI
+Eight new policy/announcement/render regressions, the current exact 180-test product CI
 selector, and the complete 186-test accessibility run pass. Physical keyboard
 and VoiceOver traversal remain unclaimed because the Mac was locked during
 attempted UI observation.
@@ -108,12 +141,14 @@ or explicitly tagged mapping keys. The isolated product-copy mode is included
 in the macOS static lane and returns before the paused mixed security checks.
 The Android allowlist directly executes the
 changed-session scroll-boundary regression; the exact Android lane passes seven
-tests across four result classes with zero skips, failures, or errors. Local
-parity passes with 159 selected Swift tests. Hosted run `30525374687` completed
+tests across four result classes with zero skips, failures, or errors. Current
+local parity passes with 180 selected Swift tests. Hosted run `30525374687` completed
 both jobs successfully for baseline commit
-`0f59c757d745d0b95c37c9b93aec8d354bcfef9f`; the current uncommitted listener,
-reduced-motion, visual/focus accessibility, copy, selector, and checker changes
-are not covered by that baseline run. This
+`0f59c757d745d0b95c37c9b93aec8d354bcfef9f`. That historical 159-test baseline
+predates commit `53f45d4e9909dd77520a450170eb87c7d260ea89` and does not
+cover the current unstaged listener/Bonjour publication lifecycle,
+advertisement-timeout, same-port retry, selector, checker, or documentation
+follow-ups. This
 does not complete canonical G7 `PR fast`, `Merge full`,
 nightly, controlled network, resilience, RC, or GA tiers.
 
@@ -3276,10 +3311,12 @@ Current implementation status: the repository contains only a bounded G7
 non-security CI subset. It covers read-only pull-request static checks, exact
 Swift/Android product test allowlists, affected compilation, and `main`-only
 Release compilation/lint. Hosted run `30525374687` proves that the two baseline
-jobs passed at commit `0f59c757d745d0b95c37c9b93aec8d354bcfef9f`; it does not
-cover the current uncommitted listener-recovery, reduced-motion, visual/focus
-accessibility, product-copy, selector, or checker changes. The canonical rows
-above deliberately remain unsatisfied:
+jobs passed at commit `0f59c757d745d0b95c37c9b93aec8d354bcfef9f`. That
+historical 159-test result predates commit
+`53f45d4e9909dd77520a450170eb87c7d260ea89` and does not cover the current
+unstaged wrong-port/port-replacement, startup pairing gate, development-server
+late-failure, selector, checker, or documentation follow-ups. The canonical
+rows above deliberately remain unsatisfied:
 excluded security/authentication/cryptography checks are not silently
 relabeled, broad mixed suites are not invoked, and no nightly, physical-device,
 network, signing, publication, or deployment evidence is claimed. SwiftPM and
