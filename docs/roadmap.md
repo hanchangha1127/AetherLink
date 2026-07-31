@@ -28,13 +28,33 @@ explicitly. A checked app-private `LaunchPending -> Recorded` transaction
 precedes and follows launcher acceptance. Storage failure suppresses launch;
 launcher failure and incomplete completion become manual retry rather than an
 automatic loop or false Settings recovery. Production wiring also reconciles
-OS permission and stale in-flight state on `ON_RESUME`. Thirteen pure
-resolver/transaction and Compose regressions and the exact 20-test Android
-product selector pass; static hygiene guards the controller wiring. This is
-no-device current-source evidence after immutable Build 24, not execution of
-the lifecycle observer or Android permission delivery. Physical
-permission-dialog behavior, camera startup, optical QR recognition, TalkBack,
-release binaries, and G5 completion remain unproven.
+OS permission and stale in-flight state on `ON_RESUME`. Thirteen
+resolver/transaction and Compose regressions pass. A dedicated controller-host
+matrix passes 4/4 on API 26, 30, 33, and 36 while driving denial, rationale,
+explicit retry, grant, revocation, and resume reconciliation through production
+Compose wiring. A separate Robolectric lifecycle matrix launches the manifest
+production `MainActivity` on the same four APIs. Its three paths per API pass
+12/12: it retains the
+Activity-recreation proof and adds saved-state-free same-JVM cold Activity
+launches for durable `Recorded` and interrupted `LaunchPending` reconstruction
+without duplicate CAMERA requests. The exact 36-test Android product selector
+passes. This is current-source evidence after
+immutable Build 24. Controlled platform values do not prove SDK-specific OS
+permission or rationale policy, Android OS process death, or a physical
+permission dialog. Camera startup, optical QR recognition, TalkBack, and G5
+completion remain unproven.
+
+The same post-Build 24 source now passes clean offline strict-lock Android
+Release APK/AAB/lint generation and a current-source local ad-hoc macOS Release
+package. The source snapshot is
+`512084a6b4dd213364df88d5a3a2d2465f6db519847faa36c5d87b33a2ac0551`;
+the unsigned APK and AAB are 9,575,138 and 10,684,069 bytes, and an isolated
+167,566,669-byte temporary local archive passes independent 29-member readback.
+This closes only current-source local release-artifact build/readback risk.
+The candidate retains `1.0.0+24` metadata, is not stored under
+`dist/releases`, and does not relabel immutable Build 24 or create a canonical
+Build 25. Distribution signing, installation, physical-device behavior,
+publication, and production release remain open.
 
 The current macOS G5/G6 lifecycle slice closes both listener and Bonjour false
 readiness. `LocalPeerServer` reports `.listening` only after the operating system
@@ -526,9 +546,9 @@ body, and a Psych AST pre-pass requires one document and rejects duplicate
 or explicitly tagged mapping keys. The isolated product-copy mode is included
 in the macOS static lane and returns before the paused mixed security checks.
 The Android allowlist directly executes the
-changed-session scroll-boundary regression; the exact Android lane passes seven
-tests across four result classes with zero skips, failures, or errors. Current
-local parity passes with 193 selected Swift tests. Hosted run `30525374687` completed
+changed-session scroll-boundary regression; the exact Android lane passes 36
+tests across seven result classes with zero skips, failures, or errors. Current
+local parity passes with 217 selected Swift tests. Hosted run `30525374687` completed
 both jobs successfully for baseline commit
 `0f59c757d745d0b95c37c9b93aec8d354bcfef9f`. That historical 159-test baseline
 predates commit `53f45d4e9909dd77520a450170eb87c7d260ea89` and does not

@@ -12422,10 +12422,28 @@ def android_haptic_guard_failures() -> list[str]:
     test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt"
     compose_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt"
     scanner_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/PairingQrScannerChromeNoDeviceComposeTest.kt"
+    controller_host_test_path = ROOT / (
+        "apps/android/app/src/test/java/com/localagentbridge/android/"
+        "PairingQrCameraPermissionControllerHostApiMatrixTest.kt"
+    )
+    recreation_test_path = ROOT / (
+        "apps/android/app/src/test/java/com/localagentbridge/android/"
+        "PairingQrCameraPermissionActivityRecreationTest.kt"
+    )
     strings_path = ROOT / "apps/android/app/src/main/res/values/strings.xml"
     gate_path = ROOT / "script/check_no_device_quality.sh"
 
-    for path in (main_path, ui_path, test_path, compose_test_path, scanner_test_path, strings_path, gate_path):
+    for path in (
+        main_path,
+        ui_path,
+        test_path,
+        compose_test_path,
+        scanner_test_path,
+        controller_host_test_path,
+        recreation_test_path,
+        strings_path,
+        gate_path,
+    ):
         if not path.exists():
             failures.append(f"{path.relative_to(ROOT)}: missing Android haptic contract file.")
             return failures
@@ -12435,6 +12453,10 @@ def android_haptic_guard_failures() -> list[str]:
     test_text = test_path.read_text(encoding="utf-8")
     compose_test_text = compose_test_path.read_text(encoding="utf-8")
     scanner_test_text = scanner_test_path.read_text(encoding="utf-8")
+    controller_host_test_text = controller_host_test_path.read_text(
+        encoding="utf-8",
+    )
+    recreation_test_text = recreation_test_path.read_text(encoding="utf-8")
     strings_text = strings_path.read_text(encoding="utf-8")
     gate_text = gate_path.read_text(encoding="utf-8")
     main_relative = main_path.relative_to(ROOT)
@@ -12442,6 +12464,8 @@ def android_haptic_guard_failures() -> list[str]:
     test_relative = test_path.relative_to(ROOT)
     compose_test_relative = compose_test_path.relative_to(ROOT)
     scanner_test_relative = scanner_test_path.relative_to(ROOT)
+    controller_host_test_relative = controller_host_test_path.relative_to(ROOT)
+    recreation_test_relative = recreation_test_path.relative_to(ROOT)
     strings_relative = strings_path.relative_to(ROOT)
 
     required_main_snippets = (
@@ -14877,9 +14901,6 @@ def android_haptic_guard_failures() -> list[str]:
         "cameraPermissionRequestTransactionDoesNotLaunchWhenPersistenceFails",
         "cameraPermissionRequestTransactionPersistsManualRetryAcrossLauncherFailureRecreation",
         "cameraPermissionResumeReconcilesStaleInFlightRequestWithoutAutoRetry",
-        "cameraPermissionControllerHostRunsResultReentryAndResumeLifecycle",
-        "RecordingPermissionActivityResultRegistry",
-        "LocalLifecycleOwner provides lifecycleOwner",
         "scannerChromeDisablesPermissionActionWhileRequestIsInFlight",
         "assertEquals(1, automaticRequestCount)",
         "scannerLocaleExpectations().forEachIndexed",
@@ -14988,9 +15009,6 @@ def android_haptic_guard_failures() -> list[str]:
         "cameraPermissionRequestTransactionDoesNotLaunchWhenPersistenceFails",
         "cameraPermissionRequestTransactionPersistsManualRetryAcrossLauncherFailureRecreation",
         "cameraPermissionResumeReconcilesStaleInFlightRequestWithoutAutoRetry",
-        "cameraPermissionControllerHostRunsResultReentryAndResumeLifecycle",
-        "RecordingPermissionActivityResultRegistry",
-        "LocalLifecycleOwner provides lifecycleOwner",
         "scannerChromeDisablesPermissionActionWhileRequestIsInFlight",
         "PairingQrCameraPermissionStage.RequestInFlight",
         "PairingQrCameraPermissionStage.RetryRequired",
@@ -15037,6 +15055,70 @@ def android_haptic_guard_failures() -> list[str]:
     for snippet in required_scanner_test_snippets:
         if snippet not in scanner_test_text:
             failures.append(f"{scanner_test_relative}: Missing QR scanner chrome no-device regression {snippet}.")
+
+    required_controller_host_test_snippets = (
+        "PairingQrCameraPermissionControllerHostApiMatrixTest",
+        "@Config(sdk = [26, 30, 33, 36])",
+        "controllerHostRunsDenialRegrantRevocationAndResumeLifecycle",
+        "PairingQrCameraPermissionAutoRequestEffect(",
+        "RecordingPermissionActivityResultRegistry",
+        "LocalActivityResultRegistryOwner provides",
+        "LocalLifecycleOwner provides lifecycleOwner",
+        "platform.cameraPermissionRationale = true",
+        "resultRegistry.dispatchPermissionResult(granted = false)",
+        "checkNotNull(latestController).requestPermission()",
+        "resultRegistry.dispatchPermissionResult(granted = true)",
+        "lifecycleOwner.handle(Lifecycle.Event.ON_RESUME)",
+        "PairingQrCameraPermissionStage.RationaleRequired",
+        "PairingQrCameraPermissionStage.Granted",
+        "PairingQrCameraPermissionStage.SettingsRecovery",
+        "assertEquals(2, resultRegistry.launchCount)",
+    )
+    for snippet in required_controller_host_test_snippets:
+        if snippet not in controller_host_test_text:
+            failures.append(
+                f"{controller_host_test_relative}: Missing camera permission "
+                f"controller-host API matrix regression {snippet}."
+            )
+
+    required_recreation_test_snippets = (
+        "PairingQrCameraPermissionActivityRecreationTest",
+        "createAndroidComposeRule<MainActivity>()",
+        "@Config(sdk = [26, 30, 33, 36])",
+        "ActivityScenario.launch(MainActivity::class.java)",
+        "SETTINGS_QR_PAIRING_SCAN_BUTTON_TEST_TAG",
+        "PAIRING_QR_CAMERA_PERMISSION_PREFERENCES",
+        "PairingQrCameraPermissionRequestRecord.Recorded",
+        "PairingQrCameraPermissionRequestRecord.LaunchPending",
+        "PairingQrCameraPermissionRequestRecord.RetryRequired",
+        "compose.activityRule.scenario.recreate()",
+        "compose.activityRule.scenario.close()",
+        "assertNotSame(firstActivity, recreatedActivity)",
+        "coldActivityLaunchRestoresRecordedRequestWithoutRelaunch",
+        "coldActivityLaunchRecoversLaunchPendingWithoutAutomaticRelaunch",
+        "assertArrayEquals(",
+        "firstPermissionRequest.requestedPermissions",
+        (
+            "compose.onNodeWithText(\n"
+            "            application.getString(\n"
+            "                R.string.qr_scanner_permission_blocked_title,\n"
+            "            ),\n"
+            "        ).assertIsDisplayed()"
+        ),
+        (
+            "compose.onNodeWithText(\n"
+            "            application.getString(\n"
+            "                R.string.qr_scanner_permission_settings_action,\n"
+            "            ),\n"
+            "        ).assertIsDisplayed()"
+        ),
+        "assertNull(shadowOf(recreatedActivity).lastRequestedPermission)",
+    )
+    for snippet in required_recreation_test_snippets:
+        if snippet not in recreation_test_text:
+            failures.append(
+                f"{recreation_test_relative}: Missing production Activity recreation regression {snippet}."
+            )
 
     return failures
 
@@ -31697,6 +31779,26 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "PairingQrScannerChromeNoDeviceComposeTest",
             "Default no-device gate must run the Android QR scanner chrome regression.",
+        ),
+        (
+            "PairingQrCameraPermissionControllerHostApiMatrixTest",
+            "Default no-device gate must run the Android QR camera permission controller-host API matrix.",
+        ),
+        (
+            "PairingQrCameraPermissionActivityRecreationTest",
+            "Default no-device gate must run the Android QR camera permission Activity recreation regression.",
+        ),
+        (
+            "Android QR camera permission API 26/30/33/36 controller-host denial/regrant/revocation resume lifecycle, Activity recreation, and same-JVM cold launch without duplicate launch",
+            "Default no-device gate coverage summary must mention the Android QR camera permission lifecycle API matrix.",
+        ),
+        (
+            "python3 -B script/check_product_ci.py --android-camera-lifecycle-results",
+            "Default no-device gate must reject a skipped or failed Android QR camera permission lifecycle regression.",
+        ),
+        (
+            "python3 -B script/check_product_ci.py --android-camera-controller-host-results",
+            "Default no-device gate must reject a skipped or failed Android QR camera permission controller-host regression.",
         ),
         (
             "Android QR scanner permission/settings/torch/cancel chrome",

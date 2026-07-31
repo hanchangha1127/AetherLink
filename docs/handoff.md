@@ -123,12 +123,36 @@ current user direction, not repository-owner identity proof.
   denial uses the existing Settings recovery surface. A checked app-private
   `LaunchPending -> Recorded` transaction brackets launcher acceptance.
   Production wiring rechecks the OS grant and stale in-flight state on
-  `ON_RESUME`. The scanner class passes 13/13 and the exact Android product
-  selector passes 20/20. This is current-source no-device
-  resolver/transaction/JVM/Compose evidence plus static wiring checks after
-  immutable Build 24; it does not execute the lifecycle observer, Android
-  permission delivery, a physical camera, optical scan, TalkBack, or a release
-  build.
+  `ON_RESUME`. The scanner class passes 13/13. A dedicated controller-host
+  matrix passes 4/4 on API 26, 30, 33, and 36 while driving denial, rationale,
+  explicit retry, grant, later revocation, and resume reconciliation through
+  the production Compose controller wiring. A separate Robolectric lifecycle
+  matrix launches the manifest production `MainActivity` on the same four
+  APIs. Its three paths per API pass 12/12: it retains the
+  `ActivityScenario.recreate()` regression and adds saved-state-free same-JVM
+  cold Activity launches that reconstruct durable `Recorded` and interrupted
+  `LaunchPending` without an automatic second request. The exact Android
+  product selector passes 36/36. This is current-source
+  resolver/transaction/controller-host/JVM/Compose evidence after immutable
+  Build 24; its controlled platform seam does not prove SDK-specific OS
+  permission or rationale policy, Android OS process death, a physical
+  permission dialog, physical camera, optical scan, TalkBack, or production
+  release.
+- The same exact current source passes clean offline strict-lock Android
+  Release APK/AAB/lint generation. The unsigned APK is 9,575,138 bytes at
+  `18cd152348cae25b0409be0449371792a33292d315cfb52731fdac8c3d290273`;
+  the AAB is 10,684,069 bytes at
+  `dda35e3d86aa78bf477926417d6c4c0083b3e86d94a552bd5484f9e381416665`.
+  A current-source local ad-hoc macOS Release package also builds, the source
+  snapshot stays
+  `512084a6b4dd213364df88d5a3a2d2465f6db519847faa36c5d87b33a2ac0551`,
+  and an isolated temporary 167,566,669-byte archive at SHA-256
+  `57ba1747dbdb6cdf9524fcdf1e2f8e7c3ca11bdfb6cd63558d40df3610ed14f7`
+  passes independent 29-member readback. This is a dirty-content,
+  comparison-only candidate with `1.0.0+24` metadata; it is not stored under
+  `dist/releases`, does not alter immutable Build 24 or append Build 25, and
+  does not prove distribution signing, installation, device behavior,
+  publication, or production release.
 - The current Android release-quality slice adds Build 23-forward compiled
   entry-point topology and application-shell contracts. Independent builder
   and readback parsers
@@ -240,10 +264,10 @@ current user direction, not repository-owner identity proof.
   without entering the paused mixed security checker path. A Psych AST pre-pass
   requires one YAML document and rejects duplicate or explicitly tagged
   mapping keys before safe loading. The reviewed workflow byte SHA-256 is
-  `ae14952ea4962d0cafd3c1962b7e5ad4fe072cf60d0a7462477925191662bd87`;
+  `e714373a68b91cbc7ed4314cb8ab07082dcbc9b44a4094c75a1f23a2cadd0aca`;
   its parsed-semantic SHA-256 is
-  `d72190613999799b556af6db67316a144e2159cb13c8e525b283d083a9d52005`.
-  Current local parity passes 217 selected Swift tests and 16 selected Android tests
+  `ced8816a4741f85b84b80d4d8c01b2e3de05623979b99b80db6e4c3d8536a070`.
+  Current local parity passes 217 selected Swift tests and 36 selected Android tests
   with zero skips or failures, both platform compile lanes, Release builds,
   lint, four static checks, YAML parsing, and the guard's mutation suite. The
   Android allowlist now directly executes the changed-session scroll-boundary

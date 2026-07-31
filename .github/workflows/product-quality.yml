@@ -115,7 +115,11 @@ jobs:
           --tests com.localagentbridge.android.ResearchNotebookDrawerTest
           --tests com.localagentbridge.android.runtime.RuntimeAttachmentPromptResourceTest
           --tests com.localagentbridge.android.PairingQrScannerChromeNoDeviceComposeTest
+          --tests com.localagentbridge.android.PairingQrCameraPermissionControllerHostApiMatrixTest
+          --tests com.localagentbridge.android.PairingQrCameraPermissionActivityRecreationTest
           --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenSessionBoundaryResetsLatestWhileSameSessionUpdatesKeepPosition
+      - name: Verify focused Android test results
+        run: python3 -B script/check_product_ci.py --android-test-results
       - name: Compile and lint Android Release app on main
         if: >-
           ${{ github.event_name == 'push' &&

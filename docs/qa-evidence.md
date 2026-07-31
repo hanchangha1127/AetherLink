@@ -4,7 +4,7 @@ Last updated: 2026-07-31 KST.
 
 This document separates current verification evidence from historical captures.
 
-## 2026-07-31 Android QR Camera Permission Reentry Checklist
+## 2026-07-31 Android QR Camera Permission Reentry And Cold-Launch Checklist
 
 - [x] Camera permission state is explicit:
   `NeverAsked`, `RequestInFlight`, `RetryRequired`, `RationaleRequired`,
@@ -22,22 +22,78 @@ This document separates current verification evidence from historical captures.
 - [x] The permission action is disabled while a request is active. Rationale
   remains manually requestable, while repeated/fixed denial uses the existing
   app-Settings action.
-- [x] Static source guards require `ON_RESUME` to recheck the OS state and
-  reconcile stale in-flight state. The no-device suite does not execute that
-  observer or Android's permission result delivery.
+- [x] A no-device controller-host matrix executes the production `ON_RESUME`
+  observer, Activity Result callback, and conditional scanner auto-request
+  effect on API 26, 30, 33, and 36 with controlled platform state. A denied
+  result selects rationale, explicit retry produces a second request, a granted
+  result selects `Granted`, and later revocation selects `SettingsRecovery`;
+  neither reconstruction nor scanner reentry launches automatically.
+- [x] `PairingQrCameraPermissionActivityRecreationTest` launches the manifest
+  production `MainActivity`, observes the first CAMERA request and durable
+  `Recorded` marker, calls `ActivityScenario.recreate()`, confirms a distinct
+  Activity instance, and observes `SettingsRecovery` with no second request.
+- [x] The same production-Activity class closes the first scenario and opens a
+  fresh `MainActivity` without saved-state transfer. It reconstructs durable
+  `Recorded` into `SettingsRecovery`, and reconstructs a separately seeded
+  `LaunchPending` interruption into a manually retryable action, without an
+  automatic CAMERA request.
 - [x] Offline `:app:compileDebugKotlin` and
   `:app:compileDebugUnitTestKotlin` pass.
-- [x] `PairingQrScannerChromeNoDeviceComposeTest` passes 13/13 with no skips,
-  failures, or errors. The exact Android product selector passes 20/20.
+- [x] `PairingQrScannerChromeNoDeviceComposeTest` passes 13/13, the
+  controller-host matrix passes 4/4, and the production-Activity lifecycle
+  matrix passes 12/12 across API 26, 30, 33, and 36, all with no skips,
+  failures, or errors. The exact Android product selector passes 36/36 across
+  seven result classes.
 - [x] `check_product_ci.py`, its mutation self-test, and product-only copy
-  hygiene pass. The workflow byte SHA-256 is
-  `ae14952ea4962d0cafd3c1962b7e5ad4fe072cf60d0a7462477925191662bd87`;
+  hygiene pass. Source guards pin the exact
+  `@Config(sdk = [26, 30, 33, 36])` controller-host and Activity matrices,
+  while post-test XML gates require the exact 36-test product result, four-test
+  controller-host result, and 12-test Activity lifecycle result to contain zero
+  skips, failures, or errors. The workflow byte SHA-256 is
+  `e714373a68b91cbc7ed4314cb8ab07082dcbc9b44a4094c75a1f23a2cadd0aca`;
   its parsed-semantic SHA-256 is
-  `d72190613999799b556af6db67316a144e2159cb13c8e525b283d083a9d52005`.
+  `ced8816a4741f85b84b80d4d8c01b2e3de05623979b99b80db6e4c3d8536a070`.
 - [ ] This is post-Build 24 current-source no-device evidence. It does not
-  execute the production lifecycle observer or prove the physical system
-  dialog, camera, optical QR recognition, scanner restart on hardware,
-  TalkBack, or production release.
+  prove SDK-specific OS permission or rationale policy because the
+  controller-host matrix injects those values. It does not prove Android OS
+  process death; both cold launches remain in the same JVM. It also does not
+  prove the physical system dialog, camera, optical QR recognition, scanner
+  restart on hardware, TalkBack, or production release.
+
+## 2026-07-31 Post-Build 24 Current-Source Local Release Checklist
+
+- [x] The exact current source passes a clean offline strict-lock Android
+  `:app:assembleRelease`, `:app:bundleRelease`, and `:app:lintRelease` graph.
+  Gradle reports 175 actionable tasks and `BUILD SUCCESSFUL` in 1 minute
+  22 seconds.
+- [x] Release lint completes with zero errors and three warnings
+  (`OldTargetApi`, `GradleDependency`, and `UseKtx`). Its 3,484-byte XML report
+  has SHA-256
+  `426caf18f730f3fdb2c3501251097923b8a02c1eaf2ffe11aa9d135e22a6679f`.
+- [x] The 9,575,138-byte unsigned APK has SHA-256
+  `18cd152348cae25b0409be0449371792a33292d315cfb52731fdac8c3d290273`.
+  The 10,684,069-byte AAB has SHA-256
+  `dda35e3d86aa78bf477926417d6c4c0083b3e86d94a552bd5484f9e381416665`.
+  The 72,026,026-byte R8 mapping has SHA-256
+  `ebea7e028753819b779d3bddd6a85c0cc465a76f8c81ab4df37da009b6d7108e`.
+- [x] The current-source local ad-hoc macOS Release package builds and the
+  24-entry source/artifact ledger check passes. The canonical 251-file source
+  snapshot remains
+  `512084a6b4dd213364df88d5a3a2d2465f6db519847faa36c5d87b33a2ac0551`
+  before and after both platform builds.
+- [x] An isolated temporary candidate archive passes independent readback for
+  all 29 payload members, the unsigned arm64-only Android payload, and the
+  ad-hoc arm64 macOS app plus dSYM. Its 167,566,669-byte ZIP has SHA-256
+  `57ba1747dbdb6cdf9524fcdf1e2f8e7c3ca11bdfb6cd63558d40df3610ed14f7`;
+  its 15,200-byte manifest has SHA-256
+  `2d8738ba70eadcacd1b1a8caf096c4ab32742d8b0d1572d8cc3945c05802cb56`;
+  and its 99-byte checksum sidecar has SHA-256
+  `60bf2fb6f71ea812e7eba704af8c4b6df0fbc2b88811ad6237b9b62b6d032b6b`.
+- [ ] This is a transient dirty-content comparison candidate carrying
+  `1.0.0+24` metadata. It is not retained under `dist/releases`, does not
+  replace immutable Build 24 or append Build 25, and does not prove
+  distribution signing, installation, physical-device behavior, publication,
+  or production release.
 
 ## 2026-07-31 Local V1 Build 24 Qualification Checklist
 

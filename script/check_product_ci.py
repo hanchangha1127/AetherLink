@@ -11,15 +11,30 @@ import re
 import subprocess
 import sys
 from typing import Optional
+import xml.etree.ElementTree as ET
 
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github/workflows/product-quality.yml"
+ANDROID_CAMERA_LIFECYCLE_TEST_PATH = ROOT / (
+    "apps/android/app/src/test/java/com/localagentbridge/android/"
+    "PairingQrCameraPermissionActivityRecreationTest.kt"
+)
+ANDROID_CAMERA_LIFECYCLE_CONFIG = (
+    "@Config(sdk = [26, 30, 33, 36])"
+)
+ANDROID_CAMERA_CONTROLLER_HOST_TEST_PATH = ROOT / (
+    "apps/android/app/src/test/java/com/localagentbridge/android/"
+    "PairingQrCameraPermissionControllerHostApiMatrixTest.kt"
+)
+ANDROID_CAMERA_CONTROLLER_HOST_CONFIG = (
+    "@Config(sdk = [26, 30, 33, 36])"
+)
 CANONICAL_WORKFLOW_SHA256 = (
-    "ae14952ea4962d0cafd3c1962b7e5ad4fe072cf60d0a7462477925191662bd87"
+    "e714373a68b91cbc7ed4314cb8ab07082dcbc9b44a4094c75a1f23a2cadd0aca"
 )
 CANONICAL_PARSED_WORKFLOW_SHA256 = (
-    "d72190613999799b556af6db67316a144e2159cb13c8e525b283d083a9d52005"
+    "ced8816a4741f85b84b80d4d8c01b2e3de05623979b99b80db6e4c3d8536a070"
 )
 
 REQUIRED_WORKFLOW_PREFIX = """name: Product quality (non-security subset)
@@ -192,6 +207,14 @@ ANDROID_TESTS = (
         "PairingQrScannerChromeNoDeviceComposeTest"
     ),
     (
+        "com.localagentbridge.android."
+        "PairingQrCameraPermissionControllerHostApiMatrixTest"
+    ),
+    (
+        "com.localagentbridge.android."
+        "PairingQrCameraPermissionActivityRecreationTest"
+    ),
+    (
         "com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest."
         "chatScreenSessionBoundaryResetsLatestWhileSameSessionUpdatesKeepPosition"
     ),
@@ -203,6 +226,77 @@ ANDROID_TASKS = (
     ":app:testDebugUnitTest",
     ":app:assembleRelease",
     ":app:lintRelease",
+)
+
+ANDROID_PRODUCT_TEST_RESULTS = (
+    (
+        "com.localagentbridge.android.AetherLinkThemeNoDeviceComposeTest",
+        4,
+        (),
+    ),
+    (
+        "com.localagentbridge.android.ResearchNotebookDrawerTest",
+        1,
+        (),
+    ),
+    (
+        "com.localagentbridge.android.runtime."
+        "RuntimeAttachmentPromptResourceTest",
+        1,
+        (),
+    ),
+    (
+        "com.localagentbridge.android."
+        "PairingQrScannerChromeNoDeviceComposeTest",
+        13,
+        (),
+    ),
+    (
+        "com.localagentbridge.android."
+        "PairingQrCameraPermissionControllerHostApiMatrixTest",
+        4,
+        (
+            "controllerHostRunsDenialRegrantRevocationAndResumeLifecycle[26]",
+            "controllerHostRunsDenialRegrantRevocationAndResumeLifecycle[30]",
+            "controllerHostRunsDenialRegrantRevocationAndResumeLifecycle[33]",
+            "controllerHostRunsDenialRegrantRevocationAndResumeLifecycle",
+        ),
+    ),
+    (
+        "com.localagentbridge.android."
+        "PairingQrCameraPermissionActivityRecreationTest",
+        12,
+        (
+            "activityScenarioRecreateRestoresRecordedRequestWithoutRelaunch[26]",
+            "activityScenarioRecreateRestoresRecordedRequestWithoutRelaunch[30]",
+            "activityScenarioRecreateRestoresRecordedRequestWithoutRelaunch[33]",
+            "activityScenarioRecreateRestoresRecordedRequestWithoutRelaunch",
+            "coldActivityLaunchRecoversLaunchPendingWithoutAutomaticRelaunch[26]",
+            "coldActivityLaunchRecoversLaunchPendingWithoutAutomaticRelaunch[30]",
+            "coldActivityLaunchRecoversLaunchPendingWithoutAutomaticRelaunch[33]",
+            "coldActivityLaunchRecoversLaunchPendingWithoutAutomaticRelaunch",
+            "coldActivityLaunchRestoresRecordedRequestWithoutRelaunch[26]",
+            "coldActivityLaunchRestoresRecordedRequestWithoutRelaunch[30]",
+            "coldActivityLaunchRestoresRecordedRequestWithoutRelaunch[33]",
+            "coldActivityLaunchRestoresRecordedRequestWithoutRelaunch",
+        ),
+    ),
+    (
+        "com.localagentbridge.android.ui."
+        "ClientScreensNoDeviceComposeTest",
+        1,
+        (
+            "chatScreenSessionBoundaryResetsLatestWhileSameSessionUpdatesKeepPosition",
+        ),
+    ),
+)
+
+ANDROID_CAMERA_LIFECYCLE_TEST_RESULTS = (
+    ANDROID_PRODUCT_TEST_RESULTS[-2],
+)
+
+ANDROID_CAMERA_CONTROLLER_HOST_TEST_RESULTS = (
+    ANDROID_PRODUCT_TEST_RESULTS[-3],
 )
 
 SWIFT_TEST_STEP_BODY = (
@@ -226,6 +320,13 @@ ANDROID_TEST_STEP_BODY = (
     f"          --tests {ANDROID_TESTS[2]}\n"
     f"          --tests {ANDROID_TESTS[3]}\n"
     f"          --tests {ANDROID_TESTS[4]}\n"
+    f"          --tests {ANDROID_TESTS[5]}\n"
+    f"          --tests {ANDROID_TESTS[6]}\n"
+)
+
+ANDROID_TEST_RESULT_STEP_BODY = (
+    "        run: python3 -B script/check_product_ci.py "
+    "--android-test-results\n"
 )
 
 ANDROID_RELEASE_STEP_BODY = (
@@ -350,6 +451,10 @@ ANDROID_STEPS = (
     (
         "Compile Android and run focused product units",
         ANDROID_TEST_STEP_BODY,
+    ),
+    (
+        "Verify focused Android test results",
+        ANDROID_TEST_RESULT_STEP_BODY,
     ),
     (
         "Compile and lint Android Release app on main",
@@ -745,6 +850,7 @@ def workflow_failures(
             ":app:compileDebugUnitTestKotlin",
             ":app:testDebugUnitTest",
             *tuple(f"--tests {test}" for test in ANDROID_TESTS),
+            "python3 -B script/check_product_ci.py --android-test-results",
             MAIN_RELEASE_CONDITION,
             "-PaetherlinkStrictReleaseDependencyLocks=true",
             ":app:assembleRelease",
@@ -800,6 +906,16 @@ def workflow_failures(
     ):
         failures.append(
             "Android focused test step must match the exact command body"
+        )
+    if (
+        named_step_body(
+            android,
+            "Verify focused Android test results",
+        )
+        != ANDROID_TEST_RESULT_STEP_BODY
+    ):
+        failures.append(
+            "Android focused test result step must match the exact command body"
         )
     if (
         named_step_body(
@@ -1296,13 +1412,30 @@ def self_test(workflow: str) -> list[str]:
             ),
             "exact allowlist",
         ),
-        "missing Android camera permission lifecycle regressions": (
+        "missing Android camera permission controller regressions": (
+            workflow.replace(
+                f"          --tests {ANDROID_TESTS[-3]}\n",
+                "",
+                1,
+            ),
+            "exact allowlist",
+        ),
+        "missing Android Activity recreation regression": (
             workflow.replace(
                 f"          --tests {ANDROID_TESTS[-2]}\n",
                 "",
                 1,
             ),
             "exact allowlist",
+        ),
+        "missing Android test result verification": (
+            workflow.replace(
+                "      - name: Verify focused Android test results\n"
+                f"{ANDROID_TEST_RESULT_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
         ),
         "extra Android test selector": (
             workflow.replace(
@@ -1536,14 +1669,264 @@ def self_test(workflow: str) -> list[str]:
     return failures
 
 
+def android_test_result_failures(
+    expected_results: tuple[tuple[str, int, tuple[str, ...]], ...],
+) -> list[str]:
+    failures: list[str] = []
+    result_root = (
+        ROOT
+        / "apps/android/app/build/test-results/testDebugUnitTest"
+    )
+    expected_total = sum(count for _, count, _ in expected_results)
+    observed_total = 0
+
+    for class_name, expected_count, expected_methods in expected_results:
+        report_path = result_root / f"TEST-{class_name}.xml"
+        try:
+            suite = ET.parse(report_path).getroot()
+        except (OSError, ET.ParseError) as error:
+            failures.append(
+                f"{report_path.relative_to(ROOT)} cannot be read: {error}"
+            )
+            continue
+
+        if suite.tag != "testsuite":
+            failures.append(
+                f"{report_path.relative_to(ROOT)} root must be testsuite"
+            )
+            continue
+        if suite.get("name") != class_name:
+            failures.append(
+                f"{report_path.relative_to(ROOT)} suite name must be "
+                f"{class_name}"
+            )
+
+        counts: dict[str, int] = {}
+        for attribute in ("tests", "skipped", "failures", "errors"):
+            raw = suite.get(attribute)
+            if raw is None or re.fullmatch(r"0|[1-9][0-9]*", raw) is None:
+                failures.append(
+                    f"{report_path.relative_to(ROOT)} {attribute} must be "
+                    "a canonical nonnegative integer"
+                )
+                continue
+            counts[attribute] = int(raw)
+
+        if counts.get("tests") != expected_count:
+            failures.append(
+                f"{report_path.relative_to(ROOT)} must execute exactly "
+                f"{expected_count} test(s)"
+            )
+        for attribute in ("skipped", "failures", "errors"):
+            if counts.get(attribute) != 0:
+                failures.append(
+                    f"{report_path.relative_to(ROOT)} {attribute} must be 0"
+                )
+
+        testcases = suite.findall("testcase")
+        if len(testcases) != expected_count:
+            failures.append(
+                f"{report_path.relative_to(ROOT)} must contain exactly "
+                f"{expected_count} testcase element(s)"
+            )
+        actual_methods = tuple(
+            testcase.get("name", "") for testcase in testcases
+        )
+        if expected_methods and (
+            len(set(actual_methods)) != len(actual_methods)
+            or sorted(actual_methods) != sorted(expected_methods)
+        ):
+            failures.append(
+                f"{report_path.relative_to(ROOT)} selected test methods "
+                "must match the exact contract"
+            )
+        for testcase in testcases:
+            if testcase.get("classname") != class_name:
+                failures.append(
+                    f"{report_path.relative_to(ROOT)} testcase classname "
+                    f"must be {class_name}"
+                )
+            if any(
+                testcase.find(outcome) is not None
+                for outcome in ("skipped", "failure", "error")
+            ):
+                failures.append(
+                    f"{report_path.relative_to(ROOT)} testcase outcomes "
+                    "must contain no skipped, failure, or error element"
+                )
+        observed_total += counts.get("tests", 0)
+
+    if observed_total != expected_total:
+        failures.append(
+            f"Android product result total must be {expected_total}, "
+            f"found {observed_total}"
+        )
+    return failures
+
+
+def android_camera_lifecycle_source_failures(
+    test_text: str | None = None,
+) -> list[str]:
+    failures: list[str] = []
+    relative = ANDROID_CAMERA_LIFECYCLE_TEST_PATH.relative_to(ROOT)
+    if test_text is None:
+        try:
+            test_text = ANDROID_CAMERA_LIFECYCLE_TEST_PATH.read_text(
+                encoding="utf-8",
+            )
+        except (OSError, UnicodeError) as error:
+            return [
+                f"{relative} cannot be read for API matrix validation: "
+                f"{error}"
+            ]
+
+    if test_text.count(ANDROID_CAMERA_LIFECYCLE_CONFIG) != 1:
+        failures.append(
+            f"{relative} must contain one exact API 26/30/33/36 "
+            "Robolectric lifecycle matrix"
+        )
+    if test_text.count("@Config(sdk =") != 1:
+        failures.append(
+            f"{relative} must contain exactly one class-level SDK matrix"
+        )
+    return failures
+
+
+def android_camera_lifecycle_source_self_test() -> list[str]:
+    try:
+        test_text = ANDROID_CAMERA_LIFECYCLE_TEST_PATH.read_text(
+            encoding="utf-8",
+        )
+    except (OSError, UnicodeError) as error:
+        return [f"cannot load camera lifecycle source self-test: {error}"]
+    mutated = test_text.replace(
+        ANDROID_CAMERA_LIFECYCLE_CONFIG,
+        "@Config(sdk = [26, 30, 33, 35])",
+        1,
+    )
+    if mutated == test_text:
+        return ["camera lifecycle API matrix self-test mutation did not apply"]
+    if not android_camera_lifecycle_source_failures(mutated):
+        return ["camera lifecycle API matrix mutation was not rejected"]
+    return []
+
+
+def android_camera_controller_host_source_failures(
+    test_text: str | None = None,
+) -> list[str]:
+    failures: list[str] = []
+    relative = ANDROID_CAMERA_CONTROLLER_HOST_TEST_PATH.relative_to(ROOT)
+    if test_text is None:
+        try:
+            test_text = ANDROID_CAMERA_CONTROLLER_HOST_TEST_PATH.read_text(
+                encoding="utf-8",
+            )
+        except (OSError, UnicodeError) as error:
+            return [
+                f"{relative} cannot be read for API matrix validation: "
+                f"{error}"
+            ]
+
+    if test_text.count(ANDROID_CAMERA_CONTROLLER_HOST_CONFIG) != 1:
+        failures.append(
+            f"{relative} must contain one exact API 26/30/33/36 "
+            "Robolectric controller-host matrix"
+        )
+    if test_text.count("@Config(sdk =") != 1:
+        failures.append(
+            f"{relative} must contain exactly one class-level SDK matrix"
+        )
+    if (
+        test_text.count(
+            "controllerHostRunsDenialRegrantRevocationAndResumeLifecycle"
+        )
+        != 1
+    ):
+        failures.append(
+            f"{relative} must contain one exact controller-host lifecycle test"
+        )
+    return failures
+
+
+def android_camera_controller_host_source_self_test() -> list[str]:
+    try:
+        test_text = ANDROID_CAMERA_CONTROLLER_HOST_TEST_PATH.read_text(
+            encoding="utf-8",
+        )
+    except (OSError, UnicodeError) as error:
+        return [
+            f"cannot load camera controller-host source self-test: {error}"
+        ]
+    mutated = test_text.replace(
+        ANDROID_CAMERA_CONTROLLER_HOST_CONFIG,
+        "@Config(sdk = [26, 30, 33, 35])",
+        1,
+    )
+    if mutated == test_text:
+        return [
+            "camera controller-host API matrix self-test mutation did not apply"
+        ]
+    if not android_camera_controller_host_source_failures(mutated):
+        return [
+            "camera controller-host API matrix mutation was not rejected"
+        ]
+    return []
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--self-test",
         action="store_true",
         help="also prove representative contract mutations are rejected",
     )
+    mode.add_argument(
+        "--android-test-results",
+        action="store_true",
+        help="validate the exact focused Android product JUnit results",
+    )
+    mode.add_argument(
+        "--android-camera-lifecycle-results",
+        action="store_true",
+        help="validate the production camera lifecycle JUnit results",
+    )
+    mode.add_argument(
+        "--android-camera-controller-host-results",
+        action="store_true",
+        help="validate the camera controller-host API matrix JUnit results",
+    )
     args = parser.parse_args()
+
+    if (
+        args.android_test_results
+        or args.android_camera_lifecycle_results
+        or args.android_camera_controller_host_results
+    ):
+        if args.android_test_results:
+            expected_results = ANDROID_PRODUCT_TEST_RESULTS
+        elif args.android_camera_lifecycle_results:
+            expected_results = ANDROID_CAMERA_LIFECYCLE_TEST_RESULTS
+        else:
+            expected_results = ANDROID_CAMERA_CONTROLLER_HOST_TEST_RESULTS
+        failures = (
+            android_test_result_failures(expected_results)
+            + android_camera_lifecycle_source_failures()
+            + android_camera_controller_host_source_failures()
+        )
+        if failures:
+            for failure in failures:
+                print(
+                    f"Android product test results failed: {failure}",
+                    file=sys.stderr,
+                )
+            return 1
+        total = sum(count for _, count, _ in expected_results)
+        print(
+            "Android product test results passed: "
+            f"{total}/{total}; skipped=0; failures=0; errors=0."
+        )
+        return 0
 
     try:
         workflow = WORKFLOW_PATH.read_bytes().decode("utf-8")
@@ -1551,9 +1934,15 @@ def main() -> int:
         print(f"Product CI contract failed: {error}", file=sys.stderr)
         return 1
 
-    failures = workflow_failures(workflow)
+    failures = (
+        workflow_failures(workflow)
+        + android_camera_lifecycle_source_failures()
+        + android_camera_controller_host_source_failures()
+    )
     if args.self_test and not failures:
         failures.extend(self_test(workflow))
+        failures.extend(android_camera_lifecycle_source_self_test())
+        failures.extend(android_camera_controller_host_source_self_test())
 
     if failures:
         for failure in failures:

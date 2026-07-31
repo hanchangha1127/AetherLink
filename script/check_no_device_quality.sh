@@ -5499,6 +5499,8 @@ run ./gradlew --offline --no-daemon \
 		  --tests com.localagentbridge.android.PairingQrScanResultTest \
 				  --tests com.localagentbridge.android.AetherLinkThemeNoDeviceComposeTest \
 			  --tests com.localagentbridge.android.PairingQrScannerChromeNoDeviceComposeTest \
+			  --tests com.localagentbridge.android.PairingQrCameraPermissionControllerHostApiMatrixTest \
+			  --tests com.localagentbridge.android.PairingQrCameraPermissionActivityRecreationTest \
 				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest \
   --tests com.localagentbridge.android.AndroidBackupPolicyResourceTest \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.compactRelayQrPairingUsesRealRelayTcpClientAndPersistsTrustedRelay \
@@ -5514,6 +5516,9 @@ run ./gradlew --offline --no-daemon \
   --tests com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest \
   --tests com.localagentbridge.android.runtime.RuntimeAttachmentPromptResourceTest.attachmentOnlyPromptHeaderUsesLocalizedAndroidResources \
   -Pkotlin.incremental=false
+
+run python3 -B script/check_product_ci.py --android-camera-lifecycle-results
+run python3 -B script/check_product_ci.py --android-camera-controller-host-results
 
 run check_android_authenticated_read_authority_junit
 run check_android_authenticated_read_rollover_authority_junit
@@ -6920,7 +6925,7 @@ echo "Covered Android layout detail addendum: Android Settings chat-history save
 echo "Covered Android share addendum: Android share-sheet import confirmation, Android share-sheet import compact snackbar layout, Android share-sheet import haptic feedback, Android share-sheet content URI boundary."
 echo "Covered Android archive snackbar addendum: Android chat archive undo compact snackbar layout."
 echo "Covered Android top-bar addendum: Android chat top-bar New Chat compact layout."
-echo "Covered Android scanner addendum: Android QR scanner compact pairing-state render smoke, Android QR scanner compact large-font bounds, Android QR scanner scan-target accessibility label, Android QR scanner invalid-code recovery."
+echo "Covered Android scanner addendum: Android QR scanner compact pairing-state render smoke, Android QR scanner compact large-font bounds, Android QR scanner scan-target accessibility label, Android QR scanner invalid-code recovery, Android QR camera permission API 26/30/33/36 controller-host denial/regrant/revocation resume lifecycle, Activity recreation, and same-JVM cold launch without duplicate launch."
 echo "Covered Android diagnostics addendum: Android diagnostic QR text open action labels and Android diagnostic QR text compact dialog layout."
 echo "Covered Android provider diagnostics addendum: Android provider diagnostics detail compact redaction."
 echo "Covered app icon addendum: Android adaptive/monochrome asset-chain validation plus macOS Dock no-device small-size readability."

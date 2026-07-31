@@ -633,7 +633,7 @@ internal data class PairingQrCameraPermissionController(
     val openAppSettings: () -> Unit,
 )
 
-private const val PAIRING_QR_CAMERA_PERMISSION_PREFERENCES =
+internal const val PAIRING_QR_CAMERA_PERMISSION_PREFERENCES =
     "aetherlink_pairing_qr_camera_permission"
 private const val PAIRING_QR_CAMERA_PERMISSION_REQUEST_STATE =
     "request_state"

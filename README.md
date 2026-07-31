@@ -354,6 +354,23 @@ and an external owner-governance ledger are not current prerequisites. The user
 normally handles staging, commits, and pushes unless they explicitly request
 otherwise.
 
+The post-Build 24 current source also passes an isolated offline strict-lock
+local Release qualification. Clean Android `assembleRelease`, `bundleRelease`,
+and `lintRelease` complete with zero errors and three warnings; the
+9,575,138-byte unsigned APK has SHA-256
+`18cd152348cae25b0409be0449371792a33292d315cfb52731fdac8c3d290273`,
+and the 10,684,069-byte AAB has SHA-256
+`dda35e3d86aa78bf477926417d6c4c0083b3e86d94a552bd5484f9e381416665`.
+The source snapshot stayed
+`512084a6b4dd213364df88d5a3a2d2465f6db519847faa36c5d87b33a2ac0551`
+through the Android and macOS package builds. An isolated temporary archive
+then passed independent 29-member readback at 167,566,669 bytes and SHA-256
+`57ba1747dbdb6cdf9524fcdf1e2f8e7c3ca11bdfb6cd63558d40df3610ed14f7`.
+This transient dirty-content candidate retains `1.0.0+24` metadata solely for
+current-source qualification. It is not the immutable Build 24 archive, a
+ledger append, a retained or publishable Build 25, distribution signing,
+installation, device evidence, or production release.
+
 The current Android QR scanner owns camera-permission request state above the
 conditional scanner screen. A checked app-private transaction records
 `LaunchPending` before the system launcher is called and finalizes `Recorded`
@@ -361,13 +378,22 @@ after acceptance. Storage failure suppresses launch; launcher failure and
 interrupted completion become the explicit, manually retryable
 `RetryRequired` state instead of automatic re-request or false Settings
 recovery. The implementation also rechecks the OS grant on app resume. The
-scanner reducer, request-transaction, controller-host, and Compose suite passes
-14/14, and the exact Android product selector passes 21/21. The no-device host
-directly executes the production result callback, conditional auto-request
-effect, controller reconstruction, and `ON_RESUME` observer against controlled
-platform state. This is post-Build 24 current-source/JVM/Compose evidence; it
-does not execute Android's physical permission dialog, a real Activity
-recreation, camera, optical QR, TalkBack, or release build.
+scanner reducer, request-transaction, and Compose suite passes 13/13. A
+controller-host Robolectric matrix passes 4/4 on API 26, 30, 33, and 36 while
+driving a denied Activity Result into rationale, an explicit retry into a
+granted result, and a later revoked grant through `ON_RESUME` into Settings
+recovery. A second Robolectric class launches the manifest production
+`MainActivity` and runs three lifecycle paths per API for 12/12 results: the
+existing `ActivityScenario.recreate()` case restores
+`Recorded` into Settings recovery, a saved-state-free same-JVM cold Activity
+launch reconstructs the same durable state, and a cold launch from a persisted
+`LaunchPending` interruption exposes a manually retryable action. None issues
+a duplicate CAMERA request. The exact Android product selector therefore
+passes 36/36. This is post-Build 24
+current-source/JVM/Compose evidence; its cold launches remain in one JVM and do
+not execute Android OS process death, SDK-specific OS permission or rationale
+policy, the physical permission dialog, camera, optical QR, TalkBack, or
+release installation.
 
 The versioned [G0 decision](docs/v1/g0/decision-v1.md),
 [G0 assurance packet](docs/v1/g0/assurance-v1.md), owner-trust profiles, and

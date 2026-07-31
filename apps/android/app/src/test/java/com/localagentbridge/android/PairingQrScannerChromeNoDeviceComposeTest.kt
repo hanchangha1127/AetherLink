@@ -1,13 +1,9 @@
 package com.localagentbridge.android
 
+import android.Manifest
 import android.content.Context
 import android.content.res.Configuration
 import android.os.LocaleList
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.LocalActivityResultRegistryOwner
-import androidx.activity.result.ActivityResultRegistry
-import androidx.activity.result.ActivityResultRegistryOwner
-import androidx.activity.result.contract.ActivityResultContract
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -15,8 +11,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -42,11 +36,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.dp
-import androidx.core.app.ActivityOptionsCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.LifecycleRegistry
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.util.Locale
@@ -490,116 +479,6 @@ class PairingQrScannerChromeNoDeviceComposeTest {
                     resumedStage,
                 ),
             )
-        }
-    }
-
-    @Test
-    fun cameraPermissionControllerHostRunsResultReentryAndResumeLifecycle() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        val preferencesName =
-            "camera-permission-controller-host-${System.nanoTime()}"
-        val preferences = context.getSharedPreferences(
-            preferencesName,
-            Context.MODE_PRIVATE,
-        )
-        val platform = RecordingCameraPermissionPlatform()
-        val lifecycleOwner = ManualLifecycleOwner().apply {
-            handle(Lifecycle.Event.ON_CREATE)
-        }
-        val resultRegistry = RecordingPermissionActivityResultRegistry()
-        val resultRegistryOwner =
-            RecordingActivityResultRegistryOwner(resultRegistry)
-        val hostGeneration = mutableStateOf(0)
-        val scannerVisible = mutableStateOf(true)
-        var latestController: PairingQrCameraPermissionController? = null
-
-        try {
-            compose.setContent {
-                CompositionLocalProvider(
-                    LocalActivityResultRegistryOwner provides
-                        resultRegistryOwner,
-                    LocalLifecycleOwner provides lifecycleOwner,
-                ) {
-                    key(hostGeneration.value) {
-                        val controller =
-                            rememberPairingQrCameraPermissionController(
-                                platform = platform,
-                                preferencesOverride = preferences,
-                            )
-                        SideEffect {
-                            latestController = controller
-                        }
-                        if (scannerVisible.value) {
-                            PairingQrCameraPermissionAutoRequestEffect(
-                                controller,
-                            )
-                        }
-                    }
-                }
-            }
-            compose.waitForIdle()
-
-            assertEquals(1, resultRegistry.launchCount)
-            assertEquals(
-                PairingQrCameraPermissionStage.RequestInFlight,
-                checkNotNull(latestController).stage,
-            )
-
-            compose.runOnIdle {
-                platform.cameraPermissionRationale = true
-                resultRegistry.dispatchPermissionResult(granted = false)
-            }
-            compose.waitForIdle()
-            assertEquals(
-                PairingQrCameraPermissionStage.RationaleRequired,
-                checkNotNull(latestController).stage,
-            )
-
-            compose.runOnIdle {
-                scannerVisible.value = false
-            }
-            compose.waitForIdle()
-            compose.runOnIdle {
-                scannerVisible.value = true
-            }
-            compose.waitForIdle()
-            assertEquals(1, resultRegistry.launchCount)
-
-            compose.runOnIdle {
-                hostGeneration.value += 1
-            }
-            compose.waitForIdle()
-            assertEquals(
-                PairingQrCameraPermissionStage.RationaleRequired,
-                checkNotNull(latestController).stage,
-            )
-            assertEquals(1, resultRegistry.launchCount)
-
-            compose.runOnIdle {
-                platform.cameraPermissionGranted = true
-                platform.cameraPermissionRationale = false
-                lifecycleOwner.handle(Lifecycle.Event.ON_START)
-                lifecycleOwner.handle(Lifecycle.Event.ON_RESUME)
-            }
-            compose.waitForIdle()
-            assertEquals(
-                PairingQrCameraPermissionStage.Granted,
-                checkNotNull(latestController).stage,
-            )
-
-            compose.runOnIdle {
-                lifecycleOwner.handle(Lifecycle.Event.ON_PAUSE)
-                platform.cameraPermissionGranted = false
-                lifecycleOwner.handle(Lifecycle.Event.ON_RESUME)
-            }
-            compose.waitForIdle()
-            assertEquals(
-                PairingQrCameraPermissionStage.SettingsRecovery,
-                checkNotNull(latestController).stage,
-            )
-            assertEquals(1, resultRegistry.launchCount)
-        } finally {
-            context.deleteSharedPreferences(preferencesName)
         }
     }
 
@@ -1240,65 +1119,6 @@ class PairingQrScannerChromeNoDeviceComposeTest {
         val overlapsHorizontally = first.left < second.right && second.left < first.right
         val overlapsVertically = first.top < second.bottom && second.top < first.bottom
         return overlapsHorizontally && overlapsVertically
-    }
-
-    private class RecordingCameraPermissionPlatform :
-        PairingQrCameraPermissionPlatform {
-        var cameraPermissionGranted = false
-        var cameraPermissionRationale = false
-
-        override fun hasCameraPermission(context: Context): Boolean {
-            return cameraPermissionGranted
-        }
-
-        override fun shouldShowCameraPermissionRationale(
-            activity: ComponentActivity?,
-        ): Boolean {
-            return cameraPermissionRationale
-        }
-    }
-
-    private class ManualLifecycleOwner : LifecycleOwner {
-        private val registry = LifecycleRegistry(this)
-
-        override val lifecycle: Lifecycle
-            get() = registry
-
-        fun handle(event: Lifecycle.Event) {
-            registry.handleLifecycleEvent(event)
-        }
-    }
-
-    private class RecordingPermissionActivityResultRegistry :
-        ActivityResultRegistry() {
-        var launchCount = 0
-            private set
-        private var latestRequestCode: Int? = null
-
-        override fun <I, O> onLaunch(
-            requestCode: Int,
-            contract: ActivityResultContract<I, O>,
-            input: I,
-            options: ActivityOptionsCompat?,
-        ) {
-            latestRequestCode = requestCode
-            launchCount += 1
-        }
-
-        fun dispatchPermissionResult(granted: Boolean) {
-            check(
-                dispatchResult(
-                    checkNotNull(latestRequestCode),
-                    granted,
-                ),
-            )
-        }
-    }
-
-    private class RecordingActivityResultRegistryOwner(
-        registry: ActivityResultRegistry,
-    ) : ActivityResultRegistryOwner {
-        override val activityResultRegistry: ActivityResultRegistry = registry
     }
 
     private class RecordingHapticFeedback : HapticFeedback {

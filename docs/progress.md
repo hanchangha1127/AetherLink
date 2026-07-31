@@ -4,7 +4,7 @@ Last updated: 2026-07-31 KST.
 
 This document records what has been implemented so far and what should happen next. It is intentionally broader than the original v0.1 MVP because recent work has moved the prototype toward a more complete product shape.
 
-## 2026-07-31 Android QR Camera Permission Reentry Recovery
+## 2026-07-31 Android QR Camera Permission Reentry And Cold-Launch Recovery
 
 - Root cause: camera permission request history lived inside the conditional
   scanner composition. Closing and reopening the scanner reset that history,
@@ -21,24 +21,66 @@ This document records what has been implemented so far and what should happen ne
   recovery.
 - Resume boundary: production wiring rechecks the actual CAMERA grant and
   rationale on every `ON_RESUME` and reconciles a stale in-flight marker. A
-  no-device controller host now executes that observer with controlled grant
-  and rationale state, as well as the real Activity Result callback and
-  scanner auto-request effect.
-- Verification: offline Debug and unit-test compilation pass. All fourteen
+  no-device controller-host matrix now executes that observer on API 26, 30,
+  33, and 36 with controlled grant and rationale state, as well as the real
+  Activity Result callback and scanner auto-request effect. It passes a denial
+  into rationale, explicitly requests again, passes a granted result, retains
+  the grant on resume, and then observes a revoked grant as Settings recovery.
+- Activity lifecycle: a separate Robolectric class launches the manifest
+  production `MainActivity` and executes three paths on API 26, 30, 33, and
+  36. It retains the
+  `ActivityScenario.recreate()` regression, then proves a saved-state-free
+  same-JVM cold Activity launch reconstructs durable `Recorded` into
+  `SettingsRecovery`, and proves persisted `LaunchPending` reconstructs into a
+  manually retryable state. All three paths suppress duplicate CAMERA launch.
+- Verification: offline Debug and unit-test compilation pass. All thirteen
   `PairingQrScannerChromeNoDeviceComposeTest` cases pass across the pure stage
-  resolver, checked request transaction, controller reconstruction, result
-  delivery, resume reconciliation, and Compose chrome. The exact Android
-  product selector passes 21/21, product copy hygiene passes across 100 files,
-  and the product CI contract plus mutation self-test pass. The workflow byte
-  SHA-256 is
-  `ae14952ea4962d0cafd3c1962b7e5ad4fe072cf60d0a7462477925191662bd87`;
+  resolver, checked request transaction, resume reducer, and Compose chrome.
+  The controller-host matrix passes 4/4, the production-Activity lifecycle
+  matrix passes 12/12, and the exact Android product selector passes 36/36
+  across seven result classes. Product copy hygiene passes across 100 files,
+  and the product CI contract plus mutation self-test pass. Its post-test XML
+  gates independently require all 36 selected tests, all four controller-host
+  API results, and all 12 API-specific Activity lifecycle results to report
+  zero skips, failures, and errors. Source guards pin both exact
+  `@Config(sdk = [26, 30, 33, 36])` matrices. The workflow byte SHA-256 is
+  `e714373a68b91cbc7ed4314cb8ab07082dcbc9b44a4094c75a1f23a2cadd0aca`;
   its parsed-semantic SHA-256 is
-  `d72190613999799b556af6db67316a144e2159cb13c8e525b283d083a9d52005`.
+  `ced8816a4741f85b84b80d4d8c01b2e3de05623979b99b80db6e4c3d8536a070`.
 - Boundary: this current-source work postdates immutable Build 24 and does not
   relabel it. It proves reducer/transaction/controller-host/JVM/Compose
-  behavior without a device; it does not execute Android's physical permission
-  dialog, a real Activity recreation, camera preview, optical QR recognition,
-  TalkBack, or production release.
+  behavior, one Robolectric `MainActivity` recreate, and two same-JVM cold
+  Activity launches without a device or saved-state handoff. The controller
+  matrix injects permission and rationale values and therefore does not prove
+  SDK-specific OS permission policy. It also does not execute Android OS
+  process death, the physical permission dialog, camera preview, optical QR
+  recognition, TalkBack, or production release.
+
+## 2026-07-31 Post-Build 24 Current-Source Local Release Qualification
+
+- Build graph: the exact current source passes clean offline strict-lock
+  `:app:assembleRelease`, `:app:bundleRelease`, and `:app:lintRelease`.
+  Gradle completed 175 tasks in 1 minute 22 seconds, and the Release lint XML
+  records zero errors and three warnings: `OldTargetApi`, `GradleDependency`,
+  and `UseKtx`.
+- Android artifacts: the unsigned arm64-only APK is 9,575,138 bytes with
+  SHA-256
+  `18cd152348cae25b0409be0449371792a33292d315cfb52731fdac8c3d290273`;
+  the AAB is 10,684,069 bytes with SHA-256
+  `dda35e3d86aa78bf477926417d6c4c0083b3e86d94a552bd5484f9e381416665`.
+  The retained R8 mapping for this candidate is 72,026,026 bytes with SHA-256
+  `ebea7e028753819b779d3bddd6a85c0cc465a76f8c81ab4df37da009b6d7108e`.
+- Cross-platform readback: a current-source local ad-hoc macOS Release package
+  also built, the ledger/artifact metadata check passed, and the source snapshot
+  remained
+  `512084a6b4dd213364df88d5a3a2d2465f6db519847faa36c5d87b33a2ac0551`.
+  The isolated temporary 29-member archive passed the independent reader at
+  167,566,669 bytes and SHA-256
+  `57ba1747dbdb6cdf9524fcdf1e2f8e7c3ca11bdfb6cd63558d40df3610ed14f7`.
+- Boundary: this dirty-content candidate intentionally remains outside
+  `dist/releases` and retains `1.0.0+24` metadata for comparison only. It does
+  not alter the Build 24 ledger/archive, create or publish Build 25, install on
+  a device, perform distribution signing, or establish production release.
 
 ## 2026-07-31 Local V1 Build 24 Qualification
 

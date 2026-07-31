@@ -1138,27 +1138,27 @@ CURRENT_BUILD24_MACOS_LIFECYCLE_CHAIN_PREDECESSOR_BY_DOCUMENT = {
 CURRENT_BUILD24_MACOS_LIFECYCLE_CHAIN_OUTER_SHA256_BY_DOCUMENT = {
     "README.md": (
         "e5733ca610e8d453d008c024a28e9f7f914ab17831bcefca8bd741ff0ab744ab",
-        "87600ce465773e5d1e7c8d07d190ab60f9d85afb42e97802737da918ffa1a023",
+        "d997af5dd698a08538ebc1b6839703680a5234e5e6ba42e737962db8d203e5d0",
     ),
     "docs/roadmap.md": (
-        "25c29415ee7a348c2df2b7240db9b92c1f85bc24491c8e476245122b8fe1af5f",
-        "e2b16260bf523da5c63d0936536b495444c3f77d8c7c5b264a261ffb77b5ca35",
+        "0922052ceb820e2ef963e508655dae2012dd1c0b121e42697477fa555f02a582",
+        "3f0d88217116fc1cb1d70defe2005200b13e99aaf0968dbd70542200583f8ce3",
     ),
     "docs/handoff.md": (
-        "7d32ae586d0cb6cc6d1ef86b2c40272bb6d632bfbeba748d7cfecb69a3f1708a",
+        "97e1bd231e0ee60b8f2a0761ec772ae64fe7882deffdafd7de106ad544ccdda9",
         "45757b5ef397dd7976196ae5b267eee53544fa4b8546464073830acb39d7f858",
     ),
     "docs/progress.md": (
-        "74e2d12fdef693b6f8b705f98f0949035dabc90f5bf12880c912f6198fa90564",
+        "f36d8e351c178cbe07030bd79b5b2e7d51abbfeb8af6af59c3279e510e423284",
         "c2e5ed1ec4d2af10ac3f3f87baeb3b9b29cc35393c1628cc63e147718d1589eb",
     ),
     "docs/qa-evidence.md": (
-        "3c838e056539aabf70a2815d68c9ab3458ad3c7c57338285a1af80f437b86050",
+        "d3e9ea33f37f6db203ebe0c7d6174e5ae19868d4a07174f386ccd262bcd6a91d",
         "5c92341f48705b39fcd93e03390edba375eb6455bae3a4eb55807f2c6d3c4eff",
     ),
     "docs/releases/1.0.0-build-24-local-v1.md": (
         "d03318d6bcbc764c50f4b75c4b0b8dcf475e8697d80d21a3831144d43db437a6",
-        "5f9ae81b48c5f77f059f625fab80c8790dffd986ce671c339e5558006a9a8154",
+        "a886a4f9a5254853023cf68e418c959557180d8c115645161c94a0164263190f",
     ),
 }
 CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SIZE = 2_434
@@ -1296,23 +1296,23 @@ CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_BODY_SHA256_BY_DOCUMENT = {
 }
 CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_OUTER_SHA256_BY_DOCUMENT = {
     "README.md": (
-        "5bc4afd9836b638093017a83fd670480a50faf18911e7d2be550fb9fdfa58ab1",
+        "65c8c328a557d796dafb79f2be2202a774e1467bba144c3d5a4d61ecd74ce55c",
         "98ac8839d90840a34a9104dccb8ca1803820cc30677b12ee7b5766180cc54983",
     ),
     "docs/roadmap.md": (
-        "931f9558a82c5fb452e5e2f99c6ecb191c15b144e503c80fd61877be883794ae",
+        "08751b0f26e3a7a7fc9dddab080a64d92019f8f99430718cca5a6966b0980502",
         "85b00bd0c136d4a8e5d0135d21668cb009c618362a6995266618335e12fe5667",
     ),
     "docs/handoff.md": (
-        "24acc4a80b2ab7eb56ffe55897cd9c43d566e82864812a6062971181ec2097c6",
+        "64cbfbc8aa87386bee2dd2867387fed9ddb755ba9f496a171f6d14ee72cb0a8c",
         "fcd0f93e8d91ade7dc84df0a0cf1ba3d5dfc0d2ff485645b94211dbafd4a63bf",
     ),
     "docs/progress.md": (
-        "0bb7a1f86470b94aa3a519d4632cf83901e074e35c8a8601798180081e76c0ff",
+        "fb82b34e0ef59b306b96fbb459374d317f3302a212893a801e2d8508b6158b98",
         "75ff47867bb3a85000e23e723f8b9c20e8caf252de95bb19a91732fca40863a6",
     ),
     "docs/qa-evidence.md": (
-        "ff35b99bfddd47c58ec4b4c7855016f6e3cba43b8477383bb256bb3500345dde",
+        "f5b48d629575ae3d029226842524ba01c14ff2ce386579e2069b29f867c1d2ac",
         "89cbf66a09001c07387613ebe728ed79d2ebbe66b943beec8bde498e08aedf85",
     ),
     "docs/releases/1.0.0-build-20-local-v1.md": (
@@ -1321,7 +1321,7 @@ CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_OUTER_SHA256_BY_DOCUMENT = {
     ),
     "docs/releases/1.0.0-build-24-local-v1.md": (
         "c135f0bc9d3963b550db6328407abf4af85e619aa01fb50bc10333da63be72c2",
-        "963d93647af400931cb0824ee764e8ed738d71f7092f6d722edb74579ba34485",
+        "1b674a95ced1f59ab11959d1148480f5b7a41361b3965024c522affe01b463e4",
     ),
 }
 CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_NEIGHBORS = {
@@ -3757,9 +3757,9 @@ def current_release_summary_document_failures(
     }
     summary_line_limits = {
         "docs/handoff.md": 650,
-        "docs/progress.md": 500,
-        "docs/qa-evidence.md": 500,
-        "docs/roadmap.md": 600,
+        "docs/progress.md": 550,
+        "docs/qa-evidence.md": 550,
+        "docs/roadmap.md": 650,
     }
 
     failures: list[str] = []
