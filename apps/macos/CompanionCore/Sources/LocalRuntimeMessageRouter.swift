@@ -58,6 +58,10 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private let requestTaskLock = NSLock()
     private var requestTasksByConnection: [UUID: [UUID: TrackedRuntimeRequestTask]] = [:]
     private var retiringRequestTaskIDs = Set<UUID>()
+    private var acceptsRequestTasks = true
+    private var requestTaskDrainContinuations: [
+        UUID: CheckedContinuation<Void, Never>
+    ] = [:]
     private let maximumConcurrentRequestTasks: Int
     private let maximumConcurrentRequestTasksPerConnection: Int
     private let modelCatalogCoordinator: RuntimeModelCatalogCoordinator
@@ -375,6 +379,28 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 await modelPullApprovalBroker.cancel(connectionID: connectionID)
             }
         }
+        resumeRequestTaskDrainContinuationsIfIdle()
+    }
+
+    func beginApplicationTermination() {
+        let connectionIDs = requestTaskLock.withLock { () -> [UUID] in
+            guard acceptsRequestTasks else { return [] }
+            acceptsRequestTasks = false
+            return Array(requestTasksByConnection.keys)
+        }
+        connectionIDs.forEach(connectionDidClose)
+        resumeRequestTaskDrainContinuationsIfIdle()
+    }
+
+    func drainApplicationTermination() async {
+        beginApplicationTermination()
+        await waitForRequestTasksToDrain()
+        guard !Task.isCancelled else { return }
+        await chatTitleCancellationDispatcher.drain()
+        guard !Task.isCancelled else { return }
+        await memorySummaryCancellationDispatcher.drain()
+        guard !Task.isCancelled else { return }
+        await memorySummaryPersistenceDispatcher.drain()
     }
 
     private func dispatch(
@@ -3592,11 +3618,17 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             }
             return true
         }
-        if didFinish { requestTaskCompletionCheckpoint?() }
+        if didFinish {
+            requestTaskCompletionCheckpoint?()
+            resumeRequestTaskDrainContinuationsIfIdle()
+        }
     }
 
     private func admitRequestTask(connectionID: UUID, taskID: UUID) -> Bool {
         requestTaskLock.withLock {
+            guard acceptsRequestTasks else {
+                return false
+            }
             let connectionTaskCount = requestTasksByConnection[connectionID]?.count ?? 0
             guard connectionTaskCount < maximumConcurrentRequestTasksPerConnection else {
                 return false
@@ -3611,6 +3643,47 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 TrackedRuntimeRequestTask(task: nil)
             return true
         }
+    }
+
+    private func waitForRequestTasksToDrain() async {
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let shouldResume = requestTaskLock.withLock { () -> Bool in
+                    guard !Task.isCancelled,
+                          (!requestTasksByConnection.isEmpty ||
+                            !retiringRequestTaskIDs.isEmpty) else {
+                        return true
+                    }
+                    requestTaskDrainContinuations[waiterID] = continuation
+                    return false
+                }
+                if shouldResume {
+                    continuation.resume()
+                }
+            }
+        } onCancel: {
+            let continuation = self.requestTaskLock.withLock {
+                self.requestTaskDrainContinuations.removeValue(
+                    forKey: waiterID
+                )
+            }
+            continuation?.resume()
+        }
+    }
+
+    private func resumeRequestTaskDrainContinuationsIfIdle() {
+        let continuations = requestTaskLock.withLock {
+            guard requestTasksByConnection.isEmpty,
+                  retiringRequestTaskIDs.isEmpty,
+                  !requestTaskDrainContinuations.isEmpty else {
+                return [CheckedContinuation<Void, Never>]()
+            }
+            let continuations = Array(requestTaskDrainContinuations.values)
+            requestTaskDrainContinuations.removeAll()
+            return continuations
+        }
+        continuations.forEach { $0.resume() }
     }
 
     private func sendIfRequestActive(
@@ -6959,12 +7032,21 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                         else {
                             throw CancellationError()
                         }
+                        let publicationAcknowledgementID =
+                            self.memorySummaryPersistenceDispatcher
+                                .beginPublicationAcknowledgement()
                         sink.send(
                             self.memorySummaryDraftEnvelope(
                                 baseDraft.applyingGeneratedResult(cachedDraft),
                                 requestID: envelope.requestID
                             )
                         ) { [self] succeeded in
+                            defer {
+                                self.memorySummaryPersistenceDispatcher
+                                    .completePublicationAcknowledgement(
+                                        publicationAcknowledgementID
+                                    )
+                            }
                             guard let token = cachedPublication.token,
                                   let draft = self.memorySummaryMaterializedCache
                                     .completePublication(token, succeeded: succeeded) else {
@@ -7118,12 +7200,21 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                         } else {
                             persistenceToken = nil
                         }
+                        let publicationAcknowledgementID =
+                            self.memorySummaryPersistenceDispatcher
+                                .beginPublicationAcknowledgement()
                         sink.send(
                             self.memorySummaryDraftEnvelope(
                                 baseDraft.applyingGeneratedResult(materialization.draft),
                                 requestID: envelope.requestID
                             )
                         ) { [self] succeeded in
+                            defer {
+                                self.memorySummaryPersistenceDispatcher
+                                    .completePublicationAcknowledgement(
+                                        publicationAcknowledgementID
+                                    )
+                            }
                             guard let persistenceToken,
                                   let draft = self.memorySummaryMaterializedCache
                                     .completePublication(
@@ -11319,6 +11410,10 @@ private final class RuntimeChatTitleCancellationDispatcher: @unchecked Sendable 
             _ = backend.cancel(generationID: generationID)
         }
     }
+
+    func drain() async {
+        await queue.waitForRuntimeBarrier()
+    }
 }
 
 private struct RuntimeChatTitleGenerationLease: Sendable {
@@ -12109,6 +12204,10 @@ private final class RuntimeMemorySummaryCancellationDispatcher: @unchecked Senda
             _ = backend.cancel(generationID: generationID)
         }
     }
+
+    func drain() async {
+        await queue.waitForRuntimeBarrier()
+    }
 }
 
 struct RuntimeMemorySummaryMaterializedCacheKey: Hashable, Sendable {
@@ -12401,9 +12500,42 @@ private final class RuntimeMemorySummaryPersistenceDispatcher: @unchecked Sendab
         attributes: .concurrent
     )
     private let requestCompletionCheckpoint: (@Sendable () -> Void)?
+    private let publicationAcknowledgementLock = NSLock()
+    private var pendingPublicationAcknowledgementIDs = Set<UUID>()
+    private var publicationAcknowledgementDrainContinuations: [
+        UUID: CheckedContinuation<Void, Never>
+    ] = [:]
 
     init(requestCompletionCheckpoint: (@Sendable () -> Void)? = nil) {
         self.requestCompletionCheckpoint = requestCompletionCheckpoint
+    }
+
+    func beginPublicationAcknowledgement() -> UUID {
+        let acknowledgementID = UUID()
+        _ = publicationAcknowledgementLock.withLock {
+            pendingPublicationAcknowledgementIDs.insert(acknowledgementID)
+        }
+        return acknowledgementID
+    }
+
+    func completePublicationAcknowledgement(_ acknowledgementID: UUID) {
+        let continuations = publicationAcknowledgementLock.withLock {
+            precondition(
+                pendingPublicationAcknowledgementIDs.remove(
+                    acknowledgementID
+                ) != nil
+            )
+            guard pendingPublicationAcknowledgementIDs.isEmpty,
+                  !publicationAcknowledgementDrainContinuations.isEmpty else {
+                return [CheckedContinuation<Void, Never>]()
+            }
+            let continuations = Array(
+                publicationAcknowledgementDrainContinuations.values
+            )
+            publicationAcknowledgementDrainContinuations.removeAll()
+            return continuations
+        }
+        continuations.forEach { $0.resume() }
     }
 
     func dispatch(
@@ -12430,6 +12562,90 @@ private final class RuntimeMemorySummaryPersistenceDispatcher: @unchecked Sendab
                     return
                 }
             }
+        }
+    }
+
+    func drain() async {
+        await waitForPublicationAcknowledgements()
+        guard !Task.isCancelled else { return }
+        await queue.waitForRuntimeBarrier()
+    }
+
+    private func waitForPublicationAcknowledgements() async {
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let shouldResume =
+                    publicationAcknowledgementLock.withLock { () -> Bool in
+                        guard !Task.isCancelled,
+                              !pendingPublicationAcknowledgementIDs.isEmpty else {
+                            return true
+                        }
+                        publicationAcknowledgementDrainContinuations[waiterID] =
+                            continuation
+                        return false
+                    }
+                if shouldResume {
+                    continuation.resume()
+                }
+            }
+        } onCancel: {
+            let continuation = self.publicationAcknowledgementLock.withLock {
+                self.publicationAcknowledgementDrainContinuations.removeValue(
+                    forKey: waiterID
+                )
+            }
+            continuation?.resume()
+        }
+    }
+}
+
+private final class RuntimeQueueBarrierContinuation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var isResolved = false
+
+    func install(_ continuation: CheckedContinuation<Void, Never>) -> Bool {
+        lock.withLock {
+            guard !isResolved else { return false }
+            self.continuation = continuation
+            return true
+        }
+    }
+
+    func resolve() {
+        let continuation = lock.withLock {
+            guard !isResolved else {
+                return Optional<CheckedContinuation<Void, Never>>.none
+            }
+            isResolved = true
+            let continuation = self.continuation
+            self.continuation = nil
+            return continuation
+        }
+        continuation?.resume()
+    }
+}
+
+private extension DispatchQueue {
+    func waitForRuntimeBarrier() async {
+        let barrierContinuation = RuntimeQueueBarrierContinuation()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard barrierContinuation.install(continuation) else {
+                    continuation.resume()
+                    return
+                }
+                guard !Task.isCancelled else {
+                    barrierContinuation.resolve()
+                    return
+                }
+                async(flags: .barrier) {
+                    barrierContinuation.resolve()
+                }
+            }
+        } onCancel: {
+            barrierContinuation.resolve()
         }
     }
 }

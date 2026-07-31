@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.LocaleManager
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.content.res.Resources
@@ -454,6 +455,376 @@ internal fun synchronizeAndroidSystemAppLanguageTag(
     localeManager.applicationLocales = LocaleList.forLanguageTags(normalizedLanguageTag)
 }
 
+internal enum class PairingQrCameraPermissionStage {
+    NeverAsked,
+    RequestInFlight,
+    RetryRequired,
+    RationaleRequired,
+    SettingsRecovery,
+    Granted,
+}
+
+internal enum class PairingQrCameraPermissionRequestRecord {
+    NeverStarted,
+    LaunchPending,
+    RetryRequired,
+    Recorded,
+}
+
+internal fun pairingQrCameraPermissionStage(
+    hasPermission: Boolean,
+    requestRecord: PairingQrCameraPermissionRequestRecord,
+    requestIsInFlight: Boolean,
+    shouldShowRationale: Boolean,
+): PairingQrCameraPermissionStage = when {
+    hasPermission -> PairingQrCameraPermissionStage.Granted
+    requestIsInFlight -> PairingQrCameraPermissionStage.RequestInFlight
+    requestRecord == PairingQrCameraPermissionRequestRecord.NeverStarted ->
+        PairingQrCameraPermissionStage.NeverAsked
+    requestRecord == PairingQrCameraPermissionRequestRecord.LaunchPending ||
+        requestRecord == PairingQrCameraPermissionRequestRecord.RetryRequired ->
+        PairingQrCameraPermissionStage.RetryRequired
+    shouldShowRationale -> PairingQrCameraPermissionStage.RationaleRequired
+    else -> PairingQrCameraPermissionStage.SettingsRecovery
+}
+
+internal fun shouldAutomaticallyRequestPairingQrCameraPermission(
+    stage: PairingQrCameraPermissionStage,
+): Boolean = stage == PairingQrCameraPermissionStage.NeverAsked
+
+internal fun canRequestPairingQrCameraPermission(
+    stage: PairingQrCameraPermissionStage,
+): Boolean = stage == PairingQrCameraPermissionStage.NeverAsked ||
+    stage == PairingQrCameraPermissionStage.RetryRequired ||
+    stage == PairingQrCameraPermissionStage.RationaleRequired
+
+internal interface PairingQrCameraPermissionPlatform {
+    fun hasCameraPermission(context: Context): Boolean
+
+    fun shouldShowCameraPermissionRationale(
+        activity: ComponentActivity?,
+    ): Boolean
+}
+
+private object AndroidPairingQrCameraPermissionPlatform :
+    PairingQrCameraPermissionPlatform {
+    override fun hasCameraPermission(context: Context): Boolean {
+        return ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA,
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    override fun shouldShowCameraPermissionRationale(
+        activity: ComponentActivity?,
+    ): Boolean {
+        return activity?.let {
+            ActivityCompat.shouldShowRequestPermissionRationale(
+                it,
+                Manifest.permission.CAMERA,
+            )
+        } == true
+    }
+}
+
+internal fun beginPairingQrCameraPermissionRequest(
+    requestRecord: PairingQrCameraPermissionRequestRecord,
+    persistRequestRecord: (PairingQrCameraPermissionRequestRecord) -> Boolean,
+    updateRequestRecord: (PairingQrCameraPermissionRequestRecord) -> Unit,
+    updateRequestInFlight: (Boolean) -> Unit,
+    launchPermissionRequest: () -> Unit,
+): Boolean {
+    var recordAtLaunch = requestRecord
+    if (
+        requestRecord == PairingQrCameraPermissionRequestRecord.NeverStarted ||
+        requestRecord == PairingQrCameraPermissionRequestRecord.LaunchPending ||
+        requestRecord == PairingQrCameraPermissionRequestRecord.RetryRequired
+    ) {
+        if (
+            !persistRequestRecord(
+                PairingQrCameraPermissionRequestRecord.LaunchPending,
+            )
+        ) {
+            return false
+        }
+        recordAtLaunch = PairingQrCameraPermissionRequestRecord.LaunchPending
+        updateRequestRecord(recordAtLaunch)
+    }
+
+    updateRequestInFlight(true)
+    try {
+        launchPermissionRequest()
+    } catch (_: RuntimeException) {
+        updateRequestInFlight(false)
+        if (
+            recordAtLaunch ==
+            PairingQrCameraPermissionRequestRecord.LaunchPending
+        ) {
+            persistRequestRecord(
+                PairingQrCameraPermissionRequestRecord.RetryRequired,
+            )
+            updateRequestRecord(
+                PairingQrCameraPermissionRequestRecord.RetryRequired,
+            )
+        }
+        return false
+    }
+
+    if (
+        recordAtLaunch == PairingQrCameraPermissionRequestRecord.LaunchPending &&
+        persistRequestRecord(
+            PairingQrCameraPermissionRequestRecord.Recorded,
+        )
+    ) {
+        updateRequestRecord(PairingQrCameraPermissionRequestRecord.Recorded)
+    }
+    return true
+}
+
+internal fun completePairingQrCameraPermissionRequest(
+    requestRecord: PairingQrCameraPermissionRequestRecord,
+    persistRequestRecord: (PairingQrCameraPermissionRequestRecord) -> Boolean,
+): PairingQrCameraPermissionRequestRecord {
+    if (
+        requestRecord != PairingQrCameraPermissionRequestRecord.LaunchPending &&
+        requestRecord != PairingQrCameraPermissionRequestRecord.RetryRequired
+    ) {
+        return requestRecord
+    }
+    return if (
+        persistRequestRecord(
+            PairingQrCameraPermissionRequestRecord.Recorded,
+        )
+    ) {
+        PairingQrCameraPermissionRequestRecord.Recorded
+    } else {
+        PairingQrCameraPermissionRequestRecord.RetryRequired
+    }
+}
+
+internal data class PairingQrCameraPermissionResumeState(
+    val requestRecord: PairingQrCameraPermissionRequestRecord,
+    val requestIsInFlight: Boolean,
+)
+
+internal fun reconcilePairingQrCameraPermissionRequestOnResume(
+    requestRecord: PairingQrCameraPermissionRequestRecord,
+    requestIsInFlight: Boolean,
+    persistRequestRecord: (PairingQrCameraPermissionRequestRecord) -> Boolean,
+): PairingQrCameraPermissionResumeState {
+    if (!requestIsInFlight) {
+        return PairingQrCameraPermissionResumeState(
+            requestRecord = requestRecord,
+            requestIsInFlight = false,
+        )
+    }
+    return PairingQrCameraPermissionResumeState(
+        requestRecord = completePairingQrCameraPermissionRequest(
+            requestRecord = requestRecord,
+            persistRequestRecord = persistRequestRecord,
+        ),
+        requestIsInFlight = false,
+    )
+}
+
+internal data class PairingQrCameraPermissionController(
+    val stage: PairingQrCameraPermissionStage,
+    val requestPermission: () -> Unit,
+    val openAppSettings: () -> Unit,
+)
+
+private const val PAIRING_QR_CAMERA_PERMISSION_PREFERENCES =
+    "aetherlink_pairing_qr_camera_permission"
+private const val PAIRING_QR_CAMERA_PERMISSION_REQUEST_STATE =
+    "request_state"
+private const val PAIRING_QR_CAMERA_PERMISSION_LEGACY_REQUEST_RECORDED =
+    "request_recorded"
+private const val PAIRING_QR_CAMERA_PERMISSION_LAUNCH_PENDING =
+    "launch_pending"
+private const val PAIRING_QR_CAMERA_PERMISSION_RECORDED =
+    "recorded"
+
+internal fun readPairingQrCameraPermissionRequestRecord(
+    preferences: SharedPreferences,
+): PairingQrCameraPermissionRequestRecord {
+    return when (
+        preferences.all[PAIRING_QR_CAMERA_PERMISSION_REQUEST_STATE]
+    ) {
+        PAIRING_QR_CAMERA_PERMISSION_LAUNCH_PENDING ->
+            PairingQrCameraPermissionRequestRecord.RetryRequired
+        PAIRING_QR_CAMERA_PERMISSION_RECORDED ->
+            PairingQrCameraPermissionRequestRecord.Recorded
+        else -> {
+            if (
+                preferences.all[
+                    PAIRING_QR_CAMERA_PERMISSION_LEGACY_REQUEST_RECORDED
+                ] == true
+            ) {
+                PairingQrCameraPermissionRequestRecord.Recorded
+            } else {
+                PairingQrCameraPermissionRequestRecord.NeverStarted
+            }
+        }
+    }
+}
+
+internal fun persistPairingQrCameraPermissionRequestRecord(
+    preferences: SharedPreferences,
+    requestRecord: PairingQrCameraPermissionRequestRecord,
+): Boolean {
+    val editor = preferences.edit()
+        .remove(PAIRING_QR_CAMERA_PERMISSION_LEGACY_REQUEST_RECORDED)
+    when (requestRecord) {
+        PairingQrCameraPermissionRequestRecord.NeverStarted -> {
+            editor.remove(PAIRING_QR_CAMERA_PERMISSION_REQUEST_STATE)
+        }
+        PairingQrCameraPermissionRequestRecord.LaunchPending,
+        PairingQrCameraPermissionRequestRecord.RetryRequired,
+        -> {
+            editor.putString(
+                PAIRING_QR_CAMERA_PERMISSION_REQUEST_STATE,
+                PAIRING_QR_CAMERA_PERMISSION_LAUNCH_PENDING,
+            )
+        }
+        PairingQrCameraPermissionRequestRecord.Recorded -> {
+            editor.putString(
+                PAIRING_QR_CAMERA_PERMISSION_REQUEST_STATE,
+                PAIRING_QR_CAMERA_PERMISSION_RECORDED,
+            )
+        }
+    }
+    return editor.commit()
+}
+
+@Composable
+internal fun rememberPairingQrCameraPermissionController(
+    platform: PairingQrCameraPermissionPlatform =
+        AndroidPairingQrCameraPermissionPlatform,
+    preferencesOverride: SharedPreferences? = null,
+): PairingQrCameraPermissionController {
+    val context = LocalContext.current
+    val activity = LocalActivity.current as? ComponentActivity
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val defaultPreferences = remember(context) {
+        context.applicationContext.getSharedPreferences(
+            PAIRING_QR_CAMERA_PERMISSION_PREFERENCES,
+            Context.MODE_PRIVATE,
+        )
+    }
+    val preferences = preferencesOverride ?: defaultPreferences
+    var requestRecord by remember(preferences) {
+        mutableStateOf(
+            readPairingQrCameraPermissionRequestRecord(preferences),
+        )
+    }
+    var requestIsInFlight by rememberSaveable { mutableStateOf(false) }
+    var hasPermission by remember {
+        mutableStateOf(platform.hasCameraPermission(context))
+    }
+    var shouldShowRationale by remember {
+        mutableStateOf(
+            platform.shouldShowCameraPermissionRationale(activity),
+        )
+    }
+    val refreshPermissionState = {
+        hasPermission = platform.hasCameraPermission(context)
+        shouldShowRationale =
+            platform.shouldShowCameraPermissionRationale(activity)
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        requestRecord = completePairingQrCameraPermissionRequest(
+            requestRecord = requestRecord,
+            persistRequestRecord = { updatedRecord ->
+                persistPairingQrCameraPermissionRequestRecord(
+                    preferences,
+                    updatedRecord,
+                )
+            },
+        )
+        requestIsInFlight = false
+        hasPermission = granted ||
+            platform.hasCameraPermission(context)
+        shouldShowRationale =
+            platform.shouldShowCameraPermissionRationale(activity)
+    }
+    val currentStage = pairingQrCameraPermissionStage(
+        hasPermission = hasPermission,
+        requestRecord = requestRecord,
+        requestIsInFlight = requestIsInFlight,
+        shouldShowRationale = shouldShowRationale,
+    )
+    val requestPermission = {
+        val stageBeforeRequest = pairingQrCameraPermissionStage(
+            hasPermission = hasPermission,
+            requestRecord = requestRecord,
+            requestIsInFlight = requestIsInFlight,
+            shouldShowRationale = shouldShowRationale,
+        )
+        if (canRequestPairingQrCameraPermission(stageBeforeRequest)) {
+            beginPairingQrCameraPermissionRequest(
+                requestRecord = requestRecord,
+                persistRequestRecord = { updatedRecord ->
+                    persistPairingQrCameraPermissionRequestRecord(
+                        preferences,
+                        updatedRecord,
+                    )
+                },
+                updateRequestRecord = { updatedRecord ->
+                    requestRecord = updatedRecord
+                },
+                updateRequestInFlight = { inFlight ->
+                    requestIsInFlight = inFlight
+                },
+                launchPermissionRequest = {
+                    permissionLauncher.launch(Manifest.permission.CAMERA)
+                },
+            )
+        }
+    }
+    val openAppSettings = {
+        context.startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", context.packageName, null)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+        )
+    }
+
+    DisposableEffect(lifecycleOwner, context, platform, preferences) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val resumedRequestState =
+                    reconcilePairingQrCameraPermissionRequestOnResume(
+                        requestRecord = requestRecord,
+                        requestIsInFlight = requestIsInFlight,
+                        persistRequestRecord = { updatedRecord ->
+                            persistPairingQrCameraPermissionRequestRecord(
+                                preferences,
+                                updatedRecord,
+                            )
+                        },
+                    )
+                requestRecord = resumedRequestState.requestRecord
+                requestIsInFlight =
+                    resumedRequestState.requestIsInFlight
+                refreshPermissionState()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    return PairingQrCameraPermissionController(
+        stage = currentStage,
+        requestPermission = requestPermission,
+        openAppSettings = openAppSettings,
+    )
+}
+
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun LocalAgentBridgeApp(
@@ -467,6 +838,8 @@ private fun LocalAgentBridgeApp(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val researchNotebookState by viewModel.researchNotebooks.collectAsStateWithLifecycle()
     val baseContext = LocalContext.current
+    val pairingQrCameraPermission =
+        rememberPairingQrCameraPermissionController()
     var systemLanguageReconciled by remember { mutableStateOf(false) }
     LaunchedEffect(viewModel, baseContext) {
         viewModel.reconcileSystemAppLanguageTag(androidSystemAppLanguageTag(baseContext))
@@ -678,6 +1051,7 @@ private fun LocalAgentBridgeApp(
 
             if (showPairingQrScanner) {
                 PairingQrScannerScreen(
+                    cameraPermission = pairingQrCameraPermission,
                     onResult = { rawValue ->
                         showPairingQrScanner = false
                         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
@@ -4213,88 +4587,28 @@ private val AetherLinkDarkColors: ColorScheme = darkColorScheme(
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun PairingQrScannerScreen(
+    cameraPermission: PairingQrCameraPermissionController,
     onResult: (String) -> Unit,
     onCancel: () -> Unit,
     onFailure: (String?) -> Unit,
     requireRemoteRoute: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    val activity = context as? ComponentActivity
-    val lifecycleOwner = LocalLifecycleOwner.current
     var torchEnabled by rememberSaveable { mutableStateOf(false) }
     var torchAvailable by rememberSaveable { mutableStateOf(false) }
-    var cameraPermissionRequested by rememberSaveable { mutableStateOf(false) }
     var scannerFeedback by rememberSaveable { mutableStateOf<PairingQrScannerFeedback?>(null) }
-    var hasCameraPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-                PackageManager.PERMISSION_GRANTED,
-        )
-    }
-    var shouldShowCameraPermissionRationale by remember {
-        mutableStateOf(
-            activity?.let {
-                ActivityCompat.shouldShowRequestPermissionRationale(it, Manifest.permission.CAMERA)
-            } == true,
-        )
-    }
-    val refreshCameraPermissionState = {
-        hasCameraPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-            PackageManager.PERMISSION_GRANTED
-        shouldShowCameraPermissionRationale = activity?.let {
-            ActivityCompat.shouldShowRequestPermissionRationale(it, Manifest.permission.CAMERA)
-        } == true
-        if (hasCameraPermission) {
-            cameraPermissionRequested = false
-        }
-    }
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        cameraPermissionRequested = true
-        hasCameraPermission = granted
-        shouldShowCameraPermissionRationale = activity?.let {
-            ActivityCompat.shouldShowRequestPermissionRationale(it, Manifest.permission.CAMERA)
-        } == true
-    }
-    val requestCameraPermission = {
-        cameraPermissionRequested = true
-        permissionLauncher.launch(Manifest.permission.CAMERA)
-    }
-    val cameraPermissionPermanentlyDenied = !hasCameraPermission &&
-        cameraPermissionRequested &&
-        !shouldShowCameraPermissionRationale
-    val openAppSettings = {
-        context.startActivity(
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.fromParts("package", context.packageName, null)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            },
-        )
-    }
 
-    DisposableEffect(lifecycleOwner, context) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                refreshCameraPermissionState()
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        if (!hasCameraPermission) {
-            requestCameraPermission()
-        }
-    }
+    PairingQrCameraPermissionAutoRequestEffect(cameraPermission)
 
     PairingQrScannerChrome(
-        hasCameraPermission = hasCameraPermission,
-        cameraPermissionPermanentlyDenied = cameraPermissionPermanentlyDenied,
+        hasCameraPermission =
+            cameraPermission.stage == PairingQrCameraPermissionStage.Granted,
+        cameraPermissionPermanentlyDenied =
+            cameraPermission.stage ==
+            PairingQrCameraPermissionStage.SettingsRecovery,
+        cameraPermissionRequestInFlight =
+            cameraPermission.stage ==
+            PairingQrCameraPermissionStage.RequestInFlight,
         torchAvailable = torchAvailable,
         torchEnabled = torchEnabled,
         scannerFeedback = scannerFeedback,
@@ -4302,8 +4616,8 @@ private fun PairingQrScannerScreen(
             torchEnabled = !torchEnabled
         },
         onCancel = onCancel,
-        onRequestCameraPermission = requestCameraPermission,
-        onOpenAppSettings = openAppSettings,
+        onRequestCameraPermission = cameraPermission.requestPermission,
+        onOpenAppSettings = cameraPermission.openAppSettings,
         modifier = modifier,
     ) {
         PairingQrCameraPreview(
@@ -4329,6 +4643,21 @@ private fun PairingQrScannerScreen(
 }
 
 @Composable
+internal fun PairingQrCameraPermissionAutoRequestEffect(
+    cameraPermission: PairingQrCameraPermissionController,
+) {
+    LaunchedEffect(cameraPermission.stage) {
+        if (
+            shouldAutomaticallyRequestPairingQrCameraPermission(
+                cameraPermission.stage,
+            )
+        ) {
+            cameraPermission.requestPermission()
+        }
+    }
+}
+
+@Composable
 @OptIn(ExperimentalMaterial3Api::class)
 internal fun PairingQrScannerChrome(
     hasCameraPermission: Boolean,
@@ -4339,6 +4668,7 @@ internal fun PairingQrScannerChrome(
     onRequestCameraPermission: () -> Unit,
     modifier: Modifier = Modifier,
     cameraPermissionPermanentlyDenied: Boolean = false,
+    cameraPermissionRequestInFlight: Boolean = false,
     scannerFeedback: PairingQrScannerFeedback? = null,
     onOpenAppSettings: () -> Unit = {},
     cameraContent: @Composable () -> Unit = {},
@@ -4561,6 +4891,7 @@ internal fun PairingQrScannerChrome(
                             onRequestCameraPermission()
                         }
                     },
+                    enabled = !cameraPermissionRequestInFlight,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag(PAIRING_QR_SCANNER_PERMISSION_ACTION_TEST_TAG),

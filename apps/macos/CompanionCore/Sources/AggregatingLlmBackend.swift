@@ -273,11 +273,33 @@ public final class AggregatingLlmBackend:
     }
 
     public func providerHealth() async -> [ModelProvider: BackendStatus] {
-        var statuses: [ModelProvider: BackendStatus] = [:]
-        for backend in orderedBackends {
-            statuses[backend.provider] = await backend.healthCheck()
+        await withTaskGroup(
+            of: (ModelProvider, BackendStatus).self,
+            returning: [ModelProvider: BackendStatus].self
+        ) { group in
+            for backend in orderedBackends {
+                group.addTask {
+                    (backend.provider, await backend.healthCheck())
+                }
+            }
+            var statuses: [ModelProvider: BackendStatus] = [:]
+            for await (provider, status) in group {
+                statuses[provider] = status
+            }
+            return statuses
         }
-        return statuses
+    }
+
+    public func providerHealth(for provider: ModelProvider) async -> BackendStatus {
+        guard let backend = backendsByProvider[provider] else {
+            return .unavailable(BackendError(
+                provider: provider,
+                code: "provider_not_configured",
+                message: "\(provider.displayName) is not configured in AetherLink Runtime.",
+                retryable: false
+            ))
+        }
+        return await backend.healthCheck()
     }
 
     public func healthCheck() async -> BackendStatus {

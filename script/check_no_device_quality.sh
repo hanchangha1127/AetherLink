@@ -4308,15 +4308,37 @@ run check_python_syntax \
   script/test_v1_g0_repository_remote_sources.py \
   script/check_release_version_ledger.py \
   script/test_release_version_ledger.py \
+  script/check_macos_build24_lifecycle_evidence.py \
+  script/test_check_macos_build24_lifecycle_evidence.py \
+  script/check_macos_build24_idle_resource_stability_evidence.py \
+  script/test_check_macos_build24_idle_resource_stability_evidence.py \
+  script/run_macos_build24_idle_resource_stability_smoke.py \
+  script/test_run_macos_build24_idle_resource_stability_smoke.py \
   script/package_release_artifacts.py \
   script/check_release_artifact_archive.py \
   script/test_release_artifact_archive.py \
+  script/run_macos_packaged_app_lifecycle_smoke.py \
+  script/test_run_macos_packaged_app_lifecycle_smoke.py \
+  script/run_macos_packaged_app_state_recovery_smoke.py \
+  script/test_run_macos_packaged_app_state_recovery_smoke.py \
   script/run_macos_clean_home_installed_app_smoke.py \
   script/test_run_macos_clean_home_installed_app_smoke.py \
   script/run_macos_clean_home_installed_state_recovery_smoke.py \
   script/test_run_macos_clean_home_installed_state_recovery_smoke.py \
   script/run_macos_isolated_uninstall_reinstall_smoke.py \
   script/test_run_macos_isolated_uninstall_reinstall_smoke.py \
+  script/run_macos_isolated_upgrade_smoke.py \
+  script/test_run_macos_isolated_upgrade_smoke.py \
+  script/run_macos_local_dmg_install_smoke.py \
+  script/test_run_macos_local_dmg_install_smoke.py \
+  script/run_macos_local_dmg_install_smoke_v2.py \
+  script/test_run_macos_local_dmg_install_smoke_v2.py \
+  script/run_macos_local_dmg_uninstall_reinstall_smoke.py \
+  script/test_run_macos_local_dmg_uninstall_reinstall_smoke.py \
+  script/run_macos_local_dmg_uninstall_reinstall_state_recovery_smoke.py \
+  script/test_run_macos_local_dmg_uninstall_reinstall_state_recovery_smoke.py \
+  script/run_macos_local_dmg_uninstall_reinstall_abrupt_process_state_recovery_smoke.py \
+  script/test_run_macos_local_dmg_uninstall_reinstall_abrupt_process_state_recovery_smoke.py \
   script/check_android_string_parity.py \
   script/check_macos_localization.py \
 	  script/check_protocol_schema.py \
@@ -4473,10 +4495,21 @@ run python3 -m unittest \
   script/test_v1_g0_external_evidence_readiness.py \
   script/test_v1_g0_repository_remote_sources.py \
   script/test_release_version_ledger.py \
+  script/test_check_macos_build24_lifecycle_evidence.py \
+  script/test_check_macos_build24_idle_resource_stability_evidence.py \
+  script/test_run_macos_build24_idle_resource_stability_smoke.py \
   script/test_release_artifact_archive.py \
+  script/test_run_macos_packaged_app_lifecycle_smoke.py \
+  script/test_run_macos_packaged_app_state_recovery_smoke.py \
   script/test_run_macos_clean_home_installed_app_smoke.py \
   script/test_run_macos_clean_home_installed_state_recovery_smoke.py \
   script/test_run_macos_isolated_uninstall_reinstall_smoke.py \
+  script/test_run_macos_isolated_upgrade_smoke.py \
+  script/test_run_macos_local_dmg_install_smoke.py \
+  script/test_run_macos_local_dmg_install_smoke_v2.py \
+  script/test_run_macos_local_dmg_uninstall_reinstall_smoke.py \
+  script/test_run_macos_local_dmg_uninstall_reinstall_state_recovery_smoke.py \
+  script/test_run_macos_local_dmg_uninstall_reinstall_abrupt_process_state_recovery_smoke.py \
   script/test_production_relay_security_design.py \
   script/test_relay_allocation_preflight.py \
   script/test_build_and_run.py \
@@ -4588,7 +4621,31 @@ run swift test
 run swift test --filter 'P2PNATContractsTests|P2PNATSharedVectorTests|P2PNATConformanceTests'
 run swift test --filter 'ProductionSecureSessionSharedVectorTests'
 run swift test --filter 'ProductionPairStateSharedVectorTests'
+run python3 -I -B -S script/check_macos_build24_lifecycle_evidence.py
+run python3 -I -B -S script/check_macos_build24_idle_resource_stability_evidence.py
 run python3 script/check_docs_hygiene.py
+run python3 -B -m unittest \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_clean_home_results_match_closed_contracts \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_clean_home_sources_and_documents_are_bound \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_clean_home_validators_are_wired_into_main \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_result_and_sources_are_bound \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_documents_are_bound \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_validators_are_wired_into_main \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_uninstall_reinstall_result_and_sources_are_bound \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_uninstall_reinstall_documents_are_bound \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_uninstall_reinstall_validators_are_wired_into_main \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_uninstall_reinstall_state_recovery_result_and_sources_are_bound \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_uninstall_reinstall_state_recovery_documents_are_bound \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_uninstall_reinstall_state_recovery_validators_are_wired_into_main \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_abrupt_process_state_recovery_result_receipt_and_sources_are_bound \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_abrupt_process_state_recovery_documents_are_bound \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_abrupt_process_state_recovery_validators_are_wired_into_main \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_lifecycle_aggregate_sources_are_bound \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_lifecycle_aggregate_documents_are_bound \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_lifecycle_aggregate_validators_are_wired_into_main \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_result_and_sources_are_bound \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_documents_are_bound \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_validators_are_wired_into_main
 run python3 script/check_license.py
 run python3 script/check_app_icons.py
 run check_macos_dock_capture_dry_run_summary_guard

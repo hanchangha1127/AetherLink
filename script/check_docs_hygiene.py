@@ -12,11 +12,16 @@ import runpy
 import sys
 
 if __package__:
+    from script import (
+        check_macos_build24_idle_resource_stability_evidence
+        as idle_resource_evidence,
+    )
     from script.check_release_version_ledger import (
         LedgerError,
         parse_release_version_ledger,
     )
 else:
+    import check_macos_build24_idle_resource_stability_evidence as idle_resource_evidence
     from check_release_version_ledger import (
         LedgerError,
         parse_release_version_ledger,
@@ -35,23 +40,32 @@ OLLAMA_MULTILINGUAL_FULL_MATRIX_V3_RESULT = (
     / "ollama-embedding-multilingual-full-matrix-v3.json"
 )
 LOCAL_RELEASE_MARKETING_VERSION = "1.0.0"
-LOCAL_RELEASE_BUILD_NUMBER = 22
+LOCAL_RELEASE_BUILD_NUMBER = 24
 CURRENT_REPRODUCIBILITY_RESULT_PATH_VERSION = 4
 LOCAL_RELEASE_ID = (
     f"aetherlink-{LOCAL_RELEASE_MARKETING_VERSION}"
     f"+{LOCAL_RELEASE_BUILD_NUMBER}-local-v1"
 )
-LOCAL_RELEASE_CURRENT_DOC = ROOT / "docs/releases/1.0.0-build-22-local-v1.md"
+LOCAL_RELEASE_CURRENT_DOC = (
+    ROOT
+    / "docs/releases/"
+    f"{LOCAL_RELEASE_MARKETING_VERSION}-build-"
+    f"{LOCAL_RELEASE_BUILD_NUMBER}-local-v1.md"
+)
 HISTORICAL_BUILD20_RELEASE_DOC = (
     ROOT / "docs/releases/1.0.0-build-20-local-v1.md"
 )
 HISTORICAL_BUILD20_RELEASE_DOCUMENT_SHA256 = (
     "fd0082f3bbc6922e25cd490d32c7b0c82e4b7ffd1e622f9951cc63813f8d1615"
 )
+HISTORICAL_RELEASE_DOCUMENT_SHA256_BY_BUILD = {
+    22: "e974eb61b8949d18a894a0f06941480640dca722a12c4d5f70695244beae7724",
+    23: "284bfcdfcf60911d1acc0e0835e2d1386d80903d99f7652dceb3936f58423cc6",
+}
 LATEST_RECORDED_GIT_REFRESH_HEAD = (
-    "88c0282722eb0afb3ce2d6f394fedb1f22a7ec7c"
+    "7d72147528e334edb19b9331ed7933ac71ca424b"
 )
-LATEST_RECORDED_GIT_REFRESH_LABEL = "2026-07-30 11:44 KST"
+LATEST_RECORDED_GIT_REFRESH_LABEL = "2026-07-31 00:03 KST"
 LOCAL_RELEASE_FIXTURE_BUILD_NUMBER = 3
 LOCAL_RELEASE_FIXTURE_ID = (
     f"aetherlink-{LOCAL_RELEASE_MARKETING_VERSION}"
@@ -71,12 +85,12 @@ LOCAL_RELEASE_ARCHIVE_DIR = ROOT / "dist/releases" / LOCAL_RELEASE_ID
 LOCAL_RELEASE_REPRODUCIBILITY_RESULT = (
     ROOT
     / "dist/reproducibility/"
-    "aetherlink-1.0.0+22-local-v1-two-root-v4.json"
+    f"{LOCAL_RELEASE_ID}-two-root-v4.json"
 )
 LOCAL_RELEASE_REPRODUCIBILITY_PREPUBLICATION_RESULT = (
     ROOT
     / "dist/reproducibility/"
-    "aetherlink-1.0.0+22-local-v1-two-root-v4-prepublication.json"
+    f"{LOCAL_RELEASE_ID}-two-root-v4-prepublication.json"
 )
 MACOS_CLEAN_HOME_INSTALLED_APP_RESULT = (
     ROOT
@@ -104,6 +118,105 @@ CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_RESULT = (
     / "dist/lifecycle/"
     "macos-packaged-app-build-20-clean-home-state-recovery-v1.json"
 )
+CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_APP_RESULT = (
+    ROOT
+    / "dist/lifecycle/"
+    "macos-packaged-app-build-24-clean-home-install-v1.json"
+)
+CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_RESULT = (
+    ROOT
+    / "dist/lifecycle/"
+    "macos-packaged-app-build-24-clean-home-state-recovery-v1.json"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_RESULT = (
+    ROOT
+    / "dist/lifecycle/"
+    "macos-packaged-app-build-24-local-dmg-install-v2.json"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_RUNNER = (
+    ROOT / "script/run_macos_local_dmg_install_smoke_v2.py"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_TEST = (
+    ROOT / "script/test_run_macos_local_dmg_install_smoke_v2.py"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_RESULT = (
+    ROOT
+    / "dist/lifecycle/"
+    "macos-packaged-app-build-24-local-dmg-uninstall-reinstall-v1.json"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_RUNNER = (
+    ROOT / "script/run_macos_local_dmg_uninstall_reinstall_smoke.py"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_TEST = (
+    ROOT / "script/test_run_macos_local_dmg_uninstall_reinstall_smoke.py"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_RESULT = (
+    ROOT
+    / "dist/lifecycle/"
+    "macos-packaged-app-build-24-local-dmg-uninstall-reinstall-"
+    "state-recovery-v1.json"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_RUNNER = (
+    ROOT
+    / "script/"
+    "run_macos_local_dmg_uninstall_reinstall_state_recovery_smoke.py"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_TEST = (
+    ROOT
+    / "script/"
+    "test_run_macos_local_dmg_uninstall_reinstall_state_recovery_smoke.py"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_RESULT = (
+    ROOT
+    / "dist/lifecycle/"
+    "macos-packaged-app-build-24-local-dmg-uninstall-reinstall-"
+    "abrupt-process-state-recovery-v1.json"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_RECEIPT = (
+    ROOT
+    / "dist/lifecycle/"
+    "macos-packaged-app-build-24-local-dmg-uninstall-reinstall-"
+    "abrupt-process-state-recovery-repeatability-v1.json"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_RUNNER = (
+    ROOT
+    / "script/"
+    "run_macos_local_dmg_uninstall_reinstall_"
+    "abrupt_process_state_recovery_smoke.py"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_TEST = (
+    ROOT
+    / "script/"
+    "test_run_macos_local_dmg_uninstall_reinstall_"
+    "abrupt_process_state_recovery_smoke.py"
+)
+CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_CHECKER = (
+    ROOT / "script/check_macos_build24_lifecycle_evidence.py"
+)
+CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_TEST = (
+    ROOT / "script/test_check_macos_build24_lifecycle_evidence.py"
+)
+CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_RESULT = (
+    ROOT
+    / "dist/lifecycle/"
+    "macos-packaged-app-build-24-idle-resource-stability-v1.json"
+)
+CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_RUNNER = (
+    ROOT / "script/run_macos_build24_idle_resource_stability_smoke.py"
+)
+CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_RUNNER_TEST = (
+    ROOT / "script/test_run_macos_build24_idle_resource_stability_smoke.py"
+)
+CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_CHECKER = (
+    ROOT / "script/check_macos_build24_idle_resource_stability_evidence.py"
+)
+CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_CHECKER_TEST = (
+    ROOT
+    / "script/test_check_macos_build24_idle_resource_stability_evidence.py"
+)
+CURRENT_MACOS_ISOLATED_UNINSTALL_REINSTALL_RUNNER = (
+    ROOT / "script/run_macos_isolated_uninstall_reinstall_smoke.py"
+)
 CURRENT_MACOS_LOCAL_DMG_INSTALL_RESULT = (
     ROOT
     / "dist/lifecycle/"
@@ -114,6 +227,23 @@ CURRENT_MACOS_LOCAL_DMG_INSTALL_RUNNER = (
 )
 CURRENT_MACOS_LOCAL_DMG_INSTALL_TEST = (
     ROOT / "script/test_run_macos_local_dmg_install_smoke.py"
+)
+CURRENT_MACOS_ISOLATED_UPGRADE_RESULT = (
+    ROOT
+    / "dist/lifecycle/"
+    "macos-packaged-app-build-23-to-24-isolated-upgrade-v2.json"
+)
+CURRENT_MACOS_ISOLATED_UPGRADE_REPEATABILITY_RESULT = (
+    ROOT
+    / "dist/lifecycle/"
+    "macos-packaged-app-build-23-to-24-"
+    "isolated-upgrade-repeatability-v1.json"
+)
+CURRENT_MACOS_ISOLATED_UPGRADE_RUNNER = (
+    ROOT / "script/run_macos_isolated_upgrade_smoke.py"
+)
+CURRENT_MACOS_ISOLATED_UPGRADE_TEST = (
+    ROOT / "script/test_run_macos_isolated_upgrade_smoke.py"
 )
 MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_RUNNER = (
     ROOT
@@ -159,31 +289,31 @@ HISTORICAL_MACOS_PACKAGED_LIFECYCLE_TEST = (
 )
 LOCAL_RELEASE_LEDGER = ROOT / "release/version-ledger.tsv"
 LOCAL_RELEASE_G0_DECISION = ROOT / "docs/v1/g0/decision-v1.json"
-LOCAL_RELEASE_EXPECTED_ZIP_SIZE = 165_705_774
+LOCAL_RELEASE_EXPECTED_ZIP_SIZE = 166_345_274
 LOCAL_RELEASE_EXPECTED_ZIP_SHA256 = (
-    "478bd4210c11f7e2204e80a333bc8053b0d01b8deff3d0a3d2dd6795df1366c3"
+    "104c07b6fc1b421bcc0309657001fdf991e37bb815c282b3e5112ed98821ab1c"
 )
-LOCAL_RELEASE_EXPECTED_MANIFEST_SIZE = 12_317
+LOCAL_RELEASE_EXPECTED_MANIFEST_SIZE = 15_200
 LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256 = (
-    "a92ee387be3a900bad1682093b653da1fea1a8e1dd1580153bed91c01e2ff1c5"
+    "eccc81de7eee5d56223e7826d153617a24725344154f7c7c5dd291d25ab6369b"
 )
 LOCAL_RELEASE_EXPECTED_CHECKSUM_SIZE = 99
 LOCAL_RELEASE_EXPECTED_CHECKSUM_SHA256 = (
-    "5711d5926f1c3e053f864f55bccf93a3986fb8bb5a6bcc8818161ef686d75991"
+    "827cdc72cbe44c47b75a7abc899b6523361ed9332942a721b624509ffcea5882"
 )
 LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SIZE = 20_353
 LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_RESULT_SHA256 = (
-    "330b671475c0769a0579a0af7cb7f82c746a5df4bb0aba4b305510e597d4081d"
+    "08a176bed8abe4f4c62178fa13a939059d127ee3dee4352096bcc593177cea36"
 )
 LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_PREPUBLICATION_SIZE = 19_645
 LOCAL_RELEASE_EXPECTED_REPRODUCIBILITY_PREPUBLICATION_SHA256 = (
-    "9293c578b2ca409966c79028ea2b8e9d5e717ae64159b58bd35b90c007d3d26b"
+    "64c21a8c345018e7fca552b1ff706ac5f9c1f19a349afb0090dae22466e9e3db"
 )
 LOCAL_RELEASE_EXPECTED_PROTECTED_ARCHIVE_RELATIVE = (
-    "dist/releases/aetherlink-1.0.0+21-local-v1"
+    "dist/releases/aetherlink-1.0.0+23-local-v1"
 )
 LOCAL_RELEASE_EXPECTED_PROTECTED_ARCHIVE_IDENTITY_SHA256 = (
-    "8959b4891658101c218e9bf4cefb6ce6dbd894f238992f6a601bcc4f8a72f03a"
+    "df16cc1c38a414fa0c8e09eb3954645c34ba42aba21060ca6ad5710e4b47a4f6"
 )
 HISTORICAL_BUILD18_RELEASE_ID = "aetherlink-1.0.0+18-local-v1"
 HISTORICAL_BUILD18_ARCHIVE_SIZE = 165_615_149
@@ -521,6 +651,516 @@ CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_BOUNDARY_TERMS = (
     "rollback",
     "production readiness",
 )
+CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SIZE = 2_250
+CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SHA256 = (
+    "8646ff16bb5a152aab9c874c73a048a684d02e06fb3cbf7ed2f6172de51ff0c1"
+)
+CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RUNNER_SHA256 = (
+    "55441bb84a9d8e4681af558dc7a1d017333c88fcdeb6ab2a84561c0ee093ca29"
+)
+CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_TEST_SHA256 = (
+    "55274ad4abc958d85c4df1193cfe1508d820768fbbe48eae71a4fee8c1c020aa"
+)
+CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SIZE = (
+    3_364
+)
+CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SHA256 = (
+    "d3205d662967d90d65baac6e5edc57bcc19c5f17c3963a1a3e53c95b07d44588"
+)
+CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256 = (
+    "9d05896a5dcce7e3d7642b41acba2ee4bf6d28ffda85bc8f3b2b645f2a3b273a"
+)
+CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_TEST_SHA256 = (
+    "edfd6f89b2cecd6de5cbfcb337ba6f5643a8d74d7caf8735c467578488970664"
+)
+CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START = (
+    "<!-- aetherlink-current-build24-clean-home-lifecycle-v1:start -->"
+)
+CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END = (
+    "<!-- aetherlink-current-build24-clean-home-lifecycle-v1:end -->"
+)
+CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_BODY = """\
+The current G6 non-security Build 24 clean-HOME lifecycle slice executes the
+latest immutable archive under a temporary per-user HOME. The installed-app
+runner copied the exact ten-file manifest-matched app, completed two distinct
+LaunchServices processes, verified all three SQLite files, and kept empty
+Runtime chat plus every regular state-file byte and mode stable across
+relaunch. The canonical 2,250-byte result is at
+`dist/lifecycle/macos-packaged-app-build-24-clean-home-install-v1.json`,
+SHA-256
+`8646ff16bb5a152aab9c874c73a048a684d02e06fb3cbf7ed2f6172de51ff0c1`.
+
+The state-recovery runner installed the same Build 24 tree, migrated one fixed
+legacy Runtime-chat canary, removed the legacy source, and recovered the same
+single SQLite row from a distinct SQLite-only relaunch. Both auxiliary
+databases passed integrity checks, and the app tree plus remaining state bytes
+and modes stayed unchanged. The canonical 3,364-byte result is at
+`dist/lifecycle/macos-packaged-app-build-24-clean-home-state-recovery-v1.json`,
+SHA-256
+`d3205d662967d90d65baac6e5edc57bcc19c5f17c3963a1a3e53c95b07d44588`.
+The installed-app runner and test SHA-256 values are
+`55441bb84a9d8e4681af558dc7a1d017333c88fcdeb6ab2a84561c0ee093ca29`
+and
+`55274ad4abc958d85c4df1193cfe1508d820768fbbe48eae71a4fee8c1c020aa`;
+the state-recovery runner and test SHA-256 values are
+`9d05896a5dcce7e3d7642b41acba2ee4bf6d28ffda85bc8f3b2b645f2a3b273a`
+and
+`edfd6f89b2cecd6de5cbfcb337ba6f5643a8d74d7caf8735c467578488970664`.
+
+These result files are post-archive execution evidence and are not Build 24
+archive members. They qualify only the recorded same-host, per-user,
+temporary-HOME, local ad-hoc Build 24 installation, relaunch, and fixed-canary
+state-recovery observations. They do not establish clean-machine/account or
+DMG/Finder installation, signing/notarization, rollback, automatic data
+cleanup, physical-device behavior, provider, network, UI, accessibility, or
+production-release qualification."""
+CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SIZE = 3_038
+CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SHA256 = (
+    "7d4c6ae7d892bc9d639cc8dfbe5dfb02e09ff7019ee8554f652556ba7b1bb964"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RUNNER_SHA256 = (
+    "515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_TEST_SHA256 = (
+    "6aa2e9e2354aa36f97ff096787ac05115c95114fcf95869463b47f39dea5006c"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_START = (
+    "<!-- aetherlink-current-build24-local-dmg-lifecycle-v2:start -->"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_END = (
+    "<!-- aetherlink-current-build24-local-dmg-lifecycle-v2:end -->"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_BODY = """\
+The current G6 non-security Build 24 local-DMG lifecycle slice copied the
+retained ZIP, manifest, and checksum sidecar into one private snapshot.
+Archive readback, extraction, DMG creation, and the full exercise used those
+same bytes, which were rehashed unchanged afterward. The runner created an
+ephemeral HFS+ UDZO image with an Applications alias, mounted it read-only at
+one fresh path, copied the exact ten-file manifest tree with `ditto`, detached
+it before launch, and verified that no mount remained.
+
+Two distinct LaunchServices processes completed under a temporary per-user
+HOME. All three SQLite files passed integrity checks, Runtime chat remained
+empty, the runtime identity was present, and every regular app/state byte and
+mode stayed stable. The canonical 3,038-byte result is at
+`dist/lifecycle/macos-packaged-app-build-24-local-dmg-install-v2.json`,
+SHA-256
+`7d4c6ae7d892bc9d639cc8dfbe5dfb02e09ff7019ee8554f652556ba7b1bb964`.
+The v2 runner and nine-test module SHA-256 values are
+`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`
+and
+`6aa2e9e2354aa36f97ff096787ac05115c95114fcf95869463b47f39dea5006c`.
+Its preserved DMG primitive runner and shared snapshot-helper runner SHA-256
+values are
+`e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`
+and
+`abfd7bf5b0ef5154a4f001e1baafc134567a26e930714dffb0f057bcdb9fb095`.
+
+This result is post-archive execution evidence and is not a Build 24 archive
+member. It qualifies only the recorded same-host, per-user, temporary-HOME,
+local ad-hoc mount/copy/relaunch observation. It does not establish Finder
+drag-and-drop, downloaded-image quarantine or Gatekeeper behavior, system
+`/Applications`, a clean machine/account, TCC or Keychain behavior, signed,
+notarized, or stapled distribution, UI/accessibility, provider, network,
+physical-device, arbitrary-history, crash/power-loss, concurrent-writer,
+backup/restore/transfer, upgrade, rollback, production, or security
+qualification."""
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_RESULT_SIZE = (
+    3_485
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_RESULT_SHA256 = (
+    "1e0daba4015ae36c8d96f11c424eb08a02855d3caa2e27b7838229cd55af5649"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_RUNNER_SHA256 = (
+    "300740d31a5b73755f6976f8fe6ce9c0f498cf274ed72d23d5d6c372104eb5ae"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_TEST_SHA256 = (
+    "6e782fc128aad75b20f1b04752e4754ccbf8ceaadc9e2fcabe9cc2e537bfb703"
+)
+CURRENT_MACOS_ISOLATED_UNINSTALL_REINSTALL_EXPECTED_RUNNER_SHA256 = (
+    "36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_START = (
+    "<!-- aetherlink-current-build24-local-dmg-uninstall-reinstall-v1:"
+    "start -->"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_END = (
+    "<!-- aetherlink-current-build24-local-dmg-uninstall-reinstall-v1:"
+    "end -->"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_BODY = """\
+The current G6 non-security Build 24 same-DMG uninstall/reinstall slice reused
+one private archive snapshot and one ephemeral HFS+ UDZO image. It mounted the
+same image bytes read-only at two distinct fresh mountpoints, copied the exact
+ten-file manifest tree with `ditto` each time, detached before each launch, and
+completed two distinct LaunchServices processes under one temporary per-user
+HOME.
+
+After each stopped launch, the runner removed only the exact temporary app
+path. Across the first removal, same-image reinstall, second launch, and final
+removal, Application Support, all three SQLite files, the runtime identity,
+and every regular state-file byte and mode remained unchanged. Two complete
+executions matched the same canonical 3,485-byte result at
+`dist/lifecycle/macos-packaged-app-build-24-local-dmg-uninstall-reinstall-v1.json`,
+SHA-256
+`1e0daba4015ae36c8d96f11c424eb08a02855d3caa2e27b7838229cd55af5649`.
+The runner and fifteen-test module SHA-256 values are
+`300740d31a5b73755f6976f8fe6ce9c0f498cf274ed72d23d5d6c372104eb5ae`
+and
+`6e782fc128aad75b20f1b04752e4754ccbf8ceaadc9e2fcabe9cc2e537bfb703`.
+The reused snapshot-bound DMG, preserved DMG primitive, exact-uninstall, and
+snapshot-helper runner SHA-256 values are, respectively,
+`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`,
+`e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`,
+`36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa`,
+and
+`abfd7bf5b0ef5154a4f001e1baafc134567a26e930714dffb0f057bcdb9fb095`.
+
+This result is post-archive execution evidence and is not a Build 24 archive
+member. It qualifies only the recorded same-host, per-user, temporary-HOME,
+same-created-image uninstall/reinstall observation. It does not establish
+Finder or system `/Applications` installation, downloaded-image quarantine or
+Gatekeeper behavior, signing/notarization/stapling, a clean machine/account,
+automatic Application Support cleanup, upgrade, rollback, UI/accessibility,
+provider, network, physical-device, production, or security qualification."""
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT_SIZE = (
+    4_996
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT_SHA256 = (
+    "e3c030df6cb83586f7401de2162ac8aa14cb44fbb7c7ca05b3305d9bb4edf17e"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RUNNER_SHA256 = (
+    "31bdae72f08f1f68bc4a07cb59d194c943d56179acf0a7b149ddc2e652c68b4c"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_TEST_SHA256 = (
+    "22ddc7ec39aa8c88c2b69f2dd8a390a287d85eeaff4704109784e221483faee2"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_DOCUMENT_START = (
+    "<!-- aetherlink-current-build24-local-dmg-uninstall-reinstall-"
+    "state-recovery-v1:start -->"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_DOCUMENT_END = (
+    "<!-- aetherlink-current-build24-local-dmg-uninstall-reinstall-"
+    "state-recovery-v1:end -->"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_DOCUMENT_BODY = """\
+The current G6 non-security Build 24 same-DMG state-recovery slice reused one
+private archive snapshot and one ephemeral HFS+ UDZO image. The first
+read-only mount installed the exact ten-file manifest tree. A distinct
+LaunchServices process migrated the fixed 345-byte legacy Runtime-chat canary
+to exactly one SQLite row, and the first exact app removal preserved the full
+Application Support tree, including the legacy source, plus the runtime
+identity without changing any regular-file byte or mode.
+
+The harness then moved only that fixed legacy source into its temporary
+preserved-fixture directory. A second fresh read-only mount of the same image
+bytes reinstalled the identical app tree without touching the remaining
+state. A distinct SQLite-only LaunchServices process read back the exact
+344-byte event once; both auxiliary databases retained `integrity_check=ok`.
+The second launch and final exact app removal preserved every remaining state
+byte and mode. Two complete executions matched the same canonical 4,996-byte
+result at
+`dist/lifecycle/macos-packaged-app-build-24-local-dmg-uninstall-reinstall-state-recovery-v1.json`,
+SHA-256
+`e3c030df6cb83586f7401de2162ac8aa14cb44fbb7c7ca05b3305d9bb4edf17e`.
+The runner and nine-test module SHA-256 values are
+`31bdae72f08f1f68bc4a07cb59d194c943d56179acf0a7b149ddc2e652c68b4c`
+and
+`22ddc7ec39aa8c88c2b69f2dd8a390a287d85eeaff4704109784e221483faee2`.
+The reused same-DMG, clean-HOME recovery, packaged-state recovery,
+snapshot-bound DMG, DMG primitive, exact-uninstall, and snapshot-helper runner
+SHA-256 values are, respectively,
+`300740d31a5b73755f6976f8fe6ce9c0f498cf274ed72d23d5d6c372104eb5ae`,
+`9d05896a5dcce7e3d7642b41acba2ee4bf6d28ffda85bc8f3b2b645f2a3b273a`,
+`4f3094182ba3b87eb2bb89230df59a14ee10e1db15def87074e66c9ed68d2eca`,
+`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`,
+`e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`,
+`36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa`,
+and
+`abfd7bf5b0ef5154a4f001e1baafc134567a26e930714dffb0f057bcdb9fb095`.
+
+The DMG, captured logs, and preserved legacy fixture were temporary and are
+not retained evidence. The canonical JSON is post-archive execution evidence,
+not a Build 24 archive member. It proves only the fixed non-empty canary under
+the recorded same-host, per-user, temporary-HOME, same-created-image flow. It
+does not prove automatic legacy or Application Support cleanup, arbitrary
+histories, Finder or system `/Applications`, quarantine or Gatekeeper,
+signing/notarization/stapling, clean-machine/account, upgrade, rollback,
+UI/accessibility, provider, network, physical-device, production, or security
+qualification."""
+CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_RESULT_SIZE = (
+    7_200
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_RESULT_SHA256 = (
+    "0a7879ecea014123258a14d7f6f3790b7dc5859000941bf8faf76d2b12cb5124"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_RECEIPT_SIZE = (
+    921
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_RECEIPT_SHA256 = (
+    "98ec53d1018b0bebf88174a2fad514492b6ca1cff2afa1a6051e7335fabb3a36"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_RUNNER_SHA256 = (
+    "ddd2c8286d1b78541d4ed18f125b9d1867be718e0276adb9880e60929fc15ec3"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_TEST_SHA256 = (
+    "f06479f5eb4e12d3f0072e8259e9a7b1c28e8797a423ea88b092978a4142b658"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_DOCUMENT_START = (
+    "<!-- aetherlink-current-build24-local-dmg-abrupt-process-"
+    "state-recovery-v1:start -->"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_DOCUMENT_END = (
+    "<!-- aetherlink-current-build24-local-dmg-abrupt-process-"
+    "state-recovery-v1:end -->"
+)
+CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_DOCUMENT_BODY = """\
+The current G6 non-security Build 24 persisted-state abrupt-process recovery
+slice reused one private archive snapshot and one ephemeral HFS+ UDZO image.
+It read the retained Build 24 archive without consulting current source,
+mounted the same image bytes read-only at two distinct fresh mountpoints,
+copied the exact ten-file manifest tree with `ditto`, and detached before each
+launch.
+
+A first distinct LaunchServices process migrated the fixed 345-byte legacy
+Runtime-chat canary to exactly one 344-byte SQLite event and exited through
+bounded graceful termination. The first exact app removal preserved
+Application Support and the runtime identity. The harness then moved only the
+fixed legacy source into its temporary preserved-fixture directory, and a
+second read-only mount of the same image reinstalled the identical app tree.
+
+The runner launched that exact installed executable as a sandboxed owned child
+in SQLite-only readback mode. Only after the exact 71-byte observation and an
+independent persistence probe confirmed the committed canary and quiescent
+state did it revalidate the executable identity, send `SIGKILL`, observe exit
+code `-9`, reap that child, and prove its AppKit identity absent. The canary,
+both auxiliary databases, runtime identity, app tree, and every recorded state
+byte and mode remained unchanged immediately afterward. A third distinct
+LaunchServices process then read back the same event once before final exact
+app removal.
+
+Two complete executions matched the same canonical 7,200-byte result at
+`dist/lifecycle/macos-packaged-app-build-24-local-dmg-uninstall-reinstall-abrupt-process-state-recovery-v1.json`,
+SHA-256
+`0a7879ecea014123258a14d7f6f3790b7dc5859000941bf8faf76d2b12cb5124`.
+The separate 921-byte repeatability receipt at
+`dist/lifecycle/macos-packaged-app-build-24-local-dmg-uninstall-reinstall-abrupt-process-state-recovery-repeatability-v1.json`
+has SHA-256
+`98ec53d1018b0bebf88174a2fad514492b6ca1cff2afa1a6051e7335fabb3a36`
+and binds two passed runs to those exact result bytes. The runner and
+nineteen-test module SHA-256 values are
+`ddd2c8286d1b78541d4ed18f125b9d1867be718e0276adb9880e60929fc15ec3`
+and
+`f06479f5eb4e12d3f0072e8259e9a7b1c28e8797a423ea88b092978a4142b658`.
+The reused predecessor state-recovery, same-DMG, clean-HOME recovery,
+packaged-state recovery, snapshot-bound DMG, DMG primitive, exact-uninstall,
+and snapshot-helper runner SHA-256 values are, respectively,
+`31bdae72f08f1f68bc4a07cb59d194c943d56179acf0a7b149ddc2e652c68b4c`,
+`300740d31a5b73755f6976f8fe6ce9c0f498cf274ed72d23d5d6c372104eb5ae`,
+`9d05896a5dcce7e3d7642b41acba2ee4bf6d28ffda85bc8f3b2b645f2a3b273a`,
+`4f3094182ba3b87eb2bb89230df59a14ee10e1db15def87074e66c9ed68d2eca`,
+`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`,
+`e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`,
+`36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa`,
+and
+`abfd7bf5b0ef5154a4f001e1baafc134567a26e930714dffb0f057bcdb9fb095`.
+
+The DMG, captured logs, and preserved legacy fixture were temporary and are
+not retained evidence. Both JSON files are post-archive execution evidence,
+not Build 24 archive members. The signal occurred only after the fixed canary
+was committed and independently observed; this is not an in-flight
+transaction, hot-journal fault, write-durability, power-loss, kernel-crash,
+OS-restart, UI Force Quit, arbitrary-history, or soak result. It does not
+qualify automatic state cleanup, Finder or system `/Applications`, quarantine
+or Gatekeeper, signing/notarization/stapling, clean-machine/account, upgrade,
+rollback, UI/accessibility, provider, network, physical-device, production, or
+security behavior. The canonical G6 exit and every G7 exit tier remain
+incomplete."""
+CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_EXPECTED_CHECKER_SIZE = 72_502
+CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_EXPECTED_CHECKER_SHA256 = (
+    "d4c81d6329e1e6869d8b352daf20e415782ff6debfb064844844e6ce8b79fd8e"
+)
+CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_EXPECTED_TEST_SIZE = 31_405
+CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_EXPECTED_TEST_SHA256 = (
+    "96e724bf307ae83564c1169aefcade59f01f3886662f9aca954f32e5a6cfe19a"
+)
+CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_START = (
+    "<!-- aetherlink-current-build24-macos-lifecycle-"
+    "aggregate-readback-v1:start -->"
+)
+CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_END = (
+    "<!-- aetherlink-current-build24-macos-lifecycle-"
+    "aggregate-readback-v1:end -->"
+)
+CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_BODY = """\
+The current Build 24 non-security macOS lifecycle aggregate is the standalone
+read-only command
+`python3 -I -B -S script/check_macos_build24_lifecycle_evidence.py`.
+It opens and retains the repository root, seven exact directories, and all 40
+unique target regular-file descriptors before hashing any target. It then
+streams the exact Build 23 and Build 24 archive, manifest, and checksum
+sidecars; the terminal version ledger; seven current lifecycle results; two
+repeatability receipts; and 25 source files. Final entry and directory-graph
+readback must match the held initial identities.
+
+The checker independently rejects noncanonical or duplicate-key JSON,
+non-exact integer, float, and boolean field types, wrong top-level schemas,
+release or app-tree drift, reversed Build 23-to-24 direction, weakened
+limitations, and receipt/result mismatch. It imports and executes no lifecycle
+runner and performs no subprocess, image mount, app launch, file write,
+network, device, or Git operation. The 12 exact focused unit modules remain
+byte-bound inputs but are deliberately not executed by this static checker.
+
+The standalone readback passed. A separate exact invocation of those 12
+non-security unit modules passed 169 tests, and the aggregate checker's own 22
+mutation and boundary tests passed. The 72,502-byte checker has SHA-256
+`d4c81d6329e1e6869d8b352daf20e415782ff6debfb064844844e6ce8b79fd8e`;
+the 31,405-byte test module has SHA-256
+`96e724bf307ae83564c1169aefcade59f01f3886662f9aca954f32e5a6cfe19a`.
+
+This gate publishes or rewrites no lifecycle result and creates no new install,
+launch, DMG, upgrade, recovery, or repeatability observation. Build 23 remains
+a retained historical predecessor, not a declared rollback lineage. The pass
+is bounded static/no-device consistency evidence and preparation for a future
+G7 deterministic check; it is not canonical G7 PR-fast completion and does
+not complete the signed, physical-device, network, rollback, production, or
+other remaining G6/G7 exit requirements."""
+CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_RESULT_SIZE = 22_534
+CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_RESULT_SHA256 = (
+    "07d28a073746731241932681630014647ad452e382afd6728938daacb39e167f"
+)
+CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_RUNNER_SIZE = 45_998
+CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_RUNNER_SHA256 = (
+    "073e58afa67228d6c208186d8ddca790b763a9c0a7acee9d5a681ff1f22801a9"
+)
+CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_RUNNER_TEST_SIZE = (
+    32_632
+)
+CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_RUNNER_TEST_SHA256 = (
+    "df8a04a0e46e7ef0cc10a1f5dc29f3f8f9763e960995427304a7ccd93a2e8e4b"
+)
+CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_CHECKER_SIZE = 36_411
+CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_CHECKER_SHA256 = (
+    "4b5829e4fc44f250a0cdda6586edcb6c781ec1a1c49e605d884a1210a1634bb4"
+)
+CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_CHECKER_TEST_SIZE = (
+    38_633
+)
+CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_CHECKER_TEST_SHA256 = (
+    "9cc1992ecf4612590e33d8e20e2dd341b729a1335f488605a7cb06670ece34cf"
+)
+CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_START = (
+    "<!-- aetherlink-current-build24-macos-idle-resource-stability-v1:"
+    "start -->"
+)
+CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_END = (
+    "<!-- aetherlink-current-build24-macos-idle-resource-stability-v1:"
+    "end -->"
+)
+CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_BODY = """\
+The current Build 24 non-security macOS idle-resource stability observation
+used one exact packaged-app child under an isolated temporary HOME. After a
+60,000 ms warm-up it retained 120 libproc samples at 5,000 ms targets across
+600,000 ms. The maximum observed sample lateness was 79 ms.
+
+The first and final 12-sample upper medians and full-run maxima were 10, 10,
+and 10 open file descriptors; 142,344,192, 142,344,192, and 142,393,344
+resident bytes; and 3, 3, and 4 threads. Final deltas were 0, 0, and 0;
+peak deltas were 0, 49,152, and 1. All stayed within the predeclared local
+regression budgets. The exact owned child accepted graceful termination,
+exited with status 0, was reaped, and disappeared from AppKit. The preexisting
+AetherLink app was preserved, no raw process identifier or temporary path was
+retained, and the temporary root was removed before publication.
+
+The canonical 22,534-byte result is at
+`dist/lifecycle/macos-packaged-app-build-24-idle-resource-stability-v1.json`,
+SHA-256
+`07d28a073746731241932681630014647ad452e382afd6728938daacb39e167f`.
+The 45,998-byte runner and 32,632-byte 25-test module have SHA-256 values
+`073e58afa67228d6c208186d8ddca790b763a9c0a7acee9d5a681ff1f22801a9`
+and
+`df8a04a0e46e7ef0cc10a1f5dc29f3f8f9763e960995427304a7ccd93a2e8e4b`.
+
+The standalone read-only command
+`python3 -I -B -S script/check_macos_build24_idle_resource_stability_evidence.py`
+opens 16 fixed archive, ledger, result, runner, test, and transitive-source
+files before hashing. It rechecks their held path graph, rejects noncanonical
+or duplicate-key JSON and boolean/integer aliasing, and independently
+recomputes all 120 targets, maximum lateness, upper medians, deltas, maxima,
+limits, and pass flags. Its 36,411-byte checker and 38,633-byte 25-test module
+have SHA-256 values
+`4b5829e4fc44f250a0cdda6586edcb6c781ec1a1c49e605d884a1210a1634bb4`
+and
+`9cc1992ecf4612590e33d8e20e2dd341b729a1335f488605a7cb06670ece34cf`.
+
+This is one same-host, per-user, network-denied, point-in-time local idle
+observation. It is not repeatability, load, performance-SLA, capacity,
+long-soak, install, upgrade, recovery, rollback, device, provider, UI,
+accessibility, production, or G7 Weekly resilience evidence. No signing or
+signature verification was performed."""
+CURRENT_BUILD24_MACOS_LIFECYCLE_CHAIN_PREDECESSOR_BY_DOCUMENT = {
+    "README.md": (
+        "external-network discovery, device, signing, deployment, "
+        "security, or release\nevidence.\n\n"
+        "<!-- aetherlink-current-build23-to-24-isolated-upgrade-v2:start -->"
+    ),
+    "docs/roadmap.md": (
+        "Builds 1 through 23 remain separately readable historical "
+        "archives.\n\n"
+        "<!-- aetherlink-current-build23-to-24-isolated-upgrade-v2:start -->"
+    ),
+    "docs/handoff.md": (
+        "Builds 1 through 23 are historical; their readback requires "
+        "`--historical`.\n"
+        "<!-- aetherlink-current-build23-to-24-isolated-upgrade-v2:start -->"
+    ),
+    "docs/progress.md": (
+        "physical-device behavior, external networking, deployment, "
+        "or a production\n  release.\n\n"
+        "## 2026-07-31 macOS Build 23 To Build 24 Isolated Upgrade\n\n"
+        "<!-- aetherlink-current-build23-to-24-isolated-upgrade-v2:start -->"
+    ),
+    "docs/qa-evidence.md": (
+        "physical-device behavior, external networking, deployment,\n"
+        "  or a production release.\n\n"
+        "## 2026-07-31 macOS Build 23 To Build 24 Isolated Upgrade "
+        "Checklist\n\n"
+        "<!-- aetherlink-current-build23-to-24-isolated-upgrade-v2:start -->"
+    ),
+    "docs/releases/1.0.0-build-24-local-v1.md": (
+        "fact. None of these historical observations transfers "
+        "execution evidence to\nBuild 24.\n\n"
+        "## Post-Archive Build 23 To Build 24 Isolated Upgrade "
+        "Evidence\n\n"
+        "<!-- aetherlink-current-build23-to-24-isolated-upgrade-v2:start -->"
+    ),
+}
+CURRENT_BUILD24_MACOS_LIFECYCLE_CHAIN_OUTER_SHA256_BY_DOCUMENT = {
+    "README.md": (
+        "e5733ca610e8d453d008c024a28e9f7f914ab17831bcefca8bd741ff0ab744ab",
+        "87600ce465773e5d1e7c8d07d190ab60f9d85afb42e97802737da918ffa1a023",
+    ),
+    "docs/roadmap.md": (
+        "25c29415ee7a348c2df2b7240db9b92c1f85bc24491c8e476245122b8fe1af5f",
+        "e2b16260bf523da5c63d0936536b495444c3f77d8c7c5b264a261ffb77b5ca35",
+    ),
+    "docs/handoff.md": (
+        "7d32ae586d0cb6cc6d1ef86b2c40272bb6d632bfbeba748d7cfecb69a3f1708a",
+        "45757b5ef397dd7976196ae5b267eee53544fa4b8546464073830acb39d7f858",
+    ),
+    "docs/progress.md": (
+        "74e2d12fdef693b6f8b705f98f0949035dabc90f5bf12880c912f6198fa90564",
+        "c2e5ed1ec4d2af10ac3f3f87baeb3b9b29cc35393c1628cc63e147718d1589eb",
+    ),
+    "docs/qa-evidence.md": (
+        "3c838e056539aabf70a2815d68c9ab3458ad3c7c57338285a1af80f437b86050",
+        "5c92341f48705b39fcd93e03390edba375eb6455bae3a4eb55807f2c6d3c4eff",
+    ),
+    "docs/releases/1.0.0-build-24-local-v1.md": (
+        "d03318d6bcbc764c50f4b75c4b0b8dcf475e8697d80d21a3831144d43db437a6",
+        "5f9ae81b48c5f77f059f625fab80c8790dffd986ce671c339e5558006a9a8154",
+    ),
+}
 CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SIZE = 2_434
 CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SHA256 = (
     "e78b605278d5c5b7f5601778c38f35270f1db4a9e95055ff434b71af4c33cf78"
@@ -531,6 +1171,57 @@ CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RUNNER_SHA256 = (
 CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_TEST_SHA256 = (
     "89e566ff26d22eced043ffa108f8719274f9608685d6ecd18e579291c021cf47"
 )
+CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_RESULT_SIZE = 6_469
+CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_RESULT_SHA256 = (
+    "ddec23cf048fa77c559ca7ee4f45354feb558f830ca4b01eccffa5b7786ea09c"
+)
+CURRENT_MACOS_ISOLATED_UPGRADE_REPEATABILITY_EXPECTED_SIZE = 898
+CURRENT_MACOS_ISOLATED_UPGRADE_REPEATABILITY_EXPECTED_SHA256 = (
+    "886284149745c6fdd74625fab5d97c21ad35cd9b69cc2ade4353194b4ecd1733"
+)
+CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_RUNNER_SHA256 = (
+    "abfd7bf5b0ef5154a4f001e1baafc134567a26e930714dffb0f057bcdb9fb095"
+)
+CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_TEST_SHA256 = (
+    "fac7fb5474ae41d00374b577966d75caf3addf45de2243fe64a322cdad80632f"
+)
+CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_START = (
+    "<!-- aetherlink-current-build23-to-24-isolated-upgrade-v2:start -->"
+)
+CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_END = (
+    "<!-- aetherlink-current-build23-to-24-isolated-upgrade-v2:end -->"
+)
+CURRENT_MACOS_ISOLATED_UPGRADE_BOUNDARY = (
+    "This post-archive runner and result were created after the immutable "
+    "Build 24 source snapshot and are not Build 23 or Build 24 archive "
+    "members or source inputs. The evidence qualifies only the recorded "
+    "same-host, per-user, temporary-HOME, local ad-hoc Build 23-to-24 "
+    "transition in which Application Support was retained; it does not "
+    "establish automatic data cleanup. It does not qualify rollback, "
+    "arbitrary N/N-1 versions, clean-machine or Finder/DMG installation, "
+    "signed distribution, physical-device behavior, provider, network, or "
+    "UI behavior, or production-release qualification."
+)
+CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_BLOCK_SHA256 = {
+    "README.md": (
+        "350abcf391d0fc3db74656914af28073d06e687478b3ce5a1a6f6bb617ea777d"
+    ),
+    "docs/roadmap.md": (
+        "9258b5b3f3737009cf4059f2a631f291c1daefff12f0e2ddc7e3745a287381f0"
+    ),
+    "docs/handoff.md": (
+        "1fb5135bfb920c8a50b8d4e27ffd9c467e13520fa5e074d5aaedafb48637cfc9"
+    ),
+    "docs/progress.md": (
+        "f1ade8eea03355a790c3e31e32d59ae67df90b5bbbf25bfb2024dbd7a11cae35"
+    ),
+    "docs/qa-evidence.md": (
+        "02d8b15c8d45c058afbe565d6c2bf1be661a3f7a281078bcee07f0a522bdc970"
+    ),
+    "docs/releases/1.0.0-build-24-local-v1.md": (
+        "3d3614b5d8469650870550de6ca92755139ca8823fdb0b023cdc2d3fcf28a7bb"
+    ),
+}
 CURRENT_RUNTIME_CHAT_SQLITE_SWIFT_TESTS = (
     (
         "testSQLiteCrossInstanceAppendWaitsForImmediateTransactionAnd"
@@ -575,6 +1266,112 @@ CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_BLOCK_SHA256 = {
     ),
     "docs/releases/1.0.0-build-22-local-v1.md": (
         "d3a5e47b36a8a444f07c4a307e910141be4ae7784e5ea05ab00acad90a8361b2"
+    ),
+    "docs/releases/1.0.0-build-24-local-v1.md": (
+        "d3a5e47b36a8a444f07c4a307e910141be4ae7784e5ea05ab00acad90a8361b2"
+    ),
+}
+CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_BODY_SHA256_BY_DOCUMENT = {
+    "README.md": (
+        "47ae8d160162160bdf50ac1665cf5199a454bbdaab735e24cca807ab48f01778"
+    ),
+    "docs/roadmap.md": (
+        "4f62248831121af2c5cda260db7cf21c0a3559041fea1fd4719153848e591ece"
+    ),
+    "docs/handoff.md": (
+        "4a31420a4e912ffa5201b0cdb1acf2d5ae078b140d819ca918747586645f6835"
+    ),
+    "docs/progress.md": (
+        "9309497777cffde18e01a2dc1f4c96d3a98bd223253d414d02dc45a210ec1c8a"
+    ),
+    "docs/qa-evidence.md": (
+        "3c78bd2b6de1d10550097bb7b3df2ad6ffa79a47efd4ca5a1100b9a4fd00d38b"
+    ),
+    "docs/releases/1.0.0-build-20-local-v1.md": (
+        "a20b68807d4a4a099195c83b801818f76ed750cfcb14c25a609b485a2075ad54"
+    ),
+    "docs/releases/1.0.0-build-24-local-v1.md": (
+        "a20b68807d4a4a099195c83b801818f76ed750cfcb14c25a609b485a2075ad54"
+    ),
+}
+CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_OUTER_SHA256_BY_DOCUMENT = {
+    "README.md": (
+        "5bc4afd9836b638093017a83fd670480a50faf18911e7d2be550fb9fdfa58ab1",
+        "98ac8839d90840a34a9104dccb8ca1803820cc30677b12ee7b5766180cc54983",
+    ),
+    "docs/roadmap.md": (
+        "931f9558a82c5fb452e5e2f99c6ecb191c15b144e503c80fd61877be883794ae",
+        "85b00bd0c136d4a8e5d0135d21668cb009c618362a6995266618335e12fe5667",
+    ),
+    "docs/handoff.md": (
+        "24acc4a80b2ab7eb56ffe55897cd9c43d566e82864812a6062971181ec2097c6",
+        "fcd0f93e8d91ade7dc84df0a0cf1ba3d5dfc0d2ff485645b94211dbafd4a63bf",
+    ),
+    "docs/progress.md": (
+        "0bb7a1f86470b94aa3a519d4632cf83901e074e35c8a8601798180081e76c0ff",
+        "75ff47867bb3a85000e23e723f8b9c20e8caf252de95bb19a91732fca40863a6",
+    ),
+    "docs/qa-evidence.md": (
+        "ff35b99bfddd47c58ec4b4c7855016f6e3cba43b8477383bb256bb3500345dde",
+        "89cbf66a09001c07387613ebe728ed79d2ebbe66b943beec8bde498e08aedf85",
+    ),
+    "docs/releases/1.0.0-build-20-local-v1.md": (
+        "fb0c1b58bbd660832b3949162552530870b24872e9034c03c0241bb84d99f366",
+        "b2673dc9c562eb6a7f8d209136c138754d58fb9adebfbfabc9b8696c5f3c490c",
+    ),
+    "docs/releases/1.0.0-build-24-local-v1.md": (
+        "c135f0bc9d3963b550db6328407abf4af85e619aa01fb50bc10333da63be72c2",
+        "963d93647af400931cb0824ee764e8ed738d71f7092f6d722edb74579ba34485",
+    ),
+}
+CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_NEIGHBORS = {
+    "README.md": (
+        "Those historical observations are not reinterpreted as Build 21 "
+        "evidence.\n\n"
+        + CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START,
+        CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+        + "\n\nBuild 24 preserves compliance profile",
+    ),
+    "docs/roadmap.md": (
+        CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_END
+        + "\n\n"
+        + CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START,
+        CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+        + "\n\nThe separate V3 observation path",
+    ),
+    "docs/handoff.md": (
+        CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_END
+        + "\n\n"
+        + CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START,
+        CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+        + "\n\n- Build 16 preserves",
+    ),
+    "docs/progress.md": (
+        CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_END
+        + "\n\n"
+        + CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START,
+        CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+        + "\n\n- This historical local result",
+    ),
+    "docs/qa-evidence.md": (
+        CURRENT_RUNTIME_CHAT_SQLITE_ABRUPT_DOCUMENT_END
+        + "\n\n"
+        + CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START,
+        CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+        + "\n\n- [ ] This historical local result",
+    ),
+    "docs/releases/1.0.0-build-20-local-v1.md": (
+        "## Historical Build 20 Clean-HOME Installed Lifecycle Evidence\n\n"
+        + CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START,
+        CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+        + "\n\n## Historical Build 20 Local DMG Mount-And-Copy "
+        "Lifecycle Evidence",
+    ),
+    "docs/releases/1.0.0-build-24-local-v1.md": (
+        "## Historical Build 20 Clean-HOME Installed Lifecycle Evidence\n\n"
+        + CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START,
+        CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+        + "\n\n## Historical Build 20 Local DMG Evidence",
     ),
 }
 CURRENT_RUNTIME_CHAT_SQLITE_DOCUMENT_REQUIRED_PATTERNS = (
@@ -733,18 +1530,18 @@ LOCAL_RELEASE_EXPECTED_SOURCE_ROOT_BYTE_LENGTHS = {
     "build-a": 101,
     "build-b": 109,
 }
-LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT = 247
+LOCAL_RELEASE_EXPECTED_SOURCE_FILE_COUNT = 249
 LOCAL_RELEASE_EXPECTED_SOURCE_SHA256 = (
-    "d0ee21c6f288cafad0a0f634de2116b48c8a4716389f2d52daacd4e90c591eb6"
+    "a01d37c3be608db3a8fa588b1ec019b673b5c57bc227ffc105047b3e4548f5f2"
 )
 LOCAL_RELEASE_EXPECTED_SOURCE_OVERLAY_SHA256 = (
-    "c259c24c88e5f88dacfa5eca2c4c6651f5347b10b6fb08f3698dd0822b4028f2"
+    "9d71c5340e1809222542c59d0da96f1ee08f9b619741ae3b0f1cb4fcbc28a3cc"
 )
 LOCAL_RELEASE_EXPECTED_PREPUBLICATION_SOURCE_OVERLAY_SHA256 = (
-    "c259c24c88e5f88dacfa5eca2c4c6651f5347b10b6fb08f3698dd0822b4028f2"
+    "9d71c5340e1809222542c59d0da96f1ee08f9b619741ae3b0f1cb4fcbc28a3cc"
 )
 LOCAL_RELEASE_EXPECTED_SOURCE_HEAD = (
-    "88c0282722eb0afb3ce2d6f394fedb1f22a7ec7c"
+    "7d72147528e334edb19b9331ed7933ac71ca424b"
 )
 LOCAL_RELEASE_EXPECTED_RUNTIME_CHAT_SQLITE_SOURCE_MEMBERS = {
     "Package.swift": (
@@ -772,15 +1569,15 @@ LOCAL_RELEASE_EXPECTED_RUNTIME_CHAT_SQLITE_SOURCE_MEMBERS = {
     ),
 }
 LOCAL_RELEASE_EXPECTED_MEMBER_COUNT = 29
-LOCAL_RELEASE_EXPECTED_MACOS_UUID = "E8178DE8-6DC5-3E3D-A8EA-5721BC4F70CA"
+LOCAL_RELEASE_EXPECTED_MACOS_UUID = "3FDC3DBC-3A74-3A3B-A87D-03CB432B5D46"
 LOCAL_RELEASE_EXPECTED_MEMBERS = {
     "android/apk/app-release-unsigned.apk": (
         9_575_138,
-        "31dc15d5f6af6fcaa57227818731af332e558a032a5e39b8d5cdc94b28c2af4a",
+        "bd9867b9788cb2e9aa88e7b71259a19dde59b776156f147f9b59162ab0903d74",
     ),
     "android/bundle/app-release.aab": (
-        10_677_980,
-        "324e1487978cef9d1397dfeae00a112ef0bcf37e4c20242cfb1d81cb3f37d410",
+        10_677_978,
+        "3572b0e696fb714c168de2165f143e966655039eb41ce240d275669791d322fd",
     ),
     "android/mapping/mapping.txt": (
         71_910_079,
@@ -791,12 +1588,12 @@ LOCAL_RELEASE_EXPECTED_MEMBERS = {
         "002f51ef322a3849b5c4671db6bb6dd89722dfacd0a3418e465939ac406c005a",
     ),
     "macos/AetherLink.app/Contents/MacOS/AetherLink": (
-        18_300_464,
-        "71c0273479e7121a47f0d788b19229dd8fe39b9c420108cb81a8b59580e251cd",
+        18_592_368,
+        "5bf283a6dd3504682cb4aefc9cb1536c7e340f776c90de83cea5a473044890e5",
     ),
     "macos/AetherLink.dSYM/Contents/Resources/DWARF/AetherLink": (
-        31_306_138,
-        "b72230a02d95073c02b45a8666c20ceceb57d7f302f06944b0ce7bbcfe6b8d8c",
+        31_607_333,
+        "922ad09eccd079e6c128cbb1e85fc311d3fb6ec9315941e1821daac135fc1656",
     ),
     "compliance/THIRD_PARTY_LICENSE_INVENTORY.txt": (
         109_725,
@@ -808,29 +1605,34 @@ LOCAL_RELEASE_EXPECTED_MEMBERS = {
     ),
     "compliance/sbom.spdx.json": (
         252_417,
-        "73befa74fc1a5892a656996dcc226d166540d47ae2f165fc7c5914972795d32a",
+        "a2529e7a0507c5984af849c22aed31cfbde95e5cccb8ecc3ae53190d0b59ee88",
     ),
     "compliance/third-party-license-inventory-v1.json": (
         411_087,
         "1f97b74e794e5e2b3092cc31ce8c67f634a299989658feca597bc301b67dcda5",
     ),
     "source-files.json": (
-        47_975,
-        "623a822a77eb033e4c827fc4ef875a5dfd238fe7a933c7a3a9801d966ed1d7e3",
+        48_320,
+        "9e72eb51fc21694243680e25b912de78bed4e0d154bdc505646899dd86f80500",
     ),
 }
 LOCAL_RELEASE_EXPECTED_APK_MANIFEST_READBACK = {
     "member": "android/apk/app-release-unsigned.apk",
-    "tool": "aapt2 dump xmltree + resources --no-values",
+    "tool": "aapt2 dump xmltree + resources",
     "verifiedFields": [
         "allowBackup",
         "dataExtractionRules",
         "fullBackupContent",
+        "entryPointTopology",
+        "applicationShell",
     ],
 }
 LOCAL_RELEASE_EXPECTED_BUNDLE_MANIFEST_READBACK = {
     "member": "android/bundle/app-release.aab",
-    "tool": "bundletool dump manifest",
+    "tool": (
+        "bundletool dump manifest + resources + config + universal APK "
+        "readback"
+    ),
     "verifiedFields": [
         "applicationId",
         "minSdk",
@@ -840,6 +1642,8 @@ LOCAL_RELEASE_EXPECTED_BUNDLE_MANIFEST_READBACK = {
         "allowBackup",
         "dataExtractionRules",
         "fullBackupContent",
+        "entryPointTopology",
+        "applicationShell",
     ],
 }
 LOCAL_RELEASE_ANDROID_BACKUP_POLICY_REQUIRED_CLAIMS = (
@@ -855,8 +1659,8 @@ LOCAL_RELEASE_ANDROID_BACKUP_POLICY_REQUIRED_CLAIMS = (
     ),
     '`path="."`',
     "No `<include>` rule is present.",
-    "`aapt2 dump xmltree + resources --no-values`",
-    "`bundletool dump manifest`",
+    "`aapt2 dump xmltree + resources`",
+    "`bundletool dump manifest + resources + config + universal APK readback`",
     (
         "Build 15 is the first local release that requires both APK and AAB "
         "backup-policy manifest readback."
@@ -1231,6 +2035,635 @@ CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT = {
         CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT["installation"]
     ),
     "release": CURRENT_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT["release"],
+}
+CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT = {
+    **MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT,
+    "app": {
+        "buildNumber": LOCAL_RELEASE_BUILD_NUMBER,
+        "bundleIdentifier": "dev.aetherlink.companion",
+        "executableSha256": (
+            "5bf283a6dd3504682cb4aefc9cb1536c7e340f776c90de83cea5a473044890e5"
+        ),
+        "marketingVersion": LOCAL_RELEASE_MARKETING_VERSION,
+        "uuid": LOCAL_RELEASE_EXPECTED_MACOS_UUID,
+    },
+    "installation": {
+        **MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT["installation"],
+        "tree": {
+            **MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT["installation"][
+                "tree"
+            ],
+            "sha256": (
+                "0c1882e653ec32a3bf5795c9369dbee818b6890157fbaaebd81c60b8c1a59fff"
+            ),
+            "totalRegularFileBytes": 21_151_910,
+        },
+    },
+    "release": {
+        "archiveSha256": LOCAL_RELEASE_EXPECTED_ZIP_SHA256,
+        "manifestSha256": LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256,
+        "releaseId": LOCAL_RELEASE_ID,
+    },
+}
+CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT = {
+    **MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT,
+    "app": CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT["app"],
+    "installation": (
+        CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT[
+            "installation"
+        ]
+    ),
+    "release": CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT[
+        "release"
+    ],
+}
+CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT = {
+    "archiveReadback": {
+        "currentSourceCompared": False,
+        "mode": "archive-only-no-current-source",
+        "readbackAndExerciseSameSnapshot": True,
+        "snapshotFiles": {
+            f"{LOCAL_RELEASE_ID}.manifest.json": {
+                "sha256": LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256,
+                "size": LOCAL_RELEASE_EXPECTED_MANIFEST_SIZE,
+            },
+            f"{LOCAL_RELEASE_ID}.zip": {
+                "sha256": LOCAL_RELEASE_EXPECTED_ZIP_SHA256,
+                "size": LOCAL_RELEASE_EXPECTED_ZIP_SIZE,
+            },
+            f"{LOCAL_RELEASE_ID}.zip.sha256": {
+                "sha256": LOCAL_RELEASE_EXPECTED_CHECKSUM_SHA256,
+                "size": LOCAL_RELEASE_EXPECTED_CHECKSUM_SIZE,
+            },
+        },
+        "snapshotFilesUnchangedAfterExercise": True,
+        "status": "passed",
+    },
+    "image": {
+        "ephemeral": True,
+        "filesystem": "HFS+",
+        "format": "UDZO",
+        "retained": False,
+        "verified": True,
+    },
+    "installation": {
+        "adHocAppSealAndVersionVerified": True,
+        "applicationsAliasPresent": True,
+        "copyTool": "ditto",
+        "exactReleaseTreeCopied": True,
+        "tree": {
+            "digestAlgorithm": (
+                "sha256(path-nul-mode-octal-nul-size-nul-sha256-lf)-v1"
+            ),
+            "regularFileCount": 10,
+            "sha256": (
+                "0c1882e653ec32a3bf5795c9369dbee818b6890157fbaaebd81c60b8c1a59fff"
+            ),
+            "totalRegularFileBytes": 21_151_910,
+        },
+    },
+    "isolation": {
+        "cleanHomeConfigured": True,
+        "preexistingBundleApplicationsPreserved": True,
+        "runtimeIdentityFileOverrideConfigured": True,
+        "temporaryCFUserHomeConfigured": True,
+    },
+    "launchServices": {
+        "distinctProcessIdentifiers": True,
+        "exactInstalledBundlePerCycle": True,
+        "runs": [
+            {
+                "activationPolicy": 0,
+                "finishedLaunching": True,
+                "newProcessIdentifierDetected": True,
+                "observationDeadlineReached": True,
+                "ordinal": ordinal,
+                "terminationAccepted": True,
+            }
+            for ordinal in (1, 2)
+        ],
+    },
+    "limitations": [
+        "not-finder-ui-or-drag-and-drop-evidence",
+        "not-general-ui-or-accessibility-evidence",
+        "not-developer-id-notarized-or-stapled-distribution",
+        "not-gatekeeper-quarantine-or-download-evidence",
+        "not-clean-machine-account-or-system-applications",
+        "not-tcc-keychain-provider-network-or-device-evidence",
+        "not-arbitrary-history-crash-power-loss-or-concurrent-writer-evidence",
+        "not-backup-restore-or-device-transfer-evidence",
+        "not-upgrade-n-or-n-minus-one-rollback-production-or-security-evidence",
+    ],
+    "mount": {
+        "detachedBeforeLaunch": True,
+        "exactFreshMountpoint": True,
+        "nobrowse": True,
+        "oneMountedEntity": True,
+        "readOnly": True,
+        "unmountedVerified": True,
+    },
+    "release": {
+        "archiveSha256": LOCAL_RELEASE_EXPECTED_ZIP_SHA256,
+        "manifestSha256": LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256,
+        "releaseId": LOCAL_RELEASE_ID,
+    },
+    "schemaVersion": 2,
+    "scope": "same-host-per-user-ephemeral-local-dmg-install-v2",
+    "state": {
+        "databaseCount": 3,
+        "emptyRuntimeChatVerified": True,
+        "integrityChecks": "passed",
+        "regularFileBytesAndModesUnchangedAcrossRelaunch": True,
+        "runtimeIdentityFilePresent": True,
+        "sqlite": [
+            {
+                "filename": "runtime-chat-events.sqlite",
+                "integrityCheck": "ok",
+                "totalEventCount": 0,
+            },
+            {
+                "filename": "runtime-document-index.sqlite",
+                "integrityCheck": "ok",
+            },
+            {
+                "filename": "runtime-model-pull-approvals.sqlite",
+                "integrityCheck": "ok",
+            },
+        ],
+        "stableAcrossRelaunch": True,
+    },
+    "status": "passed",
+}
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_RESULT = {
+    "archiveReadback": (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT[
+            "archiveReadback"
+        ]
+    ),
+    "image": {
+        "ephemeral": True,
+        "filesystem": "HFS+",
+        "format": "UDZO",
+        "retained": False,
+        "sameImageBytesUsedForBothInstalls": True,
+        "verified": True,
+    },
+    "installation": {
+        "adHocAppSealAndVersionVerified": True,
+        "applicationsAliasPresent": True,
+        "copyTool": "ditto",
+        "exactReleaseTreeCopiedEachInstall": True,
+        "installCount": 2,
+        "origin": "same-ephemeral-local-dmg",
+        "reinstallTreeMatchesInitial": True,
+        "tree": (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT[
+                "installation"
+            ]["tree"]
+        ),
+    },
+    "isolation": (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT[
+            "isolation"
+        ]
+    ),
+    "launchServices": {
+        "distinctProcessIdentifiers": True,
+        "exactInstalledBundlePerCycle": True,
+        "noExactTemporaryAppRemaining": True,
+        "runs": (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT[
+                "launchServices"
+            ]["runs"]
+        ),
+    },
+    "limitations": [
+        "same-host-per-user-temporary-home-only",
+        "same-created-dmg-image-remount-only",
+        "application-support-retained-no-automatic-data-cleanup",
+        "post-archive-harness-not-build-input-member",
+        (
+            "not-finder-system-applications-quarantine-or-gatekeeper-"
+            "evidence"
+        ),
+        "not-signed-notarized-stapled-or-distribution-evidence",
+        (
+            "not-clean-machine-upgrade-rollback-device-provider-network-ui-"
+            "accessibility-production-or-security-evidence"
+        ),
+    ],
+    "mount": {
+        "cycleCount": 2,
+        "detachedBeforeEachLaunch": True,
+        "exactFreshMountpointPerInstall": True,
+        "nobrowse": True,
+        "oneMountedEntityPerInstall": True,
+        "readOnly": True,
+        "unmountedAfterEachCopy": True,
+    },
+    "release": (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT[
+            "release"
+        ]
+    ),
+    "schemaVersion": 1,
+    "scope": (
+        "same-host-per-user-ephemeral-local-dmg-uninstall-reinstall-v1"
+    ),
+    "state": {
+        "applicationSupportPreservedAcrossRemovalAndReinstall": True,
+        "databaseCount": 3,
+        "emptyRuntimeChatVerified": True,
+        "integrityChecks": "passed",
+        "regularFileBytesAndModesUnchanged": True,
+        "runtimeIdentityFilePresent": True,
+        "sqlite": (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT[
+                "state"
+            ]["sqlite"]
+        ),
+        "stableAcrossRemovalAndReinstall": True,
+    },
+    "status": "passed",
+    "uninstall": {
+        "appAbsentAfterEachRemoval": True,
+        "applicationSupportCleanupPerformed": False,
+        "exactTemporaryAppPathOnly": True,
+        "exactTemporaryAppStoppedBeforeEachRemoval": True,
+        "removalCount": 2,
+        "removalMethod": "python-shutil-rmtree",
+    },
+}
+CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT = {
+    "archiveReadback": (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT[
+            "archiveReadback"
+        ]
+    ),
+    "canary": (
+        CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT[
+            "canary"
+        ]
+    ),
+    "image": (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_RESULT[
+            "image"
+        ]
+    ),
+    "installation": {
+        **CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_RESULT[
+            "installation"
+        ],
+        "statePresentBeforeReinstall": True,
+    },
+    "isolation": (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT["isolation"]
+    ),
+    "launchServices": {
+        "commandPolicy": (
+            "open-new-fresh-background-exact-app-path-captured-recovery-v1"
+        ),
+        "distinctProcessIdentifiers": True,
+        "exactInstalledBundlePerCycle": True,
+        "noExactTemporaryAppRemaining": True,
+        "runs": [
+            {
+                "activationPolicy": 0,
+                "executablePathMatched": True,
+                "finishedLaunching": True,
+                "minimumObservationSeconds": 5.0,
+                "newProcessIdentifierDetected": True,
+                "observationDeadlineReached": True,
+                "ordinal": ordinal,
+                "terminationAccepted": True,
+            }
+            for ordinal in (1, 2)
+        ],
+    },
+    "limitations": [
+        "same-host-per-user-temporary-home-only",
+        "same-created-dmg-image-remount-only",
+        "fixed-runtime-chat-legacy-canary-only",
+        "legacy-fixture-removed-by-harness-before-reinstall-readback",
+        "application-support-retained-no-automatic-data-cleanup",
+        "post-archive-harness-not-build-input-member",
+        (
+            "not-finder-system-applications-quarantine-or-gatekeeper-"
+            "evidence"
+        ),
+        "not-signed-notarized-stapled-or-distribution-evidence",
+        (
+            "not-clean-machine-upgrade-rollback-device-provider-network-ui-"
+            "accessibility-production-or-security-evidence"
+        ),
+    ],
+    "mount": (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_RESULT[
+            "mount"
+        ]
+    ),
+    "release": (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT["release"]
+    ),
+    "schemaVersion": 1,
+    "scope": (
+        "same-host-per-user-ephemeral-local-dmg-uninstall-reinstall-"
+        "state-recovery-v1"
+    ),
+    "stateRecovery": {
+        "applicationSupportPreservedAcrossRemovalAndReinstall": True,
+        "auxiliarySQLite": (
+            CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT[
+                "stateRecovery"
+            ]["auxiliarySQLite"]
+        ),
+        "databaseCount": 3,
+        "installedStateBytesAndModesUnchangedAcrossRemovalAndReinstall": True,
+        "legacyAbsentBeforeReinstallReadback": True,
+        "legacyFixturePreservedUnchanged": True,
+        "legacyRemovedByHarnessBeforeReinstall": True,
+        "migrationObservation": (
+            CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT[
+                "stateRecovery"
+            ]["migrationObservation"]
+        ),
+        "migrationSQLite": (
+            CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT[
+                "stateRecovery"
+            ]["migrationSQLite"]
+        ),
+        "runtimeIdentityFilePresent": True,
+        "sqliteCanaryUnchangedAcrossRemovalAndReinstall": True,
+        "sqliteReadbackObservation": (
+            CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT[
+                "stateRecovery"
+            ]["sqliteReadbackObservation"]
+        ),
+        "sqliteReadbackSQLite": (
+            CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT[
+                "stateRecovery"
+            ]["sqliteReadbackSQLite"]
+        ),
+        "totalEventCount": 1,
+    },
+    "status": "passed",
+    "uninstall": (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_RESULT[
+            "uninstall"
+        ]
+    ),
+}
+CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EMPTY_LOG = {
+    "sha256": (
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    ),
+    "size": 0,
+}
+CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_RESULT = {
+    "abruptTermination": {
+        "appKitProcessAbsentAfterReap": True,
+        "exactExecutableRevalidatedBeforeSignal": True,
+        "exitCode": -9,
+        "gracefulTerminationRequested": False,
+        "inFlightWriteCheckpointObserved": False,
+        "launchMethod": "direct-installed-executable-owned-child",
+        "migrationCommittedBeforeAbruptLaunch": True,
+        "observationCompletedBeforeSignal": True,
+        "persistenceProbePassedBeforeSignal": True,
+        "processDisposition": (
+            "exact-owned-child-pid-sigkill-reaped-and-appkit-absent"
+        ),
+        "processReaped": True,
+        "signal": "SIGKILL",
+        "signalNumber": 9,
+    },
+    "archiveReadback": (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT[
+            "archiveReadback"
+        ]
+    ),
+    "canary": (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT[
+            "canary"
+        ]
+    ),
+    "image": (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT[
+            "image"
+        ]
+    ),
+    "installation": (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT[
+            "installation"
+        ]
+    ),
+    "isolation": {
+        "preexistingBundleApplicationsPreserved": True,
+        "runtimeIdentityFileOverrideConfigured": True,
+        "sandboxedOwnedChildConfigured": True,
+        "temporaryCFUserHomeConfigured": True,
+    },
+    "launches": {
+        "distinctProcessIdentifiers": True,
+        "exactInstalledBundlePerCycle": True,
+        "gracefulLaunchServicesCommandPolicy": (
+            "open-new-fresh-background-exact-app-path-captured-recovery-v1"
+        ),
+        "noExactTemporaryAppRemaining": True,
+        "runs": [
+            {
+                "activationPolicy": 0,
+                "executablePathMatched": True,
+                "finishedLaunching": True,
+                "launchMethod": "launchservices-open-exact-installed-app",
+                "minimumObservationSeconds": 5.0,
+                "newProcessIdentifierDetected": True,
+                "observationDeadlineReached": True,
+                "ordinal": 1,
+                "terminationAccepted": True,
+            },
+            {
+                "activationPolicy": 0,
+                "appKitProcessAbsentAfterReap": True,
+                "exactExecutableIdentityMatchedImmediatelyBeforeSignal": True,
+                "exitCode": -9,
+                "finishedLaunching": True,
+                "launchMethod": "direct-installed-executable-owned-child",
+                "minimumObservationSeconds": 5.0,
+                "newProcessIdentifierDetected": True,
+                "observationDeadlineReached": True,
+                "ordinal": 2,
+                "ownedChildProcess": True,
+                "persistenceProbePassedBeforeSignal": True,
+                "processReaped": True,
+                "signalName": "SIGKILL",
+                "signalNumber": 9,
+            },
+            {
+                "activationPolicy": 0,
+                "executablePathMatched": True,
+                "finishedLaunching": True,
+                "launchMethod": "launchservices-open-exact-installed-app",
+                "minimumObservationSeconds": 5.0,
+                "newProcessIdentifierDetected": True,
+                "observationDeadlineReached": True,
+                "ordinal": 3,
+                "terminationAccepted": True,
+            },
+        ],
+        "stderr": {
+            "abruptReadback": (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EMPTY_LOG
+            ),
+            "migration": (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EMPTY_LOG
+            ),
+            "recoveryReadback": (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EMPTY_LOG
+            ),
+        },
+    },
+    "limitations": [
+        "same-host-per-user-temporary-home-only",
+        "same-created-dmg-image-remount-only",
+        "fixed-runtime-chat-legacy-canary-only",
+        "post-persisted-sqlite-readback-observation-sigkill-only",
+        "legacy-fixture-removed-by-harness-before-reinstall-readback",
+        "no-in-flight-write-checkpoint-or-open-transaction-observed",
+        (
+            "not-write-durability-crash-consistency-power-loss-or-"
+            "kernel-crash-evidence"
+        ),
+        "not-os-restart-ui-force-quit-arbitrary-history-or-soak-evidence",
+        "application-support-retained-no-automatic-data-cleanup",
+        "post-archive-harness-not-build-input-member",
+        (
+            "not-finder-system-applications-quarantine-gatekeeper-signing-"
+            "notarization-or-stapling-evidence"
+        ),
+        (
+            "not-upgrade-rollback-device-provider-network-ui-accessibility-"
+            "production-or-security-evidence"
+        ),
+    ],
+    "mount": (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT[
+            "mount"
+        ]
+    ),
+    "release": (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT[
+            "release"
+        ]
+    ),
+    "schemaVersion": 1,
+    "scope": (
+        "same-host-per-user-ephemeral-local-dmg-uninstall-reinstall-"
+        "abrupt-process-state-recovery-v1"
+    ),
+    "stateRecovery": {
+        "applicationSupportPreservedAcrossRemovalAndReinstall": True,
+        "auxiliarySQLite": (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT[
+                "stateRecovery"
+            ]["auxiliarySQLite"]
+        ),
+        "databaseCount": 3,
+        "legacyAbsentBeforeAbruptAndRecoveryReadback": True,
+        "legacyFixturePreservedUnchanged": True,
+        "legacyRemovedByHarnessBeforeReinstall": True,
+        "migrationObservation": (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT[
+                "stateRecovery"
+            ]["migrationObservation"]
+        ),
+        "migrationSQLite": (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT[
+                "stateRecovery"
+            ]["migrationSQLite"]
+        ),
+        "ownedAbruptReadbackObservation": (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT[
+                "stateRecovery"
+            ]["sqliteReadbackObservation"]
+        ),
+        "ownedAbruptReadbackSQLite": (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT[
+                "stateRecovery"
+            ]["sqliteReadbackSQLite"]
+        ),
+        "postAbruptSQLite": (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT[
+                "stateRecovery"
+            ]["sqliteReadbackSQLite"]
+        ),
+        (
+            "postAbruptStateBytesAndModesUnchangedAcrossRemovalReinstall"
+        ): True,
+        "recoveryReadbackObservation": (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT[
+                "stateRecovery"
+            ]["sqliteReadbackObservation"]
+        ),
+        "recoveryReadbackSQLite": (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT[
+                "stateRecovery"
+            ]["sqliteReadbackSQLite"]
+        ),
+        "runtimeIdentityFilePresent": True,
+        "stateBytesAndModesUnchangedImmediatelyAfterAbruptTermination": True,
+        "totalEventCount": 1,
+    },
+    "status": "passed",
+    "uninstall": (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT[
+            "uninstall"
+        ]
+    ),
+}
+CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_RECEIPT = {
+    "canonicalResult": {
+        "fileName": (
+            "macos-packaged-app-build-24-local-dmg-uninstall-reinstall-"
+            "abrupt-process-state-recovery-v1.json"
+        ),
+        "sha256": (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_RESULT_SHA256
+        ),
+        "size": (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_RESULT_SIZE
+        ),
+    },
+    "limitations": [
+        "same-host-two-recorded-runs-only",
+        "not-arbitrary-repeatability-or-long-soak-evidence",
+        (
+            "not-in-flight-write-power-loss-kernel-crash-clean-machine-"
+            "signed-distribution-device-network-or-production-evidence"
+        ),
+    ],
+    "releaseId": "aetherlink-1.0.0+24-local-v1",
+    "resultBytesEqual": True,
+    "runCount": 2,
+    "runs": [
+        {
+            "ordinal": ordinal,
+            "sha256": (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_RESULT_SHA256
+            ),
+            "size": (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_RESULT_SIZE
+            ),
+            "status": "passed",
+        }
+        for ordinal in (1, 2)
+    ],
+    "schemaVersion": 1,
+    "scope": (
+        "same-host-per-user-ephemeral-local-dmg-uninstall-reinstall-"
+        "abrupt-process-state-recovery-repeatability-v1"
+    ),
+    "status": "passed",
 }
 LOCAL_RELEASE_TRANSITION_FIXTURE_START = (
     "<!-- aetherlink-release-transition-fixture-v1:start -->"
@@ -1763,6 +3196,8 @@ HYGIENE_TARGETS = (
     "docs/releases/1.0.0-build-20-local-v1.md",
     "docs/releases/1.0.0-build-21-local-v1.md",
     "docs/releases/1.0.0-build-22-local-v1.md",
+    "docs/releases/1.0.0-build-23-local-v1.md",
+    "docs/releases/1.0.0-build-24-local-v1.md",
     "docs/roadmap.md",
     "docs/security.md",
     "examples/README.md",
@@ -1843,7 +3278,7 @@ CONTRACTS = (
 FILE_CONTRACTS = (
     DocsFileContract(
         "local-release-qualification-boundary",
-        "docs/releases/1.0.0-build-22-local-v1.md",
+        "docs/releases/1.0.0-build-24-local-v1.md",
         (
             re.compile(
                 r"\bStatus:\s*local release-engineering candidate,\s*not a production release\b",
@@ -1854,7 +3289,8 @@ FILE_CONTRACTS = (
                 re.IGNORECASE | re.DOTALL,
             ),
             re.compile(
-                r"\bN/N-1\b.*\bnot yet qualified\b",
+                r"\bbounded local Build 23-to-24\b.*\bqualified\b.*"
+                r"\barbitrary N/N-1\b.*\bare not\b",
                 re.IGNORECASE | re.DOTALL,
             ),
             re.compile(
@@ -2138,9 +3574,11 @@ FILE_CONTRACTS = (
 PROGRESS_DOC = ROOT / "docs/progress.md"
 QA_EVIDENCE_DOC = ROOT / "docs/qa-evidence.md"
 QA_CURRENT_RELEASE_READBACK_MARKER = (
-    "The Build 22 archive is the latest ledger entry"
+    f"The Build {LOCAL_RELEASE_BUILD_NUMBER} archive is the latest ledger entry"
 )
 QA_STALE_RELEASE_READBACK_MARKERS = (
+    "The Build 23 archive is the latest ledger entry",
+    "The Build 22 archive is the latest ledger entry",
     "The Build 21 archive is the latest ledger entry",
     "The Build 20 archive is the latest ledger entry",
     "The Build 19 archive is the latest ledger entry and its source-bound "
@@ -2193,8 +3631,9 @@ def current_release_qa_evidence_failures(
     failures: list[str] = []
     if QA_CURRENT_RELEASE_READBACK_MARKER not in normalized_text:
         failures.append(
-            "docs/qa-evidence.md: Build 22 current-source readback marker is "
-            "missing."
+            "docs/qa-evidence.md: Build "
+            f"{LOCAL_RELEASE_BUILD_NUMBER} current-source readback marker "
+            "is missing."
         )
     for stale_marker in QA_STALE_RELEASE_READBACK_MARKERS:
         if stale_marker in normalized_text:
@@ -2318,9 +3757,9 @@ def current_release_summary_document_failures(
     }
     summary_line_limits = {
         "docs/handoff.md": 650,
-        "docs/progress.md": 360,
-        "docs/qa-evidence.md": 330,
-        "docs/roadmap.md": 380,
+        "docs/progress.md": 500,
+        "docs/qa-evidence.md": 500,
+        "docs/roadmap.md": 600,
     }
 
     failures: list[str] = []
@@ -2426,6 +3865,15 @@ def release_readback_command_mode_failures(
     document_text_by_path: dict[str, str] | None = None,
 ) -> list[str]:
     failures: list[str] = []
+    try:
+        current_build_number = parse_release_version_ledger(
+            LOCAL_RELEASE_LEDGER.read_bytes()
+        )[-1].build_number
+    except (OSError, LedgerError, IndexError) as error:
+        return [
+            "release/version-ledger.tsv: cannot validate release readback "
+            f"command modes: {error}"
+        ]
     release_pattern = re.compile(
         r"--archive-dir\s+dist/releases/"
         r"aetherlink-[0-9]+\.[0-9]+\.[0-9]+\+"
@@ -2466,14 +3914,14 @@ def release_readback_command_mode_failures(
 
             build_number = int(match.group("build"))
             historical_mode = historical_pattern.search(line) is not None
-            if build_number < LOCAL_RELEASE_BUILD_NUMBER and not historical_mode:
+            if build_number < current_build_number and not historical_mode:
                 failures.append(
                     f"{relative}:{line_number}: historical Build "
                     f"{build_number} release readback command requires "
                     "`--historical`."
                 )
             elif (
-                build_number == LOCAL_RELEASE_BUILD_NUMBER
+                build_number == current_build_number
                 and historical_mode
             ):
                 failures.append(
@@ -2481,11 +3929,11 @@ def release_readback_command_mode_failures(
                     f"{build_number} release readback command must not use "
                     "`--historical`."
                 )
-            elif build_number > LOCAL_RELEASE_BUILD_NUMBER:
+            elif build_number > current_build_number:
                 failures.append(
                     f"{relative}:{line_number}: release readback command names "
                     f"future Build {build_number}; current Build is "
-                    f"{LOCAL_RELEASE_BUILD_NUMBER}."
+                    f"{current_build_number}."
                 )
 
     return failures
@@ -4218,7 +5666,10 @@ def local_release_ollama_live_fault_injection_fixture_failures(
 def current_release_android_backup_policy_document_failures(
     document_text: str,
     *,
-    relative: str = "docs/releases/1.0.0-build-22-local-v1.md",
+    relative: str = (
+        f"docs/releases/{LOCAL_RELEASE_MARKETING_VERSION}-build-"
+        f"{LOCAL_RELEASE_BUILD_NUMBER}-local-v1.md"
+    ),
 ) -> list[str]:
     failures: list[str] = []
     normalized_document = re.sub(r"\s+", " ", document_text)
@@ -4239,8 +5690,8 @@ def current_release_android_manifest_readback_failures(
     manifest: object,
     *,
     relative: str = (
-        "dist/releases/aetherlink-1.0.0+22-local-v1/"
-        "aetherlink-1.0.0+22-local-v1.manifest.json"
+        f"dist/releases/{LOCAL_RELEASE_ID}/"
+        f"{LOCAL_RELEASE_ID}.manifest.json"
     ),
 ) -> list[str]:
     if not isinstance(manifest, dict):
@@ -4290,9 +5741,10 @@ def current_handoff_git_attribution_failures(
     normalized = re.sub(r"\s+", " ", document_text).strip()
     required_bindings = (
         (
-            "Build 22 qualification-time source attribution",
+            f"Build {LOCAL_RELEASE_BUILD_NUMBER} qualification-time source attribution",
             (
-                "The Build 22 manifest captured source HEAD and "
+                f"The Build {LOCAL_RELEASE_BUILD_NUMBER} manifest captured "
+                "source HEAD and "
                 "`origin/main` as "
                 f"`{LOCAL_RELEASE_EXPECTED_SOURCE_HEAD}` at qualification time."
             ),
@@ -4317,7 +5769,7 @@ def current_handoff_git_attribution_failures(
             "archive source identity boundary",
             (
                 "The archived source inventory, not either commit alone, "
-                "remains the Build 22 source identity."
+                f"remains the Build {LOCAL_RELEASE_BUILD_NUMBER} source identity."
             ),
         ),
     )
@@ -4402,10 +5854,7 @@ def local_release_document_failures() -> list[str]:
         ),
         (
             "reproducibility result path",
-            (
-                "`dist/reproducibility/"
-                "aetherlink-1.0.0+22-local-v1-two-root-v4.json`"
-            ),
+            f"`dist/reproducibility/{LOCAL_RELEASE_ID}-two-root-v4.json`",
         ),
         (
             "reproducibility result size",
@@ -4418,8 +5867,8 @@ def local_release_document_failures() -> list[str]:
         (
             "reproducibility prepublication path",
             (
-                "`dist/reproducibility/"
-                "aetherlink-1.0.0+22-local-v1-two-root-v4-prepublication.json`"
+                f"`dist/reproducibility/{LOCAL_RELEASE_ID}-two-root-v4-"
+                "prepublication.json`"
             ),
         ),
         (
@@ -4468,6 +5917,69 @@ def local_release_document_failures() -> list[str]:
         (
             "Swift frontend serialization",
             "`-Xswiftc -num-threads -Xswiftc 1`",
+        ),
+        (
+            "current isolated upgrade result path",
+            (
+                "`dist/lifecycle/"
+                "macos-packaged-app-build-23-to-24-isolated-upgrade-v2.json`"
+            ),
+        ),
+        (
+            "current isolated upgrade result size",
+            "6,469-byte canonical result",
+        ),
+        (
+            "current isolated upgrade result SHA-256",
+            f"`{CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_RESULT_SHA256}`",
+        ),
+        (
+            "current isolated upgrade repeatability path",
+            (
+                "`dist/lifecycle/macos-packaged-app-build-23-to-24-"
+                "isolated-upgrade-repeatability-v1.json`"
+            ),
+        ),
+        (
+            "current isolated upgrade repeatability size",
+            (
+                f"{CURRENT_MACOS_ISOLATED_UPGRADE_REPEATABILITY_EXPECTED_SIZE}"
+                "-byte repeatability receipt"
+            ),
+        ),
+        (
+            "current isolated upgrade repeatability SHA-256",
+            (
+                "`"
+                f"{CURRENT_MACOS_ISOLATED_UPGRADE_REPEATABILITY_EXPECTED_SHA256}"
+                "`"
+            ),
+        ),
+        (
+            "current isolated upgrade runner SHA-256",
+            f"`{CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_RUNNER_SHA256}`",
+        ),
+        (
+            "current isolated upgrade test SHA-256",
+            f"`{CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_TEST_SHA256}`",
+        ),
+        (
+            "current isolated upgrade event JSON identity",
+            (
+                "`da3320c2cbdf9146b0ee21c084a9474715caf9f5e1d568853f6a2359cd9f4cef`"
+            ),
+        ),
+        (
+            "current isolated upgrade previous app tree identity",
+            (
+                "`31209251804494f54a699c5c4e8101491f02fca881cf25fba379b88eb493d8a8`"
+            ),
+        ),
+        (
+            "current isolated upgrade current app tree identity",
+            (
+                "`0c1882e653ec32a3bf5795c9369dbee818b6890157fbaaebd81c60b8c1a59fff`"
+            ),
         ),
         (
             "Build 21 abrupt recovery result path",
@@ -5250,8 +6762,7 @@ def local_release_document_failures() -> list[str]:
         )
 
     result_relative = (
-        "dist/reproducibility/"
-        "aetherlink-1.0.0+22-local-v1-two-root-v4.json"
+        f"dist/reproducibility/{LOCAL_RELEASE_ID}-two-root-v4.json"
     )
     if not LOCAL_RELEASE_REPRODUCIBILITY_RESULT.is_file():
         failures.append(
@@ -5332,8 +6843,7 @@ def local_release_document_failures() -> list[str]:
         (
             ("prepublicationBinding", "path"),
             (
-                "dist/reproducibility/"
-                "aetherlink-1.0.0+22-local-v1-two-root-v4-"
+                f"dist/reproducibility/{LOCAL_RELEASE_ID}-two-root-v4-"
                 "prepublication.json"
             ),
         ),
@@ -5504,8 +7014,8 @@ def current_release_reproducibility_prepublication_failures(
     result_bytes: bytes | None = None,
 ) -> list[str]:
     relative = (
-        "dist/reproducibility/"
-        "aetherlink-1.0.0+22-local-v1-two-root-v4-prepublication.json"
+        f"dist/reproducibility/{LOCAL_RELEASE_ID}-two-root-v4-"
+        "prepublication.json"
     )
     if result_bytes is None:
         if not LOCAL_RELEASE_REPRODUCIBILITY_PREPUBLICATION_RESULT.is_file():
@@ -5837,6 +7347,21 @@ def packaged_lifecycle_evidence_failures(
         )
         return failures
 
+    canonical_result = (
+        json.dumps(
+            result,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode("utf-8")
+    if result_bytes != canonical_result:
+        failures.append(
+            f"{relative}: packaged-app lifecycle result is not canonical "
+            "JSON."
+        )
+
     if not exact_json_values_equal(
         result,
         expected_result,
@@ -5932,6 +7457,54 @@ def current_macos_clean_home_installed_state_recovery_evidence_failures(
             CURRENT_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT
         ),
         build_label="historical Build 20 clean-HOME installed state-recovery",
+        result_bytes=result_bytes,
+    )
+
+
+def current_build24_macos_clean_home_installed_app_evidence_failures(
+    result_bytes: bytes | None = None,
+) -> list[str]:
+    return packaged_lifecycle_evidence_failures(
+        result_path=CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_APP_RESULT,
+        relative=(
+            "dist/lifecycle/"
+            "macos-packaged-app-build-24-clean-home-install-v1.json"
+        ),
+        expected_size=(
+            CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SIZE
+        ),
+        expected_sha256=(
+            CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT_SHA256
+        ),
+        expected_result=(
+            CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT
+        ),
+        build_label="current Build 24 clean-HOME installed-app",
+        result_bytes=result_bytes,
+    )
+
+
+def current_build24_macos_clean_home_installed_state_recovery_evidence_failures(
+    result_bytes: bytes | None = None,
+) -> list[str]:
+    return packaged_lifecycle_evidence_failures(
+        result_path=(
+            CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_RESULT
+        ),
+        relative=(
+            "dist/lifecycle/"
+            "macos-packaged-app-build-24-clean-home-state-recovery-v1.json"
+        ),
+        expected_size=(
+            CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SIZE
+        ),
+        expected_sha256=(
+            CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT_SHA256
+        ),
+        expected_result=(
+            CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT
+        ),
+        build_label="current Build 24 clean-HOME installed state-recovery",
         result_bytes=result_bytes,
     )
 
@@ -6069,6 +7642,2317 @@ def current_macos_local_dmg_install_evidence_failures(
         failures.append(
             f"{relative}: local DMG result lost required scope limitations."
         )
+    return failures
+
+
+def current_build24_macos_local_dmg_install_evidence_failures(
+    result_bytes: bytes | None = None,
+    source_bytes_by_path: dict[Path, bytes] | None = None,
+    release_bytes_by_path: dict[Path, bytes] | None = None,
+) -> list[str]:
+    relative = str(
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_RESULT.relative_to(ROOT)
+    )
+    failures: list[str] = []
+    expected_sources = (
+        (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_RUNNER,
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RUNNER_SHA256,
+        ),
+        (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_TEST,
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_TEST_SHA256,
+        ),
+        (
+            CURRENT_MACOS_LOCAL_DMG_INSTALL_RUNNER,
+            CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RUNNER_SHA256,
+        ),
+        (
+            CURRENT_MACOS_ISOLATED_UPGRADE_RUNNER,
+            CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_RUNNER_SHA256,
+        ),
+    )
+    for path, expected_sha256 in expected_sources:
+        try:
+            payload = (
+                source_bytes_by_path[path]
+                if source_bytes_by_path is not None
+                else path.read_bytes()
+            )
+            actual_sha256 = hashlib.sha256(payload).hexdigest()
+        except (KeyError, OSError, TypeError) as error:
+            failures.append(
+                f"{path.relative_to(ROOT)}: cannot read current Build 24 "
+                f"local DMG source: {error}"
+            )
+            continue
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{path.relative_to(ROOT)}: expected current Build 24 local "
+                f"DMG source SHA-256 {expected_sha256}, found "
+                f"{actual_sha256}."
+            )
+
+    failures.extend(
+        packaged_lifecycle_evidence_failures(
+            result_path=CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_RESULT,
+            relative=relative,
+            expected_size=(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SIZE
+            ),
+            expected_sha256=(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SHA256
+            ),
+            expected_result=(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT
+            ),
+            build_label="current Build 24 local-DMG v2",
+            result_bytes=result_bytes,
+        )
+    )
+
+    if result_bytes is None:
+        try:
+            result_bytes = (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_RESULT.read_bytes()
+            )
+        except OSError:
+            return failures
+    try:
+        result = json.loads(
+            result_bytes.decode("utf-8"),
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+    except (
+        UnicodeError,
+        json.JSONDecodeError,
+        DuplicateJSONKeyError,
+    ):
+        return failures
+    if not isinstance(result, dict):
+        return failures
+
+    archive_path = LOCAL_RELEASE_ARCHIVE_DIR / f"{LOCAL_RELEASE_ID}.zip"
+    manifest_path = (
+        LOCAL_RELEASE_ARCHIVE_DIR / f"{LOCAL_RELEASE_ID}.manifest.json"
+    )
+    checksum_path = (
+        LOCAL_RELEASE_ARCHIVE_DIR / f"{LOCAL_RELEASE_ID}.zip.sha256"
+    )
+    release_paths = (archive_path, manifest_path, checksum_path)
+    if (
+        release_bytes_by_path is not None
+        and set(release_bytes_by_path) != set(release_paths)
+    ):
+        failures.append(
+            f"{relative}: injected Build 24 release byte map must contain "
+            "exactly the ZIP, manifest, and checksum sidecar."
+        )
+        return failures
+
+    def streamed_identity(path: Path) -> dict[str, object]:
+        if release_bytes_by_path is not None:
+            payload = release_bytes_by_path[path]
+            if type(payload) is not bytes:
+                raise TypeError("injected release payload must be bytes")
+            return {
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "size": len(payload),
+            }
+        digest = hashlib.sha256()
+        size = 0
+        with path.open("rb") as handle:
+            while True:
+                payload = handle.read(1_024 * 1_024)
+                if not payload:
+                    break
+                digest.update(payload)
+                size += len(payload)
+        return {"sha256": digest.hexdigest(), "size": size}
+
+    def exact_bytes(path: Path) -> bytes:
+        if release_bytes_by_path is not None:
+            payload = release_bytes_by_path[path]
+            if type(payload) is not bytes:
+                raise TypeError("injected release payload must be bytes")
+            return payload
+        return path.read_bytes()
+
+    try:
+        archive_identity = streamed_identity(archive_path)
+        manifest_bytes = exact_bytes(manifest_path)
+        checksum_bytes = exact_bytes(checksum_path)
+        manifest_identity = {
+            "sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+            "size": len(manifest_bytes),
+        }
+        checksum_identity = {
+            "sha256": hashlib.sha256(checksum_bytes).hexdigest(),
+            "size": len(checksum_bytes),
+        }
+        manifest = json.loads(
+            manifest_bytes.decode("utf-8"),
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+    except (
+        KeyError,
+        OSError,
+        TypeError,
+        UnicodeError,
+        json.JSONDecodeError,
+        DuplicateJSONKeyError,
+    ) as error:
+        failures.append(
+            f"{relative}: cannot cross-bind retained Build 24 release "
+            f"bytes: {error}"
+        )
+        return failures
+
+    expected_checksum = (
+        f"{archive_identity['sha256']}  {archive_path.name}\n"
+    ).encode("ascii")
+    if checksum_bytes != expected_checksum:
+        failures.append(
+            f"{relative}: Build 24 checksum sidecar differs from the "
+            "retained ZIP identity."
+        )
+
+    readback = result.get("archiveReadback")
+    release = result.get("release")
+    if not isinstance(readback, dict) or not isinstance(release, dict):
+        failures.append(
+            f"{relative}: local DMG release/readback projection is invalid."
+        )
+        return failures
+    expected_snapshot_files = {
+        archive_path.name: archive_identity,
+        manifest_path.name: manifest_identity,
+        checksum_path.name: checksum_identity,
+    }
+    if not exact_json_values_equal(
+        readback.get("snapshotFiles"),
+        expected_snapshot_files,
+    ):
+        failures.append(
+            f"{relative}: snapshot identities do not match the retained "
+            "Build 24 release files."
+        )
+    expected_release = {
+        "archiveSha256": archive_identity["sha256"],
+        "manifestSha256": manifest_identity["sha256"],
+        "releaseId": LOCAL_RELEASE_ID,
+    }
+    if not exact_json_values_equal(release, expected_release):
+        failures.append(
+            f"{relative}: release identity does not match the retained "
+            "Build 24 archive."
+        )
+
+    def manifest_value(path: tuple[str, ...]) -> object:
+        value: object = manifest
+        for key in path:
+            if not isinstance(value, dict) or key not in value:
+                return None
+            value = value[key]
+        return value
+
+    for path, expected in (
+        (("release", "releaseId"), LOCAL_RELEASE_ID),
+        (("release", "buildNumber"), LOCAL_RELEASE_BUILD_NUMBER),
+        (("release", "marketingVersion"), LOCAL_RELEASE_MARKETING_VERSION),
+        (("platforms", "macos", "bundleId"), "dev.aetherlink.companion"),
+        (
+            ("platforms", "macos", "buildNumber"),
+            LOCAL_RELEASE_BUILD_NUMBER,
+        ),
+        (
+            ("platforms", "macos", "marketingVersion"),
+            LOCAL_RELEASE_MARKETING_VERSION,
+        ),
+    ):
+        actual = manifest_value(path)
+        if not exact_json_values_equal(actual, expected):
+            failures.append(
+                f"{relative}: retained Build 24 manifest "
+                f"{'.'.join(path)} differs from the result projection."
+            )
+
+    members = manifest_value(("members",))
+    app_prefix = "macos/AetherLink.app/"
+    app_members = (
+        [
+            row
+            for row in members
+            if isinstance(row, dict)
+            and isinstance(row.get("path"), str)
+            and row["path"].startswith(app_prefix)
+        ]
+        if isinstance(members, list)
+        else []
+    )
+    tree_digest = hashlib.sha256()
+    tree_total = 0
+    tree_valid = True
+    seen_paths: set[str] = set()
+    for row in sorted(app_members, key=lambda item: str(item.get("path"))):
+        member_path = row.get("path")
+        mode = row.get("mode")
+        size = row.get("size")
+        sha256 = row.get("sha256")
+        if (
+            not isinstance(member_path, str)
+            or member_path in seen_paths
+            or not isinstance(mode, str)
+            or re.fullmatch(r"0[0-7]{3}", mode) is None
+            or type(size) is not int
+            or size < 0
+            or not isinstance(sha256, str)
+            or re.fullmatch(r"[0-9a-f]{64}", sha256) is None
+        ):
+            tree_valid = False
+            break
+        seen_paths.add(member_path)
+        tree_digest.update(member_path.encode("utf-8"))
+        tree_digest.update(b"\0")
+        tree_digest.update(mode.encode("ascii"))
+        tree_digest.update(b"\0")
+        tree_digest.update(str(size).encode("ascii"))
+        tree_digest.update(b"\0")
+        tree_digest.update(sha256.encode("ascii"))
+        tree_digest.update(b"\n")
+        tree_total += size
+    expected_tree = {
+        "digestAlgorithm": (
+            "sha256(path-nul-mode-octal-nul-size-nul-sha256-lf)-v1"
+        ),
+        "regularFileCount": len(app_members),
+        "sha256": tree_digest.hexdigest(),
+        "totalRegularFileBytes": tree_total,
+    }
+    installation = result.get("installation")
+    actual_tree = (
+        installation.get("tree")
+        if isinstance(installation, dict)
+        else None
+    )
+    if (
+        not tree_valid
+        or not app_members
+        or not exact_json_values_equal(actual_tree, expected_tree)
+    ):
+        failures.append(
+            f"{relative}: installed app tree does not derive from the "
+            "retained Build 24 manifest."
+        )
+    return failures
+
+
+def current_build24_macos_local_dmg_uninstall_reinstall_evidence_failures(
+    result_bytes: bytes | None = None,
+    source_bytes_by_path: dict[Path, bytes] | None = None,
+    release_bytes_by_path: dict[Path, bytes] | None = None,
+) -> list[str]:
+    relative = str(
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_RESULT.relative_to(
+            ROOT
+        )
+    )
+    failures: list[str] = []
+    expected_sources = (
+        (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_RUNNER,
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_RUNNER_SHA256
+            ),
+        ),
+        (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_TEST,
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_TEST_SHA256
+            ),
+        ),
+        (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_RUNNER,
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RUNNER_SHA256,
+        ),
+        (
+            CURRENT_MACOS_LOCAL_DMG_INSTALL_RUNNER,
+            CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RUNNER_SHA256,
+        ),
+        (
+            CURRENT_MACOS_ISOLATED_UNINSTALL_REINSTALL_RUNNER,
+            (
+                CURRENT_MACOS_ISOLATED_UNINSTALL_REINSTALL_EXPECTED_RUNNER_SHA256
+            ),
+        ),
+        (
+            CURRENT_MACOS_ISOLATED_UPGRADE_RUNNER,
+            CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_RUNNER_SHA256,
+        ),
+    )
+    expected_paths = {path for path, _ in expected_sources}
+    if (
+        source_bytes_by_path is not None
+        and set(source_bytes_by_path) != expected_paths
+    ):
+        failures.append(
+            f"{relative}: injected uninstall/reinstall source byte map must "
+            "contain exactly the six bound source files."
+        )
+    for path, expected_sha256 in expected_sources:
+        try:
+            payload = (
+                source_bytes_by_path[path]
+                if source_bytes_by_path is not None
+                else path.read_bytes()
+            )
+            if type(payload) is not bytes:
+                raise TypeError("injected source payload must be bytes")
+        except (KeyError, OSError, TypeError) as error:
+            failures.append(
+                f"{path.relative_to(ROOT)}: cannot read current Build 24 "
+                f"same-DMG uninstall/reinstall source: {error}"
+            )
+            continue
+        actual_sha256 = hashlib.sha256(payload).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{path.relative_to(ROOT)}: expected current Build 24 "
+                "same-DMG uninstall/reinstall source SHA-256 "
+                f"{expected_sha256}, found {actual_sha256}."
+            )
+
+    failures.extend(
+        packaged_lifecycle_evidence_failures(
+            result_path=(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_RESULT
+            ),
+            relative=relative,
+            expected_size=(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_RESULT_SIZE
+            ),
+            expected_sha256=(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_RESULT_SHA256
+            ),
+            expected_result=(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_RESULT
+            ),
+            build_label=(
+                "current Build 24 same-DMG uninstall/reinstall v1"
+            ),
+            result_bytes=result_bytes,
+        )
+    )
+    failures.extend(
+        current_build24_macos_local_dmg_install_evidence_failures(
+            release_bytes_by_path=release_bytes_by_path,
+        )
+    )
+    return failures
+
+
+def current_build24_macos_local_dmg_uninstall_reinstall_state_recovery_evidence_failures(
+    result_bytes: bytes | None = None,
+    source_bytes_by_path: dict[Path, bytes] | None = None,
+    release_bytes_by_path: dict[Path, bytes] | None = None,
+) -> list[str]:
+    relative = str(
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_RESULT.relative_to(
+            ROOT
+        )
+    )
+    failures: list[str] = []
+    expected_sources = (
+        (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_RUNNER,
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RUNNER_SHA256
+            ),
+        ),
+        (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_TEST,
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_TEST_SHA256
+            ),
+        ),
+        (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_RUNNER,
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_RUNNER_SHA256
+            ),
+        ),
+        (
+            MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_RUNNER,
+            (
+                CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256
+            ),
+        ),
+        (
+            MACOS_PACKAGED_STATE_RECOVERY_RUNNER,
+            MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256,
+        ),
+        (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_RUNNER,
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RUNNER_SHA256,
+        ),
+        (
+            CURRENT_MACOS_LOCAL_DMG_INSTALL_RUNNER,
+            CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RUNNER_SHA256,
+        ),
+        (
+            CURRENT_MACOS_ISOLATED_UNINSTALL_REINSTALL_RUNNER,
+            (
+                CURRENT_MACOS_ISOLATED_UNINSTALL_REINSTALL_EXPECTED_RUNNER_SHA256
+            ),
+        ),
+        (
+            CURRENT_MACOS_ISOLATED_UPGRADE_RUNNER,
+            CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_RUNNER_SHA256,
+        ),
+    )
+    expected_paths = {path for path, _ in expected_sources}
+    if (
+        source_bytes_by_path is not None
+        and set(source_bytes_by_path) != expected_paths
+    ):
+        failures.append(
+            f"{relative}: injected state-recovery source byte map must "
+            "contain exactly the nine bound source files."
+        )
+    for path, expected_sha256 in expected_sources:
+        try:
+            payload = (
+                source_bytes_by_path[path]
+                if source_bytes_by_path is not None
+                else path.read_bytes()
+            )
+            if type(payload) is not bytes:
+                raise TypeError("injected source payload must be bytes")
+        except (KeyError, OSError, TypeError) as error:
+            failures.append(
+                f"{path.relative_to(ROOT)}: cannot read current Build 24 "
+                f"same-DMG state-recovery source: {error}"
+            )
+            continue
+        actual_sha256 = hashlib.sha256(payload).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{path.relative_to(ROOT)}: expected current Build 24 "
+                "same-DMG state-recovery source SHA-256 "
+                f"{expected_sha256}, found {actual_sha256}."
+            )
+
+    failures.extend(
+        packaged_lifecycle_evidence_failures(
+            result_path=(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_RESULT
+            ),
+            relative=relative,
+            expected_size=(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT_SIZE
+            ),
+            expected_sha256=(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT_SHA256
+            ),
+            expected_result=(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT
+            ),
+            build_label=(
+                "current Build 24 same-DMG uninstall/reinstall "
+                "state-recovery v1"
+            ),
+            result_bytes=result_bytes,
+        )
+    )
+    failures.extend(
+        current_build24_macos_local_dmg_uninstall_reinstall_evidence_failures(
+            release_bytes_by_path=release_bytes_by_path,
+        )
+    )
+    failures.extend(
+        current_build24_macos_clean_home_installed_state_recovery_evidence_failures(
+            result_bytes=None,
+        )
+    )
+    return failures
+
+
+def current_build24_macos_local_dmg_abrupt_process_state_recovery_evidence_failures(
+    result_bytes: bytes | None = None,
+    receipt_bytes: bytes | None = None,
+    source_bytes_by_path: dict[Path, bytes] | None = None,
+    release_bytes_by_path: dict[Path, bytes] | None = None,
+) -> list[str]:
+    relative = str(
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_RESULT.relative_to(
+            ROOT
+        )
+    )
+    receipt_relative = str(
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_RECEIPT.relative_to(
+            ROOT
+        )
+    )
+    failures: list[str] = []
+    expected_sources = (
+        (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_RUNNER,
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_RUNNER_SHA256
+            ),
+        ),
+        (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_TEST,
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_TEST_SHA256
+            ),
+        ),
+        (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_RUNNER,
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RUNNER_SHA256
+            ),
+        ),
+        (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_RUNNER,
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_RUNNER_SHA256
+            ),
+        ),
+        (
+            MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_RUNNER,
+            (
+                CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256
+            ),
+        ),
+        (
+            MACOS_PACKAGED_STATE_RECOVERY_RUNNER,
+            MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256,
+        ),
+        (
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_RUNNER,
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RUNNER_SHA256,
+        ),
+        (
+            CURRENT_MACOS_LOCAL_DMG_INSTALL_RUNNER,
+            CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RUNNER_SHA256,
+        ),
+        (
+            CURRENT_MACOS_ISOLATED_UNINSTALL_REINSTALL_RUNNER,
+            (
+                CURRENT_MACOS_ISOLATED_UNINSTALL_REINSTALL_EXPECTED_RUNNER_SHA256
+            ),
+        ),
+        (
+            CURRENT_MACOS_ISOLATED_UPGRADE_RUNNER,
+            CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_RUNNER_SHA256,
+        ),
+    )
+    expected_paths = {path for path, _ in expected_sources}
+    if (
+        source_bytes_by_path is not None
+        and set(source_bytes_by_path) != expected_paths
+    ):
+        failures.append(
+            f"{relative}: injected abrupt-process source byte map must "
+            "contain exactly the ten bound source files."
+        )
+    for path, expected_sha256 in expected_sources:
+        try:
+            payload = (
+                source_bytes_by_path[path]
+                if source_bytes_by_path is not None
+                else path.read_bytes()
+            )
+            if type(payload) is not bytes:
+                raise TypeError("injected source payload must be bytes")
+        except (KeyError, OSError, TypeError) as error:
+            failures.append(
+                f"{path.relative_to(ROOT)}: cannot read current Build 24 "
+                f"abrupt-process state-recovery source: {error}"
+            )
+            continue
+        actual_sha256 = hashlib.sha256(payload).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{path.relative_to(ROOT)}: expected current Build 24 "
+                "abrupt-process state-recovery source SHA-256 "
+                f"{expected_sha256}, found {actual_sha256}."
+            )
+
+    failures.extend(
+        packaged_lifecycle_evidence_failures(
+            result_path=(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_RESULT
+            ),
+            relative=relative,
+            expected_size=(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_RESULT_SIZE
+            ),
+            expected_sha256=(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_RESULT_SHA256
+            ),
+            expected_result=(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_RESULT
+            ),
+            build_label=(
+                "current Build 24 same-DMG post-commit abrupt-process "
+                "state-recovery v1"
+            ),
+            result_bytes=result_bytes,
+        )
+    )
+    failures.extend(
+        packaged_lifecycle_evidence_failures(
+            result_path=(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_RECEIPT
+            ),
+            relative=receipt_relative,
+            expected_size=(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_RECEIPT_SIZE
+            ),
+            expected_sha256=(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_RECEIPT_SHA256
+            ),
+            expected_result=(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_EXPECTED_RECEIPT
+            ),
+            build_label=(
+                "current Build 24 abrupt-process state-recovery "
+                "repeatability v1"
+            ),
+            result_bytes=receipt_bytes,
+        )
+    )
+    failures.extend(
+        current_build24_macos_local_dmg_uninstall_reinstall_state_recovery_evidence_failures(
+            release_bytes_by_path=release_bytes_by_path,
+        )
+    )
+    return failures
+
+
+def current_build24_macos_lifecycle_aggregate_evidence_failures(
+    *,
+    source_bytes_by_path: dict[Path, bytes] | None = None,
+) -> list[str]:
+    expected_sources = (
+        (
+            CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_CHECKER,
+            CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_EXPECTED_CHECKER_SIZE,
+            CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_EXPECTED_CHECKER_SHA256,
+            "checker",
+        ),
+        (
+            CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_TEST,
+            CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_EXPECTED_TEST_SIZE,
+            CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_EXPECTED_TEST_SHA256,
+            "test",
+        ),
+    )
+    expected_paths = {path for path, _, _, _ in expected_sources}
+    failures: list[str] = []
+    if (
+        source_bytes_by_path is not None
+        and set(source_bytes_by_path) != expected_paths
+    ):
+        failures.append(
+            "script/check_macos_build24_lifecycle_evidence.py: injected "
+            "aggregate source byte map must contain exactly the checker "
+            "and test files."
+        )
+
+    for path, expected_size, expected_sha256, label in expected_sources:
+        relative = str(path.relative_to(ROOT))
+        try:
+            if source_bytes_by_path is None:
+                if path.is_symlink() or not path.is_file():
+                    raise OSError(
+                        "path must be a non-symlink regular file"
+                    )
+                payload = path.read_bytes()
+            else:
+                payload = source_bytes_by_path[path]
+            if type(payload) is not bytes:
+                raise TypeError("injected source payload must be bytes")
+        except (KeyError, OSError, TypeError) as error:
+            failures.append(
+                f"{relative}: cannot read current Build 24 lifecycle "
+                f"aggregate {label}: {error}"
+            )
+            continue
+
+        actual_sha256 = hashlib.sha256(payload).hexdigest()
+        if len(payload) != expected_size or actual_sha256 != expected_sha256:
+            failures.append(
+                f"{relative}: expected current Build 24 lifecycle aggregate "
+                f"{label} identity {expected_size} bytes and SHA-256 "
+                f"{expected_sha256}; found {len(payload)} bytes and "
+                f"{actual_sha256}."
+            )
+    return failures
+
+
+def current_build24_macos_idle_resource_stability_evidence_failures(
+    result_bytes: bytes | None = None,
+    *,
+    source_bytes_by_path: dict[Path, bytes] | None = None,
+) -> list[str]:
+    expected_sources = (
+        (
+            CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_RUNNER,
+            CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_RUNNER_SIZE,
+            CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_RUNNER_SHA256,
+            "runner",
+        ),
+        (
+            CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_RUNNER_TEST,
+            CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_RUNNER_TEST_SIZE,
+            CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_RUNNER_TEST_SHA256,
+            "runner test",
+        ),
+        (
+            CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_CHECKER,
+            CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_CHECKER_SIZE,
+            CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_CHECKER_SHA256,
+            "checker",
+        ),
+        (
+            CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_CHECKER_TEST,
+            CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_CHECKER_TEST_SIZE,
+            CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_CHECKER_TEST_SHA256,
+            "checker test",
+        ),
+    )
+    expected_paths = {path for path, _, _, _ in expected_sources}
+    failures: list[str] = []
+    if (
+        source_bytes_by_path is not None
+        and set(source_bytes_by_path) != expected_paths
+    ):
+        failures.append(
+            "script/check_macos_build24_idle_resource_stability_evidence.py: "
+            "injected idle-resource source byte map must contain exactly "
+            "the runner, runner test, checker, and checker test files."
+        )
+
+    for path, expected_size, expected_sha256, label in expected_sources:
+        relative = str(path.relative_to(ROOT))
+        try:
+            if source_bytes_by_path is None:
+                if path.is_symlink() or not path.is_file():
+                    raise OSError(
+                        "path must be a non-symlink regular file"
+                    )
+                payload = path.read_bytes()
+            else:
+                payload = source_bytes_by_path[path]
+            if type(payload) is not bytes:
+                raise TypeError("injected source payload must be bytes")
+        except (KeyError, OSError, TypeError) as error:
+            failures.append(
+                f"{relative}: cannot read current Build 24 idle-resource "
+                f"{label}: {error}"
+            )
+            continue
+        actual_sha256 = hashlib.sha256(payload).hexdigest()
+        if len(payload) != expected_size or actual_sha256 != expected_sha256:
+            failures.append(
+                f"{relative}: expected current Build 24 idle-resource "
+                f"{label} identity {expected_size} bytes and SHA-256 "
+                f"{expected_sha256}; found {len(payload)} bytes and "
+                f"{actual_sha256}."
+            )
+
+    result_path = CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_RESULT
+    result_relative = str(result_path.relative_to(ROOT))
+    try:
+        if result_bytes is None:
+            if result_path.is_symlink() or not result_path.is_file():
+                raise OSError("path must be a non-symlink regular file")
+            payload = result_path.read_bytes()
+        else:
+            payload = result_bytes
+        if type(payload) is not bytes:
+            raise TypeError("injected result payload must be bytes")
+    except (OSError, TypeError) as error:
+        failures.append(
+            f"{result_relative}: cannot read current Build 24 idle-resource "
+            f"result: {error}"
+        )
+        return failures
+
+    actual_sha256 = hashlib.sha256(payload).hexdigest()
+    expected_size = (
+        CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_RESULT_SIZE
+    )
+    expected_sha256 = (
+        CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_RESULT_SHA256
+    )
+    if len(payload) != expected_size or actual_sha256 != expected_sha256:
+        failures.append(
+            f"{result_relative}: expected current Build 24 idle-resource "
+            f"result identity {expected_size} bytes and SHA-256 "
+            f"{expected_sha256}; found {len(payload)} bytes and "
+            f"{actual_sha256}."
+        )
+    try:
+        idle_resource_evidence.validate_result_bytes(
+            payload,
+            enforce_identity=False,
+        )
+    except idle_resource_evidence.IdleResourceEvidenceError as error:
+        failures.append(
+            f"{result_relative}: invalid current Build 24 idle-resource "
+            f"result contract: {error}"
+        )
+    return failures
+
+
+def current_macos_isolated_upgrade_evidence_failures(
+    result_bytes: bytes | None = None,
+    repeatability_bytes: bytes | None = None,
+    source_bytes_by_path: dict[Path, bytes] | None = None,
+    release_bytes_by_path: dict[Path, bytes] | None = None,
+) -> list[str]:
+    relative = str(
+        CURRENT_MACOS_ISOLATED_UPGRADE_RESULT.relative_to(ROOT)
+    )
+    failures: list[str] = []
+
+    for path, expected_sha256 in (
+        (
+            CURRENT_MACOS_ISOLATED_UPGRADE_RUNNER,
+            CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_RUNNER_SHA256,
+        ),
+        (
+            CURRENT_MACOS_ISOLATED_UPGRADE_TEST,
+            CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_TEST_SHA256,
+        ),
+    ):
+        try:
+            payload = (
+                source_bytes_by_path[path]
+                if source_bytes_by_path is not None
+                else path.read_bytes()
+            )
+        except (KeyError, OSError) as error:
+            failures.append(
+                f"{path.relative_to(ROOT)}: cannot read isolated upgrade "
+                f"source: {error}"
+            )
+            continue
+        actual_sha256 = hashlib.sha256(payload).hexdigest()
+        if actual_sha256 != expected_sha256:
+            failures.append(
+                f"{path.relative_to(ROOT)}: expected isolated upgrade "
+                f"source SHA-256 {expected_sha256}, found {actual_sha256}."
+            )
+
+    if result_bytes is None:
+        try:
+            result_bytes = (
+                CURRENT_MACOS_ISOLATED_UPGRADE_RESULT.read_bytes()
+            )
+        except OSError as error:
+            failures.append(
+                f"{relative}: cannot read isolated upgrade result: {error}"
+            )
+            return failures
+
+    identity = (len(result_bytes), hashlib.sha256(result_bytes).hexdigest())
+    expected_identity = (
+        CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_RESULT_SIZE,
+        CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_RESULT_SHA256,
+    )
+    if identity != expected_identity:
+        failures.append(
+            f"{relative}: expected identity {expected_identity!r}, "
+            f"found {identity!r}."
+        )
+
+    try:
+        result = json.loads(
+            result_bytes.decode("utf-8"),
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+    except (
+        UnicodeError,
+        json.JSONDecodeError,
+        DuplicateJSONKeyError,
+    ) as error:
+        failures.append(
+            f"{relative}: invalid isolated upgrade result JSON: {error}"
+        )
+        return failures
+    if not isinstance(result, dict):
+        failures.append(
+            f"{relative}: isolated upgrade result root must be an object."
+        )
+        return failures
+
+    canonical_result = (
+        json.dumps(
+            result,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode("utf-8")
+    if result_bytes != canonical_result:
+        failures.append(
+            f"{relative}: isolated upgrade result is not canonical JSON."
+        )
+
+    expected_top_level_keys = {
+        "archiveReadback",
+        "canary",
+        "cleanup",
+        "installation",
+        "isolation",
+        "launchServices",
+        "limitations",
+        "releases",
+        "schemaVersion",
+        "scope",
+        "stateUpgrade",
+        "status",
+    }
+    if set(result) != expected_top_level_keys:
+        failures.append(
+            f"{relative}: isolated upgrade top-level keys differ from the "
+            "closed contract."
+        )
+
+    missing = object()
+
+    def read_path(path: tuple[str, ...]) -> object:
+        value: object = result
+        for key in path:
+            if not isinstance(value, dict) or key not in value:
+                return missing
+            value = value[key]
+        return value
+
+    expectations = (
+        (("schemaVersion",), 2),
+        (("status",), "passed"),
+        (
+            ("scope",),
+            "same-host-per-user-isolated-build-to-build-upgrade-v2",
+        ),
+        (
+            ("archiveReadback", "previous", "mode"),
+            "historical",
+        ),
+        (
+            ("archiveReadback", "previous", "currentSourceCompared"),
+            False,
+        ),
+        (
+            (
+                "archiveReadback",
+                "previous",
+                "readbackAndExerciseSameSnapshot",
+            ),
+            True,
+        ),
+        (
+            (
+                "archiveReadback",
+                "previous",
+                "snapshotFilesUnchangedAfterExercise",
+            ),
+            True,
+        ),
+        (
+            ("archiveReadback", "previous", "status"),
+            "passed",
+        ),
+        (
+            ("archiveReadback", "current", "mode"),
+            "archive-only-no-current-source",
+        ),
+        (
+            ("archiveReadback", "current", "currentSourceCompared"),
+            False,
+        ),
+        (
+            (
+                "archiveReadback",
+                "current",
+                "readbackAndExerciseSameSnapshot",
+            ),
+            True,
+        ),
+        (
+            (
+                "archiveReadback",
+                "current",
+                "snapshotFilesUnchangedAfterExercise",
+            ),
+            True,
+        ),
+        (
+            ("archiveReadback", "current", "status"),
+            "passed",
+        ),
+        (("cleanup", "appAbsentAfterFinalRemoval"), True),
+        (("cleanup", "applicationSupportCleanupPerformed"), False),
+        (("cleanup", "exactTemporaryAppPathOnly"), True),
+        (("cleanup", "removalCount"), 2),
+        (("installation", "copyTool"), "ditto"),
+        (
+            ("installation", "installedRelativePath"),
+            "Applications/AetherLink.app",
+        ),
+        (
+            ("installation", "replacementMethod"),
+            "exact-path-remove-then-ditto",
+        ),
+        (("installation", "stalePreviousBundleFilesAbsent"), True),
+        (("installation", "treesDiffer"), True),
+        (
+            ("installation", "previousTree", "regularFileCount"),
+            10,
+        ),
+        (
+            ("installation", "previousTree", "digestAlgorithm"),
+            "sha256(path-nul-mode-octal-nul-size-nul-sha256-lf)-v1",
+        ),
+        (
+            ("installation", "previousTree", "totalRegularFileBytes"),
+            21_153_014,
+        ),
+        (
+            ("installation", "previousTree", "sha256"),
+            "31209251804494f54a699c5c4e8101491f02fca881cf25fba379b88eb493d8a8",
+        ),
+        (
+            ("installation", "currentTree", "regularFileCount"),
+            10,
+        ),
+        (
+            ("installation", "currentTree", "digestAlgorithm"),
+            "sha256(path-nul-mode-octal-nul-size-nul-sha256-lf)-v1",
+        ),
+        (
+            ("installation", "currentTree", "totalRegularFileBytes"),
+            21_151_910,
+        ),
+        (
+            ("installation", "currentTree", "sha256"),
+            "0c1882e653ec32a3bf5795c9369dbee818b6890157fbaaebd81c60b8c1a59fff",
+        ),
+        (
+            ("isolation", "preexistingBundleApplicationsPreserved"),
+            True,
+        ),
+        (
+            ("isolation", "runtimeIdentityFileOverrideConfigured"),
+            True,
+        ),
+        (("isolation", "temporaryCFUserHomeConfigured"), True),
+        (
+            ("launchServices", "commandPolicy"),
+            "open-new-fresh-background-exact-app-path-captured-recovery-v1",
+        ),
+        (("launchServices", "distinctProcessIdentifiers"), True),
+        (
+            ("releases", "from", "releaseId"),
+            "aetherlink-1.0.0+23-local-v1",
+        ),
+        (
+            ("releases", "from", "archiveSha256"),
+            "b9a9c3c2ebeb01fc735fed3356f1f244178fb4521c1a806dc7a93d776f83ea2e",
+        ),
+        (
+            ("releases", "from", "manifestSha256"),
+            "a645819bb0dd985b94289a29cc26b6a344361139ab6ca20a2b7aff9af0a8a16d",
+        ),
+        (("releases", "from", "app", "buildNumber"), 23),
+        (
+            ("releases", "from", "app", "bundleIdentifier"),
+            "dev.aetherlink.companion",
+        ),
+        (
+            ("releases", "from", "app", "executableSha256"),
+            "346d0a673ba7710b5692dd2fc2dd8543e937b65deae77ad8c281071e107ab55c",
+        ),
+        (
+            ("releases", "from", "app", "marketingVersion"),
+            "1.0.0",
+        ),
+        (
+            ("releases", "from", "app", "uuid"),
+            "73F610E8-4BBE-3C8D-B28E-434426EAD95B",
+        ),
+        (
+            ("releases", "to", "releaseId"),
+            "aetherlink-1.0.0+24-local-v1",
+        ),
+        (
+            ("releases", "to", "archiveSha256"),
+            "104c07b6fc1b421bcc0309657001fdf991e37bb815c282b3e5112ed98821ab1c",
+        ),
+        (
+            ("releases", "to", "manifestSha256"),
+            "eccc81de7eee5d56223e7826d153617a24725344154f7c7c5dd291d25ab6369b",
+        ),
+        (("releases", "to", "app", "buildNumber"), 24),
+        (
+            ("releases", "to", "app", "bundleIdentifier"),
+            "dev.aetherlink.companion",
+        ),
+        (
+            ("releases", "to", "app", "executableSha256"),
+            "5bf283a6dd3504682cb4aefc9cb1536c7e340f776c90de83cea5a473044890e5",
+        ),
+        (
+            ("releases", "to", "app", "marketingVersion"),
+            "1.0.0",
+        ),
+        (
+            ("releases", "to", "app", "uuid"),
+            "3FDC3DBC-3A74-3A3B-A87D-03CB432B5D46",
+        ),
+        (
+            ("stateUpgrade", "applicationSupportPreservedAcrossUpgrade"),
+            True,
+        ),
+        (
+            ("stateUpgrade", "bytesAndModesUnchangedAcrossUpgrade"),
+            True,
+        ),
+        (("stateUpgrade", "currentRelaunchIdempotent"), True),
+        (("stateUpgrade", "legacyAbsentAfterUpgrade"), True),
+        (
+            ("stateUpgrade", "legacyFixturePreservedUnchanged"),
+            True,
+        ),
+        (("stateUpgrade", "runtimeIdentityFilePresent"), True),
+        (
+            ("stateUpgrade", "migrationObservation", "mode"),
+            "migration-read-v1",
+        ),
+        (
+            ("stateUpgrade", "migrationObservation", "sha256"),
+            "558fbc563c3f07474b4a28093290216a8fcfdade66cee5ee8354c8fc867fd5f9",
+        ),
+        (
+            ("stateUpgrade", "readbackObservation", "mode"),
+            "sqlite-readback-v1",
+        ),
+        (
+            ("stateUpgrade", "readbackObservation", "sha256"),
+            "ab8c927b33c3f3b2350eefd357c696c92b076f8c950da9c46823859cddeaad07",
+        ),
+        (
+            ("stateUpgrade", "relaunchObservation", "mode"),
+            "sqlite-readback-v1",
+        ),
+        (
+            ("stateUpgrade", "relaunchObservation", "sha256"),
+            "ab8c927b33c3f3b2350eefd357c696c92b076f8c950da9c46823859cddeaad07",
+        ),
+        (
+            ("stateUpgrade", "migrationSQLite", "totalEventCount"),
+            1,
+        ),
+        (
+            ("stateUpgrade", "readbackSQLite", "totalEventCount"),
+            1,
+        ),
+        (
+            ("stateUpgrade", "relaunchSQLite", "totalEventCount"),
+            1,
+        ),
+    )
+    for path, expected in expectations:
+        actual = read_path(path)
+        if type(actual) is not type(expected) or actual != expected:
+            failures.append(
+                f"{relative}: expected {'.'.join(path)}={expected!r}, "
+                f"found {actual!r}."
+            )
+
+    expected_runs = [
+        {
+            "activationPolicy": 0,
+            "executablePathMatched": True,
+            "finishedLaunching": True,
+            "minimumObservationSeconds": 5.0,
+            "newProcessIdentifierDetected": True,
+            "observationDeadlineReached": True,
+            "ordinal": ordinal,
+            "terminationAccepted": True,
+        }
+        for ordinal in (1, 2, 3)
+    ]
+    if not exact_json_values_equal(
+        read_path(("launchServices", "runs")),
+        expected_runs,
+    ):
+        failures.append(
+            f"{relative}: launchServices.runs differs from the exact "
+            "three-process contract."
+        )
+
+    expected_auxiliary = [
+        {
+            "filename": "runtime-document-index.sqlite",
+            "integrityCheck": "ok",
+        },
+        {
+            "filename": "runtime-model-pull-approvals.sqlite",
+            "integrityCheck": "ok",
+        },
+    ]
+    if not exact_json_values_equal(
+        read_path(("stateUpgrade", "auxiliarySQLite")),
+        expected_auxiliary,
+    ):
+        failures.append(
+            f"{relative}: stateUpgrade.auxiliarySQLite differs from the "
+            "exact integrity contract."
+        )
+
+    expected_sqlite_files = [
+        "runtime-chat-events.sqlite",
+        "runtime-document-index.sqlite",
+        "runtime-model-pull-approvals.sqlite",
+    ]
+    if not exact_json_values_equal(
+        read_path(("stateUpgrade", "expectedSQLiteFiles")),
+        expected_sqlite_files,
+    ):
+        failures.append(
+            f"{relative}: stateUpgrade.expectedSQLiteFiles differs from the "
+            "exact three-file contract."
+        )
+
+    expected_limitations = [
+        "same-host-per-user-temporary-home-only",
+        "build-to-build-upgrade-not-rollback",
+        "application-support-retained-no-automatic-data-cleanup",
+        "post-archive-harness-not-build-input-member",
+        "not-clean-machine-device-provider-network-ui-or-distribution-evidence",
+        "not-production-release-qualification",
+    ]
+    if not exact_json_values_equal(
+        result.get("limitations"),
+        expected_limitations,
+    ):
+        failures.append(
+            f"{relative}: isolated upgrade result lost the exact scope "
+            "limitations."
+        )
+
+    closed_objects: list[tuple[tuple[str, ...], set[str]]] = [
+        (("archiveReadback",), {"current", "previous"}),
+        (
+            ("canary",),
+            {
+                "eventID",
+                "eventJsonSha256",
+                "eventJsonSize",
+                "legacyJsonlSha256",
+                "legacyJsonlSize",
+                "model",
+                "requestID",
+                "sessionID",
+            },
+        ),
+        (
+            ("cleanup",),
+            {
+                "appAbsentAfterFinalRemoval",
+                "applicationSupportCleanupPerformed",
+                "exactTemporaryAppPathOnly",
+                "removalCount",
+            },
+        ),
+        (
+            ("installation",),
+            {
+                "copyTool",
+                "currentTree",
+                "installedRelativePath",
+                "previousTree",
+                "replacementMethod",
+                "stalePreviousBundleFilesAbsent",
+                "treesDiffer",
+            },
+        ),
+        (
+            ("isolation",),
+            {
+                "preexistingBundleApplicationsPreserved",
+                "runtimeIdentityFileOverrideConfigured",
+                "temporaryCFUserHomeConfigured",
+            },
+        ),
+        (
+            ("launchServices",),
+            {"commandPolicy", "distinctProcessIdentifiers", "runs"},
+        ),
+        (("releases",), {"from", "to"}),
+        (
+            ("stateUpgrade",),
+            {
+                "applicationSupportPreservedAcrossUpgrade",
+                "auxiliarySQLite",
+                "bytesAndModesUnchangedAcrossUpgrade",
+                "currentRelaunchIdempotent",
+                "expectedSQLiteFiles",
+                "legacyAbsentAfterUpgrade",
+                "legacyFixturePreservedUnchanged",
+                "migrationObservation",
+                "migrationSQLite",
+                "readbackObservation",
+                "readbackSQLite",
+                "relaunchObservation",
+                "relaunchSQLite",
+                "runtimeIdentityFilePresent",
+                "stderr",
+            },
+        ),
+        (
+            ("stateUpgrade", "stderr"),
+            {"migration", "readback", "relaunch"},
+        ),
+    ]
+    for readback_name in ("previous", "current"):
+        closed_objects.append(
+            (
+                ("archiveReadback", readback_name),
+                {
+                    "currentSourceCompared",
+                    "mode",
+                    "readbackAndExerciseSameSnapshot",
+                    "snapshotFiles",
+                    "snapshotFilesUnchangedAfterExercise",
+                    "status",
+                },
+            )
+        )
+    for tree_name in ("previousTree", "currentTree"):
+        closed_objects.append(
+            (
+                ("installation", tree_name),
+                {
+                    "digestAlgorithm",
+                    "regularFileCount",
+                    "sha256",
+                    "totalRegularFileBytes",
+                },
+            )
+        )
+    for release_name in ("from", "to"):
+        closed_objects.extend(
+            (
+                (
+                    ("releases", release_name),
+                    {"app", "archiveSha256", "manifestSha256", "releaseId"},
+                ),
+                (
+                    ("releases", release_name, "app"),
+                    {
+                        "buildNumber",
+                        "bundleIdentifier",
+                        "executableSha256",
+                        "marketingVersion",
+                        "uuid",
+                    },
+                ),
+            )
+        )
+    for observation_name in (
+        "migrationObservation",
+        "readbackObservation",
+        "relaunchObservation",
+    ):
+        closed_objects.append(
+            (
+                ("stateUpgrade", observation_name),
+                {"mode", "sha256", "size", "status"},
+            )
+        )
+    for sqlite_name in (
+        "migrationSQLite",
+        "readbackSQLite",
+        "relaunchSQLite",
+    ):
+        closed_objects.append(
+            (
+                ("stateUpgrade", sqlite_name),
+                {
+                    "eventJsonSha256",
+                    "eventJsonSize",
+                    "integrityCheck",
+                    "totalEventCount",
+                },
+            )
+        )
+    for stderr_name in ("migration", "readback", "relaunch"):
+        closed_objects.append(
+            (
+                ("stateUpgrade", "stderr", stderr_name),
+                {"sha256", "size"},
+            )
+        )
+    for path, expected_keys in closed_objects:
+        value = read_path(path)
+        if not isinstance(value, dict) or set(value) != expected_keys:
+            failures.append(
+                f"{relative}: {'.'.join(path)} keys differ from the "
+                "closed contract."
+            )
+
+    for readback_name in ("previous", "current"):
+        snapshot_files = read_path(
+            ("archiveReadback", readback_name, "snapshotFiles")
+        )
+        if isinstance(snapshot_files, dict):
+            for name, identity_value in snapshot_files.items():
+                if (
+                    not isinstance(identity_value, dict)
+                    or set(identity_value) != {"sha256", "size"}
+                ):
+                    failures.append(
+                        f"{relative}: {readback_name} snapshot {name!r} "
+                        "identity keys differ from the closed contract."
+                    )
+    runs_value = read_path(("launchServices", "runs"))
+    run_keys = {
+        "activationPolicy",
+        "executablePathMatched",
+        "finishedLaunching",
+        "minimumObservationSeconds",
+        "newProcessIdentifierDetected",
+        "observationDeadlineReached",
+        "ordinal",
+        "terminationAccepted",
+    }
+    if isinstance(runs_value, list):
+        for index, run_value in enumerate(runs_value):
+            if not isinstance(run_value, dict) or set(run_value) != run_keys:
+                failures.append(
+                    f"{relative}: launchServices.runs[{index}] keys differ "
+                    "from the closed contract."
+                )
+    auxiliary_value = read_path(("stateUpgrade", "auxiliarySQLite"))
+    if isinstance(auxiliary_value, list):
+        for index, row in enumerate(auxiliary_value):
+            if (
+                not isinstance(row, dict)
+                or set(row) != {"filename", "integrityCheck"}
+            ):
+                failures.append(
+                    f"{relative}: stateUpgrade.auxiliarySQLite[{index}] "
+                    "keys differ from the closed contract."
+                )
+
+    expected_canary = {
+        "eventID": "packaged-state-recovery-canary-event-v1",
+        "eventJsonSha256": (
+            "da3320c2cbdf9146b0ee21c084a9474715caf9f5e1d568853f6a2359cd9f4cef"
+        ),
+        "eventJsonSize": 344,
+        "legacyJsonlSha256": (
+            "0e51fc924836465c4c0921eb3b3709b387f89787aabf2e100c7cff338f0aea2e"
+        ),
+        "legacyJsonlSize": 345,
+        "model": "qa:packaged-state-recovery-canary-v1",
+        "requestID": "packaged-state-recovery-canary-request-v1",
+        "sessionID": "packaged-state-recovery-canary-session-v1",
+    }
+    if not exact_json_values_equal(result.get("canary"), expected_canary):
+        failures.append(
+            f"{relative}: canary differs from the exact migration fixture."
+        )
+    expected_observations = {
+        "migrationObservation": {
+            "mode": "migration-read-v1",
+            "sha256": (
+                "558fbc563c3f07474b4a28093290216a8fcfdade66cee5ee8354c8fc867fd5f9"
+            ),
+            "size": 70,
+            "status": "passed",
+        },
+        "readbackObservation": {
+            "mode": "sqlite-readback-v1",
+            "sha256": (
+                "ab8c927b33c3f3b2350eefd357c696c92b076f8c950da9c46823859cddeaad07"
+            ),
+            "size": 71,
+            "status": "passed",
+        },
+        "relaunchObservation": {
+            "mode": "sqlite-readback-v1",
+            "sha256": (
+                "ab8c927b33c3f3b2350eefd357c696c92b076f8c950da9c46823859cddeaad07"
+            ),
+            "size": 71,
+            "status": "passed",
+        },
+    }
+    expected_sqlite = {
+        "eventJsonSha256": expected_canary["eventJsonSha256"],
+        "eventJsonSize": 344,
+        "integrityCheck": "ok",
+        "totalEventCount": 1,
+    }
+    empty_log = {
+        "sha256": (
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ),
+        "size": 0,
+    }
+    for name, expected_observation in expected_observations.items():
+        if not exact_json_values_equal(
+            read_path(("stateUpgrade", name)),
+            expected_observation,
+        ):
+            failures.append(
+                f"{relative}: stateUpgrade.{name} differs from the exact "
+                "observation contract."
+            )
+    for name in (
+        "migrationSQLite",
+        "readbackSQLite",
+        "relaunchSQLite",
+    ):
+        if not exact_json_values_equal(
+            read_path(("stateUpgrade", name)),
+            expected_sqlite,
+        ):
+            failures.append(
+                f"{relative}: stateUpgrade.{name} differs from the exact "
+                "SQLite canary contract."
+            )
+    if not exact_json_values_equal(
+        read_path(("stateUpgrade", "stderr")),
+        {
+            name: empty_log
+            for name in ("migration", "readback", "relaunch")
+        },
+    ):
+        failures.append(
+            f"{relative}: stateUpgrade.stderr differs from three empty logs."
+        )
+
+    def streamed_file_identity(path: Path) -> dict[str, object]:
+        if (
+            release_bytes_by_path is not None
+            and path in release_bytes_by_path
+        ):
+            payload = release_bytes_by_path[path]
+            return {
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "size": len(payload),
+            }
+        digest = hashlib.sha256()
+        size = 0
+        with path.open("rb") as handle:
+            while True:
+                payload = handle.read(1024 * 1024)
+                if not payload:
+                    break
+                digest.update(payload)
+                size += len(payload)
+        return {"sha256": digest.hexdigest(), "size": size}
+
+    def manifest_value(
+        manifest: object,
+        path: tuple[str, ...],
+    ) -> object:
+        value = manifest
+        for key in path:
+            if not isinstance(value, dict) or key not in value:
+                return missing
+            value = value[key]
+        return value
+
+    def validate_release_projection(
+        *,
+        build_number: int,
+        release_name: str,
+        readback_name: str,
+        tree_name: str,
+    ) -> None:
+        release_id = f"aetherlink-1.0.0+{build_number}-local-v1"
+        archive_directory = ROOT / "dist/releases" / release_id
+        archive_path = archive_directory / f"{release_id}.zip"
+        manifest_path = archive_directory / f"{release_id}.manifest.json"
+        checksum_path = archive_directory / f"{release_id}.zip.sha256"
+        try:
+            archive_identity = streamed_file_identity(archive_path)
+            manifest_bytes = (
+                release_bytes_by_path[manifest_path]
+                if (
+                    release_bytes_by_path is not None
+                    and manifest_path in release_bytes_by_path
+                )
+                else manifest_path.read_bytes()
+            )
+            manifest_identity = {
+                "sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+                "size": len(manifest_bytes),
+            }
+            checksum_bytes = (
+                release_bytes_by_path[checksum_path]
+                if (
+                    release_bytes_by_path is not None
+                    and checksum_path in release_bytes_by_path
+                )
+                else checksum_path.read_bytes()
+            )
+            checksum_identity = {
+                "sha256": hashlib.sha256(checksum_bytes).hexdigest(),
+                "size": len(checksum_bytes),
+            }
+            manifest = json.loads(
+                manifest_bytes.decode("utf-8"),
+                object_pairs_hook=reject_duplicate_json_keys,
+            )
+        except (
+            OSError,
+            UnicodeError,
+            json.JSONDecodeError,
+            DuplicateJSONKeyError,
+        ) as error:
+            failures.append(
+                f"{relative}: cannot cross-bind {release_id}: {error}"
+            )
+            return
+
+        expected_sidecar = (
+            f"{archive_identity['sha256']}  {archive_path.name}\n"
+        ).encode("ascii")
+        if checksum_bytes != expected_sidecar:
+            failures.append(
+                f"{relative}: {release_id} checksum sidecar differs from "
+                "the actual ZIP identity."
+            )
+
+        result_release = read_path(("releases", release_name))
+        snapshot_files = read_path(
+            ("archiveReadback", readback_name, "snapshotFiles")
+        )
+        expected_snapshot_files = {
+            archive_path.name: archive_identity,
+            manifest_path.name: manifest_identity,
+            checksum_path.name: checksum_identity,
+        }
+        if not isinstance(result_release, dict):
+            failures.append(
+                f"{relative}: releases.{release_name} is not an object."
+            )
+            return
+        if not exact_json_values_equal(
+            snapshot_files,
+            expected_snapshot_files,
+        ):
+            failures.append(
+                f"{relative}: {release_id} snapshot identities do not "
+                "match the retained archive files."
+            )
+        for field_name, expected_value in (
+            ("releaseId", release_id),
+            ("archiveSha256", archive_identity["sha256"]),
+            ("manifestSha256", manifest_identity["sha256"]),
+        ):
+            actual_value = result_release.get(field_name)
+            if not exact_json_values_equal(actual_value, expected_value):
+                failures.append(
+                    f"{relative}: releases.{release_name}.{field_name} "
+                    f"does not match {release_id}."
+                )
+
+        expected_manifest_bindings = (
+            (("release", "releaseId"), release_id),
+            (("release", "buildNumber"), build_number),
+            (("release", "marketingVersion"), "1.0.0"),
+            (("platforms", "macos", "bundleId"), "dev.aetherlink.companion"),
+            (("platforms", "macos", "buildNumber"), build_number),
+            (("platforms", "macos", "marketingVersion"), "1.0.0"),
+        )
+        for path, expected_value in expected_manifest_bindings:
+            actual_value = manifest_value(manifest, path)
+            if not exact_json_values_equal(actual_value, expected_value):
+                failures.append(
+                    f"{relative}: {release_id} manifest "
+                    f"{'.'.join(path)} does not match the upgrade result."
+                )
+
+        app = result_release.get("app")
+        macos = manifest_value(manifest, ("platforms", "macos"))
+        if not isinstance(app, dict) or not isinstance(macos, dict):
+            failures.append(
+                f"{relative}: {release_id} app/manifest macOS projection "
+                "is not an object."
+            )
+            return
+        for result_field, manifest_field in (
+            ("buildNumber", "buildNumber"),
+            ("bundleIdentifier", "bundleId"),
+            ("marketingVersion", "marketingVersion"),
+            ("uuid", "uuid"),
+        ):
+            if not exact_json_values_equal(
+                app.get(result_field),
+                macos.get(manifest_field),
+            ):
+                failures.append(
+                    f"{relative}: {release_id} app {result_field} does "
+                    "not match its manifest."
+                )
+        if not exact_json_values_equal(
+            app.get("uuid"),
+            manifest_value(manifest, ("platforms", "macos", "dSYM", "uuid")),
+        ):
+            failures.append(
+                f"{relative}: {release_id} app UUID does not match dSYM."
+            )
+
+        members = manifest_value(manifest, ("members",))
+        app_prefix = "macos/AetherLink.app/"
+        executable_path = app_prefix + "Contents/MacOS/AetherLink"
+        app_members: list[dict[str, object]] = []
+        if isinstance(members, list):
+            app_members = [
+                row
+                for row in members
+                if isinstance(row, dict)
+                and isinstance(row.get("path"), str)
+                and row["path"].startswith(app_prefix)
+            ]
+        executable_members = [
+            row for row in app_members if row.get("path") == executable_path
+        ]
+        if len(executable_members) != 1 or not exact_json_values_equal(
+            app.get("executableSha256"),
+            (
+                executable_members[0].get("sha256")
+                if executable_members
+                else missing
+            ),
+        ):
+            failures.append(
+                f"{relative}: {release_id} executable identity does not "
+                "match its manifest member."
+            )
+
+        tree_digest = hashlib.sha256()
+        tree_total = 0
+        valid_tree = True
+        seen_paths: set[str] = set()
+        for row in sorted(app_members, key=lambda item: str(item.get("path"))):
+            member_path = row.get("path")
+            mode = row.get("mode")
+            size = row.get("size")
+            sha256 = row.get("sha256")
+            if (
+                not isinstance(member_path, str)
+                or member_path in seen_paths
+                or not isinstance(mode, str)
+                or re.fullmatch(r"0[0-7]{3}", mode) is None
+                or type(size) is not int
+                or size < 0
+                or not isinstance(sha256, str)
+                or re.fullmatch(r"[0-9a-f]{64}", sha256) is None
+            ):
+                valid_tree = False
+                break
+            seen_paths.add(member_path)
+            tree_digest.update(member_path.encode("utf-8"))
+            tree_digest.update(b"\0")
+            tree_digest.update(mode.encode("ascii"))
+            tree_digest.update(b"\0")
+            tree_digest.update(str(size).encode("ascii"))
+            tree_digest.update(b"\0")
+            tree_digest.update(sha256.encode("ascii"))
+            tree_digest.update(b"\n")
+            tree_total += size
+        expected_tree = {
+            "digestAlgorithm": (
+                "sha256(path-nul-mode-octal-nul-size-nul-sha256-lf)-v1"
+            ),
+            "regularFileCount": len(app_members),
+            "sha256": tree_digest.hexdigest(),
+            "totalRegularFileBytes": tree_total,
+        }
+        if not valid_tree or not exact_json_values_equal(
+            read_path(("installation", tree_name)),
+            expected_tree,
+        ):
+            failures.append(
+                f"{relative}: installation.{tree_name} does not derive "
+                f"from the {release_id} manifest."
+            )
+
+    validate_release_projection(
+        build_number=23,
+        release_name="from",
+        readback_name="previous",
+        tree_name="previousTree",
+    )
+    validate_release_projection(
+        build_number=24,
+        release_name="to",
+        readback_name="current",
+        tree_name="currentTree",
+    )
+
+    repeatability_relative = str(
+        CURRENT_MACOS_ISOLATED_UPGRADE_REPEATABILITY_RESULT.relative_to(ROOT)
+    )
+    if repeatability_bytes is None:
+        try:
+            repeatability_bytes = (
+                CURRENT_MACOS_ISOLATED_UPGRADE_REPEATABILITY_RESULT.read_bytes()
+            )
+        except OSError as error:
+            failures.append(
+                f"{repeatability_relative}: cannot read repeatability "
+                f"receipt: {error}"
+            )
+            return failures
+    repeatability_identity = (
+        len(repeatability_bytes),
+        hashlib.sha256(repeatability_bytes).hexdigest(),
+    )
+    expected_repeatability_identity = (
+        CURRENT_MACOS_ISOLATED_UPGRADE_REPEATABILITY_EXPECTED_SIZE,
+        CURRENT_MACOS_ISOLATED_UPGRADE_REPEATABILITY_EXPECTED_SHA256,
+    )
+    if repeatability_identity != expected_repeatability_identity:
+        failures.append(
+            f"{repeatability_relative}: expected identity "
+            f"{expected_repeatability_identity!r}, found "
+            f"{repeatability_identity!r}."
+        )
+    try:
+        repeatability = json.loads(
+            repeatability_bytes.decode("utf-8"),
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+    except (
+        UnicodeError,
+        json.JSONDecodeError,
+        DuplicateJSONKeyError,
+    ) as error:
+        failures.append(
+            f"{repeatability_relative}: invalid repeatability receipt "
+            f"JSON: {error}"
+        )
+        return failures
+    canonical_repeatability = (
+        json.dumps(
+            repeatability,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode("utf-8")
+    if repeatability_bytes != canonical_repeatability:
+        failures.append(
+            f"{repeatability_relative}: repeatability receipt is not "
+            "canonical JSON."
+        )
+    canonical_identity = {
+        "fileName": CURRENT_MACOS_ISOLATED_UPGRADE_RESULT.name,
+        "sha256": CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_RESULT_SHA256,
+        "size": CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_RESULT_SIZE,
+    }
+    expected_repeatability = {
+        "canonicalResult": canonical_identity,
+        "limitations": [
+            "same-host-repeatability-only",
+            "two-recorded-runs-not-arbitrary-repeatability",
+            "not-cross-host-clean-machine-or-signed-distribution-evidence",
+            "not-rollback-device-provider-network-or-production-evidence",
+        ],
+        "releaseTransition": {
+            "from": "aetherlink-1.0.0+23-local-v1",
+            "to": "aetherlink-1.0.0+24-local-v1",
+        },
+        "resultBytesEqual": True,
+        "runCount": 2,
+        "runs": [
+            {
+                "ordinal": ordinal,
+                "sha256": canonical_identity["sha256"],
+                "size": canonical_identity["size"],
+                "status": "passed",
+            }
+            for ordinal in (1, 2)
+        ],
+        "schemaVersion": 1,
+        "scope": (
+            "same-host-per-user-isolated-build-to-build-upgrade-"
+            "repeatability-v1"
+        ),
+        "status": "passed",
+    }
+    if not exact_json_values_equal(
+        repeatability,
+        expected_repeatability,
+    ):
+        failures.append(
+            f"{repeatability_relative}: receipt differs from the exact "
+            "two-run repeatability contract."
+        )
+    return failures
+
+
+def marker_is_in_hidden_markdown_context(
+    document_text: str,
+    marker: str,
+) -> bool:
+    try:
+        marker_index = document_text.index(marker)
+    except ValueError:
+        return False
+    prefix = document_text[:marker_index]
+
+    active_fence: tuple[str, int] | None = None
+    outside_fence_lines: list[str] = []
+    for line in prefix.splitlines(keepends=True):
+        match = re.match(r"^[ \t]{0,3}(`{3,}|~{3,})([^\r\n]*)", line)
+        if active_fence is None:
+            if match is None:
+                outside_fence_lines.append(line)
+                continue
+            token = match.group(1)
+            active_fence = (token[0], len(token))
+            continue
+        if match is None:
+            continue
+        token = match.group(1)
+        trailing = match.group(2)
+        if (
+            token[0] == active_fence[0]
+            and len(token) >= active_fence[1]
+            and not trailing.strip()
+        ):
+            active_fence = None
+    if active_fence is not None:
+        return True
+
+    html_prefix = "".join(outside_fence_lines)
+    comment_depth = 0
+    for match in re.finditer(r"<!--|-->", html_prefix):
+        if match.group(0) == "<!--":
+            comment_depth += 1
+        elif comment_depth > 0:
+            comment_depth -= 1
+    if comment_depth > 0:
+        return True
+
+    html_prefix = re.sub(
+        r"<!--.*?-->",
+        "",
+        html_prefix,
+        flags=re.DOTALL,
+    )
+    hidden_container_tags = {"details", "pre", "script", "style", "template"}
+    open_containers: list[tuple[str, bool]] = []
+    tag_pattern = re.compile(
+        r"<\s*(/?)\s*([A-Za-z][A-Za-z0-9:_-]*)([^<>]*)>",
+        re.DOTALL,
+    )
+    for match in tag_pattern.finditer(html_prefix):
+        closing = bool(match.group(1))
+        tag = match.group(2).lower()
+        attributes = match.group(3)
+        if closing:
+            for index in range(len(open_containers) - 1, -1, -1):
+                if open_containers[index][0] == tag:
+                    del open_containers[index:]
+                    break
+            continue
+        if attributes.rstrip().endswith("/"):
+            continue
+        has_hidden_attribute = re.search(
+            r"(?:^|\s)hidden"
+            r"(?:\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s/]+))?"
+            r"(?=\s|/|$)",
+            attributes,
+            re.IGNORECASE,
+        )
+        is_hidden = tag in hidden_container_tags or has_hidden_attribute is not None
+        open_containers.append((tag, is_hidden))
+    return any(is_hidden for _, is_hidden in open_containers)
+
+
+def current_macos_isolated_upgrade_document_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    documentation_targets = (
+        README_PATH,
+        ROOT / "docs/roadmap.md",
+        ROOT / "docs/handoff.md",
+        ROOT / "docs/progress.md",
+        ROOT / "docs/qa-evidence.md",
+        LOCAL_RELEASE_CURRENT_DOC,
+    )
+    required_patterns = (
+        (
+            "build transition",
+            re.compile(
+                r"\bBuild 23(?:-to-|[\s\S]{0,320}\bBuild 24\b)",
+                re.IGNORECASE,
+            ),
+        ),
+        (
+            "state canary",
+            re.compile(
+                r"\b(?:Runtime-chat|Runtime chat)[\s\S]{0,100}canary\b",
+                re.IGNORECASE,
+            ),
+        ),
+        (
+            "same snapshot bytes",
+            re.compile(r"\bsame\s+(?:snapshot\s+)?bytes\b"),
+        ),
+        (
+            "post-use rehash",
+            re.compile(
+                r"\brehash(?:ed|es|ing)\s+(?:them\s+)?unchanged\b"
+            ),
+        ),
+        (
+            "two complete runs",
+            re.compile(r"\btwo\s+complete\s+runs\b", re.IGNORECASE),
+        ),
+        ("canonical result size", re.compile(r"\b6,469-byte\b")),
+        (
+            "canonical result path",
+            re.compile(
+                r"macos-packaged-app-build-23-to-24-"
+                r"isolated-upgrade-v2\.json"
+            ),
+        ),
+        (
+            "canonical result identity",
+            re.compile(
+                r"\bddec23cf048fa77c559ca7ee4f45354f"
+                r"eb558f830ca4b01eccffa5b7786ea09c\b"
+            ),
+        ),
+        ("repeatability receipt size", re.compile(r"\b898-byte\b")),
+        (
+            "repeatability receipt path",
+            re.compile(
+                r"macos-packaged-app-build-23-to-24-"
+                r"isolated-upgrade-repeatability-v1\.json"
+            ),
+        ),
+        (
+            "repeatability receipt identity",
+            re.compile(
+                r"\b886284149745c6fdd74625fab5d97c21"
+                r"ad35cd9b69cc2ade4353194b4ecd1733\b"
+            ),
+        ),
+    )
+    contradictory_patterns = (
+        re.compile(
+            r"(?<!not )\b(?:qualifies?|qualified|proves?|establishes?)\b"
+            r"[^.!?]{0,100}\b(?:rollback|arbitrary\s+"
+            r"(?:N/N-1|versions?)|cross-host|clean-machine|"
+            r"automatic\s+data\s+cleanup|signed\s+distribution|"
+            r"physical-device|providers?|networks?|production)\b",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"\b(?:rollback|arbitrary\s+(?:N/N-1|versions?)|cross-host|"
+            r"clean-machine|automatic\s+data\s+cleanup|signed\s+"
+            r"distribution|physical-device|providers?|networks?|"
+            r"production)\b[^.!?]{0,100}\b(?:is|are|was|were|has\s+been|"
+            r"have\s+been)\s+(?:qualified|supported|proven|complete|"
+            r"passed)\b",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"\b(?:production[- ]ready|ready\s+for\s+production|"
+            r"works?\s+across\s+hosts?)\b",
+            re.IGNORECASE,
+        ),
+    )
+    expected_neighbors = {
+        "README.md": (
+            (
+                CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_START
+                + "\nThe current non-security G6 lifecycle evidence"
+            ),
+            (
+                CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_END
+                + "\n\n"
+                + CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+            ),
+        ),
+        "docs/roadmap.md": (
+            (
+                CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_START
+                + "\nThe current G6 non-security lifecycle slice"
+            ),
+            (
+                CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_END
+                + "\n\n"
+                + CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+            ),
+        ),
+        "docs/progress.md": (
+            (
+                "## 2026-07-31 macOS Build 23 To Build 24 Isolated Upgrade\n\n"
+                + CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_START
+            ),
+            (
+                CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_END
+                + "\n\n## 2026-07-31 macOS Build 24 Clean-HOME "
+                "Lifecycle\n\n"
+                + CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+            ),
+        ),
+        "docs/qa-evidence.md": (
+            (
+                "## 2026-07-31 macOS Build 23 To Build 24 Isolated Upgrade "
+                "Checklist\n\n"
+                + CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_START
+            ),
+            (
+                CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_END
+                + "\n\n## 2026-07-31 macOS Build 24 Clean-HOME "
+                "Lifecycle Checklist\n\n"
+                + CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+            ),
+        ),
+        "docs/handoff.md": (
+            (
+                CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_START
+                + "\n- A post-archive Build 23-to-24 upgrade runner"
+            ),
+            (
+                CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_END
+                + "\n\n"
+                + CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+            ),
+        ),
+        "docs/releases/1.0.0-build-24-local-v1.md": (
+            (
+                "## Post-Archive Build 23 To Build 24 Isolated Upgrade "
+                "Evidence\n\n"
+                + CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_START
+            ),
+            (
+                CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_END
+                + "\n\n## Current Build 24 Clean-HOME Lifecycle "
+                "Evidence\n\n"
+                + CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+            ),
+        ),
+    }
+    failures: list[str] = []
+    for path in documentation_targets:
+        relative = str(path.relative_to(ROOT))
+        try:
+            document_text = (
+                document_text_by_relative[relative]
+                if document_text_by_relative is not None
+                else path.read_text(encoding="utf-8")
+            )
+        except (KeyError, OSError, UnicodeError) as error:
+            failures.append(
+                f"{relative}: cannot read isolated upgrade documentation: "
+                f"{error}"
+            )
+            continue
+        if (
+            document_text.count(
+                CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_START
+            )
+            != 1
+            or document_text.count(
+                CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_END
+            )
+            != 1
+        ):
+            failures.append(
+                f"{relative}: isolated upgrade v2 markers must each "
+                "appear exactly once."
+            )
+            continue
+        start_index = document_text.index(
+            CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_START
+        )
+        end_index = document_text.index(
+            CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_END
+        )
+        if start_index >= end_index:
+            failures.append(
+                f"{relative}: isolated upgrade v2 markers are out of order."
+            )
+            continue
+        expected_before, expected_after = expected_neighbors[relative]
+        if (
+            expected_before not in document_text
+            or expected_after not in document_text
+        ):
+            failures.append(
+                f"{relative}: isolated upgrade v2 block moved outside its "
+                "canonical document location."
+            )
+        block = document_text[
+            start_index
+            + len(CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_START):
+            end_index
+        ]
+        block_sha256 = hashlib.sha256(
+            block.encode("utf-8")
+        ).hexdigest()
+        expected_block_sha256 = (
+            CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_BLOCK_SHA256[relative]
+        )
+        if block_sha256 != expected_block_sha256:
+            failures.append(
+                f"{relative}: isolated upgrade v2 exact bounded block "
+                f"SHA-256 must be {expected_block_sha256}, found "
+                f"{block_sha256}."
+            )
+        normalized_block = re.sub(r"\s+", " ", block).strip()
+        normalized_document = re.sub(r"\s+", " ", document_text).strip()
+        normalized_boundary = re.sub(
+            r"\s+",
+            " ",
+            CURRENT_MACOS_ISOLATED_UPGRADE_BOUNDARY,
+        ).strip()
+        if (
+            normalized_block.count(normalized_boundary) != 1
+            or normalized_document.count(normalized_boundary) != 1
+        ):
+            failures.append(
+                f"{relative}: canonical isolated upgrade boundary must "
+                "appear exactly once inside the v2 block."
+            )
+        for label, pattern in required_patterns:
+            if not pattern.search(block):
+                failures.append(
+                    f"{relative}: missing isolated upgrade {label}."
+                )
+        if any(
+            pattern.search(normalized_block)
+            for pattern in contradictory_patterns
+        ):
+            failures.append(
+                f"{relative}: isolated upgrade v2 block contains an "
+                "unnegated contradictory qualification claim."
+            )
     return failures
 
 
@@ -6279,7 +10163,10 @@ def current_runtime_chat_sqlite_abrupt_recovery_document_failures(
 def current_runtime_chat_sqlite_cross_process_document_failures(
     document_text: str | None = None,
     *,
-    relative: str = "docs/releases/1.0.0-build-22-local-v1.md",
+    relative: str = (
+        f"docs/releases/{LOCAL_RELEASE_MARKETING_VERSION}-build-"
+        f"{LOCAL_RELEASE_BUILD_NUMBER}-local-v1.md"
+    ),
 ) -> list[str]:
     if document_text is None:
         try:
@@ -6297,7 +10184,8 @@ def current_runtime_chat_sqlite_cross_process_document_failures(
     for label, pattern in CURRENT_RUNTIME_CHAT_SQLITE_DOCUMENT_REQUIRED_PATTERNS:
         if not pattern.search(normalized_text):
             failures.append(
-                f"{relative}: current Build 22 Runtime-chat SQLite "
+                f"{relative}: current Build {LOCAL_RELEASE_BUILD_NUMBER} "
+                "Runtime-chat SQLite "
                 f"cross-process record is missing {label}."
             )
 
@@ -6306,7 +10194,8 @@ def current_runtime_chat_sqlite_cross_process_document_failures(
     )
     if stable_message_count != 1:
         failures.append(
-            f"{relative}: current Build 22 Runtime-chat SQLite stable busy "
+            f"{relative}: current Build {LOCAL_RELEASE_BUILD_NUMBER} "
+            "Runtime-chat SQLite stable busy "
             "message must appear exactly once; found "
             f"{stable_message_count}."
         )
@@ -6333,7 +10222,8 @@ def current_runtime_chat_sqlite_cross_process_document_failures(
             count = normalized_text.count(binding)
             if count != 1:
                 failures.append(
-                    f"{relative}: Build 22 source inventory must bind "
+                    f"{relative}: Build {LOCAL_RELEASE_BUILD_NUMBER} source "
+                    "inventory must bind "
                     f"{source_path!r} with {binding!r} exactly once; found "
                     f"{count}."
                 )
@@ -6355,7 +10245,8 @@ def current_runtime_chat_sqlite_source_failures(
             )
         except (KeyError, OSError) as error:
             failures.append(
-                f"{relative}: cannot validate Build 22 Runtime-chat SQLite "
+                f"{relative}: cannot validate Build "
+                f"{LOCAL_RELEASE_BUILD_NUMBER} Runtime-chat SQLite "
                 f"source binding: {error}"
             )
             continue
@@ -6365,7 +10256,8 @@ def current_runtime_chat_sqlite_source_failures(
         )
         if identity != expected_identity:
             failures.append(
-                f"{relative}: expected Build 22 source inventory identity "
+                f"{relative}: expected Build {LOCAL_RELEASE_BUILD_NUMBER} "
+                "source inventory identity "
                 f"{expected_identity!r}, found {identity!r}."
             )
 
@@ -6380,7 +10272,8 @@ def current_runtime_chat_sqlite_source_failures(
         ).decode("utf-8")
     except (KeyError, OSError, UnicodeError) as error:
         failures.append(
-            f"{test_relative}: cannot validate Build 22 Runtime-chat SQLite "
+            f"{test_relative}: cannot validate Build "
+            f"{LOCAL_RELEASE_BUILD_NUMBER} Runtime-chat SQLite "
             f"Swift regressions: {error}"
         )
         test_source = ""
@@ -6651,7 +10544,62 @@ def current_macos_clean_home_lifecycle_document_failures(
                 "reversed or empty."
             )
             continue
+        outer_end_index = end_index + len(
+            CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+        )
+        actual_outer_sha256 = (
+            hashlib.sha256(
+                document_text[:start_index].encode("utf-8")
+            ).hexdigest(),
+            hashlib.sha256(
+                document_text[outer_end_index:].encode("utf-8")
+            ).hexdigest(),
+        )
+        expected_outer_sha256 = (
+            CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_OUTER_SHA256_BY_DOCUMENT[
+                relative
+            ]
+        )
+        if actual_outer_sha256 != expected_outer_sha256:
+            failures.append(
+                f"{relative}: historical Build 20 lifecycle outer document "
+                "identity differs from its canonical location."
+            )
         block = document_text[body_start:end_index]
+        actual_body_sha256 = hashlib.sha256(
+            block.encode("utf-8")
+        ).hexdigest()
+        expected_body_sha256 = (
+            CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_BODY_SHA256_BY_DOCUMENT[
+                relative
+            ]
+        )
+        if actual_body_sha256 != expected_body_sha256:
+            failures.append(
+                f"{relative}: historical Build 20 lifecycle body must "
+                f"retain exact SHA-256 {expected_body_sha256}; found "
+                f"{actual_body_sha256}."
+            )
+        if any(
+            neighbor not in document_text
+            for neighbor in (
+                CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_NEIGHBORS[
+                    relative
+                ]
+            )
+        ):
+            failures.append(
+                f"{relative}: historical Build 20 lifecycle block moved "
+                "outside its canonical document location."
+            )
+        if marker_is_in_hidden_markdown_context(
+            document_text,
+            CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START,
+        ):
+            failures.append(
+                f"{relative}: historical Build 20 lifecycle block must "
+                "remain outside hidden Markdown or HTML contexts."
+            )
         normalized_block = re.sub(r"\s+", " ", block).strip()
         if "Build 20" not in normalized_block:
             failures.append(
@@ -6822,6 +10770,1697 @@ def current_macos_clean_home_lifecycle_document_failures(
                 )
                 break
     return failures
+
+
+def current_build24_macos_clean_home_lifecycle_document_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    documentation_targets = (
+        README_PATH,
+        ROOT / "docs/roadmap.md",
+        ROOT / "docs/handoff.md",
+        ROOT / "docs/progress.md",
+        ROOT / "docs/qa-evidence.md",
+        LOCAL_RELEASE_CURRENT_DOC,
+    )
+    expected_neighbors = {
+        "README.md": (
+            (
+                CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_END
+                + "\n\n"
+                + CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+            ),
+            (
+                CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+                + "\n\n"
+                + CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_START
+            ),
+        ),
+        "docs/roadmap.md": (
+            (
+                CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_END
+                + "\n\n"
+                + CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+            ),
+            (
+                CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+                + "\n\n"
+                + CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_START
+            ),
+        ),
+        "docs/handoff.md": (
+            (
+                CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_END
+                + "\n\n"
+                + CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+            ),
+            (
+                CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+                + "\n\n"
+                + CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_START
+            ),
+        ),
+        "docs/progress.md": (
+            (
+                "## 2026-07-31 macOS Build 24 Clean-HOME Lifecycle\n\n"
+                + CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+            ),
+            (
+                CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+                + "\n\n## 2026-07-31 macOS Build 24 Local-DMG "
+                "Lifecycle\n\n"
+                + CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_START
+            ),
+        ),
+        "docs/qa-evidence.md": (
+            (
+                "## 2026-07-31 macOS Build 24 Clean-HOME Lifecycle "
+                "Checklist\n\n"
+                + CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+            ),
+            (
+                CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+                + "\n\n## 2026-07-31 macOS Build 24 Local-DMG "
+                "Lifecycle Checklist\n\n"
+                + CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_START
+            ),
+        ),
+        "docs/releases/1.0.0-build-24-local-v1.md": (
+            (
+                "## Current Build 24 Clean-HOME Lifecycle Evidence\n\n"
+                + CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+            ),
+            (
+                CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+                + "\n\n## Current Build 24 Local-DMG Lifecycle "
+                "Evidence\n\n"
+                + CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_START
+            ),
+        ),
+    }
+    failures: list[str] = []
+    for path in documentation_targets:
+        relative = str(path.relative_to(ROOT))
+        try:
+            document_text = (
+                document_text_by_relative[relative]
+                if (
+                    document_text_by_relative is not None
+                    and relative in document_text_by_relative
+                )
+                else path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError) as error:
+            failures.append(
+                f"{relative}: cannot validate current Build 24 clean-HOME "
+                f"lifecycle block: {error}"
+            )
+            continue
+
+        start_count = document_text.count(
+            CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+        )
+        end_count = document_text.count(
+            CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+        )
+        if (start_count, end_count) != (1, 1):
+            failures.append(
+                f"{relative}: current Build 24 clean-HOME lifecycle block "
+                "must contain exactly one start and end marker; found "
+                f"{start_count} and {end_count}."
+            )
+            continue
+
+        chain_markers = (
+            CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_START,
+            CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_END,
+            CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START,
+            CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END,
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_START,
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_END,
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_START
+            ),
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_END
+            ),
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_DOCUMENT_START
+            ),
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_DOCUMENT_END
+            ),
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_DOCUMENT_START
+            ),
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_DOCUMENT_END
+            ),
+            CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_START,
+            CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_END,
+            CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_START,
+            CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_END,
+        )
+        chain_is_ordered = (
+            all(document_text.count(marker) == 1 for marker in chain_markers)
+            and sorted(document_text.index(marker) for marker in chain_markers)
+            == [document_text.index(marker) for marker in chain_markers]
+        )
+        if not chain_is_ordered:
+            failures.append(
+                f"{relative}: current Build 24 lifecycle chain markers "
+                "must appear once in isolated, clean-HOME, local-DMG, "
+                "uninstall/reinstall, state-recovery, abrupt-process "
+                "recovery, aggregate-readback, idle-resource-stability "
+                "order."
+            )
+        else:
+            chain_start_index = document_text.index(chain_markers[0])
+            chain_end_index = (
+                document_text.index(chain_markers[-1])
+                + len(chain_markers[-1])
+            )
+            actual_outer_sha256 = (
+                hashlib.sha256(
+                    document_text[:chain_start_index].encode("utf-8")
+                ).hexdigest(),
+                hashlib.sha256(
+                    document_text[chain_end_index:].encode("utf-8")
+                ).hexdigest(),
+            )
+            expected_outer_sha256 = (
+                CURRENT_BUILD24_MACOS_LIFECYCLE_CHAIN_OUTER_SHA256_BY_DOCUMENT[
+                    relative
+                ]
+            )
+            if actual_outer_sha256 != expected_outer_sha256:
+                failures.append(
+                    f"{relative}: current Build 24 lifecycle chain outer "
+                    "document identity differs from its canonical location."
+                )
+        if (
+            CURRENT_BUILD24_MACOS_LIFECYCLE_CHAIN_PREDECESSOR_BY_DOCUMENT[
+                relative
+            ]
+            not in document_text
+        ):
+            failures.append(
+                f"{relative}: current Build 24 lifecycle chain moved away "
+                "from its canonical external predecessor."
+            )
+        if any(
+            marker_is_in_hidden_markdown_context(document_text, marker)
+            for marker in chain_markers
+        ):
+            failures.append(
+                f"{relative}: current Build 24 lifecycle chain must remain "
+                "outside hidden Markdown or HTML contexts."
+            )
+
+        start_index = document_text.index(
+            CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+        )
+        body_start = start_index + len(
+            CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+        )
+        end_index = document_text.index(
+            CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+        )
+        if end_index <= body_start:
+            failures.append(
+                f"{relative}: current Build 24 clean-HOME lifecycle markers "
+                "are reversed or empty."
+            )
+            continue
+
+        block = document_text[body_start:end_index].strip()
+        if block != CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_BODY:
+            expected_sha256 = hashlib.sha256(
+                CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_BODY.encode(
+                    "utf-8"
+                )
+            ).hexdigest()
+            actual_sha256 = hashlib.sha256(
+                block.encode("utf-8")
+            ).hexdigest()
+            failures.append(
+                f"{relative}: current Build 24 clean-HOME lifecycle block "
+                f"must match exact canonical body SHA-256 {expected_sha256}; "
+                f"found {actual_sha256}."
+            )
+        if any(
+            binding not in document_text
+            for binding in expected_neighbors[relative]
+        ):
+            failures.append(
+                f"{relative}: current Build 24 clean-HOME lifecycle block "
+                "moved outside its canonical document location."
+            )
+    return failures
+
+
+def current_build24_macos_local_dmg_lifecycle_document_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    documentation_targets = (
+        README_PATH,
+        ROOT / "docs/roadmap.md",
+        ROOT / "docs/handoff.md",
+        ROOT / "docs/progress.md",
+        ROOT / "docs/qa-evidence.md",
+        LOCAL_RELEASE_CURRENT_DOC,
+    )
+    expected_neighbors = {
+        "README.md": (
+            (
+                CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+                + "\n\n"
+                + CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_START
+            ),
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_END
+                + "\n\n"
+                + (
+                    CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_START
+                )
+            ),
+        ),
+        "docs/roadmap.md": (
+            (
+                CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+                + "\n\n"
+                + CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_START
+            ),
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_END
+                + "\n\n"
+                + (
+                    CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_START
+                )
+            ),
+        ),
+        "docs/handoff.md": (
+            (
+                CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+                + "\n\n"
+                + CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_START
+            ),
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_END
+                + "\n\n"
+                + (
+                    CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_START
+                )
+            ),
+        ),
+        "docs/progress.md": (
+            (
+                "## 2026-07-31 macOS Build 24 Local-DMG Lifecycle\n\n"
+                + CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_START
+            ),
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_END
+                + "\n\n## 2026-07-31 macOS Build 24 Local-DMG "
+                "Uninstall/Reinstall Lifecycle\n\n"
+                + (
+                    CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_START
+                )
+            ),
+        ),
+        "docs/qa-evidence.md": (
+            (
+                "## 2026-07-31 macOS Build 24 Local-DMG Lifecycle "
+                "Checklist\n\n"
+                + CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_START
+            ),
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_END
+                + "\n\n## 2026-07-31 macOS Build 24 Local-DMG "
+                "Uninstall/Reinstall Lifecycle Checklist\n\n"
+                + (
+                    CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_START
+                )
+            ),
+        ),
+        "docs/releases/1.0.0-build-24-local-v1.md": (
+            (
+                "## Current Build 24 Local-DMG Lifecycle Evidence\n\n"
+                + CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_START
+            ),
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_END
+                + "\n\n## Current Build 24 Local-DMG "
+                "Uninstall/Reinstall Lifecycle Evidence\n\n"
+                + (
+                    CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_START
+                )
+            ),
+        ),
+    }
+    failures: list[str] = []
+    for path in documentation_targets:
+        relative = str(path.relative_to(ROOT))
+        try:
+            document_text = (
+                document_text_by_relative[relative]
+                if (
+                    document_text_by_relative is not None
+                    and relative in document_text_by_relative
+                )
+                else path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError) as error:
+            failures.append(
+                f"{relative}: cannot validate current Build 24 local-DMG "
+                f"lifecycle block: {error}"
+            )
+            continue
+
+        start_count = document_text.count(
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_START
+        )
+        end_count = document_text.count(
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_END
+        )
+        if (start_count, end_count) != (1, 1):
+            failures.append(
+                f"{relative}: current Build 24 local-DMG lifecycle block "
+                "must contain exactly one start and end marker; found "
+                f"{start_count} and {end_count}."
+            )
+            continue
+
+        start_index = document_text.index(
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_START
+        )
+        body_start = start_index + len(
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_START
+        )
+        end_index = document_text.index(
+            CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_END
+        )
+        if end_index <= body_start:
+            failures.append(
+                f"{relative}: current Build 24 local-DMG lifecycle markers "
+                "are reversed or empty."
+            )
+            continue
+
+        block = document_text[body_start:end_index].strip()
+        if (
+            block
+            != CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_BODY
+        ):
+            expected_sha256 = hashlib.sha256(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_BODY.encode(
+                    "utf-8"
+                )
+            ).hexdigest()
+            actual_sha256 = hashlib.sha256(
+                block.encode("utf-8")
+            ).hexdigest()
+            failures.append(
+                f"{relative}: current Build 24 local-DMG lifecycle block "
+                f"must match exact canonical body SHA-256 {expected_sha256}; "
+                f"found {actual_sha256}."
+            )
+        if any(
+            binding not in document_text
+            for binding in expected_neighbors[relative]
+        ):
+            failures.append(
+                f"{relative}: current Build 24 local-DMG lifecycle block "
+                "moved outside its canonical document location."
+            )
+    return failures
+
+
+def current_build24_macos_local_dmg_uninstall_reinstall_document_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    documentation_targets = (
+        README_PATH,
+        ROOT / "docs/roadmap.md",
+        ROOT / "docs/handoff.md",
+        ROOT / "docs/progress.md",
+        ROOT / "docs/qa-evidence.md",
+        LOCAL_RELEASE_CURRENT_DOC,
+    )
+    start_marker = (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_START
+    )
+    end_marker = (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_END
+    )
+    state_start_marker = (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_DOCUMENT_START
+    )
+    expected_neighbors = {
+        "README.md": (
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_END
+                + "\n\n"
+                + start_marker
+            ),
+            end_marker + "\n\n" + state_start_marker,
+        ),
+        "docs/roadmap.md": (
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_END
+                + "\n\n"
+                + start_marker
+            ),
+            end_marker + "\n\n" + state_start_marker,
+        ),
+        "docs/handoff.md": (
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_END
+                + "\n\n"
+                + start_marker
+            ),
+            end_marker + "\n\n" + state_start_marker,
+        ),
+        "docs/progress.md": (
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_END
+                + "\n\n## 2026-07-31 macOS Build 24 Local-DMG "
+                "Uninstall/Reinstall Lifecycle\n\n"
+                + start_marker
+            ),
+            (
+                end_marker
+                + "\n\n## 2026-07-31 macOS Build 24 Local-DMG "
+                "Uninstall/Reinstall State Recovery\n\n"
+                + state_start_marker
+            ),
+        ),
+        "docs/qa-evidence.md": (
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_END
+                + "\n\n## 2026-07-31 macOS Build 24 Local-DMG "
+                "Uninstall/Reinstall Lifecycle Checklist\n\n"
+                + start_marker
+            ),
+            (
+                end_marker
+                + "\n\n## 2026-07-31 macOS Build 24 Local-DMG "
+                "Uninstall/Reinstall State Recovery Checklist\n\n"
+                + state_start_marker
+            ),
+        ),
+        "docs/releases/1.0.0-build-24-local-v1.md": (
+            (
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_END
+                + "\n\n## Current Build 24 Local-DMG "
+                "Uninstall/Reinstall Lifecycle Evidence\n\n"
+                + start_marker
+            ),
+            (
+                end_marker
+                + "\n\n## Current Build 24 Local-DMG "
+                "Uninstall/Reinstall State-Recovery Evidence\n\n"
+                + state_start_marker
+            ),
+        ),
+    }
+    failures: list[str] = []
+    for path in documentation_targets:
+        relative = str(path.relative_to(ROOT))
+        try:
+            document_text = (
+                document_text_by_relative[relative]
+                if (
+                    document_text_by_relative is not None
+                    and relative in document_text_by_relative
+                )
+                else path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError) as error:
+            failures.append(
+                f"{relative}: cannot validate current Build 24 same-DMG "
+                f"uninstall/reinstall lifecycle block: {error}"
+            )
+            continue
+
+        start_count = document_text.count(start_marker)
+        end_count = document_text.count(end_marker)
+        if (start_count, end_count) != (1, 1):
+            failures.append(
+                f"{relative}: current Build 24 same-DMG "
+                "uninstall/reinstall lifecycle block must contain exactly "
+                "one start and end marker; found "
+                f"{start_count} and {end_count}."
+            )
+            continue
+        start_index = document_text.index(start_marker)
+        body_start = start_index + len(start_marker)
+        end_index = document_text.index(end_marker)
+        if end_index <= body_start:
+            failures.append(
+                f"{relative}: current Build 24 same-DMG "
+                "uninstall/reinstall lifecycle markers are reversed or "
+                "empty."
+            )
+            continue
+        block = document_text[body_start:end_index].strip()
+        if (
+            block
+            != CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_BODY
+        ):
+            expected_sha256 = hashlib.sha256(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_BODY.encode(
+                    "utf-8"
+                )
+            ).hexdigest()
+            actual_sha256 = hashlib.sha256(
+                block.encode("utf-8")
+            ).hexdigest()
+            failures.append(
+                f"{relative}: current Build 24 same-DMG "
+                "uninstall/reinstall lifecycle block must match exact "
+                f"canonical body SHA-256 {expected_sha256}; found "
+                f"{actual_sha256}."
+            )
+        if any(
+            binding not in document_text
+            for binding in expected_neighbors[relative]
+        ):
+            failures.append(
+                f"{relative}: current Build 24 same-DMG "
+                "uninstall/reinstall lifecycle block moved outside its "
+                "canonical document location."
+            )
+        if any(
+            marker_is_in_hidden_markdown_context(document_text, marker)
+            for marker in (start_marker, end_marker)
+        ):
+            failures.append(
+                f"{relative}: current Build 24 same-DMG "
+                "uninstall/reinstall lifecycle block must remain outside "
+                "hidden Markdown or HTML contexts."
+            )
+    return failures
+
+
+def current_build24_macos_local_dmg_uninstall_reinstall_state_recovery_document_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    documentation_targets = (
+        README_PATH,
+        ROOT / "docs/roadmap.md",
+        ROOT / "docs/handoff.md",
+        ROOT / "docs/progress.md",
+        ROOT / "docs/qa-evidence.md",
+        LOCAL_RELEASE_CURRENT_DOC,
+    )
+    predecessor = (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_END
+    )
+    start_marker = (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_DOCUMENT_START
+    )
+    end_marker = (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_DOCUMENT_END
+    )
+    successor = (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_DOCUMENT_START
+    )
+    expected_neighbors = {
+        "README.md": (
+            predecessor + "\n\n" + start_marker,
+            end_marker + "\n\n" + successor,
+        ),
+        "docs/roadmap.md": (
+            predecessor + "\n\n" + start_marker,
+            end_marker + "\n\n" + successor,
+        ),
+        "docs/handoff.md": (
+            predecessor + "\n\n" + start_marker,
+            end_marker + "\n\n" + successor,
+        ),
+        "docs/progress.md": (
+            (
+                predecessor
+                + "\n\n## 2026-07-31 macOS Build 24 Local-DMG "
+                "Uninstall/Reinstall State Recovery\n\n"
+                + start_marker
+            ),
+            (
+                end_marker
+                + "\n\n## 2026-07-31 macOS Build 24 Local-DMG "
+                "Persisted-State Abrupt Process Recovery\n\n"
+                + successor
+            ),
+        ),
+        "docs/qa-evidence.md": (
+            (
+                predecessor
+                + "\n\n## 2026-07-31 macOS Build 24 Local-DMG "
+                "Uninstall/Reinstall State Recovery Checklist\n\n"
+                + start_marker
+            ),
+            (
+                end_marker
+                + "\n\n## 2026-07-31 macOS Build 24 Local-DMG "
+                "Persisted-State Abrupt Process Recovery Checklist\n\n"
+                + successor
+            ),
+        ),
+        "docs/releases/1.0.0-build-24-local-v1.md": (
+            (
+                predecessor
+                + "\n\n## Current Build 24 Local-DMG "
+                "Uninstall/Reinstall State-Recovery Evidence\n\n"
+                + start_marker
+            ),
+            (
+                end_marker
+                + "\n\n## Current Build 24 Local-DMG Persisted-State "
+                "Abrupt Process Recovery Evidence\n\n"
+                + successor
+            ),
+        ),
+    }
+    failures: list[str] = []
+    for path in documentation_targets:
+        relative = str(path.relative_to(ROOT))
+        try:
+            document_text = (
+                document_text_by_relative[relative]
+                if (
+                    document_text_by_relative is not None
+                    and relative in document_text_by_relative
+                )
+                else path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError) as error:
+            failures.append(
+                f"{relative}: cannot validate current Build 24 same-DMG "
+                f"state-recovery lifecycle block: {error}"
+            )
+            continue
+
+        start_count = document_text.count(start_marker)
+        end_count = document_text.count(end_marker)
+        if (start_count, end_count) != (1, 1):
+            failures.append(
+                f"{relative}: current Build 24 same-DMG state-recovery "
+                "lifecycle block must contain exactly one start and end "
+                f"marker; found {start_count} and {end_count}."
+            )
+            continue
+        start_index = document_text.index(start_marker)
+        body_start = start_index + len(start_marker)
+        end_index = document_text.index(end_marker)
+        if end_index <= body_start:
+            failures.append(
+                f"{relative}: current Build 24 same-DMG state-recovery "
+                "lifecycle markers are reversed or empty."
+            )
+            continue
+        block = document_text[body_start:end_index].strip()
+        if (
+            block
+            != CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_DOCUMENT_BODY
+        ):
+            expected_sha256 = hashlib.sha256(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_DOCUMENT_BODY.encode(
+                    "utf-8"
+                )
+            ).hexdigest()
+            actual_sha256 = hashlib.sha256(
+                block.encode("utf-8")
+            ).hexdigest()
+            failures.append(
+                f"{relative}: current Build 24 same-DMG state-recovery "
+                "lifecycle block must match exact canonical body SHA-256 "
+                f"{expected_sha256}; found {actual_sha256}."
+            )
+        if any(
+            binding not in document_text
+            for binding in expected_neighbors[relative]
+        ):
+            failures.append(
+                f"{relative}: current Build 24 same-DMG state-recovery "
+                "lifecycle block moved outside its canonical document "
+                "location."
+            )
+        if any(
+            marker_is_in_hidden_markdown_context(document_text, marker)
+            for marker in (start_marker, end_marker)
+        ):
+            failures.append(
+                f"{relative}: current Build 24 same-DMG state-recovery "
+                "lifecycle block must remain outside hidden Markdown or "
+                "HTML contexts."
+            )
+    return failures
+
+
+def current_build24_macos_local_dmg_abrupt_process_state_recovery_document_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    documentation_targets = (
+        README_PATH,
+        ROOT / "docs/roadmap.md",
+        ROOT / "docs/handoff.md",
+        ROOT / "docs/progress.md",
+        ROOT / "docs/qa-evidence.md",
+        LOCAL_RELEASE_CURRENT_DOC,
+    )
+    predecessor = (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_DOCUMENT_END
+    )
+    start_marker = (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_DOCUMENT_START
+    )
+    end_marker = (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_DOCUMENT_END
+    )
+    expected_neighbors = {
+        "README.md": (
+            predecessor + "\n\n" + start_marker,
+            (
+                end_marker
+                + "\n\n"
+                + CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_START
+            ),
+        ),
+        "docs/roadmap.md": (
+            predecessor + "\n\n" + start_marker,
+            (
+                end_marker
+                + "\n\n"
+                + CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_START
+            ),
+        ),
+        "docs/handoff.md": (
+            predecessor + "\n\n" + start_marker,
+            (
+                end_marker
+                + "\n\n"
+                + CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_START
+            ),
+        ),
+        "docs/progress.md": (
+            (
+                predecessor
+                + "\n\n## 2026-07-31 macOS Build 24 Local-DMG "
+                "Persisted-State Abrupt Process Recovery\n\n"
+                + start_marker
+            ),
+            (
+                end_marker
+                + "\n\n## 2026-07-31 macOS Build 24 Lifecycle "
+                "Aggregate Readback\n\n"
+                + CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_START
+            ),
+        ),
+        "docs/qa-evidence.md": (
+            (
+                predecessor
+                + "\n\n## 2026-07-31 macOS Build 24 Local-DMG "
+                "Persisted-State Abrupt Process Recovery Checklist\n\n"
+                + start_marker
+            ),
+            (
+                end_marker
+                + "\n\n## 2026-07-31 macOS Build 24 Lifecycle "
+                "Aggregate Readback Checklist\n\n"
+                + CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_START
+            ),
+        ),
+        "docs/releases/1.0.0-build-24-local-v1.md": (
+            (
+                predecessor
+                + "\n\n## Current Build 24 Local-DMG Persisted-State "
+                "Abrupt Process Recovery Evidence\n\n"
+                + start_marker
+            ),
+            (
+                end_marker
+                + "\n\n## Current Build 24 Lifecycle Aggregate "
+                "Readback Evidence\n\n"
+                + CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_START
+            ),
+        ),
+    }
+    failures: list[str] = []
+    for path in documentation_targets:
+        relative = str(path.relative_to(ROOT))
+        try:
+            document_text = (
+                document_text_by_relative[relative]
+                if (
+                    document_text_by_relative is not None
+                    and relative in document_text_by_relative
+                )
+                else path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError) as error:
+            failures.append(
+                f"{relative}: cannot validate current Build 24 "
+                f"abrupt-process state-recovery block: {error}"
+            )
+            continue
+
+        start_count = document_text.count(start_marker)
+        end_count = document_text.count(end_marker)
+        if (start_count, end_count) != (1, 1):
+            failures.append(
+                f"{relative}: current Build 24 abrupt-process "
+                "state-recovery block must contain exactly one start and "
+                f"end marker; found {start_count} and {end_count}."
+            )
+            continue
+        start_index = document_text.index(start_marker)
+        body_start = start_index + len(start_marker)
+        end_index = document_text.index(end_marker)
+        if end_index <= body_start:
+            failures.append(
+                f"{relative}: current Build 24 abrupt-process "
+                "state-recovery markers are reversed or empty."
+            )
+            continue
+        block = document_text[body_start:end_index].strip()
+        if (
+            block
+            != CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_DOCUMENT_BODY
+        ):
+            expected_sha256 = hashlib.sha256(
+                CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_DOCUMENT_BODY.encode(
+                    "utf-8"
+                )
+            ).hexdigest()
+            actual_sha256 = hashlib.sha256(
+                block.encode("utf-8")
+            ).hexdigest()
+            failures.append(
+                f"{relative}: current Build 24 abrupt-process "
+                "state-recovery block must match exact canonical body "
+                f"SHA-256 {expected_sha256}; found {actual_sha256}."
+            )
+        if any(
+            binding not in document_text
+            for binding in expected_neighbors[relative]
+        ):
+            failures.append(
+                f"{relative}: current Build 24 abrupt-process "
+                "state-recovery block moved outside its canonical "
+                "document location."
+            )
+        if any(
+            marker_is_in_hidden_markdown_context(document_text, marker)
+            for marker in (start_marker, end_marker)
+        ):
+            failures.append(
+                f"{relative}: current Build 24 abrupt-process "
+                "state-recovery block must remain outside hidden Markdown "
+                "or HTML contexts."
+            )
+    return failures
+
+
+def current_build24_macos_lifecycle_aggregate_document_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    documentation_targets = (
+        README_PATH,
+        ROOT / "docs/roadmap.md",
+        ROOT / "docs/handoff.md",
+        ROOT / "docs/progress.md",
+        ROOT / "docs/qa-evidence.md",
+        LOCAL_RELEASE_CURRENT_DOC,
+    )
+    predecessor = (
+        CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_DOCUMENT_END
+    )
+    start_marker = CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_START
+    end_marker = CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_END
+    expected_neighbors = {
+        "README.md": (
+            predecessor + "\n\n" + start_marker,
+            (
+                end_marker
+                + "\n\n"
+                + CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_START
+            ),
+        ),
+        "docs/roadmap.md": (
+            predecessor + "\n\n" + start_marker,
+            (
+                end_marker
+                + "\n\n"
+                + CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_START
+            ),
+        ),
+        "docs/handoff.md": (
+            predecessor + "\n\n" + start_marker,
+            (
+                end_marker
+                + "\n\n"
+                + CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_START
+            ),
+        ),
+        "docs/progress.md": (
+            (
+                predecessor
+                + "\n\n## 2026-07-31 macOS Build 24 Lifecycle "
+                "Aggregate Readback\n\n"
+                + start_marker
+            ),
+            (
+                end_marker
+                + "\n\n## 2026-07-31 macOS Build 24 Idle Resource "
+                "Stability\n\n"
+                + CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_START
+            ),
+        ),
+        "docs/qa-evidence.md": (
+            (
+                predecessor
+                + "\n\n## 2026-07-31 macOS Build 24 Lifecycle "
+                "Aggregate Readback Checklist\n\n"
+                + start_marker
+            ),
+            (
+                end_marker
+                + "\n\n## 2026-07-31 macOS Build 24 Idle Resource "
+                "Stability Checklist\n\n"
+                + CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_START
+            ),
+        ),
+        "docs/releases/1.0.0-build-24-local-v1.md": (
+            (
+                predecessor
+                + "\n\n## Current Build 24 Lifecycle Aggregate "
+                "Readback Evidence\n\n"
+                + start_marker
+            ),
+            (
+                end_marker
+                + "\n\n## Current Build 24 Idle Resource Stability "
+                "Evidence\n\n"
+                + CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_START
+            ),
+        ),
+    }
+    failures: list[str] = []
+    for path in documentation_targets:
+        relative = str(path.relative_to(ROOT))
+        try:
+            document_text = (
+                document_text_by_relative[relative]
+                if (
+                    document_text_by_relative is not None
+                    and relative in document_text_by_relative
+                )
+                else path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError) as error:
+            failures.append(
+                f"{relative}: cannot validate current Build 24 lifecycle "
+                f"aggregate readback block: {error}"
+            )
+            continue
+
+        start_count = document_text.count(start_marker)
+        end_count = document_text.count(end_marker)
+        if (start_count, end_count) != (1, 1):
+            failures.append(
+                f"{relative}: current Build 24 lifecycle aggregate "
+                "readback block must contain exactly one start and end "
+                f"marker; found {start_count} and {end_count}."
+            )
+            continue
+        start_index = document_text.index(start_marker)
+        body_start = start_index + len(start_marker)
+        end_index = document_text.index(end_marker)
+        if end_index <= body_start:
+            failures.append(
+                f"{relative}: current Build 24 lifecycle aggregate "
+                "readback markers are reversed or empty."
+            )
+            continue
+
+        block = document_text[body_start:end_index].strip()
+        if block != CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_BODY:
+            expected_sha256 = hashlib.sha256(
+                CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_BODY.encode(
+                    "utf-8"
+                )
+            ).hexdigest()
+            actual_sha256 = hashlib.sha256(
+                block.encode("utf-8")
+            ).hexdigest()
+            failures.append(
+                f"{relative}: current Build 24 lifecycle aggregate "
+                "readback block must match exact canonical body SHA-256 "
+                f"{expected_sha256}; found {actual_sha256}."
+            )
+        if any(
+            binding not in document_text
+            for binding in expected_neighbors[relative]
+        ):
+            failures.append(
+                f"{relative}: current Build 24 lifecycle aggregate "
+                "readback block moved outside its canonical document "
+                "location."
+            )
+        if any(
+            marker_is_in_hidden_markdown_context(document_text, marker)
+            for marker in (start_marker, end_marker)
+        ):
+            failures.append(
+                f"{relative}: current Build 24 lifecycle aggregate "
+                "readback block must remain outside hidden Markdown or "
+                "HTML contexts."
+            )
+    return failures
+
+
+def current_build24_macos_idle_resource_stability_document_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    documentation_targets = (
+        README_PATH,
+        ROOT / "docs/roadmap.md",
+        ROOT / "docs/handoff.md",
+        ROOT / "docs/progress.md",
+        ROOT / "docs/qa-evidence.md",
+        LOCAL_RELEASE_CURRENT_DOC,
+    )
+    predecessor = CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_END
+    start_marker = (
+        CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_START
+    )
+    end_marker = CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_END
+    expected_neighbors = {
+        "README.md": (
+            predecessor + "\n\n" + start_marker,
+            end_marker + "\n\nThis is a personal, single-owner project.",
+        ),
+        "docs/roadmap.md": (
+            predecessor + "\n\n" + start_marker,
+            end_marker + "\n\nThe current macOS G5 Runtime slice",
+        ),
+        "docs/handoff.md": (
+            predecessor + "\n\n" + start_marker,
+            end_marker + "\n\n- Build 19 remains",
+        ),
+        "docs/progress.md": (
+            (
+                predecessor
+                + "\n\n## 2026-07-31 macOS Build 24 Idle Resource "
+                "Stability\n\n"
+                + start_marker
+            ),
+            (
+                end_marker
+                + "\n\n## 2026-07-31 Historical Local V1 Build 23 "
+                "Qualification"
+            ),
+        ),
+        "docs/qa-evidence.md": (
+            (
+                predecessor
+                + "\n\n## 2026-07-31 macOS Build 24 Idle Resource "
+                "Stability Checklist\n\n"
+                + start_marker
+            ),
+            (
+                end_marker
+                + "\n\n## 2026-07-31 Historical Local V1 Build 23 "
+                "Qualification Checklist"
+            ),
+        ),
+        "docs/releases/1.0.0-build-24-local-v1.md": (
+            (
+                predecessor
+                + "\n\n## Current Build 24 Idle Resource Stability "
+                "Evidence\n\n"
+                + start_marker
+            ),
+            end_marker + "\n\n## Compatibility And Transition Boundary",
+        ),
+    }
+    failures: list[str] = []
+    for path in documentation_targets:
+        relative = str(path.relative_to(ROOT))
+        try:
+            document_text = (
+                document_text_by_relative[relative]
+                if (
+                    document_text_by_relative is not None
+                    and relative in document_text_by_relative
+                )
+                else path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError) as error:
+            failures.append(
+                f"{relative}: cannot validate current Build 24 "
+                f"idle-resource stability block: {error}"
+            )
+            continue
+
+        start_count = document_text.count(start_marker)
+        end_count = document_text.count(end_marker)
+        if (start_count, end_count) != (1, 1):
+            failures.append(
+                f"{relative}: current Build 24 idle-resource stability "
+                "block must contain exactly one start and end marker; found "
+                f"{start_count} and {end_count}."
+            )
+            continue
+        start_index = document_text.index(start_marker)
+        body_start = start_index + len(start_marker)
+        end_index = document_text.index(end_marker)
+        if end_index <= body_start:
+            failures.append(
+                f"{relative}: current Build 24 idle-resource stability "
+                "markers are reversed or empty."
+            )
+            continue
+
+        block = document_text[body_start:end_index].strip()
+        if (
+            block
+            != CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_BODY
+        ):
+            expected_sha256 = hashlib.sha256(
+                CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_BODY.encode(
+                    "utf-8"
+                )
+            ).hexdigest()
+            actual_sha256 = hashlib.sha256(
+                block.encode("utf-8")
+            ).hexdigest()
+            failures.append(
+                f"{relative}: current Build 24 idle-resource stability "
+                "block must match exact canonical body SHA-256 "
+                f"{expected_sha256}; found {actual_sha256}."
+            )
+        if any(
+            binding not in document_text
+            for binding in expected_neighbors[relative]
+        ):
+            failures.append(
+                f"{relative}: current Build 24 idle-resource stability "
+                "block moved outside its canonical document location."
+            )
+        if any(
+            marker_is_in_hidden_markdown_context(document_text, marker)
+            for marker in (start_marker, end_marker)
+        ):
+            failures.append(
+                f"{relative}: current Build 24 idle-resource stability "
+                "block must remain outside hidden Markdown or HTML contexts."
+            )
+    return failures
+
+
+def top_level_shell_command_definitely_terminates(
+    command: str,
+    *,
+    errexit_enabled: bool,
+) -> bool:
+    if re.search(
+        r"(?:^|;|&&|\|\||[&|])\s*(?:exit|return)(?:\s|$)",
+        command,
+    ):
+        return True
+    if re.search(
+        r"(?:^|;)\s*exec\s+(?![0-9]*[<>])\S+",
+        command,
+    ):
+        return True
+    return (
+        errexit_enabled
+        and re.fullmatch(
+            r"(?:(?:command|builtin|run)\s+)*false(?:\s+[^;&|]*)?",
+            command,
+        )
+        is not None
+    )
+
+
+def shell_prefix_reaches_top_level(prefix: str) -> bool:
+    active_heredoc: tuple[str, bool] | None = None
+    inside_function = False
+    control_stack: list[str] = []
+    group_stack: list[str] = []
+    quote_state: str | None = None
+    pending_command_chain = False
+    errexit_enabled = False
+    function_start = re.compile(
+        r"^(?:function\s+)?[A-Za-z_][A-Za-z0-9_]*"
+        r"(?:\s*\(\))?\s*\{\s*$"
+    )
+    heredoc_start = re.compile(
+        r"<<(-?)\s*(?:'([^']+)'|\"([^\"]+)\"|"
+        r"([A-Za-z_][A-Za-z0-9_]*))"
+    )
+
+    def mask_quoted_shell_text(
+        line: str,
+        initial_state: str | None,
+    ) -> tuple[str, str | None]:
+        masked = list(line)
+        state = initial_state
+        index = 0
+        while index < len(line):
+            character = line[index]
+            if state == "'":
+                masked[index] = " "
+                if character == "'":
+                    state = None
+                index += 1
+                continue
+            if state in {'"', "`"}:
+                masked[index] = " "
+                if character == "\\" and index + 1 < len(line):
+                    masked[index + 1] = " "
+                    index += 2
+                    continue
+                if character == state:
+                    state = None
+                index += 1
+                continue
+            if character == "#" and (
+                index == 0 or line[index - 1].isspace()
+            ):
+                masked[index:] = [" "] * (len(line) - index)
+                break
+            if character == "\\" and index + 1 < len(line):
+                masked[index] = " "
+                masked[index + 1] = " "
+                index += 2
+                continue
+            if character in {"'", '"', "`"}:
+                state = character
+                masked[index] = " "
+            index += 1
+        return "".join(masked), state
+
+    for raw_line in prefix.splitlines():
+        if active_heredoc is not None:
+            delimiter, strip_tabs = active_heredoc
+            candidate = raw_line.lstrip("\t") if strip_tabs else raw_line
+            if candidate == delimiter:
+                active_heredoc = None
+            continue
+
+        heredoc_match = (
+            None
+            if quote_state is not None
+            else heredoc_start.search(raw_line)
+        )
+        if heredoc_match is not None:
+            delimiter = next(
+                group
+                for group in heredoc_match.groups()[1:]
+                if group is not None
+            )
+            active_heredoc = (delimiter, heredoc_match.group(1) == "-")
+
+        if inside_function:
+            if raw_line == "}":
+                inside_function = False
+            continue
+
+        masked_line, quote_state = mask_quoted_shell_text(
+            raw_line,
+            quote_state,
+        )
+        stripped = masked_line.strip()
+        if not stripped:
+            continue
+        if function_start.fullmatch(stripped):
+            inside_function = True
+            continue
+        if heredoc_match is not None:
+            continue
+
+        closing_group = re.match(
+            r"^([})])(?:\s*(?:;|&&|\|\|))?\s*$",
+            stripped,
+        )
+        if closing_group is not None:
+            if group_stack:
+                group_stack.pop()
+            pending_command_chain = bool(
+                re.search(r"(?:&&|\|\|)\s*$", stripped)
+            )
+            continue
+        if re.search(r"(?:^|&&|\|\||[;&|])\s*\{\s*$", stripped):
+            group_stack.append("brace")
+            pending_command_chain = False
+            continue
+        if re.search(r"(?:^|&&|\|\||[;&|])\s*\(\s*$", stripped):
+            group_stack.append("subshell")
+            pending_command_chain = False
+            continue
+
+        closing_control = re.match(r"^(fi|done|esac)\b", stripped)
+        if closing_control is not None:
+            if control_stack:
+                control_stack.pop()
+            pending_command_chain = False
+            continue
+        if re.match(r"^if(?:\s|$)", stripped):
+            control_stack.append("if")
+            pending_command_chain = False
+            continue
+        if re.match(r"^(?:for|while|until)(?:\s|$)", stripped):
+            control_stack.append("loop")
+            pending_command_chain = False
+            continue
+        if re.match(r"^case(?:\s|$)", stripped):
+            control_stack.append("case")
+            pending_command_chain = False
+            continue
+        if not control_stack and not group_stack:
+            if re.match(r"^set\s+-[A-Za-z]*e[A-Za-z]*(?:\s|$)", stripped):
+                errexit_enabled = True
+            elif re.match(
+                r"^set\s+\+[A-Za-z]*e[A-Za-z]*(?:\s|$)",
+                stripped,
+            ):
+                errexit_enabled = False
+            if top_level_shell_command_definitely_terminates(
+                stripped,
+                errexit_enabled=errexit_enabled,
+            ):
+                return False
+        pending_command_chain = bool(
+            re.search(r"(?:&&|\|\||\\)\s*$", stripped)
+        )
+
+    return not (
+        active_heredoc is not None
+        or inside_function
+        or control_stack
+        or group_stack
+        or quote_state is not None
+        or pending_command_chain
+    )
+
+
+def reachable_top_level_continued_commands(
+    shell_text: str,
+    command_start: str,
+) -> list[list[str]]:
+    pattern = re.compile(
+        r"(?m)^" + re.escape(command_start) + r"\s*\\\s*$"
+    )
+    commands: list[list[str]] = []
+    for match in pattern.finditer(shell_text):
+        if not shell_prefix_reaches_top_level(shell_text[: match.start()]):
+            continue
+        command_lines: list[str] = []
+        command_is_simple = True
+        for raw_line in shell_text[match.start() :].splitlines():
+            if "#" in raw_line:
+                command_is_simple = False
+            without_comment = raw_line.split("#", 1)[0].rstrip()
+            continued = without_comment.endswith("\\")
+            if continued:
+                without_comment = without_comment[:-1].rstrip()
+            if not without_comment.strip():
+                command_is_simple = False
+            command_lines.append(without_comment)
+            if not continued:
+                break
+        tokens = [
+            token
+            for line in command_lines
+            for token in line.strip().split()
+            if token
+        ]
+        if any(
+            re.fullmatch(r"[A-Za-z0-9_./:+-]+", token) is None
+            for token in tokens
+        ):
+            command_is_simple = False
+        if command_is_simple:
+            commands.append(tokens)
+    return commands
+
+
+def current_build24_macos_local_dmg_default_gate_failures(
+    *,
+    gate_text: str | None = None,
+) -> list[str]:
+    gate_path = ROOT / "script/check_no_device_quality.sh"
+    if gate_text is None:
+        try:
+            gate_text = gate_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            return [
+                "script/check_no_device_quality.sh: cannot validate current "
+                f"Build 24 local-DMG default-gate selectors: {error}"
+            ]
+
+    expected_invocation = """\
+run python3 -I -B -S script/check_macos_build24_lifecycle_evidence.py
+run python3 -I -B -S script/check_macos_build24_idle_resource_stability_evidence.py
+run python3 script/check_docs_hygiene.py
+run python3 -B -m unittest \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_clean_home_results_match_closed_contracts \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_clean_home_sources_and_documents_are_bound \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_clean_home_validators_are_wired_into_main \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_result_and_sources_are_bound \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_documents_are_bound \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_validators_are_wired_into_main \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_uninstall_reinstall_result_and_sources_are_bound \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_uninstall_reinstall_documents_are_bound \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_uninstall_reinstall_validators_are_wired_into_main \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_uninstall_reinstall_state_recovery_result_and_sources_are_bound \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_uninstall_reinstall_state_recovery_documents_are_bound \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_uninstall_reinstall_state_recovery_validators_are_wired_into_main \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_abrupt_process_state_recovery_result_receipt_and_sources_are_bound \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_abrupt_process_state_recovery_documents_are_bound \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_local_dmg_abrupt_process_state_recovery_validators_are_wired_into_main \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_lifecycle_aggregate_sources_are_bound \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_lifecycle_aggregate_documents_are_bound \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_lifecycle_aggregate_validators_are_wired_into_main \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_result_and_sources_are_bound \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_documents_are_bound \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_validators_are_wired_into_main
+"""
+    aggregate_invocation = (
+        "run python3 -I -B -S "
+        "script/check_macos_build24_lifecycle_evidence.py"
+    )
+    aggregate_selectors = (
+        (
+            "script.test_documentation_handoff_guards."
+            "DocumentationHandoffGuardTests."
+            "test_current_build24_macos_lifecycle_aggregate_"
+            "sources_are_bound"
+        ),
+        (
+            "script.test_documentation_handoff_guards."
+            "DocumentationHandoffGuardTests."
+            "test_current_build24_macos_lifecycle_aggregate_"
+            "documents_are_bound"
+        ),
+        (
+            "script.test_documentation_handoff_guards."
+            "DocumentationHandoffGuardTests."
+            "test_current_build24_macos_lifecycle_aggregate_"
+            "validators_are_wired_into_main"
+        ),
+    )
+    idle_resource_invocation = (
+        "run python3 -I -B -S "
+        "script/check_macos_build24_idle_resource_stability_evidence.py"
+    )
+    idle_resource_selectors = (
+        (
+            "script.test_documentation_handoff_guards."
+            "DocumentationHandoffGuardTests."
+            "test_current_build24_macos_idle_resource_stability_"
+            "result_and_sources_are_bound"
+        ),
+        (
+            "script.test_documentation_handoff_guards."
+            "DocumentationHandoffGuardTests."
+            "test_current_build24_macos_idle_resource_stability_"
+            "documents_are_bound"
+        ),
+        (
+            "script.test_documentation_handoff_guards."
+            "DocumentationHandoffGuardTests."
+            "test_current_build24_macos_idle_resource_stability_"
+            "validators_are_wired_into_main"
+        ),
+    )
+    if (
+        gate_text.count(expected_invocation) != 1
+        or gate_text.count(aggregate_invocation) != 1
+        or gate_text.count(idle_resource_invocation) != 1
+        or any(gate_text.count(selector) != 1 for selector in aggregate_selectors)
+        or any(
+            gate_text.count(selector) != 1
+            for selector in idle_resource_selectors
+        )
+    ):
+        return [
+            "script/check_no_device_quality.sh: current Build 24 local-DMG "
+            "lifecycle aggregate and idle-resource selectors and static "
+            "checkers must appear exactly once in the active invocation "
+            "immediately before and after docs hygiene."
+        ]
+    syntax_commands = reachable_top_level_continued_commands(
+        gate_text,
+        "run check_python_syntax",
+    )
+    if (
+        len(syntax_commands) != 1
+        or syntax_commands[0][:2] != ["run", "check_python_syntax"]
+        or any(
+            re.fullmatch(r"script/[A-Za-z0-9_./-]+\.py", token) is None
+            for token in syntax_commands[0][2:]
+        )
+        or any(
+            syntax_commands[0].count(path) != 1
+            for path in (
+                "script/check_macos_build24_lifecycle_evidence.py",
+                "script/test_check_macos_build24_lifecycle_evidence.py",
+                (
+                    "script/check_macos_build24_"
+                    "idle_resource_stability_evidence.py"
+                ),
+                (
+                    "script/test_check_macos_build24_"
+                    "idle_resource_stability_evidence.py"
+                ),
+                (
+                    "script/run_macos_build24_"
+                    "idle_resource_stability_smoke.py"
+                ),
+                (
+                    "script/test_run_macos_build24_"
+                    "idle_resource_stability_smoke.py"
+                ),
+                "script/run_macos_local_dmg_uninstall_reinstall_smoke.py",
+                "script/test_run_macos_local_dmg_uninstall_reinstall_smoke.py",
+                (
+                    "script/run_macos_local_dmg_uninstall_reinstall_"
+                    "state_recovery_smoke.py"
+                ),
+                (
+                    "script/test_run_macos_local_dmg_uninstall_reinstall_"
+                    "state_recovery_smoke.py"
+                ),
+                (
+                    "script/run_macos_local_dmg_uninstall_reinstall_"
+                    "abrupt_process_state_recovery_smoke.py"
+                ),
+                (
+                    "script/test_run_macos_local_dmg_uninstall_reinstall_"
+                    "abrupt_process_state_recovery_smoke.py"
+                ),
+            )
+        )
+    ):
+        return [
+            "script/check_no_device_quality.sh: current Build 24 lifecycle "
+            "aggregate and idle-resource checker/test plus the idle and "
+            "same-DMG lifecycle runner/test must each appear exactly once "
+            "in the reachable top-level Python syntax inventory."
+        ]
+    unit_commands = reachable_top_level_continued_commands(
+        gate_text,
+        "run python3 -m unittest",
+    )
+    full_unit_commands = [
+        command
+        for command in unit_commands
+        if (
+            command[:4] == ["run", "python3", "-m", "unittest"]
+            and all(
+                re.fullmatch(
+                    r"script/[A-Za-z0-9_./-]+\.py",
+                    token,
+                )
+                is not None
+                for token in command[4:]
+            )
+            and "script/test_v1_g0_checkpoint.py" in command
+            and "script/test_android_usb_install.py" in command
+        )
+    ]
+    required_unit_paths = (
+        "script/test_check_macos_build24_lifecycle_evidence.py",
+        (
+            "script/test_check_macos_build24_"
+            "idle_resource_stability_evidence.py"
+        ),
+        (
+            "script/test_run_macos_build24_"
+            "idle_resource_stability_smoke.py"
+        ),
+        "script/test_release_version_ledger.py",
+        "script/test_run_macos_packaged_app_lifecycle_smoke.py",
+        "script/test_run_macos_packaged_app_state_recovery_smoke.py",
+        "script/test_run_macos_clean_home_installed_app_smoke.py",
+        "script/test_run_macos_clean_home_installed_state_recovery_smoke.py",
+        "script/test_run_macos_isolated_uninstall_reinstall_smoke.py",
+        "script/test_run_macos_isolated_upgrade_smoke.py",
+        "script/test_run_macos_local_dmg_install_smoke.py",
+        "script/test_run_macos_local_dmg_install_smoke_v2.py",
+        "script/test_run_macos_local_dmg_uninstall_reinstall_smoke.py",
+        (
+            "script/test_run_macos_local_dmg_uninstall_reinstall_"
+            "state_recovery_smoke.py"
+        ),
+        (
+            "script/test_run_macos_local_dmg_uninstall_reinstall_"
+            "abrupt_process_state_recovery_smoke.py"
+        ),
+    )
+    if (
+        len(full_unit_commands) != 1
+        or any(
+            full_unit_commands[0].count(path) != 1
+            for path in required_unit_paths
+        )
+    ):
+        return [
+            "script/check_no_device_quality.sh: current Build 24 lifecycle "
+            "aggregate test, idle-resource checker/runner tests, and all "
+            "12 byte-bound focused lifecycle unit modules must each appear "
+            "exactly once in the "
+            "reachable top-level full Python unittest inventory."
+        ]
+
+    if re.search(
+        r"(?m)^run\s+python3(?:\s+\S+)*\s+"
+        r"script/run_macos_build24_idle_resource_stability_smoke\.py(?:\s|$)",
+        gate_text,
+    ):
+        return [
+            "script/check_no_device_quality.sh: the retained ten-minute "
+            "idle-resource runner must not execute in the default gate."
+        ]
+
+    invocation_index = gate_text.index(expected_invocation)
+    if not shell_prefix_reaches_top_level(gate_text[:invocation_index]):
+        return [
+            "script/check_no_device_quality.sh: current Build 24 local-DMG "
+            "selector invocation must execute at reachable top-level shell "
+            "scope before any definite terminator."
+        ]
+    return []
 
 
 def current_android_drawer_search_document_failures(
@@ -7953,7 +13592,15 @@ def historical_local_release_document_failures(
     *,
     ledger_bytes: bytes | None = None,
     document_text_by_build: dict[int, str] | None = None,
+    document_bytes_by_build: dict[int, bytes] | None = None,
 ) -> list[str]:
+    if (
+        document_text_by_build is not None
+        and document_bytes_by_build is not None
+    ):
+        return [
+            "historical release documents: inject text or bytes, not both."
+        ]
     try:
         raw_ledger = (
             LOCAL_RELEASE_LEDGER.read_bytes()
@@ -7973,7 +13620,10 @@ def historical_local_release_document_failures(
             "docs/releases/"
             f"{entry.marketing_version}-build-{entry.build_number}-local-v1.md"
         )
-        if document_text_by_build is None:
+        if (
+            document_text_by_build is None
+            and document_bytes_by_build is None
+        ):
             path = ROOT / relative
             if not path.is_file():
                 failures.append(
@@ -7981,11 +13631,29 @@ def historical_local_release_document_failures(
                 )
                 continue
             try:
-                document_text = path.read_text(encoding="utf-8")
+                document_bytes = path.read_bytes()
+                document_text = document_bytes.decode("utf-8")
             except (OSError, UnicodeError) as error:
                 failures.append(
                     f"{relative}: unreadable historical local release "
                     f"record: {error}"
+                )
+                continue
+        elif document_bytes_by_build is not None:
+            document_bytes = document_bytes_by_build.get(
+                entry.build_number
+            )
+            if document_bytes is None:
+                failures.append(
+                    f"{relative}: missing injected historical release record."
+                )
+                continue
+            try:
+                document_text = document_bytes.decode("utf-8")
+            except UnicodeError as error:
+                failures.append(
+                    f"{relative}: unreadable injected historical local "
+                    f"release record: {error}"
                 )
                 continue
         else:
@@ -7995,6 +13663,7 @@ def historical_local_release_document_failures(
                     f"{relative}: missing injected historical release record."
                 )
                 continue
+            document_bytes = document_text.encode("utf-8")
 
         release_id = (
             f"aetherlink-{entry.marketing_version}"
@@ -8065,6 +13734,21 @@ def historical_local_release_document_failures(
                 f"{relative}: historical readback mode must appear exactly "
                 f"once; found {historical_mode_count}."
             )
+        expected_document_sha256 = (
+            HISTORICAL_RELEASE_DOCUMENT_SHA256_BY_BUILD.get(
+                entry.build_number
+            )
+        )
+        if expected_document_sha256 is not None:
+            observed_document_sha256 = hashlib.sha256(
+                document_bytes
+            ).hexdigest()
+            if observed_document_sha256 != expected_document_sha256:
+                failures.append(
+                    f"{relative}: exact immutable document SHA-256 must remain "
+                    f"{expected_document_sha256}; found "
+                    f"{observed_document_sha256}."
+                )
         if entry.build_number == HISTORICAL_BUILD17_BUILD_NUMBER:
             failures.extend(
                 historical_build17_release_document_failures(document_text)
@@ -8809,7 +14493,33 @@ def main() -> int:
     failures.extend(
         current_macos_clean_home_installed_state_recovery_evidence_failures()
     )
+    failures.extend(
+        current_build24_macos_clean_home_installed_app_evidence_failures()
+    )
+    failures.extend(
+        current_build24_macos_clean_home_installed_state_recovery_evidence_failures()
+    )
     failures.extend(current_macos_local_dmg_install_evidence_failures())
+    failures.extend(
+        current_build24_macos_local_dmg_install_evidence_failures()
+    )
+    failures.extend(
+        current_build24_macos_local_dmg_uninstall_reinstall_evidence_failures()
+    )
+    failures.extend(
+        current_build24_macos_local_dmg_uninstall_reinstall_state_recovery_evidence_failures()
+    )
+    failures.extend(
+        current_build24_macos_local_dmg_abrupt_process_state_recovery_evidence_failures()
+    )
+    failures.extend(
+        current_build24_macos_lifecycle_aggregate_evidence_failures()
+    )
+    failures.extend(
+        current_build24_macos_idle_resource_stability_evidence_failures()
+    )
+    failures.extend(current_macos_isolated_upgrade_evidence_failures())
+    failures.extend(current_macos_isolated_upgrade_document_failures())
     failures.extend(
         current_runtime_chat_sqlite_cross_process_document_failures()
     )
@@ -8821,6 +14531,30 @@ def main() -> int:
         current_runtime_chat_sqlite_abrupt_recovery_evidence_failures()
     )
     failures.extend(current_macos_clean_home_lifecycle_document_failures())
+    failures.extend(
+        current_build24_macos_clean_home_lifecycle_document_failures()
+    )
+    failures.extend(
+        current_build24_macos_local_dmg_lifecycle_document_failures()
+    )
+    failures.extend(
+        current_build24_macos_local_dmg_uninstall_reinstall_document_failures()
+    )
+    failures.extend(
+        current_build24_macos_local_dmg_uninstall_reinstall_state_recovery_document_failures()
+    )
+    failures.extend(
+        current_build24_macos_local_dmg_abrupt_process_state_recovery_document_failures()
+    )
+    failures.extend(
+        current_build24_macos_lifecycle_aggregate_document_failures()
+    )
+    failures.extend(
+        current_build24_macos_idle_resource_stability_document_failures()
+    )
+    failures.extend(
+        current_build24_macos_local_dmg_default_gate_failures()
+    )
     failures.extend(current_android_drawer_search_document_failures())
     failures.extend(macos_clean_home_installed_app_evidence_failures())
     failures.extend(

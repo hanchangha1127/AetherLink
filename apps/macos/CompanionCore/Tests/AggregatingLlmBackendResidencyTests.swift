@@ -3,6 +3,39 @@ import OllamaBackend
 import XCTest
 
 final class AggregatingLlmBackendResidencyTests: XCTestCase {
+    func testProviderScopedHealthChecksOnlyRequestedProvider() async {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            healthStatus: .available
+        )
+        let lmStudioError = BackendError(
+            provider: .lmStudio,
+            code: "backend_unavailable",
+            message: "LM Studio is unavailable.",
+            retryable: true
+        )
+        let lmStudio = ResidencyTestBackend(
+            provider: .lmStudio,
+            healthStatus: .unavailable(lmStudioError)
+        )
+        let backend = AggregatingLlmBackend([ollama, lmStudio])
+
+        let status = await backend.providerHealth(for: .lmStudio)
+        let missing = await backend.providerHealth(for: .aggregate)
+
+        XCTAssertEqual(status, .unavailable(lmStudioError))
+        XCTAssertEqual(ollama.healthCheckCallCount, 0)
+        XCTAssertEqual(lmStudio.healthCheckCallCount, 1)
+        guard case .unavailable(let missingError) = missing else {
+            XCTFail("Expected an unconfigured provider result.")
+            return
+        }
+        XCTAssertEqual(missingError.code, "provider_not_configured")
+        XCTAssertFalse(missingError.retryable)
+        XCTAssertEqual(ollama.healthCheckCallCount, 0)
+        XCTAssertEqual(lmStudio.healthCheckCallCount, 1)
+    }
+
     func testListModelsPropagatesCancellationInsteadOfReturningPartialCatalog() async {
         let ollama = ResidencyTestBackend(
             provider: .ollama,
@@ -1662,6 +1695,7 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
     private let controlledChatEventBurst: ControlledChatEventBurst?
     private let providerUsageSource: ChatProviderUsageSource?
     private let modelListError: Error?
+    private let healthStatus: BackendStatus
     private let modelListStarted = DispatchSemaphore(value: 0)
     private let unloadStarted = DispatchSemaphore(value: 0)
     private var modelListReleased = false
@@ -1669,6 +1703,7 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
     private var unloadReleased = false
     private var unloadReleaseContinuations: [CheckedContinuation<Void, Never>] = []
     private var modelListCalls = 0
+    private var healthCheckCalls = 0
     private var unloaded: [String] = []
     private var routed: [String] = []
     private var embedded: [EmbeddingRequest] = []
@@ -1695,6 +1730,10 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
         lock.withLock { modelListCalls }
     }
 
+    var healthCheckCallCount: Int {
+        lock.withLock { healthCheckCalls }
+    }
+
     init(
         provider: ModelProvider,
         models: [ModelInfo] = [],
@@ -1706,7 +1745,8 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
         holdsUnloadsOpen: Bool = false,
         controlledChatEventBurst: ControlledChatEventBurst? = nil,
         providerUsageSource: ChatProviderUsageSource? = nil,
-        modelListError: Error? = nil
+        modelListError: Error? = nil,
+        healthStatus: BackendStatus = .available
     ) {
         self.provider = provider
         self.models = models
@@ -1719,10 +1759,14 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
         self.controlledChatEventBurst = controlledChatEventBurst
         self.providerUsageSource = providerUsageSource
         self.modelListError = modelListError
+        self.healthStatus = healthStatus
     }
 
     func healthCheck() async -> BackendStatus {
-        .available
+        lock.withLock {
+            healthCheckCalls += 1
+        }
+        return healthStatus
     }
 
     func listModels() async throws -> [ModelInfo] {

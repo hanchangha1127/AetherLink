@@ -16,10 +16,10 @@ from typing import Optional
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github/workflows/product-quality.yml"
 CANONICAL_WORKFLOW_SHA256 = (
-    "2b37513e5a8e6ef92220abb8bad47f433fb75f4bf908bea72a559921dab1b8ac"
+    "ae14952ea4962d0cafd3c1962b7e5ad4fe072cf60d0a7462477925191662bd87"
 )
 CANONICAL_PARSED_WORKFLOW_SHA256 = (
-    "b19d82f91cf167ee7915a16fdc63caa9a8c5814b94d89c9586f9d5f4137633f9"
+    "d72190613999799b556af6db67316a144e2159cb13c8e525b283d083a9d52005"
 )
 
 REQUIRED_WORKFLOW_PREFIX = """name: Product quality (non-security subset)
@@ -68,9 +68,31 @@ MAIN_RELEASE_CONDITION = (
 
 SWIFT_FILTER = (
     "DocumentIngestorTests|DocumentTextExtractorTests|DocumentChunkerTests|"
-    "AggregatingLlmBackendResidencyTests|RuntimeModelIdleUnloadPolicyTests|"
+    "AggregatingLlmBackendResidencyTests|ProviderHealthRecoveryTests|"
+    "RuntimeModelIdleUnloadPolicyTests|"
     "RuntimeChatContextCompactionPlannerTests|"
     "RuntimeSemanticChatSessionSearchTests|RuntimeSemanticMemorySearchTests|"
+    "AppLifecycleTests|"
+    "LocalRuntimeMessageRouterTests/"
+    "testApplicationTerminationRejectsNewRequestsAndDrainsRetiringTasks|"
+    "LocalRuntimeMessageRouterTests/"
+    "testApplicationTerminationDrainsRequestBlockedDuringRegistration|"
+    "LocalRuntimeMessageRouterTests/"
+    "testApplicationTerminationWaitsForChatTitleCancellationDispatch|"
+    "LocalRuntimeMessageRouterTests/"
+    "testApplicationTerminationWaitsForMemorySummaryCancellationDispatch|"
+    "LocalRuntimeMessageRouterTests/"
+    "testApplicationTerminationWaitsForDeferredSummaryPublicationAndPersistence|"
+    "LocalRuntimeMessageRouterTests/"
+    "testApplicationTerminationDrainsFailedDeferredSummaryPublicationWithoutPersistence|"
+    "LocalRuntimeMessageRouterTests/"
+    "testMemorySummaryDraftGeneratePublishesBeforeBlockingDurableCache|"
+    "LocalRuntimeMessageRouterTests/"
+    "testCompanionAppModelTerminationCancelsAndDrainsRuntimeChatRetentionMaintenance|"
+    "OllamaBackendHealthTimeoutTests/"
+    "testHealthCheckUsesFiveSecondsWhileCatalogRetainsSixtySeconds|"
+    "LMStudioBackendHealthTimeoutTests/"
+    "testHealthCheckUsesFiveSecondsWhileCatalogRetainsSixtySeconds|"
     "BonjourAdvertiserTests|"
     "LocalPeerServerTests/"
     "testLocalPeerServerReportsListenerStartAndExplicitStop|"
@@ -100,6 +122,16 @@ SWIFT_FILTER = (
     "testSupersededLocalStatusCallbackCannotStopReplacement|"
     "MacRuntimeConnectionManagerTests/"
     "testStoppedLocalStatusCallbackIsIgnoredAfterExplicitStop|"
+    "MacRuntimeConnectionManagerTests/"
+    "testStopAllStopsLocalAdvertiserBootstrapAndPairsExactlyOnce|"
+    "LocalRuntimeMessageRouterTests/"
+    "testCompanionAppModelSuspendsAndResumesActiveRuntimeOnceAtSamePort|"
+    "LocalRuntimeMessageRouterTests/"
+    "testCompanionAppModelSuspendsStartingRuntimeAndIgnoresPreSleepCallbacks|"
+    "LocalRuntimeMessageRouterTests/"
+    "testCompanionAppModelDoesNotResumeStoppedOrFailedRuntimeAfterSystemWake|"
+    "LocalRuntimeMessageRouterTests/"
+    "testCompanionAppModelStartsReplaceableTransportAndStopsIt|"
     "LocalRuntimeMessageRouterTests/"
     "testCompanionAppModelUserInterfaceStartCanRetryAfterListenerFailure|"
     "LocalRuntimeMessageRouterTests/"
@@ -156,6 +188,10 @@ ANDROID_TESTS = (
         "RuntimeAttachmentPromptResourceTest"
     ),
     (
+        "com.localagentbridge.android."
+        "PairingQrScannerChromeNoDeviceComposeTest"
+    ),
+    (
         "com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest."
         "chatScreenSessionBoundaryResetsLatestWhileSameSessionUpdatesKeepPosition"
     ),
@@ -189,6 +225,7 @@ ANDROID_TEST_STEP_BODY = (
     f"          --tests {ANDROID_TESTS[1]}\n"
     f"          --tests {ANDROID_TESTS[2]}\n"
     f"          --tests {ANDROID_TESTS[3]}\n"
+    f"          --tests {ANDROID_TESTS[4]}\n"
 )
 
 ANDROID_RELEASE_STEP_BODY = (
@@ -904,6 +941,157 @@ def self_test(workflow: str) -> list[str]:
             ),
             "exact command body",
         ),
+        "missing AppKit termination lifecycle regressions": (
+            workflow.replace(
+                "AppLifecycleTests|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing active-request termination drain regression": (
+            workflow.replace(
+                "LocalRuntimeMessageRouterTests/"
+                "testApplicationTerminationRejectsNewRequestsAndDrainsRetiringTasks|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing request-registration termination drain regression": (
+            workflow.replace(
+                "LocalRuntimeMessageRouterTests/"
+                "testApplicationTerminationDrainsRequestBlockedDuringRegistration|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing chat-title cancellation drain regression": (
+            workflow.replace(
+                "LocalRuntimeMessageRouterTests/"
+                "testApplicationTerminationWaitsForChatTitleCancellationDispatch|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing memory-summary cancellation drain regression": (
+            workflow.replace(
+                "LocalRuntimeMessageRouterTests/"
+                "testApplicationTerminationWaitsForMemorySummaryCancellationDispatch|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing deferred publication success drain regression": (
+            workflow.replace(
+                "LocalRuntimeMessageRouterTests/"
+                "testApplicationTerminationWaitsForDeferredSummaryPublicationAndPersistence|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing deferred publication failure drain regression": (
+            workflow.replace(
+                "LocalRuntimeMessageRouterTests/"
+                "testApplicationTerminationDrainsFailedDeferredSummaryPublicationWithoutPersistence|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing queued persistence drain regression": (
+            workflow.replace(
+                "LocalRuntimeMessageRouterTests/"
+                "testMemorySummaryDraftGeneratePublishesBeforeBlockingDurableCache|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing retention maintenance drain regression": (
+            workflow.replace(
+                "LocalRuntimeMessageRouterTests/"
+                "testCompanionAppModelTerminationCancelsAndDrainsRuntimeChatRetentionMaintenance|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing provider health recovery regressions": (
+            workflow.replace(
+                "ProviderHealthRecoveryTests|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing Ollama health timeout regression": (
+            workflow.replace(
+                "OllamaBackendHealthTimeoutTests/"
+                "testHealthCheckUsesFiveSecondsWhileCatalogRetainsSixtySeconds|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing LM Studio health timeout regression": (
+            workflow.replace(
+                "LMStudioBackendHealthTimeoutTests/"
+                "testHealthCheckUsesFiveSecondsWhileCatalogRetainsSixtySeconds|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing active Runtime sleep-wake regression": (
+            workflow.replace(
+                "LocalRuntimeMessageRouterTests/"
+                "testCompanionAppModelSuspendsAndResumesActiveRuntimeOnceAtSamePort|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing starting Runtime sleep-wake generation regression": (
+            workflow.replace(
+                "LocalRuntimeMessageRouterTests/"
+                "testCompanionAppModelSuspendsStartingRuntimeAndIgnoresPreSleepCallbacks|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing stopped or failed Runtime wake regression": (
+            workflow.replace(
+                "LocalRuntimeMessageRouterTests/"
+                "testCompanionAppModelDoesNotResumeStoppedOrFailedRuntimeAfterSystemWake|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing Runtime model stop regression": (
+            workflow.replace(
+                "LocalRuntimeMessageRouterTests/"
+                "testCompanionAppModelStartsReplaceableTransportAndStopsIt|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
+        "missing manager stop-all idempotency regression": (
+            workflow.replace(
+                "MacRuntimeConnectionManagerTests/"
+                "testStopAllStopsLocalAdvertiserBootstrapAndPairsExactlyOnce|",
+                "",
+                1,
+            ),
+            "exact command body",
+        ),
         "missing Runtime retry regression": (
             workflow.replace(
                 "LocalRuntimeMessageRouterTests/"
@@ -1103,6 +1291,14 @@ def self_test(workflow: str) -> list[str]:
         "missing Android session-boundary regression": (
             workflow.replace(
                 f"          --tests {ANDROID_TESTS[-1]}\n",
+                "",
+                1,
+            ),
+            "exact allowlist",
+        ),
+        "missing Android camera permission lifecycle regressions": (
+            workflow.replace(
+                f"          --tests {ANDROID_TESTS[-2]}\n",
                 "",
                 1,
             ),

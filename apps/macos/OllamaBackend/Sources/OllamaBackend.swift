@@ -9,6 +9,7 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
     private static let maximumConcurrentModelDetailRequests = 4
     private static let defaultDataResponseByteLimit = 32 * 1_024 * 1_024
     private static let defaultDataResponseTimeout: TimeInterval = 60
+    private static let defaultHealthResponseTimeout: TimeInterval = 5
 
     private let baseURL: URL
     private let session: URLSession
@@ -18,6 +19,7 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
     private let catalogResponseByteLimit: Int
     private let dataResponseByteLimit: Int
     private let dataResponseTimeout: TimeInterval
+    private let healthResponseTimeout: TimeInterval
     private let streamLimits: OllamaStreamLimits
     private let registry = GenerationRegistry()
     private let encoder = JSONEncoder()
@@ -32,6 +34,7 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         self.catalogResponseByteLimit = ModelInfo.maximumCatalogResponseBytes
         self.dataResponseByteLimit = Self.defaultDataResponseByteLimit
         self.dataResponseTimeout = Self.defaultDataResponseTimeout
+        self.healthResponseTimeout = Self.defaultHealthResponseTimeout
         self.streamLimits = OllamaStreamLimits()
     }
 
@@ -42,6 +45,7 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         catalogResponseByteLimit: Int = ModelInfo.maximumCatalogResponseBytes,
         dataResponseByteLimit: Int = defaultDataResponseByteLimit,
         dataResponseTimeout: TimeInterval = defaultDataResponseTimeout,
+        healthResponseTimeout: TimeInterval = defaultHealthResponseTimeout,
         streamLimits: OllamaStreamLimits = OllamaStreamLimits(),
         unloadPollIntervalNanoseconds: UInt64 = 0,
         unloadSleeper: @escaping @Sendable (UInt64) async throws -> Void = { _ in }
@@ -52,6 +56,9 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         self.catalogResponseByteLimit = max(0, catalogResponseByteLimit)
         self.dataResponseByteLimit = max(0, dataResponseByteLimit)
         self.dataResponseTimeout = Self.normalizedDataResponseTimeout(dataResponseTimeout)
+        self.healthResponseTimeout = Self.normalizedDataResponseTimeout(
+            healthResponseTimeout
+        )
         self.streamLimits = streamLimits
         self.unloadPollIntervalNanoseconds = unloadPollIntervalNanoseconds
         self.unloadSleeper = unloadSleeper
@@ -60,7 +67,11 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
     public func healthCheck() async -> BackendStatus {
         do {
             let endpoint = "GET /api/tags"
-            let data = try await performCatalogDataRequest(endpoint: endpoint, url: baseURL.appending(path: "api/tags"))
+            let data = try await performCatalogDataRequest(
+                endpoint: endpoint,
+                url: baseURL.appending(path: "api/tags"),
+                timeout: healthResponseTimeout
+            )
             _ = try decodeTagsResponse(data, endpoint: endpoint)
             return .available
         } catch let error as OllamaBackendError {
@@ -555,12 +566,17 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         try ModelInfo.validateForCatalogPublication(candidate)
     }
 
-    private func performCatalogDataRequest(endpoint: String, url: URL) async throws -> Data {
+    private func performCatalogDataRequest(
+        endpoint: String,
+        url: URL,
+        timeout: TimeInterval? = nil
+    ) async throws -> Data {
         do {
             return try await performBoundedDataRequest(
                 endpoint: endpoint,
                 request: URLRequest(url: url),
-                byteLimit: catalogResponseByteLimit
+                byteLimit: catalogResponseByteLimit,
+                timeout: timeout
             )
         } catch OllamaCatalogIngestionError.responseTooLarge {
             throw OllamaBackendError.responseDecoding(
@@ -573,16 +589,21 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
     private func performBoundedDataRequest(
         endpoint: String,
         request: URLRequest,
-        byteLimit: Int
+        byteLimit: Int,
+        timeout: TimeInterval? = nil
     ) async throws -> Data {
         do {
-            let timeoutNanoseconds = UInt64(dataResponseTimeout * 1_000_000_000)
+            let resolvedTimeout = timeout ?? dataResponseTimeout
+            let timeoutNanoseconds = UInt64(
+                resolvedTimeout * 1_000_000_000
+            )
             return try await withThrowingTaskGroup(of: Data.self) { group in
                 group.addTask { [self] in
                     try await collectBoundedDataResponse(
                         endpoint: endpoint,
                         request: request,
-                        byteLimit: byteLimit
+                        byteLimit: byteLimit,
+                        timeout: resolvedTimeout
                     )
                 }
                 group.addTask {
@@ -617,10 +638,11 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
     private func collectBoundedDataResponse(
         endpoint: String,
         request: URLRequest,
-        byteLimit: Int
+        byteLimit: Int,
+        timeout: TimeInterval
     ) async throws -> Data {
         var boundedRequest = request
-        boundedRequest.timeoutInterval = dataResponseTimeout
+        boundedRequest.timeoutInterval = timeout
         let (bytes, response) = try await session.bytes(for: boundedRequest)
         do {
             guard let http = response as? HTTPURLResponse else {

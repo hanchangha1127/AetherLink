@@ -2,7 +2,7 @@
 
 ## Canonical V1 Delivery Roadmap
 
-Last revised: 2026-07-30 KST.
+Last revised: 2026-07-31 KST.
 
 This section is the canonical forward plan for the first production release of
 AetherLink. It supersedes the shipping order implied by the historical feature
@@ -20,6 +20,21 @@ Active implementation is limited to non-security feature, UX, accessibility,
 performance, build, and release-quality work at the user's direction. The G2
 security track below is paused and retained as historical roadmap context; it
 is not the next action.
+
+The current Android G5 camera-permission slice moves request history above the
+conditional QR scanner screen and models `NeverAsked`, `RequestInFlight`,
+`RetryRequired`, `RationaleRequired`, `SettingsRecovery`, and `Granted`
+explicitly. A checked app-private `LaunchPending -> Recorded` transaction
+precedes and follows launcher acceptance. Storage failure suppresses launch;
+launcher failure and incomplete completion become manual retry rather than an
+automatic loop or false Settings recovery. Production wiring also reconciles
+OS permission and stale in-flight state on `ON_RESUME`. Thirteen pure
+resolver/transaction and Compose regressions and the exact 20-test Android
+product selector pass; static hygiene guards the controller wiring. This is
+no-device current-source evidence after immutable Build 24, not execution of
+the lifecycle observer or Android permission delivery. Physical
+permission-dialog behavior, camera startup, optical QR recognition, TalkBack,
+release binaries, and G5 completion remain unproven.
 
 The current macOS G5/G6 lifecycle slice closes both listener and Bonjour false
 readiness. `LocalPeerServer` reports `.listening` only after the operating system
@@ -41,7 +56,7 @@ and immediate advertisement failure after asynchronous listener readiness is
 forwarded before ownership cleanup. Status handlers run outside the lifecycle
 lock so a handler can coordinate a stop on another queue without lock
 inversion. Seven advertiser tests, all 39 manager tests, two focused AppModel
-regressions, and the exact 180-test non-security product
+regressions, and the exact 217-test non-security product
 selector pass.
 This is local no-device lifecycle evidence only, not external-network discovery,
 device, performance, security, signing, deployment, or release qualification.
@@ -65,11 +80,32 @@ through the standalone APK and composite direct-plus-derived AAB paths. The
 claim intentionally excludes unrelated activities merged from dependencies;
 it is a closed MainActivity entry-point contract rather than a complete
 application-component inventory. The
-gate is deliberately inactive for immutable Builds 1 through 22; Build 22
-archive-only readback and Builds 1 through 21 historical readback all pass. No
-Build 23 release, ledger bump, archive rewrite, device run, visual
-launcher/theme observation, signing, publication, permission analysis, or
-network claim is part of this slice.
+gate is deliberately inactive for immutable Builds 1 through 22. At the
+preflight stage, no canonical Build 23 release existed; an isolated
+current-source `1.0.0+23` candidate passed offline strict-lock APK/AAB/lint generation and
+builder-versus-independent-checker real-tool parity. Its APK and AAB SHA-256
+identities are
+`ecbd83e71889d43134c121f057df7cf38e2e04a08a95fc7588f10e3ee6521ea9`
+and
+`af9b77eb7d13563a45cab5b7fe10bc71ba47caa633f4eaedbf719278f80e06fa`.
+That temporary candidate did not bump the canonical ledger or create/rewrite
+an archive. A later ordinary-wrapper run retained
+`dist/releases/aetherlink-1.0.0+23-local-v1/`; its 166,859,521-byte ZIP SHA-256
+is `b9a9c3c2ebeb01fc735fed3356f1f244178fb4521c1a806dc7a93d776f83ea2e`.
+The subsequent Build 23 comparison-only candidate was not published. Its
+19,645-byte result at
+`dist/reproducibility/aetherlink-1.0.0+23-local-v1-two-root-v4-prepublication.json`
+has SHA-256
+`e82cfc2b2cf005ace6f5405065b997f7fb66a1338d1bf3d3fe082d1b9863b297`.
+Its
+166,345,274-byte ZIP SHA-256
+`f9bee58ed228e31103bfd3929d2b2ba9c4fd30cb3fbc907b6f39f2d287239ffb`
+differed from the retained archive only in the macOS executable, dSYM DWARF
+member, and relocation member. Build 23 is therefore a retained historical
+ordinary-wrapper archive, not the canonical qualified two-root lineage. No
+device run, visual launcher/theme observation, distribution signing,
+publication to an external service, permission analysis, or network claim is
+part of this slice.
 
 The current G6 non-security slice isolates macOS packaging from the running
 development app. Package-only performs a clean default Swift build into
@@ -85,8 +121,339 @@ This closes one bounded macOS uninstall/reinstall and packaging-isolation gap.
 It does not qualify N/N-1 upgrade, rollback, automatic data cleanup,
 clean-machine/Finder installation, signing/distribution, providers, networks,
 UI, or physical devices.
-The latest immutable ledger archive is `aetherlink-1.0.0+22-local-v1`.
-Builds 1 through 21 remain separately readable historical archives.
+The latest immutable ledger archive is `aetherlink-1.0.0+24-local-v1`.
+Builds 1 through 23 remain separately readable historical archives.
+
+<!-- aetherlink-current-build23-to-24-isolated-upgrade-v2:start -->
+The current G6 non-security lifecycle slice adds one post-archive Build
+23-to-Build 24 upgrade observation. The runner snapshots each archive's exact
+ZIP, manifest, and checksum sidecar, then uses those same bytes for archive
+readback, extraction, and exercise before rehashing them unchanged. It installs
+Build 23 under a temporary HOME, migrates one fixed Runtime-chat canary,
+replaces only the exact app path with the manifest-matched Build 24 tree, then
+performs two Build 24 SQLite-only readbacks. All three SQLite files pass
+integrity, the canary remains exactly once, retained state bytes and modes do
+not change, three launches use distinct processes, and final removal preserves
+Application Support.
+
+Two complete runs produced the same 6,469-byte canonical result at
+`dist/lifecycle/macos-packaged-app-build-23-to-24-isolated-upgrade-v2.json`,
+SHA-256
+`ddec23cf048fa77c559ca7ee4f45354feb558f830ca4b01eccffa5b7786ea09c`.
+The 898-byte repeatability receipt at
+`dist/lifecycle/macos-packaged-app-build-23-to-24-isolated-upgrade-repeatability-v1.json`
+has SHA-256
+`886284149745c6fdd74625fab5d97c21ad35cd9b69cc2ade4353194b4ecd1733`.
+
+This post-archive runner and result were created after the immutable Build 24
+source snapshot and are not Build 23 or Build 24 archive members or source
+inputs. The evidence qualifies only the recorded same-host, per-user,
+temporary-HOME, local ad-hoc Build 23-to-24 transition in which Application
+Support was retained; it does not establish automatic data cleanup. It does
+not qualify rollback, arbitrary N/N-1 versions, clean-machine or Finder/DMG
+installation, signed distribution, physical-device behavior, provider,
+network, or UI behavior, or production-release qualification.
+<!-- aetherlink-current-build23-to-24-isolated-upgrade-v2:end -->
+
+<!-- aetherlink-current-build24-clean-home-lifecycle-v1:start -->
+The current G6 non-security Build 24 clean-HOME lifecycle slice executes the
+latest immutable archive under a temporary per-user HOME. The installed-app
+runner copied the exact ten-file manifest-matched app, completed two distinct
+LaunchServices processes, verified all three SQLite files, and kept empty
+Runtime chat plus every regular state-file byte and mode stable across
+relaunch. The canonical 2,250-byte result is at
+`dist/lifecycle/macos-packaged-app-build-24-clean-home-install-v1.json`,
+SHA-256
+`8646ff16bb5a152aab9c874c73a048a684d02e06fb3cbf7ed2f6172de51ff0c1`.
+
+The state-recovery runner installed the same Build 24 tree, migrated one fixed
+legacy Runtime-chat canary, removed the legacy source, and recovered the same
+single SQLite row from a distinct SQLite-only relaunch. Both auxiliary
+databases passed integrity checks, and the app tree plus remaining state bytes
+and modes stayed unchanged. The canonical 3,364-byte result is at
+`dist/lifecycle/macos-packaged-app-build-24-clean-home-state-recovery-v1.json`,
+SHA-256
+`d3205d662967d90d65baac6e5edc57bcc19c5f17c3963a1a3e53c95b07d44588`.
+The installed-app runner and test SHA-256 values are
+`55441bb84a9d8e4681af558dc7a1d017333c88fcdeb6ab2a84561c0ee093ca29`
+and
+`55274ad4abc958d85c4df1193cfe1508d820768fbbe48eae71a4fee8c1c020aa`;
+the state-recovery runner and test SHA-256 values are
+`9d05896a5dcce7e3d7642b41acba2ee4bf6d28ffda85bc8f3b2b645f2a3b273a`
+and
+`edfd6f89b2cecd6de5cbfcb337ba6f5643a8d74d7caf8735c467578488970664`.
+
+These result files are post-archive execution evidence and are not Build 24
+archive members. They qualify only the recorded same-host, per-user,
+temporary-HOME, local ad-hoc Build 24 installation, relaunch, and fixed-canary
+state-recovery observations. They do not establish clean-machine/account or
+DMG/Finder installation, signing/notarization, rollback, automatic data
+cleanup, physical-device behavior, provider, network, UI, accessibility, or
+production-release qualification.
+<!-- aetherlink-current-build24-clean-home-lifecycle-v1:end -->
+
+<!-- aetherlink-current-build24-local-dmg-lifecycle-v2:start -->
+The current G6 non-security Build 24 local-DMG lifecycle slice copied the
+retained ZIP, manifest, and checksum sidecar into one private snapshot.
+Archive readback, extraction, DMG creation, and the full exercise used those
+same bytes, which were rehashed unchanged afterward. The runner created an
+ephemeral HFS+ UDZO image with an Applications alias, mounted it read-only at
+one fresh path, copied the exact ten-file manifest tree with `ditto`, detached
+it before launch, and verified that no mount remained.
+
+Two distinct LaunchServices processes completed under a temporary per-user
+HOME. All three SQLite files passed integrity checks, Runtime chat remained
+empty, the runtime identity was present, and every regular app/state byte and
+mode stayed stable. The canonical 3,038-byte result is at
+`dist/lifecycle/macos-packaged-app-build-24-local-dmg-install-v2.json`,
+SHA-256
+`7d4c6ae7d892bc9d639cc8dfbe5dfb02e09ff7019ee8554f652556ba7b1bb964`.
+The v2 runner and nine-test module SHA-256 values are
+`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`
+and
+`6aa2e9e2354aa36f97ff096787ac05115c95114fcf95869463b47f39dea5006c`.
+Its preserved DMG primitive runner and shared snapshot-helper runner SHA-256
+values are
+`e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`
+and
+`abfd7bf5b0ef5154a4f001e1baafc134567a26e930714dffb0f057bcdb9fb095`.
+
+This result is post-archive execution evidence and is not a Build 24 archive
+member. It qualifies only the recorded same-host, per-user, temporary-HOME,
+local ad-hoc mount/copy/relaunch observation. It does not establish Finder
+drag-and-drop, downloaded-image quarantine or Gatekeeper behavior, system
+`/Applications`, a clean machine/account, TCC or Keychain behavior, signed,
+notarized, or stapled distribution, UI/accessibility, provider, network,
+physical-device, arbitrary-history, crash/power-loss, concurrent-writer,
+backup/restore/transfer, upgrade, rollback, production, or security
+qualification.
+<!-- aetherlink-current-build24-local-dmg-lifecycle-v2:end -->
+
+<!-- aetherlink-current-build24-local-dmg-uninstall-reinstall-v1:start -->
+The current G6 non-security Build 24 same-DMG uninstall/reinstall slice reused
+one private archive snapshot and one ephemeral HFS+ UDZO image. It mounted the
+same image bytes read-only at two distinct fresh mountpoints, copied the exact
+ten-file manifest tree with `ditto` each time, detached before each launch, and
+completed two distinct LaunchServices processes under one temporary per-user
+HOME.
+
+After each stopped launch, the runner removed only the exact temporary app
+path. Across the first removal, same-image reinstall, second launch, and final
+removal, Application Support, all three SQLite files, the runtime identity,
+and every regular state-file byte and mode remained unchanged. Two complete
+executions matched the same canonical 3,485-byte result at
+`dist/lifecycle/macos-packaged-app-build-24-local-dmg-uninstall-reinstall-v1.json`,
+SHA-256
+`1e0daba4015ae36c8d96f11c424eb08a02855d3caa2e27b7838229cd55af5649`.
+The runner and fifteen-test module SHA-256 values are
+`300740d31a5b73755f6976f8fe6ce9c0f498cf274ed72d23d5d6c372104eb5ae`
+and
+`6e782fc128aad75b20f1b04752e4754ccbf8ceaadc9e2fcabe9cc2e537bfb703`.
+The reused snapshot-bound DMG, preserved DMG primitive, exact-uninstall, and
+snapshot-helper runner SHA-256 values are, respectively,
+`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`,
+`e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`,
+`36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa`,
+and
+`abfd7bf5b0ef5154a4f001e1baafc134567a26e930714dffb0f057bcdb9fb095`.
+
+This result is post-archive execution evidence and is not a Build 24 archive
+member. It qualifies only the recorded same-host, per-user, temporary-HOME,
+same-created-image uninstall/reinstall observation. It does not establish
+Finder or system `/Applications` installation, downloaded-image quarantine or
+Gatekeeper behavior, signing/notarization/stapling, a clean machine/account,
+automatic Application Support cleanup, upgrade, rollback, UI/accessibility,
+provider, network, physical-device, production, or security qualification.
+<!-- aetherlink-current-build24-local-dmg-uninstall-reinstall-v1:end -->
+
+<!-- aetherlink-current-build24-local-dmg-uninstall-reinstall-state-recovery-v1:start -->
+The current G6 non-security Build 24 same-DMG state-recovery slice reused one
+private archive snapshot and one ephemeral HFS+ UDZO image. The first
+read-only mount installed the exact ten-file manifest tree. A distinct
+LaunchServices process migrated the fixed 345-byte legacy Runtime-chat canary
+to exactly one SQLite row, and the first exact app removal preserved the full
+Application Support tree, including the legacy source, plus the runtime
+identity without changing any regular-file byte or mode.
+
+The harness then moved only that fixed legacy source into its temporary
+preserved-fixture directory. A second fresh read-only mount of the same image
+bytes reinstalled the identical app tree without touching the remaining
+state. A distinct SQLite-only LaunchServices process read back the exact
+344-byte event once; both auxiliary databases retained `integrity_check=ok`.
+The second launch and final exact app removal preserved every remaining state
+byte and mode. Two complete executions matched the same canonical 4,996-byte
+result at
+`dist/lifecycle/macos-packaged-app-build-24-local-dmg-uninstall-reinstall-state-recovery-v1.json`,
+SHA-256
+`e3c030df6cb83586f7401de2162ac8aa14cb44fbb7c7ca05b3305d9bb4edf17e`.
+The runner and nine-test module SHA-256 values are
+`31bdae72f08f1f68bc4a07cb59d194c943d56179acf0a7b149ddc2e652c68b4c`
+and
+`22ddc7ec39aa8c88c2b69f2dd8a390a287d85eeaff4704109784e221483faee2`.
+The reused same-DMG, clean-HOME recovery, packaged-state recovery,
+snapshot-bound DMG, DMG primitive, exact-uninstall, and snapshot-helper runner
+SHA-256 values are, respectively,
+`300740d31a5b73755f6976f8fe6ce9c0f498cf274ed72d23d5d6c372104eb5ae`,
+`9d05896a5dcce7e3d7642b41acba2ee4bf6d28ffda85bc8f3b2b645f2a3b273a`,
+`4f3094182ba3b87eb2bb89230df59a14ee10e1db15def87074e66c9ed68d2eca`,
+`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`,
+`e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`,
+`36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa`,
+and
+`abfd7bf5b0ef5154a4f001e1baafc134567a26e930714dffb0f057bcdb9fb095`.
+
+The DMG, captured logs, and preserved legacy fixture were temporary and are
+not retained evidence. The canonical JSON is post-archive execution evidence,
+not a Build 24 archive member. It proves only the fixed non-empty canary under
+the recorded same-host, per-user, temporary-HOME, same-created-image flow. It
+does not prove automatic legacy or Application Support cleanup, arbitrary
+histories, Finder or system `/Applications`, quarantine or Gatekeeper,
+signing/notarization/stapling, clean-machine/account, upgrade, rollback,
+UI/accessibility, provider, network, physical-device, production, or security
+qualification.
+<!-- aetherlink-current-build24-local-dmg-uninstall-reinstall-state-recovery-v1:end -->
+
+<!-- aetherlink-current-build24-local-dmg-abrupt-process-state-recovery-v1:start -->
+The current G6 non-security Build 24 persisted-state abrupt-process recovery
+slice reused one private archive snapshot and one ephemeral HFS+ UDZO image.
+It read the retained Build 24 archive without consulting current source,
+mounted the same image bytes read-only at two distinct fresh mountpoints,
+copied the exact ten-file manifest tree with `ditto`, and detached before each
+launch.
+
+A first distinct LaunchServices process migrated the fixed 345-byte legacy
+Runtime-chat canary to exactly one 344-byte SQLite event and exited through
+bounded graceful termination. The first exact app removal preserved
+Application Support and the runtime identity. The harness then moved only the
+fixed legacy source into its temporary preserved-fixture directory, and a
+second read-only mount of the same image reinstalled the identical app tree.
+
+The runner launched that exact installed executable as a sandboxed owned child
+in SQLite-only readback mode. Only after the exact 71-byte observation and an
+independent persistence probe confirmed the committed canary and quiescent
+state did it revalidate the executable identity, send `SIGKILL`, observe exit
+code `-9`, reap that child, and prove its AppKit identity absent. The canary,
+both auxiliary databases, runtime identity, app tree, and every recorded state
+byte and mode remained unchanged immediately afterward. A third distinct
+LaunchServices process then read back the same event once before final exact
+app removal.
+
+Two complete executions matched the same canonical 7,200-byte result at
+`dist/lifecycle/macos-packaged-app-build-24-local-dmg-uninstall-reinstall-abrupt-process-state-recovery-v1.json`,
+SHA-256
+`0a7879ecea014123258a14d7f6f3790b7dc5859000941bf8faf76d2b12cb5124`.
+The separate 921-byte repeatability receipt at
+`dist/lifecycle/macos-packaged-app-build-24-local-dmg-uninstall-reinstall-abrupt-process-state-recovery-repeatability-v1.json`
+has SHA-256
+`98ec53d1018b0bebf88174a2fad514492b6ca1cff2afa1a6051e7335fabb3a36`
+and binds two passed runs to those exact result bytes. The runner and
+nineteen-test module SHA-256 values are
+`ddd2c8286d1b78541d4ed18f125b9d1867be718e0276adb9880e60929fc15ec3`
+and
+`f06479f5eb4e12d3f0072e8259e9a7b1c28e8797a423ea88b092978a4142b658`.
+The reused predecessor state-recovery, same-DMG, clean-HOME recovery,
+packaged-state recovery, snapshot-bound DMG, DMG primitive, exact-uninstall,
+and snapshot-helper runner SHA-256 values are, respectively,
+`31bdae72f08f1f68bc4a07cb59d194c943d56179acf0a7b149ddc2e652c68b4c`,
+`300740d31a5b73755f6976f8fe6ce9c0f498cf274ed72d23d5d6c372104eb5ae`,
+`9d05896a5dcce7e3d7642b41acba2ee4bf6d28ffda85bc8f3b2b645f2a3b273a`,
+`4f3094182ba3b87eb2bb89230df59a14ee10e1db15def87074e66c9ed68d2eca`,
+`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`,
+`e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`,
+`36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa`,
+and
+`abfd7bf5b0ef5154a4f001e1baafc134567a26e930714dffb0f057bcdb9fb095`.
+
+The DMG, captured logs, and preserved legacy fixture were temporary and are
+not retained evidence. Both JSON files are post-archive execution evidence,
+not Build 24 archive members. The signal occurred only after the fixed canary
+was committed and independently observed; this is not an in-flight
+transaction, hot-journal fault, write-durability, power-loss, kernel-crash,
+OS-restart, UI Force Quit, arbitrary-history, or soak result. It does not
+qualify automatic state cleanup, Finder or system `/Applications`, quarantine
+or Gatekeeper, signing/notarization/stapling, clean-machine/account, upgrade,
+rollback, UI/accessibility, provider, network, physical-device, production, or
+security behavior. The canonical G6 exit and every G7 exit tier remain
+incomplete.
+<!-- aetherlink-current-build24-local-dmg-abrupt-process-state-recovery-v1:end -->
+
+<!-- aetherlink-current-build24-macos-lifecycle-aggregate-readback-v1:start -->
+The current Build 24 non-security macOS lifecycle aggregate is the standalone
+read-only command
+`python3 -I -B -S script/check_macos_build24_lifecycle_evidence.py`.
+It opens and retains the repository root, seven exact directories, and all 40
+unique target regular-file descriptors before hashing any target. It then
+streams the exact Build 23 and Build 24 archive, manifest, and checksum
+sidecars; the terminal version ledger; seven current lifecycle results; two
+repeatability receipts; and 25 source files. Final entry and directory-graph
+readback must match the held initial identities.
+
+The checker independently rejects noncanonical or duplicate-key JSON,
+non-exact integer, float, and boolean field types, wrong top-level schemas,
+release or app-tree drift, reversed Build 23-to-24 direction, weakened
+limitations, and receipt/result mismatch. It imports and executes no lifecycle
+runner and performs no subprocess, image mount, app launch, file write,
+network, device, or Git operation. The 12 exact focused unit modules remain
+byte-bound inputs but are deliberately not executed by this static checker.
+
+The standalone readback passed. A separate exact invocation of those 12
+non-security unit modules passed 169 tests, and the aggregate checker's own 22
+mutation and boundary tests passed. The 72,502-byte checker has SHA-256
+`d4c81d6329e1e6869d8b352daf20e415782ff6debfb064844844e6ce8b79fd8e`;
+the 31,405-byte test module has SHA-256
+`96e724bf307ae83564c1169aefcade59f01f3886662f9aca954f32e5a6cfe19a`.
+
+This gate publishes or rewrites no lifecycle result and creates no new install,
+launch, DMG, upgrade, recovery, or repeatability observation. Build 23 remains
+a retained historical predecessor, not a declared rollback lineage. The pass
+is bounded static/no-device consistency evidence and preparation for a future
+G7 deterministic check; it is not canonical G7 PR-fast completion and does
+not complete the signed, physical-device, network, rollback, production, or
+other remaining G6/G7 exit requirements.
+<!-- aetherlink-current-build24-macos-lifecycle-aggregate-readback-v1:end -->
+
+<!-- aetherlink-current-build24-macos-idle-resource-stability-v1:start -->
+The current Build 24 non-security macOS idle-resource stability observation
+used one exact packaged-app child under an isolated temporary HOME. After a
+60,000 ms warm-up it retained 120 libproc samples at 5,000 ms targets across
+600,000 ms. The maximum observed sample lateness was 79 ms.
+
+The first and final 12-sample upper medians and full-run maxima were 10, 10,
+and 10 open file descriptors; 142,344,192, 142,344,192, and 142,393,344
+resident bytes; and 3, 3, and 4 threads. Final deltas were 0, 0, and 0;
+peak deltas were 0, 49,152, and 1. All stayed within the predeclared local
+regression budgets. The exact owned child accepted graceful termination,
+exited with status 0, was reaped, and disappeared from AppKit. The preexisting
+AetherLink app was preserved, no raw process identifier or temporary path was
+retained, and the temporary root was removed before publication.
+
+The canonical 22,534-byte result is at
+`dist/lifecycle/macos-packaged-app-build-24-idle-resource-stability-v1.json`,
+SHA-256
+`07d28a073746731241932681630014647ad452e382afd6728938daacb39e167f`.
+The 45,998-byte runner and 32,632-byte 25-test module have SHA-256 values
+`073e58afa67228d6c208186d8ddca790b763a9c0a7acee9d5a681ff1f22801a9`
+and
+`df8a04a0e46e7ef0cc10a1f5dc29f3f8f9763e960995427304a7ccd93a2e8e4b`.
+
+The standalone read-only command
+`python3 -I -B -S script/check_macos_build24_idle_resource_stability_evidence.py`
+opens 16 fixed archive, ledger, result, runner, test, and transitive-source
+files before hashing. It rechecks their held path graph, rejects noncanonical
+or duplicate-key JSON and boolean/integer aliasing, and independently
+recomputes all 120 targets, maximum lateness, upper medians, deltas, maxima,
+limits, and pass flags. Its 36,411-byte checker and 38,633-byte 25-test module
+have SHA-256 values
+`4b5829e4fc44f250a0cdda6586edcb6c781ec1a1c49e605d884a1210a1634bb4`
+and
+`9cc1992ecf4612590e33d8e20e2dd341b729a1335f488605a7cb06670ece34cf`.
+
+This is one same-host, per-user, network-denied, point-in-time local idle
+observation. It is not repeatability, load, performance-SLA, capacity,
+long-soak, install, upgrade, recovery, rollback, device, provider, UI,
+accessibility, production, or G7 Weekly resilience evidence. No signing or
+signature verification was performed.
+<!-- aetherlink-current-build24-macos-idle-resource-stability-v1:end -->
 
 The current macOS G5 Runtime slice closes failed-start recovery. A listener
 failure no longer latches the app into an already-started state; only an
@@ -100,6 +467,25 @@ Connection admission validates and inserts under the same generation lock, and
 listener failure retires that generation before publishing status.
 This is deterministic no-device evidence, not live socket,
 physical-device, signing, deployment, security, or production proof.
+
+The current unreleased macOS G5 lifecycle slice now connects the same
+`@StateObject` Runtime model to the AppKit delegate before requesting startup.
+The delegate retains only the first weak Runtime lifecycle reference. Normal
+negotiated termination enters through `applicationShouldTerminate`, begins
+synchronous stop and request-admission closure, returns `.terminateLater`, and
+replies exactly once after its drain or the five-second deadline. The drain
+retires active and registration-racing requests, waits for already submitted
+chat-title and memory-summary cancellation jobs, resolves deferred
+memory-summary delivery acknowledgements before its persistence barrier, and
+cancels and joins active Runtime chat-retention maintenance. A timeout permits
+termination but does not prove a non-cooperative operation completed. The
+direct `applicationWillTerminate` fallback remains synchronous `stop()` only.
+Thirteen AppDelegate regressions and eight exact Router/model termination
+regressions are included in the expanded 217/217 non-security product selector.
+This is a current-source graceful-quit correction made after the immutable
+Build 24 source snapshot; no Build 24 archive or lifecycle result is relabeled
+as evidence for it. SIGKILL, power loss, arbitrary asynchronous work, device,
+network, signing, security, and G7 completion remain unclaimed.
 
 The current macOS G5 accessibility slice closes the explicit custom-animation
 part of Reduce Motion. Status recovery scrolling and pairing QR expiry share
@@ -121,7 +507,7 @@ are canceled when the screen is left. Menu-bar generation is owned by one main
 `Window`, and locale-driven view recreation preserves a pending focus handoff.
 QR expiry announces once per QR lifecycle without countdown spam, and
 decorative Model Download icons are hidden from the accessibility tree.
-Eight new policy/announcement/render regressions, the current exact 180-test product CI
+Eight new policy/announcement/render regressions, the current exact 217-test product CI
 selector, and the complete 186-test accessibility run pass. Physical keyboard
 and VoiceOver traversal remain unclaimed because the Mac was locked during
 attempted UI observation.
@@ -142,7 +528,7 @@ in the macOS static lane and returns before the paused mixed security checks.
 The Android allowlist directly executes the
 changed-session scroll-boundary regression; the exact Android lane passes seven
 tests across four result classes with zero skips, failures, or errors. Current
-local parity passes with 180 selected Swift tests. Hosted run `30525374687` completed
+local parity passes with 193 selected Swift tests. Hosted run `30525374687` completed
 both jobs successfully for baseline commit
 `0f59c757d745d0b95c37c9b93aec8d354bcfef9f`. That historical 159-test baseline
 predates commit `53f45d4e9909dd77520a450170eb87c7d260ea89` and does not
@@ -204,26 +590,77 @@ affected accepted-endpoint types belong to the security and authorization
 scope excluded by the user. It remains untouched and does not block the active
 non-security quality lane.
 
-Build 22 is the latest immutable local G6 package qualification record for its
+Build 24 is the latest immutable local G6 package qualification record for its
 qualification-time source snapshot. It retains Android backup/device-transfer
 exclusions and
 independently verifies both compiled APK policy bodies and the same bodies in
 an AAB-derived universal APK. The
 reproducible package-only Swift path now supplies
 `-Xswiftc -num-threads -Xswiftc 1`. Separate comparison-only and
-publish-qualified schema-v4 executions reproduced the same 165,705,774-byte
+publish-qualified schema-v4 executions reproduced the same 166,345,274-byte
 archive
 with SHA-256
-`478bd4210c11f7e2204e80a333bc8053b0d01b8deff3d0a3d2dd6795df1366c3`.
-The comparison-only record did not publish; the publish-qualified record
-exactly binds that prepublication result, proves the protected Build 21 archive
+`104c07b6fc1b421bcc0309657001fdf991e37bb815c282b3e5112ed98821ab1c`.
+The v4 comparison-only prepublication result is
+`dist/reproducibility/aetherlink-1.0.0+24-local-v1-two-root-v4-prepublication.json`,
+19,645 bytes with SHA-256
+`64c21a8c345018e7fca552b1ff706ac5f9c1f19a349afb0090dae22466e9e3db`;
+it did not publish. The v4 publish-qualified result is
+`dist/reproducibility/aetherlink-1.0.0+24-local-v1-two-root-v4.json`,
+20,353 bytes with SHA-256
+`08a176bed8abe4f4c62178fa13a939059d127ee3dee4352096bcc593177cea36`.
+It
+exactly binds that prepublication result, proves the protected Build 23 archive
 identity remained unchanged, then publishes and independently reads back the
-exact Build 22 archive. This closes the current same-host package boundary,
+exact Build 24 archive. This closes the current same-host package boundary,
 not arbitrary cross-host reproducibility, clean-machine installation, signed
 distribution, vendor backup/transfer behavior, or physical-device proof.
+The release output is `dist/releases/aetherlink-1.0.0+24-local-v1/`. Current
+readback is
+`python3 -B script/check_release_artifact_archive.py --archive-dir dist/releases/aetherlink-1.0.0+24-local-v1`.
+
+The current-source macOS G5 lifecycle slice makes system sleep/wake a
+reversible Runtime transition without treating every wake as startup
+authority. AppDelegate observes `NSWorkspace` sleep/wake notifications once.
+Only a Runtime in `starting` or `advertising` state is stopped and leaves a
+same-port resume intent; failed and stopped states leave no intent. Wake
+consumes that intent once through the existing UI start and Bonjour publication
+gate. Duplicate or reversed notifications, pre-sleep listener callbacks,
+startup requested while already asleep, and termination during suspension are
+closed by explicit state transitions. Eight AppDelegate tests, three direct
+model sleep/wake regressions, and the existing model-stop and manager stop-all
+regressions pass 13/13. The exact non-security product selector passes 217/217.
+This is deterministic injected-notification evidence after immutable Build 24.
+That sleep/wake slice does not itself observe a physical sleep cycle,
+post-wake network readiness, provider restart, asynchronous persistence flush,
+device, signing, security, G7, or release behavior.
+
+The current-source macOS G5 provider-recovery slice now follows that lifecycle
+without adding global polling. Runtime start and wake issue concurrent immediate
+health checks. Only a provider observed as retryable-unavailable is retried
+after 1, 2, 4, 8, 16, and then repeated 30-second delays; non-retryable and
+available states stop the loop. Provider-scoped single-flight lets manual
+refresh join existing work, and partial status merging prevents a slow provider
+from delaying or overwriting another provider's row. Stop, sleep, Runtime
+failure, and deinitialization cancel the monitor and rotate generation and
+reservation identities so cancellation-resistant late responses are rejected.
+Health calls use a five-second provider-only timeout, while ordinary catalog and
+data operations retain their previous bounds. LM Studio's native and compatible
+fallback probes share one total five-second health deadline. Recovery never
+loads models, starts chat, or repeatedly checks a healthy unrelated provider,
+and unchanged status does not produce retry log spam.
+
+Eight recovery tests, one aggregate scoped-health test, and the Ollama and LM
+Studio endpoint/health-timeout tests pass 11/11. The exact product selector
+passes 217/217, and its contract independently rejects removal of each new
+selector. This is deterministic current-source proof using injected provider,
+backoff, and lifecycle seams. It postdates and does not relabel immutable Build
+24; live provider processes, external networking, physical device or sleep
+cycles, signing, security, G7 completion, deployment, and production release
+remain outside this result.
 
 Build 19 first source-binds a Runtime-chat SQLite cross-process quality slice.
-Build 22 retains and extends those sources.
+Build 24 retains and extends those sources.
 All production store connections install a 5-second SQLite busy timeout and
 normalize busy/locked failures to one stable retry message. Three deterministic
 Swift regressions cover wait-and-release success, `BEGIN` timeout rollback, and
@@ -394,7 +831,7 @@ uses a Swift Release build and embeds the SwiftPM localization bundle under the
 standard signed app resource directory. The app prefers that packaged bundle,
 version metadata is present, and strict local ad-hoc verification passes
 without launching the app. The append-only shared ledger now supplies the same
-`1.0.0+22` metadata to the current isolated macOS and Android Release
+`1.0.0+24` metadata to the current isolated macOS and Android Release
 qualification while Android Debug
 remains `0.1.0+1` and builds without the ledger; the three consumers share a
 strict LF-only byte boundary, monotonic guard, and semantic-regression guard.
@@ -406,7 +843,7 @@ Android G6 release optimization is now explicit as well. Release-only R8 code
 shrinking/obfuscation and resource shrinking use the optimized Android defaults
 and dependency consumer rules without a broad app keep file. A clean offline
 APK/AAB/lint build passes. V1 Release is now `arm64-v8a`-only: the current
-unsigned AAB is 10,677,980 bytes, contains one DEX, retains all five app locales
+unsigned AAB is 10,677,978 bytes, contains one DEX, retains all five app locales
 and five JNI libraries, and embeds the generated mapping byte-for-byte. The
 ChromeOS x86_64
 lint warning is narrowly excluded because ChromeOS is outside the V1 matrix.
@@ -416,7 +853,7 @@ require the locally unavailable SDK 37.
 
 One canonical local release container now retains the unsigned APK/AAB, R8
 outputs, dependency report, arm64 ad-hoc macOS app, and UUID-matched dSYM with
-an exact 247-file source snapshot, external checksum, immutable publication,
+an exact 249-file source snapshot, external checksum, immutable publication,
 and independent full readback. APK identity/version/SDK/ABI and the three
 backup-policy fields are independently read with aapt2; compiled policy IDs
 must resolve to `xml/backup_rules` and `xml/data_extraction_rules`. The builder
@@ -432,36 +869,36 @@ closed semantic normalization for R8 `resources.txt` and remains a valid
 equal-length-root historical qualification. Build 6 retained that and the
 other declared normalizations in its unequal-length-root qualification.
 The current manifest records `worktreeState=dirty-content-snapshot`, source
-SHA-256 `d0ee21c6f288cafad0a0f634de2116b48c8a4716389f2d52daacd4e90c591eb6`,
+SHA-256 `a01d37c3be608db3a8fa588b1ec019b673b5c57bc227ffc105047b3e4548f5f2`,
 and the qualification-time source HEAD/`origin/main`
-`88c0282722eb0afb3ce2d6f394fedb1f22a7ec7c`. The commit alone cannot
+`7d72147528e334edb19b9331ed7933ac71ca424b`. The commit alone cannot
 reconstruct the release bytes; the archived source inventory is the source
 identity.
-Build 22 uses the same 101- and 109-byte isolated lane roots, host, fixed
+Build 24 uses the same 101- and 109-byte isolated lane roots, host, fixed
 toolchains, paired clones of one byte-identical Gradle seed, canonical Swift
 scratch policy, and frontend serialization. Two complete qualification
-executions produced four builds with the exact same 165,705,774-byte ZIP,
-12,317-byte manifest, checksum sidecar, and 30-entry archive inventory. The
-latest immutable ledger archive is `aetherlink-1.0.0+22-local-v1`, and
+executions produced four builds with the exact same 166,345,274-byte ZIP,
+15,200-byte manifest, checksum sidecar, and 30-entry archive inventory. The
+latest immutable ledger archive is `aetherlink-1.0.0+24-local-v1`, and
 independent current-source readback passes. The comparison-only execution did
 not publish; the separate publish-qualified execution exactly bound its
-prepublication result, protected the prior Build 21 archive, published lane A,
+prepublication result, protected the prior Build 23 archive, published lane A,
 and independently read it back.
-Builds 1 through 21 remain separately readable historical archives. The
+Builds 1 through 23 remain separately readable historical archives. The
 verifier cross-binds each Gradle lock identity to the archived source inventory
 and rejects current releases in historical mode. This proves only the two
 recorded successful same-host pairs; it does not establish variance-free
 arbitrary repetition, arbitrary roots, cross-host, signed-release,
 clean-machine, or physical-device G6 qualification.
 
-Build 22 retains the qualification-time source-bound AAB structure-validation
+Build 24 retains the qualification-time source-bound AAB structure-validation
 evidence and the settled two-stage reranker. Build 18 first bound the Android
-drawer search release inputs, which Builds 19 through 22 retain. It
+drawer search release inputs, which Builds 19 through 24 retain. It
 also binds the Research Notebook permanent-delete confirmation's atomic
 saved-state target, trusted-Runtime/notebook/session rebind checks, unresolved
 catalog tolerance, and authoritative invalidation regressions. The complete
 Android app gate passes 1,195 tests with zero failures and release lint reports
-0 errors and 2 SDK 37 availability warnings. Build 22 additionally binds the
+0 errors and 2 SDK 37 availability warnings. Build 24 additionally binds the
 exact backup/cloud/device-transfer exclusion resources, APK/AAB manifest
 readback, and compiled XML body readback.
 

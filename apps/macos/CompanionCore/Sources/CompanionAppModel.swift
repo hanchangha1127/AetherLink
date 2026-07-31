@@ -865,6 +865,18 @@ private enum CompanionRelaySecretSource {
     case environmentEphemeral
 }
 
+private struct CompanionProviderHealthProbe {
+    let id: UUID
+    let generation: UUID
+    let task: Task<BackendStatus, Never>
+}
+
+private struct CompanionProviderRecoveryWorker {
+    let id: UUID
+    let generation: UUID
+    let task: Task<Void, Never>
+}
+
 @MainActor
 private struct PendingPairScopedRelayActivation: Equatable {
     let clientKeyFingerprint: String
@@ -918,6 +930,17 @@ public final class CompanionAppModel: ObservableObject {
     @Published public private(set) var logs: [String] = []
 
     private let backend: any LlmBackend
+    private let providerHealthProviders: [ModelProvider]
+    private let providerRecoveryRetryDelaysNanoseconds: [UInt64]
+    private let providerRecoverySleeper: @Sendable (UInt64) async throws -> Void
+    private var providerHealthGeneration = UUID()
+    private var providerHealthStatuses: [ModelProvider: BackendStatus] = [:]
+    private var providerHealthProbes: [ModelProvider: CompanionProviderHealthProbe] = [:]
+    private var latestProviderHealthProbeIDs: [ModelProvider: UUID] = [:]
+    private var providerRecoveryWorkers: [
+        ModelProvider: CompanionProviderRecoveryWorker
+    ] = [:]
+    private var runtimeProviderStatusRefreshTask: Task<Void, Never>?
     private var runtimeModelPullApprovalBroker: RuntimeModelPullApprovalBroker!
     private var runtimeRouter: LocalRuntimeMessageRouter!
     private let runtimeChatEventStore: any RuntimeChatEventStore
@@ -951,10 +974,20 @@ public final class CompanionAppModel: ObservableObject {
     private let runtimeIdentityWarning: String?
     private var runtimePort: UInt16 = 43170
     private var isRuntimeStarted = false
+    private var isPreparingForApplicationTermination = false
+    private var pendingSystemWakeResumePort: UInt16?
     private var activeRuntimeStartAttemptID: UUID?
     private var pendingRuntimeStartRoutePreparation: CompanionRuntimeStartRoutePreparation?
     private var hasScheduledRuntimeChatRetentionMaintenance = false
     private var runtimeChatRetentionMaintenanceTask: Task<Void, Never>?
+    private let runtimeChatRetentionMaintenanceOperation:
+        @Sendable (any RuntimeChatEventStore) async throws -> Int
+    private var activeRuntimeChatRetentionMaintenanceID: UUID?
+    private var activeRuntimeChatRetentionMaintenanceTask:
+        Task<Int, Error>?
+    private var runtimeChatRetentionDrainContinuations: [
+        UUID: CheckedContinuation<Void, Never>
+    ] = [:]
     private let modelIdleUnloadPolicyUpdateQueue = RuntimeModelIdleUnloadPolicyUpdateQueue()
     private var shouldGenerateRemotePairingQRCodeWhenRelayReady = false
     private var pendingRemotePairingPreparationID: UUID?
@@ -1106,7 +1139,22 @@ public final class CompanionAppModel: ObservableObject {
         allowsAuthenticatedRouteRefresh: Bool = false,
         allowsLocalDiagnosticPairingFromUserInterface: Bool? = nil,
         pairingRoutePreparationTimeoutNanoseconds: UInt64 = 15_000_000_000,
-        routeAllocationTimeoutNanoseconds: UInt64 = 15_000_000_000
+        routeAllocationTimeoutNanoseconds: UInt64 = 15_000_000_000,
+        providerRecoveryRetryDelaysNanoseconds: [UInt64] = [
+            1_000_000_000,
+            2_000_000_000,
+            4_000_000_000,
+            8_000_000_000,
+            16_000_000_000,
+            30_000_000_000,
+        ],
+        providerRecoverySleeper: @escaping @Sendable (UInt64) async throws -> Void = {
+            try await Task.sleep(nanoseconds: $0)
+        },
+        runtimeChatRetentionMaintenanceOperation:
+            (@Sendable (
+                any RuntimeChatEventStore
+            ) async throws -> Int)? = nil
     ) {
         precondition(
             pairingRoutePreparationTimeoutNanoseconds > 0,
@@ -1127,12 +1175,28 @@ public final class CompanionAppModel: ObservableObject {
                 loadedModelIdleUnloadPolicy.idleUnloadDelayNanoseconds
             )
         }
+        let initialProviderStatuses = Self.initialProviderStatuses(
+            for: resolvedBackend
+        )
         let loadedBootstrapRelaySettings = Self.loadBootstrapRelaySettings(
             defaults: userDefaults,
             relaySecretStore: relaySecretStore
         )
         self.backend = resolvedBackend
-        self.providerStatuses = Self.initialProviderStatuses(for: resolvedBackend)
+        self.providerHealthProviders = initialProviderStatuses.map(\.provider)
+        self.providerStatuses = initialProviderStatuses
+        self.providerRecoveryRetryDelaysNanoseconds = Array(
+            providerRecoveryRetryDelaysNanoseconds
+                .filter { $0 > 0 }
+                .prefix(16)
+        )
+        self.providerRecoverySleeper = providerRecoverySleeper
+        self.runtimeChatRetentionMaintenanceOperation =
+            runtimeChatRetentionMaintenanceOperation ?? {
+                try await CompanionAppModel.pruneExpiredDeletedRuntimeChats(
+                    from: $0
+                )
+            }
         self.modelIdleUnloadPolicy = loadedModelIdleUnloadPolicy
         self.relayServiceRouteAllocator = relayServiceRouteAllocator
         self.environment = environment
@@ -1264,7 +1328,11 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     deinit {
+        runtimeProviderStatusRefreshTask?.cancel()
+        providerHealthProbes.values.forEach { $0.task.cancel() }
+        providerRecoveryWorkers.values.forEach { $0.task.cancel() }
         runtimeChatRetentionMaintenanceTask?.cancel()
+        activeRuntimeChatRetentionMaintenanceTask?.cancel()
         remotePairingPreparationTimeoutTask?.cancel()
         routeAllocationTimeoutTask?.cancel()
         activeRouteAllocationRequest?.cancellation.cancel()
@@ -1272,17 +1340,51 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     public func start(port: UInt16 = 43170) {
+        guard !isPreparingForApplicationTermination,
+              pendingSystemWakeResumePort == nil else {
+            return
+        }
         startRuntime(port: port, routePreparation: .asynchronous)
     }
 
     @discardableResult
     public func requestStartForUserInterface(port: UInt16 = 43170) -> Bool {
-        guard runtimePort != port ||
+        guard !isPreparingForApplicationTermination,
+              pendingSystemWakeResumePort == nil,
+              runtimePort != port ||
                 (!isRuntimeStarted && transportState.state != .starting) else {
             return false
         }
         startRuntime(port: port, routePreparation: .asynchronous)
         return true
+    }
+
+    @discardableResult
+    public func suspendForSystemSleep() -> Bool {
+        guard !isPreparingForApplicationTermination,
+              pendingSystemWakeResumePort == nil else {
+            return false
+        }
+        switch transportState.state {
+        case .starting, .advertising:
+            break
+        case .failed, .stopped:
+            return false
+        }
+        let resumePort = runtimePort
+        stop()
+        pendingSystemWakeResumePort = resumePort
+        return true
+    }
+
+    @discardableResult
+    public func resumeAfterSystemWake() -> Bool {
+        guard !isPreparingForApplicationTermination,
+              let resumePort = pendingSystemWakeResumePort else {
+            return false
+        }
+        pendingSystemWakeResumePort = nil
+        return requestStartForUserInterface(port: resumePort)
     }
 
     private func startRuntime(
@@ -1314,8 +1416,11 @@ public final class CompanionAppModel: ObservableObject {
             localStatus,
             expectedStartAttemptID: startAttemptID
         )
-        Task {
-            await refreshBackendStatus()
+        switch transportState.state {
+        case .starting, .advertising:
+            startRuntimeProviderHealthMonitoring()
+        case .failed, .stopped:
+            break
         }
         if !hasScheduledRuntimeChatRetentionMaintenance {
             hasScheduledRuntimeChatRetentionMaintenance = true
@@ -1324,18 +1429,27 @@ public final class CompanionAppModel: ObservableObject {
             runtimeChatRetentionMaintenanceTask = Task { [weak self, store] in
                 while !Task.isCancelled {
                     guard self != nil else { return }
-                    if self?.beginRuntimeChatRetentionMaintenance() == true {
+                    if let maintenance =
+                        self?.beginRuntimeChatRetentionMaintenance(
+                            store: store
+                        ) {
                         do {
-                            let prunedSessionCount = try await Self.pruneExpiredDeletedRuntimeChats(
-                                from: store
-                            )
+                            let prunedSessionCount =
+                                try await maintenance.task.value
                             self?.completeRuntimeChatRetentionMaintenance(
-                                prunedSessionCount: prunedSessionCount
+                                prunedSessionCount: prunedSessionCount,
+                                maintenanceID: maintenance.id
                             )
                         } catch is CancellationError {
+                            self?.cancelRuntimeChatRetentionMaintenance(
+                                maintenanceID: maintenance.id
+                            )
                             return
                         } catch {
-                            self?.failRuntimeChatRetentionMaintenance(error)
+                            self?.failRuntimeChatRetentionMaintenance(
+                                error,
+                                maintenanceID: maintenance.id
+                            )
                         }
                     }
                     do {
@@ -1372,6 +1486,7 @@ public final class CompanionAppModel: ObservableObject {
                 completeRuntimeStartIfNeeded()
             }
         case .failed, .stopped:
+            cancelProviderHealthMonitoring()
             invalidateRouteAllocationRequests(routeStateChanged: true)
             isRuntimeStarted = false
             activeRuntimeStartAttemptID = nil
@@ -1430,7 +1545,41 @@ public final class CompanionAppModel: ObservableObject {
         }
     }
 
+    public func beginApplicationTermination() {
+        guard !isPreparingForApplicationTermination else { return }
+        isPreparingForApplicationTermination = true
+        runtimeChatRetentionMaintenanceTask?.cancel()
+        activeRuntimeChatRetentionMaintenanceTask?.cancel()
+        if runtimeChatRetentionStatus.state == .running {
+            runtimeChatRetentionStatus = CompanionRuntimeChatRetentionStatus(
+                state: .notRun
+            )
+        }
+        runtimeRouter.beginApplicationTermination()
+        stop()
+    }
+
+    public func drainApplicationTermination() async {
+        beginApplicationTermination()
+        let scheduledRetentionTask = runtimeChatRetentionMaintenanceTask
+        scheduledRetentionTask?.cancel()
+        async let routerDrain: Void =
+            runtimeRouter.drainApplicationTermination()
+        if let scheduledRetentionTask {
+            await scheduledRetentionTask.value
+        }
+        await waitForRuntimeChatRetentionMaintenanceToDrain()
+        await routerDrain
+    }
+
     public func stop() {
+        cancelProviderHealthMonitoring()
+        let wasAlreadyStoppedForSystemSleep =
+            pendingSystemWakeResumePort != nil && transportState == .stopped
+        pendingSystemWakeResumePort = nil
+        guard !wasAlreadyStoppedForSystemSleep else {
+            return
+        }
         invalidateRouteAllocationRequests(routeStateChanged: true)
         isRuntimeStarted = false
         activeRuntimeStartAttemptID = nil
@@ -1449,27 +1598,278 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     public func refreshBackendStatus() async {
-        if let aggregate = backend as? AggregatingLlmBackend {
-            let statuses = await aggregate.providerHealth()
-            let sortedStatuses = statuses.sorted { $0.key.rawValue < $1.key.rawValue }
-            providerStatuses = sortedStatuses.map { provider, status in
-                CompanionProviderStatus.from(provider: provider, status: status)
-            }
-            backendStatus = Self.backendStatusString(for: sortedStatuses)
-            log(backendStatus)
+        runtimeProviderStatusRefreshTask?.cancel()
+        runtimeProviderStatusRefreshTask = nil
+        cancelProviderRecoveryWorkers()
+        let generation = providerHealthGeneration
+        await refreshProviderStatuses(
+            generation: generation,
+            schedulesAutomaticRecovery: permitsProviderHealthRecovery
+        )
+    }
+
+    private var permitsProviderHealthRecovery: Bool {
+        switch transportState.state {
+        case .starting, .advertising:
+            return true
+        case .failed, .stopped:
+            return false
+        }
+    }
+
+    private func startRuntimeProviderHealthMonitoring() {
+        cancelProviderHealthMonitoring()
+        let generation = providerHealthGeneration
+        runtimeProviderStatusRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            await self.refreshProviderStatuses(
+                generation: generation,
+                schedulesAutomaticRecovery: true
+            )
+        }
+    }
+
+    private func refreshProviderStatuses(
+        generation: UUID,
+        schedulesAutomaticRecovery: Bool
+    ) async {
+        guard providerHealthGeneration == generation else {
             return
         }
-
-        let status = await backend.healthCheck()
-        providerStatuses = [CompanionProviderStatus.from(provider: backend.provider, status: status)]
-        switch status {
-        case .available:
-            backendStatus = "\(backend.provider.displayName) available"
-            log("\(backend.provider.displayName) health check passed")
-        case .unavailable(let error):
-            backendStatus = error.message
-            log(error.message)
+        await withTaskGroup(of: Void.self) { group in
+            for provider in providerHealthProviders {
+                group.addTask { [weak self] in
+                    await self?.refreshProviderStatus(
+                        provider,
+                        generation: generation,
+                        schedulesAutomaticRecovery:
+                            schedulesAutomaticRecovery
+                    )
+                }
+            }
+            await group.waitForAll()
         }
+    }
+
+    private func refreshProviderStatus(
+        _ provider: ModelProvider,
+        generation: UUID,
+        schedulesAutomaticRecovery: Bool
+    ) async {
+        guard let status = await probeProviderHealth(
+            provider,
+            generation: generation
+        ) else {
+            return
+        }
+        _ = applyProviderHealthStatus(
+            status,
+            provider: provider,
+            generation: generation,
+            schedulesAutomaticRecovery: schedulesAutomaticRecovery
+        )
+    }
+
+    private func probeProviderHealth(
+        _ provider: ModelProvider,
+        generation: UUID
+    ) async -> BackendStatus? {
+        guard providerHealthGeneration == generation else {
+            return nil
+        }
+        let probe: CompanionProviderHealthProbe
+        if let existing = providerHealthProbes[provider],
+           existing.generation == generation {
+            probe = existing
+        } else {
+            providerHealthProbes[provider]?.task.cancel()
+            let probeID = UUID()
+            let backend = backend
+            let task = Task.detached(priority: .utility) {
+                await Self.providerHealthStatus(
+                    backend: backend,
+                    provider: provider
+                )
+            }
+            probe = CompanionProviderHealthProbe(
+                id: probeID,
+                generation: generation,
+                task: task
+            )
+            latestProviderHealthProbeIDs[provider] = probeID
+            providerHealthProbes[provider] = probe
+        }
+
+        let status = await probe.task.value
+        if providerHealthProbes[provider]?.id == probe.id {
+            providerHealthProbes[provider] = nil
+        }
+        guard !Task.isCancelled,
+              providerHealthGeneration == generation,
+              latestProviderHealthProbeIDs[provider] == probe.id else {
+            return nil
+        }
+        return status
+    }
+
+    nonisolated private static func providerHealthStatus(
+        backend: any LlmBackend,
+        provider: ModelProvider
+    ) async -> BackendStatus {
+        if let aggregate = backend as? AggregatingLlmBackend {
+            return await aggregate.providerHealth(for: provider)
+        }
+        guard backend.provider == provider else {
+            return .unavailable(BackendError(
+                provider: provider,
+                code: "provider_not_configured",
+                message: "\(provider.displayName) is not configured in AetherLink Runtime.",
+                retryable: false
+            ))
+        }
+        return await backend.healthCheck()
+    }
+
+    @discardableResult
+    private func applyProviderHealthStatus(
+        _ status: BackendStatus,
+        provider: ModelProvider,
+        generation: UUID,
+        schedulesAutomaticRecovery: Bool
+    ) -> Bool {
+        guard providerHealthGeneration == generation else {
+            return false
+        }
+        let previousStatus = providerHealthStatuses[provider]
+        providerHealthStatuses[provider] = status
+        providerStatuses = providerHealthProviders.map { provider in
+            guard let status = providerHealthStatuses[provider] else {
+                return .notChecked(provider: provider)
+            }
+            return .from(provider: provider, status: status)
+        }
+        backendStatus = Self.backendStatusString(for: providerStatuses)
+        if previousStatus != status {
+            switch status {
+            case .available:
+                log("\(provider.displayName) health check passed")
+            case .unavailable(let error):
+                log(error.message)
+            }
+        }
+
+        guard case .unavailable(let error) = status,
+              error.retryable else {
+            return false
+        }
+        if schedulesAutomaticRecovery,
+           permitsProviderHealthRecovery {
+            scheduleProviderRecovery(
+                provider,
+                generation: generation
+            )
+        }
+        return permitsProviderHealthRecovery
+    }
+
+    private func scheduleProviderRecovery(
+        _ provider: ModelProvider,
+        generation: UUID
+    ) {
+        guard providerHealthGeneration == generation,
+              permitsProviderHealthRecovery,
+              !providerRecoveryRetryDelaysNanoseconds.isEmpty,
+              providerRecoveryWorkers[provider] == nil else {
+            return
+        }
+        let workerID = UUID()
+        let retryDelays = providerRecoveryRetryDelaysNanoseconds
+        let sleeper = providerRecoverySleeper
+        let task = Task { [weak self] in
+            defer {
+                self?.finishProviderRecovery(
+                    provider,
+                    workerID: workerID,
+                    generation: generation
+                )
+            }
+            var attempt = 0
+            while !Task.isCancelled {
+                let delay = retryDelays[min(attempt, retryDelays.count - 1)]
+                do {
+                    try await sleeper(delay)
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled,
+                      let shouldContinue = await self?
+                        .performProviderRecoveryAttempt(
+                            provider,
+                            generation: generation
+                        ) else {
+                    return
+                }
+                guard shouldContinue else {
+                    return
+                }
+                if attempt < Int.max {
+                    attempt += 1
+                }
+            }
+        }
+        providerRecoveryWorkers[provider] = CompanionProviderRecoveryWorker(
+            id: workerID,
+            generation: generation,
+            task: task
+        )
+    }
+
+    private func performProviderRecoveryAttempt(
+        _ provider: ModelProvider,
+        generation: UUID
+    ) async -> Bool {
+        guard providerHealthGeneration == generation,
+              permitsProviderHealthRecovery,
+              let status = await probeProviderHealth(
+                provider,
+                generation: generation
+              ),
+              !Task.isCancelled else {
+            return false
+        }
+        return applyProviderHealthStatus(
+            status,
+            provider: provider,
+            generation: generation,
+            schedulesAutomaticRecovery: false
+        )
+    }
+
+    private func finishProviderRecovery(
+        _ provider: ModelProvider,
+        workerID: UUID,
+        generation: UUID
+    ) {
+        guard providerRecoveryWorkers[provider]?.id == workerID,
+              providerRecoveryWorkers[provider]?.generation == generation else {
+            return
+        }
+        providerRecoveryWorkers[provider] = nil
+    }
+
+    private func cancelProviderRecoveryWorkers() {
+        providerRecoveryWorkers.values.forEach { $0.task.cancel() }
+        providerRecoveryWorkers.removeAll()
+    }
+
+    private func cancelProviderHealthMonitoring() {
+        providerHealthGeneration = UUID()
+        runtimeProviderStatusRefreshTask?.cancel()
+        runtimeProviderStatusRefreshTask = nil
+        providerHealthProbes.values.forEach { $0.task.cancel() }
+        providerHealthProbes.removeAll()
+        latestProviderHealthProbeIDs.removeAll()
+        cancelProviderRecoveryWorkers()
     }
 
     public func refreshRuntimeDataSummary() {
@@ -1520,42 +1920,138 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     public func runRuntimeChatRetentionMaintenance() async {
-        guard beginRuntimeChatRetentionMaintenance() else { return }
         let store = runtimeChatEventStore
+        guard let maintenance = beginRuntimeChatRetentionMaintenance(
+            store: store
+        ) else {
+            return
+        }
         do {
-            let prunedSessionCount = try await Self.pruneExpiredDeletedRuntimeChats(from: store)
-            completeRuntimeChatRetentionMaintenance(prunedSessionCount: prunedSessionCount)
+            let prunedSessionCount = try await maintenance.task.value
+            completeRuntimeChatRetentionMaintenance(
+                prunedSessionCount: prunedSessionCount,
+                maintenanceID: maintenance.id
+            )
         } catch is CancellationError {
-            runtimeChatRetentionStatus = CompanionRuntimeChatRetentionStatus(state: .notRun)
+            cancelRuntimeChatRetentionMaintenance(
+                maintenanceID: maintenance.id
+            )
         } catch {
-            failRuntimeChatRetentionMaintenance(error)
+            failRuntimeChatRetentionMaintenance(
+                error,
+                maintenanceID: maintenance.id
+            )
         }
     }
 
-    private func beginRuntimeChatRetentionMaintenance() -> Bool {
-        guard runtimeChatRetentionStatus.state != .running else { return false }
+    private func beginRuntimeChatRetentionMaintenance(
+        store: any RuntimeChatEventStore
+    ) -> (id: UUID, task: Task<Int, Error>)? {
+        guard !isPreparingForApplicationTermination,
+              activeRuntimeChatRetentionMaintenanceID == nil else {
+            return nil
+        }
+        let maintenanceID = UUID()
+        let maintenanceOperation = runtimeChatRetentionMaintenanceOperation
+        let maintenanceTask = Task.detached(priority: .utility) {
+            try await maintenanceOperation(store)
+        }
+        activeRuntimeChatRetentionMaintenanceID = maintenanceID
+        activeRuntimeChatRetentionMaintenanceTask = maintenanceTask
         runtimeChatRetentionStatus = CompanionRuntimeChatRetentionStatus(state: .running)
-        return true
+        return (maintenanceID, maintenanceTask)
     }
 
-    private func completeRuntimeChatRetentionMaintenance(prunedSessionCount: Int) {
-        runtimeChatRetentionStatus = CompanionRuntimeChatRetentionStatus(
-            state: .completed,
-            prunedDeletedSessionCount: prunedSessionCount,
-            lastRunAt: Date()
-        )
-        log(
-            "Runtime chat retention completed: "
-                + "\(prunedSessionCount) expired deleted sessions pruned"
+    private func completeRuntimeChatRetentionMaintenance(
+        prunedSessionCount: Int,
+        maintenanceID: UUID
+    ) {
+        if !isPreparingForApplicationTermination,
+           activeRuntimeChatRetentionMaintenanceID == maintenanceID {
+            runtimeChatRetentionStatus = CompanionRuntimeChatRetentionStatus(
+                state: .completed,
+                prunedDeletedSessionCount: prunedSessionCount,
+                lastRunAt: Date()
+            )
+            log(
+                "Runtime chat retention completed: "
+                    + "\(prunedSessionCount) expired deleted sessions pruned"
+            )
+        }
+        finishRuntimeChatRetentionMaintenance(
+            maintenanceID: maintenanceID
         )
     }
 
-    private func failRuntimeChatRetentionMaintenance(_ error: any Error) {
-        runtimeChatRetentionStatus = CompanionRuntimeChatRetentionStatus(
-            state: .failed,
-            lastRunAt: Date()
+    private func cancelRuntimeChatRetentionMaintenance(
+        maintenanceID: UUID
+    ) {
+        if !isPreparingForApplicationTermination,
+           activeRuntimeChatRetentionMaintenanceID == maintenanceID {
+            runtimeChatRetentionStatus = CompanionRuntimeChatRetentionStatus(
+                state: .notRun
+            )
+        }
+        finishRuntimeChatRetentionMaintenance(
+            maintenanceID: maintenanceID
         )
-        log("Runtime chat retention failed: \(error.localizedDescription)")
+    }
+
+    private func failRuntimeChatRetentionMaintenance(
+        _ error: any Error,
+        maintenanceID: UUID
+    ) {
+        if !isPreparingForApplicationTermination,
+           activeRuntimeChatRetentionMaintenanceID == maintenanceID {
+            runtimeChatRetentionStatus = CompanionRuntimeChatRetentionStatus(
+                state: .failed,
+                lastRunAt: Date()
+            )
+            log("Runtime chat retention failed: \(error.localizedDescription)")
+        }
+        finishRuntimeChatRetentionMaintenance(
+            maintenanceID: maintenanceID
+        )
+    }
+
+    private func finishRuntimeChatRetentionMaintenance(
+        maintenanceID: UUID
+    ) {
+        guard activeRuntimeChatRetentionMaintenanceID == maintenanceID else {
+            return
+        }
+        activeRuntimeChatRetentionMaintenanceID = nil
+        activeRuntimeChatRetentionMaintenanceTask = nil
+        let continuations = Array(
+            runtimeChatRetentionDrainContinuations.values
+        )
+        runtimeChatRetentionDrainContinuations.removeAll()
+        continuations.forEach { $0.resume() }
+    }
+
+    private func waitForRuntimeChatRetentionMaintenanceToDrain() async {
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled,
+                      activeRuntimeChatRetentionMaintenanceID != nil else {
+                    continuation.resume()
+                    return
+                }
+                runtimeChatRetentionDrainContinuations[waiterID] =
+                    continuation
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard let continuation =
+                    self?.runtimeChatRetentionDrainContinuations.removeValue(
+                        forKey: waiterID
+                    ) else {
+                    return
+                }
+                continuation.resume()
+            }
+        }
     }
 
     nonisolated private static func pruneExpiredDeletedRuntimeChats(
@@ -4419,14 +4915,31 @@ public final class CompanionAppModel: ObservableObject {
         return [.notChecked(provider: backend.provider)]
     }
 
-    private static func backendStatusString(for statuses: [(key: ModelProvider, value: BackendStatus)]) -> String {
-        statuses
-            .map { provider, status in
-                switch status {
+    private static func backendStatusString(
+        for statuses: [CompanionProviderStatus]
+    ) -> String {
+        if statuses.count == 1,
+           let status = statuses.first {
+            switch status.availability {
+            case .notChecked:
+                return "Not checked"
+            case .available:
+                return "\(status.provider.displayName) available"
+            case .unavailable:
+                return status.message
+                    ?? "\(status.provider.displayName) unavailable"
+            }
+        }
+        return statuses
+            .map { status in
+                switch status.availability {
+                case .notChecked:
+                    return "\(status.provider.displayName) not checked"
                 case .available:
-                    return "\(provider.displayName) available"
-                case .unavailable(let error):
-                    return "\(provider.displayName) unavailable: \(error.message)"
+                    return "\(status.provider.displayName) available"
+                case .unavailable:
+                    return "\(status.provider.displayName) unavailable: "
+                        + (status.message ?? "Provider unavailable")
                 }
             }
             .joined(separator: " | ")

@@ -933,6 +933,307 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(completedRequestTasks.value, 4)
     }
 
+    func testApplicationTerminationRejectsNewRequestsAndDrainsRetiringTasks()
+        async throws
+    {
+        let backend = MockBackend(holdHealthCheckUntilReleased: true)
+        defer { backend.releaseHeldHealthChecks() }
+        let completedRequestTasks = LockedBox(0)
+        let router = makeRouter(
+            backend: backend,
+            requestTaskCompletionCheckpoint: {
+                completedRequestTasks.value += 1
+            }
+        )
+        let activeSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.runtimeHealth,
+            requestID: "termination-active-request"
+        ), sink: activeSink)
+        let activeRequestStarted = await waitForCondition {
+            backend.healthCheckCallCount == 1
+        }
+        XCTAssertTrue(activeRequestStarted)
+
+        router.beginApplicationTermination()
+        let drainCompleted = LockedBox(false)
+        let drainTask = Task {
+            await router.drainApplicationTermination()
+            drainCompleted.value = true
+        }
+
+        let rejectedSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.runtimeHealth,
+            requestID: "termination-rejected-request"
+        ), sink: rejectedSink)
+        let rejection = try await rejectedSink.waitForMessages(count: 1).last
+        XCTAssertEqual(rejection?.type, MessageType.error)
+        XCTAssertEqual(rejection?.payload["code"], .string("backend_unavailable"))
+        XCTAssertEqual(backend.healthCheckCallCount, 1)
+        XCTAssertFalse(drainCompleted.value)
+        XCTAssertEqual(completedRequestTasks.value, 0)
+
+        backend.releaseHeldHealthChecks()
+        await drainTask.value
+
+        XCTAssertTrue(drainCompleted.value)
+        XCTAssertEqual(completedRequestTasks.value, 1)
+        XCTAssertTrue(activeSink.recordedMessages.isEmpty)
+    }
+
+    func testApplicationTerminationDrainsRequestBlockedDuringRegistration()
+        async
+    {
+        let registrationCheckpoint = BlockingLifecycleAuthorizationCheckpoint()
+        let backend = MockBackend()
+        let router = makeRouter(
+            backend: backend,
+            requestTaskRegistrationCheckpoint: {
+                registrationCheckpoint.checkpoint()
+            }
+        )
+        let sink = RecordingSink()
+
+        registrationCheckpoint.arm()
+        let handleTask = Task {
+            router.handle(ProtocolEnvelope(
+                type: MessageType.runtimeHealth,
+                requestID: "termination-registration-race"
+            ), sink: sink)
+        }
+        let didEnterRegistration = await registrationCheckpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterRegistration)
+        guard didEnterRegistration else {
+            registrationCheckpoint.release()
+            await handleTask.value
+            return
+        }
+
+        router.beginApplicationTermination()
+        let drainCompleted = LockedBox(false)
+        let drainTask = Task {
+            await router.drainApplicationTermination()
+            drainCompleted.value = true
+        }
+        await Task.yield()
+        XCTAssertFalse(drainCompleted.value)
+
+        registrationCheckpoint.release()
+        await handleTask.value
+        await drainTask.value
+
+        XCTAssertTrue(drainCompleted.value)
+        XCTAssertEqual(backend.healthCheckCallCount, 0)
+        XCTAssertTrue(sink.recordedMessages.isEmpty)
+    }
+
+    func testApplicationTerminationWaitsForChatTitleCancellationDispatch()
+        async throws
+    {
+        let store = RecordingRuntimeChatEventStore(
+            sessions: [
+                placeholderChatSession(
+                    sessionID: "termination-title-cancellation"
+                )
+            ],
+            messages: [
+                "termination-title-cancellation": firstAnsweredTitleMessages(
+                    user: "Wait for queued cancellation before quitting.",
+                    assistant: "The bounded drain tracks that work."
+                )
+            ]
+        )
+        let streamReady = DispatchSemaphore(value: 0)
+        let cancellationEntered = DispatchSemaphore(value: 0)
+        let releaseCancellation = DispatchSemaphore(value: 0)
+        let deadlineScheduler =
+            ManualChatTitleGenerationDeadlineScheduler()
+        let backend = MockBackend(
+            models: [
+                ModelInfo(
+                    id: "llama3.1:8b",
+                    name: "llama3.1:8b",
+                    installed: true
+                )
+            ],
+            finishChatStream: false,
+            onChatStreamReady: {
+                streamReady.signal()
+            },
+            cancelHandler: { generationID in
+                cancellationEntered.signal()
+                releaseCancellation.wait()
+                return .cancelled(generationID: generationID)
+            }
+        )
+        var didReleaseCancellation = false
+        defer {
+            if !didReleaseCancellation {
+                releaseCancellation.signal()
+            }
+            backend.finishChat(with: [])
+        }
+        let router = makeRouter(
+            backend: backend,
+            chatEventStore: store,
+            chatTitleGenerationDeadlineSchedule: {
+                nanoseconds,
+                action in
+                deadlineScheduler.schedule(nanoseconds, action: action)
+            }
+        )
+        let sink = RecordingSink()
+        router.handle(
+            titleRequestEnvelope(
+                requestID: "termination-title-cancellation-request",
+                sessionID: "termination-title-cancellation"
+            ),
+            sink: sink
+        )
+        assertAsyncTrue(await waitForSemaphore(streamReady, timeout: 1))
+        XCTAssertTrue(deadlineScheduler.fireNext())
+        let result = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(
+            result?.payload["title"],
+            .string("The bounded drain tracks that work")
+        )
+        assertAsyncTrue(
+            await waitForSemaphore(cancellationEntered, timeout: 1)
+        )
+
+        router.beginApplicationTermination()
+        let terminationDrainCompleted = LockedBox(false)
+        let terminationDrainTask = Task {
+            await router.drainApplicationTermination()
+            terminationDrainCompleted.value = true
+        }
+        let didDrainBeforeCancellationReturned = await waitForCondition(
+            timeout: 0.05
+        ) {
+            terminationDrainCompleted.value
+        }
+        XCTAssertFalse(didDrainBeforeCancellationReturned)
+
+        didReleaseCancellation = true
+        releaseCancellation.signal()
+        backend.finishChat(with: [])
+        await terminationDrainTask.value
+
+        XCTAssertTrue(terminationDrainCompleted.value)
+        XCTAssertEqual(backend.cancelledGenerationIDs.count, 1)
+    }
+
+    func testApplicationTerminationWaitsForMemorySummaryCancellationDispatch()
+        async throws
+    {
+        let chatStore = SQLiteRuntimeChatEventStore(
+            databaseURL: temporarySQLiteURL()
+        )
+        let memoryStore = JSONLRuntimeMemoryStore(
+            fileURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathComponent("runtime-memory-events.jsonl")
+        )
+        let sessionID = "termination-summary-cancellation-session"
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: sessionID,
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "Termination summary cancellation"
+        )
+        let streamReady = DispatchSemaphore(value: 0)
+        let cancellationEntered = DispatchSemaphore(value: 0)
+        let releaseCancellation = DispatchSemaphore(value: 0)
+        let backend = MockBackend(
+            models: [
+                ModelInfo(
+                    id: "termination-summary-cancellation-model",
+                    name: "termination-summary-cancellation-model",
+                    installed: true
+                )
+            ],
+            finishChatStream: false,
+            onChatStreamReady: {
+                streamReady.signal()
+            },
+            cancelHandler: { generationID in
+                cancellationEntered.signal()
+                releaseCancellation.wait()
+                return .cancelled(generationID: generationID)
+            }
+        )
+        var didReleaseCancellation = false
+        defer {
+            if !didReleaseCancellation {
+                releaseCancellation.signal()
+            }
+            backend.finishChat(with: [])
+        }
+        let router = makeRouter(
+            backend: backend,
+            chatEventStore: chatStore,
+            memoryStore: memoryStore
+        )
+        let listSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "termination-summary-cancellation-list"
+        ), sink: listSink)
+        let listResponse = try await listSink.waitForMessages(count: 1).last
+        guard case .array(let drafts)? = listResponse?.payload["drafts"],
+              case .object(let draft)? = drafts.first,
+              case .string(let draftID)? = draft["id"] else {
+            return XCTFail("Expected deterministic summary draft")
+        }
+
+        let generationSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "termination-summary-cancellation-generate",
+            payload: [
+                "draft_id": .string(draftID),
+                "model": .string(
+                    "termination-summary-cancellation-model"
+                ),
+                "expected_session_id": .string(sessionID),
+                "expected_source_message_count": .number(6),
+            ]
+        ), sink: generationSink)
+        assertAsyncTrue(await waitForSemaphore(streamReady, timeout: 1))
+        router.connectionDidClose(generationSink.connectionID)
+        assertAsyncTrue(
+            await waitForSemaphore(cancellationEntered, timeout: 1)
+        )
+
+        router.beginApplicationTermination()
+        let terminationDrainCompleted = LockedBox(false)
+        let terminationDrainTask = Task {
+            await router.drainApplicationTermination()
+            terminationDrainCompleted.value = true
+        }
+        let didDrainBeforeCancellationReturned = await waitForCondition(
+            timeout: 0.05
+        ) {
+            terminationDrainCompleted.value
+        }
+        XCTAssertFalse(didDrainBeforeCancellationReturned)
+
+        didReleaseCancellation = true
+        releaseCancellation.signal()
+        backend.finishChat(with: [])
+        await terminationDrainTask.value
+
+        XCTAssertTrue(terminationDrainCompleted.value)
+        XCTAssertEqual(backend.cancelledGenerationIDs.count, 1)
+        XCTAssertTrue(
+            try memoryStore.generatedMemorySummaryDrafts(
+                ownerDeviceID: nil
+            ).isEmpty
+        )
+    }
+
     func testModelsListSingleFlightCoalescesBoundedWaitersAndDoesNotCacheSuccess()
         async throws
     {
@@ -11240,11 +11541,224 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertTrue(connectionCloseReturned)
         XCTAssertTrue(try memoryStore.generatedMemorySummaryDrafts(ownerDeviceID: nil).isEmpty)
 
+        router.beginApplicationTermination()
+        let terminationDrainCompleted = LockedBox(false)
+        let terminationDrainTask = Task {
+            await router.drainApplicationTermination()
+            terminationDrainCompleted.value = true
+        }
+        await Task.yield()
+        XCTAssertFalse(terminationDrainCompleted.value)
+
         memoryStore.releasePersistence.signal()
+        await terminationDrainTask.value
         let persistenceCompleted = await waitForCondition {
             (try? memoryStore.generatedMemorySummaryDrafts(ownerDeviceID: nil).count) == 1
         }
         XCTAssertTrue(persistenceCompleted)
+        XCTAssertTrue(terminationDrainCompleted.value)
+    }
+
+    func testApplicationTerminationWaitsForDeferredSummaryPublicationAndPersistence()
+        async throws
+    {
+        let chatStore = SQLiteRuntimeChatEventStore(
+            databaseURL: temporarySQLiteURL()
+        )
+        let memoryStore = BlockingGeneratedDraftPersistenceStore()
+        var didReleasePersistence = false
+        defer {
+            if !didReleasePersistence {
+                memoryStore.releasePersistence.signal()
+            }
+        }
+        let sessionID = "termination-deferred-publication-session"
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: sessionID,
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "Termination deferred publication"
+        )
+        let requestCompleted = DispatchSemaphore(value: 0)
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(
+                    id: "termination-deferred-publication-model",
+                    name: "termination-deferred-publication-model",
+                    installed: true
+                )],
+                chatEvents: [
+                    .delta(#"{"summary":"Drain after transport acknowledgement."}"#),
+                    .done(inputTokens: 2, outputTokens: 3),
+                ]
+            ),
+            chatEventStore: chatStore,
+            memoryStore: memoryStore,
+            requestTaskCompletionCheckpoint: {
+                requestCompleted.signal()
+            }
+        )
+        let listSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "termination-deferred-publication-list"
+        ), sink: listSink)
+        let listResponse = try await listSink.waitForMessages(count: 1).last
+        guard case .array(let drafts)? = listResponse?.payload["drafts"],
+              case .object(let draft)? = drafts.first,
+              case .string(let draftID)? = draft["id"] else {
+            return XCTFail("Expected deterministic summary draft")
+        }
+        assertAsyncTrue(await waitForSemaphore(requestCompleted, timeout: 1))
+
+        let generationSink = DeferredPublicationSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "termination-deferred-publication-generate",
+            payload: [
+                "draft_id": .string(draftID),
+                "model": .string("termination-deferred-publication-model"),
+                "expected_session_id": .string(sessionID),
+                "expected_source_message_count": .number(6),
+            ]
+        ), sink: generationSink)
+        assertAsyncTrue(
+            await waitForSemaphore(
+                generationSink.publicationEntered,
+                timeout: 1
+            )
+        )
+        assertAsyncTrue(await waitForSemaphore(requestCompleted, timeout: 1))
+
+        router.beginApplicationTermination()
+        let terminationDrainCompleted = LockedBox(false)
+        let terminationDrainTask = Task {
+            await router.drainApplicationTermination()
+            terminationDrainCompleted.value = true
+        }
+        let didDrainBeforePublication = await waitForCondition(timeout: 0.05) {
+            terminationDrainCompleted.value
+        }
+        XCTAssertFalse(didDrainBeforePublication)
+
+        generationSink.complete(succeeded: true)
+        assertAsyncTrue(
+            await waitForSemaphore(memoryStore.persistenceEntered, timeout: 1)
+        )
+        XCTAssertFalse(terminationDrainCompleted.value)
+
+        didReleasePersistence = true
+        memoryStore.releasePersistence.signal()
+        await terminationDrainTask.value
+
+        XCTAssertTrue(terminationDrainCompleted.value)
+        XCTAssertEqual(
+            try memoryStore.generatedMemorySummaryDrafts(
+                ownerDeviceID: nil
+            ).count,
+            1
+        )
+    }
+
+    func testApplicationTerminationDrainsFailedDeferredSummaryPublicationWithoutPersistence()
+        async throws
+    {
+        let chatStore = SQLiteRuntimeChatEventStore(
+            databaseURL: temporarySQLiteURL()
+        )
+        let memoryStore = JSONLRuntimeMemoryStore(
+            fileURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathComponent("runtime-memory-events.jsonl")
+        )
+        let sessionID = "termination-failed-publication-session"
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: sessionID,
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "Termination failed publication"
+        )
+        let requestCompleted = DispatchSemaphore(value: 0)
+        let persistenceCompleted = DispatchSemaphore(value: 0)
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(
+                    id: "termination-failed-publication-model",
+                    name: "termination-failed-publication-model",
+                    installed: true
+                )],
+                chatEvents: [
+                    .delta(#"{"summary":"Do not persist a failed delivery."}"#),
+                    .done(inputTokens: 2, outputTokens: 3),
+                ]
+            ),
+            chatEventStore: chatStore,
+            memoryStore: memoryStore,
+            requestTaskCompletionCheckpoint: {
+                requestCompleted.signal()
+            },
+            memorySummaryPersistenceRequestCompletionCheckpoint: {
+                persistenceCompleted.signal()
+            }
+        )
+        let listSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "termination-failed-publication-list"
+        ), sink: listSink)
+        let listResponse = try await listSink.waitForMessages(count: 1).last
+        guard case .array(let drafts)? = listResponse?.payload["drafts"],
+              case .object(let draft)? = drafts.first,
+              case .string(let draftID)? = draft["id"] else {
+            return XCTFail("Expected deterministic summary draft")
+        }
+        assertAsyncTrue(await waitForSemaphore(requestCompleted, timeout: 1))
+
+        let generationSink = DeferredPublicationSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "termination-failed-publication-generate",
+            payload: [
+                "draft_id": .string(draftID),
+                "model": .string("termination-failed-publication-model"),
+                "expected_session_id": .string(sessionID),
+                "expected_source_message_count": .number(6),
+            ]
+        ), sink: generationSink)
+        assertAsyncTrue(
+            await waitForSemaphore(
+                generationSink.publicationEntered,
+                timeout: 1
+            )
+        )
+        assertAsyncTrue(await waitForSemaphore(requestCompleted, timeout: 1))
+
+        router.beginApplicationTermination()
+        let terminationDrainCompleted = LockedBox(false)
+        let terminationDrainTask = Task {
+            await router.drainApplicationTermination()
+            terminationDrainCompleted.value = true
+        }
+        let didDrainBeforeFailure = await waitForCondition(timeout: 0.05) {
+            terminationDrainCompleted.value
+        }
+        XCTAssertFalse(didDrainBeforeFailure)
+
+        generationSink.complete(succeeded: false)
+        await terminationDrainTask.value
+
+        XCTAssertTrue(terminationDrainCompleted.value)
+        XCTAssertEqual(
+            persistenceCompleted.wait(timeout: .now() + 0.05),
+            .timedOut
+        )
+        XCTAssertTrue(
+            try memoryStore.generatedMemorySummaryDrafts(
+                ownerDeviceID: nil
+            ).isEmpty
+        )
     }
 
     func testMemorySummaryDraftGeneratePersistsOnlyAfterTransportSuccessAndRetriesMaterializedCandidate()
@@ -30913,24 +31427,167 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
+    func testCompanionAppModelTerminationCancelsAndDrainsRuntimeChatRetentionMaintenance()
+        async
+    {
+        let retentionOperation = BlockingRuntimeChatRetentionOperation()
+        let transport = FakeRuntimeTransport()
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: transport,
+            advertiser: FakeRuntimeAdvertiser(),
+            runtimeChatEventStore: RecordingRuntimeChatEventStore(),
+            runtimeRouteHostProvider: { "192.168.1.44" },
+            runtimeChatRetentionMaintenanceOperation: { _ in
+                await retentionOperation.run()
+            }
+        )
+
+        model.start()
+        assertAsyncTrue(
+            await waitForSemaphore(retentionOperation.entered, timeout: 1)
+        )
+        XCTAssertEqual(model.runtimeChatRetentionStatus.state, .running)
+        XCTAssertEqual(retentionOperation.invocationCount, 1)
+
+        model.beginApplicationTermination()
+        XCTAssertEqual(model.runtimeChatRetentionStatus.state, .notRun)
+        assertAsyncTrue(
+            await waitForSemaphore(
+                retentionOperation.cancellationObserved,
+                timeout: 1
+            )
+        )
+        let logsAfterTerminationBegan = model.logs
+
+        let terminationDrainCompleted = LockedBox(false)
+        let terminationDrainTask = Task { @MainActor in
+            await model.drainApplicationTermination()
+            terminationDrainCompleted.value = true
+        }
+        let didDrainBeforeMaintenanceReturned = await waitForCondition(
+            timeout: 0.05
+        ) {
+            terminationDrainCompleted.value
+        }
+        XCTAssertFalse(didDrainBeforeMaintenanceReturned)
+
+        await model.runRuntimeChatRetentionMaintenance()
+        XCTAssertEqual(retentionOperation.invocationCount, 1)
+
+        retentionOperation.release(returning: 7)
+        await terminationDrainTask.value
+
+        XCTAssertTrue(terminationDrainCompleted.value)
+        XCTAssertEqual(model.runtimeChatRetentionStatus.state, .notRun)
+        XCTAssertEqual(model.logs, logsAfterTerminationBegan)
+        XCTAssertEqual(transport.stopCount, 1)
+
+        let manualRetentionOperation =
+            BlockingRuntimeChatRetentionOperation()
+        let manualTransport = FakeRuntimeTransport()
+        let manualModel = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: manualTransport,
+            advertiser: FakeRuntimeAdvertiser(),
+            runtimeChatEventStore: RecordingRuntimeChatEventStore(),
+            runtimeRouteHostProvider: { "192.168.1.44" },
+            runtimeChatRetentionMaintenanceOperation: { _ in
+                await manualRetentionOperation.run()
+            }
+        )
+        let manualMaintenanceTask = Task { @MainActor in
+            await manualModel.runRuntimeChatRetentionMaintenance()
+        }
+
+        assertAsyncTrue(
+            await waitForSemaphore(
+                manualRetentionOperation.entered,
+                timeout: 1
+            )
+        )
+        XCTAssertEqual(
+            manualModel.runtimeChatRetentionStatus.state,
+            .running
+        )
+        XCTAssertEqual(manualRetentionOperation.invocationCount, 1)
+
+        manualModel.beginApplicationTermination()
+        XCTAssertEqual(
+            manualModel.runtimeChatRetentionStatus.state,
+            .notRun
+        )
+        assertAsyncTrue(
+            await waitForSemaphore(
+                manualRetentionOperation.cancellationObserved,
+                timeout: 1
+            )
+        )
+        let manualLogsAfterTerminationBegan = manualModel.logs
+
+        let manualTerminationDrainCompleted = LockedBox(false)
+        let manualTerminationDrainTask = Task { @MainActor in
+            await manualModel.drainApplicationTermination()
+            manualTerminationDrainCompleted.value = true
+        }
+        let didManualDrainBeforeMaintenanceReturned =
+            await waitForCondition(timeout: 0.05) {
+                manualTerminationDrainCompleted.value
+            }
+        XCTAssertFalse(didManualDrainBeforeMaintenanceReturned)
+
+        await manualModel.runRuntimeChatRetentionMaintenance()
+        XCTAssertEqual(manualRetentionOperation.invocationCount, 1)
+
+        manualRetentionOperation.release(returning: 11)
+        await manualMaintenanceTask.value
+        await manualTerminationDrainTask.value
+
+        XCTAssertTrue(manualTerminationDrainCompleted.value)
+        XCTAssertEqual(
+            manualModel.runtimeChatRetentionStatus.state,
+            .notRun
+        )
+        XCTAssertEqual(
+            manualModel.logs,
+            manualLogsAfterTerminationBegan
+        )
+        XCTAssertEqual(manualTransport.stopCount, 0)
+    }
+
+    @MainActor
     func testCompanionAppModelRetentionScheduleDoesNotKeepModelAlive() async throws {
+        let retentionOperation = BlockingRuntimeChatRetentionOperation()
         weak var weakModel: CompanionAppModel?
         var model: CompanionAppModel? = CompanionAppModel(
             backend: MockBackend(status: .available),
             peerServer: FakeRuntimeTransport(),
             advertiser: FakeRuntimeAdvertiser(),
-            runtimeChatEventStore: SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL()),
-            runtimeRouteHostProvider: { "192.168.1.44" }
+            runtimeChatEventStore: RecordingRuntimeChatEventStore(),
+            runtimeRouteHostProvider: { "192.168.1.44" },
+            runtimeChatRetentionMaintenanceOperation: { _ in
+                await retentionOperation.run()
+            }
         )
         weakModel = model
 
         model?.start()
+        assertAsyncTrue(
+            await waitForSemaphore(retentionOperation.entered, timeout: 1)
+        )
         model = nil
         for _ in 0..<200 where weakModel != nil {
             try await Task.sleep(nanoseconds: 1_000_000)
         }
 
         XCTAssertNil(weakModel)
+        assertAsyncTrue(
+            await waitForSemaphore(
+                retentionOperation.cancellationObserved,
+                timeout: 1
+            )
+        )
+        retentionOperation.release(returning: 0)
     }
 
     @MainActor
@@ -34097,6 +34754,127 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(metadata.txtRecord["route_token"], metadata.routeToken)
         XCTAssertNil(metadata.txtRecord["device_id"])
         XCTAssertNil(metadata.txtRecord["fingerprint"])
+    }
+
+    @MainActor
+    func testCompanionAppModelSuspendsAndResumesActiveRuntimeOnceAtSamePort()
+        async throws
+    {
+        let transport = FakeRuntimeTransport()
+        let advertiser = FakeRuntimeAdvertiser()
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: transport,
+            advertiser: advertiser
+        )
+
+        XCTAssertTrue(model.requestStartForUserInterface(port: 43_210))
+        XCTAssertEqual(model.transportState.state, .advertising)
+
+        XCTAssertTrue(model.suspendForSystemSleep())
+        XCTAssertFalse(model.suspendForSystemSleep())
+        XCTAssertEqual(model.transportState, .stopped)
+        XCTAssertEqual(transport.startedPorts, [43_210])
+        XCTAssertEqual(transport.stopCount, 1)
+        XCTAssertEqual(advertiser.startCount, 1)
+        XCTAssertEqual(advertiser.stopCount, 1)
+
+        XCTAssertFalse(model.requestStartForUserInterface(port: 43_211))
+        model.start(port: 43_211)
+        XCTAssertEqual(transport.startedPorts, [43_210])
+        XCTAssertEqual(advertiser.startCount, 1)
+
+        XCTAssertTrue(model.resumeAfterSystemWake())
+        XCTAssertFalse(model.resumeAfterSystemWake())
+        XCTAssertEqual(model.transportState.state, .advertising)
+        XCTAssertEqual(transport.startedPorts, [43_210, 43_210])
+        XCTAssertEqual(advertiser.startCount, 2)
+
+        XCTAssertTrue(model.suspendForSystemSleep())
+        XCTAssertEqual(transport.stopCount, 2)
+        XCTAssertEqual(advertiser.stopCount, 2)
+        model.stop()
+
+        XCTAssertFalse(model.resumeAfterSystemWake())
+        XCTAssertEqual(transport.stopCount, 2)
+        XCTAssertEqual(advertiser.stopCount, 2)
+    }
+
+    @MainActor
+    func testCompanionAppModelSuspendsStartingRuntimeAndIgnoresPreSleepCallbacks()
+        async throws
+    {
+        let transport = FakeRuntimeTransport(statusesAfterStart: [
+            .starting(port: 43_216),
+            .starting(port: 43_216),
+        ])
+        let advertiser = FakeRuntimeAdvertiser()
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: transport,
+            advertiser: advertiser
+        )
+        defer { model.stop() }
+
+        XCTAssertTrue(model.requestStartForUserInterface(port: 43_216))
+        XCTAssertEqual(model.transportState, .starting(port: 43_216))
+        XCTAssertTrue(model.suspendForSystemSleep())
+        XCTAssertEqual(model.transportState, .stopped)
+        XCTAssertTrue(model.resumeAfterSystemWake())
+        XCTAssertEqual(model.transportState, .starting(port: 43_216))
+        XCTAssertEqual(transport.startedPorts, [43_216, 43_216])
+
+        transport.emitStatus(.listening(port: 43_216), start: 0)
+        await Task.yield()
+        await Task.yield()
+        XCTAssertEqual(model.transportState, .starting(port: 43_216))
+        XCTAssertNil(advertiser.startedPort)
+
+        transport.emitStatus(.listening(port: 43_216), start: 1)
+        assertAsyncTrue(await waitForCondition {
+            model.transportState == .advertising(
+                serviceName: "_aetherlink._tcp.local.",
+                port: 43_216
+            )
+        })
+        XCTAssertEqual(advertiser.startCount, 1)
+    }
+
+    @MainActor
+    func testCompanionAppModelDoesNotResumeStoppedOrFailedRuntimeAfterSystemWake()
+        async throws
+    {
+        let stoppedTransport = FakeRuntimeTransport()
+        let stoppedModel = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: stoppedTransport,
+            advertiser: FakeRuntimeAdvertiser()
+        )
+
+        XCTAssertFalse(stoppedModel.suspendForSystemSleep())
+        XCTAssertFalse(stoppedModel.resumeAfterSystemWake())
+        XCTAssertEqual(stoppedTransport.startedPorts, [])
+
+        let failedTransport = FakeRuntimeTransport(
+            statusAfterStart: .failed("Port is already in use.")
+        )
+        let failedModel = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: failedTransport,
+            advertiser: FakeRuntimeAdvertiser()
+        )
+        defer { failedModel.stop() }
+
+        XCTAssertTrue(
+            failedModel.requestStartForUserInterface(port: 43_217)
+        )
+        XCTAssertEqual(
+            failedModel.transportState,
+            .failed("Port is already in use.")
+        )
+        XCTAssertFalse(failedModel.suspendForSystemSleep())
+        XCTAssertFalse(failedModel.resumeAfterSystemWake())
+        XCTAssertEqual(failedTransport.startedPorts, [43_217])
     }
 
     @MainActor
@@ -38682,6 +39460,56 @@ private final class RecordingSink: RuntimeMessageSink, @unchecked Sendable {
     }
 }
 
+private final class BlockingRuntimeChatRetentionOperation:
+    @unchecked Sendable {
+    let entered = DispatchSemaphore(value: 0)
+    let cancellationObserved = DispatchSemaphore(value: 0)
+
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Int, Never>?
+    private var releasedResult: Int?
+    private var storedInvocationCount = 0
+
+    var invocationCount: Int {
+        lock.withLock { storedInvocationCount }
+    }
+
+    func run() async -> Int {
+        lock.withLock {
+            storedInvocationCount += 1
+        }
+        entered.signal()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let resolvedResult = lock.withLock { () -> Int? in
+                    if let releasedResult = self.releasedResult {
+                        return releasedResult
+                    }
+                    precondition(self.continuation == nil)
+                    self.continuation = continuation
+                    return nil
+                }
+                if let resolvedResult {
+                    continuation.resume(returning: resolvedResult)
+                }
+            }
+        } onCancel: {
+            self.cancellationObserved.signal()
+        }
+    }
+
+    func release(returning result: Int) {
+        let continuation = lock.withLock {
+            precondition(releasedResult == nil)
+            releasedResult = result
+            let continuation = self.continuation
+            self.continuation = nil
+            return continuation
+        }
+        continuation?.resume(returning: result)
+    }
+}
+
 private final class DeferredPublicationSink: RuntimeMessageSink, @unchecked Sendable {
     let connectionID = UUID()
     let publicationEntered = DispatchSemaphore(value: 0)
@@ -38835,6 +39663,7 @@ private final class FakeRuntimeTransport: RuntimeTransport, RuntimeStatusReporti
     private(set) var startedPort: UInt16?
     private(set) var startedPorts: [UInt16] = []
     private(set) var didStop = false
+    private(set) var stopCount = 0
     private(set) var onMessage: LocalPeerMessageHandler?
     var onStatusChange: (@Sendable (PeerServerStatus) -> Void)?
 
@@ -38863,6 +39692,7 @@ private final class FakeRuntimeTransport: RuntimeTransport, RuntimeStatusReporti
 
     func stop() {
         didStop = true
+        stopCount += 1
         onMessage = nil
         status = .stopped
     }
@@ -38878,6 +39708,7 @@ private final class FakeRuntimeAdvertiser: RuntimeAdvertiser {
     private(set) var startedMetadata: RuntimeAdvertisementMetadata?
     private(set) var didStop = false
     private(set) var startCount = 0
+    private(set) var stopCount = 0
 
     func start(port: Int32, metadata: RuntimeAdvertisementMetadata) {
         startedPort = port
@@ -38888,6 +39719,7 @@ private final class FakeRuntimeAdvertiser: RuntimeAdvertiser {
 
     func stop() {
         didStop = true
+        stopCount += 1
     }
 }
 

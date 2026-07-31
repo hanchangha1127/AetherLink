@@ -3,6 +3,11 @@ package com.localagentbridge.android
 import android.content.Context
 import android.content.res.Configuration
 import android.os.LocaleList
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.activity.result.ActivityResultRegistry
+import androidx.activity.result.ActivityResultRegistryOwner
+import androidx.activity.result.contract.ActivityResultContract
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -10,6 +15,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -23,6 +30,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -34,6 +42,11 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityOptionsCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.util.Locale
@@ -162,6 +175,460 @@ class PairingQrScannerChromeNoDeviceComposeTest {
             assertEquals(index + 1, cancelClicks)
             assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
         }
+    }
+
+    @Test
+    fun cameraPermissionStateMachineRequestsOnlyOnFirstEntryAndNeverDuringReentry() {
+        var automaticRequestCount = 0
+        fun observeScannerEntry(stage: PairingQrCameraPermissionStage) {
+            if (shouldAutomaticallyRequestPairingQrCameraPermission(stage)) {
+                automaticRequestCount += 1
+            }
+        }
+
+        val firstEntry = pairingQrCameraPermissionStage(
+            hasPermission = false,
+            requestRecord =
+                PairingQrCameraPermissionRequestRecord.NeverStarted,
+            requestIsInFlight = false,
+            shouldShowRationale = false,
+        )
+        assertEquals(PairingQrCameraPermissionStage.NeverAsked, firstEntry)
+        assertTrue(canRequestPairingQrCameraPermission(firstEntry))
+        observeScannerEntry(firstEntry)
+
+        val requestInFlight = pairingQrCameraPermissionStage(
+            hasPermission = false,
+            requestRecord =
+                PairingQrCameraPermissionRequestRecord.LaunchPending,
+            requestIsInFlight = true,
+            shouldShowRationale = false,
+        )
+        assertEquals(
+            PairingQrCameraPermissionStage.RequestInFlight,
+            requestInFlight,
+        )
+        assertFalse(canRequestPairingQrCameraPermission(requestInFlight))
+        observeScannerEntry(requestInFlight)
+
+        val firstDenialAndReentry = pairingQrCameraPermissionStage(
+            hasPermission = false,
+            requestRecord =
+                PairingQrCameraPermissionRequestRecord.Recorded,
+            requestIsInFlight = false,
+            shouldShowRationale = true,
+        )
+        assertEquals(
+            PairingQrCameraPermissionStage.RationaleRequired,
+            firstDenialAndReentry,
+        )
+        assertTrue(canRequestPairingQrCameraPermission(firstDenialAndReentry))
+        observeScannerEntry(firstDenialAndReentry)
+
+        val repeatedDenialAndReentry = pairingQrCameraPermissionStage(
+            hasPermission = false,
+            requestRecord =
+                PairingQrCameraPermissionRequestRecord.Recorded,
+            requestIsInFlight = false,
+            shouldShowRationale = false,
+        )
+        assertEquals(
+            PairingQrCameraPermissionStage.SettingsRecovery,
+            repeatedDenialAndReentry,
+        )
+        assertFalse(
+            canRequestPairingQrCameraPermission(repeatedDenialAndReentry),
+        )
+        observeScannerEntry(repeatedDenialAndReentry)
+
+        assertEquals(1, automaticRequestCount)
+    }
+
+    @Test
+    fun cameraPermissionStateMachineReconcilesSettingsReturnWithoutReRequest() {
+        val deniedAfterSettings = pairingQrCameraPermissionStage(
+            hasPermission = false,
+            requestRecord =
+                PairingQrCameraPermissionRequestRecord.Recorded,
+            requestIsInFlight = false,
+            shouldShowRationale = false,
+        )
+        assertEquals(
+            PairingQrCameraPermissionStage.SettingsRecovery,
+            deniedAfterSettings,
+        )
+        assertFalse(
+            shouldAutomaticallyRequestPairingQrCameraPermission(
+                deniedAfterSettings,
+            ),
+        )
+
+        val grantedAfterSettings = pairingQrCameraPermissionStage(
+            hasPermission = true,
+            requestRecord =
+                PairingQrCameraPermissionRequestRecord.Recorded,
+            requestIsInFlight = false,
+            shouldShowRationale = false,
+        )
+        assertEquals(
+            PairingQrCameraPermissionStage.Granted,
+            grantedAfterSettings,
+        )
+        assertFalse(canRequestPairingQrCameraPermission(grantedAfterSettings))
+
+        val revokedAfterGrant = pairingQrCameraPermissionStage(
+            hasPermission = false,
+            requestRecord =
+                PairingQrCameraPermissionRequestRecord.Recorded,
+            requestIsInFlight = false,
+            shouldShowRationale = false,
+        )
+        assertEquals(
+            PairingQrCameraPermissionStage.SettingsRecovery,
+            revokedAfterGrant,
+        )
+        assertFalse(
+            shouldAutomaticallyRequestPairingQrCameraPermission(
+                revokedAfterGrant,
+            ),
+        )
+    }
+
+    @Test
+    fun cameraPermissionRequestTransactionPersistsBeforeLaunchAndFinalizesAfterAcceptance() {
+        var requestRecord =
+            PairingQrCameraPermissionRequestRecord.NeverStarted
+        var requestIsInFlight = false
+        val events = mutableListOf<String>()
+
+        val launched = beginPairingQrCameraPermissionRequest(
+            requestRecord = requestRecord,
+            persistRequestRecord = { updatedRecord ->
+                events += "persist:$updatedRecord"
+                true
+            },
+            updateRequestRecord = { updatedRecord ->
+                requestRecord = updatedRecord
+                events += "record:$updatedRecord"
+            },
+            updateRequestInFlight = { inFlight ->
+                requestIsInFlight = inFlight
+                events += "in-flight:$inFlight"
+            },
+            launchPermissionRequest = {
+                events += "launch"
+            },
+        )
+
+        assertTrue(launched)
+        assertEquals(
+            PairingQrCameraPermissionRequestRecord.Recorded,
+            requestRecord,
+        )
+        assertTrue(requestIsInFlight)
+        assertEquals(
+            listOf(
+                "persist:LaunchPending",
+                "record:LaunchPending",
+                "in-flight:true",
+                "launch",
+                "persist:Recorded",
+                "record:Recorded",
+            ),
+            events,
+        )
+
+        var synchronousRecord =
+            PairingQrCameraPermissionRequestRecord.NeverStarted
+        var synchronousRequestIsInFlight = false
+        val synchronousLaunchAccepted =
+            beginPairingQrCameraPermissionRequest(
+                requestRecord = synchronousRecord,
+                persistRequestRecord = { true },
+                updateRequestRecord = { synchronousRecord = it },
+                updateRequestInFlight = {
+                    synchronousRequestIsInFlight = it
+                },
+                launchPermissionRequest = {
+                    synchronousRecord =
+                        completePairingQrCameraPermissionRequest(
+                            requestRecord = synchronousRecord,
+                            persistRequestRecord = { true },
+                        )
+                    synchronousRequestIsInFlight = false
+                },
+            )
+        assertTrue(synchronousLaunchAccepted)
+        assertEquals(
+            PairingQrCameraPermissionRequestRecord.Recorded,
+            synchronousRecord,
+        )
+        assertFalse(synchronousRequestIsInFlight)
+    }
+
+    @Test
+    fun cameraPermissionRequestTransactionDoesNotLaunchWhenPersistenceFails() {
+        var requestRecord =
+            PairingQrCameraPermissionRequestRecord.NeverStarted
+        var requestIsInFlight = false
+        var launchCount = 0
+
+        val launched = beginPairingQrCameraPermissionRequest(
+            requestRecord = requestRecord,
+            persistRequestRecord = { false },
+            updateRequestRecord = { requestRecord = it },
+            updateRequestInFlight = { requestIsInFlight = it },
+            launchPermissionRequest = { launchCount += 1 },
+        )
+
+        assertFalse(launched)
+        assertEquals(0, launchCount)
+        assertEquals(
+            PairingQrCameraPermissionRequestRecord.NeverStarted,
+            requestRecord,
+        )
+        assertFalse(requestIsInFlight)
+    }
+
+    @Test
+    fun cameraPermissionRequestTransactionPersistsManualRetryAcrossLauncherFailureRecreation() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val preferencesName =
+            "camera-permission-launch-failure-${System.nanoTime()}"
+        val preferences = context.getSharedPreferences(
+            preferencesName,
+            Context.MODE_PRIVATE,
+        )
+        try {
+            var requestRecord =
+                readPairingQrCameraPermissionRequestRecord(preferences)
+            var requestIsInFlight = false
+
+            val launched = beginPairingQrCameraPermissionRequest(
+                requestRecord = requestRecord,
+                persistRequestRecord = { updatedRecord ->
+                    persistPairingQrCameraPermissionRequestRecord(
+                        preferences,
+                        updatedRecord,
+                    )
+                },
+                updateRequestRecord = { requestRecord = it },
+                updateRequestInFlight = { requestIsInFlight = it },
+                launchPermissionRequest = {
+                    throw IllegalStateException("launcher unavailable")
+                },
+            )
+
+            assertFalse(launched)
+            assertFalse(requestIsInFlight)
+            assertEquals(
+                PairingQrCameraPermissionRequestRecord.RetryRequired,
+                requestRecord,
+            )
+            val recordAfterRecreation =
+                readPairingQrCameraPermissionRequestRecord(preferences)
+            assertEquals(
+                PairingQrCameraPermissionRequestRecord.RetryRequired,
+                recordAfterRecreation,
+            )
+            val retryStage = pairingQrCameraPermissionStage(
+                hasPermission = false,
+                requestRecord = recordAfterRecreation,
+                requestIsInFlight = false,
+                shouldShowRationale = false,
+            )
+            assertEquals(
+                PairingQrCameraPermissionStage.RetryRequired,
+                retryStage,
+            )
+            assertFalse(
+                shouldAutomaticallyRequestPairingQrCameraPermission(
+                    retryStage,
+                ),
+            )
+            assertTrue(canRequestPairingQrCameraPermission(retryStage))
+        } finally {
+            context.deleteSharedPreferences(preferencesName)
+        }
+    }
+
+    @Test
+    fun cameraPermissionResumeReconcilesStaleInFlightRequestWithoutAutoRetry() {
+        listOf(true, false).forEach { completionPersists ->
+            val resumed = reconcilePairingQrCameraPermissionRequestOnResume(
+                requestRecord =
+                    PairingQrCameraPermissionRequestRecord.LaunchPending,
+                requestIsInFlight = true,
+                persistRequestRecord = { completionPersists },
+            )
+
+            assertEquals(
+                if (completionPersists) {
+                    PairingQrCameraPermissionRequestRecord.Recorded
+                } else {
+                    PairingQrCameraPermissionRequestRecord.RetryRequired
+                },
+                resumed.requestRecord,
+            )
+            assertFalse(resumed.requestIsInFlight)
+            val resumedStage = pairingQrCameraPermissionStage(
+                hasPermission = false,
+                requestRecord = resumed.requestRecord,
+                requestIsInFlight = resumed.requestIsInFlight,
+                shouldShowRationale = false,
+            )
+            assertEquals(
+                if (completionPersists) {
+                    PairingQrCameraPermissionStage.SettingsRecovery
+                } else {
+                    PairingQrCameraPermissionStage.RetryRequired
+                },
+                resumedStage,
+            )
+            assertFalse(
+                shouldAutomaticallyRequestPairingQrCameraPermission(
+                    resumedStage,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun cameraPermissionControllerHostRunsResultReentryAndResumeLifecycle() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val preferencesName =
+            "camera-permission-controller-host-${System.nanoTime()}"
+        val preferences = context.getSharedPreferences(
+            preferencesName,
+            Context.MODE_PRIVATE,
+        )
+        val platform = RecordingCameraPermissionPlatform()
+        val lifecycleOwner = ManualLifecycleOwner().apply {
+            handle(Lifecycle.Event.ON_CREATE)
+        }
+        val resultRegistry = RecordingPermissionActivityResultRegistry()
+        val resultRegistryOwner =
+            RecordingActivityResultRegistryOwner(resultRegistry)
+        val hostGeneration = mutableStateOf(0)
+        val scannerVisible = mutableStateOf(true)
+        var latestController: PairingQrCameraPermissionController? = null
+
+        try {
+            compose.setContent {
+                CompositionLocalProvider(
+                    LocalActivityResultRegistryOwner provides
+                        resultRegistryOwner,
+                    LocalLifecycleOwner provides lifecycleOwner,
+                ) {
+                    key(hostGeneration.value) {
+                        val controller =
+                            rememberPairingQrCameraPermissionController(
+                                platform = platform,
+                                preferencesOverride = preferences,
+                            )
+                        SideEffect {
+                            latestController = controller
+                        }
+                        if (scannerVisible.value) {
+                            PairingQrCameraPermissionAutoRequestEffect(
+                                controller,
+                            )
+                        }
+                    }
+                }
+            }
+            compose.waitForIdle()
+
+            assertEquals(1, resultRegistry.launchCount)
+            assertEquals(
+                PairingQrCameraPermissionStage.RequestInFlight,
+                checkNotNull(latestController).stage,
+            )
+
+            compose.runOnIdle {
+                platform.cameraPermissionRationale = true
+                resultRegistry.dispatchPermissionResult(granted = false)
+            }
+            compose.waitForIdle()
+            assertEquals(
+                PairingQrCameraPermissionStage.RationaleRequired,
+                checkNotNull(latestController).stage,
+            )
+
+            compose.runOnIdle {
+                scannerVisible.value = false
+            }
+            compose.waitForIdle()
+            compose.runOnIdle {
+                scannerVisible.value = true
+            }
+            compose.waitForIdle()
+            assertEquals(1, resultRegistry.launchCount)
+
+            compose.runOnIdle {
+                hostGeneration.value += 1
+            }
+            compose.waitForIdle()
+            assertEquals(
+                PairingQrCameraPermissionStage.RationaleRequired,
+                checkNotNull(latestController).stage,
+            )
+            assertEquals(1, resultRegistry.launchCount)
+
+            compose.runOnIdle {
+                platform.cameraPermissionGranted = true
+                platform.cameraPermissionRationale = false
+                lifecycleOwner.handle(Lifecycle.Event.ON_START)
+                lifecycleOwner.handle(Lifecycle.Event.ON_RESUME)
+            }
+            compose.waitForIdle()
+            assertEquals(
+                PairingQrCameraPermissionStage.Granted,
+                checkNotNull(latestController).stage,
+            )
+
+            compose.runOnIdle {
+                lifecycleOwner.handle(Lifecycle.Event.ON_PAUSE)
+                platform.cameraPermissionGranted = false
+                lifecycleOwner.handle(Lifecycle.Event.ON_RESUME)
+            }
+            compose.waitForIdle()
+            assertEquals(
+                PairingQrCameraPermissionStage.SettingsRecovery,
+                checkNotNull(latestController).stage,
+            )
+            assertEquals(1, resultRegistry.launchCount)
+        } finally {
+            context.deleteSharedPreferences(preferencesName)
+        }
+    }
+
+    @Test
+    fun scannerChromeDisablesPermissionActionWhileRequestIsInFlight() {
+        val expected = scannerLocaleExpectations().first()
+        var requestPermissionClicks = 0
+
+        compose.setContent {
+            LocalizedScannerContent(languageTag = expected.languageTag) {
+                PairingQrScannerChrome(
+                    hasCameraPermission = false,
+                    cameraPermissionRequestInFlight = true,
+                    torchAvailable = false,
+                    torchEnabled = false,
+                    onTorchToggle = {},
+                    onCancel = {},
+                    onRequestCameraPermission = {
+                        requestPermissionClicks += 1
+                    },
+                )
+            }
+        }
+
+        compose.onNodeWithText(expected.permissionAction)
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+        compose.onAllNodesWithTag(CAMERA_PREVIEW_TAG).assertCountEquals(0)
+        assertEquals(0, requestPermissionClicks)
     }
 
     @Test
@@ -773,6 +1240,65 @@ class PairingQrScannerChromeNoDeviceComposeTest {
         val overlapsHorizontally = first.left < second.right && second.left < first.right
         val overlapsVertically = first.top < second.bottom && second.top < first.bottom
         return overlapsHorizontally && overlapsVertically
+    }
+
+    private class RecordingCameraPermissionPlatform :
+        PairingQrCameraPermissionPlatform {
+        var cameraPermissionGranted = false
+        var cameraPermissionRationale = false
+
+        override fun hasCameraPermission(context: Context): Boolean {
+            return cameraPermissionGranted
+        }
+
+        override fun shouldShowCameraPermissionRationale(
+            activity: ComponentActivity?,
+        ): Boolean {
+            return cameraPermissionRationale
+        }
+    }
+
+    private class ManualLifecycleOwner : LifecycleOwner {
+        private val registry = LifecycleRegistry(this)
+
+        override val lifecycle: Lifecycle
+            get() = registry
+
+        fun handle(event: Lifecycle.Event) {
+            registry.handleLifecycleEvent(event)
+        }
+    }
+
+    private class RecordingPermissionActivityResultRegistry :
+        ActivityResultRegistry() {
+        var launchCount = 0
+            private set
+        private var latestRequestCode: Int? = null
+
+        override fun <I, O> onLaunch(
+            requestCode: Int,
+            contract: ActivityResultContract<I, O>,
+            input: I,
+            options: ActivityOptionsCompat?,
+        ) {
+            latestRequestCode = requestCode
+            launchCount += 1
+        }
+
+        fun dispatchPermissionResult(granted: Boolean) {
+            check(
+                dispatchResult(
+                    checkNotNull(latestRequestCode),
+                    granted,
+                ),
+            )
+        }
+    }
+
+    private class RecordingActivityResultRegistryOwner(
+        registry: ActivityResultRegistry,
+    ) : ActivityResultRegistryOwner {
+        override val activityResultRegistry: ActivityResultRegistry = registry
     }
 
     private class RecordingHapticFeedback : HapticFeedback {

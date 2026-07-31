@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import copy
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -11,6 +13,147 @@ from unittest.mock import patch
 from script import check_docs_hygiene
 from script import run_clean_release_reproducibility
 from script.check_copy_hygiene import macos_pairing_callback_wiring_failures
+
+
+def _static_truth_value(expression: ast.expr) -> bool | None:
+    if isinstance(expression, ast.UnaryOp) and isinstance(
+        expression.op,
+        ast.Not,
+    ):
+        operand = _static_truth_value(expression.operand)
+        return None if operand is None else not operand
+    if isinstance(expression, ast.BoolOp):
+        values = [_static_truth_value(value) for value in expression.values]
+        if isinstance(expression.op, ast.And):
+            if False in values:
+                return False
+            return True if all(value is True for value in values) else None
+        if isinstance(expression.op, ast.Or):
+            if True in values:
+                return True
+            return False if all(value is False for value in values) else None
+        return None
+    if isinstance(expression, ast.Compare):
+        try:
+            values = [
+                ast.literal_eval(node)
+                for node in (expression.left, *expression.comparators)
+            ]
+        except (ValueError, TypeError, SyntaxError):
+            return None
+        comparisons: list[bool] = []
+        for left, operator, right in zip(
+            values,
+            expression.ops,
+            values[1:],
+        ):
+            try:
+                if isinstance(operator, ast.Eq):
+                    comparisons.append(left == right)
+                elif isinstance(operator, ast.NotEq):
+                    comparisons.append(left != right)
+                elif isinstance(operator, ast.Is):
+                    comparisons.append(left is right)
+                elif isinstance(operator, ast.IsNot):
+                    comparisons.append(left is not right)
+                elif isinstance(operator, ast.Lt):
+                    comparisons.append(left < right)
+                elif isinstance(operator, ast.LtE):
+                    comparisons.append(left <= right)
+                elif isinstance(operator, ast.Gt):
+                    comparisons.append(left > right)
+                elif isinstance(operator, ast.GtE):
+                    comparisons.append(left >= right)
+                else:
+                    return None
+            except TypeError:
+                return None
+        return all(comparisons)
+    try:
+        return bool(ast.literal_eval(expression))
+    except (ValueError, TypeError, SyntaxError):
+        return None
+
+
+def _reachable_main_extend_counts(
+    source: str,
+    required_calls: tuple[str, ...],
+) -> dict[str, int]:
+    module = ast.parse(source)
+    main_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "main"
+    )
+    counts = {name: 0 for name in required_calls}
+
+    def statement_definitely_terminates(statement: ast.stmt) -> bool:
+        if isinstance(statement, (ast.Return, ast.Raise)):
+            return True
+        if isinstance(statement, ast.Try):
+            if block_definitely_terminates(statement.finalbody):
+                return True
+            return (
+                block_definitely_terminates(statement.body)
+                and all(
+                    block_definitely_terminates(handler.body)
+                    for handler in statement.handlers
+                )
+            )
+        if (
+            isinstance(statement, ast.If)
+            and _static_truth_value(statement.test) is True
+        ):
+            return block_definitely_terminates(statement.body)
+        if (
+            isinstance(statement, ast.Expr)
+            and isinstance(statement.value, ast.Call)
+        ):
+            function = statement.value.func
+            return (
+                isinstance(function, ast.Name)
+                and function.id in {"exit", "quit"}
+            ) or (
+                isinstance(function, ast.Attribute)
+                and isinstance(function.value, ast.Name)
+                and function.value.id == "sys"
+                and function.attr == "exit"
+            )
+        return False
+
+    def block_definitely_terminates(
+        statements: list[ast.stmt],
+    ) -> bool:
+        return any(
+            statement_definitely_terminates(statement)
+            for statement in statements
+        )
+
+    for statement in main_function.body:
+        if statement_definitely_terminates(statement):
+            break
+        if not (
+            isinstance(statement, ast.Expr)
+            and isinstance(statement.value, ast.Call)
+            and isinstance(statement.value.func, ast.Attribute)
+            and statement.value.func.attr == "extend"
+            and isinstance(statement.value.func.value, ast.Name)
+            and statement.value.func.value.id == "failures"
+            and len(statement.value.args) == 1
+            and not statement.value.keywords
+        ):
+            continue
+        validator_call = statement.value.args[0]
+        if not (
+            isinstance(validator_call, ast.Call)
+            and isinstance(validator_call.func, ast.Name)
+            and not validator_call.args
+            and not validator_call.keywords
+        ):
+            continue
+        if validator_call.func.id in counts:
+            counts[validator_call.func.id] += 1
+    return counts
 
 
 GENERIC_CALL = "model.requestPairingForUserInterface()"
@@ -173,25 +316,29 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
             )
         )
 
-        build21_command = (
+        previous_build_number = check_docs_hygiene.parse_release_version_ledger(
+            check_docs_hygiene.LOCAL_RELEASE_LEDGER.read_bytes()
+        )[-2].build_number
+        previous_build_command = (
             "--archive-dir "
-            "dist/releases/aetherlink-1.0.0+21-local-v1 --historical"
+            "dist/releases/aetherlink-1.0.0+"
+            f"{previous_build_number}-local-v1 --historical"
         )
-        without_build21_historical = dict(documents)
-        without_build21_historical[progress_path] = documents[
+        without_previous_historical = dict(documents)
+        without_previous_historical[progress_path] = documents[
             progress_path
         ].replace(
-            build21_command,
-            build21_command.removesuffix(" --historical"),
+            previous_build_command,
+            previous_build_command.removesuffix(" --historical"),
             1,
         )
         self.assertTrue(
             any(
-                "historical Build 21" in failure
+                f"historical Build {previous_build_number}" in failure
                 for failure in (
                     check_docs_hygiene
                     .release_readback_command_mode_failures(
-                        without_build21_historical
+                        without_previous_historical
                     )
                 )
             )
@@ -211,7 +358,11 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
         )
         self.assertTrue(
             any(
-                "current Build 22" in failure
+                (
+                    f"current Build "
+                    f"{check_docs_hygiene.LOCAL_RELEASE_BUILD_NUMBER}"
+                )
+                in failure
                 for failure in (
                     check_docs_hygiene
                     .release_readback_command_mode_failures(
@@ -234,7 +385,7 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
             (
                 rf"(at the "
                 rf"{re.escape(check_docs_hygiene.LATEST_RECORDED_GIT_REFRESH_LABEL)} "
-                rf"refresh,\s+`main`\s+and `origin/main` both resolved to\s+)"
+                rf"refresh,\s+`main`\s+and\s+`origin/main` both resolved to\s+)"
                 rf"`{check_docs_hygiene.LATEST_RECORDED_GIT_REFRESH_HEAD}`"
             ),
             lambda match: match.group(1) + f"`{'0' * 40}`",
@@ -628,16 +779,16 @@ private func generatePairingQR() {{
         self.assertEqual(validator(), [])
         mutations = {
             "docs/handoff.md": (
-                "Build 22 is the latest immutable ledger archive.",
-                "Build 21 is the latest immutable ledger archive.",
+                "Build 24 is the latest immutable ledger archive.",
+                "Build 23 is the latest immutable ledger archive.",
             ),
             "docs/progress.md": (
-                "Local V1 Build 22 Qualification",
-                "Local V1 Build 21 Qualification",
+                "Local V1 Build 24 Qualification",
+                "Local V1 Build 23 Qualification",
             ),
             "docs/qa-evidence.md": (
-                "The Build 22 archive is the latest ledger entry",
-                "The Build 21 archive is the latest ledger entry",
+                "The Build 24 archive is the latest ledger entry",
+                "The Build 23 archive is the latest ledger entry",
             ),
             "docs/roadmap.md": (
                 "publish-qualified schema-v4 executions",
@@ -652,7 +803,6 @@ private func generatePairingQR() {{
                 mutated = document_text.replace(
                     current_claim,
                     stale_claim,
-                    1,
                 )
                 self.assertNotEqual(mutated, document_text)
                 failures = validator(
@@ -670,16 +820,16 @@ private func generatePairingQR() {{
 
         competing_stale_claims = {
             "docs/handoff.md": (
-                "Build 21 is the latest immutable ledger archive."
+                "Build 23 is the latest immutable ledger archive."
             ),
             "docs/progress.md": (
-                "Build 21 is the current local qualification record."
+                "Build 23 is the current local qualification record."
             ),
             "docs/qa-evidence.md": (
-                "The Build 21 archive is the latest ledger entry."
+                "The Build 23 archive is the latest ledger entry."
             ),
             "docs/roadmap.md": (
-                "Build 21 is the latest immutable local G6 package "
+                "Build 23 is the latest immutable local G6 package "
                 "qualification record."
             ),
         }
@@ -706,10 +856,10 @@ private func generatePairingQR() {{
                 "The v3 comparison-only prepublication result remains current."
             ),
             "docs/progress.md": (
-                "Build 21 remains the latest local qualification record."
+                "Build 23 remains the latest local qualification record."
             ),
             "docs/qa-evidence.md": (
-                "Build 21 continues as the current ledger qualification."
+                "Build 23 continues as the current ledger qualification."
             ),
             "docs/roadmap.md": (
                 "Separate publish-qualified schema-v3 executions remain the "
@@ -1159,6 +1309,348 @@ private func generatePairingQR() {{
                     any("exact closed" in failure for failure in failures)
                 )
 
+    def test_current_build24_clean_home_results_match_closed_contracts(
+        self,
+    ) -> None:
+        cases = (
+            (
+                (
+                    check_docs_hygiene
+                    .CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_APP_RESULT
+                ),
+                (
+                    check_docs_hygiene
+                    .current_build24_macos_clean_home_installed_app_evidence_failures
+                ),
+                ("app", "buildNumber"),
+            ),
+            (
+                (
+                    check_docs_hygiene
+                    .CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_RESULT
+                ),
+                (
+                    check_docs_hygiene
+                    .current_build24_macos_clean_home_installed_state_recovery_evidence_failures
+                ),
+                ("stateRecovery", "migrationSQLite", "totalEventCount"),
+            ),
+        )
+
+        for result_path, validator, mutation_path in cases:
+            with self.subTest(path=result_path.name):
+                self.assertEqual(validator(), [])
+                result = json.loads(result_path.read_text(encoding="utf-8"))
+                target = result
+                for key in mutation_path[:-1]:
+                    target = target[key]
+                target[mutation_path[-1]] = True
+                mutated = (
+                    json.dumps(
+                        result,
+                        ensure_ascii=True,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    )
+                    + "\n"
+                ).encode("ascii")
+
+                failures = validator(mutated)
+                self.assertTrue(
+                    any("expected identity" in failure for failure in failures)
+                )
+                self.assertTrue(
+                    any("exact closed" in failure for failure in failures)
+                )
+
+        for expected_result in (
+            (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RESULT
+            ),
+            (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RESULT
+            ),
+        ):
+            with self.subTest(scope=expected_result["scope"]):
+                self.assertEqual(
+                    expected_result["app"]["buildNumber"],
+                    check_docs_hygiene.LOCAL_RELEASE_BUILD_NUMBER,
+                )
+                self.assertEqual(
+                    expected_result["release"],
+                    {
+                        "archiveSha256": (
+                            check_docs_hygiene.LOCAL_RELEASE_EXPECTED_ZIP_SHA256
+                        ),
+                        "manifestSha256": (
+                            check_docs_hygiene
+                            .LOCAL_RELEASE_EXPECTED_MANIFEST_SHA256
+                        ),
+                        "releaseId": check_docs_hygiene.LOCAL_RELEASE_ID,
+                    },
+                )
+
+    def test_current_build24_clean_home_sources_and_documents_are_bound(
+        self,
+    ) -> None:
+        source_cases = (
+            (
+                check_docs_hygiene.MACOS_CLEAN_HOME_INSTALLED_APP_RUNNER,
+                (
+                    check_docs_hygiene
+                    .CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_RUNNER_SHA256
+                ),
+            ),
+            (
+                check_docs_hygiene.MACOS_CLEAN_HOME_INSTALLED_APP_TEST,
+                (
+                    check_docs_hygiene
+                    .CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_APP_EXPECTED_TEST_SHA256
+                ),
+            ),
+            (
+                (
+                    check_docs_hygiene
+                    .MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_RUNNER
+                ),
+                (
+                    check_docs_hygiene
+                    .CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256
+                ),
+            ),
+            (
+                (
+                    check_docs_hygiene
+                    .MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_TEST
+                ),
+                (
+                    check_docs_hygiene
+                    .CURRENT_BUILD24_MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_EXPECTED_TEST_SHA256
+                ),
+            ),
+        )
+        for path, expected_sha256 in source_cases:
+            with self.subTest(path=path.name):
+                self.assertEqual(
+                    hashlib.sha256(path.read_bytes()).hexdigest(),
+                    expected_sha256,
+                )
+
+        validator = (
+            check_docs_hygiene
+            .current_build24_macos_clean_home_lifecycle_document_failures
+        )
+        self.assertEqual(validator(), [])
+        targets = (
+            "README.md",
+            "docs/roadmap.md",
+            "docs/handoff.md",
+            "docs/progress.md",
+            "docs/qa-evidence.md",
+            "docs/releases/1.0.0-build-24-local-v1.md",
+        )
+        start_marker = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_START
+        )
+        end_marker = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_END
+        )
+        expected_body = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_BODY
+        )
+        for relative in targets:
+            with self.subTest(relative=relative):
+                path = check_docs_hygiene.ROOT / relative
+                text = path.read_text(encoding="utf-8")
+                start = text.index(start_marker) + len(start_marker)
+                end = text.index(end_marker)
+                self.assertEqual(text[start:end].strip(), expected_body)
+                mutated_body = expected_body.replace(
+                    "The canonical 2,250-byte result",
+                    "A 2,250-byte result",
+                    1,
+                )
+                self.assertNotEqual(mutated_body, expected_body)
+                mutated = text[:start] + "\n" + mutated_body + "\n" + text[end:]
+                failures = validator(
+                    document_text_by_relative={relative: mutated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "exact canonical body SHA-256" in failure
+                        for failure in failures
+                    )
+                )
+                complete_block = (
+                    start_marker
+                    + "\n"
+                    + expected_body
+                    + "\n"
+                    + end_marker
+                )
+                self.assertEqual(text.count(complete_block), 1)
+                relocated = (
+                    text.replace(complete_block, "", 1).rstrip()
+                    + "\n\n"
+                    + complete_block
+                    + "\n"
+                )
+                relocation_failures = validator(
+                    document_text_by_relative={relative: relocated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "canonical document location" in failure
+                        for failure in relocation_failures
+                    )
+                )
+
+        readme = check_docs_hygiene.README_PATH.read_text(encoding="utf-8")
+        marker_mutations = (
+            readme.replace(start_marker, "", 1),
+            readme.replace(end_marker, "", 1),
+            readme + f"\n{start_marker}\n{expected_body}\n{end_marker}\n",
+            readme.replace(start_marker, "__BUILD24_START__", 1)
+            .replace(end_marker, start_marker, 1)
+            .replace("__BUILD24_START__", end_marker, 1),
+        )
+        for mutated in marker_mutations:
+            failures = validator(
+                document_text_by_relative={"README.md": mutated}
+            )
+            self.assertTrue(
+                any(
+                    "README.md" in failure
+                    and "current Build 24 clean-HOME lifecycle" in failure
+                    for failure in failures
+                )
+            )
+
+    def test_current_build24_clean_home_validators_are_wired_into_main(
+        self,
+    ) -> None:
+        required_calls = (
+            "current_build24_macos_clean_home_installed_app_evidence_failures",
+            (
+                "current_build24_macos_clean_home_installed_state_"
+                "recovery_evidence_failures"
+            ),
+            "current_build24_macos_clean_home_lifecycle_document_failures",
+        )
+
+        def top_level_extend_counts(source: str) -> dict[str, int]:
+            module = ast.parse(source)
+            main_function = next(
+                node
+                for node in module.body
+                if isinstance(node, ast.FunctionDef) and node.name == "main"
+            )
+            counts = {name: 0 for name in required_calls}
+
+            def statement_definitely_terminates(
+                statement: ast.stmt,
+            ) -> bool:
+                if isinstance(statement, (ast.Return, ast.Raise)):
+                    return True
+                if (
+                    isinstance(statement, ast.If)
+                    and _static_truth_value(statement.test) is True
+                ):
+                    return block_definitely_terminates(statement.body)
+                if (
+                    isinstance(statement, ast.Expr)
+                    and isinstance(statement.value, ast.Call)
+                ):
+                    function = statement.value.func
+                    return (
+                        isinstance(function, ast.Name)
+                        and function.id in {"exit", "quit"}
+                    ) or (
+                        isinstance(function, ast.Attribute)
+                        and isinstance(function.value, ast.Name)
+                        and function.value.id == "sys"
+                        and function.attr == "exit"
+                    )
+                return False
+
+            def block_definitely_terminates(
+                statements: list[ast.stmt],
+            ) -> bool:
+                return any(
+                    statement_definitely_terminates(statement)
+                    for statement in statements
+                )
+
+            for statement in main_function.body:
+                if statement_definitely_terminates(statement):
+                    break
+                if not (
+                    isinstance(statement, ast.Expr)
+                    and isinstance(statement.value, ast.Call)
+                    and isinstance(statement.value.func, ast.Attribute)
+                    and statement.value.func.attr == "extend"
+                    and isinstance(statement.value.func.value, ast.Name)
+                    and statement.value.func.value.id == "failures"
+                    and len(statement.value.args) == 1
+                    and not statement.value.keywords
+                ):
+                    continue
+                validator_call = statement.value.args[0]
+                if not (
+                    isinstance(validator_call, ast.Call)
+                    and isinstance(validator_call.func, ast.Name)
+                    and not validator_call.args
+                    and not validator_call.keywords
+                ):
+                    continue
+                if validator_call.func.id in counts:
+                    counts[validator_call.func.id] += 1
+            return counts
+
+        source = (
+            check_docs_hygiene.ROOT / "script/check_docs_hygiene.py"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(
+            top_level_extend_counts(source),
+            {name: 1 for name in required_calls},
+        )
+
+        for name in required_calls:
+            wrapper = (
+                "    failures.extend(\n"
+                f"        {name}()\n"
+                "    )"
+            )
+            self.assertEqual(source.count(wrapper), 1)
+            mutations = {
+                "bare_call": source.replace(
+                    wrapper,
+                    f"    {name}()",
+                    1,
+                ),
+                "dead_branch": source.replace(
+                    wrapper,
+                    (
+                        "    if False:\n"
+                        "        failures.extend(\n"
+                        f"            {name}()\n"
+                        "        )"
+                    ),
+                    1,
+                ),
+            }
+            for label, mutated in mutations.items():
+                with self.subTest(name=name, label=label):
+                    counts = top_level_extend_counts(mutated)
+                    self.assertEqual(counts[name], 0)
+
     def test_historical_build20_local_dmg_result_and_sources_are_bound(
         self,
     ) -> None:
@@ -1211,6 +1703,3433 @@ private func generatePairingQR() {{
             )
         )
 
+    def test_current_build24_local_dmg_result_and_sources_are_bound(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_build24_macos_local_dmg_install_evidence_failures
+        )
+        self.assertEqual(validator(), [])
+
+        result_path = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_RESULT
+        )
+        baseline = json.loads(result_path.read_text(encoding="utf-8"))
+        mutations: list[dict[str, object]] = []
+
+        schema_bool = copy.deepcopy(baseline)
+        schema_bool["schemaVersion"] = True
+        mutations.append(schema_bool)
+
+        boolean_integer = copy.deepcopy(baseline)
+        boolean_integer["mount"]["readOnly"] = 1
+        mutations.append(boolean_integer)
+
+        integer_float = copy.deepcopy(baseline)
+        integer_float["state"]["databaseCount"] = 3.0
+        mutations.append(integer_float)
+
+        nested_string = copy.deepcopy(baseline)
+        nested_string["archiveReadback"]["mode"] = "historical"
+        mutations.append(nested_string)
+
+        missing_key = copy.deepcopy(baseline)
+        missing_key["image"].pop("verified")
+        mutations.append(missing_key)
+
+        unknown_key = copy.deepcopy(baseline)
+        unknown_key["unexpected"] = True
+        mutations.append(unknown_key)
+
+        reversed_runs = copy.deepcopy(baseline)
+        reversed_runs["launchServices"]["runs"].reverse()
+        mutations.append(reversed_runs)
+
+        changed_sqlite = copy.deepcopy(baseline)
+        changed_sqlite["state"]["sqlite"][0]["unexpected"] = True
+        mutations.append(changed_sqlite)
+
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                payload = (
+                    json.dumps(
+                        mutation,
+                        ensure_ascii=True,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    )
+                    + "\n"
+                ).encode("ascii")
+                failures = validator(result_bytes=payload)
+                self.assertTrue(
+                    any(
+                        "expected identity" in failure
+                        for failure in failures
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        "exact closed" in failure
+                        for failure in failures
+                    )
+                )
+
+        baseline_bytes = result_path.read_bytes()
+        duplicate = baseline_bytes.replace(
+            b'"schemaVersion":2',
+            b'"schemaVersion":2,"schemaVersion":2',
+            1,
+        )
+        for label, payload in (
+            ("duplicate", duplicate),
+            ("malformed", b"{"),
+        ):
+            with self.subTest(label=label):
+                failures = validator(result_bytes=payload)
+                self.assertTrue(
+                    any(
+                        "invalid packaged-app lifecycle JSON" in failure
+                        for failure in failures
+                    )
+                )
+
+        expected_sources = {
+            (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_RUNNER
+            ),
+            (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_TEST
+            ),
+            check_docs_hygiene.CURRENT_MACOS_LOCAL_DMG_INSTALL_RUNNER,
+            check_docs_hygiene.CURRENT_MACOS_ISOLATED_UPGRADE_RUNNER,
+        }
+        source_bytes = {
+            path: path.read_bytes()
+            for path in expected_sources
+        }
+        for path in expected_sources:
+            with self.subTest(source=path.name, mutation="bytes"):
+                mutated_sources = dict(source_bytes)
+                mutated_sources[path] += b"\n"
+                failures = validator(
+                    source_bytes_by_path=mutated_sources
+                )
+                self.assertTrue(
+                    any(
+                        str(path.relative_to(check_docs_hygiene.ROOT))
+                        in failure
+                        and "source SHA-256" in failure
+                        for failure in failures
+                    )
+                )
+            with self.subTest(source=path.name, mutation="missing"):
+                missing_sources = dict(source_bytes)
+                missing_sources.pop(path)
+                failures = validator(
+                    source_bytes_by_path=missing_sources
+                )
+                self.assertTrue(
+                    any(
+                        str(path.relative_to(check_docs_hygiene.ROOT))
+                        in failure
+                        and "cannot read" in failure
+                        for failure in failures
+                    )
+                )
+
+        release_map_failures = validator(release_bytes_by_path={})
+        self.assertTrue(
+            any(
+                "release byte map must contain exactly" in failure
+                for failure in release_map_failures
+            )
+        )
+
+        archive_path = (
+            check_docs_hygiene.LOCAL_RELEASE_ARCHIVE_DIR
+            / f"{check_docs_hygiene.LOCAL_RELEASE_ID}.zip"
+        )
+        manifest_path = (
+            check_docs_hygiene.LOCAL_RELEASE_ARCHIVE_DIR
+            / f"{check_docs_hygiene.LOCAL_RELEASE_ID}.manifest.json"
+        )
+        checksum_path = (
+            check_docs_hygiene.LOCAL_RELEASE_ARCHIVE_DIR
+            / f"{check_docs_hygiene.LOCAL_RELEASE_ID}.zip.sha256"
+        )
+        release_bytes = {
+            path: path.read_bytes()
+            for path in (archive_path, manifest_path, checksum_path)
+        }
+        self.assertEqual(
+            validator(release_bytes_by_path=release_bytes),
+            [],
+        )
+
+        archive_payload = release_bytes[archive_path]
+        mutated_release = dict(release_bytes)
+        mutated_release[archive_path] = (
+            bytes((archive_payload[0] ^ 1,))
+            + archive_payload[1:]
+        )
+        failures = validator(release_bytes_by_path=mutated_release)
+        self.assertTrue(
+            any("checksum sidecar differs" in failure for failure in failures)
+        )
+        self.assertTrue(
+            any("snapshot identities do not match" in failure for failure in failures)
+        )
+        self.assertTrue(
+            any("release identity does not match" in failure for failure in failures)
+        )
+        del mutated_release
+
+        mutated_release = dict(release_bytes)
+        mutated_release[checksum_path] = (
+            release_bytes[checksum_path] + b" "
+        )
+        failures = validator(release_bytes_by_path=mutated_release)
+        self.assertTrue(
+            any("checksum sidecar differs" in failure for failure in failures)
+        )
+        self.assertTrue(
+            any("snapshot identities do not match" in failure for failure in failures)
+        )
+
+        manifest = json.loads(
+            release_bytes[manifest_path].decode("utf-8")
+        )
+        manifest["release"]["buildNumber"] = (
+            check_docs_hygiene.LOCAL_RELEASE_BUILD_NUMBER + 1
+        )
+        mutated_release = dict(release_bytes)
+        mutated_release[manifest_path] = (
+            json.dumps(
+                manifest,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("ascii")
+        failures = validator(release_bytes_by_path=mutated_release)
+        self.assertTrue(
+            any(
+                "manifest release.buildNumber differs" in failure
+                for failure in failures
+            )
+        )
+
+        manifest = json.loads(
+            release_bytes[manifest_path].decode("utf-8")
+        )
+        app_member = next(
+            row
+            for row in manifest["members"]
+            if row["path"].startswith("macos/AetherLink.app/")
+        )
+        app_member["size"] += 1
+        mutated_release = dict(release_bytes)
+        mutated_release[manifest_path] = (
+            json.dumps(
+                manifest,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("ascii")
+        failures = validator(release_bytes_by_path=mutated_release)
+        self.assertTrue(
+            any(
+                "installed app tree does not derive" in failure
+                for failure in failures
+            )
+        )
+
+        expected_result = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT
+        )
+        self.assertEqual(
+            expected_result["release"]["releaseId"],
+            check_docs_hygiene.LOCAL_RELEASE_ID,
+        )
+        self.assertEqual(
+            expected_result["archiveReadback"]["snapshotFiles"][
+                f"{check_docs_hygiene.LOCAL_RELEASE_ID}.zip"
+            ]["sha256"],
+            check_docs_hygiene.LOCAL_RELEASE_EXPECTED_ZIP_SHA256,
+        )
+        historical = json.loads(
+            check_docs_hygiene.CURRENT_MACOS_LOCAL_DMG_INSTALL_RESULT.read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(
+            historical["release"]["releaseId"],
+            check_docs_hygiene.HISTORICAL_BUILD20_RELEASE_ID,
+        )
+
+    def test_current_build24_local_dmg_uninstall_reinstall_result_and_sources_are_bound(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_build24_macos_local_dmg_uninstall_reinstall_evidence_failures
+        )
+        self.assertEqual(validator(), [])
+
+        result_path = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_RESULT
+        )
+        baseline = json.loads(result_path.read_text(encoding="utf-8"))
+        mutations: list[dict[str, object]] = []
+
+        schema_bool = copy.deepcopy(baseline)
+        schema_bool["schemaVersion"] = True
+        mutations.append(schema_bool)
+
+        install_count_bool = copy.deepcopy(baseline)
+        install_count_bool["installation"]["installCount"] = True
+        mutations.append(install_count_bool)
+
+        install_count_float = copy.deepcopy(baseline)
+        install_count_float["installation"]["installCount"] = 2.0
+        mutations.append(install_count_float)
+
+        cycle_count_bool = copy.deepcopy(baseline)
+        cycle_count_bool["mount"]["cycleCount"] = True
+        mutations.append(cycle_count_bool)
+
+        wrong_origin = copy.deepcopy(baseline)
+        wrong_origin["installation"]["origin"] = "extracted-archive"
+        mutations.append(wrong_origin)
+
+        wrong_image = copy.deepcopy(baseline)
+        wrong_image["image"]["sameImageBytesUsedForBothInstalls"] = False
+        mutations.append(wrong_image)
+
+        missing_key = copy.deepcopy(baseline)
+        missing_key["uninstall"].pop("removalCount")
+        mutations.append(missing_key)
+
+        unknown_key = copy.deepcopy(baseline)
+        unknown_key["unexpected"] = True
+        mutations.append(unknown_key)
+
+        reversed_runs = copy.deepcopy(baseline)
+        reversed_runs["launchServices"]["runs"].reverse()
+        mutations.append(reversed_runs)
+
+        with patch.object(
+            check_docs_hygiene,
+            "current_build24_macos_local_dmg_install_evidence_failures",
+            return_value=[],
+        ):
+            for mutation in mutations:
+                with self.subTest(mutation=mutation):
+                    payload = (
+                        json.dumps(
+                            mutation,
+                            ensure_ascii=True,
+                            separators=(",", ":"),
+                            sort_keys=True,
+                        )
+                        + "\n"
+                    ).encode("ascii")
+                    failures = validator(result_bytes=payload)
+                    self.assertTrue(
+                        any(
+                            "expected identity" in failure
+                            for failure in failures
+                        )
+                    )
+                    self.assertTrue(
+                        any(
+                            "exact closed" in failure
+                            for failure in failures
+                        )
+                    )
+
+            baseline_bytes = result_path.read_bytes()
+            duplicate = baseline_bytes.replace(
+                b'"schemaVersion":1',
+                b'"schemaVersion":1,"schemaVersion":1',
+                1,
+            )
+            for label, payload in (
+                ("duplicate", duplicate),
+                ("malformed", b"{"),
+            ):
+                with self.subTest(label=label):
+                    failures = validator(result_bytes=payload)
+                    self.assertTrue(
+                        any(
+                            "invalid packaged-app lifecycle JSON" in failure
+                            for failure in failures
+                        )
+                    )
+
+        expected_sources = {
+            (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_RUNNER
+            ),
+            (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_TEST
+            ),
+            (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_RUNNER
+            ),
+            check_docs_hygiene.CURRENT_MACOS_LOCAL_DMG_INSTALL_RUNNER,
+            (
+                check_docs_hygiene
+                .CURRENT_MACOS_ISOLATED_UNINSTALL_REINSTALL_RUNNER
+            ),
+            check_docs_hygiene.CURRENT_MACOS_ISOLATED_UPGRADE_RUNNER,
+        }
+        source_bytes = {
+            path: path.read_bytes()
+            for path in expected_sources
+        }
+        with patch.object(
+            check_docs_hygiene,
+            "current_build24_macos_local_dmg_install_evidence_failures",
+            return_value=[],
+        ):
+            for path in expected_sources:
+                with self.subTest(source=path.name, mutation="bytes"):
+                    mutated_sources = dict(source_bytes)
+                    mutated_sources[path] += b"\n"
+                    failures = validator(
+                        source_bytes_by_path=mutated_sources
+                    )
+                    self.assertTrue(
+                        any(
+                            str(
+                                path.relative_to(check_docs_hygiene.ROOT)
+                            )
+                            in failure
+                            and "source SHA-256" in failure
+                            for failure in failures
+                        )
+                    )
+                with self.subTest(source=path.name, mutation="missing"):
+                    missing_sources = dict(source_bytes)
+                    missing_sources.pop(path)
+                    failures = validator(
+                        source_bytes_by_path=missing_sources
+                    )
+                    self.assertTrue(
+                        any(
+                            "exactly the six bound source files" in failure
+                            for failure in failures
+                        )
+                    )
+                    self.assertTrue(
+                        any(
+                            str(
+                                path.relative_to(check_docs_hygiene.ROOT)
+                            )
+                            in failure
+                            and "cannot read" in failure
+                            for failure in failures
+                        )
+                    )
+
+        archive_path = (
+            check_docs_hygiene.LOCAL_RELEASE_ARCHIVE_DIR
+            / f"{check_docs_hygiene.LOCAL_RELEASE_ID}.zip"
+        )
+        manifest_path = (
+            check_docs_hygiene.LOCAL_RELEASE_ARCHIVE_DIR
+            / f"{check_docs_hygiene.LOCAL_RELEASE_ID}.manifest.json"
+        )
+        checksum_path = (
+            check_docs_hygiene.LOCAL_RELEASE_ARCHIVE_DIR
+            / f"{check_docs_hygiene.LOCAL_RELEASE_ID}.zip.sha256"
+        )
+        release_bytes = {
+            path: path.read_bytes()
+            for path in (archive_path, manifest_path, checksum_path)
+        }
+        self.assertEqual(
+            validator(release_bytes_by_path=release_bytes),
+            [],
+        )
+        archive_payload = release_bytes[archive_path]
+        mutated_release = dict(release_bytes)
+        mutated_release[archive_path] = (
+            bytes((archive_payload[0] ^ 1,))
+            + archive_payload[1:]
+        )
+        failures = validator(release_bytes_by_path=mutated_release)
+        self.assertTrue(
+            any(
+                "checksum sidecar differs" in failure
+                for failure in failures
+            )
+        )
+        self.assertTrue(
+            any(
+                "snapshot identities do not match" in failure
+                for failure in failures
+            )
+        )
+
+    def test_current_build24_local_dmg_uninstall_reinstall_documents_are_bound(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_build24_macos_local_dmg_uninstall_reinstall_document_failures
+        )
+        chain_validator = (
+            check_docs_hygiene
+            .current_build24_macos_clean_home_lifecycle_document_failures
+        )
+        self.assertEqual(validator(), [])
+        self.assertEqual(chain_validator(), [])
+        targets = (
+            "README.md",
+            "docs/roadmap.md",
+            "docs/handoff.md",
+            "docs/progress.md",
+            "docs/qa-evidence.md",
+            "docs/releases/1.0.0-build-24-local-v1.md",
+        )
+        start_marker = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_START
+        )
+        end_marker = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_END
+        )
+        expected_body = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_BODY
+        )
+        complete_block = (
+            start_marker
+            + "\n"
+            + expected_body
+            + "\n"
+            + end_marker
+        )
+        for relative in targets:
+            with self.subTest(relative=relative):
+                text = (
+                    check_docs_hygiene.ROOT / relative
+                ).read_text(encoding="utf-8")
+                start = text.index(start_marker) + len(start_marker)
+                end = text.index(end_marker)
+                self.assertEqual(text[start:end].strip(), expected_body)
+                self.assertEqual(text.count(complete_block), 1)
+
+                mutated_body = expected_body.replace(
+                    "same canonical 3,485-byte result",
+                    "a 3,485-byte result",
+                    1,
+                )
+                mutated = (
+                    text[:start]
+                    + "\n"
+                    + mutated_body
+                    + "\n"
+                    + text[end:]
+                )
+                failures = validator(
+                    document_text_by_relative={relative: mutated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "exact canonical body SHA-256" in failure
+                        for failure in failures
+                    )
+                )
+
+                relocated = (
+                    text.replace(complete_block, "", 1).rstrip()
+                    + "\n\n"
+                    + complete_block
+                    + "\n"
+                )
+                failures = validator(
+                    document_text_by_relative={relative: relocated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "canonical document location" in failure
+                        for failure in failures
+                    )
+                )
+
+        readme = check_docs_hygiene.README_PATH.read_text(encoding="utf-8")
+        marker_mutations = (
+            readme.replace(start_marker, "", 1),
+            readme.replace(end_marker, "", 1),
+            readme + f"\n{complete_block}\n",
+            readme.replace(
+                complete_block,
+                start_marker + "\n" + end_marker,
+                1,
+            ),
+        )
+        for mutated in marker_mutations:
+            failures = validator(
+                document_text_by_relative={"README.md": mutated}
+            )
+            self.assertTrue(
+                any(
+                    "README.md" in failure
+                    and "uninstall/reinstall lifecycle" in failure
+                    for failure in failures
+                )
+            )
+
+        chain_start = readme.index(
+            check_docs_hygiene.CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_START
+        )
+        chain_end = readme.index(end_marker) + len(end_marker)
+        hidden = (
+            readme[:chain_start]
+            + "<details>\n"
+            + readme[chain_start:chain_end]
+            + "\n</details>"
+            + readme[chain_end:]
+        )
+        failures = chain_validator(
+            document_text_by_relative={"README.md": hidden}
+        )
+        self.assertTrue(
+            any(
+                "README.md" in failure
+                and "hidden Markdown or HTML" in failure
+                for failure in failures
+            )
+        )
+
+        body_mutations = (
+            (
+                "result path",
+                (
+                    "macos-packaged-app-build-24-local-dmg-"
+                    "uninstall-reinstall-v1.json"
+                ),
+                (
+                    "macos-packaged-app-build-24-local-dmg-"
+                    "uninstall-reinstall-v2.json"
+                ),
+            ),
+            ("size", "3,485-byte", "3,486-byte"),
+            (
+                "result sha",
+                (
+                    check_docs_hygiene
+                    .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_RESULT_SHA256
+                ),
+                "0" * 64,
+            ),
+            (
+                "runner sha",
+                (
+                    check_docs_hygiene
+                    .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_RUNNER_SHA256
+                ),
+                "1" * 64,
+            ),
+            (
+                "test sha",
+                (
+                    check_docs_hygiene
+                    .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_TEST_SHA256
+                ),
+                "2" * 64,
+            ),
+            (
+                "boundary",
+                (
+                    "same-created-image uninstall/reinstall observation. "
+                    "It does not establish"
+                ),
+                (
+                    "same-created-image uninstall/reinstall observation. "
+                    "It establishes"
+                ),
+            ),
+        )
+        for label, old, new in body_mutations:
+            with self.subTest(label=label):
+                mutated = readme.replace(old, new, 1)
+                failures = validator(
+                    document_text_by_relative={"README.md": mutated}
+                )
+                self.assertTrue(
+                    any(
+                        "README.md" in failure
+                        and "exact canonical body SHA-256" in failure
+                        for failure in failures
+                    )
+                )
+
+    def test_current_build24_local_dmg_documents_are_bound(self) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_build24_macos_local_dmg_lifecycle_document_failures
+        )
+        chain_validator = (
+            check_docs_hygiene
+            .current_build24_macos_clean_home_lifecycle_document_failures
+        )
+        self.assertEqual(validator(), [])
+        self.assertEqual(chain_validator(), [])
+        targets = (
+            "README.md",
+            "docs/roadmap.md",
+            "docs/handoff.md",
+            "docs/progress.md",
+            "docs/qa-evidence.md",
+            "docs/releases/1.0.0-build-24-local-v1.md",
+        )
+        start_marker = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_START
+        )
+        end_marker = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_END
+        )
+        expected_body = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_BODY
+        )
+        complete_block = (
+            start_marker
+            + "\n"
+            + expected_body
+            + "\n"
+            + end_marker
+        )
+        for relative in targets:
+            with self.subTest(relative=relative):
+                text = (
+                    check_docs_hygiene.ROOT / relative
+                ).read_text(encoding="utf-8")
+                start = text.index(start_marker) + len(start_marker)
+                end = text.index(end_marker)
+                self.assertEqual(text[start:end].strip(), expected_body)
+                self.assertEqual(text.count(complete_block), 1)
+
+                mutated_body = expected_body.replace(
+                    "The canonical 3,038-byte result",
+                    "A 3,038-byte result",
+                    1,
+                )
+                mutated = (
+                    text[:start]
+                    + "\n"
+                    + mutated_body
+                    + "\n"
+                    + text[end:]
+                )
+                failures = validator(
+                    document_text_by_relative={relative: mutated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "exact canonical body SHA-256" in failure
+                        for failure in failures
+                    )
+                )
+
+                relocated = (
+                    text.replace(complete_block, "", 1).rstrip()
+                    + "\n\n"
+                    + complete_block
+                    + "\n"
+                )
+                failures = validator(
+                    document_text_by_relative={relative: relocated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "canonical document location" in failure
+                        for failure in failures
+                    )
+                )
+
+                chain_start = text.index(
+                    check_docs_hygiene
+                    .CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_START
+                )
+                chain_terminal = (
+                    check_docs_hygiene
+                    .CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_END
+                )
+                chain_end = (
+                    text.index(chain_terminal) + len(chain_terminal)
+                )
+                chain = text[chain_start:chain_end]
+                relocated_chain = (
+                    text[:chain_start]
+                    + text[chain_end:]
+                    + "\n\n"
+                    + chain
+                    + "\n"
+                )
+                chain_failures = chain_validator(
+                    document_text_by_relative={
+                        relative: relocated_chain,
+                    }
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "canonical external predecessor" in failure
+                        for failure in chain_failures
+                    )
+                )
+
+                predecessor = (
+                    check_docs_hygiene
+                    .CURRENT_BUILD24_MACOS_LIFECYCLE_CHAIN_PREDECESSOR_BY_DOCUMENT[
+                        relative
+                    ]
+                )
+                outer_span_start = text.index(predecessor)
+                terminal_start = (
+                    text.index(chain_terminal) + len(chain_terminal)
+                )
+                outer_span_end = text.find("\n\n", terminal_start + 2)
+                if outer_span_end == -1:
+                    outer_span_end = len(text)
+                outer_span = text[outer_span_start:outer_span_end]
+                relocated_outer_span = (
+                    text[:outer_span_start]
+                    + text[outer_span_end:]
+                ).rstrip() + "\n\n" + outer_span + "\n"
+                outer_failures = chain_validator(
+                    document_text_by_relative={
+                        relative: relocated_outer_span,
+                    }
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "outer document identity" in failure
+                        for failure in outer_failures
+                    )
+                )
+
+        readme = check_docs_hygiene.README_PATH.read_text(encoding="utf-8")
+        marker_mutations = (
+            readme.replace(start_marker, "", 1),
+            readme.replace(end_marker, "", 1),
+            readme + f"\n{complete_block}\n",
+            readme.replace(
+                complete_block,
+                start_marker + "\n" + end_marker,
+                1,
+            ),
+            readme.replace(start_marker, "__DMG_START__", 1)
+            .replace(end_marker, start_marker, 1)
+            .replace("__DMG_START__", end_marker, 1),
+        )
+        for mutated in marker_mutations:
+            failures = validator(
+                document_text_by_relative={"README.md": mutated}
+            )
+            self.assertTrue(
+                any(
+                    "README.md" in failure
+                    and "current Build 24 local-DMG lifecycle" in failure
+                    for failure in failures
+                )
+            )
+
+        readme_chain_start = readme.index(
+            check_docs_hygiene.CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_START
+        )
+        chain_terminal = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_DOCUMENT_END
+        )
+        readme_chain_end = (
+            readme.index(chain_terminal) + len(chain_terminal)
+        )
+        for label, opening, closing in (
+            ("fence", "```\n", "\n```"),
+            (
+                "invalid-closing-fence",
+                "```\n```not-a-valid-closing-fence\n",
+                "\n```",
+            ),
+            ("html-comment", "<!--\n", "\n-->"),
+            ("details", "<details>\n", "\n</details>"),
+            ("pre", "<pre>\n", "\n</pre>"),
+            ("hidden-container", "<div hidden>\n", "\n</div>"),
+        ):
+            with self.subTest(hidden_context=label):
+                hidden = (
+                    readme[:readme_chain_start]
+                    + opening
+                    + readme[readme_chain_start:readme_chain_end]
+                    + closing
+                    + readme[readme_chain_end:]
+                )
+                failures = chain_validator(
+                    document_text_by_relative={"README.md": hidden}
+                )
+                self.assertTrue(
+                    any(
+                        "README.md" in failure
+                        and "hidden Markdown or HTML" in failure
+                        for failure in failures
+                    )
+                )
+
+        body_mutations = (
+            (
+                "result path",
+                "macos-packaged-app-build-24-local-dmg-install-v2.json",
+                "macos-packaged-app-build-24-local-dmg-install-v1.json",
+            ),
+            ("size", "3,038-byte", "3,039-byte"),
+            (
+                "result sha",
+                (
+                    check_docs_hygiene
+                    .CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SHA256
+                ),
+                "0" * 64,
+            ),
+            (
+                "runner sha",
+                (
+                    check_docs_hygiene
+                    .CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RUNNER_SHA256
+                ),
+                "1" * 64,
+            ),
+            (
+                "test sha",
+                (
+                    check_docs_hygiene
+                    .CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_TEST_SHA256
+                ),
+                "2" * 64,
+            ),
+            (
+                "boundary",
+                "does not establish Finder",
+                "establishes Finder",
+            ),
+        )
+        for label, old, new in body_mutations:
+            with self.subTest(label=label):
+                mutated = readme.replace(old, new, 1)
+                failures = validator(
+                    document_text_by_relative={"README.md": mutated}
+                )
+                self.assertTrue(
+                    any(
+                        "README.md" in failure
+                        and "exact canonical body SHA-256" in failure
+                        for failure in failures
+                    )
+                )
+
+    def test_current_build24_local_dmg_validators_are_wired_into_main(
+        self,
+    ) -> None:
+        required_calls = (
+            "current_build24_macos_local_dmg_install_evidence_failures",
+            (
+                "current_build24_macos_local_dmg_uninstall_reinstall_"
+                "evidence_failures"
+            ),
+            "current_build24_macos_local_dmg_lifecycle_document_failures",
+            (
+                "current_build24_macos_local_dmg_uninstall_reinstall_"
+                "document_failures"
+            ),
+            "current_build24_macos_local_dmg_default_gate_failures",
+        )
+
+        def top_level_extend_counts(source: str) -> dict[str, int]:
+            module = ast.parse(source)
+            main_function = next(
+                node
+                for node in module.body
+                if isinstance(node, ast.FunctionDef) and node.name == "main"
+            )
+            counts = {name: 0 for name in required_calls}
+
+            def statement_definitely_terminates(
+                statement: ast.stmt,
+            ) -> bool:
+                if isinstance(statement, (ast.Return, ast.Raise)):
+                    return True
+                if (
+                    isinstance(statement, ast.If)
+                    and _static_truth_value(statement.test) is True
+                ):
+                    return block_definitely_terminates(statement.body)
+                if (
+                    isinstance(statement, ast.Expr)
+                    and isinstance(statement.value, ast.Call)
+                ):
+                    function = statement.value.func
+                    return (
+                        isinstance(function, ast.Name)
+                        and function.id in {"exit", "quit"}
+                    ) or (
+                        isinstance(function, ast.Attribute)
+                        and isinstance(function.value, ast.Name)
+                        and function.value.id == "sys"
+                        and function.attr == "exit"
+                    )
+                return False
+
+            def block_definitely_terminates(
+                statements: list[ast.stmt],
+            ) -> bool:
+                return any(
+                    statement_definitely_terminates(statement)
+                    for statement in statements
+                )
+
+            for statement in main_function.body:
+                if statement_definitely_terminates(statement):
+                    break
+                if not (
+                    isinstance(statement, ast.Expr)
+                    and isinstance(statement.value, ast.Call)
+                    and isinstance(statement.value.func, ast.Attribute)
+                    and statement.value.func.attr == "extend"
+                    and isinstance(statement.value.func.value, ast.Name)
+                    and statement.value.func.value.id == "failures"
+                    and len(statement.value.args) == 1
+                    and not statement.value.keywords
+                ):
+                    continue
+                validator_call = statement.value.args[0]
+                if not (
+                    isinstance(validator_call, ast.Call)
+                    and isinstance(validator_call.func, ast.Name)
+                    and not validator_call.args
+                    and not validator_call.keywords
+                ):
+                    continue
+                if validator_call.func.id in counts:
+                    counts[validator_call.func.id] += 1
+            return counts
+
+        checker_path = (
+            check_docs_hygiene.ROOT / "script/check_docs_hygiene.py"
+        )
+        source = checker_path.read_text(encoding="utf-8")
+        self.assertEqual(
+            top_level_extend_counts(source),
+            {name: 1 for name in required_calls},
+        )
+        for name in required_calls:
+            wrapper = (
+                "    failures.extend(\n"
+                f"        {name}()\n"
+                "    )"
+            )
+            self.assertEqual(source.count(wrapper), 1)
+            mutations = (
+                source.replace(wrapper, f"    {name}()", 1),
+                source.replace(
+                    wrapper,
+                    (
+                        "    if False:\n"
+                        "        failures.extend(\n"
+                        f"            {name}()\n"
+                        "        )"
+                    ),
+                    1,
+                ),
+            )
+            for mutated in mutations:
+                with self.subTest(name=name):
+                    self.assertEqual(
+                        top_level_extend_counts(mutated)[name],
+                        0,
+                    )
+            for label, terminator in (
+                (
+                    "constant_return",
+                    "    if True:\n        return 0\n",
+                ),
+                (
+                    "truthy_integer_return",
+                    "    if 1:\n        return 0\n",
+                ),
+                (
+                    "constant_not_return",
+                    "    if not False:\n        return 0\n",
+                ),
+                (
+                    "constant_compare_return",
+                    "    if 1 == 1:\n        return 0\n",
+                ),
+                (
+                    "raise",
+                    "    raise RuntimeError('stop')\n",
+                ),
+                (
+                    "exit",
+                    "    sys.exit(0)\n",
+                ),
+            ):
+                with self.subTest(name=name, terminator=label):
+                    unreachable = source.replace(
+                        wrapper,
+                        terminator + wrapper,
+                        1,
+                    )
+                    self.assertEqual(
+                        top_level_extend_counts(unreachable)[name],
+                        0,
+                    )
+
+        gate_source = (
+            check_docs_hygiene.ROOT / "script/check_no_device_quality.sh"
+        ).read_text(encoding="utf-8")
+        gate_validator = (
+            check_docs_hygiene
+            .current_build24_macos_local_dmg_default_gate_failures
+        )
+        self.assertEqual(gate_validator(gate_text=gate_source), [])
+        selector_names = (
+            "test_current_build24_local_dmg_result_and_sources_are_bound",
+            "test_current_build24_local_dmg_documents_are_bound",
+            "test_current_build24_local_dmg_validators_are_wired_into_main",
+            (
+                "test_current_build24_local_dmg_uninstall_reinstall_"
+                "result_and_sources_are_bound"
+            ),
+            (
+                "test_current_build24_local_dmg_uninstall_reinstall_"
+                "documents_are_bound"
+            ),
+            (
+                "test_current_build24_local_dmg_uninstall_reinstall_"
+                "validators_are_wired_into_main"
+            ),
+        )
+        for selector_name in selector_names:
+            selector = (
+                "script.test_documentation_handoff_guards."
+                "DocumentationHandoffGuardTests."
+                + selector_name
+            )
+            with self.subTest(selector=selector_name):
+                self.assertEqual(gate_source.count(selector), 1)
+
+        target_selector = (
+            "  script.test_documentation_handoff_guards."
+            "DocumentationHandoffGuardTests."
+            "test_current_build24_local_dmg_result_and_sources_are_bound \\"
+        )
+        gate_block_start = gate_source.index(
+            "run python3 script/check_docs_hygiene.py\n"
+            "run python3 -B -m unittest \\"
+        )
+        gate_block_end = gate_source.index(
+            "run python3 script/check_license.py",
+            gate_block_start,
+        )
+        gate_prefix = gate_source[:gate_block_start]
+        gate_block = gate_source[gate_block_start:gate_block_end]
+        gate_suffix = gate_source[gate_block_end:]
+        gate_mutations = (
+            gate_source.replace(
+                target_selector,
+                "# " + target_selector,
+                1,
+            ),
+            gate_source.replace(
+                "run python3 script/check_docs_hygiene.py\n"
+                "run python3 -B -m unittest \\",
+                "run python3 script/check_docs_hygiene.py\n"
+                "exit 0\n"
+                "run python3 -B -m unittest \\",
+                1,
+            ),
+            gate_source.replace(
+                target_selector,
+                "",
+                1,
+            )
+            + "\n# "
+            + target_selector
+            + "\n",
+            gate_prefix + "exit 0\n" + gate_block + gate_suffix,
+            gate_prefix + ":; exit 0\n" + gate_block + gate_suffix,
+            (
+                gate_prefix
+                + "inactive_build24_gate() {\n"
+                + gate_block
+                + "}\n"
+                + gate_suffix
+            ),
+            (
+                gate_prefix
+                + ": <<'AETHERLINK_INACTIVE_BUILD24_GATE'\n"
+                + gate_block
+                + "AETHERLINK_INACTIVE_BUILD24_GATE\n"
+                + gate_suffix
+            ),
+            (
+                gate_prefix
+                + "if false; then\n"
+                + gate_block
+                + "fi\n"
+                + gate_suffix
+            ),
+            (
+                gate_prefix
+                + ": '\n"
+                + gate_block
+                + "'\n"
+                + gate_suffix
+            ),
+            (
+                gate_prefix
+                + "false && {\n"
+                + gate_block
+                + "}\n"
+                + gate_suffix
+            ),
+            (
+                gate_prefix
+                + "false && (\n"
+                + gate_block
+                + ")\n"
+                + gate_suffix
+            ),
+            (
+                gate_prefix
+                + "false &&\n"
+                + gate_block
+                + gate_suffix
+            ),
+        )
+        for mutation in gate_mutations:
+            self.assertTrue(gate_validator(gate_text=mutation))
+
+    def test_current_build24_local_dmg_uninstall_reinstall_validators_are_wired_into_main(
+        self,
+    ) -> None:
+        checker_source = (
+            check_docs_hygiene.ROOT / "script/check_docs_hygiene.py"
+        ).read_text(encoding="utf-8")
+        for name in (
+            (
+                "current_build24_macos_local_dmg_uninstall_reinstall_"
+                "evidence_failures"
+            ),
+            (
+                "current_build24_macos_local_dmg_uninstall_reinstall_"
+                "document_failures"
+            ),
+        ):
+            wrapper = (
+                "    failures.extend(\n"
+                f"        {name}()\n"
+                "    )"
+            )
+            with self.subTest(validator=name):
+                self.assertEqual(checker_source.count(wrapper), 1)
+
+        gate_source = (
+            check_docs_hygiene.ROOT / "script/check_no_device_quality.sh"
+        ).read_text(encoding="utf-8")
+        gate_validator = (
+            check_docs_hygiene
+            .current_build24_macos_local_dmg_default_gate_failures
+        )
+        self.assertEqual(gate_validator(gate_text=gate_source), [])
+        for selector_name in (
+            (
+                "test_current_build24_local_dmg_uninstall_reinstall_"
+                "result_and_sources_are_bound"
+            ),
+            (
+                "test_current_build24_local_dmg_uninstall_reinstall_"
+                "documents_are_bound"
+            ),
+            (
+                "test_current_build24_local_dmg_uninstall_reinstall_"
+                "validators_are_wired_into_main"
+            ),
+        ):
+            selector = (
+                "script.test_documentation_handoff_guards."
+                "DocumentationHandoffGuardTests."
+                + selector_name
+            )
+            with self.subTest(selector=selector_name):
+                self.assertEqual(gate_source.count(selector), 1)
+        self.assertEqual(
+            gate_source.count(
+                "script/run_macos_local_dmg_uninstall_reinstall_smoke.py"
+            ),
+            1,
+        )
+        self.assertEqual(
+            gate_source.count(
+                "script/test_run_macos_local_dmg_uninstall_reinstall_smoke.py"
+            ),
+            2,
+        )
+        syntax_start = gate_source.index(
+            "run check_python_syntax \\\n"
+        )
+        syntax_end = gate_source.index(
+            "run bash -n script/*.sh",
+            syntax_start,
+        )
+        syntax_block = gate_source[syntax_start:syntax_end]
+        unit_start = gate_source.index(
+            "run python3 -m unittest \\\n"
+            "  script/test_v1_g0_checkpoint.py \\"
+        )
+        unit_end = gate_source.index(
+            "run git diff --check",
+            unit_start,
+        )
+        unit_block = gate_source[unit_start:unit_end]
+        runner_line = (
+            "  script/run_macos_local_dmg_uninstall_reinstall_smoke.py \\\n"
+        )
+        test_line = (
+            "  script/test_run_macos_local_dmg_uninstall_reinstall_smoke.py "
+            "\\\n"
+        )
+        inventory_mutations = (
+            (
+                gate_source.replace(runner_line, "", 1)
+                + "\n# "
+                + runner_line
+            ),
+            (
+                gate_source[:unit_start]
+                + unit_block.replace(test_line, "", 1)
+                + gate_source[unit_end:]
+                + "\n# "
+                + test_line
+            ),
+            (
+                gate_source[:syntax_start]
+                + "inactive_inventory() {\n"
+                + syntax_block
+                + "}\n"
+                + gate_source[syntax_end:]
+            ),
+            (
+                gate_source[:unit_start]
+                + ": <<'AETHERLINK_INACTIVE_UNIT_INVENTORY'\n"
+                + unit_block
+                + "AETHERLINK_INACTIVE_UNIT_INVENTORY\n"
+                + gate_source[unit_end:]
+            ),
+            (
+                gate_source[:unit_start]
+                + unit_block.replace(
+                    test_line,
+                    (
+                        "  ; true "
+                        "script/test_run_macos_local_dmg_"
+                        "uninstall_reinstall_smoke.py \\\n"
+                    ),
+                    1,
+                )
+                + gate_source[unit_end:]
+            ),
+            (
+                gate_source[:syntax_start]
+                + "if false; then\n"
+                + syntax_block
+                + "fi\n"
+                + gate_source[syntax_end:]
+            ),
+            (
+                gate_source[:syntax_start]
+                + "exit 0\n"
+                + gate_source[syntax_start:]
+            ),
+            (
+                gate_source[:syntax_start]
+                + "false\n"
+                + gate_source[syntax_start:]
+            ),
+            (
+                gate_source[:syntax_start]
+                + "exec true\n"
+                + gate_source[syntax_start:]
+            ),
+            (
+                gate_source[:syntax_start]
+                + "run false\n"
+                + gate_source[syntax_start:]
+            ),
+            (
+                gate_source[:syntax_start]
+                + "command false\n"
+                + gate_source[syntax_start:]
+            ),
+        )
+        for ordinal, mutation in enumerate(
+            inventory_mutations,
+            start=1,
+        ):
+            with self.subTest(inventory_mutation=ordinal):
+                self.assertTrue(gate_validator(gate_text=mutation))
+
+    def test_current_build24_local_dmg_uninstall_reinstall_state_recovery_result_and_sources_are_bound(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_build24_macos_local_dmg_uninstall_reinstall_state_recovery_evidence_failures
+        )
+        self.assertEqual(validator(), [])
+        result_path = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_RESULT
+        )
+        baseline = json.loads(result_path.read_text(encoding="utf-8"))
+        mutations: list[dict[str, object]] = []
+
+        for path, value in (
+            (("schemaVersion",), True),
+            (("installation", "installCount"), True),
+            (("installation", "installCount"), 2.0),
+            (("mount", "cycleCount"), True),
+            (("stateRecovery", "databaseCount"), True),
+            (("stateRecovery", "totalEventCount"), True),
+            (
+                ("stateRecovery", "legacyRemovedByHarnessBeforeReinstall"),
+                False,
+            ),
+            (
+                (
+                    "stateRecovery",
+                    "sqliteReadbackSQLite",
+                    "totalEventCount",
+                ),
+                2,
+            ),
+            (
+                (
+                    "stateRecovery",
+                    "migrationSQLite",
+                    "eventJsonSha256",
+                ),
+                "0" * 64,
+            ),
+            (("installation", "origin"), "extracted-archive"),
+        ):
+            mutation = copy.deepcopy(baseline)
+            target: object = mutation
+            for key in path[:-1]:
+                target = target[key]  # type: ignore[index]
+            target[path[-1]] = value  # type: ignore[index]
+            mutations.append(mutation)
+
+        reversed_runs = copy.deepcopy(baseline)
+        reversed_runs["launchServices"]["runs"].reverse()
+        mutations.append(reversed_runs)
+        missing_key = copy.deepcopy(baseline)
+        missing_key["stateRecovery"].pop("legacyAbsentBeforeReinstallReadback")
+        mutations.append(missing_key)
+        extra_key = copy.deepcopy(baseline)
+        extra_key["unexpected"] = True
+        mutations.append(extra_key)
+
+        antecedents = (
+            patch.object(
+                check_docs_hygiene,
+                (
+                    "current_build24_macos_local_dmg_uninstall_reinstall_"
+                    "evidence_failures"
+                ),
+                return_value=[],
+            ),
+            patch.object(
+                check_docs_hygiene,
+                (
+                    "current_build24_macos_clean_home_installed_state_"
+                    "recovery_evidence_failures"
+                ),
+                return_value=[],
+            ),
+        )
+        with (
+            antecedents[0] as uninstall_predecessor,
+            antecedents[1] as state_predecessor,
+        ):
+            for mutation in mutations:
+                with self.subTest(mutation=mutation):
+                    payload = (
+                        json.dumps(
+                            mutation,
+                            ensure_ascii=True,
+                            separators=(",", ":"),
+                            sort_keys=True,
+                        )
+                        + "\n"
+                    ).encode("ascii")
+                    failures = validator(result_bytes=payload)
+                    self.assertTrue(
+                        any("expected identity" in row for row in failures)
+                    )
+                    self.assertTrue(
+                        any("exact closed" in row for row in failures)
+                    )
+
+            baseline_bytes = result_path.read_bytes()
+            duplicate = baseline_bytes.replace(
+                b'"schemaVersion":1',
+                b'"schemaVersion":1,"schemaVersion":1',
+                1,
+            )
+            for label, payload in (
+                ("duplicate", duplicate),
+                ("malformed", b"{"),
+                ("noncanonical", b" " + baseline_bytes),
+            ):
+                with self.subTest(payload=label):
+                    failures = validator(result_bytes=payload)
+                    self.assertTrue(failures)
+        self.assertGreater(uninstall_predecessor.call_count, 0)
+        self.assertGreater(state_predecessor.call_count, 0)
+
+        expected_sources = {
+            (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_RUNNER
+            ),
+            (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_TEST
+            ),
+            (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_RUNNER
+            ),
+            (
+                check_docs_hygiene
+                .MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_RUNNER
+            ),
+            check_docs_hygiene.MACOS_PACKAGED_STATE_RECOVERY_RUNNER,
+            check_docs_hygiene.CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_RUNNER,
+            check_docs_hygiene.CURRENT_MACOS_LOCAL_DMG_INSTALL_RUNNER,
+            (
+                check_docs_hygiene
+                .CURRENT_MACOS_ISOLATED_UNINSTALL_REINSTALL_RUNNER
+            ),
+            check_docs_hygiene.CURRENT_MACOS_ISOLATED_UPGRADE_RUNNER,
+        }
+        source_bytes = {
+            path: path.read_bytes()
+            for path in expected_sources
+        }
+        with (
+            patch.object(
+                check_docs_hygiene,
+                (
+                    "current_build24_macos_local_dmg_uninstall_reinstall_"
+                    "evidence_failures"
+                ),
+                return_value=[],
+            ),
+            patch.object(
+                check_docs_hygiene,
+                (
+                    "current_build24_macos_clean_home_installed_state_"
+                    "recovery_evidence_failures"
+                ),
+                return_value=[],
+            ),
+        ):
+            for path in expected_sources:
+                with self.subTest(source=path.name, mutation="bytes"):
+                    mutated = dict(source_bytes)
+                    mutated[path] += b"\n"
+                    failures = validator(source_bytes_by_path=mutated)
+                    self.assertTrue(
+                        any(
+                            str(path.relative_to(check_docs_hygiene.ROOT))
+                            in row
+                            and "source SHA-256" in row
+                            for row in failures
+                        )
+                    )
+                with self.subTest(source=path.name, mutation="missing"):
+                    mutated = dict(source_bytes)
+                    mutated.pop(path)
+                    failures = validator(source_bytes_by_path=mutated)
+                    self.assertTrue(
+                        any(
+                            "exactly the nine bound source files" in row
+                            for row in failures
+                        )
+                    )
+                    self.assertTrue(
+                        any(
+                            str(path.relative_to(check_docs_hygiene.ROOT))
+                            in row
+                            and "cannot read" in row
+                            for row in failures
+                        )
+                    )
+
+            non_bytes = dict(source_bytes)
+            first_path = next(iter(expected_sources))
+            non_bytes[first_path] = "not-bytes"  # type: ignore[assignment]
+            self.assertTrue(
+                validator(source_bytes_by_path=non_bytes)
+            )
+
+    def test_current_build24_local_dmg_uninstall_reinstall_state_recovery_documents_are_bound(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_build24_macos_local_dmg_uninstall_reinstall_state_recovery_document_failures
+        )
+        chain_validator = (
+            check_docs_hygiene
+            .current_build24_macos_clean_home_lifecycle_document_failures
+        )
+        self.assertEqual(validator(), [])
+        self.assertEqual(chain_validator(), [])
+        targets = (
+            "README.md",
+            "docs/roadmap.md",
+            "docs/handoff.md",
+            "docs/progress.md",
+            "docs/qa-evidence.md",
+            "docs/releases/1.0.0-build-24-local-v1.md",
+        )
+        start_marker = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_DOCUMENT_START
+        )
+        end_marker = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_DOCUMENT_END
+        )
+        expected_body = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_DOCUMENT_BODY
+        )
+        complete_block = (
+            start_marker
+            + "\n"
+            + expected_body
+            + "\n"
+            + end_marker
+        )
+        for relative in targets:
+            with self.subTest(relative=relative):
+                text = (
+                    check_docs_hygiene.ROOT / relative
+                ).read_text(encoding="utf-8")
+                start = text.index(start_marker) + len(start_marker)
+                end = text.index(end_marker)
+                self.assertEqual(text[start:end].strip(), expected_body)
+                self.assertEqual(text.count(complete_block), 1)
+
+                mutated_body = expected_body.replace(
+                    "same canonical 4,996-byte",
+                    "a 4,996-byte",
+                    1,
+                )
+                mutated = (
+                    text[:start]
+                    + "\n"
+                    + mutated_body
+                    + "\n"
+                    + text[end:]
+                )
+                failures = validator(
+                    document_text_by_relative={relative: mutated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in row
+                        and "exact canonical body SHA-256" in row
+                        for row in failures
+                    )
+                )
+
+                relocated = (
+                    text.replace(complete_block, "", 1).rstrip()
+                    + "\n\n"
+                    + complete_block
+                    + "\n"
+                )
+                failures = validator(
+                    document_text_by_relative={relative: relocated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in row
+                        and "canonical document location" in row
+                        for row in failures
+                    )
+                )
+
+        readme = check_docs_hygiene.README_PATH.read_text(
+            encoding="utf-8"
+        )
+        for mutation in (
+            readme.replace(start_marker, "", 1),
+            readme.replace(end_marker, "", 1),
+            readme + f"\n{complete_block}\n",
+            readme.replace(
+                complete_block,
+                start_marker + "\n" + end_marker,
+                1,
+            ),
+            readme.replace(
+                complete_block,
+                "<details>\n"
+                + complete_block
+                + "\n</details>",
+                1,
+            ),
+        ):
+            with self.subTest(marker_mutation=hash(mutation)):
+                failures = validator(
+                    document_text_by_relative={"README.md": mutation}
+                )
+                self.assertTrue(
+                    any(
+                        "README.md" in row
+                        and "state-recovery lifecycle" in row
+                        for row in failures
+                    )
+                )
+
+        for label, old, new in (
+            (
+                "result path",
+                (
+                    "macos-packaged-app-build-24-local-dmg-"
+                    "uninstall-reinstall-state-recovery-v1.json"
+                ),
+                (
+                    "macos-packaged-app-build-24-local-dmg-"
+                    "uninstall-reinstall-state-recovery-v2.json"
+                ),
+            ),
+            ("size", "4,996-byte", "4,997-byte"),
+            (
+                "result sha",
+                (
+                    check_docs_hygiene
+                    .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RESULT_SHA256
+                ),
+                "0" * 64,
+            ),
+            (
+                "runner sha",
+                (
+                    check_docs_hygiene
+                    .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_RUNNER_SHA256
+                ),
+                "1" * 64,
+            ),
+            (
+                "test sha",
+                (
+                    check_docs_hygiene
+                    .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_EXPECTED_TEST_SHA256
+                ),
+                "2" * 64,
+            ),
+            (
+                "boundary",
+                "It proves only the fixed non-empty canary",
+                "It proves arbitrary non-empty histories",
+            ),
+        ):
+            with self.subTest(body_mutation=label):
+                mutated = readme.replace(old, new, 1)
+                failures = validator(
+                    document_text_by_relative={"README.md": mutated}
+                )
+                self.assertTrue(
+                    any(
+                        "README.md" in row
+                        and "exact canonical body SHA-256" in row
+                        for row in failures
+                    )
+                )
+
+    def test_current_build24_local_dmg_uninstall_reinstall_state_recovery_validators_are_wired_into_main(
+        self,
+    ) -> None:
+        required_calls = (
+            (
+                "current_build24_macos_local_dmg_uninstall_reinstall_"
+                "state_recovery_evidence_failures"
+            ),
+            (
+                "current_build24_macos_local_dmg_uninstall_reinstall_"
+                "state_recovery_document_failures"
+            ),
+        )
+        checker_source = (
+            check_docs_hygiene.ROOT / "script/check_docs_hygiene.py"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(
+            _reachable_main_extend_counts(checker_source, required_calls),
+            {name: 1 for name in required_calls},
+        )
+        for name in required_calls:
+            wrapper = (
+                "    failures.extend(\n"
+                f"        {name}()\n"
+                "    )"
+            )
+            with self.subTest(validator=name):
+                self.assertEqual(checker_source.count(wrapper), 1)
+                mutations = (
+                    checker_source.replace(
+                        wrapper,
+                        f"    {name}()",
+                        1,
+                    ),
+                    checker_source.replace(
+                        wrapper,
+                        (
+                            "    if False:\n"
+                            "        failures.extend(\n"
+                            f"            {name}()\n"
+                            "        )"
+                        ),
+                        1,
+                    ),
+                    checker_source.replace(
+                        wrapper,
+                        "    return 0\n" + wrapper,
+                        1,
+                    ),
+                    checker_source.replace(
+                        wrapper,
+                        (
+                            "    try:\n"
+                            "        return 0\n"
+                            "    finally:\n"
+                            "        pass\n"
+                            + wrapper
+                        ),
+                        1,
+                    ),
+                )
+                for mutation in mutations:
+                    self.assertEqual(
+                        _reachable_main_extend_counts(
+                            mutation,
+                            required_calls,
+                        )[name],
+                        0,
+                    )
+
+        gate_source = (
+            check_docs_hygiene.ROOT / "script/check_no_device_quality.sh"
+        ).read_text(encoding="utf-8")
+        gate_validator = (
+            check_docs_hygiene
+            .current_build24_macos_local_dmg_default_gate_failures
+        )
+        self.assertEqual(gate_validator(gate_text=gate_source), [])
+        selector_prefix = (
+            "script.test_documentation_handoff_guards."
+            "DocumentationHandoffGuardTests."
+        )
+        for name in (
+            (
+                "test_current_build24_local_dmg_uninstall_reinstall_"
+                "state_recovery_result_and_sources_are_bound"
+            ),
+            (
+                "test_current_build24_local_dmg_uninstall_reinstall_"
+                "state_recovery_documents_are_bound"
+            ),
+            (
+                "test_current_build24_local_dmg_uninstall_reinstall_"
+                "state_recovery_validators_are_wired_into_main"
+            ),
+        ):
+            self.assertEqual(gate_source.count(selector_prefix + name), 1)
+
+        runner_path = (
+            "script/run_macos_local_dmg_uninstall_reinstall_"
+            "state_recovery_smoke.py"
+        )
+        test_path = (
+            "script/test_run_macos_local_dmg_uninstall_reinstall_"
+            "state_recovery_smoke.py"
+        )
+        self.assertEqual(gate_source.count(runner_path), 1)
+        self.assertEqual(gate_source.count(test_path), 2)
+        syntax_start = gate_source.index(
+            "run check_python_syntax \\\n"
+        )
+        syntax_end = gate_source.index(
+            "run bash -n script/*.sh",
+            syntax_start,
+        )
+        unit_start = gate_source.index(
+            "run python3 -m unittest \\\n"
+            "  script/test_v1_g0_checkpoint.py \\"
+        )
+        unit_end = gate_source.index(
+            "run git diff --check",
+            unit_start,
+        )
+        syntax_block = gate_source[syntax_start:syntax_end]
+        unit_block = gate_source[unit_start:unit_end]
+        runner_line = f"  {runner_path} \\\n"
+        test_line = f"  {test_path} \\\n"
+        mutations = (
+            gate_source.replace(runner_line, "", 1)
+            + "\n# "
+            + runner_line,
+            (
+                gate_source[:unit_start]
+                + unit_block.replace(test_line, "", 1)
+                + gate_source[unit_end:]
+                + "\n# "
+                + test_line
+            ),
+            (
+                gate_source[:syntax_start]
+                + "inactive_inventory() {\n"
+                + syntax_block
+                + "}\n"
+                + gate_source[syntax_end:]
+            ),
+            (
+                gate_source[:unit_start]
+                + ": <<'AETHERLINK_INACTIVE_STATE_RECOVERY'\n"
+                + unit_block
+                + "AETHERLINK_INACTIVE_STATE_RECOVERY\n"
+                + gate_source[unit_end:]
+            ),
+            (
+                gate_source[:unit_start]
+                + unit_block.replace(
+                    test_line,
+                    f"  ; true {test_path} \\\n",
+                    1,
+                )
+                + gate_source[unit_end:]
+            ),
+            (
+                gate_source[:syntax_start]
+                + "if false; then\n"
+                + syntax_block
+                + "fi\n"
+                + gate_source[syntax_end:]
+            ),
+            (
+                gate_source[:syntax_start]
+                + "exit 0\n"
+                + gate_source[syntax_start:]
+            ),
+        )
+        for ordinal, mutation in enumerate(mutations, start=1):
+            with self.subTest(inventory_mutation=ordinal):
+                self.assertTrue(gate_validator(gate_text=mutation))
+
+    def test_current_build24_local_dmg_abrupt_process_state_recovery_result_receipt_and_sources_are_bound(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_build24_macos_local_dmg_abrupt_process_state_recovery_evidence_failures
+        )
+        self.assertEqual(validator(), [])
+        result_path = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_RESULT
+        )
+        receipt_path = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_RECEIPT
+        )
+
+        def canonical_bytes(value: object) -> bytes:
+            return (
+                json.dumps(
+                    value,
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("ascii")
+
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        result_mutations: list[dict[str, object]] = []
+        for path, value in (
+            (("schemaVersion",), True),
+            (("abruptTermination", "signalNumber"), True),
+            (("abruptTermination", "inFlightWriteCheckpointObserved"), True),
+            (("abruptTermination", "processReaped"), False),
+            (("stateRecovery", "databaseCount"), True),
+            (("stateRecovery", "totalEventCount"), 2),
+            (
+                (
+                    "launches",
+                    "runs",
+                    1,
+                    "exactExecutableIdentityMatchedImmediatelyBeforeSignal",
+                ),
+                False,
+            ),
+        ):
+            mutation = copy.deepcopy(result)
+            target: object = mutation
+            for key in path[:-1]:
+                target = target[key]  # type: ignore[index]
+            target[path[-1]] = value  # type: ignore[index]
+            result_mutations.append(mutation)
+        missing_result_key = copy.deepcopy(result)
+        missing_result_key["abruptTermination"].pop("signal")
+        result_mutations.append(missing_result_key)
+        extra_result_key = copy.deepcopy(result)
+        extra_result_key["unexpected"] = True
+        result_mutations.append(extra_result_key)
+
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt_mutations: list[dict[str, object]] = []
+        for path, value in (
+            (("schemaVersion",), True),
+            (("runCount",), True),
+            (("resultBytesEqual",), False),
+            (("canonicalResult", "size"), 7_201),
+            (("runs", 1, "ordinal"), 1),
+        ):
+            mutation = copy.deepcopy(receipt)
+            target = mutation
+            for key in path[:-1]:
+                target = target[key]  # type: ignore[index]
+            target[path[-1]] = value  # type: ignore[index]
+            receipt_mutations.append(mutation)
+        extra_receipt_key = copy.deepcopy(receipt)
+        extra_receipt_key["unexpected"] = True
+        receipt_mutations.append(extra_receipt_key)
+
+        with patch.object(
+            check_docs_hygiene,
+            (
+                "current_build24_macos_local_dmg_uninstall_reinstall_"
+                "state_recovery_evidence_failures"
+            ),
+            return_value=[],
+        ) as predecessor:
+            for mutation in result_mutations:
+                with self.subTest(result_mutation=mutation):
+                    failures = validator(
+                        result_bytes=canonical_bytes(mutation),
+                    )
+                    self.assertTrue(
+                        any("expected identity" in row for row in failures)
+                    )
+                    self.assertTrue(
+                        any("exact closed" in row for row in failures)
+                    )
+            for mutation in receipt_mutations:
+                with self.subTest(receipt_mutation=mutation):
+                    failures = validator(
+                        receipt_bytes=canonical_bytes(mutation),
+                    )
+                    self.assertTrue(
+                        any("expected identity" in row for row in failures)
+                    )
+                    self.assertTrue(
+                        any("exact closed" in row for row in failures)
+                    )
+            for label, payload in (
+                ("duplicate", result_path.read_bytes().replace(
+                    b'"schemaVersion":1',
+                    b'"schemaVersion":1,"schemaVersion":1',
+                    1,
+                )),
+                ("malformed", b"{"),
+                ("noncanonical", b" " + result_path.read_bytes()),
+            ):
+                with self.subTest(result_payload=label):
+                    self.assertTrue(validator(result_bytes=payload))
+        self.assertGreater(predecessor.call_count, 0)
+
+        expected_sources = {
+            (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_RUNNER
+            ),
+            (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_TEST
+            ),
+            (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_STATE_RECOVERY_RUNNER
+            ),
+            (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_RUNNER
+            ),
+            (
+                check_docs_hygiene
+                .MACOS_CLEAN_HOME_INSTALLED_STATE_RECOVERY_RUNNER
+            ),
+            check_docs_hygiene.MACOS_PACKAGED_STATE_RECOVERY_RUNNER,
+            check_docs_hygiene.CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_RUNNER,
+            check_docs_hygiene.CURRENT_MACOS_LOCAL_DMG_INSTALL_RUNNER,
+            (
+                check_docs_hygiene
+                .CURRENT_MACOS_ISOLATED_UNINSTALL_REINSTALL_RUNNER
+            ),
+            check_docs_hygiene.CURRENT_MACOS_ISOLATED_UPGRADE_RUNNER,
+        }
+        source_bytes = {
+            path: path.read_bytes()
+            for path in expected_sources
+        }
+        with patch.object(
+            check_docs_hygiene,
+            (
+                "current_build24_macos_local_dmg_uninstall_reinstall_"
+                "state_recovery_evidence_failures"
+            ),
+            return_value=[],
+        ):
+            for path in expected_sources:
+                with self.subTest(source=path.name):
+                    mutated = dict(source_bytes)
+                    mutated[path] += b"\n"
+                    failures = validator(source_bytes_by_path=mutated)
+                    self.assertTrue(
+                        any(
+                            str(path.relative_to(check_docs_hygiene.ROOT))
+                            in row
+                            and "source SHA-256" in row
+                            for row in failures
+                        )
+                    )
+            missing = dict(source_bytes)
+            missing.pop(next(iter(expected_sources)))
+            self.assertTrue(
+                any(
+                    "exactly the ten bound source files" in row
+                    for row in validator(source_bytes_by_path=missing)
+                )
+            )
+
+    def test_current_build24_local_dmg_abrupt_process_state_recovery_documents_are_bound(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_build24_macos_local_dmg_abrupt_process_state_recovery_document_failures
+        )
+        chain_validator = (
+            check_docs_hygiene
+            .current_build24_macos_clean_home_lifecycle_document_failures
+        )
+        self.assertEqual(validator(), [])
+        self.assertEqual(chain_validator(), [])
+        targets = (
+            "README.md",
+            "docs/roadmap.md",
+            "docs/handoff.md",
+            "docs/progress.md",
+            "docs/qa-evidence.md",
+            "docs/releases/1.0.0-build-24-local-v1.md",
+        )
+        start_marker = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_DOCUMENT_START
+        )
+        end_marker = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_DOCUMENT_END
+        )
+        expected_body = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_DOCUMENT_BODY
+        )
+        complete_block = (
+            start_marker
+            + "\n"
+            + expected_body
+            + "\n"
+            + end_marker
+        )
+        for relative in targets:
+            with self.subTest(relative=relative):
+                text = (
+                    check_docs_hygiene.ROOT / relative
+                ).read_text(encoding="utf-8")
+                start = text.index(start_marker) + len(start_marker)
+                end = text.index(end_marker)
+                self.assertEqual(text[start:end].strip(), expected_body)
+                self.assertEqual(text.count(complete_block), 1)
+
+                mutated = text.replace(
+                    "same canonical 7,200-byte",
+                    "a 7,200-byte",
+                    1,
+                )
+                failures = validator(
+                    document_text_by_relative={relative: mutated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in row
+                        and "exact canonical body SHA-256" in row
+                        for row in failures
+                    )
+                )
+
+                relocated = (
+                    text.replace(complete_block, "", 1).rstrip()
+                    + "\n\n"
+                    + complete_block
+                    + "\n"
+                )
+                failures = validator(
+                    document_text_by_relative={relative: relocated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in row
+                        and "canonical document location" in row
+                        for row in failures
+                    )
+                )
+
+        readme = check_docs_hygiene.README_PATH.read_text(encoding="utf-8")
+        for mutation in (
+            readme.replace(start_marker, "", 1),
+            readme.replace(end_marker, "", 1),
+            readme + f"\n{complete_block}\n",
+            readme.replace(
+                complete_block,
+                "<details>\n" + complete_block + "\n</details>",
+                1,
+            ),
+        ):
+            with self.subTest(marker_mutation=hash(mutation)):
+                failures = validator(
+                    document_text_by_relative={"README.md": mutation}
+                )
+                self.assertTrue(
+                    any(
+                        "README.md" in row
+                        and "abrupt-process state-recovery" in row
+                        for row in failures
+                    )
+                )
+
+    def test_current_build24_local_dmg_abrupt_process_state_recovery_validators_are_wired_into_main(
+        self,
+    ) -> None:
+        required_calls = (
+            (
+                "current_build24_macos_local_dmg_abrupt_process_"
+                "state_recovery_evidence_failures"
+            ),
+            (
+                "current_build24_macos_local_dmg_abrupt_process_"
+                "state_recovery_document_failures"
+            ),
+        )
+        checker_source = (
+            check_docs_hygiene.ROOT / "script/check_docs_hygiene.py"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(
+            _reachable_main_extend_counts(checker_source, required_calls),
+            {name: 1 for name in required_calls},
+        )
+        for name in required_calls:
+            wrapper = (
+                "    failures.extend(\n"
+                f"        {name}()\n"
+                "    )"
+            )
+            self.assertEqual(checker_source.count(wrapper), 1)
+
+        gate_source = (
+            check_docs_hygiene.ROOT / "script/check_no_device_quality.sh"
+        ).read_text(encoding="utf-8")
+        gate_validator = (
+            check_docs_hygiene
+            .current_build24_macos_local_dmg_default_gate_failures
+        )
+        self.assertEqual(gate_validator(gate_text=gate_source), [])
+        selector_prefix = (
+            "script.test_documentation_handoff_guards."
+            "DocumentationHandoffGuardTests."
+        )
+        selector_names = (
+            (
+                "test_current_build24_local_dmg_abrupt_process_"
+                "state_recovery_result_receipt_and_sources_are_bound"
+            ),
+            (
+                "test_current_build24_local_dmg_abrupt_process_"
+                "state_recovery_documents_are_bound"
+            ),
+            (
+                "test_current_build24_local_dmg_abrupt_process_"
+                "state_recovery_validators_are_wired_into_main"
+            ),
+        )
+        for name in selector_names:
+            self.assertEqual(gate_source.count(selector_prefix + name), 1)
+
+        runner_path = (
+            "script/run_macos_local_dmg_uninstall_reinstall_"
+            "abrupt_process_state_recovery_smoke.py"
+        )
+        test_path = (
+            "script/test_run_macos_local_dmg_uninstall_reinstall_"
+            "abrupt_process_state_recovery_smoke.py"
+        )
+        self.assertEqual(gate_source.count(runner_path), 1)
+        self.assertEqual(gate_source.count(test_path), 2)
+        for line in (
+            f"  {runner_path} \\\n",
+            f"  {test_path} \\\n",
+            f"  {selector_prefix}{selector_names[0]} \\\n",
+        ):
+            with self.subTest(removed=line):
+                self.assertTrue(
+                    gate_validator(
+                        gate_text=gate_source.replace(line, "", 1)
+                    )
+                )
+
+    def test_current_build24_macos_lifecycle_aggregate_sources_are_bound(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_build24_macos_lifecycle_aggregate_evidence_failures
+        )
+        self.assertEqual(validator(), [])
+        expected = {
+            check_docs_hygiene.CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_CHECKER: (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_EXPECTED_CHECKER_SIZE,
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_EXPECTED_CHECKER_SHA256,
+            ),
+            check_docs_hygiene.CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_TEST: (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_EXPECTED_TEST_SIZE,
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_EXPECTED_TEST_SHA256,
+            ),
+        }
+        source_bytes = {path: path.read_bytes() for path in expected}
+        for path, (expected_size, expected_sha256) in expected.items():
+            with self.subTest(path=path.name):
+                payload = source_bytes[path]
+                self.assertEqual(len(payload), expected_size)
+                self.assertEqual(
+                    hashlib.sha256(payload).hexdigest(),
+                    expected_sha256,
+                )
+                mutated = dict(source_bytes)
+                mutated[path] += b"\n"
+                failures = validator(source_bytes_by_path=mutated)
+                self.assertTrue(
+                    any(
+                        str(path.relative_to(check_docs_hygiene.ROOT)) in row
+                        and "expected current Build 24 lifecycle aggregate"
+                        in row
+                        for row in failures
+                    )
+                )
+
+        missing = dict(source_bytes)
+        missing.pop(next(iter(expected)))
+        self.assertTrue(
+            any(
+                "exactly the checker and test files" in row
+                for row in validator(source_bytes_by_path=missing)
+            )
+        )
+        extra = dict(source_bytes)
+        extra[check_docs_hygiene.ROOT / "unexpected.py"] = b""
+        self.assertTrue(
+            any(
+                "exactly the checker and test files" in row
+                for row in validator(source_bytes_by_path=extra)
+            )
+        )
+        non_bytes = dict(source_bytes)
+        first_path = next(iter(expected))
+        non_bytes[first_path] = bytearray(non_bytes[first_path])  # type: ignore[assignment]
+        self.assertTrue(
+            any(
+                "injected source payload must be bytes" in row
+                for row in validator(source_bytes_by_path=non_bytes)
+            )
+        )
+
+        with tempfile.TemporaryDirectory(
+            dir=check_docs_hygiene.ROOT
+        ) as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            target = temporary_root / "checker.py"
+            link = temporary_root / "checker-link.py"
+            target.write_bytes(source_bytes[
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_CHECKER
+            ])
+            link.symlink_to(target)
+            with patch.object(
+                check_docs_hygiene,
+                "CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_CHECKER",
+                link,
+            ):
+                failures = validator()
+            self.assertTrue(
+                any(
+                    "non-symlink regular file" in row
+                    for row in failures
+                )
+            )
+
+    def test_current_build24_macos_lifecycle_aggregate_documents_are_bound(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_build24_macos_lifecycle_aggregate_document_failures
+        )
+        chain_validator = (
+            check_docs_hygiene
+            .current_build24_macos_clean_home_lifecycle_document_failures
+        )
+        self.assertEqual(validator(), [])
+        self.assertEqual(chain_validator(), [])
+        targets = (
+            "README.md",
+            "docs/roadmap.md",
+            "docs/handoff.md",
+            "docs/progress.md",
+            "docs/qa-evidence.md",
+            "docs/releases/1.0.0-build-24-local-v1.md",
+        )
+        start_marker = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_START
+        )
+        end_marker = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_END
+        )
+        expected_body = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_BODY
+        )
+        complete_block = (
+            start_marker + "\n" + expected_body + "\n" + end_marker
+        )
+        for relative in targets:
+            with self.subTest(relative=relative):
+                text = (
+                    check_docs_hygiene.ROOT / relative
+                ).read_text(encoding="utf-8")
+                start = text.index(start_marker) + len(start_marker)
+                end = text.index(end_marker)
+                self.assertEqual(text[start:end].strip(), expected_body)
+                self.assertEqual(text.count(complete_block), 1)
+
+                mutated = text.replace(
+                    "standalone\nread-only command",
+                    "standalone local\nread-only command",
+                    1,
+                )
+                failures = validator(
+                    document_text_by_relative={relative: mutated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in row
+                        and "exact canonical body SHA-256" in row
+                        for row in failures
+                    )
+                )
+
+                relocated = (
+                    text.replace(complete_block, "", 1).rstrip()
+                    + "\n\n"
+                    + complete_block
+                    + "\n"
+                )
+                failures = validator(
+                    document_text_by_relative={relative: relocated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in row
+                        and "canonical document location" in row
+                        for row in failures
+                    )
+                )
+
+        readme = check_docs_hygiene.README_PATH.read_text(encoding="utf-8")
+        for mutation in (
+            readme.replace(start_marker, "", 1),
+            readme.replace(end_marker, "", 1),
+            readme + f"\n{complete_block}\n",
+            readme.replace(
+                complete_block,
+                "<details>\n" + complete_block + "\n</details>",
+                1,
+            ),
+        ):
+            with self.subTest(marker_mutation=hash(mutation)):
+                failures = validator(
+                    document_text_by_relative={"README.md": mutation}
+                )
+                self.assertTrue(
+                    any(
+                        "README.md" in row
+                        and "lifecycle aggregate readback" in row
+                        for row in failures
+                    )
+                )
+
+    def test_current_build24_macos_lifecycle_aggregate_validators_are_wired_into_main(
+        self,
+    ) -> None:
+        required_calls = (
+            "current_build24_macos_lifecycle_aggregate_evidence_failures",
+            "current_build24_macos_lifecycle_aggregate_document_failures",
+        )
+        checker_source = (
+            check_docs_hygiene.ROOT / "script/check_docs_hygiene.py"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(
+            _reachable_main_extend_counts(checker_source, required_calls),
+            {name: 1 for name in required_calls},
+        )
+        for name in required_calls:
+            wrapper = (
+                "    failures.extend(\n"
+                f"        {name}()\n"
+                "    )"
+            )
+            self.assertEqual(checker_source.count(wrapper), 1)
+
+        gate_source = (
+            check_docs_hygiene.ROOT / "script/check_no_device_quality.sh"
+        ).read_text(encoding="utf-8")
+        gate_validator = (
+            check_docs_hygiene
+            .current_build24_macos_local_dmg_default_gate_failures
+        )
+        self.assertEqual(gate_validator(gate_text=gate_source), [])
+        checker_path = "script/check_macos_build24_lifecycle_evidence.py"
+        test_path = "script/test_check_macos_build24_lifecycle_evidence.py"
+        direct_invocation = (
+            "run python3 -I -B -S "
+            "script/check_macos_build24_lifecycle_evidence.py"
+        )
+        self.assertEqual(gate_source.count(checker_path), 2)
+        self.assertEqual(gate_source.count(test_path), 2)
+        self.assertEqual(gate_source.count(direct_invocation), 1)
+
+        selector_prefix = (
+            "script.test_documentation_handoff_guards."
+            "DocumentationHandoffGuardTests."
+        )
+        selector_names = (
+            "test_current_build24_macos_lifecycle_aggregate_sources_are_bound",
+            (
+                "test_current_build24_macos_lifecycle_aggregate_"
+                "documents_are_bound"
+            ),
+            (
+                "test_current_build24_macos_lifecycle_aggregate_"
+                "validators_are_wired_into_main"
+            ),
+        )
+        for name in selector_names:
+            self.assertEqual(gate_source.count(selector_prefix + name), 1)
+
+        for line in (
+            direct_invocation + "\n",
+            f"  {checker_path} \\\n",
+            f"  {test_path} \\\n",
+            f"  {selector_prefix}{selector_names[0]} \\\n",
+        ):
+            with self.subTest(removed=line):
+                self.assertTrue(
+                    gate_validator(
+                        gate_text=gate_source.replace(line, "", 1)
+                    )
+                )
+
+    def test_current_build24_macos_idle_resource_stability_result_and_sources_are_bound(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_build24_macos_idle_resource_stability_evidence_failures
+        )
+        self.assertEqual(validator(), [])
+        result_path = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_RESULT
+        )
+        result_payload = result_path.read_bytes()
+        self.assertEqual(
+            len(result_payload),
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_RESULT_SIZE,
+        )
+        self.assertEqual(
+            hashlib.sha256(result_payload).hexdigest(),
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_RESULT_SHA256,
+        )
+        expected_sources = {
+            (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_RUNNER
+            ): (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_RUNNER_SIZE,
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_RUNNER_SHA256,
+            ),
+            (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_RUNNER_TEST
+            ): (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_RUNNER_TEST_SIZE,
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_RUNNER_TEST_SHA256,
+            ),
+            (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_CHECKER
+            ): (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_CHECKER_SIZE,
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_CHECKER_SHA256,
+            ),
+            (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_CHECKER_TEST
+            ): (
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_CHECKER_TEST_SIZE,
+                check_docs_hygiene
+                .CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_EXPECTED_CHECKER_TEST_SHA256,
+            ),
+        }
+        source_bytes = {
+            path: path.read_bytes() for path in expected_sources
+        }
+        for path, (expected_size, expected_sha256) in (
+            expected_sources.items()
+        ):
+            payload = source_bytes[path]
+            with self.subTest(path=path.name):
+                self.assertEqual(len(payload), expected_size)
+                self.assertEqual(
+                    hashlib.sha256(payload).hexdigest(),
+                    expected_sha256,
+                )
+                mutated = dict(source_bytes)
+                mutated[path] = payload + b"\n"
+                self.assertTrue(
+                    validator(source_bytes_by_path=mutated)
+                )
+
+        missing = dict(source_bytes)
+        missing.pop(next(iter(expected_sources)))
+        self.assertTrue(
+            any(
+                "must contain exactly the runner, runner test, checker, "
+                "and checker test files" in row
+                for row in validator(source_bytes_by_path=missing)
+            )
+        )
+        extra = dict(source_bytes)
+        extra[check_docs_hygiene.ROOT / "unexpected.py"] = b""
+        self.assertTrue(validator(source_bytes_by_path=extra))
+        non_bytes = dict(source_bytes)
+        first_source = next(iter(expected_sources))
+        non_bytes[first_source] = bytearray(  # type: ignore[assignment]
+            non_bytes[first_source]
+        )
+        self.assertTrue(
+            any(
+                "injected source payload must be bytes" in row
+                for row in validator(source_bytes_by_path=non_bytes)
+            )
+        )
+
+        result = json.loads(result_payload)
+        result["measurement"]["run"]["summary"]["threads"][
+            "finalDelta"
+        ] = False
+        type_mutation = (
+            check_docs_hygiene.idle_resource_evidence
+            .canonical_json_bytes(result)
+        )
+        failures = validator(
+            result_bytes=type_mutation,
+            source_bytes_by_path=source_bytes,
+        )
+        self.assertTrue(
+            any(
+                "invalid current Build 24 idle-resource result contract"
+                in row
+                for row in failures
+            )
+        )
+
+        result = json.loads(result_payload)
+        result["measurement"]["run"][
+            "maximumObservedLatenessMilliseconds"
+        ] = 78
+        lateness_mutation = (
+            check_docs_hygiene.idle_resource_evidence
+            .canonical_json_bytes(result)
+        )
+        self.assertTrue(
+            any(
+                "maximum observed lateness differs from raw samples" in row
+                for row in validator(result_bytes=lateness_mutation)
+            )
+        )
+
+        with tempfile.TemporaryDirectory(
+            dir=check_docs_hygiene.ROOT
+        ) as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            target = temporary_root / "result.json"
+            link = temporary_root / "result-link.json"
+            target.write_bytes(result_payload)
+            link.symlink_to(target)
+            with patch.object(
+                check_docs_hygiene,
+                "CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_RESULT",
+                link,
+            ):
+                failures = validator()
+            self.assertTrue(
+                any(
+                    "non-symlink regular file" in row
+                    for row in failures
+                )
+            )
+
+    def test_current_build24_macos_idle_resource_stability_documents_are_bound(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_build24_macos_idle_resource_stability_document_failures
+        )
+        chain_validator = (
+            check_docs_hygiene
+            .current_build24_macos_clean_home_lifecycle_document_failures
+        )
+        self.assertEqual(validator(), [])
+        self.assertEqual(chain_validator(), [])
+        targets = (
+            "README.md",
+            "docs/roadmap.md",
+            "docs/handoff.md",
+            "docs/progress.md",
+            "docs/qa-evidence.md",
+            "docs/releases/1.0.0-build-24-local-v1.md",
+        )
+        start_marker = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_START
+        )
+        end_marker = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_END
+        )
+        expected_body = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_BODY
+        )
+        complete_block = (
+            start_marker + "\n" + expected_body + "\n" + end_marker
+        )
+        for relative in targets:
+            text = (
+                check_docs_hygiene.ROOT / relative
+            ).read_text(encoding="utf-8")
+            with self.subTest(relative=relative):
+                start = text.index(start_marker) + len(start_marker)
+                end = text.index(end_marker)
+                self.assertEqual(text[start:end].strip(), expected_body)
+                self.assertEqual(text.count(complete_block), 1)
+
+                mutated = text.replace(
+                    "maximum observed sample lateness was 79 ms",
+                    "maximum observed sample lateness was 80 ms",
+                    1,
+                )
+                failures = validator(
+                    document_text_by_relative={relative: mutated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in row
+                        and "exact canonical body SHA-256" in row
+                        for row in failures
+                    )
+                )
+
+                relocated = (
+                    text.replace(complete_block, "", 1).rstrip()
+                    + "\n\n"
+                    + complete_block
+                    + "\n"
+                )
+                failures = validator(
+                    document_text_by_relative={relative: relocated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in row
+                        and "canonical document location" in row
+                        for row in failures
+                    )
+                )
+
+        readme = check_docs_hygiene.README_PATH.read_text(encoding="utf-8")
+        for mutation in (
+            readme.replace(start_marker, "", 1),
+            readme.replace(end_marker, "", 1),
+            readme + f"\n{complete_block}\n",
+            readme.replace(
+                complete_block,
+                "<details>\n" + complete_block + "\n</details>",
+                1,
+            ),
+        ):
+            with self.subTest(marker_mutation=hash(mutation)):
+                failures = validator(
+                    document_text_by_relative={"README.md": mutation}
+                )
+                self.assertTrue(
+                    any(
+                        "README.md" in row
+                        and "idle-resource stability" in row
+                        for row in failures
+                    )
+                )
+                self.assertTrue(
+                    chain_validator(
+                        document_text_by_relative={"README.md": mutation}
+                    )
+                )
+
+    def test_current_build24_macos_idle_resource_stability_validators_are_wired_into_main(
+        self,
+    ) -> None:
+        required_calls = (
+            (
+                "current_build24_macos_idle_resource_"
+                "stability_evidence_failures"
+            ),
+            (
+                "current_build24_macos_idle_resource_"
+                "stability_document_failures"
+            ),
+        )
+        checker_source = (
+            check_docs_hygiene.ROOT / "script/check_docs_hygiene.py"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(
+            _reachable_main_extend_counts(checker_source, required_calls),
+            {name: 1 for name in required_calls},
+        )
+        for name in required_calls:
+            wrapper = (
+                "    failures.extend(\n"
+                f"        {name}()\n"
+                "    )"
+            )
+            self.assertEqual(checker_source.count(wrapper), 1)
+
+        gate_source = (
+            check_docs_hygiene.ROOT / "script/check_no_device_quality.sh"
+        ).read_text(encoding="utf-8")
+        gate_validator = (
+            check_docs_hygiene
+            .current_build24_macos_local_dmg_default_gate_failures
+        )
+        self.assertEqual(gate_validator(gate_text=gate_source), [])
+        runner_path = (
+            "script/run_macos_build24_idle_resource_stability_smoke.py"
+        )
+        runner_test_path = (
+            "script/test_run_macos_build24_idle_resource_stability_smoke.py"
+        )
+        evidence_checker_path = (
+            "script/check_macos_build24_idle_resource_stability_evidence.py"
+        )
+        evidence_test_path = (
+            "script/test_check_macos_build24_idle_resource_stability_evidence.py"
+        )
+        direct_checker = (
+            "run python3 -I -B -S "
+            "script/check_macos_build24_idle_resource_stability_evidence.py"
+        )
+        direct_runner = (
+            "run python3 -B "
+            "script/run_macos_build24_idle_resource_stability_smoke.py"
+        )
+        self.assertEqual(gate_source.count(runner_path), 1)
+        self.assertEqual(gate_source.count(runner_test_path), 2)
+        self.assertEqual(gate_source.count(evidence_checker_path), 2)
+        self.assertEqual(gate_source.count(evidence_test_path), 2)
+        self.assertEqual(gate_source.count(direct_checker), 1)
+        self.assertEqual(gate_source.count(direct_runner), 0)
+        self.assertTrue(
+            any(
+                "must not execute in the default gate" in row
+                for row in gate_validator(
+                    gate_text=gate_source + "\n" + direct_runner + "\n"
+                )
+            )
+        )
+
+        selector_prefix = (
+            "script.test_documentation_handoff_guards."
+            "DocumentationHandoffGuardTests."
+        )
+        selector_names = (
+            (
+                "test_current_build24_macos_idle_resource_stability_"
+                "result_and_sources_are_bound"
+            ),
+            (
+                "test_current_build24_macos_idle_resource_stability_"
+                "documents_are_bound"
+            ),
+            (
+                "test_current_build24_macos_idle_resource_stability_"
+                "validators_are_wired_into_main"
+            ),
+        )
+        for name in selector_names:
+            self.assertEqual(gate_source.count(selector_prefix + name), 1)
+
+        for line in (
+            direct_checker + "\n",
+            f"  {runner_path} \\\n",
+            f"  {runner_test_path} \\\n",
+            f"  {evidence_checker_path} \\\n",
+            f"  {evidence_test_path} \\\n",
+            f"  {selector_prefix}{selector_names[0]} \\\n",
+        ):
+            with self.subTest(removed=line):
+                self.assertTrue(
+                    gate_validator(
+                        gate_text=gate_source.replace(line, "", 1)
+                    )
+                )
+
+    def test_current_macos_isolated_upgrade_result_and_sources_are_bound(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_macos_isolated_upgrade_evidence_failures
+        )
+        self.assertEqual(validator(), [])
+
+        result = json.loads(
+            (
+                check_docs_hygiene
+                .CURRENT_MACOS_ISOLATED_UPGRADE_RESULT
+            ).read_text(encoding="utf-8")
+        )
+        result["stateUpgrade"]["currentRelaunchIdempotent"] = False
+        mutated_result = (
+            json.dumps(
+                result,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
+        result_failures = validator(result_bytes=mutated_result)
+        self.assertTrue(
+            any(
+                "expected identity" in failure
+                for failure in result_failures
+            )
+        )
+        self.assertTrue(
+            any(
+                (
+                    "stateUpgrade.currentRelaunchIdempotent=True"
+                    in failure
+                )
+                for failure in result_failures
+            )
+        )
+
+        runner = (
+            check_docs_hygiene.CURRENT_MACOS_ISOLATED_UPGRADE_RUNNER
+        )
+        test = check_docs_hygiene.CURRENT_MACOS_ISOLATED_UPGRADE_TEST
+        source_failures = validator(
+            source_bytes_by_path={
+                runner: runner.read_bytes() + b"\n",
+                test: test.read_bytes(),
+            }
+        )
+        self.assertTrue(
+            any(
+                "isolated upgrade source SHA-256" in failure
+                for failure in source_failures
+            )
+        )
+
+        receipt = json.loads(
+            (
+                check_docs_hygiene
+                .CURRENT_MACOS_ISOLATED_UPGRADE_REPEATABILITY_RESULT
+            ).read_text(encoding="utf-8")
+        )
+        receipt["runCount"] = True
+        mutated_receipt = (
+            json.dumps(
+                receipt,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
+        receipt_failures = validator(
+            repeatability_bytes=mutated_receipt,
+        )
+        self.assertTrue(
+            any(
+                "expected identity" in failure
+                for failure in receipt_failures
+            )
+        )
+        self.assertTrue(
+            any(
+                "exact two-run repeatability contract" in failure
+                for failure in receipt_failures
+            )
+        )
+
+        result = json.loads(
+            (
+                check_docs_hygiene
+                .CURRENT_MACOS_ISOLATED_UPGRADE_RESULT
+            ).read_text(encoding="utf-8")
+        )
+        result["archiveReadback"]["current"]["unexpected"] = True
+        mutated_schema = (
+            json.dumps(
+                result,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
+        schema_failures = validator(result_bytes=mutated_schema)
+        self.assertTrue(
+            any(
+                "archiveReadback.current keys differ" in failure
+                for failure in schema_failures
+            )
+        )
+
+        for build_number, tree_name in (
+            (23, "previousTree"),
+            (24, "currentTree"),
+        ):
+            release_id = (
+                f"aetherlink-1.0.0+{build_number}-local-v1"
+            )
+            manifest_path = (
+                check_docs_hygiene.ROOT
+                / "dist/releases"
+                / release_id
+                / f"{release_id}.manifest.json"
+            )
+            manifest = json.loads(
+                manifest_path.read_text(encoding="utf-8")
+            )
+            executable_path = (
+                "macos/AetherLink.app/Contents/MacOS/AetherLink"
+            )
+            executable = next(
+                row
+                for row in manifest["members"]
+                if row["path"] == executable_path
+            )
+            executable["sha256"] = "0" * 64
+            mutated_manifest = (
+                json.dumps(
+                    manifest,
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("utf-8")
+            manifest_failures = validator(
+                release_bytes_by_path={
+                    manifest_path: mutated_manifest,
+                }
+            )
+            self.assertTrue(
+                any(
+                    "executable identity does not match" in failure
+                    for failure in manifest_failures
+                )
+            )
+            self.assertTrue(
+                any(
+                    f"installation.{tree_name} does not derive" in failure
+                    for failure in manifest_failures
+                )
+            )
+
+        build23_release_id = "aetherlink-1.0.0+23-local-v1"
+        build23_archive = (
+            check_docs_hygiene.ROOT
+            / "dist/releases"
+            / build23_release_id
+            / f"{build23_release_id}.zip"
+        )
+        archive_failures = validator(
+            release_bytes_by_path={
+                build23_archive: b"mutated-archive",
+            }
+        )
+        self.assertTrue(
+            any(
+                "checksum sidecar differs from the actual ZIP identity"
+                in failure
+                for failure in archive_failures
+            )
+        )
+        self.assertTrue(
+            any(
+                "snapshot identities do not match" in failure
+                for failure in archive_failures
+            )
+        )
+
+    def test_current_macos_isolated_upgrade_documentation_rejects_drift(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_macos_isolated_upgrade_document_failures
+        )
+        self.assertEqual(validator(), [])
+
+        targets = (
+            check_docs_hygiene.README_PATH,
+            check_docs_hygiene.ROOT / "docs/roadmap.md",
+            check_docs_hygiene.ROOT / "docs/handoff.md",
+            check_docs_hygiene.ROOT / "docs/progress.md",
+            check_docs_hygiene.ROOT / "docs/qa-evidence.md",
+            check_docs_hygiene.LOCAL_RELEASE_CURRENT_DOC,
+        )
+        documents = {
+            str(path.relative_to(check_docs_hygiene.ROOT)): (
+                path.read_text(encoding="utf-8")
+            )
+            for path in targets
+        }
+        readme_relative = str(
+            check_docs_hygiene.README_PATH.relative_to(
+                check_docs_hygiene.ROOT
+            )
+        )
+        identity = (
+            check_docs_hygiene
+            .CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_RESULT_SHA256
+        )
+        identity_documents = dict(documents)
+        identity_documents[readme_relative] = documents[
+            readme_relative
+        ].replace(
+            identity,
+            "0" * 64,
+            1,
+        )
+        failures = validator(
+            document_text_by_relative=identity_documents,
+        )
+        self.assertTrue(
+            any(
+                readme_relative in failure
+                and "canonical result identity" in failure
+                for failure in failures
+                )
+            )
+
+        readme_contract_mutations = (
+            ("6,469-byte", "6,470-byte", "canonical result size"),
+            (
+                "isolated-upgrade-v2.json",
+                "isolated-upgrade-v3.json",
+                "canonical result path",
+            ),
+            ("898-byte", "899-byte", "repeatability receipt size"),
+            (
+                "isolated-upgrade-repeatability-v1.json",
+                "isolated-upgrade-repeatability-v2.json",
+                "repeatability receipt path",
+            ),
+            (
+                (
+                    check_docs_hygiene
+                    .CURRENT_MACOS_ISOLATED_UPGRADE_REPEATABILITY_EXPECTED_SHA256
+                ),
+                "1" * 64,
+                "repeatability receipt identity",
+            ),
+        )
+        for original, replacement, expected_label in (
+            readme_contract_mutations
+        ):
+            mutated_documents = dict(documents)
+            mutated_documents[readme_relative] = documents[
+                readme_relative
+            ].replace(original, replacement, 1)
+            contract_failures = validator(
+                document_text_by_relative=mutated_documents,
+            )
+            self.assertTrue(
+                any(
+                    readme_relative in failure
+                    and expected_label in failure
+                    for failure in contract_failures
+                )
+            )
+
+        for path in targets:
+            relative = str(path.relative_to(check_docs_hygiene.ROOT))
+            text = documents[relative]
+            start = text.index(
+                check_docs_hygiene
+                .CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_START
+            )
+            end = text.index(
+                check_docs_hygiene
+                .CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_END
+            )
+            block = text[start:end]
+            self.assertIn("rollback", block)
+            rollback_index = block.rfind("rollback")
+            mutated_documents = dict(documents)
+            mutated_documents[relative] = (
+                text[:start]
+                + block[:rollback_index]
+                + "roll-back"
+                + block[rollback_index + len("rollback"):]
+                + text[end:]
+            )
+            boundary_failures = validator(
+                document_text_by_relative=mutated_documents,
+            )
+            self.assertTrue(
+                any(
+                    relative in failure
+                    and "canonical isolated upgrade boundary" in failure
+                    for failure in boundary_failures
+                )
+            )
+
+            start_marker = (
+                check_docs_hygiene
+                .CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_START
+            )
+            end_marker = (
+                check_docs_hygiene
+                .CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_END
+            )
+            for marker in (start_marker, end_marker):
+                marker_documents = dict(documents)
+                marker_documents[relative] = text.replace(
+                    marker,
+                    "",
+                    1,
+                )
+                marker_failures = validator(
+                    document_text_by_relative=marker_documents,
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "markers must each appear exactly once" in failure
+                        for failure in marker_failures
+                    )
+                )
+
+            duplicate_documents = dict(documents)
+            duplicate_documents[relative] = text.replace(
+                start_marker,
+                start_marker + "\n" + start_marker,
+                1,
+            )
+            duplicate_failures = validator(
+                document_text_by_relative=duplicate_documents,
+            )
+            self.assertTrue(
+                any(
+                    relative in failure
+                    and "markers must each appear exactly once" in failure
+                    for failure in duplicate_failures
+                )
+            )
+
+            reversed_documents = dict(documents)
+            placeholder = "<!-- isolated-upgrade-marker-placeholder -->"
+            reversed_documents[relative] = (
+                text.replace(start_marker, placeholder, 1)
+                .replace(end_marker, start_marker, 1)
+                .replace(placeholder, end_marker, 1)
+            )
+            reversed_failures = validator(
+                document_text_by_relative=reversed_documents,
+            )
+            self.assertTrue(
+                any(
+                    relative in failure
+                    and "markers are out of order" in failure
+                    for failure in reversed_failures
+                )
+            )
+
+            complete_end = end + len(end_marker)
+            complete_block = text[start:complete_end]
+            moved_documents = dict(documents)
+            moved_documents[relative] = (
+                text[:start]
+                + text[complete_end:]
+                + "\n\n"
+                + complete_block
+            )
+            moved_failures = validator(
+                document_text_by_relative=moved_documents,
+            )
+            self.assertTrue(
+                any(
+                    relative in failure
+                    and "moved outside its canonical document location"
+                    in failure
+                    for failure in moved_failures
+                )
+            )
+
+        contradictory_documents = dict(documents)
+        readme_text = contradictory_documents[readme_relative]
+        readme_end = readme_text.index(
+            check_docs_hygiene
+            .CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_END
+        )
+        contradictory_documents[readme_relative] = (
+            readme_text[:readme_end]
+            + (
+                "Arbitrary N/N-1 versions and cross-host production "
+                "qualification are complete.\n"
+            )
+            + readme_text[readme_end:]
+        )
+        contradictory_failures = validator(
+            document_text_by_relative=contradictory_documents,
+        )
+        self.assertTrue(
+            any(
+                readme_relative in failure
+                and "unnegated contradictory qualification claim" in failure
+                for failure in contradictory_failures
+            )
+        )
+
+        for contradictory_claim in (
+            "This evidence supports rollback.",
+            "UI behavior is qualified.",
+            "Automatic Application Support cleanup is supported.",
+            "Physical devices passed qualification.",
+        ):
+            claim_documents = dict(documents)
+            readme_text = claim_documents[readme_relative]
+            readme_end = readme_text.index(
+                check_docs_hygiene
+                .CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_END
+            )
+            claim_documents[readme_relative] = (
+                readme_text[:readme_end]
+                + contradictory_claim
+                + "\n"
+                + readme_text[readme_end:]
+            )
+            claim_failures = validator(
+                document_text_by_relative=claim_documents,
+            )
+            self.assertTrue(
+                any(
+                    readme_relative in failure
+                    and "exact bounded block SHA-256" in failure
+                    for failure in claim_failures
+                )
+            )
+
     def test_historical_and_current_clean_home_test_hashes_are_separate(
         self,
     ) -> None:
@@ -1252,7 +5171,11 @@ private func generatePairingQR() {{
             "docs/progress.md",
             "docs/qa-evidence.md",
             "docs/releases/1.0.0-build-20-local-v1.md",
-            "docs/releases/1.0.0-build-22-local-v1.md",
+            str(
+                check_docs_hygiene.LOCAL_RELEASE_CURRENT_DOC.relative_to(
+                    check_docs_hygiene.ROOT
+                )
+            ),
         )
         for relative in targets:
             with self.subTest(relative=relative):
@@ -1368,7 +5291,11 @@ private func generatePairingQR() {{
                     )
                 if relative in {
                     "docs/releases/1.0.0-build-20-local-v1.md",
-                    "docs/releases/1.0.0-build-22-local-v1.md",
+                    str(
+                        check_docs_hygiene.LOCAL_RELEASE_CURRENT_DOC.relative_to(
+                            check_docs_hygiene.ROOT
+                        )
+                    ),
                 }:
                     mutations["runner_sha"] = block.replace(
                         (
@@ -1421,6 +5348,97 @@ private func generatePairingQR() {{
                     )
                 )
 
+                neutral_insertion = (
+                    text[:end]
+                    + "\nNeutral historical note.\n"
+                    + text[end:]
+                )
+                neutral_failures = (
+                    check_docs_hygiene
+                    .current_macos_clean_home_lifecycle_document_failures(
+                        document_text_by_relative={
+                            relative: neutral_insertion,
+                        }
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "retain exact SHA-256" in failure
+                        for failure in neutral_failures
+                    )
+                )
+
+                complete_block = (
+                    start_marker + block + end_marker
+                )
+                relocated = (
+                    text.replace(complete_block, "", 1).rstrip()
+                    + "\n\n"
+                    + complete_block
+                    + "\n"
+                )
+                relocation_failures = (
+                    check_docs_hygiene
+                    .current_macos_clean_home_lifecycle_document_failures(
+                        document_text_by_relative={relative: relocated}
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "canonical document location" in failure
+                        for failure in relocation_failures
+                    )
+                )
+
+                predecessor, successor = (
+                    check_docs_hygiene
+                    .CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_NEIGHBORS[
+                        relative
+                    ]
+                )
+                outer_start = text.index(predecessor)
+                outer_end = text.index(successor) + len(successor)
+                outer_span = text[outer_start:outer_end]
+                relocated_outer_span = (
+                    text[:outer_start] + text[outer_end:]
+                ).rstrip() + "\n\n" + outer_span + "\n"
+                outer_failures = (
+                    check_docs_hygiene
+                    .current_macos_clean_home_lifecycle_document_failures(
+                        document_text_by_relative={
+                            relative: relocated_outer_span,
+                        }
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "outer document identity" in failure
+                        for failure in outer_failures
+                    )
+                )
+
+                hidden = text.replace(
+                    complete_block,
+                    "```\n" + complete_block + "\n```",
+                    1,
+                )
+                hidden_failures = (
+                    check_docs_hygiene
+                    .current_macos_clean_home_lifecycle_document_failures(
+                        document_text_by_relative={relative: hidden}
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        relative in failure
+                        and "hidden Markdown or HTML" in failure
+                        for failure in hidden_failures
+                    )
+                )
+
     def test_historical_build20_dmg_document_bindings_reject_drift(self) -> None:
         targets = (
             "README.md",
@@ -1429,7 +5447,11 @@ private func generatePairingQR() {{
             "docs/progress.md",
             "docs/qa-evidence.md",
             "docs/releases/1.0.0-build-20-local-v1.md",
-            "docs/releases/1.0.0-build-22-local-v1.md",
+            str(
+                check_docs_hygiene.LOCAL_RELEASE_CURRENT_DOC.relative_to(
+                    check_docs_hygiene.ROOT
+                )
+            ),
         )
         bindings = (
             "macos-packaged-app-build-20-local-dmg-install-v1.json",
@@ -1619,7 +5641,10 @@ private func generatePairingQR() {{
                 flags=re.IGNORECASE | re.DOTALL,
             ),
             "archive_overclaim": re.sub(
-                r"not an? (?:retained (?:Build 19 )?)?archive member",
+                (
+                    r"not\s+an?\s+(?:retained\s+(?:Build\s+19\s+)?)?"
+                    r"archive\s+member"
+                ),
                 "a retained Build 19 archive member",
                 document_text,
                 count=1,
@@ -1713,7 +5738,11 @@ private func generatePairingQR() {{
             "docs/handoff.md",
             "docs/progress.md",
             "docs/qa-evidence.md",
-            "docs/releases/1.0.0-build-22-local-v1.md",
+            str(
+                check_docs_hygiene.LOCAL_RELEASE_CURRENT_DOC.relative_to(
+                    check_docs_hygiene.ROOT
+                )
+            ),
         )
         start_marker = (
             check_docs_hygiene
@@ -3211,6 +7240,75 @@ private func generatePairingQR() {{
                     f"unexpected failures: {failures!r}",
                 )
 
+    def test_build22_and_build23_historical_documents_are_byte_pinned(
+        self,
+    ) -> None:
+        ledger_bytes = check_docs_hygiene.LOCAL_RELEASE_LEDGER.read_bytes()
+        entries = check_docs_hygiene.parse_release_version_ledger(
+            ledger_bytes
+        )
+        documents = {
+            entry.build_number: (
+                check_docs_hygiene.ROOT
+                / "docs"
+                / "releases"
+                / (
+                    f"{entry.marketing_version}-build-"
+                    f"{entry.build_number}-local-v1.md"
+                )
+            ).read_bytes()
+            for entry in entries[:-1]
+        }
+        archive_sha256_by_build = {
+            22: (
+                "478bd4210c11f7e2204e80a333bc8053b0d01b8deff3d0a3d2dd6795df1366c3"
+            ),
+            23: (
+                "b9a9c3c2ebeb01fc735fed3356f1f244178fb4521c1a806dc7a93d776f83ea2e"
+            ),
+        }
+        for build_number, archive_sha256 in archive_sha256_by_build.items():
+            mutations = {
+                "identity": documents[build_number].replace(
+                    archive_sha256.encode("ascii"),
+                    b"0" * 64,
+                    1,
+                ),
+                "line_endings": documents[build_number].replace(
+                    b"\n",
+                    b"\r\n",
+                ),
+            }
+            for label, mutated_document in mutations.items():
+                with self.subTest(
+                    build_number=build_number,
+                    mutation=label,
+                ):
+                    mutated_documents = dict(documents)
+                    mutated_documents[build_number] = mutated_document
+                    self.assertNotEqual(
+                        mutated_documents[build_number],
+                        documents[build_number],
+                    )
+                    failures = (
+                        check_docs_hygiene
+                        .historical_local_release_document_failures(
+                            ledger_bytes=ledger_bytes,
+                            document_bytes_by_build=mutated_documents,
+                        )
+                    )
+                    self.assertTrue(
+                        any(
+                            (
+                                f"build-{build_number}-local-v1.md" in failure
+                                and "exact immutable document SHA-256" in failure
+                            )
+                            for failure in failures
+                        ),
+                        f"Build {build_number} {label} mutation was accepted: "
+                        f"{failures!r}",
+                    )
+
     def test_build3_fixture_record_requires_every_own_historical_readback(
         self,
     ) -> None:
@@ -3333,6 +7431,36 @@ private func generatePairingQR() {{
             "`-Xswiftc -num-threads -Xswiftc 1`",
             (
                 "`dist/lifecycle/"
+                "macos-packaged-app-build-23-to-24-isolated-upgrade-v2.json`"
+            ),
+            "6,469-byte canonical result",
+            (
+                f"`{check_docs_hygiene.CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_RESULT_SHA256}`"
+            ),
+            (
+                "`dist/lifecycle/macos-packaged-app-build-23-to-24-"
+                "isolated-upgrade-repeatability-v1.json`"
+            ),
+            "898-byte repeatability receipt",
+            (
+                "`"
+                f"{check_docs_hygiene.CURRENT_MACOS_ISOLATED_UPGRADE_REPEATABILITY_EXPECTED_SHA256}"
+                "`"
+            ),
+            (
+                f"`{check_docs_hygiene.CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_RUNNER_SHA256}`"
+            ),
+            (
+                f"`{check_docs_hygiene.CURRENT_MACOS_ISOLATED_UPGRADE_EXPECTED_TEST_SHA256}`"
+            ),
+            (
+                "`31209251804494f54a699c5c4e8101491f02fca881cf25fba379b88eb493d8a8`"
+            ),
+            (
+                "`0c1882e653ec32a3bf5795c9369dbee818b6890157fbaaebd81c60b8c1a59fff`"
+            ),
+            (
+                "`dist/lifecycle/"
                 "macos-packaged-app-build-20-clean-home-install-v1.json`"
             ),
             (
@@ -3429,9 +7557,6 @@ private func generatePairingQR() {{
             ),
             (
                 f"`{check_docs_hygiene.MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RESULT_SHA256}`"
-            ),
-            (
-                f"`{check_docs_hygiene.MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_RUNNER_SHA256}`"
             ),
             (
                 f"`{check_docs_hygiene.MACOS_PACKAGED_STATE_RECOVERY_EXPECTED_TEST_SHA256}`"

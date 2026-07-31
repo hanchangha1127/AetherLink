@@ -9,6 +9,7 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
     private static let defaultUnloadPollIntervalNanoseconds: UInt64 = 100_000_000
     private static let defaultDataResponseByteLimit = 32 * 1_024 * 1_024
     private static let defaultDataResponseTimeout: TimeInterval = 60
+    private static let defaultHealthResponseTimeout: TimeInterval = 5
 
     private let baseURL: URL
     private let session: URLSession
@@ -18,6 +19,8 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
     private let catalogResponseByteLimit: Int
     private let dataResponseByteLimit: Int
     private let dataResponseTimeout: TimeInterval
+    private let healthResponseTimeout: TimeInterval
+    private let healthUptime: @Sendable () -> TimeInterval
     private let streamLimits: LMStudioStreamLimits
     private let registry = LMStudioGenerationRegistry()
     private let encoder = JSONEncoder()
@@ -32,6 +35,8 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         self.catalogResponseByteLimit = ModelInfo.maximumCatalogResponseBytes
         self.dataResponseByteLimit = Self.defaultDataResponseByteLimit
         self.dataResponseTimeout = Self.defaultDataResponseTimeout
+        self.healthResponseTimeout = Self.defaultHealthResponseTimeout
+        self.healthUptime = { ProcessInfo.processInfo.systemUptime }
         self.streamLimits = LMStudioStreamLimits()
     }
 
@@ -42,6 +47,10 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         catalogResponseByteLimit: Int = ModelInfo.maximumCatalogResponseBytes,
         dataResponseByteLimit: Int = defaultDataResponseByteLimit,
         dataResponseTimeout: TimeInterval = defaultDataResponseTimeout,
+        healthResponseTimeout: TimeInterval = defaultHealthResponseTimeout,
+        healthUptime: @escaping @Sendable () -> TimeInterval = {
+            ProcessInfo.processInfo.systemUptime
+        },
         streamLimits: LMStudioStreamLimits = LMStudioStreamLimits(),
         unloadPollIntervalNanoseconds: UInt64 = 0,
         unloadSleeper: @escaping @Sendable (UInt64) async throws -> Void = { _ in }
@@ -52,6 +61,10 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         self.catalogResponseByteLimit = max(0, catalogResponseByteLimit)
         self.dataResponseByteLimit = max(0, dataResponseByteLimit)
         self.dataResponseTimeout = Self.normalizedDataResponseTimeout(dataResponseTimeout)
+        self.healthResponseTimeout = Self.normalizedDataResponseTimeout(
+            healthResponseTimeout
+        )
+        self.healthUptime = healthUptime
         self.streamLimits = streamLimits
         self.unloadPollIntervalNanoseconds = unloadPollIntervalNanoseconds
         self.unloadSleeper = unloadSleeper
@@ -59,7 +72,12 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
 
     public func healthCheck() async -> BackendStatus {
         do {
-            _ = try await listModels()
+            let responseDeadlineUptime =
+                healthUptime() + healthResponseTimeout
+            _ = try await listModels(
+                responseTimeout: healthResponseTimeout,
+                responseDeadlineUptime: responseDeadlineUptime
+            )
             return .available
         } catch let error as LMStudioBackendError {
             return .unavailable(error.backendError)
@@ -72,11 +90,29 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
     }
 
     public func listModels() async throws -> [ModelInfo] {
+        try await listModels(responseTimeout: dataResponseTimeout)
+    }
+
+    private func listModels(
+        responseTimeout: TimeInterval,
+        responseDeadlineUptime: TimeInterval? = nil
+    ) async throws -> [ModelInfo] {
         let data: Data
         do {
-            data = try await performCatalogDataRequest(endpoint: "GET /api/v1/models", url: baseURL.appending(path: "api/v1/models"))
+            data = try await performCatalogDataRequest(
+                endpoint: "GET /api/v1/models",
+                url: baseURL.appending(path: "api/v1/models"),
+                timeout: responseTimeout
+            )
         } catch let error as LMStudioBackendError where error.shouldFallbackModelCatalogToOpenAICompatible {
-            return try await listOpenAICompatibleModels()
+            let fallbackResponseTimeout = try remainingResponseTimeout(
+                maximum: responseTimeout,
+                deadlineUptime: responseDeadlineUptime,
+                endpoint: "GET /v1/models"
+            )
+            return try await listOpenAICompatibleModels(
+                responseTimeout: fallbackResponseTimeout
+            )
         }
         do {
             try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)
@@ -286,8 +322,14 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         registry.takeUsageSource(id: generationID)
     }
 
-    private func listOpenAICompatibleModels() async throws -> [ModelInfo] {
-        let data = try await performCatalogDataRequest(endpoint: "GET /v1/models", url: baseURL.appending(path: "v1/models"))
+    private func listOpenAICompatibleModels(
+        responseTimeout: TimeInterval
+    ) async throws -> [ModelInfo] {
+        let data = try await performCatalogDataRequest(
+            endpoint: "GET /v1/models",
+            url: baseURL.appending(path: "v1/models"),
+            timeout: responseTimeout
+        )
         do {
             try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)
             let response = try decoder.decode(OpenAIModelsResponse.self, from: data)
@@ -315,6 +357,24 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         } catch {
             throw LMStudioBackendError.badResponse(endpoint: "GET /v1/models", reason: error.localizedDescription)
         }
+    }
+
+    private func remainingResponseTimeout(
+        maximum: TimeInterval,
+        deadlineUptime: TimeInterval?,
+        endpoint: String
+    ) throws -> TimeInterval {
+        guard let deadlineUptime else {
+            return maximum
+        }
+        let remaining = deadlineUptime - healthUptime()
+        guard remaining.isFinite, remaining > 0 else {
+            throw LMStudioBackendError.unavailable(
+                endpoint: endpoint,
+                reason: "The provider health deadline expired."
+            )
+        }
+        return min(maximum, remaining)
     }
 
     private static func validateUniqueModelIdentities(_ identities: [String]) throws {
@@ -434,12 +494,17 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         }
     }
 
-    private func performCatalogDataRequest(endpoint: String, url: URL) async throws -> Data {
+    private func performCatalogDataRequest(
+        endpoint: String,
+        url: URL,
+        timeout: TimeInterval? = nil
+    ) async throws -> Data {
         do {
             return try await performBoundedDataRequest(
                 endpoint: endpoint,
                 request: URLRequest(url: url),
-                byteLimit: catalogResponseByteLimit
+                byteLimit: catalogResponseByteLimit,
+                timeout: timeout
             )
         } catch LMStudioCatalogIngestionError.responseTooLarge {
             throw LMStudioBackendError.badResponse(
@@ -452,16 +517,21 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
     private func performBoundedDataRequest(
         endpoint: String,
         request: URLRequest,
-        byteLimit: Int
+        byteLimit: Int,
+        timeout: TimeInterval? = nil
     ) async throws -> Data {
         do {
-            let timeoutNanoseconds = UInt64(dataResponseTimeout * 1_000_000_000)
+            let resolvedTimeout = timeout ?? dataResponseTimeout
+            let timeoutNanoseconds = UInt64(
+                resolvedTimeout * 1_000_000_000
+            )
             return try await withThrowingTaskGroup(of: Data.self) { group in
                 group.addTask { [self] in
                     try await collectBoundedDataResponse(
                         endpoint: endpoint,
                         request: request,
-                        byteLimit: byteLimit
+                        byteLimit: byteLimit,
+                        timeout: resolvedTimeout
                     )
                 }
                 group.addTask {
@@ -492,10 +562,11 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
     private func collectBoundedDataResponse(
         endpoint: String,
         request: URLRequest,
-        byteLimit: Int
+        byteLimit: Int,
+        timeout: TimeInterval
     ) async throws -> Data {
         var boundedRequest = request
-        boundedRequest.timeoutInterval = dataResponseTimeout
+        boundedRequest.timeoutInterval = timeout
         let (bytes, response) = try await session.bytes(for: boundedRequest)
         do {
             guard let http = response as? HTTPURLResponse else {

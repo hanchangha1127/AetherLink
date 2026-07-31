@@ -12677,6 +12677,63 @@ def android_haptic_guard_failures() -> list[str]:
             "QR scanner chrome must stay testable without opening CameraX.",
         ),
         (
+            "internal enum class PairingQrCameraPermissionStage",
+            "QR scanner camera permission must keep an explicit lifecycle state machine.",
+        ),
+        (
+            "internal interface PairingQrCameraPermissionPlatform",
+            "QR scanner camera permission must retain a deterministic production-controller host seam.",
+        ),
+        (
+            "RequestInFlight,\n    RetryRequired,\n    RationaleRequired,\n    SettingsRecovery,\n    Granted,",
+            "QR scanner camera permission must distinguish in-flight, retry, rationale, Settings, and granted states.",
+        ),
+        (
+            "val pairingQrCameraPermission =\n"
+            "        rememberPairingQrCameraPermissionController()",
+            "QR scanner camera permission request history must stay above the conditional scanner composition.",
+        ),
+        (
+            "cameraPermission = pairingQrCameraPermission,",
+            "QR scanner must consume the app-scoped camera permission controller.",
+        ),
+        (
+            "LaunchedEffect(cameraPermission.stage)",
+            "QR scanner automatic camera permission request must be keyed to the explicit lifecycle state.",
+        ),
+        (
+            "PairingQrCameraPermissionAutoRequestEffect(cameraPermission)",
+            "QR scanner must keep its production automatic-request effect directly host-testable.",
+        ),
+        (
+            "shouldAutomaticallyRequestPairingQrCameraPermission(",
+            "QR scanner must automatically request camera permission only from the never-asked state.",
+        ),
+        (
+            "PAIRING_QR_CAMERA_PERMISSION_REQUEST_STATE",
+            "QR scanner camera permission request state must survive scanner removal and process recreation.",
+        ),
+        (
+            "beginPairingQrCameraPermissionRequest(",
+            "QR scanner camera permission launch must preserve the checked persistence transaction.",
+        ),
+        (
+            "return editor.commit()",
+            "QR scanner camera permission request state must be durably checked before launch.",
+        ),
+        (
+            "reconcilePairingQrCameraPermissionRequestOnResume(",
+            "QR scanner camera permission request must reconcile stale in-flight state on resume.",
+        ),
+        (
+            "DisposableEffect(lifecycleOwner, context, platform, preferences)",
+            "QR scanner camera permission controller must retain direct lifecycle-observer wiring.",
+        ),
+        (
+            "enabled = !cameraPermissionRequestInFlight",
+            "QR scanner camera permission action must reject duplicate input while the system request is active.",
+        ),
+        (
             "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)\n"
             "                                onTorchToggle()",
             "QR scanner flashlight toggle must keep toggle haptic.",
@@ -14814,6 +14871,17 @@ def android_haptic_guard_failures() -> list[str]:
     required_scanner_test_snippets = (
         "scannerChromeShowsPermissionStateWithoutCameraPreview",
         "scannerChromeShowsSettingsRecoveryWhenCameraPermissionIsBlocked",
+        "cameraPermissionStateMachineRequestsOnlyOnFirstEntryAndNeverDuringReentry",
+        "cameraPermissionStateMachineReconcilesSettingsReturnWithoutReRequest",
+        "cameraPermissionRequestTransactionPersistsBeforeLaunchAndFinalizesAfterAcceptance",
+        "cameraPermissionRequestTransactionDoesNotLaunchWhenPersistenceFails",
+        "cameraPermissionRequestTransactionPersistsManualRetryAcrossLauncherFailureRecreation",
+        "cameraPermissionResumeReconcilesStaleInFlightRequestWithoutAutoRetry",
+        "cameraPermissionControllerHostRunsResultReentryAndResumeLifecycle",
+        "RecordingPermissionActivityResultRegistry",
+        "LocalLifecycleOwner provides lifecycleOwner",
+        "scannerChromeDisablesPermissionActionWhileRequestIsInFlight",
+        "assertEquals(1, automaticRequestCount)",
         "scannerLocaleExpectations().forEachIndexed",
         "LocalizedScannerContent(languageTag = currentExpectation.value.languageTag)",
         "compose.onNodeWithText(expected.cancel).assertIsDisplayed()",
@@ -14914,6 +14982,22 @@ def android_haptic_guard_failures() -> list[str]:
         "PairingQrScannerChromeNoDeviceComposeTest",
         "scannerChromeShowsPermissionStateWithoutCameraPreview",
         "scannerChromeShowsSettingsRecoveryWhenCameraPermissionIsBlocked",
+        "cameraPermissionStateMachineRequestsOnlyOnFirstEntryAndNeverDuringReentry",
+        "cameraPermissionStateMachineReconcilesSettingsReturnWithoutReRequest",
+        "cameraPermissionRequestTransactionPersistsBeforeLaunchAndFinalizesAfterAcceptance",
+        "cameraPermissionRequestTransactionDoesNotLaunchWhenPersistenceFails",
+        "cameraPermissionRequestTransactionPersistsManualRetryAcrossLauncherFailureRecreation",
+        "cameraPermissionResumeReconcilesStaleInFlightRequestWithoutAutoRetry",
+        "cameraPermissionControllerHostRunsResultReentryAndResumeLifecycle",
+        "RecordingPermissionActivityResultRegistry",
+        "LocalLifecycleOwner provides lifecycleOwner",
+        "scannerChromeDisablesPermissionActionWhileRequestIsInFlight",
+        "PairingQrCameraPermissionStage.RequestInFlight",
+        "PairingQrCameraPermissionStage.RetryRequired",
+        "PairingQrCameraPermissionStage.RationaleRequired",
+        "PairingQrCameraPermissionStage.SettingsRecovery",
+        "assertEquals(1, automaticRequestCount)",
+        ".assertIsNotEnabled()",
         "scannerChromeShowsCameraStateWithTorchAndCancelActions",
         "scannerChromeRendersCompactPairingStatesAcrossSupportedLanguages",
         "scannerChromeCompactLargeFontBoundsAcrossSupportedLanguages",
@@ -57401,7 +57485,7 @@ def bounded_script_hardening_guard_failures() -> list[str]:
             "macos-packaged-app-build-22-isolated-uninstall-reinstall-v1.json"
         ),
         "current_release_doc": ROOT / (
-            "docs/releases/1.0.0-build-22-local-v1.md"
+            "docs/releases/1.0.0-build-24-local-v1.md"
         ),
         "progress": ROOT / "docs/progress.md",
         "qa": ROOT / "docs/qa-evidence.md",
@@ -57689,7 +57773,7 @@ def bounded_script_hardening_guard_failures() -> list[str]:
             "post-archive harness evidence",
         ),
         "progress": (
-            "Android Build 23 Entry-Point Topology Contract",
+            "Android Build 23 Entry-Point And Application-Shell Contract",
             "expected == APK == AAB == archived claim",
             "G6 macOS Package Isolation And Uninstall/Reinstall",
             "dist/package-only/AetherLink.app",
@@ -57697,8 +57781,8 @@ def bounded_script_hardening_guard_failures() -> list[str]:
             "eae0cc7e6060fa8418f01c059556d2b73059234ecc0eab7c6ec0f2bf2d041a5e",
         ),
         "qa": (
-            "Android Build 23 Entry-Point Topology Checklist",
-            "The immutable Build 22 archive continues to pass independent",
+            "Android Build 23 Entry-Point And Application-Shell Checklist",
+            "The retained Build 23 archive is now historical.",
             "G6 macOS Package Isolation And Uninstall/Reinstall Checklist",
             "automatic Application Support",
             "PID 59809 stayed alive",
@@ -58714,7 +58798,7 @@ def macos_runtime_connection_manager_guard_failures() -> list[str]:
             "runtimeConnectionManager.stopAll()",
         ),
         "apps/macos/CompanionCore/Tests/MacRuntimeConnectionManagerTests.swift": (
-            "testStartLocalStartsListenerBeforeAdvertisingWithExactValues",
+            "testStartLocalDefersAdvertisementUntilListenerIsReady",
             "testFailedLocalStartSuppressesAdvertisement",
             "testRepeatedLocalStartStopsPriorOwnershipBeforeReplacement",
             "testRefreshLocalAdvertisementRestartsOnlyAdvertiserForActivePort",
@@ -59051,7 +59135,7 @@ def runtime_chat_sqlite_cross_process_quality_guard_failures() -> list[str]:
         "script/test_documentation_handoff_guards.py": (
             "test_handoff_separates_build_capture_head_from_recorded_live_refs",
             "test_historical_build20_release_rejects_build21_transfer_claims",
-            "test_current_build21_abrupt_recovery_documents_reject_overclaims",
+            "test_historical_build21_abrupt_recovery_documents_reject_overclaims",
         ),
         "docs/releases/1.0.0-build-19-local-v1.md": (
             "passing 90/90 `SQLiteRuntimeChatEventStoreTests` suite",
@@ -59131,7 +59215,7 @@ def runtime_chat_sqlite_cross_process_quality_guard_failures() -> list[str]:
             "Build 20 is retained as an immutable historical qualification record.",
             "<!-- aetherlink-historical-build20-lifecycle-v1:start -->",
             "<!-- aetherlink-historical-build20-lifecycle-v1:end -->",
-            "no Build 20\nobservation is relabeled as Build 21 evidence",
+            "no Build 20\nobservation is relabeled as evidence for a later build",
         ),
         "README.md": (
             "<!-- aetherlink-current-build21-abrupt-recovery-v1:start -->",
