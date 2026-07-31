@@ -99,10 +99,10 @@ mode stayed stable. The canonical 3,038-byte result is at
 `dist/lifecycle/macos-packaged-app-build-24-local-dmg-install-v2.json`,
 SHA-256
 `7d4c6ae7d892bc9d639cc8dfbe5dfb02e09ff7019ee8554f652556ba7b1bb964`.
-The v2 runner and nine-test module SHA-256 values are
-`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`
+The v2 runner and ten-test module SHA-256 values are
+`2ac25660c13f7a256fb2671a735255523cb8ec1c398128a53b2c46535af31b50`
 and
-`6aa2e9e2354aa36f97ff096787ac05115c95114fcf95869463b47f39dea5006c`.
+`8b3cd5852c89735f2454cf4ae13d29024901dbbc7d915d37b4b3a58932558c91`.
 Its preserved DMG primitive runner and shared snapshot-helper runner SHA-256
 values are
 `e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`
@@ -142,7 +142,7 @@ and
 `6e782fc128aad75b20f1b04752e4754ccbf8ceaadc9e2fcabe9cc2e537bfb703`.
 The reused snapshot-bound DMG, preserved DMG primitive, exact-uninstall, and
 snapshot-helper runner SHA-256 values are, respectively,
-`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`,
+`2ac25660c13f7a256fb2671a735255523cb8ec1c398128a53b2c46535af31b50`,
 `e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`,
 `36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa`,
 and
@@ -187,7 +187,7 @@ SHA-256 values are, respectively,
 `300740d31a5b73755f6976f8fe6ce9c0f498cf274ed72d23d5d6c372104eb5ae`,
 `9d05896a5dcce7e3d7642b41acba2ee4bf6d28ffda85bc8f3b2b645f2a3b273a`,
 `4f3094182ba3b87eb2bb89230df59a14ee10e1db15def87074e66c9ed68d2eca`,
-`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`,
+`2ac25660c13f7a256fb2671a735255523cb8ec1c398128a53b2c46535af31b50`,
 `e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`,
 `36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa`,
 and
@@ -249,7 +249,7 @@ and snapshot-helper runner SHA-256 values are, respectively,
 `300740d31a5b73755f6976f8fe6ce9c0f498cf274ed72d23d5d6c372104eb5ae`,
 `9d05896a5dcce7e3d7642b41acba2ee4bf6d28ffda85bc8f3b2b645f2a3b273a`,
 `4f3094182ba3b87eb2bb89230df59a14ee10e1db15def87074e66c9ed68d2eca`,
-`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`,
+`2ac25660c13f7a256fb2671a735255523cb8ec1c398128a53b2c46535af31b50`,
 `e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`,
 `36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa`,
 and
@@ -354,22 +354,97 @@ and an external owner-governance ledger are not current prerequisites. The user
 normally handles staging, commits, and pushes unless they explicitly request
 otherwise.
 
+Android 13+ app-language startup now treats the platform as authoritative:
+nonempty `LocaleManager.applicationLocales` becomes a fixed app language and
+an empty list means Follow system, while API 26 through 32 retain the stored
+fixed-language behavior. The former state-to-platform startup effect is gone;
+only user language actions write the OS list. This preserves external Korean
+and Japanese selections, records explicit English even on an English device,
+and avoids repeated writes and persistence. The first localized frame uses the
+platform snapshot while storage converges. Three focused regressions plus three
+API 32/33/36 production-lifecycle regressions and the 45-test Android product
+selector pass. The complete app JVM suite also passes 1,226/1,226 through an
+exact 19-class `--rerun-tasks` run. A pre-run marker snapshots every declared
+Android input path, byte stream, and mode; the result gate requires the exact
+19-report set, 1,226 unique nonempty test cases, and testcase-manifest SHA-256
+`cc3ea9e2d72ca96e7f937b22a893d8cdaf38c409564ac8baecc5b947b8aa1b78`,
+then writes and independently reads a canonical binding over the marker and
+every report byte. Equality is rejected at the source/report, marker/report,
+and report/binding freshness boundaries. The drawer regression resets each
+locale to the app title and
+traverses `top -> header -> detail -> header` inside the actual history
+viewport above the fixed Settings footer, re-reading geometry at each step and
+preserving the exact merged accessibility summary. On a disposable API 36.1 emulator,
+external Korean/Japanese, in-app French, explicit English, Follow system,
+repeated cold launches, the real camera denial/recovery/settings path, and 200%
+font-scale reachability all passed without a FATAL or ANR. This is emulator
+evidence, not physical optical-camera, TalkBack, OEM, signing, or production
+release proof.
+
 The post-Build 24 current source also passes an isolated offline strict-lock
 local Release qualification. Clean Android `assembleRelease`, `bundleRelease`,
 and `lintRelease` complete with zero errors and three warnings; the
 9,575,138-byte unsigned APK has SHA-256
-`18cd152348cae25b0409be0449371792a33292d315cfb52731fdac8c3d290273`,
-and the 10,684,069-byte AAB has SHA-256
-`dda35e3d86aa78bf477926417d6c4c0083b3e86d94a552bd5484f9e381416665`.
-The source snapshot stayed
-`512084a6b4dd213364df88d5a3a2d2465f6db519847faa36c5d87b33a2ac0551`
+`cad01315710cf2ed63962f0165b410dd16c09dc27cc44c42036318b1e1739a1f`,
+and the 10,684,471-byte AAB has SHA-256
+`736f4debe24ada3bdbfd51055a56dcd4d5ccae103568d92183d9e74c696bb62f`.
+The 253-file source snapshot stayed
+`d5aee95b0a7b86c73ac111653f7bbf2e2d96b4e718b4d0b8db9571bcfe7d4dce`
 through the Android and macOS package builds. An isolated temporary archive
-then passed independent 29-member readback at 167,566,669 bytes and SHA-256
-`57ba1747dbdb6cdf9524fcdf1e2f8e7c3ca11bdfb6cd63558d40df3610ed14f7`.
+then passed independent 29-member readback. Its 167,578,488-byte ZIP has
+SHA-256
+`c329ed6a44f1e8a459345993f5e645cefa5b8bdc730cd78efe771fc0c8500f88`;
+its 15,200-byte manifest has SHA-256
+`f99521fce2f3e420265902323260a6a5b771805ddd71f3d4d1391617796efb72`;
+and its 99-byte checksum sidecar has SHA-256
+`24b860585953d9eaaf46b7b9e883d46c9b729e1e5beaba99f5bf0d8bc66dcebe`.
 This transient dirty-content candidate retains `1.0.0+24` metadata solely for
 current-source qualification. It is not the immutable Build 24 archive, a
 ledger append, a retained or publishable Build 25, distribution signing,
 installation, device evidence, or production release.
+
+<!-- aetherlink-current-source-g6-lane-a-dmg-v1:start -->
+**Latest current-source G6 exact Lane-A DMG handoff.** The comparison-only
+run bound 254 release inputs at source SHA-256
+`e2db0c96a079cceed3c6b8913d633783c8d4bf2062038694be493fac88f56923`
+and execution overlay SHA-256
+`0eeaa1ffcc08cbf2e7bb2e2854d8892f360f989e438aa4f25818eeff15cc680e`.
+Its unequal 101- and 109-byte source roots produced the exact same
+167,061,116-byte archive at SHA-256
+`3300f967ba14e4703640f7b00c600f16e9a101911db60200857887f1a8db7ada`,
+with a 15,200-byte manifest at
+`ea3250caf41c4cd649482264ca42a2ea91380fe0bc4fe4f17db6b73d09f1c1e6`
+and a 99-byte checksum sidecar at
+`03070799c23b4ba16fddb43b56579c3a7ba695e9530bd5750c06e0c479fcd461`.
+All archive/member equality flags are true and both difference lists are
+empty. The exact 19,645-byte primary result is
+`dist/reproducibility/aetherlink-1.0.0+24-local-v1-two-root-v4-prepublication-current-source-g6-lane-a-dmg.json`,
+SHA-256
+`427824807c66ae2e121af43f155dc0172e307ea9704823d6e556400a2eb02c3a`.
+
+Only after exact A/B equality, the runner handed the materialized Lane-A
+archive to the v2 local-DMG exercise. The exact 3,038-byte lifecycle result is
+`dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-local-dmg-install-v2-current-source-g6.json`,
+SHA-256
+`d5250ccd5b84de4517e6ce79234343cca6670b604cae23503ef8de61cb347fe7`.
+It records one ephemeral HFS+ UDZO image, a read-only mount detached before
+launch, two distinct LaunchServices processes, three SQLite integrity checks,
+stable empty Runtime chat and state, and the exact ten-file installed app tree
+of 21,356,326 bytes at SHA-256
+`0dd6363420e79b90ffac38fdf9410cc109122800f071ca9e1e66bf579ea21145`.
+
+The lifecycle field `archiveReadback.currentSourceCompared=false` means that
+the lifecycle runner performed archive-only validation; the documentation
+guard dynamically cross-binds its ZIP, manifest, and checksum identities to
+the parent current-source Lane-A result. No lane archive was retained or
+published, comparison-only publication stayed disabled, and the protected
+Build 23 archive stayed unchanged. This proves only one same-host, per-user,
+local ad-hoc exact handoff. It does not prove arbitrary cross-host or
+clean-machine reproducibility, Finder/quarantine/Gatekeeper behavior,
+signed/notarized distribution, N/N-1 upgrade or rollback, physical-device,
+provider, network, UI/accessibility, security, deployment, or production
+qualification.
+<!-- aetherlink-current-source-g6-lane-a-dmg-v1:end -->
 
 The current Android QR scanner owns camera-permission request state above the
 conditional scanner screen. A checked app-private transaction records
@@ -388,12 +463,20 @@ existing `ActivityScenario.recreate()` case restores
 `Recorded` into Settings recovery, a saved-state-free same-JVM cold Activity
 launch reconstructs the same durable state, and a cold launch from a persisted
 `LaunchPending` interruption exposes a manually retryable action. None issues
-a duplicate CAMERA request. The exact Android product selector therefore
-passes 36/36. This is post-Build 24
+a duplicate CAMERA request. A dedicated G5 qualification class now reports
+three independent results at exactly 100%, 150%, and 200%, exercising scanner,
+drawer, Chat, Settings pairing, Memory, and chat history across all five app
+locales with full state coverage in English and Korean. QR-scanner close,
+flashlight, cancel, and permission actions now hold a 48 dp minimum. The exact
+Android product selector therefore passes 45/45 across twelve result classes.
+The result checker resolves focused contracts by class name and rejects JUnit
+XML older than the workflow, checker, Android build inputs, production sources,
+or complete app test-source graph.
+This is post-Build 24
 current-source/JVM/Compose evidence; its cold launches remain in one JVM and do
 not execute Android OS process death, SDK-specific OS permission or rationale
-policy, the physical permission dialog, camera, optical QR, TalkBack, or
-release installation.
+policy, the physical permission dialog, camera, optical QR, physical/OEM
+typography, TalkBack, or release installation.
 
 The versioned [G0 decision](docs/v1/g0/decision-v1.md),
 [G0 assurance packet](docs/v1/g0/assurance-v1.md), owner-trust profiles, and
@@ -1757,6 +1840,40 @@ Validate the workflow contract locally with:
 python3 -B script/check_product_ci.py
 python3 -B script/check_product_ci.py --self-test
 ```
+
+The standalone full Android result contract uses this order:
+
+```bash
+python3 -B script/check_product_ci.py --prepare-android-full-test-run
+./gradlew --offline --no-daemon --rerun-tasks \
+  :app:compileDebugKotlin :app:testDebugUnitTest \
+  --tests com.localagentbridge.android.AppNavigationTest \
+  --tests com.localagentbridge.android.AndroidAppLanguagePlatformLifecycleTest \
+  --tests com.localagentbridge.android.ResearchNotebookDrawerTest \
+  --tests com.localagentbridge.android.PairingQrScanResultTest \
+  --tests com.localagentbridge.android.AetherLinkThemeNoDeviceComposeTest \
+  --tests com.localagentbridge.android.ui.AndroidCoreSurfaceFontScaleQualificationTest \
+  --tests com.localagentbridge.android.PairingQrScannerChromeNoDeviceComposeTest \
+  --tests com.localagentbridge.android.PairingQrCameraPermissionControllerHostApiMatrixTest \
+  --tests com.localagentbridge.android.PairingQrCameraPermissionActivityRecreationTest \
+  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest \
+  --tests com.localagentbridge.android.AndroidBackupPolicyResourceTest \
+  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest \
+  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelProductionDeadlineTest \
+  --tests com.localagentbridge.android.runtime.AndroidProductionRuntimeChannelComposerTest \
+  --tests com.localagentbridge.android.runtime.AndroidProductionRuntimeActivationControllerTest \
+  --tests com.localagentbridge.android.runtime.RuntimeLocalStoreTest \
+  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest \
+  --tests com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest \
+  --tests com.localagentbridge.android.runtime.RuntimeAttachmentPromptResourceTest \
+  -Pkotlin.incremental=false
+python3 -B script/check_product_ci.py --write-android-full-test-binding
+python3 -B script/check_product_ci.py --android-full-test-results
+```
+
+`script/check_no_device_quality.sh` owns the same exact marker, 19-class
+runner, binding, and readback sequence. The focused 45-test result contract
+remains separate and rejects additional methods.
 
 The checker pins the complete reviewed workflow byte stream and separately
 parses the YAML safely to validate the exact top-level/job mappings and complete

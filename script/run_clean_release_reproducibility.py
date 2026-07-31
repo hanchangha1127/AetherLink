@@ -12,12 +12,15 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import selectors
 import shutil
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
-from typing import Iterator
+import time
+from typing import Callable, Iterator
 import uuid
 import zipfile
 
@@ -38,6 +41,120 @@ SWIFT_SCRATCH = Path("/private/tmp/aetherlink-g6-swift-scratch-v1")
 LOCK_PATH = WORK_ROOT / ".runner.lock"
 SWIFT_LEASE_PATH = WORK_ROOT / ".swift-scratch-lease.json"
 RESULT_ROOT = ROOT / "dist/reproducibility"
+LIFECYCLE_RESULT_ROOT = ROOT / "dist/lifecycle"
+LANE_A_LOCAL_DMG_RUNNER = Path(
+    "script/run_macos_local_dmg_install_smoke_v2.py"
+)
+LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_RUNNER = Path(
+    "script/run_macos_local_dmg_uninstall_reinstall_smoke.py"
+)
+LANE_A_LOCAL_DMG_STATE_RECOVERY_RUNNER = Path(
+    "script/run_macos_local_dmg_uninstall_reinstall_state_recovery_smoke.py"
+)
+LANE_A_LOCAL_DMG_PHASE = "lane-a-local-dmg"
+LANE_A_LOCAL_DMG_SCOPE = (
+    "same-host-per-user-ephemeral-local-dmg-install-v2"
+)
+LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_SCOPE = (
+    "same-host-per-user-ephemeral-local-dmg-uninstall-reinstall-v1"
+)
+LANE_A_LOCAL_DMG_STATE_RECOVERY_SCOPE = (
+    "same-host-per-user-ephemeral-local-dmg-uninstall-reinstall-"
+    "state-recovery-v1"
+)
+LANE_A_LOCAL_DMG_READBACK_MODE = "archive-only-no-current-source"
+LANE_A_LOCAL_DMG_TIMEOUT_SECONDS = 720.0
+LANE_A_LIFECYCLE_MAX_STDOUT_BYTES = 1024 * 1024
+LANE_A_LIFECYCLE_MAX_STDERR_BYTES = 64 * 1024
+LANE_A_LIFECYCLE_INTERRUPT_TIMEOUT_SECONDS = 5.0
+LANE_A_LOCAL_DMG_INSTALL_FILENAME_TOKEN = "local-dmg-install-v2"
+LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_FILENAME_TOKEN = (
+    "local-dmg-uninstall-reinstall-v1"
+)
+LANE_A_LOCAL_DMG_STATE_RECOVERY_FILENAME_TOKEN = (
+    "local-dmg-uninstall-reinstall-state-recovery-v1"
+)
+LANE_A_LOCAL_DMG_SUITE_LABEL_MAX_LENGTH = 80
+LANE_A_LOCAL_DMG_EXERCISE_PROGRAM = """\
+import sys
+from pathlib import Path
+from script import run_macos_local_dmg_install_smoke_v2 as smoke
+
+result = smoke.exercise(
+    archive_dir=Path(sys.argv[1]),
+    readiness_timeout_seconds=15.0,
+    observation_seconds=5.0,
+    termination_timeout_seconds=10.0,
+)
+sys.stdout.buffer.write(smoke.engine.canonical_json_bytes(result))
+"""
+LANE_A_LOCAL_DMG_LIMITATIONS = (
+    "not-finder-ui-or-drag-and-drop-evidence",
+    "not-general-ui-or-accessibility-evidence",
+    "not-developer-id-notarized-or-stapled-distribution",
+    "not-gatekeeper-quarantine-or-download-evidence",
+    "not-clean-machine-account-or-system-applications",
+    "not-tcc-keychain-provider-network-or-device-evidence",
+    "not-arbitrary-history-crash-power-loss-or-concurrent-writer-evidence",
+    "not-backup-restore-or-device-transfer-evidence",
+    "not-upgrade-n-or-n-minus-one-rollback-production-or-security-evidence",
+)
+LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_LIMITATIONS = (
+    "same-host-per-user-temporary-home-only",
+    "same-created-dmg-image-remount-only",
+    "application-support-retained-no-automatic-data-cleanup",
+    "post-archive-harness-not-build-input-member",
+    "not-finder-system-applications-quarantine-or-gatekeeper-evidence",
+    "not-signed-notarized-stapled-or-distribution-evidence",
+    (
+        "not-clean-machine-upgrade-rollback-device-provider-network-ui-"
+        "accessibility-production-or-security-evidence"
+    ),
+)
+LANE_A_LOCAL_DMG_STATE_RECOVERY_LIMITATIONS = (
+    "same-host-per-user-temporary-home-only",
+    "same-created-dmg-image-remount-only",
+    "fixed-runtime-chat-legacy-canary-only",
+    "legacy-fixture-removed-by-harness-before-reinstall-readback",
+    "application-support-retained-no-automatic-data-cleanup",
+    "post-archive-harness-not-build-input-member",
+    "not-finder-system-applications-quarantine-or-gatekeeper-evidence",
+    "not-signed-notarized-stapled-or-distribution-evidence",
+    (
+        "not-clean-machine-upgrade-rollback-device-provider-network-ui-"
+        "accessibility-production-or-security-evidence"
+    ),
+)
+LANE_A_LOCAL_DMG_CANARY = {
+    "eventID": "packaged-state-recovery-canary-event-v1",
+    "eventJsonSha256": (
+        "da3320c2cbdf9146b0ee21c084a9474715caf9f5e1d568853f6a2359cd9f4cef"
+    ),
+    "eventJsonSize": 344,
+    "legacyJsonlSha256": (
+        "0e51fc924836465c4c0921eb3b3709b387f89787aabf2e100c7cff338f0aea2e"
+    ),
+    "legacyJsonlSize": 345,
+    "model": "qa:packaged-state-recovery-canary-v1",
+    "requestID": "packaged-state-recovery-canary-request-v1",
+    "sessionID": "packaged-state-recovery-canary-session-v1",
+}
+LANE_A_LOCAL_DMG_MIGRATION_OBSERVATION = {
+    "mode": "migration-read-v1",
+    "sha256": (
+        "558fbc563c3f07474b4a28093290216a8fcfdade66cee5ee8354c8fc867fd5f9"
+    ),
+    "size": 70,
+    "status": "passed",
+}
+LANE_A_LOCAL_DMG_SQLITE_READBACK_OBSERVATION = {
+    "mode": "sqlite-readback-v1",
+    "sha256": (
+        "ab8c927b33c3f3b2350eefd357c696c92b076f8c950da9c46823859cddeaad07"
+    ),
+    "size": 71,
+    "status": "passed",
+}
 RESULT_SCHEMA_VERSION = 4
 RESULT_PATH_VERSION = 4
 COMPARISON_ONLY_MODE = "comparison-only"
@@ -108,6 +225,37 @@ class ReproducibilityError(RuntimeError):
 class ReleaseContext:
     release_id: str
     previous_release_relative: Path
+
+
+@dataclass(frozen=True)
+class LaneALocalDMGSuitePaths:
+    install: Path
+    uninstall_reinstall: Path
+    state_recovery: Path
+
+    def ordered(self) -> tuple[Path, Path, Path]:
+        return (
+            self.install,
+            self.uninstall_reinstall,
+            self.state_recovery,
+        )
+
+
+@dataclass(frozen=True)
+class LaneALocalDMGSuiteEvidence:
+    paths: LaneALocalDMGSuitePaths
+    archive: ArchiveEvidence
+    expected_release_id: str
+    install: dict[str, object]
+    uninstall_reinstall: dict[str, object]
+    state_recovery: dict[str, object]
+
+
+@dataclass(frozen=True)
+class LaneALifecycleProcessResult:
+    returncode: int
+    stdout: bytes
+    stderr: bytes
 
 
 def resolve_release_context(
@@ -911,6 +1059,169 @@ def preflight_fixed_paths(
             f"fixed Swift scratch lease already exists: {SWIFT_LEASE_PATH}",
         )
     return release_id
+
+
+def validate_lane_a_lifecycle_result_path(
+    result_path: Path,
+    *,
+    expected_release_id: str,
+    filename_token: str,
+) -> Path:
+    allowed_root = LIFECYCLE_RESULT_ROOT.resolve(strict=False)
+    try:
+        resolved = result_path.resolve(strict=False)
+    except OSError as error:
+        raise ReproducibilityError(
+            2,
+            "invocation",
+            f"cannot resolve lane-A local DMG result path: {error}",
+        ) from error
+    prefix = f"macos-{expected_release_id}-two-root-lane-a-{filename_token}-"
+    label = (
+        result_path.name[len(prefix) : -len(".json")]
+        if (
+            result_path.name.startswith(prefix)
+            and result_path.name.endswith(".json")
+        )
+        else ""
+    )
+    if (
+        result_path != resolved
+        or result_path.parent != allowed_root
+        or result_path.suffix != ".json"
+        or result_path.name.startswith(".")
+        or re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", label) is None
+    ):
+        raise ReproducibilityError(
+            2,
+            "invocation",
+            "lane-A local DMG result must be a visible current-release "
+            "qualified JSON file directly under dist/lifecycle",
+        )
+
+    if os.path.lexists(allowed_root):
+        try:
+            validate_owned_directory(allowed_root, phase="invocation")
+        except ReproducibilityError as error:
+            raise ReproducibilityError(
+                2,
+                "invocation",
+                str(error),
+            ) from error
+    else:
+        try:
+            validate_owned_directory(
+                allowed_root.parent,
+                phase="invocation",
+            )
+        except ReproducibilityError as error:
+            raise ReproducibilityError(
+                2,
+                "invocation",
+                "lane-A local DMG result root has no owner-controlled "
+                f"physical parent: {error}",
+            ) from error
+
+    if os.path.lexists(result_path):
+        try:
+            status = result_path.lstat()
+        except OSError as error:
+            raise ReproducibilityError(
+                2,
+                "invocation",
+                f"cannot inspect lane-A local DMG result: {error}",
+            ) from error
+        if (
+            stat.S_ISLNK(status.st_mode)
+            or not stat.S_ISREG(status.st_mode)
+            or status.st_uid != os.getuid()
+            or stat.S_IMODE(status.st_mode) & 0o022
+        ):
+            raise ReproducibilityError(
+                2,
+                "invocation",
+                "existing lane-A local DMG result is not an "
+                "owner-controlled regular file",
+            )
+    return result_path
+
+
+def validate_lane_a_local_dmg_result_path(
+    result_path: Path,
+    *,
+    expected_release_id: str,
+) -> Path:
+    return validate_lane_a_lifecycle_result_path(
+        result_path,
+        expected_release_id=expected_release_id,
+        filename_token=LANE_A_LOCAL_DMG_INSTALL_FILENAME_TOKEN,
+    )
+
+
+def validate_lane_a_local_dmg_suite_label(label: object) -> str:
+    if (
+        type(label) is not str
+        or not 1 <= len(label) <= LANE_A_LOCAL_DMG_SUITE_LABEL_MAX_LENGTH
+        or re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", label) is None
+    ):
+        raise ReproducibilityError(
+            2,
+            "invocation",
+            "lane-A local DMG suite label must be a lowercase slug of at "
+            f"most {LANE_A_LOCAL_DMG_SUITE_LABEL_MAX_LENGTH} characters",
+        )
+    return label
+
+
+def lane_a_local_dmg_suite_paths(
+    label: object,
+    *,
+    expected_release_id: str,
+) -> LaneALocalDMGSuitePaths:
+    validated_label = validate_lane_a_local_dmg_suite_label(label)
+
+    def result_path(filename_token: str) -> Path:
+        return LIFECYCLE_RESULT_ROOT.resolve(strict=False) / (
+            f"macos-{expected_release_id}-two-root-lane-a-"
+            f"{filename_token}-{validated_label}.json"
+        )
+
+    paths = LaneALocalDMGSuitePaths(
+        install=result_path(LANE_A_LOCAL_DMG_INSTALL_FILENAME_TOKEN),
+        uninstall_reinstall=result_path(
+            LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_FILENAME_TOKEN
+        ),
+        state_recovery=result_path(
+            LANE_A_LOCAL_DMG_STATE_RECOVERY_FILENAME_TOKEN
+        ),
+    )
+    specifications = (
+        (
+            paths.install,
+            LANE_A_LOCAL_DMG_INSTALL_FILENAME_TOKEN,
+        ),
+        (
+            paths.uninstall_reinstall,
+            LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_FILENAME_TOKEN,
+        ),
+        (
+            paths.state_recovery,
+            LANE_A_LOCAL_DMG_STATE_RECOVERY_FILENAME_TOKEN,
+        ),
+    )
+    for path, filename_token in specifications:
+        validate_lane_a_lifecycle_result_path(
+            path,
+            expected_release_id=expected_release_id,
+            filename_token=filename_token,
+        )
+    if len(set(paths.ordered())) != 3:
+        raise ReproducibilityError(
+            2,
+            "invocation",
+            "lane-A local DMG suite result paths are not distinct",
+        )
+    return paths
 
 
 def create_swift_lease(run_id: str) -> None:
@@ -1786,6 +2097,1792 @@ def run_lane(
     return capture_archive(clone_root, release_id)
 
 
+def lane_a_local_dmg_error(message: str) -> ReproducibilityError:
+    return ReproducibilityError(
+        10,
+        LANE_A_LOCAL_DMG_PHASE,
+        message,
+    )
+
+
+def require_closed_object(
+    value: object,
+    keys: set[str],
+    *,
+    label: str,
+) -> dict[str, object]:
+    if type(value) is not dict or set(value) != keys:
+        raise lane_a_local_dmg_error(
+            f"{label} does not have the exact closed schema"
+        )
+    return value
+
+
+def require_sha256(value: object, *, label: str) -> str:
+    if (
+        type(value) is not str
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise lane_a_local_dmg_error(f"{label} is not a lowercase SHA-256")
+    return value
+
+
+def reject_duplicate_json_pairs(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def reject_json_constant(value: str) -> object:
+    raise ValueError(f"non-finite JSON value: {value}")
+
+
+def parse_lane_a_lifecycle_result_bytes(
+    raw: bytes,
+    *,
+    label: str,
+) -> dict[str, object]:
+    if not raw or len(raw) > 1024 * 1024:
+        raise lane_a_local_dmg_error(
+            f"{label} size is outside the bounded contract"
+        )
+    try:
+        decoded = raw.decode("ascii")
+        parsed = json.loads(
+            decoded,
+            object_pairs_hook=reject_duplicate_json_pairs,
+            parse_constant=reject_json_constant,
+        )
+    except (UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
+        raise lane_a_local_dmg_error(
+            f"{label} is not strict ASCII JSON: {error}"
+        ) from error
+    if type(parsed) is not dict or canonical_json_bytes(parsed) != raw:
+        raise lane_a_local_dmg_error(f"{label} is not canonical JSON")
+    return parsed
+
+
+def validate_lane_a_archive_binding(
+    result: dict[str, object],
+    *,
+    expected_release_id: str,
+    evidence: ArchiveEvidence,
+    label: str,
+) -> None:
+    release = require_closed_object(
+        result["release"],
+        {"archiveSha256", "manifestSha256", "releaseId"},
+        label=f"{label} release",
+    )
+    if (
+        release["releaseId"] != expected_release_id
+        or release["archiveSha256"] != evidence.archive_identity.sha256
+        or release["manifestSha256"] != evidence.manifest_identity.sha256
+    ):
+        raise lane_a_local_dmg_error(
+            f"{label} release identity differs from build A"
+        )
+
+    archive_readback = require_closed_object(
+        result["archiveReadback"],
+        {
+            "currentSourceCompared",
+            "mode",
+            "readbackAndExerciseSameSnapshot",
+            "snapshotFiles",
+            "snapshotFilesUnchangedAfterExercise",
+            "status",
+        },
+        label=f"{label} archive readback",
+    )
+    if (
+        archive_readback["currentSourceCompared"] is not False
+        or archive_readback["mode"] != LANE_A_LOCAL_DMG_READBACK_MODE
+        or archive_readback["readbackAndExerciseSameSnapshot"] is not True
+        or archive_readback["snapshotFilesUnchangedAfterExercise"] is not True
+        or archive_readback["status"] != "passed"
+    ):
+        raise lane_a_local_dmg_error(
+            f"{label} archive readback contract is invalid"
+        )
+    expected_snapshot_files = {
+        f"{expected_release_id}.manifest.json": evidence.manifest_identity,
+        f"{expected_release_id}.zip": evidence.archive_identity,
+        f"{expected_release_id}.zip.sha256": evidence.checksum_identity,
+    }
+    snapshot_files = require_closed_object(
+        archive_readback["snapshotFiles"],
+        set(expected_snapshot_files),
+        label=f"{label} snapshot files",
+    )
+    for name, expected_identity in expected_snapshot_files.items():
+        record = require_closed_object(
+            snapshot_files[name],
+            {"sha256", "size"},
+            label=f"{label} snapshot file {name}",
+        )
+        if (
+            record["sha256"] != expected_identity.sha256
+            or type(record["size"]) is not int
+            or record["size"] != expected_identity.size
+        ):
+            raise lane_a_local_dmg_error(
+                f"{label} snapshot file differs from build A: {name}"
+            )
+
+
+def validate_lane_a_local_dmg_result_bytes(
+    raw: bytes,
+    *,
+    expected_release_id: str,
+    evidence: ArchiveEvidence,
+) -> dict[str, object]:
+    parsed = parse_lane_a_lifecycle_result_bytes(
+        raw,
+        label="lane-A local DMG result",
+    )
+    result = require_closed_object(
+        parsed,
+        {
+            "archiveReadback",
+            "image",
+            "installation",
+            "isolation",
+            "launchServices",
+            "limitations",
+            "mount",
+            "release",
+            "schemaVersion",
+            "scope",
+            "state",
+            "status",
+        },
+        label="lane-A local DMG result",
+    )
+    if (
+        type(result["schemaVersion"]) is not int
+        or result["schemaVersion"] != 2
+        or result["scope"] != LANE_A_LOCAL_DMG_SCOPE
+        or result["status"] != "passed"
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG result identity or status is invalid"
+        )
+
+    release = require_closed_object(
+        result["release"],
+        {"archiveSha256", "manifestSha256", "releaseId"},
+        label="lane-A local DMG release",
+    )
+    if (
+        release["releaseId"] != expected_release_id
+        or release["archiveSha256"] != evidence.archive_identity.sha256
+        or release["manifestSha256"] != evidence.manifest_identity.sha256
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG release identity differs from build A"
+        )
+
+    archive_readback = require_closed_object(
+        result["archiveReadback"],
+        {
+            "currentSourceCompared",
+            "mode",
+            "readbackAndExerciseSameSnapshot",
+            "snapshotFiles",
+            "snapshotFilesUnchangedAfterExercise",
+            "status",
+        },
+        label="lane-A local DMG archive readback",
+    )
+    if (
+        archive_readback["currentSourceCompared"] is not False
+        or archive_readback["mode"] != LANE_A_LOCAL_DMG_READBACK_MODE
+        or archive_readback["readbackAndExerciseSameSnapshot"] is not True
+        or archive_readback["snapshotFilesUnchangedAfterExercise"] is not True
+        or archive_readback["status"] != "passed"
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG archive readback contract is invalid"
+        )
+    expected_snapshot_files = {
+        f"{expected_release_id}.manifest.json": (
+            evidence.manifest_identity
+        ),
+        f"{expected_release_id}.zip": evidence.archive_identity,
+        f"{expected_release_id}.zip.sha256": (
+            evidence.checksum_identity
+        ),
+    }
+    snapshot_files = require_closed_object(
+        archive_readback["snapshotFiles"],
+        set(expected_snapshot_files),
+        label="lane-A local DMG snapshot files",
+    )
+    for name, expected_identity in expected_snapshot_files.items():
+        record = require_closed_object(
+            snapshot_files[name],
+            {"sha256", "size"},
+            label=f"lane-A local DMG snapshot file {name}",
+        )
+        if (
+            record["sha256"] != expected_identity.sha256
+            or type(record["size"]) is not int
+            or record["size"] != expected_identity.size
+        ):
+            raise lane_a_local_dmg_error(
+                f"lane-A local DMG snapshot file differs from build A: {name}"
+            )
+
+    image = require_closed_object(
+        result["image"],
+        {"ephemeral", "filesystem", "format", "retained", "verified"},
+        label="lane-A local DMG image",
+    )
+    if (
+        image["ephemeral"] is not True
+        or image["filesystem"] != "HFS+"
+        or image["format"] != "UDZO"
+        or image["retained"] is not False
+        or image["verified"] is not True
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG image contract is invalid"
+        )
+
+    installation = require_closed_object(
+        result["installation"],
+        {
+            "adHocAppSealAndVersionVerified",
+            "applicationsAliasPresent",
+            "copyTool",
+            "exactReleaseTreeCopied",
+            "tree",
+        },
+        label="lane-A local DMG installation",
+    )
+    if (
+        installation["adHocAppSealAndVersionVerified"] is not True
+        or installation["applicationsAliasPresent"] is not True
+        or installation["copyTool"] != "ditto"
+        or installation["exactReleaseTreeCopied"] is not True
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG installation contract is invalid"
+        )
+    tree = require_closed_object(
+        installation["tree"],
+        {
+            "digestAlgorithm",
+            "regularFileCount",
+            "sha256",
+            "totalRegularFileBytes",
+        },
+        label="lane-A local DMG installed tree",
+    )
+    if (
+        tree["digestAlgorithm"]
+        != "sha256(path-nul-mode-octal-nul-size-nul-sha256-lf)-v1"
+        or type(tree["regularFileCount"]) is not int
+        or tree["regularFileCount"] <= 0
+        or type(tree["totalRegularFileBytes"]) is not int
+        or tree["totalRegularFileBytes"] <= 0
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG installed tree contract is invalid"
+        )
+    require_sha256(tree["sha256"], label="lane-A local DMG installed tree")
+
+    isolation = require_closed_object(
+        result["isolation"],
+        {
+            "cleanHomeConfigured",
+            "preexistingBundleApplicationsPreserved",
+            "runtimeIdentityFileOverrideConfigured",
+            "temporaryCFUserHomeConfigured",
+        },
+        label="lane-A local DMG isolation",
+    )
+    if any(value is not True for value in isolation.values()):
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG isolation contract is invalid"
+        )
+
+    launch_services = require_closed_object(
+        result["launchServices"],
+        {
+            "distinctProcessIdentifiers",
+            "exactInstalledBundlePerCycle",
+            "runs",
+        },
+        label="lane-A local DMG LaunchServices",
+    )
+    runs = launch_services["runs"]
+    if (
+        launch_services["distinctProcessIdentifiers"] is not True
+        or launch_services["exactInstalledBundlePerCycle"] is not True
+        or type(runs) is not list
+        or len(runs) != 2
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG LaunchServices contract is invalid"
+        )
+    for ordinal, value in enumerate(runs, start=1):
+        run = require_closed_object(
+            value,
+            {
+                "activationPolicy",
+                "finishedLaunching",
+                "newProcessIdentifierDetected",
+                "observationDeadlineReached",
+                "ordinal",
+                "terminationAccepted",
+            },
+            label=f"lane-A local DMG launch run {ordinal}",
+        )
+        if (
+            type(run["activationPolicy"]) is not int
+            or run["activationPolicy"] != 0
+            or type(run["ordinal"]) is not int
+            or run["ordinal"] != ordinal
+            or any(
+                run[key] is not True
+                for key in (
+                    "finishedLaunching",
+                    "newProcessIdentifierDetected",
+                    "observationDeadlineReached",
+                    "terminationAccepted",
+                )
+            )
+        ):
+            raise lane_a_local_dmg_error(
+                f"lane-A local DMG launch run {ordinal} is invalid"
+            )
+
+    if result["limitations"] != list(LANE_A_LOCAL_DMG_LIMITATIONS):
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG limitations are not exact"
+        )
+
+    mount = require_closed_object(
+        result["mount"],
+        {
+            "detachedBeforeLaunch",
+            "exactFreshMountpoint",
+            "nobrowse",
+            "oneMountedEntity",
+            "readOnly",
+            "unmountedVerified",
+        },
+        label="lane-A local DMG mount",
+    )
+    if any(value is not True for value in mount.values()):
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG mount contract is invalid"
+        )
+
+    state = require_closed_object(
+        result["state"],
+        {
+            "databaseCount",
+            "emptyRuntimeChatVerified",
+            "integrityChecks",
+            "regularFileBytesAndModesUnchangedAcrossRelaunch",
+            "runtimeIdentityFilePresent",
+            "sqlite",
+            "stableAcrossRelaunch",
+        },
+        label="lane-A local DMG state",
+    )
+    if (
+        type(state["databaseCount"]) is not int
+        or state["databaseCount"] != 3
+        or state["emptyRuntimeChatVerified"] is not True
+        or state["integrityChecks"] != "passed"
+        or state["regularFileBytesAndModesUnchangedAcrossRelaunch"] is not True
+        or state["runtimeIdentityFilePresent"] is not True
+        or state["stableAcrossRelaunch"] is not True
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG persisted-state contract is invalid"
+        )
+    sqlite = state["sqlite"]
+    expected_sqlite = (
+        ("runtime-chat-events.sqlite", True),
+        ("runtime-document-index.sqlite", False),
+        ("runtime-model-pull-approvals.sqlite", False),
+    )
+    if type(sqlite) is not list or len(sqlite) != len(expected_sqlite):
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG SQLite inventory is invalid"
+        )
+    for record, (filename, has_count) in zip(sqlite, expected_sqlite):
+        expected_keys = {"filename", "integrityCheck"}
+        if has_count:
+            expected_keys.add("totalEventCount")
+        item = require_closed_object(
+            record,
+            expected_keys,
+            label=f"lane-A local DMG SQLite record {filename}",
+        )
+        if (
+            item["filename"] != filename
+            or item["integrityCheck"] != "ok"
+            or (
+                has_count
+                and (
+                    type(item["totalEventCount"]) is not int
+                    or item["totalEventCount"] != 0
+                )
+            )
+        ):
+            raise lane_a_local_dmg_error(
+                f"lane-A local DMG SQLite record is invalid: {filename}"
+            )
+    return result
+
+
+def validate_lane_a_installed_tree(
+    value: object,
+    *,
+    expected_tree: dict[str, object],
+    label: str,
+) -> dict[str, object]:
+    tree = require_closed_object(
+        value,
+        {
+            "digestAlgorithm",
+            "regularFileCount",
+            "sha256",
+            "totalRegularFileBytes",
+        },
+        label=label,
+    )
+    if (
+        tree["digestAlgorithm"]
+        != "sha256(path-nul-mode-octal-nul-size-nul-sha256-lf)-v1"
+        or type(tree["regularFileCount"]) is not int
+        or tree["regularFileCount"] <= 0
+        or type(tree["totalRegularFileBytes"]) is not int
+        or tree["totalRegularFileBytes"] <= 0
+    ):
+        raise lane_a_local_dmg_error(f"{label} contract is invalid")
+    require_sha256(tree["sha256"], label=label)
+    if tree != expected_tree:
+        raise lane_a_local_dmg_error(
+            f"{label} differs from the validated install result"
+        )
+    return tree
+
+
+def validate_lane_a_two_install_contract(
+    result: dict[str, object],
+    *,
+    expected_tree: dict[str, object],
+    label: str,
+    state_present_before_reinstall: bool,
+) -> None:
+    image = require_closed_object(
+        result["image"],
+        {
+            "ephemeral",
+            "filesystem",
+            "format",
+            "retained",
+            "sameImageBytesUsedForBothInstalls",
+            "verified",
+        },
+        label=f"{label} image",
+    )
+    if (
+        image["ephemeral"] is not True
+        or image["filesystem"] != "HFS+"
+        or image["format"] != "UDZO"
+        or image["retained"] is not False
+        or image["sameImageBytesUsedForBothInstalls"] is not True
+        or image["verified"] is not True
+    ):
+        raise lane_a_local_dmg_error(f"{label} image contract is invalid")
+
+    installation_keys = {
+        "adHocAppSealAndVersionVerified",
+        "applicationsAliasPresent",
+        "copyTool",
+        "exactReleaseTreeCopiedEachInstall",
+        "installCount",
+        "origin",
+        "reinstallTreeMatchesInitial",
+        "tree",
+    }
+    if state_present_before_reinstall:
+        installation_keys.add("statePresentBeforeReinstall")
+    installation = require_closed_object(
+        result["installation"],
+        installation_keys,
+        label=f"{label} installation",
+    )
+    if (
+        installation["adHocAppSealAndVersionVerified"] is not True
+        or installation["applicationsAliasPresent"] is not True
+        or installation["copyTool"] != "ditto"
+        or installation["exactReleaseTreeCopiedEachInstall"] is not True
+        or type(installation["installCount"]) is not int
+        or installation["installCount"] != 2
+        or installation["origin"] != "same-ephemeral-local-dmg"
+        or installation["reinstallTreeMatchesInitial"] is not True
+        or (
+            state_present_before_reinstall
+            and installation["statePresentBeforeReinstall"] is not True
+        )
+    ):
+        raise lane_a_local_dmg_error(
+            f"{label} installation contract is invalid"
+        )
+    validate_lane_a_installed_tree(
+        installation["tree"],
+        expected_tree=expected_tree,
+        label=f"{label} installed tree",
+    )
+
+    isolation = require_closed_object(
+        result["isolation"],
+        {
+            "cleanHomeConfigured",
+            "preexistingBundleApplicationsPreserved",
+            "runtimeIdentityFileOverrideConfigured",
+            "temporaryCFUserHomeConfigured",
+        },
+        label=f"{label} isolation",
+    )
+    if any(value is not True for value in isolation.values()):
+        raise lane_a_local_dmg_error(
+            f"{label} isolation contract is invalid"
+        )
+
+    mount = require_closed_object(
+        result["mount"],
+        {
+            "cycleCount",
+            "detachedBeforeEachLaunch",
+            "exactFreshMountpointPerInstall",
+            "nobrowse",
+            "oneMountedEntityPerInstall",
+            "readOnly",
+            "unmountedAfterEachCopy",
+        },
+        label=f"{label} mount",
+    )
+    if (
+        type(mount["cycleCount"]) is not int
+        or mount["cycleCount"] != 2
+        or any(
+            mount[key] is not True
+            for key in set(mount) - {"cycleCount"}
+        )
+    ):
+        raise lane_a_local_dmg_error(f"{label} mount contract is invalid")
+
+    uninstall = require_closed_object(
+        result["uninstall"],
+        {
+            "appAbsentAfterEachRemoval",
+            "applicationSupportCleanupPerformed",
+            "exactTemporaryAppPathOnly",
+            "exactTemporaryAppStoppedBeforeEachRemoval",
+            "removalCount",
+            "removalMethod",
+        },
+        label=f"{label} uninstall",
+    )
+    if (
+        uninstall["appAbsentAfterEachRemoval"] is not True
+        or uninstall["applicationSupportCleanupPerformed"] is not False
+        or uninstall["exactTemporaryAppPathOnly"] is not True
+        or uninstall["exactTemporaryAppStoppedBeforeEachRemoval"] is not True
+        or type(uninstall["removalCount"]) is not int
+        or uninstall["removalCount"] != 2
+        or uninstall["removalMethod"] != "python-shutil-rmtree"
+    ):
+        raise lane_a_local_dmg_error(
+            f"{label} uninstall contract is invalid"
+        )
+
+
+def validate_lane_a_two_launches(
+    value: object,
+    *,
+    label: str,
+    includes_observation: bool,
+) -> None:
+    launch_keys = {
+        "distinctProcessIdentifiers",
+        "exactInstalledBundlePerCycle",
+        "noExactTemporaryAppRemaining",
+        "runs",
+    }
+    if includes_observation:
+        launch_keys.add("commandPolicy")
+    launch_services = require_closed_object(
+        value,
+        launch_keys,
+        label=f"{label} LaunchServices",
+    )
+    if (
+        launch_services["distinctProcessIdentifiers"] is not True
+        or launch_services["exactInstalledBundlePerCycle"] is not True
+        or launch_services["noExactTemporaryAppRemaining"] is not True
+        or (
+            includes_observation
+            and launch_services["commandPolicy"]
+            != "open-new-fresh-background-exact-app-path-captured-recovery-v1"
+        )
+    ):
+        raise lane_a_local_dmg_error(
+            f"{label} LaunchServices contract is invalid"
+        )
+    runs = launch_services["runs"]
+    if type(runs) is not list or len(runs) != 2:
+        raise lane_a_local_dmg_error(
+            f"{label} LaunchServices run inventory is invalid"
+        )
+    base_keys = {
+        "activationPolicy",
+        "finishedLaunching",
+        "newProcessIdentifierDetected",
+        "observationDeadlineReached",
+        "ordinal",
+        "terminationAccepted",
+    }
+    if includes_observation:
+        base_keys |= {"executablePathMatched", "minimumObservationSeconds"}
+    for ordinal, value in enumerate(runs, start=1):
+        run = require_closed_object(
+            value,
+            base_keys,
+            label=f"{label} launch run {ordinal}",
+        )
+        if (
+            type(run["activationPolicy"]) is not int
+            or run["activationPolicy"] != 0
+            or type(run["ordinal"]) is not int
+            or run["ordinal"] != ordinal
+            or any(
+                run[key] is not True
+                for key in (
+                    "finishedLaunching",
+                    "newProcessIdentifierDetected",
+                    "observationDeadlineReached",
+                    "terminationAccepted",
+                )
+            )
+            or (
+                includes_observation
+                and (
+                    run["executablePathMatched"] is not True
+                    or type(run["minimumObservationSeconds"]) is not float
+                    or run["minimumObservationSeconds"] != 5.0
+                )
+            )
+        ):
+            raise lane_a_local_dmg_error(
+                f"{label} launch run {ordinal} is invalid"
+            )
+
+
+def validate_lane_a_empty_sqlite_inventory(
+    value: object,
+    *,
+    label: str,
+) -> None:
+    expected = (
+        ("runtime-chat-events.sqlite", True),
+        ("runtime-document-index.sqlite", False),
+        ("runtime-model-pull-approvals.sqlite", False),
+    )
+    if type(value) is not list or len(value) != len(expected):
+        raise lane_a_local_dmg_error(f"{label} inventory is invalid")
+    for record, (filename, has_count) in zip(value, expected):
+        keys = {"filename", "integrityCheck"}
+        if has_count:
+            keys.add("totalEventCount")
+        item = require_closed_object(
+            record,
+            keys,
+            label=f"{label} record {filename}",
+        )
+        if (
+            item["filename"] != filename
+            or item["integrityCheck"] != "ok"
+            or (
+                has_count
+                and (
+                    type(item["totalEventCount"]) is not int
+                    or item["totalEventCount"] != 0
+                )
+            )
+        ):
+            raise lane_a_local_dmg_error(
+                f"{label} record is invalid: {filename}"
+            )
+
+
+def validate_lane_a_canary_sqlite(
+    value: object,
+    *,
+    label: str,
+) -> dict[str, object]:
+    record = require_closed_object(
+        value,
+        {
+            "eventJsonSha256",
+            "eventJsonSize",
+            "integrityCheck",
+            "totalEventCount",
+        },
+        label=label,
+    )
+    if (
+        record["eventJsonSha256"]
+        != LANE_A_LOCAL_DMG_CANARY["eventJsonSha256"]
+        or type(record["eventJsonSize"]) is not int
+        or record["eventJsonSize"]
+        != LANE_A_LOCAL_DMG_CANARY["eventJsonSize"]
+        or record["integrityCheck"] != "ok"
+        or type(record["totalEventCount"]) is not int
+        or record["totalEventCount"] != 1
+    ):
+        raise lane_a_local_dmg_error(f"{label} is invalid")
+    return record
+
+
+def validate_lane_a_observation(
+    value: object,
+    *,
+    expected: dict[str, object],
+    label: str,
+) -> None:
+    observation = require_closed_object(
+        value,
+        {"mode", "sha256", "size", "status"},
+        label=label,
+    )
+    if (
+        observation["mode"] != expected["mode"]
+        or observation["sha256"] != expected["sha256"]
+        or type(observation["size"]) is not int
+        or observation["size"] != expected["size"]
+        or observation["status"] != "passed"
+    ):
+        raise lane_a_local_dmg_error(f"{label} is invalid")
+
+
+def validate_lane_a_local_dmg_uninstall_reinstall_result_bytes(
+    raw: bytes,
+    *,
+    expected_release_id: str,
+    evidence: ArchiveEvidence,
+    expected_tree: dict[str, object],
+) -> dict[str, object]:
+    label = "lane-A local DMG uninstall/reinstall result"
+    parsed = parse_lane_a_lifecycle_result_bytes(raw, label=label)
+    result = require_closed_object(
+        parsed,
+        {
+            "archiveReadback",
+            "image",
+            "installation",
+            "isolation",
+            "launchServices",
+            "limitations",
+            "mount",
+            "release",
+            "schemaVersion",
+            "scope",
+            "state",
+            "status",
+            "uninstall",
+        },
+        label=label,
+    )
+    if (
+        type(result["schemaVersion"]) is not int
+        or result["schemaVersion"] != 1
+        or result["scope"] != LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_SCOPE
+        or result["status"] != "passed"
+    ):
+        raise lane_a_local_dmg_error(f"{label} identity or status is invalid")
+    validate_lane_a_archive_binding(
+        result,
+        expected_release_id=expected_release_id,
+        evidence=evidence,
+        label=label,
+    )
+    validate_lane_a_two_install_contract(
+        result,
+        expected_tree=expected_tree,
+        label=label,
+        state_present_before_reinstall=False,
+    )
+    validate_lane_a_two_launches(
+        result["launchServices"],
+        label=label,
+        includes_observation=False,
+    )
+    if result["limitations"] != list(
+        LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_LIMITATIONS
+    ):
+        raise lane_a_local_dmg_error(f"{label} limitations are not exact")
+    state = require_closed_object(
+        result["state"],
+        {
+            "applicationSupportPreservedAcrossRemovalAndReinstall",
+            "databaseCount",
+            "emptyRuntimeChatVerified",
+            "integrityChecks",
+            "regularFileBytesAndModesUnchanged",
+            "runtimeIdentityFilePresent",
+            "sqlite",
+            "stableAcrossRemovalAndReinstall",
+        },
+        label=f"{label} state",
+    )
+    if (
+        state["applicationSupportPreservedAcrossRemovalAndReinstall"]
+        is not True
+        or type(state["databaseCount"]) is not int
+        or state["databaseCount"] != 3
+        or state["emptyRuntimeChatVerified"] is not True
+        or state["integrityChecks"] != "passed"
+        or state["regularFileBytesAndModesUnchanged"] is not True
+        or state["runtimeIdentityFilePresent"] is not True
+        or state["stableAcrossRemovalAndReinstall"] is not True
+    ):
+        raise lane_a_local_dmg_error(f"{label} state contract is invalid")
+    validate_lane_a_empty_sqlite_inventory(
+        state["sqlite"],
+        label=f"{label} SQLite",
+    )
+    return result
+
+
+def validate_lane_a_local_dmg_state_recovery_result_bytes(
+    raw: bytes,
+    *,
+    expected_release_id: str,
+    evidence: ArchiveEvidence,
+    expected_tree: dict[str, object],
+) -> dict[str, object]:
+    label = "lane-A local DMG state-recovery result"
+    parsed = parse_lane_a_lifecycle_result_bytes(raw, label=label)
+    result = require_closed_object(
+        parsed,
+        {
+            "archiveReadback",
+            "canary",
+            "image",
+            "installation",
+            "isolation",
+            "launchServices",
+            "limitations",
+            "mount",
+            "release",
+            "schemaVersion",
+            "scope",
+            "stateRecovery",
+            "status",
+            "uninstall",
+        },
+        label=label,
+    )
+    if (
+        type(result["schemaVersion"]) is not int
+        or result["schemaVersion"] != 1
+        or result["scope"] != LANE_A_LOCAL_DMG_STATE_RECOVERY_SCOPE
+        or result["status"] != "passed"
+    ):
+        raise lane_a_local_dmg_error(f"{label} identity or status is invalid")
+    validate_lane_a_archive_binding(
+        result,
+        expected_release_id=expected_release_id,
+        evidence=evidence,
+        label=label,
+    )
+    canary = require_closed_object(
+        result["canary"],
+        set(LANE_A_LOCAL_DMG_CANARY),
+        label=f"{label} canary",
+    )
+    for key, expected in LANE_A_LOCAL_DMG_CANARY.items():
+        value = canary[key]
+        if type(expected) is int:
+            valid = type(value) is int and value == expected
+        else:
+            valid = value == expected
+        if not valid:
+            raise lane_a_local_dmg_error(
+                f"{label} canary field is invalid: {key}"
+            )
+    validate_lane_a_two_install_contract(
+        result,
+        expected_tree=expected_tree,
+        label=label,
+        state_present_before_reinstall=True,
+    )
+    validate_lane_a_two_launches(
+        result["launchServices"],
+        label=label,
+        includes_observation=True,
+    )
+    if result["limitations"] != list(
+        LANE_A_LOCAL_DMG_STATE_RECOVERY_LIMITATIONS
+    ):
+        raise lane_a_local_dmg_error(f"{label} limitations are not exact")
+    state = require_closed_object(
+        result["stateRecovery"],
+        {
+            "applicationSupportPreservedAcrossRemovalAndReinstall",
+            "auxiliarySQLite",
+            "databaseCount",
+            "installedStateBytesAndModesUnchangedAcrossRemovalAndReinstall",
+            "legacyAbsentBeforeReinstallReadback",
+            "legacyFixturePreservedUnchanged",
+            "legacyRemovedByHarnessBeforeReinstall",
+            "migrationObservation",
+            "migrationSQLite",
+            "runtimeIdentityFilePresent",
+            "sqliteCanaryUnchangedAcrossRemovalAndReinstall",
+            "sqliteReadbackObservation",
+            "sqliteReadbackSQLite",
+            "totalEventCount",
+        },
+        label=f"{label} state recovery",
+    )
+    if (
+        state["applicationSupportPreservedAcrossRemovalAndReinstall"]
+        is not True
+        or type(state["databaseCount"]) is not int
+        or state["databaseCount"] != 3
+        or state[
+            "installedStateBytesAndModesUnchangedAcrossRemovalAndReinstall"
+        ]
+        is not True
+        or state["legacyAbsentBeforeReinstallReadback"] is not True
+        or state["legacyFixturePreservedUnchanged"] is not True
+        or state["legacyRemovedByHarnessBeforeReinstall"] is not True
+        or state["runtimeIdentityFilePresent"] is not True
+        or state["sqliteCanaryUnchangedAcrossRemovalAndReinstall"] is not True
+        or type(state["totalEventCount"]) is not int
+        or state["totalEventCount"] != 1
+    ):
+        raise lane_a_local_dmg_error(
+            f"{label} state-recovery contract is invalid"
+        )
+    auxiliary = state["auxiliarySQLite"]
+    expected_auxiliary = (
+        "runtime-document-index.sqlite",
+        "runtime-model-pull-approvals.sqlite",
+    )
+    if type(auxiliary) is not list or len(auxiliary) != 2:
+        raise lane_a_local_dmg_error(
+            f"{label} auxiliary SQLite inventory is invalid"
+        )
+    for value, filename in zip(auxiliary, expected_auxiliary):
+        record = require_closed_object(
+            value,
+            {"filename", "integrityCheck"},
+            label=f"{label} auxiliary SQLite {filename}",
+        )
+        if (
+            record["filename"] != filename
+            or record["integrityCheck"] != "ok"
+        ):
+            raise lane_a_local_dmg_error(
+                f"{label} auxiliary SQLite record is invalid: {filename}"
+            )
+    validate_lane_a_observation(
+        state["migrationObservation"],
+        expected=LANE_A_LOCAL_DMG_MIGRATION_OBSERVATION,
+        label=f"{label} migration observation",
+    )
+    validate_lane_a_observation(
+        state["sqliteReadbackObservation"],
+        expected=LANE_A_LOCAL_DMG_SQLITE_READBACK_OBSERVATION,
+        label=f"{label} SQLite readback observation",
+    )
+    migration_sqlite = validate_lane_a_canary_sqlite(
+        state["migrationSQLite"],
+        label=f"{label} migration SQLite",
+    )
+    readback_sqlite = validate_lane_a_canary_sqlite(
+        state["sqliteReadbackSQLite"],
+        label=f"{label} readback SQLite",
+    )
+    if migration_sqlite != readback_sqlite:
+        raise lane_a_local_dmg_error(
+            f"{label} SQLite canary changed across reinstall"
+        )
+    return result
+
+
+def lane_archive_identities(
+    evidence: ArchiveEvidence,
+) -> tuple[FileIdentity, FileIdentity, FileIdentity]:
+    observed: list[FileIdentity] = []
+    for path in (
+        evidence.archive_path,
+        evidence.manifest_path,
+        evidence.checksum_path,
+    ):
+        try:
+            observed.append(stable_file_identity(path))
+        except ReproducibilityError as error:
+            raise lane_a_local_dmg_error(
+                f"cannot re-read lane-A archive input: {error}"
+            ) from error
+    identities = tuple(observed)
+    expected = (
+        evidence.archive_identity,
+        evidence.manifest_identity,
+        evidence.checksum_identity,
+    )
+    if identities != expected:
+        raise lane_a_local_dmg_error(
+            "lane-A archive inputs changed around local DMG exercise"
+        )
+    return identities
+
+
+def stable_lane_a_local_dmg_result_bytes(
+    path: Path,
+) -> tuple[bytes, FileIdentity]:
+    try:
+        before = stable_file_identity(path)
+        raw = path.read_bytes()
+        after = stable_file_identity(path)
+    except (OSError, ReproducibilityError) as error:
+        raise lane_a_local_dmg_error(
+            f"cannot read back lane-A local DMG result: {error}"
+        ) from error
+    if before != after or len(raw) != before.size:
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG result changed while being read back"
+        )
+    return raw, after
+
+
+def sync_lane_a_local_dmg_result_parent(path: Path) -> None:
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path.parent, flags)
+        try:
+            status = os.fstat(descriptor)
+            if (
+                not stat.S_ISDIR(status.st_mode)
+                or status.st_uid != os.getuid()
+                or stat.S_IMODE(status.st_mode) & 0o022
+            ):
+                raise OSError(
+                    "result parent is not an owner-controlled directory"
+                )
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    except OSError as error:
+        raise lane_a_local_dmg_error(
+            f"cannot sync lane-A local DMG result directory: {error}"
+        ) from error
+
+
+def publish_lane_a_local_dmg_result(
+    path: Path,
+    result: dict[str, object],
+    *,
+    expected_release_id: str,
+    filename_token: str = LANE_A_LOCAL_DMG_INSTALL_FILENAME_TOKEN,
+) -> FileIdentity:
+    payload = canonical_json_bytes(result)
+    try:
+        path.parent.mkdir(mode=0o700, exist_ok=True)
+    except OSError as error:
+        raise lane_a_local_dmg_error(
+            f"cannot create lane-A local DMG result root: {error}"
+        ) from error
+    validate_lane_a_lifecycle_result_path(
+        path,
+        expected_release_id=expected_release_id,
+        filename_token=filename_token,
+    )
+    if os.path.lexists(path):
+        existing, identity = stable_lane_a_local_dmg_result_bytes(path)
+        if existing != payload:
+            raise lane_a_local_dmg_error(
+                "refusing to replace a different lane-A local DMG result"
+            )
+        sync_lane_a_local_dmg_result_parent(path)
+        return identity
+
+    try:
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{path.name}.",
+            dir=path.parent,
+        )
+    except OSError as error:
+        raise lane_a_local_dmg_error(
+            f"cannot create lane-A local DMG result temporary: {error}"
+        ) from error
+    temporary = Path(temporary_name)
+    try:
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+        except OSError as error:
+            raise lane_a_local_dmg_error(
+                f"cannot write lane-A local DMG result temporary: {error}"
+            ) from error
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            existing, identity = stable_lane_a_local_dmg_result_bytes(path)
+            if existing != payload:
+                raise lane_a_local_dmg_error(
+                    "concurrent lane-A local DMG result publication differed"
+                )
+            sync_lane_a_local_dmg_result_parent(path)
+            return identity
+        except OSError as error:
+            raise lane_a_local_dmg_error(
+                f"cannot publish lane-A local DMG result: {error}"
+            ) from error
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    sync_lane_a_local_dmg_result_parent(path)
+    raw, identity = stable_lane_a_local_dmg_result_bytes(path)
+    if raw != payload:
+        raise lane_a_local_dmg_error(
+            "published lane-A local DMG result bytes differ"
+        )
+    return identity
+
+
+def run_lane_a_local_dmg_install(
+    *,
+    clone_root: Path,
+    evidence: ArchiveEvidence,
+    expected_release_id: str,
+    result_path: Path,
+) -> dict[str, object]:
+    validate_lane_a_local_dmg_result_path(
+        result_path,
+        expected_release_id=expected_release_id,
+    )
+    lane_archive_identities(evidence)
+    runner_path = clone_root / LANE_A_LOCAL_DMG_RUNNER
+    try:
+        runner_before = stable_file_identity(runner_path)
+    except ReproducibilityError as error:
+        raise lane_a_local_dmg_error(
+            f"cannot bind materialized local DMG runner: {error}"
+        ) from error
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "LC_ALL": "C",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONPATH": str(clone_root),
+        }
+    )
+    try:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                "-c",
+                LANE_A_LOCAL_DMG_EXERCISE_PROGRAM,
+                str(evidence.archive_directory),
+            ],
+            cwd=clone_root,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=LANE_A_LOCAL_DMG_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise lane_a_local_dmg_error(
+            f"lane-A local DMG exercise did not complete: {error}"
+        ) from error
+    if completed.returncode != 0:
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG exercise returned a nonzero status "
+            f"({completed.returncode})"
+        )
+    try:
+        runner_after = stable_file_identity(runner_path)
+    except ReproducibilityError as error:
+        raise lane_a_local_dmg_error(
+            f"cannot re-read materialized local DMG runner: {error}"
+        ) from error
+    if runner_before != runner_after:
+        raise lane_a_local_dmg_error(
+            "materialized local DMG runner changed during exercise"
+        )
+    lane_archive_identities(evidence)
+    result = validate_lane_a_local_dmg_result_bytes(
+        completed.stdout,
+        expected_release_id=expected_release_id,
+        evidence=evidence,
+    )
+    published_identity = publish_lane_a_local_dmg_result(
+        result_path,
+        result,
+        expected_release_id=expected_release_id,
+    )
+    disk_raw, disk_identity = stable_lane_a_local_dmg_result_bytes(
+        result_path
+    )
+    disk_result = validate_lane_a_local_dmg_result_bytes(
+        disk_raw,
+        expected_release_id=expected_release_id,
+        evidence=evidence,
+    )
+    if (
+        disk_result != result
+        or disk_identity != published_identity
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG disk readback differs from exercised result"
+        )
+    lane_archive_identities(evidence)
+    return result
+
+
+def require_lane_a_clone_source_snapshot(
+    clone_root: Path,
+    *,
+    expected_source_snapshot: dict[str, object],
+) -> None:
+    try:
+        observed = archive_builder.source_snapshot(clone_root)
+    except Exception as error:
+        raise lane_a_local_dmg_error(
+            f"cannot re-read materialized lane-A source snapshot: {error}"
+        ) from error
+    if observed != expected_source_snapshot:
+        raise lane_a_local_dmg_error(
+            "materialized lane-A source snapshot changed around lifecycle "
+            "exercise"
+        )
+
+
+def terminate_lane_a_lifecycle_process(
+    process: subprocess.Popen[bytes],
+) -> None:
+    process_group = process.pid
+
+    def group_exists() -> bool:
+        try:
+            os.killpg(process_group, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    try:
+        os.killpg(process_group, signal.SIGINT)
+    except OSError:
+        try:
+            process.terminate()
+        except OSError:
+            pass
+
+    deadline = (
+        time.monotonic() + LANE_A_LIFECYCLE_INTERRUPT_TIMEOUT_SECONDS
+    )
+    while group_exists():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        if process.poll() is None:
+            try:
+                process.wait(timeout=min(0.05, remaining))
+            except subprocess.TimeoutExpired:
+                pass
+        else:
+            time.sleep(min(0.05, remaining))
+
+    if group_exists():
+        try:
+            os.killpg(process_group, signal.SIGKILL)
+        except OSError:
+            pass
+    if process.poll() is None:
+        try:
+            process.kill()
+        except OSError:
+            pass
+    try:
+        process.wait(timeout=LANE_A_LIFECYCLE_INTERRUPT_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        try:
+            process.kill()
+            process.wait(timeout=LANE_A_LIFECYCLE_INTERRUPT_TIMEOUT_SECONDS)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    group_deadline = (
+        time.monotonic() + LANE_A_LIFECYCLE_INTERRUPT_TIMEOUT_SECONDS
+    )
+    while group_exists() and time.monotonic() < group_deadline:
+        time.sleep(0.05)
+    if group_exists():
+        raise lane_a_local_dmg_error(
+            "lane-A lifecycle process group remained after forced cleanup"
+        )
+
+
+def run_bounded_lane_a_lifecycle_command(
+    command: list[str],
+    *,
+    cwd: Path,
+    environment: dict[str, str],
+    timeout_seconds: float,
+) -> LaneALifecycleProcessResult:
+    try:
+        process = subprocess.Popen(
+            command,
+            cwd=cwd,
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+    except OSError as error:
+        raise lane_a_local_dmg_error(
+            f"cannot start lane-A lifecycle exercise: {error}"
+        ) from error
+    if process.stdout is None or process.stderr is None:
+        terminate_lane_a_lifecycle_process(process)
+        raise lane_a_local_dmg_error(
+            "lane-A lifecycle exercise has no bounded output pipes"
+        )
+
+    streams = selectors.DefaultSelector()
+    buffers = {"stdout": bytearray(), "stderr": bytearray()}
+    limits = {
+        "stdout": LANE_A_LIFECYCLE_MAX_STDOUT_BYTES,
+        "stderr": LANE_A_LIFECYCLE_MAX_STDERR_BYTES,
+    }
+    deadline = time.monotonic() + timeout_seconds
+    try:
+        streams.register(process.stdout, selectors.EVENT_READ, "stdout")
+        streams.register(process.stderr, selectors.EVENT_READ, "stderr")
+        while streams.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise lane_a_local_dmg_error(
+                    "lane-A lifecycle exercise timed out"
+                )
+            events = streams.select(remaining)
+            if not events:
+                raise lane_a_local_dmg_error(
+                    "lane-A lifecycle exercise timed out"
+                )
+            for key, _ in events:
+                output_name = key.data
+                capacity = limits[output_name] - len(buffers[output_name])
+                try:
+                    chunk = os.read(
+                        key.fileobj.fileno(),
+                        min(65_536, capacity + 1),
+                    )
+                except OSError as error:
+                    raise lane_a_local_dmg_error(
+                        "cannot read bounded lane-A lifecycle output"
+                    ) from error
+                if not chunk:
+                    streams.unregister(key.fileobj)
+                    continue
+                buffers[output_name].extend(chunk)
+                if len(buffers[output_name]) > limits[output_name]:
+                    raise lane_a_local_dmg_error(
+                        f"lane-A lifecycle {output_name} exceeded its "
+                        "hard byte limit"
+                    )
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise lane_a_local_dmg_error(
+                "lane-A lifecycle exercise timed out"
+            )
+        try:
+            returncode = process.wait(timeout=remaining)
+        except subprocess.TimeoutExpired as error:
+            raise lane_a_local_dmg_error(
+                "lane-A lifecycle exercise timed out"
+            ) from error
+    except BaseException:
+        terminate_lane_a_lifecycle_process(process)
+        raise
+    finally:
+        streams.close()
+        process.stdout.close()
+        process.stderr.close()
+    return LaneALifecycleProcessResult(
+        returncode=returncode,
+        stdout=bytes(buffers["stdout"]),
+        stderr=bytes(buffers["stderr"]),
+    )
+
+
+def run_lane_a_lifecycle_exercise(
+    *,
+    clone_root: Path,
+    evidence: ArchiveEvidence,
+    runner_relative: Path,
+    module_name: str,
+    expected_source_snapshot: dict[str, object],
+    validator: Callable[[bytes], dict[str, object]],
+) -> dict[str, object]:
+    lane_archive_identities(evidence)
+    require_lane_a_clone_source_snapshot(
+        clone_root,
+        expected_source_snapshot=expected_source_snapshot,
+    )
+    runner_path = clone_root / runner_relative
+    try:
+        runner_before = stable_file_identity(runner_path)
+    except ReproducibilityError as error:
+        raise lane_a_local_dmg_error(
+            f"cannot bind materialized lifecycle runner: {error}"
+        ) from error
+    exercise_program = f"""\
+import sys
+from pathlib import Path
+from script import {module_name} as smoke
+
+result = smoke.exercise(
+    archive_dir=Path(sys.argv[1]),
+    readiness_timeout_seconds=15.0,
+    observation_seconds=5.0,
+    termination_timeout_seconds=10.0,
+)
+sys.stdout.buffer.write(smoke.engine.canonical_json_bytes(result))
+"""
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "LC_ALL": "C",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONPATH": str(clone_root),
+        }
+    )
+    completed = run_bounded_lane_a_lifecycle_command(
+        [
+            sys.executable,
+            "-B",
+            "-c",
+            exercise_program,
+            str(evidence.archive_directory),
+        ],
+        cwd=clone_root,
+        environment=environment,
+        timeout_seconds=LANE_A_LOCAL_DMG_TIMEOUT_SECONDS,
+    )
+    if completed.returncode != 0:
+        raise lane_a_local_dmg_error(
+            "lane-A lifecycle exercise returned a nonzero status "
+            f"({completed.returncode})"
+        )
+    try:
+        runner_after = stable_file_identity(runner_path)
+    except ReproducibilityError as error:
+        raise lane_a_local_dmg_error(
+            f"cannot re-read materialized lifecycle runner: {error}"
+        ) from error
+    if runner_before != runner_after:
+        raise lane_a_local_dmg_error(
+            "materialized lifecycle runner changed during exercise"
+        )
+    lane_archive_identities(evidence)
+    require_lane_a_clone_source_snapshot(
+        clone_root,
+        expected_source_snapshot=expected_source_snapshot,
+    )
+    return validator(completed.stdout)
+
+
+def run_lane_a_local_dmg_suite(
+    *,
+    clone_root: Path,
+    evidence: ArchiveEvidence,
+    expected_release_id: str,
+    expected_source_snapshot: dict[str, object],
+    label: str,
+) -> LaneALocalDMGSuiteEvidence:
+    paths = lane_a_local_dmg_suite_paths(
+        label,
+        expected_release_id=expected_release_id,
+    )
+    install = run_lane_a_lifecycle_exercise(
+        clone_root=clone_root,
+        evidence=evidence,
+        runner_relative=LANE_A_LOCAL_DMG_RUNNER,
+        module_name="run_macos_local_dmg_install_smoke_v2",
+        expected_source_snapshot=expected_source_snapshot,
+        validator=lambda raw: validate_lane_a_local_dmg_result_bytes(
+            raw,
+            expected_release_id=expected_release_id,
+            evidence=evidence,
+        ),
+    )
+    installation = require_closed_object(
+        install["installation"],
+        {
+            "adHocAppSealAndVersionVerified",
+            "applicationsAliasPresent",
+            "copyTool",
+            "exactReleaseTreeCopied",
+            "tree",
+        },
+        label="validated lane-A local DMG installation",
+    )
+    expected_tree = require_closed_object(
+        installation["tree"],
+        {
+            "digestAlgorithm",
+            "regularFileCount",
+            "sha256",
+            "totalRegularFileBytes",
+        },
+        label="validated lane-A local DMG installed tree",
+    )
+
+    uninstall_reinstall = run_lane_a_lifecycle_exercise(
+        clone_root=clone_root,
+        evidence=evidence,
+        runner_relative=LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_RUNNER,
+        module_name="run_macos_local_dmg_uninstall_reinstall_smoke",
+        expected_source_snapshot=expected_source_snapshot,
+        validator=lambda raw: (
+            validate_lane_a_local_dmg_uninstall_reinstall_result_bytes(
+                raw,
+                expected_release_id=expected_release_id,
+                evidence=evidence,
+                expected_tree=expected_tree,
+            )
+        ),
+    )
+    state_recovery = run_lane_a_lifecycle_exercise(
+        clone_root=clone_root,
+        evidence=evidence,
+        runner_relative=LANE_A_LOCAL_DMG_STATE_RECOVERY_RUNNER,
+        module_name=(
+            "run_macos_local_dmg_uninstall_reinstall_"
+            "state_recovery_smoke"
+        ),
+        expected_source_snapshot=expected_source_snapshot,
+        validator=lambda raw: validate_lane_a_local_dmg_state_recovery_result_bytes(
+            raw,
+            expected_release_id=expected_release_id,
+            evidence=evidence,
+            expected_tree=expected_tree,
+        ),
+    )
+    lane_archive_identities(evidence)
+    require_lane_a_clone_source_snapshot(
+        clone_root,
+        expected_source_snapshot=expected_source_snapshot,
+    )
+    return LaneALocalDMGSuiteEvidence(
+        paths=paths,
+        archive=evidence,
+        expected_release_id=expected_release_id,
+        install=install,
+        uninstall_reinstall=uninstall_reinstall,
+        state_recovery=state_recovery,
+    )
+
+
+def publish_lane_a_local_dmg_suite(
+    suite: LaneALocalDMGSuiteEvidence,
+) -> None:
+    install_tree = require_closed_object(
+        require_closed_object(
+            suite.install["installation"],
+            {
+                "adHocAppSealAndVersionVerified",
+                "applicationsAliasPresent",
+                "copyTool",
+                "exactReleaseTreeCopied",
+                "tree",
+            },
+            label="validated lane-A local DMG installation",
+        )["tree"],
+        {
+            "digestAlgorithm",
+            "regularFileCount",
+            "sha256",
+            "totalRegularFileBytes",
+        },
+        label="validated lane-A local DMG installed tree",
+    )
+    items: tuple[
+        tuple[
+            Path,
+            str,
+            dict[str, object],
+            Callable[[bytes], dict[str, object]],
+        ],
+        ...,
+    ] = (
+        (
+            suite.paths.install,
+            LANE_A_LOCAL_DMG_INSTALL_FILENAME_TOKEN,
+            suite.install,
+            lambda raw: validate_lane_a_local_dmg_result_bytes(
+                raw,
+                expected_release_id=suite.expected_release_id,
+                evidence=suite.archive,
+            ),
+        ),
+        (
+            suite.paths.uninstall_reinstall,
+            LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_FILENAME_TOKEN,
+            suite.uninstall_reinstall,
+            lambda raw: (
+                validate_lane_a_local_dmg_uninstall_reinstall_result_bytes(
+                    raw,
+                    expected_release_id=suite.expected_release_id,
+                    evidence=suite.archive,
+                    expected_tree=install_tree,
+                )
+            ),
+        ),
+        (
+            suite.paths.state_recovery,
+            LANE_A_LOCAL_DMG_STATE_RECOVERY_FILENAME_TOKEN,
+            suite.state_recovery,
+            lambda raw: validate_lane_a_local_dmg_state_recovery_result_bytes(
+                raw,
+                expected_release_id=suite.expected_release_id,
+                evidence=suite.archive,
+                expected_tree=install_tree,
+            ),
+        ),
+    )
+    try:
+        suite.paths.install.parent.mkdir(mode=0o700, exist_ok=True)
+    except OSError as error:
+        raise lane_a_local_dmg_error(
+            f"cannot create lane-A local DMG suite result root: {error}"
+        ) from error
+
+    payloads: list[bytes] = []
+    for path, filename_token, result, validator in items:
+        validate_lane_a_lifecycle_result_path(
+            path,
+            expected_release_id=suite.expected_release_id,
+            filename_token=filename_token,
+        )
+        payload = canonical_json_bytes(result)
+        validator(payload)
+        payloads.append(payload)
+        if os.path.lexists(path):
+            existing, _ = stable_lane_a_local_dmg_result_bytes(path)
+            if existing != payload:
+                raise lane_a_local_dmg_error(
+                    "refusing to replace a different lane-A local DMG "
+                    f"suite result: {path.name}"
+                )
+
+    staged: list[tuple[Path, int]] = []
+    identities: list[FileIdentity | None] = [None] * len(items)
+    try:
+        for index, ((path, _, _, _), payload) in enumerate(
+            zip(items, payloads)
+        ):
+            if os.path.lexists(path):
+                continue
+            descriptor: int | None = None
+            try:
+                descriptor, temporary_name = tempfile.mkstemp(
+                    prefix=f".{path.name}.",
+                    dir=path.parent,
+                )
+                temporary = Path(temporary_name)
+                staged.append((temporary, index))
+                with os.fdopen(descriptor, "wb") as handle:
+                    descriptor = None
+                    handle.write(payload)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            except OSError as error:
+                if descriptor is not None:
+                    try:
+                        os.close(descriptor)
+                    except OSError:
+                        pass
+                raise lane_a_local_dmg_error(
+                    f"cannot stage lane-A local DMG suite result: {error}"
+                ) from error
+
+        for temporary, index in staged:
+            path = items[index][0]
+            try:
+                os.link(temporary, path)
+            except FileExistsError:
+                existing, identity = stable_lane_a_local_dmg_result_bytes(
+                    path
+                )
+                if existing != payloads[index]:
+                    raise lane_a_local_dmg_error(
+                        "concurrent lane-A local DMG suite publication "
+                        f"differed: {path.name}"
+                    )
+                identities[index] = identity
+            except OSError as error:
+                raise lane_a_local_dmg_error(
+                    f"cannot publish lane-A local DMG suite result: {error}"
+                ) from error
+    finally:
+        for temporary, _ in staged:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    sync_lane_a_local_dmg_result_parent(suite.paths.install)
+    for index, ((path, _, _, validator), payload) in enumerate(
+        zip(items, payloads)
+    ):
+        raw, identity = stable_lane_a_local_dmg_result_bytes(path)
+        observed = validator(raw)
+        if raw != payload or observed != items[index][2]:
+            raise lane_a_local_dmg_error(
+                "lane-A local DMG suite disk readback differs from "
+                f"exercised result: {path.name}"
+            )
+        if identities[index] is not None and identities[index] != identity:
+            raise lane_a_local_dmg_error(
+                "lane-A local DMG suite result identity changed during "
+                f"readback: {path.name}"
+            )
+
+
 def empty_result(
     *,
     publish_qualified: bool = True,
@@ -1918,6 +4015,8 @@ def execute(
     result_path: Path,
     *,
     publish_qualified: bool = True,
+    lane_a_local_dmg_result_path: Path | None = None,
+    lane_a_local_dmg_suite_label: str | None = None,
 ) -> tuple[int, dict[str, object]]:
     result = empty_result(publish_qualified=publish_qualified)
     exit_code = 70
@@ -1928,6 +4027,7 @@ def execute(
     run_id: str | None = None
     lease_created = False
     result_path_validated = False
+    pending_lane_a_local_dmg_suite: LaneALocalDMGSuiteEvidence | None = None
     lock_manager = acquire_run_lock()
     lock_acquired = False
     try:
@@ -1937,6 +4037,25 @@ def execute(
         protected_release_relative = (
             release_context.previous_release_relative
         )
+        if (
+            lane_a_local_dmg_result_path is not None
+            and lane_a_local_dmg_suite_label is not None
+        ):
+            raise ReproducibilityError(
+                2,
+                "invocation",
+                "lane-A local DMG install-only and suite modes are mutually "
+                "exclusive",
+            )
+        if publish_qualified and (
+            lane_a_local_dmg_result_path is not None
+            or lane_a_local_dmg_suite_label is not None
+        ):
+            raise ReproducibilityError(
+                2,
+                "invocation",
+                "lane-A local DMG exercise is comparison-only",
+            )
         result["protectedArchive"]["relativePath"] = (
             protected_release_relative.as_posix()
         )
@@ -1946,6 +4065,16 @@ def execute(
             expected_release_id=release_context.release_id,
             protected_release_relative=protected_release_relative,
         )
+        if lane_a_local_dmg_result_path is not None:
+            validate_lane_a_local_dmg_result_path(
+                lane_a_local_dmg_result_path,
+                expected_release_id=expected_release_id,
+            )
+        if lane_a_local_dmg_suite_label is not None:
+            lane_a_local_dmg_suite_paths(
+                lane_a_local_dmg_suite_label,
+                expected_release_id=expected_release_id,
+            )
         result["releaseId"] = expected_release_id
         result_path_validated = True
         sentinel_before = capture_protected_archive(
@@ -2079,6 +4208,30 @@ def execute(
                 "release archives differ: "
                 f"{result['comparison']['differences']}",
             )
+        if lane_a_local_dmg_result_path is not None:
+            print(
+                "Exercising exact build A through local DMG install twice...",
+                flush=True,
+            )
+            run_lane_a_local_dmg_install(
+                clone_root=roots[0],
+                evidence=build_a,
+                expected_release_id=expected_release_id,
+                result_path=lane_a_local_dmg_result_path,
+            )
+        elif lane_a_local_dmg_suite_label is not None:
+            print(
+                "Exercising exact build A through the complete local DMG "
+                "lifecycle suite...",
+                flush=True,
+            )
+            pending_lane_a_local_dmg_suite = run_lane_a_local_dmg_suite(
+                clone_root=roots[0],
+                evidence=build_a,
+                expected_release_id=expected_release_id,
+                expected_source_snapshot=source_snapshot,
+                label=lane_a_local_dmg_suite_label,
+            )
         if publish_qualified:
             (
                 prepublication_binding,
@@ -2185,6 +4338,24 @@ def execute(
                 )
                 exit_code = 9
 
+        if (
+            pending_lane_a_local_dmg_suite is not None
+            and error is None
+            and exit_code == 0
+        ):
+            try:
+                publish_lane_a_local_dmg_suite(
+                    pending_lane_a_local_dmg_suite
+                )
+            except ReproducibilityError as caught:
+                error = caught
+                exit_code = caught.exit_code
+            except Exception as caught:
+                error = lane_a_local_dmg_error(
+                    f"cannot publish lane-A local DMG suite: {caught}"
+                )
+                exit_code = error.exit_code
+
         if error is not None:
             result["status"] = "failed"
             result["failure"] = {
@@ -2253,8 +4424,28 @@ def main() -> int:
             "archive into the source workspace"
         ),
     )
+    parser.add_argument(
+        "--lane-a-local-dmg-result",
+        type=Path,
+        default=None,
+        help=(
+            "comparison-only opt-in: exercise the exact matching build-A "
+            "archive through the local DMG v2 lifecycle and publish its "
+            "separate canonical JSON result under dist/lifecycle"
+        ),
+    )
+    parser.add_argument(
+        "--lane-a-local-dmg-suite-label",
+        default=None,
+        help=(
+            "comparison-only opt-in: derive and publish the install, "
+            "same-DMG uninstall/reinstall, and persisted-state recovery "
+            "results under dist/lifecycle from one lowercase slug"
+        ),
+    )
     arguments = parser.parse_args()
     publish_qualified = not arguments.comparison_only
+    lane_a_local_dmg_result_path: Path | None = None
     try:
         result_path = (
             (
@@ -2265,10 +4456,46 @@ def main() -> int:
             if arguments.result is None
             else arguments.result.resolve()
         ).resolve()
-        validate_result_mode_path(
+        release_id = validate_result_mode_path(
             result_path,
             publish_qualified=publish_qualified,
         )
+        if arguments.lane_a_local_dmg_result is not None:
+            if publish_qualified:
+                raise ReproducibilityError(
+                    2,
+                    "invocation",
+                    "--lane-a-local-dmg-result requires --comparison-only",
+                )
+            lane_a_local_dmg_result_path = Path(
+                os.path.abspath(arguments.lane_a_local_dmg_result)
+            )
+            validate_lane_a_local_dmg_result_path(
+                lane_a_local_dmg_result_path,
+                expected_release_id=release_id,
+            )
+        if arguments.lane_a_local_dmg_suite_label is not None:
+            if publish_qualified:
+                raise ReproducibilityError(
+                    2,
+                    "invocation",
+                    "--lane-a-local-dmg-suite-label requires "
+                    "--comparison-only",
+                )
+            if lane_a_local_dmg_result_path is not None:
+                raise ReproducibilityError(
+                    2,
+                    "invocation",
+                    "--lane-a-local-dmg-result and "
+                    "--lane-a-local-dmg-suite-label are mutually exclusive",
+                )
+            validate_lane_a_local_dmg_suite_label(
+                arguments.lane_a_local_dmg_suite_label
+            )
+            lane_a_local_dmg_suite_paths(
+                arguments.lane_a_local_dmg_suite_label,
+                expected_release_id=release_id,
+            )
     except (LedgerError, OSError, ReproducibilityError) as error:
         print(
             f"Clean release reproducibility failed: invocation: {error}",
@@ -2276,10 +4503,28 @@ def main() -> int:
             flush=True,
         )
         return 2
-    exit_code, result = execute(
-        result_path,
-        publish_qualified=publish_qualified,
-    )
+    if (
+        lane_a_local_dmg_result_path is None
+        and arguments.lane_a_local_dmg_suite_label is None
+    ):
+        exit_code, result = execute(
+            result_path,
+            publish_qualified=publish_qualified,
+        )
+    elif lane_a_local_dmg_result_path is not None:
+        exit_code, result = execute(
+            result_path,
+            publish_qualified=publish_qualified,
+            lane_a_local_dmg_result_path=lane_a_local_dmg_result_path,
+        )
+    else:
+        exit_code, result = execute(
+            result_path,
+            publish_qualified=publish_qualified,
+            lane_a_local_dmg_suite_label=(
+                arguments.lane_a_local_dmg_suite_label
+            ),
+        )
     if exit_code == 0:
         comparison = result["comparison"]
         archive_sha = result["builds"][0]["archive"]["sha256"]

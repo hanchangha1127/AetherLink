@@ -512,6 +512,7 @@ class LocalDMGUninstallReinstallSmokeTests(unittest.TestCase):
         self,
         *,
         failure: str | None = None,
+        publish_result: bool = True,
     ) -> list[str]:
         with tempfile.TemporaryDirectory() as temporary_name:
             root = Path(temporary_name).resolve()
@@ -776,14 +777,21 @@ class LocalDMGUninstallReinstallSmokeTests(unittest.TestCase):
                 for context in patches:
                     stack.enter_context(context)
                 if failure is None:
-                    result = smoke.execute(
-                        archive_dir=archive_dir,
-                        result_path=result_path,
-                        readiness_timeout_seconds=1.0,
-                        observation_seconds=(
+                    arguments = {
+                        "archive_dir": archive_dir,
+                        "readiness_timeout_seconds": 1.0,
+                        "observation_seconds": (
                             smoke.engine.MINIMUM_OBSERVATION_SECONDS
                         ),
-                        termination_timeout_seconds=1.0,
+                        "termination_timeout_seconds": 1.0,
+                    }
+                    result = (
+                        smoke.execute(
+                            result_path=result_path,
+                            **arguments,
+                        )
+                        if publish_result
+                        else smoke.exercise(**arguments)
                     )
                     self.assertEqual(result["status"], "passed")
                 else:
@@ -837,6 +845,11 @@ class LocalDMGUninstallReinstallSmokeTests(unittest.TestCase):
                 "publish",
             ],
         )
+
+    def test_exercise_cleans_root_without_publishing(self) -> None:
+        events = self.exercise(publish_result=False)
+        self.assertEqual(events[-1], "root-cleanup")
+        self.assertNotIn("publish", events)
 
     def test_image_snapshot_and_pid_failures_block_publication(self) -> None:
         for failure in ("image-drift", "snapshot-drift", "pid-reuse"):

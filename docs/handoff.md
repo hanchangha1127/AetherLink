@@ -53,6 +53,20 @@ current user direction, not repository-owner identity proof.
 - Continue only feature, UX, accessibility, performance, build, documentation,
   and release-quality work. Do not resume security findings, threat analysis,
   owner authentication, or authority-evidence work.
+- Android 13+ app-language startup is now platform-to-ViewModel only.
+  A nonempty `LocaleManager.applicationLocales` snapshot becomes the fixed
+  language; an empty snapshot means Follow system. API 26 through 32 retain a
+  stored fixed language. OS writes happen only from user language actions, so
+  an external app-language selection is no longer cleared by stale state and
+  explicit English is distinct from empty/system English. The first localized
+  frame uses the platform snapshot while storage converges. The storage,
+  duplicate-save ViewModel, writer, and API 32/33/36 production-lifecycle
+  regressions pass 6/6. A disposable API 36.1
+  emulator preserved external Korean/Japanese, in-app French, explicit English,
+  Follow system, and repeated cold launches. The same current Debug APK passed
+  the real permission-dialog denial/recovery/settings flow and 200% font-scale
+  reachability without a FATAL or ANR. Physical QR, TalkBack, OEM, signing, and
+  production claims remain open.
 - The current macOS Runtime lifecycle publishes
   `starting(port) -> listening(port) | failed(message)` only after listener and
   Bonjour readiness. Network.framework `.ready` starts Bonjour; `NetService`
@@ -131,28 +145,95 @@ current user direction, not repository-owner identity proof.
   APIs. Its three paths per API pass 12/12: it retains the
   `ActivityScenario.recreate()` regression and adds saved-state-free same-JVM
   cold Activity launches that reconstruct durable `Recorded` and interrupted
-  `LaunchPending` without an automatic second request. The exact Android
-  product selector passes 36/36. This is current-source
+  `LaunchPending` without an automatic second request. The G5 font-scale
+  qualification class adds three independently reported 100%, 150%, and 200%
+  results across scanner, drawer, Chat, Settings pairing, Memory, and chat
+  history. All five app locales receive representative smoke coverage, while
+  English and Korean receive the full state set; QR-scanner close, flashlight,
+  cancel, and permission actions are held to 48 dp. The exact Android product
+  selector passes 45/45 across twelve result classes. Focused result contracts
+  resolve by class name, and accepted JUnit XML must strictly postdate the
+  workflow, checker, Android build inputs, production source, and complete app
+  test-source graph. This is current-source
   resolver/transaction/controller-host/JVM/Compose evidence after immutable
-  Build 24; its controlled platform seam does not prove SDK-specific OS
+  Build 24. The complete app JVM suite also passes 1,226/1,226 through the
+  exact 19-class `--rerun-tasks` runner. Its pre-run marker binds every declared
+  Android input path, byte stream, and mode; the post-run gate requires the
+  exact 19-report set, 1,226 unique nonempty test cases, testcase-manifest
+  SHA-256
+  `cc3ea9e2d72ca96e7f937b22a893d8cdaf38c409564ac8baecc5b947b8aa1b78`,
+  and a canonical marker/report-byte binding with independent readback. The
+  drawer test resets each locale to the app title and traverses
+  `top -> header -> detail -> header` inside the actual history viewport above
+  the fixed Settings footer, refreshing bounds and checking the exact merged
+  accessibility summary.
+  Its controlled platform seam does not prove SDK-specific OS
   permission or rationale policy, Android OS process death, a physical
-  permission dialog, physical camera, optical scan, TalkBack, or production
-  release.
+  permission dialog, physical camera, optical scan, physical/OEM typography,
+  TalkBack, or production release.
 - The same exact current source passes clean offline strict-lock Android
   Release APK/AAB/lint generation. The unsigned APK is 9,575,138 bytes at
-  `18cd152348cae25b0409be0449371792a33292d315cfb52731fdac8c3d290273`;
-  the AAB is 10,684,069 bytes at
-  `dda35e3d86aa78bf477926417d6c4c0083b3e86d94a552bd5484f9e381416665`.
+  `cad01315710cf2ed63962f0165b410dd16c09dc27cc44c42036318b1e1739a1f`;
+  the AAB is 10,684,471 bytes at
+  `736f4debe24ada3bdbfd51055a56dcd4d5ccae103568d92183d9e74c696bb62f`.
   A current-source local ad-hoc macOS Release package also builds, the source
   snapshot stays
-  `512084a6b4dd213364df88d5a3a2d2465f6db519847faa36c5d87b33a2ac0551`,
-  and an isolated temporary 167,566,669-byte archive at SHA-256
-  `57ba1747dbdb6cdf9524fcdf1e2f8e7c3ca11bdfb6cd63558d40df3610ed14f7`
-  passes independent 29-member readback. This is a dirty-content,
+  `d5aee95b0a7b86c73ac111653f7bbf2e2d96b4e718b4d0b8db9571bcfe7d4dce`
+  across 253 files, and an isolated temporary 167,578,488-byte archive at
+  SHA-256
+  `c329ed6a44f1e8a459345993f5e645cefa5b8bdc730cd78efe771fc0c8500f88`
+  passes independent 29-member readback. Its 15,200-byte manifest has SHA-256
+  `f99521fce2f3e420265902323260a6a5b771805ddd71f3d4d1391617796efb72`,
+  and its 99-byte checksum sidecar has SHA-256
+  `24b860585953d9eaaf46b7b9e883d46c9b729e1e5beaba99f5bf0d8bc66dcebe`.
+  This is a dirty-content,
   comparison-only candidate with `1.0.0+24` metadata; it is not stored under
   `dist/releases`, does not alter immutable Build 24 or append Build 25, and
   does not prove distribution signing, installation, device behavior,
   publication, or production release.
+<!-- aetherlink-current-source-g6-lane-a-dmg-v1:start -->
+**Latest current-source G6 exact Lane-A DMG handoff.** The comparison-only
+run bound 254 release inputs at source SHA-256
+`e2db0c96a079cceed3c6b8913d633783c8d4bf2062038694be493fac88f56923`
+and execution overlay SHA-256
+`0eeaa1ffcc08cbf2e7bb2e2854d8892f360f989e438aa4f25818eeff15cc680e`.
+Its unequal 101- and 109-byte source roots produced the exact same
+167,061,116-byte archive at SHA-256
+`3300f967ba14e4703640f7b00c600f16e9a101911db60200857887f1a8db7ada`,
+with a 15,200-byte manifest at
+`ea3250caf41c4cd649482264ca42a2ea91380fe0bc4fe4f17db6b73d09f1c1e6`
+and a 99-byte checksum sidecar at
+`03070799c23b4ba16fddb43b56579c3a7ba695e9530bd5750c06e0c479fcd461`.
+All archive/member equality flags are true and both difference lists are
+empty. The exact 19,645-byte primary result is
+`dist/reproducibility/aetherlink-1.0.0+24-local-v1-two-root-v4-prepublication-current-source-g6-lane-a-dmg.json`,
+SHA-256
+`427824807c66ae2e121af43f155dc0172e307ea9704823d6e556400a2eb02c3a`.
+
+Only after exact A/B equality, the runner handed the materialized Lane-A
+archive to the v2 local-DMG exercise. The exact 3,038-byte lifecycle result is
+`dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-local-dmg-install-v2-current-source-g6.json`,
+SHA-256
+`d5250ccd5b84de4517e6ce79234343cca6670b604cae23503ef8de61cb347fe7`.
+It records one ephemeral HFS+ UDZO image, a read-only mount detached before
+launch, two distinct LaunchServices processes, three SQLite integrity checks,
+stable empty Runtime chat and state, and the exact ten-file installed app tree
+of 21,356,326 bytes at SHA-256
+`0dd6363420e79b90ffac38fdf9410cc109122800f071ca9e1e66bf579ea21145`.
+
+The lifecycle field `archiveReadback.currentSourceCompared=false` means that
+the lifecycle runner performed archive-only validation; the documentation
+guard dynamically cross-binds its ZIP, manifest, and checksum identities to
+the parent current-source Lane-A result. No lane archive was retained or
+published, comparison-only publication stayed disabled, and the protected
+Build 23 archive stayed unchanged. This proves only one same-host, per-user,
+local ad-hoc exact handoff. It does not prove arbitrary cross-host or
+clean-machine reproducibility, Finder/quarantine/Gatekeeper behavior,
+signed/notarized distribution, N/N-1 upgrade or rollback, physical-device,
+provider, network, UI/accessibility, security, deployment, or production
+qualification.
+<!-- aetherlink-current-source-g6-lane-a-dmg-v1:end -->
+
 - The current Android release-quality slice adds Build 23-forward compiled
   entry-point topology and application-shell contracts. Independent builder
   and readback parsers
@@ -264,14 +345,16 @@ current user direction, not repository-owner identity proof.
   without entering the paused mixed security checker path. A Psych AST pre-pass
   requires one YAML document and rejects duplicate or explicitly tagged
   mapping keys before safe loading. The reviewed workflow byte SHA-256 is
-  `e714373a68b91cbc7ed4314cb8ab07082dcbc9b44a4094c75a1f23a2cadd0aca`;
+  `56c2417d0294e7da5ff27a904036cae94668699ed83447b2214a72b2858714ef`;
   its parsed-semantic SHA-256 is
-  `ced8816a4741f85b84b80d4d8c01b2e3de05623979b99b80db6e4c3d8536a070`.
-  Current local parity passes 217 selected Swift tests and 36 selected Android tests
-  with zero skips or failures, both platform compile lanes, Release builds,
-  lint, four static checks, YAML parsing, and the guard's mutation suite. The
-  Android allowlist now directly executes the changed-session scroll-boundary
-  regression rather than only compiling its test source. Hosted run
+  `563cf577cc6bea780633a99bb73416cfbdafa416cde9d0125056baeef5307305`.
+  Current local parity passes 217 selected Swift tests and 45 selected Android
+  tests across twelve result classes with zero skips or failures, both platform
+  compile lanes, Release builds, lint, four static checks, YAML parsing, and
+  the guard's mutation suite. The Android allowlist directly executes both the
+  changed-session scroll-boundary regression and the three-result exact
+  font-scale qualification rather than only compiling their test source.
+  Hosted run
   `30525374687` completed successfully for both jobs at baseline commit
   `0f59c757d745d0b95c37c9b93aec8d354bcfef9f`. That historical 159-test
   baseline also predates commit
@@ -423,10 +506,10 @@ mode stayed stable. The canonical 3,038-byte result is at
 `dist/lifecycle/macos-packaged-app-build-24-local-dmg-install-v2.json`,
 SHA-256
 `7d4c6ae7d892bc9d639cc8dfbe5dfb02e09ff7019ee8554f652556ba7b1bb964`.
-The v2 runner and nine-test module SHA-256 values are
-`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`
+The v2 runner and ten-test module SHA-256 values are
+`2ac25660c13f7a256fb2671a735255523cb8ec1c398128a53b2c46535af31b50`
 and
-`6aa2e9e2354aa36f97ff096787ac05115c95114fcf95869463b47f39dea5006c`.
+`8b3cd5852c89735f2454cf4ae13d29024901dbbc7d915d37b4b3a58932558c91`.
 Its preserved DMG primitive runner and shared snapshot-helper runner SHA-256
 values are
 `e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`
@@ -466,7 +549,7 @@ and
 `6e782fc128aad75b20f1b04752e4754ccbf8ceaadc9e2fcabe9cc2e537bfb703`.
 The reused snapshot-bound DMG, preserved DMG primitive, exact-uninstall, and
 snapshot-helper runner SHA-256 values are, respectively,
-`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`,
+`2ac25660c13f7a256fb2671a735255523cb8ec1c398128a53b2c46535af31b50`,
 `e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`,
 `36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa`,
 and
@@ -511,7 +594,7 @@ SHA-256 values are, respectively,
 `300740d31a5b73755f6976f8fe6ce9c0f498cf274ed72d23d5d6c372104eb5ae`,
 `9d05896a5dcce7e3d7642b41acba2ee4bf6d28ffda85bc8f3b2b645f2a3b273a`,
 `4f3094182ba3b87eb2bb89230df59a14ee10e1db15def87074e66c9ed68d2eca`,
-`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`,
+`2ac25660c13f7a256fb2671a735255523cb8ec1c398128a53b2c46535af31b50`,
 `e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`,
 `36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa`,
 and
@@ -573,7 +656,7 @@ and snapshot-helper runner SHA-256 values are, respectively,
 `300740d31a5b73755f6976f8fe6ce9c0f498cf274ed72d23d5d6c372104eb5ae`,
 `9d05896a5dcce7e3d7642b41acba2ee4bf6d28ffda85bc8f3b2b645f2a3b273a`,
 `4f3094182ba3b87eb2bb89230df59a14ee10e1db15def87074e66c9ed68d2eca`,
-`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`,
+`2ac25660c13f7a256fb2671a735255523cb8ec1c398128a53b2c46535af31b50`,
 `e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`,
 `36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa`,
 and

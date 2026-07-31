@@ -685,18 +685,31 @@ class AppNavigationTest {
     }
 
     @Test
-    fun androidSystemAppLanguageSyncNormalizesCurrentAndSelectedTags() {
-        assertNull(androidLanguageTagFromLocaleList(LocaleList.getEmptyLocaleList()))
-        assertEquals("ko-KR", androidLanguageTagFromLocaleList(LocaleList.forLanguageTags("ko-KR,en-US")))
-        assertFalse(shouldSynchronizeAndroidSystemAppLanguage(null, "en"))
-        assertFalse(shouldSynchronizeAndroidSystemAppLanguage("  ", "en"))
-        assertTrue(shouldSynchronizeAndroidSystemAppLanguage(null, "ko"))
-        assertTrue(shouldSynchronizeAndroidSystemAppLanguage("  ", "fr"))
-        assertFalse(shouldSynchronizeAndroidSystemAppLanguage("en-US", "en"))
-        assertFalse(shouldSynchronizeAndroidSystemAppLanguage("ko-KR", "ko"))
-        assertFalse(shouldSynchronizeAndroidSystemAppLanguage("zh-Hans", "zh-CN"))
-        assertTrue(shouldSynchronizeAndroidSystemAppLanguage("fr-FR", "ko"))
-        assertTrue(shouldSynchronizeAndroidSystemAppLanguage("de-DE", "en"))
+    fun androidAppLocaleOverrideSyncDistinguishesExplicitEnglishFromFollowSystem() {
+        val emptyLocales = LocaleList.getEmptyLocaleList()
+        val englishLocales = LocaleList.forLanguageTags("en-US")
+        val koreanLocales = LocaleList.forLanguageTags("ko-KR")
+        val simplifiedChineseLocales = LocaleList.forLanguageTags("zh-Hans")
+
+        assertNull(androidLanguageTagFromLocaleList(emptyLocales))
+        assertEquals(
+            "ko-KR",
+            androidLanguageTagFromLocaleList(LocaleList.forLanguageTags("ko-KR,en-US")),
+        )
+        assertTrue(shouldSetAndroidAppLocaleOverride(emptyLocales, "en"))
+        assertFalse(shouldClearAndroidAppLocaleOverride(emptyLocales))
+        assertFalse(shouldSetAndroidAppLocaleOverride(englishLocales, "en"))
+        assertFalse(shouldSetAndroidAppLocaleOverride(koreanLocales, "ko"))
+        assertFalse(shouldSetAndroidAppLocaleOverride(simplifiedChineseLocales, "zh-CN"))
+        assertTrue(shouldSetAndroidAppLocaleOverride(LocaleList.forLanguageTags("fr-FR"), "ko"))
+        assertTrue(shouldSetAndroidAppLocaleOverride(LocaleList.forLanguageTags("de-DE"), "en"))
+        assertTrue(
+            shouldSetAndroidAppLocaleOverride(
+                LocaleList.forLanguageTags("en-US,ko-KR"),
+                "en",
+            ),
+        )
+        assertTrue(shouldClearAndroidAppLocaleOverride(englishLocales))
     }
 
     @Test

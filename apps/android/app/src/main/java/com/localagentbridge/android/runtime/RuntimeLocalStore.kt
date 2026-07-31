@@ -39,6 +39,35 @@ internal const val APP_LANGUAGE_SOURCE_DEFAULT = "default"
 internal const val APP_LANGUAGE_SOURCE_SYSTEM = "system"
 internal const val APP_LANGUAGE_SOURCE_IN_APP = "in_app"
 
+internal data class AndroidPlatformAppLanguageSnapshot(
+    val languageTag: String,
+    val languageSource: String,
+)
+
+internal fun resolveAndroidPlatformAppLanguageSnapshot(
+    applicationLocaleLanguageTag: String?,
+    systemLanguageTag: String?,
+): AndroidPlatformAppLanguageSnapshot {
+    val applicationLanguageTag =
+        RuntimeAppLanguage.supportedLanguageTagOrNull(applicationLocaleLanguageTag)
+    if (applicationLanguageTag != null) {
+        return AndroidPlatformAppLanguageSnapshot(
+            languageTag = applicationLanguageTag,
+            languageSource = APP_LANGUAGE_SOURCE_IN_APP,
+        )
+    }
+    val systemLanguageTag =
+        RuntimeAppLanguage.supportedLanguageTagOrNull(systemLanguageTag)
+    return AndroidPlatformAppLanguageSnapshot(
+        languageTag = systemLanguageTag ?: RuntimeAppLanguage.English.languageTag,
+        languageSource = if (systemLanguageTag == null) {
+            APP_LANGUAGE_SOURCE_DEFAULT
+        } else {
+            APP_LANGUAGE_SOURCE_SYSTEM
+        },
+    )
+}
+
 class RuntimeLocalStore internal constructor(
     context: Context,
     private val json: Json,
@@ -910,6 +939,24 @@ internal fun PersistedRuntimeData.withFollowSystemAppLanguageTag(languageTag: St
         } else {
             APP_LANGUAGE_SOURCE_SYSTEM
         },
+    ).sanitized()
+}
+
+internal fun PersistedRuntimeData.withAndroidPlatformAppLanguageSnapshot(
+    applicationLocalesSupported: Boolean,
+    applicationLocaleLanguageTag: String?,
+    systemLanguageTag: String?,
+): PersistedRuntimeData {
+    if (!applicationLocalesSupported) {
+        return withSystemAppLanguageTag(systemLanguageTag)
+    }
+    val snapshot = resolveAndroidPlatformAppLanguageSnapshot(
+        applicationLocaleLanguageTag = applicationLocaleLanguageTag,
+        systemLanguageTag = systemLanguageTag,
+    )
+    return copy(
+        appLanguageTag = snapshot.languageTag,
+        appLanguageSource = snapshot.languageSource,
     ).sanitized()
 }
 

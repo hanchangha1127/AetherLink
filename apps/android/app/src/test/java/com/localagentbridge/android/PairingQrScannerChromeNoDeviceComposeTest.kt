@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -34,6 +35,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
@@ -721,13 +723,15 @@ class PairingQrScannerChromeNoDeviceComposeTest {
 
     @Test
     fun scannerChromeCompactLargeFontBoundsAcrossSupportedLanguages() {
+        val fontScales = listOf(1f, 1.5f, 2f)
         val currentExpectation = mutableStateOf(scannerLocaleExpectations().first())
+        val currentFontScale = mutableStateOf(fontScales.first())
         val scannerState = mutableStateOf(CompactScannerBoundsState.ActiveCamera)
 
         compose.setContent {
             LocalizedScannerContent(
                 languageTag = currentExpectation.value.languageTag,
-                fontScale = 1.45f,
+                fontScale = currentFontScale.value,
             ) {
                 Box(
                     modifier = Modifier
@@ -807,54 +811,66 @@ class PairingQrScannerChromeNoDeviceComposeTest {
             }
         }
 
-        scannerLocaleExpectations().forEach { expected ->
-            currentExpectation.value = expected
+        fontScales.forEach { fontScale ->
+            scannerLocaleExpectations().forEach { expected ->
+                compose.runOnUiThread {
+                    currentFontScale.value = fontScale
+                    currentExpectation.value = expected
+                    scannerState.value = CompactScannerBoundsState.ActiveCamera
+                }
+                compose.waitForIdle()
+                assertActiveScannerCompactBounds(
+                    stateLabel = "$fontScale font scale active camera",
+                    expected = expected,
+                    hasTorch = true,
+                )
 
-            scannerState.value = CompactScannerBoundsState.ActiveCamera
-            compose.waitForIdle()
-            assertActiveScannerCompactBounds(
-                stateLabel = "active camera",
-                expected = expected,
-                hasTorch = true,
-            )
+                compose.runOnUiThread {
+                    scannerState.value = CompactScannerBoundsState.InvalidFeedback
+                }
+                compose.waitForIdle()
+                assertActiveScannerCompactBounds(
+                    stateLabel = "$fontScale font scale invalid QR",
+                    expected = expected,
+                    hasTorch = false,
+                    expectedFeedback = expected.invalidQrFeedback,
+                )
 
-            scannerState.value = CompactScannerBoundsState.InvalidFeedback
-            compose.waitForIdle()
-            assertActiveScannerCompactBounds(
-                stateLabel = "invalid QR",
-                expected = expected,
-                hasTorch = false,
-                expectedFeedback = expected.invalidQrFeedback,
-            )
+                compose.runOnUiThread {
+                    scannerState.value = CompactScannerBoundsState.UnsupportedFeedback
+                }
+                compose.waitForIdle()
+                assertActiveScannerCompactBounds(
+                    stateLabel = "$fontScale font scale unsupported QR",
+                    expected = expected,
+                    hasTorch = false,
+                    expectedFeedback = expected.unsupportedQrFeedback,
+                )
 
-            scannerState.value = CompactScannerBoundsState.UnsupportedFeedback
-            compose.waitForIdle()
-            assertActiveScannerCompactBounds(
-                stateLabel = "unsupported QR",
-                expected = expected,
-                hasTorch = false,
-                expectedFeedback = expected.unsupportedQrFeedback,
-            )
+                compose.runOnUiThread {
+                    scannerState.value = CompactScannerBoundsState.PermissionPrompt
+                }
+                compose.waitForIdle()
+                assertPermissionScannerCompactBounds(
+                    stateLabel = "$fontScale font scale permission prompt",
+                    expected = expected,
+                    title = expected.permissionTitle,
+                    detail = expected.permissionDetail,
+                    action = expected.permissionAction,
+                )
 
-            scannerState.value = CompactScannerBoundsState.PermissionPrompt
-            compose.waitForIdle()
-            assertPermissionScannerCompactBounds(
-                stateLabel = "permission prompt",
-                expected = expected,
-                title = expected.permissionTitle,
-                detail = expected.permissionDetail,
-                action = expected.permissionAction,
-            )
-
-            scannerState.value = CompactScannerBoundsState.SettingsRecovery
-            compose.waitForIdle()
-            assertPermissionScannerCompactBounds(
-                stateLabel = "settings recovery",
-                expected = expected,
-                title = expected.blockedPermissionTitle,
-                detail = expected.blockedPermissionDetail,
-                action = expected.settingsAction,
-            )
+                compose.runOnUiThread {
+                    scannerState.value = CompactScannerBoundsState.SettingsRecovery
+                }
+                compose.waitForIdle()
+                assertPermissionScannerCompactBounds(
+                    stateLabel = "$fontScale font scale settings recovery",
+                    expected = expected,
+                    title = expected.blockedPermissionTitle,
+                    detail = expected.blockedPermissionDetail,
+                    action = expected.settingsAction,
+                )
+            }
         }
     }
 
@@ -868,7 +884,15 @@ class PairingQrScannerChromeNoDeviceComposeTest {
         val localizedContext = remember(baseContext, languageTag, fontScale) {
             baseContext.localizedContext(languageTag, fontScale)
         }
-        CompositionLocalProvider(LocalContext provides localizedContext) {
+        val baseDensity = LocalDensity.current
+        val scaledDensity = remember(baseDensity.density, fontScale) {
+            Density(density = baseDensity.density, fontScale = fontScale)
+        }
+        CompositionLocalProvider(
+            LocalContext provides localizedContext,
+            LocalDensity provides scaledDensity,
+        ) {
+            check(LocalDensity.current.fontScale == fontScale)
             MaterialTheme {
                 content()
             }

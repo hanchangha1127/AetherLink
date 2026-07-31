@@ -28879,6 +28879,125 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun viewModelReconcilesAuthoritativeAndroidAppLanguageSnapshotWithoutDuplicateSaves() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val localStore = FakeRuntimeLocalDataStore(
+                initialData = PersistedRuntimeData().withAppLanguageTag("fr-FR"),
+            )
+            fun createViewModel(): RuntimeClientViewModel {
+                return RuntimeClientViewModel(
+                    application = Application(),
+                    dependencies = RuntimeClientViewModelDependencies(
+                        json = json,
+                        transportClient = RuntimeTransportClient(),
+                        transportConnector = RuntimeTransportConnector { _, _, _ ->
+                            error("Direct TCP should not be used for platform language reconciliation")
+                        },
+                        relayConnector = RuntimeRelayConnector { _, _ ->
+                            error("Relay should not be used for platform language reconciliation")
+                        },
+                        discovery = EmptyRuntimeDiscoverySource,
+                        trustedRuntimeStore = FakeTrustedRuntimeStore(),
+                        deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                        localDataStore = localStore,
+                        lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                        currentTimeMillis = { 1_000L },
+                    ),
+                )
+            }
+
+            val first = createViewModel()
+            advanceUntilIdle()
+            assertEquals(0, localStore.saveCount)
+
+            first.reconcileAndroidPlatformAppLanguageSnapshot(
+                applicationLocalesSupported = true,
+                applicationLocaleLanguageTag = "ko-KR",
+                systemLanguageTag = "ja-JP",
+            )
+            advanceUntilIdle()
+
+            assertEquals(1, localStore.saveCount)
+            assertEquals("ko", first.state.value.selectedLanguageTag)
+            assertEquals(APP_LANGUAGE_SOURCE_IN_APP, first.state.value.selectedLanguageSource)
+            assertEquals("ko", localStore.data.appLanguageTag)
+            assertEquals(APP_LANGUAGE_SOURCE_IN_APP, localStore.data.appLanguageSource)
+
+            first.reconcileAndroidPlatformAppLanguageSnapshot(
+                applicationLocalesSupported = true,
+                applicationLocaleLanguageTag = "ko",
+                systemLanguageTag = "ja",
+            )
+            advanceUntilIdle()
+            assertEquals(1, localStore.saveCount)
+
+            first.setAppLanguageTag("ko-KR")
+            first.setAppLanguageTag("ko")
+            advanceUntilIdle()
+            assertEquals(1, localStore.saveCount)
+
+            first.reconcileAndroidPlatformAppLanguageSnapshot(
+                applicationLocalesSupported = true,
+                applicationLocaleLanguageTag = null,
+                systemLanguageTag = "ja-JP",
+            )
+            advanceUntilIdle()
+
+            assertEquals(2, localStore.saveCount)
+            assertEquals("ja", first.state.value.selectedLanguageTag)
+            assertEquals(APP_LANGUAGE_SOURCE_SYSTEM, first.state.value.selectedLanguageSource)
+            assertEquals("ja", localStore.data.appLanguageTag)
+            assertEquals(APP_LANGUAGE_SOURCE_SYSTEM, localStore.data.appLanguageSource)
+
+            first.reconcileAndroidPlatformAppLanguageSnapshot(
+                applicationLocalesSupported = true,
+                applicationLocaleLanguageTag = null,
+                systemLanguageTag = "ja",
+            )
+            advanceUntilIdle()
+            assertEquals(2, localStore.saveCount)
+
+            first.followSystemAppLanguageTag("ja-JP")
+            first.followSystemAppLanguageTag("ja")
+            advanceUntilIdle()
+            assertEquals(2, localStore.saveCount)
+
+            first.setAppLanguageTag("zh-Hans")
+            advanceUntilIdle()
+            assertEquals(3, localStore.saveCount)
+
+            val recreated = createViewModel()
+            advanceUntilIdle()
+            recreated.reconcileAndroidPlatformAppLanguageSnapshot(
+                applicationLocalesSupported = false,
+                applicationLocaleLanguageTag = null,
+                systemLanguageTag = "ko-KR",
+            )
+            advanceUntilIdle()
+
+            assertEquals(3, localStore.saveCount)
+            assertEquals("zh-CN", recreated.state.value.selectedLanguageTag)
+            assertEquals(APP_LANGUAGE_SOURCE_IN_APP, recreated.state.value.selectedLanguageSource)
+
+            recreated.reconcileAndroidPlatformAppLanguageSnapshot(
+                applicationLocalesSupported = true,
+                applicationLocaleLanguageTag = null,
+                systemLanguageTag = "de-DE",
+            )
+            advanceUntilIdle()
+
+            assertEquals(4, localStore.saveCount)
+            assertEquals("en", recreated.state.value.selectedLanguageTag)
+            assertEquals(APP_LANGUAGE_SOURCE_DEFAULT, recreated.state.value.selectedLanguageSource)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun viewModelPublicSettingsSettersPersistAcrossRecreation() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)

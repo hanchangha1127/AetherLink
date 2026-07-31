@@ -374,6 +374,55 @@ class RuntimeLocalStoreTest {
     }
 
     @Test
+    fun androidPlatformLanguageSnapshotUsesApi33OverrideAndPreservesLegacyExplicitChoice() {
+        val explicitFrench = PersistedRuntimeData().withAppLanguageTag("fr-FR")
+        val api33KoreanOverride = explicitFrench.withAndroidPlatformAppLanguageSnapshot(
+            applicationLocalesSupported = true,
+            applicationLocaleLanguageTag = "ko-KR",
+            systemLanguageTag = "ja-JP",
+        )
+        val api33SimplifiedChineseOverride =
+            explicitFrench.withAndroidPlatformAppLanguageSnapshot(
+                applicationLocalesSupported = true,
+                applicationLocaleLanguageTag = "zh-Hans",
+                systemLanguageTag = "ja-JP",
+            )
+        val api33FollowJapanese = explicitFrench.withAndroidPlatformAppLanguageSnapshot(
+            applicationLocalesSupported = true,
+            applicationLocaleLanguageTag = null,
+            systemLanguageTag = "ja-JP",
+        )
+        val api33UnsupportedSystem = explicitFrench.withAndroidPlatformAppLanguageSnapshot(
+            applicationLocalesSupported = true,
+            applicationLocaleLanguageTag = null,
+            systemLanguageTag = "de-DE",
+        )
+        val api32ExplicitFrench = explicitFrench.withAndroidPlatformAppLanguageSnapshot(
+            applicationLocalesSupported = false,
+            applicationLocaleLanguageTag = null,
+            systemLanguageTag = "ko-KR",
+        )
+        val api32SystemKorean = PersistedRuntimeData().withAndroidPlatformAppLanguageSnapshot(
+            applicationLocalesSupported = false,
+            applicationLocaleLanguageTag = null,
+            systemLanguageTag = "ko-KR",
+        )
+
+        assertEquals("ko", api33KoreanOverride.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_IN_APP, api33KoreanOverride.appLanguageSource)
+        assertEquals("zh-CN", api33SimplifiedChineseOverride.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_IN_APP, api33SimplifiedChineseOverride.appLanguageSource)
+        assertEquals("ja", api33FollowJapanese.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_SYSTEM, api33FollowJapanese.appLanguageSource)
+        assertEquals("en", api33UnsupportedSystem.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_DEFAULT, api33UnsupportedSystem.appLanguageSource)
+        assertEquals("fr", api32ExplicitFrench.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_IN_APP, api32ExplicitFrench.appLanguageSource)
+        assertEquals("ko", api32SystemKorean.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_SYSTEM, api32SystemKorean.appLanguageSource)
+    }
+
+    @Test
     fun composerDraftLimitNeverPersistsHalfOfSurrogatePair() {
         val splitBoundary = "a".repeat(19_999) + "😀" + "tail"
         val exactBoundary = "a".repeat(19_998) + "😀"

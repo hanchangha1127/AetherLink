@@ -224,9 +224,20 @@ SOURCE_REQUIRED_FILES = (
     "script/package_release_artifacts.py",
     "script/check_release_artifact_archive.py",
     "script/run_clean_release_reproducibility.py",
+    "script/run_macos_clean_home_installed_app_smoke.py",
+    "script/run_macos_clean_home_installed_state_recovery_smoke.py",
     "script/run_macos_isolated_uninstall_reinstall_smoke.py",
     "script/test_run_macos_isolated_uninstall_reinstall_smoke.py",
+    "script/run_macos_isolated_upgrade_smoke.py",
     "script/run_macos_local_dmg_install_smoke.py",
+    "script/run_macos_local_dmg_install_smoke_v2.py",
+    "script/run_macos_local_dmg_uninstall_reinstall_smoke.py",
+    (
+        "script/"
+        "run_macos_local_dmg_uninstall_reinstall_state_recovery_smoke.py"
+    ),
+    "script/run_macos_packaged_app_lifecycle_smoke.py",
+    "script/run_macos_packaged_app_state_recovery_smoke.py",
     "script/run_macos_runtime_chat_cross_process_smoke.py",
     "script/test_run_macos_runtime_chat_cross_process_smoke.py",
 )

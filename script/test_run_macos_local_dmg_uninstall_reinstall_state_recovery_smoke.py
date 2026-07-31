@@ -443,6 +443,7 @@ class LocalDMGUninstallReinstallStateRecoverySmokeTests(
         self,
         *,
         failure: str | None = None,
+        publish_result: bool = True,
     ) -> list[str]:
         with tempfile.TemporaryDirectory() as temporary_name:
             root = Path(temporary_name).resolve()
@@ -816,12 +817,19 @@ class LocalDMGUninstallReinstallStateRecoverySmokeTests(
                         smoke.engine.LifecycleSmokeError,
                     )
                 if failure is None:
-                    result = smoke.execute(
-                        archive_dir=archive_dir,
-                        result_path=result_path,
-                        readiness_timeout_seconds=1.0,
-                        observation_seconds=5.0,
-                        termination_timeout_seconds=1.0,
+                    arguments = {
+                        "archive_dir": archive_dir,
+                        "readiness_timeout_seconds": 1.0,
+                        "observation_seconds": 5.0,
+                        "termination_timeout_seconds": 1.0,
+                    }
+                    result = (
+                        smoke.execute(
+                            result_path=result_path,
+                            **arguments,
+                        )
+                        if publish_result
+                        else smoke.exercise(**arguments)
                     )
                     self.assertEqual(result["status"], "passed")
                 else:
@@ -850,6 +858,11 @@ class LocalDMGUninstallReinstallStateRecoverySmokeTests(
             events.index("snapshot-recheck"),
             events.index("root-cleanup"),
         )
+
+    def test_exercise_cleans_root_without_publishing(self) -> None:
+        events = self.exercise(publish_result=False)
+        self.assertEqual(events[-1], "root-cleanup")
+        self.assertNotIn("publish", events)
 
     def test_failures_and_interrupt_block_publication(self) -> None:
         for failure in (

@@ -996,6 +996,507 @@ private func generatePairingQR() {{
                     f"missing nullable key {nullable_key!r} was accepted",
                 )
 
+    def test_current_source_g6_reproducibility_matches_closed_contract(
+        self,
+    ) -> None:
+        self.assertEqual(
+            check_docs_hygiene.current_source_g6_reproducibility_failures(),
+            [],
+        )
+
+    def test_current_source_g6_reproducibility_rejects_semantic_drift(
+        self,
+    ) -> None:
+        def canonical_bytes(result: dict[str, object]) -> bytes:
+            return (
+                json.dumps(
+                    result,
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("ascii")
+
+        source_result = json.loads(
+            check_docs_hygiene
+            .CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT
+            .read_text(encoding="ascii")
+        )
+        source_result["publication"]["attempted"] = True
+        failures = (
+            check_docs_hygiene.current_source_g6_reproducibility_failures(
+                canonical_bytes(source_result)
+            )
+        )
+        self.assertTrue(
+            any("publication.attempted" in failure for failure in failures)
+        )
+
+        source_result = json.loads(
+            check_docs_hygiene
+            .CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT
+            .read_text(encoding="ascii")
+        )
+        source_result["builds"][1]["archive"]["sha256"] = "0" * 64
+        failures = (
+            check_docs_hygiene.current_source_g6_reproducibility_failures(
+                canonical_bytes(source_result)
+            )
+        )
+        self.assertTrue(
+            any(
+                "builds[1].archive.sha256" in failure
+                for failure in failures
+            )
+        )
+        self.assertTrue(
+            any(
+                "archive inventories must match exactly" in failure
+                for failure in failures
+            )
+        )
+
+        source_result = json.loads(
+            check_docs_hygiene
+            .CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT
+            .read_text(encoding="ascii")
+        )
+        source_result["builds"][0]["commandExitCode"] = False
+        failures = (
+            check_docs_hygiene.current_source_g6_reproducibility_failures(
+                canonical_bytes(source_result)
+            )
+        )
+        self.assertTrue(
+            any(
+                "builds[0].commandExitCode" in failure
+                for failure in failures
+            )
+        )
+
+        source_result = json.loads(
+            check_docs_hygiene
+            .CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT
+            .read_text(encoding="ascii")
+        )
+        for build in source_result["builds"]:
+            build["archive"]["members"][0] = []
+            build["archive"]["members"][1]["path"] = "manifest.json"
+        failures = (
+            check_docs_hygiene.current_source_g6_reproducibility_failures(
+                canonical_bytes(source_result)
+            )
+        )
+        self.assertTrue(
+            any(
+                "members must start with manifest.json" in failure
+                for failure in failures
+            )
+        )
+
+    def test_current_source_g6_reproducibility_rejects_live_source_drift(
+        self,
+    ) -> None:
+        with patch.object(
+            check_docs_hygiene.package_release_artifacts,
+            "source_snapshot",
+            return_value={
+                "algorithm": (
+                    "sha256(path-nul-mode-nul-size-nul-sha256-lf)-v1"
+                ),
+                "fileCount": 255,
+                "files": [],
+                "sha256": "0" * 64,
+            },
+        ):
+            failures = (
+                check_docs_hygiene
+                .current_source_g6_reproducibility_failures()
+            )
+        self.assertTrue(
+            any(
+                "live release-input source.fileCount" in failure
+                for failure in failures
+            )
+        )
+        self.assertTrue(
+            any(
+                "live release-input source.sha256" in failure
+                for failure in failures
+            )
+        )
+
+    def test_current_source_g6_reproducibility_rejects_noncanonical_json(
+        self,
+    ) -> None:
+        result = json.loads(
+            check_docs_hygiene
+            .CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT
+            .read_text(encoding="ascii")
+        )
+        pretty = (json.dumps(result, indent=2) + "\n").encode("ascii")
+        failures = (
+            check_docs_hygiene.current_source_g6_reproducibility_failures(
+                pretty
+            )
+        )
+        self.assertTrue(
+            any(
+                "canonical sorted compact ASCII JSON" in failure
+                for failure in failures
+            )
+        )
+
+        failures = (
+            check_docs_hygiene.current_source_g6_reproducibility_failures(
+                b'{"schemaVersion":4,"schemaVersion":4}\n'
+            )
+        )
+        self.assertTrue(
+            any("duplicate JSON key" in failure for failure in failures)
+        )
+
+    def test_current_source_g6_lane_a_local_dmg_matches_closed_contract(
+        self,
+    ) -> None:
+        self.assertEqual(
+            (
+                check_docs_hygiene
+                .current_source_g6_lane_a_local_dmg_evidence_failures()
+            ),
+            [],
+        )
+
+    def test_current_source_g6_lane_a_local_dmg_rejects_drift(
+        self,
+    ) -> None:
+        def canonical_bytes(result: dict[str, object]) -> bytes:
+            return (
+                json.dumps(
+                    result,
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("ascii")
+
+        source_result = json.loads(
+            (
+                check_docs_hygiene
+                .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_RESULT
+                .read_text(encoding="ascii")
+            )
+        )
+        source_result["release"]["archiveSha256"] = "0" * 64
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_local_dmg_evidence_failures(
+                canonical_bytes(source_result)
+            )
+        )
+        self.assertTrue(
+            any("exact closed" in failure for failure in failures)
+        )
+        self.assertTrue(
+            any("release identity must cross-bind" in failure for failure in failures)
+        )
+
+        source_result = json.loads(
+            (
+                check_docs_hygiene
+                .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_RESULT
+                .read_text(encoding="ascii")
+            )
+        )
+        snapshot_files = source_result["archiveReadback"]["snapshotFiles"]
+        snapshot_files[
+            f"{check_docs_hygiene.LOCAL_RELEASE_ID}.zip"
+        ]["size"] = True
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_local_dmg_evidence_failures(
+                canonical_bytes(source_result)
+            )
+        )
+        self.assertTrue(
+            any("exact closed" in failure for failure in failures)
+        )
+        self.assertTrue(
+            any(
+                "snapshot identities must cross-bind" in failure
+                for failure in failures
+            )
+        )
+
+    def test_current_source_g6_lane_a_local_dmg_rejects_shape_and_encoding(
+        self,
+    ) -> None:
+        source_result = json.loads(
+            (
+                check_docs_hygiene
+                .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_RESULT
+                .read_text(encoding="ascii")
+            )
+        )
+        source_result["unexpected"] = True
+        mutated = (
+            json.dumps(
+                source_result,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("ascii")
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_local_dmg_evidence_failures(mutated)
+        )
+        self.assertTrue(
+            any("exact closed" in failure for failure in failures)
+        )
+
+        pretty = (json.dumps(source_result, indent=2) + "\n").encode("ascii")
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_local_dmg_evidence_failures(pretty)
+        )
+        self.assertTrue(
+            any("not canonical JSON" in failure for failure in failures)
+        )
+
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_local_dmg_evidence_failures(
+                b'{"schemaVersion":2,"schemaVersion":2}\n'
+            )
+        )
+        self.assertTrue(
+            any("duplicate JSON key" in failure for failure in failures)
+        )
+
+    def test_current_source_g6_lane_a_local_dmg_rejects_missing_and_symlink(
+        self,
+    ) -> None:
+        actual_result = (
+            check_docs_hygiene.CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_RESULT
+        )
+        with tempfile.TemporaryDirectory(
+            dir=check_docs_hygiene.ROOT / "dist/lifecycle"
+        ) as temporary:
+            temporary_root = Path(temporary)
+            missing_result = temporary_root / "missing.json"
+            with patch.object(
+                check_docs_hygiene,
+                "CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_RESULT",
+                missing_result,
+            ):
+                failures = (
+                    check_docs_hygiene
+                    .current_source_g6_lane_a_local_dmg_evidence_failures()
+                )
+            self.assertTrue(
+                any("missing current-source" in failure for failure in failures)
+            )
+
+            symlink_result = temporary_root / "symlink.json"
+            symlink_result.symlink_to(actual_result)
+            with patch.object(
+                check_docs_hygiene,
+                "CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_RESULT",
+                symlink_result,
+            ):
+                failures = (
+                    check_docs_hygiene
+                    .current_source_g6_lane_a_local_dmg_evidence_failures()
+                )
+            self.assertTrue(
+                any("must not be a symlink" in failure for failure in failures)
+            )
+
+    def test_current_source_g6_primary_rejects_missing_and_symlink(
+        self,
+    ) -> None:
+        actual_result = (
+            check_docs_hygiene.CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT
+        )
+        with tempfile.TemporaryDirectory(
+            dir=check_docs_hygiene.ROOT / "dist/reproducibility"
+        ) as temporary:
+            temporary_root = Path(temporary)
+            missing_result = temporary_root / "missing.json"
+            with patch.object(
+                check_docs_hygiene,
+                "CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT",
+                missing_result,
+            ):
+                failures = (
+                    check_docs_hygiene
+                    .current_source_g6_reproducibility_failures()
+                )
+            self.assertTrue(
+                any("missing current-source G6" in failure for failure in failures)
+            )
+
+            symlink_result = temporary_root / "symlink.json"
+            symlink_result.symlink_to(actual_result)
+            with patch.object(
+                check_docs_hygiene,
+                "CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT",
+                symlink_result,
+            ):
+                failures = (
+                    check_docs_hygiene
+                    .current_source_g6_reproducibility_failures()
+                )
+            self.assertTrue(
+                any("must not be a symlink" in failure for failure in failures)
+            )
+
+    def test_current_source_g6_lane_a_local_dmg_crossbinds_primary_bytes(
+        self,
+    ) -> None:
+        primary_result = json.loads(
+            (
+                check_docs_hygiene
+                .CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT
+                .read_text(encoding="ascii")
+            )
+        )
+        primary_result["builds"][0]["archive"]["sha256"] = "0" * 64
+        primary_bytes = (
+            json.dumps(
+                primary_result,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("ascii")
+        with tempfile.TemporaryDirectory(
+            dir=check_docs_hygiene.ROOT / "dist/reproducibility"
+        ) as temporary:
+            primary_path = Path(temporary) / "mutated-primary.json"
+            primary_path.write_bytes(primary_bytes)
+            with patch.object(
+                check_docs_hygiene,
+                "CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT",
+                primary_path,
+            ):
+                failures = (
+                    check_docs_hygiene
+                    .current_source_g6_lane_a_local_dmg_evidence_failures()
+                )
+        self.assertTrue(
+            any(
+                "release identity must cross-bind" in failure
+                for failure in failures
+            )
+        )
+        self.assertTrue(
+            any(
+                "snapshot identities must cross-bind" in failure
+                for failure in failures
+            )
+        )
+
+    def test_current_source_g6_lane_a_local_dmg_documents_match(
+        self,
+    ) -> None:
+        self.assertEqual(
+            (
+                check_docs_hygiene
+                .current_source_g6_lane_a_local_dmg_document_failures()
+            ),
+            [],
+        )
+
+    def test_current_source_g6_lane_a_local_dmg_documents_reject_mutation(
+        self,
+    ) -> None:
+        document_paths = (
+            check_docs_hygiene.README_PATH,
+            check_docs_hygiene.ROOT / "docs/roadmap.md",
+            check_docs_hygiene.ROOT / "docs/handoff.md",
+            check_docs_hygiene.ROOT / "docs/progress.md",
+            check_docs_hygiene.ROOT / "docs/qa-evidence.md",
+            check_docs_hygiene.LOCAL_RELEASE_CURRENT_DOC,
+        )
+        documents = {
+            str(path.relative_to(check_docs_hygiene.ROOT)): path.read_text(
+                encoding="utf-8"
+            )
+            for path in document_paths
+        }
+        readme = documents["README.md"]
+        documents["README.md"] = readme.replace(
+            "run bound 254 release inputs",
+            "run bound 255 release inputs",
+            1,
+        )
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_local_dmg_document_failures(
+                document_text_by_relative=documents
+            )
+        )
+        self.assertTrue(
+            any(
+                "README.md" in failure
+                and "exact canonical body" in failure
+                for failure in failures
+            )
+        )
+
+    def test_current_source_g6_lane_a_local_dmg_documents_reject_move(
+        self,
+    ) -> None:
+        document_paths = (
+            check_docs_hygiene.README_PATH,
+            check_docs_hygiene.ROOT / "docs/roadmap.md",
+            check_docs_hygiene.ROOT / "docs/handoff.md",
+            check_docs_hygiene.ROOT / "docs/progress.md",
+            check_docs_hygiene.ROOT / "docs/qa-evidence.md",
+            check_docs_hygiene.LOCAL_RELEASE_CURRENT_DOC,
+        )
+        documents = {
+            str(path.relative_to(check_docs_hygiene.ROOT)): path.read_text(
+                encoding="utf-8"
+            )
+            for path in document_paths
+        }
+        readme = documents["README.md"]
+        start = readme.index(
+            check_docs_hygiene
+            .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_DOCUMENT_START
+        )
+        end = readme.index(
+            check_docs_hygiene
+            .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_DOCUMENT_END
+        ) + len(
+            check_docs_hygiene
+            .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_DOCUMENT_END
+        )
+        block = readme[start:end]
+        documents["README.md"] = (
+            readme[:start] + readme[end:] + "\n\n" + block + "\n"
+        )
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_local_dmg_document_failures(
+                document_text_by_relative=documents
+            )
+        )
+        self.assertTrue(
+            any(
+                "README.md" in failure
+                and "canonical document location" in failure
+                for failure in failures
+            )
+        )
+
     def test_current_publish_result_semantic_fields_reject_drift(self) -> None:
         source_result = json.loads(
             check_docs_hygiene.LOCAL_RELEASE_REPRODUCIBILITY_RESULT.read_text(

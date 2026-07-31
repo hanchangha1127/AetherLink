@@ -5491,34 +5491,37 @@ run ./gradlew --offline --no-daemon \
 	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest \
   -Pkotlin.incremental=false
 
+run python3 -B script/check_product_ci.py --prepare-android-full-test-run
 run ./gradlew --offline --no-daemon \
+	  --rerun-tasks \
 	  :app:compileDebugKotlin \
 		  :app:testDebugUnitTest \
 		  --tests com.localagentbridge.android.AppNavigationTest \
+		  --tests com.localagentbridge.android.AndroidAppLanguagePlatformLifecycleTest \
 		  --tests com.localagentbridge.android.ResearchNotebookDrawerTest \
 		  --tests com.localagentbridge.android.PairingQrScanResultTest \
 				  --tests com.localagentbridge.android.AetherLinkThemeNoDeviceComposeTest \
+			  --tests com.localagentbridge.android.ui.AndroidCoreSurfaceFontScaleQualificationTest \
 			  --tests com.localagentbridge.android.PairingQrScannerChromeNoDeviceComposeTest \
 			  --tests com.localagentbridge.android.PairingQrCameraPermissionControllerHostApiMatrixTest \
 			  --tests com.localagentbridge.android.PairingQrCameraPermissionActivityRecreationTest \
 				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest \
   --tests com.localagentbridge.android.AndroidBackupPolicyResourceTest \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.compactRelayQrPairingUsesRealRelayTcpClientAndPersistsTrustedRelay \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.privateOverlayRelayQrPairingUsesRealRelayTcpClientAndPersistsOverlayRoute \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.trustedPrivateOverlayRelayReconnectUsesRealRelayTcpClientAndAuthenticatedSession \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.trustedRelayReconnectRejectsInvalidRuntimeProofBeforeAuthResponse \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.trustedRelayReconnectRejectsRuntimeFingerprintMismatchBeforeAuthResponse \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelProductionDeadlineTest.productionFactoryEnablesHostAlignedMemorySummaryDeadlines \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelProductionDeadlineTest \
 	  --tests com.localagentbridge.android.runtime.AndroidProductionRuntimeChannelComposerTest \
 	  --tests com.localagentbridge.android.runtime.AndroidProductionRuntimeActivationControllerTest \
 	  --tests com.localagentbridge.android.runtime.RuntimeLocalStoreTest \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest \
   --tests com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest \
-  --tests com.localagentbridge.android.runtime.RuntimeAttachmentPromptResourceTest.attachmentOnlyPromptHeaderUsesLocalizedAndroidResources \
+	  --tests com.localagentbridge.android.runtime.RuntimeAttachmentPromptResourceTest \
   -Pkotlin.incremental=false
 
+run python3 -B script/check_product_ci.py --write-android-full-test-binding
+run python3 -B script/check_product_ci.py --android-full-test-results
 run python3 -B script/check_product_ci.py --android-camera-lifecycle-results
 run python3 -B script/check_product_ci.py --android-camera-controller-host-results
+run python3 -B script/check_product_ci.py --android-font-scale-results
 
 run check_android_authenticated_read_authority_junit
 run check_android_authenticated_read_rollover_authority_junit
@@ -6926,6 +6929,7 @@ echo "Covered Android share addendum: Android share-sheet import confirmation, A
 echo "Covered Android archive snackbar addendum: Android chat archive undo compact snackbar layout."
 echo "Covered Android top-bar addendum: Android chat top-bar New Chat compact layout."
 echo "Covered Android scanner addendum: Android QR scanner compact pairing-state render smoke, Android QR scanner compact large-font bounds, Android QR scanner scan-target accessibility label, Android QR scanner invalid-code recovery, Android QR camera permission API 26/30/33/36 controller-host denial/regrant/revocation resume lifecycle, Activity recreation, and same-JVM cold launch without duplicate launch."
+echo "Covered Android font-scale qualification addendum: exact 100%, 150%, and 200% Robolectric results across scanner, drawer, chat, Settings pairing, Memory, and chat history; five-locale smoke plus full English/Korean state coverage; 48dp scanner actions; no physical-device or OEM typography claim."
 echo "Covered Android diagnostics addendum: Android diagnostic QR text open action labels and Android diagnostic QR text compact dialog layout."
 echo "Covered Android provider diagnostics addendum: Android provider diagnostics detail compact redaction."
 echo "Covered app icon addendum: Android adaptive/monochrome asset-chain validation plus macOS Dock no-device small-size readability."

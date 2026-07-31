@@ -114,6 +114,11 @@ jobs:
           --tests com.localagentbridge.android.AetherLinkThemeNoDeviceComposeTest
           --tests com.localagentbridge.android.ResearchNotebookDrawerTest
           --tests com.localagentbridge.android.runtime.RuntimeAttachmentPromptResourceTest
+          --tests com.localagentbridge.android.AppNavigationTest.androidAppLocaleOverrideSyncDistinguishesExplicitEnglishFromFollowSystem
+          --tests com.localagentbridge.android.runtime.RuntimeLocalStoreTest.androidPlatformLanguageSnapshotUsesApi33OverrideAndPreservesLegacyExplicitChoice
+          --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.viewModelReconcilesAuthoritativeAndroidAppLanguageSnapshotWithoutDuplicateSaves
+          --tests com.localagentbridge.android.AndroidAppLanguagePlatformLifecycleTest
+          --tests com.localagentbridge.android.ui.AndroidCoreSurfaceFontScaleQualificationTest
           --tests com.localagentbridge.android.PairingQrScannerChromeNoDeviceComposeTest
           --tests com.localagentbridge.android.PairingQrCameraPermissionControllerHostApiMatrixTest
           --tests com.localagentbridge.android.PairingQrCameraPermissionActivityRecreationTest

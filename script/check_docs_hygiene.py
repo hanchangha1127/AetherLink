@@ -16,12 +16,14 @@ if __package__:
         check_macos_build24_idle_resource_stability_evidence
         as idle_resource_evidence,
     )
+    from script import package_release_artifacts
     from script.check_release_version_ledger import (
         LedgerError,
         parse_release_version_ledger,
     )
 else:
     import check_macos_build24_idle_resource_stability_evidence as idle_resource_evidence
+    import package_release_artifacts
     from check_release_version_ledger import (
         LedgerError,
         parse_release_version_ledger,
@@ -92,6 +94,97 @@ LOCAL_RELEASE_REPRODUCIBILITY_PREPUBLICATION_RESULT = (
     / "dist/reproducibility/"
     f"{LOCAL_RELEASE_ID}-two-root-v4-prepublication.json"
 )
+CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT = (
+    ROOT
+    / "dist/reproducibility/"
+    / (
+        f"{LOCAL_RELEASE_ID}-two-root-v4-prepublication-current-source-"
+        "g6-lane-a-dmg.json"
+    )
+)
+CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT_SIZE = 19_645
+CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT_SHA256 = (
+    "427824807c66ae2e121af43f155dc0172e307ea9704823d6e556400a2eb02c3a"
+)
+CURRENT_SOURCE_G6_SOURCE_FILE_COUNT = 254
+CURRENT_SOURCE_G6_SOURCE_SHA256 = (
+    "e2db0c96a079cceed3c6b8913d633783c8d4bf2062038694be493fac88f56923"
+)
+CURRENT_SOURCE_G6_OVERLAY_SHA256 = (
+    "0eeaa1ffcc08cbf2e7bb2e2854d8892f360f989e438aa4f25818eeff15cc680e"
+)
+CURRENT_SOURCE_G6_REPRODUCIBLE_ARCHIVE_SIZE = 167_061_116
+CURRENT_SOURCE_G6_REPRODUCIBLE_ARCHIVE_SHA256 = (
+    "3300f967ba14e4703640f7b00c600f16e9a101911db60200857887f1a8db7ada"
+)
+CURRENT_SOURCE_G6_REPRODUCIBLE_MANIFEST_SHA256 = (
+    "ea3250caf41c4cd649482264ca42a2ea91380fe0bc4fe4f17db6b73d09f1c1e6"
+)
+CURRENT_SOURCE_G6_REPRODUCIBLE_CHECKSUM_SHA256 = (
+    "03070799c23b4ba16fddb43b56579c3a7ba695e9530bd5750c06e0c479fcd461"
+)
+CURRENT_SOURCE_G6_PROTECTED_ARCHIVE_IDENTITY_SHA256 = (
+    "df16cc1c38a414fa0c8e09eb3954645c34ba42aba21060ca6ad5710e4b47a4f6"
+)
+CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_RESULT = (
+    ROOT
+    / "dist/lifecycle/"
+    / (
+        f"macos-{LOCAL_RELEASE_ID}-two-root-lane-a-local-dmg-install-v2-"
+        "current-source-g6.json"
+    )
+)
+CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_RESULT_SIZE = 3_038
+CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_RESULT_SHA256 = (
+    "d5250ccd5b84de4517e6ce79234343cca6670b604cae23503ef8de61cb347fe7"
+)
+CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_DOCUMENT_START = (
+    "<!-- aetherlink-current-source-g6-lane-a-dmg-v1:start -->"
+)
+CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_DOCUMENT_END = (
+    "<!-- aetherlink-current-source-g6-lane-a-dmg-v1:end -->"
+)
+CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_DOCUMENT_BODY = """\
+**Latest current-source G6 exact Lane-A DMG handoff.** The comparison-only
+run bound 254 release inputs at source SHA-256
+`e2db0c96a079cceed3c6b8913d633783c8d4bf2062038694be493fac88f56923`
+and execution overlay SHA-256
+`0eeaa1ffcc08cbf2e7bb2e2854d8892f360f989e438aa4f25818eeff15cc680e`.
+Its unequal 101- and 109-byte source roots produced the exact same
+167,061,116-byte archive at SHA-256
+`3300f967ba14e4703640f7b00c600f16e9a101911db60200857887f1a8db7ada`,
+with a 15,200-byte manifest at
+`ea3250caf41c4cd649482264ca42a2ea91380fe0bc4fe4f17db6b73d09f1c1e6`
+and a 99-byte checksum sidecar at
+`03070799c23b4ba16fddb43b56579c3a7ba695e9530bd5750c06e0c479fcd461`.
+All archive/member equality flags are true and both difference lists are
+empty. The exact 19,645-byte primary result is
+`dist/reproducibility/aetherlink-1.0.0+24-local-v1-two-root-v4-prepublication-current-source-g6-lane-a-dmg.json`,
+SHA-256
+`427824807c66ae2e121af43f155dc0172e307ea9704823d6e556400a2eb02c3a`.
+
+Only after exact A/B equality, the runner handed the materialized Lane-A
+archive to the v2 local-DMG exercise. The exact 3,038-byte lifecycle result is
+`dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-local-dmg-install-v2-current-source-g6.json`,
+SHA-256
+`d5250ccd5b84de4517e6ce79234343cca6670b604cae23503ef8de61cb347fe7`.
+It records one ephemeral HFS+ UDZO image, a read-only mount detached before
+launch, two distinct LaunchServices processes, three SQLite integrity checks,
+stable empty Runtime chat and state, and the exact ten-file installed app tree
+of 21,356,326 bytes at SHA-256
+`0dd6363420e79b90ffac38fdf9410cc109122800f071ca9e1e66bf579ea21145`.
+
+The lifecycle field `archiveReadback.currentSourceCompared=false` means that
+the lifecycle runner performed archive-only validation; the documentation
+guard dynamically cross-binds its ZIP, manifest, and checksum identities to
+the parent current-source Lane-A result. No lane archive was retained or
+published, comparison-only publication stayed disabled, and the protected
+Build 23 archive stayed unchanged. This proves only one same-host, per-user,
+local ad-hoc exact handoff. It does not prove arbitrary cross-host or
+clean-machine reproducibility, Finder/quarantine/Gatekeeper behavior,
+signed/notarized distribution, N/N-1 upgrade or rollback, physical-device,
+provider, network, UI/accessibility, security, deployment, or production
+qualification."""
 MACOS_CLEAN_HOME_INSTALLED_APP_RESULT = (
     ROOT
     / "dist/lifecycle/"
@@ -719,10 +812,10 @@ CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SHA256 = (
     "7d4c6ae7d892bc9d639cc8dfbe5dfb02e09ff7019ee8554f652556ba7b1bb964"
 )
 CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RUNNER_SHA256 = (
-    "515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374"
+    "2ac25660c13f7a256fb2671a735255523cb8ec1c398128a53b2c46535af31b50"
 )
 CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_TEST_SHA256 = (
-    "6aa2e9e2354aa36f97ff096787ac05115c95114fcf95869463b47f39dea5006c"
+    "8b3cd5852c89735f2454cf4ae13d29024901dbbc7d915d37b4b3a58932558c91"
 )
 CURRENT_BUILD24_MACOS_LOCAL_DMG_LIFECYCLE_DOCUMENT_START = (
     "<!-- aetherlink-current-build24-local-dmg-lifecycle-v2:start -->"
@@ -746,10 +839,10 @@ mode stayed stable. The canonical 3,038-byte result is at
 `dist/lifecycle/macos-packaged-app-build-24-local-dmg-install-v2.json`,
 SHA-256
 `7d4c6ae7d892bc9d639cc8dfbe5dfb02e09ff7019ee8554f652556ba7b1bb964`.
-The v2 runner and nine-test module SHA-256 values are
-`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`
+The v2 runner and ten-test module SHA-256 values are
+`2ac25660c13f7a256fb2671a735255523cb8ec1c398128a53b2c46535af31b50`
 and
-`6aa2e9e2354aa36f97ff096787ac05115c95114fcf95869463b47f39dea5006c`.
+`8b3cd5852c89735f2454cf4ae13d29024901dbbc7d915d37b4b3a58932558c91`.
 Its preserved DMG primitive runner and shared snapshot-helper runner SHA-256
 values are
 `e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`
@@ -810,7 +903,7 @@ and
 `6e782fc128aad75b20f1b04752e4754ccbf8ceaadc9e2fcabe9cc2e537bfb703`.
 The reused snapshot-bound DMG, preserved DMG primitive, exact-uninstall, and
 snapshot-helper runner SHA-256 values are, respectively,
-`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`,
+`2ac25660c13f7a256fb2671a735255523cb8ec1c398128a53b2c46535af31b50`,
 `e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`,
 `36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa`,
 and
@@ -873,7 +966,7 @@ SHA-256 values are, respectively,
 `300740d31a5b73755f6976f8fe6ce9c0f498cf274ed72d23d5d6c372104eb5ae`,
 `9d05896a5dcce7e3d7642b41acba2ee4bf6d28ffda85bc8f3b2b645f2a3b273a`,
 `4f3094182ba3b87eb2bb89230df59a14ee10e1db15def87074e66c9ed68d2eca`,
-`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`,
+`2ac25660c13f7a256fb2671a735255523cb8ec1c398128a53b2c46535af31b50`,
 `e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`,
 `36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa`,
 and
@@ -959,7 +1052,7 @@ and snapshot-helper runner SHA-256 values are, respectively,
 `300740d31a5b73755f6976f8fe6ce9c0f498cf274ed72d23d5d6c372104eb5ae`,
 `9d05896a5dcce7e3d7642b41acba2ee4bf6d28ffda85bc8f3b2b645f2a3b273a`,
 `4f3094182ba3b87eb2bb89230df59a14ee10e1db15def87074e66c9ed68d2eca`,
-`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`,
+`2ac25660c13f7a256fb2671a735255523cb8ec1c398128a53b2c46535af31b50`,
 `e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`,
 `36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa`,
 and
@@ -1138,27 +1231,27 @@ CURRENT_BUILD24_MACOS_LIFECYCLE_CHAIN_PREDECESSOR_BY_DOCUMENT = {
 CURRENT_BUILD24_MACOS_LIFECYCLE_CHAIN_OUTER_SHA256_BY_DOCUMENT = {
     "README.md": (
         "e5733ca610e8d453d008c024a28e9f7f914ab17831bcefca8bd741ff0ab744ab",
-        "d997af5dd698a08538ebc1b6839703680a5234e5e6ba42e737962db8d203e5d0",
+        "5bb94e6658e4451f658fc77d8109b53a0631efb3723e9f86ac69e0fbcdc44652",
     ),
     "docs/roadmap.md": (
-        "0922052ceb820e2ef963e508655dae2012dd1c0b121e42697477fa555f02a582",
-        "3f0d88217116fc1cb1d70defe2005200b13e99aaf0968dbd70542200583f8ce3",
+        "d8436604d4e2cbffc0960d1fc00c07141f40ee457171a13c765d1a5cd510a210",
+        "eca46ddca14997316a81f7a5795f9ec7612753e06e969028023eae4dd622bdd6",
     ),
     "docs/handoff.md": (
-        "97e1bd231e0ee60b8f2a0761ec772ae64fe7882deffdafd7de106ad544ccdda9",
+        "99527220010cb63459b0326b90120fa4c61d882938ffcfbe0e0649e4a0ac24af",
         "45757b5ef397dd7976196ae5b267eee53544fa4b8546464073830acb39d7f858",
     ),
     "docs/progress.md": (
-        "f36d8e351c178cbe07030bd79b5b2e7d51abbfeb8af6af59c3279e510e423284",
+        "29463b467da6b182c3b7d2f773f9e30e421b2fa6d796bd3784f2872263b5e8b5",
         "c2e5ed1ec4d2af10ac3f3f87baeb3b9b29cc35393c1628cc63e147718d1589eb",
     ),
     "docs/qa-evidence.md": (
-        "d3e9ea33f37f6db203ebe0c7d6174e5ae19868d4a07174f386ccd262bcd6a91d",
+        "35a55b9ed3f8ac83fc3bed33a0bc53f78250ad3f51bed075b617845019579a28",
         "5c92341f48705b39fcd93e03390edba375eb6455bae3a4eb55807f2c6d3c4eff",
     ),
     "docs/releases/1.0.0-build-24-local-v1.md": (
         "d03318d6bcbc764c50f4b75c4b0b8dcf475e8697d80d21a3831144d43db437a6",
-        "a886a4f9a5254853023cf68e418c959557180d8c115645161c94a0164263190f",
+        "bddf602b3a0cad343f7372f4221cdde652b49b535972770edb1f4a661cce1079",
     ),
 }
 CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SIZE = 2_434
@@ -1296,23 +1389,23 @@ CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_BODY_SHA256_BY_DOCUMENT = {
 }
 CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_OUTER_SHA256_BY_DOCUMENT = {
     "README.md": (
-        "65c8c328a557d796dafb79f2be2202a774e1467bba144c3d5a4d61ecd74ce55c",
-        "98ac8839d90840a34a9104dccb8ca1803820cc30677b12ee7b5766180cc54983",
+        "a56492d29f136ba626c017c3ccd972c5a23580583eb183f211eb378a97c22e3c",
+        "5c6f61531b39edc4103b8dd33487b8392be71eceb6a0aa4ac9d1544af09ef227",
     ),
     "docs/roadmap.md": (
-        "08751b0f26e3a7a7fc9dddab080a64d92019f8f99430718cca5a6966b0980502",
+        "0af81482767b289178cd3e5e36c37893665748030df8b070e899eac6b25df255",
         "85b00bd0c136d4a8e5d0135d21668cb009c618362a6995266618335e12fe5667",
     ),
     "docs/handoff.md": (
-        "64cbfbc8aa87386bee2dd2867387fed9ddb755ba9f496a171f6d14ee72cb0a8c",
+        "a0c79c0977fc82305cff2b61796c82ae85b8f2ba490d28a55996b759c7a54d3a",
         "fcd0f93e8d91ade7dc84df0a0cf1ba3d5dfc0d2ff485645b94211dbafd4a63bf",
     ),
     "docs/progress.md": (
-        "fb82b34e0ef59b306b96fbb459374d317f3302a212893a801e2d8508b6158b98",
+        "c03e22e19d649a8c91029b734b7cfbc1bb1b252c03df81c4be1f350166acffb3",
         "75ff47867bb3a85000e23e723f8b9c20e8caf252de95bb19a91732fca40863a6",
     ),
     "docs/qa-evidence.md": (
-        "f5b48d629575ae3d029226842524ba01c14ff2ce386579e2069b29f867c1d2ac",
+        "3fdec1162e90566bcfc7b6576311a701cc418aa6b8cf913257fb79d273b1b656",
         "89cbf66a09001c07387613ebe728ed79d2ebbe66b943beec8bde498e08aedf85",
     ),
     "docs/releases/1.0.0-build-20-local-v1.md": (
@@ -1321,7 +1414,7 @@ CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_OUTER_SHA256_BY_DOCUMENT = {
     ),
     "docs/releases/1.0.0-build-24-local-v1.md": (
         "c135f0bc9d3963b550db6328407abf4af85e619aa01fb50bc10333da63be72c2",
-        "1b674a95ced1f59ab11959d1148480f5b7a41361b3965024c522affe01b463e4",
+        "fe753aa2cfa81b9205d1ef0c7a62cf6727d8836893852925f21bd6b98cc1db7f",
     ),
 }
 CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_NEIGHBORS = {
@@ -2193,6 +2286,47 @@ CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT = {
         "stableAcrossRelaunch": True,
     },
     "status": "passed",
+}
+CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_EXPECTED_RESULT = {
+    **CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT,
+    "archiveReadback": {
+        **CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT[
+            "archiveReadback"
+        ],
+        "snapshotFiles": {
+            f"{LOCAL_RELEASE_ID}.manifest.json": {
+                "sha256": CURRENT_SOURCE_G6_REPRODUCIBLE_MANIFEST_SHA256,
+                "size": 15_200,
+            },
+            f"{LOCAL_RELEASE_ID}.zip": {
+                "sha256": CURRENT_SOURCE_G6_REPRODUCIBLE_ARCHIVE_SHA256,
+                "size": CURRENT_SOURCE_G6_REPRODUCIBLE_ARCHIVE_SIZE,
+            },
+            f"{LOCAL_RELEASE_ID}.zip.sha256": {
+                "sha256": CURRENT_SOURCE_G6_REPRODUCIBLE_CHECKSUM_SHA256,
+                "size": 99,
+            },
+        },
+    },
+    "installation": {
+        **CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT[
+            "installation"
+        ],
+        "tree": {
+            **CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT[
+                "installation"
+            ]["tree"],
+            "sha256": (
+                "0dd6363420e79b90ffac38fdf9410cc109122800f071ca9e1e66bf579ea21145"
+            ),
+            "totalRegularFileBytes": 21_356_326,
+        },
+    },
+    "release": {
+        "archiveSha256": CURRENT_SOURCE_G6_REPRODUCIBLE_ARCHIVE_SHA256,
+        "manifestSha256": CURRENT_SOURCE_G6_REPRODUCIBLE_MANIFEST_SHA256,
+        "releaseId": LOCAL_RELEASE_ID,
+    },
 }
 CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_EXPECTED_RESULT = {
     "archiveReadback": (
@@ -7158,6 +7292,591 @@ def current_release_reproducibility_prepublication_failures(
     return failures
 
 
+def current_source_g6_reproducibility_failures(
+    result_bytes: bytes | None = None,
+) -> list[str]:
+    relative = str(
+        CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT.relative_to(ROOT)
+    )
+    validate_live_source = result_bytes is None
+    if result_bytes is None:
+        if CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT.is_symlink():
+            return [
+                f"{relative}: current-source G6 result must not be a symlink."
+            ]
+        if not CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT.is_file():
+            return [
+                f"{relative}: missing current-source G6 reproducibility "
+                "result."
+            ]
+        try:
+            result_bytes = CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT.read_bytes()
+        except OSError as error:
+            return [
+                f"{relative}: unreadable current-source G6 reproducibility "
+                f"result: {error}"
+            ]
+
+    failures: list[str] = []
+    identity = (len(result_bytes), hashlib.sha256(result_bytes).hexdigest())
+    expected_identity = (
+        CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT_SIZE,
+        CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT_SHA256,
+    )
+    if identity != expected_identity:
+        failures.append(
+            f"{relative}: expected identity {expected_identity!r}, "
+            f"found {identity!r}."
+        )
+
+    try:
+        result = json.loads(
+            result_bytes.decode("ascii"),
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+    except (
+        UnicodeError,
+        json.JSONDecodeError,
+        DuplicateJSONKeyError,
+    ) as error:
+        failures.append(
+            f"{relative}: invalid current-source G6 JSON: {error}"
+        )
+        return failures
+    if not isinstance(result, dict):
+        failures.append(
+            f"{relative}: current-source G6 root must be an object."
+        )
+        return failures
+
+    canonical_bytes = (
+        json.dumps(
+            result,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode("ascii")
+    if result_bytes != canonical_bytes:
+        failures.append(
+            f"{relative}: result must be canonical sorted compact ASCII JSON "
+            "with one trailing LF."
+        )
+
+    def require_keys(
+        value: object,
+        path: str,
+        expected: set[str],
+    ) -> None:
+        if not isinstance(value, dict):
+            failures.append(f"{relative}: {path} must be an object.")
+            return
+        actual = set(value)
+        if actual != expected:
+            failures.append(
+                f"{relative}: {path} keys must be exactly "
+                f"{sorted(expected)!r}, found {sorted(actual)!r}."
+            )
+
+    root_keys = {
+        "builds",
+        "comparison",
+        "executionMode",
+        "failure",
+        "gradleCache",
+        "prepublicationBinding",
+        "protectedArchive",
+        "publication",
+        "releaseId",
+        "schemaVersion",
+        "scratch",
+        "source",
+        "status",
+        "toolchainPolicy",
+    }
+    require_keys(result, "root", root_keys)
+
+    missing = object()
+
+    def read_path(path: tuple[str, ...]) -> object:
+        value: object = result
+        for key in path:
+            if not isinstance(value, dict) or key not in value:
+                return missing
+            value = value[key]
+        return value
+
+    expectations = (
+        (("schemaVersion",), 4),
+        (("executionMode",), "comparison-only"),
+        (("releaseId",), LOCAL_RELEASE_ID),
+        (("status",), "passed"),
+        (("failure",), None),
+        (("prepublicationBinding",), None),
+        (
+            ("source", "algorithm"),
+            "sha256(path-nul-mode-nul-size-nul-sha256-lf)-v1",
+        ),
+        (("source", "fileCount"), CURRENT_SOURCE_G6_SOURCE_FILE_COUNT),
+        (
+            ("source", "overlaySha256"),
+            CURRENT_SOURCE_G6_OVERLAY_SHA256,
+        ),
+        (("source", "sha256"), CURRENT_SOURCE_G6_SOURCE_SHA256),
+        (
+            ("scratch", "fixedSwiftPath"),
+            "/private/tmp/aetherlink-g6-swift-scratch-v1",
+        ),
+        (
+            ("scratch", "policy"),
+            "fixed-owned-flocked-fresh-per-lane-v1",
+        ),
+        (
+            ("scratch", "sourceRoots", "policy"),
+            "distinct-unequal-utf8-byte-length-v1",
+        ),
+        (
+            ("scratch", "sourceRoots", "sourceRootByteLengths"),
+            {"build-a": 101, "build-b": 109},
+        ),
+        (
+            ("scratch", "sourceRoots", "sourceRootLengthsDiffer"),
+            True,
+        ),
+        (
+            ("gradleCache", "policy"),
+            "paired-clones-from-one-stable-seed-v1",
+        ),
+        (("gradleCache", "pairInitiallyEqual"), True),
+        (
+            ("toolchainPolicy", "scope"),
+            "same-host-fixed-toolchain-cache-snapshot",
+        ),
+        (("comparison", "archiveBytesEqual"), True),
+        (("comparison", "memberBytesEqual"), True),
+        (("comparison", "memberMetadataEqual"), True),
+        (("comparison", "memberSetEqual"), True),
+        (("comparison", "differences"), []),
+        (("comparison", "memberDifferences"), []),
+        (
+            ("comparison", "normalizations"),
+            [
+                (
+                    "android/mapping/configuration.txt:"
+                    "declared-extracted-file-root-markers"
+                ),
+                (
+                    "android/mapping/mapping.prt:"
+                    "sorted-members-fixed-metadata-deflate-9"
+                ),
+                (
+                    "android/mapping/resources.txt:"
+                    "semantic-reachability-sorted-unique-lines"
+                ),
+                (
+                    "android/mapping/seeds.txt:"
+                    "bytewise-sorted-unique-lines"
+                ),
+            ],
+        ),
+        (("publication", "attempted"), False),
+        (("publication", "independentReadback"), False),
+        (
+            ("publication", "outcome"),
+            "disabled-comparison-only",
+        ),
+        (
+            ("publication", "policy"),
+            "comparison-only-no-publication",
+        ),
+        (("publication", "qualifiedArchivePublished"), False),
+        (
+            ("protectedArchive", "policy"),
+            "previous-ledger-entry-archive-v1",
+        ),
+        (
+            ("protectedArchive", "relativePath"),
+            LOCAL_RELEASE_EXPECTED_PROTECTED_ARCHIVE_RELATIVE,
+        ),
+        (
+            ("protectedArchive", "beforeIdentitySha256"),
+            CURRENT_SOURCE_G6_PROTECTED_ARCHIVE_IDENTITY_SHA256,
+        ),
+        (
+            ("protectedArchive", "afterIdentitySha256"),
+            CURRENT_SOURCE_G6_PROTECTED_ARCHIVE_IDENTITY_SHA256,
+        ),
+        (("protectedArchive", "unchanged"), True),
+    )
+    for path, expected in expectations:
+        actual = read_path(path)
+        if not exact_json_values_equal(actual, expected):
+            failures.append(
+                f"{relative}: expected {'.'.join(path)}={expected!r}, "
+                f"found {actual!r}."
+            )
+
+    require_keys(
+        result.get("source"),
+        "source",
+        {"algorithm", "fileCount", "overlaySha256", "sha256"},
+    )
+    if validate_live_source:
+        try:
+            live_source = package_release_artifacts.source_snapshot(ROOT)
+        except (OSError, UnicodeError, ValueError) as error:
+            failures.append(
+                f"{relative}: cannot calculate the live release-input "
+                f"snapshot: {error}"
+            )
+        else:
+            for key in ("algorithm", "fileCount", "sha256"):
+                recorded = read_path(("source", key))
+                live = live_source.get(key, missing)
+                if not exact_json_values_equal(live, recorded):
+                    failures.append(
+                        f"{relative}: live release-input source.{key} must "
+                        f"match the recorded result; found live {live!r} and "
+                        f"recorded {recorded!r}."
+                    )
+    require_keys(
+        result.get("scratch"),
+        "scratch",
+        {"fixedSwiftPath", "policy", "sourceRoots"},
+    )
+    source_roots = read_path(("scratch", "sourceRoots"))
+    require_keys(
+        source_roots,
+        "scratch.sourceRoots",
+        {"policy", "sourceRootByteLengths", "sourceRootLengthsDiffer"},
+    )
+    require_keys(
+        result.get("gradleCache"),
+        "gradleCache",
+        {
+            "fileCount",
+            "pairInitiallyEqual",
+            "policy",
+            "seedSnapshotSha256",
+        },
+    )
+    require_keys(
+        result.get("toolchainPolicy"),
+        "toolchainPolicy",
+        {"scope", "swiftArguments"},
+    )
+    require_keys(
+        result.get("comparison"),
+        "comparison",
+        {
+            "archiveBytesEqual",
+            "differences",
+            "memberBytesEqual",
+            "memberDifferences",
+            "memberMetadataEqual",
+            "memberSetEqual",
+            "normalizations",
+        },
+    )
+    require_keys(
+        result.get("publication"),
+        "publication",
+        {
+            "attempted",
+            "independentReadback",
+            "outcome",
+            "policy",
+            "qualifiedArchivePublished",
+        },
+    )
+    require_keys(
+        result.get("protectedArchive"),
+        "protectedArchive",
+        {
+            "afterIdentitySha256",
+            "beforeIdentitySha256",
+            "policy",
+            "relativePath",
+            "unchanged",
+        },
+    )
+
+    gradle_file_count = read_path(("gradleCache", "fileCount"))
+    if type(gradle_file_count) is not int or gradle_file_count <= 0:
+        failures.append(
+            f"{relative}: gradleCache.fileCount must be an exact positive "
+            f"integer, found {gradle_file_count!r}."
+        )
+    gradle_seed = read_path(("gradleCache", "seedSnapshotSha256"))
+    if (
+        not isinstance(gradle_seed, str)
+        or re.fullmatch(r"[0-9a-f]{64}", gradle_seed) is None
+    ):
+        failures.append(
+            f"{relative}: gradleCache.seedSnapshotSha256 must be a lowercase "
+            "SHA-256."
+        )
+
+    expected_swift_arguments = [
+        "--jobs",
+        "1",
+        "--scratch-path",
+        "/private/tmp/aetherlink-g6-swift-scratch-v1",
+        "-Xswiftc",
+        "-num-threads",
+        "-Xswiftc",
+        "1",
+        "-Xswiftc",
+        "-file-prefix-map",
+        "-Xswiftc",
+        "<PHYSICAL_SOURCE_ROOT>=/aetherlink/source",
+        "-Xswiftc",
+        "-file-compilation-dir",
+        "-Xswiftc",
+        "/aetherlink/source",
+        "-Xswiftc",
+        "-prefix-serialized-debugging-options",
+        "-Xcc",
+        "-working-directory",
+        "-Xcc",
+        "/private/tmp/aetherlink-g6-swift-scratch-v1",
+        "-Xcc",
+        "-Xclang",
+        "-Xcc",
+        "-fdebug-compilation-dir=/aetherlink/source",
+        "-Xcc",
+        "-Xclang",
+        "-Xcc",
+        "-fdisable-module-hash",
+        "-Xcc",
+        "-Xclang",
+        "-Xcc",
+        "-fbuild-session-timestamp=0",
+        "-Xcc",
+        "-Xclang",
+        "-Xcc",
+        "-fno-pch-timestamp",
+        "-Xlinker",
+        "-reproducible",
+    ]
+    swift_arguments = read_path(("toolchainPolicy", "swiftArguments"))
+    if not exact_json_values_equal(swift_arguments, expected_swift_arguments):
+        failures.append(
+            f"{relative}: toolchainPolicy.swiftArguments must match the "
+            "complete fixed reproducibility argument list."
+        )
+
+    builds = result.get("builds")
+    archives: list[dict[str, object]] = []
+    if not isinstance(builds, list) or len(builds) != 2:
+        failures.append(
+            f"{relative}: builds must contain exactly build-a and build-b."
+        )
+    else:
+        for index, expected_id in enumerate(("build-a", "build-b")):
+            build = builds[index]
+            build_path = f"builds[{index}]"
+            require_keys(
+                build,
+                build_path,
+                {"archive", "commandExitCode", "id", "status"},
+            )
+            if not isinstance(build, dict):
+                continue
+            for key, expected in (
+                ("id", expected_id),
+                ("status", "passed"),
+                ("commandExitCode", 0),
+            ):
+                actual = build.get(key, missing)
+                if type(actual) is not type(expected) or actual != expected:
+                    failures.append(
+                        f"{relative}: expected {build_path}.{key}="
+                        f"{expected!r}, found {actual!r}."
+                    )
+
+            archive = build.get("archive")
+            archive_path = f"{build_path}.archive"
+            require_keys(
+                archive,
+                archive_path,
+                {
+                    "checksumSha256",
+                    "manifestSha256",
+                    "members",
+                    "payloadMemberCount",
+                    "sha256",
+                    "size",
+                    "sourceSha256",
+                    "zipEntryCount",
+                },
+            )
+            if not isinstance(archive, dict):
+                continue
+            archives.append(archive)
+            archive_expectations = (
+                (
+                    "checksumSha256",
+                    CURRENT_SOURCE_G6_REPRODUCIBLE_CHECKSUM_SHA256,
+                ),
+                (
+                    "manifestSha256",
+                    CURRENT_SOURCE_G6_REPRODUCIBLE_MANIFEST_SHA256,
+                ),
+                ("payloadMemberCount", 29),
+                (
+                    "sha256",
+                    CURRENT_SOURCE_G6_REPRODUCIBLE_ARCHIVE_SHA256,
+                ),
+                ("size", CURRENT_SOURCE_G6_REPRODUCIBLE_ARCHIVE_SIZE),
+                ("sourceSha256", CURRENT_SOURCE_G6_SOURCE_SHA256),
+                ("zipEntryCount", 30),
+            )
+            for key, expected in archive_expectations:
+                actual = archive.get(key, missing)
+                if type(actual) is not type(expected) or actual != expected:
+                    failures.append(
+                        f"{relative}: expected {archive_path}.{key}="
+                        f"{expected!r}, found {actual!r}."
+                    )
+
+            members = archive.get("members")
+            if not isinstance(members, list) or len(members) != 30:
+                failures.append(
+                    f"{relative}: {archive_path}.members must contain "
+                    "exactly 30 entries."
+                )
+                continue
+            paths: list[str] = []
+            for member_index, member in enumerate(members):
+                member_path = (
+                    f"{archive_path}.members[{member_index}]"
+                )
+                require_keys(
+                    member,
+                    member_path,
+                    {
+                        "compressedSize",
+                        "compression",
+                        "crc32",
+                        "externalAttributes",
+                        "path",
+                        "sha256",
+                        "size",
+                        "timestamp",
+                    },
+                )
+                if not isinstance(member, dict):
+                    continue
+                path_value = member.get("path")
+                if (
+                    not isinstance(path_value, str)
+                    or not path_value
+                    or not path_value.isascii()
+                    or path_value.startswith("/")
+                    or any(
+                        part in {"", ".", ".."}
+                        for part in path_value.split("/")
+                    )
+                ):
+                    failures.append(
+                        f"{relative}: {member_path}.path is not a safe "
+                        f"relative ASCII member path: {path_value!r}."
+                    )
+                else:
+                    paths.append(path_value)
+                for key in (
+                    "compressedSize",
+                    "compression",
+                    "externalAttributes",
+                    "size",
+                ):
+                    value = member.get(key)
+                    if type(value) is not int or value < 0:
+                        failures.append(
+                            f"{relative}: {member_path}.{key} must be an "
+                            f"exact non-negative integer, found {value!r}."
+                        )
+                if member.get("compression") != 0:
+                    failures.append(
+                        f"{relative}: {member_path}.compression must be 0."
+                    )
+                if member.get("compressedSize") != member.get("size"):
+                    failures.append(
+                        f"{relative}: {member_path} stored sizes differ."
+                    )
+                crc32 = member.get("crc32")
+                if (
+                    not isinstance(crc32, str)
+                    or re.fullmatch(r"[0-9a-f]{8}", crc32) is None
+                ):
+                    failures.append(
+                        f"{relative}: {member_path}.crc32 must be lowercase "
+                        "eight-digit hexadecimal."
+                    )
+                member_sha256 = member.get("sha256")
+                if (
+                    not isinstance(member_sha256, str)
+                    or re.fullmatch(
+                        r"[0-9a-f]{64}",
+                        member_sha256,
+                    )
+                    is None
+                ):
+                    failures.append(
+                        f"{relative}: {member_path}.sha256 must be a "
+                        "lowercase SHA-256."
+                    )
+                if not exact_json_values_equal(
+                    member.get("timestamp"),
+                    [1980, 1, 1, 0, 0, 0],
+                ):
+                    failures.append(
+                        f"{relative}: {member_path}.timestamp must be the "
+                        "fixed ZIP epoch."
+                    )
+            if len(paths) != len(set(paths)):
+                failures.append(
+                    f"{relative}: {archive_path}.members paths must be unique."
+                )
+            first_member = members[0]
+            if (
+                not isinstance(first_member, dict)
+                or first_member.get("path") != "manifest.json"
+            ):
+                failures.append(
+                    f"{relative}: {archive_path}.members must start with "
+                    "manifest.json."
+                )
+            elif paths[1:] != sorted(
+                paths[1:],
+                key=lambda value: value.encode("ascii"),
+            ):
+                failures.append(
+                    f"{relative}: {archive_path}.members after manifest.json "
+                    "must retain bytewise path order."
+                )
+            elif (
+                first_member.get("sha256")
+                != CURRENT_SOURCE_G6_REPRODUCIBLE_MANIFEST_SHA256
+            ):
+                failures.append(
+                    f"{relative}: {archive_path} embedded manifest SHA-256 "
+                    "does not match manifestSha256."
+                )
+
+    if len(archives) == 2 and not exact_json_values_equal(
+        archives[0],
+        archives[1],
+    ):
+        failures.append(
+            f"{relative}: build-a and build-b archive inventories must match "
+            "exactly."
+        )
+    return failures
+
+
 def macos_clean_home_installed_app_source_failures() -> list[str]:
     expected_sources = (
         (
@@ -7369,6 +8088,151 @@ def packaged_lifecycle_evidence_failures(
         failures.append(
             f"{relative}: result does not match the exact closed "
             f"{build_label} lifecycle contract."
+        )
+    return failures
+
+
+def current_source_g6_lane_a_local_dmg_evidence_failures(
+    result_bytes: bytes | None = None,
+) -> list[str]:
+    relative = str(
+        CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_RESULT.relative_to(ROOT)
+    )
+    if result_bytes is None:
+        if CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_RESULT.is_symlink():
+            return [
+                f"{relative}: current-source lane-A local-DMG result must "
+                "not be a symlink."
+            ]
+        if not CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_RESULT.is_file():
+            return [
+                f"{relative}: missing current-source lane-A local-DMG "
+                "result."
+            ]
+        try:
+            result_bytes = (
+                CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_RESULT.read_bytes()
+            )
+        except OSError as error:
+            return [
+                f"{relative}: unreadable current-source lane-A local-DMG "
+                f"result: {error}"
+            ]
+
+    failures = packaged_lifecycle_evidence_failures(
+        result_path=CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_RESULT,
+        relative=relative,
+        expected_size=CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_RESULT_SIZE,
+        expected_sha256=CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_RESULT_SHA256,
+        expected_result=CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_EXPECTED_RESULT,
+        build_label="current-source G6 exact lane-A local-DMG v2",
+        result_bytes=result_bytes,
+    )
+
+    try:
+        result = json.loads(
+            result_bytes.decode("ascii"),
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+    except (
+        UnicodeError,
+        json.JSONDecodeError,
+        DuplicateJSONKeyError,
+    ):
+        return failures
+    if not isinstance(result, dict):
+        return failures
+
+    try:
+        primary_result = json.loads(
+            CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT.read_text(
+                encoding="ascii"
+            ),
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+        primary_builds = primary_result["builds"]
+        primary_archive = primary_builds[0]["archive"]
+        primary_members = primary_archive["members"]
+        primary_manifest_member = primary_members[0]
+        if (
+            type(primary_builds) is not list
+            or len(primary_builds) != 2
+            or type(primary_archive) is not dict
+            or type(primary_members) is not list
+            or not primary_members
+            or type(primary_manifest_member) is not dict
+            or primary_manifest_member.get("path") != "manifest.json"
+        ):
+            raise ValueError("invalid build-a archive projection")
+        archive_sha256 = primary_archive["sha256"]
+        archive_size = primary_archive["size"]
+        manifest_sha256 = primary_archive["manifestSha256"]
+        manifest_size = primary_manifest_member["size"]
+        checksum_sha256 = primary_archive["checksumSha256"]
+        if (
+            type(archive_sha256) is not str
+            or type(archive_size) is not int
+            or type(manifest_sha256) is not str
+            or type(manifest_size) is not int
+            or type(checksum_sha256) is not str
+        ):
+            raise ValueError("invalid build-a archive identity types")
+    except (
+        OSError,
+        UnicodeError,
+        ValueError,
+        KeyError,
+        IndexError,
+        TypeError,
+        json.JSONDecodeError,
+        DuplicateJSONKeyError,
+    ) as error:
+        failures.append(
+            f"{relative}: cannot cross-bind the lane-A DMG result to the "
+            f"current-source two-root result: {error}"
+        )
+        return failures
+
+    expected_release = {
+        "archiveSha256": archive_sha256,
+        "manifestSha256": manifest_sha256,
+        "releaseId": LOCAL_RELEASE_ID,
+    }
+    expected_snapshot_files = {
+        f"{LOCAL_RELEASE_ID}.manifest.json": {
+            "sha256": manifest_sha256,
+            "size": manifest_size,
+        },
+        f"{LOCAL_RELEASE_ID}.zip": {
+            "sha256": archive_sha256,
+            "size": archive_size,
+        },
+        f"{LOCAL_RELEASE_ID}.zip.sha256": {
+            "sha256": checksum_sha256,
+            "size": len(
+                (
+                    f"{archive_sha256}  {LOCAL_RELEASE_ID}.zip\n"
+                ).encode("ascii")
+            ),
+        },
+    }
+    release = result.get("release")
+    archive_readback = result.get("archiveReadback")
+    if not exact_json_values_equal(release, expected_release):
+        failures.append(
+            f"{relative}: lane-A DMG release identity must cross-bind the "
+            "current-source two-root archive and manifest."
+        )
+    if (
+        not isinstance(archive_readback, dict)
+        or not exact_json_values_equal(
+            archive_readback.get("snapshotFiles"),
+            expected_snapshot_files,
+        )
+    ):
+        failures.append(
+            f"{relative}: lane-A DMG snapshot identities must cross-bind "
+            "the current-source two-root ZIP, manifest, and checksum."
         )
     return failures
 
@@ -9687,6 +10551,108 @@ def marker_is_in_hidden_markdown_context(
         is_hidden = tag in hidden_container_tags or has_hidden_attribute is not None
         open_containers.append((tag, is_hidden))
     return any(is_hidden for _, is_hidden in open_containers)
+
+
+def current_source_g6_lane_a_local_dmg_document_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    documentation_targets = (
+        README_PATH,
+        ROOT / "docs/roadmap.md",
+        ROOT / "docs/handoff.md",
+        ROOT / "docs/progress.md",
+        ROOT / "docs/qa-evidence.md",
+        LOCAL_RELEASE_CURRENT_DOC,
+    )
+    expected_successors = {
+        "README.md": "The current Android QR scanner",
+        "docs/roadmap.md": "The current macOS G5/G6 lifecycle slice",
+        "docs/handoff.md": "- The current Android release-quality slice",
+        "docs/progress.md": (
+            "## 2026-07-31 Local V1 Build 24 Qualification"
+        ),
+        "docs/qa-evidence.md": (
+            "## 2026-07-31 Local V1 Build 24 Qualification Checklist"
+        ),
+        "docs/releases/1.0.0-build-24-local-v1.md": (
+            "## Rollback Posture"
+        ),
+    }
+    expected_block = (
+        "\n"
+        + CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_DOCUMENT_BODY
+        + "\n"
+    )
+    failures: list[str] = []
+    for path in documentation_targets:
+        relative = str(path.relative_to(ROOT))
+        try:
+            document_text = (
+                document_text_by_relative[relative]
+                if document_text_by_relative is not None
+                else path.read_text(encoding="utf-8")
+            )
+        except (KeyError, OSError, UnicodeError) as error:
+            failures.append(
+                f"{relative}: cannot read current-source G6 Lane-A DMG "
+                f"documentation: {error}"
+            )
+            continue
+        start_count = document_text.count(
+            CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_DOCUMENT_START
+        )
+        end_count = document_text.count(
+            CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_DOCUMENT_END
+        )
+        if start_count != 1 or end_count != 1:
+            failures.append(
+                f"{relative}: current-source G6 Lane-A DMG markers must "
+                "each appear exactly once."
+            )
+            continue
+        start_index = document_text.index(
+            CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_DOCUMENT_START
+        )
+        body_start = (
+            start_index
+            + len(CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_DOCUMENT_START)
+        )
+        end_index = document_text.index(
+            CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_DOCUMENT_END
+        )
+        if start_index >= end_index:
+            failures.append(
+                f"{relative}: current-source G6 Lane-A DMG markers are "
+                "reversed."
+            )
+            continue
+        actual_block = document_text[body_start:end_index]
+        if actual_block != expected_block:
+            failures.append(
+                f"{relative}: current-source G6 Lane-A DMG block must "
+                "match the exact canonical body."
+            )
+        successor = expected_successors[relative]
+        expected_after = (
+            CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_DOCUMENT_END
+            + "\n\n"
+            + successor
+        )
+        if expected_after not in document_text:
+            failures.append(
+                f"{relative}: current-source G6 Lane-A DMG block moved "
+                "outside its canonical document location."
+            )
+        if marker_is_in_hidden_markdown_context(
+            document_text,
+            CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_DOCUMENT_START,
+        ):
+            failures.append(
+                f"{relative}: current-source G6 Lane-A DMG block must "
+                "remain visible Markdown."
+            )
+    return failures
 
 
 def current_macos_isolated_upgrade_document_failures(
@@ -14481,6 +15447,13 @@ def main() -> int:
     failures.extend(syntax_only_no_device_gate_evidence_failures())
     failures.extend(current_handoff_git_attribution_failures())
     failures.extend(local_release_document_failures())
+    failures.extend(current_source_g6_reproducibility_failures())
+    failures.extend(
+        current_source_g6_lane_a_local_dmg_evidence_failures()
+    )
+    failures.extend(
+        current_source_g6_lane_a_local_dmg_document_failures()
+    )
     failures.extend(macos_clean_home_installed_app_source_failures())
     failures.extend(
         macos_clean_home_installed_state_recovery_source_failures()

@@ -225,6 +225,45 @@ class SnapshotIntegrationTests(unittest.TestCase):
 
 
 class ExecuteOrchestrationTests(unittest.TestCase):
+    def test_execute_publishes_only_after_unpublished_exercise_returns(
+        self,
+    ) -> None:
+        archive_dir = Path("/fixture/archive")
+        result_path = Path("/fixture/result.json")
+        result = {"schemaVersion": 2, "status": "passed"}
+        events: list[str] = []
+        with (
+            patch.object(smoke, "require_result_outside_archive"),
+            patch.object(
+                smoke,
+                "exercise",
+                side_effect=lambda **kwargs: (
+                    events.append("exercise") or result
+                ),
+            ) as exercise_mock,
+            patch.object(
+                smoke,
+                "publish_result",
+                side_effect=lambda *args: events.append("publish"),
+            ) as publish_mock,
+        ):
+            observed = smoke.execute(
+                archive_dir=archive_dir,
+                result_path=result_path,
+                readiness_timeout_seconds=1.0,
+                observation_seconds=2.0,
+                termination_timeout_seconds=3.0,
+            )
+        self.assertIs(observed, result)
+        self.assertEqual(events, ["exercise", "publish"])
+        exercise_mock.assert_called_once_with(
+            archive_dir=archive_dir,
+            readiness_timeout_seconds=1.0,
+            observation_seconds=2.0,
+            termination_timeout_seconds=3.0,
+        )
+        publish_mock.assert_called_once_with(result_path, result)
+
     def exercise(
         self,
         *,

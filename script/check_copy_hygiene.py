@@ -1229,8 +1229,8 @@ def android_client_ui_resource_copy_guard_failures() -> list[str]:
         (
             main_activity_path,
             main_activity_text,
-            "androidAppLocaleOverrideLanguageTag(context) ?: androidSystemAppLanguageTag(context)",
-            "In-app language synchronization must compare against the app override or effective system language.",
+            "resolveAndroidPlatformAppLanguageSnapshot(",
+            "API 33+ startup must resolve one authoritative platform app-language snapshot.",
         ),
         (
             main_activity_path,
@@ -1241,8 +1241,8 @@ def android_client_ui_resource_copy_guard_failures() -> list[str]:
         (
             main_activity_path,
             main_activity_text,
-            "selectedLanguageSource = state.selectedLanguageSource",
-            "Android app-language sync must consider language source, not only language tag.",
+            "pendingInitialAndroidPlatformAppLanguageSnapshot?.languageTag",
+            "The first localized frame must use the authoritative platform app-language snapshot.",
         ),
         (
             runtime_local_store_path,
@@ -10854,10 +10854,10 @@ def android_chat_model_menu_guard_failures() -> list[str]:
     required_test_snippets = (
         "chatModelMenuSearchAvailabilityUsesChatModelsOnly",
         "chatModelPickerClosedLabelIgnoresProviderManagedChatModel",
-        'assertFalse(shouldSynchronizeAndroidSystemAppLanguage(null, "en"))',
-        'assertFalse(shouldSynchronizeAndroidSystemAppLanguage("  ", "en"))',
-        'assertTrue(shouldSynchronizeAndroidSystemAppLanguage(null, "ko"))',
-        'assertTrue(shouldSynchronizeAndroidSystemAppLanguage("  ", "fr"))',
+        "androidAppLocaleOverrideSyncDistinguishesExplicitEnglishFromFollowSystem",
+        'assertTrue(shouldSetAndroidAppLocaleOverride(emptyLocales, "en"))',
+        "assertFalse(shouldClearAndroidAppLocaleOverride(emptyLocales))",
+        'assertFalse(shouldSetAndroidAppLocaleOverride(englishLocales, "en"))',
         "assertEquals(null, chatModelPickerFallbackDisplayName(state))",
         "chatTopBarActiveTitleHidesOnlyUnprovenanceDefaultTitle",
         "chat-unknown-source",
@@ -12412,6 +12412,184 @@ def android_trusted_runtime_forget_guard_failures() -> list[str]:
         if snippet not in strings_text:
             failures.append(f"{strings_relative}: Missing trusted-runtime forget confirmation string {snippet}.")
 
+    return failures
+
+
+def android_font_scale_qualification_guard_failures() -> list[str]:
+    failures: list[str] = []
+    main_path = ROOT / (
+        "apps/android/app/src/main/java/com/localagentbridge/android/"
+        "MainActivity.kt"
+    )
+    qualification_path = ROOT / (
+        "apps/android/app/src/test/java/com/localagentbridge/android/ui/"
+        "AndroidCoreSurfaceFontScaleQualificationTest.kt"
+    )
+    scanner_test_path = ROOT / (
+        "apps/android/app/src/test/java/com/localagentbridge/android/"
+        "PairingQrScannerChromeNoDeviceComposeTest.kt"
+    )
+    client_test_path = ROOT / (
+        "apps/android/app/src/test/java/com/localagentbridge/android/ui/"
+        "ClientScreensNoDeviceComposeTest.kt"
+    )
+    gate_path = ROOT / "script/check_no_device_quality.sh"
+    product_checker_path = ROOT / "script/check_product_ci.py"
+    workflow_path = ROOT / ".github/workflows/product-quality.yml"
+
+    paths = (
+        main_path,
+        qualification_path,
+        scanner_test_path,
+        client_test_path,
+        gate_path,
+        product_checker_path,
+        workflow_path,
+    )
+    for path in paths:
+        if not path.exists():
+            failures.append(
+                f"{path.relative_to(ROOT)}: missing Android font-scale "
+                "qualification contract file."
+            )
+            return failures
+
+    main_text = main_path.read_text(encoding="utf-8")
+    qualification_text = qualification_path.read_text(encoding="utf-8")
+    scanner_test_text = scanner_test_path.read_text(encoding="utf-8")
+    client_test_text = client_test_path.read_text(encoding="utf-8")
+    gate_text = gate_path.read_text(encoding="utf-8")
+    product_checker_text = product_checker_path.read_text(encoding="utf-8")
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+
+    main_snippets = (
+        ".size(48.dp)\n"
+        "                            .testTag(PAIRING_QR_SCANNER_CLOSE_BUTTON_TEST_TAG)",
+        ".size(48.dp)\n"
+        "                                .testTag(PAIRING_QR_FLASHLIGHT_BUTTON_TEST_TAG)",
+        ".heightIn(min = 48.dp)\n"
+        "                                .testTag(PAIRING_QR_SCANNER_CANCEL_BUTTON_TEST_TAG)",
+        ".heightIn(min = 48.dp)\n"
+        "                        .testTag(PAIRING_QR_SCANNER_PERMISSION_ACTION_TEST_TAG)",
+        ".heightIn(min = 48.dp)\n"
+        "                        .testTag(PAIRING_QR_SCANNER_PERMISSION_CANCEL_BUTTON_TEST_TAG)",
+    )
+    for snippet in main_snippets:
+        if snippet not in main_text:
+            failures.append(
+                f"{main_path.relative_to(ROOT)}: missing 48dp scanner action "
+                f"contract {snippet}."
+            )
+
+    qualification_snippets = (
+        "class AndroidCoreSurfaceFontScaleQualificationTest",
+        "fun coreSurfacesRemainUsableAt100PercentFontScale()",
+        "runCoreSurfaceQualification(fontScale = 1f)",
+        "fun coreSurfacesRemainUsableAt150PercentFontScale()",
+        "runCoreSurfaceQualification(fontScale = 1.5f)",
+        "fun coreSurfacesRemainUsableAt200PercentFontScale()",
+        "runCoreSurfaceQualification(fontScale = 2f)",
+        "val canonicalFontScales = listOf(1f, 1.5f, 2f)",
+        'val supportedLanguageTags = listOf("en", "ko", "ja", "zh-CN", "fr")',
+        'val fullCoverageLanguageTags = listOf("en", "ko")',
+        "SurfaceCase.ScannerSettingsRecovery",
+        "SurfaceCase.DrawerSearchNoResults",
+        "SurfaceCase.ChatStreaming",
+        "SurfaceCase.SettingsPairing",
+        "SurfaceCase.SettingsData",
+        "bounds.bottom - bounds.top >= 48.dp",
+        "bounds.right - bounds.left >= 48.dp",
+        "Density(density = baseDensity.density, fontScale = fontScale)",
+        "LocalDensity provides scaledDensity",
+        "check(LocalDensity.current.fontScale == fontScale)",
+    )
+    for snippet in qualification_snippets:
+        if snippet not in qualification_text:
+            failures.append(
+                f"{qualification_path.relative_to(ROOT)}: missing Android "
+                f"font-scale qualification contract {snippet}."
+            )
+
+    if scanner_test_text.count(
+        "val fontScales = listOf(1f, 1.5f, 2f)"
+    ) < 1:
+        failures.append(
+            f"{scanner_test_path.relative_to(ROOT)}: compact scanner bounds "
+            "must cover exact 100/150/200 percent scales."
+        )
+    for relative, contents in (
+        (scanner_test_path.relative_to(ROOT), scanner_test_text),
+        (client_test_path.relative_to(ROOT), client_test_text),
+    ):
+        for snippet in (
+            "Density(density = baseDensity.density, fontScale = fontScale)",
+            "LocalDensity provides scaledDensity",
+            "check(LocalDensity.current.fontScale == fontScale)",
+        ):
+            if snippet not in contents:
+                failures.append(
+                    f"{relative}: missing real Compose font-scale contract "
+                    f"{snippet}."
+                )
+    for method in (
+        "navigationDrawerEmptyHistoryStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "chatScreenTalkBackOrderProxyKeepsVisibleChatControlsReachableAtLargeFontAcrossSupportedLanguages",
+        "settingsCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages",
+    ):
+        if method not in client_test_text:
+            failures.append(
+                f"{client_test_path.relative_to(ROOT)}: missing expanded "
+                f"font-scale regression {method}."
+            )
+    if client_test_text.count(
+        "val fontScales = listOf(1f, 1.5f, 2f)"
+    ) < 3:
+        failures.append(
+            f"{client_test_path.relative_to(ROOT)}: drawer, chat, and "
+            "Settings regressions must retain exact 100/150/200 percent scales."
+        )
+
+    integration_snippets = (
+        (
+            gate_text,
+            gate_path,
+            "--tests com.localagentbridge.android.ui."
+            "AndroidCoreSurfaceFontScaleQualificationTest",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "python3 -B script/check_product_ci.py --android-font-scale-results",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "exact 100%, 150%, and 200% Robolectric results across scanner, "
+            "drawer, chat, Settings pairing, Memory, and chat history",
+        ),
+        (
+            product_checker_text,
+            product_checker_path,
+            '"AndroidCoreSurfaceFontScaleQualificationTest"',
+        ),
+        (
+            product_checker_text,
+            product_checker_path,
+            '"--android-font-scale-results"',
+        ),
+        (
+            workflow_text,
+            workflow_path,
+            "--tests com.localagentbridge.android.ui."
+            "AndroidCoreSurfaceFontScaleQualificationTest",
+        ),
+    )
+    for text, path, snippet in integration_snippets:
+        if snippet not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: missing Android font-scale "
+                f"qualification integration {snippet}."
+            )
     return failures
 
 
@@ -31777,6 +31955,18 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android app theme-path regression.",
         ),
         (
+            "--tests com.localagentbridge.android.ui.AndroidCoreSurfaceFontScaleQualificationTest",
+            "Default no-device gate must run the Android core-surface font-scale qualification class.",
+        ),
+        (
+            "python3 -B script/check_product_ci.py --android-font-scale-results",
+            "Default no-device gate must reject skipped, failed, or incomplete Android font-scale qualification results.",
+        ),
+        (
+            "Android font-scale qualification addendum: exact 100%, 150%, and 200% Robolectric results across scanner, drawer, chat, Settings pairing, Memory, and chat history",
+            "Default no-device gate coverage summary must mention exact Android core-surface font-scale qualification.",
+        ),
+        (
             "PairingQrScannerChromeNoDeviceComposeTest",
             "Default no-device gate must run the Android QR scanner chrome regression.",
         ),
@@ -41851,7 +42041,8 @@ def runtime_research_notebook_guard_failures() -> list[str]:
             "navigationDrawerHoistedChatMenuTracksStreamingLockoutAndFilteredAuthority",
             "navigationDrawerVirtualizesAuthoritativeTenThousandNotebookSnapshot",
             "composedResearchSemantics in 0 until 100",
-            "performScrollToIndex(10_002)",
+            'performScrollToKey("research-notebook-${lastActive.sessionId}")',
+            'performScrollToKey("research-notebook-${lastArchived.sessionId}")',
             "researchNotebookDrawerFitsCompactHeightAtLargeFontScale",
             "lifecycleActionsBlocked",
             "researchBriefDialogKeepsContentReachableAtCompactHeightAndLargeFont",
@@ -59056,7 +59247,9 @@ def runtime_chat_retention_production_ownership_guard_failures() -> list[str]:
             "if !hasScheduledRuntimeChatRetentionMaintenance",
             "runtimeChatRetentionMaintenanceIntervalNanoseconds",
             "runtimeChatRetentionMaintenanceTask = Task { [weak self, store] in",
-            "Self.pruneExpiredDeletedRuntimeChats(",
+            "CompanionAppModel.pruneExpiredDeletedRuntimeChats(\n"
+            "                    from: $0\n"
+            "                )",
             "try await Task.sleep(nanoseconds: interval)",
             "public func runRuntimeChatRetentionMaintenance() async",
             "withThrowingTaskGroup(of: Int.self)",
@@ -59065,7 +59258,10 @@ def runtime_chat_retention_production_ownership_guard_failures() -> list[str]:
             "RuntimeChatEventStoreDefaults.runProductionMaintenance(",
             "total += result.prunedDeletedSessionCount",
             "await Task.yield()",
-            "completeRuntimeChatRetentionMaintenance(prunedSessionCount:",
+            "private func completeRuntimeChatRetentionMaintenance(\n"
+            "        prunedSessionCount: Int,\n"
+            "        maintenanceID: UUID\n"
+            "    )",
         ),
         "apps/macos/LocalAgentBridgeApp/Sources/StatusView.swift": (
             "RuntimeHistoryRetentionControl(",
@@ -67394,9 +67590,15 @@ def main() -> int:
             return 2
         if report_product_copy_failures():
             return 1
+        if report_guard_failures(
+            "Android font-scale qualification guard failed:",
+            android_font_scale_qualification_guard_failures,
+        ):
+            return 1
         print(
-            f"Product copy hygiene OK across {len(target_files())} "
-            "user-facing source/resource file(s)."
+            f"Product copy hygiene and Android font-scale qualification guard "
+            f"OK across {len(target_files())} user-facing "
+            "source/resource file(s)."
         )
         return 0
 
@@ -67760,6 +67962,9 @@ def main() -> int:
         return 1
 
     if report_guard_failures("Android trusted-runtime forget guard failed:", android_trusted_runtime_forget_guard_failures):
+        return 1
+
+    if report_guard_failures("Android font-scale qualification guard failed:", android_font_scale_qualification_guard_failures):
         return 1
 
     if report_guard_failures("Android haptic guard failed:", android_haptic_guard_failures):

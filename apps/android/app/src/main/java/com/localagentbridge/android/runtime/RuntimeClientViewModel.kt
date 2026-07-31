@@ -2854,21 +2854,36 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun setAppLanguageTag(languageTag: String) {
-        publishPersistedRuntimeData(
-            persistedRuntimeData.withAppLanguageTag(languageTag),
-            save = true,
-        )
+        val cleanData = persistedRuntimeData.withAppLanguageTag(languageTag)
+        if (cleanData != persistedRuntimeData) {
+            publishPersistedRuntimeData(cleanData, save = true)
+        }
     }
 
     fun followSystemAppLanguageTag(languageTag: String?) {
-        publishPersistedRuntimeData(
-            persistedRuntimeData.withFollowSystemAppLanguageTag(languageTag),
-            save = true,
-        )
+        val cleanData = persistedRuntimeData.withFollowSystemAppLanguageTag(languageTag)
+        if (cleanData != persistedRuntimeData) {
+            publishPersistedRuntimeData(cleanData, save = true)
+        }
     }
 
     fun reconcileSystemAppLanguageTag(languageTag: String?) {
         val cleanData = persistedRuntimeData.withSystemAppLanguageTag(languageTag)
+        if (cleanData != persistedRuntimeData) {
+            publishPersistedRuntimeData(cleanData, save = true)
+        }
+    }
+
+    fun reconcileAndroidPlatformAppLanguageSnapshot(
+        applicationLocalesSupported: Boolean,
+        applicationLocaleLanguageTag: String?,
+        systemLanguageTag: String?,
+    ) {
+        val cleanData = persistedRuntimeData.withAndroidPlatformAppLanguageSnapshot(
+            applicationLocalesSupported = applicationLocalesSupported,
+            applicationLocaleLanguageTag = applicationLocaleLanguageTag,
+            systemLanguageTag = systemLanguageTag,
+        )
         if (cleanData != persistedRuntimeData) {
             publishPersistedRuntimeData(cleanData, save = true)
         }

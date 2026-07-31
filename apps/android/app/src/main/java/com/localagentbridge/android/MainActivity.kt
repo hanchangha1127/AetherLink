@@ -161,7 +161,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
-import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_IN_APP
 import com.localagentbridge.android.core.protocol.ResearchNotebookPayload
 import com.localagentbridge.android.runtime.RuntimeClientViewModel
 import com.localagentbridge.android.runtime.RuntimeChatSession
@@ -171,6 +170,7 @@ import com.localagentbridge.android.runtime.RuntimeAppTheme
 import com.localagentbridge.android.runtime.RuntimeUiState
 import com.localagentbridge.android.runtime.isChatModel
 import com.localagentbridge.android.runtime.isRuntimeHostLocalModel
+import com.localagentbridge.android.runtime.resolveAndroidPlatformAppLanguageSnapshot
 import com.localagentbridge.android.runtime.supportsImageInput
 import com.localagentbridge.android.ui.AetherLinkInteractionFeedback
 import com.localagentbridge.android.ui.ChatScreen
@@ -418,38 +418,37 @@ internal fun androidSystemAppLanguageTag(context: Context): String? {
             .takeIf { it.isNotBlank() }
 }
 
-internal fun shouldSynchronizeAndroidSystemAppLanguage(
-    currentLanguageTag: String?,
+internal fun shouldSetAndroidAppLocaleOverride(
+    currentLocales: LocaleList,
     selectedLanguageTag: String,
 ): Boolean {
+    if (currentLocales.size() != 1) return true
     val selected = RuntimeAppLanguage.normalizeLanguageTag(selectedLanguageTag)
-    if (currentLanguageTag.isNullOrBlank()) {
-        return selected != RuntimeAppLanguage.English.languageTag
-    }
-    val current = RuntimeAppLanguage.supportedLanguageTagOrNull(currentLanguageTag)
+    val current = RuntimeAppLanguage.supportedLanguageTagOrNull(
+        androidLanguageTagFromLocaleList(currentLocales),
+    )
     return current != selected
 }
 
-internal fun synchronizeAndroidSystemAppLanguageTag(
+internal fun shouldClearAndroidAppLocaleOverride(currentLocales: LocaleList): Boolean {
+    return currentLocales.size() > 0
+}
+
+internal fun synchronizeAndroidAppLocaleOverride(
     context: Context,
-    selectedLanguageTag: String,
-    selectedLanguageSource: String = APP_LANGUAGE_SOURCE_IN_APP,
+    selectedLanguageTag: String?,
 ) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
     val localeManager = context.getSystemService(LocaleManager::class.java) ?: return
-    if (selectedLanguageSource != APP_LANGUAGE_SOURCE_IN_APP) {
-        if (localeManager.applicationLocales.size() > 0) {
+    val currentLocales = localeManager.applicationLocales
+    if (selectedLanguageTag == null) {
+        if (shouldClearAndroidAppLocaleOverride(currentLocales)) {
             localeManager.applicationLocales = LocaleList.getEmptyLocaleList()
         }
         return
     }
     val normalizedLanguageTag = RuntimeAppLanguage.normalizeLanguageTag(selectedLanguageTag)
-    if (
-        !shouldSynchronizeAndroidSystemAppLanguage(
-            currentLanguageTag = androidAppLocaleOverrideLanguageTag(context) ?: androidSystemAppLanguageTag(context),
-            selectedLanguageTag = normalizedLanguageTag,
-        )
-    ) {
+    if (!shouldSetAndroidAppLocaleOverride(currentLocales, normalizedLanguageTag)) {
         return
     }
     localeManager.applicationLocales = LocaleList.forLanguageTags(normalizedLanguageTag)
@@ -840,26 +839,51 @@ private fun LocalAgentBridgeApp(
     val baseContext = LocalContext.current
     val pairingQrCameraPermission =
         rememberPairingQrCameraPermissionController()
-    var systemLanguageReconciled by remember { mutableStateOf(false) }
-    LaunchedEffect(viewModel, baseContext) {
-        viewModel.reconcileSystemAppLanguageTag(androidSystemAppLanguageTag(baseContext))
-        systemLanguageReconciled = true
-    }
-    LaunchedEffect(baseContext, state.selectedLanguageTag, state.selectedLanguageSource, systemLanguageReconciled) {
-        if (systemLanguageReconciled) {
-            synchronizeAndroidSystemAppLanguageTag(
-                context = baseContext,
-                selectedLanguageTag = state.selectedLanguageTag,
-                selectedLanguageSource = state.selectedLanguageSource,
+    val initialAndroidPlatformAppLanguageSnapshot = remember(baseContext) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            resolveAndroidPlatformAppLanguageSnapshot(
+                applicationLocaleLanguageTag =
+                    androidAppLocaleOverrideLanguageTag(baseContext),
+                systemLanguageTag = androidSystemAppLanguageTag(baseContext),
             )
+        } else {
+            null
         }
     }
+    var pendingInitialAndroidPlatformAppLanguageSnapshot by remember(baseContext) {
+        mutableStateOf(initialAndroidPlatformAppLanguageSnapshot)
+    }
+    LaunchedEffect(viewModel, baseContext) {
+        viewModel.reconcileAndroidPlatformAppLanguageSnapshot(
+            applicationLocalesSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
+            applicationLocaleLanguageTag = androidAppLocaleOverrideLanguageTag(baseContext),
+            systemLanguageTag = androidSystemAppLanguageTag(baseContext),
+        )
+    }
+    LaunchedEffect(
+        state.selectedLanguageTag,
+        state.selectedLanguageSource,
+        pendingInitialAndroidPlatformAppLanguageSnapshot,
+    ) {
+        val pendingSnapshot =
+            pendingInitialAndroidPlatformAppLanguageSnapshot ?: return@LaunchedEffect
+        if (
+            RuntimeAppLanguage.normalizeLanguageTag(state.selectedLanguageTag) ==
+            pendingSnapshot.languageTag &&
+            state.selectedLanguageSource == pendingSnapshot.languageSource
+        ) {
+            pendingInitialAndroidPlatformAppLanguageSnapshot = null
+        }
+    }
+    val localizedLanguageTag =
+        pendingInitialAndroidPlatformAppLanguageSnapshot?.languageTag
+            ?: state.selectedLanguageTag
     AetherLinkTheme(theme = state.selectedTheme) {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,
         ) {
-            LocalizedContent(languageTag = state.selectedLanguageTag) {
+            LocalizedContent(languageTag = localizedLanguageTag) {
             val density = LocalDensity.current
             val windowInfo = LocalWindowInfo.current
             val hapticFeedback = LocalHapticFeedback.current
@@ -1266,9 +1290,23 @@ private fun LocalAgentBridgeApp(
                                     onRequestModels = viewModel::requestModels,
                                     onDisconnect = viewModel::disconnect,
                                     onSetAutoReconnectEnabled = viewModel::setTrustedRuntimeAutoReconnectEnabled,
-                                    onSetLanguageTag = viewModel::setAppLanguageTag,
+                                    onSetLanguageTag = { languageTag ->
+                                        pendingInitialAndroidPlatformAppLanguageSnapshot = null
+                                        viewModel.setAppLanguageTag(languageTag)
+                                        synchronizeAndroidAppLocaleOverride(
+                                            context = baseContext,
+                                            selectedLanguageTag = languageTag,
+                                        )
+                                    },
                                     onFollowSystemLanguage = {
-                                        viewModel.followSystemAppLanguageTag(androidSystemAppLanguageTag(baseContext))
+                                        pendingInitialAndroidPlatformAppLanguageSnapshot = null
+                                        viewModel.followSystemAppLanguageTag(
+                                            androidSystemAppLanguageTag(baseContext),
+                                        )
+                                        synchronizeAndroidAppLocaleOverride(
+                                            context = baseContext,
+                                            selectedLanguageTag = null,
+                                        )
                                     },
                                     onSetTheme = viewModel::setAppTheme,
                                     onSelectEmbeddingModel = viewModel::selectEmbeddingModel,
@@ -2835,35 +2873,53 @@ internal fun AetherLinkNavigationDrawerContent(
                 .fillMaxSize()
                 .padding(vertical = 12.dp),
         ) {
-            Text(
-                text = stringResource(R.string.app_name),
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp),
-            )
-            DrawerRuntimeSummary(state = state)
-            Button(
-                onClick = {
-                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                    onNewChat()
-                },
-                enabled = newChatEnabled,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                    .semantics {
-                        stateDescription = newChatStateDescription
-                        onClick(label = newChatActionLabel, action = null)
-                    },
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = null)
-                Spacer(Modifier.size(8.dp))
-                Text(newChatActionLabel)
-            }
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
                     .testTag(DRAWER_HISTORY_TEST_TAG),
+                contentPadding = PaddingValues(bottom = 8.dp),
             ) {
+                item(
+                    key = "drawer-app-title",
+                    contentType = "drawer-header",
+                ) {
+                    Text(
+                        text = stringResource(R.string.app_name),
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp),
+                    )
+                }
+                item(
+                    key = "drawer-runtime-summary",
+                    contentType = "drawer-header",
+                ) {
+                    DrawerRuntimeSummary(state = state)
+                }
+                item(
+                    key = "drawer-new-chat",
+                    contentType = "drawer-header",
+                ) {
+                    Button(
+                        onClick = {
+                            hapticFeedback.performAetherLinkFeedback(
+                                AetherLinkInteractionFeedback.PrimaryAction
+                            )
+                            onNewChat()
+                        },
+                        enabled = newChatEnabled,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                            .semantics {
+                                stateDescription = newChatStateDescription
+                                onClick(label = newChatActionLabel, action = null)
+                            },
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = null)
+                        Spacer(Modifier.size(8.dp))
+                        Text(newChatActionLabel)
+                    }
+                }
                 item(
                     key = "research-notebooks-header",
                     contentType = "section-header",
@@ -4699,6 +4755,7 @@ internal fun PairingQrScannerChrome(
                             onCancel()
                         },
                         modifier = Modifier
+                            .size(48.dp)
                             .testTag(PAIRING_QR_SCANNER_CLOSE_BUTTON_TEST_TAG)
                             .semantics {
                                 onClick(label = closeScannerActionLabel, action = null)
@@ -4725,6 +4782,7 @@ internal fun PairingQrScannerChrome(
                                 onTorchToggle()
                             },
                             modifier = Modifier
+                                .size(48.dp)
                                 .testTag(PAIRING_QR_FLASHLIGHT_BUTTON_TEST_TAG)
                                 .semantics {
                                     stateDescription = torchStateDescription
@@ -4824,7 +4882,9 @@ internal fun PairingQrScannerChrome(
                                 hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                                 onCancel()
                             },
-                            modifier = Modifier.testTag(PAIRING_QR_SCANNER_CANCEL_BUTTON_TEST_TAG),
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag(PAIRING_QR_SCANNER_CANCEL_BUTTON_TEST_TAG),
                         ) {
                             Text(stringResource(R.string.cancel))
                         }
@@ -4894,6 +4954,7 @@ internal fun PairingQrScannerChrome(
                     enabled = !cameraPermissionRequestInFlight,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(min = 48.dp)
                         .testTag(PAIRING_QR_SCANNER_PERMISSION_ACTION_TEST_TAG),
                 ) {
                     Text(
@@ -4909,7 +4970,9 @@ internal fun PairingQrScannerChrome(
                         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                         onCancel()
                     },
-                    modifier = Modifier.testTag(PAIRING_QR_SCANNER_PERMISSION_CANCEL_BUTTON_TEST_TAG),
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag(PAIRING_QR_SCANNER_PERMISSION_CANCEL_BUTTON_TEST_TAG),
                 ) {
                     Text(stringResource(R.string.cancel))
                 }

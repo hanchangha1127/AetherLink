@@ -77,6 +77,17 @@ RUNTIME_VIEW_MODEL_TEST_SOURCE = (
     / "runtime"
     / "RuntimeClientViewModelTest.kt"
 )
+RUNTIME_LOCAL_STORE_TEST_SOURCE = (
+    ANDROID_APP_ROOT
+    / "src"
+    / "test"
+    / "java"
+    / "com"
+    / "localagentbridge"
+    / "android"
+    / "runtime"
+    / "RuntimeLocalStoreTest.kt"
+)
 APP_NAVIGATION_TEST_SOURCE = (
     ANDROID_APP_ROOT
     / "src"
@@ -86,6 +97,16 @@ APP_NAVIGATION_TEST_SOURCE = (
     / "localagentbridge"
     / "android"
     / "AppNavigationTest.kt"
+)
+APP_LANGUAGE_PLATFORM_LIFECYCLE_TEST_SOURCE = (
+    ANDROID_APP_ROOT
+    / "src"
+    / "test"
+    / "java"
+    / "com"
+    / "localagentbridge"
+    / "android"
+    / "AndroidAppLanguagePlatformLifecycleTest.kt"
 )
 ANDROID_MANIFEST_SOURCE = ANDROID_APP_ROOT / "src" / "main" / "AndroidManifest.xml"
 ANDROID_LOCALE_CONFIG_SOURCE = ANDROID_APP_ROOT / "src" / "main" / "res" / "xml" / "locales_config.xml"
@@ -591,16 +612,32 @@ def check_android_locale_config() -> list[str]:
                 "Resources.getSystem().configuration.locales",
                 "Build.VERSION_CODES.TIRAMISU",
                 "localeManager.applicationLocales",
-                "viewModel.reconcileSystemAppLanguageTag(androidSystemAppLanguageTag(baseContext))",
-                "internal fun synchronizeAndroidSystemAppLanguageTag(",
-                "selectedLanguageSource: String = APP_LANGUAGE_SOURCE_IN_APP",
+                "viewModel.reconcileAndroidPlatformAppLanguageSnapshot(",
+                "applicationLocalesSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU",
+                "applicationLocaleLanguageTag = androidAppLocaleOverrideLanguageTag(baseContext)",
+                "initialAndroidPlatformAppLanguageSnapshot",
+                "pendingInitialAndroidPlatformAppLanguageSnapshot?.languageTag",
+                "internal fun synchronizeAndroidAppLocaleOverride(",
+                "internal fun shouldSetAndroidAppLocaleOverride(",
+                "internal fun shouldClearAndroidAppLocaleOverride(",
                 "LocaleList.getEmptyLocaleList()",
                 "LocaleList.forLanguageTags(normalizedLanguageTag)",
-                "LaunchedEffect(baseContext, state.selectedLanguageTag, state.selectedLanguageSource, systemLanguageReconciled)",
+                "viewModel.setAppLanguageTag(languageTag)",
+                "selectedLanguageTag = null",
             ),
             "Android OS app-language handoff",
         )
     )
+    main_activity_source = MAIN_ACTIVITY_SOURCE.read_text(encoding="utf-8")
+    forbidden_state_to_platform_sync = (
+        "LaunchedEffect(baseContext, state.selectedLanguageTag, "
+        "state.selectedLanguageSource"
+    )
+    if forbidden_state_to_platform_sync in main_activity_source:
+        failures.append(
+            f"{MAIN_ACTIVITY_SOURCE.relative_to(ROOT)}: Android app-language startup "
+            "must remain platform-to-ViewModel only; OS writes belong only to user actions"
+        )
     failures.extend(
         missing_source_snippets(
             RUNTIME_LOCAL_STORE_SOURCE,
@@ -610,6 +647,9 @@ def check_android_locale_config() -> list[str]:
                 "val appLanguageSource: String? = APP_LANGUAGE_SOURCE_DEFAULT",
                 "internal fun PersistedRuntimeData.withSystemAppLanguageTag(languageTag: String?)",
                 "internal fun PersistedRuntimeData.withFollowSystemAppLanguageTag(languageTag: String?)",
+                "internal fun resolveAndroidPlatformAppLanguageSnapshot(",
+                "internal fun PersistedRuntimeData.withAndroidPlatformAppLanguageSnapshot(",
+                "if (!applicationLocalesSupported)",
             ),
             "Android app-language source persistence",
         )
@@ -620,8 +660,10 @@ def check_android_locale_config() -> list[str]:
             (
                 "fun reconcileSystemAppLanguageTag(languageTag: String?)",
                 "fun followSystemAppLanguageTag(languageTag: String?)",
+                "fun reconcileAndroidPlatformAppLanguageSnapshot(",
                 "persistedRuntimeData.withSystemAppLanguageTag(languageTag)",
                 "persistedRuntimeData.withFollowSystemAppLanguageTag(languageTag)",
+                "persistedRuntimeData.withAndroidPlatformAppLanguageSnapshot(",
             ),
             "Android app-language ViewModel reconciliation",
         )
@@ -631,6 +673,7 @@ def check_android_locale_config() -> list[str]:
             RUNTIME_VIEW_MODEL_TEST_SOURCE,
             (
                 "viewModelReconcilesSystemAppLanguageUntilInAppLanguageIsSelected",
+                "viewModelReconcilesAuthoritativeAndroidAppLanguageSnapshotWithoutDuplicateSaves",
                 "systemAppLanguageHelperDoesNotOverrideInAppLanguageSelection",
                 'followSystemAppLanguageTag("ja-JP")',
             ),
@@ -639,12 +682,40 @@ def check_android_locale_config() -> list[str]:
     )
     failures.extend(
         missing_source_snippets(
+            RUNTIME_LOCAL_STORE_TEST_SOURCE,
+            (
+                "androidPlatformLanguageSnapshotUsesApi33OverrideAndPreservesLegacyExplicitChoice",
+                "applicationLocalesSupported = true",
+                "applicationLocalesSupported = false",
+            ),
+            "Android app-language storage snapshot regression tests",
+        )
+    )
+    failures.extend(
+        missing_source_snippets(
             APP_NAVIGATION_TEST_SOURCE,
             (
-                "androidSystemAppLanguageSyncNormalizesCurrentAndSelectedTags",
+                "androidAppLocaleOverrideSyncDistinguishesExplicitEnglishFromFollowSystem",
+                'shouldSetAndroidAppLocaleOverride(emptyLocales, "en")',
+                "shouldClearAndroidAppLocaleOverride(emptyLocales)",
                 "settingsSystemLanguageOptionIsSeparateFromFixedLaunchLanguages",
             ),
             "Android app-language shell handoff regression tests",
+        )
+    )
+    failures.extend(
+        missing_source_snippets(
+            APP_LANGUAGE_PLATFORM_LIFECYCLE_TEST_SOURCE,
+            (
+                "api32ColdLaunchAndRecreationPreserveStoredExplicitLanguage",
+                "api33ExternalApplicationLocaleWinsAcrossColdLaunchAndRecreation",
+                "api36ExplicitEnglishAndFollowSystemConvergeAcrossRecreation",
+                'localeManager().applicationLocales = LocaleList.forLanguageTags("ko-KR")',
+                "synchronizeAndroidAppLocaleOverride(",
+                "ActivityScenario.launch(MainActivity::class.java)",
+                "scenario.recreate()",
+            ),
+            "Android platform app-language lifecycle regression tests",
         )
     )
 

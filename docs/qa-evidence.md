@@ -4,7 +4,61 @@ Last updated: 2026-07-31 KST.
 
 This document separates current verification evidence from historical captures.
 
-## 2026-07-31 Android QR Camera Permission Reentry And Cold-Launch Checklist
+The previous-release checklist remains under Historical Local V1 Build 23
+Qualification Checklist below.
+
+## 2026-07-31 Android Platform App-Language And API 36 Emulator Checklist
+
+- [x] API 33+ startup reads `LocaleManager.applicationLocales` before deriving
+  app state. A nonempty supported override becomes the fixed `IN_APP` language;
+  an empty override becomes Follow system using the current device language.
+- [x] API 26 through 32 retain the existing stored fixed-language guard.
+  Android 13+ no longer runs a state-to-platform startup effect, eliminating
+  the stale-state race that could erase an external platform selection.
+- [x] Only the user's fixed-language and Follow system actions write the
+  platform override. Empty plus system English is distinct from explicit
+  English, aliases such as `ko-KR` and `zh-Hans` normalize, and matching
+  snapshots neither rewrite the locale list nor save persisted state again.
+  The first localized frame uses the authoritative platform snapshot while
+  persisted state converges.
+- [x] Focused storage, ViewModel, and writer regressions pass. A production-path
+  lifecycle class passes 3/3: API 32 stored-language preservation, API 33
+  external-override cold launch/recreation, and API 36 explicit-English versus
+  Follow-system recreation/cold launch. The exact product result passes 45/45
+  across twelve classes with no skip, failure, or error.
+  Android string parity, the product CI contract and mutation self-test,
+  product-only copy hygiene, Debug assembly, and `git diff --check` pass.
+- [x] The complete app JVM suite passes 1,226/1,226 with no skip, failure, or
+  error through the exact 19-class `--rerun-tasks` runner. A pre-run marker
+  binds every declared Android input path, byte stream, and mode. The result
+  gate requires the exact 19-report set, 1,226 unique nonempty test cases, and
+  testcase-manifest SHA-256
+  `cc3ea9e2d72ca96e7f937b22a893d8cdaf38c409564ac8baecc5b947b8aa1b78`,
+  then writes and independently reads a canonical binding over the marker and
+  every report byte. Equality is rejected at the source/report, marker/report,
+  and report/binding freshness boundaries. The drawer regression resets each
+  locale at the app title,
+  traverses `top -> header -> detail -> header` inside the actual history
+  viewport above the fixed Settings footer, refreshes geometry after each
+  scroll, and preserves the exact merged accessibility summary.
+- [x] On a disposable API 36.1 arm64 emulator, externally selected `[ko]` and
+  `[ja]` survive cold launch and render their matching UI. In-app French writes
+  `[fr]`; Follow system writes `[]`; explicit English on an English device
+  writes `[en]`. Fixed French and Follow system each remain stable across three
+  cold launches.
+- [x] On the same current Debug APK after disposable app-data reset, the real
+  CAMERA permission dialog opens, denial persists across force-stop without an
+  automatic second request, grant reaches the scan target, fixed denial exposes
+  Open app settings, and the action opens Android's AetherLink app-info screen.
+  Pairing, language choices, and the drawer remain reachable at 200% font
+  scale. No AetherLink FATAL or ANR appears in logcat.
+- [ ] Emulator evidence does not substitute for physical optical scanning,
+  physical camera quality, TalkBack, OEM-specific typography/layout, API
+  26/30/33 platform UI observation, signing, store delivery, or production
+  release. API 32-to-33 stored-language migration remains an explicit future
+  product decision.
+
+## 2026-07-31 Android Camera Lifecycle And Font-Scale Checklist
 
 - [x] Camera permission state is explicit:
   `NeverAsked`, `RequestInFlight`, `RetryRequired`, `RationaleRequired`,
@@ -42,58 +96,114 @@ This document separates current verification evidence from historical captures.
 - [x] `PairingQrScannerChromeNoDeviceComposeTest` passes 13/13, the
   controller-host matrix passes 4/4, and the production-Activity lifecycle
   matrix passes 12/12 across API 26, 30, 33, and 36, all with no skips,
-  failures, or errors. The exact Android product selector passes 36/36 across
-  seven result classes.
+  failures, or errors.
+- [x] `AndroidCoreSurfaceFontScaleQualificationTest` reports three independent
+  passing results at exactly 100%, 150%, and 200%. Each result reaches scanner,
+  drawer, Chat, Settings pairing, Memory, and chat history in all five app
+  locales; English and Korean also cover scanner invalid/permission/Settings
+  recovery, populated and empty search states, streaming Chat, and expanded
+  Memory/history details.
+- [x] QR-scanner close, flashlight, cancel, permission, and Settings-recovery
+  actions expose at least 48 dp bounds. The exact Android product selector
+  passes 45/45 across twelve result classes.
 - [x] `check_product_ci.py`, its mutation self-test, and product-only copy
   hygiene pass. Source guards pin the exact
   `@Config(sdk = [26, 30, 33, 36])` controller-host and Activity matrices,
-  while post-test XML gates require the exact 36-test product result, four-test
-  controller-host result, and 12-test Activity lifecycle result to contain zero
-  skips, failures, or errors. The workflow byte SHA-256 is
-  `e714373a68b91cbc7ed4314cb8ab07082dcbc9b44a4094c75a1f23a2cadd0aca`;
+	  exact 100/150/200% tuple, exact five-locale smoke tuple, and exact
+	  English/Korean full-coverage tuple. Post-test XML gates require the exact
+	  45-test product result, three-test font-scale result, four-test
+	  controller-host result, and 12-test Activity lifecycle result to contain
+	  zero skips, failures, or errors. Focused result contracts resolve by class
+	  name, and every accepted report must strictly postdate the workflow,
+	  checker, Android build inputs, production source, and complete app
+	  test-source graph. The workflow byte SHA-256 is
+  `56c2417d0294e7da5ff27a904036cae94668699ed83447b2214a72b2858714ef`;
   its parsed-semantic SHA-256 is
-  `ced8816a4741f85b84b80d4d8c01b2e3de05623979b99b80db6e4c3d8536a070`.
+  `563cf577cc6bea780633a99bb73416cfbdafa416cde9d0125056baeef5307305`.
 - [ ] This is post-Build 24 current-source no-device evidence. It does not
   prove SDK-specific OS permission or rationale policy because the
   controller-host matrix injects those values. It does not prove Android OS
   process death; both cold launches remain in the same JVM. It also does not
   prove the physical system dialog, camera, optical QR recognition, scanner
-  restart on hardware, TalkBack, or production release.
+  restart on hardware, physical/OEM typography, TalkBack, or production
+  release.
 
 ## 2026-07-31 Post-Build 24 Current-Source Local Release Checklist
 
 - [x] The exact current source passes a clean offline strict-lock Android
   `:app:assembleRelease`, `:app:bundleRelease`, and `:app:lintRelease` graph.
   Gradle reports 175 actionable tasks and `BUILD SUCCESSFUL` in 1 minute
-  22 seconds.
+  20 seconds.
 - [x] Release lint completes with zero errors and three warnings
   (`OldTargetApi`, `GradleDependency`, and `UseKtx`). Its 3,484-byte XML report
   has SHA-256
-  `426caf18f730f3fdb2c3501251097923b8a02c1eaf2ffe11aa9d135e22a6679f`.
+  `e68113caae25e77efd4fdeb2c54560c9cbb48e264da0d45fbfa4779d8472652b`.
 - [x] The 9,575,138-byte unsigned APK has SHA-256
-  `18cd152348cae25b0409be0449371792a33292d315cfb52731fdac8c3d290273`.
-  The 10,684,069-byte AAB has SHA-256
-  `dda35e3d86aa78bf477926417d6c4c0083b3e86d94a552bd5484f9e381416665`.
-  The 72,026,026-byte R8 mapping has SHA-256
-  `ebea7e028753819b779d3bddd6a85c0cc465a76f8c81ab4df37da009b6d7108e`.
+  `cad01315710cf2ed63962f0165b410dd16c09dc27cc44c42036318b1e1739a1f`.
+  The 10,684,471-byte AAB has SHA-256
+  `736f4debe24ada3bdbfd51055a56dcd4d5ccae103568d92183d9e74c696bb62f`.
+  The 72,034,945-byte R8 mapping has SHA-256
+  `c1cb548ac3162f50dbccccfd970cb1fef0b3b4f662f366facbc34092a65bd0b4`.
 - [x] The current-source local ad-hoc macOS Release package builds and the
-  24-entry source/artifact ledger check passes. The canonical 251-file source
+  24-entry source/artifact ledger check passes. The canonical 253-file source
   snapshot remains
-  `512084a6b4dd213364df88d5a3a2d2465f6db519847faa36c5d87b33a2ac0551`
+  `d5aee95b0a7b86c73ac111653f7bbf2e2d96b4e718b4d0b8db9571bcfe7d4dce`
   before and after both platform builds.
 - [x] An isolated temporary candidate archive passes independent readback for
   all 29 payload members, the unsigned arm64-only Android payload, and the
-  ad-hoc arm64 macOS app plus dSYM. Its 167,566,669-byte ZIP has SHA-256
-  `57ba1747dbdb6cdf9524fcdf1e2f8e7c3ca11bdfb6cd63558d40df3610ed14f7`;
+  ad-hoc arm64 macOS app plus dSYM. Its 167,578,488-byte ZIP has SHA-256
+  `c329ed6a44f1e8a459345993f5e645cefa5b8bdc730cd78efe771fc0c8500f88`;
   its 15,200-byte manifest has SHA-256
-  `2d8738ba70eadcacd1b1a8caf096c4ab32742d8b0d1572d8cc3945c05802cb56`;
+  `f99521fce2f3e420265902323260a6a5b771805ddd71f3d4d1391617796efb72`;
   and its 99-byte checksum sidecar has SHA-256
-  `60bf2fb6f71ea812e7eba704af8c4b6df0fbc2b88811ad6237b9b62b6d032b6b`.
+  `24b860585953d9eaaf46b7b9e883d46c9b729e1e5beaba99f5bf0d8bc66dcebe`.
 - [ ] This is a transient dirty-content comparison candidate carrying
   `1.0.0+24` metadata. It is not retained under `dist/releases`, does not
   replace immutable Build 24 or append Build 25, and does not prove
   distribution signing, installation, physical-device behavior, publication,
   or production release.
+<!-- aetherlink-current-source-g6-lane-a-dmg-v1:start -->
+**Latest current-source G6 exact Lane-A DMG handoff.** The comparison-only
+run bound 254 release inputs at source SHA-256
+`e2db0c96a079cceed3c6b8913d633783c8d4bf2062038694be493fac88f56923`
+and execution overlay SHA-256
+`0eeaa1ffcc08cbf2e7bb2e2854d8892f360f989e438aa4f25818eeff15cc680e`.
+Its unequal 101- and 109-byte source roots produced the exact same
+167,061,116-byte archive at SHA-256
+`3300f967ba14e4703640f7b00c600f16e9a101911db60200857887f1a8db7ada`,
+with a 15,200-byte manifest at
+`ea3250caf41c4cd649482264ca42a2ea91380fe0bc4fe4f17db6b73d09f1c1e6`
+and a 99-byte checksum sidecar at
+`03070799c23b4ba16fddb43b56579c3a7ba695e9530bd5750c06e0c479fcd461`.
+All archive/member equality flags are true and both difference lists are
+empty. The exact 19,645-byte primary result is
+`dist/reproducibility/aetherlink-1.0.0+24-local-v1-two-root-v4-prepublication-current-source-g6-lane-a-dmg.json`,
+SHA-256
+`427824807c66ae2e121af43f155dc0172e307ea9704823d6e556400a2eb02c3a`.
+
+Only after exact A/B equality, the runner handed the materialized Lane-A
+archive to the v2 local-DMG exercise. The exact 3,038-byte lifecycle result is
+`dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-local-dmg-install-v2-current-source-g6.json`,
+SHA-256
+`d5250ccd5b84de4517e6ce79234343cca6670b604cae23503ef8de61cb347fe7`.
+It records one ephemeral HFS+ UDZO image, a read-only mount detached before
+launch, two distinct LaunchServices processes, three SQLite integrity checks,
+stable empty Runtime chat and state, and the exact ten-file installed app tree
+of 21,356,326 bytes at SHA-256
+`0dd6363420e79b90ffac38fdf9410cc109122800f071ca9e1e66bf579ea21145`.
+
+The lifecycle field `archiveReadback.currentSourceCompared=false` means that
+the lifecycle runner performed archive-only validation; the documentation
+guard dynamically cross-binds its ZIP, manifest, and checksum identities to
+the parent current-source Lane-A result. No lane archive was retained or
+published, comparison-only publication stayed disabled, and the protected
+Build 23 archive stayed unchanged. This proves only one same-host, per-user,
+local ad-hoc exact handoff. It does not prove arbitrary cross-host or
+clean-machine reproducibility, Finder/quarantine/Gatekeeper behavior,
+signed/notarized distribution, N/N-1 upgrade or rollback, physical-device,
+provider, network, UI/accessibility, security, deployment, or production
+qualification.
+<!-- aetherlink-current-source-g6-lane-a-dmg-v1:end -->
 
 ## 2026-07-31 Local V1 Build 24 Qualification Checklist
 
@@ -247,10 +357,10 @@ mode stayed stable. The canonical 3,038-byte result is at
 `dist/lifecycle/macos-packaged-app-build-24-local-dmg-install-v2.json`,
 SHA-256
 `7d4c6ae7d892bc9d639cc8dfbe5dfb02e09ff7019ee8554f652556ba7b1bb964`.
-The v2 runner and nine-test module SHA-256 values are
-`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`
+The v2 runner and ten-test module SHA-256 values are
+`2ac25660c13f7a256fb2671a735255523cb8ec1c398128a53b2c46535af31b50`
 and
-`6aa2e9e2354aa36f97ff096787ac05115c95114fcf95869463b47f39dea5006c`.
+`8b3cd5852c89735f2454cf4ae13d29024901dbbc7d915d37b4b3a58932558c91`.
 Its preserved DMG primitive runner and shared snapshot-helper runner SHA-256
 values are
 `e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`
@@ -292,7 +402,7 @@ and
 `6e782fc128aad75b20f1b04752e4754ccbf8ceaadc9e2fcabe9cc2e537bfb703`.
 The reused snapshot-bound DMG, preserved DMG primitive, exact-uninstall, and
 snapshot-helper runner SHA-256 values are, respectively,
-`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`,
+`2ac25660c13f7a256fb2671a735255523cb8ec1c398128a53b2c46535af31b50`,
 `e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`,
 `36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa`,
 and
@@ -339,7 +449,7 @@ SHA-256 values are, respectively,
 `300740d31a5b73755f6976f8fe6ce9c0f498cf274ed72d23d5d6c372104eb5ae`,
 `9d05896a5dcce7e3d7642b41acba2ee4bf6d28ffda85bc8f3b2b645f2a3b273a`,
 `4f3094182ba3b87eb2bb89230df59a14ee10e1db15def87074e66c9ed68d2eca`,
-`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`,
+`2ac25660c13f7a256fb2671a735255523cb8ec1c398128a53b2c46535af31b50`,
 `e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`,
 `36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa`,
 and
@@ -403,7 +513,7 @@ and snapshot-helper runner SHA-256 values are, respectively,
 `300740d31a5b73755f6976f8fe6ce9c0f498cf274ed72d23d5d6c372104eb5ae`,
 `9d05896a5dcce7e3d7642b41acba2ee4bf6d28ffda85bc8f3b2b645f2a3b273a`,
 `4f3094182ba3b87eb2bb89230df59a14ee10e1db15def87074e66c9ed68d2eca`,
-`515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374`,
+`2ac25660c13f7a256fb2671a735255523cb8ec1c398128a53b2c46535af31b50`,
 `e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb`,
 `36bb3771aedc55c4c80c32a100e4feec83ee402a821dce168730543ebfd07afa`,
 and

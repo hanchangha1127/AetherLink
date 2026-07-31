@@ -64,6 +64,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
@@ -73,6 +74,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -81,6 +83,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.dp
@@ -3168,20 +3171,28 @@ class ClientScreensNoDeviceComposeTest {
         compose.onNode(hasText("Research notebooks") and hasHeading()).assertIsDisplayed()
         compose.onNodeWithContentDescription("Create research brief").performClick()
         assertEquals(1, createClicks)
-        history.performScrollToIndex(1)
+        history.performScrollToNode(
+            hasTestTag(DRAWER_RESEARCH_NOTEBOOKS_ACTIVE_TEST_TAG),
+        )
         compose.onNodeWithTag(DRAWER_RESEARCH_NOTEBOOKS_ACTIVE_TEST_TAG).assertIsDisplayed()
         compose.onNode(hasText("Active") and hasHeading()).assertIsDisplayed()
-        history.performScrollToIndex(3)
+        history.performScrollToNode(
+            hasTestTag(DRAWER_RESEARCH_NOTEBOOKS_ARCHIVED_TEST_TAG),
+        )
         compose.onNodeWithTag(DRAWER_RESEARCH_NOTEBOOKS_ARCHIVED_TEST_TAG).assertIsDisplayed()
         compose.onNode(hasText("Archived") and hasHeading()).assertIsDisplayed()
 
-        history.performScrollToIndex(2)
+        history.performScrollToNode(
+            hasTestTag(researchNotebookDrawerRowTestTag(activeNotebook.sessionId)),
+        )
         compose.onNodeWithTag(researchNotebookDrawerRowTestTag(activeNotebook.sessionId))
             .assertIsDisplayed()
             .performClick()
         assertEquals(activeNotebook.sessionId, selectedSessionId)
 
-        history.performScrollToIndex(2)
+        history.performScrollToNode(
+            hasTestTag(researchNotebookDrawerOptionsTestTag(activeNotebook.sessionId)),
+        )
         compose.onNodeWithTag(researchNotebookDrawerOptionsTestTag(activeNotebook.sessionId))
             .assert(hasContentDescription("More options for research notebook Active runtime research"))
             .performClick()
@@ -3192,7 +3203,9 @@ class ClientScreensNoDeviceComposeTest {
             .assertIsEnabled()
             .performClick()
         assertEquals(listOf(activeNotebook.sessionId), renamedSessionIds)
-        history.performScrollToIndex(2)
+        history.performScrollToNode(
+            hasTestTag(researchNotebookDrawerOptionsTestTag(activeNotebook.sessionId)),
+        )
         compose.onNodeWithTag(researchNotebookDrawerOptionsTestTag(activeNotebook.sessionId))
             .performClick()
         compose.onNodeWithTag(
@@ -3215,7 +3228,9 @@ class ClientScreensNoDeviceComposeTest {
             .performClick()
         assertEquals(activeNotebook.sessionId, archivedSessionId)
 
-        history.performScrollToIndex(4)
+        history.performScrollToNode(
+            hasTestTag(researchNotebookDrawerOptionsTestTag(archivedNotebook.sessionId)),
+        )
         compose.onNodeWithTag(researchNotebookDrawerOptionsTestTag(archivedNotebook.sessionId))
             .performClick()
         compose.onNodeWithTag(
@@ -3228,7 +3243,9 @@ class ClientScreensNoDeviceComposeTest {
             listOf(activeNotebook.sessionId, archivedNotebook.sessionId),
             renamedSessionIds,
         )
-        history.performScrollToIndex(4)
+        history.performScrollToNode(
+            hasTestTag(researchNotebookDrawerOptionsTestTag(archivedNotebook.sessionId)),
+        )
         compose.onNodeWithTag(researchNotebookDrawerOptionsTestTag(archivedNotebook.sessionId))
             .performClick()
         compose.onNodeWithTag(
@@ -3238,7 +3255,9 @@ class ClientScreensNoDeviceComposeTest {
             .performClick()
         assertEquals(archivedNotebook.sessionId, restoredSessionId)
 
-        history.performScrollToIndex(4)
+        history.performScrollToNode(
+            hasTestTag(researchNotebookDrawerOptionsTestTag(archivedNotebook.sessionId)),
+        )
         compose.onNodeWithTag(researchNotebookDrawerOptionsTestTag(archivedNotebook.sessionId))
             .performClick()
         compose.onNodeWithTag(
@@ -3739,7 +3758,9 @@ class ClientScreensNoDeviceComposeTest {
         }
 
         val history = compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
-        history.performScrollToIndex(2)
+        history.performScrollToNode(
+            hasTestTag(researchNotebookDrawerOptionsTestTag(notebook.sessionId)),
+        )
         compose.onNodeWithTag(researchNotebookDrawerOptionsTestTag(notebook.sessionId))
             .performClick()
         compose.onNodeWithTag(
@@ -3896,7 +3917,7 @@ class ClientScreensNoDeviceComposeTest {
         compose.onNodeWithTag(researchNotebookDrawerRowTestTag(lastArchived.sessionId))
             .assertDoesNotExist()
 
-        history.performScrollToIndex(5_001)
+        history.performScrollToKey("research-notebook-${lastActive.sessionId}")
         compose.onNodeWithTag(researchNotebookDrawerRowTestTag(lastActive.sessionId))
             .assertIsDisplayed()
             .performClick()
@@ -3904,7 +3925,7 @@ class ClientScreensNoDeviceComposeTest {
         compose.onNodeWithTag(researchNotebookDrawerRowTestTag(lastArchived.sessionId))
             .assertDoesNotExist()
 
-        history.performScrollToIndex(10_002)
+        history.performScrollToKey("research-notebook-${lastArchived.sessionId}")
         compose.onNodeWithTag(researchNotebookDrawerRowTestTag(lastArchived.sessionId))
             .assertIsDisplayed()
         compose.onNodeWithTag(researchNotebookDrawerRowTestTag(notebooks.first().sessionId))
@@ -4837,15 +4858,91 @@ class ClientScreensNoDeviceComposeTest {
                 localizedContext,
                 131_072,
             )
+            val history = compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+            val settingsFooter = compose.onNodeWithTag(DRAWER_SETTINGS_FOOTER_TEST_TAG)
+            val appTitle = compose.onNode(
+                hasText(localizedContext.getString(R.string.app_name)) and
+                    hasAnyAncestor(hasTestTag(DRAWER_HISTORY_TEST_TAG)),
+                useUnmergedTree = true,
+            )
+            val summaryHeader = compose.onNodeWithTag(
+                DRAWER_RUNTIME_SUMMARY_HEADER_TEST_TAG,
+                useUnmergedTree = true,
+            )
+            val modelDetail = compose.onNodeWithTag(
+                DRAWER_RUNTIME_SUMMARY_MODEL_DETAIL_TEST_TAG,
+                useUnmergedTree = true,
+            )
+
+            history.performScrollToKey("drawer-app-title")
+            compose.waitForIdle()
             val rootBounds = compose
                 .onNodeWithTag(drawerRuntimeSummaryNarrowRootTestTag)
                 .getUnclippedBoundsInRoot()
+            val topViewportBounds = history.getUnclippedBoundsInRoot()
+            val topFooterBounds = settingsFooter.getUnclippedBoundsInRoot()
+            val appTitleBounds = appTitle
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            assertBoundsInside("$nextLanguageTag drawer history viewport", topViewportBounds, rootBounds)
+            assertBoundsInside("$nextLanguageTag drawer settings footer", topFooterBounds, rootBounds)
+            assertBoundsInside("$nextLanguageTag drawer app title", appTitleBounds, topViewportBounds)
+            assertTrue(
+                "$nextLanguageTag drawer history viewport should end above the fixed settings footer.",
+                topViewportBounds.bottom <= topFooterBounds.top,
+            )
+
+            summaryHeader.performScrollTo()
+            compose.waitForIdle()
+            val headerViewportBounds = history.getUnclippedBoundsInRoot()
+            val headerFooterBounds = settingsFooter.getUnclippedBoundsInRoot()
+            val visibleHeaderBounds = summaryHeader
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val visibleRuntimeLabelBounds = compose
+                .onNodeWithTag(DRAWER_RUNTIME_SUMMARY_RUNTIME_LABEL_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val visibleStatusBounds = compose
+                .onNodeWithTag(DRAWER_RUNTIME_SUMMARY_STATUS_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            assertBoundsInside(
+                "$nextLanguageTag drawer runtime summary header",
+                visibleHeaderBounds,
+                headerViewportBounds,
+            )
+            assertBoundsInside(
+                "$nextLanguageTag drawer runtime label",
+                visibleRuntimeLabelBounds,
+                headerViewportBounds,
+            )
+            assertBoundsInside(
+                "$nextLanguageTag drawer runtime status",
+                visibleStatusBounds,
+                headerViewportBounds,
+            )
+            assertFalse(
+                "$nextLanguageTag drawer runtime header should not overlap the fixed settings footer.",
+                boundsOverlap(visibleHeaderBounds, headerFooterBounds),
+            )
+            assertTrue(
+                "$nextLanguageTag drawer header viewport should end above the fixed settings footer.",
+                headerViewportBounds.bottom <= headerFooterBounds.top,
+            )
+            assertFalse(
+                "$nextLanguageTag drawer runtime header labels should not overlap.",
+                boundsOverlap(visibleRuntimeLabelBounds, visibleStatusBounds),
+            )
+
+            modelDetail.performScrollTo()
+            compose.waitForIdle()
+            val detailViewportBounds = history.getUnclippedBoundsInRoot()
+            val detailFooterBounds = settingsFooter.getUnclippedBoundsInRoot()
             val summaryBounds = compose
                 .onNodeWithTag(DRAWER_RUNTIME_SUMMARY_TEST_TAG, useUnmergedTree = true)
                 .getUnclippedBoundsInRoot()
-            val headerBounds = compose
-                .onNodeWithTag(DRAWER_RUNTIME_SUMMARY_HEADER_TEST_TAG, useUnmergedTree = true)
-                .getUnclippedBoundsInRoot()
+            val headerBounds = summaryHeader.getUnclippedBoundsInRoot()
             val runtimeLabelBounds = compose
                 .onNodeWithTag(DRAWER_RUNTIME_SUMMARY_RUNTIME_LABEL_TEST_TAG, useUnmergedTree = true)
                 .getUnclippedBoundsInRoot()
@@ -4861,15 +4958,15 @@ class ClientScreensNoDeviceComposeTest {
             val modelNameBounds = compose
                 .onNodeWithTag(DRAWER_RUNTIME_SUMMARY_MODEL_NAME_TEST_TAG, useUnmergedTree = true)
                 .assertTextContains(selectedModel.name, substring = false)
+                .assertIsDisplayed()
                 .getUnclippedBoundsInRoot()
-            val modelDetailBounds = compose
-                .onNodeWithTag(DRAWER_RUNTIME_SUMMARY_MODEL_DETAIL_TEST_TAG, useUnmergedTree = true)
+            val modelDetailBounds = modelDetail
                 .assertTextContains(expectedModelDetail, substring = false)
+                .assertIsDisplayed()
                 .getUnclippedBoundsInRoot()
 
             compose.onNode(
                 hasContentDescription(expectedRuntimeSummary),
-                useUnmergedTree = true,
             ).assertIsDisplayed()
             compose.onAllNodesWithText(
                 "raw_future_capability",
@@ -4882,7 +4979,6 @@ class ClientScreensNoDeviceComposeTest {
                 useUnmergedTree = true,
             ).assertCountEquals(0)
 
-            assertBoundsInside("$nextLanguageTag drawer runtime summary", summaryBounds, rootBounds)
             assertBoundsInside("$nextLanguageTag drawer runtime summary header", headerBounds, summaryBounds)
             assertBoundsInside("$nextLanguageTag drawer runtime label", runtimeLabelBounds, headerBounds)
             assertBoundsInside("$nextLanguageTag drawer runtime status", statusBounds, headerBounds)
@@ -4890,13 +4986,58 @@ class ClientScreensNoDeviceComposeTest {
             assertBoundsInside("$nextLanguageTag drawer selected model label", modelLabelBounds, summaryBounds)
             assertBoundsInside("$nextLanguageTag drawer selected model name", modelNameBounds, summaryBounds)
             assertBoundsInside("$nextLanguageTag drawer selected model detail", modelDetailBounds, summaryBounds)
+            assertBoundsInsideHorizontally(
+                "$nextLanguageTag drawer runtime summary",
+                summaryBounds,
+                detailViewportBounds,
+            )
+            assertBoundsInside(
+                "$nextLanguageTag drawer selected model label",
+                modelLabelBounds,
+                detailViewportBounds,
+            )
+            assertBoundsInside(
+                "$nextLanguageTag drawer selected model name",
+                modelNameBounds,
+                detailViewportBounds,
+            )
+            assertBoundsInside(
+                "$nextLanguageTag drawer selected model detail",
+                modelDetailBounds,
+                detailViewportBounds,
+            )
             assertFalse(
-                "$nextLanguageTag drawer runtime header labels should not overlap.",
-                boundsOverlap(runtimeLabelBounds, statusBounds),
+                "$nextLanguageTag drawer selected model detail should not overlap the fixed settings footer.",
+                boundsOverlap(modelDetailBounds, detailFooterBounds),
+            )
+            assertTrue(
+                "$nextLanguageTag drawer detail viewport should end above the fixed settings footer.",
+                detailViewportBounds.bottom <= detailFooterBounds.top,
             )
             assertFalse(
                 "$nextLanguageTag drawer selected model name and detail should not overlap.",
                 boundsOverlap(modelNameBounds, modelDetailBounds),
+            )
+
+            summaryHeader.performScrollTo()
+            compose.waitForIdle()
+            val returnedHeaderViewportBounds = history.getUnclippedBoundsInRoot()
+            val returnedHeaderFooterBounds = settingsFooter.getUnclippedBoundsInRoot()
+            val returnedHeaderBounds = summaryHeader
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            assertBoundsInside(
+                "$nextLanguageTag returned drawer runtime summary header",
+                returnedHeaderBounds,
+                returnedHeaderViewportBounds,
+            )
+            assertFalse(
+                "$nextLanguageTag returned drawer runtime header should not overlap the fixed settings footer.",
+                boundsOverlap(returnedHeaderBounds, returnedHeaderFooterBounds),
+            )
+            assertTrue(
+                "$nextLanguageTag returned drawer header viewport should end above the fixed settings footer.",
+                returnedHeaderViewportBounds.bottom <= returnedHeaderFooterBounds.top,
             )
         }
 
@@ -4913,13 +5054,33 @@ class ClientScreensNoDeviceComposeTest {
             localizedContext,
             0,
         )
-        compose.onNodeWithTag(
+        val history = compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+        val settingsFooter = compose.onNodeWithTag(DRAWER_SETTINGS_FOOTER_TEST_TAG)
+        val modelDetail = compose.onNodeWithTag(
             DRAWER_RUNTIME_SUMMARY_MODEL_DETAIL_TEST_TAG,
             useUnmergedTree = true,
-        ).assertTextContains(expectedModelDetail, substring = false)
+        )
+        history.performScrollToKey("drawer-app-title")
+        compose.waitForIdle()
+        modelDetail.performScrollTo()
+        compose.waitForIdle()
+        val detailViewportBounds = history.getUnclippedBoundsInRoot()
+        val detailFooterBounds = settingsFooter.getUnclippedBoundsInRoot()
+        val modelDetailBounds = modelDetail
+            .assertTextContains(expectedModelDetail, substring = false)
+            .assertIsDisplayed()
+            .getUnclippedBoundsInRoot()
+        assertBoundsInside(
+            "zero-context drawer selected model detail",
+            modelDetailBounds,
+            detailViewportBounds,
+        )
+        assertFalse(
+            "zero-context drawer selected model detail should not overlap the fixed settings footer.",
+            boundsOverlap(modelDetailBounds, detailFooterBounds),
+        )
         compose.onNode(
             hasContentDescription(expectedRuntimeSummary),
-            useUnmergedTree = true,
         ).assertIsDisplayed()
         val nonpositiveContext = localizedContext.resources.getQuantityString(
             R.plurals.model_capability_context_window,
@@ -5123,13 +5284,18 @@ class ClientScreensNoDeviceComposeTest {
 
     @Test
     fun navigationDrawerEmptyHistoryStaysBoundedAtLargeFontAcrossSupportedLanguages() {
+        val fontScales = listOf(1f, 1.5f, 2f)
         val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
         val currentLanguage = mutableStateOf(languageTags.first())
+        val currentFontScale = mutableStateOf(fontScales.first())
 
         compose.setContent {
             MaterialTheme {
-                LocalizedTestContent(languageTag = currentLanguage.value, fontScale = 1.45f) {
-                    key(currentLanguage.value) {
+                LocalizedTestContent(
+                    languageTag = currentLanguage.value,
+                    fontScale = currentFontScale.value,
+                ) {
+                    key(currentLanguage.value, currentFontScale.value) {
                         Surface(
                             modifier = Modifier
                                 .width(320.dp)
@@ -5158,30 +5324,37 @@ class ClientScreensNoDeviceComposeTest {
             }
         }
 
-        languageTags.forEach { languageTag ->
-            val localizedContext = ApplicationProvider
-                .getApplicationContext<Context>()
-                .localizedContext(languageTag)
-            val emptyText = localizedContext.getString(R.string.no_previous_chats)
-            compose.runOnUiThread {
-                currentLanguage.value = languageTag
+        fontScales.forEach { fontScale ->
+            languageTags.forEach { languageTag ->
+                val localizedContext = ApplicationProvider
+                    .getApplicationContext<Context>()
+                    .localizedContext(languageTag, fontScale = fontScale)
+                val emptyText = localizedContext.getString(R.string.no_previous_chats)
+                compose.runOnUiThread {
+                    currentLanguage.value = languageTag
+                    currentFontScale.value = fontScale
+                }
+                compose.waitForIdle()
+
+                val rootBounds = compose
+                    .onNodeWithTag(drawerEmptyHistoryNarrowRootTestTag)
+                    .getUnclippedBoundsInRoot()
+                compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+                    .performScrollToNode(hasTestTag(DRAWER_EMPTY_HISTORY_TEST_TAG))
+                val emptyBounds = compose
+                    .onNodeWithTag(DRAWER_EMPTY_HISTORY_TEST_TAG, useUnmergedTree = true)
+                    .assertIsDisplayed()
+                    .assert(hasText(emptyText))
+                    .assert(hasContentDescription(emptyText))
+                    .assert(hasPoliteLiveRegion())
+                    .getUnclippedBoundsInRoot()
+
+                assertBoundsInside(
+                    "$fontScale font scale $languageTag drawer empty-history message",
+                    emptyBounds,
+                    rootBounds,
+                )
             }
-            compose.waitForIdle()
-
-            val rootBounds = compose
-                .onNodeWithTag(drawerEmptyHistoryNarrowRootTestTag)
-                .getUnclippedBoundsInRoot()
-            compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
-                .performScrollToNode(hasTestTag(DRAWER_EMPTY_HISTORY_TEST_TAG))
-            val emptyBounds = compose
-                .onNodeWithTag(DRAWER_EMPTY_HISTORY_TEST_TAG, useUnmergedTree = true)
-                .assertIsDisplayed()
-                .assert(hasText(emptyText))
-                .assert(hasContentDescription(emptyText))
-                .assert(hasPoliteLiveRegion())
-                .getUnclippedBoundsInRoot()
-
-            assertBoundsInside("$languageTag drawer empty-history message", emptyBounds, rootBounds)
         }
     }
 
@@ -30423,9 +30596,9 @@ class ClientScreensNoDeviceComposeTest {
 
     @Test
     fun settingsCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages() {
+        val fontScales = listOf(1f, 1.5f, 2f)
         val language = mutableStateOf("en")
-        // V1 qualification ceiling: Android font size 200%.
-        val fontScale = 2.0f
+        val currentFontScale = mutableStateOf(fontScales.first())
         val chatModel = RuntimeModel(
             id = "ollama:qwen3:8b",
             name = "Qwen3 8B",
@@ -30474,8 +30647,11 @@ class ClientScreensNoDeviceComposeTest {
 
         compose.setContent {
             MaterialTheme {
-                LocalizedTestContent(languageTag = language.value, fontScale = fontScale) {
-                    key(language.value) {
+                LocalizedTestContent(
+                    languageTag = language.value,
+                    fontScale = currentFontScale.value,
+                ) {
+                    key(language.value, currentFontScale.value) {
                         SettingsScreen(
                             state = RuntimeUiState(
                                 isConnected = true,
@@ -30534,10 +30710,11 @@ class ClientScreensNoDeviceComposeTest {
             }
         }
 
-        listOf("en", "ko", "ja", "zh-CN", "fr").forEach { languageTag ->
-            val localizedContext = ApplicationProvider
-                .getApplicationContext<Context>()
-                .localizedContext(languageTag, fontScale = fontScale)
+        fontScales.forEach { fontScale ->
+            listOf("en", "ko", "ja", "zh-CN", "fr").forEach { languageTag ->
+                val localizedContext = ApplicationProvider
+                    .getApplicationContext<Context>()
+                    .localizedContext(languageTag, fontScale = fontScale)
             val preferencesTitle = localizedContext.getString(R.string.preferences_title)
             val languageTitle = localizedContext.getString(R.string.language_title)
             val followSystemLanguageSummary = localizedContext.getString(
@@ -30570,11 +30747,12 @@ class ClientScreensNoDeviceComposeTest {
                 activeSession.title,
             )
 
-            compose.runOnUiThread {
-                language.value = languageTag
-            }
-            compose.waitForIdle()
-            assertRootHasStableLayout()
+                compose.runOnUiThread {
+                    language.value = languageTag
+                    currentFontScale.value = fontScale
+                }
+                compose.waitForIdle()
+                assertRootHasStableLayout()
 
             scrollUntilTextIsVisible(preferencesTitle, maxSwipes = 8)
             compose.onNode(hasText(preferencesTitle) and hasHeading())
@@ -30615,13 +30793,14 @@ class ClientScreensNoDeviceComposeTest {
                 .assertIsDisplayed()
                 .performClick()
             compose.waitForIdle()
-            compose.onNode(
-                hasContentDescription(archiveChatAction) and
-                    hasClickActionLabel(archiveChatAction),
-                useUnmergedTree = true,
-            )
-                .performScrollTo()
-                .assertIsDisplayed()
+                compose.onNode(
+                    hasContentDescription(archiveChatAction) and
+                        hasClickActionLabel(archiveChatAction),
+                    useUnmergedTree = true,
+                )
+                    .performScrollTo()
+                    .assertIsDisplayed()
+            }
         }
     }
 
@@ -31592,10 +31771,11 @@ class ClientScreensNoDeviceComposeTest {
 
     @Test
     fun chatScreenTalkBackOrderProxyKeepsVisibleChatControlsReachableAtLargeFontAcrossSupportedLanguages() {
+        val fontScales = listOf(1f, 1.5f, 2f)
         val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
         val languageTag = mutableStateOf(languageTags.first())
         val streaming = mutableStateOf(false)
-        val fontScale = 1.5f
+        val currentFontScale = mutableStateOf(fontScales.first())
         val chatModel = RuntimeModel(
             id = "ollama:qwen3:8b",
             name = "Qwen3 8B",
@@ -31618,8 +31798,11 @@ class ClientScreensNoDeviceComposeTest {
 
         compose.setContent {
             MaterialTheme {
-                LocalizedTestContent(languageTag = languageTag.value, fontScale = fontScale) {
-                    key(languageTag.value, streaming.value) {
+                LocalizedTestContent(
+                    languageTag = languageTag.value,
+                    fontScale = currentFontScale.value,
+                ) {
+                    key(languageTag.value, currentFontScale.value, streaming.value) {
                         Surface(
                             modifier = Modifier
                                 .width(320.dp)
@@ -31665,19 +31848,21 @@ class ClientScreensNoDeviceComposeTest {
             }
         }
 
-        languageTags.forEach { nextLanguageTag ->
-            compose.runOnUiThread {
-                languageTag.value = nextLanguageTag
-                streaming.value = false
-            }
-            compose.waitForIdle()
-            compose.onNodeWithTag(CHAT_MESSAGE_LIST_TEST_TAG)
-                .performScrollToIndex(messages.lastIndex - 1)
-            compose.waitForIdle()
+        fontScales.forEach { fontScale ->
+            languageTags.forEach { nextLanguageTag ->
+                compose.runOnUiThread {
+                    languageTag.value = nextLanguageTag
+                    currentFontScale.value = fontScale
+                    streaming.value = false
+                }
+                compose.waitForIdle()
+                compose.onNodeWithTag(CHAT_MESSAGE_LIST_TEST_TAG)
+                    .performScrollToIndex(messages.lastIndex - 1)
+                compose.waitForIdle()
 
-            val localizedContext = ApplicationProvider
-                .getApplicationContext<Context>()
-                .localizedContext(nextLanguageTag, fontScale = fontScale)
+                val localizedContext = ApplicationProvider
+                    .getApplicationContext<Context>()
+                    .localizedContext(nextLanguageTag, fontScale = fontScale)
             val copyLabel = localizedContext.getString(R.string.copy_message)
             val reuseLabel = localizedContext.getString(R.string.reuse_message)
             val reuseState = localizedContext.getString(R.string.reuse_message_state_ready)
@@ -31887,10 +32072,11 @@ class ClientScreensNoDeviceComposeTest {
                 "$nextLanguageTag streaming attach action should precede input.",
                 streamingAttachBounds.right <= streamingInputBounds.left,
             )
-            assertTrue(
-                "$nextLanguageTag streaming input should precede cancel.",
-                streamingInputBounds.right <= cancelBounds.left,
-            )
+                assertTrue(
+                    "$nextLanguageTag streaming input should precede cancel.",
+                    streamingInputBounds.right <= cancelBounds.left,
+                )
+            }
         }
     }
 
@@ -31904,7 +32090,15 @@ class ClientScreensNoDeviceComposeTest {
         val localizedContext = remember(baseContext, languageTag, fontScale) {
             baseContext.localizedContext(languageTag, fontScale)
         }
-        CompositionLocalProvider(LocalContext provides localizedContext) {
+        val baseDensity = LocalDensity.current
+        val scaledDensity = remember(baseDensity.density, fontScale) {
+            Density(density = baseDensity.density, fontScale = fontScale)
+        }
+        CompositionLocalProvider(
+            LocalContext provides localizedContext,
+            LocalDensity provides scaledDensity,
+        ) {
+            check(LocalDensity.current.fontScale == fontScale)
             content()
         }
     }
