@@ -72,6 +72,35 @@ def replace_at_path(
     target[path[-1]] = replacement  # type: ignore[index]
 
 
+def canonical_source_snapshot_directories() -> tuple[str, ...]:
+    directories: set[str] = set()
+    for semantic_path in checker.SOURCE_CONTRACTS:
+        parent = Path(checker.source_storage_path(semantic_path)).parent
+        while parent != Path("."):
+            directories.add(parent.as_posix())
+            parent = parent.parent
+    return tuple(
+        sorted(
+            directories,
+            key=lambda value: (len(Path(value).parts), value),
+        )
+    )
+
+
+def materialize_canonical_source_snapshot(root: Path) -> tuple[str, ...]:
+    storage_paths = tuple(
+        sorted(
+            checker.source_storage_path(path)
+            for path in checker.SOURCE_CONTRACTS
+        )
+    )
+    for relative_path in storage_paths:
+        target = root / relative_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((checker.ROOT / relative_path).read_bytes())
+    return storage_paths
+
+
 class Build24MacOSLifecycleEvidenceTests(unittest.TestCase):
     maxDiff = None
 
@@ -106,6 +135,65 @@ class Build24MacOSLifecycleEvidenceTests(unittest.TestCase):
         self.assertEqual({23, 24}, set(checker.RELEASES))
         self.assertEqual(9, len(checker.EVIDENCE_CONTRACTS))
         self.assertEqual(25, len(checker.SOURCE_CONTRACTS))
+        self.assertEqual(
+            checker.HISTORICAL_SOURCE_SNAPSHOT_COMMIT,
+            "38027523f65f97a81044555c2f42b020eada3436",
+        )
+        self.assertEqual(
+            checker.HISTORICAL_SOURCE_SNAPSHOT_ROOT,
+            "docs/evidence/macos-build24-lifecycle-source-v1",
+        )
+        self.assertEqual(
+            set(checker.HISTORICAL_SOURCE_STORAGE_PATHS),
+            {
+                "script/run_macos_local_dmg_install_smoke_v2.py",
+                "script/test_run_macos_local_dmg_install_smoke_v2.py",
+                "script/run_macos_local_dmg_uninstall_reinstall_smoke.py",
+                "script/test_run_macos_local_dmg_uninstall_reinstall_smoke.py",
+                (
+                    "script/run_macos_local_dmg_uninstall_reinstall_"
+                    "state_recovery_smoke.py"
+                ),
+                (
+                    "script/test_run_macos_local_dmg_uninstall_reinstall_"
+                    "state_recovery_smoke.py"
+                ),
+                (
+                    "script/run_macos_local_dmg_uninstall_reinstall_"
+                    "abrupt_process_state_recovery_smoke.py"
+                ),
+                (
+                    "script/test_run_macos_local_dmg_uninstall_reinstall_"
+                    "abrupt_process_state_recovery_smoke.py"
+                ),
+            },
+        )
+        checker.validate_historical_source_snapshot_contract()
+        for semantic_path, storage_path in (
+            checker.HISTORICAL_SOURCE_STORAGE_PATHS.items()
+        ):
+            expected = checker.SOURCE_CONTRACTS[semantic_path]
+            fixture = checker.ROOT / storage_path
+            with self.subTest(semantic_path=semantic_path):
+                self.assertTrue(
+                    storage_path.startswith(
+                        checker.HISTORICAL_SOURCE_SNAPSHOT_ROOT + "/script/"
+                    )
+                )
+                self.assertFalse(fixture.is_symlink())
+                self.assertTrue(fixture.is_file())
+                self.assertEqual(fixture.stat().st_mode & 0o111, 0)
+                payload = fixture.read_bytes()
+                self.assertEqual(byte_identity(payload), expected)
+        live_v2 = (
+            checker.ROOT / "script/run_macos_local_dmg_install_smoke_v2.py"
+        ).read_bytes()
+        self.assertNotEqual(
+            byte_identity(live_v2),
+            checker.SOURCE_CONTRACTS[
+                "script/run_macos_local_dmg_install_smoke_v2.py"
+            ],
+        )
         self.assertEqual(12, len(checker.UNIT_TEST_MODULES))
         evidence_paths = [
             contract.relative_path for contract in checker.EVIDENCE_CONTRACTS
@@ -671,6 +759,82 @@ class Build24MacOSLifecycleEvidenceTests(unittest.TestCase):
             source.unlink()
             with self.assertRaises(checker.LifecycleEvidenceError):
                 checker.validate_source_files(root, contracts)
+
+    def test_historical_snapshot_contract_rejects_commit_and_path_drift(
+        self,
+    ) -> None:
+        with mock.patch.object(
+            checker,
+            "HISTORICAL_SOURCE_SNAPSHOT_COMMIT",
+            "0" * 40,
+        ):
+            with self.assertRaises(checker.LifecycleEvidenceError):
+                checker.validate_historical_source_snapshot_contract()
+        mutated_paths = dict(checker.HISTORICAL_SOURCE_STORAGE_PATHS)
+        semantic_path = "script/run_macos_local_dmg_install_smoke_v2.py"
+        mutated_paths[semantic_path] = semantic_path
+        with mock.patch.object(
+            checker,
+            "HISTORICAL_SOURCE_STORAGE_PATHS",
+            mutated_paths,
+        ):
+            with self.assertRaises(checker.LifecycleEvidenceError):
+                checker.validate_historical_source_snapshot_contract()
+
+    def test_canonical_source_readback_uses_exact_physical_fixture(self) -> None:
+        def validate(root: Path, storage_paths: tuple[str, ...]) -> None:
+            with checker.RepositorySnapshotReader(
+                root,
+                canonical_source_snapshot_directories(),
+                storage_paths,
+            ) as snapshot:
+                checker.validate_source_files(root, snapshot=snapshot)
+                checker.validate_source_files(
+                    root,
+                    checker.SOURCE_CONTRACTS,
+                    snapshot=snapshot,
+                )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            storage_paths = materialize_canonical_source_snapshot(root)
+            live_v2 = root / "script/run_macos_local_dmg_install_smoke_v2.py"
+            live_v2.write_bytes(
+                b"current live runner is not Build 24 evidence\n"
+            )
+            validate(root, storage_paths)
+
+            fixture = root / checker.HISTORICAL_SOURCE_STORAGE_PATHS[
+                "script/run_macos_local_dmg_install_smoke_v2.py"
+            ]
+            fixture.write_bytes(fixture.read_bytes() + b"mutation")
+            with self.assertRaises(checker.LifecycleEvidenceError):
+                validate(root, storage_paths)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            storage_paths = materialize_canonical_source_snapshot(root)
+            fixture = root / checker.HISTORICAL_SOURCE_STORAGE_PATHS[
+                "script/run_macos_local_dmg_install_smoke_v2.py"
+            ]
+            fixture.unlink()
+            fixture.symlink_to(
+                root / "script/run_macos_local_dmg_install_smoke_v2.py"
+            )
+            with self.assertRaises((checker.LifecycleEvidenceError, OSError)):
+                validate(root, storage_paths)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            storage_paths = materialize_canonical_source_snapshot(root)
+            fixture_directory = (
+                root
+                / checker.HISTORICAL_SOURCE_SNAPSHOT_ROOT
+                / "script"
+            )
+            (fixture_directory / "unexpected.py").write_bytes(b"pass\n")
+            with self.assertRaises(checker.LifecycleEvidenceError):
+                validate(root, storage_paths)
 
     def test_focused_unit_inventory_is_closed_bound_and_nonsecurity(self) -> None:
         checker.validate_unit_test_inventory()

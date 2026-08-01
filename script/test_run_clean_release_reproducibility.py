@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import copy
 from contextlib import contextmanager
+import errno
 import hashlib
 import json
 import os
@@ -356,6 +358,294 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             "uninstall": json.loads(json.dumps(same_dmg["uninstall"])),
         }
 
+    @classmethod
+    def lane_a_local_dmg_abrupt_process_state_recovery_result(
+        cls,
+        release_id: str,
+        evidence: runner.ArchiveEvidence,
+    ) -> dict[str, object]:
+        return (
+            runner.expected_lane_a_local_dmg_abrupt_process_state_recovery_result(
+                cls.lane_a_local_dmg_state_recovery_result(
+                    release_id,
+                    evidence,
+                )
+            )
+        )
+
+    @classmethod
+    def lane_a_local_dmg_abrupt_process_repeatability_receipt(
+        cls,
+        release_id: str,
+        evidence: runner.ArchiveEvidence,
+        result_path: Path,
+    ) -> dict[str, object]:
+        result = cls.lane_a_local_dmg_abrupt_process_state_recovery_result(
+            release_id,
+            evidence,
+        )
+        return runner.build_lane_a_local_dmg_abrupt_process_repeatability_receipt(
+            result_path=result_path,
+            result=result,
+            expected_release_id=release_id,
+        )
+
+    @classmethod
+    def lane_a_idle_resource_stability_result(
+        cls,
+        release_id: str,
+        evidence: runner.ArchiveEvidence,
+    ) -> dict[str, object]:
+        tree = cls.lane_a_local_dmg_result(
+            release_id,
+            evidence,
+        )["installation"]["tree"]
+        samples = [
+            {
+                "observedLatenessMilliseconds": 0,
+                "openFileDescriptorCount": 10,
+                "ordinal": ordinal,
+                "residentBytes": 100 * 1024 * 1024,
+                "targetElapsedMilliseconds": (
+                    ordinal * runner.LANE_A_IDLE_RESOURCE_INTERVAL_MILLISECONDS
+                ),
+                "threadCount": 3,
+            }
+            for ordinal in range(
+                1,
+                runner.LANE_A_IDLE_RESOURCE_SAMPLE_COUNT + 1,
+            )
+        ]
+        return {
+            "archiveReadback": {
+                "currentSourceCompared": False,
+                "mode": runner.LANE_A_IDLE_RESOURCE_READBACK_MODE,
+                "readbackAndExerciseSameSnapshot": True,
+                "signatureVerificationPerformed": False,
+                "snapshotFiles": {
+                    f"{release_id}.manifest.json": {
+                        "sha256": evidence.manifest_identity.sha256,
+                        "size": evidence.manifest_identity.size,
+                    },
+                    f"{release_id}.zip": {
+                        "sha256": evidence.archive_identity.sha256,
+                        "size": evidence.archive_identity.size,
+                    },
+                    f"{release_id}.zip.sha256": {
+                        "sha256": evidence.checksum_identity.sha256,
+                        "size": evidence.checksum_identity.size,
+                    },
+                },
+                "snapshotFilesUnchangedAfterExercise": True,
+                "status": "passed",
+            },
+            "artifact": {"appTree": json.loads(json.dumps(tree))},
+            "cleanup": {
+                "ownedChildOnly": True,
+                "preexistingApplicationsPreserved": True,
+                "temporaryRootRemovedBeforePublication": True,
+            },
+            "environment": {
+                "architecture": "arm64",
+                "logicalCpuCount": 10,
+                "macOSVersion": "26.5.2",
+                "pageSizeBytes": 16_384,
+            },
+            "isolation": {
+                "afInetBindDeniedByPreflight": True,
+                "networkDenied": True,
+                "nonTemporaryWriteDeniedByPreflight": True,
+                "profile": "allow-default-deny-network-and-non-temp-writes-v1",
+                "sandboxed": True,
+                "standardStreams": "devnull",
+                "temporaryCFUserHomeConfigured": True,
+            },
+            "limitations": list(runner.LANE_A_IDLE_RESOURCE_LIMITATIONS),
+            "measurement": {
+                "api": "macos-libproc-proc-pidinfo-v1",
+                "baselineWindowSampleCount": (
+                    runner.LANE_A_IDLE_RESOURCE_WINDOW_SAMPLE_COUNT
+                ),
+                "finalWindowSampleCount": (
+                    runner.LANE_A_IDLE_RESOURCE_WINDOW_SAMPLE_COUNT
+                ),
+                "intervalMilliseconds": (
+                    runner.LANE_A_IDLE_RESOURCE_INTERVAL_MILLISECONDS
+                ),
+                "observationMilliseconds": (
+                    runner.LANE_A_IDLE_RESOURCE_OBSERVATION_MILLISECONDS
+                ),
+                "run": {
+                    "activationPolicy": 0,
+                    "appKitProcessAbsentAfterReap": True,
+                    "exitCode": 0,
+                    "finishedLaunching": True,
+                    "gracefulTerminationAccepted": True,
+                    "maximumObservedLatenessMilliseconds": 0,
+                    "ownedChildProcess": True,
+                    "processIdentifierRetained": False,
+                    "processReaped": True,
+                    "samples": samples,
+                    "summary": runner.lane_a_idle_measurement_summary(
+                        samples
+                    ),
+                },
+                "sampleCount": runner.LANE_A_IDLE_RESOURCE_SAMPLE_COUNT,
+                "sampleLatenessLimitMilliseconds": (
+                    runner.LANE_A_IDLE_RESOURCE_LATENESS_LIMIT_MILLISECONDS
+                ),
+                "status": "passed",
+                "warmupMilliseconds": (
+                    runner.LANE_A_IDLE_RESOURCE_WARMUP_MILLISECONDS
+                ),
+            },
+            "process": {
+                "launchMethod": "sandbox-exec-direct-owned-child-v1",
+                "preexistingApplicationCount": 1,
+                "preexistingApplicationsUsedAsTerminationTargets": False,
+                "rawProcessIdentifierRetained": False,
+            },
+            "release": {
+                "archiveSha256": evidence.archive_identity.sha256,
+                "manifestSha256": evidence.manifest_identity.sha256,
+                "releaseId": release_id,
+            },
+            "repeatability": {
+                "performed": False,
+                "reason": "single-live-resource-observation-v1",
+            },
+            "schemaVersion": 1,
+            "scope": runner.LANE_A_IDLE_RESOURCE_STABILITY_SCOPE,
+            "sourceSnapshot": {
+                "algorithm": (
+                    "sha256(path-nul-mode-nul-size-nul-sha256-lf)-v1"
+                ),
+                "fileCount": 266,
+                "sha256": evidence.source_sha256,
+            },
+            "status": "passed",
+        }
+
+    @classmethod
+    def lane_a_suite_parent_result(
+        cls,
+        release_id: str,
+        evidence: runner.ArchiveEvidence,
+    ) -> dict[str, object]:
+        result = runner.empty_result(publish_qualified=False)
+        result.update(
+            {
+                "builds": [
+                    evidence.result_record("build-a"),
+                    evidence.result_record("build-b"),
+                ],
+                "comparison": {
+                    "archiveBytesEqual": True,
+                    "differences": [],
+                    "memberBytesEqual": True,
+                    "memberDifferences": [],
+                    "memberMetadataEqual": True,
+                    "memberSetEqual": True,
+                    "normalizations": list(evidence.normalizations),
+                },
+                "failure": None,
+                "releaseId": release_id,
+                "source": {
+                    "algorithm": (
+                        "sha256(path-nul-mode-nul-size-nul-sha256-lf)-v1"
+                    ),
+                    "fileCount": 266,
+                    "overlaySha256": "f" * 64,
+                    "sha256": evidence.source_sha256,
+                },
+                "status": "passed",
+            }
+        )
+        return result
+
+    def lane_a_suite(
+        self,
+        paths: runner.LaneALocalDMGSuitePaths,
+        *,
+        release_id: str,
+        evidence: runner.ArchiveEvidence,
+    ) -> runner.LaneALocalDMGSuiteEvidence:
+        install = self.lane_a_local_dmg_result(release_id, evidence)
+        uninstall_reinstall = (
+            self.lane_a_local_dmg_uninstall_reinstall_result(
+                release_id,
+                evidence,
+            )
+        )
+        state_recovery = self.lane_a_local_dmg_state_recovery_result(
+            release_id,
+            evidence,
+        )
+        abrupt_process_state_recovery = (
+            self.lane_a_local_dmg_abrupt_process_state_recovery_result(
+                release_id,
+                evidence,
+            )
+        )
+        repeatability = (
+            runner.build_lane_a_local_dmg_abrupt_process_repeatability_receipt(
+                result_path=paths.abrupt_process_state_recovery,
+                result=abrupt_process_state_recovery,
+                expected_release_id=release_id,
+            )
+        )
+        return runner.LaneALocalDMGSuiteEvidence(
+            paths=paths,
+            archive=evidence,
+            expected_release_id=release_id,
+            install=install,
+            uninstall_reinstall=uninstall_reinstall,
+            state_recovery=state_recovery,
+            abrupt_process_state_recovery=abrupt_process_state_recovery,
+            abrupt_process_state_recovery_repeatability=repeatability,
+            idle_resource_stability=(
+                self.lane_a_idle_resource_stability_result(
+                    release_id,
+                    evidence,
+                )
+            ),
+        )
+
+    @staticmethod
+    def lane_a_suite_publication_payloads(
+        suite: runner.LaneALocalDMGSuiteEvidence,
+        *,
+        parent_result_path: Path | None = None,
+        parent_result: dict[str, object] | None = None,
+    ) -> tuple[tuple[Path, bytes], ...]:
+        items = tuple(
+            zip(
+                suite.paths.ordered(),
+                (
+                    runner.canonical_json_bytes(suite.install),
+                    runner.canonical_json_bytes(suite.uninstall_reinstall),
+                    runner.canonical_json_bytes(suite.state_recovery),
+                    runner.canonical_json_bytes(
+                        suite.abrupt_process_state_recovery
+                    ),
+                    runner.canonical_json_bytes(
+                        suite.abrupt_process_state_recovery_repeatability
+                    ),
+                    runner.canonical_json_bytes(
+                        suite.idle_resource_stability
+                    ),
+                ),
+            )
+        )
+        if parent_result_path is None or parent_result is None:
+            return items
+        return items + (
+            (
+                parent_result_path,
+                runner.canonical_json_bytes(parent_result),
+            ),
+        )
+
     def test_source_inventory_includes_runner_once_and_matches_readback(
         self,
     ) -> None:
@@ -368,6 +658,254 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             builder_module.SOURCE_REQUIRED_FILES,
             readback_module.SOURCE_REQUIRED_FILES,
         )
+
+    def test_source_inventory_includes_idle_runner_closure_once(self) -> None:
+        relatives = (
+            "script/run_macos_build24_idle_resource_stability_smoke.py",
+            (
+                "script/run_macos_current_source_lane_a_"
+                "idle_resource_stability_smoke.py"
+            ),
+            (
+                "script/test_run_macos_current_source_lane_a_"
+                "idle_resource_stability_smoke.py"
+            ),
+        )
+        self.assertEqual(
+            builder_module.SOURCE_REQUIRED_FILES,
+            readback_module.SOURCE_REQUIRED_FILES,
+        )
+        for relative in relatives:
+            with self.subTest(relative=relative):
+                self.assertEqual(
+                    builder_module.SOURCE_REQUIRED_FILES.count(relative),
+                    1,
+                )
+
+    def test_no_device_gate_wires_idle_and_atomic_seven_regressions(
+        self,
+    ) -> None:
+        gate = (runner.ROOT / "script/check_no_device_quality.sh").read_text(
+            encoding="utf-8"
+        )
+        syntax_block = gate[
+            gate.index("run check_python_syntax \\\n") : gate.index(
+                "\n\nrun bash -n script/*.sh"
+            )
+        ]
+        unittest_start = gate.index("run python3 -m unittest \\\n")
+        unittest_block = gate[unittest_start:].split("\n\n", 1)[0]
+        idle_runner = (
+            "script/run_macos_current_source_lane_a_"
+            "idle_resource_stability_smoke.py"
+        )
+        idle_test = (
+            "script/test_run_macos_current_source_lane_a_"
+            "idle_resource_stability_smoke.py"
+        )
+        clean_runner = "script/run_clean_release_reproducibility.py"
+        clean_test = "script/test_run_clean_release_reproducibility.py"
+        for relative in (idle_runner, idle_test, clean_runner, clean_test):
+            with self.subTest(block="syntax", relative=relative):
+                self.assertEqual(syntax_block.count(relative), 1)
+        for relative in (idle_test, clean_test):
+            with self.subTest(block="unittest", relative=relative):
+                self.assertEqual(unittest_block.count(relative), 1)
+        for relative in (idle_runner, clean_runner):
+            with self.subTest(block="unittest", relative=relative):
+                self.assertNotIn(relative, unittest_block)
+
+    def test_idle_result_validator_recomputes_samples_and_cross_bindings(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        result = self.lane_a_idle_resource_stability_result(
+            release_id,
+            evidence,
+        )
+        tree = self.lane_a_local_dmg_result(
+            release_id,
+            evidence,
+        )["installation"]["tree"]
+        source = result["sourceSnapshot"]
+
+        def validate(candidate: dict[str, object]) -> dict[str, object]:
+            return runner.validate_lane_a_idle_resource_stability_result_bytes(
+                runner.canonical_json_bytes(candidate),
+                expected_release_id=release_id,
+                evidence=evidence,
+                expected_source_snapshot=source,
+                expected_tree=tree,
+            )
+
+        self.assertEqual(validate(result), result)
+        mutations: list[tuple[str, Callable[[dict[str, object]], None]]] = [
+            (
+                "source",
+                lambda value: value["sourceSnapshot"].__setitem__(
+                    "sha256",
+                    "b" * 64,
+                ),
+            ),
+            (
+                "tree",
+                lambda value: value["artifact"]["appTree"].__setitem__(
+                    "sha256",
+                    "c" * 64,
+                ),
+            ),
+            (
+                "sample-type",
+                lambda value: value["measurement"]["run"]["samples"][0].__setitem__(
+                    "openFileDescriptorCount",
+                    True,
+                ),
+            ),
+            (
+                "summary",
+                lambda value: value["measurement"]["run"]["summary"][
+                    "threads"
+                ].__setitem__("finalDelta", 1),
+            ),
+            (
+                "lateness",
+                lambda value: value["measurement"]["run"].__setitem__(
+                    "maximumObservedLatenessMilliseconds",
+                    1,
+                ),
+            ),
+            (
+                "cleanup-bool-int",
+                lambda value: value["cleanup"].__setitem__(
+                    "ownedChildOnly",
+                    1,
+                ),
+            ),
+            (
+                "isolation-bool-int",
+                lambda value: value["isolation"].__setitem__(
+                    "networkDenied",
+                    1,
+                ),
+            ),
+            (
+                "repeatability-bool-int",
+                lambda value: value["repeatability"].__setitem__(
+                    "performed",
+                    0,
+                ),
+            ),
+        ]
+        for label, mutate in mutations:
+            candidate = copy.deepcopy(result)
+            mutate(candidate)
+            with self.subTest(label=label), self.assertRaises(
+                runner.ReproducibilityError
+            ):
+                validate(candidate)
+
+    def test_suite_parent_binding_rejects_source_build_and_comparison_drift(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        install = self.lane_a_local_dmg_result(release_id, evidence)
+        same_dmg = self.lane_a_local_dmg_uninstall_reinstall_result(
+            release_id,
+            evidence,
+        )
+        recovery = self.lane_a_local_dmg_state_recovery_result(
+            release_id,
+            evidence,
+        )
+        abrupt = self.lane_a_local_dmg_abrupt_process_state_recovery_result(
+            release_id,
+            evidence,
+        )
+        idle = self.lane_a_idle_resource_stability_result(
+            release_id,
+            evidence,
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            lifecycle_root = Path(temporary).resolve() / "lifecycle"
+            lifecycle_root.mkdir(mode=0o700)
+            with mock.patch.object(
+                runner,
+                "LIFECYCLE_RESULT_ROOT",
+                lifecycle_root,
+            ):
+                paths = runner.lane_a_local_dmg_suite_paths(
+                    "parent-binding",
+                    expected_release_id=release_id,
+                )
+        receipt = (
+            runner.build_lane_a_local_dmg_abrupt_process_repeatability_receipt(
+                result_path=paths.abrupt_process_state_recovery,
+                result=abrupt,
+                expected_release_id=release_id,
+            )
+        )
+        suite = runner.LaneALocalDMGSuiteEvidence(
+            paths=paths,
+            archive=evidence,
+            expected_release_id=release_id,
+            install=install,
+            uninstall_reinstall=same_dmg,
+            state_recovery=recovery,
+            abrupt_process_state_recovery=abrupt,
+            abrupt_process_state_recovery_repeatability=receipt,
+            idle_resource_stability=idle,
+        )
+        parent = self.lane_a_suite_parent_result(release_id, evidence)
+        source = idle["sourceSnapshot"]
+        runner.validate_lane_a_suite_parent_binding(
+            parent_result=parent,
+            suite=suite,
+            idle_source_snapshot=source,
+        )
+
+        mutations: list[tuple[str, Callable[[dict[str, object]], None]]] = [
+            (
+                "source",
+                lambda value: value["source"].__setitem__(
+                    "sha256",
+                    "b" * 64,
+                ),
+            ),
+            (
+                "build-a",
+                lambda value: value["builds"][0]["archive"].__setitem__(
+                    "sha256",
+                    "c" * 64,
+                ),
+            ),
+            (
+                "build-b",
+                lambda value: value["builds"][1]["archive"].__setitem__(
+                    "sha256",
+                    "d" * 64,
+                ),
+            ),
+            (
+                "comparison",
+                lambda value: value["comparison"].__setitem__(
+                    "archiveBytesEqual",
+                    False,
+                ),
+            ),
+        ]
+        for label, mutate in mutations:
+            candidate = copy.deepcopy(parent)
+            mutate(candidate)
+            with self.subTest(label=label), self.assertRaises(
+                runner.ReproducibilityError
+            ):
+                runner.validate_lane_a_suite_parent_binding(
+                    parent_result=candidate,
+                    suite=suite,
+                    idle_source_snapshot=source,
+                )
 
     def test_source_inventory_includes_runtime_chat_cross_process_qa_closure(
         self,
@@ -414,6 +952,14 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             (
                 "script/"
                 "run_macos_local_dmg_uninstall_reinstall_state_recovery_smoke.py"
+            ),
+            (
+                "script/run_macos_local_dmg_uninstall_reinstall_"
+                "abrupt_process_state_recovery_smoke.py"
+            ),
+            (
+                "script/test_run_macos_local_dmg_uninstall_reinstall_"
+                "abrupt_process_state_recovery_smoke.py"
             ),
             "script/run_macos_packaged_app_lifecycle_smoke.py",
             "script/run_macos_packaged_app_state_recovery_smoke.py",
@@ -687,7 +1233,7 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                         expected_release_id=release_id,
                     )
 
-    def test_lane_a_local_dmg_suite_label_derives_three_exact_paths(
+    def test_lane_a_local_dmg_suite_label_derives_six_exact_paths(
         self,
     ) -> None:
         release_id = "aetherlink-1.0.0+24-local-v1"
@@ -721,9 +1267,25 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                             "local-dmg-uninstall-reinstall-state-recovery-v1-"
                             "current-source-g6-chain.json"
                         ),
+                        (
+                            f"macos-{release_id}-two-root-lane-a-"
+                            "local-dmg-uninstall-reinstall-abrupt-process-"
+                            "state-recovery-v1-current-source-g6-chain.json"
+                        ),
+                        (
+                            f"macos-{release_id}-two-root-lane-a-"
+                            "local-dmg-uninstall-reinstall-abrupt-process-"
+                            "state-recovery-repeatability-v1-"
+                            "current-source-g6-chain.json"
+                        ),
+                        (
+                            f"macos-{release_id}-two-root-lane-a-"
+                            "idle-resource-stability-v1-"
+                            "current-source-g6-chain.json"
+                        ),
                     ],
                 )
-                self.assertEqual(len(set(paths.ordered())), 3)
+                self.assertEqual(len(set(paths.ordered())), 6)
                 for invalid in (
                     "",
                     "Uppercase",
@@ -1240,6 +1802,91 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 expected_tree=tree,
             )
 
+    def test_lane_a_local_dmg_abrupt_result_and_receipt_are_exact(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        recovery = self.lane_a_local_dmg_state_recovery_result(
+            release_id,
+            evidence,
+        )
+        result = (
+            self.lane_a_local_dmg_abrupt_process_state_recovery_result(
+                release_id,
+                evidence,
+            )
+        )
+        result_path = Path(
+            "/fixture/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-"
+            "local-dmg-uninstall-reinstall-abrupt-process-state-recovery-"
+            "v1-suite.json"
+        )
+        receipt = (
+            self.lane_a_local_dmg_abrupt_process_repeatability_receipt(
+                release_id,
+                evidence,
+                result_path,
+            )
+        )
+        self.assertEqual(
+            (
+                runner.validate_lane_a_local_dmg_abrupt_process_state_recovery_result_bytes(
+                    runner.canonical_json_bytes(result),
+                    state_recovery=recovery,
+                )
+            ),
+            result,
+        )
+        self.assertEqual(
+            (
+                runner.validate_lane_a_local_dmg_abrupt_process_repeatability_receipt_bytes(
+                    runner.canonical_json_bytes(receipt),
+                    result_path=result_path,
+                    result=result,
+                    expected_release_id=release_id,
+                )
+            ),
+            receipt,
+        )
+
+        result_mutations = []
+        signal_bool = json.loads(json.dumps(result))
+        signal_bool["abruptTermination"]["signalNumber"] = True
+        result_mutations.append(signal_bool)
+        tree_drift = json.loads(json.dumps(result))
+        tree_drift["installation"]["tree"]["sha256"] = "e" * 64
+        result_mutations.append(tree_drift)
+        extra_result = json.loads(json.dumps(result))
+        extra_result["unexpected"] = True
+        result_mutations.append(extra_result)
+        for mutation in result_mutations:
+            with self.subTest(result_mutation=mutation), self.assertRaises(
+                runner.ReproducibilityError
+            ):
+                runner.validate_lane_a_local_dmg_abrupt_process_state_recovery_result_bytes(
+                    runner.canonical_json_bytes(mutation),
+                    state_recovery=recovery,
+                )
+
+        receipt_mutations = []
+        count_bool = json.loads(json.dumps(receipt))
+        count_bool["runCount"] = True
+        receipt_mutations.append(count_bool)
+        digest_drift = json.loads(json.dumps(receipt))
+        digest_drift["runs"][1]["sha256"] = "f" * 64
+        receipt_mutations.append(digest_drift)
+        for mutation in receipt_mutations:
+            with self.subTest(receipt_mutation=mutation), self.assertRaises(
+                runner.ReproducibilityError
+            ):
+                runner.validate_lane_a_local_dmg_abrupt_process_repeatability_receipt_bytes(
+                    runner.canonical_json_bytes(mutation),
+                    result_path=result_path,
+                    result=result,
+                    expected_release_id=release_id,
+                )
+
     def test_lane_a_local_dmg_result_publication_is_idempotent_only(
         self,
     ) -> None:
@@ -1418,7 +2065,1560 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     runner.LANE_A_LOCAL_DMG_PHASE,
                 )
 
-    def test_lane_a_local_dmg_suite_preflights_all_then_publishes_exactly(
+    def test_lane_a_local_dmg_suite_preflights_and_reuses_exact_staging(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        with tempfile.TemporaryDirectory() as temporary:
+            lifecycle_root = Path(temporary).resolve() / "lifecycle"
+            lifecycle_root.mkdir(mode=0o700)
+            with mock.patch.object(
+                runner,
+                "LIFECYCLE_RESULT_ROOT",
+                lifecycle_root,
+            ):
+                blocked_paths = runner.lane_a_local_dmg_suite_paths(
+                    "blocked-suite",
+                    expected_release_id=release_id,
+                )
+                blocked_suite = self.lane_a_suite(
+                    blocked_paths,
+                    release_id=release_id,
+                    evidence=evidence,
+                )
+                blocked_paths.uninstall_reinstall.write_bytes(b"different\n")
+                with self.assertRaisesRegex(
+                    runner.ReproducibilityError,
+                    "refusing to replace",
+                ):
+                    runner.publish_lane_a_local_dmg_suite(blocked_suite)
+                self.assertFalse(blocked_paths.install.exists())
+                self.assertEqual(
+                    runner.lane_a_local_dmg_staged_candidates(
+                        blocked_paths.install
+                    ),
+                    (),
+                )
+
+                paths = runner.lane_a_local_dmg_suite_paths(
+                    "recoverable-exclusive-rename",
+                    expected_release_id=release_id,
+                )
+                suite = self.lane_a_suite(
+                    paths,
+                    release_id=release_id,
+                    evidence=evidence,
+                )
+                install_payload = runner.canonical_json_bytes(suite.install)
+                paths.install.write_bytes(install_payload)
+                install_status = os.lstat(paths.install)
+                real_rename = (
+                    runner.rename_lane_a_local_dmg_result_exclusive
+                )
+                publication_calls = 0
+
+                def fail_second_publication(
+                    source: Path,
+                    destination: Path,
+                ) -> None:
+                    nonlocal publication_calls
+                    if destination in paths.ordered():
+                        publication_calls += 1
+                        if publication_calls == 2:
+                            raise OSError(
+                                "fixture second exclusive rename failure"
+                            )
+                    real_rename(source, destination)
+
+                with (
+                    mock.patch.object(
+                        runner,
+                        "rename_lane_a_local_dmg_result_exclusive",
+                        side_effect=fail_second_publication,
+                    ),
+                    mock.patch.object(
+                        Path,
+                        "unlink",
+                        autospec=True,
+                        side_effect=AssertionError(
+                            "publication must not unlink paths"
+                        ),
+                    ),
+                    self.assertRaisesRegex(
+                        runner.ReproducibilityError,
+                        "cannot publish",
+                    ),
+                ):
+                    runner.publish_lane_a_local_dmg_suite(suite)
+
+                self.assertEqual(
+                    paths.install.read_bytes(),
+                    install_payload,
+                )
+                preserved_install = os.lstat(paths.install)
+                self.assertEqual(
+                    (preserved_install.st_dev, preserved_install.st_ino),
+                    (install_status.st_dev, install_status.st_ino),
+                )
+                for path, payload in self.lane_a_suite_publication_payloads(
+                    suite
+                )[1:]:
+                    self.assertFalse(path.exists())
+                    candidates = (
+                        runner.lane_a_local_dmg_staged_candidates(path)
+                    )
+                    self.assertEqual(len(candidates), 1)
+                    self.assertEqual(candidates[0].read_bytes(), payload)
+
+                with (
+                    mock.patch.object(
+                        runner.tempfile,
+                        "mkstemp",
+                        side_effect=AssertionError(
+                            "retry must reuse exact staging"
+                        ),
+                    ),
+                    mock.patch.object(
+                        Path,
+                        "unlink",
+                        autospec=True,
+                        side_effect=AssertionError(
+                            "retry must not unlink paths"
+                        ),
+                    ),
+                ):
+                    runner.publish_lane_a_local_dmg_suite(suite)
+                self.assertTrue(
+                    all(path.is_file() for path in paths.ordered())
+                )
+                self.assertEqual(
+                    (
+                        os.lstat(paths.install).st_dev,
+                        os.lstat(paths.install).st_ino,
+                    ),
+                    (install_status.st_dev, install_status.st_ino),
+                )
+                self.assertTrue(
+                    all(
+                        not runner.lane_a_local_dmg_staged_candidates(path)
+                        for path in paths.ordered()
+                    )
+                )
+
+    def test_lane_a_exclusive_rename_is_no_replace_inode_move(self) -> None:
+        if sys.platform != "darwin":
+            self.skipTest("renamex_np is a Darwin release-gate primitive")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            destination = root / "destination"
+            source.write_bytes(b"source\n")
+            source_status = os.lstat(source)
+            runner.rename_lane_a_local_dmg_result_exclusive(
+                source,
+                destination,
+            )
+            destination_status = os.lstat(destination)
+            self.assertFalse(source.exists())
+            self.assertEqual(destination.read_bytes(), b"source\n")
+            self.assertEqual(
+                (destination_status.st_dev, destination_status.st_ino),
+                (source_status.st_dev, source_status.st_ino),
+            )
+
+            loser = root / "loser"
+            loser.write_bytes(b"loser\n")
+            winner_status = os.lstat(destination)
+            loser_status = os.lstat(loser)
+            with self.assertRaises(FileExistsError):
+                runner.rename_lane_a_local_dmg_result_exclusive(
+                    loser,
+                    destination,
+                )
+            self.assertEqual(destination.read_bytes(), b"source\n")
+            self.assertEqual(loser.read_bytes(), b"loser\n")
+            self.assertEqual(
+                (os.lstat(destination).st_dev, os.lstat(destination).st_ino),
+                (winner_status.st_dev, winner_status.st_ino),
+            )
+            self.assertEqual(
+                (os.lstat(loser).st_dev, os.lstat(loser).st_ino),
+                (loser_status.st_dev, loser_status.st_ino),
+            )
+
+            with (
+                mock.patch.object(
+                    runner.ctypes,
+                    "CDLL",
+                    return_value=object(),
+                ),
+                self.assertRaises(OSError) as unavailable,
+            ):
+                runner.rename_lane_a_local_dmg_result_exclusive(
+                    loser,
+                    destination,
+                )
+            self.assertEqual(unavailable.exception.errno, errno.ENOSYS)
+
+            class ErrnoZeroRename:
+                argtypes: object = None
+                restype: object = None
+
+                def __call__(self, *args: object) -> int:
+                    runner.ctypes.set_errno(0)
+                    return -1
+
+            class ErrnoZeroLibrary:
+                renamex_np = ErrnoZeroRename()
+
+            with (
+                mock.patch.object(
+                    runner.ctypes,
+                    "CDLL",
+                    return_value=ErrnoZeroLibrary(),
+                ),
+                self.assertRaises(OSError) as defensive,
+            ):
+                runner.rename_lane_a_local_dmg_result_exclusive(
+                    loser,
+                    destination,
+                )
+            self.assertEqual(defensive.exception.errno, errno.EIO)
+
+    def test_lane_a_single_interrupt_rolls_back_and_reuses_staging(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        result = self.lane_a_local_dmg_result(release_id, evidence)
+        payload = runner.canonical_json_bytes(result)
+        with tempfile.TemporaryDirectory() as temporary:
+            lifecycle_root = Path(temporary).resolve() / "lifecycle"
+            lifecycle_root.mkdir(mode=0o700)
+            path = lifecycle_root / (
+                f"macos-{release_id}-two-root-lane-a-"
+                "local-dmg-install-v2-post-rename-interrupt.json"
+            )
+            real_rename = runner.rename_lane_a_local_dmg_result_exclusive
+            interrupted = False
+            sync_calls = 0
+            real_sync = runner.sync_lane_a_local_dmg_result_parent
+
+            def interrupt_after_publication(
+                source: Path,
+                destination: Path,
+            ) -> None:
+                nonlocal interrupted
+                real_rename(source, destination)
+                if destination == path and not interrupted:
+                    interrupted = True
+                    raise KeyboardInterrupt()
+
+            def record_sync(target: Path) -> None:
+                nonlocal sync_calls
+                sync_calls += 1
+                real_sync(target)
+
+            with (
+                mock.patch.object(
+                    runner,
+                    "LIFECYCLE_RESULT_ROOT",
+                    lifecycle_root,
+                ),
+                mock.patch.object(
+                    runner,
+                    "rename_lane_a_local_dmg_result_exclusive",
+                    side_effect=interrupt_after_publication,
+                ),
+                mock.patch.object(
+                    runner,
+                    "sync_lane_a_local_dmg_result_parent",
+                    side_effect=record_sync,
+                ),
+                mock.patch.object(
+                    Path,
+                    "unlink",
+                    autospec=True,
+                    side_effect=AssertionError(
+                        "single publication must not unlink"
+                    ),
+                ),
+                self.assertRaises(KeyboardInterrupt),
+            ):
+                runner.publish_lane_a_local_dmg_result(
+                    path,
+                    result,
+                    expected_release_id=release_id,
+                )
+            self.assertFalse(path.exists())
+            self.assertEqual(sync_calls, 1)
+            candidates = runner.lane_a_local_dmg_staged_candidates(path)
+            self.assertEqual(len(candidates), 1)
+            self.assertEqual(candidates[0].read_bytes(), payload)
+            staged_status = os.lstat(candidates[0])
+
+            with (
+                mock.patch.object(
+                    runner,
+                    "LIFECYCLE_RESULT_ROOT",
+                    lifecycle_root,
+                ),
+                mock.patch.object(
+                    runner.tempfile,
+                    "mkstemp",
+                    side_effect=AssertionError(
+                        "retry must consume retained staging"
+                    ),
+                ),
+                mock.patch.object(
+                    Path,
+                    "unlink",
+                    autospec=True,
+                    side_effect=AssertionError(
+                        "single retry must not unlink"
+                    ),
+                ),
+            ):
+                runner.publish_lane_a_local_dmg_result(
+                    path,
+                    result,
+                    expected_release_id=release_id,
+                )
+            final_status = os.lstat(path)
+            self.assertEqual(
+                (final_status.st_dev, final_status.st_ino),
+                (staged_status.st_dev, staged_status.st_ino),
+            )
+            self.assertEqual(final_status.st_nlink, 1)
+            self.assertEqual(path.read_bytes(), payload)
+            self.assertEqual(
+                runner.lane_a_local_dmg_staged_candidates(path),
+                (),
+            )
+
+    def test_lane_a_single_source_replacement_is_never_left_visible(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        result = self.lane_a_local_dmg_result(release_id, evidence)
+        with tempfile.TemporaryDirectory() as temporary:
+            lifecycle_root = Path(temporary).resolve() / "lifecycle"
+            lifecycle_root.mkdir(mode=0o700)
+            path = lifecycle_root / (
+                f"macos-{release_id}-two-root-lane-a-"
+                "local-dmg-install-v2-source-replacement.json"
+            )
+            real_rename = runner.rename_lane_a_local_dmg_result_exclusive
+            injected = False
+
+            def replace_source_before_rename(
+                source: Path,
+                destination: Path,
+            ) -> None:
+                nonlocal injected
+                if destination == path and not injected:
+                    injected = True
+                    replacement = source.parent / ".replacement-source"
+                    replacement.write_bytes(b"unvalidated bytes\n")
+                    os.replace(replacement, source)
+                real_rename(source, destination)
+
+            with (
+                mock.patch.object(
+                    runner,
+                    "LIFECYCLE_RESULT_ROOT",
+                    lifecycle_root,
+                ),
+                mock.patch.object(
+                    runner,
+                    "rename_lane_a_local_dmg_result_exclusive",
+                    side_effect=replace_source_before_rename,
+                ),
+                mock.patch.object(
+                    Path,
+                    "unlink",
+                    autospec=True,
+                    side_effect=AssertionError(
+                        "replacement handling must not unlink"
+                    ),
+                ),
+                self.assertRaisesRegex(
+                    runner.ReproducibilityError,
+                    "rollback did not complete",
+                ),
+            ):
+                runner.publish_lane_a_local_dmg_result(
+                    path,
+                    result,
+                    expected_release_id=release_id,
+                )
+            self.assertFalse(path.exists())
+            candidates = runner.lane_a_local_dmg_staged_candidates(path)
+            self.assertEqual(len(candidates), 1)
+            self.assertEqual(
+                candidates[0].read_bytes(),
+                b"unvalidated bytes\n",
+            )
+
+    def test_lane_a_parent_path_replacement_never_redirects_publication(
+        self,
+    ) -> None:
+        if sys.platform != "darwin":
+            self.skipTest("renameatx_np is a Darwin release-gate primitive")
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        result = self.lane_a_local_dmg_result(release_id, evidence)
+        payload = runner.canonical_json_bytes(result)
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            lifecycle_root = base / "lifecycle"
+            displaced_root = base / "held-lifecycle"
+            lifecycle_root.mkdir(mode=0o700)
+            path = lifecycle_root / (
+                f"macos-{release_id}-two-root-lane-a-"
+                "local-dmg-install-v2-parent-replacement.json"
+            )
+            real_rename = runner.rename_lane_a_local_dmg_result_exclusive
+            injected = False
+
+            def replace_parent_before_publication(
+                source: Path,
+                destination: Path,
+            ) -> None:
+                nonlocal injected
+                if destination == path and not injected:
+                    injected = True
+                    parent_descriptors = (
+                        runner.LANE_A_RESULT_PARENT_DESCRIPTORS.get()
+                    )
+                    self.assertIn(lifecycle_root, parent_descriptors)
+                    os.rename(lifecycle_root, displaced_root)
+                    lifecycle_root.mkdir(mode=0o700)
+                    held = os.fstat(parent_descriptors[lifecycle_root])
+                    displaced = os.lstat(displaced_root)
+                    self.assertEqual(
+                        (held.st_dev, held.st_ino),
+                        (displaced.st_dev, displaced.st_ino),
+                    )
+                real_rename(source, destination)
+
+            with (
+                mock.patch.object(
+                    runner,
+                    "LIFECYCLE_RESULT_ROOT",
+                    lifecycle_root,
+                ),
+                mock.patch.object(
+                    runner,
+                    "rename_lane_a_local_dmg_result_exclusive",
+                    side_effect=replace_parent_before_publication,
+                ),
+                self.assertRaisesRegex(
+                    runner.ReproducibilityError,
+                    "lease cleanup failed",
+                ),
+            ):
+                runner.publish_lane_a_local_dmg_result(
+                    path,
+                    result,
+                    expected_release_id=release_id,
+                )
+            self.assertFalse(path.exists())
+            self.assertEqual(tuple(lifecycle_root.iterdir()), ())
+            displaced_entries = tuple(displaced_root.iterdir())
+            self.assertEqual(len(displaced_entries), 1)
+            self.assertTrue(
+                displaced_entries[0].name.startswith(f".{path.name}.")
+            )
+            self.assertEqual(displaced_entries[0].read_bytes(), payload)
+            self.assertEqual(
+                runner.LANE_A_RESULT_PARENT_DESCRIPTORS.get(),
+                {},
+            )
+
+    def test_lane_a_suite_parent_is_last_and_success_never_unlinks(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            lifecycle_root = base / "lifecycle"
+            result_root = base / "reproducibility"
+            lifecycle_root.mkdir(mode=0o700)
+            result_root.mkdir(mode=0o700)
+            with (
+                mock.patch.object(
+                    runner,
+                    "LIFECYCLE_RESULT_ROOT",
+                    lifecycle_root,
+                ),
+                mock.patch.object(runner, "RESULT_ROOT", result_root),
+            ):
+                paths = runner.lane_a_local_dmg_suite_paths(
+                    "parent-last",
+                    expected_release_id=release_id,
+                )
+                suite = self.lane_a_suite(
+                    paths,
+                    release_id=release_id,
+                    evidence=evidence,
+                )
+                parent_path = result_root / (
+                    f"{release_id}-two-root-v4-prepublication-parent-last.json"
+                )
+                parent_result = self.lane_a_suite_parent_result(
+                    release_id,
+                    evidence,
+                )
+                expected_items = self.lane_a_suite_publication_payloads(
+                    suite,
+                    parent_result_path=parent_path,
+                    parent_result=parent_result,
+                )
+                rename_order: list[Path] = []
+                synced_parents: list[Path] = []
+                durability_events: list[tuple[str, Path]] = []
+                real_rename = (
+                    runner.rename_lane_a_local_dmg_result_exclusive
+                )
+                real_sync = runner.sync_lane_a_local_dmg_result_parent
+
+                def record_rename(
+                    source: Path,
+                    destination: Path,
+                ) -> None:
+                    if destination in tuple(path for path, _ in expected_items):
+                        rename_order.append(destination)
+                        durability_events.append(("rename", destination))
+                    real_rename(source, destination)
+
+                def record_sync(path: Path) -> None:
+                    synced_parents.append(path.parent)
+                    durability_events.append(("sync", path.parent))
+                    real_sync(path)
+
+                with (
+                    mock.patch.object(
+                        runner,
+                        "rename_lane_a_local_dmg_result_exclusive",
+                        side_effect=record_rename,
+                    ),
+                    mock.patch.object(
+                        runner,
+                        "sync_lane_a_local_dmg_result_parent",
+                        side_effect=record_sync,
+                    ),
+                    mock.patch.object(
+                        Path,
+                        "unlink",
+                        autospec=True,
+                        side_effect=AssertionError(
+                            "atomic suite publication must not unlink"
+                        ),
+                    ),
+                ):
+                    runner.publish_lane_a_local_dmg_suite(
+                        suite,
+                        parent_result_path=parent_path,
+                        parent_result=parent_result,
+                    )
+                self.assertEqual(
+                    rename_order,
+                    [path for path, _ in expected_items],
+                )
+                self.assertEqual(synced_parents.count(lifecycle_root), 1)
+                self.assertEqual(synced_parents.count(result_root), 1)
+                self.assertLess(
+                    durability_events.index(("sync", lifecycle_root)),
+                    durability_events.index(("rename", parent_path)),
+                )
+                self.assertLess(
+                    durability_events.index(("rename", parent_path)),
+                    durability_events.index(("sync", result_root)),
+                )
+                for path, payload in expected_items:
+                    self.assertEqual(path.read_bytes(), payload)
+                    self.assertEqual(os.lstat(path).st_nlink, 1)
+                    self.assertEqual(
+                        runner.lane_a_local_dmg_staged_candidates(path),
+                        (),
+                    )
+
+    def test_lane_a_suite_interrupt_after_each_rename_is_retryable(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            lifecycle_root = base / "lifecycle"
+            result_root = base / "reproducibility"
+            lifecycle_root.mkdir(mode=0o700)
+            result_root.mkdir(mode=0o700)
+            with (
+                mock.patch.object(
+                    runner,
+                    "LIFECYCLE_RESULT_ROOT",
+                    lifecycle_root,
+                ),
+                mock.patch.object(runner, "RESULT_ROOT", result_root),
+            ):
+                for ordinal in range(1, 8):
+                    with self.subTest(ordinal=ordinal):
+                        paths = runner.lane_a_local_dmg_suite_paths(
+                            f"interrupt-{ordinal}",
+                            expected_release_id=release_id,
+                        )
+                        suite = self.lane_a_suite(
+                            paths,
+                            release_id=release_id,
+                            evidence=evidence,
+                        )
+                        parent_path = result_root / (
+                            f"{release_id}-two-root-v4-prepublication-"
+                            f"interrupt-{ordinal}.json"
+                        )
+                        parent_result = self.lane_a_suite_parent_result(
+                            release_id,
+                            evidence,
+                        )
+                        items = self.lane_a_suite_publication_payloads(
+                            suite,
+                            parent_result_path=parent_path,
+                            parent_result=parent_result,
+                        )
+                        visible_paths = tuple(path for path, _ in items)
+                        real_rename = (
+                            runner.rename_lane_a_local_dmg_result_exclusive
+                        )
+                        publication_calls = 0
+
+                        def interrupt_after_ordinal(
+                            source: Path,
+                            destination: Path,
+                        ) -> None:
+                            nonlocal publication_calls
+                            real_rename(source, destination)
+                            if destination in visible_paths:
+                                publication_calls += 1
+                                if publication_calls == ordinal:
+                                    raise KeyboardInterrupt()
+
+                        with (
+                            mock.patch.object(
+                                runner,
+                                "rename_lane_a_local_dmg_result_exclusive",
+                                side_effect=interrupt_after_ordinal,
+                            ),
+                            mock.patch.object(
+                                Path,
+                                "unlink",
+                                autospec=True,
+                                side_effect=AssertionError(
+                                    "interrupt rollback must not unlink"
+                                ),
+                            ),
+                            self.assertRaises(KeyboardInterrupt),
+                        ):
+                            runner.publish_lane_a_local_dmg_suite(
+                                suite,
+                                parent_result_path=parent_path,
+                                parent_result=parent_result,
+                            )
+                        retained: list[tuple[Path, int, int]] = []
+                        for path, payload in items:
+                            self.assertFalse(path.exists())
+                            candidates = (
+                                runner.lane_a_local_dmg_staged_candidates(path)
+                            )
+                            self.assertEqual(len(candidates), 1)
+                            self.assertEqual(candidates[0].read_bytes(), payload)
+                            status = os.lstat(candidates[0])
+                            retained.append(
+                                (path, status.st_dev, status.st_ino)
+                            )
+
+                        with (
+                            mock.patch.object(
+                                runner.tempfile,
+                                "mkstemp",
+                                side_effect=AssertionError(
+                                    "retry must reuse every retained staging"
+                                ),
+                            ),
+                            mock.patch.object(
+                                Path,
+                                "unlink",
+                                autospec=True,
+                                side_effect=AssertionError(
+                                    "retry must not unlink"
+                                ),
+                            ),
+                        ):
+                            runner.publish_lane_a_local_dmg_suite(
+                                suite,
+                                parent_result_path=parent_path,
+                                parent_result=parent_result,
+                            )
+                        for path, device, inode in retained:
+                            status = os.lstat(path)
+                            self.assertEqual(
+                                (status.st_dev, status.st_ino),
+                                (device, inode),
+                            )
+                            self.assertEqual(status.st_nlink, 1)
+                            self.assertEqual(
+                                runner.lane_a_local_dmg_staged_candidates(path),
+                                (),
+                            )
+
+    def test_lane_a_suite_rejects_bad_staging_before_any_rename(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        with tempfile.TemporaryDirectory() as temporary:
+            lifecycle_root = Path(temporary).resolve() / "lifecycle"
+            lifecycle_root.mkdir(mode=0o700)
+            with mock.patch.object(
+                runner,
+                "LIFECYCLE_RESULT_ROOT",
+                lifecycle_root,
+            ):
+                bad_paths = runner.lane_a_local_dmg_suite_paths(
+                    "bad-retained",
+                    expected_release_id=release_id,
+                )
+                bad_suite = self.lane_a_suite(
+                    bad_paths,
+                    release_id=release_id,
+                    evidence=evidence,
+                )
+                bad = bad_paths.install.parent / (
+                    f".{bad_paths.install.name}.retained"
+                )
+                bad.write_bytes(b"different\n")
+                with (
+                    mock.patch.object(
+                        runner,
+                        "rename_lane_a_local_dmg_result_exclusive",
+                    ) as rename_mock,
+                    self.assertRaisesRegex(
+                        runner.ReproducibilityError,
+                        "differs from the exercised result",
+                    ),
+                ):
+                    runner.publish_lane_a_local_dmg_suite(bad_suite)
+                rename_mock.assert_not_called()
+
+                multiple_paths = runner.lane_a_local_dmg_suite_paths(
+                    "multiple-retained",
+                    expected_release_id=release_id,
+                )
+                multiple_suite = self.lane_a_suite(
+                    multiple_paths,
+                    release_id=release_id,
+                    evidence=evidence,
+                )
+                install_payload = runner.canonical_json_bytes(
+                    multiple_suite.install
+                )
+                for suffix in ("one", "two"):
+                    candidate = multiple_paths.install.parent / (
+                        f".{multiple_paths.install.name}.{suffix}"
+                    )
+                    candidate.write_bytes(install_payload)
+                with (
+                    mock.patch.object(
+                        runner,
+                        "rename_lane_a_local_dmg_result_exclusive",
+                    ) as rename_mock,
+                    self.assertRaisesRegex(
+                        runner.ReproducibilityError,
+                        "multiple retained staging",
+                    ),
+                ):
+                    runner.publish_lane_a_local_dmg_suite(multiple_suite)
+                rename_mock.assert_not_called()
+
+    def test_lane_a_suite_recovers_crash_prefix_and_binds_parent_marker(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            lifecycle_root = base / "lifecycle"
+            result_root = base / "reproducibility"
+            lifecycle_root.mkdir(mode=0o700)
+            result_root.mkdir(mode=0o700)
+            with (
+                mock.patch.object(
+                    runner,
+                    "LIFECYCLE_RESULT_ROOT",
+                    lifecycle_root,
+                ),
+                mock.patch.object(runner, "RESULT_ROOT", result_root),
+            ):
+                paths = runner.lane_a_local_dmg_suite_paths(
+                    "crash-prefix",
+                    expected_release_id=release_id,
+                )
+                suite = self.lane_a_suite(
+                    paths,
+                    release_id=release_id,
+                    evidence=evidence,
+                )
+                parent_path = result_root / (
+                    f"{release_id}-two-root-v4-prepublication-crash-prefix.json"
+                )
+                parent_result = self.lane_a_suite_parent_result(
+                    release_id,
+                    evidence,
+                )
+                items = self.lane_a_suite_publication_payloads(
+                    suite,
+                    parent_result_path=parent_path,
+                    parent_result=parent_result,
+                )
+                preserved: dict[Path, tuple[int, int]] = {}
+                for path, payload in items[:3]:
+                    path.write_bytes(payload)
+                    status = os.lstat(path)
+                    preserved[path] = (status.st_dev, status.st_ino)
+                for path, payload in items[3:]:
+                    candidate = path.parent / f".{path.name}.crash"
+                    candidate.write_bytes(payload)
+
+                rename_order: list[Path] = []
+                real_rename = (
+                    runner.rename_lane_a_local_dmg_result_exclusive
+                )
+
+                def record_rename(
+                    source: Path,
+                    destination: Path,
+                ) -> None:
+                    if destination in tuple(path for path, _ in items):
+                        rename_order.append(destination)
+                    real_rename(source, destination)
+
+                with (
+                    mock.patch.object(
+                        runner.tempfile,
+                        "mkstemp",
+                        side_effect=AssertionError(
+                            "crash recovery must reuse its exact suffix"
+                        ),
+                    ),
+                    mock.patch.object(
+                        runner,
+                        "rename_lane_a_local_dmg_result_exclusive",
+                        side_effect=record_rename,
+                    ),
+                    mock.patch.object(
+                        Path,
+                        "unlink",
+                        autospec=True,
+                        side_effect=AssertionError(
+                            "crash recovery must not unlink"
+                        ),
+                    ),
+                ):
+                    runner.publish_lane_a_local_dmg_suite(
+                        suite,
+                        parent_result_path=parent_path,
+                        parent_result=parent_result,
+                    )
+                self.assertEqual(
+                    rename_order,
+                    [path for path, _ in items[3:]],
+                )
+                for path, identity in preserved.items():
+                    status = os.lstat(path)
+                    self.assertEqual(
+                        (status.st_dev, status.st_ino),
+                        identity,
+                    )
+                self.assertTrue(all(path.is_file() for path, _ in items))
+
+                invalid_paths = runner.lane_a_local_dmg_suite_paths(
+                    "orphan-parent",
+                    expected_release_id=release_id,
+                )
+                invalid_suite = self.lane_a_suite(
+                    invalid_paths,
+                    release_id=release_id,
+                    evidence=evidence,
+                )
+                invalid_parent = result_root / (
+                    f"{release_id}-two-root-v4-prepublication-orphan-parent.json"
+                )
+                invalid_parent_result = self.lane_a_suite_parent_result(
+                    release_id,
+                    evidence,
+                )
+                invalid_parent.write_bytes(
+                    runner.canonical_json_bytes(invalid_parent_result)
+                )
+                with self.assertRaisesRegex(
+                    runner.ReproducibilityError,
+                    "parent commit marker exists before the complete child",
+                ):
+                    runner.publish_lane_a_local_dmg_suite(
+                        invalid_suite,
+                        parent_result_path=invalid_parent,
+                        parent_result=invalid_parent_result,
+                    )
+                self.assertTrue(invalid_parent.is_file())
+                self.assertTrue(
+                    all(not path.exists() for path in invalid_paths.ordered())
+                )
+
+    def test_lane_a_suite_fdopen_interrupt_closes_and_retains_staging(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        with tempfile.TemporaryDirectory() as temporary:
+            lifecycle_root = Path(temporary).resolve() / "lifecycle"
+            lifecycle_root.mkdir(mode=0o700)
+            with mock.patch.object(
+                runner,
+                "LIFECYCLE_RESULT_ROOT",
+                lifecycle_root,
+            ):
+                paths = runner.lane_a_local_dmg_suite_paths(
+                    "fdopen-interrupt",
+                    expected_release_id=release_id,
+                )
+                suite = self.lane_a_suite(
+                    paths,
+                    release_id=release_id,
+                    evidence=evidence,
+                )
+                captured_descriptor: int | None = None
+
+                def interrupt_fdopen(
+                    descriptor: int,
+                    mode: str,
+                ) -> object:
+                    nonlocal captured_descriptor
+                    captured_descriptor = descriptor
+                    raise KeyboardInterrupt()
+
+                with (
+                    mock.patch.object(
+                        runner.os,
+                        "fdopen",
+                        side_effect=interrupt_fdopen,
+                    ),
+                    mock.patch.object(
+                        Path,
+                        "unlink",
+                        autospec=True,
+                        side_effect=AssertionError(
+                            "interrupted staging must not be unlinked"
+                        ),
+                    ),
+                    self.assertRaises(KeyboardInterrupt),
+                ):
+                    runner.publish_lane_a_local_dmg_suite(suite)
+                self.assertIsNotNone(captured_descriptor)
+                with self.assertRaises(OSError):
+                    os.fstat(captured_descriptor)  # type: ignore[arg-type]
+                self.assertFalse(paths.install.exists())
+                candidates = runner.lane_a_local_dmg_staged_candidates(
+                    paths.install
+                )
+                self.assertEqual(len(candidates), 1)
+                self.assertEqual(candidates[0].read_bytes(), b"")
+                interrupted_status = os.lstat(candidates[0])
+                with mock.patch.object(
+                    runner.tempfile,
+                    "mkstemp",
+                    wraps=tempfile.mkstemp,
+                ) as create_mock:
+                    runner.publish_lane_a_local_dmg_suite(suite)
+                self.assertEqual(create_mock.call_count, 5)
+                repaired_status = os.lstat(paths.install)
+                self.assertEqual(
+                    (repaired_status.st_dev, repaired_status.st_ino),
+                    (
+                        interrupted_status.st_dev,
+                        interrupted_status.st_ino,
+                    ),
+                )
+                self.assertEqual(
+                    paths.install.read_bytes(),
+                    runner.canonical_json_bytes(suite.install),
+                )
+                self.assertTrue(
+                    all(path.is_file() for path in paths.ordered())
+                )
+                self.assertEqual(
+                    runner.lane_a_local_dmg_staged_candidates(paths.install),
+                    (),
+                )
+
+    def test_lane_a_suite_normal_failure_rolls_back_and_retries(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        with tempfile.TemporaryDirectory() as temporary:
+            lifecycle_root = Path(temporary).resolve() / "lifecycle"
+            lifecycle_root.mkdir(mode=0o700)
+            with mock.patch.object(
+                runner,
+                "LIFECYCLE_RESULT_ROOT",
+                lifecycle_root,
+            ):
+                paths = runner.lane_a_local_dmg_suite_paths(
+                    "readback-failure",
+                    expected_release_id=release_id,
+                )
+                suite = self.lane_a_suite(
+                    paths,
+                    release_id=release_id,
+                    evidence=evidence,
+                )
+                items = self.lane_a_suite_publication_payloads(suite)
+                with (
+                    mock.patch.object(
+                        runner,
+                        "reject_lane_a_local_dmg_stale_temporaries",
+                        side_effect=runner.lane_a_local_dmg_error(
+                            "fixture final readback failure"
+                        ),
+                    ),
+                    self.assertRaisesRegex(
+                        runner.ReproducibilityError,
+                        "fixture final readback failure",
+                    ),
+                ):
+                    runner.publish_lane_a_local_dmg_suite(suite)
+                for path, payload in items:
+                    self.assertFalse(path.exists())
+                    candidates = (
+                        runner.lane_a_local_dmg_staged_candidates(path)
+                    )
+                    self.assertEqual(len(candidates), 1)
+                    self.assertEqual(candidates[0].read_bytes(), payload)
+                with mock.patch.object(
+                    runner.tempfile,
+                    "mkstemp",
+                    side_effect=AssertionError(
+                        "normal retry must reuse retained staging"
+                    ),
+                ):
+                    runner.publish_lane_a_local_dmg_suite(suite)
+                self.assertTrue(all(path.is_file() for path, _ in items))
+
+    def test_lane_a_suite_original_interrupt_survives_rollback_failure(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        with tempfile.TemporaryDirectory() as temporary:
+            lifecycle_root = Path(temporary).resolve() / "lifecycle"
+            lifecycle_root.mkdir(mode=0o700)
+            with mock.patch.object(
+                runner,
+                "LIFECYCLE_RESULT_ROOT",
+                lifecycle_root,
+            ):
+                paths = runner.lane_a_local_dmg_suite_paths(
+                    "interrupt-and-rollback-error",
+                    expected_release_id=release_id,
+                )
+                suite = self.lane_a_suite(
+                    paths,
+                    release_id=release_id,
+                    evidence=evidence,
+                )
+                real_rename = (
+                    runner.rename_lane_a_local_dmg_result_exclusive
+                )
+                interrupted = False
+
+                def interrupt_after_first(
+                    source: Path,
+                    destination: Path,
+                ) -> None:
+                    nonlocal interrupted
+                    real_rename(source, destination)
+                    if destination in paths.ordered() and not interrupted:
+                        interrupted = True
+                        raise KeyboardInterrupt()
+
+                with (
+                    mock.patch.object(
+                        runner,
+                        "rename_lane_a_local_dmg_result_exclusive",
+                        side_effect=interrupt_after_first,
+                    ),
+                    mock.patch.object(
+                        runner,
+                        "rollback_lane_a_local_dmg_result_rename",
+                        side_effect=OSError("fixture rollback failure"),
+                    ),
+                    self.assertRaises(KeyboardInterrupt) as caught,
+                ):
+                    runner.publish_lane_a_local_dmg_suite(suite)
+                self.assertIsInstance(
+                    caught.exception.__cause__,
+                    runner.ReproducibilityError,
+                )
+                self.assertIn(
+                    "rollback also failed",
+                    str(caught.exception.__cause__),
+                )
+
+    def test_lane_a_suite_parent_rollback_failure_keeps_committed_set(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            lifecycle_root = base / "lifecycle"
+            result_root = base / "reproducibility"
+            lifecycle_root.mkdir(mode=0o700)
+            result_root.mkdir(mode=0o700)
+            with (
+                mock.patch.object(
+                    runner,
+                    "LIFECYCLE_RESULT_ROOT",
+                    lifecycle_root,
+                ),
+                mock.patch.object(runner, "RESULT_ROOT", result_root),
+            ):
+                paths = runner.lane_a_local_dmg_suite_paths(
+                    "parent-rollback-interrupt",
+                    expected_release_id=release_id,
+                )
+                suite = self.lane_a_suite(
+                    paths,
+                    release_id=release_id,
+                    evidence=evidence,
+                )
+                parent_path = result_root / (
+                    f"{release_id}-two-root-v4-prepublication-"
+                    "parent-rollback-interrupt.json"
+                )
+                parent_result = self.lane_a_suite_parent_result(
+                    release_id,
+                    evidence,
+                )
+                items = self.lane_a_suite_publication_payloads(
+                    suite,
+                    parent_result_path=parent_path,
+                    parent_result=parent_result,
+                )
+                real_rollback = (
+                    runner.rollback_lane_a_local_dmg_result_rename
+                )
+
+                def interrupt_parent_rollback(
+                    path: Path,
+                    **kwargs: object,
+                ) -> None:
+                    if path == parent_path:
+                        raise KeyboardInterrupt()
+                    real_rollback(path, **kwargs)  # type: ignore[arg-type]
+
+                with (
+                    mock.patch.object(
+                        runner,
+                        "reject_lane_a_local_dmg_stale_temporaries",
+                        side_effect=runner.lane_a_local_dmg_error(
+                            "fixture post-commit failure"
+                        ),
+                    ),
+                    mock.patch.object(
+                        runner,
+                        "rollback_lane_a_local_dmg_result_rename",
+                        side_effect=interrupt_parent_rollback,
+                    ),
+                    self.assertRaises(KeyboardInterrupt),
+                ):
+                    runner.publish_lane_a_local_dmg_suite(
+                        suite,
+                        parent_result_path=parent_path,
+                        parent_result=parent_result,
+                    )
+                self.assertTrue(all(path.is_file() for path, _ in items))
+
+    def test_lane_a_suite_parent_rollback_is_durable_before_children(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            lifecycle_root = base / "lifecycle"
+            result_root = base / "reproducibility"
+            lifecycle_root.mkdir(mode=0o700)
+            result_root.mkdir(mode=0o700)
+            with (
+                mock.patch.object(
+                    runner,
+                    "LIFECYCLE_RESULT_ROOT",
+                    lifecycle_root,
+                ),
+                mock.patch.object(runner, "RESULT_ROOT", result_root),
+            ):
+                paths = runner.lane_a_local_dmg_suite_paths(
+                    "rollback-durability",
+                    expected_release_id=release_id,
+                )
+                suite = self.lane_a_suite(
+                    paths,
+                    release_id=release_id,
+                    evidence=evidence,
+                )
+                parent_path = result_root / (
+                    f"{release_id}-two-root-v4-prepublication-"
+                    "rollback-durability.json"
+                )
+                parent_result = self.lane_a_suite_parent_result(
+                    release_id,
+                    evidence,
+                )
+                events: list[tuple[str, Path]] = []
+                real_rollback = (
+                    runner.rollback_lane_a_local_dmg_result_rename
+                )
+                real_sync = runner.sync_lane_a_local_dmg_result_parent
+
+                def record_rollback(
+                    path: Path,
+                    **kwargs: object,
+                ) -> None:
+                    real_rollback(path, **kwargs)  # type: ignore[arg-type]
+                    events.append(("rollback", path))
+
+                def record_sync(path: Path) -> None:
+                    real_sync(path)
+                    events.append(("sync", path.parent))
+
+                with (
+                    mock.patch.object(
+                        runner,
+                        "reject_lane_a_local_dmg_stale_temporaries",
+                        side_effect=runner.lane_a_local_dmg_error(
+                            "fixture post-commit failure"
+                        ),
+                    ),
+                    mock.patch.object(
+                        runner,
+                        "rollback_lane_a_local_dmg_result_rename",
+                        side_effect=record_rollback,
+                    ),
+                    mock.patch.object(
+                        runner,
+                        "sync_lane_a_local_dmg_result_parent",
+                        side_effect=record_sync,
+                    ),
+                    self.assertRaisesRegex(
+                        runner.ReproducibilityError,
+                        "fixture post-commit failure",
+                    ),
+                ):
+                    runner.publish_lane_a_local_dmg_suite(
+                        suite,
+                        parent_result_path=parent_path,
+                        parent_result=parent_result,
+                    )
+                parent_rollback = events.index(("rollback", parent_path))
+                first_child_rollback = min(
+                    events.index(("rollback", child_path))
+                    for child_path in paths.ordered()
+                )
+                self.assertIn(
+                    ("sync", result_root),
+                    events[parent_rollback + 1 : first_child_rollback],
+                )
+
+    def test_lane_a_parent_lease_rejects_second_process(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            result = root / "result.json"
+            program = "\n".join(
+                (
+                    "from pathlib import Path",
+                    "from script import run_clean_release_reproducibility as r",
+                    "import sys",
+                    "try:",
+                    "    with r.acquire_lane_a_local_dmg_result_parent_leases((Path(sys.argv[1]),)):",
+                    "        raise SystemExit(2)",
+                    "except r.ReproducibilityError as error:",
+                    "    print(error)",
+                )
+            )
+            with runner.acquire_lane_a_local_dmg_result_parent_leases(
+                (result,)
+            ):
+                completed = subprocess.run(
+                    [sys.executable, "-B", "-c", program, str(result)],
+                    cwd=runner.ROOT,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn(
+                b"another lane-A result publisher holds a parent lease",
+                completed.stdout,
+            )
+
+    def test_lane_a_read_and_sync_interrupts_survive_close_failure(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            path = root / "result.json"
+            path.write_bytes(b"fixture\n")
+            real_close = os.close
+
+            def close_then_fail(descriptor: int) -> None:
+                real_close(descriptor)
+                raise OSError("fixture close failure")
+
+            with (
+                mock.patch.object(
+                    runner.os,
+                    "read",
+                    side_effect=KeyboardInterrupt(),
+                ),
+                mock.patch.object(
+                    runner.os,
+                    "close",
+                    side_effect=close_then_fail,
+                ),
+                self.assertRaises(KeyboardInterrupt) as read_interrupt,
+            ):
+                runner.stable_lane_a_local_dmg_result_bytes(path)
+            self.assertIsInstance(read_interrupt.exception.__cause__, OSError)
+
+            with (
+                mock.patch.object(
+                    runner.os,
+                    "fsync",
+                    side_effect=KeyboardInterrupt(),
+                ),
+                mock.patch.object(
+                    runner.os,
+                    "close",
+                    side_effect=close_then_fail,
+                ),
+                self.assertRaises(KeyboardInterrupt) as sync_interrupt,
+            ):
+                runner.sync_lane_a_local_dmg_result_parent(path)
+            self.assertIsInstance(sync_interrupt.exception.__cause__, OSError)
+
+            real_flock = runner.fcntl.flock
+
+            def unlock_then_fail(
+                descriptor: int,
+                operation: int,
+            ) -> None:
+                real_flock(descriptor, operation)
+                if operation == runner.fcntl.LOCK_UN:
+                    raise OSError("fixture unlock failure")
+
+            with (
+                mock.patch.object(
+                    runner.fcntl,
+                    "flock",
+                    side_effect=unlock_then_fail,
+                ),
+                self.assertRaises(KeyboardInterrupt) as lease_interrupt,
+            ):
+                with runner.acquire_lane_a_local_dmg_result_parent_leases(
+                    (path,)
+                ):
+                    raise KeyboardInterrupt()
+            self.assertIsInstance(
+                lease_interrupt.exception.__cause__,
+                runner.ReproducibilityError,
+            )
+            self.assertIn(
+                "lease cleanup also failed",
+                str(lease_interrupt.exception.__cause__),
+            )
+
+    def test_lane_a_concurrent_parent_marker_preserves_child_set(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            lifecycle_root = base / "lifecycle"
+            result_root = base / "reproducibility"
+            lifecycle_root.mkdir(mode=0o700)
+            result_root.mkdir(mode=0o700)
+            with (
+                mock.patch.object(
+                    runner,
+                    "LIFECYCLE_RESULT_ROOT",
+                    lifecycle_root,
+                ),
+                mock.patch.object(runner, "RESULT_ROOT", result_root),
+            ):
+                paths = runner.lane_a_local_dmg_suite_paths(
+                    "concurrent-parent",
+                    expected_release_id=release_id,
+                )
+                suite = self.lane_a_suite(
+                    paths,
+                    release_id=release_id,
+                    evidence=evidence,
+                )
+                parent_path = result_root / (
+                    f"{release_id}-two-root-v4-prepublication-"
+                    "concurrent-parent.json"
+                )
+                parent_result = self.lane_a_suite_parent_result(
+                    release_id,
+                    evidence,
+                )
+                parent_payload = runner.canonical_json_bytes(parent_result)
+                real_rename = (
+                    runner.rename_lane_a_local_dmg_result_exclusive
+                )
+                injected = False
+
+                def publish_parent_before_rename(
+                    source: Path,
+                    destination: Path,
+                ) -> None:
+                    nonlocal injected
+                    if destination == parent_path and not injected:
+                        injected = True
+                        parent_path.write_bytes(parent_payload)
+                    real_rename(source, destination)
+
+                with (
+                    mock.patch.object(
+                        runner,
+                        "rename_lane_a_local_dmg_result_exclusive",
+                        side_effect=publish_parent_before_rename,
+                    ),
+                    mock.patch.object(
+                        Path,
+                        "unlink",
+                        autospec=True,
+                        side_effect=AssertionError(
+                            "concurrent marker handling must not unlink"
+                        ),
+                    ),
+                    self.assertRaisesRegex(
+                        runner.ReproducibilityError,
+                        "child results were preserved",
+                    ),
+                ):
+                    runner.publish_lane_a_local_dmg_suite(
+                        suite,
+                        parent_result_path=parent_path,
+                        parent_result=parent_result,
+                    )
+                self.assertTrue(
+                    all(path.is_file() for path in paths.ordered())
+                )
+                self.assertEqual(parent_path.read_bytes(), parent_payload)
+                parent_candidates = (
+                    runner.lane_a_local_dmg_staged_candidates(parent_path)
+                )
+                self.assertEqual(len(parent_candidates), 1)
+                self.assertEqual(
+                    parent_candidates[0].read_bytes(),
+                    parent_payload,
+                )
+
+    def test_lane_a_parent_republication_during_rollback_preserves_children(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            lifecycle_root = base / "lifecycle"
+            result_root = base / "reproducibility"
+            lifecycle_root.mkdir(mode=0o700)
+            result_root.mkdir(mode=0o700)
+            with (
+                mock.patch.object(
+                    runner,
+                    "LIFECYCLE_RESULT_ROOT",
+                    lifecycle_root,
+                ),
+                mock.patch.object(runner, "RESULT_ROOT", result_root),
+            ):
+                paths = runner.lane_a_local_dmg_suite_paths(
+                    "parent-republication",
+                    expected_release_id=release_id,
+                )
+                suite = self.lane_a_suite(
+                    paths,
+                    release_id=release_id,
+                    evidence=evidence,
+                )
+                parent_path = result_root / (
+                    f"{release_id}-two-root-v4-prepublication-"
+                    "parent-republication.json"
+                )
+                parent_result = self.lane_a_suite_parent_result(
+                    release_id,
+                    evidence,
+                )
+                parent_payload = runner.canonical_json_bytes(parent_result)
+                real_rollback = (
+                    runner.rollback_lane_a_local_dmg_result_rename
+                )
+
+                def republish_parent_after_rollback(
+                    path: Path,
+                    **kwargs: object,
+                ) -> None:
+                    real_rollback(path, **kwargs)  # type: ignore[arg-type]
+                    if path == parent_path:
+                        parent_path.write_bytes(parent_payload)
+
+                with (
+                    mock.patch.object(
+                        runner,
+                        "reject_lane_a_local_dmg_stale_temporaries",
+                        side_effect=runner.lane_a_local_dmg_error(
+                            "fixture post-commit failure"
+                        ),
+                    ),
+                    mock.patch.object(
+                        runner,
+                        "rollback_lane_a_local_dmg_result_rename",
+                        side_effect=republish_parent_after_rollback,
+                    ),
+                    self.assertRaisesRegex(
+                        runner.ReproducibilityError,
+                        "commit marker reappeared",
+                    ),
+                ):
+                    runner.publish_lane_a_local_dmg_suite(
+                        suite,
+                        parent_result_path=parent_path,
+                        parent_result=parent_result,
+                    )
+                self.assertTrue(
+                    all(path.is_file() for path in paths.ordered())
+                )
+                self.assertEqual(parent_path.read_bytes(), parent_payload)
+
+    def test_lane_a_local_dmg_suite_same_label_conflict_preserves_set(
         self,
     ) -> None:
         release_id = "aetherlink-1.0.0+24-local-v1"
@@ -1432,84 +3632,36 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             release_id,
             evidence,
         )
+        abrupt = (
+            self.lane_a_local_dmg_abrupt_process_state_recovery_result(
+                release_id,
+                evidence,
+            )
+        )
         with tempfile.TemporaryDirectory() as temporary:
-            lifecycle_root = Path(temporary).resolve() / "lifecycle"
+            base = Path(temporary).resolve()
+            lifecycle_root = base / "lifecycle"
+            result_root = base / "reproducibility"
             lifecycle_root.mkdir(mode=0o700)
-            with mock.patch.object(
-                runner,
-                "LIFECYCLE_RESULT_ROOT",
-                lifecycle_root,
+            result_root.mkdir(mode=0o700)
+            with (
+                mock.patch.object(
+                    runner,
+                    "LIFECYCLE_RESULT_ROOT",
+                    lifecycle_root,
+                ),
+                mock.patch.object(runner, "RESULT_ROOT", result_root),
             ):
-                blocked_paths = runner.lane_a_local_dmg_suite_paths(
-                    "blocked-suite",
-                    expected_release_id=release_id,
-                )
-                blocked_paths.uninstall_reinstall.write_bytes(b"different\n")
-                blocked_suite = runner.LaneALocalDMGSuiteEvidence(
-                    paths=blocked_paths,
-                    archive=evidence,
-                    expected_release_id=release_id,
-                    install=install,
-                    uninstall_reinstall=same_dmg,
-                    state_recovery=recovery,
-                )
-                with self.assertRaisesRegex(
-                    runner.ReproducibilityError,
-                    "refusing to replace",
-                ):
-                    runner.publish_lane_a_local_dmg_suite(blocked_suite)
-                self.assertFalse(blocked_paths.install.exists())
-                self.assertFalse(blocked_paths.state_recovery.exists())
-
-                recoverable_paths = runner.lane_a_local_dmg_suite_paths(
-                    "recoverable-suite",
-                    expected_release_id=release_id,
-                )
-                recoverable_suite = runner.LaneALocalDMGSuiteEvidence(
-                    paths=recoverable_paths,
-                    archive=evidence,
-                    expected_release_id=release_id,
-                    install=install,
-                    uninstall_reinstall=same_dmg,
-                    state_recovery=recovery,
-                )
-                real_link = os.link
-                link_calls = 0
-
-                def fail_second_link(source: object, target: object) -> None:
-                    nonlocal link_calls
-                    link_calls += 1
-                    if link_calls == 2:
-                        raise OSError("fixture second-link failure")
-                    real_link(source, target)
-
-                with (
-                    mock.patch.object(
-                        runner.os,
-                        "link",
-                        side_effect=fail_second_link,
-                    ),
-                    self.assertRaisesRegex(
-                        runner.ReproducibilityError,
-                        "cannot publish",
-                    ),
-                ):
-                    runner.publish_lane_a_local_dmg_suite(
-                        recoverable_suite
-                    )
-                self.assertTrue(recoverable_paths.install.is_file())
-                self.assertFalse(
-                    recoverable_paths.uninstall_reinstall.exists()
-                )
-                self.assertFalse(recoverable_paths.state_recovery.exists())
-                runner.publish_lane_a_local_dmg_suite(recoverable_suite)
-                self.assertTrue(
-                    all(path.is_file() for path in recoverable_paths.ordered())
-                )
-
                 paths = runner.lane_a_local_dmg_suite_paths(
-                    "published-suite",
+                    "same-label",
                     expected_release_id=release_id,
+                )
+                receipt = (
+                    runner.build_lane_a_local_dmg_abrupt_process_repeatability_receipt(
+                        result_path=paths.abrupt_process_state_recovery,
+                        result=abrupt,
+                        expected_release_id=release_id,
+                    )
                 )
                 suite = runner.LaneALocalDMGSuiteEvidence(
                     paths=paths,
@@ -1518,21 +3670,64 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     install=install,
                     uninstall_reinstall=same_dmg,
                     state_recovery=recovery,
+                    abrupt_process_state_recovery=abrupt,
+                    abrupt_process_state_recovery_repeatability=receipt,
+                    idle_resource_stability=(
+                        self.lane_a_idle_resource_stability_result(
+                            release_id,
+                            evidence,
+                        )
+                    ),
                 )
-                runner.publish_lane_a_local_dmg_suite(suite)
-                first = [path.read_bytes() for path in paths.ordered()]
-                self.assertEqual(
-                    first,
-                    [
-                        runner.canonical_json_bytes(install),
-                        runner.canonical_json_bytes(same_dmg),
-                        runner.canonical_json_bytes(recovery),
-                    ],
+                parent_path = result_root / (
+                    f"{release_id}-two-root-v4-prepublication-same-label.json"
                 )
-                runner.publish_lane_a_local_dmg_suite(suite)
+                first_parent = self.lane_a_suite_parent_result(
+                    release_id,
+                    evidence,
+                )
+                preexisting_parent = b'{"fixture":"different"}\n'
+                parent_path.write_bytes(preexisting_parent)
+                with self.assertRaisesRegex(
+                    runner.ReproducibilityError,
+                    "refusing to replace",
+                ):
+                    runner.publish_lane_a_local_dmg_suite(
+                        suite,
+                        parent_result_path=parent_path,
+                        parent_result=first_parent,
+                    )
+                self.assertEqual(parent_path.read_bytes(), preexisting_parent)
+                self.assertTrue(
+                    all(not path.exists() for path in paths.ordered())
+                )
+                parent_path.unlink()
+                runner.publish_lane_a_local_dmg_suite(
+                    suite,
+                    parent_result_path=parent_path,
+                    parent_result=first_parent,
+                )
+                all_paths = (*paths.ordered(), parent_path)
+                first_bytes = [path.read_bytes() for path in all_paths]
+                conflicting_parent = {
+                    **first_parent,
+                    "source": {
+                        **first_parent["source"],
+                        "overlaySha256": "e" * 64,
+                    },
+                }
+                with self.assertRaisesRegex(
+                    runner.ReproducibilityError,
+                    "refusing to replace",
+                ):
+                    runner.publish_lane_a_local_dmg_suite(
+                        suite,
+                        parent_result_path=parent_path,
+                        parent_result=conflicting_parent,
+                    )
                 self.assertEqual(
-                    [path.read_bytes() for path in paths.ordered()],
-                    first,
+                    [path.read_bytes() for path in all_paths],
+                    first_bytes,
                 )
 
     def test_lane_a_local_dmg_exercises_clone_before_publication(
@@ -1782,6 +3977,46 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 "SIGINT-ignoring descendant survived bounded cleanup",
             )
 
+        with tempfile.TemporaryDirectory() as temporary:
+            child_pid_path = Path(temporary) / "separate-child.pid"
+            child_program = "import time;time.sleep(30)"
+            parent_program = "\n".join(
+                (
+                    "import pathlib,subprocess,sys,time",
+                    (
+                        "child=subprocess.Popen([sys.executable,'-B','-c',"
+                        "sys.argv[2]],start_new_session=True)"
+                    ),
+                    "pathlib.Path(sys.argv[1]).write_text(str(child.pid))",
+                    "try:",
+                    "    time.sleep(30)",
+                    "finally:",
+                    "    child.terminate()",
+                    "    child.wait(timeout=1.0)",
+                )
+            )
+            with self.assertRaisesRegex(
+                runner.ReproducibilityError,
+                "timed out",
+            ):
+                runner.run_bounded_lane_a_lifecycle_command(
+                    [
+                        sys.executable,
+                        "-B",
+                        "-c",
+                        parent_program,
+                        str(child_pid_path),
+                        child_program,
+                    ],
+                    cwd=Path.cwd(),
+                    environment=environment,
+                    timeout_seconds=0.5,
+                )
+            self.assertTrue(child_pid_path.is_file())
+            child_pid = int(child_pid_path.read_text(encoding="ascii"))
+            with self.assertRaises(ProcessLookupError):
+                os.kill(child_pid, 0)
+
     def test_lane_a_lifecycle_exercise_binds_runner_source_and_archive(
         self,
     ) -> None:
@@ -1985,7 +4220,183 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 )
             validator.assert_not_called()
 
-    def test_lane_a_local_dmg_suite_runs_install_same_dmg_then_recovery(
+    def test_lane_a_idle_exercise_uses_bounded_materialized_runner(self) -> None:
+        evidence = self.evidence(Path("/fixture/archive"))
+        identity = self.identity()
+        source_snapshot = {
+            "algorithm": "sha256(path-nul-mode-nul-size-nul-sha256-lf)-v1",
+            "fileCount": 266,
+            "files": [],
+            "sha256": evidence.source_sha256,
+        }
+        result = {"schemaVersion": 1, "status": "passed"}
+        raw = runner.canonical_json_bytes(result)
+        validator = mock.Mock(return_value=result)
+        completed = runner.LaneALifecycleProcessResult(
+            returncode=0,
+            stdout=raw,
+            stderr=b"",
+        )
+        with (
+            mock.patch.object(runner, "lane_archive_identities") as archive,
+            mock.patch.object(
+                runner,
+                "require_lane_a_clone_source_snapshot",
+            ) as source,
+            mock.patch.object(
+                runner,
+                "stable_file_identity",
+                side_effect=(identity, identity),
+            ),
+            mock.patch.object(
+                runner,
+                "run_bounded_lane_a_lifecycle_command",
+                return_value=completed,
+            ) as bounded,
+        ):
+            observed = runner.run_lane_a_idle_resource_exercise(
+                clone_root=Path("/fixture/clone"),
+                evidence=evidence,
+                expected_source_snapshot=source_snapshot,
+                validator=validator,
+            )
+        self.assertEqual(observed, result)
+        self.assertEqual(archive.call_count, 2)
+        self.assertEqual(source.call_count, 2)
+        validator.assert_called_once_with(raw)
+        command = bounded.call_args.args[0]
+        self.assertEqual(command[:3], [sys.executable, "-B", "-c"])
+        self.assertIn(
+            "run_macos_current_source_lane_a_idle_resource_stability_smoke",
+            command[3],
+        )
+        self.assertEqual(
+            bounded.call_args.kwargs["timeout_seconds"],
+            runner.LANE_A_IDLE_RESOURCE_TIMEOUT_SECONDS,
+        )
+        self.assertGreater(
+            runner.LANE_A_LIFECYCLE_INTERRUPT_TIMEOUT_SECONDS,
+            2
+            * runner.LANE_A_IDLE_RESOURCE_CHILD_TERMINATION_TIMEOUT_SECONDS,
+        )
+
+    def test_lane_a_idle_exercise_failures_stop_before_validation(self) -> None:
+        evidence = self.evidence(Path("/fixture/archive"))
+        identity = self.identity()
+        changed_identity = self.identity(b"changed\n")
+        source_snapshot = {
+            "algorithm": "sha256(path-nul-mode-nul-size-nul-sha256-lf)-v1",
+            "fileCount": 266,
+            "files": [],
+            "sha256": evidence.source_sha256,
+        }
+        cases = (
+            (
+                "nonzero",
+                runner.LaneALifecycleProcessResult(
+                    returncode=1,
+                    stdout=b"",
+                    stderr=b"fixture",
+                ),
+                (identity, identity),
+                (None, None),
+                (None, None),
+                "nonzero status",
+            ),
+            (
+                "runner-drift",
+                runner.LaneALifecycleProcessResult(
+                    returncode=0,
+                    stdout=b"{}\n",
+                    stderr=b"",
+                ),
+                (identity, changed_identity),
+                (None, None),
+                (None, None),
+                "runner changed",
+            ),
+            (
+                "archive-drift",
+                runner.LaneALifecycleProcessResult(
+                    returncode=0,
+                    stdout=b"{}\n",
+                    stderr=b"",
+                ),
+                (identity, identity),
+                (
+                    None,
+                    runner.lane_a_local_dmg_error(
+                        "lane-A archive input changed"
+                    ),
+                ),
+                (None, None),
+                "archive input changed",
+            ),
+            (
+                "source-drift",
+                runner.LaneALifecycleProcessResult(
+                    returncode=0,
+                    stdout=b"{}\n",
+                    stderr=b"",
+                ),
+                (identity, identity),
+                (None, None),
+                (
+                    None,
+                    runner.lane_a_local_dmg_error(
+                        "materialized lane-A source snapshot changed"
+                    ),
+                ),
+                "source snapshot changed",
+            ),
+        )
+        for (
+            label,
+            completed,
+            identities,
+            archive_effects,
+            source_effects,
+            message,
+        ) in cases:
+            validator = mock.Mock()
+            with (
+                self.subTest(label=label),
+                mock.patch.object(
+                    runner,
+                    "lane_archive_identities",
+                    side_effect=archive_effects,
+                ),
+                mock.patch.object(
+                    runner,
+                    "require_lane_a_clone_source_snapshot",
+                    side_effect=source_effects,
+                ),
+                mock.patch.object(
+                    runner,
+                    "stable_file_identity",
+                    side_effect=identities,
+                ),
+                mock.patch.object(
+                    runner,
+                    "run_bounded_lane_a_lifecycle_command",
+                    return_value=completed,
+                ),
+                self.assertRaisesRegex(
+                    runner.ReproducibilityError,
+                    message,
+                ) as caught,
+            ):
+                runner.run_lane_a_idle_resource_exercise(
+                    clone_root=Path("/fixture/clone"),
+                    evidence=evidence,
+                    expected_source_snapshot=source_snapshot,
+                    validator=validator,
+                )
+            validator.assert_not_called()
+            if label == "nonzero":
+                self.assertIn("child stderr: fixture", str(caught.exception))
+
+    def test_lane_a_local_dmg_suite_runs_through_two_abrupt_cycles(
         self,
     ) -> None:
         release_id = "aetherlink-1.0.0+24-local-v1"
@@ -1999,10 +4410,23 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             release_id,
             evidence,
         )
+        abrupt = (
+            self.lane_a_local_dmg_abrupt_process_state_recovery_result(
+                release_id,
+                evidence,
+            )
+        )
+        idle = self.lane_a_idle_resource_stability_result(
+            release_id,
+            evidence,
+        )
         outputs = {
             runner.LANE_A_LOCAL_DMG_RUNNER: install,
             runner.LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_RUNNER: same_dmg,
             runner.LANE_A_LOCAL_DMG_STATE_RECOVERY_RUNNER: recovery,
+            (
+                runner.LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_RUNNER
+            ): abrupt,
         }
         events: list[Path] = []
 
@@ -2012,6 +4436,120 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             output = outputs[relative]
             validator = keywords["validator"]
             return validator(runner.canonical_json_bytes(output))
+
+        def idle_exercise(**keywords: object) -> dict[str, object]:
+            events.append(runner.LANE_A_IDLE_RESOURCE_STABILITY_RUNNER)
+            validator = keywords["validator"]
+            return validator(runner.canonical_json_bytes(idle))
+
+        with tempfile.TemporaryDirectory() as temporary:
+            lifecycle_root = Path(temporary).resolve() / "lifecycle"
+            lifecycle_root.mkdir(mode=0o700)
+            with (
+                mock.patch.object(
+                    runner,
+                    "LIFECYCLE_RESULT_ROOT",
+                    lifecycle_root,
+                ),
+                mock.patch.object(
+                    runner,
+                    "run_lane_a_lifecycle_exercise",
+                    side_effect=exercise,
+                ),
+                mock.patch.object(
+                    runner,
+                    "run_lane_a_idle_resource_exercise",
+                    side_effect=idle_exercise,
+                ),
+                mock.patch.object(runner, "lane_archive_identities"),
+                mock.patch.object(
+                    runner,
+                    "require_lane_a_clone_source_snapshot",
+                ),
+            ):
+                suite = runner.run_lane_a_local_dmg_suite(
+                    clone_root=Path("/fixture/clone"),
+                    evidence=evidence,
+                    expected_release_id=release_id,
+                    expected_source_snapshot={
+                        "algorithm": (
+                            "sha256(path-nul-mode-nul-size-nul-sha256-lf)-v1"
+                        ),
+                        "fileCount": 266,
+                        "sha256": evidence.source_sha256,
+                    },
+                    label="ordered-suite",
+                )
+        self.assertEqual(
+            events,
+            [
+                runner.LANE_A_LOCAL_DMG_RUNNER,
+                runner.LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_RUNNER,
+                runner.LANE_A_LOCAL_DMG_STATE_RECOVERY_RUNNER,
+                (
+                    runner.LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_RUNNER
+                ),
+                (
+                    runner.LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_RUNNER
+                ),
+                runner.LANE_A_IDLE_RESOURCE_STABILITY_RUNNER,
+            ],
+        )
+        self.assertEqual(suite.install, install)
+        self.assertEqual(suite.uninstall_reinstall, same_dmg)
+        self.assertEqual(suite.state_recovery, recovery)
+        self.assertEqual(suite.abrupt_process_state_recovery, abrupt)
+        self.assertEqual(suite.idle_resource_stability, idle)
+        self.assertEqual(
+            suite.abrupt_process_state_recovery_repeatability,
+            runner.build_lane_a_local_dmg_abrupt_process_repeatability_receipt(
+                result_path=suite.paths.abrupt_process_state_recovery,
+                result=abrupt,
+                expected_release_id=release_id,
+            ),
+        )
+
+    def test_lane_a_local_dmg_suite_rejects_abrupt_cycle_mismatch(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        install = self.lane_a_local_dmg_result(release_id, evidence)
+        same_dmg = self.lane_a_local_dmg_uninstall_reinstall_result(
+            release_id,
+            evidence,
+        )
+        recovery = self.lane_a_local_dmg_state_recovery_result(
+            release_id,
+            evidence,
+        )
+        abrupt = (
+            self.lane_a_local_dmg_abrupt_process_state_recovery_result(
+                release_id,
+                evidence,
+            )
+        )
+        outputs = {
+            runner.LANE_A_LOCAL_DMG_RUNNER: install,
+            runner.LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_RUNNER: same_dmg,
+            runner.LANE_A_LOCAL_DMG_STATE_RECOVERY_RUNNER: recovery,
+        }
+        abrupt_calls = 0
+
+        def exercise(**keywords: object) -> dict[str, object]:
+            nonlocal abrupt_calls
+            relative = Path(keywords["runner_relative"])
+            if (
+                relative
+                == runner.LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_RUNNER
+            ):
+                abrupt_calls += 1
+                if abrupt_calls == 1:
+                    return abrupt
+                different = json.loads(json.dumps(abrupt))
+                different["status"] = "fixture-different"
+                return different
+            return outputs[relative]
 
         with tempfile.TemporaryDirectory() as temporary:
             lifecycle_root = Path(temporary).resolve() / "lifecycle"
@@ -2032,25 +4570,20 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     runner,
                     "require_lane_a_clone_source_snapshot",
                 ),
+                self.assertRaisesRegex(
+                    runner.ReproducibilityError,
+                    "did not produce identical canonical results",
+                ),
             ):
-                suite = runner.run_lane_a_local_dmg_suite(
+                runner.run_lane_a_local_dmg_suite(
                     clone_root=Path("/fixture/clone"),
                     evidence=evidence,
                     expected_release_id=release_id,
                     expected_source_snapshot={"sha256": "f" * 64},
-                    label="ordered-suite",
+                    label="mismatch-suite",
                 )
-        self.assertEqual(
-            events,
-            [
-                runner.LANE_A_LOCAL_DMG_RUNNER,
-                runner.LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_RUNNER,
-                runner.LANE_A_LOCAL_DMG_STATE_RECOVERY_RUNNER,
-            ],
-        )
-        self.assertEqual(suite.install, install)
-        self.assertEqual(suite.uninstall_reinstall, same_dmg)
-        self.assertEqual(suite.state_recovery, recovery)
+            self.assertEqual(abrupt_calls, 2)
+            self.assertEqual(list(lifecycle_root.iterdir()), [])
 
     def test_publish_binding_requires_exact_canonical_comparison_result(
         self,
@@ -3039,7 +5572,7 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 mock.patch.object(
                     runner,
                     "capture_protected_archive",
-                    side_effect=(sentinel,) * 20,
+                    return_value=sentinel,
                 ),
                 mock.patch.object(runner, "acquire_run_lock", fake_lock),
                 mock.patch.object(
@@ -3090,7 +5623,7 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 mock.patch.object(
                     runner,
                     "run_lane",
-                    side_effect=(evidence,) * 20,
+                    return_value=evidence,
                 ) as run_lane_mock,
                 mock.patch.object(
                     runner,
@@ -3208,16 +5741,32 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 local_dmg_suite_publish_mock.reset_mock()
                 run_lane_mock.reset_mock()
                 events.clear()
+                suite_parent_path = (
+                    base / "result/result-lane-a-suite-prepublication.json"
+                )
                 suite_code, suite_result = runner.execute(
-                    base / "result/result-lane-a-suite-prepublication.json",
+                    suite_parent_path,
                     publish_qualified=False,
                     lane_a_local_dmg_suite_label="current-source-g6-chain",
                 )
                 self.assertEqual(suite_code, 0, suite_result)
                 local_dmg_mock.assert_not_called()
                 local_dmg_suite_mock.assert_called_once()
-                local_dmg_suite_publish_mock.assert_called_once_with(
-                    mock.sentinel.lane_a_local_dmg_suite
+                local_dmg_suite_publish_mock.assert_called_once()
+                suite_publish_call = (
+                    local_dmg_suite_publish_mock.call_args
+                )
+                self.assertEqual(
+                    suite_publish_call.args,
+                    (mock.sentinel.lane_a_local_dmg_suite,),
+                )
+                self.assertEqual(
+                    suite_publish_call.kwargs["parent_result_path"],
+                    suite_parent_path,
+                )
+                self.assertIs(
+                    suite_publish_call.kwargs["parent_result"],
+                    suite_result,
                 )
                 suite_call = local_dmg_suite_mock.call_args.kwargs
                 self.assertEqual(
@@ -3245,6 +5794,67 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 local_dmg_suite_publish_mock.reset_mock()
                 run_lane_mock.reset_mock()
                 events.clear()
+                local_dmg_suite_publish_mock.side_effect = (
+                    runner.lane_a_local_dmg_error(
+                        "fixture same-label publication conflict"
+                    )
+                )
+                conflict_parent_path = base / (
+                    "result/result-lane-a-suite-conflict-"
+                    "prepublication.json"
+                )
+                write_patcher = mock.patch.object(runner, "write_result")
+                write_mock = write_patcher.start()
+                conflict_code, conflict_result = runner.execute(
+                    conflict_parent_path,
+                    publish_qualified=False,
+                    lane_a_local_dmg_suite_label=(
+                        "current-source-g6-chain-conflict"
+                    ),
+                )
+                write_patcher.stop()
+                self.assertEqual(conflict_code, 10, conflict_result)
+                self.assertEqual(
+                    conflict_result["failure"]["phase"],
+                    runner.LANE_A_LOCAL_DMG_PHASE,
+                )
+                local_dmg_suite_publish_mock.assert_called_once()
+                write_mock.assert_not_called()
+                local_dmg_suite_mock.reset_mock()
+                local_dmg_suite_publish_mock.reset_mock()
+                run_lane_mock.reset_mock()
+                events.clear()
+                local_dmg_suite_publish_mock.side_effect = KeyboardInterrupt()
+                interrupted_write_patcher = mock.patch.object(
+                    runner,
+                    "write_result",
+                )
+                interrupted_write = interrupted_write_patcher.start()
+                interrupted_code, interrupted_result = runner.execute(
+                    base / "result/result-lane-a-suite-interrupted.json",
+                    publish_qualified=False,
+                    lane_a_local_dmg_suite_label=(
+                        "current-source-g6-chain-interrupted"
+                    ),
+                )
+                interrupted_write_patcher.stop()
+                self.assertEqual(interrupted_code, 130, interrupted_result)
+                self.assertEqual(
+                    interrupted_result["failure"]["phase"],
+                    "interrupted",
+                )
+                local_dmg_suite_publish_mock.assert_called_once()
+                interrupted_write.assert_not_called()
+                self.assertIn("lock-exit", events)
+                local_dmg_suite_publish_mock.side_effect = (
+                    lambda *args, **kwargs: events.append(
+                        "lane-a-local-dmg-suite-publish"
+                    )
+                )
+                local_dmg_suite_mock.reset_mock()
+                local_dmg_suite_publish_mock.reset_mock()
+                run_lane_mock.reset_mock()
+                events.clear()
                 local_dmg_suite_mock.side_effect = (
                     runner.ReproducibilityError(
                         10,
@@ -3252,8 +5862,11 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                         "fixture lifecycle suite failure",
                     )
                 )
+                suite_failure_path = (
+                    base / "result/result-lane-a-suite-failed.json"
+                )
                 suite_failure_code, suite_failure_result = runner.execute(
-                    base / "result/result-lane-a-suite-failed.json",
+                    suite_failure_path,
                     publish_qualified=False,
                     lane_a_local_dmg_suite_label=(
                         "current-source-g6-chain-failed"
@@ -3265,8 +5878,28 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     suite_failure_result,
                 )
                 local_dmg_suite_publish_mock.assert_not_called()
+                self.assertFalse(suite_failure_path.exists())
                 self.assertIn("scratch-cleanup", events)
                 self.assertIn("lock-exit", events)
+                preserved_parent = b'{"fixture":"existing-success"}\n'
+                suite_failure_path.parent.mkdir(
+                    mode=0o700,
+                    parents=True,
+                    exist_ok=True,
+                )
+                suite_failure_path.write_bytes(preserved_parent)
+                repeated_failure_code, _ = runner.execute(
+                    suite_failure_path,
+                    publish_qualified=False,
+                    lane_a_local_dmg_suite_label=(
+                        "current-source-g6-chain-failed"
+                    ),
+                )
+                self.assertEqual(repeated_failure_code, 10)
+                self.assertEqual(
+                    suite_failure_path.read_bytes(),
+                    preserved_parent,
+                )
                 local_dmg_suite_mock.side_effect = (
                     lambda *args, **kwargs: (
                         events.append("lane-a-local-dmg-suite")

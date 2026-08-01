@@ -19,6 +19,7 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
+import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -26,6 +27,7 @@ if str(ROOT) not in sys.path:
 
 from script.check_release_version_ledger import (
     LedgerError,
+    ReleaseVersion,
     load_release_version_ledger,
 )
 from script.check_release_compliance import (
@@ -50,6 +52,11 @@ GRADLE_LOCK_PATHS = (
 GRADLE_IGNORED_DEPENDENCIES = (
     "org.jetbrains.kotlin:kotlin-stdlib-common",
 )
+GRADLE_IGNORED_DEPENDENCY_PARENT = {
+    "org.jetbrains.kotlin:kotlin-stdlib-common": (
+        "org.jetbrains.kotlin:kotlin-stdlib"
+    ),
+}
 ANDROID_XML_NAMESPACE = "http://schemas.android.com/apk/res/android"
 BUNDLETOOL_CLASSPATH_MARKER = "AETHERLINK_BUNDLETOOL_CLASSPATH="
 BUNDLETOOL_MAIN_CLASS = (
@@ -58,6 +65,32 @@ BUNDLETOOL_MAIN_CLASS = (
 BUNDLETOOL_VERSION = "1.18.3"
 BUNDLETOOL_TIMEOUT_SECONDS = 60
 AAPT2_TIMEOUT_SECONDS = 60
+ANDROID_BUILD_TOOLS_VERSION = "36.0.0"
+ANDROID_NDK_VERSION = "28.2.13676358"
+ANDROID_RELEASE_SDK_DEPENDENCIES_SHA256 = (
+    "a8d5bf95bcb9d96daef3be37aed81344f992bdac5f15ce6926ff10af393f71cf"
+)
+ANDROID_RELEASE_SDK_DEPENDENCIES_PROTOBUF_SHA256 = (
+    "2a061d9f10804b3c4a2e6e63eae2d39cea066700863a0e87993562f052e20ca0"
+)
+ANDROID_RELEASE_R8_MAPPING_SHA256 = (
+    "25726643b405661101d4e938ca5e5d525cc09e0fe00ed49296d7e7e87cdc3383"
+)
+ANDROID_RELEASE_R8_MAPPING_PRT_LOGICAL_SHA256 = (
+    "6b3fe34fe61466d9d274848f7085a135c53476e09d32d4826f4e8563cce0fde8"
+)
+ANDROID_RELEASE_APK_BASELINE_PROFILE_SHA256 = (
+    "9872d570c48fdcf7bd21ca3c35f42124f1251110c407e36662d3ca1cc4209fb8"
+)
+ANDROID_RELEASE_APK_BASELINE_PROFILE_METADATA_SHA256 = (
+    "085b63a646d83a869ba06e2468259f564c2e472780d2f87a3b081f17a067eaeb"
+)
+ANDROID_RELEASE_API31_DM_PROFILE_SHA256 = (
+    "4ca2bff94b68bc5adc046b378eac4532aade7f76cca6e44ed82938ff53869ff8"
+)
+ANDROID_RELEASE_DEX_SHA256 = (
+    "80faf2ed2d61b3231e6ffaf13f3a96271d756cabf0403afcac58b9def41f4a10"
+)
 ANDROID_BACKUP_POLICY_BUILD = 15
 ANDROID_ENTRY_POINT_TOPOLOGY_BUILD = 23
 ANDROID_APPLICATION_SHELL_BUILD = 23
@@ -195,6 +228,23 @@ SOURCE_REQUIRED_FILES = (
         "script/"
         "run_macos_local_dmg_uninstall_reinstall_state_recovery_smoke.py"
     ),
+    (
+        "script/run_macos_local_dmg_uninstall_reinstall_"
+        "abrupt_process_state_recovery_smoke.py"
+    ),
+    (
+        "script/test_run_macos_local_dmg_uninstall_reinstall_"
+        "abrupt_process_state_recovery_smoke.py"
+    ),
+    "script/run_macos_build24_idle_resource_stability_smoke.py",
+    (
+        "script/run_macos_current_source_lane_a_"
+        "idle_resource_stability_smoke.py"
+    ),
+    (
+        "script/test_run_macos_current_source_lane_a_"
+        "idle_resource_stability_smoke.py"
+    ),
     "script/run_macos_packaged_app_lifecycle_smoke.py",
     "script/run_macos_packaged_app_state_recovery_smoke.py",
     "script/run_macos_runtime_chat_cross_process_smoke.py",
@@ -218,6 +268,60 @@ SOURCE_ROOTS = (
     "apps/macos/RuntimeChatSQLiteCrossProcessQA/Sources",
     "apps/macos/LocalAgentBridgeApp/Sources",
 )
+ANDROID_RELEASE_APK_RELATIVE_PATH = Path(
+    "apps/android/app/build/outputs/apk/release/app-release-unsigned.apk"
+)
+ANDROID_RELEASE_APK_METADATA_RELATIVE_PATH = Path(
+    "apps/android/app/build/outputs/apk/release/output-metadata.json"
+)
+ANDROID_RELEASE_AAB_RELATIVE_PATH = Path(
+    "apps/android/app/build/outputs/bundle/release/app-release.aab"
+)
+ANDROID_RELEASE_MAPPING_RELATIVE_PATH = Path(
+    "apps/android/app/build/outputs/mapping/release"
+)
+ANDROID_RELEASE_SDK_DEPENDENCIES_RELATIVE_PATH = Path(
+    "apps/android/app/build/outputs/sdk-dependencies/release/"
+    "sdkDependencies.txt"
+)
+ANDROID_RELEASE_NATIVE_SYMBOL_RELATIVE_PATH = Path(
+    "apps/android/app/build/outputs/native-debug-symbols/release/"
+    "native-debug-symbols.zip"
+)
+ANDROID_RELEASE_MERGED_NATIVE_RELATIVE_PATH = Path(
+    "apps/android/app/build/intermediates/merged_native_libs/release/"
+    "mergeReleaseNativeLibs/out/lib"
+)
+ANDROID_RELEASE_STRIPPED_NATIVE_RELATIVE_PATH = Path(
+    "apps/android/app/build/intermediates/stripped_native_libs/release/"
+    "stripReleaseDebugSymbols/out/lib"
+)
+ANDROID_RELEASE_MAPPING_FILES = (
+    "configuration.txt",
+    "mapping.prt",
+    "mapping.txt",
+    "resources.txt",
+    "seeds.txt",
+    "usage.txt",
+)
+ANDROID_RELEASE_APK_MAX_MEMBER_COUNT = 4_096
+ANDROID_RELEASE_APK_MAX_MEMBER_BYTES = 134_217_728
+ANDROID_RELEASE_APK_MAX_TOTAL_UNCOMPRESSED_BYTES = 268_435_456
+ANDROID_RELEASE_AAB_MAX_MEMBER_COUNT = 4_096
+ANDROID_RELEASE_AAB_MAX_MEMBER_BYTES = 134_217_728
+ANDROID_RELEASE_AAB_MAX_TOTAL_UNCOMPRESSED_BYTES = 268_435_456
+ANDROID_RELEASE_R8_PRT_MAX_MEMBER_COUNT = 16_384
+ANDROID_RELEASE_R8_PRT_MAX_MEMBER_BYTES = 16_777_216
+ANDROID_RELEASE_R8_PRT_MAX_TOTAL_UNCOMPRESSED_BYTES = 268_435_456
+ANDROID_RELEASE_MAPPING_MAX_BYTES = {
+    "configuration.txt": 4_194_304,
+    "mapping.prt": 134_217_728,
+    "mapping.txt": 268_435_456,
+    "resources.txt": 33_554_432,
+    "seeds.txt": 33_554_432,
+    "usage.txt": 134_217_728,
+}
+ANDROID_RELEASE_MAPPING_MAX_TOTAL_BYTES = 536_870_912
 
 
 class ReleaseArchiveVerificationError(ValueError):
@@ -485,30 +589,17 @@ def validate_canonical_r8_configuration(data: bytes, label: str) -> None:
 
 
 def canonicalize_r8_mapping_prt(data: bytes, label: str) -> bytes:
-    entries: list[tuple[str, bytes]] = []
-    try:
-        with zipfile.ZipFile(io.BytesIO(data), "r") as source:
-            if source.comment:
-                raise ReleaseArchiveVerificationError(
-                    f"{label} must not contain a ZIP comment"
-                )
-            names = [info.filename for info in source.infolist()]
-            if not names or len(names) != len(set(names)):
-                raise ReleaseArchiveVerificationError(
-                    f"{label} must contain unique ZIP members"
-                )
-            for info in source.infolist():
-                validate_member_path(info.filename)
-                if info.is_dir() or info.flag_bits & 0x1:
-                    raise ReleaseArchiveVerificationError(
-                        f"{label} contains a directory or encrypted member"
-                    )
-                entries.append((info.filename, source.read(info)))
-    except (OSError, KeyError, zipfile.BadZipFile) as error:
-        raise ReleaseArchiveVerificationError(
-            f"{label} is not a readable ZIP: {error}"
-        ) from error
-
+    entries = list(
+        read_safe_zip_members(
+            data,
+            label,
+            maximum_members=ANDROID_RELEASE_R8_PRT_MAX_MEMBER_COUNT,
+            maximum_member_bytes=ANDROID_RELEASE_R8_PRT_MAX_MEMBER_BYTES,
+            maximum_total_uncompressed_bytes=(
+                ANDROID_RELEASE_R8_PRT_MAX_TOTAL_UNCOMPRESSED_BYTES
+            ),
+        ).items()
+    )
     entries.sort(key=lambda entry: entry[0].encode("ascii"))
     output = io.BytesIO()
     with zipfile.ZipFile(
@@ -538,6 +629,178 @@ def canonicalize_r8_mapping_prt(data: bytes, label: str) -> bytes:
 
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def logical_member_digest(
+    members: dict[str, bytes],
+    domain: bytes,
+) -> str:
+    digest = hashlib.sha256()
+    digest.update(domain)
+    digest.update(len(members).to_bytes(8, "big"))
+    for name, payload in sorted(
+        members.items(),
+        key=lambda item: item[0].encode("ascii"),
+    ):
+        name_bytes = name.encode("ascii")
+        digest.update(len(name_bytes).to_bytes(8, "big"))
+        digest.update(name_bytes)
+        digest.update(len(payload).to_bytes(8, "big"))
+        digest.update(payload)
+    return digest.hexdigest()
+
+
+def read_stable_regular_file(
+    path: Path,
+    label: str,
+    *,
+    maximum_bytes: int = 1_073_741_824,
+) -> bytes:
+    if type(maximum_bytes) is not int or maximum_bytes < 1:
+        raise ReleaseArchiveVerificationError(
+            f"{label} read limit must be a positive integer"
+        )
+    try:
+        before = path.lstat()
+    except OSError as error:
+        raise ReleaseArchiveVerificationError(
+            f"{label} cannot be inspected: {error}"
+        ) from error
+    if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+        raise ReleaseArchiveVerificationError(
+            f"{label} must be a regular non-symlink file"
+        )
+    if before.st_size > maximum_bytes:
+        raise ReleaseArchiveVerificationError(
+            f"{label} exceeds the {maximum_bytes}-byte read limit"
+        )
+    flags = os.O_RDONLY
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise ReleaseArchiveVerificationError(
+            f"{label} cannot be opened without following links: {error}"
+        ) from error
+    try:
+        opened = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or (before.st_dev, before.st_ino)
+            != (opened.st_dev, opened.st_ino)
+        ):
+            raise ReleaseArchiveVerificationError(
+                f"{label} changed before it was opened"
+            )
+        with os.fdopen(descriptor, "rb", closefd=True) as handle:
+            descriptor = -1
+            data = handle.read(maximum_bytes + 1)
+            after = os.fstat(handle.fileno())
+    except OSError as error:
+        raise ReleaseArchiveVerificationError(
+            f"{label} cannot be read: {error}"
+        ) from error
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    if len(data) > maximum_bytes:
+        raise ReleaseArchiveVerificationError(
+            f"{label} exceeds the {maximum_bytes}-byte read limit"
+        )
+    try:
+        final = path.lstat()
+    except OSError as error:
+        raise ReleaseArchiveVerificationError(
+            f"{label} cannot be inspected after read: {error}"
+        ) from error
+    identity_fields = (
+        "st_dev",
+        "st_ino",
+        "st_mode",
+        "st_size",
+        "st_mtime_ns",
+        "st_ctime_ns",
+    )
+    before_identity = tuple(getattr(before, field) for field in identity_fields)
+    opened_identity = tuple(getattr(opened, field) for field in identity_fields)
+    after_identity = tuple(getattr(after, field) for field in identity_fields)
+    final_identity = tuple(getattr(final, field) for field in identity_fields)
+    if (
+        before_identity != opened_identity
+        or opened_identity != after_identity
+        or after_identity != final_identity
+        or len(data) != after.st_size
+    ):
+        raise ReleaseArchiveVerificationError(
+            f"{label} changed while it was read"
+        )
+    if not data:
+        raise ReleaseArchiveVerificationError(f"{label} must not be empty")
+    return data
+
+
+def parse_json_without_duplicate_keys(
+    data: bytes,
+    label: str,
+) -> object:
+    def reject_duplicate_keys(
+        pairs: list[tuple[str, object]],
+    ) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ReleaseArchiveVerificationError(
+                    f"{label} contains duplicate JSON key {key!r}"
+                )
+            result[key] = value
+        return result
+
+    def reject_nonstandard_constant(value: str) -> object:
+        raise ReleaseArchiveVerificationError(
+            f"{label} contains nonstandard JSON constant {value!r}"
+        )
+
+    try:
+        text = data.decode("utf-8")
+        return json.loads(
+            text,
+            object_pairs_hook=reject_duplicate_keys,
+            parse_constant=reject_nonstandard_constant,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ReleaseArchiveVerificationError(
+            f"{label} is not valid UTF-8 JSON: {error}"
+        ) from error
+
+
+def require_directory_inventory(
+    path: Path,
+    expected_names: set[str],
+    label: str,
+) -> None:
+    try:
+        status = path.lstat()
+    except OSError as error:
+        raise ReleaseArchiveVerificationError(
+            f"{label} cannot be inspected: {error}"
+        ) from error
+    if stat.S_ISLNK(status.st_mode) or not stat.S_ISDIR(status.st_mode):
+        raise ReleaseArchiveVerificationError(
+            f"{label} must be a physical directory"
+        )
+    try:
+        actual_names = {entry.name for entry in path.iterdir()}
+    except OSError as error:
+        raise ReleaseArchiveVerificationError(
+            f"{label} cannot be listed: {error}"
+        ) from error
+    if actual_names != expected_names:
+        raise ReleaseArchiveVerificationError(
+            f"{label} inventory differs; missing="
+            f"{sorted(expected_names - actual_names)}, "
+            f"extra={sorted(actual_names - expected_names)}"
+        )
 
 
 def require_exact_int(value: object, label: str) -> int:
@@ -2148,30 +2411,15 @@ def android_sdk_root(root: Path = ROOT) -> Path:
     return Path.home() / "Library/Android/sdk"
 
 
-def android_build_tool_version(path: Path) -> tuple[int, ...]:
-    try:
-        return tuple(int(component) for component in path.parent.name.split("."))
-    except ValueError:
-        return ()
-
-
 def find_android_build_tool(name: str, root: Path = ROOT) -> Path:
     sdk_root = android_sdk_root(root)
-    candidates = [
-        path
-        for path in (sdk_root / "build-tools").glob(f"*/{name}")
-        if path.is_file() and os.access(path, os.X_OK)
-    ]
-    versioned = [
-        (android_build_tool_version(path), path)
-        for path in candidates
-        if android_build_tool_version(path)
-    ]
-    if not versioned:
+    path = sdk_root / "build-tools" / ANDROID_BUILD_TOOLS_VERSION / name
+    if not path.is_file() or not os.access(path, os.X_OK):
         raise ReleaseArchiveVerificationError(
-            f"cannot locate {name} under Android SDK {sdk_root}"
+            f"cannot locate pinned Build Tools {ANDROID_BUILD_TOOLS_VERSION} "
+            f"{name} under Android SDK {sdk_root}"
         )
-    return max(versioned)[1]
+    return path
 
 
 def parse_aapt2_badging(output: str) -> dict[str, object]:
@@ -2904,6 +3152,1604 @@ def inspect_apk_backup_policy(
         return manifest_policy
     finally:
         Path(temporary_name).unlink(missing_ok=True)
+
+
+def validate_android_art_profile_payload(
+    data: bytes,
+    label: str,
+    *,
+    expected_magic: bytes,
+    expected_version: bytes,
+) -> None:
+    if (
+        len(data) <= 8
+        or len(expected_magic) != 4
+        or len(expected_version) != 4
+        or data[:4] != expected_magic
+        or data[4:8] != expected_version
+    ):
+        raise ReleaseArchiveVerificationError(
+            f"{label} has an unexpected ART profile header"
+        )
+
+
+def parse_android_release_output_metadata(
+    data: bytes,
+    current: ReleaseVersion,
+    apk_directory: Path,
+    apk_members: dict[str, bytes],
+    aab_members: dict[str, bytes],
+) -> dict[str, object]:
+    metadata = parse_json_without_duplicate_keys(
+        data,
+        "Android Release output-metadata.json",
+    )
+    if type(metadata) is not dict:
+        raise ReleaseArchiveVerificationError(
+            "Android Release output metadata root must be an object"
+        )
+    artifact_type = metadata.get("artifactType")
+    if artifact_type != {"type": "APK", "kind": "Directory"}:
+        raise ReleaseArchiveVerificationError(
+            "Android Release output metadata artifact type is unexpected"
+        )
+    if require_exact_int(
+        metadata.get("version"),
+        "Android Release output metadata version",
+    ) != 3:
+        raise ReleaseArchiveVerificationError(
+            "Android Release output metadata schema must be version 3"
+        )
+    if (
+        metadata.get("applicationId")
+        != "com.localagentbridge.android"
+        or metadata.get("variantName") != "release"
+        or metadata.get("elementType") != "File"
+        or require_exact_int(
+            metadata.get("minSdkVersionForDexing"),
+            "Android Release output metadata minSdkVersionForDexing",
+        )
+        != 26
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android Release output metadata identity differs from V1"
+        )
+    elements = metadata.get("elements")
+    if type(elements) is not list or len(elements) != 1:
+        raise ReleaseArchiveVerificationError(
+            "Android Release output metadata must contain one element"
+        )
+    element = elements[0]
+    if type(element) is not dict:
+        raise ReleaseArchiveVerificationError(
+            "Android Release output metadata element must be an object"
+        )
+    if (
+        element.get("type") != "SINGLE"
+        or element.get("filters") != []
+        or element.get("attributes") != []
+        or element.get("outputFile") != "app-release-unsigned.apk"
+        or require_exact_int(
+            element.get("versionCode"),
+            "Android Release output metadata versionCode",
+        )
+        != current.build_number
+        or element.get("versionName") != current.marketing_version
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android Release output metadata element differs from ledger"
+        )
+
+    baseline_profiles = metadata.get("baselineProfiles")
+    if type(baseline_profiles) is not list or len(baseline_profiles) != 2:
+        raise ReleaseArchiveVerificationError(
+            "Android Release output metadata must describe two baseline "
+            "profile API ranges"
+        )
+    expected_ranges = [(28, 30), (31, 2_147_483_647)]
+    observed_ranges: list[tuple[int, int]] = []
+    profile_paths: list[str] = []
+    profile_records: list[tuple[int, int, dict[str, bytes]]] = []
+    for index, profile in enumerate(baseline_profiles):
+        if type(profile) is not dict:
+            raise ReleaseArchiveVerificationError(
+                "Android Release baseline profile entry must be an object"
+            )
+        min_api = require_exact_int(
+            profile.get("minApi"),
+            f"Android baselineProfiles[{index}].minApi",
+        )
+        max_api = require_exact_int(
+            profile.get("maxApi"),
+            f"Android baselineProfiles[{index}].maxApi",
+        )
+        observed_ranges.append((min_api, max_api))
+        paths = profile.get("baselineProfiles")
+        if (
+            type(paths) is not list
+            or len(paths) != 1
+            or type(paths[0]) is not str
+        ):
+            raise ReleaseArchiveVerificationError(
+                "Android Release baseline profile range must name one file"
+            )
+        pure = PurePosixPath(paths[0])
+        if (
+            pure.is_absolute()
+            or len(pure.parts) != 3
+            or pure.parts[0] != "baselineProfiles"
+            or any(part in ("", ".", "..") for part in pure.parts)
+            or pure.suffix != ".dm"
+        ):
+            raise ReleaseArchiveVerificationError(
+                "Android Release baseline profile path is noncanonical"
+            )
+        profile_paths.append(paths[0])
+    if observed_ranges != expected_ranges:
+        raise ReleaseArchiveVerificationError(
+            "Android Release baseline profile API ranges differ from V1"
+        )
+    if len(profile_paths) != len(set(profile_paths)):
+        raise ReleaseArchiveVerificationError(
+            "Android Release baseline profile paths must be unique"
+        )
+
+    expected_inventory = {
+        "app-release-unsigned.apk",
+        "output-metadata.json",
+        "baselineProfiles",
+    }
+    require_directory_inventory(
+        apk_directory,
+        expected_inventory,
+        "Android Release APK output directory",
+    )
+    baseline_root = apk_directory / "baselineProfiles"
+    try:
+        baseline_root_status = baseline_root.lstat()
+    except OSError as error:
+        raise ReleaseArchiveVerificationError(
+            f"Android Release baseline profile root cannot be inspected: {error}"
+        ) from error
+    if stat.S_ISLNK(baseline_root_status.st_mode) or not stat.S_ISDIR(
+        baseline_root_status.st_mode
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android Release baseline profile root must be a non-symlink "
+            "directory"
+        )
+    expected_baseline_entries: set[str] = set()
+    for (min_api, max_api), relative in zip(
+        observed_ranges,
+        profile_paths,
+    ):
+        pure = PurePosixPath(relative)
+        expected_baseline_entries.add("/".join(pure.parts[1:]))
+        expected_baseline_entries.add(pure.parts[1])
+        profile_data = read_stable_regular_file(
+            apk_directory.joinpath(*pure.parts),
+            f"Android Release baseline profile {relative}",
+            maximum_bytes=67_108_864,
+        )
+        profile_members = read_safe_zip_members(
+            profile_data,
+            f"Android Release baseline profile {relative}",
+            maximum_members=2,
+            maximum_member_bytes=16_777_216,
+            maximum_total_uncompressed_bytes=33_554_432,
+        )
+        if set(profile_members) != {"primary.prof", "primary.profm"}:
+            raise ReleaseArchiveVerificationError(
+                "Android Release baseline profile must contain exactly "
+                f"primary.prof and primary.profm: {relative}"
+            )
+        profile_records.append((min_api, max_api, profile_members))
+    try:
+        actual_baseline_entries = {
+            entry.relative_to(baseline_root).as_posix()
+            for entry in baseline_root.rglob("*")
+        }
+    except OSError as error:
+        raise ReleaseArchiveVerificationError(
+            f"Android Release baseline profile inventory failed: {error}"
+        ) from error
+    if actual_baseline_entries != expected_baseline_entries:
+        raise ReleaseArchiveVerificationError(
+            "Android Release baseline profile inventory differs; "
+            f"missing={sorted(expected_baseline_entries - actual_baseline_entries)}, "
+            f"extra={sorted(actual_baseline_entries - expected_baseline_entries)}"
+        )
+    for entry in baseline_root.rglob("*"):
+        status = entry.lstat()
+        if stat.S_ISLNK(status.st_mode) or not (
+            stat.S_ISDIR(status.st_mode) or stat.S_ISREG(status.st_mode)
+        ):
+            raise ReleaseArchiveVerificationError(
+                "Android Release baseline profile tree contains an unsafe entry"
+            )
+
+    apk_profile_names = {
+        name
+        for name in apk_members
+        if name.startswith("assets/dexopt/baseline.")
+    }
+    expected_apk_profile_names = {
+        "assets/dexopt/baseline.prof",
+        "assets/dexopt/baseline.profm",
+    }
+    if apk_profile_names != expected_apk_profile_names:
+        raise ReleaseArchiveVerificationError(
+            "Android Release APK baseline profile inventory differs"
+        )
+    aab_profile_prefix = (
+        "BUNDLE-METADATA/com.android.tools.build.profiles/"
+    )
+    aab_profile_names = {
+        name for name in aab_members if name.startswith(aab_profile_prefix)
+    }
+    expected_aab_profile_names = {
+        f"{aab_profile_prefix}baseline.prof",
+        f"{aab_profile_prefix}baseline.profm",
+    }
+    if aab_profile_names != expected_aab_profile_names:
+        raise ReleaseArchiveVerificationError(
+            "Android Release AAB baseline profile inventory differs"
+        )
+
+    apk_profile = apk_members["assets/dexopt/baseline.prof"]
+    apk_profile_metadata = apk_members["assets/dexopt/baseline.profm"]
+    if (
+        aab_members[f"{aab_profile_prefix}baseline.prof"] != apk_profile
+        or aab_members[f"{aab_profile_prefix}baseline.profm"]
+        != apk_profile_metadata
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android Release APK and AAB baseline profile payloads differ"
+        )
+    validate_android_art_profile_payload(
+        apk_profile,
+        "Android Release APK baseline.prof",
+        expected_magic=b"pro\0",
+        expected_version=b"010\0",
+    )
+    validate_android_art_profile_payload(
+        apk_profile_metadata,
+        "Android Release APK baseline.profm",
+        expected_magic=b"prm\0",
+        expected_version=b"002\0",
+    )
+    if (
+        sha256(apk_profile) != ANDROID_RELEASE_APK_BASELINE_PROFILE_SHA256
+        or sha256(apk_profile_metadata)
+        != ANDROID_RELEASE_APK_BASELINE_PROFILE_METADATA_SHA256
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android Release APK/AAB baseline profiles differ from the "
+            "pinned V1 profile identities"
+        )
+
+    profiles_by_range = {
+        (min_api, max_api): members
+        for min_api, max_api, members in profile_records
+    }
+    api_28_profile = profiles_by_range[(28, 30)]
+    api_31_profile = profiles_by_range[(31, 2_147_483_647)]
+    if (
+        api_28_profile["primary.prof"] != apk_profile
+        or api_28_profile["primary.profm"] != apk_profile_metadata
+        or api_31_profile["primary.profm"] != apk_profile_metadata
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android Release DM profiles are not bound to the APK/AAB "
+            "baseline profile payloads"
+        )
+    validate_android_art_profile_payload(
+        api_31_profile["primary.prof"],
+        "Android Release API 31+ DM primary.prof",
+        expected_magic=b"pro\0",
+        expected_version=b"015\0",
+    )
+    if (
+        sha256(api_31_profile["primary.prof"])
+        != ANDROID_RELEASE_API31_DM_PROFILE_SHA256
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android Release API 31+ DM primary.prof differs from the "
+            "pinned V1 converted-profile identity"
+        )
+    return {
+        "baselineProfileCount": len(profile_paths),
+        "outputFile": element["outputFile"],
+    }
+
+
+def validate_android_r8_partition_source_prefix(
+    prefix: bytes,
+    class_name_pattern: re.Pattern[str],
+    partition_name: str,
+) -> None:
+    label = f"Android Release mapping.prt partition {partition_name}"
+    if (
+        not prefix.startswith(b"# ")
+        or not prefix.endswith(b"\n")
+        or prefix.count(b"\n") != 1
+    ):
+        raise ReleaseArchiveVerificationError(
+            f"{label} has an unexpected source-file prefix"
+        )
+    value = parse_json_without_duplicate_keys(
+        prefix[2:-1],
+        f"{label} source-file prefix",
+    )
+    if type(value) is not dict:
+        raise ReleaseArchiveVerificationError(
+            f"{label} source-file prefix must be an object"
+        )
+    require_exact_keys(
+        value,
+        {"id", "fileNameMappings"},
+        f"{label} source-file prefix",
+    )
+    file_name_mappings = value.get("fileNameMappings")
+    if (
+        value.get("id") != "partitionSourceFiles"
+        or type(file_name_mappings) is not dict
+        or not file_name_mappings
+    ):
+        raise ReleaseArchiveVerificationError(
+            f"{label} source-file mapping differs"
+        )
+    for class_identity, source_file in file_name_mappings.items():
+        if (
+            type(class_identity) is not str
+            or class_name_pattern.fullmatch(class_identity) is None
+            or type(source_file) is not str
+            or not source_file
+            or len(source_file) > 512
+            or any(ord(character) < 33 or ord(character) > 126 for character in source_file)
+            or "/" in source_file
+            or "\\" in source_file
+        ):
+            raise ReleaseArchiveVerificationError(
+                f"{label} contains an invalid source-file identity"
+            )
+
+
+def validate_android_r8_prt_metadata(
+    data: bytes,
+    partition_names: list[str],
+    expected_mapping_header: bytes,
+    original_names: list[str],
+) -> None:
+    label = "Android Release mapping.prt METADATA"
+    cursor = 0
+
+    def take(length: int) -> bytes:
+        nonlocal cursor
+        if length < 0 or cursor + length > len(data):
+            raise ReleaseArchiveVerificationError(
+                f"{label} is truncated"
+            )
+        value = data[cursor : cursor + length]
+        cursor += length
+        return value
+
+    def read_unsigned(length: int) -> int:
+        return int.from_bytes(take(length), "big")
+
+    if take(2) != b"\xaa\xa8" or read_unsigned(2) != 1:
+        raise ReleaseArchiveVerificationError(
+            f"{label} header differs"
+        )
+    version_length = read_unsigned(2)
+    if version_length != 3 or take(version_length) != b"2.2":
+        raise ReleaseArchiveVerificationError(
+            f"{label} mapping version differs"
+        )
+    partition_name_bytes = b";".join(
+        name.encode("ascii") for name in partition_names
+    )
+    if (
+        read_unsigned(4) != len(partition_name_bytes)
+        or take(len(partition_name_bytes)) != partition_name_bytes
+    ):
+        raise ReleaseArchiveVerificationError(
+            f"{label} partition inventory differs"
+        )
+    tail_length = read_unsigned(4)
+    if tail_length != len(data) - cursor:
+        raise ReleaseArchiveVerificationError(
+            f"{label} tail length differs"
+        )
+    if read_unsigned(2) != 2 or read_unsigned(4) != 0:
+        raise ReleaseArchiveVerificationError(
+            f"{label} partition map header differs"
+        )
+    header_length = read_unsigned(2)
+    if (
+        header_length != len(expected_mapping_header)
+        or take(header_length) != expected_mapping_header
+    ):
+        raise ReleaseArchiveVerificationError(
+            f"{label} is not bound to mapping.txt"
+        )
+    if read_unsigned(2) != 1:
+        raise ReleaseArchiveVerificationError(
+            f"{label} package-map version differs"
+        )
+    package_length = read_unsigned(4)
+    packages_data = take(package_length)
+    if cursor != len(data):
+        raise ReleaseArchiveVerificationError(
+            f"{label} contains trailing bytes"
+        )
+    if not packages_data.startswith(b"\n") or not packages_data.endswith(b"\n"):
+        raise ReleaseArchiveVerificationError(
+            f"{label} package inventory is not LF-delimited"
+        )
+    try:
+        packages = packages_data.decode("ascii").splitlines()
+    except UnicodeDecodeError as error:
+        raise ReleaseArchiveVerificationError(
+            f"{label} package inventory must be ASCII"
+        ) from error
+    if (
+        not packages
+        or packages[0] != ""
+        or any(not package for package in packages[1:])
+        or packages[1:] != sorted(set(packages[1:]))
+    ):
+        raise ReleaseArchiveVerificationError(
+            f"{label} package inventory is noncanonical"
+        )
+    for package in packages[1:]:
+        if not any(
+            original_name.startswith(package + ".")
+            for original_name in original_names
+        ):
+            raise ReleaseArchiveVerificationError(
+                f"{label} contains an unbound package identity"
+            )
+
+
+def validate_android_release_mapping_outputs(
+    mapping_outputs: dict[str, bytes],
+) -> None:
+    if set(mapping_outputs) != set(ANDROID_RELEASE_MAPPING_FILES):
+        raise ReleaseArchiveVerificationError(
+            "Android Release R8 mapping file set differs"
+        )
+    configuration = mapping_outputs["configuration.txt"]
+    if b"\0" in configuration or not configuration.endswith(b"\n"):
+        raise ReleaseArchiveVerificationError(
+            "Android Release R8 configuration must be LF-terminated "
+            "and NUL-free"
+        )
+    mapping_prt = mapping_outputs["mapping.prt"]
+    canonicalize_r8_resources(
+        mapping_outputs["resources.txt"],
+        "Android Release resources.txt",
+    )
+    canonicalize_r8_line_artifact(
+        mapping_outputs["seeds.txt"],
+        "Android Release seeds.txt",
+    )
+    for name in ("mapping.txt", "usage.txt"):
+        data = mapping_outputs[name]
+        if b"\0" in data or b"\r" in data or not data.endswith(b"\n"):
+            raise ReleaseArchiveVerificationError(
+                f"Android Release {name} must be LF-terminated and NUL-free"
+            )
+        try:
+            data.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise ReleaseArchiveVerificationError(
+                f"Android Release {name} must be UTF-8 text"
+            ) from error
+
+    mapping = mapping_outputs["mapping.txt"]
+    header_match = re.match(
+        rb"\A# compiler: R8\n"
+        rb"# compiler_version: ([0-9]+\.[0-9]+\.[0-9]+(?:[-+]"
+        rb"[A-Za-z0-9_.-]+)?)\n"
+        rb"# min_api: ([0-9]+)\n"
+        rb"# common_typos_disable\n"
+        rb'# \{"id":"com\.android\.tools\.r8\.mapping",'
+        rb'"version":"2\.2"\}\n'
+        rb"# pg_map_id: ([0-9a-f]{64})\n"
+        rb"# pg_map_hash: SHA-256 ([0-9a-f]{64})\n",
+        mapping,
+    )
+    if header_match is None:
+        raise ReleaseArchiveVerificationError(
+            "Android Release mapping.txt R8 header differs"
+        )
+    if int(header_match.group(2)) != 26:
+        raise ReleaseArchiveVerificationError(
+            "Android Release mapping.txt min_api must be 26"
+        )
+    mapping_body = mapping[header_match.end() :]
+    if hashlib.sha256(mapping_body).hexdigest().encode("ascii") != (
+        header_match.group(4)
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android Release mapping.txt pg_map_hash differs from its body"
+        )
+    if header_match.group(3) == b"0" * 64:
+        raise ReleaseArchiveVerificationError(
+            "Android Release mapping.txt pg_map_id must be nonzero"
+        )
+
+    java_identifier = r"[A-Za-z_$][A-Za-z0-9_$-]*"
+    class_name = rf"{java_identifier}(?:\.{java_identifier})*"
+    class_identity_pattern = re.compile(rf"^{class_name}$")
+    class_mapping_pattern = re.compile(
+        rf"^({class_name}) -> ({class_name}):$"
+    )
+    original_names: list[str] = []
+    obfuscated_names: list[str] = []
+    mapping_blocks: dict[str, bytes] = {}
+    current_obfuscated_name: str | None = None
+    current_block: list[bytes] = []
+    for raw_line in mapping_body.splitlines(keepends=True):
+        if raw_line and not raw_line.startswith((b" ", b"#")):
+            if not raw_line.endswith(b"\n"):
+                raise ReleaseArchiveVerificationError(
+                    "Android Release mapping.txt contains an unterminated "
+                    "top-level class mapping"
+                )
+            try:
+                line = raw_line[:-1].decode("utf-8")
+            except UnicodeDecodeError as error:
+                raise ReleaseArchiveVerificationError(
+                    "Android Release mapping.txt class identity must be UTF-8"
+                ) from error
+            class_match = class_mapping_pattern.fullmatch(line)
+            if class_match is None:
+                raise ReleaseArchiveVerificationError(
+                    "Android Release mapping.txt contains a malformed "
+                    f"top-level class mapping: {line!r}"
+                )
+            if current_obfuscated_name is not None:
+                mapping_blocks[current_obfuscated_name] = b"".join(
+                    current_block
+                )
+            elif current_block:
+                raise ReleaseArchiveVerificationError(
+                    "Android Release mapping.txt body begins outside a class "
+                    "mapping"
+                )
+            original_names.append(class_match.group(1))
+            current_obfuscated_name = class_match.group(2)
+            obfuscated_names.append(current_obfuscated_name)
+            current_block = [raw_line]
+        else:
+            current_block.append(raw_line)
+    if current_obfuscated_name is not None:
+        mapping_blocks[current_obfuscated_name] = b"".join(current_block)
+    if not original_names:
+        raise ReleaseArchiveVerificationError(
+            "Android Release mapping.txt must contain class mappings"
+        )
+    if (
+        len(original_names) != len(set(original_names))
+        or len(obfuscated_names) != len(set(obfuscated_names))
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android Release mapping.txt class identities must be unique"
+        )
+
+    partition_members = read_safe_zip_members(
+        mapping_prt,
+        "Android Release mapping.prt",
+        maximum_members=ANDROID_RELEASE_R8_PRT_MAX_MEMBER_COUNT,
+        maximum_member_bytes=ANDROID_RELEASE_R8_PRT_MAX_MEMBER_BYTES,
+        maximum_total_uncompressed_bytes=(
+            ANDROID_RELEASE_R8_PRT_MAX_TOTAL_UNCOMPRESSED_BYTES
+        ),
+    )
+    if "METADATA" not in partition_members:
+        raise ReleaseArchiveVerificationError(
+            "Android Release mapping.prt must contain METADATA"
+        )
+    partition_class_names = set(partition_members) - {"METADATA"}
+    obfuscated_name_set = set(obfuscated_names)
+    if not partition_class_names:
+        raise ReleaseArchiveVerificationError(
+            "Android Release mapping.prt must contain class partitions"
+        )
+    unexpected_partitions = sorted(
+        partition_class_names - obfuscated_name_set
+    )
+    missing_partitions = sorted(
+        obfuscated_name_set - partition_class_names
+    )
+    if unexpected_partitions or set(missing_partitions) - {"$$compose"}:
+        raise ReleaseArchiveVerificationError(
+            "Android Release mapping.prt class partitions differ from "
+            "mapping.txt; "
+            f"missing={missing_partitions}, extra={unexpected_partitions}"
+        )
+    for partition_name in partition_class_names:
+        partition_payload = partition_members[partition_name]
+        mapping_block = mapping_blocks[partition_name]
+        if partition_payload == mapping_block:
+            continue
+        if not partition_payload.endswith(mapping_block):
+            raise ReleaseArchiveVerificationError(
+                "Android Release mapping.prt partition payload differs from "
+                f"mapping.txt: {partition_name}"
+            )
+        validate_android_r8_partition_source_prefix(
+            partition_payload[: -len(mapping_block)],
+            class_identity_pattern,
+            partition_name,
+        )
+
+    metadata_header = bytearray(mapping[: header_match.end()])
+    metadata_header[
+        header_match.start(4) : header_match.end(4)
+    ] = header_match.group(3)
+    ordered_partition_names = [
+        name for name in partition_members if name != "METADATA"
+    ]
+    validate_android_r8_prt_metadata(
+        partition_members["METADATA"],
+        ordered_partition_names,
+        bytes(metadata_header),
+        original_names,
+    )
+    if sha256(mapping) != ANDROID_RELEASE_R8_MAPPING_SHA256:
+        raise ReleaseArchiveVerificationError(
+            "Android Release mapping.txt differs from the pinned V1 byte "
+            "identity"
+        )
+    if (
+        logical_member_digest(
+            partition_members,
+            b"AETHERLINK-R8-PRT-V1\0",
+        )
+        != ANDROID_RELEASE_R8_MAPPING_PRT_LOGICAL_SHA256
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android Release mapping.prt differs from the pinned V1 "
+            "logical identity"
+        )
+
+
+def decode_android_sdk_dependency_digest(value: str, label: str) -> bytes:
+    output = bytearray()
+    cursor = 0
+    simple_escapes = {
+        "a": 7,
+        "b": 8,
+        "f": 12,
+        "n": 10,
+        "r": 13,
+        "t": 9,
+        "v": 11,
+        "\\": 92,
+        "'": 39,
+        '"': 34,
+    }
+    while cursor < len(value):
+        character = value[cursor]
+        if character != "\\":
+            code_point = ord(character)
+            if code_point < 32 or code_point > 126:
+                raise ReleaseArchiveVerificationError(
+                    f"{label} contains a non-ASCII digest byte"
+                )
+            output.append(code_point)
+            cursor += 1
+            continue
+        if cursor + 1 >= len(value):
+            raise ReleaseArchiveVerificationError(
+                f"{label} contains a truncated digest escape"
+            )
+        escape = value[cursor + 1]
+        if escape in simple_escapes:
+            output.append(simple_escapes[escape])
+            cursor += 2
+            continue
+        octal = value[cursor + 1 : cursor + 4]
+        if len(octal) != 3 or any(digit not in "01234567" for digit in octal):
+            raise ReleaseArchiveVerificationError(
+                f"{label} contains a noncanonical digest escape"
+            )
+        output.append(int(octal, 8))
+        cursor += 4
+    return bytes(output)
+
+
+def parse_android_sdk_dependencies(
+    data: bytes,
+    root: Path,
+) -> int:
+    if (
+        data.startswith(b"\xef\xbb\xbf")
+        or b"\r" in data
+        or b"\0" in data
+        or not data.endswith(b"\n")
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android SDK dependency output must be BOM-free ASCII/LF text"
+        )
+    try:
+        text = data.decode("ascii")
+    except UnicodeDecodeError as error:
+        raise ReleaseArchiveVerificationError(
+            "Android SDK dependency output must contain only ASCII"
+        ) from error
+    header = (
+        "# List of SDK dependencies of this app, this information is also "
+        "included in an encrypted form in the APK.\n"
+        "# For more information visit: "
+        "https://d.android.com/r/tools/dependency-metadata\n\n"
+    )
+    if not text.startswith(header):
+        raise ReleaseArchiveVerificationError(
+            "Android SDK dependency output header differs"
+        )
+    block_pattern = re.compile(
+        r"(?ms)^(library|library_dependencies|module_dependencies|"
+        r"repositories) \{\n.*?^\}\n"
+    )
+    matches = list(block_pattern.finditer(text, len(header)))
+    cursor = len(header)
+    coordinates: list[str] = []
+    library_repository_indices: list[int] = []
+    dependency_graph: dict[int, list[int]] = {}
+    module_dependencies: list[int] | None = None
+    repository_blocks: list[str] = []
+    digest_count = 0
+    observed_kinds: list[str] = []
+    for index, match in enumerate(matches):
+        if match.start() != cursor:
+            raise ReleaseArchiveVerificationError(
+                "Android SDK dependency output contains text outside "
+                "recognized top-level blocks"
+            )
+        kind = match.group(1)
+        observed_kinds.append(kind)
+        block = match.group(0)
+        cursor = match.end()
+        if kind == "library":
+            library_match = re.fullmatch(
+                r"library \{\n"
+                r"  maven_library \{\n"
+                r'    groupId: "([A-Za-z0-9_.+\-]+)"\n'
+                r'    artifactId: "([A-Za-z0-9_.+\-]+)"\n'
+                r'    version: "([A-Za-z0-9_.+\-]+)"\n'
+                r"  \}\n"
+                r"(?:  digests \{\n"
+                r'    sha256: "((?:\\[^\n]|[^"\\\n])+)"\n'
+                r"  \}\n)?"
+                r"  repo_index \{\n"
+                r"(?:    value: ([01])\n)?"
+                r"  \}\n"
+                r"\}\n",
+                block,
+            )
+            if library_match is None:
+                raise ReleaseArchiveVerificationError(
+                    f"Android SDK dependency block {index} has an invalid "
+                    "library shape"
+                )
+            coordinates.append(":".join(library_match.group(1, 2, 3)))
+            digest = library_match.group(4)
+            if digest is not None:
+                digest_bytes = decode_android_sdk_dependency_digest(
+                    digest,
+                    f"Android SDK dependency block {index}",
+                )
+                if len(digest_bytes) != 32:
+                    raise ReleaseArchiveVerificationError(
+                        f"Android SDK dependency block {index} digest must be "
+                        "32 bytes"
+                    )
+                digest_count += 1
+            repository_index = library_match.group(5)
+            library_repository_indices.append(
+                0 if repository_index is None else int(repository_index)
+            )
+            continue
+        if kind == "library_dependencies":
+            dependency_match = re.fullmatch(
+                r"library_dependencies \{\n"
+                r"(?:  library_index: ([1-9][0-9]*)\n)?"
+                r"((?:  library_dep_index: (?:0|[1-9][0-9]*)\n)+)"
+                r"\}\n",
+                block,
+            )
+            if dependency_match is None:
+                raise ReleaseArchiveVerificationError(
+                    f"Android SDK dependency block {index} has an invalid "
+                    "dependency shape"
+                )
+            owner = (
+                0
+                if dependency_match.group(1) is None
+                else int(dependency_match.group(1))
+            )
+            if owner in dependency_graph:
+                raise ReleaseArchiveVerificationError(
+                    "Android SDK dependency owners must be unique"
+                )
+            dependency_graph[owner] = [
+                int(value)
+                for value in re.findall(
+                    r"^  library_dep_index: (0|[1-9][0-9]*)$",
+                    dependency_match.group(2),
+                    re.MULTILINE,
+                )
+            ]
+            continue
+        if kind == "module_dependencies":
+            module_match = re.fullmatch(
+                r"module_dependencies \{\n"
+                r'  module_name: "base"\n'
+                r"((?:  dependency_index: (?:0|[1-9][0-9]*)\n)+)"
+                r"\}\n",
+                block,
+            )
+            if module_match is None or module_dependencies is not None:
+                raise ReleaseArchiveVerificationError(
+                    "Android SDK module dependency block differs"
+                )
+            module_dependencies = [
+                int(value)
+                for value in re.findall(
+                    r"^  dependency_index: (0|[1-9][0-9]*)$",
+                    module_match.group(1),
+                    re.MULTILINE,
+                )
+            ]
+            continue
+        repository_blocks.append(block)
+    kind_rank = {
+        "library": 0,
+        "library_dependencies": 1,
+        "module_dependencies": 2,
+        "repositories": 3,
+    }
+    if (
+        cursor != len(text)
+        or not coordinates
+        or [kind_rank[kind] for kind in observed_kinds]
+        != sorted(kind_rank[kind] for kind in observed_kinds)
+        or module_dependencies is None
+        or repository_blocks
+        != [
+            "repositories {\n"
+            "  maven_repo {\n"
+            '    url: "https://dl.google.com/dl/android/maven2/"\n'
+            "  }\n"
+            "}\n",
+            "repositories {\n"
+            "  maven_repo {\n"
+            '    url: "https://repo.maven.apache.org/maven2/"\n'
+            "  }\n"
+            "}\n",
+        ]
+        or not digest_count
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android SDK dependency output top-level block shape differs"
+        )
+    if len(coordinates) != len(set(coordinates)):
+        raise ReleaseArchiveVerificationError(
+            "Android SDK dependency identities must be unique"
+        )
+    library_count = len(coordinates)
+    if any(
+        repository_index >= len(repository_blocks)
+        for repository_index in library_repository_indices
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android SDK dependency repository index is out of range"
+        )
+    for owner, dependencies in dependency_graph.items():
+        if (
+            owner >= library_count
+            or any(dependency >= library_count for dependency in dependencies)
+            or owner in dependencies
+        ):
+            raise ReleaseArchiveVerificationError(
+                "Android SDK library dependency graph contains an invalid index"
+            )
+    if (
+        not module_dependencies
+        or len(module_dependencies) != len(set(module_dependencies))
+        or any(dependency >= library_count for dependency in module_dependencies)
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android SDK module dependency roots differ"
+        )
+    reachable = set(module_dependencies)
+    pending = list(module_dependencies)
+    while pending:
+        owner = pending.pop()
+        for dependency in dependency_graph.get(owner, []):
+            if dependency not in reachable:
+                reachable.add(dependency)
+                pending.append(dependency)
+    expected_indices = set(range(library_count))
+    if reachable != expected_indices:
+        raise ReleaseArchiveVerificationError(
+            "Android SDK dependency graph is not complete from the base "
+            "module; "
+            f"missing={sorted(expected_indices - reachable)}"
+        )
+
+    locked_modules: set[str] = set()
+    release_runtime_locked_modules: set[str] = set()
+    for relative in GRADLE_LOCK_PATHS:
+        lock_data = read_stable_regular_file(
+            root / relative,
+            f"Gradle dependency lock {relative}",
+            maximum_bytes=16_777_216,
+        )
+        parse_gradle_lockfile(lock_data, relative)
+        for line in lock_data.decode("ascii").splitlines()[3:]:
+            module, configurations = line.split("=", 1)
+            if module != "empty":
+                locked_modules.add(module)
+                if (
+                    relative == "apps/android/app/gradle.lockfile"
+                    and "releaseRuntimeClasspath"
+                    in configurations.split(",")
+                ):
+                    release_runtime_locked_modules.add(module)
+    ignored = set(GRADLE_IGNORED_DEPENDENCIES)
+    unlocked = [
+        coordinate
+        for coordinate in coordinates
+        if coordinate not in locked_modules
+        and ":".join(coordinate.split(":")[:2]) not in ignored
+    ]
+    if unlocked:
+        raise ReleaseArchiveVerificationError(
+            "Android SDK dependency output contains unlocked modules: "
+            f"{sorted(unlocked)}"
+        )
+    expected_coordinates = set(release_runtime_locked_modules)
+    for ignored_coordinate, parent_coordinate in (
+        GRADLE_IGNORED_DEPENDENCY_PARENT.items()
+    ):
+        parent_versions = {
+            module.rsplit(":", 1)[1]
+            for module in release_runtime_locked_modules
+            if module.rsplit(":", 1)[0] == parent_coordinate
+        }
+        if not parent_versions:
+            continue
+        if len(parent_versions) != 1:
+            raise ReleaseArchiveVerificationError(
+                "Android Release runtime lock must contain one parent "
+                f"version for ignored dependency {ignored_coordinate}"
+            )
+        expected_coordinates.add(
+            f"{ignored_coordinate}:{next(iter(parent_versions))}"
+        )
+    observed_coordinates = set(coordinates)
+    if observed_coordinates != expected_coordinates:
+        raise ReleaseArchiveVerificationError(
+            "Android SDK dependency output differs from the exact Release "
+            "runtime lock closure; "
+            f"missing={sorted(expected_coordinates - observed_coordinates)}, "
+            f"extra={sorted(observed_coordinates - expected_coordinates)}"
+        )
+    if sha256(data) != ANDROID_RELEASE_SDK_DEPENDENCIES_SHA256:
+        raise ReleaseArchiveVerificationError(
+            "Android SDK dependency output differs from the pinned V1 byte "
+            "identity"
+        )
+    return len(coordinates)
+
+
+def find_llvm_readelf(root: Path = ROOT) -> Path:
+    sdk_root = android_sdk_root(root)
+    candidates = sorted(
+        sdk_root.glob(
+            f"ndk/{ANDROID_NDK_VERSION}/toolchains/llvm/prebuilt/*/bin/"
+            "llvm-readelf"
+        ),
+        key=lambda item: item.as_posix(),
+    )
+    candidates = [
+        candidate
+        for candidate in candidates
+        if candidate.is_file() and os.access(candidate, os.X_OK)
+    ]
+    if len(candidates) != 1:
+        raise ReleaseArchiveVerificationError(
+            "expected exactly one llvm-readelf for pinned Android NDK "
+            f"{ANDROID_NDK_VERSION} under {sdk_root}; found {candidates}"
+        )
+    return candidates[0]
+
+
+def inspect_elf(
+    path: Path,
+    llvm_readelf: Path,
+    root: Path = ROOT,
+) -> tuple[str | None, bool]:
+    notes = run_text([str(llvm_readelf), "-n", str(path)], root)
+    build_id_match = re.search(r"Build ID:\s*([0-9a-fA-F]+)", notes)
+    sections = run_text(
+        [str(llvm_readelf), "-W", "-S", str(path)],
+        root,
+    )
+    has_debug_metadata = (
+        re.search(r"\.symtab(?:\s|$)", sections) is not None
+        or re.search(r"\.debug_[A-Za-z0-9_.-]+", sections) is not None
+    )
+    return (
+        build_id_match.group(1).lower() if build_id_match else None,
+        has_debug_metadata,
+    )
+
+
+def inspect_elf_bytes(
+    data: bytes,
+    label: str,
+    llvm_readelf: Path,
+    root: Path = ROOT,
+) -> tuple[str | None, bool]:
+    if not data.startswith(b"\x7fELF"):
+        raise ReleaseArchiveVerificationError(
+            f"{label} is not an ELF file"
+        )
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix="aetherlink-release-elf-readback-",
+            suffix=".elf",
+            delete=False,
+        ) as temporary:
+            temporary.write(data)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+            temporary_path = Path(temporary.name)
+        return inspect_elf(temporary_path, llvm_readelf, root)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def read_safe_zip_members(
+    data: bytes,
+    label: str,
+    *,
+    maximum_members: int = 8_192,
+    maximum_member_bytes: int = 268_435_456,
+    maximum_total_uncompressed_bytes: int = 536_870_912,
+) -> dict[str, bytes]:
+    limits = {
+        "member count": maximum_members,
+        "member size": maximum_member_bytes,
+        "total uncompressed size": maximum_total_uncompressed_bytes,
+    }
+    for kind, limit in limits.items():
+        if type(limit) is not int or limit < 1:
+            raise ReleaseArchiveVerificationError(
+                f"{label} {kind} limit must be a positive integer"
+            )
+    members: dict[str, bytes] = {}
+    try:
+        with zipfile.ZipFile(io.BytesIO(data), "r") as archive:
+            if archive.comment:
+                raise ReleaseArchiveVerificationError(
+                    f"{label} must not contain a ZIP comment"
+                )
+            infos = archive.infolist()
+            names = [info.filename for info in infos]
+            if not names or len(names) != len(set(names)):
+                raise ReleaseArchiveVerificationError(
+                    f"{label} must contain unique members"
+                )
+            if len(infos) > maximum_members:
+                raise ReleaseArchiveVerificationError(
+                    f"{label} exceeds the {maximum_members}-member limit"
+                )
+            total_uncompressed_bytes = 0
+            for info in infos:
+                validate_member_path(info.filename)
+                if info.is_dir() or info.flag_bits & 0x1:
+                    raise ReleaseArchiveVerificationError(
+                        f"{label} contains a directory or encrypted member"
+                    )
+                if info.file_size < 1:
+                    raise ReleaseArchiveVerificationError(
+                        f"{label} contains an empty member: {info.filename}"
+                    )
+                if info.file_size > maximum_member_bytes:
+                    raise ReleaseArchiveVerificationError(
+                        f"{label} member exceeds the "
+                        f"{maximum_member_bytes}-byte limit: {info.filename}"
+                    )
+                total_uncompressed_bytes += info.file_size
+                if (
+                    total_uncompressed_bytes
+                    > maximum_total_uncompressed_bytes
+                ):
+                    raise ReleaseArchiveVerificationError(
+                        f"{label} exceeds the "
+                        f"{maximum_total_uncompressed_bytes}-byte total "
+                        "uncompressed limit"
+                    )
+                member = archive.read(info)
+                if len(member) != info.file_size:
+                    raise ReleaseArchiveVerificationError(
+                        f"{label} member size differs after readback: "
+                        f"{info.filename}"
+                    )
+                members[info.filename] = member
+    except ReleaseArchiveVerificationError:
+        raise
+    except (
+        EOFError,
+        OSError,
+        KeyError,
+        RuntimeError,
+        zipfile.BadZipFile,
+        zlib.error,
+    ) as error:
+        raise ReleaseArchiveVerificationError(
+            f"{label} is not a readable ZIP: {error}"
+        ) from error
+    return members
+
+
+def verify_android_release_build_outputs(
+    root: Path = ROOT,
+) -> dict[str, object]:
+    try:
+        current = load_release_version_ledger(
+            root / "release/version-ledger.tsv"
+        )[-1]
+    except (IndexError, LedgerError) as error:
+        raise ReleaseArchiveVerificationError(
+            f"Android Release ledger readback failed: {error}"
+        ) from error
+
+    apk_path = root / ANDROID_RELEASE_APK_RELATIVE_PATH
+    apk_metadata_path = (
+        root / ANDROID_RELEASE_APK_METADATA_RELATIVE_PATH
+    )
+    aab_path = root / ANDROID_RELEASE_AAB_RELATIVE_PATH
+    mapping_directory = root / ANDROID_RELEASE_MAPPING_RELATIVE_PATH
+    sdk_dependencies_path = (
+        root / ANDROID_RELEASE_SDK_DEPENDENCIES_RELATIVE_PATH
+    )
+    native_symbol_path = (
+        root / ANDROID_RELEASE_NATIVE_SYMBOL_RELATIVE_PATH
+    )
+
+    require_directory_inventory(
+        aab_path.parent,
+        {aab_path.name},
+        "Android Release AAB output directory",
+    )
+    require_directory_inventory(
+        mapping_directory,
+        set(ANDROID_RELEASE_MAPPING_FILES),
+        "Android Release R8 output directory",
+    )
+    require_directory_inventory(
+        sdk_dependencies_path.parent,
+        {sdk_dependencies_path.name},
+        "Android Release SDK dependency output directory",
+    )
+    apk_data = read_stable_regular_file(
+        apk_path,
+        "Android Release APK",
+    )
+    apk_members = read_safe_zip_members(
+        apk_data,
+        "Android Release APK",
+        maximum_members=ANDROID_RELEASE_APK_MAX_MEMBER_COUNT,
+        maximum_member_bytes=ANDROID_RELEASE_APK_MAX_MEMBER_BYTES,
+        maximum_total_uncompressed_bytes=(
+            ANDROID_RELEASE_APK_MAX_TOTAL_UNCOMPRESSED_BYTES
+        ),
+    )
+    apk_native_members = {
+        name: member
+        for name, member in apk_members.items()
+        if name.startswith("lib/") and name.endswith(".so")
+    }
+    if not apk_native_members:
+        raise ReleaseArchiveVerificationError(
+            "Android Release APK must contain JNI libraries"
+        )
+    if any(
+        len(PurePosixPath(name).parts) != 3
+        for name in apk_native_members
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android Release APK contains a noncanonical JNI path"
+        )
+    apk_native_abis = sorted(
+        {PurePosixPath(name).parts[1] for name in apk_native_members}
+    )
+    if apk_native_abis != ["arm64-v8a"]:
+        raise ReleaseArchiveVerificationError(
+            "Android Release APK JNI ABI set must be arm64-v8a-only"
+        )
+    apk_metadata_data = read_stable_regular_file(
+        apk_metadata_path,
+        "Android Release APK output metadata",
+        maximum_bytes=1_048_576,
+    )
+    aab_data = read_stable_regular_file(
+        aab_path,
+        "Android Release AAB",
+    )
+    aab_members = read_safe_zip_members(
+        aab_data,
+        "Android Release AAB",
+        maximum_members=ANDROID_RELEASE_AAB_MAX_MEMBER_COUNT,
+        maximum_member_bytes=ANDROID_RELEASE_AAB_MAX_MEMBER_BYTES,
+        maximum_total_uncompressed_bytes=(
+            ANDROID_RELEASE_AAB_MAX_TOTAL_UNCOMPRESSED_BYTES
+        ),
+    )
+    apk_dex_members = {
+        name: payload
+        for name, payload in apk_members.items()
+        if re.fullmatch(r"classes(?:[2-9][0-9]*)?\.dex", name)
+    }
+    aab_dex_members = {
+        name.removeprefix("base/dex/"): payload
+        for name, payload in aab_members.items()
+        if name.startswith("base/dex/") and name.endswith(".dex")
+    }
+    if (
+        set(apk_dex_members) != {"classes.dex"}
+        or apk_dex_members != aab_dex_members
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android Release APK and AAB DEX members differ from the V1 "
+            "single-DEX identity"
+        )
+    if sha256(apk_dex_members["classes.dex"]) != ANDROID_RELEASE_DEX_SHA256:
+        raise ReleaseArchiveVerificationError(
+            "Android Release DEX differs from the pinned V1 byte identity"
+        )
+
+    sdk_protobuf_prefix = (
+        "BUNDLE-METADATA/com.android.tools.build.libraries/"
+    )
+    sdk_protobuf_names = {
+        name for name in aab_members if name.startswith(sdk_protobuf_prefix)
+    }
+    sdk_protobuf_name = f"{sdk_protobuf_prefix}dependencies.pb"
+    if sdk_protobuf_names != {sdk_protobuf_name}:
+        raise ReleaseArchiveVerificationError(
+            "Android Release AAB SDK dependency protobuf inventory differs"
+        )
+    if (
+        sha256(aab_members[sdk_protobuf_name])
+        != ANDROID_RELEASE_SDK_DEPENDENCIES_PROTOBUF_SHA256
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android Release AAB SDK dependency protobuf differs from the "
+            "pinned V1 byte identity"
+        )
+    mapping_outputs = {
+        name: read_stable_regular_file(
+            mapping_directory / name,
+            f"Android Release R8 {name}",
+            maximum_bytes=ANDROID_RELEASE_MAPPING_MAX_BYTES[name],
+        )
+        for name in ANDROID_RELEASE_MAPPING_FILES
+    }
+    if sum(map(len, mapping_outputs.values())) > (
+        ANDROID_RELEASE_MAPPING_MAX_TOTAL_BYTES
+    ):
+        raise ReleaseArchiveVerificationError(
+            "Android Release R8 outputs exceed the cumulative read limit"
+        )
+    sdk_dependencies_data = read_stable_regular_file(
+        sdk_dependencies_path,
+        "Android Release SDK dependencies",
+        maximum_bytes=16_777_216,
+    )
+    metadata_result = parse_android_release_output_metadata(
+        apk_metadata_data,
+        current,
+        apk_path.parent,
+        apk_members,
+        aab_members,
+    )
+    validate_android_release_mapping_outputs(mapping_outputs)
+    dependency_count = parse_android_sdk_dependencies(
+        sdk_dependencies_data,
+        root,
+    )
+
+    expected_badging = {
+        "applicationId": "com.localagentbridge.android",
+        "minSdk": 26,
+        "nativeAbis": ["arm64-v8a"],
+        "targetSdk": 36,
+        "versionCode": current.build_number,
+        "versionName": current.marketing_version,
+    }
+    apk_badging = inspect_apk_badging(apk_data, root)
+    if apk_badging != expected_badging:
+        raise ReleaseArchiveVerificationError(
+            "Android Release APK badging differs from V1 and the ledger"
+        )
+    backup_policy_required = (
+        current.build_number >= ANDROID_BACKUP_POLICY_BUILD
+    )
+    topology_required = (
+        current.build_number >= ANDROID_ENTRY_POINT_TOPOLOGY_BUILD
+    )
+    shell_required = (
+        current.build_number >= ANDROID_APPLICATION_SHELL_BUILD
+    )
+    apk_policy = inspect_apk_backup_policy(
+        apk_data,
+        root,
+        entry_point_topology_required=topology_required,
+        application_shell_required=shell_required,
+    )
+    expected_apk_policy: dict[str, object] = {
+        "allowBackup": False,
+        "dataExtractionRules": "@xml/data_extraction_rules",
+        "fullBackupContent": "@xml/backup_rules",
+    }
+    if topology_required:
+        expected_apk_policy["entryPointTopology"] = (
+            verify_android_entry_point_topology_claim(
+                apk_policy.get("entryPointTopology")
+            )
+        )
+    if shell_required:
+        expected_apk_policy["applicationShell"] = (
+            verify_android_application_shell_claim(
+                apk_policy.get("applicationShell")
+            )
+        )
+    if apk_policy != expected_apk_policy:
+        raise ReleaseArchiveVerificationError(
+            "Android Release APK manifest differs from V1"
+        )
+
+    expected_aab_manifest: dict[str, object] = {
+        **expected_badging,
+    }
+    expected_aab_manifest.pop("nativeAbis")
+    if backup_policy_required:
+        expected_aab_manifest.update(
+            {
+                "allowBackup": False,
+                "dataExtractionRules": "@xml/data_extraction_rules",
+                "fullBackupContent": "@xml/backup_rules",
+            }
+        )
+    if topology_required:
+        expected_aab_manifest["entryPointTopology"] = (
+            expected_apk_policy["entryPointTopology"]
+        )
+    if shell_required:
+        expected_aab_manifest["applicationShell"] = (
+            expected_apk_policy["applicationShell"]
+        )
+    aab_manifest = inspect_aab_manifest(
+        aab_data,
+        root,
+        backup_policy_required=backup_policy_required,
+        entry_point_topology_required=topology_required,
+        application_shell_required=shell_required,
+    )
+    if aab_manifest != expected_aab_manifest:
+        raise ReleaseArchiveVerificationError(
+            "Android Release AAB manifest/config/resources differ from V1"
+        )
+    verified_bundletool_version = bundletool_version(root)
+
+    mapping_member = (
+        "BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map"
+    )
+    embedded_symbol_prefix = (
+        "BUNDLE-METADATA/com.android.tools.build.debugsymbols/"
+    )
+    names = list(aab_members)
+    if names.count(mapping_member) != 1:
+        raise ReleaseArchiveVerificationError(
+            "Android Release AAB must contain one R8 mapping"
+        )
+    if aab_members[mapping_member] != mapping_outputs["mapping.txt"]:
+        raise ReleaseArchiveVerificationError(
+            "Android Release AAB R8 mapping differs from mapping.txt"
+        )
+    native_names = sorted(
+        name
+        for name in names
+        if name.startswith("base/lib/") and name.endswith(".so")
+    )
+    native_members = {name: aab_members[name] for name in native_names}
+    embedded_symbols = {
+        name.removeprefix(embedded_symbol_prefix): aab_members[name]
+        for name in names
+        if name.startswith(embedded_symbol_prefix)
+    }
+    if not native_names:
+        raise ReleaseArchiveVerificationError(
+            "Android Release AAB must contain JNI libraries"
+        )
+    if any(len(PurePosixPath(name).parts) != 4 for name in native_names):
+        raise ReleaseArchiveVerificationError(
+            "Android Release AAB contains a noncanonical JNI path"
+        )
+    native_abis = sorted(
+        {PurePosixPath(name).parts[2] for name in native_names}
+    )
+    if native_abis != ["arm64-v8a"]:
+        raise ReleaseArchiveVerificationError(
+            "Android Release AAB JNI ABI set must be arm64-v8a-only"
+        )
+    aab_native_members_by_apk_path = {
+        name.removeprefix("base/"): member
+        for name, member in native_members.items()
+    }
+    if apk_native_members != aab_native_members_by_apk_path:
+        missing = sorted(
+            set(aab_native_members_by_apk_path) - set(apk_native_members)
+        )
+        extra = sorted(
+            set(apk_native_members) - set(aab_native_members_by_apk_path)
+        )
+        byte_differences = sorted(
+            name
+            for name in (
+                set(apk_native_members) & set(aab_native_members_by_apk_path)
+            )
+            if apk_native_members[name]
+            != aab_native_members_by_apk_path[name]
+        )
+        raise ReleaseArchiveVerificationError(
+            "Android Release APK and AAB JNI members differ; "
+            f"missing={missing}, extra={extra}, "
+            f"byteDifferences={byte_differences}"
+        )
+
+    llvm_readelf = find_llvm_readelf(root)
+    any_merged_debug_metadata = False
+    expected_symbol_build_ids: dict[str, str] = {}
+    for name, member_data in native_members.items():
+        _, _, abi, library_name = PurePosixPath(name).parts
+        merged_path = (
+            root
+            / ANDROID_RELEASE_MERGED_NATIVE_RELATIVE_PATH
+            / abi
+            / library_name
+        )
+        stripped_path = (
+            root
+            / ANDROID_RELEASE_STRIPPED_NATIVE_RELATIVE_PATH
+            / abi
+            / library_name
+        )
+        merged_data = read_stable_regular_file(
+            merged_path,
+            f"Android Release merged JNI input {abi}/{library_name}",
+            maximum_bytes=536_870_912,
+        )
+        stripped_data = read_stable_regular_file(
+            stripped_path,
+            f"Android Release stripped JNI output {abi}/{library_name}",
+            maximum_bytes=536_870_912,
+        )
+        if stripped_data != member_data:
+            raise ReleaseArchiveVerificationError(
+                f"Android Release AAB JNI member differs from stripped "
+                f"output: {name}"
+            )
+        build_id, has_debug_metadata = inspect_elf_bytes(
+            merged_data,
+            f"Android Release merged JNI input {abi}/{library_name}",
+            llvm_readelf,
+            root,
+        )
+        if build_id is None or re.fullmatch(
+            r"[0-9a-f]{16,64}", build_id
+        ) is None:
+            raise ReleaseArchiveVerificationError(
+                f"Android Release merged JNI input lacks a valid Build ID: "
+                f"{name}"
+            )
+        if not has_debug_metadata and merged_data != stripped_data:
+            raise ReleaseArchiveVerificationError(
+                "Android Release pre-stripped JNI input differs without "
+                f"debug metadata: {name}"
+            )
+        any_merged_debug_metadata |= has_debug_metadata
+        expected_symbol_build_ids[f"{abi}/{library_name}.sym"] = build_id
+
+    native_symbol_exists = (
+        native_symbol_path.exists() or native_symbol_path.is_symlink()
+    )
+    if native_symbol_exists:
+        require_directory_inventory(
+            native_symbol_path.parent,
+            {native_symbol_path.name},
+            "Android Release native-symbol output directory",
+        )
+        standalone_symbols = read_safe_zip_members(
+            read_stable_regular_file(
+                native_symbol_path,
+                "Android Release native-symbol archive",
+                maximum_bytes=1_073_741_824,
+            ),
+            "Android Release native-symbol archive",
+        )
+        if standalone_symbols != embedded_symbols:
+            raise ReleaseArchiveVerificationError(
+                "Android Release standalone and embedded native symbols differ"
+            )
+        if set(standalone_symbols) != set(expected_symbol_build_ids):
+            raise ReleaseArchiveVerificationError(
+                "Android Release native-symbol members differ from JNI "
+                "libraries; "
+                f"missing={sorted(set(expected_symbol_build_ids) - set(standalone_symbols))}, "
+                f"extra={sorted(set(standalone_symbols) - set(expected_symbol_build_ids))}"
+            )
+        for symbol_name, symbol_data in standalone_symbols.items():
+            symbol_build_id, symbol_has_debug_metadata = inspect_elf_bytes(
+                symbol_data,
+                f"Android Release native symbol {symbol_name}",
+                llvm_readelf,
+                root,
+            )
+            if symbol_build_id != expected_symbol_build_ids[symbol_name]:
+                raise ReleaseArchiveVerificationError(
+                    "Android Release native-symbol Build ID differs from "
+                    f"its JNI input: {symbol_name}"
+                )
+            if not symbol_has_debug_metadata:
+                raise ReleaseArchiveVerificationError(
+                    "Android Release native symbol lacks debug metadata: "
+                    f"{symbol_name}"
+                )
+        native_symbol_status = "available"
+    else:
+        if embedded_symbols:
+            raise ReleaseArchiveVerificationError(
+                "Android Release AAB embeds native symbols without the "
+                "standalone archive"
+            )
+        if any_merged_debug_metadata:
+            raise ReleaseArchiveVerificationError(
+                "Android Release JNI inputs contain debug metadata but the "
+                "native-symbol archive is missing"
+            )
+        native_symbol_status = "unavailable-upstream-prestripped"
+
+    return {
+        "aab": {
+            "sha256": sha256(aab_data),
+            "size": len(aab_data),
+        },
+        "apk": {
+            "sha256": sha256(apk_data),
+            "size": len(apk_data),
+        },
+        "applicationId": expected_badging["applicationId"],
+        "baselineProfileCount": metadata_result["baselineProfileCount"],
+        "bundletoolVersion": verified_bundletool_version,
+        "mappingFileCount": len(mapping_outputs),
+        "nativeLibraryCount": len(native_members),
+        "nativeSymbolStatus": native_symbol_status,
+        "sdkDependencyCount": dependency_count,
+        "versionCode": current.build_number,
+        "versionName": current.marketing_version,
+    }
 
 
 def parse_dwarfdump_uuid(path: Path) -> tuple[str, str]:
@@ -4440,6 +6286,14 @@ def main() -> int:
     )
     readback_mode = parser.add_mutually_exclusive_group()
     readback_mode.add_argument(
+        "--android-build-outputs",
+        action="store_true",
+        help=(
+            "independently verify current Gradle APK/AAB Release outputs "
+            "without requiring a macOS archive"
+        ),
+    )
+    readback_mode.add_argument(
         "--no-current-source",
         action="store_true",
         help="skip comparison with current build-input bytes",
@@ -4453,6 +6307,33 @@ def main() -> int:
         ),
     )
     arguments = parser.parse_args()
+    if arguments.android_build_outputs:
+        if arguments.archive_dir != DEFAULT_OUTPUT_ROOT / expected_release_id():
+            print(
+                "Android Release build-output readback failed: "
+                "--archive-dir is not valid with --android-build-outputs",
+                file=os.sys.stderr,
+            )
+            return 1
+        try:
+            result = verify_android_release_build_outputs()
+        except ReleaseArchiveVerificationError as error:
+            print(
+                f"Android Release build-output readback failed: {error}",
+                file=os.sys.stderr,
+            )
+            return 1
+        print(
+            "Android Release build-output readback OK: "
+            f"{result['applicationId']} "
+            f"{result['versionName']}+{result['versionCode']}; "
+            f"APK={result['apk']['sha256']}; "
+            f"AAB={result['aab']['sha256']}; "
+            f"JNI={result['nativeLibraryCount']}; "
+            f"SDK dependencies={result['sdkDependencyCount']}; "
+            f"native symbols={result['nativeSymbolStatus']}."
+        )
+        return 0
     try:
         manifest = verify_release_archive(
             arguments.archive_dir,

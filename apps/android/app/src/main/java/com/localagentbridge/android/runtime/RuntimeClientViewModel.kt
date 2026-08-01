@@ -2874,19 +2874,32 @@ class RuntimeClientViewModel internal constructor(
         }
     }
 
-    fun reconcileAndroidPlatformAppLanguageSnapshot(
+    internal fun androidPlatformAppLanguageReconciliation(
         applicationLocalesSupported: Boolean,
         applicationLocaleLanguageTag: String?,
         systemLanguageTag: String?,
-    ) {
-        val cleanData = persistedRuntimeData.withAndroidPlatformAppLanguageSnapshot(
+    ): AndroidPlatformAppLanguageReconciliation {
+        return persistedRuntimeData.reconcileAndroidPlatformAppLanguage(
             applicationLocalesSupported = applicationLocalesSupported,
             applicationLocaleLanguageTag = applicationLocaleLanguageTag,
             systemLanguageTag = systemLanguageTag,
         )
-        if (cleanData != persistedRuntimeData) {
-            publishPersistedRuntimeData(cleanData, save = true)
+    }
+
+    fun reconcileAndroidPlatformAppLanguageSnapshot(
+        applicationLocalesSupported: Boolean,
+        applicationLocaleLanguageTag: String?,
+        systemLanguageTag: String?,
+    ): String? {
+        val reconciliation = androidPlatformAppLanguageReconciliation(
+            applicationLocalesSupported = applicationLocalesSupported,
+            applicationLocaleLanguageTag = applicationLocaleLanguageTag,
+            systemLanguageTag = systemLanguageTag,
+        )
+        if (reconciliation.data != persistedRuntimeData) {
+            publishPersistedRuntimeData(reconciliation.data, save = true)
         }
+        return reconciliation.applicationLocaleLanguageTagToSet
     }
 
     fun setAppTheme(theme: RuntimeAppTheme) {

@@ -376,50 +376,161 @@ class RuntimeLocalStoreTest {
     @Test
     fun androidPlatformLanguageSnapshotUsesApi33OverrideAndPreservesLegacyExplicitChoice() {
         val explicitFrench = PersistedRuntimeData().withAppLanguageTag("fr-FR")
-        val api33KoreanOverride = explicitFrench.withAndroidPlatformAppLanguageSnapshot(
+        val api33PendingFrenchMigration = explicitFrench.reconcileAndroidPlatformAppLanguage(
+            applicationLocalesSupported = true,
+            applicationLocaleLanguageTag = null,
+            systemLanguageTag = "ja-JP",
+        )
+        val api33RetriedFrenchMigration =
+            api33PendingFrenchMigration.data.reconcileAndroidPlatformAppLanguage(
+                applicationLocalesSupported = true,
+                applicationLocaleLanguageTag = null,
+                systemLanguageTag = "ja-JP",
+            )
+        val api33CompletedFrenchMigration =
+            api33RetriedFrenchMigration.data.reconcileAndroidPlatformAppLanguage(
+                applicationLocalesSupported = true,
+                applicationLocaleLanguageTag = "fr-FR",
+                systemLanguageTag = "ja-JP",
+            )
+        val api33ExternalClearAfterMigration =
+            api33CompletedFrenchMigration.data.reconcileAndroidPlatformAppLanguage(
+                applicationLocalesSupported = true,
+                applicationLocaleLanguageTag = null,
+                systemLanguageTag = "ja-JP",
+            )
+        val api33KoreanOverride = explicitFrench.reconcileAndroidPlatformAppLanguage(
             applicationLocalesSupported = true,
             applicationLocaleLanguageTag = "ko-KR",
             systemLanguageTag = "ja-JP",
         )
         val api33SimplifiedChineseOverride =
-            explicitFrench.withAndroidPlatformAppLanguageSnapshot(
+            explicitFrench.reconcileAndroidPlatformAppLanguage(
                 applicationLocalesSupported = true,
                 applicationLocaleLanguageTag = "zh-Hans",
                 systemLanguageTag = "ja-JP",
             )
-        val api33FollowJapanese = explicitFrench.withAndroidPlatformAppLanguageSnapshot(
+        val api33FollowJapanese = PersistedRuntimeData(
+            androidAppLanguagePlatformMigrationVersion =
+                ANDROID_APP_LANGUAGE_PLATFORM_MIGRATION_VERSION,
+        ).reconcileAndroidPlatformAppLanguage(
             applicationLocalesSupported = true,
             applicationLocaleLanguageTag = null,
             systemLanguageTag = "ja-JP",
         )
-        val api33UnsupportedSystem = explicitFrench.withAndroidPlatformAppLanguageSnapshot(
+        val api33UnsupportedSystem = PersistedRuntimeData(
+            androidAppLanguagePlatformMigrationVersion =
+                ANDROID_APP_LANGUAGE_PLATFORM_MIGRATION_VERSION,
+        ).reconcileAndroidPlatformAppLanguage(
             applicationLocalesSupported = true,
             applicationLocaleLanguageTag = null,
             systemLanguageTag = "de-DE",
         )
-        val api32ExplicitFrench = explicitFrench.withAndroidPlatformAppLanguageSnapshot(
+        val api33DefaultCompletesWithoutSetter =
+            PersistedRuntimeData().reconcileAndroidPlatformAppLanguage(
+                applicationLocalesSupported = true,
+                applicationLocaleLanguageTag = null,
+                systemLanguageTag = "ko-KR",
+            )
+        val api33ExplicitEnglishMigration =
+            PersistedRuntimeData().withAppLanguageTag("en-US")
+                .reconcileAndroidPlatformAppLanguage(
+                    applicationLocalesSupported = true,
+                    applicationLocaleLanguageTag = null,
+                    systemLanguageTag = "en-US",
+                )
+        val api33FutureMigrationVersion = PersistedRuntimeData(
+            appLanguageTag = "fr",
+            appLanguageSource = APP_LANGUAGE_SOURCE_IN_APP,
+            androidAppLanguagePlatformMigrationVersion = 7,
+            pendingAndroidAppLanguagePlatformMigrationTag = "fr",
+        ).reconcileAndroidPlatformAppLanguage(
+            applicationLocalesSupported = true,
+            applicationLocaleLanguageTag = null,
+            systemLanguageTag = "ko-KR",
+        )
+        val mismatchedPendingMigration = PersistedRuntimeData(
+            appLanguageTag = "fr",
+            appLanguageSource = APP_LANGUAGE_SOURCE_IN_APP,
+            pendingAndroidAppLanguagePlatformMigrationTag = "ko",
+        ).sanitized()
+        val systemSourcePendingMigration = PersistedRuntimeData(
+            appLanguageTag = "fr",
+            appLanguageSource = APP_LANGUAGE_SOURCE_SYSTEM,
+            pendingAndroidAppLanguagePlatformMigrationTag = "fr",
+        ).sanitized()
+        val api32ExplicitFrench = explicitFrench.reconcileAndroidPlatformAppLanguage(
             applicationLocalesSupported = false,
             applicationLocaleLanguageTag = null,
             systemLanguageTag = "ko-KR",
         )
-        val api32SystemKorean = PersistedRuntimeData().withAndroidPlatformAppLanguageSnapshot(
+        val api32SystemKorean = PersistedRuntimeData().reconcileAndroidPlatformAppLanguage(
             applicationLocalesSupported = false,
             applicationLocaleLanguageTag = null,
             systemLanguageTag = "ko-KR",
         )
 
-        assertEquals("ko", api33KoreanOverride.appLanguageTag)
-        assertEquals(APP_LANGUAGE_SOURCE_IN_APP, api33KoreanOverride.appLanguageSource)
-        assertEquals("zh-CN", api33SimplifiedChineseOverride.appLanguageTag)
-        assertEquals(APP_LANGUAGE_SOURCE_IN_APP, api33SimplifiedChineseOverride.appLanguageSource)
-        assertEquals("ja", api33FollowJapanese.appLanguageTag)
-        assertEquals(APP_LANGUAGE_SOURCE_SYSTEM, api33FollowJapanese.appLanguageSource)
-        assertEquals("en", api33UnsupportedSystem.appLanguageTag)
-        assertEquals(APP_LANGUAGE_SOURCE_DEFAULT, api33UnsupportedSystem.appLanguageSource)
-        assertEquals("fr", api32ExplicitFrench.appLanguageTag)
-        assertEquals(APP_LANGUAGE_SOURCE_IN_APP, api32ExplicitFrench.appLanguageSource)
-        assertEquals("ko", api32SystemKorean.appLanguageTag)
-        assertEquals(APP_LANGUAGE_SOURCE_SYSTEM, api32SystemKorean.appLanguageSource)
+        assertEquals("fr", api33PendingFrenchMigration.data.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_IN_APP, api33PendingFrenchMigration.data.appLanguageSource)
+        assertEquals("fr", api33PendingFrenchMigration.snapshot.languageTag)
+        assertEquals("fr", api33PendingFrenchMigration.applicationLocaleLanguageTagToSet)
+        assertEquals(0, api33PendingFrenchMigration.data.androidAppLanguagePlatformMigrationVersion)
+        assertEquals("fr", api33PendingFrenchMigration.data.pendingAndroidAppLanguagePlatformMigrationTag)
+        assertEquals(api33PendingFrenchMigration, api33RetriedFrenchMigration)
+
+        assertNull(api33CompletedFrenchMigration.applicationLocaleLanguageTagToSet)
+        assertEquals(
+            ANDROID_APP_LANGUAGE_PLATFORM_MIGRATION_VERSION,
+            api33CompletedFrenchMigration.data.androidAppLanguagePlatformMigrationVersion,
+        )
+        assertNull(
+            api33CompletedFrenchMigration.data.pendingAndroidAppLanguagePlatformMigrationTag,
+        )
+        assertEquals("ja", api33ExternalClearAfterMigration.data.appLanguageTag)
+        assertEquals(
+            APP_LANGUAGE_SOURCE_SYSTEM,
+            api33ExternalClearAfterMigration.data.appLanguageSource,
+        )
+        assertNull(api33ExternalClearAfterMigration.applicationLocaleLanguageTagToSet)
+
+        assertEquals("ko", api33KoreanOverride.data.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_IN_APP, api33KoreanOverride.data.appLanguageSource)
+        assertEquals(
+            ANDROID_APP_LANGUAGE_PLATFORM_MIGRATION_VERSION,
+            api33KoreanOverride.data.androidAppLanguagePlatformMigrationVersion,
+        )
+        assertEquals("zh-CN", api33SimplifiedChineseOverride.data.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_IN_APP, api33SimplifiedChineseOverride.data.appLanguageSource)
+        assertEquals("ja", api33FollowJapanese.data.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_SYSTEM, api33FollowJapanese.data.appLanguageSource)
+        assertEquals("en", api33UnsupportedSystem.data.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_DEFAULT, api33UnsupportedSystem.data.appLanguageSource)
+
+        assertEquals("ko", api33DefaultCompletesWithoutSetter.data.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_SYSTEM, api33DefaultCompletesWithoutSetter.data.appLanguageSource)
+        assertEquals(
+            ANDROID_APP_LANGUAGE_PLATFORM_MIGRATION_VERSION,
+            api33DefaultCompletesWithoutSetter.data.androidAppLanguagePlatformMigrationVersion,
+        )
+        assertNull(api33DefaultCompletesWithoutSetter.applicationLocaleLanguageTagToSet)
+        assertEquals("en", api33ExplicitEnglishMigration.applicationLocaleLanguageTagToSet)
+        assertEquals("en", api33ExplicitEnglishMigration.snapshot.languageTag)
+
+        assertEquals(7, api33FutureMigrationVersion.data.androidAppLanguagePlatformMigrationVersion)
+        assertEquals("ko", api33FutureMigrationVersion.data.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_SYSTEM, api33FutureMigrationVersion.data.appLanguageSource)
+        assertNull(api33FutureMigrationVersion.data.pendingAndroidAppLanguagePlatformMigrationTag)
+        assertNull(api33FutureMigrationVersion.applicationLocaleLanguageTagToSet)
+        assertNull(mismatchedPendingMigration.pendingAndroidAppLanguagePlatformMigrationTag)
+        assertNull(systemSourcePendingMigration.pendingAndroidAppLanguagePlatformMigrationTag)
+
+        assertEquals("fr", api32ExplicitFrench.data.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_IN_APP, api32ExplicitFrench.data.appLanguageSource)
+        assertEquals(0, api32ExplicitFrench.data.androidAppLanguagePlatformMigrationVersion)
+        assertNull(api32ExplicitFrench.applicationLocaleLanguageTagToSet)
+        assertEquals("ko", api32SystemKorean.data.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_SYSTEM, api32SystemKorean.data.appLanguageSource)
+        assertEquals(0, api32SystemKorean.data.androidAppLanguagePlatformMigrationVersion)
     }
 
     @Test

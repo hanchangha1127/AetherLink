@@ -4314,6 +4314,10 @@ run check_python_syntax \
   script/test_check_macos_build24_idle_resource_stability_evidence.py \
   script/run_macos_build24_idle_resource_stability_smoke.py \
   script/test_run_macos_build24_idle_resource_stability_smoke.py \
+  script/run_macos_current_source_lane_a_idle_resource_stability_smoke.py \
+  script/test_run_macos_current_source_lane_a_idle_resource_stability_smoke.py \
+  script/run_clean_release_reproducibility.py \
+  script/test_run_clean_release_reproducibility.py \
   script/package_release_artifacts.py \
   script/check_release_artifact_archive.py \
   script/test_release_artifact_archive.py \
@@ -4329,6 +4333,10 @@ run check_python_syntax \
   script/test_run_macos_isolated_uninstall_reinstall_smoke.py \
   script/run_macos_isolated_upgrade_smoke.py \
   script/test_run_macos_isolated_upgrade_smoke.py \
+  script/run_macos_isolated_reverse_version_readback_smoke.py \
+  script/test_run_macos_isolated_reverse_version_readback_smoke.py \
+  script/check_macos_isolated_reverse_version_readback_evidence.py \
+  script/test_check_macos_isolated_reverse_version_readback_evidence.py \
   script/run_macos_local_dmg_install_smoke.py \
   script/test_run_macos_local_dmg_install_smoke.py \
   script/run_macos_local_dmg_install_smoke_v2.py \
@@ -4498,6 +4506,8 @@ run python3 -m unittest \
   script/test_check_macos_build24_lifecycle_evidence.py \
   script/test_check_macos_build24_idle_resource_stability_evidence.py \
   script/test_run_macos_build24_idle_resource_stability_smoke.py \
+  script/test_run_macos_current_source_lane_a_idle_resource_stability_smoke.py \
+  script/test_run_clean_release_reproducibility.py \
   script/test_release_artifact_archive.py \
   script/test_run_macos_packaged_app_lifecycle_smoke.py \
   script/test_run_macos_packaged_app_state_recovery_smoke.py \
@@ -4505,6 +4515,8 @@ run python3 -m unittest \
   script/test_run_macos_clean_home_installed_state_recovery_smoke.py \
   script/test_run_macos_isolated_uninstall_reinstall_smoke.py \
   script/test_run_macos_isolated_upgrade_smoke.py \
+  script/test_run_macos_isolated_reverse_version_readback_smoke.py \
+  script/test_check_macos_isolated_reverse_version_readback_evidence.py \
   script/test_run_macos_local_dmg_install_smoke.py \
   script/test_run_macos_local_dmg_install_smoke_v2.py \
   script/test_run_macos_local_dmg_uninstall_reinstall_smoke.py \
@@ -4621,6 +4633,7 @@ run swift test
 run swift test --filter 'P2PNATContractsTests|P2PNATSharedVectorTests|P2PNATConformanceTests'
 run swift test --filter 'ProductionSecureSessionSharedVectorTests'
 run swift test --filter 'ProductionPairStateSharedVectorTests'
+run python3 -I -B -S script/check_macos_isolated_reverse_version_readback_evidence.py
 run python3 -I -B -S script/check_macos_build24_lifecycle_evidence.py
 run python3 -I -B -S script/check_macos_build24_idle_resource_stability_evidence.py
 run python3 script/check_docs_hygiene.py
@@ -4646,6 +4659,28 @@ run python3 -B -m unittest \
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_result_and_sources_are_bound \
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_documents_are_bound \
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_validators_are_wired_into_main
+
+run python3 -B -m unittest \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_reproducibility_matches_closed_contract \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_reproducibility_rejects_semantic_drift \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_reproducibility_rejects_live_source_drift \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_reproducibility_rejects_noncanonical_json \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_lane_a_local_dmg_matches_closed_contract \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_lane_a_idle_resource_matches_closed_contract \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_lane_a_idle_resource_rejects_drift \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_lane_a_idle_resource_rejects_crossbinding_drift \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_lane_a_local_dmg_rejects_drift \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_lane_a_local_dmg_rejects_shape_and_encoding \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_lane_a_followups_reject_shape_and_encoding \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_lane_a_followups_reject_crossbinding_drift \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_lane_a_local_dmg_rejects_missing_and_symlink \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_lane_a_followups_reject_missing_and_symlink \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_primary_rejects_missing_and_symlink \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_evidence_rejects_read_time_symlink_swap \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_lane_a_local_dmg_crossbinds_primary_bytes \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_lane_a_local_dmg_documents_match \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_lane_a_local_dmg_documents_reject_mutation \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_lane_a_local_dmg_documents_reject_move
 run python3 script/check_license.py
 run python3 script/check_app_icons.py
 run check_macos_dock_capture_dry_run_summary_guard

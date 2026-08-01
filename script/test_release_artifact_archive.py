@@ -8,10 +8,13 @@ import hashlib
 import io
 import os
 from pathlib import Path
+import re
+import stat
 import subprocess
 import tempfile
 import unittest
 from unittest import mock
+import warnings
 import zipfile
 
 import script.check_release_artifact_archive as readback_module
@@ -365,6 +368,31 @@ def bundletool_application_shell_manifest() -> str:
 
 
 class ReleaseArtifactArchiveTests(unittest.TestCase):
+    FIXTURE_R8_MAPPING_SHA256 = (
+        "a06cdac1eb82c67f7e9650ca4d9b92caff4e85b4ef8e5803ed01c45fd7f8a615"
+    )
+    FIXTURE_R8_MAPPING_PRT_LOGICAL_SHA256 = (
+        "26e7744547ccac092db58c3d6f234e851f9511a56d04a64d307f7007659d68c8"
+    )
+    FIXTURE_SDK_DEPENDENCIES_SHA256 = (
+        "5137d605c2ac08c0a877a3fe689cf046bed147f82fe3689d915bf6d8bcf8ad1f"
+    )
+    FIXTURE_APK_BASELINE_PROFILE_SHA256 = (
+        "ed6be521fa2abc15b040335bf532c7925121ecaaa280678390a8f0204a0468b2"
+    )
+    FIXTURE_APK_BASELINE_PROFILE_METADATA_SHA256 = (
+        "3c57e8ecf0ea89efef57df5e1ef70be6ca197ee934e5cf7948b299a3339992a5"
+    )
+    FIXTURE_API31_DM_PROFILE_SHA256 = (
+        "905ee8a9e450ac9e4a85b3f22401e0fad71bcda7439ceca4a6bd9ae20ba973df"
+    )
+    FIXTURE_SDK_DEPENDENCIES_PROTOBUF_SHA256 = (
+        "4b7b7d5edfe5d28948eb601ea70c1b7516d28ad737ae3924484fd5aeba816ca8"
+    )
+    FIXTURE_DEX_SHA256 = (
+        "d39e091649939bd0712ae83aa7169e154e5c4b1361c3245f8e0097fb53e50ba3"
+    )
+
     AAPT2_ENTRY_POINT_XMLTREE = aapt2_entry_point_xmltree()
     BUNDLETOOL_ENTRY_POINT_MANIFEST = bundletool_entry_point_manifest()
     AAPT2_APPLICATION_SHELL_XMLTREE = (
@@ -624,6 +652,1446 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
             "schemaVersion": 1,
         }
         return members, canonical_json_bytes(manifest)
+
+    @staticmethod
+    def corrupt_zip_member_payload(path: Path, member_name: str) -> None:
+        data = bytearray(path.read_bytes())
+        with zipfile.ZipFile(io.BytesIO(data), "r") as archive:
+            info = archive.getinfo(member_name)
+        header_offset = info.header_offset
+        if data[header_offset : header_offset + 4] != b"PK\x03\x04":
+            raise AssertionError("fixture ZIP local header is missing")
+        name_length = int.from_bytes(
+            data[header_offset + 26 : header_offset + 28],
+            "little",
+        )
+        extra_length = int.from_bytes(
+            data[header_offset + 28 : header_offset + 30],
+            "little",
+        )
+        payload_offset = header_offset + 30 + name_length + extra_length
+        if info.compress_size < 1:
+            raise AssertionError("fixture ZIP member payload is empty")
+        data[payload_offset + info.compress_size // 2] ^= 0x01
+        path.write_bytes(data)
+
+    @staticmethod
+    def write_fixture_zip_members(
+        path: Path,
+        members: list[tuple[str, bytes]],
+    ) -> None:
+        output = io.BytesIO()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            with zipfile.ZipFile(
+                output,
+                "w",
+                compression=zipfile.ZIP_DEFLATED,
+            ) as archive:
+                for name, payload in members:
+                    archive.writestr(name, payload)
+        path.write_bytes(output.getvalue())
+
+    @classmethod
+    def replace_fixture_zip_member(
+        cls,
+        path: Path,
+        member_name: str,
+        payload: bytes,
+    ) -> None:
+        with zipfile.ZipFile(path, "r") as archive:
+            members = [
+                (
+                    info.filename,
+                    payload
+                    if info.filename == member_name
+                    else archive.read(info),
+                )
+                for info in archive.infolist()
+            ]
+        if sum(name == member_name for name, _ in members) != 1:
+            raise AssertionError("fixture ZIP replacement target differs")
+        cls.write_fixture_zip_members(path, members)
+
+    def write_android_release_build_output_fixture(
+        self,
+        root: Path,
+        *,
+        aab_mapping: bytes | None = None,
+        aab_abi: str = "arm64-v8a",
+        embedded_symbol: bytes | None = None,
+        embedded_symbol_name: str | None = None,
+        sdk_coordinate: tuple[str, str, str] = (
+            "com.example",
+            "fixture",
+            "1.0",
+        ),
+    ) -> dict[str, object]:
+        build_number = 24
+        marketing_version = "1.0.0"
+        mapping_body = (
+            b"fixture.Source -> a:\n"
+            b"    void run() -> a\n"
+        )
+        mapping_id = hashlib.sha256(b"fixture-map-id\n").hexdigest().encode(
+            "ascii"
+        )
+        mapping_body_hash = hashlib.sha256(mapping_body).hexdigest().encode(
+            "ascii"
+        )
+        mapping_header = (
+            b"# compiler: R8\n"
+            b"# compiler_version: 9.2.14\n"
+            b"# min_api: 26\n"
+            b"# common_typos_disable\n"
+            b'# {"id":"com.android.tools.r8.mapping","version":"2.2"}\n'
+            b"# pg_map_id: "
+            + mapping_id
+            + b"\n# pg_map_hash: SHA-256 "
+            + mapping_body_hash
+            + b"\n"
+        )
+        mapping = mapping_header + mapping_body
+        mapping_prt_header = mapping_header.replace(
+            b"# pg_map_hash: SHA-256 " + mapping_body_hash,
+            b"# pg_map_hash: SHA-256 " + mapping_id,
+        )
+        partition_names = b"a"
+        package_names = b"\nfixture\n"
+        mapping_prt_tail = (
+            (2).to_bytes(2, "big")
+            + (0).to_bytes(4, "big")
+            + len(mapping_prt_header).to_bytes(2, "big")
+            + mapping_prt_header
+            + (1).to_bytes(2, "big")
+            + len(package_names).to_bytes(4, "big")
+            + package_names
+        )
+        mapping_prt_metadata = (
+            b"\xaa\xa8"
+            + (1).to_bytes(2, "big")
+            + (3).to_bytes(2, "big")
+            + b"2.2"
+            + len(partition_names).to_bytes(4, "big")
+            + partition_names
+            + len(mapping_prt_tail).to_bytes(4, "big")
+            + mapping_prt_tail
+        )
+        native = b"\x7fELFfixture-native"
+        baseline_profile = b"pro\x00010\x00fixture-baseline-profile\n"
+        converted_baseline_profile = (
+            b"pro\x00015\x00fixture-converted-baseline-profile\n"
+        )
+        baseline_profile_metadata = (
+            b"prm\x00002\x00fixture-baseline-profile-metadata\n"
+        )
+        ledger = root / "release/version-ledger.tsv"
+        ledger.parent.mkdir(parents=True)
+        ledger.write_text(
+            "build_number\tmarketing_version\n24\t1.0.0\n",
+            encoding="ascii",
+        )
+        lock_data = (
+            "# This is a Gradle generated file for dependency locking.\n"
+            "# Manual edits can break the build and are not advised.\n"
+            "# This file is expected to be part of source control.\n"
+            "com.example:fixture:1.0=releaseRuntimeClasspath\n"
+            "empty=releaseAnnotationProcessorClasspath\n"
+        ).encode("ascii")
+        for relative in readback_module.GRADLE_LOCK_PATHS:
+            lock_path = root / relative
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            lock_path.write_bytes(lock_data)
+
+        apk_directory = (
+            root
+            / "apps/android/app/build/outputs/apk/release"
+        )
+        apk_directory.mkdir(parents=True)
+        apk_path = apk_directory / "app-release-unsigned.apk"
+        apk_output = io.BytesIO()
+        with zipfile.ZipFile(
+            apk_output,
+            "w",
+            compression=zipfile.ZIP_DEFLATED,
+        ) as apk:
+            apk.writestr("classes.dex", b"dex\nfixture\n")
+            apk.writestr("lib/arm64-v8a/libfixture.so", native)
+            apk.writestr(
+                "assets/dexopt/baseline.prof",
+                baseline_profile,
+            )
+            apk.writestr(
+                "assets/dexopt/baseline.profm",
+                baseline_profile_metadata,
+            )
+        apk_path.write_bytes(apk_output.getvalue())
+        baseline_paths = (
+            "baselineProfiles/1/app-release-unsigned.dm",
+            "baselineProfiles/0/app-release-unsigned.dm",
+        )
+        for index, relative in enumerate(baseline_paths):
+            profile_path = apk_directory / relative
+            profile_path.parent.mkdir(parents=True, exist_ok=True)
+            profile_output = io.BytesIO()
+            with zipfile.ZipFile(
+                profile_output,
+                "w",
+                compression=zipfile.ZIP_DEFLATED,
+            ) as profile:
+                profile.writestr(
+                    "primary.prof",
+                    baseline_profile
+                    if index == 0
+                    else converted_baseline_profile,
+                )
+                profile.writestr(
+                    "primary.profm",
+                    baseline_profile_metadata,
+                )
+            profile_path.write_bytes(profile_output.getvalue())
+        metadata_path = apk_directory / "output-metadata.json"
+        metadata_path.write_bytes(
+            canonical_json_bytes(
+                {
+                    "applicationId": "com.localagentbridge.android",
+                    "artifactType": {
+                        "kind": "Directory",
+                        "type": "APK",
+                    },
+                    "baselineProfiles": [
+                        {
+                            "baselineProfiles": [baseline_paths[0]],
+                            "maxApi": 30,
+                            "minApi": 28,
+                        },
+                        {
+                            "baselineProfiles": [baseline_paths[1]],
+                            "maxApi": 2_147_483_647,
+                            "minApi": 31,
+                        },
+                    ],
+                    "elementType": "File",
+                    "elements": [
+                        {
+                            "attributes": [],
+                            "filters": [],
+                            "outputFile": "app-release-unsigned.apk",
+                            "type": "SINGLE",
+                            "versionCode": build_number,
+                            "versionName": marketing_version,
+                        }
+                    ],
+                    "minSdkVersionForDexing": 26,
+                    "variantName": "release",
+                    "version": 3,
+                }
+            )
+        )
+
+        mapping_directory = (
+            root
+            / "apps/android/app/build/outputs/mapping/release"
+        )
+        mapping_directory.mkdir(parents=True)
+        mapping_prt = io.BytesIO()
+        with zipfile.ZipFile(mapping_prt, "w") as archive:
+            archive.writestr("a", mapping_body)
+            archive.writestr("METADATA", mapping_prt_metadata)
+        mapping_outputs = {
+            "configuration.txt": b"-dontobfuscate\r\n",
+            "mapping.prt": mapping_prt.getvalue(),
+            "mapping.txt": mapping,
+            "resources.txt": b"fixture:type:1 reachable from root\n",
+            "seeds.txt": b"zeta\nalpha\n",
+            "usage.txt": b"fixture.Unused\n",
+        }
+        for name, data in mapping_outputs.items():
+            (mapping_directory / name).write_bytes(data)
+
+        aab_directory = (
+            root
+            / "apps/android/app/build/outputs/bundle/release"
+        )
+        aab_directory.mkdir(parents=True)
+        aab_path = aab_directory / "app-release.aab"
+        aab_output = io.BytesIO()
+        with zipfile.ZipFile(aab_output, "w") as bundle:
+            bundle.writestr(
+                "base/dex/classes.dex",
+                b"dex\nfixture\n",
+                compress_type=zipfile.ZIP_DEFLATED,
+            )
+            bundle.writestr(
+                (
+                    "BUNDLE-METADATA/com.android.tools.build.obfuscation/"
+                    "proguard.map"
+                ),
+                mapping if aab_mapping is None else aab_mapping,
+            )
+            bundle.writestr(
+                f"base/lib/{aab_abi}/libfixture.so",
+                native,
+            )
+            bundle.writestr(
+                (
+                    "BUNDLE-METADATA/com.android.tools.build.profiles/"
+                    "baseline.prof"
+                ),
+                baseline_profile,
+            )
+            bundle.writestr(
+                (
+                    "BUNDLE-METADATA/com.android.tools.build.profiles/"
+                    "baseline.profm"
+                ),
+                baseline_profile_metadata,
+            )
+            bundle.writestr(
+                (
+                    "BUNDLE-METADATA/com.android.tools.build.libraries/"
+                    "dependencies.pb"
+                ),
+                b"fixture-sdk-dependencies-protobuf\n",
+            )
+            if embedded_symbol is not None:
+                bundle.writestr(
+                    (
+                        "BUNDLE-METADATA/com.android.tools.build.debugsymbols/"
+                        + (
+                            embedded_symbol_name
+                            if embedded_symbol_name is not None
+                            else f"{aab_abi}/libfixture.so.sym"
+                        )
+                    ),
+                    embedded_symbol,
+                )
+        aab_path.write_bytes(aab_output.getvalue())
+
+        group, artifact, version = sdk_coordinate
+        sdk_directory = (
+            root
+            / "apps/android/app/build/outputs/sdk-dependencies/release"
+        )
+        sdk_directory.mkdir(parents=True)
+        sdk_path = sdk_directory / "sdkDependencies.txt"
+        sdk_path.write_text(
+            "# List of SDK dependencies of this app, this information is also "
+            "included in an encrypted form in the APK.\n"
+            "# For more information visit: "
+            "https://d.android.com/r/tools/dependency-metadata\n\n"
+            "library {\n"
+            "  maven_library {\n"
+            f'    groupId: "{group}"\n'
+            f'    artifactId: "{artifact}"\n'
+            f'    version: "{version}"\n'
+            "  }\n"
+            "  digests {\n"
+            '    sha256: "0123456789abcdef0123456789abcdef"\n'
+            "  }\n"
+            "  repo_index {\n"
+            "    value: 1\n"
+            "  }\n"
+            "}\n"
+            "module_dependencies {\n"
+            '  module_name: "base"\n'
+            "  dependency_index: 0\n"
+            "}\n"
+            "repositories {\n"
+            "  maven_repo {\n"
+            '    url: "https://dl.google.com/dl/android/maven2/"\n'
+            "  }\n"
+            "}\n"
+            "repositories {\n"
+            "  maven_repo {\n"
+            '    url: "https://repo.maven.apache.org/maven2/"\n'
+            "  }\n"
+            "}\n",
+            encoding="ascii",
+        )
+
+        for relative_root in (
+            readback_module.ANDROID_RELEASE_MERGED_NATIVE_RELATIVE_PATH,
+            readback_module.ANDROID_RELEASE_STRIPPED_NATIVE_RELATIVE_PATH,
+        ):
+            native_path = (
+                root / relative_root / "arm64-v8a/libfixture.so"
+            )
+            native_path.parent.mkdir(parents=True, exist_ok=True)
+            native_path.write_bytes(native)
+        return {
+            "aabPath": aab_path,
+            "apkPath": apk_path,
+            "mappingDirectory": mapping_directory,
+            "metadataPath": metadata_path,
+            "native": native,
+            "sdkPath": sdk_path,
+            "baselineProfile": baseline_profile,
+            "baselineProfileMetadata": baseline_profile_metadata,
+        }
+
+    def verify_android_release_build_output_fixture(
+        self,
+        root: Path,
+        *,
+        apk_badging: dict[str, object] | None = None,
+        apk_policy: dict[str, object] | None = None,
+        aab_manifest: dict[str, object] | None = None,
+        elf_result: tuple[str | None, bool] = (
+            "0123456789abcdef",
+            False,
+        ),
+    ) -> dict[str, object]:
+        topology = expected_entry_point_topology()
+        application_shell = expected_application_shell()
+        expected_badging: dict[str, object] = {
+            "applicationId": "com.localagentbridge.android",
+            "minSdk": 26,
+            "nativeAbis": ["arm64-v8a"],
+            "targetSdk": 36,
+            "versionCode": 24,
+            "versionName": "1.0.0",
+        }
+        expected_policy: dict[str, object] = {
+            "allowBackup": False,
+            "applicationShell": application_shell,
+            "dataExtractionRules": "@xml/data_extraction_rules",
+            "entryPointTopology": topology,
+            "fullBackupContent": "@xml/backup_rules",
+        }
+        expected_aab: dict[str, object] = {
+            "allowBackup": False,
+            "applicationId": "com.localagentbridge.android",
+            "applicationShell": application_shell,
+            "dataExtractionRules": "@xml/data_extraction_rules",
+            "entryPointTopology": topology,
+            "fullBackupContent": "@xml/backup_rules",
+            "minSdk": 26,
+            "targetSdk": 36,
+            "versionCode": 24,
+            "versionName": "1.0.0",
+        }
+        with (
+            mock.patch.object(
+                readback_module,
+                "inspect_apk_badging",
+                return_value=(
+                    expected_badging
+                    if apk_badging is None
+                    else apk_badging
+                ),
+            ),
+            mock.patch.object(
+                readback_module,
+                "inspect_apk_backup_policy",
+                return_value=(
+                    expected_policy if apk_policy is None else apk_policy
+                ),
+            ),
+            mock.patch.object(
+                readback_module,
+                "inspect_aab_manifest",
+                return_value=(
+                    expected_aab if aab_manifest is None else aab_manifest
+                ),
+            ),
+            mock.patch.object(
+                readback_module,
+                "bundletool_version",
+                return_value=readback_module.BUNDLETOOL_VERSION,
+            ),
+            mock.patch.object(
+                readback_module,
+                "find_llvm_readelf",
+                return_value=Path("/fixture/llvm-readelf"),
+            ),
+            mock.patch.object(
+                readback_module,
+                "inspect_elf",
+                return_value=elf_result,
+            ),
+            mock.patch.object(
+                readback_module,
+                "ANDROID_RELEASE_R8_MAPPING_SHA256",
+                self.FIXTURE_R8_MAPPING_SHA256,
+            ),
+            mock.patch.object(
+                readback_module,
+                "ANDROID_RELEASE_R8_MAPPING_PRT_LOGICAL_SHA256",
+                self.FIXTURE_R8_MAPPING_PRT_LOGICAL_SHA256,
+            ),
+            mock.patch.object(
+                readback_module,
+                "ANDROID_RELEASE_SDK_DEPENDENCIES_SHA256",
+                self.FIXTURE_SDK_DEPENDENCIES_SHA256,
+            ),
+            mock.patch.object(
+                readback_module,
+                "ANDROID_RELEASE_API31_DM_PROFILE_SHA256",
+                self.FIXTURE_API31_DM_PROFILE_SHA256,
+            ),
+            mock.patch.object(
+                readback_module,
+                "ANDROID_RELEASE_APK_BASELINE_PROFILE_SHA256",
+                self.FIXTURE_APK_BASELINE_PROFILE_SHA256,
+            ),
+            mock.patch.object(
+                readback_module,
+                "ANDROID_RELEASE_APK_BASELINE_PROFILE_METADATA_SHA256",
+                self.FIXTURE_APK_BASELINE_PROFILE_METADATA_SHA256,
+            ),
+            mock.patch.object(
+                readback_module,
+                "ANDROID_RELEASE_SDK_DEPENDENCIES_PROTOBUF_SHA256",
+                self.FIXTURE_SDK_DEPENDENCIES_PROTOBUF_SHA256,
+            ),
+            mock.patch.object(
+                readback_module,
+                "ANDROID_RELEASE_DEX_SHA256",
+                self.FIXTURE_DEX_SHA256,
+            ),
+        ):
+            return readback_module.verify_android_release_build_outputs(root)
+
+    def test_android_release_build_output_direct_readback_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            result = self.verify_android_release_build_output_fixture(root)
+            self.assertEqual(result["applicationId"], "com.localagentbridge.android")
+            self.assertEqual(result["versionCode"], 24)
+            self.assertEqual(result["versionName"], "1.0.0")
+            self.assertEqual(result["baselineProfileCount"], 2)
+            self.assertEqual(result["mappingFileCount"], 6)
+            self.assertEqual(result["nativeLibraryCount"], 1)
+            self.assertEqual(result["sdkDependencyCount"], 1)
+            self.assertEqual(
+                result["nativeSymbolStatus"],
+                "unavailable-upstream-prestripped",
+            )
+
+            mapping_directory = fixture["mappingDirectory"]
+            assert isinstance(mapping_directory, Path)
+            raw_prt = (mapping_directory / "mapping.prt").read_bytes()
+            raw_resources = (
+                mapping_directory / "resources.txt"
+            ).read_bytes()
+            raw_seeds = (mapping_directory / "seeds.txt").read_bytes()
+            self.assertNotEqual(
+                raw_prt,
+                readback_module.canonicalize_r8_mapping_prt(
+                    raw_prt,
+                    "fixture mapping.prt",
+                ),
+            )
+            self.assertNotEqual(
+                raw_resources,
+                readback_module.canonicalize_r8_resources(
+                    raw_resources,
+                    "fixture resources.txt",
+                ),
+            )
+            self.assertNotEqual(
+                raw_seeds,
+                readback_module.canonicalize_r8_line_artifact(
+                    raw_seeds,
+                    "fixture seeds.txt",
+                ),
+            )
+
+    def test_android_release_build_output_readback_rejects_file_drift(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            aab_path = fixture["aabPath"]
+            assert isinstance(aab_path, Path)
+            aab_path.unlink()
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "AAB output directory.*missing",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            metadata_path = fixture["metadataPath"]
+            assert isinstance(metadata_path, Path)
+            metadata_path.write_text(
+                metadata_path.read_text(encoding="ascii").replace(
+                    '"version":3',
+                    '"unexpected":NaN,"version":3',
+                    1,
+                ),
+                encoding="ascii",
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "nonstandard JSON constant 'NaN'",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            metadata_path = fixture["metadataPath"]
+            assert isinstance(metadata_path, Path)
+            metadata = metadata_path.read_text(encoding="ascii")
+            metadata_path.write_text(
+                metadata.replace(
+                    '"version":3',
+                    '"version":3,"version":3',
+                    1,
+                ),
+                encoding="ascii",
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "duplicate JSON key 'version'",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            metadata_path = fixture["metadataPath"]
+            assert isinstance(metadata_path, Path)
+            metadata = metadata_path.read_text(encoding="ascii")
+            metadata_path.write_text(
+                metadata.replace(
+                    '"versionCode":24',
+                    '"versionCode":true',
+                    1,
+                ),
+                encoding="ascii",
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "versionCode must be an integer",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            apk_path = fixture["apkPath"]
+            assert isinstance(apk_path, Path)
+            profile = (
+                apk_path.parent
+                / "baselineProfiles/0/app-release-unsigned.dm"
+            )
+            profile.unlink()
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "baseline profile.*cannot be inspected",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            apk_path = fixture["apkPath"]
+            assert isinstance(apk_path, Path)
+            profile = (
+                apk_path.parent
+                / "baselineProfiles/0/app-release-unsigned.dm"
+            )
+            profile.write_bytes(b"not-a-profile-zip")
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "baseline profile.*is not a readable ZIP",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            apk_path = fixture["apkPath"]
+            baseline_profile_metadata = fixture["baselineProfileMetadata"]
+            assert isinstance(apk_path, Path)
+            assert isinstance(baseline_profile_metadata, bytes)
+            profile = (
+                apk_path.parent
+                / "baselineProfiles/0/app-release-unsigned.dm"
+            )
+            self.write_fixture_zip_members(
+                profile,
+                [
+                    (
+                        "primary.prof",
+                        b"pro\x00015\x00tampered-converted-profile\n",
+                    ),
+                    ("primary.profm", baseline_profile_metadata),
+                ],
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "pinned V1 converted-profile identity",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            apk_path = fixture["apkPath"]
+            aab_path = fixture["aabPath"]
+            assert isinstance(apk_path, Path)
+            assert isinstance(aab_path, Path)
+            tampered_profile = b"pro\x00010\x00coordinated-profile-drift\n"
+            tampered_metadata = b"prm\x00002\x00coordinated-metadata-drift\n"
+            self.replace_fixture_zip_member(
+                apk_path,
+                "assets/dexopt/baseline.prof",
+                tampered_profile,
+            )
+            self.replace_fixture_zip_member(
+                apk_path,
+                "assets/dexopt/baseline.profm",
+                tampered_metadata,
+            )
+            self.replace_fixture_zip_member(
+                aab_path,
+                (
+                    "BUNDLE-METADATA/com.android.tools.build.profiles/"
+                    "baseline.prof"
+                ),
+                tampered_profile,
+            )
+            self.replace_fixture_zip_member(
+                aab_path,
+                (
+                    "BUNDLE-METADATA/com.android.tools.build.profiles/"
+                    "baseline.profm"
+                ),
+                tampered_metadata,
+            )
+            api_28_profile = (
+                apk_path.parent
+                / "baselineProfiles/1/app-release-unsigned.dm"
+            )
+            self.write_fixture_zip_members(
+                api_28_profile,
+                [
+                    ("primary.prof", tampered_profile),
+                    ("primary.profm", tampered_metadata),
+                ],
+            )
+            api_31_profile = (
+                apk_path.parent
+                / "baselineProfiles/0/app-release-unsigned.dm"
+            )
+            with zipfile.ZipFile(api_31_profile, "r") as archive:
+                converted_profile = archive.read("primary.prof")
+            self.write_fixture_zip_members(
+                api_31_profile,
+                [
+                    ("primary.prof", converted_profile),
+                    ("primary.profm", tampered_metadata),
+                ],
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "pinned V1 profile identities",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            apk_path = fixture["apkPath"]
+            assert isinstance(apk_path, Path)
+            baseline_root = apk_path.parent / "baselineProfiles"
+            moved_root = root / "moved-baseline-profiles"
+            baseline_root.rename(moved_root)
+            baseline_root.symlink_to(moved_root, target_is_directory=True)
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "baseline profile root must be a non-symlink directory",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            mapping_directory = fixture["mappingDirectory"]
+            assert isinstance(mapping_directory, Path)
+            (mapping_directory / "unexpected.txt").write_text(
+                "unexpected\n",
+                encoding="ascii",
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "R8 output directory inventory differs",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            mapping_directory = fixture["mappingDirectory"]
+            assert isinstance(mapping_directory, Path)
+            seeds = mapping_directory / "seeds.txt"
+            replacement = root / "replacement-seeds.txt"
+            replacement.write_text("seed\n", encoding="ascii")
+            seeds.unlink()
+            seeds.symlink_to(replacement)
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "must be a regular non-symlink file",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+    def test_android_release_build_output_readback_rejects_content_drift(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.write_android_release_build_output_fixture(
+                root,
+                aab_mapping=b"different.Mapping -> z:\n",
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "AAB R8 mapping differs",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.write_android_release_build_output_fixture(
+                root,
+                embedded_symbol=b"not-an-elf-symbol-file",
+            )
+            symbol_path = (
+                root
+                / readback_module.ANDROID_RELEASE_NATIVE_SYMBOL_RELATIVE_PATH
+            )
+            symbol_path.parent.mkdir(parents=True)
+            self.write_fixture_zip_members(
+                symbol_path,
+                [
+                    (
+                        "arm64-v8a/libfixture.so.sym",
+                        b"not-an-elf-symbol-file",
+                    )
+                ],
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "native symbol.*is not an ELF file",
+            ):
+                self.verify_android_release_build_output_fixture(
+                    root,
+                    elf_result=("0123456789abcdef", True),
+                )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            symbol_data = b"\x7fELFfixture-symbols"
+            self.write_android_release_build_output_fixture(
+                root,
+                embedded_symbol=symbol_data,
+            )
+            symbol_path = (
+                root
+                / readback_module.ANDROID_RELEASE_NATIVE_SYMBOL_RELATIVE_PATH
+            )
+            symbol_path.parent.mkdir(parents=True)
+            self.write_fixture_zip_members(
+                symbol_path,
+                [("arm64-v8a/libfixture.so.sym", symbol_data)],
+            )
+            result = self.verify_android_release_build_output_fixture(
+                root,
+                elf_result=("0123456789abcdef", True),
+            )
+            self.assertEqual(result["nativeSymbolStatus"], "available")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            symbol_data = b"\x7fELFfixture-symbols"
+            self.write_android_release_build_output_fixture(
+                root,
+                embedded_symbol=symbol_data,
+                embedded_symbol_name="arm64-v8a/libghost.so.sym",
+            )
+            symbol_path = (
+                root
+                / readback_module.ANDROID_RELEASE_NATIVE_SYMBOL_RELATIVE_PATH
+            )
+            symbol_path.parent.mkdir(parents=True)
+            self.write_fixture_zip_members(
+                symbol_path,
+                [("arm64-v8a/libghost.so.sym", symbol_data)],
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "native-symbol members differ from JNI libraries",
+            ):
+                self.verify_android_release_build_output_fixture(
+                    root,
+                    elf_result=("0123456789abcdef", True),
+                )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.write_android_release_build_output_fixture(
+                root,
+                aab_abi="x86_64",
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "JNI ABI set must be arm64-v8a-only",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.write_android_release_build_output_fixture(root)
+            wrong_badging: dict[str, object] = {
+                "applicationId": "com.localagentbridge.android",
+                "minSdk": 26,
+                "nativeAbis": ["x86_64"],
+                "targetSdk": 36,
+                "versionCode": 24,
+                "versionName": "1.0.0",
+            }
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "APK badging differs",
+            ):
+                self.verify_android_release_build_output_fixture(
+                    root,
+                    apk_badging=wrong_badging,
+                )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.write_android_release_build_output_fixture(root)
+            wrong_shell = expected_application_shell()
+            localized = wrong_shell["localizedString"]
+            assert isinstance(localized, dict)
+            values = localized["values"]
+            assert isinstance(values, dict)
+            values["ko"] = "변조"
+            wrong_manifest: dict[str, object] = {
+                "allowBackup": False,
+                "applicationId": "com.localagentbridge.android",
+                "applicationShell": wrong_shell,
+                "dataExtractionRules": "@xml/data_extraction_rules",
+                "entryPointTopology": expected_entry_point_topology(),
+                "fullBackupContent": "@xml/backup_rules",
+                "minSdk": 26,
+                "targetSdk": 36,
+                "versionCode": 24,
+                "versionName": "1.0.0",
+            }
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "AAB manifest/config/resources differ",
+            ):
+                self.verify_android_release_build_output_fixture(
+                    root,
+                    aab_manifest=wrong_manifest,
+                )
+
+    def test_android_release_build_output_readback_rejects_zip_and_apk_jni_drift(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            apk_path = fixture["apkPath"]
+            native = fixture["native"]
+            assert isinstance(apk_path, Path)
+            assert isinstance(native, bytes)
+            self.replace_fixture_zip_member(
+                apk_path,
+                "lib/arm64-v8a/libfixture.so",
+                native + b"-changed",
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "APK and AAB JNI members differ.*byteDifferences",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            apk_path = fixture["apkPath"]
+            native = fixture["native"]
+            assert isinstance(apk_path, Path)
+            assert isinstance(native, bytes)
+            with zipfile.ZipFile(apk_path, "r") as archive:
+                members = [
+                    (info.filename, archive.read(info))
+                    for info in archive.infolist()
+                ]
+            self.write_fixture_zip_members(
+                apk_path,
+                members + [("lib/arm64-v8a/libextra.so", native)],
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "APK and AAB JNI members differ.*extra=.*libextra",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            apk_path = fixture["apkPath"]
+            aab_path = fixture["aabPath"]
+            assert isinstance(apk_path, Path)
+            assert isinstance(aab_path, Path)
+            coordinated_dex = b"dex\ncoordinated-drift\n"
+            self.replace_fixture_zip_member(
+                apk_path,
+                "classes.dex",
+                coordinated_dex,
+            )
+            self.replace_fixture_zip_member(
+                aab_path,
+                "base/dex/classes.dex",
+                coordinated_dex,
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "DEX differs from the pinned V1 byte identity",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            apk_path = fixture["apkPath"]
+            native = fixture["native"]
+            assert isinstance(apk_path, Path)
+            assert isinstance(native, bytes)
+            self.write_fixture_zip_members(
+                apk_path,
+                [
+                    ("classes.dex", b"first"),
+                    ("classes.dex", b"second"),
+                    ("lib/arm64-v8a/libfixture.so", native),
+                ],
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "APK must contain unique members",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        for artifact_key, member_name, label in (
+            ("apkPath", "classes.dex", "APK"),
+            ("aabPath", "base/dex/classes.dex", "AAB"),
+        ):
+            with self.subTest(artifact=label):
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary)
+                    fixture = self.write_android_release_build_output_fixture(
+                        root
+                    )
+                    artifact_path = fixture[artifact_key]
+                    assert isinstance(artifact_path, Path)
+                    self.corrupt_zip_member_payload(
+                        artifact_path,
+                        member_name,
+                    )
+                    with self.assertRaisesRegex(
+                        ReleaseArchiveVerificationError,
+                        f"Android Release {label} is not a readable ZIP",
+                    ):
+                        self.verify_android_release_build_output_fixture(root)
+
+    def test_safe_zip_member_readback_enforces_resource_bounds(self) -> None:
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, "w") as archive:
+            archive.writestr("one", b"1234")
+            archive.writestr("two", b"5678")
+        data = output.getvalue()
+        with self.assertRaisesRegex(
+            ReleaseArchiveVerificationError,
+            "exceeds the 1-member limit",
+        ):
+            readback_module.read_safe_zip_members(
+                data,
+                "fixture ZIP",
+                maximum_members=1,
+            )
+        with self.assertRaisesRegex(
+            ReleaseArchiveVerificationError,
+            "member exceeds the 3-byte limit",
+        ):
+            readback_module.read_safe_zip_members(
+                data,
+                "fixture ZIP",
+                maximum_member_bytes=3,
+            )
+        with self.assertRaisesRegex(
+            ReleaseArchiveVerificationError,
+            "exceeds the 7-byte total uncompressed limit",
+        ):
+            readback_module.read_safe_zip_members(
+                data,
+                "fixture ZIP",
+                maximum_total_uncompressed_bytes=7,
+            )
+        with self.assertRaisesRegex(
+            ReleaseArchiveVerificationError,
+            "limit must be a positive integer",
+        ):
+            readback_module.read_safe_zip_members(
+                data,
+                "fixture ZIP",
+                maximum_members=True,
+            )
+
+    def test_android_release_tool_resolution_is_exactly_pinned(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "project"
+            sdk = Path(temporary) / "sdk"
+            root.mkdir()
+            (root / "local.properties").write_text(
+                f"sdk.dir={sdk}\n",
+                encoding="utf-8",
+            )
+            pinned_aapt2 = (
+                sdk
+                / "build-tools"
+                / readback_module.ANDROID_BUILD_TOOLS_VERSION
+                / "aapt2"
+            )
+            newer_aapt2 = sdk / "build-tools/99.0.0/aapt2"
+            for path in (pinned_aapt2, newer_aapt2):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("#!/bin/sh\nexit 0\n", encoding="ascii")
+                path.chmod(0o755)
+            self.assertEqual(
+                readback_module.find_android_build_tool("aapt2", root),
+                pinned_aapt2,
+            )
+            self.assertEqual(
+                builder_module.find_android_build_tool("aapt2", root),
+                pinned_aapt2,
+            )
+
+            pinned_readelf = (
+                sdk
+                / "ndk"
+                / readback_module.ANDROID_NDK_VERSION
+                / "toolchains/llvm/prebuilt/fixture-host/bin/llvm-readelf"
+            )
+            newer_readelf = (
+                sdk
+                / "ndk/99.0.0/toolchains/llvm/prebuilt/fixture-host/bin/"
+                "llvm-readelf"
+            )
+            for path in (pinned_readelf, newer_readelf):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("#!/bin/sh\nexit 0\n", encoding="ascii")
+                path.chmod(0o755)
+            self.assertEqual(
+                readback_module.find_llvm_readelf(root),
+                pinned_readelf,
+            )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "project"
+            sdk = Path(temporary) / "sdk"
+            root.mkdir()
+            (root / "local.properties").write_text(
+                f"sdk.dir={sdk}\n",
+                encoding="utf-8",
+            )
+            newer_aapt2 = sdk / "build-tools/99.0.0/aapt2"
+            newer_aapt2.parent.mkdir(parents=True)
+            newer_aapt2.write_text(
+                "#!/bin/sh\nexit 0\n",
+                encoding="ascii",
+            )
+            newer_aapt2.chmod(0o755)
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "cannot locate pinned Build Tools",
+            ):
+                readback_module.find_android_build_tool("aapt2", root)
+
+    def test_android_release_build_output_readback_rejects_dependency_and_symbol_drift(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            sdk_path = fixture["sdkPath"]
+            assert isinstance(sdk_path, Path)
+            sdk_path.write_bytes(
+                sdk_path.read_bytes().replace(
+                    b"0123456789abcdef0123456789abcdef",
+                    b"1123456789abcdef0123456789abcdef",
+                    1,
+                )
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "pinned V1 byte identity",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            sdk_path = fixture["sdkPath"]
+            assert isinstance(sdk_path, Path)
+            sdk_path.write_bytes(
+                sdk_path.read_bytes().replace(
+                    b'module_dependencies {\n  module_name: "base"\n'
+                    b"  dependency_index: 0\n}\n",
+                    b"",
+                    1,
+                )
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "top-level block shape differs",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            aab_path = fixture["aabPath"]
+            assert isinstance(aab_path, Path)
+            self.replace_fixture_zip_member(
+                aab_path,
+                (
+                    "BUNDLE-METADATA/com.android.tools.build.libraries/"
+                    "dependencies.pb"
+                ),
+                b"tampered-sdk-dependencies-protobuf\n",
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "SDK dependency protobuf differs from the pinned V1",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.write_android_release_build_output_fixture(
+                root,
+                sdk_coordinate=("com.example", "unlocked", "9.9"),
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "contains unlocked modules",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.write_android_release_build_output_fixture(root)
+            app_lock = root / "apps/android/app/gradle.lockfile"
+            app_lock.write_text(
+                app_lock.read_text(encoding="ascii").replace(
+                    "empty=releaseAnnotationProcessorClasspath\n",
+                    "com.example:second:2.0=releaseRuntimeClasspath\n"
+                    "empty=releaseAnnotationProcessorClasspath\n",
+                ),
+                encoding="ascii",
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "exact Release runtime lock closure.*missing=.*second",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.write_android_release_build_output_fixture(root)
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "debug metadata.*native-symbol archive is missing",
+            ):
+                self.verify_android_release_build_output_fixture(
+                    root,
+                    elf_result=("0123456789abcdef", True),
+                )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.write_android_release_build_output_fixture(root)
+            symbol_path = (
+                root
+                / readback_module.ANDROID_RELEASE_NATIVE_SYMBOL_RELATIVE_PATH
+            )
+            symbol_path.parent.mkdir(parents=True)
+            symbol_archive = io.BytesIO()
+            with zipfile.ZipFile(symbol_archive, "w") as archive:
+                archive.writestr(
+                    "arm64-v8a/libfixture.so.sym",
+                    b"symbols",
+                )
+            symbol_path.write_bytes(symbol_archive.getvalue())
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "standalone and embedded native symbols differ",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.write_android_release_build_output_fixture(
+                root,
+                embedded_symbol=b"symbols",
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "embeds native symbols without the standalone archive",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+    def test_android_release_build_output_readback_rejects_coordinated_r8_drift(
+        self,
+    ) -> None:
+        mapping_member = (
+            "BUNDLE-METADATA/com.android.tools.build.obfuscation/"
+            "proguard.map"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            mapping_directory = fixture["mappingDirectory"]
+            aab_path = fixture["aabPath"]
+            assert isinstance(mapping_directory, Path)
+            assert isinstance(aab_path, Path)
+            (mapping_directory / "mapping.txt").write_bytes(b"x\n")
+            self.replace_fixture_zip_member(aab_path, mapping_member, b"x\n")
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "mapping.txt R8 header differs",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            mapping_directory = fixture["mappingDirectory"]
+            aab_path = fixture["aabPath"]
+            assert isinstance(mapping_directory, Path)
+            assert isinstance(aab_path, Path)
+            mapping_path = mapping_directory / "mapping.txt"
+            mapping = mapping_path.read_bytes().replace(
+                b"fixture.Source",
+                b"fixture.Tampered",
+            )
+            mapping_path.write_bytes(mapping)
+            self.replace_fixture_zip_member(aab_path, mapping_member, mapping)
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "pg_map_hash differs from its body",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            mapping_directory = fixture["mappingDirectory"]
+            assert isinstance(mapping_directory, Path)
+            self.write_fixture_zip_members(
+                mapping_directory / "mapping.prt",
+                [("METADATA", b"fixture-metadata\n")],
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "mapping.prt must contain class partitions",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            mapping_directory = fixture["mappingDirectory"]
+            assert isinstance(mapping_directory, Path)
+            mapping_prt = mapping_directory / "mapping.prt"
+            with zipfile.ZipFile(mapping_prt, "r") as archive:
+                metadata = archive.read("METADATA")
+            self.write_fixture_zip_members(
+                mapping_prt,
+                [("a", b"x"), ("METADATA", metadata)],
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "partition payload differs from mapping.txt",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            mapping_directory = fixture["mappingDirectory"]
+            assert isinstance(mapping_directory, Path)
+            mapping_prt = mapping_directory / "mapping.prt"
+            mapping = (mapping_directory / "mapping.txt").read_bytes()
+            mapping_body = b"".join(mapping.splitlines(keepends=True)[7:])
+            with zipfile.ZipFile(mapping_prt, "r") as archive:
+                metadata = archive.read("METADATA")
+            source_prefix = (
+                b'# {"id":"partitionSourceFiles","fileNameMappings":'
+                b'{"fixture.Source":"Renamed.kt"}}\n'
+            )
+            self.write_fixture_zip_members(
+                mapping_prt,
+                [
+                    ("a", source_prefix + mapping_body),
+                    ("METADATA", metadata),
+                ],
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "pinned V1 logical identity",
+            ):
+                self.verify_android_release_build_output_fixture(root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_android_release_build_output_fixture(root)
+            mapping_directory = fixture["mappingDirectory"]
+            aab_path = fixture["aabPath"]
+            assert isinstance(mapping_directory, Path)
+            assert isinstance(aab_path, Path)
+            mapping_path = mapping_directory / "mapping.txt"
+            mapping = mapping_path.read_bytes()
+            mapping_header = b"".join(mapping.splitlines(keepends=True)[:7])
+            mapping_body = b"".join(mapping.splitlines(keepends=True)[7:])
+            mapping_body += b"fixture.ComposeStackTrace -> $$compose:\n"
+            old_hash = re.search(
+                rb"# pg_map_hash: SHA-256 ([0-9a-f]{64})\n",
+                mapping_header,
+            )
+            assert old_hash is not None
+            mapping_header = mapping_header.replace(
+                old_hash.group(1),
+                hashlib.sha256(mapping_body).hexdigest().encode("ascii"),
+            )
+            coordinated_mapping = mapping_header + mapping_body
+            mapping_path.write_bytes(coordinated_mapping)
+            self.replace_fixture_zip_member(
+                aab_path,
+                (
+                    "BUNDLE-METADATA/com.android.tools.build.obfuscation/"
+                    "proguard.map"
+                ),
+                coordinated_mapping,
+            )
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "mapping.txt differs from the pinned V1 byte identity",
+            ):
+                self.verify_android_release_build_output_fixture(root)
 
     def android_metadata_fixture(
         self,
@@ -1622,6 +3090,39 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                     root,
                     compare_current_source=True,
                 )
+
+    def test_current_source_g6_lifecycle_closure_is_required_once(
+        self,
+    ) -> None:
+        required = (
+            "script/run_clean_release_reproducibility.py",
+            "script/run_macos_build24_idle_resource_stability_smoke.py",
+            (
+                "script/run_macos_current_source_lane_a_"
+                "idle_resource_stability_smoke.py"
+            ),
+            (
+                "script/test_run_macos_current_source_lane_a_"
+                "idle_resource_stability_smoke.py"
+            ),
+        )
+        self.assertEqual(
+            readback_module.SOURCE_REQUIRED_FILES,
+            builder_module.SOURCE_REQUIRED_FILES,
+        )
+        self.assertEqual(readback_module.ROOT, builder_module.ROOT)
+        for relative in required:
+            with self.subTest(relative=relative):
+                self.assertEqual(
+                    builder_module.SOURCE_REQUIRED_FILES.count(relative),
+                    1,
+                )
+                self.assertEqual(
+                    readback_module.SOURCE_REQUIRED_FILES.count(relative),
+                    1,
+                )
+                status = (builder_module.ROOT / relative).lstat()
+                self.assertTrue(stat.S_ISREG(status.st_mode))
 
     def test_historical_ledger_prefix_is_exact_and_append_only(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -4586,6 +6087,19 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
             release_script,
         )
         self.assertNotIn("--write-locks", release_script)
+        release_commands = (
+            "python3 script/check_release_version_ledger.py --artifacts",
+            (
+                "python3 script/check_release_artifact_archive.py "
+                "--android-build-outputs"
+            ),
+            "python3 script/package_release_artifacts.py create",
+            "python3 script/check_release_artifact_archive.py",
+        )
+        self.assertEqual(
+            tuple(release_script.splitlines()[-4:]),
+            release_commands,
+        )
         for clean_task in (
             ":app:clean",
             ":core:pairing:clean",

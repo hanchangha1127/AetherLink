@@ -38,10 +38,17 @@ private const val MAX_PERSISTED_COMPOSER_DRAFT_CHARS = 20_000
 internal const val APP_LANGUAGE_SOURCE_DEFAULT = "default"
 internal const val APP_LANGUAGE_SOURCE_SYSTEM = "system"
 internal const val APP_LANGUAGE_SOURCE_IN_APP = "in_app"
+internal const val ANDROID_APP_LANGUAGE_PLATFORM_MIGRATION_VERSION = 1
 
 internal data class AndroidPlatformAppLanguageSnapshot(
     val languageTag: String,
     val languageSource: String,
+)
+
+internal data class AndroidPlatformAppLanguageReconciliation(
+    val data: PersistedRuntimeData,
+    val snapshot: AndroidPlatformAppLanguageSnapshot,
+    val applicationLocaleLanguageTagToSet: String?,
 )
 
 internal fun resolveAndroidPlatformAppLanguageSnapshot(
@@ -260,6 +267,8 @@ data class PersistedRuntimeData(
     val memoryEntries: List<PersistedMemoryEntry> = emptyList(),
     val appLanguageTag: String = RuntimeAppLanguage.English.languageTag,
     val appLanguageSource: String? = APP_LANGUAGE_SOURCE_DEFAULT,
+    val androidAppLanguagePlatformMigrationVersion: Int = 0,
+    val pendingAndroidAppLanguagePlatformMigrationTag: String? = null,
     val appTheme: String = RuntimeAppTheme.System.storageValue,
     val pendingPairingRoute: PersistedPendingPairingRoute? = null,
 )
@@ -409,6 +418,18 @@ internal fun PersistedRuntimeData.sanitized(): PersistedRuntimeData {
             }
         }
     }
+    val cleanAndroidAppLanguagePlatformMigrationVersion =
+        androidAppLanguagePlatformMigrationVersion.coerceAtLeast(0)
+    val cleanPendingAndroidAppLanguagePlatformMigrationTag =
+        RuntimeAppLanguage.supportedLanguageTagOrNull(
+            pendingAndroidAppLanguagePlatformMigrationTag,
+        )
+            ?.takeIf { pendingLanguageTag ->
+                cleanAndroidAppLanguagePlatformMigrationVersion <
+                    ANDROID_APP_LANGUAGE_PLATFORM_MIGRATION_VERSION &&
+                    cleanAppLanguageSource == APP_LANGUAGE_SOURCE_IN_APP &&
+                    pendingLanguageTag == cleanAppLanguageTag
+            }
     val cleanSessions = sessions
         .filter { it.id.isNotBlank() }
         .distinctBy { it.id }
@@ -491,6 +512,10 @@ internal fun PersistedRuntimeData.sanitized(): PersistedRuntimeData {
         memoryEntries = cleanMemory.sortedByDescending { it.updatedAtMillis },
         appLanguageTag = cleanAppLanguageTag,
         appLanguageSource = cleanAppLanguageSource,
+        androidAppLanguagePlatformMigrationVersion =
+            cleanAndroidAppLanguagePlatformMigrationVersion,
+        pendingAndroidAppLanguagePlatformMigrationTag =
+            cleanPendingAndroidAppLanguagePlatformMigrationTag,
         appTheme = RuntimeAppTheme.fromStorage(appTheme).storageValue,
         pendingPairingRoute = pendingPairingRoute?.sanitizedOrNull(),
     )
@@ -927,6 +952,7 @@ internal fun PersistedRuntimeData.withAppLanguageTag(languageTag: String): Persi
     return copy(
         appLanguageTag = RuntimeAppLanguage.normalizeLanguageTag(languageTag),
         appLanguageSource = APP_LANGUAGE_SOURCE_IN_APP,
+        pendingAndroidAppLanguagePlatformMigrationTag = null,
     ).sanitized()
 }
 
@@ -939,7 +965,99 @@ internal fun PersistedRuntimeData.withFollowSystemAppLanguageTag(languageTag: St
         } else {
             APP_LANGUAGE_SOURCE_SYSTEM
         },
+        pendingAndroidAppLanguagePlatformMigrationTag = null,
     ).sanitized()
+}
+
+internal fun PersistedRuntimeData.reconcileAndroidPlatformAppLanguage(
+    applicationLocalesSupported: Boolean,
+    applicationLocaleLanguageTag: String?,
+    systemLanguageTag: String?,
+): AndroidPlatformAppLanguageReconciliation {
+    val cleanData = sanitized()
+    if (!applicationLocalesSupported) {
+        val reconciledData = cleanData.withSystemAppLanguageTag(systemLanguageTag)
+        return AndroidPlatformAppLanguageReconciliation(
+            data = reconciledData,
+            snapshot = AndroidPlatformAppLanguageSnapshot(
+                languageTag = reconciledData.appLanguageTag,
+                languageSource = requireNotNull(reconciledData.appLanguageSource),
+            ),
+            applicationLocaleLanguageTagToSet = null,
+        )
+    }
+
+    val platformLanguageTag =
+        RuntimeAppLanguage.supportedLanguageTagOrNull(applicationLocaleLanguageTag)
+    if (platformLanguageTag != null) {
+        val reconciledData = cleanData.copy(
+            appLanguageTag = platformLanguageTag,
+            appLanguageSource = APP_LANGUAGE_SOURCE_IN_APP,
+            androidAppLanguagePlatformMigrationVersion = maxOf(
+                cleanData.androidAppLanguagePlatformMigrationVersion,
+                ANDROID_APP_LANGUAGE_PLATFORM_MIGRATION_VERSION,
+            ),
+            pendingAndroidAppLanguagePlatformMigrationTag = null,
+        ).sanitized()
+        return AndroidPlatformAppLanguageReconciliation(
+            data = reconciledData,
+            snapshot = AndroidPlatformAppLanguageSnapshot(
+                languageTag = platformLanguageTag,
+                languageSource = APP_LANGUAGE_SOURCE_IN_APP,
+            ),
+            applicationLocaleLanguageTagToSet = null,
+        )
+    }
+
+    val systemSnapshot = resolveAndroidPlatformAppLanguageSnapshot(
+        applicationLocaleLanguageTag = null,
+        systemLanguageTag = systemLanguageTag,
+    )
+    if (
+        cleanData.androidAppLanguagePlatformMigrationVersion >=
+        ANDROID_APP_LANGUAGE_PLATFORM_MIGRATION_VERSION
+    ) {
+        val reconciledData = cleanData.copy(
+            appLanguageTag = systemSnapshot.languageTag,
+            appLanguageSource = systemSnapshot.languageSource,
+            pendingAndroidAppLanguagePlatformMigrationTag = null,
+        ).sanitized()
+        return AndroidPlatformAppLanguageReconciliation(
+            data = reconciledData,
+            snapshot = systemSnapshot,
+            applicationLocaleLanguageTagToSet = null,
+        )
+    }
+
+    if (cleanData.appLanguageSource == APP_LANGUAGE_SOURCE_IN_APP) {
+        val migrationLanguageTag =
+            cleanData.pendingAndroidAppLanguagePlatformMigrationTag
+                ?: cleanData.appLanguageTag
+        val pendingData = cleanData.copy(
+            pendingAndroidAppLanguagePlatformMigrationTag = migrationLanguageTag,
+        ).sanitized()
+        return AndroidPlatformAppLanguageReconciliation(
+            data = pendingData,
+            snapshot = AndroidPlatformAppLanguageSnapshot(
+                languageTag = migrationLanguageTag,
+                languageSource = APP_LANGUAGE_SOURCE_IN_APP,
+            ),
+            applicationLocaleLanguageTagToSet = migrationLanguageTag,
+        )
+    }
+
+    val completedData = cleanData.copy(
+        appLanguageTag = systemSnapshot.languageTag,
+        appLanguageSource = systemSnapshot.languageSource,
+        androidAppLanguagePlatformMigrationVersion =
+            ANDROID_APP_LANGUAGE_PLATFORM_MIGRATION_VERSION,
+        pendingAndroidAppLanguagePlatformMigrationTag = null,
+    ).sanitized()
+    return AndroidPlatformAppLanguageReconciliation(
+        data = completedData,
+        snapshot = systemSnapshot,
+        applicationLocaleLanguageTagToSet = null,
+    )
 }
 
 internal fun PersistedRuntimeData.withAndroidPlatformAppLanguageSnapshot(
@@ -947,17 +1065,11 @@ internal fun PersistedRuntimeData.withAndroidPlatformAppLanguageSnapshot(
     applicationLocaleLanguageTag: String?,
     systemLanguageTag: String?,
 ): PersistedRuntimeData {
-    if (!applicationLocalesSupported) {
-        return withSystemAppLanguageTag(systemLanguageTag)
-    }
-    val snapshot = resolveAndroidPlatformAppLanguageSnapshot(
+    return reconcileAndroidPlatformAppLanguage(
+        applicationLocalesSupported = applicationLocalesSupported,
         applicationLocaleLanguageTag = applicationLocaleLanguageTag,
         systemLanguageTag = systemLanguageTag,
-    )
-    return copy(
-        appLanguageTag = snapshot.languageTag,
-        appLanguageSource = snapshot.languageSource,
-    ).sanitized()
+    ).data
 }
 
 internal fun PersistedRuntimeData.withSystemAppLanguageTag(languageTag: String?): PersistedRuntimeData {

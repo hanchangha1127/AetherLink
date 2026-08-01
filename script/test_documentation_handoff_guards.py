@@ -1105,7 +1105,7 @@ private func generatePairingQR() {{
                 "algorithm": (
                     "sha256(path-nul-mode-nul-size-nul-sha256-lf)-v1"
                 ),
-                "fileCount": 255,
+                "fileCount": 262,
                 "files": [],
                 "sha256": "0" * 64,
             },
@@ -1166,6 +1166,222 @@ private func generatePairingQR() {{
                 .current_source_g6_lane_a_local_dmg_evidence_failures()
             ),
             [],
+        )
+
+        self.assertEqual(
+            (
+                check_docs_hygiene
+                .current_source_g6_lane_a_local_dmg_evidence_failures(
+                    result_bytes=(
+                        check_docs_hygiene
+                        .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_RESULT
+                        .read_bytes()
+                    ),
+                    primary_result_bytes=(
+                        check_docs_hygiene
+                        .CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT
+                        .read_bytes()
+                    ),
+                    uninstall_reinstall_result_bytes=(
+                        check_docs_hygiene
+                        .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_RESULT
+                        .read_bytes()
+                    ),
+                    state_recovery_result_bytes=(
+                        check_docs_hygiene
+                        .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_STATE_RECOVERY_RESULT
+                        .read_bytes()
+                    ),
+                    abrupt_process_result_bytes=(
+                        check_docs_hygiene
+                        .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_ABRUPT_PROCESS_RESULT
+                        .read_bytes()
+                    ),
+                    abrupt_process_receipt_bytes=(
+                        check_docs_hygiene
+                        .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_ABRUPT_PROCESS_RECEIPT
+                        .read_bytes()
+                    ),
+                    idle_resource_result_bytes=(
+                        check_docs_hygiene
+                        .CURRENT_SOURCE_G6_LANE_A_IDLE_RESOURCE_RESULT
+                        .read_bytes()
+                    ),
+                )
+            ),
+            [],
+        )
+
+    def test_current_source_g6_lane_a_idle_resource_matches_closed_contract(
+        self,
+    ) -> None:
+        self.assertEqual(
+            (
+                check_docs_hygiene
+                .current_source_g6_lane_a_idle_resource_evidence_failures()
+            ),
+            [],
+        )
+
+    def test_current_source_g6_lane_a_idle_resource_rejects_drift(
+        self,
+    ) -> None:
+        def canonical_bytes(result: dict[str, object]) -> bytes:
+            return (
+                json.dumps(
+                    result,
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("ascii")
+
+        path = (
+            check_docs_hygiene.CURRENT_SOURCE_G6_LANE_A_IDLE_RESOURCE_RESULT
+        )
+
+        result = json.loads(path.read_text(encoding="ascii"))
+        result["unexpected"] = True
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_idle_resource_evidence_failures(
+                canonical_bytes(result)
+            )
+        )
+        self.assertTrue(
+            any("root keys must be exactly" in failure for failure in failures)
+        )
+
+        result = json.loads(path.read_text(encoding="ascii"))
+        pretty = (json.dumps(result, indent=2) + "\n").encode("ascii")
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_idle_resource_evidence_failures(pretty)
+        )
+        self.assertTrue(
+            any("canonical sorted compact ASCII JSON" in failure for failure in failures)
+        )
+
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_idle_resource_evidence_failures(
+                b'{"schemaVersion":1,"schemaVersion":1}\n'
+            )
+        )
+        self.assertTrue(
+            any("duplicate JSON key" in failure for failure in failures)
+        )
+
+        result = json.loads(path.read_text(encoding="ascii"))
+        result["measurement"]["run"]["samples"][0]["ordinal"] = True
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_idle_resource_evidence_failures(
+                canonical_bytes(result)
+            )
+        )
+        self.assertTrue(
+            any("sample 1 schedule is invalid" in failure for failure in failures)
+        )
+
+        result = json.loads(path.read_text(encoding="ascii"))
+        result["measurement"]["run"]["summary"][
+            "openFileDescriptors"
+        ]["finalDelta"] = 1
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_idle_resource_evidence_failures(
+                canonical_bytes(result)
+            )
+        )
+        self.assertTrue(
+            any("independently recomputed sample summary" in failure for failure in failures)
+        )
+
+    def test_current_source_g6_lane_a_idle_resource_rejects_crossbinding_drift(
+        self,
+    ) -> None:
+        def canonical_bytes(result: dict[str, object]) -> bytes:
+            return (
+                json.dumps(
+                    result,
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("ascii")
+
+        path = (
+            check_docs_hygiene.CURRENT_SOURCE_G6_LANE_A_IDLE_RESOURCE_RESULT
+        )
+        relative = str(path.relative_to(check_docs_hygiene.ROOT))
+
+        result = json.loads(path.read_text(encoding="ascii"))
+        result["release"]["archiveSha256"] = "0" * 64
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_local_dmg_evidence_failures(
+                idle_resource_result_bytes=canonical_bytes(result)
+            )
+        )
+        self.assertTrue(
+            any(
+                relative in failure
+                and "idle-resource release identity must cross-bind" in failure
+                for failure in failures
+            )
+        )
+
+        result = json.loads(path.read_text(encoding="ascii"))
+        result["archiveReadback"]["snapshotFiles"][
+            f"{check_docs_hygiene.LOCAL_RELEASE_ID}.zip"
+        ]["size"] = True
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_local_dmg_evidence_failures(
+                idle_resource_result_bytes=canonical_bytes(result)
+            )
+        )
+        self.assertTrue(
+            any(
+                relative in failure
+                and "idle-resource snapshot identities must cross-bind" in failure
+                for failure in failures
+            )
+        )
+
+        result = json.loads(path.read_text(encoding="ascii"))
+        result["artifact"]["appTree"]["sha256"] = "0" * 64
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_local_dmg_evidence_failures(
+                idle_resource_result_bytes=canonical_bytes(result)
+            )
+        )
+        self.assertTrue(
+            any(
+                relative in failure
+                and "idle-resource app tree must cross-bind" in failure
+                for failure in failures
+            )
+        )
+
+        result = json.loads(path.read_text(encoding="ascii"))
+        result["sourceSnapshot"]["sha256"] = "0" * 64
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_local_dmg_evidence_failures(
+                idle_resource_result_bytes=canonical_bytes(result)
+            )
+        )
+        self.assertTrue(
+            any(
+                relative in failure
+                and "idle-resource source snapshot must cross-bind" in failure
+                for failure in failures
+            )
         )
 
     def test_current_source_g6_lane_a_local_dmg_rejects_drift(
@@ -1277,6 +1493,220 @@ private func generatePairingQR() {{
             any("duplicate JSON key" in failure for failure in failures)
         )
 
+    def test_current_source_g6_lane_a_followups_reject_shape_and_encoding(
+        self,
+    ) -> None:
+        followups = (
+            (
+                "uninstall_reinstall_result_bytes",
+                check_docs_hygiene
+                .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_RESULT,
+            ),
+            (
+                "state_recovery_result_bytes",
+                check_docs_hygiene
+                .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_STATE_RECOVERY_RESULT,
+            ),
+            (
+                "abrupt_process_result_bytes",
+                check_docs_hygiene
+                .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_ABRUPT_PROCESS_RESULT,
+            ),
+            (
+                "abrupt_process_receipt_bytes",
+                check_docs_hygiene
+                .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_ABRUPT_PROCESS_RECEIPT,
+            ),
+        )
+        for keyword, path in followups:
+            with self.subTest(keyword=keyword):
+                result = json.loads(path.read_text(encoding="ascii"))
+                result["unexpected"] = True
+                mutated = (
+                    json.dumps(
+                        result,
+                        ensure_ascii=True,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    )
+                    + "\n"
+                ).encode("ascii")
+                failures = (
+                    check_docs_hygiene
+                    .current_source_g6_lane_a_local_dmg_evidence_failures(
+                        **{keyword: mutated}
+                    )
+                )
+                self.assertTrue(
+                    any("exact closed" in failure for failure in failures)
+                )
+
+                pretty = (json.dumps(result, indent=2) + "\n").encode(
+                    "ascii"
+                )
+                failures = (
+                    check_docs_hygiene
+                    .current_source_g6_lane_a_local_dmg_evidence_failures(
+                        **{keyword: pretty}
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        "not canonical JSON" in failure
+                        for failure in failures
+                    )
+                )
+
+                failures = (
+                    check_docs_hygiene
+                    .current_source_g6_lane_a_local_dmg_evidence_failures(
+                        **{
+                            keyword: (
+                                b'{"schemaVersion":1,"schemaVersion":1}\n'
+                            )
+                        }
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        "duplicate JSON key" in failure
+                        for failure in failures
+                    )
+                )
+
+    def test_current_source_g6_lane_a_followups_reject_crossbinding_drift(
+        self,
+    ) -> None:
+        def canonical_bytes(result: dict[str, object]) -> bytes:
+            return (
+                json.dumps(
+                    result,
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("ascii")
+
+        uninstall_reinstall = json.loads(
+            check_docs_hygiene
+            .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_RESULT
+            .read_text(encoding="ascii")
+        )
+        uninstall_reinstall["installation"]["tree"]["sha256"] = "0" * 64
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_local_dmg_evidence_failures(
+                uninstall_reinstall_result_bytes=canonical_bytes(
+                    uninstall_reinstall
+                )
+            )
+        )
+        self.assertTrue(
+            any("exact closed" in failure for failure in failures)
+        )
+        self.assertTrue(
+            any("installed tree must be identical" in failure for failure in failures)
+        )
+
+        state_recovery = json.loads(
+            check_docs_hygiene
+            .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_STATE_RECOVERY_RESULT
+            .read_text(encoding="ascii")
+        )
+        state_recovery["archiveReadback"]["snapshotFiles"][
+            f"{check_docs_hygiene.LOCAL_RELEASE_ID}.zip"
+        ]["size"] = True
+        state_recovery["uninstall"]["removalCount"] = 3
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_local_dmg_evidence_failures(
+                state_recovery_result_bytes=canonical_bytes(state_recovery)
+            )
+        )
+        self.assertTrue(
+            any("exact closed" in failure for failure in failures)
+        )
+        self.assertTrue(
+            any(
+                "snapshot identities must cross-bind" in failure
+                for failure in failures
+            )
+        )
+        self.assertTrue(
+            any(
+                "uninstall contract must be identical" in failure
+                for failure in failures
+            )
+        )
+
+        abrupt_process = json.loads(
+            check_docs_hygiene
+            .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_ABRUPT_PROCESS_RESULT
+            .read_text(encoding="ascii")
+        )
+        abrupt_process["installation"]["tree"]["sha256"] = "0" * 64
+        abrupt_process["archiveReadback"]["snapshotFiles"][
+            f"{check_docs_hygiene.LOCAL_RELEASE_ID}.zip"
+        ]["size"] = True
+        abrupt_process["uninstall"]["removalCount"] = 3
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_local_dmg_evidence_failures(
+                abrupt_process_result_bytes=canonical_bytes(abrupt_process)
+            )
+        )
+        self.assertTrue(
+            any("exact closed" in failure for failure in failures)
+        )
+        self.assertTrue(
+            any(
+                "snapshot identities must cross-bind" in failure
+                for failure in failures
+            )
+        )
+        self.assertTrue(
+            any(
+                "installed tree must be identical" in failure
+                for failure in failures
+            )
+        )
+        self.assertTrue(
+            any(
+                "uninstall contract must be identical" in failure
+                for failure in failures
+            )
+        )
+
+        receipt = json.loads(
+            check_docs_hygiene
+            .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_ABRUPT_PROCESS_RECEIPT
+            .read_text(encoding="ascii")
+        )
+        receipt["canonicalResult"]["sha256"] = "0" * 64
+        receipt["runs"][1]["size"] += 1
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_lane_a_local_dmg_evidence_failures(
+                abrupt_process_receipt_bytes=canonical_bytes(receipt)
+            )
+        )
+        self.assertTrue(
+            any("exact closed" in failure for failure in failures)
+        )
+        self.assertTrue(
+            any(
+                "must bind the pinned canonical result" in failure
+                for failure in failures
+            )
+        )
+        self.assertTrue(
+            any(
+                "must bind both independent runs" in failure
+                for failure in failures
+            )
+        )
+
     def test_current_source_g6_lane_a_local_dmg_rejects_missing_and_symlink(
         self,
     ) -> None:
@@ -1315,6 +1745,154 @@ private func generatePairingQR() {{
             self.assertTrue(
                 any("must not be a symlink" in failure for failure in failures)
             )
+
+    def test_current_source_g6_lane_a_followups_reject_missing_and_symlink(
+        self,
+    ) -> None:
+        followups = (
+            (
+                "CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_RESULT",
+                check_docs_hygiene
+                .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_RESULT,
+            ),
+            (
+                "CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_STATE_RECOVERY_RESULT",
+                check_docs_hygiene
+                .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_STATE_RECOVERY_RESULT,
+            ),
+            (
+                "CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_ABRUPT_PROCESS_RESULT",
+                check_docs_hygiene
+                .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_ABRUPT_PROCESS_RESULT,
+            ),
+            (
+                "CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_ABRUPT_PROCESS_RECEIPT",
+                check_docs_hygiene
+                .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_ABRUPT_PROCESS_RECEIPT,
+            ),
+            (
+                "CURRENT_SOURCE_G6_LANE_A_IDLE_RESOURCE_RESULT",
+                check_docs_hygiene
+                .CURRENT_SOURCE_G6_LANE_A_IDLE_RESOURCE_RESULT,
+            ),
+        )
+        for constant_name, actual_result in followups:
+            with self.subTest(constant_name=constant_name):
+                with tempfile.TemporaryDirectory(
+                    dir=check_docs_hygiene.ROOT / "dist/lifecycle"
+                ) as temporary:
+                    temporary_root = Path(temporary)
+                    missing_result = temporary_root / "missing.json"
+                    with patch.object(
+                        check_docs_hygiene,
+                        constant_name,
+                        missing_result,
+                    ):
+                        failures = (
+                            check_docs_hygiene
+                            .current_source_g6_lane_a_local_dmg_evidence_failures()
+                        )
+                    self.assertTrue(
+                        any(
+                            "missing current-source" in failure
+                            for failure in failures
+                        )
+                    )
+
+                    symlink_result = temporary_root / "symlink.json"
+                    symlink_result.symlink_to(actual_result)
+                    with patch.object(
+                        check_docs_hygiene,
+                        constant_name,
+                        symlink_result,
+                    ):
+                        failures = (
+                            check_docs_hygiene
+                            .current_source_g6_lane_a_local_dmg_evidence_failures()
+                        )
+                    self.assertTrue(
+                        any(
+                            "must not be a symlink" in failure
+                            for failure in failures
+                        )
+                    )
+
+    def test_lifecycle_source_binding_rejects_historical_successor_mix(
+        self,
+    ) -> None:
+        runner = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_RUNNER
+        )
+        test = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_TEST
+        )
+        expected_sources = {
+            runner,
+            test,
+            check_docs_hygiene.CURRENT_BUILD24_MACOS_LOCAL_DMG_INSTALL_RUNNER,
+            check_docs_hygiene.CURRENT_MACOS_LOCAL_DMG_INSTALL_RUNNER,
+            (
+                check_docs_hygiene
+                .CURRENT_MACOS_ISOLATED_UNINSTALL_REINSTALL_RUNNER
+            ),
+            check_docs_hygiene.CURRENT_MACOS_ISOLATED_UPGRADE_RUNNER,
+        }
+        source_bytes = {path: path.read_bytes() for path in expected_sources}
+        runner_sha256 = hashlib.sha256(source_bytes[runner]).hexdigest()
+        successor_map = dict(
+            check_docs_hygiene
+            .CURRENT_SOURCE_G6_LIFECYCLE_SUCCESSOR_SHA256_BY_PATH
+        )
+        successor_map[runner] = "f" * 64
+        with (
+            patch.object(
+                check_docs_hygiene,
+                (
+                    "CURRENT_BUILD24_MACOS_LOCAL_DMG_UNINSTALL_REINSTALL_"
+                    "EXPECTED_RUNNER_SHA256"
+                ),
+                runner_sha256,
+            ),
+            patch.object(
+                check_docs_hygiene,
+                "CURRENT_SOURCE_G6_LIFECYCLE_SUCCESSOR_SHA256_BY_PATH",
+                successor_map,
+            ),
+            patch.object(
+                check_docs_hygiene,
+                "current_build24_macos_local_dmg_install_evidence_failures",
+                return_value=[],
+            ),
+        ):
+            failures = (
+                check_docs_hygiene
+                .current_build24_macos_local_dmg_uninstall_reinstall_evidence_failures(
+                    source_bytes_by_path=source_bytes
+                )
+            )
+        self.assertTrue(
+            any(
+                "complete historical or current-source G6 successor tuple"
+                in failure
+                for failure in failures
+            )
+        )
+        self.assertFalse(
+            any(
+                str(runner.relative_to(check_docs_hygiene.ROOT)) in failure
+                and "found" in failure
+                for failure in failures
+            )
+        )
+        self.assertFalse(
+            any(
+                str(test.relative_to(check_docs_hygiene.ROOT)) in failure
+                and "found" in failure
+                for failure in failures
+            )
+        )
 
     def test_current_source_g6_primary_rejects_missing_and_symlink(
         self,
@@ -1355,6 +1933,86 @@ private func generatePairingQR() {{
                 any("must not be a symlink" in failure for failure in failures)
             )
 
+    def test_current_source_g6_evidence_rejects_read_time_symlink_swap(
+        self,
+    ) -> None:
+        cases = (
+            (
+                "primary",
+                "dist/reproducibility",
+                "CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT",
+                check_docs_hygiene
+                .CURRENT_SOURCE_G6_REPRODUCIBILITY_RESULT,
+                check_docs_hygiene
+                .current_source_g6_reproducibility_failures,
+            ),
+            (
+                "idle",
+                "dist/lifecycle",
+                "CURRENT_SOURCE_G6_LANE_A_IDLE_RESOURCE_RESULT",
+                check_docs_hygiene
+                .CURRENT_SOURCE_G6_LANE_A_IDLE_RESOURCE_RESULT,
+                check_docs_hygiene
+                .current_source_g6_lane_a_idle_resource_evidence_failures,
+            ),
+        )
+        for (
+            label,
+            temporary_parent,
+            constant_name,
+            source_path,
+            validator,
+        ) in cases:
+            with self.subTest(label=label):
+                with tempfile.TemporaryDirectory(
+                    dir=check_docs_hygiene.ROOT / temporary_parent
+                ) as temporary:
+                    temporary_root = Path(temporary)
+                    candidate = temporary_root / "candidate.json"
+                    identical_target = temporary_root / "identical.json"
+                    source_bytes = source_path.read_bytes()
+                    candidate.write_bytes(source_bytes)
+                    identical_target.write_bytes(source_bytes)
+                    real_read = check_docs_hygiene.os.read
+                    swapped = False
+
+                    def swapping_read(
+                        descriptor: int,
+                        count: int,
+                    ) -> bytes:
+                        nonlocal swapped
+                        chunk = real_read(descriptor, count)
+                        if chunk and not swapped:
+                            candidate.unlink()
+                            candidate.symlink_to(identical_target)
+                            swapped = True
+                        return chunk
+
+                    with (
+                        patch.object(
+                            check_docs_hygiene,
+                            constant_name,
+                            candidate,
+                        ),
+                        patch.object(
+                            check_docs_hygiene.os,
+                            "read",
+                            side_effect=swapping_read,
+                        ),
+                    ):
+                        failures = validator()
+
+                    self.assertTrue(swapped)
+                    self.assertTrue(
+                        any(
+                            "changed during stable no-follow read" in failure
+                            or "must not be a symlink" in failure
+                            or "final path identity differs" in failure
+                            for failure in failures
+                        ),
+                        failures,
+                    )
+
     def test_current_source_g6_lane_a_local_dmg_crossbinds_primary_bytes(
         self,
     ) -> None:
@@ -1365,7 +2023,9 @@ private func generatePairingQR() {{
                 .read_text(encoding="ascii")
             )
         )
-        primary_result["builds"][0]["archive"]["sha256"] = "0" * 64
+        for build in primary_result["builds"]:
+            build["archive"]["sha256"] = "0" * 64
+        primary_result["source"]["sha256"] = "0" * 64
         primary_bytes = (
             json.dumps(
                 primary_result,
@@ -1401,6 +2061,22 @@ private func generatePairingQR() {{
                 for failure in failures
             )
         )
+        idle_relative = str(
+            check_docs_hygiene
+            .CURRENT_SOURCE_G6_LANE_A_IDLE_RESOURCE_RESULT
+            .relative_to(check_docs_hygiene.ROOT)
+        )
+        for binding in (
+            "idle-resource release identity must cross-bind",
+            "idle-resource snapshot identities must cross-bind",
+            "idle-resource source snapshot must cross-bind",
+        ):
+            self.assertTrue(
+                any(
+                    idle_relative in failure and binding in failure
+                    for failure in failures
+                )
+            )
 
     def test_current_source_g6_lane_a_local_dmg_documents_match(
         self,
@@ -1412,6 +2088,18 @@ private func generatePairingQR() {{
             ),
             [],
         )
+        body = (
+            check_docs_hygiene
+            .CURRENT_SOURCE_G6_LANE_A_LOCAL_DMG_DOCUMENT_BODY
+        )
+        normalized_body = " ".join(body.split())
+        for required in (
+            "run bound 266 release inputs",
+            "android-release-byte-readback-nine.json",
+            "six child results followed by the parent",
+            "all seven evidence files",
+        ):
+            self.assertIn(required, normalized_body)
 
     def test_current_source_g6_lane_a_local_dmg_documents_reject_mutation(
         self,
@@ -1432,8 +2120,8 @@ private func generatePairingQR() {{
         }
         readme = documents["README.md"]
         documents["README.md"] = readme.replace(
-            "run bound 254 release inputs",
-            "run bound 255 release inputs",
+            "run bound 266 release inputs",
+            "run bound 267 release inputs",
             1,
         )
         failures = (
@@ -1496,6 +2184,62 @@ private func generatePairingQR() {{
                 for failure in failures
             )
         )
+
+    def test_current_source_g6_default_gate_selectors_are_wired(
+        self,
+    ) -> None:
+        gate_path = (
+            check_docs_hygiene.ROOT / "script/check_no_device_quality.sh"
+        )
+        gate_text = gate_path.read_text(encoding="utf-8")
+        validator = (
+            check_docs_hygiene
+            .current_build24_macos_local_dmg_default_gate_failures
+        )
+        self.assertEqual(validator(gate_text=gate_text), [])
+        selectors = tuple(
+            "script.test_documentation_handoff_guards."
+            "DocumentationHandoffGuardTests."
+            + name
+            for name in (
+                "test_current_source_g6_reproducibility_matches_closed_contract",
+                "test_current_source_g6_reproducibility_rejects_semantic_drift",
+                "test_current_source_g6_reproducibility_rejects_live_source_drift",
+                "test_current_source_g6_reproducibility_rejects_noncanonical_json",
+                "test_current_source_g6_lane_a_local_dmg_matches_closed_contract",
+                "test_current_source_g6_lane_a_idle_resource_matches_closed_contract",
+                "test_current_source_g6_lane_a_idle_resource_rejects_drift",
+                "test_current_source_g6_lane_a_idle_resource_rejects_crossbinding_drift",
+                "test_current_source_g6_lane_a_local_dmg_rejects_drift",
+                "test_current_source_g6_lane_a_local_dmg_rejects_shape_and_encoding",
+                "test_current_source_g6_lane_a_followups_reject_shape_and_encoding",
+                "test_current_source_g6_lane_a_followups_reject_crossbinding_drift",
+                "test_current_source_g6_lane_a_local_dmg_rejects_missing_and_symlink",
+                "test_current_source_g6_lane_a_followups_reject_missing_and_symlink",
+                "test_current_source_g6_primary_rejects_missing_and_symlink",
+                "test_current_source_g6_evidence_rejects_read_time_symlink_swap",
+                "test_current_source_g6_lane_a_local_dmg_crossbinds_primary_bytes",
+                "test_current_source_g6_lane_a_local_dmg_documents_match",
+                "test_current_source_g6_lane_a_local_dmg_documents_reject_mutation",
+                "test_current_source_g6_lane_a_local_dmg_documents_reject_move",
+            )
+        )
+        for selector in selectors:
+            with self.subTest(selector=selector):
+                self.assertEqual(gate_text.count(selector), 1)
+                failures = validator(
+                    gate_text=gate_text.replace(
+                        selector,
+                        "REMOVED_CURRENT_SOURCE_G6_SELECTOR",
+                        1,
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        "current-source G6" in failure
+                        for failure in failures
+                    )
+                )
 
     def test_current_publish_result_semantic_fields_reject_drift(self) -> None:
         source_result = json.loads(
@@ -4803,6 +5547,426 @@ private func generatePairingQR() {{
                         gate_text=gate_source.replace(line, "", 1)
                     )
                 )
+
+    def test_current_build24_reverse_version_readback_result_receipt_and_sources_are_bound(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_build24_reverse_version_readback_source_failures
+        )
+        self.assertEqual(validator(), [])
+        expected = {
+            check_docs_hygiene.CURRENT_BUILD24_REVERSE_VERSION_READBACK_RESULT: (
+                check_docs_hygiene
+                .CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_RESULT_SIZE,
+                check_docs_hygiene
+                .CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_RESULT_SHA256,
+            ),
+            check_docs_hygiene.CURRENT_BUILD24_REVERSE_VERSION_READBACK_RECEIPT: (
+                check_docs_hygiene
+                .CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_RECEIPT_SIZE,
+                check_docs_hygiene
+                .CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_RECEIPT_SHA256,
+            ),
+            check_docs_hygiene.CURRENT_BUILD24_REVERSE_VERSION_READBACK_RUNNER: (
+                check_docs_hygiene
+                .CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_RUNNER_SIZE,
+                check_docs_hygiene
+                .CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_RUNNER_SHA256,
+            ),
+            check_docs_hygiene.CURRENT_BUILD24_REVERSE_VERSION_READBACK_RUNNER_TEST: (
+                check_docs_hygiene
+                .CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_RUNNER_TEST_SIZE,
+                check_docs_hygiene
+                .CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_RUNNER_TEST_SHA256,
+            ),
+            check_docs_hygiene.CURRENT_BUILD24_REVERSE_VERSION_READBACK_CHECKER: (
+                check_docs_hygiene
+                .CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_CHECKER_SIZE,
+                check_docs_hygiene
+                .CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_CHECKER_SHA256,
+            ),
+            check_docs_hygiene.CURRENT_BUILD24_REVERSE_VERSION_READBACK_CHECKER_TEST: (
+                check_docs_hygiene
+                .CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_CHECKER_TEST_SIZE,
+                check_docs_hygiene
+                .CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_CHECKER_TEST_SHA256,
+            ),
+        }
+        source_bytes = {path: path.read_bytes() for path in expected}
+        for path, (expected_size, expected_sha256) in expected.items():
+            payload = source_bytes[path]
+            relative = str(path.relative_to(check_docs_hygiene.ROOT))
+            with self.subTest(path=relative):
+                self.assertEqual(len(payload), expected_size)
+                self.assertEqual(
+                    hashlib.sha256(payload).hexdigest(),
+                    expected_sha256,
+                )
+                mutated = dict(source_bytes)
+                mutated[path] = payload + b"\n"
+                failures = validator(source_bytes_by_path=mutated)
+                self.assertTrue(
+                    any(
+                        relative in row
+                        and "expected current Build 24-to-23-to-24" in row
+                        for row in failures
+                    )
+                )
+
+                missing = dict(source_bytes)
+                missing.pop(path)
+                failures = validator(source_bytes_by_path=missing)
+                self.assertTrue(
+                    any(
+                        "must contain exactly the result, repeatability "
+                        "receipt, runner, runner test, checker, and checker "
+                        "test files" in row
+                        for row in failures
+                    )
+                )
+
+        extra = dict(source_bytes)
+        extra[check_docs_hygiene.ROOT / "unexpected.py"] = b""
+        self.assertTrue(
+            any(
+                "must contain exactly the result, repeatability receipt"
+                in row
+                for row in validator(source_bytes_by_path=extra)
+            )
+        )
+        non_bytes = dict(source_bytes)
+        first_path = next(iter(expected))
+        non_bytes[first_path] = bytearray(  # type: ignore[assignment]
+            non_bytes[first_path]
+        )
+        self.assertTrue(
+            any(
+                "injected source payload must be bytes" in row
+                for row in validator(source_bytes_by_path=non_bytes)
+            )
+        )
+
+        with tempfile.TemporaryDirectory(
+            dir=check_docs_hygiene.ROOT
+        ) as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            target = temporary_root / "result.json"
+            link = temporary_root / "result-link.json"
+            target.write_bytes(
+                source_bytes[
+                    check_docs_hygiene
+                    .CURRENT_BUILD24_REVERSE_VERSION_READBACK_RESULT
+                ]
+            )
+            link.symlink_to(target)
+            with patch.object(
+                check_docs_hygiene,
+                "CURRENT_BUILD24_REVERSE_VERSION_READBACK_RESULT",
+                link,
+            ):
+                failures = validator()
+            self.assertTrue(
+                any(
+                    "non-symlink regular file" in row
+                    for row in failures
+                )
+            )
+
+    def test_current_build24_reverse_version_readback_documents_are_bound(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_build24_reverse_version_readback_document_failures
+        )
+        chain_validator = (
+            check_docs_hygiene
+            .current_build24_macos_clean_home_lifecycle_document_failures
+        )
+        self.assertEqual(validator(), [])
+        self.assertEqual(chain_validator(), [])
+        targets = (
+            "README.md",
+            "docs/roadmap.md",
+            "docs/handoff.md",
+            "docs/progress.md",
+            "docs/qa-evidence.md",
+            "docs/releases/1.0.0-build-24-local-v1.md",
+        )
+        heading_by_relative = {
+            "docs/progress.md": (
+                "## 2026-08-01 macOS Build 24-to-23-to-24 Bounded "
+                "Reverse-Version Readback"
+            ),
+            "docs/qa-evidence.md": (
+                "## 2026-08-01 macOS Build 24-to-23-to-24 Bounded "
+                "Reverse-Version Readback Checklist"
+            ),
+            "docs/releases/1.0.0-build-24-local-v1.md": (
+                "## Post-Archive Build 24-to-23-to-24 Bounded "
+                "Reverse-Version Readback Evidence"
+            ),
+        }
+        start_marker = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_REVERSE_VERSION_READBACK_DOCUMENT_START
+        )
+        end_marker = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_REVERSE_VERSION_READBACK_DOCUMENT_END
+        )
+        expected_body = (
+            check_docs_hygiene
+            .CURRENT_BUILD24_REVERSE_VERSION_READBACK_DOCUMENT_BODY
+        )
+        complete_block = (
+            start_marker + "\n" + expected_body + "\n" + end_marker
+        )
+        self.assertEqual(len(expected_body.encode("utf-8")), 3_381)
+        self.assertEqual(
+            hashlib.sha256(expected_body.encode("utf-8")).hexdigest(),
+            "46a688da4a7a6e04a391bbaf3f8f1366e164a2429544e307c8a4f70785e8c6e3",
+        )
+
+        for relative in targets:
+            text = (
+                check_docs_hygiene.ROOT / relative
+            ).read_text(encoding="utf-8")
+            with self.subTest(relative=relative):
+                start = text.index(start_marker) + len(start_marker)
+                end = text.index(end_marker)
+                self.assertEqual(
+                    text[start:end],
+                    "\n" + expected_body + "\n",
+                )
+                self.assertEqual(text.count(complete_block), 1)
+
+                mutated_block = complete_block.replace(
+                    "fixed-canary compatibility observation",
+                    "bounded fixed-canary compatibility observation",
+                    1,
+                )
+                self.assertNotEqual(mutated_block, complete_block)
+                mutated = text.replace(
+                    complete_block,
+                    mutated_block,
+                    1,
+                )
+                failures = validator(
+                    document_text_by_relative={relative: mutated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in row
+                        and "exact canonical body SHA-256" in row
+                        for row in failures
+                    )
+                )
+
+                extra_boundary_space = text.replace(
+                    start_marker + "\n",
+                    start_marker + "\n\n",
+                    1,
+                )
+                failures = validator(
+                    document_text_by_relative={
+                        relative: extra_boundary_space
+                    }
+                )
+                self.assertTrue(
+                    any(
+                        relative in row
+                        and "exact canonical body SHA-256" in row
+                        for row in failures
+                    )
+                )
+
+                relocated = (
+                    text.replace(complete_block, "", 1).rstrip()
+                    + "\n\n"
+                    + complete_block
+                    + "\n"
+                )
+                failures = validator(
+                    document_text_by_relative={relative: relocated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in row
+                        and "canonical document location" in row
+                        for row in failures
+                    )
+                )
+                self.assertTrue(
+                    chain_validator(
+                        document_text_by_relative={relative: relocated}
+                    )
+                )
+
+                hidden = text.replace(
+                    complete_block,
+                    "<details>\n" + complete_block + "\n</details>",
+                    1,
+                )
+                failures = validator(
+                    document_text_by_relative={relative: hidden}
+                )
+                self.assertTrue(
+                    any(
+                        relative in row
+                        and "hidden Markdown or HTML" in row
+                        for row in failures
+                    )
+                )
+                self.assertTrue(
+                    chain_validator(
+                        document_text_by_relative={relative: hidden}
+                    )
+                )
+
+                for marker in (start_marker, end_marker):
+                    missing_marker = text.replace(marker, "", 1)
+                    failures = validator(
+                        document_text_by_relative={
+                            relative: missing_marker
+                        }
+                    )
+                    self.assertTrue(
+                        any(
+                            relative in row
+                            and "exactly one start and end marker" in row
+                            for row in failures
+                        )
+                    )
+
+                duplicated = text + "\n" + complete_block + "\n"
+                failures = validator(
+                    document_text_by_relative={relative: duplicated}
+                )
+                self.assertTrue(
+                    any(
+                        relative in row
+                        and "exactly one start and end marker" in row
+                        for row in failures
+                    )
+                )
+
+                if relative in heading_by_relative:
+                    heading = heading_by_relative[relative]
+                    mutated_heading = text.replace(
+                        heading,
+                        heading + " Changed",
+                        1,
+                    )
+                    self.assertNotEqual(mutated_heading, text)
+                    failures = validator(
+                        document_text_by_relative={
+                            relative: mutated_heading
+                        }
+                    )
+                    self.assertTrue(
+                        any(
+                            relative in row
+                            and "canonical document location" in row
+                            for row in failures
+                        )
+                    )
+
+    def test_current_build24_reverse_version_readback_validators_are_wired_into_main(
+        self,
+    ) -> None:
+        required_calls = (
+            "current_build24_reverse_version_readback_source_failures",
+            "current_build24_reverse_version_readback_document_failures",
+        )
+        checker_source = (
+            check_docs_hygiene.ROOT / "script/check_docs_hygiene.py"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(
+            _reachable_main_extend_counts(checker_source, required_calls),
+            {name: 1 for name in required_calls},
+        )
+        for name in required_calls:
+            wrapper = (
+                "    failures.extend(\n"
+                f"        {name}()\n"
+                "    )"
+            )
+            self.assertEqual(checker_source.count(wrapper), 1)
+
+        gate_source = (
+            check_docs_hygiene.ROOT / "script/check_no_device_quality.sh"
+        ).read_text(encoding="utf-8")
+        runner_path = (
+            "script/run_macos_isolated_reverse_version_readback_smoke.py"
+        )
+        runner_test_path = (
+            "script/test_run_macos_isolated_reverse_version_readback_smoke.py"
+        )
+        checker_path = (
+            "script/check_macos_isolated_reverse_version_readback_evidence.py"
+        )
+        checker_test_path = (
+            "script/test_check_macos_isolated_reverse_version_readback_evidence.py"
+        )
+        direct_checker = (
+            "run python3 -I -B -S "
+            "script/check_macos_isolated_reverse_version_readback_evidence.py"
+        )
+        syntax_inventory = (
+            gate_source.index("run check_python_syntax \\\n"),
+            gate_source.index("\n\nrun bash -n script/*.sh"),
+        )
+        unit_inventory = (
+            gate_source.index("run python3 -m unittest \\\n"),
+            gate_source.index("\nrun git diff --check"),
+        )
+
+        self.assertEqual(gate_source.count(runner_path), 1)
+        self.assertEqual(gate_source.count(runner_test_path), 2)
+        self.assertEqual(gate_source.count(checker_path), 2)
+        self.assertEqual(gate_source.count(checker_test_path), 2)
+        self.assertEqual(gate_source.count(direct_checker), 1)
+        for path in (
+            runner_path,
+            runner_test_path,
+            checker_path,
+            checker_test_path,
+        ):
+            syntax_line = f"  {path} \\\n"
+            positions = [
+                match.start()
+                for match in re.finditer(re.escape(syntax_line), gate_source)
+            ]
+            self.assertEqual(
+                sum(
+                    syntax_inventory[0] <= position < syntax_inventory[1]
+                    for position in positions
+                ),
+                1,
+            )
+        for path in (runner_test_path, checker_test_path):
+            unit_line = f"  {path} \\\n"
+            positions = [
+                match.start()
+                for match in re.finditer(re.escape(unit_line), gate_source)
+            ]
+            self.assertEqual(len(positions), 2)
+            self.assertEqual(
+                sum(
+                    unit_inventory[0] <= position < unit_inventory[1]
+                    for position in positions
+                ),
+                1,
+            )
+        checker_index = gate_source.index(direct_checker)
+        self.assertGreater(checker_index, unit_inventory[1])
+        self.assertLess(
+            checker_index,
+            gate_source.index("run python3 script/check_docs_hygiene.py"),
+        )
 
     def test_current_build24_macos_idle_resource_stability_result_and_sources_are_bound(
         self,

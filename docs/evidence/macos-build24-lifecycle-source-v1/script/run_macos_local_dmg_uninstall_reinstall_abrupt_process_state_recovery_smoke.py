@@ -746,9 +746,10 @@ def build_result(
     }
 
 
-def exercise(
+def execute(
     *,
     archive_dir: Path,
+    result_path: Path,
     readiness_timeout_seconds: float,
     observation_seconds: float,
     termination_timeout_seconds: float,
@@ -771,6 +772,8 @@ def exercise(
         0.1,
         30.0,
     )
+    same_dmg.require_result_outside_archive(result_path, archive_dir)
+
     version = current_release()
     release_id = release_id_for(version)
     preexisting_applications = installed.list_bundle_applications()
@@ -1172,24 +1175,6 @@ def exercise(
             snapshot_files=snapshot_files,
         )
 
-    return result
-
-
-def execute(
-    *,
-    archive_dir: Path,
-    result_path: Path,
-    readiness_timeout_seconds: float,
-    observation_seconds: float,
-    termination_timeout_seconds: float,
-) -> dict[str, object]:
-    same_dmg.require_result_outside_archive(result_path, archive_dir)
-    result = exercise(
-        archive_dir=archive_dir,
-        readiness_timeout_seconds=readiness_timeout_seconds,
-        observation_seconds=observation_seconds,
-        termination_timeout_seconds=termination_timeout_seconds,
-    )
     state.publish_result(result_path, result)
     return result
 

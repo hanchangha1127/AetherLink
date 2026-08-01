@@ -9,11 +9,12 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import subprocess
 import sys
 import tempfile
 import time
-from typing import Optional
+from typing import BinaryIO, Callable, Optional
 import xml.etree.ElementTree as ET
 
 
@@ -43,7 +44,7 @@ ANDROID_APP_LANGUAGE_LIFECYCLE_METHODS = (
     "api36ExplicitEnglishAndFollowSystemConvergeAcrossRecreation",
 )
 ANDROID_APP_LANGUAGE_LIFECYCLE_SOURCE_SHA256 = (
-    "01f5790886f5fb47647369ad5a003cdd47e5f87bb5a9b2e1dd1e4a17fd4120d0"
+    "23bc579f5163890bffe24d1689cbbd2e3b97fe38934578a29d27c27763899f68"
 )
 ANDROID_CAMERA_CONTROLLER_HOST_TEST_PATH = ROOT / (
     "apps/android/app/src/test/java/com/localagentbridge/android/"
@@ -72,10 +73,10 @@ ANDROID_FONT_SCALE_METHODS = (
     "coreSurfacesRemainUsableAt200PercentFontScale",
 )
 CANONICAL_WORKFLOW_SHA256 = (
-    "56c2417d0294e7da5ff27a904036cae94668699ed83447b2214a72b2858714ef"
+    "bba5b364cc32ccf31f80d0836b0f1bc22ba9444ec8b4400848b25c44b857a97c"
 )
 CANONICAL_PARSED_WORKFLOW_SHA256 = (
-    "563cf577cc6bea780633a99bb73416cfbdafa416cde9d0125056baeef5307305"
+    "5fedce03ffe74a191e15df1385b6019f503856c817530dce46e14cc3e971d86c"
 )
 
 REQUIRED_WORKFLOW_PREFIX = """name: Product quality (non-security subset)
@@ -235,6 +236,111 @@ SWIFT_FILTER = (
     "AetherLinkRenderSmokeTests/"
     "testIncreasedContrastAndColorIndependentHistorySurfacesRender"
 )
+SWIFT_TEST_LIST_PATH = (
+    ROOT / ".build/aetherlink-product-ci-swift-test-list-v1.txt"
+)
+SWIFT_PRODUCT_TEST_COUNT = 217
+SWIFT_PRODUCT_TEST_MANIFEST_SHA256 = (
+    "213a6521b157ed948a38c4877e9242115e7033a1a5194fc4c3dcdcaca09f6be3"
+)
+SWIFT_FOCUSED_TEST_RUN_MARKER_PATH = (
+    ROOT / ".build/aetherlink-product-ci-swift-focused-run-marker-v1.json"
+)
+SWIFT_FOCUSED_TEST_LOG_PATH = (
+    ROOT / ".build/aetherlink-product-ci-swift-focused-console-v1.log"
+)
+SWIFT_FOCUSED_TEST_BINDING_PATH = (
+    ROOT / ".build/aetherlink-product-ci-swift-focused-binding-v1.json"
+)
+SWIFT_FOCUSED_TEST_RUN_MARKER_CONTRACT = (
+    "swift-focused-xctest-run-source-v1"
+)
+SWIFT_FOCUSED_TEST_BINDING_CONTRACT = (
+    "swift-focused-xctest-console-binding-v1"
+)
+SWIFT_FOCUSED_TEST_MAX_LOG_BYTES = 16 * 1024 * 1024
+SWIFT_FOCUSED_TEST_FUTURE_MTIME_TOLERANCE_NS = 5_000_000_000
+SWIFT_FOCUSED_PACKAGE_MAX_BYTES = 512 * 1024
+SWIFT_FOCUSED_PACKAGE_DUMP_MAX_BYTES = 2 * 1024 * 1024
+SWIFT_FOCUSED_PACKAGE_DUMP_TIMEOUT_SECONDS = 15
+SWIFT_FOCUSED_PACKAGE_PATH = ROOT / "Package.swift"
+SWIFT_FOCUSED_PACKAGE_DUMP_COMMAND = (
+    "swift",
+    "package",
+    "dump-package",
+)
+SWIFT_FOCUSED_PACKAGE_TARGETS = (
+    ("regular", "P2PNATContracts", "apps/macos/P2PNATContracts/Sources"),
+    ("regular", "P2PNATConformance", "apps/macos/P2PNATConformance/Sources"),
+    ("regular", "RelayServerCore", "apps/macos/RelayServerCore/Sources"),
+    ("regular", "BridgeProtocol", "apps/macos/Protocol/Sources"),
+    ("regular", "TrustedDevices", "apps/macos/TrustedDevices/Sources"),
+    ("regular", "Pairing", "apps/macos/Pairing/Sources"),
+    ("regular", "Transport", "apps/macos/Transport/Sources"),
+    ("regular", "OllamaBackend", "apps/macos/OllamaBackend/Sources"),
+    ("regular", "LMStudioBackend", "apps/macos/LMStudioBackend/Sources"),
+    ("regular", "DocumentIngestion", "apps/macos/DocumentIngestion/Sources"),
+    ("regular", "CompanionCore", "apps/macos/CompanionCore/Sources"),
+    (
+        "executable",
+        "LocalAgentBridge",
+        "apps/macos/LocalAgentBridgeApp/Sources",
+    ),
+    (
+        "executable",
+        "RuntimeDevServer",
+        "apps/macos/RuntimeDevServer/Sources",
+    ),
+    ("executable", "AetherLinkRelay", "apps/macos/AetherLinkRelay/Sources"),
+    (
+        "executable",
+        "RuntimeChatSQLiteCrossProcessQA",
+        "apps/macos/RuntimeChatSQLiteCrossProcessQA/Sources",
+    ),
+    ("test", "P2PNATContractsTests", "apps/macos/P2PNATContracts/Tests"),
+    (
+        "test",
+        "P2PNATConformanceTests",
+        "apps/macos/P2PNATConformance/Tests",
+    ),
+    ("test", "RelayServerCoreTests", "apps/macos/RelayServerCore/Tests"),
+    ("test", "BridgeProtocolTests", "apps/macos/Protocol/Tests"),
+    ("test", "TrustedDevicesTests", "apps/macos/TrustedDevices/Tests"),
+    ("test", "PairingTests", "apps/macos/Pairing/Tests"),
+    ("test", "OllamaBackendTests", "apps/macos/OllamaBackend/Tests"),
+    ("test", "TransportTests", "apps/macos/Transport/Tests"),
+    ("test", "LMStudioBackendTests", "apps/macos/LMStudioBackend/Tests"),
+    ("test", "CompanionCoreTests", "apps/macos/CompanionCore/Tests"),
+    (
+        "test",
+        "LocalAgentBridgeTests",
+        "apps/macos/LocalAgentBridgeApp/Tests",
+    ),
+    (
+        "test",
+        "DocumentIngestionTests",
+        "apps/macos/DocumentIngestion/Tests",
+    ),
+)
+SWIFT_FOCUSED_PACKAGE_SOURCE_PATHS = tuple(
+    target_path
+    for _, _, target_path in SWIFT_FOCUSED_PACKAGE_TARGETS
+)
+SWIFT_FOCUSED_RESULT_EXACT_FILES = (
+    Path(__file__).resolve(),
+    WORKFLOW_PATH,
+    SWIFT_FOCUSED_PACKAGE_PATH,
+)
+SWIFT_FOCUSED_RESULT_SOURCE_ROOTS = tuple(
+    ROOT / relative_path
+    for relative_path in SWIFT_FOCUSED_PACKAGE_SOURCE_PATHS
+)
+SWIFT_FOCUSED_RUN_COMMAND = (
+    "swift",
+    "test",
+    "--filter",
+    SWIFT_FILTER,
+)
 
 ANDROID_TESTS = (
     "com.localagentbridge.android.AetherLinkThemeNoDeviceComposeTest",
@@ -281,11 +387,78 @@ ANDROID_TESTS = (
     ),
 )
 
+ANDROID_MAIN_FULL_TESTS = (
+    "com.localagentbridge.android.AppNavigationTest",
+    (
+        "com.localagentbridge.android."
+        "AndroidAppLanguagePlatformLifecycleTest"
+    ),
+    "com.localagentbridge.android.ResearchNotebookDrawerTest",
+    "com.localagentbridge.android.PairingQrScanResultTest",
+    "com.localagentbridge.android.AetherLinkThemeNoDeviceComposeTest",
+    (
+        "com.localagentbridge.android.ui."
+        "AndroidCoreSurfaceFontScaleQualificationTest"
+    ),
+    (
+        "com.localagentbridge.android."
+        "PairingQrScannerChromeNoDeviceComposeTest"
+    ),
+    (
+        "com.localagentbridge.android."
+        "PairingQrCameraPermissionControllerHostApiMatrixTest"
+    ),
+    (
+        "com.localagentbridge.android."
+        "PairingQrCameraPermissionActivityRecreationTest"
+    ),
+    (
+        "com.localagentbridge.android.ui."
+        "ClientScreensNoDeviceComposeTest"
+    ),
+    "com.localagentbridge.android.AndroidBackupPolicyResourceTest",
+    (
+        "com.localagentbridge.android.runtime."
+        "RuntimeClientViewModelRelayIntegrationTest"
+    ),
+    (
+        "com.localagentbridge.android.runtime."
+        "RuntimeClientViewModelProductionDeadlineTest"
+    ),
+    (
+        "com.localagentbridge.android.runtime."
+        "AndroidProductionRuntimeChannelComposerTest"
+    ),
+    (
+        "com.localagentbridge.android.runtime."
+        "AndroidProductionRuntimeActivationControllerTest"
+    ),
+    (
+        "com.localagentbridge.android.runtime."
+        "RuntimeLocalStoreTest"
+    ),
+    (
+        "com.localagentbridge.android.runtime."
+        "RuntimeClientViewModelTest"
+    ),
+    (
+        "com.localagentbridge.android.runtime."
+        "RuntimeClientChatSessionMutationFailureTest"
+    ),
+    (
+        "com.localagentbridge.android.runtime."
+        "RuntimeAttachmentPromptResourceTest"
+    ),
+)
+
 ANDROID_TASKS = (
     ":app:compileDebugKotlin",
     ":app:compileDebugUnitTestKotlin",
     ":app:testDebugUnitTest",
+    ":app:compileDebugKotlin",
+    ":app:testDebugUnitTest",
     ":app:assembleRelease",
+    ":app:bundleRelease",
     ":app:lintRelease",
 )
 
@@ -399,6 +572,9 @@ ANDROID_PRODUCT_TEST_RESULTS = (
             "chatScreenSessionBoundaryResetsLatestWhileSameSessionUpdatesKeepPosition",
         ),
     ),
+)
+ANDROID_PRODUCT_TEST_CASE_MANIFEST_SHA256 = (
+    "b0dc7a73bddfead85c8f92be523442e5eaf5ae42740e1a99478cba6ace2909dd"
 )
 
 ANDROID_FULL_TEST_RESULTS = (
@@ -589,11 +765,30 @@ ANDROID_RESULT_FRESHNESS_ROOTS = (
     ROOT / "apps/android/core/transport/src/main",
 )
 
+SWIFT_TEST_SELECTION_STEP_BODY = (
+    "        run: |\n"
+    "          swift test list > "
+    ".build/aetherlink-product-ci-swift-test-list-v1.txt\n"
+    "          python3 -B script/check_product_ci.py "
+    "--swift-test-selection\n"
+    "          python3 -B script/check_product_ci.py "
+    "--prepare-swift-focused-test-run\n"
+)
+
 SWIFT_TEST_STEP_BODY = (
     "        run: >-\n"
-    "          swift test\n"
-    "          --filter\n"
+    "          python3 -B script/check_product_ci.py\n"
+    "          --run-swift-focused-tests\n"
+    "          --swift-focused-filter\n"
     f"          '{SWIFT_FILTER}'\n"
+)
+
+SWIFT_TEST_RESULT_STEP_BODY = (
+    "        run: |\n"
+    "          python3 -B script/check_product_ci.py "
+    "--write-swift-focused-test-binding\n"
+    "          python3 -B script/check_product_ci.py "
+    "--swift-focused-test-results\n"
 )
 
 ANDROID_TEST_STEP_BODY = (
@@ -613,9 +808,42 @@ ANDROID_TEST_RESULT_STEP_BODY = (
     "--android-test-results\n"
 )
 
-ANDROID_RELEASE_STEP_BODY = (
+ANDROID_MAIN_FULL_PREPARE_STEP_BODY = (
     "        if: >-\n"
     f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: >-\n"
+    "          python3 -B script/check_product_ci.py\n"
+    "          --prepare-android-full-test-run\n"
+)
+
+ANDROID_MAIN_FULL_TEST_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: >-\n"
+    "          ./gradlew\n"
+    "          --no-daemon\n"
+    "          --console=plain\n"
+    "          --rerun-tasks\n"
+    "          -Pkotlin.incremental=false\n"
+    "          :app:compileDebugKotlin\n"
+    "          :app:testDebugUnitTest\n"
+    + "".join(
+        f"          --tests {test}\n"
+        for test in ANDROID_MAIN_FULL_TESTS
+    )
+)
+
+ANDROID_MAIN_FULL_RESULT_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: |\n"
+    "          python3 -B script/check_product_ci.py "
+    "--write-android-full-test-binding\n"
+    "          python3 -B script/check_product_ci.py "
+    "--android-full-test-results\n"
+)
+
+ANDROID_RELEASE_STEP_BODY = (
     "        run: >-\n"
     "          ./gradlew\n"
     "          --no-daemon\n"
@@ -623,7 +851,14 @@ ANDROID_RELEASE_STEP_BODY = (
     "          -PaetherlinkStrictReleaseDependencyLocks=true\n"
     "          -Pkotlin.incremental=false\n"
     "          :app:assembleRelease\n"
+    "          :app:bundleRelease\n"
     "          :app:lintRelease\n"
+)
+
+ANDROID_RELEASE_READBACK_STEP_BODY = (
+    "        run: >-\n"
+    "          python3 -B script/check_release_artifact_archive.py\n"
+    "          --android-build-outputs\n"
 )
 
 MACOS_JOB_PREAMBLE = (
@@ -689,7 +924,15 @@ MACOS_STEPS = (
         "Compile macOS app",
         "        run: swift build --product AetherLink\n",
     ),
+    (
+        "Verify focused Swift test selection",
+        SWIFT_TEST_SELECTION_STEP_BODY,
+    ),
     ("Run focused product units", SWIFT_TEST_STEP_BODY),
+    (
+        "Bind and verify focused Swift test results",
+        SWIFT_TEST_RESULT_STEP_BODY,
+    ),
     (
         "Compile macOS Release app on main",
         "        if: >-\n"
@@ -725,6 +968,7 @@ ANDROID_STEPS = (
         "          java -version\n"
         '          test -d "$ANDROID_HOME/platforms/android-36"\n'
         '          test -d "$ANDROID_HOME/build-tools/36.0.0"\n'
+        '          test -d "$ANDROID_HOME/ndk/28.2.13676358"\n'
         "          ./gradlew --version\n",
     ),
     (
@@ -741,8 +985,24 @@ ANDROID_STEPS = (
         ANDROID_TEST_RESULT_STEP_BODY,
     ),
     (
-        "Compile and lint Android Release app on main",
+        "Prepare complete Android app units on main",
+        ANDROID_MAIN_FULL_PREPARE_STEP_BODY,
+    ),
+    (
+        "Run complete Android app units on main",
+        ANDROID_MAIN_FULL_TEST_STEP_BODY,
+    ),
+    (
+        "Bind and verify complete Android app units on main",
+        ANDROID_MAIN_FULL_RESULT_STEP_BODY,
+    ),
+    (
+        "Compile and lint Android Release app",
         ANDROID_RELEASE_STEP_BODY,
+    ),
+    (
+        "Read back Android Release build outputs",
+        ANDROID_RELEASE_READBACK_STEP_BODY,
     ),
 )
 
@@ -771,7 +1031,6 @@ FORBIDDEN_SCOPE_PATTERNS = {
     "repository push": r"\bgit\s+push\b",
     "macOS signing": r"\bcodesign\b|\bnotarytool\b",
     "Android signing": r"\bjarsigner\b|\bapksigner\b",
-    "Android bundle signing path": r":app:bundleRelease\b",
     "mixed aggregate gate": r"\bcheck_no_device_quality(?:\.sh)?\b",
     "excluded checker": (
         r"\bcheck_(?:production_security|p2p_nat_security|"
@@ -1112,7 +1371,14 @@ def workflow_failures(
             "python3 -B script/check_app_icons.py",
             "python3 -B script/check_license.py",
             "run: swift build --product AetherLink",
+            "swift test list > "
+            ".build/aetherlink-product-ci-swift-test-list-v1.txt",
+            "python3 -B script/check_product_ci.py --swift-test-selection",
+            "--prepare-swift-focused-test-run",
+            "--run-swift-focused-tests",
             f"'{SWIFT_FILTER}'",
+            "--write-swift-focused-test-binding",
+            "--swift-focused-test-results",
             MAIN_RELEASE_CONDITION,
             "run: swift build -c release --product AetherLink",
         ),
@@ -1135,15 +1401,38 @@ def workflow_failures(
             ":app:testDebugUnitTest",
             *tuple(f"--tests {test}" for test in ANDROID_TESTS),
             "python3 -B script/check_product_ci.py --android-test-results",
+            "--prepare-android-full-test-run",
+            "--rerun-tasks",
+            *tuple(
+                f"--tests {test}" for test in ANDROID_MAIN_FULL_TESTS
+            ),
+            "--write-android-full-test-binding",
+            "--android-full-test-results",
             MAIN_RELEASE_CONDITION,
             "-PaetherlinkStrictReleaseDependencyLocks=true",
             ":app:assembleRelease",
+            ":app:bundleRelease",
             ":app:lintRelease",
+            "python3 -B script/check_release_artifact_archive.py",
+            "--android-build-outputs",
         ),
     )
 
     if workflow.count("swift test") != 1:
-        failures.append("workflow must contain one focused Swift test command")
+        failures.append(
+            "workflow must contain one direct Swift test-list command; the "
+            "focused execution must use the bounded result runner"
+        )
+    for command in (
+        "--prepare-swift-focused-test-run",
+        "--run-swift-focused-tests",
+        "--write-swift-focused-test-binding",
+        "--swift-focused-test-results",
+    ):
+        if workflow.count(command) != 1:
+            failures.append(
+                f"workflow must invoke {command} exactly once"
+            )
     product_copy_command = (
         "python3 -B script/check_copy_hygiene.py --product-copy-only"
     )
@@ -1151,22 +1440,68 @@ def workflow_failures(
         failures.append(
             "workflow must contain one exact non-security product copy command"
         )
-    if f"'{SWIFT_FILTER}'" not in macos:
-        failures.append("Swift tests must use the exact product allowlist")
+    release_readback_command = (
+        "python3 -B script/check_release_artifact_archive.py"
+    )
+    if (
+        workflow.count(release_readback_command) != 1
+        or workflow.count("--android-build-outputs") != 1
+    ):
+        failures.append(
+            "workflow must contain one exact Android Release readback command"
+        )
+    if (
+        named_step_body(macos, "Verify focused Swift test selection")
+        != SWIFT_TEST_SELECTION_STEP_BODY
+    ):
+        failures.append(
+            "Swift focused test selection step must match the exact command "
+            "body"
+        )
     if (
         named_step_body(macos, "Run focused product units")
         != SWIFT_TEST_STEP_BODY
     ):
         failures.append("Swift focused test step must match the exact command body")
-    if len(re.findall(r"(?<![\w-])--filter(?:\s|=)", macos)) != 1:
-        failures.append("Swift tests must contain exactly one filter option")
-    if re.search(r"(?<![\w-])--skip(?:\s|=)", macos):
-        failures.append("Swift focused tests must not use a skip option")
+    if (
+        named_step_body(
+            macos,
+            "Bind and verify focused Swift test results",
+        )
+        != SWIFT_TEST_RESULT_STEP_BODY
+    ):
+        failures.append(
+            "Swift focused test result step must match the exact command body"
+        )
+    if SWIFT_FOCUSED_RUN_COMMAND != (
+        "swift",
+        "test",
+        "--filter",
+        SWIFT_FILTER,
+    ):
+        failures.append(
+            "Swift focused result runner must use the exact serial product "
+            "allowlist command"
+        )
+    if (
+        SWIFT_FOCUSED_PACKAGE_SOURCE_PATHS
+        != tuple(path for _, _, path in SWIFT_FOCUSED_PACKAGE_TARGETS)
+        or SWIFT_FOCUSED_RESULT_SOURCE_ROOTS
+        != tuple(ROOT / path for path in SWIFT_FOCUSED_PACKAGE_SOURCE_PATHS)
+        or SWIFT_FOCUSED_PACKAGE_DUMP_COMMAND
+        != ("swift", "package", "dump-package")
+    ):
+        failures.append(
+            "Swift focused package roots must derive from the exact semantic "
+            "target contract"
+        )
 
     strict_flag = "-PaetherlinkStrictReleaseDependencyLocks=true"
-    release_index = android.find(MAIN_RELEASE_CONDITION)
+    release_index = android.find(
+        "      - name: Compile and lint Android Release app\n"
+    )
     if release_index < 0:
-        failures.append("Android Release step must be main-push-only")
+        failures.append("Android Release step must run on pull requests and main")
     else:
         if strict_flag in android[:release_index]:
             failures.append(
@@ -1178,8 +1513,10 @@ def workflow_failures(
     android_tests = tuple(
         re.findall(r"(?m)^\s+--tests\s+([^\s#]+)\s*$", android)
     )
-    if android_tests != ANDROID_TESTS:
-        failures.append("Android product tests must use the exact allowlist")
+    if android_tests != ANDROID_TESTS + ANDROID_MAIN_FULL_TESTS:
+        failures.append(
+            "Android focused and complete tests must use the exact allowlists"
+        )
 
     if (
         named_step_body(
@@ -1204,12 +1541,56 @@ def workflow_failures(
     if (
         named_step_body(
             android,
-            "Compile and lint Android Release app on main",
+            "Prepare complete Android app units on main",
+        )
+        != ANDROID_MAIN_FULL_PREPARE_STEP_BODY
+    ):
+        failures.append(
+            "Android complete test preparation step must match the exact "
+            "main-only command body"
+        )
+    if (
+        named_step_body(
+            android,
+            "Run complete Android app units on main",
+        )
+        != ANDROID_MAIN_FULL_TEST_STEP_BODY
+    ):
+        failures.append(
+            "Android complete test step must match the exact main-only "
+            "command body"
+        )
+    if (
+        named_step_body(
+            android,
+            "Bind and verify complete Android app units on main",
+        )
+        != ANDROID_MAIN_FULL_RESULT_STEP_BODY
+    ):
+        failures.append(
+            "Android complete result step must match the exact main-only "
+            "command body"
+        )
+    if (
+        named_step_body(
+            android,
+            "Compile and lint Android Release app",
         )
         != ANDROID_RELEASE_STEP_BODY
     ):
         failures.append(
             "Android Release step must match the exact command body"
+        )
+    if (
+        named_step_body(
+            android,
+            "Read back Android Release build outputs",
+        )
+        != ANDROID_RELEASE_READBACK_STEP_BODY
+    ):
+        failures.append(
+            "Android Release readback step must match the exact "
+            "command body"
         )
 
     android_tasks = tuple(
@@ -1330,13 +1711,58 @@ def self_test(workflow: str) -> list[str]:
                 "      - run: swift build -c release --product AetherLink",
                 1,
             ),
-            "one focused Swift test command",
+            "one direct Swift test-list command",
+        ),
+        "missing Swift test selection step": (
+            workflow.replace(
+                "      - name: Verify focused Swift test selection\n"
+                f"{SWIFT_TEST_SELECTION_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "Swift test selection list bypass": (
+            workflow.replace(
+                "          swift test list > "
+                ".build/aetherlink-product-ci-swift-test-list-v1.txt\n",
+                "          printf '' > "
+                ".build/aetherlink-product-ci-swift-test-list-v1.txt\n",
+                1,
+            ),
+            "selection step must match the exact command body",
+        ),
+        "missing Swift test selection checker": (
+            workflow.replace(
+                "          python3 -B script/check_product_ci.py "
+                "--swift-test-selection\n",
+                "",
+                1,
+            ),
+            "selection step must match the exact command body",
+        ),
+        "missing Swift focused source marker": (
+            workflow.replace(
+                "          python3 -B script/check_product_ci.py "
+                "--prepare-swift-focused-test-run\n",
+                "",
+                1,
+            ),
+            "selection step must match the exact command body",
+        ),
+        "bypassed Swift focused result runner": (
+            workflow.replace(
+                "          --run-swift-focused-tests\n",
+                "          --swift-test-selection\n",
+                1,
+            ),
+            "focused test step must match the exact command body",
         ),
         "extra Swift filter": (
             workflow.replace(
-                "          --filter\n",
-                "          --filter ExtraProductTests\n"
-                "          --filter\n",
+                "          --swift-focused-filter\n",
+                "          --swift-focused-filter ExtraProductTests\n"
+                "          --swift-focused-filter\n",
                 1,
             ),
             "exact command body",
@@ -1673,12 +2099,82 @@ def self_test(workflow: str) -> list[str]:
         ),
         "Swift skip option": (
             workflow.replace(
-                "          --filter\n",
+                "          --swift-focused-filter\n",
                 "          --skip '.*'\n"
-                "          --filter\n",
+                "          --swift-focused-filter\n",
                 1,
             ),
-            "skip option",
+            "exact command body",
+        ),
+        "missing Swift focused binding writer": (
+            workflow.replace(
+                "          python3 -B script/check_product_ci.py "
+                "--write-swift-focused-test-binding\n",
+                "",
+                1,
+            ),
+            "result step must match the exact command body",
+        ),
+        "missing Swift focused independent readback": (
+            workflow.replace(
+                "          python3 -B script/check_product_ci.py "
+                "--swift-focused-test-results\n",
+                "",
+                1,
+            ),
+            "result step must match the exact command body",
+        ),
+        "reversed Swift focused binding and readback": (
+            workflow.replace(
+                (
+                    "          python3 -B script/check_product_ci.py "
+                    "--write-swift-focused-test-binding\n"
+                    "          python3 -B script/check_product_ci.py "
+                    "--swift-focused-test-results\n"
+                ),
+                (
+                    "          python3 -B script/check_product_ci.py "
+                    "--swift-focused-test-results\n"
+                    "          python3 -B script/check_product_ci.py "
+                    "--write-swift-focused-test-binding\n"
+                ),
+                1,
+            ),
+            "result step must match the exact command body",
+        ),
+        "missing Android complete preparation step": (
+            workflow.replace(
+                "      - name: Prepare complete Android app units on main\n"
+                f"{ANDROID_MAIN_FULL_PREPARE_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "missing Android complete rerun requirement": (
+            workflow.replace(
+                "          --rerun-tasks\n",
+                "",
+                1,
+            ),
+            "complete test step must match the exact main-only command body",
+        ),
+        "missing Android complete selector": (
+            workflow.replace(
+                f"          --tests {ANDROID_MAIN_FULL_TESTS[0]}\n",
+                "",
+                1,
+            ),
+            "exact allowlists",
+        ),
+        "missing Android complete binding writer": (
+            workflow.replace(
+                "          python3 -B script/check_product_ci.py "
+                "--write-android-full-test-binding\n",
+                "",
+                1,
+            ),
+            "complete result step must match the exact main-only command body",
         ),
         "missing Android test selector": (
             workflow.replace(
@@ -1772,10 +2268,10 @@ def self_test(workflow: str) -> list[str]:
         ),
         "extra unfiltered Android step": (
             workflow.replace(
-                "      - name: Compile and lint Android Release app on main\n",
+                "      - name: Compile and lint Android Release app\n",
                 "      - name: Run unfiltered Android units\n"
                 "        run: ./gradlew :app:testDebugUnitTest\n"
-                "      - name: Compile and lint Android Release app on main\n",
+                "      - name: Compile and lint Android Release app\n",
                 1,
             ),
             "steps must match the exact names and order",
@@ -1883,14 +2379,72 @@ def self_test(workflow: str) -> list[str]:
             ),
             "Android signing report",
         ),
-        "Android bundle path": (
+        "missing Android bundle task": (
             workflow.replace(
-                "          :app:assembleRelease\n",
-                "          :app:assembleRelease\n"
+                "          :app:bundleRelease\n",
+                "",
+                1,
+            ),
+            "Android Release step must match the exact command body",
+        ),
+        "duplicate Android bundle task": (
+            workflow.replace(
+                "          :app:bundleRelease\n",
+                "          :app:bundleRelease\n"
                 "          :app:bundleRelease\n",
                 1,
             ),
-            "Android bundle signing path",
+            "Android Release step must match the exact command body",
+        ),
+        "reordered Android bundle task": (
+            workflow.replace(
+                "          :app:assembleRelease\n"
+                "          :app:bundleRelease\n",
+                "          :app:bundleRelease\n"
+                "          :app:assembleRelease\n",
+                1,
+            ),
+            "Android Release step must match the exact command body",
+        ),
+        "missing Android Release readback step": (
+            workflow.replace(
+                "      - name: Read back Android Release build outputs\n"
+                f"{ANDROID_RELEASE_READBACK_STEP_BODY}",
+                "",
+                1,
+            ),
+            "one exact Android Release readback command",
+        ),
+        "wrong Android Release readback mode": (
+            workflow.replace(
+                "          --android-build-outputs\n",
+                "          --historical\n",
+                1,
+            ),
+            "one exact Android Release readback command",
+        ),
+        "Android Release readback before build": (
+            workflow.replace(
+                "      - name: Compile and lint Android Release app\n"
+                f"{ANDROID_RELEASE_STEP_BODY}"
+                "      - name: Read back Android Release build outputs\n"
+                f"{ANDROID_RELEASE_READBACK_STEP_BODY}",
+                "      - name: Read back Android Release build outputs\n"
+                f"{ANDROID_RELEASE_READBACK_STEP_BODY}"
+                "      - name: Compile and lint Android Release app\n"
+                f"{ANDROID_RELEASE_STEP_BODY}",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "suppressed Android Release readback failure": (
+            workflow.replace(
+                "      - name: Read back Android Release build outputs\n",
+                "      - name: Read back Android Release build outputs\n"
+                "        continue-on-error: true\n",
+                1,
+            ),
+            "ignored failure",
         ),
         "live backend enablement": (
             workflow.replace(
@@ -1969,6 +2523,195 @@ def self_test(workflow: str) -> list[str]:
     return failures
 
 
+def swift_test_selection_manifest_sha256(
+    test_names: tuple[str, ...],
+) -> str:
+    payload = json.dumps(
+        sorted(test_names),
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("ascii")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def swift_selected_test_names(
+    *,
+    test_list_path: Path = SWIFT_TEST_LIST_PATH,
+    filter_pattern: str = SWIFT_FILTER,
+) -> tuple[tuple[str, ...] | None, bytes | None, list[str]]:
+    try:
+        test_list_bytes = test_list_path.read_bytes()
+        test_list = test_list_bytes.decode("utf-8")
+    except (OSError, UnicodeError) as error:
+        return None, None, [
+            f"{path_label(test_list_path)} cannot be read: {error}"
+        ]
+
+    failures: list[str] = []
+    if b"\r" in test_list_bytes:
+        failures.append("Swift test list must use LF line endings")
+    if not test_list_bytes.endswith(b"\n"):
+        failures.append("Swift test list must end with LF")
+
+    test_names = tuple(test_list.splitlines())
+    if not test_names:
+        failures.append("Swift test list must not be empty")
+        return None, test_list_bytes, failures
+    malformed = tuple(
+        test_name
+        for test_name in test_names
+        if (
+            not test_name
+            or test_name != test_name.strip()
+            or re.fullmatch(r"[^\s/]+/[^\s/]+", test_name) is None
+        )
+    )
+    if malformed:
+        failures.append(
+            "Swift test list must contain only canonical test specifiers"
+        )
+    if len(set(test_names)) != len(test_names):
+        failures.append("Swift test list must not contain duplicate specifiers")
+
+    try:
+        selected_tests = tuple(
+            test_name
+            for test_name in test_names
+            if re.search(filter_pattern, test_name)
+        )
+    except re.error as error:
+        failures.append(f"Swift product test filter is invalid: {error}")
+        return None, test_list_bytes, failures
+    if failures:
+        return None, test_list_bytes, failures
+    return selected_tests, test_list_bytes, []
+
+
+def swift_test_selection_failures(
+    *,
+    test_list_path: Path = SWIFT_TEST_LIST_PATH,
+    filter_pattern: str = SWIFT_FILTER,
+    expected_count: int = SWIFT_PRODUCT_TEST_COUNT,
+    expected_manifest_sha256: str = (
+        SWIFT_PRODUCT_TEST_MANIFEST_SHA256
+    ),
+) -> list[str]:
+    selected_tests, _, failures = swift_selected_test_names(
+        test_list_path=test_list_path,
+        filter_pattern=filter_pattern,
+    )
+    if selected_tests is None:
+        return failures
+    if len(selected_tests) != expected_count:
+        failures.append(
+            "Swift product test selection must match exactly "
+            f"{expected_count} tests, found {len(selected_tests)}"
+        )
+    actual_manifest_sha256 = swift_test_selection_manifest_sha256(
+        selected_tests
+    )
+    if actual_manifest_sha256 != expected_manifest_sha256:
+        failures.append(
+            "Swift product test selection manifest SHA-256 must match the "
+            "exact contract"
+        )
+    return failures
+
+
+def swift_test_selection_self_test() -> list[str]:
+    failures: list[str] = []
+    fixture_filter = r"FixtureSuite/"
+    fixture_names = (
+        "FixtureTests.FixtureSuite/testOne",
+        "FixtureTests.FixtureSuite/testTwo",
+        "FixtureTests.UnselectedSuite/testThree",
+    )
+    fixture_manifest = swift_test_selection_manifest_sha256(
+        fixture_names[:2]
+    )
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix="aetherlink-swift-selection-",
+        ) as temporary:
+            fixture_path = Path(temporary) / "tests.txt"
+
+            def fixture_failures(text: str) -> list[str]:
+                fixture_path.write_bytes(text.encode("utf-8"))
+                return swift_test_selection_failures(
+                    test_list_path=fixture_path,
+                    filter_pattern=fixture_filter,
+                    expected_count=2,
+                    expected_manifest_sha256=fixture_manifest,
+                )
+
+            valid_text = "\n".join(fixture_names) + "\n"
+            valid_failures = fixture_failures(valid_text)
+            if valid_failures:
+                failures.append(
+                    "valid Swift selection fixture was rejected: "
+                    + "; ".join(valid_failures)
+                )
+
+            missing_failures = fixture_failures(
+                valid_text.replace(
+                    "FixtureTests.FixtureSuite/testTwo\n",
+                    "",
+                    1,
+                )
+            )
+            if not any(
+                "must match exactly 2 tests" in failure
+                for failure in missing_failures
+            ):
+                failures.append(
+                    "missing Swift selected test was not rejected"
+                )
+
+            substitution_failures = fixture_failures(
+                valid_text.replace("testTwo", "sameCountSubstitution", 1)
+            )
+            if not any(
+                "selection manifest SHA-256 must match" in failure
+                for failure in substitution_failures
+            ):
+                failures.append(
+                    "same-count Swift selected test substitution was not "
+                    "rejected"
+                )
+
+            duplicate_failures = fixture_failures(
+                fixture_names[0] + "\n" + valid_text
+            )
+            if not any(
+                "duplicate specifiers" in failure
+                for failure in duplicate_failures
+            ):
+                failures.append("duplicate Swift test was not rejected")
+
+            malformed_failures = fixture_failures(
+                valid_text + "[0/1] Planning build\n"
+            )
+            if not any(
+                "canonical test specifiers" in failure
+                for failure in malformed_failures
+            ):
+                failures.append("malformed Swift test list was not rejected")
+
+            missing_lf_failures = fixture_failures(
+                valid_text.removesuffix("\n")
+            )
+            if not any(
+                "must end with LF" in failure
+                for failure in missing_lf_failures
+            ):
+                failures.append(
+                    "Swift test list without final LF was not rejected"
+                )
+    except OSError as error:
+        failures.append(f"Swift selection fixture failed: {error}")
+    return failures
+
+
 def android_testcase_manifest_sha256(
     testcases: list[tuple[str, str]],
 ) -> str:
@@ -2022,7 +2765,7 @@ def android_test_result_failures(
             if actual_report_names != expected_report_names:
                 failures.append(
                     f"{path_label(result_root)} result report set must "
-                    "match the exact full-suite contract"
+                    "match the exact result contract"
                 )
     freshness_mtimes: list[tuple[str, int]] = []
     for input_path in freshness_inputs:
@@ -2162,7 +2905,7 @@ def android_test_result_failures(
         if actual_manifest_sha256 != expected_testcase_manifest_sha256:
             failures.append(
                 f"{path_label(result_root)} testcase manifest SHA-256 "
-                "must match the exact full-suite contract"
+                "must match the exact result contract"
             )
     return failures
 
@@ -2237,6 +2980,35 @@ def canonical_json_bytes(value: object) -> bytes:
         )
         + "\n"
     ).encode("ascii")
+
+
+def write_canonical_json_payload(
+    path: Path,
+    payload: object,
+    *,
+    label: str,
+) -> list[str]:
+    failures: list[str] = []
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.tmp-",
+        dir=path.parent,
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(canonical_json_bytes(payload))
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary_path, path)
+    except OSError as error:
+        failures.append(
+            f"{path_label(path)} cannot write {label}: {error}"
+        )
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
+    return failures
 
 
 def android_result_source_snapshot(
@@ -2643,6 +3415,1778 @@ def write_android_full_test_binding(
     return failures
 
 
+def read_bounded_regular_bytes(
+    path: Path,
+    *,
+    max_bytes: int,
+    label: str,
+) -> tuple[bytes | None, list[str]]:
+    try:
+        before = path.lstat()
+    except OSError as error:
+        return None, [f"{path_label(path)} cannot read {label}: {error}"]
+    if not stat.S_ISREG(before.st_mode):
+        return None, [f"{path_label(path)} {label} must be a regular file"]
+    if before.st_size > max_bytes:
+        return None, [
+            f"{path_label(path)} {label} exceeds {max_bytes} bytes"
+        ]
+
+    flags = os.O_RDONLY
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(path, flags)
+        opened = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or (opened.st_dev, opened.st_ino)
+            != (before.st_dev, before.st_ino)
+        ):
+            return None, [
+                f"{path_label(path)} {label} changed during descriptor open"
+            ]
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(descriptor, min(65_536, max_bytes + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > max_bytes:
+                return None, [
+                    f"{path_label(path)} {label} exceeds {max_bytes} bytes"
+                ]
+        after = os.fstat(descriptor)
+        if (
+            (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
+                after.st_ctime_ns,
+            )
+            != (
+                opened.st_dev,
+                opened.st_ino,
+                opened.st_size,
+                opened.st_mtime_ns,
+                opened.st_ctime_ns,
+            )
+        ):
+            return None, [
+                f"{path_label(path)} {label} changed during descriptor read"
+            ]
+        return b"".join(chunks), []
+    except OSError as error:
+        return None, [f"{path_label(path)} cannot read {label}: {error}"]
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def swift_focused_package_source_path_failures(
+    *,
+    package_path: Path = SWIFT_FOCUSED_PACKAGE_PATH,
+    expected_targets: tuple[tuple[str, str, str], ...] = (
+        SWIFT_FOCUSED_PACKAGE_TARGETS
+    ),
+    observed_targets: Optional[tuple[tuple[str, str, str], ...]] = None,
+    source_roots: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_SOURCE_ROOTS,
+) -> list[str]:
+    package_bytes, failures = read_bounded_regular_bytes(
+        package_path,
+        max_bytes=SWIFT_FOCUSED_PACKAGE_MAX_BYTES,
+        label="Swift package manifest",
+    )
+    if package_bytes is None:
+        return failures
+    try:
+        package_bytes.decode("utf-8")
+    except UnicodeError as error:
+        return [
+            f"{path_label(package_path)} Swift package manifest must be "
+            f"UTF-8: {error}"
+        ]
+    if package_path.name != "Package.swift":
+        failures.append("focused Swift package manifest must be named Package.swift")
+
+    expected_source_paths = tuple(
+        target_path for _, _, target_path in expected_targets
+    )
+    expected_names = tuple(target_name for _, target_name, _ in expected_targets)
+    if len(set(expected_targets)) != len(expected_targets):
+        failures.append("focused Swift package target contracts must be unique")
+    if len(set(expected_names)) != len(expected_names):
+        failures.append("focused Swift package target names must be unique")
+    if len(set(expected_source_paths)) != len(expected_source_paths):
+        failures.append("focused Swift package target paths must be unique")
+    for target_type, target_name, relative_path in expected_targets:
+        components = relative_path.split("/")
+        if (
+            target_type not in ("regular", "executable", "test")
+            or not target_name
+            or not relative_path
+            or relative_path.startswith("/")
+            or any(component in ("", ".", "..") for component in components)
+            or components[-1] not in ("Sources", "Tests")
+            or any(component in (".build", "build") for component in components)
+        ):
+            failures.append(
+                "focused Swift source contract contains an invalid target "
+                f"path: {relative_path!r}"
+            )
+
+    if observed_targets is None and not failures:
+        try:
+            completed = subprocess.run(
+                SWIFT_FOCUSED_PACKAGE_DUMP_COMMAND,
+                cwd=package_path.parent,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=SWIFT_FOCUSED_PACKAGE_DUMP_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            failures.append(
+                f"focused Swift package semantic dump failed: {error}"
+            )
+        else:
+            if completed.returncode != 0:
+                stderr_text = completed.stderr[:512].decode(
+                    "utf-8",
+                    errors="replace",
+                )
+                failures.append(
+                    "focused Swift package semantic dump exited with status "
+                    f"{completed.returncode}: {stderr_text!r}"
+                )
+            elif len(completed.stdout) > SWIFT_FOCUSED_PACKAGE_DUMP_MAX_BYTES:
+                failures.append(
+                    "focused Swift package semantic dump exceeds the byte bound"
+                )
+            else:
+                try:
+                    dump_payload = json.loads(completed.stdout)
+                except (UnicodeError, json.JSONDecodeError) as error:
+                    failures.append(
+                        "focused Swift package semantic dump must be JSON: "
+                        f"{error}"
+                    )
+                else:
+                    targets_value = (
+                        dump_payload.get("targets")
+                        if isinstance(dump_payload, dict)
+                        else None
+                    )
+                    if not isinstance(targets_value, list):
+                        failures.append(
+                            "focused Swift package semantic dump must contain "
+                            "a targets array"
+                        )
+                    else:
+                        extracted_targets: list[tuple[str, str, str]] = []
+                        for index, target_value in enumerate(targets_value):
+                            if not isinstance(target_value, dict):
+                                failures.append(
+                                    "focused Swift package semantic target "
+                                    f"{index} must be an object"
+                                )
+                                continue
+                            target_type = target_value.get("type")
+                            target_name = target_value.get("name")
+                            target_path = target_value.get("path")
+                            if not all(
+                                isinstance(value, str) and bool(value)
+                                for value in (
+                                    target_type,
+                                    target_name,
+                                    target_path,
+                                )
+                            ):
+                                failures.append(
+                                    "focused Swift package semantic target "
+                                    f"{index} must have nonempty string type, "
+                                    "name, and path"
+                                )
+                                continue
+                            extracted_targets.append(
+                                (target_type, target_name, target_path)
+                            )
+                        if not failures:
+                            observed_targets = tuple(extracted_targets)
+
+    if observed_targets is not None and observed_targets != expected_targets:
+        failures.append(
+            "Swift package semantic targets must exactly match the focused "
+            f"source contract; expected={expected_targets!r}; "
+            f"found={observed_targets!r}"
+        )
+
+    expected_roots = tuple(
+        package_path.parent / relative_path
+        for relative_path in expected_source_paths
+    )
+    if source_roots != expected_roots:
+        failures.append(
+            "focused Swift source roots must be derived exactly from the "
+            "Package.swift target path contract"
+        )
+
+    for source_root in source_roots:
+        if not source_root.is_dir():
+            continue
+        for candidate in source_root.rglob("*"):
+            try:
+                relative_parts = candidate.relative_to(source_root).parts
+            except ValueError:
+                failures.append(
+                    "focused Swift source traversal escaped its target root: "
+                    f"{path_label(candidate)}"
+                )
+                continue
+            if any(
+                component in (".build", "build")
+                for component in relative_parts
+            ):
+                failures.append(
+                    "focused Swift target roots must not contain generated "
+                    f"build paths: {path_label(candidate)}"
+                )
+                break
+    return failures
+
+
+def swift_focused_source_snapshot(
+    *,
+    exact_files: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_EXACT_FILES,
+    source_roots: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_SOURCE_ROOTS,
+    package_path: Path = SWIFT_FOCUSED_PACKAGE_PATH,
+    expected_targets: tuple[tuple[str, str, str], ...] = (
+        SWIFT_FOCUSED_PACKAGE_TARGETS
+    ),
+    observed_targets: Optional[tuple[tuple[str, str, str], ...]] = None,
+) -> tuple[dict[str, object] | None, list[str]]:
+    failures = swift_focused_package_source_path_failures(
+        package_path=package_path,
+        expected_targets=expected_targets,
+        observed_targets=observed_targets,
+        source_roots=source_roots,
+    )
+    if failures:
+        return None, failures
+    source_snapshot, source_failures = android_result_source_snapshot(
+        exact_files=exact_files,
+        source_roots=source_roots,
+    )
+    if source_failures:
+        return None, source_failures
+    return source_snapshot, []
+
+
+def swift_focused_test_list_snapshot(
+    *,
+    test_list_path: Path = SWIFT_TEST_LIST_PATH,
+    filter_pattern: str = SWIFT_FILTER,
+    expected_count: int = SWIFT_PRODUCT_TEST_COUNT,
+    expected_manifest_sha256: str = (
+        SWIFT_PRODUCT_TEST_MANIFEST_SHA256
+    ),
+) -> tuple[dict[str, object] | None, tuple[str, ...] | None, list[str]]:
+    selected_tests, test_list_bytes, failures = swift_selected_test_names(
+        test_list_path=test_list_path,
+        filter_pattern=filter_pattern,
+    )
+    if selected_tests is None or test_list_bytes is None:
+        return None, None, failures
+    if len(selected_tests) != expected_count:
+        failures.append(
+            "Swift product test selection must match exactly "
+            f"{expected_count} tests, found {len(selected_tests)}"
+        )
+    manifest_sha256 = swift_test_selection_manifest_sha256(selected_tests)
+    if manifest_sha256 != expected_manifest_sha256:
+        failures.append(
+            "Swift product test selection manifest SHA-256 must match the "
+            "exact contract"
+        )
+    if failures:
+        return None, None, failures
+    return (
+        {
+            "bytes": len(test_list_bytes),
+            "sha256": hashlib.sha256(test_list_bytes).hexdigest(),
+            "testcaseManifestSha256": manifest_sha256,
+            "tests": len(selected_tests),
+        },
+        selected_tests,
+        [],
+    )
+
+
+def swift_focused_test_run_marker_payload(
+    *,
+    test_list_path: Path = SWIFT_TEST_LIST_PATH,
+    filter_pattern: str = SWIFT_FILTER,
+    expected_count: int = SWIFT_PRODUCT_TEST_COUNT,
+    expected_manifest_sha256: str = (
+        SWIFT_PRODUCT_TEST_MANIFEST_SHA256
+    ),
+    exact_files: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_EXACT_FILES,
+    source_roots: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_SOURCE_ROOTS,
+    package_path: Path = SWIFT_FOCUSED_PACKAGE_PATH,
+    expected_targets: tuple[tuple[str, str, str], ...] = (
+        SWIFT_FOCUSED_PACKAGE_TARGETS
+    ),
+    observed_targets: Optional[tuple[tuple[str, str, str], ...]] = None,
+) -> tuple[dict[str, object] | None, list[str]]:
+    source_snapshot, source_failures = swift_focused_source_snapshot(
+        exact_files=exact_files,
+        source_roots=source_roots,
+        package_path=package_path,
+        expected_targets=expected_targets,
+        observed_targets=observed_targets,
+    )
+    list_snapshot, _, list_failures = swift_focused_test_list_snapshot(
+        test_list_path=test_list_path,
+        filter_pattern=filter_pattern,
+        expected_count=expected_count,
+        expected_manifest_sha256=expected_manifest_sha256,
+    )
+    failures = source_failures + list_failures
+    if failures or source_snapshot is None or list_snapshot is None:
+        return None, failures
+    return (
+        {
+            "contract": SWIFT_FOCUSED_TEST_RUN_MARKER_CONTRACT,
+            "sourceInputs": source_snapshot,
+            "testList": list_snapshot,
+        },
+        [],
+    )
+
+
+def swift_focused_test_run_marker_failures(
+    *,
+    marker_path: Path = SWIFT_FOCUSED_TEST_RUN_MARKER_PATH,
+    log_path: Path = SWIFT_FOCUSED_TEST_LOG_PATH,
+    test_list_path: Path = SWIFT_TEST_LIST_PATH,
+    filter_pattern: str = SWIFT_FILTER,
+    expected_count: int = SWIFT_PRODUCT_TEST_COUNT,
+    expected_manifest_sha256: str = (
+        SWIFT_PRODUCT_TEST_MANIFEST_SHA256
+    ),
+    exact_files: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_EXACT_FILES,
+    source_roots: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_SOURCE_ROOTS,
+    package_path: Path = SWIFT_FOCUSED_PACKAGE_PATH,
+    expected_targets: tuple[tuple[str, str, str], ...] = (
+        SWIFT_FOCUSED_PACKAGE_TARGETS
+    ),
+    observed_targets: Optional[tuple[tuple[str, str, str], ...]] = None,
+    require_log: bool = True,
+) -> list[str]:
+    expected_payload, failures = swift_focused_test_run_marker_payload(
+        test_list_path=test_list_path,
+        filter_pattern=filter_pattern,
+        expected_count=expected_count,
+        expected_manifest_sha256=expected_manifest_sha256,
+        exact_files=exact_files,
+        source_roots=source_roots,
+        package_path=package_path,
+        expected_targets=expected_targets,
+        observed_targets=observed_targets,
+    )
+    if expected_payload is None:
+        return failures
+    try:
+        marker_bytes = marker_path.read_bytes()
+        json.loads(marker_bytes)
+        marker_mtime_ns = marker_path.stat().st_mtime_ns
+        test_list_mtime_ns = test_list_path.stat().st_mtime_ns
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        failures.append(
+            f"{path_label(marker_path)} cannot be read: {error}"
+        )
+        return failures
+    if marker_bytes != canonical_json_bytes(expected_payload):
+        failures.append(
+            f"{path_label(marker_path)} must exactly bind the focused Swift "
+            "source and selected test-list bytes from before execution"
+        )
+    if marker_mtime_ns <= test_list_mtime_ns:
+        failures.append(
+            f"{path_label(marker_path)} must postdate the selected Swift "
+            "test list"
+        )
+    if (
+        marker_mtime_ns
+        > time.time_ns() + SWIFT_FOCUSED_TEST_FUTURE_MTIME_TOLERANCE_NS
+    ):
+        failures.append(
+            f"{path_label(marker_path)} timestamp is implausibly in the future"
+        )
+    if require_log:
+        try:
+            log_mtime_ns = log_path.stat().st_mtime_ns
+        except OSError as error:
+            failures.append(
+                f"{path_label(log_path)} timestamp cannot be read after the "
+                f"focused Swift source marker: {error}"
+            )
+        else:
+            if log_mtime_ns <= marker_mtime_ns:
+                failures.append(
+                    f"{path_label(log_path)} must be generated after the "
+                    "focused Swift source marker"
+                )
+    return failures
+
+
+def write_swift_focused_test_run_marker(
+    *,
+    marker_path: Path = SWIFT_FOCUSED_TEST_RUN_MARKER_PATH,
+    test_list_path: Path = SWIFT_TEST_LIST_PATH,
+    filter_pattern: str = SWIFT_FILTER,
+    expected_count: int = SWIFT_PRODUCT_TEST_COUNT,
+    expected_manifest_sha256: str = (
+        SWIFT_PRODUCT_TEST_MANIFEST_SHA256
+    ),
+    exact_files: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_EXACT_FILES,
+    source_roots: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_SOURCE_ROOTS,
+    package_path: Path = SWIFT_FOCUSED_PACKAGE_PATH,
+    expected_targets: tuple[tuple[str, str, str], ...] = (
+        SWIFT_FOCUSED_PACKAGE_TARGETS
+    ),
+    observed_targets: Optional[tuple[tuple[str, str, str], ...]] = None,
+) -> list[str]:
+    payload, failures = swift_focused_test_run_marker_payload(
+        test_list_path=test_list_path,
+        filter_pattern=filter_pattern,
+        expected_count=expected_count,
+        expected_manifest_sha256=expected_manifest_sha256,
+        exact_files=exact_files,
+        source_roots=source_roots,
+        package_path=package_path,
+        expected_targets=expected_targets,
+        observed_targets=observed_targets,
+    )
+    if payload is None:
+        return failures
+    failures.extend(
+        write_canonical_json_payload(
+            marker_path,
+            payload,
+            label="focused Swift source marker",
+        )
+    )
+    if not failures:
+        failures.extend(
+            swift_focused_test_run_marker_failures(
+                marker_path=marker_path,
+                test_list_path=test_list_path,
+                filter_pattern=filter_pattern,
+                expected_count=expected_count,
+                expected_manifest_sha256=expected_manifest_sha256,
+                exact_files=exact_files,
+                source_roots=source_roots,
+                package_path=package_path,
+                expected_targets=expected_targets,
+                observed_targets=observed_targets,
+                require_log=False,
+            )
+        )
+    return failures
+
+
+SWIFT_XCTEST_EVENT_PATTERN = re.compile(
+    r"^Test Case '-\[([^\]\s]+) ([^\]\s]+)\]' "
+    r"(started|passed|failed|skipped)(?: \([^\r\n]+\))?\.$"
+)
+SWIFT_XCTEST_SUMMARY_PATTERN = re.compile(
+    r"^\s*Executed (\d+) tests?, with (\d+) failures? "
+    r"\((\d+) unexpected\) in [0-9.]+ \([0-9.]+\) seconds$"
+)
+
+
+def swift_focused_console_snapshot(
+    *,
+    log_path: Path = SWIFT_FOCUSED_TEST_LOG_PATH,
+    expected_tests: tuple[str, ...],
+    max_bytes: int = SWIFT_FOCUSED_TEST_MAX_LOG_BYTES,
+) -> tuple[dict[str, object] | None, list[str]]:
+    log_bytes, failures = read_bounded_regular_bytes(
+        log_path,
+        max_bytes=max_bytes,
+        label="focused Swift console log",
+    )
+    if log_bytes is None:
+        return None, failures
+    try:
+        log_text = log_bytes.decode("utf-8")
+    except UnicodeError as error:
+        return None, [
+            f"{path_label(log_path)} focused Swift console log must be "
+            f"UTF-8: {error}"
+        ]
+    if not log_bytes.endswith(b"\n"):
+        failures.append("focused Swift console log must end with LF")
+
+    events_by_test: dict[str, list[tuple[int, str]]] = {}
+    malformed_events: list[str] = []
+    summaries: list[tuple[int, tuple[int, int, int]]] = []
+    for line_number, line in enumerate(log_text.splitlines(), start=1):
+        if line.startswith("Test Case '-["):
+            match = SWIFT_XCTEST_EVENT_PATTERN.fullmatch(line)
+            if match is None:
+                malformed_events.append(f"line {line_number}")
+                continue
+            identity = f"{match.group(1)}/{match.group(2)}"
+            events_by_test.setdefault(identity, []).append(
+                (line_number, match.group(3))
+            )
+        summary = SWIFT_XCTEST_SUMMARY_PATTERN.fullmatch(line)
+        if summary is not None:
+            summaries.append(
+                (
+                    line_number,
+                    tuple(int(value) for value in summary.groups()),
+                )
+            )
+    if malformed_events:
+        failures.append(
+            "focused Swift console contains malformed XCTest events at "
+            + ", ".join(malformed_events[:5])
+        )
+
+    expected_set = set(expected_tests)
+    observed_set = set(events_by_test)
+    if observed_set != expected_set:
+        missing = sorted(expected_set - observed_set)
+        unexpected = sorted(observed_set - expected_set)
+        failures.append(
+            "focused Swift console testcase identities must exactly match "
+            f"the selected manifest; missing={missing[:3]!r}; "
+            f"unexpected={unexpected[:3]!r}"
+        )
+    for identity in sorted(expected_set & observed_set):
+        events = events_by_test[identity]
+        event_names = tuple(event for _, event in events)
+        if event_names != ("started", "passed"):
+            failures.append(
+                f"focused Swift testcase {identity} must contain exactly one "
+                f"ordered started/passed pair; found {event_names!r}"
+            )
+    if not summaries:
+        failures.append("focused Swift console must contain an XCTest summary")
+    elif summaries[-1][1] != (len(expected_tests), 0, 0):
+        failures.append(
+            "focused Swift final XCTest summary must report exactly "
+            f"{len(expected_tests)} tests and zero failures/unexpected; "
+            f"found {summaries[-1][1]!r}"
+        )
+    elif events_by_test and summaries[-1][0] <= max(
+        line_number
+        for events in events_by_test.values()
+        for line_number, _ in events
+    ):
+        failures.append(
+            "focused Swift final XCTest summary must follow every testcase "
+            "event"
+        )
+    if failures:
+        return None, failures
+    observed_tests = tuple(sorted(observed_set))
+    manifest_sha256 = swift_test_selection_manifest_sha256(observed_tests)
+    return (
+        {
+            "bytes": len(log_bytes),
+            "errors": 0,
+            "failures": 0,
+            "sha256": hashlib.sha256(log_bytes).hexdigest(),
+            "skipped": 0,
+            "testcaseManifestSha256": manifest_sha256,
+            "tests": len(observed_tests),
+        },
+        [],
+    )
+
+
+def run_and_publish_swift_focused_log(
+    *,
+    command: tuple[str, ...],
+    cwd: Path,
+    log_path: Path,
+    expected_tests: tuple[str, ...],
+    log_context_failures: Callable[[Path], list[str]],
+    max_bytes: int = SWIFT_FOCUSED_TEST_MAX_LOG_BYTES,
+    mirror_output: Optional[BinaryIO] = None,
+) -> tuple[int, list[str]]:
+    if not command:
+        return 1, ["focused Swift runner command must not be empty"]
+    if max_bytes <= 0:
+        return 1, ["focused Swift runner log bound must be positive"]
+
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{log_path.name}.tmp-",
+            dir=log_path.parent,
+        )
+    except OSError as error:
+        return 1, [f"focused Swift runner failed: {error}"]
+    temporary_path = Path(temporary_name)
+    process: subprocess.Popen[bytes] | None = None
+    status = 1
+    failures: list[str] = []
+    temporary_snapshot: dict[str, object] | None = None
+    published_snapshot: dict[str, object] | None = None
+    backup_path: Path | None = None
+    previous_canonical_state: tuple[int, int, int, int] | None = None
+    published = False
+
+    def restore_previous_canonical() -> None:
+        nonlocal published
+        try:
+            if previous_canonical_state is None:
+                log_path.unlink()
+                try:
+                    log_path.lstat()
+                except FileNotFoundError:
+                    pass
+                else:
+                    failures.append(
+                        "focused Swift failed publication did not remove its "
+                        "new canonical log"
+                    )
+            elif backup_path is None or not backup_path.exists():
+                failures.append(
+                    "focused Swift failed publication cannot restore the "
+                    "previous canonical log"
+                )
+            else:
+                os.replace(backup_path, log_path)
+                restored = log_path.lstat()
+                restored_state = (
+                    restored.st_dev,
+                    restored.st_ino,
+                    restored.st_size,
+                    restored.st_mtime_ns,
+                )
+                if restored_state != previous_canonical_state:
+                    failures.append(
+                        "focused Swift restored canonical log identity differs "
+                        "from the pre-run log"
+                    )
+        except OSError as error:
+            failures.append(
+                f"focused Swift canonical log restoration failed: {error}"
+            )
+        published = False
+
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            process = subprocess.Popen(
+                command,
+                cwd=cwd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+            if process.stdout is None:
+                raise OSError("focused Swift runner stdout pipe was not created")
+            total = 0
+            while True:
+                chunk = process.stdout.read(65_536)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_bytes:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                    failures.append(
+                        "focused Swift console exceeded the bounded log size"
+                    )
+                    break
+                output.write(chunk)
+                if mirror_output is not None:
+                    mirror_output.write(chunk)
+                    mirror_output.flush()
+            if process.poll() is None:
+                process.wait()
+            process.stdout.close()
+            if process.returncode is not None:
+                status = process.returncode
+            output.flush()
+            os.fsync(output.fileno())
+
+        if not failures and status != 0:
+            failures.append(
+                "focused Swift test command exited with status "
+                f"{status}; canonical log was not replaced"
+            )
+        if not failures:
+            temporary_snapshot, console_failures = (
+                swift_focused_console_snapshot(
+                    log_path=temporary_path,
+                    expected_tests=expected_tests,
+                    max_bytes=max_bytes,
+                )
+            )
+            failures.extend(console_failures)
+        if not failures:
+            failures.extend(log_context_failures(temporary_path))
+        if not failures:
+            try:
+                previous = log_path.lstat()
+            except FileNotFoundError:
+                previous_canonical_state = None
+            else:
+                if not stat.S_ISREG(previous.st_mode):
+                    failures.append(
+                        "focused Swift existing canonical log must be a regular "
+                        "file"
+                    )
+                else:
+                    previous_canonical_state = (
+                        previous.st_dev,
+                        previous.st_ino,
+                        previous.st_size,
+                        previous.st_mtime_ns,
+                    )
+                    backup_descriptor, backup_name = tempfile.mkstemp(
+                        prefix=f".{log_path.name}.previous-",
+                        dir=log_path.parent,
+                    )
+                    os.close(backup_descriptor)
+                    backup_path = Path(backup_name)
+                    backup_path.unlink()
+                    os.link(
+                        log_path,
+                        backup_path,
+                        follow_symlinks=False,
+                    )
+                    retained = backup_path.lstat()
+                    current = log_path.lstat()
+                    retained_state = (
+                        retained.st_dev,
+                        retained.st_ino,
+                        retained.st_size,
+                        retained.st_mtime_ns,
+                    )
+                    current_state = (
+                        current.st_dev,
+                        current.st_ino,
+                        current.st_size,
+                        current.st_mtime_ns,
+                    )
+                    if (
+                        retained_state != previous_canonical_state
+                        or current_state != previous_canonical_state
+                    ):
+                        failures.append(
+                            "focused Swift existing canonical log changed while "
+                            "being retained for publication"
+                        )
+        if not failures:
+            os.replace(temporary_path, log_path)
+            published = True
+            published_snapshot, console_failures = (
+                swift_focused_console_snapshot(
+                    log_path=log_path,
+                    expected_tests=expected_tests,
+                    max_bytes=max_bytes,
+                )
+            )
+            failures.extend(console_failures)
+            failures.extend(log_context_failures(log_path))
+            if (
+                temporary_snapshot is not None
+                and published_snapshot is not None
+                and published_snapshot != temporary_snapshot
+            ):
+                failures.append(
+                    "focused Swift canonical log readback must match the "
+                    "validated temporary log bytes"
+                )
+        if published and failures:
+            restore_previous_canonical()
+        elif published and backup_path is not None:
+            try:
+                backup_path.unlink()
+            except OSError as error:
+                failures.append(
+                    "focused Swift previous canonical log cleanup failed: "
+                    f"{error}"
+                )
+                restore_previous_canonical()
+    except OSError as error:
+        failures.append(f"focused Swift runner failed: {error}")
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        if published:
+            restore_previous_canonical()
+    finally:
+        try:
+            if temporary_path.exists():
+                temporary_path.unlink()
+            if backup_path is not None and backup_path.exists():
+                backup_path.unlink()
+        except OSError as error:
+            failures.append(
+                f"focused Swift runner temporary log cleanup failed: {error}"
+            )
+    if failures:
+        if status != 0 and status > 0:
+            return status, failures
+        return 1, failures
+    return (0 if not failures else 1), failures
+
+
+def run_swift_focused_tests(
+    *,
+    filter_pattern: str,
+    marker_path: Path = SWIFT_FOCUSED_TEST_RUN_MARKER_PATH,
+    log_path: Path = SWIFT_FOCUSED_TEST_LOG_PATH,
+    test_list_path: Path = SWIFT_TEST_LIST_PATH,
+) -> tuple[int, list[str]]:
+    if filter_pattern != SWIFT_FILTER:
+        return 1, ["focused Swift runner filter must match the exact contract"]
+    marker_failures = swift_focused_test_run_marker_failures(
+        marker_path=marker_path,
+        log_path=log_path,
+        test_list_path=test_list_path,
+        require_log=False,
+    )
+    if marker_failures:
+        return 1, marker_failures
+    _, expected_tests, selection_failures = swift_focused_test_list_snapshot(
+        test_list_path=test_list_path,
+    )
+    if expected_tests is None:
+        return 1, selection_failures
+
+    def validate_log_context(candidate_log_path: Path) -> list[str]:
+        return swift_focused_test_run_marker_failures(
+            marker_path=marker_path,
+            log_path=candidate_log_path,
+            test_list_path=test_list_path,
+        )
+
+    return run_and_publish_swift_focused_log(
+        command=SWIFT_FOCUSED_RUN_COMMAND,
+        cwd=ROOT,
+        log_path=log_path,
+        expected_tests=expected_tests,
+        log_context_failures=validate_log_context,
+        mirror_output=sys.stdout.buffer,
+    )
+
+
+def swift_focused_test_binding_payload(
+    *,
+    marker_path: Path = SWIFT_FOCUSED_TEST_RUN_MARKER_PATH,
+    log_path: Path = SWIFT_FOCUSED_TEST_LOG_PATH,
+    test_list_path: Path = SWIFT_TEST_LIST_PATH,
+    filter_pattern: str = SWIFT_FILTER,
+    expected_count: int = SWIFT_PRODUCT_TEST_COUNT,
+    expected_manifest_sha256: str = (
+        SWIFT_PRODUCT_TEST_MANIFEST_SHA256
+    ),
+    exact_files: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_EXACT_FILES,
+    source_roots: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_SOURCE_ROOTS,
+    package_path: Path = SWIFT_FOCUSED_PACKAGE_PATH,
+    expected_targets: tuple[tuple[str, str, str], ...] = (
+        SWIFT_FOCUSED_PACKAGE_TARGETS
+    ),
+    observed_targets: Optional[tuple[tuple[str, str, str], ...]] = None,
+) -> tuple[dict[str, object] | None, list[str]]:
+    source_snapshot, source_failures = swift_focused_source_snapshot(
+        exact_files=exact_files,
+        source_roots=source_roots,
+        package_path=package_path,
+        expected_targets=expected_targets,
+        observed_targets=observed_targets,
+    )
+    list_snapshot, expected_tests, list_failures = (
+        swift_focused_test_list_snapshot(
+            test_list_path=test_list_path,
+            filter_pattern=filter_pattern,
+            expected_count=expected_count,
+            expected_manifest_sha256=expected_manifest_sha256,
+        )
+    )
+    if expected_tests is None:
+        console_snapshot = None
+        console_failures: list[str] = []
+    else:
+        console_snapshot, console_failures = swift_focused_console_snapshot(
+            log_path=log_path,
+            expected_tests=expected_tests,
+        )
+    try:
+        marker_bytes = marker_path.read_bytes()
+    except OSError as error:
+        marker_snapshot = None
+        marker_failures = [
+            f"{path_label(marker_path)} cannot be bound: {error}"
+        ]
+    else:
+        marker_snapshot = {
+            "bytes": len(marker_bytes),
+            "sha256": hashlib.sha256(marker_bytes).hexdigest(),
+        }
+        marker_failures = []
+    failures = (
+        source_failures
+        + list_failures
+        + console_failures
+        + marker_failures
+    )
+    if (
+        failures
+        or source_snapshot is None
+        or list_snapshot is None
+        or console_snapshot is None
+        or marker_snapshot is None
+    ):
+        return None, failures
+    return (
+        {
+            "contract": SWIFT_FOCUSED_TEST_BINDING_CONTRACT,
+            "result": console_snapshot,
+            "runMarker": marker_snapshot,
+            "sourceInputs": source_snapshot,
+            "testList": list_snapshot,
+        },
+        [],
+    )
+
+
+def swift_focused_test_binding_failures(
+    *,
+    binding_path: Path = SWIFT_FOCUSED_TEST_BINDING_PATH,
+    marker_path: Path = SWIFT_FOCUSED_TEST_RUN_MARKER_PATH,
+    log_path: Path = SWIFT_FOCUSED_TEST_LOG_PATH,
+    test_list_path: Path = SWIFT_TEST_LIST_PATH,
+    filter_pattern: str = SWIFT_FILTER,
+    expected_count: int = SWIFT_PRODUCT_TEST_COUNT,
+    expected_manifest_sha256: str = (
+        SWIFT_PRODUCT_TEST_MANIFEST_SHA256
+    ),
+    exact_files: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_EXACT_FILES,
+    source_roots: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_SOURCE_ROOTS,
+    package_path: Path = SWIFT_FOCUSED_PACKAGE_PATH,
+    expected_targets: tuple[tuple[str, str, str], ...] = (
+        SWIFT_FOCUSED_PACKAGE_TARGETS
+    ),
+    observed_targets: Optional[tuple[tuple[str, str, str], ...]] = None,
+) -> list[str]:
+    failures = swift_focused_test_run_marker_failures(
+        marker_path=marker_path,
+        log_path=log_path,
+        test_list_path=test_list_path,
+        filter_pattern=filter_pattern,
+        expected_count=expected_count,
+        expected_manifest_sha256=expected_manifest_sha256,
+        exact_files=exact_files,
+        source_roots=source_roots,
+        package_path=package_path,
+        expected_targets=expected_targets,
+        observed_targets=observed_targets,
+    )
+    expected_payload, payload_failures = swift_focused_test_binding_payload(
+        marker_path=marker_path,
+        log_path=log_path,
+        test_list_path=test_list_path,
+        filter_pattern=filter_pattern,
+        expected_count=expected_count,
+        expected_manifest_sha256=expected_manifest_sha256,
+        exact_files=exact_files,
+        source_roots=source_roots,
+        package_path=package_path,
+        expected_targets=expected_targets,
+        observed_targets=observed_targets,
+    )
+    failures.extend(payload_failures)
+    if expected_payload is None:
+        return failures
+    try:
+        binding_bytes = binding_path.read_bytes()
+        json.loads(binding_bytes)
+        binding_mtime_ns = binding_path.stat().st_mtime_ns
+        log_mtime_ns = log_path.stat().st_mtime_ns
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        failures.append(
+            f"{path_label(binding_path)} cannot be read: {error}"
+        )
+        return failures
+    if binding_bytes != canonical_json_bytes(expected_payload):
+        failures.append(
+            f"{path_label(binding_path)} must exactly bind the current "
+            "focused Swift source, list, marker, and console bytes"
+        )
+    if binding_mtime_ns <= log_mtime_ns:
+        failures.append(
+            f"{path_label(binding_path)} must postdate the focused Swift log"
+        )
+    if (
+        binding_mtime_ns
+        > time.time_ns() + SWIFT_FOCUSED_TEST_FUTURE_MTIME_TOLERANCE_NS
+    ):
+        failures.append(
+            f"{path_label(binding_path)} timestamp is implausibly in the future"
+        )
+    return failures
+
+
+def write_swift_focused_test_binding(
+    *,
+    binding_path: Path = SWIFT_FOCUSED_TEST_BINDING_PATH,
+    marker_path: Path = SWIFT_FOCUSED_TEST_RUN_MARKER_PATH,
+    log_path: Path = SWIFT_FOCUSED_TEST_LOG_PATH,
+    test_list_path: Path = SWIFT_TEST_LIST_PATH,
+    filter_pattern: str = SWIFT_FILTER,
+    expected_count: int = SWIFT_PRODUCT_TEST_COUNT,
+    expected_manifest_sha256: str = (
+        SWIFT_PRODUCT_TEST_MANIFEST_SHA256
+    ),
+    exact_files: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_EXACT_FILES,
+    source_roots: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_SOURCE_ROOTS,
+    package_path: Path = SWIFT_FOCUSED_PACKAGE_PATH,
+    expected_targets: tuple[tuple[str, str, str], ...] = (
+        SWIFT_FOCUSED_PACKAGE_TARGETS
+    ),
+    observed_targets: Optional[tuple[tuple[str, str, str], ...]] = None,
+) -> list[str]:
+    failures = swift_focused_test_run_marker_failures(
+        marker_path=marker_path,
+        log_path=log_path,
+        test_list_path=test_list_path,
+        filter_pattern=filter_pattern,
+        expected_count=expected_count,
+        expected_manifest_sha256=expected_manifest_sha256,
+        exact_files=exact_files,
+        source_roots=source_roots,
+        package_path=package_path,
+        expected_targets=expected_targets,
+        observed_targets=observed_targets,
+    )
+    if failures:
+        return failures
+    payload, payload_failures = swift_focused_test_binding_payload(
+        marker_path=marker_path,
+        log_path=log_path,
+        test_list_path=test_list_path,
+        filter_pattern=filter_pattern,
+        expected_count=expected_count,
+        expected_manifest_sha256=expected_manifest_sha256,
+        exact_files=exact_files,
+        source_roots=source_roots,
+        package_path=package_path,
+        expected_targets=expected_targets,
+        observed_targets=observed_targets,
+    )
+    failures.extend(payload_failures)
+    if payload is None:
+        return failures
+    failures.extend(
+        write_canonical_json_payload(
+            binding_path,
+            payload,
+            label="focused Swift result binding",
+        )
+    )
+    if not failures:
+        failures.extend(
+            swift_focused_test_binding_failures(
+                binding_path=binding_path,
+                marker_path=marker_path,
+                log_path=log_path,
+                test_list_path=test_list_path,
+                filter_pattern=filter_pattern,
+                expected_count=expected_count,
+                expected_manifest_sha256=expected_manifest_sha256,
+                exact_files=exact_files,
+                source_roots=source_roots,
+                package_path=package_path,
+                expected_targets=expected_targets,
+                observed_targets=observed_targets,
+            )
+        )
+    return failures
+
+
+def swift_focused_result_self_test() -> list[str]:
+    failures: list[str] = []
+    fixture_filter = r"FixtureSuite/"
+    fixture_tests = (
+        "FixtureTests.FixtureSuite/testOne",
+        "FixtureTests.FixtureSuite/testTwo",
+    )
+    fixture_manifest = swift_test_selection_manifest_sha256(fixture_tests)
+
+    def console_text(
+        *,
+        tests: tuple[str, ...] = fixture_tests,
+        final_count: int = 2,
+    ) -> str:
+        lines: list[str] = []
+        for identity in tests:
+            class_name, method_name = identity.split("/", 1)
+            lines.extend(
+                (
+                    f"Test Case '-[{class_name} {method_name}]' started.",
+                    (
+                        f"Test Case '-[{class_name} {method_name}]' passed "
+                        "(0.001 seconds)."
+                    ),
+                )
+            )
+        lines.append(
+            f"\t Executed {final_count} tests, with 0 failures "
+            "(0 unexpected) in 0.002 (0.002) seconds"
+        )
+        return "\n".join(lines) + "\n"
+
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix="aetherlink-swift-focused-result-",
+        ) as temporary:
+            root = Path(temporary)
+            source_exact = root / "Package.swift"
+            fixture_targets = (
+                ("regular", "Fixture", "Component/Sources"),
+            )
+            source_root = root / fixture_targets[0][2]
+            source_root.mkdir(parents=True)
+            source_file = source_root / "Fixture.swift"
+            fixture_package = """// swift-tools-version: 5.9
+import PackageDescription
+
+let package = Package(
+    name: "Fixture",
+    targets: [
+        .target(
+            name: "Fixture",
+            path: "Component/Sources"
+        )
+    ]
+)
+"""
+            source_exact.write_text(fixture_package, encoding="utf-8")
+            source_file.write_text("struct Fixture {}\n", encoding="utf-8")
+            ambient_build_file = root / ".build/ambient.txt"
+            ambient_component_build_file = root / "Component/build/ambient.txt"
+            ambient_build_file.parent.mkdir()
+            ambient_component_build_file.parent.mkdir()
+            ambient_build_file.write_text("ambient\n", encoding="utf-8")
+            ambient_component_build_file.write_text(
+                "ambient\n",
+                encoding="utf-8",
+            )
+            test_list_path = root / "tests.txt"
+            marker_path = root / "marker.json"
+            log_path = root / "result.log"
+            binding_path = root / "binding.json"
+            test_list_path.write_text(
+                "\n".join(
+                    fixture_tests
+                    + ("FixtureTests.OtherSuite/testUnselected",)
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            current_ns = time.time_ns()
+            os.utime(
+                test_list_path,
+                ns=(current_ns - 4_000_000_000,) * 2,
+            )
+
+            package_contract_failures = (
+                swift_focused_package_source_path_failures(
+                    package_path=source_exact,
+                    expected_targets=fixture_targets,
+                    observed_targets=fixture_targets,
+                    source_roots=(source_root,),
+                )
+            )
+            if package_contract_failures:
+                failures.append(
+                    "valid focused Swift package-path fixture was rejected: "
+                    + "; ".join(package_contract_failures)
+                )
+                return failures
+            source_snapshot, source_snapshot_failures = (
+                swift_focused_source_snapshot(
+                    exact_files=(source_exact,),
+                    source_roots=(source_root,),
+                    package_path=source_exact,
+                    expected_targets=fixture_targets,
+                    observed_targets=fixture_targets,
+                )
+            )
+            if source_snapshot_failures or source_snapshot is None:
+                failures.append(
+                    "valid focused Swift explicit-root snapshot was rejected: "
+                    + "; ".join(source_snapshot_failures)
+                )
+                return failures
+            if source_snapshot.get("count") != 2:
+                failures.append(
+                    "focused Swift explicit-root snapshot included ambient "
+                    "sibling build outputs"
+                )
+
+            compact_test_root = root / "Component/Tests"
+            compact_test_root.mkdir()
+            (compact_test_root / "FixtureTests.swift").write_text(
+                "// fixture test\n",
+                encoding="utf-8",
+            )
+            extra_target_package = fixture_package.replace(
+                "        )\n    ]",
+                "        ), .testTarget("
+                "name: \"FixtureTests\", dependencies: [\"Fixture\"], "
+                "path: \"Component/Tests\")\n"
+                "    ]",
+                1,
+            )
+            source_exact.write_text(extra_target_package, encoding="utf-8")
+            if not swift_focused_package_source_path_failures(
+                package_path=source_exact,
+                expected_targets=fixture_targets,
+                source_roots=(source_root,),
+            ):
+                failures.append(
+                    "focused Swift compact added target/path mutation was not "
+                    "rejected"
+                )
+            source_exact.write_text(fixture_package, encoding="utf-8")
+
+            implicit_test_root = root / "Tests/FixtureTests"
+            implicit_test_root.mkdir(parents=True)
+            (implicit_test_root / "FixtureTests.swift").write_text(
+                "// implicit fixture test\n",
+                encoding="utf-8",
+            )
+            no_path_target_package = fixture_package.replace(
+                "        )\n    ]",
+                "        ), .testTarget("
+                "name: \"FixtureTests\", dependencies: [\"Fixture\"])\n"
+                "    ]",
+                1,
+            )
+            source_exact.write_text(no_path_target_package, encoding="utf-8")
+            if not swift_focused_package_source_path_failures(
+                package_path=source_exact,
+                expected_targets=fixture_targets,
+                source_roots=(source_root,),
+            ):
+                failures.append(
+                    "focused Swift implicit-path target mutation was not rejected"
+                )
+            source_exact.write_text(fixture_package, encoding="utf-8")
+
+            nested_build_file = source_root / "build/generated.swift"
+            nested_build_file.parent.mkdir()
+            nested_build_file.write_text("generated\n", encoding="utf-8")
+            if not any(
+                "must not contain generated build paths" in failure
+                for failure in swift_focused_package_source_path_failures(
+                    package_path=source_exact,
+                    expected_targets=fixture_targets,
+                    observed_targets=fixture_targets,
+                    source_roots=(source_root,),
+                )
+            ):
+                failures.append(
+                    "focused Swift nested build-output mutation was not rejected"
+                )
+            nested_build_file.unlink()
+            nested_build_file.parent.rmdir()
+
+            marker_failures = write_swift_focused_test_run_marker(
+                marker_path=marker_path,
+                test_list_path=test_list_path,
+                filter_pattern=fixture_filter,
+                expected_count=2,
+                expected_manifest_sha256=fixture_manifest,
+                exact_files=(source_exact,),
+                source_roots=(source_root,),
+                package_path=source_exact,
+                expected_targets=fixture_targets,
+                observed_targets=fixture_targets,
+            )
+            if marker_failures:
+                failures.append(
+                    "valid focused Swift marker fixture was rejected: "
+                    + "; ".join(marker_failures)
+                )
+                return failures
+            os.utime(
+                marker_path,
+                ns=(current_ns - 3_000_000_000,) * 2,
+            )
+            valid_console = console_text()
+            sentinel_bytes = b"prior canonical focused Swift log\n"
+            log_path.write_bytes(sentinel_bytes)
+            os.utime(
+                log_path,
+                ns=(current_ns - 2_000_000_000,) * 2,
+            )
+
+            def canonical_log_state() -> tuple[bytes, int, int]:
+                log_stat = log_path.stat()
+                return (
+                    log_path.read_bytes(),
+                    log_stat.st_ino,
+                    log_stat.st_mtime_ns,
+                )
+
+            def fixture_log_context_failures(
+                candidate_log_path: Path,
+            ) -> list[str]:
+                return swift_focused_test_run_marker_failures(
+                    marker_path=marker_path,
+                    log_path=candidate_log_path,
+                    test_list_path=test_list_path,
+                    filter_pattern=fixture_filter,
+                    expected_count=2,
+                    expected_manifest_sha256=fixture_manifest,
+                    exact_files=(source_exact,),
+                    source_roots=(source_root,),
+                    package_path=source_exact,
+                    expected_targets=fixture_targets,
+                    observed_targets=fixture_targets,
+                )
+
+            def fixture_command(
+                output_text: str,
+                exit_status: int,
+            ) -> tuple[str, ...]:
+                return (
+                    sys.executable,
+                    "-c",
+                    "import sys\n"
+                    f"sys.stdout.write({output_text!r})\n"
+                    "sys.stdout.flush()\n"
+                    f"raise SystemExit({exit_status})\n",
+                )
+
+            def require_preserved_canonical(
+                label: str,
+                expected_state: tuple[bytes, int, int],
+            ) -> None:
+                if canonical_log_state() != expected_state:
+                    failures.append(
+                        f"focused Swift {label} runner replaced the canonical "
+                        "log"
+                    )
+
+            sentinel_state = canonical_log_state()
+            runner_status, runner_failures = (
+                run_and_publish_swift_focused_log(
+                    command=fixture_command(valid_console, 7),
+                    cwd=root,
+                    log_path=log_path,
+                    expected_tests=fixture_tests,
+                    log_context_failures=fixture_log_context_failures,
+                )
+            )
+            if runner_status != 7 or not runner_failures:
+                failures.append(
+                    "focused Swift nonzero valid-console runner was not rejected"
+                )
+            require_preserved_canonical("nonzero", sentinel_state)
+
+            invalid_console = valid_console.replace(
+                "Test Case '-[FixtureTests.FixtureSuite testTwo]' "
+                "passed (0.001 seconds).\n",
+                "",
+                1,
+            )
+            runner_status, runner_failures = (
+                run_and_publish_swift_focused_log(
+                    command=fixture_command(invalid_console, 0),
+                    cwd=root,
+                    log_path=log_path,
+                    expected_tests=fixture_tests,
+                    log_context_failures=fixture_log_context_failures,
+                )
+            )
+            if runner_status != 1 or not runner_failures:
+                failures.append(
+                    "focused Swift zero-exit invalid-console runner was not "
+                    "rejected"
+                )
+            require_preserved_canonical("invalid-console", sentinel_state)
+
+            runner_status, runner_failures = (
+                run_and_publish_swift_focused_log(
+                    command=fixture_command(valid_console, 0),
+                    cwd=root,
+                    log_path=log_path,
+                    expected_tests=fixture_tests,
+                    log_context_failures=fixture_log_context_failures,
+                    max_bytes=8,
+                )
+            )
+            if runner_status != 1 or not runner_failures:
+                failures.append(
+                    "focused Swift oversized-console runner was not rejected"
+                )
+            require_preserved_canonical("oversized-console", sentinel_state)
+
+            runner_status, runner_failures = (
+                run_and_publish_swift_focused_log(
+                    command=fixture_command(valid_console, 0),
+                    cwd=root,
+                    log_path=log_path,
+                    expected_tests=fixture_tests,
+                    log_context_failures=(
+                        lambda _candidate: ["fixture pre-publication drift"]
+                    ),
+                )
+            )
+            if runner_status != 1 or not runner_failures:
+                failures.append(
+                    "focused Swift pre-publication drift was not rejected"
+                )
+            require_preserved_canonical("context-drift", sentinel_state)
+
+            late_context_calls: list[tuple[Path, bytes, int]] = []
+
+            def late_context_drift(candidate: Path) -> list[str]:
+                candidate_stat = candidate.stat()
+                late_context_calls.append(
+                    (candidate, candidate.read_bytes(), candidate_stat.st_ino)
+                )
+                if len(late_context_calls) == 1:
+                    return []
+                return ["fixture post-publication drift"]
+
+            runner_status, runner_failures = (
+                run_and_publish_swift_focused_log(
+                    command=fixture_command(valid_console, 0),
+                    cwd=root,
+                    log_path=log_path,
+                    expected_tests=fixture_tests,
+                    log_context_failures=late_context_drift,
+                )
+            )
+            if (
+                runner_status != 1
+                or not runner_failures
+                or len(late_context_calls) != 2
+                or late_context_calls[0][0] == log_path
+                or late_context_calls[1][0] != log_path
+                or late_context_calls[0][1] != valid_console.encode("utf-8")
+                or late_context_calls[1][1] != valid_console.encode("utf-8")
+                or late_context_calls[0][2] != late_context_calls[1][2]
+                or late_context_calls[1][2] == sentinel_state[1]
+            ):
+                failures.append(
+                    "focused Swift post-publication drift phase was not "
+                    "rejected and restored"
+                )
+            require_preserved_canonical("late-context-drift", sentinel_state)
+
+            post_readback_calls: list[Path] = []
+
+            def corrupt_after_temporary_validation(
+                candidate: Path,
+            ) -> list[str]:
+                post_readback_calls.append(candidate)
+                if len(post_readback_calls) == 1:
+                    candidate.write_bytes(b"corrupted after validation\n")
+                return []
+
+            runner_status, runner_failures = (
+                run_and_publish_swift_focused_log(
+                    command=fixture_command(valid_console, 0),
+                    cwd=root,
+                    log_path=log_path,
+                    expected_tests=fixture_tests,
+                    log_context_failures=corrupt_after_temporary_validation,
+                )
+            )
+            if (
+                runner_status != 1
+                or not runner_failures
+                or len(post_readback_calls) != 2
+                or post_readback_calls[0] == log_path
+                or post_readback_calls[1] != log_path
+            ):
+                failures.append(
+                    "focused Swift post-publication parser failure was not "
+                    "rejected and restored"
+                )
+            require_preserved_canonical("post-readback-failure", sentinel_state)
+
+            runner_status, runner_failures = (
+                run_and_publish_swift_focused_log(
+                    command=(str(root / "missing-executable"),),
+                    cwd=root,
+                    log_path=log_path,
+                    expected_tests=fixture_tests,
+                    log_context_failures=fixture_log_context_failures,
+                )
+            )
+            if runner_status != 1 or not runner_failures:
+                failures.append(
+                    "focused Swift process-launch failure was not rejected"
+                )
+            require_preserved_canonical("process-launch-failure", sentinel_state)
+            if tuple(root.glob(f".{log_path.name}.tmp-*")):
+                failures.append(
+                    "focused Swift failed runners retained temporary logs"
+                )
+            if tuple(root.glob(f".{log_path.name}.previous-*")):
+                failures.append(
+                    "focused Swift failed runners retained canonical backups"
+                )
+
+            runner_status, runner_failures = (
+                run_and_publish_swift_focused_log(
+                    command=fixture_command(valid_console, 0),
+                    cwd=root,
+                    log_path=log_path,
+                    expected_tests=fixture_tests,
+                    log_context_failures=fixture_log_context_failures,
+                )
+            )
+            if runner_status != 0 or runner_failures:
+                failures.append(
+                    "valid focused Swift runner fixture was rejected: "
+                    + "; ".join(runner_failures)
+                )
+            elif log_path.read_bytes() != valid_console.encode("utf-8"):
+                failures.append(
+                    "valid focused Swift runner did not publish exact console "
+                    "bytes"
+                )
+
+            _, valid_console_failures = swift_focused_console_snapshot(
+                log_path=log_path,
+                expected_tests=fixture_tests,
+            )
+            if valid_console_failures:
+                failures.append(
+                    "valid focused Swift console fixture was rejected: "
+                    + "; ".join(valid_console_failures)
+                )
+
+            console_mutations = (
+                (
+                    "missing pass",
+                    valid_console.replace(
+                        "Test Case '-[FixtureTests.FixtureSuite testTwo]' "
+                        "passed (0.001 seconds).\n",
+                        "",
+                        1,
+                    ),
+                ),
+                (
+                    "duplicate pass",
+                    valid_console.replace(
+                        "Test Case '-[FixtureTests.FixtureSuite testTwo]' "
+                        "passed (0.001 seconds).\n",
+                        "Test Case '-[FixtureTests.FixtureSuite testTwo]' "
+                        "passed (0.001 seconds).\n"
+                        "Test Case '-[FixtureTests.FixtureSuite testTwo]' "
+                        "passed (0.001 seconds).\n",
+                        1,
+                    ),
+                ),
+                (
+                    "same-count identity substitution",
+                    valid_console.replace("testTwo", "testSubstitute"),
+                ),
+                (
+                    "skipped testcase",
+                    valid_console.replace(
+                        "testTwo]' passed",
+                        "testTwo]' skipped",
+                        1,
+                    ),
+                ),
+                (
+                    "failed testcase",
+                    valid_console.replace(
+                        "testTwo]' passed",
+                        "testTwo]' failed",
+                        1,
+                    ),
+                ),
+                (
+                    "forged final summary",
+                    valid_console.replace("Executed 2 tests", "Executed 1 test"),
+                ),
+                (
+                    "summary before testcase events",
+                    valid_console.splitlines()[-1]
+                    + "\n"
+                    + "\n".join(valid_console.splitlines()[:-1])
+                    + "\n",
+                ),
+                ("missing final LF", valid_console.rstrip("\n")),
+            )
+            for label, mutated in console_mutations:
+                log_path.write_text(mutated, encoding="utf-8")
+                _, mutation_failures = swift_focused_console_snapshot(
+                    log_path=log_path,
+                    expected_tests=fixture_tests,
+                )
+                if not mutation_failures:
+                    failures.append(
+                        f"focused Swift console {label} mutation was not rejected"
+                    )
+            log_path.write_text(valid_console, encoding="utf-8")
+            os.utime(
+                log_path,
+                ns=(current_ns - 2_000_000_000,) * 2,
+            )
+
+            binding_failures = write_swift_focused_test_binding(
+                binding_path=binding_path,
+                marker_path=marker_path,
+                log_path=log_path,
+                test_list_path=test_list_path,
+                filter_pattern=fixture_filter,
+                expected_count=2,
+                expected_manifest_sha256=fixture_manifest,
+                exact_files=(source_exact,),
+                source_roots=(source_root,),
+                package_path=source_exact,
+                expected_targets=fixture_targets,
+                observed_targets=fixture_targets,
+            )
+            if binding_failures:
+                failures.append(
+                    "valid focused Swift binding fixture was rejected: "
+                    + "; ".join(binding_failures)
+                )
+                return failures
+
+            original_source_mtime_ns = source_file.stat().st_mtime_ns
+            source_file.write_text("struct ChangedFixture {}\n", encoding="utf-8")
+            os.utime(
+                source_file,
+                ns=(original_source_mtime_ns,) * 2,
+            )
+            source_drift_failures = swift_focused_test_binding_failures(
+                binding_path=binding_path,
+                marker_path=marker_path,
+                log_path=log_path,
+                test_list_path=test_list_path,
+                filter_pattern=fixture_filter,
+                expected_count=2,
+                expected_manifest_sha256=fixture_manifest,
+                exact_files=(source_exact,),
+                source_roots=(source_root,),
+                package_path=source_exact,
+                expected_targets=fixture_targets,
+                observed_targets=fixture_targets,
+            )
+            if not any(
+                "must exactly bind the focused Swift source" in failure
+                for failure in source_drift_failures
+            ):
+                failures.append(
+                    "mtime-preserved focused Swift source drift was not rejected"
+                )
+            source_file.write_text("struct Fixture {}\n", encoding="utf-8")
+            os.utime(
+                source_file,
+                ns=(original_source_mtime_ns,) * 2,
+            )
+
+            original_log_bytes = log_path.read_bytes()
+            original_log_mtime_ns = log_path.stat().st_mtime_ns
+            log_path.write_bytes(original_log_bytes + b"post-run mutation\n")
+            os.utime(log_path, ns=(original_log_mtime_ns,) * 2)
+            log_drift_failures = swift_focused_test_binding_failures(
+                binding_path=binding_path,
+                marker_path=marker_path,
+                log_path=log_path,
+                test_list_path=test_list_path,
+                filter_pattern=fixture_filter,
+                expected_count=2,
+                expected_manifest_sha256=fixture_manifest,
+                exact_files=(source_exact,),
+                source_roots=(source_root,),
+                package_path=source_exact,
+                expected_targets=fixture_targets,
+                observed_targets=fixture_targets,
+            )
+            if not any(
+                "must exactly bind the current focused Swift" in failure
+                for failure in log_drift_failures
+            ):
+                failures.append("focused Swift log byte drift was not rejected")
+            log_path.write_bytes(original_log_bytes)
+            os.utime(log_path, ns=(original_log_mtime_ns,) * 2)
+
+            marker_mtime_ns = marker_path.stat().st_mtime_ns
+            os.utime(log_path, ns=(marker_mtime_ns,) * 2)
+            stale_log_failures = swift_focused_test_binding_failures(
+                binding_path=binding_path,
+                marker_path=marker_path,
+                log_path=log_path,
+                test_list_path=test_list_path,
+                filter_pattern=fixture_filter,
+                expected_count=2,
+                expected_manifest_sha256=fixture_manifest,
+                exact_files=(source_exact,),
+                source_roots=(source_root,),
+                package_path=source_exact,
+                expected_targets=fixture_targets,
+                observed_targets=fixture_targets,
+            )
+            if not any(
+                "must be generated after" in failure
+                for failure in stale_log_failures
+            ):
+                failures.append("stale focused Swift log was not rejected")
+            os.utime(log_path, ns=(original_log_mtime_ns,) * 2)
+
+            os.utime(binding_path, ns=(original_log_mtime_ns,) * 2)
+            stale_binding_failures = swift_focused_test_binding_failures(
+                binding_path=binding_path,
+                marker_path=marker_path,
+                log_path=log_path,
+                test_list_path=test_list_path,
+                filter_pattern=fixture_filter,
+                expected_count=2,
+                expected_manifest_sha256=fixture_manifest,
+                exact_files=(source_exact,),
+                source_roots=(source_root,),
+                package_path=source_exact,
+                expected_targets=fixture_targets,
+                observed_targets=fixture_targets,
+            )
+            if not any(
+                "must postdate the focused Swift log" in failure
+                for failure in stale_binding_failures
+            ):
+                failures.append("stale focused Swift binding was not rejected")
+    except OSError as error:
+        failures.append(f"focused Swift result fixture failed: {error}")
+    return failures
+
+
 def android_result_freshness_self_test() -> list[str]:
     failures: list[str] = []
     source_mtimes = (
@@ -2884,6 +5428,40 @@ def android_result_freshness_self_test() -> list[str]:
                 failures.append(
                     "full XML testcase substitution was not rejected"
                 )
+            original_full_xml = full_report_path.read_text(
+                encoding="utf-8"
+            )
+            full_report_path.write_text(
+                original_full_xml.replace(
+                    'name="additional"',
+                    'name="sameCountSubstitution"',
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            same_count_substitution_failures = (
+                android_test_result_failures(
+                    full_contract,
+                    result_root=full_result_root,
+                    allow_additional_methods=True,
+                    require_exact_report_set=True,
+                    expected_testcase_manifest_sha256=(
+                        full_testcase_manifest
+                    ),
+                )
+            )
+            if not any(
+                "testcase manifest SHA-256 must match"
+                in failure
+                for failure in same_count_substitution_failures
+            ):
+                failures.append(
+                    "same-count XML testcase substitution was not rejected"
+                )
+            full_report_path.write_text(
+                original_full_xml,
+                encoding="utf-8",
+            )
 
             binding_exact_file = temporary_root / "binding-config.txt"
             binding_exact_file.write_text("config-v1\n", encoding="utf-8")
@@ -3206,7 +5784,7 @@ def android_result_freshness_self_test() -> list[str]:
                 require_exact_report_set=True,
             )
             if not any(
-                "result report set must match the exact full-suite contract"
+                "result report set must match the exact result contract"
                 in failure
                 for failure in exact_set_failures
             ):
@@ -3230,69 +5808,7 @@ ANDROID_FULL_RUN_PREPARE_COMMAND = (
     "run python3 -B script/check_product_ci.py "
     "--prepare-android-full-test-run\n"
 )
-ANDROID_FULL_RUNNER_SELECTORS = (
-    "com.localagentbridge.android.AppNavigationTest",
-    (
-        "com.localagentbridge.android."
-        "AndroidAppLanguagePlatformLifecycleTest"
-    ),
-    "com.localagentbridge.android.ResearchNotebookDrawerTest",
-    "com.localagentbridge.android.PairingQrScanResultTest",
-    "com.localagentbridge.android.AetherLinkThemeNoDeviceComposeTest",
-    (
-        "com.localagentbridge.android.ui."
-        "AndroidCoreSurfaceFontScaleQualificationTest"
-    ),
-    (
-        "com.localagentbridge.android."
-        "PairingQrScannerChromeNoDeviceComposeTest"
-    ),
-    (
-        "com.localagentbridge.android."
-        "PairingQrCameraPermissionControllerHostApiMatrixTest"
-    ),
-    (
-        "com.localagentbridge.android."
-        "PairingQrCameraPermissionActivityRecreationTest"
-    ),
-    (
-        "com.localagentbridge.android.ui."
-        "ClientScreensNoDeviceComposeTest"
-    ),
-    "com.localagentbridge.android.AndroidBackupPolicyResourceTest",
-    (
-        "com.localagentbridge.android.runtime."
-        "RuntimeClientViewModelRelayIntegrationTest"
-    ),
-    (
-        "com.localagentbridge.android.runtime."
-        "RuntimeClientViewModelProductionDeadlineTest"
-    ),
-    (
-        "com.localagentbridge.android.runtime."
-        "AndroidProductionRuntimeChannelComposerTest"
-    ),
-    (
-        "com.localagentbridge.android.runtime."
-        "AndroidProductionRuntimeActivationControllerTest"
-    ),
-    (
-        "com.localagentbridge.android.runtime."
-        "RuntimeLocalStoreTest"
-    ),
-    (
-        "com.localagentbridge.android.runtime."
-        "RuntimeClientViewModelTest"
-    ),
-    (
-        "com.localagentbridge.android.runtime."
-        "RuntimeClientChatSessionMutationFailureTest"
-    ),
-    (
-        "com.localagentbridge.android.runtime."
-        "RuntimeAttachmentPromptResourceTest"
-    ),
-)
+ANDROID_FULL_RUNNER_SELECTORS = ANDROID_MAIN_FULL_TESTS
 
 
 def no_device_full_result_gate_failures(
@@ -3839,15 +6355,22 @@ def android_app_language_lifecycle_source_failures(
             (
                 "closeInitialActivityAndResetState()",
                 "runtimeStore().save(",
-                "localeManager().applicationLocales = LocaleList.forLanguageTags(",
                 "ActivityScenario.launch(MainActivity::class.java)",
                 "awaitStoredLanguage(",
                 "assertPlatformLanguage(",
-                "scenario.recreate()",
+                "assertPlatformMigrationCompleted()",
+                "migrationScenario.recreate()",
                 "assertNotSame(firstActivity, recreatedActivity)",
-                "val coldScenario = ActivityScenario.launch(MainActivity::class.java)",
+                "LocaleList.getEmptyLocaleList()",
+                "migratedColdScenario.recreate()",
+                "localeManager().applicationLocales = LocaleList.forLanguageTags(",
+                "externalOverrideScenario.recreate()",
             ),
             (
+                'PersistedRuntimeData().withAppLanguageTag("fr-FR")',
+                'awaitStoredLanguage("fr", APP_LANGUAGE_SOURCE_IN_APP)',
+                'assertPlatformLanguage("fr")',
+                'awaitStoredLanguage("en", APP_LANGUAGE_SOURCE_SYSTEM)',
                 'LocaleList.forLanguageTags("ko-KR")',
                 'awaitStoredLanguage("ko", APP_LANGUAGE_SOURCE_IN_APP)',
             ),
@@ -3887,15 +6410,18 @@ def android_app_language_lifecycle_source_failures(
         ANDROID_APP_LANGUAGE_LIFECYCLE_METHODS[1]: (
             ("closeInitialActivityAndResetState()", (0,)),
             ("runtimeStore().save(", (0,)),
-            (
-                "localeManager().applicationLocales = LocaleList.forLanguageTags(",
-                (0,),
-            ),
-            ("ActivityScenario.launch(MainActivity::class.java)", (0, 0)),
-            ("awaitStoredLanguage(", (1, 1)),
-            ("assertPlatformLanguage(", (1, 1, 1)),
-            ("scenario.recreate()", (1,)),
+            ("ActivityScenario.launch(MainActivity::class.java)", (0, 0, 0, 0)),
+            ("awaitStoredLanguage(", (1, 1, 1, 1, 1)),
+            ("assertPlatformLanguage(", (1, 1, 1, 1, 1)),
+            ("assertPlatformMigrationCompleted()", (1, 1, 1, 1, 1, 1, 1)),
+            ("migrationScenario.recreate()", (1,)),
             ("assertNotSame(firstActivity, recreatedActivity)", (1,)),
+            ("LocaleList.getEmptyLocaleList()", (1,)),
+            ("localeManager().applicationLocales.size()", (1, 1, 1)),
+            ("migratedColdScenario.recreate()", (1,)),
+            ("LocaleList.forLanguageTags(", (0,)),
+            ("externalOverrideScenario.recreate()", (1,)),
+            ("assertStoredLanguage(", (1, 1)),
         ),
         ANDROID_APP_LANGUAGE_LIFECYCLE_METHODS[2]: (
             ("closeInitialActivityAndResetState()", (0,)),
@@ -4564,6 +7090,31 @@ def main() -> int:
         help="also prove representative contract mutations are rejected",
     )
     mode.add_argument(
+        "--swift-test-selection",
+        action="store_true",
+        help="validate the exact focused Swift test selection",
+    )
+    mode.add_argument(
+        "--prepare-swift-focused-test-run",
+        action="store_true",
+        help="bind current Swift source and selected tests before execution",
+    )
+    mode.add_argument(
+        "--run-swift-focused-tests",
+        action="store_true",
+        help="run the exact serial focused Swift tests and retain console bytes",
+    )
+    mode.add_argument(
+        "--write-swift-focused-test-binding",
+        action="store_true",
+        help="bind focused Swift console bytes to source and selected tests",
+    )
+    mode.add_argument(
+        "--swift-focused-test-results",
+        action="store_true",
+        help="independently read back the focused Swift test binding",
+    )
+    mode.add_argument(
         "--android-test-results",
         action="store_true",
         help="validate the exact focused Android product JUnit results",
@@ -4600,7 +7151,108 @@ def main() -> int:
         action="store_true",
         help="validate the exact Android font-scale JUnit results",
     )
+    parser.add_argument(
+        "--swift-focused-filter",
+        help="exact filter accepted only by --run-swift-focused-tests",
+    )
     args = parser.parse_args()
+
+    if (
+        args.swift_focused_filter is not None
+        and not args.run_swift_focused_tests
+    ):
+        parser.error(
+            "--swift-focused-filter requires --run-swift-focused-tests"
+        )
+
+    if args.swift_test_selection:
+        failures = swift_test_selection_failures()
+        if failures:
+            for failure in failures:
+                print(
+                    f"Swift product test selection failed: {failure}",
+                    file=sys.stderr,
+                )
+            return 1
+        print(
+            "Swift product test selection passed: "
+            f"{SWIFT_PRODUCT_TEST_COUNT}/{SWIFT_PRODUCT_TEST_COUNT}."
+        )
+        return 0
+
+    if args.prepare_swift_focused_test_run:
+        failures = swift_test_selection_failures()
+        if not failures:
+            failures.extend(write_swift_focused_test_run_marker())
+        if failures:
+            for failure in failures:
+                print(
+                    f"Swift focused test run preparation failed: {failure}",
+                    file=sys.stderr,
+                )
+            return 1
+        print(
+            "Swift focused source marker written and read back: "
+            f"{SWIFT_PRODUCT_TEST_COUNT} expected tests."
+        )
+        return 0
+
+    if args.run_swift_focused_tests:
+        if args.swift_focused_filter is None:
+            print(
+                "Swift focused test runner failed: exact filter is required",
+                file=sys.stderr,
+            )
+            return 1
+        status, failures = run_swift_focused_tests(
+            filter_pattern=args.swift_focused_filter,
+        )
+        if failures:
+            for failure in failures:
+                print(
+                    f"Swift focused test runner failed: {failure}",
+                    file=sys.stderr,
+                )
+        if status != 0:
+            if not failures:
+                print(
+                    f"Swift focused test runner exited with status {status}.",
+                    file=sys.stderr,
+                )
+            return status
+        print(
+            "Swift focused serial test run passed and retained: "
+            f"{SWIFT_PRODUCT_TEST_COUNT}/{SWIFT_PRODUCT_TEST_COUNT}."
+        )
+        return 0
+
+    if (
+        args.write_swift_focused_test_binding
+        or args.swift_focused_test_results
+    ):
+        failures = (
+            write_swift_focused_test_binding()
+            if args.write_swift_focused_test_binding
+            else swift_focused_test_binding_failures()
+        )
+        if failures:
+            for failure in failures:
+                print(
+                    f"Swift focused test results failed: {failure}",
+                    file=sys.stderr,
+                )
+            return 1
+        action = (
+            "binding written and read back"
+            if args.write_swift_focused_test_binding
+            else "independent binding readback passed"
+        )
+        print(
+            f"Swift focused test {action}: "
+            f"{SWIFT_PRODUCT_TEST_COUNT}/{SWIFT_PRODUCT_TEST_COUNT}; "
+            "skipped=0; failures=0; errors=0."
+        )
+        return 0
 
     if args.prepare_android_full_test_run:
         failures = (
@@ -4638,7 +7290,7 @@ def main() -> int:
             expected_results = ANDROID_PRODUCT_TEST_RESULTS
             result_label = "Android product"
             allow_additional_methods = False
-            require_exact_report_set = False
+            require_exact_report_set = True
         elif args.android_full_test_results:
             expected_results = ANDROID_FULL_TEST_RESULTS
             result_label = "Android full app"
@@ -4675,7 +7327,11 @@ def main() -> int:
                         args.android_full_test_results
                         or args.write_android_full_test_binding
                     )
-                    else None
+                    else (
+                        ANDROID_PRODUCT_TEST_CASE_MANIFEST_SHA256
+                        if args.android_test_results
+                        else None
+                    )
                 ),
             )
             + android_app_language_lifecycle_source_failures()
@@ -4729,6 +7385,8 @@ def main() -> int:
         failures.extend(android_camera_lifecycle_source_self_test())
         failures.extend(android_camera_controller_host_source_self_test())
         failures.extend(android_font_scale_source_self_test())
+        failures.extend(swift_test_selection_self_test())
+        failures.extend(swift_focused_result_self_test())
         failures.extend(android_result_freshness_self_test())
         failures.extend(no_device_full_result_gate_self_test())
         failures.extend(product_copy_font_scale_guard_self_test())

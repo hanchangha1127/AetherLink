@@ -170,7 +170,6 @@ import com.localagentbridge.android.runtime.RuntimeAppTheme
 import com.localagentbridge.android.runtime.RuntimeUiState
 import com.localagentbridge.android.runtime.isChatModel
 import com.localagentbridge.android.runtime.isRuntimeHostLocalModel
-import com.localagentbridge.android.runtime.resolveAndroidPlatformAppLanguageSnapshot
 import com.localagentbridge.android.runtime.supportsImageInput
 import com.localagentbridge.android.ui.AetherLinkInteractionFeedback
 import com.localagentbridge.android.ui.ChatScreen
@@ -839,13 +838,14 @@ private fun LocalAgentBridgeApp(
     val baseContext = LocalContext.current
     val pairingQrCameraPermission =
         rememberPairingQrCameraPermissionController()
-    val initialAndroidPlatformAppLanguageSnapshot = remember(baseContext) {
+    val initialAndroidPlatformAppLanguageSnapshot = remember(viewModel, baseContext) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            resolveAndroidPlatformAppLanguageSnapshot(
+            viewModel.androidPlatformAppLanguageReconciliation(
+                applicationLocalesSupported = true,
                 applicationLocaleLanguageTag =
                     androidAppLocaleOverrideLanguageTag(baseContext),
                 systemLanguageTag = androidSystemAppLanguageTag(baseContext),
-            )
+            ).snapshot
         } else {
             null
         }
@@ -854,11 +854,23 @@ private fun LocalAgentBridgeApp(
         mutableStateOf(initialAndroidPlatformAppLanguageSnapshot)
     }
     LaunchedEffect(viewModel, baseContext) {
-        viewModel.reconcileAndroidPlatformAppLanguageSnapshot(
+        val migrationLanguageTag = viewModel.reconcileAndroidPlatformAppLanguageSnapshot(
             applicationLocalesSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
             applicationLocaleLanguageTag = androidAppLocaleOverrideLanguageTag(baseContext),
             systemLanguageTag = androidSystemAppLanguageTag(baseContext),
         )
+        if (migrationLanguageTag != null) {
+            synchronizeAndroidAppLocaleOverride(
+                context = baseContext,
+                selectedLanguageTag = migrationLanguageTag,
+            )
+            viewModel.reconcileAndroidPlatformAppLanguageSnapshot(
+                applicationLocalesSupported = true,
+                applicationLocaleLanguageTag =
+                    androidAppLocaleOverrideLanguageTag(baseContext),
+                systemLanguageTag = androidSystemAppLanguageTag(baseContext),
+            )
+        }
     }
     LaunchedEffect(
         state.selectedLanguageTag,

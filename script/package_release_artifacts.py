@@ -103,6 +103,7 @@ BUNDLETOOL_MAIN_CLASS = (
 BUNDLETOOL_VERSION = "1.18.3"
 BUNDLETOOL_TIMEOUT_SECONDS = 60
 AAPT2_TIMEOUT_SECONDS = 60
+ANDROID_BUILD_TOOLS_VERSION = "36.0.0"
 ANDROID_BACKUP_POLICY_BUILD = 15
 ANDROID_ENTRY_POINT_TOPOLOGY_BUILD = 23
 ANDROID_APPLICATION_SHELL_BUILD = 23
@@ -235,6 +236,23 @@ SOURCE_REQUIRED_FILES = (
     (
         "script/"
         "run_macos_local_dmg_uninstall_reinstall_state_recovery_smoke.py"
+    ),
+    (
+        "script/run_macos_local_dmg_uninstall_reinstall_"
+        "abrupt_process_state_recovery_smoke.py"
+    ),
+    (
+        "script/test_run_macos_local_dmg_uninstall_reinstall_"
+        "abrupt_process_state_recovery_smoke.py"
+    ),
+    "script/run_macos_build24_idle_resource_stability_smoke.py",
+    (
+        "script/run_macos_current_source_lane_a_"
+        "idle_resource_stability_smoke.py"
+    ),
+    (
+        "script/test_run_macos_current_source_lane_a_"
+        "idle_resource_stability_smoke.py"
     ),
     "script/run_macos_packaged_app_lifecycle_smoke.py",
     "script/run_macos_packaged_app_state_recovery_smoke.py",
@@ -2113,30 +2131,15 @@ def android_sdk_root(root: Path = ROOT) -> Path:
     return Path.home() / "Library/Android/sdk"
 
 
-def android_build_tool_version(path: Path) -> tuple[int, ...]:
-    try:
-        return tuple(int(component) for component in path.parent.name.split("."))
-    except ValueError:
-        return ()
-
-
 def find_android_build_tool(name: str, root: Path = ROOT) -> Path:
     sdk_root = android_sdk_root(root)
-    candidates = [
-        path
-        for path in (sdk_root / "build-tools").glob(f"*/{name}")
-        if path.is_file() and os.access(path, os.X_OK)
-    ]
-    versioned = [
-        (android_build_tool_version(path), path)
-        for path in candidates
-        if android_build_tool_version(path)
-    ]
-    if not versioned:
+    path = sdk_root / "build-tools" / ANDROID_BUILD_TOOLS_VERSION / name
+    if not path.is_file() or not os.access(path, os.X_OK):
         raise ReleaseArchiveError(
-            f"cannot locate {name} under Android SDK {sdk_root}"
+            f"cannot locate pinned Build Tools {ANDROID_BUILD_TOOLS_VERSION} "
+            f"{name} under Android SDK {sdk_root}"
         )
-    return max(versioned)[1]
+    return path
 
 
 def parse_aapt2_badging(output: str) -> dict[str, object]:

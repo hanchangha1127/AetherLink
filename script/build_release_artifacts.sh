@@ -40,5 +40,6 @@ if [[ "$source_before" != "$source_after" ]]; then
 fi
 
 python3 script/check_release_version_ledger.py --artifacts
+python3 script/check_release_artifact_archive.py --android-build-outputs
 python3 script/package_release_artifacts.py create
 python3 script/check_release_artifact_archive.py

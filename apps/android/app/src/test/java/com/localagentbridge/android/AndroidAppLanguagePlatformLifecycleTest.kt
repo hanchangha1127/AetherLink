@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.localagentbridge.android.runtime.ANDROID_APP_LANGUAGE_PLATFORM_MIGRATION_VERSION
 import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_IN_APP
 import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_SYSTEM
 import com.localagentbridge.android.runtime.PersistedRuntimeData
@@ -58,6 +59,7 @@ class AndroidAppLanguagePlatformLifecycleTest {
         try {
             awaitStoredLanguage("fr", APP_LANGUAGE_SOURCE_IN_APP)
             assertNull(androidAppLocaleOverrideLanguageTag(application))
+            assertPlatformMigrationNotStarted()
 
             lateinit var firstActivity: MainActivity
             scenario.onActivity { activity ->
@@ -73,6 +75,7 @@ class AndroidAppLanguagePlatformLifecycleTest {
             assertNotSame(firstActivity, recreatedActivity)
             assertStoredLanguage("fr", APP_LANGUAGE_SOURCE_IN_APP)
             assertNull(androidAppLocaleOverrideLanguageTag(application))
+            assertPlatformMigrationNotStarted()
         } finally {
             scenario.close()
         }
@@ -86,37 +89,72 @@ class AndroidAppLanguagePlatformLifecycleTest {
             PersistedRuntimeData().withAppLanguageTag("fr-FR"),
             commitToDisk = true,
         )
-        localeManager().applicationLocales = LocaleList.forLanguageTags("ko-KR")
 
-        val scenario = ActivityScenario.launch(MainActivity::class.java)
+        val migrationScenario = ActivityScenario.launch(MainActivity::class.java)
         try {
-            awaitStoredLanguage("ko", APP_LANGUAGE_SOURCE_IN_APP)
-            assertPlatformLanguage("ko")
+            awaitStoredLanguage("fr", APP_LANGUAGE_SOURCE_IN_APP)
+            assertPlatformLanguage("fr")
+            assertPlatformMigrationCompleted()
 
             lateinit var firstActivity: MainActivity
-            scenario.onActivity { activity ->
+            migrationScenario.onActivity { activity ->
                 firstActivity = activity
             }
-            scenario.recreate()
+            migrationScenario.recreate()
             compose.waitForIdle()
 
             lateinit var recreatedActivity: MainActivity
-            scenario.onActivity { activity ->
+            migrationScenario.onActivity { activity ->
                 recreatedActivity = activity
             }
             assertNotSame(firstActivity, recreatedActivity)
-            assertStoredLanguage("ko", APP_LANGUAGE_SOURCE_IN_APP)
-            assertPlatformLanguage("ko")
+            assertStoredLanguage("fr", APP_LANGUAGE_SOURCE_IN_APP)
+            assertPlatformLanguage("fr")
+            assertPlatformMigrationCompleted()
         } finally {
-            scenario.close()
+            migrationScenario.close()
         }
 
-        val coldScenario = ActivityScenario.launch(MainActivity::class.java)
+        val migratedColdScenario = ActivityScenario.launch(MainActivity::class.java)
+        try {
+            awaitStoredLanguage("fr", APP_LANGUAGE_SOURCE_IN_APP)
+            assertPlatformLanguage("fr")
+            assertPlatformMigrationCompleted()
+
+            localeManager().applicationLocales = LocaleList.getEmptyLocaleList()
+            assertEquals(0, localeManager().applicationLocales.size())
+
+            migratedColdScenario.recreate()
+            awaitStoredLanguage("en", APP_LANGUAGE_SOURCE_SYSTEM)
+            assertEquals(0, localeManager().applicationLocales.size())
+            assertPlatformMigrationCompleted()
+        } finally {
+            migratedColdScenario.close()
+        }
+
+        val clearedColdScenario = ActivityScenario.launch(MainActivity::class.java)
+        try {
+            awaitStoredLanguage("en", APP_LANGUAGE_SOURCE_SYSTEM)
+            assertEquals(0, localeManager().applicationLocales.size())
+            assertPlatformMigrationCompleted()
+        } finally {
+            clearedColdScenario.close()
+        }
+
+        localeManager().applicationLocales = LocaleList.forLanguageTags("ko-KR")
+        val externalOverrideScenario = ActivityScenario.launch(MainActivity::class.java)
         try {
             awaitStoredLanguage("ko", APP_LANGUAGE_SOURCE_IN_APP)
             assertPlatformLanguage("ko")
+            assertPlatformMigrationCompleted()
+
+            externalOverrideScenario.recreate()
+            compose.waitForIdle()
+            assertStoredLanguage("ko", APP_LANGUAGE_SOURCE_IN_APP)
+            assertPlatformLanguage("ko")
+            assertPlatformMigrationCompleted()
         } finally {
-            coldScenario.close()
+            externalOverrideScenario.close()
         }
     }
 
@@ -139,11 +177,13 @@ class AndroidAppLanguagePlatformLifecycleTest {
         try {
             awaitStoredLanguage("en", APP_LANGUAGE_SOURCE_IN_APP)
             assertPlatformLanguage("en")
+            assertPlatformMigrationCompleted()
 
             scenario.recreate()
             compose.waitForIdle()
             assertStoredLanguage("en", APP_LANGUAGE_SOURCE_IN_APP)
             assertPlatformLanguage("en")
+            assertPlatformMigrationCompleted()
 
             synchronizeAndroidAppLocaleOverride(
                 context = application,
@@ -154,6 +194,7 @@ class AndroidAppLanguagePlatformLifecycleTest {
             scenario.recreate()
             awaitStoredLanguage("en", APP_LANGUAGE_SOURCE_SYSTEM)
             assertEquals(0, localeManager().applicationLocales.size())
+            assertPlatformMigrationCompleted()
         } finally {
             scenario.close()
         }
@@ -162,6 +203,7 @@ class AndroidAppLanguagePlatformLifecycleTest {
         try {
             awaitStoredLanguage("en", APP_LANGUAGE_SOURCE_SYSTEM)
             assertEquals(0, localeManager().applicationLocales.size())
+            assertPlatformMigrationCompleted()
         } finally {
             coldScenario.close()
         }
@@ -199,6 +241,21 @@ class AndroidAppLanguagePlatformLifecycleTest {
         val data = runtimeStore().load()
         assertEquals(expectedLanguageTag, data.appLanguageTag)
         assertEquals(expectedLanguageSource, data.appLanguageSource)
+    }
+
+    private fun assertPlatformMigrationCompleted() {
+        val data = runtimeStore().load()
+        assertEquals(
+            ANDROID_APP_LANGUAGE_PLATFORM_MIGRATION_VERSION,
+            data.androidAppLanguagePlatformMigrationVersion,
+        )
+        assertNull(data.pendingAndroidAppLanguagePlatformMigrationTag)
+    }
+
+    private fun assertPlatformMigrationNotStarted() {
+        val data = runtimeStore().load()
+        assertEquals(0, data.androidAppLanguagePlatformMigrationVersion)
+        assertNull(data.pendingAndroidAppLanguagePlatformMigrationTag)
     }
 
     private fun localeManager(): LocaleManager {

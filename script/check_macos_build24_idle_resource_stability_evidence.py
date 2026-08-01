@@ -80,6 +80,21 @@ LIMITATIONS = (
     ),
 )
 
+# This Build 24 observation was exercised with the exact runner bytes at this
+# commit. The live runner later gained a reusable current-source exercise seam,
+# so the evidence-era bytes are retained under a versioned fixture path rather
+# than rebound to code that did not produce the result.
+HISTORICAL_SOURCE_SNAPSHOT_COMMIT = (
+    "38027523f65f97a81044555c2f42b020eada3436"
+)
+HISTORICAL_SOURCE_SNAPSHOT_ROOT = (
+    "docs/evidence/macos-build24-lifecycle-source-v1"
+)
+HISTORICAL_LOCAL_DMG_V2_SOURCE_PATH = (
+    f"{HISTORICAL_SOURCE_SNAPSHOT_ROOT}/script/"
+    "run_macos_local_dmg_install_smoke_v2.py"
+)
+
 
 class IdleResourceEvidenceError(RuntimeError):
     """Raised when the retained evidence fails its closed contract."""
@@ -172,7 +187,7 @@ TARGET_IDENTITIES = {
         32_324,
         "e082ce1aaf7f65bfb63bb2b5fd58136af1510eb6d1689faa1014c018b74129fb",
     ),
-    "script/run_macos_local_dmg_install_smoke_v2.py": identity(
+    HISTORICAL_LOCAL_DMG_V2_SOURCE_PATH: identity(
         12_962,
         "515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374",
     ),
@@ -183,6 +198,32 @@ TARGET_IDENTITIES = {
     "script/test_run_macos_build24_idle_resource_stability_smoke.py": identity(
         32_632,
         "df8a04a0e46e7ef0cc10a1f5dc29f3f8f9763e960995427304a7ccd93a2e8e4b",
+    ),
+}
+CANONICAL_TARGET_PATHS = frozenset(TARGET_IDENTITIES)
+HISTORICAL_SOURCE_DIRECTORY_INVENTORIES = {
+    HISTORICAL_SOURCE_SNAPSHOT_ROOT: ("script",),
+    f"{HISTORICAL_SOURCE_SNAPSHOT_ROOT}/script": (
+        "run_macos_local_dmg_install_smoke_v2.py",
+        (
+            "run_macos_local_dmg_uninstall_reinstall_"
+            "abrupt_process_state_recovery_smoke.py"
+        ),
+        "run_macos_local_dmg_uninstall_reinstall_smoke.py",
+        (
+            "run_macos_local_dmg_uninstall_reinstall_"
+            "state_recovery_smoke.py"
+        ),
+        "test_run_macos_local_dmg_install_smoke_v2.py",
+        (
+            "test_run_macos_local_dmg_uninstall_reinstall_"
+            "abrupt_process_state_recovery_smoke.py"
+        ),
+        "test_run_macos_local_dmg_uninstall_reinstall_smoke.py",
+        (
+            "test_run_macos_local_dmg_uninstall_reinstall_"
+            "state_recovery_smoke.py"
+        ),
     ),
 }
 PAYLOAD_PATHS = frozenset(TARGET_IDENTITIES) - {ARCHIVE_RELATIVE_PATH}
@@ -399,6 +440,22 @@ class RepositorySnapshot:
                 payloads[relative_path] = b"".join(chunks)
         return payloads
 
+    def list_directory(self, relative_path: str) -> tuple[str, ...]:
+        parts = normalized_relative_parts(relative_path)
+        held = self.directories.get(parts)
+        if held is None:
+            raise IdleResourceEvidenceError(
+                "directory is outside the held repository snapshot: "
+                f"{relative_path}"
+            )
+        try:
+            return tuple(os.listdir(held.file_descriptor))
+        except OSError as error:
+            raise IdleResourceEvidenceError(
+                f"cannot enumerate held repository directory {relative_path}: "
+                f"{error}"
+            ) from error
+
     def verify_graph(self) -> None:
         root_path_stat = os.stat(self.root, follow_symlinks=False)
         root_held = self.directories[()]
@@ -469,6 +526,71 @@ class RepositorySnapshot:
             except OSError:
                 pass
         self.directories.clear()
+
+
+def validate_historical_source_snapshot_contract(
+    snapshot: RepositorySnapshot | None = None,
+) -> None:
+    expected_root = "docs/evidence/macos-build24-lifecycle-source-v1"
+    expected_path = (
+        f"{expected_root}/script/run_macos_local_dmg_install_smoke_v2.py"
+    )
+    expected_identity = identity(
+        12_962,
+        "515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374",
+    )
+    if (
+        HISTORICAL_SOURCE_SNAPSHOT_COMMIT
+        != "38027523f65f97a81044555c2f42b020eada3436"
+        or HISTORICAL_SOURCE_SNAPSHOT_ROOT != expected_root
+        or HISTORICAL_LOCAL_DMG_V2_SOURCE_PATH != expected_path
+        or frozenset(TARGET_IDENTITIES) != CANONICAL_TARGET_PATHS
+        or len(CANONICAL_TARGET_PATHS) != 16
+        or TARGET_IDENTITIES.get(expected_path) != expected_identity
+        or "script/run_macos_local_dmg_install_smoke_v2.py"
+        in TARGET_IDENTITIES
+        or HISTORICAL_SOURCE_DIRECTORY_INVENTORIES
+        != {
+            expected_root: ("script",),
+            f"{expected_root}/script": (
+                "run_macos_local_dmg_install_smoke_v2.py",
+                (
+                    "run_macos_local_dmg_uninstall_reinstall_"
+                    "abrupt_process_state_recovery_smoke.py"
+                ),
+                "run_macos_local_dmg_uninstall_reinstall_smoke.py",
+                (
+                    "run_macos_local_dmg_uninstall_reinstall_"
+                    "state_recovery_smoke.py"
+                ),
+                "test_run_macos_local_dmg_install_smoke_v2.py",
+                (
+                    "test_run_macos_local_dmg_uninstall_reinstall_"
+                    "abrupt_process_state_recovery_smoke.py"
+                ),
+                "test_run_macos_local_dmg_uninstall_reinstall_smoke.py",
+                (
+                    "test_run_macos_local_dmg_uninstall_reinstall_"
+                    "state_recovery_smoke.py"
+                ),
+            ),
+        }
+    ):
+        raise IdleResourceEvidenceError(
+            "historical source snapshot contract differs"
+        )
+    if snapshot is None:
+        return
+    for relative_directory, expected_entries in (
+        HISTORICAL_SOURCE_DIRECTORY_INVENTORIES.items()
+    ):
+        if tuple(sorted(snapshot.list_directory(relative_directory))) != (
+            expected_entries
+        ):
+            raise IdleResourceEvidenceError(
+                "historical source snapshot directory inventory differs: "
+                f"{relative_directory}"
+            )
 
 
 def duplicate_rejecting_object(
@@ -1079,9 +1201,11 @@ def validate_release_payloads(payloads: dict[str, bytes]) -> None:
 
 
 def readback(root: Path = ROOT) -> dict[str, object]:
+    validate_historical_source_snapshot_contract()
     snapshot = RepositorySnapshot(root, TARGET_IDENTITIES)
     try:
         snapshot.open_all()
+        validate_historical_source_snapshot_contract(snapshot)
         payloads = snapshot.read_all()
         if set(payloads) != PAYLOAD_PATHS:
             raise IdleResourceEvidenceError(

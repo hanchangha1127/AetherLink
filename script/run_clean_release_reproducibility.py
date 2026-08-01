@@ -5,7 +5,10 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+from contextvars import ContextVar
+import ctypes
 from dataclasses import dataclass
+import errno
 import fcntl
 import hashlib
 import json
@@ -20,7 +23,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import Callable, Iterator
+from typing import Callable, Iterable, Iterator
 import uuid
 import zipfile
 
@@ -42,6 +45,10 @@ LOCK_PATH = WORK_ROOT / ".runner.lock"
 SWIFT_LEASE_PATH = WORK_ROOT / ".swift-scratch-lease.json"
 RESULT_ROOT = ROOT / "dist/reproducibility"
 LIFECYCLE_RESULT_ROOT = ROOT / "dist/lifecycle"
+LANE_A_RESULT_PARENT_DESCRIPTORS: ContextVar[dict[Path, int]] = ContextVar(
+    "lane_a_result_parent_descriptors",
+    default={},
+)
 LANE_A_LOCAL_DMG_RUNNER = Path(
     "script/run_macos_local_dmg_install_smoke_v2.py"
 )
@@ -50,6 +57,14 @@ LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_RUNNER = Path(
 )
 LANE_A_LOCAL_DMG_STATE_RECOVERY_RUNNER = Path(
     "script/run_macos_local_dmg_uninstall_reinstall_state_recovery_smoke.py"
+)
+LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_RUNNER = Path(
+    "script/run_macos_local_dmg_uninstall_reinstall_"
+    "abrupt_process_state_recovery_smoke.py"
+)
+LANE_A_IDLE_RESOURCE_STABILITY_RUNNER = Path(
+    "script/run_macos_current_source_lane_a_"
+    "idle_resource_stability_smoke.py"
 )
 LANE_A_LOCAL_DMG_PHASE = "lane-a-local-dmg"
 LANE_A_LOCAL_DMG_SCOPE = (
@@ -62,11 +77,29 @@ LANE_A_LOCAL_DMG_STATE_RECOVERY_SCOPE = (
     "same-host-per-user-ephemeral-local-dmg-uninstall-reinstall-"
     "state-recovery-v1"
 )
+LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_SCOPE = (
+    "same-host-per-user-ephemeral-local-dmg-uninstall-reinstall-"
+    "abrupt-process-state-recovery-v1"
+)
+LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_REPEATABILITY_SCOPE = (
+    "same-host-per-user-ephemeral-local-dmg-uninstall-reinstall-"
+    "abrupt-process-state-recovery-repeatability-v1"
+)
+LANE_A_IDLE_RESOURCE_STABILITY_SCOPE = (
+    "same-host-per-user-current-source-lane-a-idle-resource-stability-v1"
+)
 LANE_A_LOCAL_DMG_READBACK_MODE = "archive-only-no-current-source"
+LANE_A_IDLE_RESOURCE_READBACK_MODE = (
+    "archive-only-with-materialized-source-snapshot-no-signature-check"
+)
 LANE_A_LOCAL_DMG_TIMEOUT_SECONDS = 720.0
+LANE_A_IDLE_RESOURCE_TIMEOUT_SECONDS = 900.0
+LANE_A_IDLE_RESOURCE_CHILD_TERMINATION_TIMEOUT_SECONDS = 10.0
 LANE_A_LIFECYCLE_MAX_STDOUT_BYTES = 1024 * 1024
 LANE_A_LIFECYCLE_MAX_STDERR_BYTES = 64 * 1024
-LANE_A_LIFECYCLE_INTERRUPT_TIMEOUT_SECONDS = 5.0
+LANE_A_LIFECYCLE_INTERRUPT_TIMEOUT_SECONDS = (
+    2 * LANE_A_IDLE_RESOURCE_CHILD_TERMINATION_TIMEOUT_SECONDS + 5.0
+)
 LANE_A_LOCAL_DMG_INSTALL_FILENAME_TOKEN = "local-dmg-install-v2"
 LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_FILENAME_TOKEN = (
     "local-dmg-uninstall-reinstall-v1"
@@ -74,6 +107,28 @@ LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_FILENAME_TOKEN = (
 LANE_A_LOCAL_DMG_STATE_RECOVERY_FILENAME_TOKEN = (
     "local-dmg-uninstall-reinstall-state-recovery-v1"
 )
+LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_FILENAME_TOKEN = (
+    "local-dmg-uninstall-reinstall-abrupt-process-state-recovery-v1"
+)
+LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_REPEATABILITY_FILENAME_TOKEN = (
+    "local-dmg-uninstall-reinstall-abrupt-process-state-recovery-"
+    "repeatability-v1"
+)
+LANE_A_IDLE_RESOURCE_STABILITY_FILENAME_TOKEN = (
+    "idle-resource-stability-v1"
+)
+LANE_A_IDLE_RESOURCE_WARMUP_MILLISECONDS = 60_000
+LANE_A_IDLE_RESOURCE_OBSERVATION_MILLISECONDS = 600_000
+LANE_A_IDLE_RESOURCE_INTERVAL_MILLISECONDS = 5_000
+LANE_A_IDLE_RESOURCE_SAMPLE_COUNT = 120
+LANE_A_IDLE_RESOURCE_LATENESS_LIMIT_MILLISECONDS = 1_000
+LANE_A_IDLE_RESOURCE_WINDOW_SAMPLE_COUNT = 12
+LANE_A_IDLE_RESOURCE_FINAL_FD_DELTA_LIMIT = 2
+LANE_A_IDLE_RESOURCE_PEAK_FD_DELTA_LIMIT = 8
+LANE_A_IDLE_RESOURCE_FINAL_THREAD_DELTA_LIMIT = 2
+LANE_A_IDLE_RESOURCE_PEAK_THREAD_DELTA_LIMIT = 8
+LANE_A_IDLE_RESOURCE_FINAL_RSS_DELTA_LIMIT_BYTES = 32 * 1024 * 1024
+LANE_A_IDLE_RESOURCE_PEAK_RSS_DELTA_LIMIT_BYTES = 128 * 1024 * 1024
 LANE_A_LOCAL_DMG_SUITE_LABEL_MAX_LENGTH = 80
 LANE_A_LOCAL_DMG_EXERCISE_PROGRAM = """\
 import sys
@@ -111,6 +166,25 @@ LANE_A_LOCAL_DMG_UNINSTALL_REINSTALL_LIMITATIONS = (
         "accessibility-production-or-security-evidence"
     ),
 )
+LANE_A_IDLE_RESOURCE_LIMITATIONS = (
+    "same-host-per-user-temporary-home-only",
+    "single-direct-owned-child-idle-observation-only",
+    "sixty-second-warmup-and-ten-minute-observation-only",
+    "network-denied-and-writes-confined-to-temporary-root",
+    "libproc-resource-samples-are-point-in-time-nonatomic-observations",
+    "local-regression-budgets-not-performance-sla-or-capacity-evidence",
+    "single-recorded-run-not-repeatability-or-long-soak-evidence",
+    "archive-only-exercise-current-source-binding-requires-suite-parent",
+    "no-signing-or-signature-verification-performed",
+    (
+        "not-install-upgrade-uninstall-reinstall-recovery-crash-or-"
+        "rollback-evidence"
+    ),
+    (
+        "not-load-provider-device-ui-accessibility-production-or-"
+        "security-evidence"
+    ),
+)
 LANE_A_LOCAL_DMG_STATE_RECOVERY_LIMITATIONS = (
     "same-host-per-user-temporary-home-only",
     "same-created-dmg-image-remount-only",
@@ -125,6 +199,53 @@ LANE_A_LOCAL_DMG_STATE_RECOVERY_LIMITATIONS = (
         "accessibility-production-or-security-evidence"
     ),
 )
+LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_LIMITATIONS = (
+    "same-host-per-user-temporary-home-only",
+    "same-created-dmg-image-remount-only",
+    "fixed-runtime-chat-legacy-canary-only",
+    "post-persisted-sqlite-readback-observation-sigkill-only",
+    "legacy-fixture-removed-by-harness-before-reinstall-readback",
+    "no-in-flight-write-checkpoint-or-open-transaction-observed",
+    (
+        "not-write-durability-crash-consistency-power-loss-or-"
+        "kernel-crash-evidence"
+    ),
+    "not-os-restart-ui-force-quit-arbitrary-history-or-soak-evidence",
+    "application-support-retained-no-automatic-data-cleanup",
+    "post-archive-harness-not-build-input-member",
+    (
+        "not-finder-system-applications-quarantine-gatekeeper-signing-"
+        "notarization-or-stapling-evidence"
+    ),
+    (
+        "not-upgrade-rollback-device-provider-network-ui-accessibility-"
+        "production-or-security-evidence"
+    ),
+)
+LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_REPEATABILITY_LIMITATIONS = (
+    "same-host-two-recorded-runs-only",
+    "not-arbitrary-repeatability-or-long-soak-evidence",
+    (
+        "not-in-flight-write-power-loss-kernel-crash-clean-machine-"
+        "signed-distribution-device-network-or-production-evidence"
+    ),
+)
+LANE_A_LOCAL_DMG_ABRUPT_PROCESS_DISPOSITION = (
+    "exact-owned-child-pid-sigkill-reaped-and-appkit-absent"
+)
+LANE_A_LOCAL_DMG_ABRUPT_LAUNCH_METHOD = (
+    "direct-installed-executable-owned-child"
+)
+LANE_A_LOCAL_DMG_GRACEFUL_LAUNCH_METHOD = (
+    "launchservices-open-exact-installed-app"
+)
+LANE_A_LOCAL_DMG_GRACEFUL_COMMAND_POLICY = (
+    "open-new-fresh-background-exact-app-path-captured-recovery-v1"
+)
+LANE_A_LOCAL_DMG_EMPTY_LOG = {
+    "sha256": hashlib.sha256(b"").hexdigest(),
+    "size": 0,
+}
 LANE_A_LOCAL_DMG_CANARY = {
     "eventID": "packaged-state-recovery-canary-event-v1",
     "eventJsonSha256": (
@@ -232,12 +353,18 @@ class LaneALocalDMGSuitePaths:
     install: Path
     uninstall_reinstall: Path
     state_recovery: Path
+    abrupt_process_state_recovery: Path
+    abrupt_process_state_recovery_repeatability: Path
+    idle_resource_stability: Path
 
-    def ordered(self) -> tuple[Path, Path, Path]:
+    def ordered(self) -> tuple[Path, Path, Path, Path, Path, Path]:
         return (
             self.install,
             self.uninstall_reinstall,
             self.state_recovery,
+            self.abrupt_process_state_recovery,
+            self.abrupt_process_state_recovery_repeatability,
+            self.idle_resource_stability,
         )
 
 
@@ -249,6 +376,9 @@ class LaneALocalDMGSuiteEvidence:
     install: dict[str, object]
     uninstall_reinstall: dict[str, object]
     state_recovery: dict[str, object]
+    abrupt_process_state_recovery: dict[str, object]
+    abrupt_process_state_recovery_repeatability: dict[str, object]
+    idle_resource_stability: dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -1194,6 +1324,15 @@ def lane_a_local_dmg_suite_paths(
         state_recovery=result_path(
             LANE_A_LOCAL_DMG_STATE_RECOVERY_FILENAME_TOKEN
         ),
+        abrupt_process_state_recovery=result_path(
+            LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_FILENAME_TOKEN
+        ),
+        abrupt_process_state_recovery_repeatability=result_path(
+            LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_REPEATABILITY_FILENAME_TOKEN
+        ),
+        idle_resource_stability=result_path(
+            LANE_A_IDLE_RESOURCE_STABILITY_FILENAME_TOKEN
+        ),
     )
     specifications = (
         (
@@ -1208,6 +1347,18 @@ def lane_a_local_dmg_suite_paths(
             paths.state_recovery,
             LANE_A_LOCAL_DMG_STATE_RECOVERY_FILENAME_TOKEN,
         ),
+        (
+            paths.abrupt_process_state_recovery,
+            LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_FILENAME_TOKEN,
+        ),
+        (
+            paths.abrupt_process_state_recovery_repeatability,
+            LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_REPEATABILITY_FILENAME_TOKEN,
+        ),
+        (
+            paths.idle_resource_stability,
+            LANE_A_IDLE_RESOURCE_STABILITY_FILENAME_TOKEN,
+        ),
     )
     for path, filename_token in specifications:
         validate_lane_a_lifecycle_result_path(
@@ -1215,7 +1366,7 @@ def lane_a_local_dmg_suite_paths(
             expected_release_id=expected_release_id,
             filename_token=filename_token,
         )
-    if len(set(paths.ordered())) != 3:
+    if len(set(paths.ordered())) != 6:
         raise ReproducibilityError(
             2,
             "invocation",
@@ -3130,6 +3281,689 @@ def validate_lane_a_local_dmg_state_recovery_result_bytes(
     return result
 
 
+def expected_lane_a_local_dmg_abrupt_process_state_recovery_result(
+    state_recovery: dict[str, object],
+) -> dict[str, object]:
+    state = require_closed_object(
+        state_recovery["stateRecovery"],
+        {
+            "applicationSupportPreservedAcrossRemovalAndReinstall",
+            "auxiliarySQLite",
+            "databaseCount",
+            "installedStateBytesAndModesUnchangedAcrossRemovalAndReinstall",
+            "legacyAbsentBeforeReinstallReadback",
+            "legacyFixturePreservedUnchanged",
+            "legacyRemovedByHarnessBeforeReinstall",
+            "migrationObservation",
+            "migrationSQLite",
+            "runtimeIdentityFilePresent",
+            "sqliteCanaryUnchangedAcrossRemovalAndReinstall",
+            "sqliteReadbackObservation",
+            "sqliteReadbackSQLite",
+            "totalEventCount",
+        },
+        label="validated lane-A local DMG state recovery",
+    )
+    graceful_run = {
+        "activationPolicy": 0,
+        "executablePathMatched": True,
+        "finishedLaunching": True,
+        "launchMethod": LANE_A_LOCAL_DMG_GRACEFUL_LAUNCH_METHOD,
+        "minimumObservationSeconds": 5.0,
+        "newProcessIdentifierDetected": True,
+        "observationDeadlineReached": True,
+        "terminationAccepted": True,
+    }
+    return {
+        "abruptTermination": {
+            "appKitProcessAbsentAfterReap": True,
+            "exactExecutableRevalidatedBeforeSignal": True,
+            "exitCode": -9,
+            "gracefulTerminationRequested": False,
+            "inFlightWriteCheckpointObserved": False,
+            "launchMethod": LANE_A_LOCAL_DMG_ABRUPT_LAUNCH_METHOD,
+            "migrationCommittedBeforeAbruptLaunch": True,
+            "observationCompletedBeforeSignal": True,
+            "persistenceProbePassedBeforeSignal": True,
+            "processDisposition": (
+                LANE_A_LOCAL_DMG_ABRUPT_PROCESS_DISPOSITION
+            ),
+            "processReaped": True,
+            "signal": "SIGKILL",
+            "signalNumber": 9,
+        },
+        "archiveReadback": state_recovery["archiveReadback"],
+        "canary": state_recovery["canary"],
+        "image": state_recovery["image"],
+        "installation": state_recovery["installation"],
+        "isolation": {
+            "preexistingBundleApplicationsPreserved": True,
+            "runtimeIdentityFileOverrideConfigured": True,
+            "sandboxedOwnedChildConfigured": True,
+            "temporaryCFUserHomeConfigured": True,
+        },
+        "launches": {
+            "distinctProcessIdentifiers": True,
+            "exactInstalledBundlePerCycle": True,
+            "gracefulLaunchServicesCommandPolicy": (
+                LANE_A_LOCAL_DMG_GRACEFUL_COMMAND_POLICY
+            ),
+            "noExactTemporaryAppRemaining": True,
+            "runs": [
+                {**graceful_run, "ordinal": 1},
+                {
+                    "activationPolicy": 0,
+                    "appKitProcessAbsentAfterReap": True,
+                    (
+                        "exactExecutableIdentityMatchedImmediatelyBeforeSignal"
+                    ): True,
+                    "exitCode": -9,
+                    "finishedLaunching": True,
+                    "launchMethod": LANE_A_LOCAL_DMG_ABRUPT_LAUNCH_METHOD,
+                    "minimumObservationSeconds": 5.0,
+                    "newProcessIdentifierDetected": True,
+                    "observationDeadlineReached": True,
+                    "ordinal": 2,
+                    "ownedChildProcess": True,
+                    "persistenceProbePassedBeforeSignal": True,
+                    "processReaped": True,
+                    "signalName": "SIGKILL",
+                    "signalNumber": 9,
+                },
+                {**graceful_run, "ordinal": 3},
+            ],
+            "stderr": {
+                "abruptReadback": dict(LANE_A_LOCAL_DMG_EMPTY_LOG),
+                "migration": dict(LANE_A_LOCAL_DMG_EMPTY_LOG),
+                "recoveryReadback": dict(LANE_A_LOCAL_DMG_EMPTY_LOG),
+            },
+        },
+        "limitations": list(
+            LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_LIMITATIONS
+        ),
+        "mount": state_recovery["mount"],
+        "release": state_recovery["release"],
+        "schemaVersion": 1,
+        "scope": LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_SCOPE,
+        "stateRecovery": {
+            "applicationSupportPreservedAcrossRemovalAndReinstall": True,
+            "auxiliarySQLite": state["auxiliarySQLite"],
+            "databaseCount": 3,
+            "legacyAbsentBeforeAbruptAndRecoveryReadback": True,
+            "legacyFixturePreservedUnchanged": True,
+            "legacyRemovedByHarnessBeforeReinstall": True,
+            "migrationObservation": state["migrationObservation"],
+            "migrationSQLite": state["migrationSQLite"],
+            "ownedAbruptReadbackObservation": (
+                state["sqliteReadbackObservation"]
+            ),
+            "ownedAbruptReadbackSQLite": state["sqliteReadbackSQLite"],
+            "postAbruptSQLite": state["sqliteReadbackSQLite"],
+            (
+                "postAbruptStateBytesAndModesUnchangedAcrossRemovalReinstall"
+            ): True,
+            "recoveryReadbackObservation": (
+                state["sqliteReadbackObservation"]
+            ),
+            "recoveryReadbackSQLite": state["sqliteReadbackSQLite"],
+            "runtimeIdentityFilePresent": True,
+            "stateBytesAndModesUnchangedImmediatelyAfterAbruptTermination": (
+                True
+            ),
+            "totalEventCount": 1,
+        },
+        "status": "passed",
+        "uninstall": state_recovery["uninstall"],
+    }
+
+
+def validate_lane_a_local_dmg_abrupt_process_state_recovery_result_bytes(
+    raw: bytes,
+    *,
+    state_recovery: dict[str, object],
+) -> dict[str, object]:
+    label = "lane-A local DMG abrupt-process state-recovery result"
+    parsed = parse_lane_a_lifecycle_result_bytes(raw, label=label)
+    expected = expected_lane_a_local_dmg_abrupt_process_state_recovery_result(
+        state_recovery
+    )
+    if raw != canonical_json_bytes(expected):
+        raise lane_a_local_dmg_error(
+            f"{label} is not the exact state-bound contract"
+        )
+    return parsed
+
+
+def build_lane_a_local_dmg_abrupt_process_repeatability_receipt(
+    *,
+    result_path: Path,
+    result: dict[str, object],
+    expected_release_id: str,
+) -> dict[str, object]:
+    payload = canonical_json_bytes(result)
+    identity = {
+        "sha256": hashlib.sha256(payload).hexdigest(),
+        "size": len(payload),
+    }
+    return {
+        "canonicalResult": {
+            "fileName": result_path.name,
+            **identity,
+        },
+        "limitations": list(
+            LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_REPEATABILITY_LIMITATIONS
+        ),
+        "releaseId": expected_release_id,
+        "resultBytesEqual": True,
+        "runCount": 2,
+        "runs": [
+            {
+                "ordinal": ordinal,
+                **identity,
+                "status": "passed",
+            }
+            for ordinal in (1, 2)
+        ],
+        "schemaVersion": 1,
+        "scope": (
+            LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_REPEATABILITY_SCOPE
+        ),
+        "status": "passed",
+    }
+
+
+def validate_lane_a_local_dmg_abrupt_process_repeatability_receipt_bytes(
+    raw: bytes,
+    *,
+    result_path: Path,
+    result: dict[str, object],
+    expected_release_id: str,
+) -> dict[str, object]:
+    label = "lane-A local DMG abrupt-process repeatability receipt"
+    parsed = parse_lane_a_lifecycle_result_bytes(raw, label=label)
+    expected = build_lane_a_local_dmg_abrupt_process_repeatability_receipt(
+        result_path=result_path,
+        result=result,
+        expected_release_id=expected_release_id,
+    )
+    if raw != canonical_json_bytes(expected):
+        raise lane_a_local_dmg_error(
+            f"{label} is not the exact two-run binding"
+        )
+    return parsed
+
+
+def lane_a_idle_metric_summary(
+    values: list[int],
+    *,
+    final_delta_limit: int,
+    peak_delta_limit: int,
+) -> dict[str, object]:
+    if (
+        len(values) != LANE_A_IDLE_RESOURCE_SAMPLE_COUNT
+        or any(type(value) is not int or value <= 0 for value in values)
+    ):
+        raise lane_a_local_dmg_error(
+            "idle resource metric requires 120 positive integer samples"
+        )
+    if (
+        type(final_delta_limit) is not int
+        or final_delta_limit < 0
+        or type(peak_delta_limit) is not int
+        or peak_delta_limit < final_delta_limit
+    ):
+        raise lane_a_local_dmg_error(
+            "idle resource metric limits are invalid"
+        )
+    baseline_values = sorted(
+        values[:LANE_A_IDLE_RESOURCE_WINDOW_SAMPLE_COUNT]
+    )
+    final_values = sorted(
+        values[-LANE_A_IDLE_RESOURCE_WINDOW_SAMPLE_COUNT:]
+    )
+    baseline = baseline_values[len(baseline_values) // 2]
+    final = final_values[len(final_values) // 2]
+    maximum = max(values)
+    final_delta = final - baseline
+    peak_delta = maximum - baseline
+    passed = (
+        final_delta <= final_delta_limit
+        and peak_delta <= peak_delta_limit
+    )
+    return {
+        "baselineUpperMedian": baseline,
+        "finalDelta": final_delta,
+        "finalDeltaLimit": final_delta_limit,
+        "finalUpperMedian": final,
+        "maximum": maximum,
+        "passed": passed,
+        "peakDelta": peak_delta,
+        "peakDeltaLimit": peak_delta_limit,
+    }
+
+
+def lane_a_idle_measurement_summary(
+    samples: object,
+) -> dict[str, object]:
+    if (
+        type(samples) is not list
+        or len(samples) != LANE_A_IDLE_RESOURCE_SAMPLE_COUNT
+    ):
+        raise lane_a_local_dmg_error(
+            "idle resource measurement requires exactly 120 samples"
+        )
+    required = {
+        "observedLatenessMilliseconds",
+        "openFileDescriptorCount",
+        "ordinal",
+        "residentBytes",
+        "targetElapsedMilliseconds",
+        "threadCount",
+    }
+    for ordinal, sample in enumerate(samples, start=1):
+        if type(sample) is not dict or set(sample) != required:
+            raise lane_a_local_dmg_error(
+                "idle resource sample has an invalid closed schema"
+            )
+        if (
+            type(sample["ordinal"]) is not int
+            or sample["ordinal"] != ordinal
+            or type(sample["targetElapsedMilliseconds"]) is not int
+            or sample["targetElapsedMilliseconds"]
+            != ordinal * LANE_A_IDLE_RESOURCE_INTERVAL_MILLISECONDS
+            or type(sample["observedLatenessMilliseconds"]) is not int
+            or sample["observedLatenessMilliseconds"] < 0
+            or sample["observedLatenessMilliseconds"]
+            > LANE_A_IDLE_RESOURCE_LATENESS_LIMIT_MILLISECONDS
+        ):
+            raise lane_a_local_dmg_error(
+                "idle resource sample schedule is invalid"
+            )
+        for key in (
+            "openFileDescriptorCount",
+            "residentBytes",
+            "threadCount",
+        ):
+            if type(sample[key]) is not int or sample[key] <= 0:
+                raise lane_a_local_dmg_error(
+                    f"idle resource sample {key} must be positive integer"
+                )
+    summaries = {
+        "openFileDescriptors": lane_a_idle_metric_summary(
+            [sample["openFileDescriptorCount"] for sample in samples],
+            final_delta_limit=(
+                LANE_A_IDLE_RESOURCE_FINAL_FD_DELTA_LIMIT
+            ),
+            peak_delta_limit=LANE_A_IDLE_RESOURCE_PEAK_FD_DELTA_LIMIT,
+        ),
+        "residentBytes": lane_a_idle_metric_summary(
+            [sample["residentBytes"] for sample in samples],
+            final_delta_limit=(
+                LANE_A_IDLE_RESOURCE_FINAL_RSS_DELTA_LIMIT_BYTES
+            ),
+            peak_delta_limit=(
+                LANE_A_IDLE_RESOURCE_PEAK_RSS_DELTA_LIMIT_BYTES
+            ),
+        ),
+        "threads": lane_a_idle_metric_summary(
+            [sample["threadCount"] for sample in samples],
+            final_delta_limit=(
+                LANE_A_IDLE_RESOURCE_FINAL_THREAD_DELTA_LIMIT
+            ),
+            peak_delta_limit=(
+                LANE_A_IDLE_RESOURCE_PEAK_THREAD_DELTA_LIMIT
+            ),
+        ),
+    }
+    if any(summary["passed"] is not True for summary in summaries.values()):
+        raise lane_a_local_dmg_error(
+            "idle resource samples exceed the fixed regression budgets"
+        )
+    return summaries
+
+
+def expected_lane_a_idle_artifact(
+    *,
+    expected_tree: dict[str, object],
+) -> dict[str, object]:
+    return {"appTree": expected_tree}
+
+
+def validate_lane_a_idle_resource_stability_result_bytes(
+    raw: bytes,
+    *,
+    expected_release_id: str,
+    evidence: ArchiveEvidence,
+    expected_source_snapshot: dict[str, object],
+    expected_tree: dict[str, object],
+) -> dict[str, object]:
+    label = "lane-A current-source idle resource stability result"
+    parsed = parse_lane_a_lifecycle_result_bytes(raw, label=label)
+    result = require_closed_object(
+        parsed,
+        {
+            "archiveReadback",
+            "artifact",
+            "cleanup",
+            "environment",
+            "isolation",
+            "limitations",
+            "measurement",
+            "process",
+            "release",
+            "repeatability",
+            "schemaVersion",
+            "scope",
+            "sourceSnapshot",
+            "status",
+        },
+        label=label,
+    )
+    if (
+        type(result["schemaVersion"]) is not int
+        or result["schemaVersion"] != 1
+        or result["scope"] != LANE_A_IDLE_RESOURCE_STABILITY_SCOPE
+        or result["status"] != "passed"
+        or result["limitations"] != list(LANE_A_IDLE_RESOURCE_LIMITATIONS)
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A idle result identity, status, or limitations differ"
+        )
+    if (
+        type(expected_source_snapshot) is not dict
+        or not {"algorithm", "fileCount", "sha256"}.issubset(
+            expected_source_snapshot
+        )
+    ):
+        raise lane_a_local_dmg_error(
+            "expected lane-A idle source snapshot lacks its summary"
+        )
+    expected_source = {
+        key: expected_source_snapshot[key]
+        for key in ("algorithm", "fileCount", "sha256")
+    }
+    if (
+        expected_source["algorithm"]
+        != "sha256(path-nul-mode-nul-size-nul-sha256-lf)-v1"
+        or type(expected_source["fileCount"]) is not int
+        or expected_source["fileCount"] <= 0
+        or require_sha256(
+            expected_source["sha256"],
+            label="expected lane-A idle source SHA-256",
+        )
+        != evidence.source_sha256
+    ):
+        raise lane_a_local_dmg_error(
+            "expected lane-A idle source snapshot differs from build A"
+        )
+    if canonical_json_bytes(result["sourceSnapshot"]) != canonical_json_bytes(
+        expected_source
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A idle source snapshot differs from the suite parent"
+        )
+    expected_artifact = expected_lane_a_idle_artifact(
+        expected_tree=expected_tree,
+    )
+    if canonical_json_bytes(result["artifact"]) != canonical_json_bytes(
+        expected_artifact
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A idle artifact differs from the exact installed app tree"
+        )
+
+    release = require_closed_object(
+        result["release"],
+        {"archiveSha256", "manifestSha256", "releaseId"},
+        label="lane-A idle release",
+    )
+    if release != {
+        "archiveSha256": evidence.archive_identity.sha256,
+        "manifestSha256": evidence.manifest_identity.sha256,
+        "releaseId": expected_release_id,
+    }:
+        raise lane_a_local_dmg_error(
+            "lane-A idle release differs from exact build A"
+        )
+    archive_readback = require_closed_object(
+        result["archiveReadback"],
+        {
+            "currentSourceCompared",
+            "mode",
+            "readbackAndExerciseSameSnapshot",
+            "signatureVerificationPerformed",
+            "snapshotFiles",
+            "snapshotFilesUnchangedAfterExercise",
+            "status",
+        },
+        label="lane-A idle archive readback",
+    )
+    if (
+        archive_readback["currentSourceCompared"] is not False
+        or archive_readback["mode"] != LANE_A_IDLE_RESOURCE_READBACK_MODE
+        or archive_readback["readbackAndExerciseSameSnapshot"] is not True
+        or archive_readback["signatureVerificationPerformed"] is not False
+        or archive_readback["snapshotFilesUnchangedAfterExercise"] is not True
+        or archive_readback["status"] != "passed"
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A idle archive readback contract is invalid"
+        )
+    expected_snapshot_files = {
+        f"{expected_release_id}.manifest.json": evidence.manifest_identity,
+        f"{expected_release_id}.zip": evidence.archive_identity,
+        f"{expected_release_id}.zip.sha256": evidence.checksum_identity,
+    }
+    snapshot_files = require_closed_object(
+        archive_readback["snapshotFiles"],
+        set(expected_snapshot_files),
+        label="lane-A idle snapshot files",
+    )
+    for name, identity in expected_snapshot_files.items():
+        record = require_closed_object(
+            snapshot_files[name],
+            {"sha256", "size"},
+            label=f"lane-A idle snapshot file {name}",
+        )
+        if (
+            record["sha256"] != identity.sha256
+            or type(record["size"]) is not int
+            or record["size"] != identity.size
+        ):
+            raise lane_a_local_dmg_error(
+                f"lane-A idle snapshot differs from build A: {name}"
+            )
+
+    cleanup = require_closed_object(
+        result["cleanup"],
+        {
+            "ownedChildOnly",
+            "preexistingApplicationsPreserved",
+            "temporaryRootRemovedBeforePublication",
+        },
+        label="lane-A idle cleanup",
+    )
+    expected_cleanup = {
+        "ownedChildOnly": True,
+        "preexistingApplicationsPreserved": True,
+        "temporaryRootRemovedBeforePublication": True,
+    }
+    if canonical_json_bytes(cleanup) != canonical_json_bytes(
+        expected_cleanup
+    ):
+        raise lane_a_local_dmg_error("lane-A idle cleanup is invalid")
+    environment = require_closed_object(
+        result["environment"],
+        {"architecture", "logicalCpuCount", "macOSVersion", "pageSizeBytes"},
+        label="lane-A idle environment",
+    )
+    if (
+        type(environment["architecture"]) is not str
+        or not environment["architecture"]
+        or type(environment["macOSVersion"]) is not str
+        or not environment["macOSVersion"]
+        or type(environment["logicalCpuCount"]) is not int
+        or environment["logicalCpuCount"] <= 0
+        or type(environment["pageSizeBytes"]) is not int
+        or environment["pageSizeBytes"] <= 0
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A idle environment is invalid"
+        )
+    isolation = require_closed_object(
+        result["isolation"],
+        {
+            "afInetBindDeniedByPreflight",
+            "networkDenied",
+            "nonTemporaryWriteDeniedByPreflight",
+            "profile",
+            "sandboxed",
+            "standardStreams",
+            "temporaryCFUserHomeConfigured",
+        },
+        label="lane-A idle isolation",
+    )
+    expected_isolation = {
+        "afInetBindDeniedByPreflight": True,
+        "networkDenied": True,
+        "nonTemporaryWriteDeniedByPreflight": True,
+        "profile": "allow-default-deny-network-and-non-temp-writes-v1",
+        "sandboxed": True,
+        "standardStreams": "devnull",
+        "temporaryCFUserHomeConfigured": True,
+    }
+    if canonical_json_bytes(isolation) != canonical_json_bytes(
+        expected_isolation
+    ):
+        raise lane_a_local_dmg_error("lane-A idle isolation is invalid")
+    process = require_closed_object(
+        result["process"],
+        {
+            "launchMethod",
+            "preexistingApplicationCount",
+            "preexistingApplicationsUsedAsTerminationTargets",
+            "rawProcessIdentifierRetained",
+        },
+        label="lane-A idle process",
+    )
+    if (
+        process["launchMethod"] != "sandbox-exec-direct-owned-child-v1"
+        or type(process["preexistingApplicationCount"]) is not int
+        or process["preexistingApplicationCount"] < 0
+        or process["preexistingApplicationsUsedAsTerminationTargets"]
+        is not False
+        or process["rawProcessIdentifierRetained"] is not False
+    ):
+        raise lane_a_local_dmg_error("lane-A idle process is invalid")
+    repeatability = require_closed_object(
+        result["repeatability"],
+        {"performed", "reason"},
+        label="lane-A idle repeatability",
+    )
+    expected_repeatability = {
+        "performed": False,
+        "reason": "single-live-resource-observation-v1",
+    }
+    if canonical_json_bytes(repeatability) != canonical_json_bytes(
+        expected_repeatability
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A idle repeatability claim is invalid"
+        )
+
+    measurement = require_closed_object(
+        result["measurement"],
+        {
+            "api",
+            "baselineWindowSampleCount",
+            "finalWindowSampleCount",
+            "intervalMilliseconds",
+            "observationMilliseconds",
+            "run",
+            "sampleCount",
+            "sampleLatenessLimitMilliseconds",
+            "status",
+            "warmupMilliseconds",
+        },
+        label="lane-A idle measurement",
+    )
+    if (
+        measurement["api"] != "macos-libproc-proc-pidinfo-v1"
+        or type(measurement["baselineWindowSampleCount"]) is not int
+        or measurement["baselineWindowSampleCount"]
+        != LANE_A_IDLE_RESOURCE_WINDOW_SAMPLE_COUNT
+        or type(measurement["finalWindowSampleCount"]) is not int
+        or measurement["finalWindowSampleCount"]
+        != LANE_A_IDLE_RESOURCE_WINDOW_SAMPLE_COUNT
+        or type(measurement["intervalMilliseconds"]) is not int
+        or measurement["intervalMilliseconds"]
+        != LANE_A_IDLE_RESOURCE_INTERVAL_MILLISECONDS
+        or type(measurement["observationMilliseconds"]) is not int
+        or measurement["observationMilliseconds"]
+        != LANE_A_IDLE_RESOURCE_OBSERVATION_MILLISECONDS
+        or type(measurement["sampleCount"]) is not int
+        or measurement["sampleCount"] != LANE_A_IDLE_RESOURCE_SAMPLE_COUNT
+        or type(measurement["sampleLatenessLimitMilliseconds"]) is not int
+        or measurement["sampleLatenessLimitMilliseconds"]
+        != LANE_A_IDLE_RESOURCE_LATENESS_LIMIT_MILLISECONDS
+        or measurement["status"] != "passed"
+        or type(measurement["warmupMilliseconds"]) is not int
+        or measurement["warmupMilliseconds"]
+        != LANE_A_IDLE_RESOURCE_WARMUP_MILLISECONDS
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A idle measurement constants are invalid"
+        )
+    run = require_closed_object(
+        measurement["run"],
+        {
+            "activationPolicy",
+            "appKitProcessAbsentAfterReap",
+            "exitCode",
+            "finishedLaunching",
+            "gracefulTerminationAccepted",
+            "maximumObservedLatenessMilliseconds",
+            "ownedChildProcess",
+            "processIdentifierRetained",
+            "processReaped",
+            "samples",
+            "summary",
+        },
+        label="lane-A idle run",
+    )
+    if (
+        type(run["activationPolicy"]) is not int
+        or run["activationPolicy"] != 0
+        or run["appKitProcessAbsentAfterReap"] is not True
+        or type(run["exitCode"]) is not int
+        or run["exitCode"] != 0
+        or run["finishedLaunching"] is not True
+        or run["gracefulTerminationAccepted"] is not True
+        or run["ownedChildProcess"] is not True
+        or run["processIdentifierRetained"] is not False
+        or run["processReaped"] is not True
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A idle owned-child outcome is invalid"
+        )
+    summary = lane_a_idle_measurement_summary(run["samples"])
+    if canonical_json_bytes(run["summary"]) != canonical_json_bytes(summary):
+        raise lane_a_local_dmg_error(
+            "lane-A idle summary differs from independently recomputed samples"
+        )
+    maximum_lateness = max(
+        sample["observedLatenessMilliseconds"] for sample in run["samples"]
+    )
+    if (
+        type(run["maximumObservedLatenessMilliseconds"]) is not int
+        or run["maximumObservedLatenessMilliseconds"] != maximum_lateness
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A idle maximum lateness differs from samples"
+        )
+    return parsed
+
+
 def lane_archive_identities(
     evidence: ArchiveEvidence,
 ) -> tuple[FileIdentity, FileIdentity, FileIdentity]:
@@ -3161,47 +3995,674 @@ def lane_archive_identities(
 def stable_lane_a_local_dmg_result_bytes(
     path: Path,
 ) -> tuple[bytes, FileIdentity]:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
-        before = stable_file_identity(path)
-        raw = path.read_bytes()
-        after = stable_file_identity(path)
-    except (OSError, ReproducibilityError) as error:
+        descriptor = os.open(path, flags)
+    except OSError as error:
         raise lane_a_local_dmg_error(
             f"cannot read back lane-A local DMG result: {error}"
         ) from error
-    if before != after or len(raw) != before.size:
+    before: os.stat_result | None = None
+    after: os.stat_result | None = None
+    chunks: list[bytes] = []
+    total = 0
+    operation_error: BaseException | None = None
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise OSError("lane-A local DMG result is not a regular file")
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+        after = os.fstat(descriptor)
+    except BaseException as error:
+        operation_error = error
+    close_error: BaseException | None = None
+    try:
+        os.close(descriptor)
+    except BaseException as error:
+        close_error = error
+    if operation_error is not None:
+        if not isinstance(operation_error, Exception):
+            raise operation_error from close_error
+        if close_error is not None and not isinstance(close_error, Exception):
+            raise close_error from operation_error
+        if close_error is not None:
+            raise lane_a_local_dmg_error(
+                "lane-A local DMG result readback failed and its descriptor "
+                f"close also failed: {close_error}"
+            ) from operation_error
+        if isinstance(operation_error, OSError):
+            raise lane_a_local_dmg_error(
+                f"cannot read back lane-A local DMG result: {operation_error}"
+            ) from operation_error
+        raise operation_error
+    if close_error is not None:
+        if not isinstance(close_error, Exception):
+            raise close_error
+        raise lane_a_local_dmg_error(
+            f"cannot close lane-A local DMG result readback: {close_error}"
+        ) from close_error
+    assert before is not None and after is not None
+    raw = b"".join(chunks)
+    before_fields = (
+        before.st_dev,
+        before.st_ino,
+        before.st_mode,
+        before.st_uid,
+        before.st_gid,
+        before.st_size,
+        before.st_mtime_ns,
+        before.st_ctime_ns,
+    )
+    after_fields = (
+        after.st_dev,
+        after.st_ino,
+        after.st_mode,
+        after.st_uid,
+        after.st_gid,
+        after.st_size,
+        after.st_mtime_ns,
+        after.st_ctime_ns,
+    )
+    if before_fields != after_fields or total != before.st_size:
         raise lane_a_local_dmg_error(
             "lane-A local DMG result changed while being read back"
         )
-    return raw, after
+    identity = FileIdentity(
+        device=before.st_dev,
+        inode=before.st_ino,
+        mode=stat.S_IMODE(before.st_mode),
+        uid=before.st_uid,
+        gid=before.st_gid,
+        size=before.st_size,
+        mtime_ns=before.st_mtime_ns,
+        ctime_ns=before.st_ctime_ns,
+        sha256=hashlib.sha256(raw).hexdigest(),
+    )
+    try:
+        entry = os.lstat(path)
+    except OSError as error:
+        raise lane_a_local_dmg_error(
+            f"cannot bind lane-A local DMG result readback: {error}"
+        ) from error
+    if (
+        entry.st_dev != identity.device
+        or entry.st_ino != identity.inode
+        or not stat.S_ISREG(entry.st_mode)
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG result path changed during readback"
+        )
+    return raw, identity
+
+
+def require_lane_a_local_dmg_result_single_link(
+    path: Path,
+    identity: FileIdentity,
+) -> None:
+    try:
+        status = os.lstat(path)
+    except OSError as error:
+        raise lane_a_local_dmg_error(
+            f"cannot inspect lane-A local DMG result link count: {error}"
+        ) from error
+    if (
+        not stat.S_ISREG(status.st_mode)
+        or status.st_dev != identity.device
+        or status.st_ino != identity.inode
+        or stat.S_IMODE(status.st_mode) != identity.mode
+        or status.st_uid != identity.uid
+        or status.st_gid != identity.gid
+        or status.st_size != identity.size
+        or status.st_uid != os.getuid()
+        or stat.S_IMODE(status.st_mode) & 0o022
+        or status.st_nlink != 1
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG result is not an owner-controlled "
+            "single-link regular file"
+        )
+
+
+def rename_lane_a_local_dmg_result_exclusive(
+    source: Path,
+    destination: Path,
+) -> None:
+    parent_descriptors = LANE_A_RESULT_PARENT_DESCRIPTORS.get()
+    source_descriptor = parent_descriptors.get(source.parent)
+    destination_descriptor = parent_descriptors.get(destination.parent)
+    if (source_descriptor is None) != (destination_descriptor is None):
+        raise OSError(
+            errno.EXDEV,
+            "lane-A result rename crossed the held parent boundary",
+        )
+    try:
+        library = ctypes.CDLL(None, use_errno=True)
+        if source_descriptor is None:
+            rename_exclusive = library.renamex_np
+        else:
+            rename_exclusive = library.renameatx_np
+    except (AttributeError, OSError) as error:
+        raise OSError(
+            errno.ENOSYS,
+            "Darwin exclusive rename is unavailable for lane-A result "
+            "publication",
+        ) from error
+    if source_descriptor is None:
+        rename_exclusive.argtypes = (
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        )
+        rename_arguments = (
+            os.fsencode(source),
+            os.fsencode(destination),
+            0x00000004,
+        )
+    else:
+        assert destination_descriptor is not None
+        rename_exclusive.argtypes = (
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        )
+        rename_arguments = (
+            source_descriptor,
+            os.fsencode(source.name),
+            destination_descriptor,
+            os.fsencode(destination.name),
+            0x00000004,
+        )
+    rename_exclusive.restype = ctypes.c_int
+    ctypes.set_errno(0)
+    if rename_exclusive(*rename_arguments) != 0:
+        error_number = ctypes.get_errno() or errno.EIO
+        raise OSError(
+            error_number,
+            "cannot exclusively rename lane-A local DMG result "
+            f"{source.name} to {destination.name}: "
+            f"{os.strerror(error_number)}",
+        )
+
+
+def lane_a_local_dmg_staged_candidates(path: Path) -> tuple[Path, ...]:
+    try:
+        entries = tuple(os.listdir(path.parent))
+    except OSError as error:
+        raise lane_a_local_dmg_error(
+            f"cannot inspect lane-A local DMG result temporaries: {error}"
+        ) from error
+    prefix = f".{path.name}."
+    return tuple(
+        path.parent / name
+        for name in sorted(entries)
+        if name.startswith(prefix)
+    )
+
+
+def lane_a_local_dmg_staging_prefix(path: Path, payload: bytes) -> str:
+    payload_token = hashlib.sha256(payload).hexdigest()[:16]
+    return f".{path.name}.s1-{payload_token}-"
+
+
+def repair_lane_a_local_dmg_staged_result(
+    candidate: Path,
+    *,
+    identity: FileIdentity,
+    payload: bytes,
+) -> None:
+    flags = os.O_WRONLY | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(candidate, flags)
+    except OSError as error:
+        raise lane_a_local_dmg_error(
+            f"cannot reopen interrupted lane-A staging result: {error}"
+        ) from error
+    operation_error: BaseException | None = None
+    try:
+        status = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(status.st_mode)
+            or status.st_dev != identity.device
+            or status.st_ino != identity.inode
+            or status.st_uid != os.getuid()
+            or stat.S_IMODE(status.st_mode) != 0o600
+            or status.st_nlink != 1
+        ):
+            raise OSError(
+                "interrupted staging identity changed before repair"
+            )
+        os.ftruncate(descriptor, 0)
+        offset = 0
+        while offset < len(payload):
+            written = os.write(descriptor, payload[offset:])
+            if written <= 0:
+                raise OSError("staging repair write made no progress")
+            offset += written
+        os.fsync(descriptor)
+    except BaseException as error:
+        operation_error = error
+    close_error: BaseException | None = None
+    try:
+        os.close(descriptor)
+    except BaseException as error:
+        close_error = error
+    if operation_error is not None:
+        if not isinstance(operation_error, Exception):
+            raise operation_error from close_error
+        if close_error is not None and not isinstance(close_error, Exception):
+            raise close_error from operation_error
+        if close_error is not None:
+            raise lane_a_local_dmg_error(
+                "interrupted lane-A staging repair failed and descriptor "
+                f"close also failed: {close_error}"
+            ) from operation_error
+        if isinstance(operation_error, OSError):
+            raise lane_a_local_dmg_error(
+                f"cannot repair interrupted lane-A staging result: "
+                f"{operation_error}"
+            ) from operation_error
+        raise operation_error
+    if close_error is not None:
+        if not isinstance(close_error, Exception):
+            raise close_error
+        raise lane_a_local_dmg_error(
+            f"cannot close repaired lane-A staging result: {close_error}"
+        ) from close_error
+
+
+def reusable_lane_a_local_dmg_staged_result(
+    path: Path,
+    payload: bytes,
+) -> Path | None:
+    candidates = lane_a_local_dmg_staged_candidates(path)
+    if not candidates:
+        return None
+    if len(candidates) != 1:
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG result has multiple retained staging "
+            f"temporaries: {path.name}"
+        )
+    candidate = candidates[0]
+    raw, identity = stable_lane_a_local_dmg_result_bytes(candidate)
+    require_lane_a_local_dmg_result_single_link(candidate, identity)
+    if raw != payload:
+        if (
+            not candidate.name.startswith(
+                lane_a_local_dmg_staging_prefix(path, payload)
+            )
+            or identity.mode != 0o600
+        ):
+            raise lane_a_local_dmg_error(
+                "retained lane-A local DMG staging temporary differs from "
+                f"the exercised result: {candidate.name}"
+            )
+        repair_lane_a_local_dmg_staged_result(
+            candidate,
+            identity=identity,
+            payload=payload,
+        )
+        raw, identity = stable_lane_a_local_dmg_result_bytes(candidate)
+        require_lane_a_local_dmg_result_single_link(candidate, identity)
+        if raw != payload:
+            raise lane_a_local_dmg_error(
+                "repaired lane-A local DMG staging temporary still differs "
+                f"from the exercised result: {candidate.name}"
+            )
+    return candidate
+
+
+def reject_lane_a_local_dmg_stale_temporaries(
+    paths: Iterable[Path],
+) -> None:
+    for path in paths:
+        candidates = lane_a_local_dmg_staged_candidates(path)
+        if candidates:
+            raise lane_a_local_dmg_error(
+                "lane-A local DMG result retained a staging temporary: "
+                f"{candidates[0].name}"
+            )
+
+
+def rollback_lane_a_local_dmg_result_rename(
+    path: Path,
+    *,
+    temporary: Path,
+    expected_device: int,
+    expected_inode: int,
+    expected_payload: bytes,
+) -> None:
+    try:
+        rename_lane_a_local_dmg_result_exclusive(
+            path,
+            temporary,
+        )
+    except FileNotFoundError:
+        return
+
+    try:
+        status = os.lstat(temporary)
+        raw, identity = stable_lane_a_local_dmg_result_bytes(temporary)
+        require_lane_a_local_dmg_result_single_link(temporary, identity)
+        exact_created_result = (
+            stat.S_ISREG(status.st_mode)
+            and status.st_dev == expected_device
+            and status.st_ino == expected_inode
+            and identity.device == expected_device
+            and identity.inode == expected_inode
+            and raw == expected_payload
+        )
+    except BaseException as error:
+        if not isinstance(error, Exception):
+            raise
+        raise OSError(
+            "lane-A local DMG result rollback moved the result to its "
+            f"retained staging path but could not validate it: {temporary.name}"
+        ) from error
+    if exact_created_result:
+        return
+    raise OSError(
+        "changed lane-A local DMG result was removed from the visible path "
+        f"and preserved in its retained staging path {temporary.name}"
+    )
 
 
 def sync_lane_a_local_dmg_result_parent(path: Path) -> None:
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    flags |= getattr(os, "O_CLOEXEC", 0)
-    flags |= getattr(os, "O_NOFOLLOW", 0)
-    try:
-        descriptor = os.open(path.parent, flags)
+    held_descriptor = LANE_A_RESULT_PARENT_DESCRIPTORS.get().get(path.parent)
+    if held_descriptor is not None:
         try:
-            status = os.fstat(descriptor)
+            status = os.fstat(held_descriptor)
             if (
                 not stat.S_ISDIR(status.st_mode)
                 or status.st_uid != os.getuid()
                 or stat.S_IMODE(status.st_mode) & 0o022
             ):
                 raise OSError(
-                    "result parent is not an owner-controlled directory"
+                    "held result parent is not an owner-controlled directory"
                 )
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
+            os.fsync(held_descriptor)
+        except BaseException as error:
+            if not isinstance(error, Exception):
+                raise
+            if isinstance(error, OSError):
+                raise lane_a_local_dmg_error(
+                    "cannot sync held lane-A local DMG result directory: "
+                    f"{error}"
+                ) from error
+            raise
+        return
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path.parent, flags)
     except OSError as error:
         raise lane_a_local_dmg_error(
             f"cannot sync lane-A local DMG result directory: {error}"
         ) from error
+    operation_error: BaseException | None = None
+    try:
+        status = os.fstat(descriptor)
+        if (
+            not stat.S_ISDIR(status.st_mode)
+            or status.st_uid != os.getuid()
+            or stat.S_IMODE(status.st_mode) & 0o022
+        ):
+            raise OSError(
+                "result parent is not an owner-controlled directory"
+            )
+        os.fsync(descriptor)
+    except BaseException as error:
+        operation_error = error
+    close_error: BaseException | None = None
+    try:
+        os.close(descriptor)
+    except BaseException as error:
+        close_error = error
+    if operation_error is not None:
+        if not isinstance(operation_error, Exception):
+            raise operation_error from close_error
+        if close_error is not None and not isinstance(close_error, Exception):
+            raise close_error from operation_error
+        if close_error is not None:
+            raise lane_a_local_dmg_error(
+                "lane-A local DMG result directory sync failed and its "
+                f"descriptor close also failed: {close_error}"
+            ) from operation_error
+        if isinstance(operation_error, OSError):
+            raise lane_a_local_dmg_error(
+                f"cannot sync lane-A local DMG result directory: "
+                f"{operation_error}"
+            ) from operation_error
+        raise operation_error
+    if close_error is not None:
+        if not isinstance(close_error, Exception):
+            raise close_error
+        raise lane_a_local_dmg_error(
+            "cannot close lane-A local DMG result directory descriptor: "
+            f"{close_error}"
+        ) from close_error
+
+
+@contextmanager
+def acquire_lane_a_local_dmg_result_parent_leases(
+    paths: Iterable[Path],
+) -> Iterator[None]:
+    parents = tuple(
+        sorted(
+            {path.parent for path in paths},
+            key=lambda path: os.fsencode(str(path)),
+        )
+    )
+    descriptors: list[int] = []
+    locked_descriptors: list[int] = []
+    parent_descriptors: dict[Path, int] = {}
+    context_token: object | None = None
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    primary_error: BaseException | None = None
+    try:
+        for parent in parents:
+            try:
+                descriptor = os.open(parent, flags)
+            except OSError as error:
+                raise lane_a_local_dmg_error(
+                    f"cannot open lane-A result parent lease: {error}"
+                ) from error
+            descriptors.append(descriptor)
+            try:
+                held = os.fstat(descriptor)
+                visible = os.lstat(parent)
+                physical = parent.resolve(strict=True)
+            except OSError as error:
+                raise lane_a_local_dmg_error(
+                    f"cannot validate lane-A result parent lease: {error}"
+                ) from error
+            if (
+                not stat.S_ISDIR(held.st_mode)
+                or not stat.S_ISDIR(visible.st_mode)
+                or held.st_dev != visible.st_dev
+                or held.st_ino != visible.st_ino
+                or held.st_uid != os.getuid()
+                or visible.st_uid != os.getuid()
+                or stat.S_IMODE(held.st_mode) & 0o022
+                or stat.S_IMODE(visible.st_mode) & 0o022
+                or physical != parent
+            ):
+                raise lane_a_local_dmg_error(
+                    "lane-A result parent lease is not bound to one private "
+                    "owner-controlled physical directory"
+                )
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as error:
+                raise lane_a_local_dmg_error(
+                    "another lane-A result publisher holds a parent lease"
+                ) from error
+            locked_descriptors.append(descriptor)
+            parent_descriptors[parent] = descriptor
+        context_token = LANE_A_RESULT_PARENT_DESCRIPTORS.set(
+            parent_descriptors
+        )
+        yield
+    except BaseException as error:
+        primary_error = error
+    cleanup_failures: list[str] = []
+    cleanup_interrupt: BaseException | None = None
+
+    def record_cleanup_error(label: str, error: BaseException) -> None:
+        nonlocal cleanup_interrupt
+        if not isinstance(error, Exception):
+            if cleanup_interrupt is None:
+                cleanup_interrupt = error
+            return
+        cleanup_failures.append(f"{label}: {error}")
+
+    for parent, descriptor in parent_descriptors.items():
+        try:
+            held = os.fstat(descriptor)
+            visible = os.lstat(parent)
+            physical = parent.resolve(strict=True)
+            if (
+                not stat.S_ISDIR(held.st_mode)
+                or not stat.S_ISDIR(visible.st_mode)
+                or held.st_dev != visible.st_dev
+                or held.st_ino != visible.st_ino
+                or held.st_uid != os.getuid()
+                or visible.st_uid != os.getuid()
+                or stat.S_IMODE(held.st_mode) & 0o022
+                or stat.S_IMODE(visible.st_mode) & 0o022
+                or physical != parent
+            ):
+                raise OSError(
+                    "held result parent changed while its lease was active"
+                )
+        except BaseException as error:
+            record_cleanup_error(f"{parent} binding", error)
+    if context_token is not None:
+        try:
+            LANE_A_RESULT_PARENT_DESCRIPTORS.reset(context_token)  # type: ignore[arg-type]
+        except BaseException as error:
+            record_cleanup_error("descriptor context reset", error)
+
+    for descriptor in reversed(locked_descriptors):
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        except BaseException as error:
+            record_cleanup_error("unlock", error)
+    for descriptor in reversed(descriptors):
+        try:
+            os.close(descriptor)
+        except BaseException as error:
+            record_cleanup_error("close", error)
+    cleanup_context = "; ".join(cleanup_failures)
+    if cleanup_interrupt is not None:
+        cleanup_context = (
+            (cleanup_context + "; ") if cleanup_context else ""
+        ) + "lease cleanup was interrupted"
+    if primary_error is not None and not isinstance(primary_error, Exception):
+        if cleanup_context:
+            raise primary_error from lane_a_local_dmg_error(
+                "lane-A result parent lease cleanup also failed: "
+                + cleanup_context
+            )
+        raise primary_error
+    if cleanup_interrupt is not None:
+        raise cleanup_interrupt from primary_error
+    if cleanup_failures:
+        raise lane_a_local_dmg_error(
+            "lane-A result parent lease cleanup failed: " + cleanup_context
+        ) from primary_error
+    if primary_error is not None:
+        raise primary_error
+
+
+def validate_lane_a_local_dmg_suite_parent_result_path(
+    result_path: Path,
+    *,
+    expected_release_id: str,
+) -> Path:
+    validate_result_mode_path(
+        result_path,
+        publish_qualified=False,
+        expected_release_id=expected_release_id,
+    )
+    allowed_root = RESULT_ROOT.resolve(strict=False)
+    try:
+        resolved = result_path.resolve(strict=False)
+        allowed_root.mkdir(mode=0o700, exist_ok=True)
+        validate_owned_directory(allowed_root, phase=LANE_A_LOCAL_DMG_PHASE)
+    except (OSError, ReproducibilityError) as error:
+        raise lane_a_local_dmg_error(
+            f"cannot validate lifecycle-suite parent result root: {error}"
+        ) from error
+    if (
+        result_path != resolved
+        or result_path.parent != allowed_root
+        or result_path.suffix != ".json"
+        or result_path.name.startswith(".")
+    ):
+        raise lane_a_local_dmg_error(
+            "lifecycle-suite parent result must be a visible current-release "
+            "comparison-only JSON file directly under dist/reproducibility"
+        )
+    if os.path.lexists(result_path):
+        try:
+            status = result_path.lstat()
+        except OSError as error:
+            raise lane_a_local_dmg_error(
+                f"cannot inspect lifecycle-suite parent result: {error}"
+            ) from error
+        if (
+            stat.S_ISLNK(status.st_mode)
+            or not stat.S_ISREG(status.st_mode)
+            or status.st_uid != os.getuid()
+            or stat.S_IMODE(status.st_mode) & 0o022
+        ):
+            raise lane_a_local_dmg_error(
+                "existing lifecycle-suite parent result is not an "
+                "owner-controlled regular file"
+            )
+    return result_path
 
 
 def publish_lane_a_local_dmg_result(
+    path: Path,
+    result: dict[str, object],
+    *,
+    expected_release_id: str,
+    filename_token: str = LANE_A_LOCAL_DMG_INSTALL_FILENAME_TOKEN,
+) -> FileIdentity:
+    expected_root = LIFECYCLE_RESULT_ROOT.resolve(strict=False)
+    if path.parent != expected_root:
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG result must use the exact lifecycle result root"
+        )
+    try:
+        expected_root.mkdir(mode=0o700, exist_ok=True)
+    except OSError as error:
+        raise lane_a_local_dmg_error(
+            f"cannot create lane-A local DMG result root: {error}"
+        ) from error
+    with acquire_lane_a_local_dmg_result_parent_leases((path,)):
+        return _publish_lane_a_local_dmg_result_locked(
+            path,
+            result,
+            expected_release_id=expected_release_id,
+            filename_token=filename_token,
+        )
+
+
+def _publish_lane_a_local_dmg_result_locked(
     path: Path,
     result: dict[str, object],
     *,
@@ -3221,61 +4682,150 @@ def publish_lane_a_local_dmg_result(
         filename_token=filename_token,
     )
     if os.path.lexists(path):
+        reject_lane_a_local_dmg_stale_temporaries((path,))
         existing, identity = stable_lane_a_local_dmg_result_bytes(path)
         if existing != payload:
             raise lane_a_local_dmg_error(
                 "refusing to replace a different lane-A local DMG result"
             )
+        require_lane_a_local_dmg_result_single_link(path, identity)
         sync_lane_a_local_dmg_result_parent(path)
         return identity
 
-    try:
-        descriptor, temporary_name = tempfile.mkstemp(
-            prefix=f".{path.name}.",
-            dir=path.parent,
-        )
-    except OSError as error:
-        raise lane_a_local_dmg_error(
-            f"cannot create lane-A local DMG result temporary: {error}"
-        ) from error
-    temporary = Path(temporary_name)
-    try:
+    temporary = reusable_lane_a_local_dmg_staged_result(path, payload)
+    descriptor: int | None = None
+    if temporary is None:
         try:
-            with os.fdopen(descriptor, "wb") as handle:
-                handle.write(payload)
-                handle.flush()
-                os.fsync(handle.fileno())
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=lane_a_local_dmg_staging_prefix(path, payload),
+                dir=path.parent,
+            )
         except OSError as error:
             raise lane_a_local_dmg_error(
-                f"cannot write lane-A local DMG result temporary: {error}"
+                f"cannot create lane-A local DMG result temporary: {error}"
             ) from error
+        temporary = Path(temporary_name)
+    created_result: tuple[int, int, Path] | None = None
+    try:
+        if descriptor is not None:
+            try:
+                with os.fdopen(descriptor, "wb") as handle:
+                    descriptor = None
+                    handle.write(payload)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            except BaseException as error:
+                close_error: OSError | None = None
+                if descriptor is not None:
+                    try:
+                        os.close(descriptor)
+                    except OSError as caught:
+                        close_error = caught
+                    descriptor = None
+                if close_error is not None:
+                    if not isinstance(error, Exception):
+                        raise error from lane_a_local_dmg_error(
+                            "lane-A local DMG result descriptor close also "
+                            f"failed: {close_error}"
+                        )
+                    raise lane_a_local_dmg_error(
+                        "cannot close failed lane-A local DMG result "
+                        f"descriptor: {close_error}"
+                    ) from error
+                if isinstance(error, OSError):
+                    raise lane_a_local_dmg_error(
+                        "cannot write lane-A local DMG result temporary: "
+                        f"{error}"
+                    ) from error
+                raise
         try:
-            os.link(temporary, path)
+            temporary_status = os.lstat(temporary)
+            created_result = (
+                temporary_status.st_dev,
+                temporary_status.st_ino,
+                temporary,
+            )
+            rename_lane_a_local_dmg_result_exclusive(temporary, path)
         except FileExistsError:
+            created_result = None
             existing, identity = stable_lane_a_local_dmg_result_bytes(path)
             if existing != payload:
                 raise lane_a_local_dmg_error(
                     "concurrent lane-A local DMG result publication differed"
                 )
-            sync_lane_a_local_dmg_result_parent(path)
-            return identity
+            raise lane_a_local_dmg_error(
+                "concurrent lane-A local DMG result publication retained "
+                f"an unconsumed staging temporary: {temporary.name}"
+            )
         except OSError as error:
             raise lane_a_local_dmg_error(
                 f"cannot publish lane-A local DMG result: {error}"
             ) from error
-    finally:
-        try:
-            temporary.unlink(missing_ok=True)
-        except OSError:
-            pass
 
-    sync_lane_a_local_dmg_result_parent(path)
-    raw, identity = stable_lane_a_local_dmg_result_bytes(path)
-    if raw != payload:
-        raise lane_a_local_dmg_error(
-            "published lane-A local DMG result bytes differ"
-        )
-    return identity
+        sync_lane_a_local_dmg_result_parent(path)
+        reject_lane_a_local_dmg_stale_temporaries((path,))
+        raw, identity = stable_lane_a_local_dmg_result_bytes(path)
+        require_lane_a_local_dmg_result_single_link(path, identity)
+        if raw != payload:
+            raise lane_a_local_dmg_error(
+                "published lane-A local DMG result bytes differ"
+            )
+        return identity
+    except BaseException as error:
+        rollback_failures: list[str] = []
+        rollback_interrupt: BaseException | None = None
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError as close_error:
+                rollback_failures.append(f"descriptor: {close_error}")
+            descriptor = None
+        if created_result is not None:
+            expected_device, expected_inode, staged_path = created_result
+            try:
+                rollback_lane_a_local_dmg_result_rename(
+                    path,
+                    temporary=staged_path,
+                    expected_device=expected_device,
+                    expected_inode=expected_inode,
+                    expected_payload=payload,
+                )
+            except BaseException as rollback_error:
+                if not isinstance(rollback_error, Exception):
+                    rollback_interrupt = rollback_error
+                else:
+                    rollback_failures.append(
+                        f"{path.name}: {rollback_error}"
+                    )
+        try:
+            sync_lane_a_local_dmg_result_parent(path)
+        except BaseException as sync_error:
+            if not isinstance(sync_error, Exception):
+                if rollback_interrupt is None:
+                    rollback_interrupt = sync_error
+            else:
+                rollback_failures.append(f"{path.parent}: {sync_error}")
+        if rollback_interrupt is not None:
+            if rollback_failures:
+                raise rollback_interrupt from lane_a_local_dmg_error(
+                    "lane-A local DMG result rollback also failed: "
+                    + "; ".join(rollback_failures)
+                )
+            raise rollback_interrupt from error
+        if not isinstance(error, Exception):
+            if rollback_failures:
+                raise error from lane_a_local_dmg_error(
+                    "lane-A local DMG result rollback also failed: "
+                    + "; ".join(rollback_failures)
+                )
+            raise
+        if rollback_failures:
+            raise lane_a_local_dmg_error(
+                "lane-A local DMG result publication failed and rollback "
+                "did not complete: "
+                + "; ".join(rollback_failures)
+            ) from error
+        raise
 
 
 def run_lane_a_local_dmg_install(
@@ -3625,6 +5175,89 @@ sys.stdout.buffer.write(smoke.engine.canonical_json_bytes(result))
     return validator(completed.stdout)
 
 
+def run_lane_a_idle_resource_exercise(
+    *,
+    clone_root: Path,
+    evidence: ArchiveEvidence,
+    expected_source_snapshot: dict[str, object],
+    validator: Callable[[bytes], dict[str, object]],
+) -> dict[str, object]:
+    lane_archive_identities(evidence)
+    require_lane_a_clone_source_snapshot(
+        clone_root,
+        expected_source_snapshot=expected_source_snapshot,
+    )
+    runner_path = clone_root / LANE_A_IDLE_RESOURCE_STABILITY_RUNNER
+    try:
+        runner_before = stable_file_identity(runner_path)
+    except ReproducibilityError as error:
+        raise lane_a_local_dmg_error(
+            f"cannot bind materialized idle-resource runner: {error}"
+        ) from error
+    exercise_program = f"""\
+import sys
+from pathlib import Path
+from script import run_macos_current_source_lane_a_idle_resource_stability_smoke as smoke
+
+result = smoke.exercise(
+    archive_dir=Path(sys.argv[1]),
+    readiness_timeout_seconds=15.0,
+    termination_timeout_seconds={LANE_A_IDLE_RESOURCE_CHILD_TERMINATION_TIMEOUT_SECONDS!r},
+)
+sys.stdout.buffer.write(smoke.engine.canonical_json_bytes(result))
+"""
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "LC_ALL": "C",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONPATH": str(clone_root),
+        }
+    )
+    completed = run_bounded_lane_a_lifecycle_command(
+        [
+            sys.executable,
+            "-B",
+            "-c",
+            exercise_program,
+            str(evidence.archive_directory),
+        ],
+        cwd=clone_root,
+        environment=environment,
+        timeout_seconds=LANE_A_IDLE_RESOURCE_TIMEOUT_SECONDS,
+    )
+    if completed.returncode != 0:
+        child_diagnostic = completed.stderr.decode(
+            "utf-8",
+            errors="replace",
+        ).strip()
+        diagnostic_suffix = (
+            f"; child stderr: {child_diagnostic}"
+            if child_diagnostic
+            else ""
+        )
+        raise lane_a_local_dmg_error(
+            "lane-A idle-resource exercise returned a nonzero status "
+            f"({completed.returncode}){diagnostic_suffix}"
+        )
+    try:
+        runner_after = stable_file_identity(runner_path)
+    except ReproducibilityError as error:
+        raise lane_a_local_dmg_error(
+            f"cannot re-read materialized idle-resource runner: {error}"
+        ) from error
+    if runner_before != runner_after:
+        raise lane_a_local_dmg_error(
+            "materialized idle-resource runner changed during exercise"
+        )
+    lane_archive_identities(evidence)
+    require_lane_a_clone_source_snapshot(
+        clone_root,
+        expected_source_snapshot=expected_source_snapshot,
+    )
+    return validator(completed.stdout)
+
+
 def run_lane_a_local_dmg_suite(
     *,
     clone_root: Path,
@@ -3702,6 +5335,55 @@ def run_lane_a_local_dmg_suite(
             expected_tree=expected_tree,
         ),
     )
+    abrupt_process_runs = [
+        run_lane_a_lifecycle_exercise(
+            clone_root=clone_root,
+            evidence=evidence,
+            runner_relative=(
+                LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_RUNNER
+            ),
+            module_name=(
+                "run_macos_local_dmg_uninstall_reinstall_"
+                "abrupt_process_state_recovery_smoke"
+            ),
+            expected_source_snapshot=expected_source_snapshot,
+            validator=lambda raw: (
+                validate_lane_a_local_dmg_abrupt_process_state_recovery_result_bytes(
+                    raw,
+                    state_recovery=state_recovery,
+                )
+            ),
+        )
+        for _ in (1, 2)
+    ]
+    abrupt_payloads = [
+        canonical_json_bytes(result) for result in abrupt_process_runs
+    ]
+    if abrupt_payloads[0] != abrupt_payloads[1]:
+        raise lane_a_local_dmg_error(
+            "two lane-A abrupt-process state-recovery runs did not "
+            "produce identical canonical results"
+        )
+    abrupt_process_state_recovery = abrupt_process_runs[0]
+    abrupt_process_state_recovery_repeatability = (
+        build_lane_a_local_dmg_abrupt_process_repeatability_receipt(
+            result_path=paths.abrupt_process_state_recovery,
+            result=abrupt_process_state_recovery,
+            expected_release_id=expected_release_id,
+        )
+    )
+    idle_resource_stability = run_lane_a_idle_resource_exercise(
+        clone_root=clone_root,
+        evidence=evidence,
+        expected_source_snapshot=expected_source_snapshot,
+        validator=lambda raw: validate_lane_a_idle_resource_stability_result_bytes(
+            raw,
+            expected_release_id=expected_release_id,
+            evidence=evidence,
+            expected_source_snapshot=expected_source_snapshot,
+            expected_tree=expected_tree,
+        ),
+    )
     lane_archive_identities(evidence)
     require_lane_a_clone_source_snapshot(
         clone_root,
@@ -3714,12 +5396,148 @@ def run_lane_a_local_dmg_suite(
         install=install,
         uninstall_reinstall=uninstall_reinstall,
         state_recovery=state_recovery,
+        abrupt_process_state_recovery=abrupt_process_state_recovery,
+        abrupt_process_state_recovery_repeatability=(
+            abrupt_process_state_recovery_repeatability
+        ),
+        idle_resource_stability=idle_resource_stability,
     )
+
+
+def validate_lane_a_suite_parent_binding(
+    *,
+    parent_result: dict[str, object],
+    suite: LaneALocalDMGSuiteEvidence,
+    idle_source_snapshot: dict[str, object],
+) -> None:
+    source = require_closed_object(
+        parent_result.get("source"),
+        {"algorithm", "fileCount", "overlaySha256", "sha256"},
+        label="lifecycle-suite parent source",
+    )
+    if (
+        type(source["algorithm"]) is not str
+        or source["algorithm"] != idle_source_snapshot["algorithm"]
+        or type(source["fileCount"]) is not int
+        or source["fileCount"] != idle_source_snapshot["fileCount"]
+        or source["sha256"] != idle_source_snapshot["sha256"]
+        or source["sha256"] != suite.archive.source_sha256
+        or require_sha256(
+            source["overlaySha256"],
+            label="lifecycle-suite parent source overlay",
+        )
+        != source["overlaySha256"]
+    ):
+        raise lane_a_local_dmg_error(
+            "lifecycle-suite parent source does not bind build A and idle"
+        )
+    builds = parent_result.get("builds")
+    if type(builds) is not list or len(builds) != 2:
+        raise lane_a_local_dmg_error(
+            "lifecycle-suite parent must contain exactly two builds"
+        )
+    if canonical_json_bytes(builds[0]) != canonical_json_bytes(
+        suite.archive.result_record("build-a")
+    ):
+        raise lane_a_local_dmg_error(
+            "lifecycle-suite parent build A differs from suite archive"
+        )
+    if canonical_json_bytes(builds[1]) != canonical_json_bytes(
+        suite.archive.result_record("build-b")
+    ):
+        raise lane_a_local_dmg_error(
+            "lifecycle-suite parent build B differs from exact A/B match"
+        )
+    comparison = require_closed_object(
+        parent_result.get("comparison"),
+        {
+            "archiveBytesEqual",
+            "differences",
+            "memberBytesEqual",
+            "memberDifferences",
+            "memberMetadataEqual",
+            "memberSetEqual",
+            "normalizations",
+        },
+        label="lifecycle-suite parent comparison",
+    )
+    if (
+        any(
+            comparison[key] is not True
+            for key in (
+                "archiveBytesEqual",
+                "memberBytesEqual",
+                "memberMetadataEqual",
+                "memberSetEqual",
+            )
+        )
+        or comparison["differences"] != []
+        or comparison["memberDifferences"] != []
+        or comparison["normalizations"] != list(suite.archive.normalizations)
+    ):
+        raise lane_a_local_dmg_error(
+            "lifecycle-suite parent comparison is not an exact A/B match"
+        )
 
 
 def publish_lane_a_local_dmg_suite(
     suite: LaneALocalDMGSuiteEvidence,
+    *,
+    parent_result_path: Path | None = None,
+    parent_result: dict[str, object] | None = None,
 ) -> None:
+    child_paths = suite.paths.ordered()
+    expected_lifecycle_root = LIFECYCLE_RESULT_ROOT.resolve(strict=False)
+    if any(path.parent != expected_lifecycle_root for path in child_paths):
+        raise lane_a_local_dmg_error(
+            "lane-A local DMG suite must use the exact lifecycle result root"
+        )
+    try:
+        expected_lifecycle_root.mkdir(mode=0o700, exist_ok=True)
+    except OSError as error:
+        raise lane_a_local_dmg_error(
+            f"cannot create lane-A local DMG suite result root: {error}"
+        ) from error
+    lease_paths = child_paths
+    if parent_result_path is not None and parent_result is not None:
+        validate_lane_a_local_dmg_suite_parent_result_path(
+            parent_result_path,
+            expected_release_id=suite.expected_release_id,
+        )
+        lease_paths += (parent_result_path,)
+    with acquire_lane_a_local_dmg_result_parent_leases(lease_paths):
+        _publish_lane_a_local_dmg_suite_locked(
+            suite,
+            parent_result_path=parent_result_path,
+            parent_result=parent_result,
+        )
+
+
+def _publish_lane_a_local_dmg_suite_locked(
+    suite: LaneALocalDMGSuiteEvidence,
+    *,
+    parent_result_path: Path | None = None,
+    parent_result: dict[str, object] | None = None,
+) -> None:
+    if (parent_result_path is None) != (parent_result is None):
+        raise lane_a_local_dmg_error(
+            "lifecycle-suite parent path and payload must be provided together"
+        )
+    if parent_result is not None:
+        if (
+            parent_result.get("releaseId") != suite.expected_release_id
+            or parent_result.get("status") != "passed"
+            or parent_result.get("failure") is not None
+        ):
+            raise lane_a_local_dmg_error(
+                "lifecycle-suite parent payload is not the passing current "
+                "release result"
+            )
+        assert parent_result_path is not None
+        validate_lane_a_local_dmg_suite_parent_result_path(
+            parent_result_path,
+            expected_release_id=suite.expected_release_id,
+        )
     install_tree = require_closed_object(
         require_closed_object(
             suite.install["installation"],
@@ -3740,10 +5558,35 @@ def publish_lane_a_local_dmg_suite(
         },
         label="validated lane-A local DMG installed tree",
     )
+    idle_source_snapshot = require_closed_object(
+        suite.idle_resource_stability.get("sourceSnapshot"),
+        {"algorithm", "fileCount", "sha256"},
+        label="validated lane-A idle source snapshot",
+    )
+    if (
+        idle_source_snapshot["algorithm"]
+        != "sha256(path-nul-mode-nul-size-nul-sha256-lf)-v1"
+        or type(idle_source_snapshot["fileCount"]) is not int
+        or idle_source_snapshot["fileCount"] <= 0
+        or require_sha256(
+            idle_source_snapshot["sha256"],
+            label="validated lane-A idle source SHA-256",
+        )
+        != suite.archive.source_sha256
+    ):
+        raise lane_a_local_dmg_error(
+            "lane-A idle source snapshot differs from build A"
+        )
+    if parent_result is not None:
+        validate_lane_a_suite_parent_binding(
+            parent_result=parent_result,
+            suite=suite,
+            idle_source_snapshot=idle_source_snapshot,
+        )
     items: tuple[
         tuple[
             Path,
-            str,
+            str | None,
             dict[str, object],
             Callable[[bytes], dict[str, object]],
         ],
@@ -3783,7 +5626,68 @@ def publish_lane_a_local_dmg_suite(
                 expected_tree=install_tree,
             ),
         ),
+        (
+            suite.paths.abrupt_process_state_recovery,
+            LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_FILENAME_TOKEN,
+            suite.abrupt_process_state_recovery,
+            lambda raw: (
+                validate_lane_a_local_dmg_abrupt_process_state_recovery_result_bytes(
+                    raw,
+                    state_recovery=suite.state_recovery,
+                )
+            ),
+        ),
+        (
+            suite.paths.abrupt_process_state_recovery_repeatability,
+            (
+                LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_REPEATABILITY_FILENAME_TOKEN
+            ),
+            suite.abrupt_process_state_recovery_repeatability,
+            lambda raw: (
+                validate_lane_a_local_dmg_abrupt_process_repeatability_receipt_bytes(
+                    raw,
+                    result_path=suite.paths.abrupt_process_state_recovery,
+                    result=suite.abrupt_process_state_recovery,
+                    expected_release_id=suite.expected_release_id,
+                )
+            ),
+        ),
+        (
+            suite.paths.idle_resource_stability,
+            LANE_A_IDLE_RESOURCE_STABILITY_FILENAME_TOKEN,
+            suite.idle_resource_stability,
+            lambda raw: validate_lane_a_idle_resource_stability_result_bytes(
+                raw,
+                expected_release_id=suite.expected_release_id,
+                evidence=suite.archive,
+                expected_source_snapshot=idle_source_snapshot,
+                expected_tree=install_tree,
+            ),
+        ),
     )
+    if parent_result is not None:
+        assert parent_result_path is not None
+
+        def validate_parent_result(raw: bytes) -> dict[str, object]:
+            parsed = parse_lane_a_lifecycle_result_bytes(
+                raw,
+                label="lane-A local DMG lifecycle-suite parent result",
+            )
+            if raw != canonical_json_bytes(parent_result):
+                raise lane_a_local_dmg_error(
+                    "lifecycle-suite parent result differs from the passing "
+                    "reproducibility result"
+                )
+            return parsed
+
+        items += (
+            (
+                parent_result_path,
+                None,
+                parent_result,
+                validate_parent_result,
+            ),
+        )
     try:
         suite.paths.install.parent.mkdir(mode=0o700, exist_ok=True)
     except OSError as error:
@@ -3792,59 +5696,155 @@ def publish_lane_a_local_dmg_suite(
         ) from error
 
     payloads: list[bytes] = []
-    for path, filename_token, result, validator in items:
-        validate_lane_a_lifecycle_result_path(
-            path,
-            expected_release_id=suite.expected_release_id,
-            filename_token=filename_token,
-        )
+    identities: list[FileIdentity | None] = [None] * len(items)
+    retained_temporaries: list[Path | None] = [None] * len(items)
+    for index, (path, filename_token, result, validator) in enumerate(items):
+        if filename_token is None:
+            validate_lane_a_local_dmg_suite_parent_result_path(
+                path,
+                expected_release_id=suite.expected_release_id,
+            )
+        else:
+            validate_lane_a_lifecycle_result_path(
+                path,
+                expected_release_id=suite.expected_release_id,
+                filename_token=filename_token,
+            )
         payload = canonical_json_bytes(result)
         validator(payload)
         payloads.append(payload)
         if os.path.lexists(path):
-            existing, _ = stable_lane_a_local_dmg_result_bytes(path)
+            reject_lane_a_local_dmg_stale_temporaries((path,))
+            existing, identity = stable_lane_a_local_dmg_result_bytes(path)
             if existing != payload:
                 raise lane_a_local_dmg_error(
                     "refusing to replace a different lane-A local DMG "
                     f"suite result: {path.name}"
                 )
+            require_lane_a_local_dmg_result_single_link(path, identity)
+            identities[index] = identity
+        else:
+            retained_temporaries[index] = (
+                reusable_lane_a_local_dmg_staged_result(path, payload)
+            )
+
+    if (
+        parent_result is not None
+        and identities[-1] is not None
+        and any(identity is None for identity in identities[:-1])
+    ):
+        raise lane_a_local_dmg_error(
+            "lifecycle-suite parent commit marker exists before the complete "
+            "child result set"
+        )
 
     staged: list[tuple[Path, int]] = []
-    identities: list[FileIdentity | None] = [None] * len(items)
+    created_results: list[tuple[int, int, int, Path]] = []
+
+    def sync_item_parents() -> None:
+        synced_parents: set[Path] = set()
+        for path, *_ in items:
+            if path.parent in synced_parents:
+                continue
+            sync_lane_a_local_dmg_result_parent(path)
+            synced_parents.add(path.parent)
+
     try:
         for index, ((path, _, _, _), payload) in enumerate(
             zip(items, payloads)
         ):
             if os.path.lexists(path):
                 continue
+            temporary = retained_temporaries[index]
             descriptor: int | None = None
-            try:
-                descriptor, temporary_name = tempfile.mkstemp(
-                    prefix=f".{path.name}.",
-                    dir=path.parent,
-                )
+            if temporary is None:
+                try:
+                    descriptor, temporary_name = tempfile.mkstemp(
+                        prefix=lane_a_local_dmg_staging_prefix(path, payload),
+                        dir=path.parent,
+                    )
+                except OSError as error:
+                    raise lane_a_local_dmg_error(
+                        "cannot create lane-A local DMG suite staging "
+                        f"temporary: {error}"
+                    ) from error
                 temporary = Path(temporary_name)
-                staged.append((temporary, index))
-                with os.fdopen(descriptor, "wb") as handle:
-                    descriptor = None
-                    handle.write(payload)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-            except OSError as error:
-                if descriptor is not None:
-                    try:
-                        os.close(descriptor)
-                    except OSError:
-                        pass
+            staged.append((temporary, index))
+            if descriptor is not None:
+                try:
+                    with os.fdopen(descriptor, "wb") as handle:
+                        descriptor = None
+                        handle.write(payload)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                except BaseException as error:
+                    close_error: OSError | None = None
+                    if descriptor is not None:
+                        try:
+                            os.close(descriptor)
+                        except OSError as caught:
+                            close_error = caught
+                        descriptor = None
+                    if not isinstance(error, Exception):
+                        if close_error is not None:
+                            raise error from lane_a_local_dmg_error(
+                                "lane-A local DMG suite staging descriptor "
+                                f"close also failed: {close_error}"
+                            )
+                        raise
+                    if close_error is not None:
+                        raise lane_a_local_dmg_error(
+                            "cannot close failed lane-A local DMG suite "
+                            f"staging descriptor: {close_error}"
+                        ) from error
+                    if isinstance(error, OSError):
+                        raise lane_a_local_dmg_error(
+                            "cannot stage lane-A local DMG suite result: "
+                            f"{error}"
+                        ) from error
+                    raise
+
+            staged_raw, staged_identity = (
+                stable_lane_a_local_dmg_result_bytes(temporary)
+            )
+            require_lane_a_local_dmg_result_single_link(
+                temporary,
+                staged_identity,
+            )
+            if staged_raw != payload:
                 raise lane_a_local_dmg_error(
-                    f"cannot stage lane-A local DMG suite result: {error}"
-                ) from error
+                    "lane-A local DMG suite staging bytes differ from the "
+                    f"exercised result: {temporary.name}"
+                )
 
         for temporary, index in staged:
             path = items[index][0]
+            staged_raw, staged_identity = (
+                stable_lane_a_local_dmg_result_bytes(temporary)
+            )
+            require_lane_a_local_dmg_result_single_link(
+                temporary,
+                staged_identity,
+            )
+            if staged_raw != payloads[index]:
+                raise lane_a_local_dmg_error(
+                    "lane-A local DMG suite staging result changed before "
+                    f"publication: {temporary.name}"
+                )
+            creation_intent = (
+                index,
+                staged_identity.device,
+                staged_identity.inode,
+                temporary,
+            )
+            if parent_result is not None and index == len(items) - 1:
+                sync_lane_a_local_dmg_result_parent(items[0][0])
+            created_results.append(creation_intent)
             try:
-                os.link(temporary, path)
+                rename_lane_a_local_dmg_result_exclusive(temporary, path)
             except FileExistsError:
+                if created_results and created_results[-1] == creation_intent:
+                    created_results.pop()
                 existing, identity = stable_lane_a_local_dmg_result_bytes(
                     path
                 )
@@ -3853,34 +5853,146 @@ def publish_lane_a_local_dmg_suite(
                         "concurrent lane-A local DMG suite publication "
                         f"differed: {path.name}"
                     )
-                identities[index] = identity
+                require_lane_a_local_dmg_result_single_link(path, identity)
+                raise lane_a_local_dmg_error(
+                    "concurrent lane-A local DMG suite publication retained "
+                    f"an unconsumed staging temporary: {temporary.name}"
+                )
             except OSError as error:
                 raise lane_a_local_dmg_error(
                     f"cannot publish lane-A local DMG suite result: {error}"
                 ) from error
-    finally:
-        for temporary, _ in staged:
-            try:
-                temporary.unlink(missing_ok=True)
-            except OSError:
-                pass
 
-    sync_lane_a_local_dmg_result_parent(suite.paths.install)
-    for index, ((path, _, _, validator), payload) in enumerate(
-        zip(items, payloads)
-    ):
-        raw, identity = stable_lane_a_local_dmg_result_bytes(path)
-        observed = validator(raw)
-        if raw != payload or observed != items[index][2]:
+        if parent_result is not None and identities[-1] is None:
+            sync_lane_a_local_dmg_result_parent(items[-1][0])
+        else:
+            sync_item_parents()
+        reject_lane_a_local_dmg_stale_temporaries(
+            path for path, *_ in items
+        )
+        for index, ((path, _, _, validator), payload) in enumerate(
+            zip(items, payloads)
+        ):
+            raw, identity = stable_lane_a_local_dmg_result_bytes(path)
+            require_lane_a_local_dmg_result_single_link(path, identity)
+            observed = validator(raw)
+            if raw != payload or observed != items[index][2]:
+                raise lane_a_local_dmg_error(
+                    "lane-A local DMG suite disk readback differs from "
+                    f"exercised result: {path.name}"
+                )
+            if (
+                identities[index] is not None
+                and identities[index] != identity
+            ):
+                raise lane_a_local_dmg_error(
+                    "lane-A local DMG suite result identity changed "
+                    f"during readback: {path.name}"
+                )
+    except BaseException as error:
+        rollback_failures: list[str] = []
+        rollback_interrupt: BaseException | None = None
+
+        def record_rollback_error(label: str, caught: BaseException) -> None:
+            nonlocal rollback_interrupt
+            if not isinstance(caught, Exception):
+                if rollback_interrupt is None:
+                    rollback_interrupt = caught
+                return
+            rollback_failures.append(f"{label}: {caught}")
+
+        parent_commit_index = (
+            len(items) - 1 if parent_result is not None else None
+        )
+        rollback_results = list(reversed(created_results))
+        if parent_commit_index is not None and not any(
+            index == parent_commit_index
+            for index, *_ in created_results
+        ):
+            parent_path = items[parent_commit_index][0]
+            try:
+                parent_still_visible = os.path.lexists(parent_path)
+            except BaseException as inspection_error:
+                record_rollback_error(
+                    f"{parent_path.name} visibility",
+                    inspection_error,
+                )
+                parent_still_visible = True
+            if parent_still_visible:
+                rollback_failures.append(
+                    "lifecycle-suite parent commit marker became visible "
+                    "outside this publication; child results were preserved"
+                )
+                rollback_results = []
+        for (
+            index,
+            expected_device,
+            expected_inode,
+            temporary,
+        ) in rollback_results:
+            path = items[index][0]
+            rollback_succeeded = False
+            try:
+                rollback_lane_a_local_dmg_result_rename(
+                    path,
+                    temporary=temporary,
+                    expected_device=expected_device,
+                    expected_inode=expected_inode,
+                    expected_payload=payloads[index],
+                )
+                rollback_succeeded = True
+            except BaseException as rollback_error:
+                record_rollback_error(path.name, rollback_error)
+            if index == parent_commit_index:
+                try:
+                    parent_still_visible = os.path.lexists(path)
+                except BaseException as inspection_error:
+                    record_rollback_error(
+                        f"{path.name} visibility",
+                        inspection_error,
+                    )
+                    parent_still_visible = True
+                if parent_still_visible:
+                    if rollback_succeeded:
+                        rollback_failures.append(
+                            "lifecycle-suite parent commit marker reappeared "
+                            "during rollback; child results were preserved"
+                        )
+                    break
+                try:
+                    sync_lane_a_local_dmg_result_parent(path)
+                except BaseException as rollback_error:
+                    record_rollback_error(
+                        f"{path.name} rollback durability",
+                        rollback_error,
+                    )
+                    break
+        if staged or created_results:
+            try:
+                sync_item_parents()
+            except BaseException as rollback_error:
+                record_rollback_error("result parents", rollback_error)
+        if rollback_interrupt is not None:
+            if rollback_failures:
+                raise rollback_interrupt from lane_a_local_dmg_error(
+                    "lane-A local DMG suite rollback also failed: "
+                    + "; ".join(rollback_failures)
+                )
+            raise rollback_interrupt from error
+        if not isinstance(error, Exception):
+            if rollback_failures:
+                raise error from lane_a_local_dmg_error(
+                    "lane-A local DMG suite rollback also failed: "
+                    + "; ".join(rollback_failures)
+                )
+            raise
+        if rollback_failures:
             raise lane_a_local_dmg_error(
-                "lane-A local DMG suite disk readback differs from "
-                f"exercised result: {path.name}"
-            )
-        if identities[index] is not None and identities[index] != identity:
-            raise lane_a_local_dmg_error(
-                "lane-A local DMG suite result identity changed during "
-                f"readback: {path.name}"
-            )
+                "lane-A local DMG suite publication failed and its "
+                "rename rollback did not complete: "
+                + "; ".join(rollback_failures)
+            ) from error
+        raise
 
 
 def empty_result(
@@ -4338,6 +6450,9 @@ def execute(
                 )
                 exit_code = 9
 
+        if error is None and exit_code == 0:
+            result["failure"] = None
+
         if (
             pending_lane_a_local_dmg_suite is not None
             and error is None
@@ -4345,11 +6460,20 @@ def execute(
         ):
             try:
                 publish_lane_a_local_dmg_suite(
-                    pending_lane_a_local_dmg_suite
+                    pending_lane_a_local_dmg_suite,
+                    parent_result_path=result_path,
+                    parent_result=result,
                 )
             except ReproducibilityError as caught:
                 error = caught
                 exit_code = caught.exit_code
+            except KeyboardInterrupt:
+                error = ReproducibilityError(
+                    130,
+                    "interrupted",
+                    "reproducibility suite publication interrupted",
+                )
+                exit_code = error.exit_code
             except Exception as caught:
                 error = lane_a_local_dmg_error(
                     f"cannot publish lane-A local DMG suite: {caught}"
@@ -4366,7 +6490,11 @@ def execute(
         elif exit_code == 0:
             result["failure"] = None
         try:
-            if result_path_validated:
+            if (
+                result_path_validated
+                and lane_a_local_dmg_suite_label is None
+                and pending_lane_a_local_dmg_suite is None
+            ):
                 write_result(result_path, result)
         except Exception as caught:  # result path failures must not traceback
             if exit_code != 9:
@@ -4440,7 +6568,10 @@ def main() -> int:
         help=(
             "comparison-only opt-in: derive and publish the install, "
             "same-DMG uninstall/reinstall, and persisted-state recovery "
-            "results under dist/lifecycle from one lowercase slug"
+            "plus two-run abrupt-process recovery result/receipt and one "
+            "bounded idle-resource result under dist/lifecycle from one "
+            "lowercase slug; the parent and six children publish as one "
+            "create-only rollback transaction"
         ),
     )
     arguments = parser.parse_args()

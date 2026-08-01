@@ -28912,85 +28912,165 @@ class RuntimeClientViewModelTest {
             advanceUntilIdle()
             assertEquals(0, localStore.saveCount)
 
-            first.reconcileAndroidPlatformAppLanguageSnapshot(
-                applicationLocalesSupported = true,
-                applicationLocaleLanguageTag = "ko-KR",
-                systemLanguageTag = "ja-JP",
-            )
-            advanceUntilIdle()
-
-            assertEquals(1, localStore.saveCount)
-            assertEquals("ko", first.state.value.selectedLanguageTag)
-            assertEquals(APP_LANGUAGE_SOURCE_IN_APP, first.state.value.selectedLanguageSource)
-            assertEquals("ko", localStore.data.appLanguageTag)
-            assertEquals(APP_LANGUAGE_SOURCE_IN_APP, localStore.data.appLanguageSource)
-
-            first.reconcileAndroidPlatformAppLanguageSnapshot(
-                applicationLocalesSupported = true,
-                applicationLocaleLanguageTag = "ko",
-                systemLanguageTag = "ja",
-            )
-            advanceUntilIdle()
-            assertEquals(1, localStore.saveCount)
-
-            first.setAppLanguageTag("ko-KR")
-            first.setAppLanguageTag("ko")
-            advanceUntilIdle()
-            assertEquals(1, localStore.saveCount)
-
-            first.reconcileAndroidPlatformAppLanguageSnapshot(
+            val firstFrameReconciliation = first.androidPlatformAppLanguageReconciliation(
                 applicationLocalesSupported = true,
                 applicationLocaleLanguageTag = null,
                 systemLanguageTag = "ja-JP",
             )
+            assertEquals("fr", firstFrameReconciliation.snapshot.languageTag)
+            assertEquals(
+                APP_LANGUAGE_SOURCE_IN_APP,
+                firstFrameReconciliation.snapshot.languageSource,
+            )
+            assertEquals("fr", firstFrameReconciliation.applicationLocaleLanguageTagToSet)
+            assertEquals(0, localStore.saveCount)
+
+            assertEquals(
+                "fr",
+                first.reconcileAndroidPlatformAppLanguageSnapshot(
+                    applicationLocalesSupported = true,
+                    applicationLocaleLanguageTag = null,
+                    systemLanguageTag = "ja-JP",
+                ),
+            )
             advanceUntilIdle()
 
+            assertEquals(1, localStore.saveCount)
+            assertEquals("fr", first.state.value.selectedLanguageTag)
+            assertEquals(APP_LANGUAGE_SOURCE_IN_APP, first.state.value.selectedLanguageSource)
+            assertEquals("fr", localStore.data.appLanguageTag)
+            assertEquals(APP_LANGUAGE_SOURCE_IN_APP, localStore.data.appLanguageSource)
+            assertEquals(0, localStore.data.androidAppLanguagePlatformMigrationVersion)
+            assertEquals("fr", localStore.data.pendingAndroidAppLanguagePlatformMigrationTag)
+
+            val pendingRecreated = createViewModel()
+            advanceUntilIdle()
+            assertEquals(
+                "fr",
+                pendingRecreated.reconcileAndroidPlatformAppLanguageSnapshot(
+                    applicationLocalesSupported = true,
+                    applicationLocaleLanguageTag = null,
+                    systemLanguageTag = "ja",
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(1, localStore.saveCount)
+
+            assertNull(
+                pendingRecreated.reconcileAndroidPlatformAppLanguageSnapshot(
+                    applicationLocalesSupported = true,
+                    applicationLocaleLanguageTag = "fr-FR",
+                    systemLanguageTag = "ja-JP",
+                ),
+            )
+            advanceUntilIdle()
             assertEquals(2, localStore.saveCount)
-            assertEquals("ja", first.state.value.selectedLanguageTag)
-            assertEquals(APP_LANGUAGE_SOURCE_SYSTEM, first.state.value.selectedLanguageSource)
+            assertEquals(
+                ANDROID_APP_LANGUAGE_PLATFORM_MIGRATION_VERSION,
+                localStore.data.androidAppLanguagePlatformMigrationVersion,
+            )
+            assertNull(localStore.data.pendingAndroidAppLanguagePlatformMigrationTag)
+
+            assertNull(
+                pendingRecreated.reconcileAndroidPlatformAppLanguageSnapshot(
+                    applicationLocalesSupported = true,
+                    applicationLocaleLanguageTag = "fr",
+                    systemLanguageTag = "ja",
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(2, localStore.saveCount)
+
+            assertNull(
+                pendingRecreated.reconcileAndroidPlatformAppLanguageSnapshot(
+                    applicationLocalesSupported = true,
+                    applicationLocaleLanguageTag = null,
+                    systemLanguageTag = "ja-JP",
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(3, localStore.saveCount)
+            assertEquals("ja", pendingRecreated.state.value.selectedLanguageTag)
+            assertEquals(
+                APP_LANGUAGE_SOURCE_SYSTEM,
+                pendingRecreated.state.value.selectedLanguageSource,
+            )
             assertEquals("ja", localStore.data.appLanguageTag)
             assertEquals(APP_LANGUAGE_SOURCE_SYSTEM, localStore.data.appLanguageSource)
 
-            first.reconcileAndroidPlatformAppLanguageSnapshot(
-                applicationLocalesSupported = true,
-                applicationLocaleLanguageTag = null,
-                systemLanguageTag = "ja",
+            assertNull(
+                pendingRecreated.reconcileAndroidPlatformAppLanguageSnapshot(
+                    applicationLocalesSupported = true,
+                    applicationLocaleLanguageTag = null,
+                    systemLanguageTag = "ja",
+                ),
             )
             advanceUntilIdle()
-            assertEquals(2, localStore.saveCount)
-
-            first.followSystemAppLanguageTag("ja-JP")
-            first.followSystemAppLanguageTag("ja")
-            advanceUntilIdle()
-            assertEquals(2, localStore.saveCount)
-
-            first.setAppLanguageTag("zh-Hans")
-            advanceUntilIdle()
             assertEquals(3, localStore.saveCount)
+
+            assertNull(
+                pendingRecreated.reconcileAndroidPlatformAppLanguageSnapshot(
+                    applicationLocalesSupported = true,
+                    applicationLocaleLanguageTag = "ko-KR",
+                    systemLanguageTag = "ja-JP",
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(4, localStore.saveCount)
+            assertEquals("ko", pendingRecreated.state.value.selectedLanguageTag)
+            assertEquals(APP_LANGUAGE_SOURCE_IN_APP, localStore.data.appLanguageSource)
+
+            assertNull(
+                pendingRecreated.reconcileAndroidPlatformAppLanguageSnapshot(
+                    applicationLocalesSupported = true,
+                    applicationLocaleLanguageTag = "ko",
+                    systemLanguageTag = "ja",
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(4, localStore.saveCount)
+
+            pendingRecreated.setAppLanguageTag("ko-KR")
+            pendingRecreated.setAppLanguageTag("ko")
+            advanceUntilIdle()
+            assertEquals(4, localStore.saveCount)
+
+            pendingRecreated.setAppLanguageTag("zh-Hans")
+            advanceUntilIdle()
+            assertEquals(5, localStore.saveCount)
 
             val recreated = createViewModel()
             advanceUntilIdle()
-            recreated.reconcileAndroidPlatformAppLanguageSnapshot(
-                applicationLocalesSupported = false,
-                applicationLocaleLanguageTag = null,
-                systemLanguageTag = "ko-KR",
+            assertNull(
+                recreated.reconcileAndroidPlatformAppLanguageSnapshot(
+                    applicationLocalesSupported = false,
+                    applicationLocaleLanguageTag = null,
+                    systemLanguageTag = "ko-KR",
+                ),
             )
             advanceUntilIdle()
 
-            assertEquals(3, localStore.saveCount)
+            assertEquals(5, localStore.saveCount)
             assertEquals("zh-CN", recreated.state.value.selectedLanguageTag)
             assertEquals(APP_LANGUAGE_SOURCE_IN_APP, recreated.state.value.selectedLanguageSource)
 
-            recreated.reconcileAndroidPlatformAppLanguageSnapshot(
-                applicationLocalesSupported = true,
-                applicationLocaleLanguageTag = null,
-                systemLanguageTag = "de-DE",
+            assertNull(
+                recreated.reconcileAndroidPlatformAppLanguageSnapshot(
+                    applicationLocalesSupported = true,
+                    applicationLocaleLanguageTag = null,
+                    systemLanguageTag = "de-DE",
+                ),
             )
             advanceUntilIdle()
 
-            assertEquals(4, localStore.saveCount)
+            assertEquals(6, localStore.saveCount)
             assertEquals("en", recreated.state.value.selectedLanguageTag)
             assertEquals(APP_LANGUAGE_SOURCE_DEFAULT, recreated.state.value.selectedLanguageSource)
+            assertTrue(
+                localStore.savedDurabilities.all { durability ->
+                    durability == RuntimeLocalDataWriteDurability.Durable
+                },
+            )
         } finally {
             Dispatchers.resetMain()
         }

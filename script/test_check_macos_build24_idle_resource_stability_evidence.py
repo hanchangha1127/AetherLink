@@ -783,7 +783,7 @@ class Build24IdleResourceEvidenceCheckerTests(unittest.TestCase):
             "script/run_macos_isolated_uninstall_reinstall_smoke.py",
             "script/run_macos_isolated_upgrade_smoke.py",
             "script/run_macos_local_dmg_install_smoke.py",
-            "script/run_macos_local_dmg_install_smoke_v2.py",
+            checker.HISTORICAL_LOCAL_DMG_V2_SOURCE_PATH,
             (
                 "script/"
                 "run_macos_build24_idle_resource_stability_smoke.py"
@@ -795,12 +795,121 @@ class Build24IdleResourceEvidenceCheckerTests(unittest.TestCase):
         }
         self.assertTrue(expected_sources.issubset(checker.TARGET_IDENTITIES))
         self.assertEqual(len(checker.TARGET_IDENTITIES), 16)
+        self.assertEqual(
+            checker.HISTORICAL_SOURCE_SNAPSHOT_COMMIT,
+            "38027523f65f97a81044555c2f42b020eada3436",
+        )
+        self.assertEqual(
+            checker.HISTORICAL_SOURCE_SNAPSHOT_ROOT,
+            "docs/evidence/macos-build24-lifecycle-source-v1",
+        )
+        self.assertNotIn(
+            "script/run_macos_local_dmg_install_smoke_v2.py",
+            checker.TARGET_IDENTITIES,
+        )
+        checker.validate_historical_source_snapshot_contract()
         for relative, expected in checker.TARGET_IDENTITIES.items():
             path = ROOT / relative
             with self.subTest(relative=relative):
                 self.assertFalse(path.is_symlink())
                 self.assertTrue(path.is_file())
                 self.assertEqual(path.stat().st_size, expected.size)
+        fixture = ROOT / checker.HISTORICAL_LOCAL_DMG_V2_SOURCE_PATH
+        self.assertEqual(fixture.stat().st_mode & 0o111, 0)
+        self.assertEqual(
+            hashlib.sha256(fixture.read_bytes()).hexdigest(),
+            checker.TARGET_IDENTITIES[
+                checker.HISTORICAL_LOCAL_DMG_V2_SOURCE_PATH
+            ].sha256,
+        )
+
+    def test_18_historical_snapshot_contract_fails_closed(self) -> None:
+        with mock.patch.object(
+            checker,
+            "HISTORICAL_SOURCE_SNAPSHOT_COMMIT",
+            "0" * 40,
+        ):
+            with self.assertRaises(checker.IdleResourceEvidenceError):
+                checker.validate_historical_source_snapshot_contract()
+        with mock.patch.object(
+            checker,
+            "HISTORICAL_LOCAL_DMG_V2_SOURCE_PATH",
+            "script/run_macos_local_dmg_install_smoke_v2.py",
+        ):
+            with self.assertRaises(checker.IdleResourceEvidenceError):
+                checker.validate_historical_source_snapshot_contract()
+        mutated_targets = dict(checker.TARGET_IDENTITIES)
+        mutated_targets["unexpected"] = checker.identity(
+            0,
+            hashlib.sha256(b"").hexdigest(),
+        )
+        with mock.patch.object(checker, "TARGET_IDENTITIES", mutated_targets):
+            with self.assertRaises(checker.IdleResourceEvidenceError):
+                checker.validate_historical_source_snapshot_contract()
+
+    def test_18_historical_fixture_rejects_mutation_symlink_and_extra(
+        self,
+    ) -> None:
+        expected = checker.TARGET_IDENTITIES[
+            checker.HISTORICAL_LOCAL_DMG_V2_SOURCE_PATH
+        ]
+        payload = (
+            ROOT / checker.HISTORICAL_LOCAL_DMG_V2_SOURCE_PATH
+        ).read_bytes()
+
+        def materialize(root: Path) -> Path:
+            relative_directory = (
+                f"{checker.HISTORICAL_SOURCE_SNAPSHOT_ROOT}/script"
+            )
+            fixture_directory = root / relative_directory
+            fixture_directory.mkdir(parents=True)
+            for name in checker.HISTORICAL_SOURCE_DIRECTORY_INVENTORIES[
+                relative_directory
+            ]:
+                source = ROOT / relative_directory / name
+                (fixture_directory / name).write_bytes(source.read_bytes())
+            return root / checker.HISTORICAL_LOCAL_DMG_V2_SOURCE_PATH
+
+        def validate(root: Path) -> None:
+            snapshot = checker.RepositorySnapshot(
+                root,
+                {checker.HISTORICAL_LOCAL_DMG_V2_SOURCE_PATH: expected},
+            )
+            try:
+                snapshot.open_all()
+                checker.validate_historical_source_snapshot_contract(snapshot)
+                snapshot.read_all()
+                snapshot.verify_graph()
+            finally:
+                snapshot.close()
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture = materialize(root)
+            live = root / "script/run_macos_local_dmg_install_smoke_v2.py"
+            live.parent.mkdir()
+            live.write_bytes(b"current live runner bytes\n")
+            validate(root)
+            fixture.write_bytes(payload + b"mutation")
+            with self.assertRaises(checker.IdleResourceEvidenceError):
+                validate(root)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture = materialize(root)
+            live = root / "live.py"
+            live.write_bytes(payload)
+            fixture.unlink()
+            fixture.symlink_to(live)
+            with self.assertRaises((checker.IdleResourceEvidenceError, OSError)):
+                validate(root)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture = materialize(root)
+            (fixture.parent / "unexpected.py").write_bytes(b"pass\n")
+            with self.assertRaises(checker.IdleResourceEvidenceError):
+                validate(root)
 
     def test_18_identity_constructor_and_path_normalization_fail_closed(
         self,

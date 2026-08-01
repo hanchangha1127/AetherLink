@@ -135,6 +135,10 @@ RELEASES = {
 REPOSITORY_SNAPSHOT_DIRECTORIES = (
     "release",
     "script",
+    "docs",
+    "docs/evidence",
+    "docs/evidence/macos-build24-lifecycle-source-v1",
+    "docs/evidence/macos-build24-lifecycle-source-v1/script",
     "dist",
     "dist/lifecycle",
     "dist/releases",
@@ -624,6 +628,207 @@ SOURCE_CONTRACTS = {
     ),
 }
 
+# Build 24 lifecycle evidence was exercised with the source bytes at this
+# commit. The runner and unit-test files that later evolved now retain their
+# evidence-era bytes under a versioned, non-executable fixture root instead of
+# being falsely rebound to current production source.
+HISTORICAL_SOURCE_SNAPSHOT_COMMIT = (
+    "38027523f65f97a81044555c2f42b020eada3436"
+)
+HISTORICAL_SOURCE_SNAPSHOT_ROOT = (
+    "docs/evidence/macos-build24-lifecycle-source-v1"
+)
+HISTORICAL_SOURCE_STORAGE_PATHS = {
+    "script/run_macos_local_dmg_install_smoke_v2.py": (
+        f"{HISTORICAL_SOURCE_SNAPSHOT_ROOT}/script/"
+        "run_macos_local_dmg_install_smoke_v2.py"
+    ),
+    "script/test_run_macos_local_dmg_install_smoke_v2.py": (
+        f"{HISTORICAL_SOURCE_SNAPSHOT_ROOT}/script/"
+        "test_run_macos_local_dmg_install_smoke_v2.py"
+    ),
+    "script/run_macos_local_dmg_uninstall_reinstall_smoke.py": (
+        f"{HISTORICAL_SOURCE_SNAPSHOT_ROOT}/script/"
+        "run_macos_local_dmg_uninstall_reinstall_smoke.py"
+    ),
+    "script/test_run_macos_local_dmg_uninstall_reinstall_smoke.py": (
+        f"{HISTORICAL_SOURCE_SNAPSHOT_ROOT}/script/"
+        "test_run_macos_local_dmg_uninstall_reinstall_smoke.py"
+    ),
+    (
+        "script/run_macos_local_dmg_uninstall_reinstall_"
+        "state_recovery_smoke.py"
+    ): (
+        f"{HISTORICAL_SOURCE_SNAPSHOT_ROOT}/script/"
+        "run_macos_local_dmg_uninstall_reinstall_state_recovery_smoke.py"
+    ),
+    (
+        "script/test_run_macos_local_dmg_uninstall_reinstall_"
+        "state_recovery_smoke.py"
+    ): (
+        f"{HISTORICAL_SOURCE_SNAPSHOT_ROOT}/script/"
+        "test_run_macos_local_dmg_uninstall_reinstall_state_recovery_smoke.py"
+    ),
+    (
+        "script/run_macos_local_dmg_uninstall_reinstall_"
+        "abrupt_process_state_recovery_smoke.py"
+    ): (
+        f"{HISTORICAL_SOURCE_SNAPSHOT_ROOT}/script/"
+        "run_macos_local_dmg_uninstall_reinstall_"
+        "abrupt_process_state_recovery_smoke.py"
+    ),
+    (
+        "script/test_run_macos_local_dmg_uninstall_reinstall_"
+        "abrupt_process_state_recovery_smoke.py"
+    ): (
+        f"{HISTORICAL_SOURCE_SNAPSHOT_ROOT}/script/"
+        "test_run_macos_local_dmg_uninstall_reinstall_"
+        "abrupt_process_state_recovery_smoke.py"
+    ),
+}
+
+HISTORICAL_SOURCE_DIRECTORY_INVENTORIES = {
+    HISTORICAL_SOURCE_SNAPSHOT_ROOT: ("script",),
+    f"{HISTORICAL_SOURCE_SNAPSHOT_ROOT}/script": tuple(
+        sorted(Path(path).name for path in HISTORICAL_SOURCE_STORAGE_PATHS.values())
+    ),
+}
+
+
+def source_storage_path(relative_path: str) -> str:
+    return HISTORICAL_SOURCE_STORAGE_PATHS.get(relative_path, relative_path)
+
+
+def validate_historical_source_snapshot_contract(
+    snapshot: RepositorySnapshotReader | None = None,
+) -> None:
+    expected_root = "docs/evidence/macos-build24-lifecycle-source-v1"
+    expected_storage_paths = {
+        "script/run_macos_local_dmg_install_smoke_v2.py": (
+            f"{expected_root}/script/run_macos_local_dmg_install_smoke_v2.py"
+        ),
+        "script/test_run_macos_local_dmg_install_smoke_v2.py": (
+            f"{expected_root}/script/test_run_macos_local_dmg_install_smoke_v2.py"
+        ),
+        "script/run_macos_local_dmg_uninstall_reinstall_smoke.py": (
+            f"{expected_root}/script/"
+            "run_macos_local_dmg_uninstall_reinstall_smoke.py"
+        ),
+        "script/test_run_macos_local_dmg_uninstall_reinstall_smoke.py": (
+            f"{expected_root}/script/"
+            "test_run_macos_local_dmg_uninstall_reinstall_smoke.py"
+        ),
+        (
+            "script/run_macos_local_dmg_uninstall_reinstall_"
+            "state_recovery_smoke.py"
+        ): (
+            f"{expected_root}/script/"
+            "run_macos_local_dmg_uninstall_reinstall_state_recovery_smoke.py"
+        ),
+        (
+            "script/test_run_macos_local_dmg_uninstall_reinstall_"
+            "state_recovery_smoke.py"
+        ): (
+            f"{expected_root}/script/"
+            "test_run_macos_local_dmg_uninstall_reinstall_state_recovery_smoke.py"
+        ),
+        (
+            "script/run_macos_local_dmg_uninstall_reinstall_"
+            "abrupt_process_state_recovery_smoke.py"
+        ): (
+            f"{expected_root}/script/"
+            "run_macos_local_dmg_uninstall_reinstall_"
+            "abrupt_process_state_recovery_smoke.py"
+        ),
+        (
+            "script/test_run_macos_local_dmg_uninstall_reinstall_"
+            "abrupt_process_state_recovery_smoke.py"
+        ): (
+            f"{expected_root}/script/"
+            "test_run_macos_local_dmg_uninstall_reinstall_"
+            "abrupt_process_state_recovery_smoke.py"
+        ),
+    }
+    expected_identities = {
+        "script/run_macos_local_dmg_install_smoke_v2.py": identity(
+            12_962,
+            "515de26546ba97c6879cad1fdf62cda6f3dcbf24a668804955f95e1755d1f374",
+        ),
+        "script/test_run_macos_local_dmg_install_smoke_v2.py": identity(
+            20_191,
+            "6aa2e9e2354aa36f97ff096787ac05115c95114fcf95869463b47f39dea5006c",
+        ),
+        "script/run_macos_local_dmg_uninstall_reinstall_smoke.py": identity(
+            25_675,
+            "300740d31a5b73755f6976f8fe6ce9c0f498cf274ed72d23d5d6c372104eb5ae",
+        ),
+        "script/test_run_macos_local_dmg_uninstall_reinstall_smoke.py": identity(
+            34_767,
+            "6e782fc128aad75b20f1b04752e4754ccbf8ceaadc9e2fcabe9cc2e537bfb703",
+        ),
+        (
+            "script/run_macos_local_dmg_uninstall_reinstall_"
+            "state_recovery_smoke.py"
+        ): identity(
+            28_693,
+            "31bdae72f08f1f68bc4a07cb59d194c943d56179acf0a7b149ddc2e652c68b4c",
+        ),
+        (
+            "script/test_run_macos_local_dmg_uninstall_reinstall_"
+            "state_recovery_smoke.py"
+        ): identity(
+            34_310,
+            "22ddc7ec39aa8c88c2b69f2dd8a390a287d85eeaff4704109784e221483faee2",
+        ),
+        (
+            "script/run_macos_local_dmg_uninstall_reinstall_"
+            "abrupt_process_state_recovery_smoke.py"
+        ): identity(
+            48_788,
+            "ddd2c8286d1b78541d4ed18f125b9d1867be718e0276adb9880e60929fc15ec3",
+        ),
+        (
+            "script/test_run_macos_local_dmg_uninstall_reinstall_"
+            "abrupt_process_state_recovery_smoke.py"
+        ): identity(
+            50_750,
+            "f06479f5eb4e12d3f0072e8259e9a7b1c28e8797a423ea88b092978a4142b658",
+        ),
+    }
+    if (
+        HISTORICAL_SOURCE_SNAPSHOT_COMMIT
+        != "38027523f65f97a81044555c2f42b020eada3436"
+        or HISTORICAL_SOURCE_SNAPSHOT_ROOT != expected_root
+        or HISTORICAL_SOURCE_STORAGE_PATHS != expected_storage_paths
+        or {
+            path: SOURCE_CONTRACTS.get(path)
+            for path in expected_storage_paths
+        }
+        != expected_identities
+        or HISTORICAL_SOURCE_DIRECTORY_INVENTORIES
+        != {
+            expected_root: ("script",),
+            f"{expected_root}/script": tuple(
+                sorted(Path(path).name for path in expected_storage_paths.values())
+            ),
+        }
+    ):
+        raise LifecycleEvidenceError(
+            "historical source snapshot contract differs"
+        )
+    if snapshot is None:
+        return
+    for relative_directory, expected_entries in (
+        HISTORICAL_SOURCE_DIRECTORY_INVENTORIES.items()
+    ):
+        if tuple(sorted(snapshot.list_directory(relative_directory))) != (
+            expected_entries
+        ):
+            raise LifecycleEvidenceError(
+                "historical source snapshot directory inventory differs: "
+                f"{relative_directory}"
+            )
+
 UNIT_TEST_MODULES = (
     "script.test_release_version_ledger",
     "script.test_run_macos_packaged_app_lifecycle_smoke",
@@ -778,7 +983,7 @@ EXACT_BOOLEAN_FIELD_NAMES = frozenset(
 REPOSITORY_SNAPSHOT_FILE_PATHS = tuple(
     sorted(
         {
-            *SOURCE_CONTRACTS,
+            *(source_storage_path(path) for path in SOURCE_CONTRACTS),
             *(
                 contract.relative_path
                 for contract in EVIDENCE_CONTRACTS
@@ -2013,16 +2218,25 @@ def validate_evidence_files(
 
 def validate_source_files(
     root: Path,
-    contracts: dict[str, ByteIdentity] = SOURCE_CONTRACTS,
+    contracts: dict[str, ByteIdentity] | None = None,
     *,
     snapshot: RepositorySnapshotReader | None = None,
 ) -> None:
+    canonical_contract = contracts is None or contracts is SOURCE_CONTRACTS
+    if contracts is None:
+        contracts = SOURCE_CONTRACTS
     if not contracts:
         raise LifecycleEvidenceError("source contract inventory must not be empty")
+    if canonical_contract:
+        validate_historical_source_snapshot_contract(snapshot)
     for relative_path in sorted(contracts):
         require_bound_identity(
             root,
-            relative_path,
+            (
+                source_storage_path(relative_path)
+                if canonical_contract
+                else relative_path
+            ),
             contracts[relative_path],
             maximum_bytes=MAXIMUM_SOURCE_BYTES,
             snapshot=snapshot,
@@ -2064,6 +2278,10 @@ def validate_unit_test_inventory(
 
 def readback_failures(root: Path = ROOT) -> list[str]:
     failures: list[str] = []
+    try:
+        validate_historical_source_snapshot_contract()
+    except (LifecycleEvidenceError, OSError, ValueError) as error:
+        return [f"historical source snapshot: {error}"]
     try:
         snapshot = RepositorySnapshotReader(root)
     except (LifecycleEvidenceError, OSError, ValueError) as error:

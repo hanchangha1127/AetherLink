@@ -453,7 +453,6 @@ class AbruptProcessStateRecoverySmokeTests(unittest.TestCase):
         fail_post_abrupt: bool = False,
         fail_root_cleanup: bool = False,
         abrupt_interrupt: BaseException | None = None,
-        nonpublishing: bool = False,
     ) -> tuple[
         list[str],
         BaseException | None,
@@ -861,21 +860,13 @@ class AbruptProcessStateRecoverySmokeTests(unittest.TestCase):
                 for patcher in patchers:
                     stack.enter_context(patcher)
                 try:
-                    if nonpublishing:
-                        result = smoke.exercise(
-                            archive_dir=archive_dir,
-                            readiness_timeout_seconds=1.0,
-                            observation_seconds=5.0,
-                            termination_timeout_seconds=2.0,
-                        )
-                    else:
-                        result = smoke.execute(
-                            archive_dir=archive_dir,
-                            result_path=result_path,
-                            readiness_timeout_seconds=1.0,
-                            observation_seconds=5.0,
-                            termination_timeout_seconds=2.0,
-                        )
+                    result = smoke.execute(
+                        archive_dir=archive_dir,
+                        result_path=result_path,
+                        readiness_timeout_seconds=1.0,
+                        observation_seconds=5.0,
+                        termination_timeout_seconds=2.0,
+                    )
                 except BaseException as caught:
                     error = caught
 
@@ -1244,20 +1235,6 @@ class AbruptProcessStateRecoverySmokeTests(unittest.TestCase):
                 self.assertIs(published, False)
                 self.assertIn("root-cleanup", events)
                 self.assertNotIn("publish", events)
-
-    def test_exercise_returns_canonical_result_without_publication(
-        self,
-    ) -> None:
-        events, error, result, published = self.execute_orchestration(
-            nonpublishing=True
-        )
-        self.assertIsNone(error)
-        self.assertIsNotNone(result)
-        assert result is not None
-        self.assertEqual(result["status"], "passed")
-        self.assertIs(published, False)
-        self.assertIn("root-cleanup", events)
-        self.assertNotIn("publish", events)
 
     def test_execute_interrupts_cleanup_root_and_block_publication(
         self,

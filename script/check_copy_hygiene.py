@@ -1229,8 +1229,32 @@ def android_client_ui_resource_copy_guard_failures() -> list[str]:
         (
             main_activity_path,
             main_activity_text,
-            "resolveAndroidPlatformAppLanguageSnapshot(",
-            "API 33+ startup must resolve one authoritative platform app-language snapshot.",
+            "viewModel.androidPlatformAppLanguageReconciliation(",
+            "API 33+ startup must resolve the authoritative persisted/platform app-language reconciliation before the first frame.",
+        ),
+        (
+            main_activity_path,
+            main_activity_text,
+            "val migrationLanguageTag = viewModel.reconcileAndroidPlatformAppLanguageSnapshot(",
+            "API 33+ startup must durably prepare an app-language migration before writing the platform locale.",
+        ),
+        (
+            runtime_local_store_path,
+            runtime_local_store_text,
+            "pendingAndroidAppLanguagePlatformMigrationTag",
+            "Persisted runtime data must retain a pending Android app-language migration across process death.",
+        ),
+        (
+            runtime_local_store_path,
+            runtime_local_store_text,
+            "ANDROID_APP_LANGUAGE_PLATFORM_MIGRATION_VERSION",
+            "Persisted runtime data must distinguish completed Android app-language migration from an external platform clear.",
+        ),
+        (
+            runtime_view_model_path,
+            runtime_view_model_text,
+            "return reconciliation.applicationLocaleLanguageTagToSet",
+            "RuntimeClientViewModel must expose a platform locale target only after persisting the reconciliation state.",
         ),
         (
             main_activity_path,

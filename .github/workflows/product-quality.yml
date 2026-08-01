@@ -64,11 +64,21 @@ jobs:
           python3 -B script/check_license.py
       - name: Compile macOS app
         run: swift build --product AetherLink
+      - name: Verify focused Swift test selection
+        run: |
+          swift test list > .build/aetherlink-product-ci-swift-test-list-v1.txt
+          python3 -B script/check_product_ci.py --swift-test-selection
+          python3 -B script/check_product_ci.py --prepare-swift-focused-test-run
       - name: Run focused product units
         run: >-
-          swift test
-          --filter
+          python3 -B script/check_product_ci.py
+          --run-swift-focused-tests
+          --swift-focused-filter
           'DocumentIngestorTests|DocumentTextExtractorTests|DocumentChunkerTests|AggregatingLlmBackendResidencyTests|ProviderHealthRecoveryTests|RuntimeModelIdleUnloadPolicyTests|RuntimeChatContextCompactionPlannerTests|RuntimeSemanticChatSessionSearchTests|RuntimeSemanticMemorySearchTests|AppLifecycleTests|LocalRuntimeMessageRouterTests/testApplicationTerminationRejectsNewRequestsAndDrainsRetiringTasks|LocalRuntimeMessageRouterTests/testApplicationTerminationDrainsRequestBlockedDuringRegistration|LocalRuntimeMessageRouterTests/testApplicationTerminationWaitsForChatTitleCancellationDispatch|LocalRuntimeMessageRouterTests/testApplicationTerminationWaitsForMemorySummaryCancellationDispatch|LocalRuntimeMessageRouterTests/testApplicationTerminationWaitsForDeferredSummaryPublicationAndPersistence|LocalRuntimeMessageRouterTests/testApplicationTerminationDrainsFailedDeferredSummaryPublicationWithoutPersistence|LocalRuntimeMessageRouterTests/testMemorySummaryDraftGeneratePublishesBeforeBlockingDurableCache|LocalRuntimeMessageRouterTests/testCompanionAppModelTerminationCancelsAndDrainsRuntimeChatRetentionMaintenance|OllamaBackendHealthTimeoutTests/testHealthCheckUsesFiveSecondsWhileCatalogRetainsSixtySeconds|LMStudioBackendHealthTimeoutTests/testHealthCheckUsesFiveSecondsWhileCatalogRetainsSixtySeconds|BonjourAdvertiserTests|LocalPeerServerTests/testLocalPeerServerReportsListenerStartAndExplicitStop|LocalPeerServerTests/testLocalPeerServerOccupiedPortFailsThenSameInstanceRetries|LocalPeerServerTests/testPeerAdmissionCannotCrossListenerStopGenerationBoundary|MacRuntimeConnectionManagerTests/testStartLocalDefersAdvertisementUntilListenerIsReady|MacRuntimeConnectionManagerTests/testStartLocalDefersReadyUntilAdvertisementIsPublished|MacRuntimeConnectionManagerTests/testAsyncListenerReadyForwardsImmediateAdvertisementFailure|MacRuntimeConnectionManagerTests/testAdvertisementFailureAllowsSamePortRetryAndIgnoresStaleSuccess|MacRuntimeConnectionManagerTests/testRefreshWhileAdvertisementPublishesUsesLatestMetadataOnly|MacRuntimeConnectionManagerTests/testUnexpectedAdvertisementStopClearsFalseReadyOwnership|MacRuntimeConnectionManagerTests/testConcreteLocalListenerDefersAdvertisementAndRetriesAfterOccupiedPort|MacRuntimeConnectionManagerTests/testUnexpectedLocalPortCannotRemainStartingOrAdvertising|MacRuntimeConnectionManagerTests/testLateLocalFailureStopsOwnershipAndReportsStatus|MacRuntimeConnectionManagerTests/testSupersededLocalStatusCallbackCannotStopReplacement|MacRuntimeConnectionManagerTests/testStoppedLocalStatusCallbackIsIgnoredAfterExplicitStop|MacRuntimeConnectionManagerTests/testStopAllStopsLocalAdvertiserBootstrapAndPairsExactlyOnce|LocalRuntimeMessageRouterTests/testCompanionAppModelSuspendsAndResumesActiveRuntimeOnceAtSamePort|LocalRuntimeMessageRouterTests/testCompanionAppModelSuspendsStartingRuntimeAndIgnoresPreSleepCallbacks|LocalRuntimeMessageRouterTests/testCompanionAppModelDoesNotResumeStoppedOrFailedRuntimeAfterSystemWake|LocalRuntimeMessageRouterTests/testCompanionAppModelStartsReplaceableTransportAndStopsIt|LocalRuntimeMessageRouterTests/testCompanionAppModelUserInterfaceStartCanRetryAfterListenerFailure|LocalRuntimeMessageRouterTests/testCompanionAppModelCanRetryAfterBonjourPublicationFailure|LocalRuntimeMessageRouterTests/testCompanionAppModelLateListenerFailureAllowsSamePortRetryAndIgnoresStaleCallback|LocalRuntimeMessageRouterTests/testCompanionAppModelPortReplacementShowsStartingUntilReady|LocalRuntimeMessageRouterTests/testCompanionAppModelUserInterfaceStartIsIdempotentDuringRouteAllocation|LocalRuntimeMessageRouterTests/testCompanionAppModelDebugUserInterfaceDoesNotGenerateQRCodeWhenRuntimeListenerFails|LocalRuntimeMessageRouterTests/testCompanionAppModelBeginLocalPairingWaitsForListenerReadiness|LocalRuntimeMessageRouterTests/testCompanionAppModelPairingWaitsForBonjourPublication|LocalRuntimeMessageRouterTests/testCompanionAppModelReportsFailedTransportWithoutAdvertising|PairingRouteNoticeTests/testRuntimeStartingUsesNeutralReadinessNotice|AetherLinkLocalizationTests/testStatusOverviewMapsEachFocusToOnePrimaryAction|AetherLinkLocalizationTests/testStatusOverviewRuntimeStartAndRetryActionsUseSelectedLanguage|AetherLinkLocalizationTests/testShortTransitionAnimationHonorsReducedMotion|AetherLinkLocalizationTests/testVisualAccessibilityOverridesCannotDisableSystemPreferences|AetherLinkLocalizationTests/testIncreasedContrastStatusPaletteAndSurfacesRemainLegible|AetherLinkLocalizationTests/testRuntimeHistorySelectionUsesNonColorMarkerAndReconcilesKeyboardList|AetherLinkLocalizationTests/testConnectionRecoveryExpansionTargetsFirstEditableField|AetherLinkLocalizationTests/testPairingDestinationFocusPlanSeparatesKeyboardAndVoiceOverTargets|AetherLinkLocalizationTests/testRuntimeTranscriptReasoningUsesFullOpacityAtIncreasedContrast|AccessibilityAnnouncementTests/testPairingQRExpiryAnnouncementFiresOnceWithoutCountdownSpam|AetherLinkRenderSmokeTests/testRuntimeOverviewPrimaryActionFitsCompactAccessibilityLayoutAcrossLanguages|AetherLinkRenderSmokeTests/testReducedMotionStatusAndActivePairingSurfacesRender|AetherLinkRenderSmokeTests/testIncreasedContrastAndColorIndependentHistorySurfacesRender'
+      - name: Bind and verify focused Swift test results
+        run: |
+          python3 -B script/check_product_ci.py --write-swift-focused-test-binding
+          python3 -B script/check_product_ci.py --swift-focused-test-results
       - name: Compile macOS Release app on main
         if: >-
           ${{ github.event_name == 'push' &&
@@ -99,6 +109,7 @@ jobs:
           java -version
           test -d "$ANDROID_HOME/platforms/android-36"
           test -d "$ANDROID_HOME/build-tools/36.0.0"
+          test -d "$ANDROID_HOME/ndk/28.2.13676358"
           ./gradlew --version
       - name: Run release archive contract units
         run: PYTHONPATH=. python3 -B script/test_release_artifact_archive.py
@@ -125,7 +136,14 @@ jobs:
           --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenSessionBoundaryResetsLatestWhileSameSessionUpdatesKeepPosition
       - name: Verify focused Android test results
         run: python3 -B script/check_product_ci.py --android-test-results
-      - name: Compile and lint Android Release app on main
+      - name: Prepare complete Android app units on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: >-
+          python3 -B script/check_product_ci.py
+          --prepare-android-full-test-run
+      - name: Run complete Android app units on main
         if: >-
           ${{ github.event_name == 'push' &&
           github.ref == 'refs/heads/main' }}
@@ -133,7 +151,47 @@ jobs:
           ./gradlew
           --no-daemon
           --console=plain
+          --rerun-tasks
+          -Pkotlin.incremental=false
+          :app:compileDebugKotlin
+          :app:testDebugUnitTest
+          --tests com.localagentbridge.android.AppNavigationTest
+          --tests com.localagentbridge.android.AndroidAppLanguagePlatformLifecycleTest
+          --tests com.localagentbridge.android.ResearchNotebookDrawerTest
+          --tests com.localagentbridge.android.PairingQrScanResultTest
+          --tests com.localagentbridge.android.AetherLinkThemeNoDeviceComposeTest
+          --tests com.localagentbridge.android.ui.AndroidCoreSurfaceFontScaleQualificationTest
+          --tests com.localagentbridge.android.PairingQrScannerChromeNoDeviceComposeTest
+          --tests com.localagentbridge.android.PairingQrCameraPermissionControllerHostApiMatrixTest
+          --tests com.localagentbridge.android.PairingQrCameraPermissionActivityRecreationTest
+          --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest
+          --tests com.localagentbridge.android.AndroidBackupPolicyResourceTest
+          --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest
+          --tests com.localagentbridge.android.runtime.RuntimeClientViewModelProductionDeadlineTest
+          --tests com.localagentbridge.android.runtime.AndroidProductionRuntimeChannelComposerTest
+          --tests com.localagentbridge.android.runtime.AndroidProductionRuntimeActivationControllerTest
+          --tests com.localagentbridge.android.runtime.RuntimeLocalStoreTest
+          --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest
+          --tests com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest
+          --tests com.localagentbridge.android.runtime.RuntimeAttachmentPromptResourceTest
+      - name: Bind and verify complete Android app units on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: |
+          python3 -B script/check_product_ci.py --write-android-full-test-binding
+          python3 -B script/check_product_ci.py --android-full-test-results
+      - name: Compile and lint Android Release app
+        run: >-
+          ./gradlew
+          --no-daemon
+          --console=plain
           -PaetherlinkStrictReleaseDependencyLocks=true
           -Pkotlin.incremental=false
           :app:assembleRelease
+          :app:bundleRelease
           :app:lintRelease
+      - name: Read back Android Release build outputs
+        run: >-
+          python3 -B script/check_release_artifact_archive.py
+          --android-build-outputs
