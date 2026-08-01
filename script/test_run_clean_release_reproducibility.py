@@ -4,7 +4,8 @@
 from __future__ import annotations
 
 import copy
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
+from dataclasses import replace
 import errno
 import hashlib
 import json
@@ -38,6 +39,47 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             ctime_ns=4,
             sha256=hashlib.sha256(data).hexdigest(),
         )
+
+    @staticmethod
+    def write_archive_fixture(
+        clone_root: Path,
+        release_id: str,
+        *,
+        payload: bytes = b"payload",
+    ) -> runner.ArchiveEvidence:
+        directory = clone_root / "dist/releases" / release_id
+        directory.mkdir(parents=True)
+        manifest = {
+            "archive": {
+                "memberCountExcludingManifest": 1,
+                "normalizations": [
+                    "android/mapping/configuration.txt:"
+                    "declared-extracted-file-root-markers"
+                ],
+            },
+            "source": {"snapshotSha256": "a" * 64},
+        }
+        manifest_bytes = (
+            json.dumps(
+                manifest,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("ascii")
+            + b"\n"
+        )
+        archive_path = directory / f"{release_id}.zip"
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            archive.writestr("manifest.json", manifest_bytes)
+            archive.writestr("payload.bin", payload)
+        (directory / f"{release_id}.manifest.json").write_bytes(
+            manifest_bytes
+        )
+        (directory / f"{release_id}.zip.sha256").write_text(
+            hashlib.sha256(archive_path.read_bytes()).hexdigest()
+            + f"  {archive_path.name}\n",
+            encoding="ascii",
+        )
+        return runner.capture_archive(clone_root, release_id)
 
     @classmethod
     def evidence(cls, root: Path) -> runner.ArchiveEvidence:
@@ -561,6 +603,16 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 "status": "passed",
             }
         )
+        scratch = copy.deepcopy(result["scratch"])
+        scratch["sourceRoots"] = {
+            "policy": runner.SOURCE_ROOT_POLICY,
+            "sourceRootByteLengths": {
+                "build-a": 101,
+                "build-b": 109,
+            },
+            "sourceRootLengthsDiffer": True,
+        }
+        result["scratch"] = scratch
         return result
 
     def lane_a_suite(
@@ -1009,6 +1061,7 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result)
         self.assertIn("--result", result.stdout)
         self.assertIn("--comparison-only", result.stdout)
+        self.assertIn("--swift-root-diagnostic", result.stdout)
         self.assertIn("--lane-a-local-dmg-result", result.stdout)
 
     def test_default_result_path_is_release_id_qualified(self) -> None:
@@ -1034,6 +1087,17 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     "-two-root-v4-prepublication.json"
                 ),
             )
+            for mode in runner.SWIFT_ROOT_DIAGNOSTIC_MODES:
+                with self.subTest(mode=mode):
+                    self.assertEqual(
+                        runner.default_swift_root_diagnostic_result_path(mode),
+                        runner.RESULT_ROOT
+                        / (
+                            "aetherlink-1.0.0+8-local-v1-"
+                            "swift-root-diagnostic-v1-"
+                            f"{mode}.json"
+                        ),
+                    )
 
     def test_result_mode_namespaces_are_current_release_qualified(self) -> None:
         current = mock.Mock(
@@ -1056,6 +1120,13 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 "prepublication-attempt1-interrupted.json"
             ),
         )
+        diagnostic_names = {
+            mode: (
+                "aetherlink-1.0.0+8-local-v1-swift-root-diagnostic-v1-"
+                f"{mode}.json"
+            )
+            for mode in runner.SWIFT_ROOT_DIAGNOSTIC_MODES
+        }
         rejected = (
             (publish_names[0], False),
             (comparison_names[0], True),
@@ -1089,6 +1160,36 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                         runner.RESULT_ROOT / name,
                         publish_qualified=False,
                     )
+            for mode, name in diagnostic_names.items():
+                for candidate in (name, name[:-5] + "-repeat-one.json"):
+                    with self.subTest(mode=mode, name=candidate):
+                        runner.validate_result_mode_path(
+                            runner.RESULT_ROOT / candidate,
+                            publish_qualified=False,
+                            diagnostic_source_root_mode=mode,
+                        )
+                for candidate in (publish_names[0], comparison_names[0]):
+                    with self.subTest(
+                        mode=mode,
+                        rejected=candidate,
+                    ), self.assertRaisesRegex(
+                        runner.ReproducibilityError,
+                        "mode namespace",
+                    ):
+                        runner.validate_result_mode_path(
+                            runner.RESULT_ROOT / candidate,
+                            publish_qualified=False,
+                            diagnostic_source_root_mode=mode,
+                        )
+                with self.assertRaisesRegex(
+                    runner.ReproducibilityError,
+                    "comparison-only",
+                ):
+                    runner.validate_result_mode_path(
+                        runner.RESULT_ROOT / name,
+                        publish_qualified=True,
+                        diagnostic_source_root_mode=mode,
+                    )
             for name, publish_qualified in rejected:
                 with self.subTest(
                     name=name,
@@ -1101,6 +1202,87 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                         runner.RESULT_ROOT / name,
                         publish_qualified=publish_qualified,
                     )
+
+    def test_main_wires_swift_root_diagnostics_and_rejects_cross_mode_use(
+        self,
+    ) -> None:
+        current = mock.Mock(build_number=8, marketing_version="1.0.0")
+        passed = {
+            "builds": [{"archive": {"sha256": "a" * 64}}],
+            "comparison": {"memberBytesEqual": True},
+        }
+        for mode in runner.SWIFT_ROOT_DIAGNOSTIC_MODES:
+            diagnostic_path = runner.RESULT_ROOT / (
+                "aetherlink-1.0.0+8-local-v1-swift-root-diagnostic-v1-"
+                f"{mode}.json"
+            )
+            with (
+                self.subTest(mode=mode),
+                mock.patch.object(
+                    runner,
+                    "load_release_version_ledger",
+                    return_value=(current,),
+                ),
+                mock.patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "runner",
+                        "--comparison-only",
+                        "--swift-root-diagnostic",
+                        mode,
+                    ],
+                ),
+                mock.patch.object(
+                    runner,
+                    "execute",
+                    return_value=(0, passed),
+                ) as execute_mock,
+                mock.patch("builtins.print"),
+            ):
+                self.assertEqual(runner.main(), 0)
+            execute_mock.assert_called_once_with(
+                diagnostic_path.resolve(),
+                publish_qualified=False,
+                diagnostic_source_root_mode=mode,
+            )
+
+        mode = runner.SWIFT_ROOT_DIAGNOSTIC_SAME_PHYSICAL
+        comparison_path = runner.RESULT_ROOT / (
+            "aetherlink-1.0.0+8-local-v1-two-root-v4-prepublication.json"
+        )
+        invalid_argv = (
+            ["runner", "--swift-root-diagnostic", mode],
+            [
+                "runner",
+                "--comparison-only",
+                "--swift-root-diagnostic",
+                mode,
+                "--lane-a-local-dmg-suite-label",
+                "diagnostic-suite",
+            ],
+            [
+                "runner",
+                "--comparison-only",
+                "--swift-root-diagnostic",
+                mode,
+                "--result",
+                str(comparison_path),
+            ],
+        )
+        for arguments in invalid_argv:
+            with (
+                mock.patch.object(
+                    runner,
+                    "load_release_version_ledger",
+                    return_value=(current,),
+                ),
+                mock.patch.object(sys, "argv", arguments),
+                mock.patch.object(runner, "execute") as rejected_execute,
+                mock.patch("builtins.print"),
+            ):
+                self.assertEqual(runner.main(), 2)
+            rejected_execute.assert_not_called()
 
     def test_main_wires_comparison_mode_and_rejects_cross_mode_result(
         self,
@@ -4632,6 +4814,16 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 "status": "passed",
             }
         )
+        scratch = copy.deepcopy(result["scratch"])
+        scratch["sourceRoots"] = {
+            "policy": runner.SOURCE_ROOT_POLICY,
+            "sourceRootByteLengths": {
+                "build-a": 101,
+                "build-b": 109,
+            },
+            "sourceRootLengthsDiffer": True,
+        }
+        result["scratch"] = scratch
         result["protectedArchive"].update(
             {
                 "afterIdentitySha256": protected_identity,
@@ -4657,6 +4849,7 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                         expected_source=source,
                         expected_builds=builds,
                         expected_comparison=comparison,
+                        expected_scratch=scratch,
                         protected_release_relative=protected_relative,
                         protected_archive_identity_sha256=(
                             protected_identity
@@ -4739,6 +4932,7 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                             expected_source=expected_source,
                             expected_builds=expected_builds,
                             expected_comparison=expected_comparison,
+                            expected_scratch=scratch,
                             protected_release_relative=protected_relative,
                             protected_archive_identity_sha256=(
                                 expected_protected_identity
@@ -4749,74 +4943,208 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                         "prepublication-binding",
                     )
 
-    def test_source_roots_require_exact_unequal_length_evidence(self) -> None:
-        roots = tuple(
-            Path("/private/tmp") / name / "project"
-            for name in runner.SOURCE_ROOT_NAMES
+                for policy, lengths, lengths_differ in (
+                    (
+                        runner.SWIFT_ROOT_POLICY_SAME_PHYSICAL,
+                        {"build-a": 101, "build-b": 101},
+                        False,
+                    ),
+                    (
+                        runner.SWIFT_ROOT_POLICY_DISTINCT_EQUAL,
+                        {"build-a": 101, "build-b": 101},
+                        False,
+                    ),
+                    (
+                        runner.SWIFT_ROOT_POLICY_DIAGNOSTIC_DISTINCT_UNEQUAL,
+                        {"build-a": 101, "build-b": 109},
+                        True,
+                    ),
+                ):
+                    diagnostic = copy.deepcopy(result)
+                    diagnostic["scratch"]["sourceRoots"].update(
+                        {
+                            "policy": policy,
+                            "sourceRootByteLengths": lengths,
+                            "sourceRootLengthsDiffer": lengths_differ,
+                        }
+                    )
+                    path.write_bytes(runner.canonical_json_bytes(diagnostic))
+                    with self.subTest(policy=policy), self.assertRaises(
+                        runner.ReproducibilityError
+                    ) as caught:
+                        runner.load_matching_prepublication_result(
+                            release_id,
+                            expected_source=source,
+                            expected_builds=builds,
+                            expected_comparison=comparison,
+                            expected_scratch=diagnostic["scratch"],
+                            protected_release_relative=protected_relative,
+                            protected_archive_identity_sha256=(
+                                protected_identity
+                            ),
+                        )
+                    self.assertEqual(
+                        caught.exception.phase,
+                        "prepublication-binding",
+                    )
+
+    def test_source_roots_require_exact_mode_specific_length_evidence(self) -> None:
+        run_root = Path("/private/tmp/aetherlink-source-root-plan-fixture")
+        cases = (
+            (
+                None,
+                False,
+                True,
+                runner.SOURCE_ROOT_POLICY,
+            ),
+            (
+                runner.SWIFT_ROOT_DIAGNOSTIC_SAME_PHYSICAL,
+                True,
+                False,
+                runner.SWIFT_ROOT_POLICY_SAME_PHYSICAL,
+            ),
+            (
+                runner.SWIFT_ROOT_DIAGNOSTIC_DISTINCT_EQUAL,
+                False,
+                False,
+                runner.SWIFT_ROOT_POLICY_DISTINCT_EQUAL,
+            ),
+            (
+                runner.SWIFT_ROOT_DIAGNOSTIC_DISTINCT_UNEQUAL,
+                False,
+                True,
+                runner.SWIFT_ROOT_POLICY_DIAGNOSTIC_DISTINCT_UNEQUAL,
+            ),
         )
-        evidence = runner.source_root_length_evidence(roots)
-        expected_lengths = {
-            label: len(os.fsencode(str(root)))
-            for label, root in zip(("build-a", "build-b"), roots)
+        expected_root_names = {
+            None: runner.SOURCE_ROOT_NAMES,
+            runner.SWIFT_ROOT_DIAGNOSTIC_SAME_PHYSICAL: (
+                "lane-same",
+                "lane-same",
+            ),
+            runner.SWIFT_ROOT_DIAGNOSTIC_DISTINCT_EQUAL: (
+                "lane-a",
+                "lane-b",
+            ),
+            runner.SWIFT_ROOT_DIAGNOSTIC_DISTINCT_UNEQUAL: (
+                "lane-a",
+                "lane-b-unequal",
+            ),
         }
-        self.assertEqual(
-            evidence,
-            {
-                "policy": runner.SOURCE_ROOT_POLICY,
-                "sourceRootByteLengths": expected_lengths,
-                "sourceRootLengthsDiffer": True,
-            },
-        )
-        self.assertNotEqual(
-            expected_lengths["build-a"],
-            expected_lengths["build-b"],
-        )
+        for mode, paths_equal, lengths_differ, policy in cases:
+            with self.subTest(mode=mode):
+                roots, actual_policy = runner.swift_source_root_plan(
+                    run_root,
+                    mode,
+                )
+                evidence = runner.source_root_length_evidence(
+                    roots,
+                    policy=actual_policy,
+                )
+                expected_lengths = {
+                    label: len(os.fsencode(str(root)))
+                    for label, root in zip(("build-a", "build-b"), roots)
+                }
+                self.assertEqual(actual_policy, policy)
+                self.assertEqual(
+                    tuple(root.parent.name for root in roots),
+                    expected_root_names[mode],
+                )
+                self.assertEqual(roots[0] == roots[1], paths_equal)
+                self.assertEqual(
+                    evidence,
+                    {
+                        "policy": policy,
+                        "sourceRootByteLengths": expected_lengths,
+                        "sourceRootLengthsDiffer": lengths_differ,
+                    },
+                )
+                runner.validate_source_root_length_evidence(
+                    evidence,
+                    roots,
+                    policy=policy,
+                )
 
-        invalid_evidence = (
-            {
-                "policy": runner.SOURCE_ROOT_POLICY,
-                "sourceRootByteLengths": {
-                    "build-a": expected_lengths["build-a"],
-                },
-                "sourceRootLengthsDiffer": True,
-            },
-            {
-                "policy": runner.SOURCE_ROOT_POLICY,
-                "sourceRootByteLengths": {
-                    "build-a": True,
-                    "build-b": expected_lengths["build-b"],
-                },
-                "sourceRootLengthsDiffer": True,
-            },
-            {
-                "policy": runner.SOURCE_ROOT_POLICY,
-                "sourceRootByteLengths": {
-                    "build-a": expected_lengths["build-a"] + 1,
-                    "build-b": expected_lengths["build-b"],
-                },
-                "sourceRootLengthsDiffer": True,
-            },
-            {
-                "policy": runner.SOURCE_ROOT_POLICY,
-                "sourceRootByteLengths": expected_lengths,
-                "sourceRootLengthsDiffer": False,
-            },
-        )
-        for mutated in invalid_evidence:
-            with self.subTest(mutated=mutated), self.assertRaises(
-                runner.ReproducibilityError
-            ):
-                runner.validate_source_root_length_evidence(mutated, roots)
+                for wrong_policy in (
+                    runner.SOURCE_ROOT_POLICY,
+                    runner.SWIFT_ROOT_POLICY_SAME_PHYSICAL,
+                    runner.SWIFT_ROOT_POLICY_DISTINCT_EQUAL,
+                    runner.SWIFT_ROOT_POLICY_DIAGNOSTIC_DISTINCT_UNEQUAL,
+                ):
+                    if wrong_policy == policy:
+                        continue
+                    with self.subTest(
+                        mode=mode,
+                        wrong_policy=wrong_policy,
+                    ), self.assertRaises(runner.ReproducibilityError):
+                        runner.validate_source_root_length_evidence(
+                            evidence,
+                            roots,
+                            policy=wrong_policy,
+                        )
 
-        equal_length_roots = (
+                mutated = copy.deepcopy(evidence)
+                mutated["sourceRootLengthsDiffer"] = not lengths_differ
+                with self.assertRaises(runner.ReproducibilityError):
+                    runner.validate_source_root_length_evidence(
+                        mutated,
+                        roots,
+                        policy=policy,
+                    )
+                mutated = copy.deepcopy(evidence)
+                mutated["sourceRootByteLengths"]["build-a"] = True
+                with self.assertRaises(runner.ReproducibilityError):
+                    runner.validate_source_root_length_evidence(
+                        mutated,
+                        roots,
+                        policy=policy,
+                    )
+
+        same = (
+            Path("/private/tmp/root-same/project"),
+            Path("/private/tmp/root-same/project"),
+        )
+        distinct_equal = (
             Path("/private/tmp/root-a/project"),
             Path("/private/tmp/root-b/project"),
         )
-        with self.assertRaisesRegex(
-            runner.ReproducibilityError,
-            "different UTF-8 byte lengths",
-        ):
-            runner.source_root_length_evidence(equal_length_roots)
+        distinct_unequal = (
+            Path("/private/tmp/root-a/project"),
+            Path("/private/tmp/root-b-unequal/project"),
+        )
+        invalid_geometries = (
+            (same, runner.SOURCE_ROOT_POLICY),
+            (same, runner.SWIFT_ROOT_POLICY_DISTINCT_EQUAL),
+            (distinct_equal, runner.SWIFT_ROOT_POLICY_SAME_PHYSICAL),
+            (distinct_equal, runner.SOURCE_ROOT_POLICY),
+            (
+                distinct_equal,
+                runner.SWIFT_ROOT_POLICY_DIAGNOSTIC_DISTINCT_UNEQUAL,
+            ),
+            (distinct_unequal, runner.SWIFT_ROOT_POLICY_DISTINCT_EQUAL),
+        )
+        for roots, policy in invalid_geometries:
+            lengths = {
+                label: len(os.fsencode(str(root)))
+                for label, root in zip(("build-a", "build-b"), roots)
+            }
+            evidence = {
+                "policy": policy,
+                "sourceRootByteLengths": lengths,
+                "sourceRootLengthsDiffer": len(set(lengths.values())) > 1,
+            }
+            with self.subTest(
+                roots=roots,
+                policy=policy,
+            ), self.assertRaises(runner.ReproducibilityError):
+                runner.validate_source_root_length_evidence(
+                    evidence,
+                    roots,
+                    policy=policy,
+                )
+
+        with self.assertRaises(runner.ReproducibilityError):
+            runner.swift_source_root_plan(run_root, "unknown-mode")
 
     def test_overlay_capture_uses_one_byte_snapshot_and_tracks_deletion(
         self,
@@ -5135,6 +5463,158 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     "sizeB": 7,
                 },
             )
+
+    def test_same_root_detaches_lane_a_before_live_path_reuse(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_root = Path(temporary).resolve() / "run"
+            run_root.mkdir(mode=0o700)
+            release_id = "aetherlink-1.0.0+24-local-v1"
+            clone_root = run_root / "lane-same/project"
+            build_a = self.write_archive_fixture(
+                clone_root,
+                release_id,
+                payload=b"lane-a",
+            )
+            original_record = build_a.result_record("build-a")
+
+            retained = runner.detach_lane_a_archive(
+                build_a,
+                run_root=run_root,
+                release_id=release_id,
+            )
+
+            self.assertFalse(os.path.lexists(build_a.archive_directory))
+            self.assertEqual(
+                retained.archive_directory,
+                run_root
+                / "retained-build-a/dist/releases"
+                / release_id,
+            )
+            self.assertEqual(
+                retained.result_record("build-a"),
+                original_record,
+            )
+            build_b = self.write_archive_fixture(
+                clone_root,
+                release_id,
+                payload=b"lane-b",
+            )
+            self.assertEqual(
+                runner.require_archive_evidence_unchanged(
+                    retained,
+                    release_id=release_id,
+                    label="build-a",
+                ).archive_identity,
+                retained.archive_identity,
+            )
+            comparison = runner.compare_archives(retained, build_b)
+            self.assertIn("member-bytes", comparison["differences"])
+            self.assertEqual(
+                [item["path"] for item in comparison["memberDifferences"]],
+                ["payload.bin"],
+            )
+            self.assertNotEqual(
+                retained.archive_path,
+                build_b.archive_path,
+            )
+            retained.archive_path.write_bytes(build_b.archive_path.read_bytes())
+            retained.manifest_path.write_bytes(build_b.manifest_path.read_bytes())
+            retained.checksum_path.write_bytes(build_b.checksum_path.read_bytes())
+            with self.assertRaisesRegex(
+                runner.ReproducibilityError,
+                "changed before comparison",
+            ):
+                runner.require_archive_evidence_unchanged(
+                    retained,
+                    release_id=release_id,
+                    label="build-a",
+                )
+
+    def test_lane_a_detachment_fails_closed_before_relocation(self) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        for mutation in (
+            "source-drift",
+            "destination-collision",
+            "non-private-run-root",
+            "outside-source",
+            "unexpected-inventory",
+        ):
+            with (
+                self.subTest(mutation=mutation),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                run_root = Path(temporary).resolve() / "run"
+                run_root.mkdir(mode=0o700)
+                clone_root = (
+                    Path(temporary).resolve() / "outside/project"
+                    if mutation == "outside-source"
+                    else run_root / "lane-same/project"
+                )
+                evidence = self.write_archive_fixture(clone_root, release_id)
+                if mutation == "source-drift":
+                    evidence.checksum_path.write_bytes(b"changed\n")
+                elif mutation == "destination-collision":
+                    (run_root / "retained-build-a").mkdir(mode=0o700)
+                elif mutation == "non-private-run-root":
+                    run_root.chmod(0o755)
+                elif mutation == "unexpected-inventory":
+                    (evidence.archive_directory / "unexpected.txt").write_bytes(
+                        b"unexpected\n"
+                    )
+                with self.assertRaises(runner.ReproducibilityError) as caught:
+                    runner.detach_lane_a_archive(
+                        evidence,
+                        run_root=run_root,
+                        release_id=release_id,
+                    )
+                self.assertEqual(caught.exception.phase, "archive-retention")
+                self.assertTrue(evidence.archive_directory.is_dir())
+
+    def test_lane_a_detachment_rejects_noop_move_and_post_move_drift(self) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        with tempfile.TemporaryDirectory() as temporary:
+            run_root = Path(temporary).resolve() / "run"
+            run_root.mkdir(mode=0o700)
+            clone_root = run_root / "lane-same/project"
+            evidence = self.write_archive_fixture(clone_root, release_id)
+            with (
+                mock.patch.object(runner.os, "replace"),
+                self.assertRaisesRegex(
+                    runner.ReproducibilityError,
+                    "remained visible",
+                ),
+            ):
+                runner.detach_lane_a_archive(
+                    evidence,
+                    run_root=run_root,
+                    release_id=release_id,
+                )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            run_root = Path(temporary).resolve() / "run"
+            run_root.mkdir(mode=0o700)
+            clone_root = run_root / "lane-same/project"
+            evidence = self.write_archive_fixture(clone_root, release_id)
+            drifted = replace(
+                evidence,
+                archive_identity=self.identity(b"post-move-drift\n"),
+            )
+            with (
+                mock.patch.object(
+                    runner,
+                    "capture_archive",
+                    side_effect=(evidence, drifted),
+                ),
+                self.assertRaisesRegex(
+                    runner.ReproducibilityError,
+                    "differs after atomic relocation",
+                ),
+            ):
+                runner.detach_lane_a_archive(
+                    evidence,
+                    run_root=run_root,
+                    release_id=release_id,
+                )
 
     def test_publication_state_tracks_archive_mutation_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -5468,6 +5948,762 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
         )
         capture_mock.assert_not_called()
         write_mock.assert_not_called()
+
+    def test_execute_same_root_materializes_once_and_detaches_before_build_b(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            work_root = base / "work"
+            work_root.mkdir(mode=0o700)
+            release_id = "aetherlink-1.0.0+24-local-v1"
+            release_context = runner.ReleaseContext(
+                release_id=release_id,
+                previous_release_relative=Path(
+                    "dist/releases/aetherlink-1.0.0+23-local-v1"
+                ),
+            )
+            source_snapshot = {
+                "algorithm": "fixture-v1",
+                "fileCount": 1,
+                "files": [],
+                "sha256": "a" * 64,
+            }
+            build_a = self.evidence(base / "live-a" / release_id)
+            retained_a = self.evidence(base / "retained" / release_id)
+            build_b = self.evidence(base / "live-b" / release_id)
+            sentinel = ("b" * 64, {"fixture": self.identity()})
+            events: list[str] = []
+            materialized: list[Path] = []
+            lane_roots: list[Path] = []
+
+            @contextmanager
+            def fake_lock() -> object:
+                events.append("lock-enter")
+                try:
+                    yield
+                finally:
+                    events.append("lock-exit")
+
+            def fake_materialize(
+                clone_root: Path,
+                *args: object,
+                **kwargs: object,
+            ) -> None:
+                materialized.append(clone_root)
+
+            def fake_run_lane(
+                clone_root: Path,
+                *args: object,
+                lane_id: str,
+                **kwargs: object,
+            ) -> runner.ArchiveEvidence:
+                lane_roots.append(clone_root)
+                events.append(lane_id)
+                return build_a if lane_id == "build-a" else build_b
+
+            def fake_cleanup(
+                *args: object,
+                remove_lease: bool,
+                **kwargs: object,
+            ) -> None:
+                events.append(
+                    "cleanup-final" if remove_lease else "cleanup-lane"
+                )
+
+            def fake_detach(*args: object, **kwargs: object) -> runner.ArchiveEvidence:
+                events.append("detach-a")
+                return retained_a
+
+            def fake_compare(
+                first: runner.ArchiveEvidence,
+                second: runner.ArchiveEvidence,
+            ) -> dict[str, object]:
+                events.append("compare")
+                self.assertIs(first, retained_a)
+                self.assertIs(second, build_b)
+                return {
+                    "archiveBytesEqual": True,
+                    "differences": [],
+                    "memberBytesEqual": True,
+                    "memberDifferences": [],
+                    "memberMetadataEqual": True,
+                    "memberSetEqual": True,
+                    "normalizations": [],
+                }
+
+            def fake_revalidate(
+                evidence: runner.ArchiveEvidence,
+                *,
+                release_id: str,
+                label: str,
+            ) -> runner.ArchiveEvidence:
+                events.append(f"revalidate-{label}")
+                return evidence
+
+            with ExitStack() as stack:
+                stack.enter_context(
+                    mock.patch.object(runner, "WORK_ROOT", work_root)
+                )
+                stack.enter_context(
+                    mock.patch.object(runner, "acquire_run_lock", fake_lock)
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "resolve_release_context",
+                        return_value=release_context,
+                    )
+                )
+                preflight_mock = stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "preflight_fixed_paths",
+                        return_value=release_id,
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "capture_protected_archive",
+                        return_value=sentinel,
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(runner, "create_swift_lease")
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "capture_source_overlay",
+                        return_value=runner.SourceOverlay((), (), "c" * 64),
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "capture_git_refs",
+                        return_value=runner.GitRefs("1" * 40, "2" * 40),
+                    )
+                )
+                source_snapshot_mock = stack.enter_context(
+                    mock.patch.object(
+                        runner.archive_builder,
+                        "source_snapshot",
+                        return_value=source_snapshot,
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "source_release_id",
+                        return_value=release_id,
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "materialize_clone",
+                        side_effect=fake_materialize,
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "prepare_gradle_caches",
+                        return_value=(
+                            base / "ga",
+                            base / "gb",
+                            1,
+                            "d" * 64,
+                        ),
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "resolve_android_sdk",
+                        return_value=base / "sdk",
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "run_lane",
+                        side_effect=fake_run_lane,
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "cleanup_swift_scratch",
+                        side_effect=fake_cleanup,
+                    )
+                )
+                detach_mock = stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "detach_lane_a_archive",
+                        side_effect=fake_detach,
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "compare_archives",
+                        side_effect=fake_compare,
+                    )
+                )
+                revalidate_mock = stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "require_archive_evidence_unchanged",
+                        side_effect=fake_revalidate,
+                    )
+                )
+                binding_mock = stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "load_matching_prepublication_result",
+                    )
+                )
+                publish_mock = stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "publish_qualified_archive",
+                    )
+                )
+                write_mock = stack.enter_context(
+                    mock.patch.object(runner, "write_result")
+                )
+                exit_code, result = runner.execute(
+                    base / "result/diagnostic.json",
+                    publish_qualified=False,
+                    diagnostic_source_root_mode=(
+                        runner.SWIFT_ROOT_DIAGNOSTIC_SAME_PHYSICAL
+                    ),
+                )
+
+            self.assertEqual(exit_code, 0, result)
+            self.assertEqual(len(materialized), 1)
+            self.assertEqual(lane_roots, [materialized[0], materialized[0]])
+            self.assertEqual(
+                result["scratch"]["sourceRoots"]["policy"],
+                runner.SWIFT_ROOT_POLICY_SAME_PHYSICAL,
+            )
+            self.assertFalse(
+                result["scratch"]["sourceRoots"][
+                    "sourceRootLengthsDiffer"
+                ]
+            )
+            self.assertLess(events.index("build-a"), events.index("detach-a"))
+            self.assertLess(events.index("detach-a"), events.index("build-b"))
+            self.assertLess(
+                events.index("build-b"),
+                events.index("revalidate-build-a"),
+            )
+            self.assertLess(
+                events.index("revalidate-build-b"),
+                events.index("compare"),
+            )
+            actual_run_root = materialized[0].parents[1]
+            detach_mock.assert_called_once_with(
+                build_a,
+                run_root=actual_run_root,
+                release_id=release_id,
+            )
+            self.assertEqual(source_snapshot_mock.call_count, 3)
+            self.assertEqual(
+                revalidate_mock.call_args_list,
+                [
+                    mock.call(
+                        retained_a,
+                        release_id=release_id,
+                        label="build-a",
+                    ),
+                    mock.call(
+                        build_b,
+                        release_id=release_id,
+                        label="build-b",
+                    ),
+                ],
+            )
+            preflight_mock.assert_called_once_with(
+                base / "result/diagnostic.json",
+                publish_qualified=False,
+                expected_release_id=release_id,
+                protected_release_relative=(
+                    release_context.previous_release_relative
+                ),
+                diagnostic_source_root_mode=(
+                    runner.SWIFT_ROOT_DIAGNOSTIC_SAME_PHYSICAL
+                ),
+            )
+            binding_mock.assert_not_called()
+            publish_mock.assert_not_called()
+            write_mock.assert_called_once()
+
+    def test_same_root_source_drift_stops_before_detach_and_build_b(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            work_root = base / "work"
+            work_root.mkdir(mode=0o700)
+            release_id = "aetherlink-1.0.0+24-local-v1"
+            release_context = runner.ReleaseContext(
+                release_id=release_id,
+                previous_release_relative=Path(
+                    "dist/releases/aetherlink-1.0.0+23-local-v1"
+                ),
+            )
+            source_snapshot = {
+                "algorithm": "fixture-v1",
+                "fileCount": 1,
+                "files": [],
+                "sha256": "a" * 64,
+            }
+            drifted_snapshot = {
+                **source_snapshot,
+                "sha256": "f" * 64,
+            }
+            build_a = self.evidence(base / "archive" / release_id)
+            sentinel = ("b" * 64, {"fixture": self.identity()})
+
+            @contextmanager
+            def fake_lock() -> object:
+                yield
+
+            with ExitStack() as stack:
+                stack.enter_context(
+                    mock.patch.object(runner, "WORK_ROOT", work_root)
+                )
+                stack.enter_context(
+                    mock.patch.object(runner, "acquire_run_lock", fake_lock)
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "resolve_release_context",
+                        return_value=release_context,
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "preflight_fixed_paths",
+                        return_value=release_id,
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "capture_protected_archive",
+                        return_value=sentinel,
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(runner, "create_swift_lease")
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "capture_source_overlay",
+                        return_value=runner.SourceOverlay((), (), "c" * 64),
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "capture_git_refs",
+                        return_value=runner.GitRefs("1" * 40, "2" * 40),
+                    )
+                )
+                source_snapshot_mock = stack.enter_context(
+                    mock.patch.object(
+                        runner.archive_builder,
+                        "source_snapshot",
+                        side_effect=(
+                            source_snapshot,
+                            source_snapshot,
+                            drifted_snapshot,
+                        ),
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "source_release_id",
+                        return_value=release_id,
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(runner, "materialize_clone")
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "prepare_gradle_caches",
+                        return_value=(
+                            base / "ga",
+                            base / "gb",
+                            1,
+                            "d" * 64,
+                        ),
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "resolve_android_sdk",
+                        return_value=base / "sdk",
+                    )
+                )
+                run_lane_mock = stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "run_lane",
+                        return_value=build_a,
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(runner, "cleanup_swift_scratch")
+                )
+                detach_mock = stack.enter_context(
+                    mock.patch.object(runner, "detach_lane_a_archive")
+                )
+                revalidate_mock = stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "require_archive_evidence_unchanged",
+                    )
+                )
+                compare_mock = stack.enter_context(
+                    mock.patch.object(runner, "compare_archives")
+                )
+                binding_mock = stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "load_matching_prepublication_result",
+                    )
+                )
+                publish_mock = stack.enter_context(
+                    mock.patch.object(
+                        runner,
+                        "publish_qualified_archive",
+                    )
+                )
+                write_mock = stack.enter_context(
+                    mock.patch.object(runner, "write_result")
+                )
+                exit_code, result = runner.execute(
+                    base / "result/source-drift.json",
+                    publish_qualified=False,
+                    diagnostic_source_root_mode=(
+                        runner.SWIFT_ROOT_DIAGNOSTIC_SAME_PHYSICAL
+                    ),
+                )
+
+            self.assertEqual(exit_code, 4, result)
+            self.assertEqual(
+                result["failure"]["phase"],
+                "source-materialization",
+            )
+            self.assertEqual(source_snapshot_mock.call_count, 3)
+            self.assertEqual(run_lane_mock.call_count, 1)
+            detach_mock.assert_not_called()
+            revalidate_mock.assert_not_called()
+            compare_mock.assert_not_called()
+            binding_mock.assert_not_called()
+            publish_mock.assert_not_called()
+            write_mock.assert_called_once()
+
+    def test_execute_rejects_diagnostic_publication_and_lifecycle_modes(self) -> None:
+        release_context = runner.ReleaseContext(
+            release_id="aetherlink-1.0.0+24-local-v1",
+            previous_release_relative=Path(
+                "dist/releases/aetherlink-1.0.0+23-local-v1"
+            ),
+        )
+
+        @contextmanager
+        def fake_lock() -> object:
+            yield
+
+        invocations = (
+            {
+                "publish_qualified": True,
+                "diagnostic_source_root_mode": (
+                    runner.SWIFT_ROOT_DIAGNOSTIC_SAME_PHYSICAL
+                ),
+            },
+            {
+                "publish_qualified": False,
+                "diagnostic_source_root_mode": (
+                    runner.SWIFT_ROOT_DIAGNOSTIC_DISTINCT_EQUAL
+                ),
+                "lane_a_local_dmg_result_path": Path("/fixture/lifecycle.json"),
+            },
+        )
+        for keywords in invocations:
+            with (
+                self.subTest(keywords=keywords),
+                mock.patch.object(runner, "acquire_run_lock", fake_lock),
+                mock.patch.object(
+                    runner,
+                    "resolve_release_context",
+                    return_value=release_context,
+                ),
+                mock.patch.object(
+                    runner,
+                    "preflight_fixed_paths",
+                ) as preflight_mock,
+                mock.patch.object(runner, "write_result") as write_mock,
+            ):
+                exit_code, result = runner.execute(
+                    Path("/fixture/result.json"),
+                    **keywords,
+                )
+            self.assertEqual(exit_code, 2, result)
+            self.assertEqual(result["failure"]["phase"], "invocation")
+            preflight_mock.assert_not_called()
+            write_mock.assert_not_called()
+
+    def test_execute_distinct_root_diagnostics_use_two_roots_without_detach(
+        self,
+    ) -> None:
+        cases = (
+            (
+                runner.SWIFT_ROOT_DIAGNOSTIC_DISTINCT_EQUAL,
+                runner.SWIFT_ROOT_POLICY_DISTINCT_EQUAL,
+                False,
+            ),
+            (
+                runner.SWIFT_ROOT_DIAGNOSTIC_DISTINCT_UNEQUAL,
+                runner.SWIFT_ROOT_POLICY_DIAGNOSTIC_DISTINCT_UNEQUAL,
+                True,
+            ),
+        )
+        for mode, expected_policy, lengths_differ in cases:
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary:
+                base = Path(temporary).resolve()
+                work_root = base / "work"
+                work_root.mkdir(mode=0o700)
+                release_id = "aetherlink-1.0.0+24-local-v1"
+                release_context = runner.ReleaseContext(
+                    release_id=release_id,
+                    previous_release_relative=Path(
+                        "dist/releases/aetherlink-1.0.0+23-local-v1"
+                    ),
+                )
+                source_snapshot = {
+                    "algorithm": "fixture-v1",
+                    "fileCount": 1,
+                    "files": [],
+                    "sha256": "a" * 64,
+                }
+                build_a = self.evidence(base / "archive-a" / release_id)
+                build_b = self.evidence(base / "archive-b" / release_id)
+                sentinel = ("b" * 64, {"fixture": self.identity()})
+
+                @contextmanager
+                def fake_lock() -> object:
+                    yield
+
+                comparison = {
+                    "archiveBytesEqual": True,
+                    "differences": [],
+                    "memberBytesEqual": True,
+                    "memberDifferences": [],
+                    "memberMetadataEqual": True,
+                    "memberSetEqual": True,
+                    "normalizations": [],
+                }
+                with ExitStack() as stack:
+                    stack.enter_context(
+                        mock.patch.object(runner, "WORK_ROOT", work_root)
+                    )
+                    stack.enter_context(
+                        mock.patch.object(
+                            runner,
+                            "acquire_run_lock",
+                            fake_lock,
+                        )
+                    )
+                    stack.enter_context(
+                        mock.patch.object(
+                            runner,
+                            "resolve_release_context",
+                            return_value=release_context,
+                        )
+                    )
+                    preflight_mock = stack.enter_context(
+                        mock.patch.object(
+                            runner,
+                            "preflight_fixed_paths",
+                            return_value=release_id,
+                        )
+                    )
+                    stack.enter_context(
+                        mock.patch.object(
+                            runner,
+                            "capture_protected_archive",
+                            return_value=sentinel,
+                        )
+                    )
+                    stack.enter_context(
+                        mock.patch.object(runner, "create_swift_lease")
+                    )
+                    stack.enter_context(
+                        mock.patch.object(
+                            runner,
+                            "capture_source_overlay",
+                            return_value=runner.SourceOverlay((), (), "c" * 64),
+                        )
+                    )
+                    stack.enter_context(
+                        mock.patch.object(
+                            runner,
+                            "capture_git_refs",
+                            return_value=runner.GitRefs(
+                                "1" * 40,
+                                "2" * 40,
+                            ),
+                        )
+                    )
+                    source_snapshot_mock = stack.enter_context(
+                        mock.patch.object(
+                            runner.archive_builder,
+                            "source_snapshot",
+                            return_value=source_snapshot,
+                        )
+                    )
+                    stack.enter_context(
+                        mock.patch.object(
+                            runner,
+                            "source_release_id",
+                            return_value=release_id,
+                        )
+                    )
+                    materialize_mock = stack.enter_context(
+                        mock.patch.object(runner, "materialize_clone")
+                    )
+                    stack.enter_context(
+                        mock.patch.object(
+                            runner,
+                            "prepare_gradle_caches",
+                            return_value=(
+                                base / "ga",
+                                base / "gb",
+                                1,
+                                "d" * 64,
+                            ),
+                        )
+                    )
+                    stack.enter_context(
+                        mock.patch.object(
+                            runner,
+                            "resolve_android_sdk",
+                            return_value=base / "sdk",
+                        )
+                    )
+                    run_lane_mock = stack.enter_context(
+                        mock.patch.object(
+                            runner,
+                            "run_lane",
+                            side_effect=(build_a, build_b),
+                        )
+                    )
+                    stack.enter_context(
+                        mock.patch.object(runner, "cleanup_swift_scratch")
+                    )
+                    detach_mock = stack.enter_context(
+                        mock.patch.object(runner, "detach_lane_a_archive")
+                    )
+                    revalidate_mock = stack.enter_context(
+                        mock.patch.object(
+                            runner,
+                            "require_archive_evidence_unchanged",
+                            side_effect=lambda item, **_: item,
+                        )
+                    )
+                    compare_mock = stack.enter_context(
+                        mock.patch.object(
+                            runner,
+                            "compare_archives",
+                            return_value=comparison,
+                        )
+                    )
+                    binding_mock = stack.enter_context(
+                        mock.patch.object(
+                            runner,
+                            "load_matching_prepublication_result",
+                        )
+                    )
+                    publish_mock = stack.enter_context(
+                        mock.patch.object(
+                            runner,
+                            "publish_qualified_archive",
+                        )
+                    )
+                    stack.enter_context(
+                        mock.patch.object(runner, "write_result")
+                    )
+                    result_path = base / "result/diagnostic.json"
+                    exit_code, result = runner.execute(
+                        result_path,
+                        publish_qualified=False,
+                        diagnostic_source_root_mode=mode,
+                    )
+
+                self.assertEqual(exit_code, 0, result)
+                materialized = [
+                    call.args[0]
+                    for call in materialize_mock.call_args_list
+                ]
+                lane_roots = [
+                    call.args[0] for call in run_lane_mock.call_args_list
+                ]
+                self.assertEqual(len(materialized), 2)
+                self.assertNotEqual(materialized[0], materialized[1])
+                self.assertEqual(lane_roots, materialized)
+                self.assertEqual(source_snapshot_mock.call_count, 3)
+                self.assertEqual(
+                    result["scratch"]["sourceRoots"]["policy"],
+                    expected_policy,
+                )
+                self.assertEqual(
+                    result["scratch"]["sourceRoots"][
+                        "sourceRootLengthsDiffer"
+                    ],
+                    lengths_differ,
+                )
+                preflight_mock.assert_called_once_with(
+                    result_path,
+                    publish_qualified=False,
+                    expected_release_id=release_id,
+                    protected_release_relative=(
+                        release_context.previous_release_relative
+                    ),
+                    diagnostic_source_root_mode=mode,
+                )
+                detach_mock.assert_not_called()
+                self.assertEqual(
+                    revalidate_mock.call_args_list,
+                    [
+                        mock.call(
+                            build_a,
+                            release_id=release_id,
+                            label="build-a",
+                        ),
+                        mock.call(
+                            build_b,
+                            release_id=release_id,
+                            label="build-b",
+                        ),
+                    ],
+                )
+                compare_mock.assert_called_once_with(build_a, build_b)
+                binding_mock.assert_not_called()
+                publish_mock.assert_not_called()
 
     def test_execute_never_builds_from_original_and_holds_lock_through_cleanup(
         self,

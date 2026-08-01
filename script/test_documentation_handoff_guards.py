@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import copy
+from dataclasses import replace
 import hashlib
 import json
 from pathlib import Path
@@ -225,6 +226,75 @@ case .pairingQR:
 
 
 class DocumentationHandoffGuardTests(unittest.TestCase):
+    def test_tracked_document_contract_mode_excludes_ignored_evidence_readback(
+        self,
+    ) -> None:
+        excluded_validators = (
+            "current_source_g6_reproducibility_failures",
+            "current_source_g6_swift_root_diagnostic_failures",
+            "current_source_g6_lifecycle_two_evidence_failures",
+            "current_source_g6_lane_a_local_dmg_evidence_failures",
+            "current_build24_reverse_version_readback_source_failures",
+            "current_build24_macos_idle_resource_stability_evidence_failures",
+        )
+        patches = [
+            patch.object(
+                check_docs_hygiene,
+                name,
+                side_effect=AssertionError(
+                    f"tracked mode invoked ignored evidence validator {name}"
+                ),
+            )
+            for name in excluded_validators
+        ]
+        for validator_patch in patches:
+            validator_patch.start()
+        try:
+            self.assertEqual(
+                check_docs_hygiene.tracked_document_contract_failures(),
+                [],
+            )
+        finally:
+            for validator_patch in reversed(patches):
+                validator_patch.stop()
+
+    def test_tracked_document_contract_cli_is_explicit_and_bounded(self) -> None:
+        with (
+            patch.object(
+                check_docs_hygiene,
+                "tracked_document_contract_failures",
+                return_value=[],
+            ) as tracked,
+            patch.object(
+                check_docs_hygiene,
+                "current_source_g6_reproducibility_failures",
+                side_effect=AssertionError("full evidence mode was reached"),
+            ),
+            patch("builtins.print") as print_mock,
+        ):
+            self.assertEqual(
+                check_docs_hygiene.main(
+                    [check_docs_hygiene.TRACKED_CONTRACTS_ONLY_ARGUMENT]
+                ),
+                0,
+            )
+        tracked.assert_called_once_with()
+        self.assertTrue(
+            any(
+                "ignored dist evidence bytes were not read" in str(call)
+                for call in print_mock.call_args_list
+            )
+        )
+
+        with patch("builtins.print") as print_mock:
+            self.assertEqual(check_docs_hygiene.main(["--unknown"]), 2)
+        self.assertTrue(
+            any(
+                "usage: check_docs_hygiene.py" in str(call)
+                for call in print_mock.call_args_list
+            )
+        )
+
     def failures(
         self,
         *,
@@ -239,6 +309,42 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
             status,
             app,
         )
+
+    def g6_swift_root_diagnostic_payloads(self) -> dict[str, bytes]:
+        return {
+            contract.label: contract.path.read_bytes()
+            for contract in (
+                check_docs_hygiene
+                .CURRENT_SOURCE_G6_SWIFT_ROOT_DIAGNOSTIC_RESULTS
+            )
+        }
+
+    def g6_lifecycle_two_payloads(self) -> dict[str, bytes]:
+        payloads = {
+            contract.role: contract.path.read_bytes()
+            for contract in (
+                check_docs_hygiene
+                .CURRENT_SOURCE_G6_LIFECYCLE_TWO_CHILD_RESULTS
+            )
+        }
+        payloads["parent"] = (
+            check_docs_hygiene
+            .CURRENT_SOURCE_G6_LIFECYCLE_TWO_REPRODUCIBILITY_RESULT
+            .read_bytes()
+        )
+        return payloads
+
+    @staticmethod
+    def canonical_json_bytes(value: object) -> bytes:
+        return (
+            json.dumps(
+                value,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("ascii")
 
     def test_current_callback_wiring_passes(self) -> None:
         self.assertEqual(self.failures(), [])
@@ -1004,6 +1110,155 @@ private func generatePairingQR() {{
             [],
         )
 
+    def test_current_source_g6_swift_root_diagnostics_match_closed_contract(
+        self,
+    ) -> None:
+        self.assertEqual(
+            (
+                check_docs_hygiene
+                .current_source_g6_swift_root_diagnostic_failures()
+            ),
+            [],
+        )
+        payloads = self.g6_swift_root_diagnostic_payloads()
+        self.assertEqual(
+            payloads["distinct-unequal-utf8-length"],
+            payloads["distinct-unequal-utf8-length-repeat-two"],
+        )
+
+    def test_current_source_g6_swift_root_diagnostics_reject_identity_shape_and_noncanonical_json(
+        self,
+    ) -> None:
+        payloads = self.g6_swift_root_diagnostic_payloads()
+        missing = dict(payloads)
+        del missing["same-physical-root"]
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_swift_root_diagnostic_failures(missing)
+        )
+        self.assertTrue(
+            any("payload labels must be exactly" in failure for failure in failures)
+        )
+
+        pretty = dict(payloads)
+        pretty_result = json.loads(pretty["same-physical-root"])
+        pretty["same-physical-root"] = (
+            json.dumps(pretty_result, indent=2) + "\n"
+        ).encode("ascii")
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_swift_root_diagnostic_failures(pretty)
+        )
+        self.assertTrue(
+            any("expected identity" in failure for failure in failures)
+        )
+        self.assertTrue(
+            any(
+                "canonical sorted compact ASCII JSON" in failure
+                for failure in failures
+            )
+        )
+
+        contracts = list(
+            check_docs_hygiene.CURRENT_SOURCE_G6_SWIFT_ROOT_DIAGNOSTIC_RESULTS
+        )
+        contracts[-1] = replace(contracts[-1], path=contracts[-2].path)
+        with patch.object(
+            check_docs_hygiene,
+            "CURRENT_SOURCE_G6_SWIFT_ROOT_DIAGNOSTIC_RESULTS",
+            tuple(contracts),
+        ):
+            failures = (
+                check_docs_hygiene
+                .current_source_g6_swift_root_diagnostic_failures()
+            )
+        self.assertTrue(
+            any("paths must be four distinct files" in failure for failure in failures)
+        )
+        self.assertTrue(
+            any("must use canonical path" in failure for failure in failures)
+        )
+
+    def test_current_source_g6_swift_root_diagnostics_reject_root_geometry_and_promotion(
+        self,
+    ) -> None:
+        payloads = self.g6_swift_root_diagnostic_payloads()
+        promoted = dict(payloads)
+        promoted_result = json.loads(promoted["distinct-unequal-utf8-length"])
+        promoted_result["scratch"]["sourceRoots"]["policy"] = (
+            "distinct-unequal-utf8-byte-length-v1"
+        )
+        promoted["distinct-unequal-utf8-length"] = self.canonical_json_bytes(
+            promoted_result
+        )
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_swift_root_diagnostic_failures(promoted)
+        )
+        self.assertTrue(
+            any("scratch.sourceRoots.policy" in failure for failure in failures)
+        )
+
+        invalid_length = dict(payloads)
+        invalid_result = json.loads(invalid_length["same-physical-root"])
+        invalid_result["scratch"]["sourceRoots"]["sourceRootByteLengths"][
+            "build-a"
+        ] = False
+        invalid_length["same-physical-root"] = self.canonical_json_bytes(
+            invalid_result
+        )
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_swift_root_diagnostic_failures(invalid_length)
+        )
+        self.assertTrue(
+            any(
+                "scratch.sourceRoots.sourceRootByteLengths" in failure
+                for failure in failures
+            )
+        )
+
+    def test_current_source_g6_swift_root_diagnostics_reject_cross_mode_and_repeat_two_drift(
+        self,
+    ) -> None:
+        payloads = self.g6_swift_root_diagnostic_payloads()
+        archive_drift = dict(payloads)
+        drift_result = json.loads(
+            archive_drift["distinct-equal-utf8-length"]
+        )
+        for build in drift_result["builds"]:
+            build["archive"]["sha256"] = "0" * 64
+        archive_drift["distinct-equal-utf8-length"] = (
+            self.canonical_json_bytes(drift_result)
+        )
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_swift_root_diagnostic_failures(archive_drift)
+        )
+        self.assertTrue(
+            any(
+                "archives must match exactly across all eight builds"
+                in failure
+                for failure in failures
+            )
+        )
+
+        repeat_drift = dict(payloads)
+        repeat_result = json.loads(
+            repeat_drift["distinct-unequal-utf8-length-repeat-two"]
+        )
+        repeat_result["gradleCache"]["fileCount"] += 1
+        repeat_drift["distinct-unequal-utf8-length-repeat-two"] = (
+            self.canonical_json_bytes(repeat_result)
+        )
+        failures = (
+            check_docs_hygiene
+            .current_source_g6_swift_root_diagnostic_failures(repeat_drift)
+        )
+        self.assertTrue(
+            any("repeat-two result bytes" in failure for failure in failures)
+        )
+
     def test_current_source_g6_reproducibility_rejects_semantic_drift(
         self,
     ) -> None:
@@ -1095,37 +1350,19 @@ private func generatePairingQR() {{
             )
         )
 
-    def test_current_source_g6_reproducibility_rejects_live_source_drift(
+    def test_current_source_g6_swift_root_diagnostics_retain_recorded_source(
         self,
     ) -> None:
         with patch.object(
             check_docs_hygiene.package_release_artifacts,
             "source_snapshot",
-            return_value={
-                "algorithm": (
-                    "sha256(path-nul-mode-nul-size-nul-sha256-lf)-v1"
-                ),
-                "fileCount": 262,
-                "files": [],
-                "sha256": "0" * 64,
-            },
+            side_effect=AssertionError("live source must not be read"),
         ):
             failures = (
                 check_docs_hygiene
-                .current_source_g6_reproducibility_failures()
+                .current_source_g6_swift_root_diagnostic_failures()
             )
-        self.assertTrue(
-            any(
-                "live release-input source.fileCount" in failure
-                for failure in failures
-            )
-        )
-        self.assertTrue(
-            any(
-                "live release-input source.sha256" in failure
-                for failure in failures
-            )
-        )
+        self.assertEqual(failures, [])
 
     def test_current_source_g6_reproducibility_rejects_noncanonical_json(
         self,
@@ -1155,6 +1392,309 @@ private func generatePairingQR() {{
         )
         self.assertTrue(
             any("duplicate JSON key" in failure for failure in failures)
+        )
+
+    def test_current_source_g6_lifecycle_two_matches_runner_contract(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_source_g6_lifecycle_two_evidence_failures
+        )
+        self.assertEqual(validator(), [])
+        self.assertEqual(validator(self.g6_lifecycle_two_payloads()), [])
+
+        stable_reader = (
+            check_docs_hygiene._stable_current_source_g6_evidence_bytes
+        )
+        read_labels: list[str] = []
+
+        def record_read(*, path: Path, label: str):
+            read_labels.append(label)
+            return stable_reader(path=path, label=label)
+
+        with patch.object(
+            check_docs_hygiene,
+            "_stable_current_source_g6_evidence_bytes",
+            side_effect=record_read,
+        ):
+            self.assertEqual(validator(), [])
+        self.assertEqual(
+            read_labels,
+            [
+                "G6 lifecycle-two install",
+                "G6 lifecycle-two uninstall_reinstall",
+                "G6 lifecycle-two state_recovery",
+                "G6 lifecycle-two abrupt_process",
+                "G6 lifecycle-two abrupt_receipt",
+                "G6 lifecycle-two idle",
+                "G6 lifecycle-two parent",
+                "G6 lifecycle-two parent commit-marker reread",
+            ],
+        )
+
+    def test_current_source_g6_lifecycle_two_rejects_parent_and_child_drift(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_source_g6_lifecycle_two_evidence_failures
+        )
+        payloads = self.g6_lifecycle_two_payloads()
+
+        incomplete = dict(payloads)
+        del incomplete["idle"]
+        failures = validator(incomplete)
+        self.assertTrue(
+            any("supplied roles must be exactly" in failure for failure in failures)
+        )
+
+        boolean_parent = dict(payloads)
+        parent = json.loads(boolean_parent["parent"])
+        for build in parent["builds"]:
+            build["archive"]["size"] = True
+        boolean_parent["parent"] = self.canonical_json_bytes(parent)
+        failures = validator(boolean_parent)
+        self.assertTrue(
+            any(
+                "builds[0].archive.size" in failure
+                for failure in failures
+            )
+        )
+
+        child_drift = dict(payloads)
+        uninstall = json.loads(child_drift["uninstall_reinstall"])
+        uninstall["release"]["archiveSha256"] = "0" * 64
+        child_drift["uninstall_reinstall"] = self.canonical_json_bytes(
+            uninstall
+        )
+        failures = validator(child_drift)
+        self.assertTrue(
+            any(
+                "semantic/cross-binding validation failed" in failure
+                for failure in failures
+            )
+        )
+
+        pretty_child = dict(payloads)
+        install = json.loads(pretty_child["install"])
+        pretty_child["install"] = (
+            json.dumps(install, ensure_ascii=True, indent=2) + "\n"
+        ).encode("ascii")
+        failures = validator(pretty_child)
+        self.assertTrue(any("expected lifecycle-two" in failure for failure in failures))
+        self.assertTrue(
+            any(
+                "semantic/cross-binding validation failed" in failure
+                for failure in failures
+            )
+        )
+
+    def test_current_source_g6_lifecycle_two_rejects_path_alias_missing_and_symlink(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_source_g6_lifecycle_two_evidence_failures
+        )
+        contracts = list(
+            check_docs_hygiene.CURRENT_SOURCE_G6_LIFECYCLE_TWO_CHILD_RESULTS
+        )
+        source_contract = contracts[0]
+        contracts[-1] = replace(contracts[-1], path=source_contract.path)
+        with patch.object(
+            check_docs_hygiene,
+            "CURRENT_SOURCE_G6_LIFECYCLE_TWO_CHILD_RESULTS",
+            tuple(contracts),
+        ):
+            failures = validator()
+        self.assertTrue(
+            any("paths must be seven distinct files" in failure for failure in failures)
+        )
+        self.assertTrue(
+            any("must use canonical path" in failure for failure in failures)
+        )
+
+        with tempfile.TemporaryDirectory(
+            dir=check_docs_hygiene.ROOT / "dist/lifecycle"
+        ) as temporary:
+            temporary_root = Path(temporary)
+            missing = temporary_root / "missing.json"
+            contracts = list(
+                check_docs_hygiene
+                .CURRENT_SOURCE_G6_LIFECYCLE_TWO_CHILD_RESULTS
+            )
+            contracts[0] = replace(source_contract, path=missing)
+            with patch.object(
+                check_docs_hygiene,
+                "CURRENT_SOURCE_G6_LIFECYCLE_TWO_CHILD_RESULTS",
+                tuple(contracts),
+            ):
+                failures = validator()
+            self.assertTrue(
+                any("missing current-source" in failure for failure in failures)
+            )
+
+            symlink = temporary_root / "symlink.json"
+            symlink.symlink_to(source_contract.path)
+            contracts[0] = replace(source_contract, path=symlink)
+            with patch.object(
+                check_docs_hygiene,
+                "CURRENT_SOURCE_G6_LIFECYCLE_TWO_CHILD_RESULTS",
+                tuple(contracts),
+            ):
+                failures = validator()
+            self.assertTrue(
+                any("must not be a symlink" in failure for failure in failures)
+            )
+
+        actual_parent = (
+            check_docs_hygiene
+            .CURRENT_SOURCE_G6_LIFECYCLE_TWO_REPRODUCIBILITY_RESULT
+        )
+        with tempfile.TemporaryDirectory(
+            dir=check_docs_hygiene.ROOT / "dist/reproducibility"
+        ) as temporary:
+            temporary_root = Path(temporary)
+            missing_parent = temporary_root / "missing-parent.json"
+            with patch.object(
+                check_docs_hygiene,
+                "CURRENT_SOURCE_G6_LIFECYCLE_TWO_REPRODUCIBILITY_RESULT",
+                missing_parent,
+            ):
+                failures = validator()
+            self.assertTrue(
+                any("missing current-source" in failure for failure in failures)
+            )
+
+            symlink_parent = temporary_root / "symlink-parent.json"
+            symlink_parent.symlink_to(actual_parent)
+            with patch.object(
+                check_docs_hygiene,
+                "CURRENT_SOURCE_G6_LIFECYCLE_TWO_REPRODUCIBILITY_RESULT",
+                symlink_parent,
+            ):
+                failures = validator()
+            self.assertTrue(
+                any("must not be a symlink" in failure for failure in failures)
+            )
+
+        stable_reader = (
+            check_docs_hygiene._stable_current_source_g6_evidence_bytes
+        )
+
+        def parent_reread_drift(*, path: Path, label: str):
+            payload, failures = stable_reader(path=path, label=label)
+            if (
+                payload is not None
+                and label == "G6 lifecycle-two parent commit-marker reread"
+            ):
+                return payload + b" ", failures
+            return payload, failures
+
+        with patch.object(
+            check_docs_hygiene,
+            "_stable_current_source_g6_evidence_bytes",
+            side_effect=parent_reread_drift,
+        ):
+            failures = validator()
+        self.assertTrue(
+            any("parent commit marker changed" in failure for failure in failures)
+        )
+
+    def test_current_source_g6_lifecycle_two_uses_recorded_source_and_avoids_physical_helpers(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_source_g6_lifecycle_two_evidence_failures
+        )
+        with patch.object(
+            check_docs_hygiene.package_release_artifacts,
+            "source_snapshot",
+            side_effect=AssertionError("live source must not be read"),
+        ):
+            failures = validator(self.g6_lifecycle_two_payloads())
+        self.assertEqual(failures, [])
+
+        runner = check_docs_hygiene.clean_release_reproducibility
+        with (
+            patch.object(
+                runner,
+                "lane_archive_identities",
+                side_effect=AssertionError("physical archive access"),
+            ),
+            patch.object(
+                runner,
+                "publish_lane_a_local_dmg_suite",
+                side_effect=AssertionError("publication access"),
+            ),
+            patch.object(
+                runner,
+                "validate_lane_a_local_dmg_suite_parent_result_path",
+                side_effect=AssertionError("result-path mutation access"),
+            ),
+        ):
+            self.assertEqual(
+                validator(self.g6_lifecycle_two_payloads()),
+                [],
+            )
+
+    def test_current_source_g6_lifecycle_two_is_full_mode_only(
+        self,
+    ) -> None:
+        module = ast.parse(
+            (check_docs_hygiene.ROOT / "script/check_docs_hygiene.py")
+            .read_text(encoding="utf-8")
+        )
+        functions = {
+            node.name: node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef)
+        }
+
+        def call_count(function_name: str) -> int:
+            return sum(
+                1
+                for node in ast.walk(functions[function_name])
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id
+                    == "current_source_g6_lifecycle_two_evidence_failures"
+                )
+            )
+
+        self.assertEqual(call_count("main"), 1)
+        self.assertEqual(call_count("tracked_document_contract_failures"), 0)
+        lifecycle_path_assignments = [
+            statement
+            for statement in module.body
+            if (
+                isinstance(statement, ast.Assign)
+                and any(
+                    isinstance(target, ast.Name)
+                    and target.id == "CURRENT_SOURCE_G6_LIFECYCLE_TWO_PATHS"
+                    for target in statement.targets
+                )
+            )
+        ]
+        self.assertEqual(len(lifecycle_path_assignments), 1)
+        lifecycle_path_assignment = lifecycle_path_assignments[0]
+        lifecycle_path_calls = [
+            node
+            for node in ast.walk(lifecycle_path_assignment.value)
+            if isinstance(node, ast.Call)
+        ]
+        self.assertEqual(len(lifecycle_path_calls), 1)
+        self.assertIs(lifecycle_path_calls[0], lifecycle_path_assignment.value)
+        constructor = lifecycle_path_calls[0].func
+        self.assertIsInstance(constructor, ast.Attribute)
+        self.assertEqual(constructor.attr, "LaneALocalDMGSuitePaths")
+        self.assertIsInstance(constructor.value, ast.Name)
+        self.assertEqual(
+            constructor.value.id,
+            "clean_release_reproducibility",
         )
 
     def test_current_source_g6_lane_a_local_dmg_matches_closed_contract(
@@ -1933,6 +2473,48 @@ private func generatePairingQR() {{
                 any("must not be a symlink" in failure for failure in failures)
             )
 
+    def test_current_source_g6_swift_root_diagnostics_reject_missing_and_symlink(
+        self,
+    ) -> None:
+        contracts = list(
+            check_docs_hygiene.CURRENT_SOURCE_G6_SWIFT_ROOT_DIAGNOSTIC_RESULTS
+        )
+        source_contract = contracts[0]
+        with tempfile.TemporaryDirectory(
+            dir=check_docs_hygiene.ROOT / "dist/reproducibility"
+        ) as temporary:
+            temporary_root = Path(temporary)
+            missing_result = temporary_root / "missing.json"
+            contracts[0] = replace(source_contract, path=missing_result)
+            with patch.object(
+                check_docs_hygiene,
+                "CURRENT_SOURCE_G6_SWIFT_ROOT_DIAGNOSTIC_RESULTS",
+                tuple(contracts),
+            ):
+                failures = (
+                    check_docs_hygiene
+                    .current_source_g6_swift_root_diagnostic_failures()
+                )
+            self.assertTrue(
+                any("missing current-source" in failure for failure in failures)
+            )
+
+            symlink_result = temporary_root / "symlink.json"
+            symlink_result.symlink_to(source_contract.path)
+            contracts[0] = replace(source_contract, path=symlink_result)
+            with patch.object(
+                check_docs_hygiene,
+                "CURRENT_SOURCE_G6_SWIFT_ROOT_DIAGNOSTIC_RESULTS",
+                tuple(contracts),
+            ):
+                failures = (
+                    check_docs_hygiene
+                    .current_source_g6_swift_root_diagnostic_failures()
+                )
+            self.assertTrue(
+                any("must not be a symlink" in failure for failure in failures)
+            )
+
     def test_current_source_g6_evidence_rejects_read_time_symlink_swap(
         self,
     ) -> None:
@@ -2095,9 +2677,12 @@ private func generatePairingQR() {{
         normalized_body = " ".join(body.split())
         for required in (
             "run bound 266 release inputs",
-            "android-release-byte-readback-nine.json",
+            "g6-macos-unsealed-gate-source-binding-one.json",
             "six child results followed by the parent",
             "all seven evidence files",
+            "four retained comparison-only diagnostic result files",
+            "a4a3615717ac4786086220e5894d2c196d70e31f03892c2fc7e609ede4e50274",
+            "Publication remained disabled",
         ):
             self.assertIn(required, normalized_body)
 
@@ -2120,8 +2705,8 @@ private func generatePairingQR() {{
         }
         readme = documents["README.md"]
         documents["README.md"] = readme.replace(
-            "run bound 266 release inputs",
-            "run bound 267 release inputs",
+            "63eeefbd7d13bf86452f39fc69337246f8a7ed0b945b5793f7f3ed33f3974c42",
+            "0" * 64,
             1,
         )
         failures = (
@@ -2204,8 +2789,18 @@ private func generatePairingQR() {{
             for name in (
                 "test_current_source_g6_reproducibility_matches_closed_contract",
                 "test_current_source_g6_reproducibility_rejects_semantic_drift",
-                "test_current_source_g6_reproducibility_rejects_live_source_drift",
                 "test_current_source_g6_reproducibility_rejects_noncanonical_json",
+                "test_current_source_g6_swift_root_diagnostics_match_closed_contract",
+                "test_current_source_g6_swift_root_diagnostics_reject_identity_shape_and_noncanonical_json",
+                "test_current_source_g6_swift_root_diagnostics_reject_root_geometry_and_promotion",
+                "test_current_source_g6_swift_root_diagnostics_reject_cross_mode_and_repeat_two_drift",
+                "test_current_source_g6_swift_root_diagnostics_retain_recorded_source",
+                "test_current_source_g6_swift_root_diagnostics_reject_missing_and_symlink",
+                "test_current_source_g6_lifecycle_two_matches_runner_contract",
+                "test_current_source_g6_lifecycle_two_rejects_parent_and_child_drift",
+                "test_current_source_g6_lifecycle_two_rejects_path_alias_missing_and_symlink",
+                "test_current_source_g6_lifecycle_two_uses_recorded_source_and_avoids_physical_helpers",
+                "test_current_source_g6_lifecycle_two_is_full_mode_only",
                 "test_current_source_g6_lane_a_local_dmg_matches_closed_contract",
                 "test_current_source_g6_lane_a_idle_resource_matches_closed_contract",
                 "test_current_source_g6_lane_a_idle_resource_rejects_drift",
@@ -5724,10 +6319,10 @@ private func generatePairingQR() {{
         complete_block = (
             start_marker + "\n" + expected_body + "\n" + end_marker
         )
-        self.assertEqual(len(expected_body.encode("utf-8")), 3_381)
+        self.assertEqual(len(expected_body.encode("utf-8")), 4_096)
         self.assertEqual(
             hashlib.sha256(expected_body.encode("utf-8")).hexdigest(),
-            "46a688da4a7a6e04a391bbaf3f8f1366e164a2429544e307c8a4f70785e8c6e3",
+            "a43877575d8026b6932f9d39e77f468e45ded550c7562a38f4730edc1c79583a",
         )
 
         for relative in targets:

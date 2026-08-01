@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import json
 import plistlib
 import shutil
 import subprocess
@@ -12,6 +13,7 @@ import tempfile
 import unittest
 
 from script.check_release_version_ledger import (
+    LedgerError,
     parse_release_version_ledger,
 )
 
@@ -79,6 +81,24 @@ class BuildAndRunModeTests(unittest.TestCase):
         fake_executable = swift_bin_path / "AetherLink"
         shutil.copyfile("/usr/bin/true", fake_executable)
         fake_executable.chmod(0o755)
+        fake_dsym = swift_bin_path / "AetherLink.dSYM"
+        fake_dsym_dwarf = fake_dsym / "Contents/Resources/DWARF/AetherLink"
+        fake_dsym_relocation = (
+            fake_dsym
+            / "Contents/Resources/Relocations/aarch64/AetherLink.yml"
+        )
+        fake_dsym_dwarf.parent.mkdir(parents=True)
+        fake_dsym_relocation.parent.mkdir(parents=True)
+        with (fake_dsym / "Contents/Info.plist").open("wb") as handle:
+            plistlib.dump(
+                {
+                    "CFBundleIdentifier": "com.apple.xcode.dsym.AetherLink",
+                    "CFBundlePackageType": "dSYM",
+                },
+                handle,
+            )
+        fake_dsym_dwarf.write_bytes(b"fixture-aetherlink-dwarf\n")
+        fake_dsym_relocation.write_bytes(b"fixture-relocations\n")
 
         for index in range(resource_bundle_count):
             prefix = "AetherLink" if resource_bundle_count == 1 else f"Candidate{index + 1}"
@@ -129,11 +149,90 @@ class BuildAndRunModeTests(unittest.TestCase):
             encoding="utf-8",
         )
         fake_pkill.chmod(0o755)
+        fake_python = fake_bin / "python3"
+        fake_python.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            'command_name="${3:-}"\n'
+            'if [[ "$command_name" == "unsealed-macos-source-receipt" ]]; then\n'
+            '  printf "%s\\n" "$FAKE_UNSEALED_SOURCE_RECEIPT"\n'
+            "  exit 0\n"
+            "fi\n"
+            'if [[ "$command_name" == "publish-unsealed-macos-output" ]]; then\n'
+            '  if [[ "${4:-}" != "--staging-root" || -z "${5:-}" ]]; then\n'
+            "    exit 96\n"
+            "  fi\n"
+            '  staging_root="$5"\n'
+            '  destination="${staging_root%/*}/unsealed-package-only"\n'
+            '  if [[ "${FAKE_UNSEALED_PUBLISH_ROLLBACK_FAILURE:-0}" == "1" '
+            '&& ( -e "$destination" || -L "$destination" ) ]]; then\n'
+            '    replaced="${staging_root%/*}/.unsealed-package-only.replaced"\n'
+            '    /bin/mv "$destination" "$replaced"\n'
+            '    /bin/mv "$staging_root" "$destination"\n'
+            '    /bin/mv "$replaced" "$staging_root"\n'
+            '    printf "injected post-readback and rollback failure\\n" >&2\n'
+            "    exit 91\n"
+            "  fi\n"
+            '  if [[ "${FAKE_UNSEALED_PUBLISH_CLEANUP_WARNING:-0}" == "1" '
+            '&& ( -e "$destination" || -L "$destination" ) ]]; then\n'
+            '    replaced="${staging_root%/*}/.unsealed-package-only.replaced"\n'
+            '    /bin/mv "$destination" "$replaced"\n'
+            '    /bin/mv "$staging_root" "$destination"\n'
+            '    /bin/mv "$replaced" "$staging_root"\n'
+            '    printf "injected committed cleanup warning\\n" >&2\n'
+            "    exit 0\n"
+            "  fi\n"
+            '  if [[ -e "$destination" || -L "$destination" ]]; then\n'
+            '    replaced="${staging_root%/*}/.unsealed-package-only.replaced"\n'
+            '    /bin/mv "$destination" "$replaced"\n'
+            '    /bin/mv "$staging_root" "$destination"\n'
+            '    /bin/rm -rf "$replaced"\n'
+            "  else\n"
+            '    /bin/mv "$staging_root" "$destination"\n'
+            "  fi\n"
+            '  printf "Unsealed macOS output published: %s\\n" "$destination"\n'
+            "  exit 0\n"
+            "fi\n"
+            'exec /usr/bin/python3 "$@"\n',
+            encoding="utf-8",
+        )
+        fake_python.chmod(0o755)
 
         environment = os.environ.copy()
         environment["PATH"] = f"{fake_bin}:/usr/bin:/bin"
         environment["FAKE_TOOLCHAIN_LOG"] = str(invocation_log)
         environment["FAKE_SWIFT_BIN_PATH"] = str(swift_bin_path)
+        try:
+            current_release = parse_release_version_ledger(
+                (release_dir / "version-ledger.tsv").read_bytes()
+            )[-1]
+            receipt_build_number = current_release.build_number
+            receipt_marketing_version = current_release.marketing_version
+        except (IndexError, LedgerError):
+            receipt_build_number = 1
+            receipt_marketing_version = "0.0.0"
+        environment["FAKE_UNSEALED_SOURCE_RECEIPT"] = json.dumps(
+            {
+                "build": {
+                    "buildNumber": receipt_build_number,
+                    "configuration": "release",
+                    "marketingVersion": receipt_marketing_version,
+                    "mode": "unsealed-package-only",
+                },
+                "outputContract": "macos-unsealed-app-dsym-source-bound-v1",
+                "schemaVersion": 1,
+                "source": {
+                    "algorithm": (
+                        "sha256(path-nul-mode-nul-size-nul-sha256-lf)-v1"
+                    ),
+                    "fileCount": 1,
+                    "sha256": "a" * 64,
+                },
+            },
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
         return workspace, environment, invocation_log
 
     def test_invalid_mode_invokes_no_fake_toolchain_commands(self) -> None:
@@ -251,6 +350,9 @@ class BuildAndRunModeTests(unittest.TestCase):
                     (app_bundle / f"Contents/Resources/{locale}.lproj").exists()
                 )
             self.assertTrue((app_bundle / "Contents/MacOS/AetherLink").is_file())
+            self.assertFalse(
+                (workspace / "dist/package-only/AetherLink.dSYM").exists()
+            )
             with (app_bundle / "Contents/Info.plist").open("rb") as handle:
                 info = plistlib.load(handle)
             current_release = parse_release_version_ledger(
@@ -287,6 +389,414 @@ class BuildAndRunModeTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(verification.returncode, 0, verification)
+
+    def test_unsealed_package_only_builds_release_and_copies_dsym_without_launch_or_seal(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace, environment, invocation_log = self.make_fake_package_workspace(
+                temporary,
+                resource_bundle_count=1,
+            )
+            development_app = workspace / "dist/AetherLink.app"
+            development_app.mkdir(parents=True)
+            development_sentinel = development_app / "running-build.txt"
+            development_sentinel.write_bytes(b"preserve-running-build")
+            legacy_output = workspace / "dist/package-only"
+            legacy_output.mkdir()
+            legacy_sentinel = legacy_output / "preserve.txt"
+            legacy_sentinel.write_bytes(b"preserve-package-only")
+            environment["AETHERLINK_PACKAGE_OUTPUT_ROOT"] = str(
+                workspace / "dist/release-package"
+            )
+
+            result = subprocess.run(
+                [
+                    "/bin/bash",
+                    str(workspace / "script/build_and_run.sh"),
+                    "--unsealed-package-only",
+                ],
+                cwd=workspace,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result)
+            self.assertEqual(
+                development_sentinel.read_bytes(),
+                b"preserve-running-build",
+            )
+            self.assertEqual(
+                legacy_sentinel.read_bytes(),
+                b"preserve-package-only",
+            )
+            output = workspace / "dist/unsealed-package-only"
+            self.assertEqual(
+                {path.name for path in output.iterdir()},
+                {
+                    "AetherLink.app",
+                    "AetherLink.dSYM",
+                    "source-receipt.json",
+                },
+            )
+            self.assertEqual(
+                json.loads(
+                    (output / "source-receipt.json").read_text(
+                        encoding="ascii"
+                    )
+                ),
+                json.loads(environment["FAKE_UNSEALED_SOURCE_RECEIPT"]),
+            )
+            app_bundle = output / "AetherLink.app"
+            output_dsym = output / "AetherLink.dSYM"
+            self.assertFalse((app_bundle / "Contents/_CodeSignature").exists())
+            self.assertFalse(
+                any(
+                    path.name == "CodeResources"
+                    for path in app_bundle.rglob("*")
+                )
+            )
+            with (app_bundle / "Contents/Info.plist").open("rb") as handle:
+                info = plistlib.load(handle)
+            current_release = parse_release_version_ledger(
+                (workspace / "release/version-ledger.tsv").read_bytes()
+            )[-1]
+            self.assertEqual(
+                info["CFBundleShortVersionString"],
+                current_release.marketing_version,
+            )
+            self.assertEqual(
+                info["CFBundleVersion"],
+                str(current_release.build_number),
+            )
+            source_dsym = Path(environment["FAKE_SWIFT_BIN_PATH"]) / "AetherLink.dSYM"
+            for relative in (
+                "Contents/Info.plist",
+                "Contents/Resources/DWARF/AetherLink",
+                "Contents/Resources/Relocations/aarch64/AetherLink.yml",
+            ):
+                self.assertEqual(
+                    (output_dsym / relative).read_bytes(),
+                    (source_dsym / relative).read_bytes(),
+                )
+            self.assertEqual(
+                invocation_log.read_text(encoding="utf-8").splitlines(),
+                [
+                    "swift package clean",
+                    "swift build -c release --product AetherLink",
+                    "swift build -c release --show-bin-path",
+                ],
+            )
+            self.assertNotIn("pkill", invocation_log.read_text(encoding="utf-8"))
+            self.assertIn(str(output), result.stdout)
+
+    def test_unsealed_package_only_requires_physical_dsym_before_replacing_outputs(
+        self,
+    ) -> None:
+        for mutation in ("missing", "symlink", "special"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                workspace, environment, _ = self.make_fake_package_workspace(
+                    temporary,
+                    resource_bundle_count=1,
+                )
+                source_dsym = (
+                    Path(environment["FAKE_SWIFT_BIN_PATH"])
+                    / "AetherLink.dSYM"
+                )
+                if mutation == "missing":
+                    shutil.rmtree(source_dsym)
+                elif mutation == "symlink":
+                    physical = source_dsym.with_name("physical.dSYM")
+                    source_dsym.rename(physical)
+                    source_dsym.symlink_to(physical, target_is_directory=True)
+                else:
+                    dwarf = (
+                        source_dsym
+                        / "Contents/Resources/DWARF/AetherLink"
+                    )
+                    dwarf.unlink()
+                    os.mkfifo(dwarf)
+
+                output = workspace / "dist/unsealed-package-only"
+                old_app = output / "AetherLink.app"
+                old_dsym = output / "AetherLink.dSYM"
+                old_app.mkdir(parents=True)
+                old_dsym.mkdir()
+                app_sentinel = old_app / "preserve.txt"
+                dsym_sentinel = old_dsym / "preserve.txt"
+                app_sentinel.write_bytes(b"old-app")
+                dsym_sentinel.write_bytes(b"old-dsym")
+
+                result = subprocess.run(
+                    [
+                        "/bin/bash",
+                        str(workspace / "script/build_and_run.sh"),
+                        "--unsealed-package-only",
+                    ],
+                    cwd=workspace,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+                self.assertEqual(result.returncode, 1, result)
+                self.assertIn("unsealed Release dSYM source", result.stderr)
+                self.assertEqual(app_sentinel.read_bytes(), b"old-app")
+                self.assertEqual(dsym_sentinel.read_bytes(), b"old-dsym")
+
+    def test_unsealed_package_only_staged_copy_failure_preserves_previous_output(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace, environment, _ = self.make_fake_package_workspace(
+                temporary,
+                resource_bundle_count=1,
+            )
+            fake_cp = Path(temporary) / "bin/cp"
+            fake_cp.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'last_argument="${!#}"\n'
+                'if [[ "$last_argument" == */AetherLink.dSYM ]]; then\n'
+                "  exit 95\n"
+                "fi\n"
+                'exec /bin/cp "$@"\n',
+                encoding="utf-8",
+            )
+            fake_cp.chmod(0o755)
+            output = workspace / "dist/unsealed-package-only"
+            old_app = output / "AetherLink.app"
+            old_dsym = output / "AetherLink.dSYM"
+            old_app.mkdir(parents=True)
+            old_dsym.mkdir()
+            (old_app / "preserve.txt").write_bytes(b"old-app")
+            (old_dsym / "preserve.txt").write_bytes(b"old-dsym")
+            (output / "source-receipt.json").write_bytes(b"old-receipt\n")
+
+            result = subprocess.run(
+                [
+                    "/bin/bash",
+                    str(workspace / "script/build_and_run.sh"),
+                    "--unsealed-package-only",
+                ],
+                cwd=workspace,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 95, result)
+            self.assertEqual(
+                (old_app / "preserve.txt").read_bytes(),
+                b"old-app",
+            )
+            self.assertEqual(
+                (old_dsym / "preserve.txt").read_bytes(),
+                b"old-dsym",
+            )
+            self.assertEqual(
+                (output / "source-receipt.json").read_bytes(),
+                b"old-receipt\n",
+            )
+            self.assertEqual(
+                list((workspace / "dist").glob(".unsealed-package-only.stage-*")),
+                [],
+            )
+
+    def test_unsealed_package_only_double_publish_failure_preserves_recovery(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace, environment, _ = self.make_fake_package_workspace(
+                temporary,
+                resource_bundle_count=1,
+            )
+            output = workspace / "dist/unsealed-package-only"
+            old_app = output / "AetherLink.app"
+            old_dsym = output / "AetherLink.dSYM"
+            old_app.mkdir(parents=True)
+            old_dsym.mkdir()
+            (old_app / "preserve.txt").write_bytes(b"old-app")
+            (old_dsym / "preserve.txt").write_bytes(b"old-dsym")
+            (output / "source-receipt.json").write_bytes(b"old-receipt\n")
+            environment["FAKE_UNSEALED_PUBLISH_ROLLBACK_FAILURE"] = "1"
+
+            result = subprocess.run(
+                [
+                    "/bin/bash",
+                    str(workspace / "script/build_and_run.sh"),
+                    "--unsealed-package-only",
+                ],
+                cwd=workspace,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 91, result)
+            self.assertIn(
+                "preserving unsealed recovery generation",
+                result.stderr,
+            )
+            recoveries = [
+                path
+                for path in (workspace / "dist").glob(
+                    ".unsealed-package-only.stage-*"
+                )
+                if path.is_dir()
+            ]
+            self.assertEqual(len(recoveries), 1)
+            recovery = recoveries[0]
+            self.assertEqual(
+                (recovery / "AetherLink.app/preserve.txt").read_bytes(),
+                b"old-app",
+            )
+            self.assertEqual(
+                (recovery / "AetherLink.dSYM/preserve.txt").read_bytes(),
+                b"old-dsym",
+            )
+            self.assertEqual(
+                (recovery / "source-receipt.json").read_bytes(),
+                b"old-receipt\n",
+            )
+            self.assertTrue((output / "AetherLink.app").is_dir())
+            self.assertTrue((output / "AetherLink.dSYM").is_dir())
+            self.assertFalse((output / "AetherLink.app/preserve.txt").exists())
+
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace, environment, _ = self.make_fake_package_workspace(
+                temporary,
+                resource_bundle_count=1,
+            )
+            fake_rm = Path(environment["PATH"].split(":", 1)[0]) / "rm"
+            fake_rm.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'last_argument="${!#}"\n'
+                'last_basename="${last_argument##*/}"\n'
+                'if [[ "$last_basename" == .unsealed-package-only.stage-* ]]; then\n'
+                "  exit 93\n"
+                "fi\n"
+                'exec /bin/rm "$@"\n',
+                encoding="utf-8",
+            )
+            fake_rm.chmod(0o755)
+            output = workspace / "dist/unsealed-package-only"
+            old_app = output / "AetherLink.app"
+            old_dsym = output / "AetherLink.dSYM"
+            old_app.mkdir(parents=True)
+            old_dsym.mkdir()
+            (old_app / "preserve.txt").write_bytes(b"old-app")
+            (old_dsym / "preserve.txt").write_bytes(b"old-dsym")
+            (output / "source-receipt.json").write_bytes(b"old-receipt\n")
+            environment["FAKE_UNSEALED_PUBLISH_CLEANUP_WARNING"] = "1"
+
+            result = subprocess.run(
+                [
+                    "/bin/bash",
+                    str(workspace / "script/build_and_run.sh"),
+                    "--unsealed-package-only",
+                ],
+                cwd=workspace,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result)
+            self.assertIn("injected committed cleanup warning", result.stderr)
+            self.assertIn(
+                "could not clean unsealed staging generation",
+                result.stderr,
+            )
+            self.assertTrue((output / "AetherLink.app").is_dir())
+            self.assertFalse((output / "AetherLink.app/preserve.txt").exists())
+            retained = [
+                path
+                for path in (workspace / "dist").glob(
+                    ".unsealed-package-only.stage-*"
+                )
+                if path.is_dir()
+            ]
+            self.assertEqual(len(retained), 1)
+            self.assertEqual(
+                (retained[0] / "AetherLink.app/preserve.txt").read_bytes(),
+                b"old-app",
+            )
+
+    def test_unsealed_package_only_reproducibility_seam_uses_exact_fixed_flags(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace, environment, invocation_log = self.make_fake_package_workspace(
+                temporary,
+                resource_bundle_count=1,
+            )
+            script = workspace / "script/build_and_run.sh"
+            scratch = Path(temporary).resolve() / "repro-swift-scratch"
+            self.set_fixed_repro_scratch_path(script, scratch)
+            expected_options = (
+                f"-c release --jobs 1 --scratch-path {scratch} "
+                "-Xswiftc -num-threads -Xswiftc 1 "
+                "-Xswiftc -file-prefix-map "
+                f"-Xswiftc {workspace.resolve()}=/aetherlink/source "
+                "-Xswiftc -file-compilation-dir "
+                "-Xswiftc /aetherlink/source "
+                "-Xswiftc -prefix-serialized-debugging-options "
+                "-Xcc -working-directory "
+                f"-Xcc {scratch} "
+                "-Xcc -Xclang "
+                "-Xcc -fdebug-compilation-dir=/aetherlink/source "
+                "-Xcc -Xclang -Xcc -fdisable-module-hash "
+                "-Xcc -Xclang -Xcc -fbuild-session-timestamp=0 "
+                "-Xcc -Xclang -Xcc -fno-pch-timestamp "
+                "-Xlinker -reproducible"
+            )
+            environment["AETHERLINK_REPRO_SWIFT_SCRATCH_PATH"] = str(scratch)
+            environment["FAKE_SWIFT_BUILD_OPTIONS"] = expected_options
+
+            result = subprocess.run(
+                ["/bin/bash", str(script), "--unsealed-package-only"],
+                cwd=workspace,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result)
+            self.assertEqual(
+                invocation_log.read_text(encoding="utf-8").splitlines(),
+                [
+                    f"swift build {expected_options} --product AetherLink",
+                    f"swift build {expected_options} --show-bin-path",
+                ],
+            )
+
+    def test_unsealed_package_only_codesign_and_launch_branches_are_disjoint(
+        self,
+    ) -> None:
+        source = SCRIPT_PATH.read_text(encoding="utf-8")
+        self.assertEqual(source.count("/usr/bin/codesign"), 2)
+        self.assertIn(
+            'if is_package_only; then\n'
+            '  /usr/bin/codesign --force --deep --sign - "$APP_BUNDLE"\n'
+            '  /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"\n'
+            "fi\n",
+            source,
+        )
+        unsealed_case = source.split(
+            "  --unsealed-package-only|unsealed-package-only)\n",
+            1,
+        )[1].split("    ;;", 1)[0]
+        self.assertNotIn("open_app", unsealed_case)
+        self.assertNotIn("codesign", unsealed_case)
 
     def test_package_only_reproducibility_seam_uses_exact_fixed_flags(
         self,

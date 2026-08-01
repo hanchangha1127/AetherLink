@@ -7,20 +7,107 @@ This document records what has been implemented so far and what should happen ne
 The previous-release summary remains under Historical Local V1 Build 23
 Qualification below.
 
+## 2026-08-01 Current Local Qualification Summary
+
+- Local V1 Build 24 Qualification remains the current local release record.
+- Build 24 is the current local qualification record; Builds 1 through 23 are immutable historical records.
+- Both v4 two-root runs in the retained current-source lifecycle-two parent
+  record exact A/B archive and member equality. The full checker validates all
+  six children before treating the parent as the commit marker.
+
+## 2026-08-01 G6/G7 macOS Unsealed Release Direct Readback
+
+- Producer result: `script/build_and_run.sh --unsealed-package-only` performs
+  one clean Swift Release product build, leaves the development
+  `dist/AetherLink.app` and existing ad-hoc package roots untouched, captures
+  the same source snapshot before and after assembly, and stages
+  exactly `AetherLink.app`, the matching `AetherLink.dSYM`, and a canonical
+  source receipt. It atomically swaps the complete three-entry generation into
+  the fixed `dist/unsealed-package-only` root, preserving the previous good
+  generation on build or replacement failure. It does not stop or launch the
+  app and does not invoke outer-bundle codesigning.
+- Direct readback: the checker reports each Build 24 generation's app/dSYM
+  sizes, domain-separated closed-tree identities, thin arm64 architecture, and
+  shared UUID. Those locally linked identities are intentionally execution
+  output rather than tracked-source constants because a later clean link may
+  produce a new UUID. Plist version `1.0.0+24`, bundle ID, minimum macOS 14.0,
+  five locales, exact modes, and closed inventories agree.
+- Stable-byte boundary: the canonical receipt binds ledger `1.0.0+24` and the
+  source snapshot. The checker uses bounded no-follow reads for the
+  receipt and source before and after the output readback, rechecks both trees
+  and all bytes, materializes only those captured bytes in a new temporary
+  root, and runs `lipo`/`dwarfdump` against the materialized copy.
+  `_CodeSignature` and `CodeResources` are structurally absent. This proves no
+  outer app-bundle seal; it deliberately makes no claim that the Mach-O lacks
+  Apple's linker-generated ad-hoc signature.
+- CI and regression contract: pull requests and `main` run the 17/17 fake-
+  toolchain producer suite. After the focused Swift result binding, `main`
+  runs the atomic source-receipt producer and `--macos-build-outputs` readback.
+  The independent archive/direct-reader suite passes 78/78, and the product CI
+  contract plus mutation self-test pass. Workflow raw SHA-256 is
+  `f54539d21bdd8d3344444484ccb36a14862b2af7f500ba46e80dd41459512e2d`;
+  parsed-semantic SHA-256 is
+  `ac7321114f6a0ac590831dd35e8f661e619b1a77d792c3d8c200f2cc3737b16c`.
+- Boundary: this is local current-source, same-host, unsealed build-output
+  evidence. It is not bit-for-bit build reproducibility, Developer ID signing,
+  notarization, installation, launch, clean-machine, update/rollback,
+  device/network, hosted-workflow, canonical G6/G7 exit, RC/GA, or V1-
+  production evidence. No staging, commit, or push was performed.
+
+## 2026-08-01 G6 Reverse-Version Successor And G7 Tracked Docs Contract
+
+- G6 result: two fresh same-host executions again completed the preserved
+  Build 24 -> 23 -> 24 fixed-canary readback. The new create-only successor
+  result is 7,859 bytes at SHA-256
+  `dbaa422de18ab37e9f4b92d7e78631fad9719e6c6d41fe30ccb402365267d416`;
+  its 1,266-byte repeatability receipt has SHA-256
+  `818474ea0469e10f836c237ef3d8cab3ec95ffd5da6299c13ea730982ff08a80`.
+  The result bytes exactly equal both the preceding
+  `android-release-byte-readback-one` successor and the original unsuffixed v1
+  result. All three result/receipt generations remain unchanged and are pinned
+  by the standalone checker.
+- Current execution-source binding: the successor checker binds the current
+  247,676-byte release-archive checker at SHA-256
+  `8405ad0a532b2b88799f370da15b1a13694f1c9d3f79d9b3f0d4be8a5bbe2452`
+  together with the other nine execution-source files, both retained archive
+  triplets, the ledger, and all six evidence files. Its combined runner/checker
+  suite passes 29/29, and independent readback passes.
+- G7 CI result: the macOS PR lane now runs
+  `check_docs_hygiene.py --tracked-contracts-only` plus the two exact bounded
+  mode regressions before compilation. The full local checker still performs
+  raw ignored-`dist` evidence readback; the tracked mode deliberately does not.
+  Product CI pins the new step name, exact command bodies, order, and three
+  representative removal/bypass mutations. Workflow raw SHA-256 is
+  `f54539d21bdd8d3344444484ccb36a14862b2af7f500ba46e80dd41459512e2d`;
+  parsed-semantic SHA-256 is
+  `ac7321114f6a0ac590831dd35e8f661e619b1a77d792c3d8c200f2cc3737b16c`.
+- Clean-checkout proof: a temporary copy containing only current Git-tracked
+  files, with neither `.git` nor `dist/`, passes the product CI contract and
+  self-test, the tracked documentation contract across 36 documents, and the
+  exact two focused mode tests. The complete local documentation suite passes
+  134/134 with the ignored evidence files present.
+- Boundary: this closes one local G6 evidence-source drift and one clean-
+  checkout G7 PR-fast documentation-contract gap. It is not hosted workflow,
+  signed/notarized distribution, supported N/N-1 upgrade or rollback,
+  physical-device, network, canonical G6/G7 exit, RC/GA, or V1-production
+  evidence. No staging, commit, or push was performed.
+
 ## 2026-08-01 G6/G7 Android Release APK+AAB Direct Readback
 
 - Build result: the current source passes strict-lock
   `:app:assembleRelease`, `:app:bundleRelease`, and `:app:lintRelease` with
-  `BUILD SUCCESSFUL` across 175 actionable tasks. The 9,575,138-byte APK has
-  SHA-256
-  `66b39dc47145af1ee75c0e2f88e088ec616636a1d2b635cc730e42b004ab47d8`;
+  `BUILD SUCCESSFUL` across 175 actionable tasks in each of two consecutive
+  clean executions. Both APK/AAB pairs are byte-identical. The 9,575,138-byte
+  APK has SHA-256
+  `0eea6b2b230d1570ec6d9d3b09b203c6449e56a0671710afd5da8a8f789d4b21`;
   the 10,687,499-byte AAB has SHA-256
-  `34847e9e9386609b8285396a763aa26df9ff2120d1a1d51a5862f193ffcbe385`.
+  `2a26fb1b625ace338b7a42575251cf04a4c5395f38ff9450b1776897964f2179`.
 - Independent readback: `script/check_release_artifact_archive.py --android-build-outputs`
   reads the fixed Gradle output paths without
   creating an archive or requiring macOS artifacts. It binds ledger version
-  `1.0.0+24`, APK/AAB metadata and three baseline profiles, APK badging and
-  final manifests, bundletool validation/resources/config/universal-APK
+  `1.0.0+24`, APK/AAB metadata and two baseline-profile API ranges with their
+  DM files, APK badging and final manifests, bundletool
+  validation/resources/config/universal-APK
   results, all six R8 outputs, pinned raw `mapping.txt` and logical PRT
   identities, five arm64-v8a JNI members, 191 SDK dependencies with their
   text/protobuf graph and Gradle lock closure, APK/AAB DEX identity, and the
@@ -39,11 +126,11 @@ Qualification below.
   `check_product_ci.py` pins the exact tasks, step bodies, branch conditions,
   order, and bypass mutations. The
   workflow raw SHA-256 is
-  `bba5b364cc32ccf31f80d0836b0f1bc22ba9444ec8b4400848b25c44b857a97c`;
+  `f54539d21bdd8d3344444484ccb36a14862b2af7f500ba46e80dd41459512e2d`;
   its parsed-semantic SHA-256 is
-  `5fedce03ffe74a191e15df1385b6019f503856c817530dce46e14cc3e971d86c`.
+  `ac7321114f6a0ac590831dd35e8f661e619b1a77d792c3d8c200f2cc3737b16c`.
   The CI contract and mutation self-test pass, and the release archive suite
-  passes 68/68.
+  passes 73/73.
 - Boundary: this is local current-source, no-device build/readback evidence.
   It does not sign, publish, install, launch, or upload either artifact and
   does not prove release-to-release upgrade, physical-device behavior,
@@ -111,15 +198,17 @@ Qualification below.
 - Swift result binding: the pre-run marker admits only the 27 explicit
   `Package.swift` `Sources`/`Tests` target roots. Its 216-file source manifest
   has SHA-256
-  `4310fe4c0226aa8b817001b6268872a4283e6212f6c205bfbadce5326b2a5e21`;
+  `6c53df0d6d60da19511c6dd7c97cfa893807154d67f0788ad1f5fbccd3148bfb`;
   sibling `.build` and `CompanionCore/build` outputs are excluded, while target
   kind/path drift and nested generated build paths fail closed. The serial
   runner validates exit zero, the complete temporary console, and current
   marker/source bytes before atomically replacing the canonical log. The
-  82,153-byte log SHA-256 is
-  `afe9c1382526e5cfb37265d07c018408fe02d17a055f0f4f0f5392b3a49a12b2`;
+  363-byte marker SHA-256 is
+  `f83159fcfb0cfa1f0cfac14759ca8b51f9fa8783896db40c23ed9249b8f805ff`;
+  the 82,150-byte log SHA-256 is
+  `834aab151364483ec623ff605fd25e64705728719f9112f6f8f0bda9f3355b02`;
   the 711-byte binding SHA-256 is
-  `8b24757782800d70734a06e42e08a7f50915eec5b08e488ae2bbcdf4b34ce667`,
+  `4ac7248d850f363f01b087bfaebef3f0221e2d629b4a3a991cf852386645bc26`,
   and immediate independent readback passes. Subprocess regressions prove
   nonzero, malformed, oversized, context-drift, and launch-error runs preserve
   the previous canonical log.
@@ -130,15 +219,22 @@ Qualification below.
   same-count method substitution is rejected.
 - Android complete result: a fresh offline forced run executes all 19 selected
   app classes and passes 1,226/1,226 with zero skips, failures, or errors. The
-  pre-run source marker, exact 19-report set, full testcase manifest
+  pre-run source marker binds 105 files at SHA-256
+  `2eb3273cb4d207a7a9e9d193ae77fc21989387014eba79fa33ce4f80a950c08b`;
+  its exact 1,819-byte marker SHA-256 is
+  `140fb071289a7369c16d6de24d4d02111ac4a962bffc773c161735364f5ad9dc`.
+  The exact 19-report set has full testcase manifest
   `cc3ea9e2d72ca96e7f937b22a893d8cdaf38c409564ac8baecc5b947b8aa1b78`,
-  canonical binding, and immediate independent readback all pass.
+  and the 3,764-byte canonical binding SHA-256 is
+  `fbca9180e39a4ab7904807b4b21157abfce77976437a15c555a8169e74785061`;
+  immediate independent readback passes.
 - Guard result: `script/check_product_ci.py` pins all new step bodies,
   branch-specific conditions, selector/task order, rerun requirement, binding commands, and
-  representative bypass mutations. The workflow raw SHA-256 is
-  `bba5b364cc32ccf31f80d0836b0f1bc22ba9444ec8b4400848b25c44b857a97c`;
+  representative bypass mutations, including the clean-checkout tracked
+  documentation step. The workflow raw SHA-256 is
+  `f54539d21bdd8d3344444484ccb36a14862b2af7f500ba46e80dd41459512e2d`;
   its parsed-semantic SHA-256 is
-  `5fedce03ffe74a191e15df1385b6019f503856c817530dce46e14cc3e971d86c`.
+  `ac7321114f6a0ac590831dd35e8f661e619b1a77d792c3d8c200f2cc3737b16c`.
   The base contract and mutation self-test pass.
 - Boundary: this is local no-device JVM/XCTest evidence. The new workflow bytes
   have not run on a hosted runner and do not complete canonical G7 `PR fast` or
@@ -333,50 +429,51 @@ Qualification below.
   not alter the Build 24 ledger/archive, create or publish Build 25, install on
   a device, perform distribution signing, or establish production release.
 <!-- aetherlink-current-source-g6-lifecycle-suite-v1:start -->
-**Latest current-source G6 exact Lane-A DMG and idle-resource lifecycle-suite
-handoff.** The comparison-only run bound 266 release inputs at source SHA-256
-`1ce988eebfde4af320f82ac100e2e12c95c72a3127efcf6e25c156de87cf75ff`
+**Recorded predecessor G6 exact Lane-A DMG and idle-resource lifecycle-suite
+handoff.** At its execution snapshot, the comparison-only run bound 266
+release inputs at source SHA-256
+`63eeefbd7d13bf86452f39fc69337246f8a7ed0b945b5793f7f3ed33f3974c42`
 and execution overlay SHA-256
-`90c4554cf60cb3c938b0b19ee02f04d311de969cd1ded8e4411c8b3fb0307ff3`.
+`cf674143e321be2db26d1ea3b70c15dc05c6aed2182acb25e584b8da06256de6`.
 Its unequal 101- and 109-byte source roots produced the exact same
-167,086,073-byte archive at SHA-256
-`b35e2353867bfabb198e2b6887bd6ebcfee3dedf813bbf80bbcd7106742377a6`,
+167,086,118-byte archive at SHA-256
+`cabc9dc622d55d3c3217a4542fd072b5884e49c717621fcfbc96b2f9f5b17037`,
 with a 15,200-byte manifest at
-`b3d1110e77ff3f74c8bda337881438c8bf314f688b6e3304be3633d649b0b5fb`
+`96505c31782a5fc4f10544a0e18ca8db8019528f5d78caed9eaf2463725c33a9`
 and a 99-byte checksum sidecar at
-`1f38dd5fbb3c9ffe61e5aa8da5d94895ba9e17002c3c77501ba50e27f2b9bce8`.
+`9e5bf156e16d87f428d3de7484deebc29370e6fc0f920300850b547f4a19b11d`.
 All archive/member equality flags are true and both difference lists are
 empty. The exact 19,645-byte primary result is
-`dist/reproducibility/aetherlink-1.0.0+24-local-v1-two-root-v4-prepublication-current-source-g6-android-release-byte-readback-nine.json`,
+`dist/reproducibility/aetherlink-1.0.0+24-local-v1-two-root-v4-prepublication-current-source-g6-macos-unsealed-gate-source-binding-one.json`,
 SHA-256
-`f866f82d92ec7e72f79a4099ebbf4e756c3fa3deffca16d4864e6daf8e30c394`.
+`b4581b21f5626f111f0d8cd7ef6858899c01ba366de23e1c667912497e93ece3`.
 
 Only after exact A/B equality, the runner handed the materialized Lane-A
 archive to the complete local-DMG and idle-resource lifecycle suite. The exact
 3,038-byte install result is
-`dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-local-dmg-install-v2-current-source-g6-android-release-byte-readback-nine.json`,
+`dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-local-dmg-install-v2-current-source-g6-macos-unsealed-gate-source-binding-one.json`,
 SHA-256
-`1d3775d2c909ab2f5f0f7d54c463e131fdd3385269f1254e191446fd6571c0fb`.
+`154e5fb9ae0b0cd9f07b6b34135bc6fab1ea36e61464f967995d58bf57e68e92`.
 The exact 3,485-byte same-DMG uninstall/reinstall result is
-`dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-local-dmg-uninstall-reinstall-v1-current-source-g6-android-release-byte-readback-nine.json`,
+`dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-local-dmg-uninstall-reinstall-v1-current-source-g6-macos-unsealed-gate-source-binding-one.json`,
 SHA-256
-`7718668091ec8ad143e7f392e98f3e1b01492223ab854046c1eb714e3bdbba0b`.
+`4fb0fc1f48df89e600edebde7afaf78a372ffd7e417d31b788cdb6e7ef400306`.
 The exact 4,996-byte state-recovery result is
-`dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-local-dmg-uninstall-reinstall-state-recovery-v1-current-source-g6-android-release-byte-readback-nine.json`,
+`dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-local-dmg-uninstall-reinstall-state-recovery-v1-current-source-g6-macos-unsealed-gate-source-binding-one.json`,
 SHA-256
-`622f218db9ce32d0593e5a043ae4ee695949bf0481d9678c1b030b5c8d9011ff`.
+`9530e99b9597da098b70abed657b923c523cf67552e1f0c203fb3bd16e5e11c6`.
 The exact 7,200-byte abrupt-process recovery result is
-`dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-local-dmg-uninstall-reinstall-abrupt-process-state-recovery-v1-current-source-g6-android-release-byte-readback-nine.json`,
+`dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-local-dmg-uninstall-reinstall-abrupt-process-state-recovery-v1-current-source-g6-macos-unsealed-gate-source-binding-one.json`,
 SHA-256
-`f0e8eedb3bea8037223618b111b13e9e3f78b3982fd2e9c728e40bed1608f151`.
-Its exact 997-byte two-run repeatability receipt is
-`dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-local-dmg-uninstall-reinstall-abrupt-process-state-recovery-repeatability-v1-current-source-g6-android-release-byte-readback-nine.json`,
+`fe5d2d843f69e12484bfe905b4789de5d85b5c400d83ab6bedd280f7fd00ed44`.
+Its exact 1,001-byte two-run repeatability receipt is
+`dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-local-dmg-uninstall-reinstall-abrupt-process-state-recovery-repeatability-v1-current-source-g6-macos-unsealed-gate-source-binding-one.json`,
 SHA-256
-`4896fed1b150cf4d409ac5d1e2001fa13486f06b3b30c7260f34803b945a40db`.
+`77d0d6477884bc5919ec9ee3babb8182a07bbb892f18a05eb8148b5c0db1f3a5`.
 The exact 22,399-byte current-source idle-resource result is
-`dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-idle-resource-stability-v1-current-source-g6-android-release-byte-readback-nine.json`,
+`dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-idle-resource-stability-v1-current-source-g6-macos-unsealed-gate-source-binding-one.json`,
 SHA-256
-`51d9e7523138044709a078316986295416014034f6e2542710a64ab13b0c64b5`.
+`fd06f7c618e86b3adfa57aec4966534b25347f9b984b0aef52206052cf1ce570`.
 
 The suite executed install, same-image removal/reinstall, and fixed-canary
 state recovery before two independent abrupt-process cycles. Each abrupt cycle
@@ -388,11 +485,12 @@ The two 7,200-byte canonical results were byte-identical.
 
 The final owned, sandboxed app received a 60,000 ms warm-up and 600,000 ms
 observation with 120 samples at 5,000 ms intervals; maximum sample lateness was
-80 ms. Open file descriptors stayed at baseline/final/maximum 4, threads stayed
-at 3, and resident bytes stayed at 140,673,024, so every final and peak delta
-was zero. The idle result binds the same 266-file source snapshot and the same
+79 ms. Open file descriptors stayed at baseline/final/maximum 4. Threads stayed
+at baseline/final/maximum 3. Resident bytes stayed at
+baseline/final/maximum 140,001,280. Every final and peak delta was zero.
+The idle result binds the same 266-file source snapshot and the same
 ten-file installed app tree of 21,356,326 bytes at SHA-256
-`0dd6363420e79b90ffac38fdf9410cc109122800f071ca9e1e66bf579ea21145`.
+`2596df8daa50f962ef776032a2487dd10d431b621f08d496d67b221fac0c9b64`.
 It denied network access, confined writes to its temporary root, preserved
 pre-existing applications, reaped only its owned child, and removed the
 temporary root before publication.
@@ -409,8 +507,91 @@ manifest, checksum, archive-readback projection, installed tree, source
 snapshot, repeatability identity, and recomputed idle summary to the parent
 current-source Lane-A result. No lane archive was retained or published,
 comparison-only release publication stayed disabled, and the protected Build
-23 archive stayed unchanged. This proves only one same-host, per-user, local
-ad-hoc exact lifecycle and bounded idle-resource handoff. It does not prove
+23 archive stayed unchanged.
+
+A later full unequal-root lifecycle attempt failed its A/B exact comparator
+before the atomic publication step. After the runner and its contracts were
+strengthened, four retained comparison-only diagnostic result files recorded
+the newer 266-file source snapshot at SHA-256
+`eefe8cbf522afd152529b3b4b0ee6862616e832e7e4a8f29c268434b783a7ce6`
+and overlay SHA-256
+`b63123aef04182da7ae7192495d92487a3b5c7957fbbc271dc2e82f63c763651`.
+The four exact JSON files are retained in the `dist/reproducibility/*-swift-root-diagnostic-v1-*.json` namespace.
+The same-physical 104/104-byte-root result is 19,648 bytes at SHA-256
+`c10b20231d7b8cc7a2bf5cfd325c97f831b64e167c0491641be34b20d3746e85`;
+the distinct-equal 101/101-byte-root result is 19,644 bytes at SHA-256
+`85255949ed10573c550155779c6d47545f68cd2c95cb0380466b8f489ca6c740`;
+and both retained distinct-unequal 101/109-byte-root results are the same
+19,656 bytes at SHA-256
+`0e7fd34a6e4a4f477a8420c9f536a22008318501245f8b0ac4acd03ee08606b0`.
+All eight recorded build entries identify the exact same 167,086,073-byte
+archive at SHA-256
+`a4a3615717ac4786086220e5894d2c196d70e31f03892c2fc7e609ede4e50274`,
+15,200-byte manifest at
+`22f63e62a39c4f1a2f4ec377dc45703afc37bfb38dcc45b01102af693e6d1f50`,
+and 99-byte checksum sidecar at
+`1eaf24633eb3e8993768c2d4c5a4c1d234b12a8782008bc7c3a700b9911738ea`;
+their complete archive inventories match, every comparison flag is true, and
+both difference lists are empty. The two unequal-root result files are exact
+byte copies. Publication remained disabled, no lifecycle child was created,
+and the protected Build 23 archive remained unchanged.
+
+The retained current-source lifecycle-two successor then bound the same 266
+release inputs at source SHA-256
+`eefe8cbf522afd152529b3b4b0ee6862616e832e7e4a8f29c268434b783a7ce6`
+and execution overlay SHA-256
+`ee81fd795de1728dd483f44af5afaa839bc95e61e401b4ba3bbc41925cb0fd06`.
+Both v4 two-root runs used the canonical unequal 101/109-byte geometry and
+recorded the same 167,086,073-byte archive, 15,200-byte manifest, 99-byte
+checksum, complete member inventory, and empty difference lists as the newer
+diagnostic record. Its exact 19,645-byte parent is
+`dist/reproducibility/aetherlink-1.0.0+24-local-v1-two-root-v4-prepublication-current-source-g6-swift-root-matrix-lifecycle-two.json`,
+SHA-256
+`984e8baef1a332a0ee67cb7cabdbf196f875b9c5837ce3444dbfa801a907b43b`.
+
+Only after that exact A/B comparison, the retained suite recorded these six
+create-only lifecycle children:
+
+- 3,038-byte install result, SHA-256
+  `16d1bde4bb4499303ff2f7b114848c57e1163ef36c8b86ef9d001333e1334cde`,
+  at `dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-local-dmg-install-v2-current-source-g6-swift-root-matrix-lifecycle-two.json`;
+- 3,485-byte uninstall/reinstall result, SHA-256
+  `8fdb6f9dc7f41dda4d0083dea6fb6bb45644dd4560d9a98ecacb75d3836b8136`,
+  at `dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-local-dmg-uninstall-reinstall-v1-current-source-g6-swift-root-matrix-lifecycle-two.json`;
+- 4,996-byte state-recovery result, SHA-256
+  `a4cf9d0fcd0164fb5193f36e084110492488a50643ace63ce7f021a522b89b5a`,
+  at `dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-local-dmg-uninstall-reinstall-state-recovery-v1-current-source-g6-swift-root-matrix-lifecycle-two.json`;
+- 7,200-byte abrupt-process recovery result, SHA-256
+  `a1beb69b55c7c0cc909d72d4e36b8620585ad2e13e60f26c26332529a4abee3f`,
+  at `dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-local-dmg-uninstall-reinstall-abrupt-process-state-recovery-v1-current-source-g6-swift-root-matrix-lifecycle-two.json`;
+- 994-byte abrupt-process repeatability receipt, SHA-256
+  `8f5a97a10e5d1c267fa9fee45cba57237f5ffdb72d8ad834df01fc86ed8e77b2`,
+  at `dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-local-dmg-uninstall-reinstall-abrupt-process-state-recovery-repeatability-v1-current-source-g6-swift-root-matrix-lifecycle-two.json`;
+- 22,399-byte idle-resource result, SHA-256
+  `02141c8e8e734417e359d566c656af87911146d9c0e1b9c01c382dd3fc2b9b66`,
+  at `dist/lifecycle/macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-idle-resource-stability-v1-current-source-g6-swift-root-matrix-lifecycle-two.json`.
+
+The successor children cross-bind the parent archive, manifest, checksum,
+source snapshot, and exact ten-file installed tree of 21,356,326 bytes at
+SHA-256
+`0dd6363420e79b90ffac38fdf9410cc109122800f071ca9e1e66bf579ea21145`.
+The owned idle process completed a 60,000 ms warm-up and 600,000 ms observation
+with 120 samples at 5,000 ms intervals and maximum lateness 84 ms. File
+descriptors stayed at 4, threads at 3, and resident bytes at 140,296,192;
+every recomputed final and peak delta was zero. The full documentation checker
+reads and validates all six children before treating the parent as the commit
+marker. It performs stable no-follow reads, pins all seven identities, reuses
+the runner's closed lifecycle validators, and rereads the parent after
+cross-binding. It does not invoke archive publication or physical-archive
+validation.
+
+The earlier failed lifecycle attempt remains failed and is not relabeled by
+the diagnostic or successor records. Together, the retained records prove only
+the exact predecessor lifecycle snapshot, the newer same-host four-file,
+three-geometry comparison record, and this exact current-source parent+6
+successor. They do not prove arbitrary future rerun repeatability or universal
+source-root independence.
+They also do not prove
 in-flight transaction durability, power loss, kernel crash, OS restart,
 arbitrary history or long soak, arbitrary cross-host or clean-machine
 reproducibility, Finder/quarantine/Gatekeeper behavior, signed/notarized
@@ -802,7 +983,8 @@ other remaining G6/G7 exit requirements.
 ## 2026-08-01 macOS Build 24-to-23-to-24 Bounded Reverse-Version Readback
 
 <!-- aetherlink-current-build24-reverse-version-readback-v1:start -->
-**Latest Build 24-to-23-to-24 bounded reverse-version readback.** Two
+**Latest current execution-source successor over the preserved
+Build 24-to-23-to-24 archives.** Two
 independent same-host executions used private snapshots of the exact local
 ad-hoc Build 24 and historical Build 23 ZIP, manifest, and checksum sidecars.
 Each execution installed Build 24 under one temporary per-user HOME, created
@@ -823,13 +1005,19 @@ SQLite files passed integrity checks, and every retained state-file byte and
 mode remained unchanged through all three installations and removals.
 
 The two executions produced the same canonical 7,859-byte result at
-`dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-isolated-reverse-version-readback-v1.json`,
+`dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-isolated-reverse-version-readback-v1-current-source-g6-macos-release-byte-readback-two.json`,
 SHA-256
 `dbaa422de18ab37e9f4b92d7e78631fad9719e6c6d41fe30ccb402365267d416`.
-The create-only 1,216-byte repeatability receipt is at
-`dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-isolated-reverse-version-readback-repeatability-v1.json`,
+The create-only 1,266-byte repeatability receipt is at
+`dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-isolated-reverse-version-readback-repeatability-v1-current-source-g6-macos-release-byte-readback-two.json`,
 SHA-256
-`c332a0512f8ac001fa5b81f29dada9e91d9fd441b43b66c0346105295ac749d8`.
+`818474ea0469e10f836c237ef3d8cab3ec95ffd5da6299c13ea730982ff08a80`.
+The result bytes exactly match both the preceding
+`android-release-byte-readback-one` successor and the original unsuffixed v1
+observation; all three result files and their receipts remain unchanged. After
+normalizing only `canonicalResult.fileName`, each adjacent receipt pair is
+identical; their different 1,266-, 1,268-, and 1,216-byte identities bind only
+the respective create-only canonical result filenames.
 Publication records each link intent before linking, fsyncs payloads and the
 existing physical parent, rejects symlink ancestors and non-owned or
 non-0600 evidence targets, rolls back only exact owned inodes on every
@@ -839,14 +1027,17 @@ The 44,003-byte runner and 31,118-byte 14-test module have SHA-256 values
 `e22a3e32e0556428f1d0274a75b4bbe93c5f5d28fe1a60607e1537a3db1771b1`
 and
 `41aadb2c9e2e961b9934ebac284df0a4f9b60f7b6fa4d02992b50775da47647b`.
-The standalone 27,382-byte read-only checker and 13,039-byte 13-test module
+The standalone 31,402-byte read-only checker and 15,942-byte 15-test module
 have SHA-256 values
-`5bec67cdce2ed4669c4802a74a30cce98080aace791d6e6558112764309cf598`
+`a6ef39ea10c314e756b2f92ad4ec07474da4f92bddb817a867acee2b33808b84`
 and
-`40058002833640ae27c88435a162da071a39618ae64c1fb9a46368a51e2dd5d7`.
-The checker retains and revalidates all evidence descriptors, the exact ledger,
-both three-file archive snapshots, and the ten-file direct execution-source
-closure. It rejects canonical/type/schema, claim-boundary, source-membership,
+`019e0ae415b77cbd3458c3bb98a2107f0218b3a76df661f9fadb99843cbacb40`.
+The checker retains and revalidates all three generations and their six
+evidence descriptors, the exact ledger, both three-file archive snapshots,
+and the ten-file direct execution-source closure, including the current
+247,676-byte release-archive checker at SHA-256
+`8405ad0a532b2b88799f370da15b1a13694f1c9d3f79d9b3f0d4be8a5bbe2452`.
+It rejects canonical/type/schema, claim-boundary, source-membership,
 archive, state, tree, receipt, file-replacement, and symlink-ancestor mutations.
 
 This is a fixed-canary compatibility observation, not an updater, downgrade,

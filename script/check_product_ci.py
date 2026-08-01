@@ -73,10 +73,10 @@ ANDROID_FONT_SCALE_METHODS = (
     "coreSurfacesRemainUsableAt200PercentFontScale",
 )
 CANONICAL_WORKFLOW_SHA256 = (
-    "bba5b364cc32ccf31f80d0836b0f1bc22ba9444ec8b4400848b25c44b857a97c"
+    "f54539d21bdd8d3344444484ccb36a14862b2af7f500ba46e80dd41459512e2d"
 )
 CANONICAL_PARSED_WORKFLOW_SHA256 = (
-    "5fedce03ffe74a191e15df1385b6019f503856c817530dce46e14cc3e971d86c"
+    "ac7321114f6a0ac590831dd35e8f661e619b1a77d792c3d8c200f2cc3737b16c"
 )
 
 REQUIRED_WORKFLOW_PREFIX = """name: Product quality (non-security subset)
@@ -791,6 +791,51 @@ SWIFT_TEST_RESULT_STEP_BODY = (
     "--swift-focused-test-results\n"
 )
 
+TRACKED_DOCUMENTATION_CONTRACT_TESTS = (
+    "script.test_documentation_handoff_guards."
+    "DocumentationHandoffGuardTests."
+    "test_tracked_document_contract_mode_excludes_ignored_evidence_readback",
+    "script.test_documentation_handoff_guards."
+    "DocumentationHandoffGuardTests."
+    "test_tracked_document_contract_cli_is_explicit_and_bounded",
+)
+
+TRACKED_DOCUMENTATION_CONTRACT_STEP_BODY = (
+    "        run: |\n"
+    "          python3 -B script/check_docs_hygiene.py "
+    "--tracked-contracts-only\n"
+    "          python3 -B -m unittest \\\n"
+    f"            {TRACKED_DOCUMENTATION_CONTRACT_TESTS[0]} \\\n"
+    f"            {TRACKED_DOCUMENTATION_CONTRACT_TESTS[1]}\n"
+)
+
+MACOS_PACKAGE_CONTRACT_TEST_STEP_BODY = (
+    "        run: PYTHONPATH=. python3 -B script/test_build_and_run.py\n"
+)
+
+MACOS_UNSEALED_RELEASE_BUILD_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: |\n"
+    "          source_before=\"$(python3 -B "
+    "script/package_release_artifacts.py source-digest)\"\n"
+    "          ./script/build_and_run.sh --unsealed-package-only\n"
+    "          source_after=\"$(python3 -B "
+    "script/package_release_artifacts.py source-digest)\"\n"
+    '          if [[ "$source_before" != "$source_after" ]]; then\n'
+    '            echo "macOS Release build inputs changed during packaging" >&2\n'
+    "            exit 2\n"
+    "          fi\n"
+)
+
+MACOS_UNSEALED_RELEASE_READBACK_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: >-\n"
+    "          python3 -B script/check_release_artifact_archive.py\n"
+    "          --macos-build-outputs\n"
+)
+
 ANDROID_TEST_STEP_BODY = (
     "        run: >-\n"
     "          ./gradlew\n"
@@ -921,6 +966,14 @@ MACOS_STEPS = (
         "          python3 -B script/check_license.py\n",
     ),
     (
+        "Run tracked documentation contracts",
+        TRACKED_DOCUMENTATION_CONTRACT_STEP_BODY,
+    ),
+    (
+        "Run macOS release package contract units",
+        MACOS_PACKAGE_CONTRACT_TEST_STEP_BODY,
+    ),
+    (
         "Compile macOS app",
         "        run: swift build --product AetherLink\n",
     ),
@@ -934,10 +987,12 @@ MACOS_STEPS = (
         SWIFT_TEST_RESULT_STEP_BODY,
     ),
     (
-        "Compile macOS Release app on main",
-        "        if: >-\n"
-        f"          {MAIN_RELEASE_CONDITION}\n"
-        "        run: swift build -c release --product AetherLink\n",
+        "Build unsealed macOS Release package on main",
+        MACOS_UNSEALED_RELEASE_BUILD_STEP_BODY,
+    ),
+    (
+        "Read back unsealed macOS Release package on main",
+        MACOS_UNSEALED_RELEASE_READBACK_STEP_BODY,
     ),
 )
 
@@ -1370,6 +1425,12 @@ def workflow_failures(
             "python3 -B script/check_release_version_ledger.py",
             "python3 -B script/check_app_icons.py",
             "python3 -B script/check_license.py",
+            "python3 -B script/check_docs_hygiene.py "
+            "--tracked-contracts-only",
+            "python3 -B -m unittest",
+            TRACKED_DOCUMENTATION_CONTRACT_TESTS[0],
+            TRACKED_DOCUMENTATION_CONTRACT_TESTS[1],
+            "PYTHONPATH=. python3 -B script/test_build_and_run.py",
             "run: swift build --product AetherLink",
             "swift test list > "
             ".build/aetherlink-product-ci-swift-test-list-v1.txt",
@@ -1380,7 +1441,11 @@ def workflow_failures(
             "--write-swift-focused-test-binding",
             "--swift-focused-test-results",
             MAIN_RELEASE_CONDITION,
-            "run: swift build -c release --product AetherLink",
+            "python3 -B script/package_release_artifacts.py source-digest",
+            "./script/build_and_run.sh --unsealed-package-only",
+            'if [[ "$source_before" != "$source_after" ]]; then',
+            "python3 -B script/check_release_artifact_archive.py",
+            "--macos-build-outputs",
         ),
     )
 
@@ -1444,11 +1509,59 @@ def workflow_failures(
         "python3 -B script/check_release_artifact_archive.py"
     )
     if (
-        workflow.count(release_readback_command) != 1
+        workflow.count(release_readback_command) != 2
         or workflow.count("--android-build-outputs") != 1
+        or workflow.count("--macos-build-outputs") != 1
     ):
         failures.append(
-            "workflow must contain one exact Android Release readback command"
+            "workflow must contain one exact Android and one exact macOS "
+            "Release readback command"
+        )
+    if workflow.count("./script/build_and_run.sh --unsealed-package-only") != 1:
+        failures.append(
+            "workflow must contain one exact unsealed macOS Release producer"
+        )
+    if workflow.count(
+        "python3 -B script/package_release_artifacts.py source-digest"
+    ) != 2:
+        failures.append(
+            "macOS unsealed Release producer must bind source before and "
+            "after packaging"
+        )
+    if (
+        named_step_body(
+            macos,
+            "Run macOS release package contract units",
+        )
+        != MACOS_PACKAGE_CONTRACT_TEST_STEP_BODY
+    ):
+        failures.append(
+            "macOS release package contract-unit step must match the exact "
+            "command body"
+        )
+    if (
+        named_step_body(
+            macos,
+            "Build unsealed macOS Release package on main",
+        )
+        != MACOS_UNSEALED_RELEASE_BUILD_STEP_BODY
+    ):
+        failures.append(
+            "macOS unsealed Release producer step must match the exact "
+            "main-only command body"
+        )
+    macos_unsealed_readback_body = named_step_body(
+        macos,
+        "Read back unsealed macOS Release package on main",
+    )
+    if (
+        macos_unsealed_readback_body is None
+        or macos_unsealed_readback_body.rstrip()
+        != MACOS_UNSEALED_RELEASE_READBACK_STEP_BODY.rstrip()
+    ):
+        failures.append(
+            "macOS unsealed Release readback step must match the exact "
+            "main-only command body"
         )
     if (
         named_step_body(macos, "Verify focused Swift test selection")
@@ -1672,6 +1785,117 @@ def self_test(workflow: str) -> list[str]:
             ),
             "step 'Check changed bytes' must match the exact body",
         ),
+        "missing tracked documentation contract step": (
+            workflow.replace(
+                "      - name: Run tracked documentation contracts\n"
+                + TRACKED_DOCUMENTATION_CONTRACT_STEP_BODY,
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "tracked documentation full-evidence substitution": (
+            workflow.replace(
+                "          python3 -B script/check_docs_hygiene.py "
+                "--tracked-contracts-only\n",
+                "          python3 -B script/check_docs_hygiene.py\n",
+                1,
+            ),
+            "step 'Run tracked documentation contracts' must match the exact body",
+        ),
+        "tracked documentation mutation-test omission": (
+            workflow.replace(
+                f"            {TRACKED_DOCUMENTATION_CONTRACT_TESTS[1]}\n",
+                "",
+                1,
+            ),
+            "step 'Run tracked documentation contracts' must match the exact body",
+        ),
+        "missing macOS package contract units": (
+            workflow.replace(
+                "      - name: Run macOS release package contract units\n"
+                f"{MACOS_PACKAGE_CONTRACT_TEST_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "missing macOS unsealed Release producer": (
+            workflow.replace(
+                "      - name: Build unsealed macOS Release package on main\n"
+                f"{MACOS_UNSEALED_RELEASE_BUILD_STEP_BODY}",
+                "",
+                1,
+            ),
+            "one exact unsealed macOS Release producer",
+        ),
+        "missing macOS unsealed Release readback": (
+            workflow.replace(
+                "      - name: Read back unsealed macOS Release package on main\n"
+                f"{MACOS_UNSEALED_RELEASE_READBACK_STEP_BODY}",
+                "",
+                1,
+            ),
+            "one exact Android and one exact macOS Release readback command",
+        ),
+        "signed package substituted for unsealed producer": (
+            workflow.replace(
+                "./script/build_and_run.sh --unsealed-package-only",
+                "./script/build_and_run.sh --package-only",
+                1,
+            ),
+            "one exact unsealed macOS Release producer",
+        ),
+        "wrong macOS Release readback mode": (
+            workflow.replace(
+                "          --macos-build-outputs\n",
+                "          --historical\n",
+                1,
+            ),
+            "one exact Android and one exact macOS Release readback command",
+        ),
+        "macOS unsealed producer condition removed": (
+            workflow.replace(
+                "      - name: Build unsealed macOS Release package on main\n"
+                "        if: >-\n"
+                f"          {MAIN_RELEASE_CONDITION}\n",
+                "      - name: Build unsealed macOS Release package on main\n",
+                1,
+            ),
+            "producer step must match the exact main-only command body",
+        ),
+        "macOS unsealed readback condition removed": (
+            workflow.replace(
+                "      - name: Read back unsealed macOS Release package on main\n"
+                "        if: >-\n"
+                f"          {MAIN_RELEASE_CONDITION}\n",
+                "      - name: Read back unsealed macOS Release package on main\n",
+                1,
+            ),
+            "readback step must match the exact main-only command body",
+        ),
+        "macOS unsealed build and readback reordered": (
+            workflow.replace(
+                "      - name: Build unsealed macOS Release package on main\n"
+                f"{MACOS_UNSEALED_RELEASE_BUILD_STEP_BODY}"
+                "      - name: Read back unsealed macOS Release package on main\n"
+                f"{MACOS_UNSEALED_RELEASE_READBACK_STEP_BODY}",
+                "      - name: Read back unsealed macOS Release package on main\n"
+                f"{MACOS_UNSEALED_RELEASE_READBACK_STEP_BODY}"
+                "      - name: Build unsealed macOS Release package on main\n"
+                f"{MACOS_UNSEALED_RELEASE_BUILD_STEP_BODY}",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "macOS source drift comparison bypassed": (
+            workflow.replace(
+                '          if [[ "$source_before" != "$source_after" ]]; then\n',
+                "          if false; then\n",
+                1,
+            ),
+            "producer step must match the exact main-only command body",
+        ),
         "changed runner with decoy": (
             workflow.replace(
                 "    runs-on: macos-26\n",
@@ -1706,9 +1930,9 @@ def self_test(workflow: str) -> list[str]:
         ),
         "unfiltered Swift suite": (
             workflow.replace(
-                "run: swift build -c release --product AetherLink",
-                "run: swift test\n"
-                "      - run: swift build -c release --product AetherLink",
+                "      - name: Build unsealed macOS Release package on main\n",
+                "      - run: swift test\n"
+                "      - name: Build unsealed macOS Release package on main\n",
                 1,
             ),
             "one direct Swift test-list command",
@@ -2413,7 +2637,7 @@ def self_test(workflow: str) -> list[str]:
                 "",
                 1,
             ),
-            "one exact Android Release readback command",
+            "one exact Android and one exact macOS Release readback command",
         ),
         "wrong Android Release readback mode": (
             workflow.replace(
@@ -2421,7 +2645,7 @@ def self_test(workflow: str) -> list[str]:
                 "          --historical\n",
                 1,
             ),
-            "one exact Android Release readback command",
+            "one exact Android and one exact macOS Release readback command",
         ),
         "Android Release readback before build": (
             workflow.replace(

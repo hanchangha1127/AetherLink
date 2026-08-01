@@ -8,6 +8,7 @@ import hashlib
 import io
 import os
 from pathlib import Path
+import plistlib
 import re
 import stat
 import subprocess
@@ -392,6 +393,11 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
     FIXTURE_DEX_SHA256 = (
         "d39e091649939bd0712ae83aa7169e154e5c4b1361c3245f8e0097fb53e50ba3"
     )
+    FIXTURE_MACOS_SOURCE_SUMMARY = {
+        "algorithm": "sha256(path-nul-mode-nul-size-nul-sha256-lf)-v1",
+        "fileCount": 3,
+        "sha256": "b" * 64,
+    }
 
     AAPT2_ENTRY_POINT_XMLTREE = aapt2_entry_point_xmltree()
     BUNDLETOOL_ENTRY_POINT_MANIFEST = bundletool_entry_point_manifest()
@@ -1152,6 +1158,496 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
             ),
         ):
             return readback_module.verify_android_release_build_outputs(root)
+
+    def write_macos_unsealed_release_build_output_fixture(
+        self,
+        root: Path,
+    ) -> dict[str, Path]:
+        ledger = root / "release/version-ledger.tsv"
+        ledger.parent.mkdir(parents=True)
+        ledger.write_text(
+            "build_number\tmarketing_version\n24\t1.0.0\n",
+            encoding="ascii",
+        )
+        output = root / readback_module.MACOS_UNSEALED_OUTPUT_RELATIVE_PATH
+        app = output / "AetherLink.app"
+        dsym = output / "AetherLink.dSYM"
+        output.mkdir(parents=True)
+        (
+            output / readback_module.MACOS_UNSEALED_SOURCE_RECEIPT_NAME
+        ).write_bytes(
+            readback_module.canonical_json_bytes(
+                {
+                    "build": {
+                        "buildNumber": 24,
+                        "configuration": "release",
+                        "marketingVersion": "1.0.0",
+                        "mode": "unsealed-package-only",
+                    },
+                    "outputContract": (
+                        readback_module.MACOS_UNSEALED_OUTPUT_CONTRACT
+                    ),
+                    "schemaVersion": (
+                        readback_module
+                        .MACOS_UNSEALED_SOURCE_RECEIPT_SCHEMA_VERSION
+                    ),
+                    "source": self.FIXTURE_MACOS_SOURCE_SUMMARY,
+                }
+            )
+        )
+
+        app_info = {
+            "CFBundleDevelopmentRegion": "en",
+            "CFBundleExecutable": "AetherLink",
+            "CFBundleIconFile": "AppIcon",
+            "CFBundleIdentifier": "dev.aetherlink.companion",
+            "CFBundleLocalizations": ["en", "ko", "ja", "zh-Hans", "fr"],
+            "CFBundleName": "AetherLink",
+            "CFBundlePackageType": "APPL",
+            "CFBundleShortVersionString": "1.0.0",
+            "CFBundleVersion": "24",
+            "LSMinimumSystemVersion": "14.0",
+            "NSPrincipalClass": "NSApplication",
+        }
+        resource_info = {"CFBundleDevelopmentRegion": "en"}
+        dsym_info = {
+            "CFBundleDevelopmentRegion": "English",
+            "CFBundleIdentifier": "com.apple.xcode.dsym.AetherLink",
+            "CFBundleInfoDictionaryVersion": "6.0",
+            "CFBundlePackageType": "dSYM",
+            "CFBundleShortVersionString": "1.0",
+            "CFBundleSignature": "????",
+            "CFBundleVersion": "1",
+        }
+        files: dict[Path, bytes] = {
+            app / "Contents/Info.plist": plistlib.dumps(
+                app_info,
+                fmt=plistlib.FMT_XML,
+                sort_keys=True,
+            ),
+            app / "Contents/MacOS/AetherLink": b"fixture-mach-o-app\n",
+            app / "Contents/Resources/AppIcon.icns": b"fixture-icon\n",
+            (
+                app
+                / "Contents/Resources/AetherLink_LocalAgentBridge.bundle/Info.plist"
+            ): plistlib.dumps(
+                resource_info,
+                fmt=plistlib.FMT_XML,
+                sort_keys=True,
+            ),
+            dsym / "Contents/Info.plist": plistlib.dumps(
+                dsym_info,
+                fmt=plistlib.FMT_XML,
+                sort_keys=True,
+            ),
+            (
+                dsym / "Contents/Resources/DWARF/AetherLink"
+            ): b"fixture-mach-o-dwarf\n",
+            (
+                dsym
+                / "Contents/Resources/Relocations/aarch64/AetherLink.yml"
+            ): b"fixture-relocations\n",
+        }
+        for locale in ("en", "fr", "ja", "ko", "zh-hans"):
+            files[
+                app
+                / "Contents/Resources/AetherLink_LocalAgentBridge.bundle"
+                / f"{locale}.lproj/Localizable.strings"
+            ] = f'"fixture" = "{locale}";\n'.encode("utf-8")
+        for path, data in files.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+            path.chmod(
+                0o755
+                if path == app / "Contents/MacOS/AetherLink"
+                else 0o644
+            )
+        return {"app": app, "dSYM": dsym, "output": output}
+
+    def verify_macos_unsealed_release_build_output_fixture(
+        self,
+        root: Path,
+        *,
+        app_architecture: str = "arm64",
+        dsym_architecture: str = "arm64",
+        app_uuid: str = "01234567-89AB-CDEF-0123-456789ABCDEF",
+        dsym_uuid: str = "01234567-89AB-CDEF-0123-456789ABCDEF",
+        source_summary: dict[str, object] | None = None,
+        calls: list[tuple[list[str], Path]] | None = None,
+    ) -> dict[str, object]:
+        def run_tool(command: list[str], cwd: Path) -> str:
+            if calls is not None:
+                calls.append((command, cwd))
+            target = Path(command[-1])
+            self.assertTrue(target.is_relative_to(cwd))
+            self.assertFalse(target.is_relative_to(root))
+            is_dsym = "AetherLink.dSYM" in target.parts
+            if command[:2] == ["/usr/bin/lipo", "-archs"]:
+                return dsym_architecture if is_dsym else app_architecture
+            if command[:2] == ["/usr/bin/dwarfdump", "--uuid"]:
+                uuid = dsym_uuid if is_dsym else app_uuid
+                architecture = (
+                    dsym_architecture if is_dsym else app_architecture
+                )
+                return f"UUID: {uuid} ({architecture}) {target}"
+            raise AssertionError(f"unexpected macOS tool command: {command!r}")
+
+        with (
+            mock.patch.object(
+                readback_module,
+                "run_macos_readback_tool",
+                side_effect=run_tool,
+            ),
+            mock.patch.object(
+                readback_module,
+                "current_source_snapshot_summary",
+                return_value=(
+                    self.FIXTURE_MACOS_SOURCE_SUMMARY
+                    if source_summary is None
+                    else source_summary
+                ),
+            ),
+        ):
+            return readback_module.verify_macos_release_build_outputs(root)
+
+    def test_macos_unsealed_release_build_output_direct_readback_passes(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = self.write_macos_unsealed_release_build_output_fixture(
+                root
+            )
+            output = fixture["output"]
+            before = {
+                path.relative_to(output).as_posix(): (
+                    path.read_bytes(),
+                    stat.S_IMODE(path.stat().st_mode),
+                )
+                for path in output.rglob("*")
+                if path.is_file()
+            }
+            calls: list[tuple[list[str], Path]] = []
+
+            result = self.verify_macos_unsealed_release_build_output_fixture(
+                root,
+                calls=calls,
+            )
+
+            after = {
+                path.relative_to(output).as_posix(): (
+                    path.read_bytes(),
+                    stat.S_IMODE(path.stat().st_mode),
+                )
+                for path in output.rglob("*")
+                if path.is_file()
+            }
+            self.assertEqual(before, after)
+            self.assertEqual(result["bundleId"], "dev.aetherlink.companion")
+            self.assertEqual(result["marketingVersion"], "1.0.0")
+            self.assertEqual(result["buildNumber"], 24)
+            self.assertEqual(result["architecture"], "arm64")
+            self.assertEqual(result["outerBundleSeal"], "absent")
+            self.assertEqual(
+                result["source"],
+                self.FIXTURE_MACOS_SOURCE_SUMMARY,
+            )
+            self.assertEqual(
+                result["sourceReceipt"]["size"],
+                (
+                    output / readback_module.MACOS_UNSEALED_SOURCE_RECEIPT_NAME
+                ).stat().st_size,
+            )
+            self.assertEqual(result["app"]["fileCount"], 9)
+            self.assertEqual(result["dSYM"]["fileCount"], 3)
+            self.assertRegex(result["app"]["sha256"], r"^[0-9a-f]{64}$")
+            self.assertRegex(result["dSYM"]["sha256"], r"^[0-9a-f]{64}$")
+            self.assertEqual(len(calls), 4)
+
+    def test_macos_unsealed_release_build_output_rejects_stale_source_receipt(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.write_macos_unsealed_release_build_output_fixture(root)
+            stale_current_source = {
+                **self.FIXTURE_MACOS_SOURCE_SUMMARY,
+                "sha256": "c" * 64,
+            }
+
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "differs from current source",
+            ):
+                self.verify_macos_unsealed_release_build_output_fixture(
+                    root,
+                    source_summary=stale_current_source,
+                )
+
+    def test_macos_unsealed_release_build_output_rejects_receipt_drift(
+        self,
+    ) -> None:
+        for mutation in (
+            "boolean-schema",
+            "source-digest",
+            "extra-key",
+            "executable-mode",
+            "symlink",
+        ):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                fixture = self.write_macos_unsealed_release_build_output_fixture(
+                    root
+                )
+                receipt_path = (
+                    fixture["output"]
+                    / readback_module.MACOS_UNSEALED_SOURCE_RECEIPT_NAME
+                )
+                if mutation == "symlink":
+                    outside = root / "outside-receipt.json"
+                    outside.write_bytes(receipt_path.read_bytes())
+                    receipt_path.unlink()
+                    receipt_path.symlink_to(outside)
+                elif mutation == "executable-mode":
+                    receipt_path.chmod(0o755)
+                else:
+                    receipt = readback_module.parse_canonical_json(
+                        receipt_path.read_bytes(),
+                        "fixture source receipt",
+                    )
+                    if mutation == "boolean-schema":
+                        receipt["schemaVersion"] = True
+                    elif mutation == "source-digest":
+                        receipt["source"]["sha256"] = "d" * 64
+                    else:
+                        receipt["unexpected"] = False
+                    receipt_path.write_bytes(
+                        readback_module.canonical_json_bytes(receipt)
+                    )
+
+                with self.assertRaises(ReleaseArchiveVerificationError):
+                    self.verify_macos_unsealed_release_build_output_fixture(
+                        root
+                    )
+
+    def test_macos_unsealed_release_build_output_rejects_closed_tree_drift(
+        self,
+    ) -> None:
+        mutations = ("extra-root", "outer-seal", "symlink", "special")
+        for mutation in mutations:
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                fixture = self.write_macos_unsealed_release_build_output_fixture(
+                    root
+                )
+                app = fixture["app"]
+                output = fixture["output"]
+                if mutation == "extra-root":
+                    (output / "unexpected.txt").write_bytes(b"unexpected\n")
+                elif mutation == "outer-seal":
+                    signature = app / "Contents/_CodeSignature/CodeResources"
+                    signature.parent.mkdir()
+                    signature.write_bytes(b"not-allowed\n")
+                elif mutation == "symlink":
+                    icon = app / "Contents/Resources/AppIcon.icns"
+                    target = root / "outside-icon"
+                    target.write_bytes(icon.read_bytes())
+                    icon.unlink()
+                    icon.symlink_to(target)
+                else:
+                    strings = (
+                        app
+                        / "Contents/Resources/AetherLink_LocalAgentBridge.bundle"
+                        / "en.lproj/Localizable.strings"
+                    )
+                    strings.unlink()
+                    os.mkfifo(strings)
+
+                with self.assertRaises(ReleaseArchiveVerificationError):
+                    self.verify_macos_unsealed_release_build_output_fixture(
+                        root
+                    )
+
+    def test_macos_unsealed_release_build_output_rejects_mode_and_plist_drift(
+        self,
+    ) -> None:
+        for mutation in ("executable-mode", "resource-mode", "version", "duplicate-key"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                fixture = self.write_macos_unsealed_release_build_output_fixture(
+                    root
+                )
+                app = fixture["app"]
+                executable = app / "Contents/MacOS/AetherLink"
+                resource = app / "Contents/Resources/AppIcon.icns"
+                info_path = app / "Contents/Info.plist"
+                if mutation == "executable-mode":
+                    executable.chmod(0o644)
+                elif mutation == "resource-mode":
+                    resource.chmod(0o755)
+                elif mutation == "version":
+                    with info_path.open("rb") as handle:
+                        info = plistlib.load(handle)
+                    info["CFBundleVersion"] = "23"
+                    info_path.write_bytes(
+                        plistlib.dumps(
+                            info,
+                            fmt=plistlib.FMT_XML,
+                            sort_keys=True,
+                        )
+                    )
+                else:
+                    data = info_path.read_bytes()
+                    marker = b"\t<key>CFBundleExecutable</key>\n"
+                    duplicate = (
+                        marker
+                        + b"\t<string>AetherLink</string>\n"
+                    )
+                    self.assertIn(marker, data)
+                    info_path.write_bytes(
+                        data.replace(marker, duplicate + marker, 1)
+                    )
+
+                with self.assertRaises(ReleaseArchiveVerificationError):
+                    self.verify_macos_unsealed_release_build_output_fixture(
+                        root
+                    )
+
+    def test_macos_unsealed_release_build_output_rejects_architecture_and_uuid_drift(
+        self,
+    ) -> None:
+        cases = {
+            "app-x86": {"app_architecture": "x86_64"},
+            "dsym-x86": {"dsym_architecture": "x86_64"},
+            "uuid": {
+                "dsym_uuid": "FEDCBA98-7654-3210-FEDC-BA9876543210"
+            },
+        }
+        for label, overrides in cases.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                self.write_macos_unsealed_release_build_output_fixture(root)
+                with self.assertRaises(ReleaseArchiveVerificationError):
+                    self.verify_macos_unsealed_release_build_output_fixture(
+                        root,
+                        **overrides,
+                    )
+
+    def test_macos_readback_tool_rejects_process_and_output_failures(
+        self,
+    ) -> None:
+        command = ["/usr/bin/fixture-tool", "--version"]
+        cases = {
+            "timeout": subprocess.TimeoutExpired(command, 30),
+            "launch": OSError("injected launch failure"),
+            "nonzero": subprocess.CompletedProcess(
+                command,
+                7,
+                stdout=b"failed\n",
+                stderr=b"detail\n",
+            ),
+            "oversized": subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=(
+                    b"x"
+                    * (
+                        readback_module.MACOS_READBACK_TOOL_MAX_OUTPUT_BYTES
+                        + 1
+                    )
+                ),
+                stderr=b"",
+            ),
+            "non-utf8": subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=b"\xff",
+                stderr=b"",
+            ),
+        }
+        for label, result_or_error in cases.items():
+            with (
+                self.subTest(label=label),
+                mock.patch.object(
+                    readback_module.subprocess,
+                    "run",
+                    side_effect=(
+                        result_or_error
+                        if isinstance(result_or_error, BaseException)
+                        else None
+                    ),
+                    return_value=(
+                        None
+                        if isinstance(result_or_error, BaseException)
+                        else result_or_error
+                    ),
+                ),
+                self.assertRaises(ReleaseArchiveVerificationError),
+            ):
+                readback_module.run_macos_readback_tool(
+                    command,
+                    Path("/tmp"),
+                )
+
+    def test_macos_uuid_parser_rejects_missing_and_duplicate_records(
+        self,
+    ) -> None:
+        valid = (
+            "UUID: 01234567-89AB-CDEF-0123-456789ABCDEF "
+            "(arm64) /tmp/AetherLink"
+        )
+        self.assertEqual(
+            readback_module.parse_macos_dwarfdump_uuid_output(
+                valid,
+                "fixture",
+            ),
+            ("01234567-89AB-CDEF-0123-456789ABCDEF", "arm64"),
+        )
+        for output in ("", f"{valid}\n{valid}"):
+            with self.assertRaises(ReleaseArchiveVerificationError):
+                readback_module.parse_macos_dwarfdump_uuid_output(
+                    output,
+                    "fixture",
+                )
+
+    def test_macos_build_output_cli_modes_are_closed(self) -> None:
+        command = [
+            os.sys.executable,
+            str(
+                readback_module.ROOT
+                / "script/check_release_artifact_archive.py"
+            ),
+        ]
+        mutually_exclusive = subprocess.run(
+            command + ["--android-build-outputs", "--macos-build-outputs"],
+            cwd=readback_module.ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(mutually_exclusive.returncode, 2)
+        self.assertIn("not allowed with argument", mutually_exclusive.stderr)
+
+        archive_conflict = subprocess.run(
+            command
+            + [
+                "--macos-build-outputs",
+                "--archive-dir",
+                str(
+                    readback_module.ROOT
+                    / "dist/releases/not-the-current-release"
+                ),
+            ],
+            cwd=readback_module.ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(archive_conflict.returncode, 1)
+        self.assertIn(
+            "--archive-dir is not valid with --macos-build-outputs",
+            archive_conflict.stderr,
+        )
 
     def test_android_release_build_output_direct_readback_passes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1920,6 +2416,21 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                     root,
                     elf_result=("0123456789abcdef", True),
                 )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.write_android_release_build_output_fixture(root)
+            symbol_path = (
+                root
+                / readback_module.ANDROID_RELEASE_NATIVE_SYMBOL_RELATIVE_PATH
+            )
+            symbol_path.parent.mkdir(parents=True)
+            (symbol_path.parent / "unexpected.txt").write_bytes(b"unexpected")
+            with self.assertRaisesRegex(
+                ReleaseArchiveVerificationError,
+                "native-symbol output directory inventory differs",
+            ):
+                self.verify_android_release_build_output_fixture(root)
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -3021,8 +3532,16 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
                 path = root / relative / "Fixture.swift"
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(b"fixture\n")
+            (root / builder_module.SOURCE_REQUIRED_FILES[0]).write_bytes(b"")
 
             snapshot = builder_module.source_snapshot(root)
+            self.assertEqual(
+                readback_module.current_source_snapshot_summary(root),
+                {
+                    key: snapshot[key]
+                    for key in ("algorithm", "fileCount", "sha256")
+                },
+            )
             payload = {
                 "source-files.json": canonical_json_bytes(
                     {
@@ -3288,6 +3807,308 @@ class ReleaseArtifactArchiveTests(unittest.TestCase):
         self.assertNotIn("profile", compliance)
         self.assertNotIn("schemaVersion", compliance)
         self.assertEqual(compliance["spdx"]["relationshipCount"], 350)
+
+    def test_unsealed_macos_output_publication_is_atomic_and_fail_closed(
+        self,
+    ) -> None:
+        with mock.patch.object(builder_module.sys, "platform", "darwin"):
+            self.assertEqual(
+                builder_module._renameat_platform_contract(),
+                ("renameatx_np", -2),
+            )
+        with mock.patch.object(builder_module.sys, "platform", "linux"):
+            self.assertEqual(
+                builder_module._renameat_platform_contract(),
+                ("renameat2", -100),
+            )
+        with (
+            mock.patch.object(builder_module.sys, "platform", "freebsd"),
+            self.assertRaisesRegex(
+                builder_module.ReleaseArchiveError,
+                "unsupported on freebsd",
+            ),
+        ):
+            builder_module._renameat_platform_contract()
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            parent = root / "dist"
+            parent.mkdir()
+            destination = parent / "unsealed-package-only"
+            destination.mkdir()
+            (destination / "old.txt").write_bytes(b"old\n")
+            staging = parent / ".unsealed-package-only.stage-fixture"
+            staging.mkdir()
+            (staging / "AetherLink.app").mkdir()
+            (staging / "AetherLink.dSYM").mkdir()
+            (
+                staging / builder_module.UNSEALED_MACOS_SOURCE_RECEIPT_NAME
+            ).write_bytes(b"{}\n")
+
+            with mock.patch.object(
+                readback_module,
+                "verify_macos_release_build_outputs",
+                return_value={"verified": True},
+            ) as verify_staging:
+                replaced = builder_module.publish_unsealed_macos_output(
+                    staging,
+                    root=root,
+                )
+
+            self.assertTrue(replaced)
+            self.assertEqual(
+                verify_staging.call_args_list,
+                [
+                    mock.call(root=root, output_root=staging),
+                    mock.call(root=root, output_root=destination),
+                ],
+            )
+            self.assertEqual(
+                {path.name for path in destination.iterdir()},
+                {
+                    "AetherLink.app",
+                    "AetherLink.dSYM",
+                    builder_module.UNSEALED_MACOS_SOURCE_RECEIPT_NAME,
+                },
+            )
+            self.assertFalse(staging.exists())
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            parent = root / "dist"
+            parent.mkdir()
+            destination = parent / "unsealed-package-only"
+            destination.mkdir()
+            old = destination / "old.txt"
+            old.write_bytes(b"old\n")
+            staging = parent / ".unsealed-package-only.stage-fixture"
+            staging.mkdir()
+            (staging / "AetherLink.app").mkdir()
+            (staging / "AetherLink.dSYM").mkdir()
+            (
+                staging / builder_module.UNSEALED_MACOS_SOURCE_RECEIPT_NAME
+            ).write_bytes(b"{}\n")
+
+            with (
+                mock.patch.object(
+                    readback_module,
+                    "verify_macos_release_build_outputs",
+                    return_value={"verified": True},
+                ),
+                mock.patch.object(
+                    builder_module,
+                    "_atomic_exchange_directories",
+                    side_effect=builder_module.ReleaseArchiveError(
+                        "injected exchange failure"
+                    ),
+                ),
+                self.assertRaisesRegex(
+                    builder_module.ReleaseArchiveError,
+                    "injected exchange failure",
+                ),
+            ):
+                builder_module.publish_unsealed_macos_output(
+                    staging,
+                    root=root,
+                )
+
+            self.assertEqual(old.read_bytes(), b"old\n")
+            self.assertTrue(staging.is_dir())
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            parent = root / "dist"
+            parent.mkdir()
+            destination = parent / "unsealed-package-only"
+            destination.mkdir()
+            old = destination / "old.txt"
+            old.write_bytes(b"old\n")
+            staging = parent / ".unsealed-package-only.stage-fixture"
+            staging.mkdir()
+            (staging / "AetherLink.app").mkdir()
+            (staging / "AetherLink.dSYM").mkdir()
+            (
+                staging / builder_module.UNSEALED_MACOS_SOURCE_RECEIPT_NAME
+            ).write_bytes(b"{}\n")
+
+            with (
+                mock.patch.object(
+                    readback_module,
+                    "verify_macos_release_build_outputs",
+                    side_effect=(
+                        {"verified": True},
+                        ReleaseArchiveVerificationError(
+                            "injected post-publication failure"
+                        ),
+                    ),
+                ),
+                self.assertRaisesRegex(
+                    builder_module.ReleaseArchiveError,
+                    "previous generation was restored",
+                ),
+            ):
+                builder_module.publish_unsealed_macos_output(
+                    staging,
+                    root=root,
+                )
+
+            self.assertEqual(old.read_bytes(), b"old\n")
+            self.assertEqual(
+                {path.name for path in staging.iterdir()},
+                {
+                    "AetherLink.app",
+                    "AetherLink.dSYM",
+                    builder_module.UNSEALED_MACOS_SOURCE_RECEIPT_NAME,
+                },
+            )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            parent = root / "dist"
+            parent.mkdir()
+            destination = parent / "unsealed-package-only"
+            destination.mkdir()
+            (destination / "old.txt").write_bytes(b"old\n")
+            staging = parent / ".unsealed-package-only.stage-fixture"
+            staging.mkdir()
+            (staging / "AetherLink.app").mkdir()
+            (staging / "AetherLink.dSYM").mkdir()
+            (
+                staging / builder_module.UNSEALED_MACOS_SOURCE_RECEIPT_NAME
+            ).write_bytes(b"{}\n")
+            real_exchange = builder_module._atomic_exchange_directories
+            exchange_count = 0
+
+            def fail_rollback(first: Path, second: Path) -> None:
+                nonlocal exchange_count
+                exchange_count += 1
+                if exchange_count == 1:
+                    real_exchange(first, second)
+                    return
+                raise builder_module.ReleaseArchiveError(
+                    "injected rollback failure"
+                )
+
+            with (
+                mock.patch.object(
+                    readback_module,
+                    "verify_macos_release_build_outputs",
+                    side_effect=(
+                        {"verified": True},
+                        ReleaseArchiveVerificationError(
+                            "injected post-publication failure"
+                        ),
+                    ),
+                ),
+                mock.patch.object(
+                    builder_module,
+                    "_atomic_exchange_directories",
+                    side_effect=fail_rollback,
+                ),
+                self.assertRaisesRegex(
+                    builder_module.ReleaseArchiveError,
+                    "previous generation was preserved at",
+                ),
+            ):
+                builder_module.publish_unsealed_macos_output(
+                    staging,
+                    root=root,
+                )
+
+            recovery = parent / ".unsealed-package-only.recovery-fixture"
+            self.assertEqual((recovery / "old.txt").read_bytes(), b"old\n")
+            self.assertFalse(staging.exists())
+            self.assertEqual(
+                {path.name for path in destination.iterdir()},
+                {
+                    "AetherLink.app",
+                    "AetherLink.dSYM",
+                    builder_module.UNSEALED_MACOS_SOURCE_RECEIPT_NAME,
+                },
+            )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            parent = root / "dist"
+            parent.mkdir()
+            destination = parent / "unsealed-package-only"
+            destination.mkdir()
+            (destination / "old.txt").write_bytes(b"old\n")
+            staging = parent / ".unsealed-package-only.stage-fixture"
+            staging.mkdir()
+            (staging / "AetherLink.app").mkdir()
+            (staging / "AetherLink.dSYM").mkdir()
+            (
+                staging / builder_module.UNSEALED_MACOS_SOURCE_RECEIPT_NAME
+            ).write_bytes(b"{}\n")
+            stderr = io.StringIO()
+
+            with (
+                mock.patch.object(
+                    readback_module,
+                    "verify_macos_release_build_outputs",
+                    return_value={"verified": True},
+                ),
+                mock.patch.object(
+                    builder_module.shutil,
+                    "rmtree",
+                    side_effect=OSError("injected cleanup failure"),
+                ),
+                mock.patch("sys.stderr", stderr),
+            ):
+                replaced = builder_module.publish_unsealed_macos_output(
+                    staging,
+                    root=root,
+                )
+
+            self.assertTrue(replaced)
+            self.assertEqual(
+                {path.name for path in destination.iterdir()},
+                {
+                    "AetherLink.app",
+                    "AetherLink.dSYM",
+                    builder_module.UNSEALED_MACOS_SOURCE_RECEIPT_NAME,
+                },
+            )
+            self.assertEqual((staging / "old.txt").read_bytes(), b"old\n")
+            self.assertIn("passed post-publication readback", stderr.getvalue())
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            parent = root / "dist"
+            parent.mkdir()
+            destination = parent / "unsealed-package-only"
+            destination.mkdir()
+            old = destination / "old.txt"
+            old.write_bytes(b"old\n")
+            staging = parent / ".unsealed-package-only.stage-fixture"
+            staging.mkdir()
+            (staging / "AetherLink.app").mkdir()
+            (staging / "AetherLink.dSYM").mkdir()
+            (
+                staging / builder_module.UNSEALED_MACOS_SOURCE_RECEIPT_NAME
+            ).write_bytes(b"{}\n")
+
+            with (
+                mock.patch.object(
+                    readback_module,
+                    "verify_macos_release_build_outputs",
+                    side_effect=ReleaseArchiveVerificationError(
+                        "invalid staged generation"
+                    ),
+                ),
+                self.assertRaisesRegex(
+                    builder_module.ReleaseArchiveError,
+                    "failed independent readback: invalid staged generation",
+                ),
+            ):
+                builder_module.publish_unsealed_macos_output(
+                    staging,
+                    root=root,
+                )
+
+            self.assertEqual(old.read_bytes(), b"old\n")
+            self.assertTrue(staging.is_dir())
 
     def test_publish_is_idempotent_and_never_overwrites_different_bytes(
         self,

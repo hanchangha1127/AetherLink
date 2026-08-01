@@ -17,16 +17,52 @@ from typing import Iterator, Mapping
 ROOT = Path(__file__).resolve().parents[1]
 RESULT_RELATIVE = Path(
     "dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-"
-    "isolated-reverse-version-readback-v1.json"
+    "isolated-reverse-version-readback-v1-current-source-g6-"
+    "macos-release-byte-readback-two.json"
 )
 RECEIPT_RELATIVE = Path(
     "dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-"
-    "isolated-reverse-version-readback-repeatability-v1.json"
+    "isolated-reverse-version-readback-repeatability-v1-current-source-g6-"
+    "macos-release-byte-readback-two.json"
 )
 RESULT_SHA256 = "dbaa422de18ab37e9f4b92d7e78631fad9719e6c6d41fe30ccb402365267d416"
 RESULT_SIZE = 7_859
-RECEIPT_SHA256 = "c332a0512f8ac001fa5b81f29dada9e91d9fd441b43b66c0346105295ac749d8"
-RECEIPT_SIZE = 1_216
+RECEIPT_SHA256 = "818474ea0469e10f836c237ef3d8cab3ec95ffd5da6299c13ea730982ff08a80"
+RECEIPT_SIZE = 1_266
+PREDECESSOR_RESULT_RELATIVE = Path(
+    "dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-"
+    "isolated-reverse-version-readback-v1-current-source-g6-"
+    "android-release-byte-readback-one.json"
+)
+PREDECESSOR_RECEIPT_RELATIVE = Path(
+    "dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-"
+    "isolated-reverse-version-readback-repeatability-v1-current-source-g6-"
+    "android-release-byte-readback-one.json"
+)
+PREDECESSOR_RESULT_SHA256 = (
+    "dbaa422de18ab37e9f4b92d7e78631fad9719e6c6d41fe30ccb402365267d416"
+)
+PREDECESSOR_RESULT_SIZE = 7_859
+PREDECESSOR_RECEIPT_SHA256 = (
+    "6a4ceb03571cddc9cb6d922a7cd68062526be2b8ecfccb2129868eeb6ce6d990"
+)
+PREDECESSOR_RECEIPT_SIZE = 1_268
+ORIGINAL_RESULT_RELATIVE = Path(
+    "dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-"
+    "isolated-reverse-version-readback-v1.json"
+)
+ORIGINAL_RECEIPT_RELATIVE = Path(
+    "dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-"
+    "isolated-reverse-version-readback-repeatability-v1.json"
+)
+ORIGINAL_RESULT_SHA256 = (
+    "dbaa422de18ab37e9f4b92d7e78631fad9719e6c6d41fe30ccb402365267d416"
+)
+ORIGINAL_RESULT_SIZE = 7_859
+ORIGINAL_RECEIPT_SHA256 = (
+    "c332a0512f8ac001fa5b81f29dada9e91d9fd441b43b66c0346105295ac749d8"
+)
+ORIGINAL_RECEIPT_SIZE = 1_216
 MAXIMUM_CAPTURE_BYTES = 4 * 1_024 * 1_024
 EXECUTION_SOURCE_CLOSURE = (
     Path("script/run_macos_isolated_reverse_version_readback_smoke.py"),
@@ -61,6 +97,30 @@ class FileSpec:
 PINNED_FILES: Mapping[Path, FileSpec] = {
     RESULT_RELATIVE: FileSpec(RESULT_SIZE, RESULT_SHA256, 0o600, True),
     RECEIPT_RELATIVE: FileSpec(RECEIPT_SIZE, RECEIPT_SHA256, 0o600, True),
+    PREDECESSOR_RESULT_RELATIVE: FileSpec(
+        PREDECESSOR_RESULT_SIZE,
+        PREDECESSOR_RESULT_SHA256,
+        0o600,
+        True,
+    ),
+    PREDECESSOR_RECEIPT_RELATIVE: FileSpec(
+        PREDECESSOR_RECEIPT_SIZE,
+        PREDECESSOR_RECEIPT_SHA256,
+        0o600,
+        True,
+    ),
+    ORIGINAL_RESULT_RELATIVE: FileSpec(
+        ORIGINAL_RESULT_SIZE,
+        ORIGINAL_RESULT_SHA256,
+        0o600,
+        True,
+    ),
+    ORIGINAL_RECEIPT_RELATIVE: FileSpec(
+        ORIGINAL_RECEIPT_SIZE,
+        ORIGINAL_RECEIPT_SHA256,
+        0o600,
+        True,
+    ),
     Path("script/run_macos_isolated_reverse_version_readback_smoke.py"): FileSpec(
         44_003,
         "e22a3e32e0556428f1d0274a75b4bbe93c5f5d28fe1a60607e1537a3db1771b1",
@@ -107,8 +167,8 @@ PINNED_FILES: Mapping[Path, FileSpec] = {
         0o644,
     ),
     Path("script/check_release_artifact_archive.py"): FileSpec(
-        159_513,
-        "c9a91a55ffd0ffd36442d4b8bb52583fd61838a073b03feea3b2e73644fb8ece",
+        247_676,
+        "8405ad0a532b2b88799f370da15b1a13694f1c9d3f79d9b3f0d4be8a5bbe2452",
         0o755,
     ),
     Path("script/check_release_compliance.py"): FileSpec(
@@ -629,10 +689,14 @@ def validate_result(value: dict[str, object]) -> None:
         raise EvidenceError("result state readback differs")
 
 
-def validate_receipt(value: dict[str, object]) -> None:
+def validate_receipt(
+    value: dict[str, object],
+    *,
+    result_file_name: str = RESULT_RELATIVE.name,
+) -> None:
     expected = {
         "canonicalResult": {
-            "fileName": RESULT_RELATIVE.name,
+            "fileName": result_file_name,
             "sha256": RESULT_SHA256,
             "size": RESULT_SIZE,
         },
@@ -676,18 +740,56 @@ def validate_receipt(value: dict[str, object]) -> None:
         raise EvidenceError("repeatability receipt differs")
 
 
-def validate_evidence_payloads(result_payload: bytes, receipt_payload: bytes) -> None:
+def validate_evidence_payloads(
+    result_payload: bytes,
+    receipt_payload: bytes,
+    *,
+    result_file_name: str = RESULT_RELATIVE.name,
+) -> tuple[dict[str, object], dict[str, object]]:
     result = parse_canonical_json(result_payload, label="canonical result")
     receipt = parse_canonical_json(receipt_payload, label="repeatability receipt")
     validate_result(result)
-    validate_receipt(receipt)
+    validate_receipt(receipt, result_file_name=result_file_name)
     result_identity = {
-        "fileName": RESULT_RELATIVE.name,
+        "fileName": result_file_name,
         "sha256": hashlib.sha256(result_payload).hexdigest(),
         "size": len(result_payload),
     }
     if not exact_equal(receipt["canonicalResult"], result_identity):
         raise EvidenceError("receipt does not bind the supplied result bytes")
+    return result, receipt
+
+
+def validate_predecessor_preservation(
+    successor_result_payload: bytes,
+    successor_receipt_payload: bytes,
+    predecessor_result_payload: bytes,
+    predecessor_receipt_payload: bytes,
+    *,
+    successor_result_file_name: str,
+    predecessor_result_file_name: str,
+) -> None:
+    _, successor_receipt = validate_evidence_payloads(
+        successor_result_payload,
+        successor_receipt_payload,
+        result_file_name=successor_result_file_name,
+    )
+    _, predecessor_receipt = validate_evidence_payloads(
+        predecessor_result_payload,
+        predecessor_receipt_payload,
+        result_file_name=predecessor_result_file_name,
+    )
+    if successor_result_payload != predecessor_result_payload:
+        raise EvidenceError("successor result differs from preserved predecessor")
+    normalized_successor = dict(successor_receipt)
+    normalized_successor["canonicalResult"] = {
+        **successor_receipt["canonicalResult"],
+        "fileName": predecessor_result_file_name,
+    }
+    if not exact_equal(normalized_successor, predecessor_receipt):
+        raise EvidenceError(
+            "successor receipt differs beyond its canonical result filename"
+        )
 
 
 def check() -> None:
@@ -720,9 +822,21 @@ def check() -> None:
             release_id="aetherlink-1.0.0+24-local-v1",
             archive_sha256=ARCHIVE_SNAPSHOT_EXPECTED["current"]["aetherlink-1.0.0+24-local-v1.zip"]["sha256"],
         )
-        validate_evidence_payloads(
+        validate_predecessor_preservation(
             payloads[RESULT_RELATIVE],
             payloads[RECEIPT_RELATIVE],
+            payloads[PREDECESSOR_RESULT_RELATIVE],
+            payloads[PREDECESSOR_RECEIPT_RELATIVE],
+            successor_result_file_name=RESULT_RELATIVE.name,
+            predecessor_result_file_name=PREDECESSOR_RESULT_RELATIVE.name,
+        )
+        validate_predecessor_preservation(
+            payloads[PREDECESSOR_RESULT_RELATIVE],
+            payloads[PREDECESSOR_RECEIPT_RELATIVE],
+            payloads[ORIGINAL_RESULT_RELATIVE],
+            payloads[ORIGINAL_RECEIPT_RELATIVE],
+            successor_result_file_name=PREDECESSOR_RESULT_RELATIVE.name,
+            predecessor_result_file_name=ORIGINAL_RESULT_RELATIVE.name,
         )
 
 

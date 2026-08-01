@@ -4,12 +4,12 @@ set -euo pipefail
 MODE="${1:-run}"
 
 usage() {
-  echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--package-only]" >&2
+  echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--package-only|--unsealed-package-only]" >&2
 }
 
 validate_mode() {
   case "$1" in
-    run|--debug|debug|--logs|logs|--telemetry|telemetry|--verify|verify|--package-only|package-only)
+    run|--debug|debug|--logs|logs|--telemetry|telemetry|--verify|verify|--package-only|package-only|--unsealed-package-only|unsealed-package-only)
       ;;
     *)
       usage
@@ -34,6 +34,21 @@ is_package_only() {
   esac
 }
 
+is_unsealed_package_only() {
+  case "$MODE" in
+    --unsealed-package-only|unsealed-package-only)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+is_release_package_only() {
+  is_package_only || is_unsealed_package_only
+}
+
 PRODUCT_NAME="AetherLink"
 TARGET_EXECUTABLE_NAME="LocalAgentBridge"
 APP_NAME="AetherLink"
@@ -42,12 +57,41 @@ MIN_SYSTEM_VERSION="14.0"
 REPRO_SWIFT_SCRATCH_PATH="/private/tmp/aetherlink-g6-swift-scratch-v1"
 RELEASE_VERSION_LEDGER="$ROOT_DIR/release/version-ledger.tsv"
 DEFAULT_PACKAGE_OUTPUT_ROOT="$ROOT_DIR/dist/package-only"
+DEFAULT_UNSEALED_PACKAGE_OUTPUT_ROOT="$ROOT_DIR/dist/unsealed-package-only"
 MAX_ANDROID_VERSION_CODE=2100000000
 MAX_MARKETING_VERSION_COMPONENT=2147483647
 MARKETING_VERSION=""
 BUILD_NUMBER=""
 DEBUG_RUNTIME_IDENTITY_FILE="${AETHERLINK_RUNTIME_IDENTITY_FILE:-$HOME/Library/Application Support/AetherLink/debug-runtime-identity.json}"
 APP_LAUNCH_SETTLE_SECONDS=5
+UNSEALED_STAGING_ROOT=""
+UNSEALED_PUBLISH_ATTEMPTED=0
+UNSEALED_PUBLISH_SUCCEEDED=0
+
+cleanup_unsealed_staging_root() {
+  local original_status=$?
+  if [[ -z "$UNSEALED_STAGING_ROOT" ]]; then
+    return "$original_status"
+  fi
+  case "$UNSEALED_STAGING_ROOT" in
+    "$ROOT_DIR/dist/.unsealed-package-only.stage-"*)
+      if [[ -e "$UNSEALED_STAGING_ROOT" || -L "$UNSEALED_STAGING_ROOT" ]]; then
+        if [[ "$UNSEALED_PUBLISH_ATTEMPTED" == "1" \
+          && "$UNSEALED_PUBLISH_SUCCEEDED" != "1" ]]; then
+          echo "warning: preserving unsealed recovery generation at $UNSEALED_STAGING_ROOT" >&2
+        elif ! rm -rf -- "$UNSEALED_STAGING_ROOT"; then
+          echo "warning: could not clean unsealed staging generation at $UNSEALED_STAGING_ROOT" >&2
+        fi
+      fi
+      ;;
+    *)
+      echo "error: refusing to clean an unexpected unsealed staging path" >&2
+      ;;
+  esac
+  return "$original_status"
+}
+
+trap cleanup_unsealed_staging_root EXIT
 
 decimal_is_at_most() {
   local value="$1"
@@ -243,18 +287,80 @@ validate_package_output_root() {
   fi
 }
 
+validate_physical_tree() {
+  local tree_root="$1"
+  local label="$2"
+  local candidate
+
+  if [[ ! -d "$tree_root" || -L "$tree_root" ]]; then
+    echo "error: $label must be a physical directory" >&2
+    return 1
+  fi
+  while IFS= read -r -d '' candidate; do
+    if [[ -L "$candidate" ]] \
+      || { [[ ! -d "$candidate" ]] && [[ ! -f "$candidate" ]]; }; then
+      echo "error: $label contains a symlink or special entry" >&2
+      return 1
+    fi
+  done < <(/usr/bin/find "$tree_root" -print0)
+}
+
+validate_unsealed_dsym_source() {
+  local dsym_root="$1"
+  local required
+
+  validate_physical_tree "$dsym_root" "unsealed Release dSYM source" || return 1
+  for required in \
+    "$dsym_root/Contents/Info.plist" \
+    "$dsym_root/Contents/Resources/DWARF/AetherLink"; do
+    if [[ ! -f "$required" || -L "$required" ]]; then
+      echo "error: unsealed Release dSYM source is missing a required regular file" >&2
+      return 1
+    fi
+  done
+}
+
 load_release_version_metadata "$RELEASE_VERSION_LEDGER"
 validate_version_metadata
 
 DIST_DIR="$ROOT_DIR/dist"
 DEVELOPMENT_APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 PACKAGE_OUTPUT_ROOT=""
+PACKAGE_ASSEMBLY_ROOT=""
+OUTPUT_DSYM=""
+UNSEALED_SOURCE_RECEIPT_BEFORE=""
 if is_package_only; then
   PACKAGE_OUTPUT_ROOT="${AETHERLINK_PACKAGE_OUTPUT_ROOT:-$DEFAULT_PACKAGE_OUTPUT_ROOT}"
   validate_package_output_root "$PACKAGE_OUTPUT_ROOT"
-  APP_BUNDLE="$PACKAGE_OUTPUT_ROOT/$APP_NAME.app"
+  PACKAGE_ASSEMBLY_ROOT="$PACKAGE_OUTPUT_ROOT"
+elif is_unsealed_package_only; then
+  PACKAGE_OUTPUT_ROOT="$DEFAULT_UNSEALED_PACKAGE_OUTPUT_ROOT"
+  validate_package_output_root "$PACKAGE_OUTPUT_ROOT"
+  if [[ ! -e "$DIST_DIR" && ! -L "$DIST_DIR" ]]; then
+    mkdir "$DIST_DIR"
+  fi
+  validate_package_output_root "$PACKAGE_OUTPUT_ROOT"
+  UNSEALED_SOURCE_RECEIPT_BEFORE="$(
+    python3 -B "$ROOT_DIR/script/package_release_artifacts.py" \
+      unsealed-macos-source-receipt
+  )"
+  if [[ -z "$UNSEALED_SOURCE_RECEIPT_BEFORE" \
+    || "$UNSEALED_SOURCE_RECEIPT_BEFORE" == *$'\n'* ]]; then
+    echo "error: unsealed macOS source receipt must be one nonempty line" >&2
+    exit 1
+  fi
+  UNSEALED_STAGING_ROOT="$(
+    /usr/bin/mktemp -d \
+      "$DIST_DIR/.unsealed-package-only.stage-XXXXXXXX"
+  )"
+  validate_package_output_root "$UNSEALED_STAGING_ROOT"
+  PACKAGE_ASSEMBLY_ROOT="$UNSEALED_STAGING_ROOT"
 else
-  APP_BUNDLE="$DEVELOPMENT_APP_BUNDLE"
+  PACKAGE_ASSEMBLY_ROOT="$DIST_DIR"
+fi
+APP_BUNDLE="$PACKAGE_ASSEMBLY_ROOT/$APP_NAME.app"
+if is_unsealed_package_only; then
+  OUTPUT_DSYM="$PACKAGE_ASSEMBLY_ROOT/$APP_NAME.dSYM"
 fi
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
@@ -268,14 +374,14 @@ ICON_DEST="$APP_RESOURCES/$ICON_NAME.icns"
 cd "$ROOT_DIR"
 
 BUILD_CONFIGURATION="debug"
-if is_package_only; then
+if is_release_package_only; then
   BUILD_CONFIGURATION="release"
 else
   pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 fi
 
 SWIFT_BUILD_OPTIONS=(-c "$BUILD_CONFIGURATION")
-if is_package_only && [[ -n "${AETHERLINK_REPRO_SWIFT_SCRATCH_PATH:-}" ]]; then
+if is_release_package_only && [[ -n "${AETHERLINK_REPRO_SWIFT_SCRATCH_PATH:-}" ]]; then
   if [[ "$AETHERLINK_REPRO_SWIFT_SCRATCH_PATH" != "$REPRO_SWIFT_SCRATCH_PATH" ]]; then
     echo "error: reproducible Swift scratch path differs from the fixed release path" >&2
     exit 2
@@ -334,7 +440,7 @@ if is_package_only && [[ -n "${AETHERLINK_REPRO_SWIFT_SCRATCH_PATH:-}" ]]; then
   )
 fi
 
-if is_package_only && [[ -z "${AETHERLINK_REPRO_SWIFT_SCRATCH_PATH:-}" ]]; then
+if is_release_package_only && [[ -z "${AETHERLINK_REPRO_SWIFT_SCRATCH_PATH:-}" ]]; then
   swift package clean
 fi
 swift build "${SWIFT_BUILD_OPTIONS[@]}" --product "$PRODUCT_NAME"
@@ -342,6 +448,12 @@ BUILD_BIN_PATH="$(swift build "${SWIFT_BUILD_OPTIONS[@]}" --show-bin-path)"
 BUILD_BINARY="$BUILD_BIN_PATH/$PRODUCT_NAME"
 if [[ ! -x "$BUILD_BINARY" ]]; then
   BUILD_BINARY="$BUILD_BIN_PATH/$TARGET_EXECUTABLE_NAME"
+fi
+
+BUILD_DSYM=""
+if is_unsealed_package_only; then
+  BUILD_DSYM="$BUILD_BIN_PATH/$PRODUCT_NAME.dSYM"
+  validate_unsealed_dsym_source "$BUILD_DSYM"
 fi
 
 if [[ ! -x "$BUILD_BINARY" ]]; then
@@ -376,7 +488,9 @@ if is_package_only; then
   fi
   validate_package_output_root "$PACKAGE_OUTPUT_ROOT"
 fi
-rm -rf "$APP_BUNDLE"
+if ! is_unsealed_package_only; then
+  rm -rf "$APP_BUNDLE"
+fi
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
@@ -429,8 +543,33 @@ cat >"$INFO_PLIST" <<PLIST
 </plist>
 PLIST
 
-/usr/bin/codesign --force --deep --sign - "$APP_BUNDLE"
-/usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
+if is_unsealed_package_only; then
+  cp -R "$BUILD_DSYM" "$OUTPUT_DSYM"
+  UNSEALED_SOURCE_RECEIPT_AFTER="$(
+    python3 -B "$ROOT_DIR/script/package_release_artifacts.py" \
+      unsealed-macos-source-receipt
+  )"
+  if [[ "$UNSEALED_SOURCE_RECEIPT_BEFORE" != "$UNSEALED_SOURCE_RECEIPT_AFTER" ]]; then
+    echo "error: source inputs changed during unsealed macOS packaging" >&2
+    exit 1
+  fi
+  printf '%s\n' "$UNSEALED_SOURCE_RECEIPT_BEFORE" \
+    >"$UNSEALED_STAGING_ROOT/source-receipt.json"
+  chmod 0644 "$UNSEALED_STAGING_ROOT/source-receipt.json"
+  UNSEALED_PUBLISH_ATTEMPTED=1
+  python3 -B "$ROOT_DIR/script/package_release_artifacts.py" \
+    publish-unsealed-macos-output \
+    --staging-root "$UNSEALED_STAGING_ROOT"
+  UNSEALED_PUBLISH_SUCCEEDED=1
+  if [[ ! -e "$UNSEALED_STAGING_ROOT" && ! -L "$UNSEALED_STAGING_ROOT" ]]; then
+    UNSEALED_STAGING_ROOT=""
+  fi
+fi
+
+if is_package_only; then
+  /usr/bin/codesign --force --deep --sign - "$APP_BUNDLE"
+  /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
+fi
 
 open_app() {
   /usr/bin/nohup /usr/bin/env \
@@ -465,6 +604,9 @@ case "$MODE" in
     ;;
   --package-only|package-only)
     echo "Packaged self-contained release app at $APP_BUNDLE"
+    ;;
+  --unsealed-package-only|unsealed-package-only)
+    echo "Packaged unsealed Release app and dSYM at $PACKAGE_OUTPUT_ROOT"
     ;;
   *)
     usage

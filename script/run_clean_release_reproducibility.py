@@ -291,6 +291,20 @@ PUBLISH_QUALIFIED_PUBLICATION_POLICY = (
 )
 SOURCE_ROOT_NAMES = ("lane-a", "lane-b-unequal")
 SOURCE_ROOT_POLICY = "distinct-unequal-utf8-byte-length-v1"
+SWIFT_ROOT_DIAGNOSTIC_PATH_VERSION = 1
+SWIFT_ROOT_DIAGNOSTIC_SAME_PHYSICAL = "same-physical-root"
+SWIFT_ROOT_DIAGNOSTIC_DISTINCT_EQUAL = "distinct-equal-utf8-length"
+SWIFT_ROOT_DIAGNOSTIC_DISTINCT_UNEQUAL = "distinct-unequal-utf8-length"
+SWIFT_ROOT_DIAGNOSTIC_MODES = (
+    SWIFT_ROOT_DIAGNOSTIC_SAME_PHYSICAL,
+    SWIFT_ROOT_DIAGNOSTIC_DISTINCT_EQUAL,
+    SWIFT_ROOT_DIAGNOSTIC_DISTINCT_UNEQUAL,
+)
+SWIFT_ROOT_POLICY_SAME_PHYSICAL = "same-physical-root-sequential-clean-v1"
+SWIFT_ROOT_POLICY_DISTINCT_EQUAL = "distinct-equal-utf8-byte-length-v1"
+SWIFT_ROOT_POLICY_DIAGNOSTIC_DISTINCT_UNEQUAL = (
+    "diagnostic-distinct-unequal-utf8-byte-length-v1"
+)
 SWIFT_REPRO_ARGUMENTS = (
     "--jobs",
     "1",
@@ -508,13 +522,26 @@ def canonical_json_bytes(value: object) -> bytes:
 def validate_source_root_length_evidence(
     evidence: object,
     roots: tuple[Path, ...],
+    *,
+    policy: str = SOURCE_ROOT_POLICY,
 ) -> None:
     labels = ("build-a", "build-b")
-    if len(roots) != len(labels) or roots[0] == roots[1]:
+    if len(roots) != len(labels):
         raise ReproducibilityError(
             4,
             "source-materialization",
-            "two distinct source roots are required",
+            "exactly two source roots are required",
+        )
+    if policy not in (
+        SOURCE_ROOT_POLICY,
+        SWIFT_ROOT_POLICY_SAME_PHYSICAL,
+        SWIFT_ROOT_POLICY_DISTINCT_EQUAL,
+        SWIFT_ROOT_POLICY_DIAGNOSTIC_DISTINCT_UNEQUAL,
+    ):
+        raise ReproducibilityError(
+            4,
+            "source-materialization",
+            "source root policy is unsupported",
         )
     if any(not root.is_absolute() for root in roots):
         raise ReproducibilityError(
@@ -533,11 +560,37 @@ def validate_source_root_length_evidence(
         label: len(encoded)
         for label, encoded in zip(labels, encoded_roots)
     }
-    if len(set(expected_lengths.values())) != len(labels):
+    paths_equal = roots[0] == roots[1]
+    lengths_equal = len(set(expected_lengths.values())) == 1
+    expected_lengths_differ = not lengths_equal
+    if policy == SWIFT_ROOT_POLICY_SAME_PHYSICAL and not (
+        paths_equal and lengths_equal
+    ):
         raise ReproducibilityError(
             4,
             "source-materialization",
-            "two source roots must have different UTF-8 byte lengths",
+            "same-physical-root policy requires one identical source path",
+        )
+    if policy == SWIFT_ROOT_POLICY_DISTINCT_EQUAL and (
+        paths_equal or not lengths_equal
+    ):
+        raise ReproducibilityError(
+            4,
+            "source-materialization",
+            "distinct-equal policy requires distinct paths with equal UTF-8 "
+            "byte lengths",
+        )
+    if policy in (
+        SOURCE_ROOT_POLICY,
+        SWIFT_ROOT_POLICY_DIAGNOSTIC_DISTINCT_UNEQUAL,
+    ) and (
+        paths_equal or lengths_equal
+    ):
+        raise ReproducibilityError(
+            4,
+            "source-materialization",
+            "two source roots must be distinct and have different UTF-8 byte "
+            "lengths",
         )
     if (
         type(evidence) is not dict
@@ -547,9 +600,10 @@ def validate_source_root_length_evidence(
             "sourceRootByteLengths",
             "sourceRootLengthsDiffer",
         }
-        or evidence.get("policy") != SOURCE_ROOT_POLICY
+        or evidence.get("policy") != policy
         or type(evidence.get("sourceRootLengthsDiffer")) is not bool
-        or evidence.get("sourceRootLengthsDiffer") is not True
+        or evidence.get("sourceRootLengthsDiffer")
+        is not expected_lengths_differ
     ):
         raise ReproducibilityError(
             4,
@@ -572,17 +626,65 @@ def validate_source_root_length_evidence(
 
 def source_root_length_evidence(
     roots: tuple[Path, ...],
+    *,
+    policy: str = SOURCE_ROOT_POLICY,
 ) -> dict[str, object]:
+    encoded_lengths = tuple(len(os.fsencode(str(root))) for root in roots)
     evidence: dict[str, object] = {
-        "policy": SOURCE_ROOT_POLICY,
+        "policy": policy,
         "sourceRootByteLengths": {
-            label: len(os.fsencode(str(root)))
-            for label, root in zip(("build-a", "build-b"), roots)
+            label: length
+            for label, length in zip(("build-a", "build-b"), encoded_lengths)
         },
-        "sourceRootLengthsDiffer": True,
+        "sourceRootLengthsDiffer": len(set(encoded_lengths)) > 1,
     }
-    validate_source_root_length_evidence(evidence, roots)
+    validate_source_root_length_evidence(evidence, roots, policy=policy)
     return evidence
+
+
+def validate_swift_root_diagnostic_mode(mode: object) -> str:
+    if type(mode) is not str or mode not in SWIFT_ROOT_DIAGNOSTIC_MODES:
+        raise ReproducibilityError(
+            2,
+            "invocation",
+            "Swift source-root diagnostic mode is unsupported",
+        )
+    return mode
+
+
+def swift_source_root_plan(
+    run_root: Path,
+    diagnostic_source_root_mode: str | None = None,
+) -> tuple[tuple[Path, Path], str]:
+    if diagnostic_source_root_mode is None:
+        root_names = SOURCE_ROOT_NAMES
+        policy = SOURCE_ROOT_POLICY
+    else:
+        diagnostic_source_root_mode = validate_swift_root_diagnostic_mode(
+            diagnostic_source_root_mode
+        )
+        if diagnostic_source_root_mode == SWIFT_ROOT_DIAGNOSTIC_SAME_PHYSICAL:
+            root_names = ("lane-same", "lane-same")
+            policy = SWIFT_ROOT_POLICY_SAME_PHYSICAL
+        elif (
+            diagnostic_source_root_mode
+            == SWIFT_ROOT_DIAGNOSTIC_DISTINCT_EQUAL
+        ):
+            root_names = ("lane-a", "lane-b")
+            policy = SWIFT_ROOT_POLICY_DISTINCT_EQUAL
+        else:
+            root_names = SOURCE_ROOT_NAMES
+            policy = SWIFT_ROOT_POLICY_DIAGNOSTIC_DISTINCT_UNEQUAL
+    roots = tuple(run_root / name / "project" for name in root_names)
+    if len(roots) != 2:  # pragma: no cover - constant integrity boundary
+        raise ReproducibilityError(
+            70,
+            "internal",
+            "Swift source-root plan must contain exactly two lanes",
+        )
+    typed_roots = (roots[0], roots[1])
+    source_root_length_evidence(typed_roots, policy=policy)
+    return typed_roots, policy
 
 
 def normalized_mode(file_mode: int) -> int:
@@ -1049,6 +1151,7 @@ def validate_result_mode_path(
     *,
     publish_qualified: bool,
     expected_release_id: str | None = None,
+    diagnostic_source_root_mode: str | None = None,
 ) -> str:
     if expected_release_id is None:
         try:
@@ -1062,16 +1165,31 @@ def validate_result_mode_path(
         release_id = archive_builder.release_id(current)
     else:
         release_id = expected_release_id
-    prefix = (
-        f"{release_id}"
-        f"-two-root-v{RESULT_PATH_VERSION}"
-    )
-    if publish_qualified:
-        canonical_name = f"{prefix}.json"
-        label_prefix = f"{prefix}-"
+    if diagnostic_source_root_mode is not None:
+        diagnostic_source_root_mode = validate_swift_root_diagnostic_mode(
+            diagnostic_source_root_mode
+        )
+        if publish_qualified:
+            raise ReproducibilityError(
+                2,
+                "invocation",
+                "Swift source-root diagnostics are comparison-only",
+            )
+        diagnostic_prefix = (
+            f"{release_id}-swift-root-diagnostic-v"
+            f"{SWIFT_ROOT_DIAGNOSTIC_PATH_VERSION}-"
+            f"{diagnostic_source_root_mode}"
+        )
+        canonical_name = f"{diagnostic_prefix}.json"
+        label_prefix = f"{diagnostic_prefix}-"
     else:
-        canonical_name = f"{prefix}{PREPUBLICATION_RESULT_SUFFIX}"
-        label_prefix = f"{prefix}-prepublication-"
+        prefix = f"{release_id}-two-root-v{RESULT_PATH_VERSION}"
+        if publish_qualified:
+            canonical_name = f"{prefix}.json"
+            label_prefix = f"{prefix}-"
+        else:
+            canonical_name = f"{prefix}{PREPUBLICATION_RESULT_SUFFIX}"
+            label_prefix = f"{prefix}-prepublication-"
     if result_path.name == canonical_name:
         valid = True
     elif not (
@@ -1105,6 +1223,7 @@ def preflight_fixed_paths(
     publish_qualified: bool = True,
     expected_release_id: str | None = None,
     protected_release_relative: Path | None = None,
+    diagnostic_source_root_mode: str | None = None,
 ) -> str:
     if (expected_release_id is None) != (
         protected_release_relative is None
@@ -1122,11 +1241,15 @@ def preflight_fixed_paths(
             previous_release_relative=protected_release_relative,
         )
     )
-    release_id = validate_result_mode_path(
-        result_path,
-        publish_qualified=publish_qualified,
-        expected_release_id=release_context.release_id,
-    )
+    validation_arguments: dict[str, object] = {
+        "publish_qualified": publish_qualified,
+        "expected_release_id": release_context.release_id,
+    }
+    if diagnostic_source_root_mode is not None:
+        validation_arguments["diagnostic_source_root_mode"] = (
+            diagnostic_source_root_mode
+        )
+    release_id = validate_result_mode_path(result_path, **validation_arguments)
     allowed_result_root = RESULT_ROOT.resolve()
     if (
         result_path.parent != allowed_result_root
@@ -1719,6 +1842,218 @@ def capture_archive(clone_root: Path, release_id: str) -> ArchiveEvidence:
     )
 
 
+def detach_lane_a_archive(
+    evidence: ArchiveEvidence,
+    *,
+    run_root: Path,
+    release_id: str,
+) -> ArchiveEvidence:
+    phase = "archive-retention"
+    try:
+        run_status = run_root.lstat()
+    except OSError as error:
+        raise ReproducibilityError(
+            8,
+            phase,
+            f"cannot inspect the owned run root: {error}",
+        ) from error
+    if (
+        not run_root.is_absolute()
+        or stat.S_ISLNK(run_status.st_mode)
+        or not stat.S_ISDIR(run_status.st_mode)
+        or run_status.st_uid != os.getuid()
+        or stat.S_IMODE(run_status.st_mode) & 0o077
+    ):
+        raise ReproducibilityError(
+            8,
+            phase,
+            "lane-A retention requires a private owner-controlled run root",
+        )
+
+    source = evidence.archive_directory
+    expected_names = {
+        f"{release_id}.zip",
+        f"{release_id}.manifest.json",
+        f"{release_id}.zip.sha256",
+    }
+    expected_paths = (
+        source / f"{release_id}.zip",
+        source / f"{release_id}.manifest.json",
+        source / f"{release_id}.zip.sha256",
+    )
+    try:
+        source_status = source.lstat()
+        run_resolved = run_root.resolve(strict=True)
+        source_resolved = source.resolve(strict=True)
+        actual_names = {path.name for path in source.iterdir()}
+    except OSError as error:
+        raise ReproducibilityError(
+            8,
+            phase,
+            f"cannot inspect the lane-A archive directory: {error}",
+        ) from error
+    if (
+        source.name != release_id
+        or stat.S_ISLNK(source_status.st_mode)
+        or not stat.S_ISDIR(source_status.st_mode)
+        or run_resolved not in source_resolved.parents
+        or actual_names != expected_names
+        or (
+            evidence.archive_path,
+            evidence.manifest_path,
+            evidence.checksum_path,
+        )
+        != expected_paths
+    ):
+        raise ReproducibilityError(
+            8,
+            phase,
+            "lane-A archive source path or inventory is invalid",
+        )
+
+    refreshed = capture_archive(source.parents[2], release_id)
+    if (
+        refreshed.result_record("build-a")
+        != evidence.result_record("build-a")
+        or refreshed.archive_identity != evidence.archive_identity
+        or refreshed.manifest_identity != evidence.manifest_identity
+        or refreshed.checksum_identity != evidence.checksum_identity
+    ):
+        raise ReproducibilityError(
+            8,
+            phase,
+            "lane-A archive changed before retention",
+        )
+
+    retained_clone_root = run_root / "retained-build-a"
+    retained_dist = retained_clone_root / "dist"
+    retained_releases = retained_dist / "releases"
+    destination = retained_releases / release_id
+    if os.path.lexists(retained_clone_root):
+        raise ReproducibilityError(
+            8,
+            phase,
+            "lane-A retained archive destination already exists",
+        )
+    try:
+        retained_clone_root.mkdir(mode=0o700)
+        retained_dist.mkdir(mode=0o700)
+        retained_releases.mkdir(mode=0o700)
+        if os.path.lexists(destination):
+            raise FileExistsError(destination)
+        os.replace(source, destination)
+    except OSError as error:
+        raise ReproducibilityError(
+            8,
+            phase,
+            f"cannot atomically retain the lane-A archive: {error}",
+        ) from error
+    if os.path.lexists(source):
+        raise ReproducibilityError(
+            8,
+            phase,
+            "lane-A archive remained visible at its live build path",
+        )
+    try:
+        destination_status = destination.lstat()
+        destination_resolved = destination.resolve(strict=True)
+    except OSError as error:
+        raise ReproducibilityError(
+            8,
+            phase,
+            f"cannot inspect the retained lane-A archive: {error}",
+        ) from error
+    if (
+        stat.S_ISLNK(destination_status.st_mode)
+        or not stat.S_ISDIR(destination_status.st_mode)
+        or run_resolved not in destination_resolved.parents
+    ):
+        raise ReproducibilityError(
+            8,
+            phase,
+            "retained lane-A archive escaped the owned run root",
+        )
+    retained = capture_archive(retained_clone_root, release_id)
+    if (
+        retained.result_record("build-a")
+        != evidence.result_record("build-a")
+        or retained.archive_identity != evidence.archive_identity
+        or retained.manifest_identity != evidence.manifest_identity
+        or retained.checksum_identity != evidence.checksum_identity
+    ):
+        raise ReproducibilityError(
+            8,
+            phase,
+            "retained lane-A archive differs after atomic relocation",
+        )
+    return retained
+
+
+def require_archive_evidence_unchanged(
+    evidence: ArchiveEvidence,
+    *,
+    release_id: str,
+    label: str,
+) -> ArchiveEvidence:
+    phase = "archive-comparison"
+    directory = evidence.archive_directory
+    expected_paths = (
+        directory / f"{release_id}.zip",
+        directory / f"{release_id}.manifest.json",
+        directory / f"{release_id}.zip.sha256",
+    )
+    expected_names = {path.name for path in expected_paths}
+    try:
+        directory_status = directory.lstat()
+        actual_names = {path.name for path in directory.iterdir()}
+    except OSError as error:
+        raise ReproducibilityError(
+            8,
+            phase,
+            f"cannot revalidate {label} archive directory: {error}",
+        ) from error
+    if (
+        directory.name != release_id
+        or stat.S_ISLNK(directory_status.st_mode)
+        or not stat.S_ISDIR(directory_status.st_mode)
+        or actual_names != expected_names
+        or (
+            evidence.archive_path,
+            evidence.manifest_path,
+            evidence.checksum_path,
+        )
+        != expected_paths
+        or directory
+        != directory.parents[1] / "releases" / release_id
+    ):
+        raise ReproducibilityError(
+            8,
+            phase,
+            f"{label} archive path or inventory changed before comparison",
+        )
+    try:
+        refreshed = capture_archive(directory.parents[2], release_id)
+    except ReproducibilityError as error:
+        raise ReproducibilityError(
+            8,
+            phase,
+            f"cannot recapture {label} archive: {error}",
+        ) from error
+    if (
+        refreshed.result_record(label) != evidence.result_record(label)
+        or refreshed.archive_identity != evidence.archive_identity
+        or refreshed.manifest_identity != evidence.manifest_identity
+        or refreshed.checksum_identity != evidence.checksum_identity
+        or refreshed.normalizations != evidence.normalizations
+    ):
+        raise ReproducibilityError(
+            8,
+            phase,
+            f"{label} archive changed before comparison",
+        )
+    return refreshed
+
+
 def files_equal(first: Path, second: Path) -> bool:
     with first.open("rb") as left, second.open("rb") as right:
         while True:
@@ -1893,6 +2228,7 @@ def load_matching_prepublication_result(
     expected_source: object,
     expected_builds: object,
     expected_comparison: object,
+    expected_scratch: object,
     protected_release_relative: Path,
     protected_archive_identity_sha256: str,
 ) -> tuple[dict[str, object], Path, FileIdentity]:
@@ -1935,6 +2271,15 @@ def load_matching_prepublication_result(
         publish_qualified=False
     )["publication"]
     protected = parsed.get("protectedArchive")
+    scratch = parsed.get("scratch")
+    source_roots = (
+        scratch.get("sourceRoots") if type(scratch) is dict else None
+    )
+    source_root_lengths = (
+        source_roots.get("sourceRootByteLengths")
+        if type(source_roots) is dict
+        else None
+    )
     if (
         set(parsed) != set(empty_result(publish_qualified=False))
         or parsed.get("schemaVersion") != RESULT_SCHEMA_VERSION
@@ -1947,6 +2292,29 @@ def load_matching_prepublication_result(
         or parsed.get("source") != expected_source
         or parsed.get("builds") != expected_builds
         or parsed.get("comparison") != expected_comparison
+        or parsed.get("scratch") != expected_scratch
+        or type(scratch) is not dict
+        or set(scratch) != {"fixedSwiftPath", "policy", "sourceRoots"}
+        or scratch.get("fixedSwiftPath") != str(SWIFT_SCRATCH)
+        or scratch.get("policy")
+        != "fixed-owned-flocked-fresh-per-lane-v1"
+        or type(source_roots) is not dict
+        or set(source_roots)
+        != {
+            "policy",
+            "sourceRootByteLengths",
+            "sourceRootLengthsDiffer",
+        }
+        or source_roots.get("policy") != SOURCE_ROOT_POLICY
+        or source_roots.get("sourceRootLengthsDiffer") is not True
+        or type(source_root_lengths) is not dict
+        or set(source_root_lengths) != {"build-a", "build-b"}
+        or any(
+            type(value) is not int or value <= 0
+            for value in source_root_lengths.values()
+        )
+        or source_root_lengths["build-a"]
+        == source_root_lengths["build-b"]
         or type(protected) is not dict
         or protected.get("policy") != PROTECTED_RELEASE_POLICY
         or protected.get("relativePath")
@@ -6129,6 +6497,7 @@ def execute(
     publish_qualified: bool = True,
     lane_a_local_dmg_result_path: Path | None = None,
     lane_a_local_dmg_suite_label: str | None = None,
+    diagnostic_source_root_mode: str | None = None,
 ) -> tuple[int, dict[str, object]]:
     result = empty_result(publish_qualified=publish_qualified)
     exit_code = 70
@@ -6168,15 +6537,44 @@ def execute(
                 "invocation",
                 "lane-A local DMG exercise is comparison-only",
             )
+        if diagnostic_source_root_mode is not None:
+            diagnostic_source_root_mode = validate_swift_root_diagnostic_mode(
+                diagnostic_source_root_mode
+            )
+            if publish_qualified:
+                raise ReproducibilityError(
+                    2,
+                    "invocation",
+                    "Swift source-root diagnostics are comparison-only",
+                )
+            if (
+                lane_a_local_dmg_result_path is not None
+                or lane_a_local_dmg_suite_label is not None
+            ):
+                raise ReproducibilityError(
+                    2,
+                    "invocation",
+                    "Swift source-root diagnostics cannot publish lane-A "
+                    "lifecycle evidence",
+                )
         result["protectedArchive"]["relativePath"] = (
             protected_release_relative.as_posix()
         )
-        expected_release_id = preflight_fixed_paths(
-            result_path,
-            publish_qualified=publish_qualified,
-            expected_release_id=release_context.release_id,
-            protected_release_relative=protected_release_relative,
-        )
+        if diagnostic_source_root_mode is None:
+            expected_release_id = preflight_fixed_paths(
+                result_path,
+                publish_qualified=publish_qualified,
+                expected_release_id=release_context.release_id,
+                protected_release_relative=protected_release_relative,
+            )
+        else:
+            expected_release_id = preflight_fixed_paths(
+                result_path,
+                publish_qualified=publish_qualified,
+                expected_release_id=release_context.release_id,
+                protected_release_relative=protected_release_relative,
+                diagnostic_source_root_mode=diagnostic_source_root_mode,
+            )
         if lane_a_local_dmg_result_path is not None:
             validate_lane_a_local_dmg_result_path(
                 lane_a_local_dmg_result_path,
@@ -6226,12 +6624,16 @@ def execute(
             "sha256": source_snapshot["sha256"],
         }
 
-        roots = tuple(
-            run_root / name / "project" for name in SOURCE_ROOT_NAMES
+        roots, source_root_policy = swift_source_root_plan(
+            run_root,
+            diagnostic_source_root_mode,
         )
-        result["scratch"]["sourceRoots"] = source_root_length_evidence(roots)
-        print("Materializing two independent local Git containers...", flush=True)
-        for clone_root in roots:
+        result["scratch"]["sourceRoots"] = source_root_length_evidence(
+            roots,
+            policy=source_root_policy,
+        )
+        print("Materializing isolated local Git container(s)...", flush=True)
+        for clone_root in dict.fromkeys(roots):
             materialize_clone(clone_root, overlay, git_refs)
             clone_snapshot = archive_builder.source_snapshot(clone_root)
             if clone_snapshot != source_snapshot:
@@ -6281,6 +6683,21 @@ def execute(
         )
         result["builds"].append(build_a.result_record("build-a"))
         cleanup_swift_scratch(run_id, remove_lease=False)
+        if (
+            diagnostic_source_root_mode
+            == SWIFT_ROOT_DIAGNOSTIC_SAME_PHYSICAL
+        ):
+            if archive_builder.source_snapshot(roots[0]) != source_snapshot:
+                raise ReproducibilityError(
+                    4,
+                    "source-materialization",
+                    "same-root build A changed its materialized source snapshot",
+                )
+            build_a = detach_lane_a_archive(
+                build_a,
+                run_root=run_root,
+                release_id=expected_release_id,
+            )
 
         print("Running clean release build B...", flush=True)
         build_b = run_lane(
@@ -6291,6 +6708,18 @@ def execute(
         )
         result["builds"].append(build_b.result_record("build-b"))
         cleanup_swift_scratch(run_id, remove_lease=False)
+
+        if diagnostic_source_root_mode is not None:
+            build_a = require_archive_evidence_unchanged(
+                build_a,
+                release_id=expected_release_id,
+                label="build-a",
+            )
+            build_b = require_archive_evidence_unchanged(
+                build_b,
+                release_id=expected_release_id,
+                label="build-b",
+            )
 
         if (
             build_a.archive_directory.name != expected_release_id
@@ -6354,6 +6783,7 @@ def execute(
                 expected_source=result["source"],
                 expected_builds=result["builds"],
                 expected_comparison=result["comparison"],
+                expected_scratch=result["scratch"],
                 protected_release_relative=protected_release_relative,
                 protected_archive_identity_sha256=sentinel_before[0],
             )
@@ -6532,6 +6962,15 @@ def default_comparison_result_path() -> Path:
     )
 
 
+def default_swift_root_diagnostic_result_path(mode: str) -> Path:
+    mode = validate_swift_root_diagnostic_mode(mode)
+    current = load_release_version_ledger()[-1]
+    return RESULT_ROOT / (
+        f"{archive_builder.release_id(current)}-swift-root-diagnostic-v"
+        f"{SWIFT_ROOT_DIAGNOSTIC_PATH_VERSION}-{mode}.json"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -6550,6 +6989,16 @@ def main() -> int:
         help=(
             "compare two complete isolated builds but never publish an "
             "archive into the source workspace"
+        ),
+    )
+    parser.add_argument(
+        "--swift-root-diagnostic",
+        choices=SWIFT_ROOT_DIAGNOSTIC_MODES,
+        default=None,
+        help=(
+            "comparison-only diagnostic: compare sequential same-root, "
+            "distinct equal-length-root, or distinct unequal-length-root "
+            "Swift release builds in a separate non-publication namespace"
         ),
     )
     parser.add_argument(
@@ -6578,19 +7027,53 @@ def main() -> int:
     publish_qualified = not arguments.comparison_only
     lane_a_local_dmg_result_path: Path | None = None
     try:
+        if (
+            arguments.swift_root_diagnostic is not None
+            and publish_qualified
+        ):
+            raise ReproducibilityError(
+                2,
+                "invocation",
+                "--swift-root-diagnostic requires --comparison-only",
+            )
+        if arguments.swift_root_diagnostic is not None and (
+            arguments.lane_a_local_dmg_result is not None
+            or arguments.lane_a_local_dmg_suite_label is not None
+        ):
+            raise ReproducibilityError(
+                2,
+                "invocation",
+                "--swift-root-diagnostic cannot be combined with lane-A "
+                "lifecycle options",
+            )
         result_path = (
             (
-                default_comparison_result_path()
-                if arguments.comparison_only
-                else default_result_path()
+                default_swift_root_diagnostic_result_path(
+                    arguments.swift_root_diagnostic
+                )
+                if arguments.swift_root_diagnostic is not None
+                else (
+                    default_comparison_result_path()
+                    if arguments.comparison_only
+                    else default_result_path()
+                )
             )
             if arguments.result is None
             else arguments.result.resolve()
         ).resolve()
-        release_id = validate_result_mode_path(
-            result_path,
-            publish_qualified=publish_qualified,
-        )
+        if arguments.swift_root_diagnostic is None:
+            release_id = validate_result_mode_path(
+                result_path,
+                publish_qualified=publish_qualified,
+            )
+        else:
+            release_id = validate_result_mode_path(
+                result_path,
+                publish_qualified=publish_qualified,
+                diagnostic_source_root_mode=(
+                    arguments.swift_root_diagnostic
+                ),
+            )
         if arguments.lane_a_local_dmg_result is not None:
             if publish_qualified:
                 raise ReproducibilityError(
@@ -6634,7 +7117,13 @@ def main() -> int:
             flush=True,
         )
         return 2
-    if (
+    if arguments.swift_root_diagnostic is not None:
+        exit_code, result = execute(
+            result_path,
+            publish_qualified=False,
+            diagnostic_source_root_mode=arguments.swift_root_diagnostic,
+        )
+    elif (
         lane_a_local_dmg_result_path is None
         and arguments.lane_a_local_dmg_suite_label is None
     ):

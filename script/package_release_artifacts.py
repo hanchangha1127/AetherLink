@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 from dataclasses import dataclass
 import functools
 import hashlib
@@ -40,6 +41,12 @@ from script.generate_release_compliance import (
 
 
 DEFAULT_OUTPUT_ROOT = ROOT / "dist/releases"
+UNSEALED_MACOS_OUTPUT_ROOT = ROOT / "dist/unsealed-package-only"
+UNSEALED_MACOS_SOURCE_RECEIPT_NAME = "source-receipt.json"
+UNSEALED_MACOS_SOURCE_RECEIPT_SCHEMA_VERSION = 1
+UNSEALED_MACOS_OUTPUT_CONTRACT = (
+    "macos-unsealed-app-dsym-source-bound-v1"
+)
 FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 MANIFEST_SCHEMA_VERSION = 2
 MEMBER_SCHEMA_VERSION = 1
@@ -783,6 +790,329 @@ def source_snapshot(root: Path = ROOT) -> dict[str, object]:
         "files": files,
         "sha256": digest.hexdigest(),
     }
+
+
+def unsealed_macos_source_receipt(root: Path = ROOT) -> dict[str, object]:
+    try:
+        current = load_release_version_ledger(
+            root / "release/version-ledger.tsv"
+        )[-1]
+    except (IndexError, LedgerError) as error:
+        raise ReleaseArchiveError(
+            f"unsealed macOS source receipt ledger failed: {error}"
+        ) from error
+    snapshot = source_snapshot(root)
+    return {
+        "build": {
+            "buildNumber": current.build_number,
+            "configuration": "release",
+            "marketingVersion": current.marketing_version,
+            "mode": "unsealed-package-only",
+        },
+        "outputContract": UNSEALED_MACOS_OUTPUT_CONTRACT,
+        "schemaVersion": UNSEALED_MACOS_SOURCE_RECEIPT_SCHEMA_VERSION,
+        "source": {
+            "algorithm": snapshot["algorithm"],
+            "fileCount": snapshot["fileCount"],
+            "sha256": snapshot["sha256"],
+        },
+    }
+
+
+def _renameat_platform_contract() -> tuple[str, int]:
+    if sys.platform == "darwin":
+        return "renameatx_np", -2
+    if sys.platform.startswith("linux"):
+        return "renameat2", -100
+    raise ReleaseArchiveError(
+        f"atomic directory rename is unsupported on {sys.platform}"
+    )
+
+
+def _atomic_exchange_directories(first: Path, second: Path) -> None:
+    libc = ctypes.CDLL(None, use_errno=True)
+    function_name, at_fdcwd = _renameat_platform_contract()
+    exchange_flag = 0x00000002
+    try:
+        exchange = getattr(libc, function_name)
+    except AttributeError as error:
+        raise ReleaseArchiveError(
+            f"atomic directory exchange function {function_name} is unavailable"
+        ) from error
+    exchange.argtypes = (
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    )
+    exchange.restype = ctypes.c_int
+    result = exchange(
+        at_fdcwd,
+        os.fsencode(first),
+        at_fdcwd,
+        os.fsencode(second),
+        exchange_flag,
+    )
+    if result != 0:
+        error_number = ctypes.get_errno()
+        raise ReleaseArchiveError(
+            "atomic unsealed macOS output exchange failed: "
+            f"{os.strerror(error_number)}"
+        )
+
+
+def _atomic_rename_directory_noreplace(source: Path, destination: Path) -> None:
+    libc = ctypes.CDLL(None, use_errno=True)
+    function_name, at_fdcwd = _renameat_platform_contract()
+    if sys.platform == "darwin":
+        no_replace_flag = 0x00000004
+    else:
+        no_replace_flag = 0x00000001
+    try:
+        rename = getattr(libc, function_name)
+    except AttributeError as error:
+        raise ReleaseArchiveError(
+            f"atomic directory rename function {function_name} is unavailable"
+        ) from error
+    rename.argtypes = (
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    )
+    rename.restype = ctypes.c_int
+    result = rename(
+        at_fdcwd,
+        os.fsencode(source),
+        at_fdcwd,
+        os.fsencode(destination),
+        no_replace_flag,
+    )
+    if result != 0:
+        error_number = ctypes.get_errno()
+        raise ReleaseArchiveError(
+            "atomic no-replace unsealed macOS recovery rename failed: "
+            f"{os.strerror(error_number)}"
+        )
+
+
+def _require_physical_directory(path: Path, label: str) -> os.stat_result:
+    try:
+        status = path.lstat()
+    except OSError as error:
+        raise ReleaseArchiveError(f"{label} cannot be inspected: {error}") from error
+    if stat.S_ISLNK(status.st_mode) or not stat.S_ISDIR(status.st_mode):
+        raise ReleaseArchiveError(f"{label} must be a physical directory")
+    return status
+
+
+def _verify_unsealed_macos_output_generation(
+    output_root: Path,
+    *,
+    root: Path,
+    label: str,
+) -> None:
+    from script.check_release_artifact_archive import (
+        ReleaseArchiveVerificationError,
+        verify_macos_release_build_outputs,
+    )
+
+    try:
+        verify_macos_release_build_outputs(
+            root=root,
+            output_root=output_root,
+        )
+    except ReleaseArchiveVerificationError as error:
+        raise ReleaseArchiveError(
+            f"{label} failed independent readback: {error}"
+        ) from error
+
+
+def _preserve_unsealed_macos_recovery_generation(staging_root: Path) -> Path:
+    recovery_name = staging_root.name.replace(
+        ".unsealed-package-only.stage-",
+        ".unsealed-package-only.recovery-",
+        1,
+    )
+    recovery_root = staging_root.with_name(recovery_name)
+    _atomic_rename_directory_noreplace(staging_root, recovery_root)
+    return recovery_root
+
+
+def publish_unsealed_macos_output(
+    staging_root: Path,
+    *,
+    root: Path = ROOT,
+) -> bool:
+    output_parent = root / "dist"
+    destination = output_parent / "unsealed-package-only"
+    _require_physical_directory(output_parent, "unsealed macOS output parent")
+    if (
+        not staging_root.is_absolute()
+        or staging_root.parent != output_parent
+        or re.fullmatch(
+            r"\.unsealed-package-only\.stage-[A-Za-z0-9._-]+",
+            staging_root.name,
+        )
+        is None
+    ):
+        raise ReleaseArchiveError(
+            "unsealed macOS staging root must be a dedicated absolute "
+            "directory below the fixed output parent"
+        )
+    staging_status = _require_physical_directory(
+        staging_root,
+        "unsealed macOS staging root",
+    )
+    expected_names = {
+        "AetherLink.app",
+        "AetherLink.dSYM",
+        UNSEALED_MACOS_SOURCE_RECEIPT_NAME,
+    }
+    try:
+        actual_names = {entry.name for entry in staging_root.iterdir()}
+    except OSError as error:
+        raise ReleaseArchiveError(
+            f"unsealed macOS staging root cannot be listed: {error}"
+        ) from error
+    if actual_names != expected_names:
+        raise ReleaseArchiveError(
+            "unsealed macOS staging inventory differs; "
+            f"missing={sorted(expected_names - actual_names)}, "
+            f"extra={sorted(actual_names - expected_names)}"
+        )
+    _require_physical_directory(
+        staging_root / "AetherLink.app",
+        "staged unsealed macOS app",
+    )
+    _require_physical_directory(
+        staging_root / "AetherLink.dSYM",
+        "staged unsealed macOS dSYM",
+    )
+    try:
+        receipt_status = (
+            staging_root / UNSEALED_MACOS_SOURCE_RECEIPT_NAME
+        ).lstat()
+    except OSError as error:
+        raise ReleaseArchiveError(
+            f"unsealed macOS source receipt cannot be inspected: {error}"
+        ) from error
+    if stat.S_ISLNK(receipt_status.st_mode) or not stat.S_ISREG(
+        receipt_status.st_mode
+    ):
+        raise ReleaseArchiveError(
+            "unsealed macOS source receipt must be a physical regular file"
+        )
+    _verify_unsealed_macos_output_generation(
+        staging_root,
+        root=root,
+        label="staged unsealed macOS output",
+    )
+    staging_status_after = _require_physical_directory(
+        staging_root,
+        "validated unsealed macOS staging root",
+    )
+    if (
+        staging_status_after.st_dev,
+        staging_status_after.st_ino,
+        staging_status_after.st_mode,
+        staging_status_after.st_uid,
+        staging_status_after.st_gid,
+    ) != (
+        staging_status.st_dev,
+        staging_status.st_ino,
+        staging_status.st_mode,
+        staging_status.st_uid,
+        staging_status.st_gid,
+    ):
+        raise ReleaseArchiveError(
+            "unsealed macOS staging root changed during independent readback"
+        )
+    try:
+        destination_exists = destination.exists() or destination.is_symlink()
+    except OSError as error:
+        raise ReleaseArchiveError(
+            f"unsealed macOS destination cannot be inspected: {error}"
+        ) from error
+    if destination_exists:
+        destination_status = _require_physical_directory(
+            destination,
+            "existing unsealed macOS output",
+        )
+        if destination_status.st_dev != staging_status.st_dev:
+            raise ReleaseArchiveError(
+                "unsealed macOS staging and destination must share a filesystem"
+            )
+        _atomic_exchange_directories(staging_root, destination)
+        try:
+            _verify_unsealed_macos_output_generation(
+                destination,
+                root=root,
+                label="published unsealed macOS output",
+            )
+        except ReleaseArchiveError as readback_error:
+            try:
+                _atomic_exchange_directories(staging_root, destination)
+            except ReleaseArchiveError as rollback_error:
+                try:
+                    recovery_root = (
+                        _preserve_unsealed_macos_recovery_generation(
+                            staging_root
+                        )
+                    )
+                except ReleaseArchiveError as recovery_error:
+                    raise ReleaseArchiveError(
+                        "published unsealed macOS output failed readback and "
+                        "atomic rollback; recovery preservation also failed: "
+                        f"{recovery_error}"
+                    ) from readback_error
+                raise ReleaseArchiveError(
+                    "published unsealed macOS output failed readback and its "
+                    "atomic rollback also failed; the previous generation was "
+                    f"preserved at {recovery_root}: {rollback_error}"
+                ) from readback_error
+            raise ReleaseArchiveError(
+                "published unsealed macOS output failed readback; the "
+                f"previous generation was restored: {readback_error}"
+            ) from readback_error
+        try:
+            shutil.rmtree(staging_root)
+        except OSError as error:
+            print(
+                "warning: new unsealed macOS output passed post-publication "
+                "readback, but the replaced generation could not be removed: "
+                f"{error}",
+                file=sys.stderr,
+                flush=True,
+            )
+        return True
+    try:
+        os.replace(staging_root, destination)
+    except OSError as error:
+        raise ReleaseArchiveError(
+            f"unsealed macOS output publication failed: {error}"
+        ) from error
+    try:
+        _verify_unsealed_macos_output_generation(
+            destination,
+            root=root,
+            label="published unsealed macOS output",
+        )
+    except ReleaseArchiveError as readback_error:
+        try:
+            os.replace(destination, staging_root)
+        except OSError as rollback_error:
+            raise ReleaseArchiveError(
+                "new unsealed macOS output failed readback and its atomic "
+                f"rollback also failed: {rollback_error}"
+            ) from readback_error
+        raise ReleaseArchiveError(
+            "new unsealed macOS output failed readback and was removed from "
+            f"the live path: {readback_error}"
+        ) from readback_error
+    return False
 
 
 def run_text(command: list[str], *, root: Path = ROOT) -> str:
@@ -3703,6 +4033,25 @@ def main() -> int:
         "source-digest",
         help="print the canonical current build-input snapshot digest",
     )
+    subparsers.add_parser(
+        "unsealed-macos-source-receipt",
+        help=(
+            "print the canonical source receipt for one unsealed macOS "
+            "Release output generation"
+        ),
+    )
+    publish_unsealed_parser = subparsers.add_parser(
+        "publish-unsealed-macos-output",
+        help=(
+            "atomically publish one staged unsealed macOS app, dSYM, and "
+            "source receipt"
+        ),
+    )
+    publish_unsealed_parser.add_argument(
+        "--staging-root",
+        type=Path,
+        required=True,
+    )
     create_parser = subparsers.add_parser(
         "create",
         help="create or idempotently confirm the local release evidence archive",
@@ -3716,6 +4065,16 @@ def main() -> int:
     try:
         if arguments.command == "source-digest":
             print(source_snapshot()["sha256"])
+            return 0
+        if arguments.command == "unsealed-macos-source-receipt":
+            os.sys.stdout.buffer.write(
+                canonical_json_bytes(unsealed_macos_source_receipt())
+            )
+            return 0
+        if arguments.command == "publish-unsealed-macos-output":
+            replaced = publish_unsealed_macos_output(arguments.staging_root)
+            state = "replaced" if replaced else "created"
+            print(f"Unsealed macOS output {state}: {UNSEALED_MACOS_OUTPUT_ROOT}")
             return 0
         directory, existed = create_release_archive(arguments.output_root)
     except ReleaseArchiveError as error:

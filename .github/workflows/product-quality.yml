@@ -62,6 +62,14 @@ jobs:
           python3 -B script/check_release_version_ledger.py
           python3 -B script/check_app_icons.py
           python3 -B script/check_license.py
+      - name: Run tracked documentation contracts
+        run: |
+          python3 -B script/check_docs_hygiene.py --tracked-contracts-only
+          python3 -B -m unittest \
+            script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_tracked_document_contract_mode_excludes_ignored_evidence_readback \
+            script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_tracked_document_contract_cli_is_explicit_and_bounded
+      - name: Run macOS release package contract units
+        run: PYTHONPATH=. python3 -B script/test_build_and_run.py
       - name: Compile macOS app
         run: swift build --product AetherLink
       - name: Verify focused Swift test selection
@@ -79,11 +87,25 @@ jobs:
         run: |
           python3 -B script/check_product_ci.py --write-swift-focused-test-binding
           python3 -B script/check_product_ci.py --swift-focused-test-results
-      - name: Compile macOS Release app on main
+      - name: Build unsealed macOS Release package on main
         if: >-
           ${{ github.event_name == 'push' &&
           github.ref == 'refs/heads/main' }}
-        run: swift build -c release --product AetherLink
+        run: |
+          source_before="$(python3 -B script/package_release_artifacts.py source-digest)"
+          ./script/build_and_run.sh --unsealed-package-only
+          source_after="$(python3 -B script/package_release_artifacts.py source-digest)"
+          if [[ "$source_before" != "$source_after" ]]; then
+            echo "macOS Release build inputs changed during packaging" >&2
+            exit 2
+          fi
+      - name: Read back unsealed macOS Release package on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: >-
+          python3 -B script/check_release_artifact_archive.py
+          --macos-build-outputs
 
   android-product-quality:
     name: Android product quality subset

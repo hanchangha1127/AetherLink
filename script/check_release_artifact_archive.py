@@ -322,6 +322,87 @@ ANDROID_RELEASE_MAPPING_MAX_BYTES = {
     "usage.txt": 134_217_728,
 }
 ANDROID_RELEASE_MAPPING_MAX_TOTAL_BYTES = 536_870_912
+MACOS_UNSEALED_OUTPUT_RELATIVE_PATH = Path("dist/unsealed-package-only")
+MACOS_UNSEALED_SOURCE_RECEIPT_NAME = "source-receipt.json"
+MACOS_UNSEALED_SOURCE_RECEIPT_SCHEMA_VERSION = 1
+MACOS_UNSEALED_SOURCE_RECEIPT_MAX_BYTES = 4_096
+MACOS_UNSEALED_OUTPUT_CONTRACT = (
+    "macos-unsealed-app-dsym-source-bound-v1"
+)
+MACOS_UNSEALED_APP_FILES = (
+    "Contents/Info.plist",
+    "Contents/MacOS/AetherLink",
+    "Contents/Resources/AppIcon.icns",
+    (
+        "Contents/Resources/AetherLink_LocalAgentBridge.bundle/"
+        "Info.plist"
+    ),
+    *(
+        "Contents/Resources/AetherLink_LocalAgentBridge.bundle/"
+        f"{locale}.lproj/Localizable.strings"
+        for locale in ("en", "fr", "ja", "ko", "zh-hans")
+    ),
+)
+MACOS_UNSEALED_DSYM_FILES = (
+    "Contents/Info.plist",
+    "Contents/Resources/DWARF/AetherLink",
+    "Contents/Resources/Relocations/aarch64/AetherLink.yml",
+)
+MACOS_UNSEALED_APP_INVENTORY = {
+    "": {"Contents"},
+    "Contents": {"Info.plist", "MacOS", "Resources"},
+    "Contents/MacOS": {"AetherLink"},
+    "Contents/Resources": {
+        "AetherLink_LocalAgentBridge.bundle",
+        "AppIcon.icns",
+    },
+    "Contents/Resources/AetherLink_LocalAgentBridge.bundle": {
+        "Info.plist",
+        "en.lproj",
+        "fr.lproj",
+        "ja.lproj",
+        "ko.lproj",
+        "zh-hans.lproj",
+    },
+    **{
+        (
+            "Contents/Resources/AetherLink_LocalAgentBridge.bundle/"
+            f"{locale}.lproj"
+        ): {"Localizable.strings"}
+        for locale in ("en", "fr", "ja", "ko", "zh-hans")
+    },
+}
+MACOS_UNSEALED_DSYM_INVENTORY = {
+    "": {"Contents"},
+    "Contents": {"Info.plist", "Resources"},
+    "Contents/Resources": {"DWARF", "Relocations"},
+    "Contents/Resources/DWARF": {"AetherLink"},
+    "Contents/Resources/Relocations": {"aarch64"},
+    "Contents/Resources/Relocations/aarch64": {"AetherLink.yml"},
+}
+MACOS_UNSEALED_APP_MAX_BYTES = {
+    "Contents/Info.plist": 1_048_576,
+    "Contents/MacOS/AetherLink": 536_870_912,
+    "Contents/Resources/AppIcon.icns": 16_777_216,
+    (
+        "Contents/Resources/AetherLink_LocalAgentBridge.bundle/"
+        "Info.plist"
+    ): 1_048_576,
+    **{
+        (
+            "Contents/Resources/AetherLink_LocalAgentBridge.bundle/"
+            f"{locale}.lproj/Localizable.strings"
+        ): 4_194_304
+        for locale in ("en", "fr", "ja", "ko", "zh-hans")
+    },
+}
+MACOS_UNSEALED_DSYM_MAX_BYTES = {
+    "Contents/Info.plist": 1_048_576,
+    "Contents/Resources/DWARF/AetherLink": 1_073_741_824,
+    "Contents/Resources/Relocations/aarch64/AetherLink.yml": 268_435_456,
+}
+MACOS_READBACK_TOOL_TIMEOUT_SECONDS = 30
+MACOS_READBACK_TOOL_MAX_OUTPUT_BYTES = 1_048_576
 
 
 class ReleaseArchiveVerificationError(ValueError):
@@ -655,6 +736,7 @@ def read_stable_regular_file(
     label: str,
     *,
     maximum_bytes: int = 1_073_741_824,
+    allow_empty: bool = False,
 ) -> bytes:
     if type(maximum_bytes) is not int or maximum_bytes < 1:
         raise ReleaseArchiveVerificationError(
@@ -735,7 +817,7 @@ def read_stable_regular_file(
         raise ReleaseArchiveVerificationError(
             f"{label} changed while it was read"
         )
-    if not data:
+    if not data and not allow_empty:
         raise ReleaseArchiveVerificationError(f"{label} must not be empty")
     return data
 
@@ -801,6 +883,145 @@ def require_directory_inventory(
             f"{sorted(expected_names - actual_names)}, "
             f"extra={sorted(actual_names - expected_names)}"
         )
+
+
+def read_exact_physical_tree(
+    root: Path,
+    *,
+    inventory: dict[str, set[str]],
+    expected_files: tuple[str, ...],
+    maximum_bytes: dict[str, int],
+    executable_files: set[str],
+    maximum_total_bytes: int,
+    digest_domain: bytes,
+    label: str,
+) -> tuple[dict[str, bytes], dict[str, int], dict[str, object]]:
+    if set(expected_files) != set(maximum_bytes):
+        raise ReleaseArchiveVerificationError(
+            f"{label} internal file-limit contract differs"
+        )
+    if type(maximum_total_bytes) is not int or maximum_total_bytes < 1:
+        raise ReleaseArchiveVerificationError(
+            f"{label} total read limit must be a positive integer"
+        )
+    for relative, expected_names in inventory.items():
+        require_directory_inventory(
+            root / relative if relative else root,
+            expected_names,
+            f"{label} directory {relative or '.'}",
+        )
+
+    files: dict[str, bytes] = {}
+    modes: dict[str, int] = {}
+    total_size = 0
+    for relative in expected_files:
+        path = root / relative
+        data = read_stable_regular_file(
+            path,
+            f"{label} file {relative}",
+            maximum_bytes=maximum_bytes[relative],
+        )
+        try:
+            status = path.lstat()
+        except OSError as error:
+            raise ReleaseArchiveVerificationError(
+                f"{label} file mode cannot be inspected for {relative}: "
+                f"{error}"
+            ) from error
+        mode = normalized_mode(status.st_mode)
+        expected_mode = 0o755 if relative in executable_files else 0o644
+        if mode != expected_mode:
+            raise ReleaseArchiveVerificationError(
+                f"{label} normalized mode differs for {relative}: "
+                f"{mode:04o} != {expected_mode:04o}"
+            )
+        total_size += len(data)
+        if total_size > maximum_total_bytes:
+            raise ReleaseArchiveVerificationError(
+                f"{label} exceeds the {maximum_total_bytes}-byte total "
+                "read limit"
+            )
+        files[relative] = data
+        modes[relative] = mode
+
+    for relative, expected_names in inventory.items():
+        require_directory_inventory(
+            root / relative if relative else root,
+            expected_names,
+            f"{label} directory {relative or '.'} after read",
+        )
+
+    digest_members = {
+        relative: f"{modes[relative]:04o}\0".encode("ascii") + data
+        for relative, data in files.items()
+    }
+    return files, modes, {
+        "fileCount": len(files),
+        "sha256": logical_member_digest(digest_members, digest_domain),
+        "size": total_size,
+    }
+
+
+def parse_exact_plist_dictionary(
+    data: bytes,
+    *,
+    expected_keys: set[str],
+    label: str,
+) -> dict[str, object]:
+    if b"\r" in data or not data.startswith(b"<?xml"):
+        raise ReleaseArchiveVerificationError(
+            f"{label} must be an XML plist with LF line endings"
+        )
+    try:
+        xml_root = ET.fromstring(data)
+        value = plistlib.loads(data)
+    except (ET.ParseError, plistlib.InvalidFileException, ValueError) as error:
+        raise ReleaseArchiveVerificationError(
+            f"{label} is invalid: {error}"
+        ) from error
+    if xml_root.tag != "plist" or len(xml_root) != 1 or xml_root[0].tag != "dict":
+        raise ReleaseArchiveVerificationError(
+            f"{label} must contain one top-level dictionary"
+        )
+    children = list(xml_root[0])
+    if len(children) % 2 != 0:
+        raise ReleaseArchiveVerificationError(
+            f"{label} dictionary key/value sequence is incomplete"
+        )
+    keys: list[str] = []
+    for index in range(0, len(children), 2):
+        key = children[index]
+        if key.tag != "key" or key.text is None:
+            raise ReleaseArchiveVerificationError(
+                f"{label} dictionary contains a non-key entry"
+            )
+        keys.append(key.text)
+    if len(keys) != len(set(keys)):
+        raise ReleaseArchiveVerificationError(
+            f"{label} contains a duplicate dictionary key"
+        )
+    if type(value) is not dict:
+        raise ReleaseArchiveVerificationError(
+            f"{label} top-level value must be a dictionary"
+        )
+    require_exact_keys(value, expected_keys, label)
+    if set(keys) != expected_keys:
+        raise ReleaseArchiveVerificationError(
+            f"{label} XML key set differs from its parsed dictionary"
+        )
+    return value
+
+
+def materialize_exact_tree(
+    root: Path,
+    files: dict[str, bytes],
+    modes: dict[str, int],
+) -> None:
+    for relative, data in files.items():
+        target = root.joinpath(*PurePosixPath(relative).parts)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        target.chmod(modes[relative])
 
 
 def require_exact_int(value: object, label: str) -> int:
@@ -1098,6 +1319,48 @@ def run_text(command: list[str], cwd: Path) -> str:
     return "\n".join(
         line.rstrip() for line in (result.stdout + result.stderr).splitlines()
     ).strip()
+
+
+def run_macos_readback_tool(command: list[str], cwd: Path) -> str:
+    environment = os.environ.copy()
+    environment["LC_ALL"] = "C"
+    try:
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            capture_output=True,
+            env=environment,
+            check=False,
+            timeout=MACOS_READBACK_TOOL_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise ReleaseArchiveVerificationError(
+            "macOS build-output readback command timed out after "
+            f"{MACOS_READBACK_TOOL_TIMEOUT_SECONDS} seconds: {command!r}"
+        ) from error
+    except OSError as error:
+        raise ReleaseArchiveVerificationError(
+            f"macOS build-output readback command failed to start: "
+            f"{command!r}: {error}"
+        ) from error
+    output = result.stdout + result.stderr
+    if len(output) > MACOS_READBACK_TOOL_MAX_OUTPUT_BYTES:
+        raise ReleaseArchiveVerificationError(
+            "macOS build-output readback command exceeded the "
+            f"{MACOS_READBACK_TOOL_MAX_OUTPUT_BYTES}-byte output limit"
+        )
+    if result.returncode != 0:
+        raise ReleaseArchiveVerificationError(
+            "macOS build-output readback command failed with exit "
+            f"{result.returncode}: {command!r}"
+        )
+    try:
+        text = output.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ReleaseArchiveVerificationError(
+            "macOS build-output readback command emitted non-UTF-8 output"
+        ) from error
+    return "\n".join(line.rstrip() for line in text.splitlines()).strip()
 
 
 def run_aapt2_dump(command: list[str], root: Path = ROOT) -> str:
@@ -4675,12 +4938,18 @@ def verify_android_release_build_outputs(
     native_symbol_exists = (
         native_symbol_path.exists() or native_symbol_path.is_symlink()
     )
-    if native_symbol_exists:
+    native_symbol_directory = native_symbol_path.parent
+    native_symbol_directory_exists = (
+        native_symbol_directory.exists()
+        or native_symbol_directory.is_symlink()
+    )
+    if native_symbol_directory_exists:
         require_directory_inventory(
-            native_symbol_path.parent,
-            {native_symbol_path.name},
+            native_symbol_directory,
+            {native_symbol_path.name} if native_symbol_exists else set(),
             "Android Release native-symbol output directory",
         )
+    if native_symbol_exists:
         standalone_symbols = read_safe_zip_members(
             read_stable_regular_file(
                 native_symbol_path,
@@ -4749,6 +5018,399 @@ def verify_android_release_build_outputs(
         "sdkDependencyCount": dependency_count,
         "versionCode": current.build_number,
         "versionName": current.marketing_version,
+    }
+
+
+def verify_unsealed_macos_source_receipt(
+    receipt_bytes: bytes,
+    *,
+    current: ReleaseVersion,
+    current_source: dict[str, object],
+) -> dict[str, object]:
+    receipt = parse_canonical_json(
+        receipt_bytes,
+        "unsealed macOS source receipt",
+    )
+    require_exact_keys(
+        receipt,
+        {"build", "outputContract", "schemaVersion", "source"},
+        "unsealed macOS source receipt",
+    )
+    if require_exact_int(
+        receipt.get("schemaVersion"),
+        "unsealed macOS source receipt.schemaVersion",
+    ) != MACOS_UNSEALED_SOURCE_RECEIPT_SCHEMA_VERSION:
+        raise ReleaseArchiveVerificationError(
+            "unsealed macOS source receipt schemaVersion is unsupported"
+        )
+    if receipt.get("outputContract") != MACOS_UNSEALED_OUTPUT_CONTRACT:
+        raise ReleaseArchiveVerificationError(
+            "unsealed macOS source receipt output contract differs"
+        )
+    build = receipt.get("build")
+    if type(build) is not dict:
+        raise ReleaseArchiveVerificationError(
+            "unsealed macOS source receipt build must be an object"
+        )
+    require_exact_keys(
+        build,
+        {"buildNumber", "configuration", "marketingVersion", "mode"},
+        "unsealed macOS source receipt.build",
+    )
+    if (
+        require_exact_int(
+            build.get("buildNumber"),
+            "unsealed macOS source receipt.buildNumber",
+        )
+        != current.build_number
+        or build.get("marketingVersion") != current.marketing_version
+        or build.get("configuration") != "release"
+        or build.get("mode") != "unsealed-package-only"
+    ):
+        raise ReleaseArchiveVerificationError(
+            "unsealed macOS source receipt build differs from the Release ledger"
+        )
+    source = receipt.get("source")
+    if type(source) is not dict:
+        raise ReleaseArchiveVerificationError(
+            "unsealed macOS source receipt source must be an object"
+        )
+    require_exact_keys(
+        source,
+        {"algorithm", "fileCount", "sha256"},
+        "unsealed macOS source receipt.source",
+    )
+    source_file_count = require_exact_int(
+        source.get("fileCount"),
+        "unsealed macOS source receipt.source.fileCount",
+    )
+    source_sha256 = require_string(
+        source.get("sha256"),
+        "unsealed macOS source receipt.source.sha256",
+    )
+    if re.fullmatch(r"[0-9a-f]{64}", source_sha256) is None:
+        raise ReleaseArchiveVerificationError(
+            "unsealed macOS source receipt source SHA-256 is invalid"
+        )
+    expected_source = {
+        "algorithm": current_source.get("algorithm"),
+        "fileCount": require_exact_int(
+            current_source.get("fileCount"),
+            "current source fileCount",
+        ),
+        "sha256": require_string(
+            current_source.get("sha256"),
+            "current source sha256",
+        ),
+    }
+    if (
+        source.get("algorithm")
+        != "sha256(path-nul-mode-nul-size-nul-sha256-lf)-v1"
+        or source_file_count != expected_source["fileCount"]
+        or source_sha256 != expected_source["sha256"]
+        or source != expected_source
+    ):
+        raise ReleaseArchiveVerificationError(
+            "unsealed macOS source receipt differs from current source"
+        )
+    return receipt
+
+
+def parse_macos_dwarfdump_uuid_output(
+    output: str,
+    label: str,
+) -> tuple[str, str]:
+    matches = re.findall(
+        r"^UUID:\s*([0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12})\s+"
+        r"\(([^)]+)\)(?:\s+.*)?$",
+        output,
+        re.MULTILINE,
+    )
+    if len(matches) != 1:
+        raise ReleaseArchiveVerificationError(
+            f"expected one UUID for {label}, found {matches!r}"
+        )
+    return matches[0]
+
+
+def verify_macos_release_build_outputs(
+    root: Path = ROOT,
+    *,
+    output_root: Path | None = None,
+) -> dict[str, object]:
+    try:
+        current = load_release_version_ledger(
+            root / "release/version-ledger.tsv"
+        )[-1]
+    except (IndexError, LedgerError) as error:
+        raise ReleaseArchiveVerificationError(
+            f"macOS Release ledger readback failed: {error}"
+        ) from error
+
+    if output_root is None:
+        output_root = root / MACOS_UNSEALED_OUTPUT_RELATIVE_PATH
+    app = output_root / "AetherLink.app"
+    dsym = output_root / "AetherLink.dSYM"
+    source_receipt_path = output_root / MACOS_UNSEALED_SOURCE_RECEIPT_NAME
+    require_directory_inventory(
+        output_root,
+        {app.name, dsym.name, source_receipt_path.name},
+        "macOS unsealed Release output root",
+    )
+    source_receipt_bytes = read_stable_regular_file(
+        source_receipt_path,
+        "unsealed macOS source receipt",
+        maximum_bytes=MACOS_UNSEALED_SOURCE_RECEIPT_MAX_BYTES,
+    )
+    try:
+        source_receipt_mode = normalized_mode(
+            source_receipt_path.lstat().st_mode
+        )
+    except OSError as error:
+        raise ReleaseArchiveVerificationError(
+            f"unsealed macOS source receipt mode cannot be read: {error}"
+        ) from error
+    if source_receipt_mode != 0o644:
+        raise ReleaseArchiveVerificationError(
+            "unsealed macOS source receipt mode must normalize to 0644"
+        )
+    current_source_before = current_source_snapshot_summary(root)
+    source_receipt = verify_unsealed_macos_source_receipt(
+        source_receipt_bytes,
+        current=current,
+        current_source=current_source_before,
+    )
+    app_files, app_modes, app_identity = read_exact_physical_tree(
+        app,
+        inventory=MACOS_UNSEALED_APP_INVENTORY,
+        expected_files=MACOS_UNSEALED_APP_FILES,
+        maximum_bytes=MACOS_UNSEALED_APP_MAX_BYTES,
+        executable_files={"Contents/MacOS/AetherLink"},
+        maximum_total_bytes=603_979_776,
+        digest_domain=b"aetherlink-macos-unsealed-app-tree-v1\0",
+        label="macOS unsealed Release app",
+    )
+    dsym_files, dsym_modes, dsym_identity = read_exact_physical_tree(
+        dsym,
+        inventory=MACOS_UNSEALED_DSYM_INVENTORY,
+        expected_files=MACOS_UNSEALED_DSYM_FILES,
+        maximum_bytes=MACOS_UNSEALED_DSYM_MAX_BYTES,
+        executable_files=set(),
+        maximum_total_bytes=1_342_177_280,
+        digest_domain=b"aetherlink-macos-unsealed-dsym-tree-v1\0",
+        label="macOS unsealed Release dSYM",
+    )
+
+    app_info = parse_exact_plist_dictionary(
+        app_files["Contents/Info.plist"],
+        expected_keys={
+            "CFBundleDevelopmentRegion",
+            "CFBundleExecutable",
+            "CFBundleIconFile",
+            "CFBundleIdentifier",
+            "CFBundleLocalizations",
+            "CFBundleName",
+            "CFBundlePackageType",
+            "CFBundleShortVersionString",
+            "CFBundleVersion",
+            "LSMinimumSystemVersion",
+            "NSPrincipalClass",
+        },
+        label="macOS unsealed Release app Info.plist",
+    )
+    expected_app_info: dict[str, object] = {
+        "CFBundleDevelopmentRegion": "en",
+        "CFBundleExecutable": "AetherLink",
+        "CFBundleIconFile": "AppIcon",
+        "CFBundleIdentifier": "dev.aetherlink.companion",
+        "CFBundleLocalizations": ["en", "ko", "ja", "zh-Hans", "fr"],
+        "CFBundleName": "AetherLink",
+        "CFBundlePackageType": "APPL",
+        "CFBundleShortVersionString": current.marketing_version,
+        "CFBundleVersion": str(current.build_number),
+        "LSMinimumSystemVersion": "14.0",
+        "NSPrincipalClass": "NSApplication",
+    }
+    if app_info != expected_app_info:
+        raise ReleaseArchiveVerificationError(
+            "macOS unsealed Release app Info.plist differs from the V1 "
+            "ledger and bundle contract"
+        )
+
+    resource_info_path = (
+        "Contents/Resources/AetherLink_LocalAgentBridge.bundle/Info.plist"
+    )
+    resource_info = parse_exact_plist_dictionary(
+        app_files[resource_info_path],
+        expected_keys={"CFBundleDevelopmentRegion"},
+        label="macOS unsealed Release resource Info.plist",
+    )
+    if resource_info != {"CFBundleDevelopmentRegion": "en"}:
+        raise ReleaseArchiveVerificationError(
+            "macOS unsealed Release resource bundle metadata differs"
+        )
+
+    dsym_info = parse_exact_plist_dictionary(
+        dsym_files["Contents/Info.plist"],
+        expected_keys={
+            "CFBundleDevelopmentRegion",
+            "CFBundleIdentifier",
+            "CFBundleInfoDictionaryVersion",
+            "CFBundlePackageType",
+            "CFBundleShortVersionString",
+            "CFBundleSignature",
+            "CFBundleVersion",
+        },
+        label="macOS unsealed Release dSYM Info.plist",
+    )
+    if dsym_info != {
+        "CFBundleDevelopmentRegion": "English",
+        "CFBundleIdentifier": "com.apple.xcode.dsym.AetherLink",
+        "CFBundleInfoDictionaryVersion": "6.0",
+        "CFBundlePackageType": "dSYM",
+        "CFBundleShortVersionString": "1.0",
+        "CFBundleSignature": "????",
+        "CFBundleVersion": "1",
+    }:
+        raise ReleaseArchiveVerificationError(
+            "macOS unsealed Release dSYM metadata differs"
+        )
+
+    for locale in ("en", "fr", "ja", "ko", "zh-hans"):
+        strings_path = (
+            "Contents/Resources/AetherLink_LocalAgentBridge.bundle/"
+            f"{locale}.lproj/Localizable.strings"
+        )
+        strings = app_files[strings_path]
+        if b"\0" in strings or b"\r" in strings or not strings.endswith(b"\n"):
+            raise ReleaseArchiveVerificationError(
+                f"macOS unsealed Release locale {locale} is not LF text"
+            )
+        try:
+            strings.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise ReleaseArchiveVerificationError(
+                f"macOS unsealed Release locale {locale} is not UTF-8"
+            ) from error
+
+    app_files_after, app_modes_after, app_identity_after = (
+        read_exact_physical_tree(
+            app,
+            inventory=MACOS_UNSEALED_APP_INVENTORY,
+            expected_files=MACOS_UNSEALED_APP_FILES,
+            maximum_bytes=MACOS_UNSEALED_APP_MAX_BYTES,
+            executable_files={"Contents/MacOS/AetherLink"},
+            maximum_total_bytes=603_979_776,
+            digest_domain=b"aetherlink-macos-unsealed-app-tree-v1\0",
+            label="macOS unsealed Release app final read",
+        )
+    )
+    dsym_files_after, dsym_modes_after, dsym_identity_after = (
+        read_exact_physical_tree(
+            dsym,
+            inventory=MACOS_UNSEALED_DSYM_INVENTORY,
+            expected_files=MACOS_UNSEALED_DSYM_FILES,
+            maximum_bytes=MACOS_UNSEALED_DSYM_MAX_BYTES,
+            executable_files=set(),
+            maximum_total_bytes=1_342_177_280,
+            digest_domain=b"aetherlink-macos-unsealed-dsym-tree-v1\0",
+            label="macOS unsealed Release dSYM final read",
+        )
+    )
+    if (
+        app_files_after != app_files
+        or app_modes_after != app_modes
+        or app_identity_after != app_identity
+        or dsym_files_after != dsym_files
+        or dsym_modes_after != dsym_modes
+        or dsym_identity_after != dsym_identity
+    ):
+        raise ReleaseArchiveVerificationError(
+            "macOS unsealed Release output changed during readback"
+        )
+
+    with tempfile.TemporaryDirectory(
+        prefix="aetherlink-macos-unsealed-readback-"
+    ) as temporary:
+        materialized_root = Path(temporary)
+        materialized_app = materialized_root / "AetherLink.app"
+        materialized_dsym = materialized_root / "AetherLink.dSYM"
+        materialize_exact_tree(materialized_app, app_files, app_modes)
+        materialize_exact_tree(materialized_dsym, dsym_files, dsym_modes)
+        executable = materialized_app / "Contents/MacOS/AetherLink"
+        dsym_dwarf = (
+            materialized_dsym / "Contents/Resources/DWARF/AetherLink"
+        )
+        app_architectures = run_macos_readback_tool(
+            ["/usr/bin/lipo", "-archs", str(executable)],
+            materialized_root,
+        ).split()
+        dsym_architectures = run_macos_readback_tool(
+            ["/usr/bin/lipo", "-archs", str(dsym_dwarf)],
+            materialized_root,
+        ).split()
+        if app_architectures != ["arm64"] or dsym_architectures != ["arm64"]:
+            raise ReleaseArchiveVerificationError(
+                "macOS unsealed Release app and dSYM must both be thin arm64"
+            )
+        app_uuid, app_uuid_architecture = parse_macos_dwarfdump_uuid_output(
+            run_macos_readback_tool(
+                ["/usr/bin/dwarfdump", "--uuid", str(executable)],
+                materialized_root,
+            ),
+            "materialized macOS app executable",
+        )
+        dsym_uuid, dsym_uuid_architecture = parse_macos_dwarfdump_uuid_output(
+            run_macos_readback_tool(
+                ["/usr/bin/dwarfdump", "--uuid", str(dsym_dwarf)],
+                materialized_root,
+            ),
+            "materialized macOS dSYM DWARF",
+        )
+    if (
+        (app_uuid, app_uuid_architecture)
+        != (dsym_uuid, dsym_uuid_architecture)
+        or app_uuid_architecture != "arm64"
+    ):
+        raise ReleaseArchiveVerificationError(
+            "macOS unsealed Release app and dSYM UUID/architecture differ"
+        )
+
+    current_source_after = current_source_snapshot_summary(root)
+    source_receipt_bytes_after = read_stable_regular_file(
+        source_receipt_path,
+        "unsealed macOS source receipt final read",
+        maximum_bytes=MACOS_UNSEALED_SOURCE_RECEIPT_MAX_BYTES,
+    )
+    if (
+        current_source_after != current_source_before
+        or source_receipt_bytes_after != source_receipt_bytes
+    ):
+        raise ReleaseArchiveVerificationError(
+            "unsealed macOS source or receipt changed during readback"
+        )
+    verify_unsealed_macos_source_receipt(
+        source_receipt_bytes_after,
+        current=current,
+        current_source=current_source_after,
+    )
+
+    return {
+        "app": app_identity,
+        "architecture": "arm64",
+        "buildNumber": current.build_number,
+        "bundleId": expected_app_info["CFBundleIdentifier"],
+        "dSYM": dsym_identity,
+        "locales": ["en", "fr", "ja", "ko", "zh-hans"],
+        "marketingVersion": current.marketing_version,
+        "minimumSystemVersion": expected_app_info["LSMinimumSystemVersion"],
+        "outerBundleSeal": "absent",
+        "source": source_receipt["source"],
+        "sourceReceipt": {
+            "sha256": sha256(source_receipt_bytes),
+            "size": len(source_receipt_bytes),
+        },
+        "uuid": app_uuid,
     }
 
 
@@ -4963,6 +5625,63 @@ def collect_current_source_paths(root: Path = ROOT) -> tuple[str, ...]:
     for relative in relative_paths:
         validate_member_path(relative)
     return relative_paths
+
+
+def current_source_snapshot_summary(
+    root: Path = ROOT,
+) -> dict[str, object]:
+    digest = hashlib.sha256()
+    relative_paths = collect_current_source_paths(root)
+    identity_fields = (
+        "st_dev",
+        "st_ino",
+        "st_mode",
+        "st_size",
+        "st_mtime_ns",
+        "st_ctime_ns",
+    )
+    for relative in relative_paths:
+        path = root / relative
+        try:
+            before = path.lstat()
+        except OSError as error:
+            raise ReleaseArchiveVerificationError(
+                f"current source input cannot be inspected: {relative}: {error}"
+            ) from error
+        data = read_stable_regular_file(
+            path,
+            f"current source input {relative}",
+            allow_empty=True,
+        )
+        try:
+            after = path.lstat()
+        except OSError as error:
+            raise ReleaseArchiveVerificationError(
+                "current source input cannot be inspected after read: "
+                f"{relative}: {error}"
+            ) from error
+        if tuple(getattr(before, field) for field in identity_fields) != tuple(
+            getattr(after, field) for field in identity_fields
+        ):
+            raise ReleaseArchiveVerificationError(
+                f"current source input changed during snapshot: {relative}"
+            )
+        mode = normalized_mode(after.st_mode)
+        digest.update(
+            relative.encode("ascii")
+            + b"\0"
+            + f"{mode:o}".encode("ascii")
+            + b"\0"
+            + str(len(data)).encode("ascii")
+            + b"\0"
+            + sha256(data).encode("ascii")
+            + b"\n"
+        )
+    return {
+        "algorithm": "sha256(path-nul-mode-nul-size-nul-sha256-lf)-v1",
+        "fileCount": len(relative_paths),
+        "sha256": digest.hexdigest(),
+    }
 
 
 def verify_source_snapshot(
@@ -6294,6 +7013,14 @@ def main() -> int:
         ),
     )
     readback_mode.add_argument(
+        "--macos-build-outputs",
+        action="store_true",
+        help=(
+            "independently verify current unsealed macOS Release app/dSYM "
+            "outputs without creating an archive"
+        ),
+    )
+    readback_mode.add_argument(
         "--no-current-source",
         action="store_true",
         help="skip comparison with current build-input bytes",
@@ -6332,6 +7059,35 @@ def main() -> int:
             f"JNI={result['nativeLibraryCount']}; "
             f"SDK dependencies={result['sdkDependencyCount']}; "
             f"native symbols={result['nativeSymbolStatus']}."
+        )
+        return 0
+    if arguments.macos_build_outputs:
+        if arguments.archive_dir != DEFAULT_OUTPUT_ROOT / expected_release_id():
+            print(
+                "macOS unsealed Release build-output readback failed: "
+                "--archive-dir is not valid with --macos-build-outputs",
+                file=os.sys.stderr,
+            )
+            return 1
+        try:
+            result = verify_macos_release_build_outputs()
+        except ReleaseArchiveVerificationError as error:
+            print(
+                "macOS unsealed Release build-output readback failed: "
+                f"{error}",
+                file=os.sys.stderr,
+            )
+            return 1
+        print(
+            "macOS unsealed Release build-output readback OK: "
+            f"{result['bundleId']} "
+            f"{result['marketingVersion']}+{result['buildNumber']}; "
+            f"app={result['app']['sha256']}; "
+            f"dSYM={result['dSYM']['sha256']}; "
+            f"UUID={result['uuid']}; "
+            f"source={result['source']['sha256']}; "
+            f"receipt={result['sourceReceipt']['sha256']}; "
+            "outer bundle seal=absent."
         )
         return 0
     try:

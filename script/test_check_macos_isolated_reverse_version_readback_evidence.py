@@ -19,6 +19,18 @@ class ReverseVersionEvidenceCheckerTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.result_payload = (checker.ROOT / checker.RESULT_RELATIVE).read_bytes()
         cls.receipt_payload = (checker.ROOT / checker.RECEIPT_RELATIVE).read_bytes()
+        cls.predecessor_result_payload = (
+            checker.ROOT / checker.PREDECESSOR_RESULT_RELATIVE
+        ).read_bytes()
+        cls.predecessor_receipt_payload = (
+            checker.ROOT / checker.PREDECESSOR_RECEIPT_RELATIVE
+        ).read_bytes()
+        cls.original_result_payload = (
+            checker.ROOT / checker.ORIGINAL_RESULT_RELATIVE
+        ).read_bytes()
+        cls.original_receipt_payload = (
+            checker.ROOT / checker.ORIGINAL_RECEIPT_RELATIVE
+        ).read_bytes()
 
     def mutated_result(self, mutate: object) -> bytes:
         value = json.loads(self.result_payload)
@@ -48,6 +60,59 @@ class ReverseVersionEvidenceCheckerTests(unittest.TestCase):
             self.result_payload,
             self.receipt_payload,
         )
+
+    def test_three_generation_successor_chain_preserves_evidence_bytes(self) -> None:
+        checker.validate_predecessor_preservation(
+            self.result_payload,
+            self.receipt_payload,
+            self.predecessor_result_payload,
+            self.predecessor_receipt_payload,
+            successor_result_file_name=checker.RESULT_RELATIVE.name,
+            predecessor_result_file_name=checker.PREDECESSOR_RESULT_RELATIVE.name,
+        )
+        checker.validate_predecessor_preservation(
+            self.predecessor_result_payload,
+            self.predecessor_receipt_payload,
+            self.original_result_payload,
+            self.original_receipt_payload,
+            successor_result_file_name=checker.PREDECESSOR_RESULT_RELATIVE.name,
+            predecessor_result_file_name=checker.ORIGINAL_RESULT_RELATIVE.name,
+        )
+        self.assertEqual(
+            self.result_payload,
+            self.predecessor_result_payload,
+        )
+        self.assertEqual(
+            self.predecessor_result_payload,
+            self.original_result_payload,
+        )
+        for successor_payload, predecessor_payload in (
+            (self.receipt_payload, self.predecessor_receipt_payload),
+            (self.predecessor_receipt_payload, self.original_receipt_payload),
+        ):
+            successor_receipt = json.loads(successor_payload)
+            predecessor_receipt = json.loads(predecessor_payload)
+            self.assertNotEqual(successor_payload, predecessor_payload)
+            successor_receipt["canonicalResult"]["fileName"] = (
+                predecessor_receipt["canonicalResult"]["fileName"]
+            )
+            self.assertEqual(successor_receipt, predecessor_receipt)
+
+    def test_three_evidence_generations_are_all_pinned(self) -> None:
+        evidence_paths = {
+            checker.RESULT_RELATIVE,
+            checker.RECEIPT_RELATIVE,
+            checker.PREDECESSOR_RESULT_RELATIVE,
+            checker.PREDECESSOR_RECEIPT_RELATIVE,
+            checker.ORIGINAL_RESULT_RELATIVE,
+            checker.ORIGINAL_RECEIPT_RELATIVE,
+        }
+        self.assertTrue(evidence_paths.issubset(checker.PINNED_FILES))
+        for path in evidence_paths:
+            with self.subTest(path=path):
+                spec = checker.PINNED_FILES[path]
+                self.assertEqual(spec.mode, 0o600)
+                self.assertTrue(spec.capture)
 
     def test_noncanonical_and_duplicate_json_are_rejected(self) -> None:
         with self.assertRaisesRegex(checker.EvidenceError, "canonical"):
