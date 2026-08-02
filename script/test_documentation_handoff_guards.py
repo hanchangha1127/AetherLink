@@ -299,6 +299,125 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
             )
         )
 
+    def test_current_g7_nonsecurity_merge_full_local_candidate_block_is_exact_and_fail_closed(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene
+            .current_g7_nonsecurity_merge_full_local_candidate_document_failures
+        )
+        self.assertEqual([], validator())
+        targets = (
+            "README.md",
+            "docs/roadmap.md",
+            "docs/handoff.md",
+            "docs/progress.md",
+            "docs/qa-evidence.md",
+            "docs/releases/1.0.0-build-24-local-v1.md",
+        )
+        start_marker = (
+            check_docs_hygiene
+            .CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_START
+        )
+        end_marker = (
+            check_docs_hygiene
+            .CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_END
+        )
+        expected_body = (
+            check_docs_hygiene
+            .CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_BODY
+        )
+        complete_block = start_marker + "\n" + expected_body + "\n" + end_marker
+        self.assertEqual(
+            (
+                check_docs_hygiene
+                .CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_BODY_SHA256
+            ),
+            hashlib.sha256((expected_body + "\n").encode("utf-8")).hexdigest(),
+        )
+
+        for relative in targets:
+            with self.subTest(relative=relative):
+                text = (check_docs_hygiene.ROOT / relative).read_text(
+                    encoding="utf-8"
+                )
+                self.assertEqual(1, text.count(complete_block))
+                mutations = (
+                    text.replace(
+                        complete_block,
+                        complete_block.replace(
+                            "62 exact ordered commands",
+                            "61 exact ordered commands",
+                            1,
+                        ),
+                        1,
+                    ),
+                    text.replace(start_marker, "", 1),
+                    text.replace(end_marker, "", 1),
+                    text.replace(
+                        complete_block,
+                        end_marker + "\n" + start_marker,
+                        1,
+                    ),
+                    text.rstrip() + "\n\n" + complete_block + "\n",
+                    text.replace(complete_block + "\n\n", "", 1).rstrip()
+                    + "\n\n"
+                    + complete_block
+                    + "\n",
+                    text.replace(
+                        complete_block,
+                        "<details hidden>\n" + complete_block + "\n</details>",
+                        1,
+                    ),
+                )
+                for mutation in mutations:
+                    failures = validator(
+                        document_text_by_relative={relative: mutation}
+                    )
+                    self.assertTrue(
+                        any(relative in failure for failure in failures),
+                        failures,
+                    )
+                self.assertTrue(any(
+                    relative in failure and "visible Markdown" in failure
+                    for failure in validator(
+                        document_text_by_relative={relative: mutations[-1]}
+                    )
+                ))
+
+    def test_current_g7_nonsecurity_merge_full_local_candidate_validator_is_wired_once(
+        self,
+    ) -> None:
+        validator_name = (
+            "current_g7_nonsecurity_merge_full_local_candidate_document_failures"
+        )
+        source = Path(check_docs_hygiene.__file__).read_text(encoding="utf-8")
+        self.assertEqual(
+            {validator_name: 1},
+            _reachable_main_extend_counts(source, (validator_name,)),
+        )
+        module = ast.parse(source)
+        tracked = next(
+            node
+            for node in module.body
+            if (
+                isinstance(node, ast.FunctionDef)
+                and node.name == "tracked_document_contract_failures"
+            )
+        )
+        self.assertEqual(
+            1,
+            sum(
+                1
+                for node in ast.walk(tracked)
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == validator_name
+                )
+            ),
+        )
+
     def test_current_g6_release_diagnostics_document_block_is_exact_and_fail_closed(
         self,
     ) -> None:
@@ -341,7 +460,7 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
                 mutations = (
                     text.replace(
                         complete_block,
-                        complete_block.replace("19/19", "18/19", 1),
+                        complete_block.replace("24/24", "23/24", 1),
                         1,
                     ),
                     text.replace(start_marker, "", 1),
@@ -404,6 +523,238 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
             )
         )
         self.assertEqual(1, tracked_calls)
+
+    def test_current_g7_document_ingestion_asan_block_is_exact_and_fail_closed(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene.
+            current_g7_document_ingestion_asan_document_failures
+        )
+        self.assertEqual([], validator())
+        targets = (
+            "README.md",
+            "docs/roadmap.md",
+            "docs/handoff.md",
+            "docs/progress.md",
+            "docs/qa-evidence.md",
+            "docs/releases/1.0.0-build-24-local-v1.md",
+        )
+        start_marker = (
+            check_docs_hygiene.
+            CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_START
+        )
+        end_marker = (
+            check_docs_hygiene.
+            CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_END
+        )
+        expected_body = (
+            check_docs_hygiene.
+            CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_BODY
+        )
+        complete_block = start_marker + "\n" + expected_body + "\n" + end_marker
+        self.assertEqual(
+            check_docs_hygiene.
+            CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_BODY_SHA256,
+            hashlib.sha256((expected_body + "\n").encode("utf-8")).hexdigest(),
+        )
+
+        for relative in targets:
+            with self.subTest(relative=relative):
+                text = (check_docs_hygiene.ROOT / relative).read_text(
+                    encoding="utf-8"
+                )
+                self.assertEqual(1, text.count(complete_block))
+                mutations = (
+                    text.replace(
+                        complete_block,
+                        complete_block.replace("57/57", "56/57", 1),
+                        1,
+                    ),
+                    text.replace(start_marker, "", 1),
+                    text.replace(end_marker, "", 1),
+                    text.replace(
+                        complete_block,
+                        end_marker + "\n" + start_marker,
+                        1,
+                    ),
+                    text.rstrip() + "\n\n" + complete_block + "\n",
+                    text.replace(complete_block + "\n\n", "", 1).rstrip()
+                    + "\n\n"
+                    + complete_block
+                    + "\n",
+                    text.replace(
+                        complete_block,
+                        "<details hidden>\n" + complete_block + "\n</details>",
+                        1,
+                    ),
+                )
+                for mutation in mutations:
+                    failures = validator(
+                        document_text_by_relative={relative: mutation}
+                    )
+                    self.assertTrue(
+                        any(relative in failure for failure in failures),
+                        failures,
+                    )
+                self.assertTrue(any(
+                    relative in failure and "visible Markdown" in failure
+                    for failure in validator(
+                        document_text_by_relative={relative: mutations[-1]}
+                    )
+                ))
+
+    def test_current_g7_document_ingestion_asan_validator_is_wired_once(
+        self,
+    ) -> None:
+        validator_name = "current_g7_document_ingestion_asan_document_failures"
+        source = Path(check_docs_hygiene.__file__).read_text(encoding="utf-8")
+        self.assertEqual(
+            {validator_name: 1},
+            _reachable_main_extend_counts(source, (validator_name,)),
+        )
+        module = ast.parse(source)
+        tracked = next(
+            node
+            for node in module.body
+            if (
+                isinstance(node, ast.FunctionDef)
+                and node.name == "tracked_document_contract_failures"
+            )
+        )
+        self.assertEqual(
+            1,
+            sum(
+                1
+                for node in ast.walk(tracked)
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == validator_name
+                )
+            ),
+        )
+
+    def test_current_g7_document_ingestion_mutation_block_is_exact_and_fail_closed(
+        self,
+    ) -> None:
+        validator = (
+            check_docs_hygiene.
+            current_g7_document_ingestion_mutation_document_failures
+        )
+        self.assertEqual([], validator())
+        targets = (
+            "README.md",
+            "docs/roadmap.md",
+            "docs/handoff.md",
+            "docs/progress.md",
+            "docs/qa-evidence.md",
+            "docs/releases/1.0.0-build-24-local-v1.md",
+        )
+        start_marker = (
+            check_docs_hygiene.
+            CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_START
+        )
+        end_marker = (
+            check_docs_hygiene.
+            CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_END
+        )
+        expected_body = (
+            check_docs_hygiene.
+            CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_BODY
+        )
+        complete_block = start_marker + "\n" + expected_body + "\n" + end_marker
+        self.assertEqual(
+            check_docs_hygiene.
+            CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_BODY_SHA256,
+            hashlib.sha256((expected_body + "\n").encode("utf-8")).hexdigest(),
+        )
+        self.assertIn(
+            "values are run-scoped",
+            expected_body,
+        )
+        self.assertNotRegex(
+            expected_body,
+            r"console has\s+SHA-256",
+        )
+
+        for relative in targets:
+            with self.subTest(relative=relative):
+                text = (check_docs_hygiene.ROOT / relative).read_text(
+                    encoding="utf-8"
+                )
+                self.assertEqual(1, text.count(complete_block))
+                mutations = (
+                    text.replace(
+                        complete_block,
+                        complete_block.replace("96/96", "95/96", 1),
+                        1,
+                    ),
+                    text.replace(start_marker, "", 1),
+                    text.replace(end_marker, "", 1),
+                    text.replace(
+                        complete_block,
+                        end_marker + "\n" + start_marker,
+                        1,
+                    ),
+                    text.rstrip() + "\n\n" + complete_block + "\n",
+                    text.replace(complete_block + "\n\n", "", 1).rstrip()
+                    + "\n\n"
+                    + complete_block
+                    + "\n",
+                    text.replace(
+                        complete_block,
+                        "<details hidden>\n" + complete_block + "\n</details>",
+                        1,
+                    ),
+                )
+                for mutation in mutations:
+                    failures = validator(
+                        document_text_by_relative={relative: mutation}
+                    )
+                    self.assertTrue(
+                        any(relative in failure for failure in failures),
+                        failures,
+                    )
+                self.assertTrue(any(
+                    relative in failure and "visible Markdown" in failure
+                    for failure in validator(
+                        document_text_by_relative={relative: mutations[-1]}
+                    )
+                ))
+
+    def test_current_g7_document_ingestion_mutation_validator_is_wired_once(
+        self,
+    ) -> None:
+        validator_name = (
+            "current_g7_document_ingestion_mutation_document_failures"
+        )
+        source = Path(check_docs_hygiene.__file__).read_text(encoding="utf-8")
+        self.assertEqual(
+            {validator_name: 1},
+            _reachable_main_extend_counts(source, (validator_name,)),
+        )
+        module = ast.parse(source)
+        tracked = next(
+            node
+            for node in module.body
+            if (
+                isinstance(node, ast.FunctionDef)
+                and node.name == "tracked_document_contract_failures"
+            )
+        )
+        self.assertEqual(
+            1,
+            sum(
+                1
+                for node in ast.walk(tracked)
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == validator_name
+                )
+            ),
+        )
 
     def test_current_g7_android_nightly_document_block_is_exact_and_fail_closed(
         self,
@@ -3047,6 +3398,14 @@ private func generatePairingQR() {{
                 "test_current_source_g6_lane_a_local_dmg_documents_match",
                 "test_current_source_g6_lane_a_local_dmg_documents_reject_mutation",
                 "test_current_source_g6_lane_a_local_dmg_documents_reject_move",
+                "test_current_g7_nonsecurity_merge_full_local_candidate_block_is_exact_and_fail_closed",
+                "test_current_g7_nonsecurity_merge_full_local_candidate_validator_is_wired_once",
+                "test_current_g6_release_diagnostics_document_block_is_exact_and_fail_closed",
+                "test_current_g6_release_diagnostics_validator_is_wired_once",
+                "test_current_g7_document_ingestion_asan_block_is_exact_and_fail_closed",
+                "test_current_g7_document_ingestion_asan_validator_is_wired_once",
+                "test_current_g7_document_ingestion_mutation_block_is_exact_and_fail_closed",
+                "test_current_g7_document_ingestion_mutation_validator_is_wired_once",
             )
         )
         for selector in selectors:
@@ -3083,6 +3442,74 @@ private func generatePairingQR() {{
                     any("product CI" in failure for failure in failures),
                     failures,
                 )
+
+        asan_mutation_commands = (
+            "run bash -c 'swift test list > "
+            ".build/aetherlink-product-ci-swift-test-list-v1.txt'\n"
+            "run python3 -B script/check_product_ci.py "
+            "--prepare-document-ingestion-asan-run\n"
+            "run python3 -B script/check_product_ci.py "
+            "--run-document-ingestion-asan-tests\n"
+            "run python3 -B script/check_product_ci.py "
+            "--write-document-ingestion-asan-binding\n"
+            "run python3 -B script/check_product_ci.py "
+            "--document-ingestion-asan-results\n"
+            "run python3 -B script/check_product_ci.py "
+            "--prepare-document-ingestion-mutation-run\n"
+            "run python3 -B script/check_product_ci.py "
+            "--run-document-ingestion-mutation-tests\n"
+            "run python3 -B script/check_product_ci.py "
+            "--write-document-ingestion-mutation-binding\n"
+            "run python3 -B script/check_product_ci.py "
+            "--document-ingestion-mutation-results\n"
+        )
+        self.assertEqual(gate_text.count(asan_mutation_commands), 1)
+        for command in asan_mutation_commands.splitlines(keepends=True):
+            with self.subTest(command=command.strip()):
+                failures = validator(
+                    gate_text=gate_text.replace(command, "", 1)
+                )
+                self.assertTrue(
+                    any(
+                        "DocumentIngestion ASan/mutation" in failure
+                        for failure in failures
+                    ),
+                    failures,
+                )
+                duplicated = gate_text.rstrip() + "\n" + command
+                duplicate_failures = validator(gate_text=duplicated)
+                self.assertTrue(
+                    any(
+                        "DocumentIngestion ASan/mutation" in failure
+                        for failure in duplicate_failures
+                    ),
+                    duplicate_failures,
+                )
+        reordered = asan_mutation_commands.replace(
+            "run python3 -B script/check_product_ci.py "
+            "--prepare-document-ingestion-asan-run\n"
+            "run python3 -B script/check_product_ci.py "
+            "--run-document-ingestion-asan-tests\n",
+            "run python3 -B script/check_product_ci.py "
+            "--run-document-ingestion-asan-tests\n"
+            "run python3 -B script/check_product_ci.py "
+            "--prepare-document-ingestion-asan-run\n",
+            1,
+        )
+        failures = validator(
+            gate_text=gate_text.replace(
+                asan_mutation_commands,
+                reordered,
+                1,
+            )
+        )
+        self.assertTrue(
+            any(
+                "DocumentIngestion ASan/mutation" in failure
+                for failure in failures
+            ),
+            failures,
+        )
 
     def test_current_publish_result_semantic_fields_reject_drift(self) -> None:
         source_result = json.loads(
@@ -6559,7 +6986,7 @@ private func generatePairingQR() {{
         self.assertEqual(len(expected_body.encode("utf-8")), 8_598)
         self.assertEqual(
             hashlib.sha256(expected_body.encode("utf-8")).hexdigest(),
-            "d05e808c1b1a69d7c2e539ae101c3c3ebd81a716913ff12c04d322dacbaed985",
+            "d88711bcdddd676cbb858026f30848db2c6233a1fc524c3e054ae2d98f9845ec",
         )
 
         for relative in targets:

@@ -4659,6 +4659,15 @@ run ./gradlew --offline --no-daemon \
 	  --tests 'com.localagentbridge.android.core.transport.p2pnat.*' \
 	  -Pkotlin.incremental=false
 run swift test
+run bash -c 'swift test list > .build/aetherlink-product-ci-swift-test-list-v1.txt'
+run python3 -B script/check_product_ci.py --prepare-document-ingestion-asan-run
+run python3 -B script/check_product_ci.py --run-document-ingestion-asan-tests
+run python3 -B script/check_product_ci.py --write-document-ingestion-asan-binding
+run python3 -B script/check_product_ci.py --document-ingestion-asan-results
+run python3 -B script/check_product_ci.py --prepare-document-ingestion-mutation-run
+run python3 -B script/check_product_ci.py --run-document-ingestion-mutation-tests
+run python3 -B script/check_product_ci.py --write-document-ingestion-mutation-binding
+run python3 -B script/check_product_ci.py --document-ingestion-mutation-results
 run swift test --filter 'P2PNATContractsTests|P2PNATSharedVectorTests|P2PNATConformanceTests'
 run swift test --filter 'ProductionSecureSessionSharedVectorTests'
 run swift test --filter 'ProductionPairStateSharedVectorTests'
@@ -4694,7 +4703,15 @@ run python3 -B -m unittest \
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_current_unsealed_install_recovery_validators_are_wired_into_main \
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_result_and_sources_are_bound \
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_documents_are_bound \
-  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_validators_are_wired_into_main
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_validators_are_wired_into_main \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g7_nonsecurity_merge_full_local_candidate_block_is_exact_and_fail_closed \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g7_nonsecurity_merge_full_local_candidate_validator_is_wired_once \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g6_release_diagnostics_document_block_is_exact_and_fail_closed \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g6_release_diagnostics_validator_is_wired_once \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g7_document_ingestion_asan_block_is_exact_and_fail_closed \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g7_document_ingestion_asan_validator_is_wired_once \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g7_document_ingestion_mutation_block_is_exact_and_fail_closed \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g7_document_ingestion_mutation_validator_is_wired_once
 
 run python3 -B -m unittest \
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_source_g6_reproducibility_matches_closed_contract \

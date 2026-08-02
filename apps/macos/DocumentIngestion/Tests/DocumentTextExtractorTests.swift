@@ -286,6 +286,7 @@ final class DocumentTextExtractorTests: XCTestCase {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("bin")
+        removeAfterTest(fileURL)
         try Data([0x00, 0x01]).write(to: fileURL)
 
         XCTAssertThrowsError(try DocumentTextExtractor().extractText(from: fileURL)) { error in
@@ -806,6 +807,7 @@ final class DocumentTextExtractorTests: XCTestCase {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension(pathExtension)
+        removeAfterTest(fileURL)
         try text.write(to: fileURL, atomically: true, encoding: .utf8)
         return fileURL
     }
@@ -813,6 +815,7 @@ final class DocumentTextExtractorTests: XCTestCase {
     private func writeExtensionlessText(_ text: String) throws -> URL {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
+        removeAfterTest(fileURL)
         try text.write(to: fileURL, atomically: true, encoding: .utf8)
         return fileURL
     }
@@ -821,6 +824,7 @@ final class DocumentTextExtractorTests: XCTestCase {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension(pathExtension)
+        removeAfterTest(fileURL)
         try data.write(to: fileURL)
         return fileURL
     }
@@ -832,9 +836,11 @@ final class DocumentTextExtractorTests: XCTestCase {
         let archiveURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension(pathExtension)
+        removeAfterTest(archiveURL)
         let payloadURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("json")
+        removeAfterTest(payloadURL)
         let payload = entries.map { entry in
             ["name": entry.name, "content": entry.content]
         }
@@ -867,6 +873,7 @@ final class DocumentTextExtractorTests: XCTestCase {
     ) throws -> URL {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        removeAfterTest(rootURL)
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
 
         for (path, content) in entries {
@@ -881,6 +888,7 @@ final class DocumentTextExtractorTests: XCTestCase {
         let archiveURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension(pathExtension)
+        removeAfterTest(archiveURL)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
         process.currentDirectoryURL = rootURL
@@ -889,6 +897,12 @@ final class DocumentTextExtractorTests: XCTestCase {
         process.waitUntilExit()
         XCTAssertEqual(process.terminationStatus, 0)
         return archiveURL
+    }
+
+    private func removeAfterTest(_ url: URL) {
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 }
 

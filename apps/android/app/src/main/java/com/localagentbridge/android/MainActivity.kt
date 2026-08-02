@@ -1,6 +1,7 @@
 package com.localagentbridge.android
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.LocaleManager
 import android.content.Context
 import android.content.Intent
@@ -666,6 +667,9 @@ internal fun readPairingQrCameraPermissionRequestRecord(
     }
 }
 
+// KTX edit(commit = true) returns Unit, but permission launch must fail closed
+// when this synchronous persistence step fails.
+@SuppressLint("UseKtx")
 internal fun persistPairingQrCameraPermissionRequestRecord(
     preferences: SharedPreferences,
     requestRecord: PairingQrCameraPermissionRequestRecord,

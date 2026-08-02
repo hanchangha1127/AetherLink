@@ -1913,10 +1913,10 @@ Merge full, G6/G7 exit, RC/GA, or V1 qualification.
 The exact 54-test workflow command, the product CI contract and mutation
 self-test, and direct readback of that recorded local current-run evidence
 pass. The
-reviewed workflow is 18,511 bytes with raw SHA-256
-`1159dd9c376e2a4170526ddd3453d49ca92d7061e058ca121e1f3602f630b06b`
+reviewed workflow is 18,819 bytes with raw SHA-256
+`d63005795068446895e5cbf5e5ed05d9497282c698da7b86c2b96155815bdfe0`
 and parsed-semantic SHA-256
-`f843851a64defc5868ed5b8a3bccd8148e8e79d7e8a3babe5a9e6d3b7cb25b1d`.
+`4cd318b9e42e97159910080e2b84a2ba8b19fe5b92ecb94c2a189f8a2bb72401`.
 No hosted run of these current workflow bytes is claimed.
 
 This is same-host, per-user, temporary-HOME, unsealed and network-denied
@@ -2137,27 +2137,27 @@ CURRENT_BUILD24_MACOS_LIFECYCLE_CHAIN_PREDECESSOR_BY_DOCUMENT = {
 }
 CURRENT_BUILD24_MACOS_LIFECYCLE_CHAIN_OUTER_SHA256_BY_DOCUMENT = {
     "README.md": (
-        "9056de9179d14c38dfed5c5c47688ae210be90ad0c8fa8bb613f201a92ffcc53",
-        "0675b5e3c559e8938a5888a56bf155a5169b6321c94df3c6ad72f8bf618361de",
+        "c74bd77593c48129461273838a1f83d7adb7afbf23a370a949153bfa590d51d1",
+        "0c72a8d453a57141d79c54fd0158bdd8aac809d4f37540d7988018dc7877bc8e",
     ),
     "docs/roadmap.md": (
-        "1277149778f6cd5d09b34238907b83ee65709ffb6e8050294d00e22197d0d357",
-        "087b814bce375cea32487b4a8dae93cb7b8077a69d4bbee375074834ae863472",
+        "5e7f50ef342483c8a11d16f4c0671742eb0087b4acc88dc0f6a79984fc155786",
+        "c214da02fa0b51233acd30c0d55f9ae798530c8eb6e942ebedf711dc933f339a",
     ),
     "docs/handoff.md": (
-        "b2f99a43c06e9003d15ff79636de3f5acecd074c30763b9b9e430f8632f13aca",
+        "69dffa737fc9bd80dde7af04a18d870a03b8dc337063624d9396a9204445db53",
         "45757b5ef397dd7976196ae5b267eee53544fa4b8546464073830acb39d7f858",
     ),
     "docs/progress.md": (
-        "48e1140ba6194c46911f539e2175fe47d74426640bb8f5b888bbc0a7f5d54043",
+        "98f57b07b98129d1c28e4a3d8f716d67d7c52ecd09b58d312902f727f3ab003e",
         "c2e5ed1ec4d2af10ac3f3f87baeb3b9b29cc35393c1628cc63e147718d1589eb",
     ),
     "docs/qa-evidence.md": (
-        "4da0059dabbdb99b9de3c0fa6d5206006b0fe0d2e2bdbda9b01d2050355a407d",
+        "09f17387eea1389e416f4de0b13f8d3877f075558cb920e5bdcef76665275f01",
         "5c92341f48705b39fcd93e03390edba375eb6455bae3a4eb55807f2c6d3c4eff",
     ),
     "docs/releases/1.0.0-build-24-local-v1.md": (
-        "edb79b120ae0e2fa13b4a4976769dd790b5a3eef174f6a70a1acbd52e987af4a",
+        "a7580c1dd2ae99e82e9117d69501f1a965a803f1b3a3233d15735d4d085d3ae3",
         "eb4d9e1354eba5f0375e42b961b3dde775d9b7328f5723d4eca2f8357af0237a",
     ),
 }
@@ -2296,23 +2296,23 @@ CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_BODY_SHA256_BY_DOCUMENT = {
 }
 CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_OUTER_SHA256_BY_DOCUMENT = {
     "README.md": (
-        "ae3244460dce503991825e4e5c59917df216e34bcb05a2db1664766ebfd4c77b",
-        "e8634fface6a6165bf00184a59c0ae3d8cf83862dbe2de09934a4780dc1c81a8",
+        "e34989f7541426314e176143d620b0271a3dbaebed5dacd66e13cb0ada35016d",
+        "06dd75f4fc31e5c9d402d99895caebdff8096dd0e663a515c7d246497d6d9653",
     ),
     "docs/roadmap.md": (
-        "467e7197d9a7ed2492bf15df10353c224ac00ae265a01c6b7abe33a84f30fe59",
-        "3405207470afeed9453761bb56ea68269f563fb2a512f4333eb7fdb8007ce4d8",
+        "a78ac13d1cabddb39f6534bfd000697e77f0e309189df605365babba2141c8a5",
+        "a62422029be6eeb555af0a20d27b49cc3d348895692466fd77bde1be5728fd44",
     ),
     "docs/handoff.md": (
-        "e88aa61aa7d7d9f659a4a752cc5d77ba2e71290aa411c1bab74b18beb22d7f8c",
+        "a4421708690afc54fa0f651aab668d42141159540d033ba11cc6aae0ebaa6c1b",
         "fcd0f93e8d91ade7dc84df0a0cf1ba3d5dfc0d2ff485645b94211dbafd4a63bf",
     ),
     "docs/progress.md": (
-        "584991dc3f89b06ff77cdeb347ace039c689d5da397e1735ab000b4b0b8a3ae1",
+        "bbc989c971e8d1f9953d5cbcaa46218e3a40e855414707546aa1861cd48aa8b6",
         "75ff47867bb3a85000e23e723f8b9c20e8caf252de95bb19a91732fca40863a6",
     ),
     "docs/qa-evidence.md": (
-        "3b746f5b4d0ae4d9dbb7111bb2417840f3c0375a64ab25873d7b7202b8f6c6c2",
+        "31635f6b1e8ef40f68ec5b42a4efd1315439f5e676f02376a79de2d5de205c20",
         "89cbf66a09001c07387613ebe728ed79d2ebbe66b943beec8bde498e08aedf85",
     ),
     "docs/releases/1.0.0-build-20-local-v1.md": (
@@ -2320,8 +2320,8 @@ CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_OUTER_SHA256_BY_DOCUMENT = {
         "b2673dc9c562eb6a7f8d209136c138754d58fb9adebfbfabc9b8696c5f3c490c",
     ),
     "docs/releases/1.0.0-build-24-local-v1.md": (
-        "dcf0329cce2d068fca3c5401ad7f56c2c6e6fe1dab2cd363d8d3efd2bbd05e3e",
-        "7585581fc57208f2bf7eae958d03db3cdd476eced9278a42b755bd61defb64c1",
+        "1e478c650dca205043a7da22f8ff711c3204eba5b40bd739ad497269603ef39f",
+        "1d720cc6113623362962f752e5cfd2eaceffb3296ab413bdbe20b55fabbcf4cd",
     ),
 }
 CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_NEIGHBORS = {
@@ -2464,6 +2464,44 @@ CURRENT_ANDROID_DRAWER_SEARCH_DOCUMENT_START = (
 CURRENT_ANDROID_DRAWER_SEARCH_DOCUMENT_END = (
     "<!-- aetherlink-current-android-drawer-search-ux-v2:end -->"
 )
+CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_START = (
+    "<!-- aetherlink-current-g7-nonsecurity-merge-full-local-candidate-v1:start -->"
+)
+CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_END = (
+    "<!-- aetherlink-current-g7-nonsecurity-merge-full-local-candidate-v1:end -->"
+)
+CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_BODY = """\
+**Current G7 local non-security Merge-full candidate status.** The
+current-source local runner executes 62 exact ordered commands and publishes
+`.build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/candidate.json` only
+after every command exits zero, all 23 artifacts and five implementation inputs
+read back from current bytes, the source snapshot is unchanged across child
+readbacks, and a requested running-app PID retains its exact identity. The
+result uses canonical ASCII JSON, mode 0600, atomic publication, and a separate
+read-only checker.
+
+The passing local matrix covers 222 focused Swift tests, 57 DocumentIngestion
+ASan tests, two mutation XCTest identities and 96 deterministic mutation cases,
+19 Android classes and 1,226 tests, zero Android lint issues, and 22 Release
+compliance tests. It also builds and directly reads back the unsigned Android
+Release APK/AAB, the unsealed macOS app and dSYM, both diagnostics results, and
+the current-unsealed macOS install/recovery lifecycle result before repeating
+all final readbacks.
+
+Only the macOS package gate receives the fixed external Swift scratch path. The
+runner acquires the existing nonblocking reproducibility lock, creates a
+mode-0600 no-follow exclusive lease, rejects a pre-existing scratch or lease,
+and validates and removes only its owned scratch and lease in `finally`. This
+keeps repository `.build` evidence and the candidate parent intact across the
+package producer's clean build.
+
+This ignored local current-source candidate is not retained release evidence.
+It does not claim the complete Swift suite, device/network execution, hosted CI,
+signed artifacts, security/authentication/cryptography execution, canonical
+Merge-full, canonical G7 exit, RC/GA, or V1 qualification."""
+CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_BODY_SHA256 = (
+    "ab9d652cc0d782afdb0eb63cc4589a5db9864aff8e456d35a03139ec7a40665f"
+)
 CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_START = (
     "<!-- aetherlink-current-g6-release-diagnostics-usability-v1:start -->"
 )
@@ -2478,28 +2516,28 @@ a separate checker command reopens the result plus the live artifact, source,
 and tool identities and reruns the same concrete recovery operation.
 
 The local macOS observation produced a 2,279-byte result with SHA-256
-`c33d42a100d802ecb1f5fb6d1ec543cfd7c683b3f9f13300b30dcec8441b14aa`.
-The 18,889,576-byte executable and 32,399,425-byte dSYM DWARF share UUID
-`6B06A6D0-9C89-3D36-A5B9-D2381598DDC8`; `/usr/bin/atos` resolves address
+`d8d7d36d717f070b1c1163d7b0357f4c7425e56cbbd915821f983c7749202e5f`.
+The 18,888,664-byte executable and 31,884,776-byte dSYM DWARF share UUID
+`6BD7228B-5EF9-3DDD-B844-49739384BB00`; `/usr/bin/atos` resolves address
 `0x0000000100001a30` to
 `JSONValue.encode(to:) (in AetherLink) (JSONValue.swift:29)`, bound to
 `apps/macos/Protocol/Sources/JSONValue.swift:29`.
 
 The local Android observation produced a 2,739-byte result with SHA-256
-`de4cc01fcd8fd67c27a9f427f1599d0ea933b00f8f3ca1a8567bde7e4501ccb1`.
-AGP 9.2.1 supplies R8 Retrace 9.2.14. Against the current 72,050,886-byte
+`97badb21a8a104052d117ae9d8696f5b2093f51f6b995ff15c86f5eb0d9f87e2`.
+AGP 9.2.1 supplies R8 Retrace 9.2.14. Against the current 72,050,888-byte
 `mapping.txt`, Retrace changes
 `at fx1.A(MainActivity.kt:23)` into
-`at com.localagentbridge.android.MainActivityKt.ResearchBriefCreateDialog(MainActivity.kt:3492)`,
+`at com.localagentbridge.android.MainActivityKt.ResearchBriefCreateDialog(MainActivity.kt:3496)`,
 bound to
-`apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt:3492`.
+`apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt:3496`.
 
-The producer/checker mutation suites pass 19/19. The product CI contract and
+The producer/checker mutation suites pass 24/24. The product CI contract and
 self-test pin the exact unit, producer, checker, platform, branch, and ordering
-bodies. The reviewed workflow is 18,511 bytes with raw SHA-256
-`1159dd9c376e2a4170526ddd3453d49ca92d7061e058ca121e1f3602f630b06b`
+bodies. The reviewed workflow is 21,656 bytes with raw SHA-256
+`41f1532ba6037645e8b7c29629eb665d368a4f524a034c0b8d7a26b5740de73e`
 and parsed-semantic SHA-256
-`f843851a64defc5868ed5b8a3bccd8148e8e79d7e8a3babe5a9e6d3b7cb25b1d`.
+`c6b90de31600f813d78ec4cfeb1f363c12ccef0735e8f2f93284024b60d89bdd`.
 
 These are local current-source supportability probes against unsigned or
 unsealed Release outputs. Their ignored `.build` result files are not retained
@@ -2507,7 +2545,98 @@ release evidence, and no hosted run of the current workflow bytes is claimed.
 They do not prove device/network behavior, signing/store delivery, production
 release, canonical G6/G7 exit, RC/GA, or V1 qualification."""
 CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_BODY_SHA256 = (
-    "ff27aeb1d04e6e3e2c4e594931abbd27ab042b20da22cc07aa20ede5d3eece2e"
+    "69a6982b1cc0e2656e9ea7d5f9d38a86b5afa6320d6345c22446e94f36a713df"
+)
+CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_START = (
+    "<!-- aetherlink-current-g7-document-ingestion-asan-v1:start -->"
+)
+CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_END = (
+    "<!-- aetherlink-current-g7-document-ingestion-asan-v1:end -->"
+)
+CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_BODY = """\
+**Current G7 DocumentIngestion ASan seed-corpus status.** On `main`, the
+macOS product-quality job now runs exact source/test preparation, an isolated
+AddressSanitizer execution, result binding, and independent readback after the
+normal focused Swift result gate. The checker owns `--sanitize address`, a
+separate scratch path, serial execution, a 720-second process-group deadline,
+bounded console capture, and TERM-to-KILL cleanup.
+
+The ASan selector pins 57 exact `DocumentIngestionTests` identities with
+manifest SHA-256
+`71b37b2f02a4b8ef65c9e82011259345c86015572480274f1417ed16f5d9b690`;
+the normal non-security Swift selector pins 222 identities with manifest
+SHA-256
+`b481e814d8e0f7a2385e50fb5d0f0f8d1602f08b608eb373bb8960ce53547815`.
+Five deterministic tests cover malformed UTF-8/XML/ZIP/PDF/RTF/HTML,
+exact-versus-plus-one limits, and Unicode grapheme chunk offsets. XML parse
+failure can no longer publish already-collected prefix text, and extractor
+fixtures remove their temporary files.
+
+The local ASan run and independent binding readback pass 57/57 with zero skips,
+failures, or errors. This is selected in-process Swift/Foundation/PDFKit
+evidence; external tools such as `/usr/bin/unzip` are outcome-checked but are
+not ASan-instrumented. Ignored `.build` bytes are not retained evidence, no
+hosted run is claimed, and generational fuzzing, complete Merge-full,
+canonical G7 exit, RC/GA, and V1 remain open."""
+CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_BODY_SHA256 = (
+    "79c49e6258578c9b81d8d668386ff12ad5f877338ba2ffe9d4774f0ac0903d72"
+)
+CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_START = (
+    "<!-- aetherlink-current-g7-document-ingestion-mutation-v1:start -->"
+)
+CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_END = (
+    "<!-- aetherlink-current-g7-document-ingestion-mutation-v1:end -->"
+)
+CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_BODY = """**Current G7 DocumentIngestion deterministic mutation status.** On `main`, the
+fixed 57-test ASan seed-corpus lane is followed by a separate exact
+prepare/run/bind/readback lane. It reuses the already-built isolated ASan
+scratch, selects two `DocumentIngestionGenerationalMutationTests` identities
+with manifest SHA-256
+`268e426f7d7c69629188c444093f044efe1952628c2e4c20923c512aaf17f05b`,
+and owns a 300-second monotonic process-group deadline with TERM-to-KILL
+cleanup.
+
+Test-only SplitMix64-v1 arithmetic and golden vectors derive 96 independent
+cases from root `a37e2c915b04d8f6`. The exact cross-product covers `txt`,
+`xml`, `html`, `rtf`, `pdf`, `docx`, `epub`, and `webarchive` across
+twelve primary operators, with one through four total operators per case and a
+4,097-byte hard bound. Fixed PDF and archive fixtures are decoded from pinned
+base64 bytes rather than generated during the run. The matrix includes exact
+4,096-byte and plus-one 4,097-byte inputs; every plus-one case must fail at the
+input-file limit with exact limit and actual counts.
+
+Immediately before each extraction the test writes one path-free ASCII
+reproduction marker. The successful console parser requires cases `000...095`
+exactly once and in order inside the mutation testcase, followed by one bound
+summary. Marker-lines-plus-LF have SHA-256
+`bd6e38cbac664aca4e7d4d912fddd1f853b93dfc5b862751921848d885d1e379`.
+Binding construction and independent readback rerun that parser. On nonzero
+exit, timeout, or bounded-log overflow, the prior successful canonical log is
+preserved and only the last complete grammar-valid marker is surfaced.
+
+The local ASan run passes 2/2 XCTest identities and 96/96 cases with zero skips,
+failures, errors, or sanitizer diagnostics. Binding reconstruction and
+independent readback validate the current console bytes, exact two-test
+selection, 96-case marker manifest, and current 219-source input set.
+Swift/XCTest stdout embeds timestamps and duration measurements, so the raw
+console and derived binding SHA-256 values are run-scoped and deliberately are
+not promoted to cross-run documentation identities. Each G7 candidate records
+and rechecks its current run bytes instead. Runner/parser mutation self-tests
+cover timeout, nonzero exit, malformed markers, log overflow, exact corpus
+drift, and canonical-log preservation.
+
+The reviewed product workflow is 21,656 bytes with raw SHA-256
+`41f1532ba6037645e8b7c29629eb665d368a4f524a034c0b8d7a26b5740de73e`
+and parsed-semantic SHA-256
+`c6b90de31600f813d78ec4cfeb1f363c12ccef0735e8f2f93284024b60d89bdd`.
+This closes one bounded deterministic generational-mutation gap, not
+coverage-guided fuzzing or a per-case preemption guarantee for PDFKit/AppKit.
+System frameworks and `/usr/bin/unzip` or `/usr/bin/textutil` remain outside
+ASan instrumentation. Ignored `.build` evidence is not retained, no hosted run
+is claimed, and complete Merge-full, canonical G7 exit, RC/GA, and V1 remain
+open."""
+CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_BODY_SHA256 = (
+    "4410fcd1cfe6e86a516e397d7a0f47c859f659a9195dc92cb1e5f6cb3020a19a"
 )
 CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_START = (
     "<!-- aetherlink-current-g7-android-headless-nightly-v1:start -->"
@@ -5007,10 +5136,10 @@ def current_release_summary_document_failures(
         ),
     }
     summary_line_limits = {
-        "docs/handoff.md": 760,
-        "docs/progress.md": 780,
-        "docs/qa-evidence.md": 550,
-        "docs/roadmap.md": 650,
+        "docs/handoff.md": 851,
+        "docs/progress.md": 811,
+        "docs/qa-evidence.md": 651,
+        "docs/roadmap.md": 681,
     }
 
     failures: list[str] = []
@@ -16306,7 +16435,15 @@ run python3 -B -m unittest \\
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_current_unsealed_install_recovery_validators_are_wired_into_main \\
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_result_and_sources_are_bound \\
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_documents_are_bound \\
-  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_validators_are_wired_into_main
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_validators_are_wired_into_main \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g7_nonsecurity_merge_full_local_candidate_block_is_exact_and_fail_closed \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g7_nonsecurity_merge_full_local_candidate_validator_is_wired_once \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g6_release_diagnostics_document_block_is_exact_and_fail_closed \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g6_release_diagnostics_validator_is_wired_once \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g7_document_ingestion_asan_block_is_exact_and_fail_closed \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g7_document_ingestion_asan_validator_is_wired_once \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g7_document_ingestion_mutation_block_is_exact_and_fail_closed \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g7_document_ingestion_mutation_validator_is_wired_once
 """
     current_source_g6_invocation = """\
 run python3 -B -m unittest \\
@@ -16349,6 +16486,20 @@ run python3 -B -m unittest \\
 run python3 -B script/check_product_ci.py
 run python3 -B script/check_product_ci.py --self-test
 """
+    document_ingestion_asan_mutation_invocation = """\
+run bash -c 'swift test list > .build/aetherlink-product-ci-swift-test-list-v1.txt'
+run python3 -B script/check_product_ci.py --prepare-document-ingestion-asan-run
+run python3 -B script/check_product_ci.py --run-document-ingestion-asan-tests
+run python3 -B script/check_product_ci.py --write-document-ingestion-asan-binding
+run python3 -B script/check_product_ci.py --document-ingestion-asan-results
+run python3 -B script/check_product_ci.py --prepare-document-ingestion-mutation-run
+run python3 -B script/check_product_ci.py --run-document-ingestion-mutation-tests
+run python3 -B script/check_product_ci.py --write-document-ingestion-mutation-binding
+run python3 -B script/check_product_ci.py --document-ingestion-mutation-results
+"""
+    document_ingestion_asan_mutation_commands = (
+        document_ingestion_asan_mutation_invocation.splitlines(keepends=True)
+    )
     aggregate_selectors = (
         (
             "script.test_documentation_handoff_guards."
@@ -16436,6 +16587,11 @@ run python3 -B script/check_product_ci.py --self-test
         or gate_text.count(current_source_g6_invocation) != 1
         or gate_text.count(aggregate_invocation) != 1
         or gate_text.count(product_ci_contract_invocation) != 1
+        or gate_text.count(document_ingestion_asan_mutation_invocation) != 1
+        or any(
+            gate_text.count(command) != 1
+            for command in document_ingestion_asan_mutation_commands
+        )
         or reachable_top_level_path_invocations(
             gate_text,
             (
@@ -16463,7 +16619,8 @@ run python3 -B script/check_product_ci.py --self-test
             "script/check_no_device_quality.sh: current Build 24 local-DMG "
             "lifecycle aggregate, current-unsealed install/recovery, "
             "idle-resource, current-source G6, and product CI "
-            "contract/self-test selectors and active static checkers must "
+            "contract/self-test plus DocumentIngestion ASan/mutation selectors "
+            "and active static checkers must "
             "have their exact "
             "reachable topology around docs hygiene."
         ]
@@ -16652,6 +16809,86 @@ run python3 -B script/check_product_ci.py --self-test
     return []
 
 
+def exact_visible_document_block_failures(
+    *,
+    label: str,
+    start_marker: str,
+    end_marker: str,
+    body: str,
+    body_sha256: str,
+    targets: tuple[tuple[Path, str, str], ...],
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    failures: list[str] = []
+    actual_body_sha256 = hashlib.sha256(
+        (body + "\n").encode("utf-8")
+    ).hexdigest()
+    if actual_body_sha256 != body_sha256:
+        failures.append(
+            f"{label} canonical body identity differs: expected "
+            f"{body_sha256}, found {actual_body_sha256}."
+        )
+
+    expected_body_block = "\n" + body + "\n"
+    for path, predecessor, successor in targets:
+        relative = str(path.relative_to(ROOT))
+        try:
+            document_text = (
+                document_text_by_relative[relative]
+                if (
+                    document_text_by_relative is not None
+                    and relative in document_text_by_relative
+                )
+                else path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError) as error:
+            failures.append(
+                f"{relative}: cannot validate {label} documentation: {error}"
+            )
+            continue
+
+        start_count = document_text.count(start_marker)
+        end_count = document_text.count(end_marker)
+        if (start_count, end_count) != (1, 1):
+            failures.append(
+                f"{relative}: {label} block must contain exactly one start "
+                f"and end marker; found {start_count} and {end_count}."
+            )
+            continue
+
+        start_index = document_text.index(start_marker)
+        body_start = start_index + len(start_marker)
+        end_index = document_text.index(end_marker)
+        if end_index <= body_start:
+            failures.append(
+                f"{relative}: {label} markers are reversed or empty."
+            )
+            continue
+
+        actual_block = document_text[body_start:end_index]
+        if actual_block != expected_body_block:
+            found_sha256 = hashlib.sha256(
+                actual_block.strip("\n").encode("utf-8") + b"\n"
+            ).hexdigest()
+            failures.append(
+                f"{relative}: {label} block must match the exact canonical "
+                f"body SHA-256 {body_sha256}; found {found_sha256}."
+            )
+
+        expected_before = predecessor + "\n\n" + start_marker
+        expected_after = end_marker + "\n\n" + successor
+        if expected_before not in document_text or expected_after not in document_text:
+            failures.append(
+                f"{relative}: {label} block moved outside its canonical "
+                "document location."
+            )
+        if marker_is_in_hidden_markdown_context(document_text, start_marker):
+            failures.append(
+                f"{relative}: {label} block must remain visible Markdown."
+            )
+    return failures
+
+
 def current_g6_release_diagnostics_document_failures(
     *,
     document_text_by_relative: dict[str, str] | None = None,
@@ -16659,33 +16896,33 @@ def current_g6_release_diagnostics_document_failures(
     documentation_targets = (
         (
             README_PATH,
-            "## Current Release Diagnostics Usability Gate",
-            "## Current macOS Release Output Gate",
+            CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_END,
+            CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_START,
         ),
         (
             ROOT / "docs/roadmap.md",
-            "evidence and does not complete G6 exit, canonical G7, RC/GA, or V1.",
-            CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_START,
+            CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_END,
+            CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_START,
         ),
         (
             ROOT / "docs/handoff.md",
-            "  canonical G7, RC/GA, and V1 remain open.",
-            CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_START,
+            CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_END,
+            CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_START,
         ),
         (
             ROOT / "docs/progress.md",
-            "## 2026-08-02 G6 Release Diagnostics Usability",
-            "## 2026-08-02 Android API 36.1 Background, Process-Kill, And Reboot Lifecycle V2",
+            CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_END,
+            CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_START,
         ),
         (
             ROOT / "docs/qa-evidence.md",
-            "## 2026-08-02 G6 Release Diagnostics Usability Checklist",
-            "## 2026-08-02 Android API 36.1 Lifecycle V2 Checklist",
+            CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_END,
+            CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_START,
         ),
         (
             ROOT / "docs/releases/1.0.0-build-24-local-v1.md",
-            "## Current-Source Release Diagnostics Usability Companion",
-            "## Android Backup And Device-Transfer Contract",
+            CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_END,
+            CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_START,
         ),
     )
     expected_body_block = (
@@ -16784,6 +17021,152 @@ def current_g6_release_diagnostics_document_failures(
     return failures
 
 
+def current_g7_nonsecurity_merge_full_local_candidate_document_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    return exact_visible_document_block_failures(
+        label="current G7 non-security Merge-full local candidate",
+        start_marker=(
+            CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_START
+        ),
+        end_marker=(
+            CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_END
+        ),
+        body=CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_BODY,
+        body_sha256=(
+            CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_BODY_SHA256
+        ),
+        targets=(
+            (
+                README_PATH,
+                "## Current Release Diagnostics Usability Gate",
+                CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_START,
+            ),
+            (
+                ROOT / "docs/roadmap.md",
+                "evidence and does not complete G6 exit, canonical G7, RC/GA, or V1.",
+                CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_START,
+            ),
+            (
+                ROOT / "docs/handoff.md",
+                "  canonical G7, RC/GA, and V1 remain open.",
+                CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_START,
+            ),
+            (
+                ROOT / "docs/progress.md",
+                "## 2026-08-02 G6 Release Diagnostics Usability",
+                CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_START,
+            ),
+            (
+                ROOT / "docs/qa-evidence.md",
+                "## 2026-08-02 G6 Release Diagnostics Usability Checklist",
+                CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_START,
+            ),
+            (
+                ROOT / "docs/releases/1.0.0-build-24-local-v1.md",
+                "## Current-Source Release Diagnostics Usability Companion",
+                CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_START,
+            ),
+        ),
+        document_text_by_relative=document_text_by_relative,
+    )
+
+
+def current_g7_document_ingestion_asan_document_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    return exact_visible_document_block_failures(
+        label="current G7 DocumentIngestion ASan",
+        start_marker=CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_START,
+        end_marker=CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_END,
+        body=CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_BODY,
+        body_sha256=CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_BODY_SHA256,
+        targets=(
+            (
+                README_PATH,
+                CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_END,
+                CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_START,
+            ),
+            (
+                ROOT / "docs/roadmap.md",
+                CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_END,
+                CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_START,
+            ),
+            (
+                ROOT / "docs/handoff.md",
+                CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_END,
+                CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_START,
+            ),
+            (
+                ROOT / "docs/progress.md",
+                CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_END,
+                CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_START,
+            ),
+            (
+                ROOT / "docs/qa-evidence.md",
+                CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_END,
+                CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_START,
+            ),
+            (
+                ROOT / "docs/releases/1.0.0-build-24-local-v1.md",
+                CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_END,
+                CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_START,
+            ),
+        ),
+        document_text_by_relative=document_text_by_relative,
+    )
+
+
+def current_g7_document_ingestion_mutation_document_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    return exact_visible_document_block_failures(
+        label="current G7 DocumentIngestion deterministic mutation",
+        start_marker=CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_START,
+        end_marker=CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_END,
+        body=CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_BODY,
+        body_sha256=(
+            CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_BODY_SHA256
+        ),
+        targets=(
+            (
+                README_PATH,
+                CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_END,
+                "## Current macOS Release Output Gate",
+            ),
+            (
+                ROOT / "docs/roadmap.md",
+                CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_END,
+                CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_START,
+            ),
+            (
+                ROOT / "docs/handoff.md",
+                CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_END,
+                CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_START,
+            ),
+            (
+                ROOT / "docs/progress.md",
+                CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_END,
+                "## 2026-08-02 Android API 36.1 Background, Process-Kill, And Reboot Lifecycle V2",
+            ),
+            (
+                ROOT / "docs/qa-evidence.md",
+                CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_END,
+                "## 2026-08-02 Android API 36.1 Lifecycle V2 Checklist",
+            ),
+            (
+                ROOT / "docs/releases/1.0.0-build-24-local-v1.md",
+                CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_END,
+                "## Android Backup And Device-Transfer Contract",
+            ),
+        ),
+        document_text_by_relative=document_text_by_relative,
+    )
+
+
 def current_g7_android_headless_nightly_document_failures(
     *,
     document_text_by_relative: dict[str, str] | None = None,
@@ -16796,12 +17179,12 @@ def current_g7_android_headless_nightly_document_failures(
         ),
         (
             ROOT / "docs/roadmap.md",
-            CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_END,
+            CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_END,
             "The predecessor current-source G5/G6 Android headless lifecycle V1 record is",
         ),
         (
             ROOT / "docs/handoff.md",
-            CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_END,
+            CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_END,
             "- The predecessor current-source disposable Android lifecycle V1 record is",
         ),
         (
@@ -19081,7 +19464,16 @@ def tracked_document_contract_failures() -> list[str]:
     tracked_failures.extend(
         current_build24_macos_local_dmg_default_gate_failures()
     )
+    tracked_failures.extend(
+        current_g7_nonsecurity_merge_full_local_candidate_document_failures()
+    )
     tracked_failures.extend(current_g6_release_diagnostics_document_failures())
+    tracked_failures.extend(
+        current_g7_document_ingestion_asan_document_failures()
+    )
+    tracked_failures.extend(
+        current_g7_document_ingestion_mutation_document_failures()
+    )
     tracked_failures.extend(
         current_g7_android_headless_nightly_document_failures()
     )
@@ -19220,7 +19612,14 @@ def main(argv: list[str] | None = None) -> int:
     failures.extend(
         current_build24_macos_local_dmg_default_gate_failures()
     )
+    failures.extend(
+        current_g7_nonsecurity_merge_full_local_candidate_document_failures()
+    )
     failures.extend(current_g6_release_diagnostics_document_failures())
+    failures.extend(current_g7_document_ingestion_asan_document_failures())
+    failures.extend(
+        current_g7_document_ingestion_mutation_document_failures()
+    )
     failures.extend(current_g7_android_headless_nightly_document_failures())
     failures.extend(current_android_drawer_search_document_failures())
     failures.extend(macos_clean_home_installed_app_evidence_failures())

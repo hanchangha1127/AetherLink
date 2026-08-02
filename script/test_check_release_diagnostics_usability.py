@@ -117,6 +117,17 @@ class ReleaseDiagnosticsReadbackTests(unittest.TestCase):
                     source_line=2,
                     root=root,
                 )
+            first_line_record = dict(record)
+            first_line_record["line"] = True
+            first_line_record["lineSha256"] = producer.sha256(b"one\n")
+            with self.assertRaises(module.EvidenceError):
+                module.source_readback(
+                    first_line_record,
+                    expected_roots=(relative_root,),
+                    source_file="Probe.kt",
+                    source_line=1,
+                    root=root,
+                )
             mutated = dict(record)
             mutated["path"] = "outside/Probe.kt"
             with self.assertRaises(module.EvidenceError):
@@ -127,6 +138,25 @@ class ReleaseDiagnosticsReadbackTests(unittest.TestCase):
                     source_line=2,
                     root=root,
                 )
+            mutated = dict(record)
+            mutated["size"] = float(len(data))
+            with self.assertRaises(module.EvidenceError):
+                module.source_readback(
+                    mutated,
+                    expected_roots=(relative_root,),
+                    source_file="Probe.kt",
+                    source_line=2,
+                    root=root,
+                )
+
+    def test_external_tool_size_requires_exact_integer_type(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tool = Path(temporary) / "tool"
+            tool.write_bytes(b"tool")
+            record = producer.tool_file_record(tool)
+            record["size"] = float(record["size"])
+            with self.assertRaises(module.EvidenceError):
+                module.live_external_tool_record(record, tool)
 
     @staticmethod
     def android_fixture(builder: Path) -> tuple[dict[str, object], dict[str, object], bytes]:
@@ -242,6 +272,19 @@ class ReleaseDiagnosticsReadbackTests(unittest.TestCase):
             assert isinstance(wrong_jar["tool"]["builderJar"], dict)
             wrong_jar["tool"]["builderJar"]["sha256"] = "0" * 64
             mutations.append(("wrong builder", wrong_jar))
+            non_integer_jar_size = deepcopy(document)
+            assert isinstance(non_integer_jar_size["tool"], dict)
+            assert isinstance(non_integer_jar_size["tool"]["builderJar"], dict)
+            non_integer_jar_size["tool"]["builderJar"]["size"] = float(
+                non_integer_jar_size["tool"]["builderJar"]["size"]
+            )
+            mutations.append(("non-integer builder size", non_integer_jar_size))
+            non_integer_classpath_count = deepcopy(document)
+            assert isinstance(non_integer_classpath_count["tool"], dict)
+            non_integer_classpath_count["tool"]["classpathEntryCount"] = 2.0
+            mutations.append(
+                ("non-integer classpath count", non_integer_classpath_count)
+            )
             for label, mutated in mutations:
                 with self.subTest(label=label), self.assertRaises(module.EvidenceError):
                     self.run_android_validation(mutated, selected, output, builder)

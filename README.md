@@ -52,6 +52,37 @@ delivery, complete Nightly coverage, canonical G7 exit, RC/GA, or V1 release.
 
 ## Current Release Diagnostics Usability Gate
 
+<!-- aetherlink-current-g7-nonsecurity-merge-full-local-candidate-v1:start -->
+**Current G7 local non-security Merge-full candidate status.** The
+current-source local runner executes 62 exact ordered commands and publishes
+`.build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/candidate.json` only
+after every command exits zero, all 23 artifacts and five implementation inputs
+read back from current bytes, the source snapshot is unchanged across child
+readbacks, and a requested running-app PID retains its exact identity. The
+result uses canonical ASCII JSON, mode 0600, atomic publication, and a separate
+read-only checker.
+
+The passing local matrix covers 222 focused Swift tests, 57 DocumentIngestion
+ASan tests, two mutation XCTest identities and 96 deterministic mutation cases,
+19 Android classes and 1,226 tests, zero Android lint issues, and 22 Release
+compliance tests. It also builds and directly reads back the unsigned Android
+Release APK/AAB, the unsealed macOS app and dSYM, both diagnostics results, and
+the current-unsealed macOS install/recovery lifecycle result before repeating
+all final readbacks.
+
+Only the macOS package gate receives the fixed external Swift scratch path. The
+runner acquires the existing nonblocking reproducibility lock, creates a
+mode-0600 no-follow exclusive lease, rejects a pre-existing scratch or lease,
+and validates and removes only its owned scratch and lease in `finally`. This
+keeps repository `.build` evidence and the candidate parent intact across the
+package producer's clean build.
+
+This ignored local current-source candidate is not retained release evidence.
+It does not claim the complete Swift suite, device/network execution, hosted CI,
+signed artifacts, security/authentication/cryptography execution, canonical
+Merge-full, canonical G7 exit, RC/GA, or V1 qualification.
+<!-- aetherlink-current-g7-nonsecurity-merge-full-local-candidate-v1:end -->
+
 <!-- aetherlink-current-g6-release-diagnostics-usability-v1:start -->
 **Current G6 Release diagnostics usability status.** On `main`, each
 product-quality Release lane now runs a diagnostics producer after its existing
@@ -60,28 +91,28 @@ a separate checker command reopens the result plus the live artifact, source,
 and tool identities and reruns the same concrete recovery operation.
 
 The local macOS observation produced a 2,279-byte result with SHA-256
-`c33d42a100d802ecb1f5fb6d1ec543cfd7c683b3f9f13300b30dcec8441b14aa`.
-The 18,889,576-byte executable and 32,399,425-byte dSYM DWARF share UUID
-`6B06A6D0-9C89-3D36-A5B9-D2381598DDC8`; `/usr/bin/atos` resolves address
+`d8d7d36d717f070b1c1163d7b0357f4c7425e56cbbd915821f983c7749202e5f`.
+The 18,888,664-byte executable and 31,884,776-byte dSYM DWARF share UUID
+`6BD7228B-5EF9-3DDD-B844-49739384BB00`; `/usr/bin/atos` resolves address
 `0x0000000100001a30` to
 `JSONValue.encode(to:) (in AetherLink) (JSONValue.swift:29)`, bound to
 `apps/macos/Protocol/Sources/JSONValue.swift:29`.
 
 The local Android observation produced a 2,739-byte result with SHA-256
-`de4cc01fcd8fd67c27a9f427f1599d0ea933b00f8f3ca1a8567bde7e4501ccb1`.
-AGP 9.2.1 supplies R8 Retrace 9.2.14. Against the current 72,050,886-byte
+`97badb21a8a104052d117ae9d8696f5b2093f51f6b995ff15c86f5eb0d9f87e2`.
+AGP 9.2.1 supplies R8 Retrace 9.2.14. Against the current 72,050,888-byte
 `mapping.txt`, Retrace changes
 `at fx1.A(MainActivity.kt:23)` into
-`at com.localagentbridge.android.MainActivityKt.ResearchBriefCreateDialog(MainActivity.kt:3492)`,
+`at com.localagentbridge.android.MainActivityKt.ResearchBriefCreateDialog(MainActivity.kt:3496)`,
 bound to
-`apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt:3492`.
+`apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt:3496`.
 
-The producer/checker mutation suites pass 19/19. The product CI contract and
+The producer/checker mutation suites pass 24/24. The product CI contract and
 self-test pin the exact unit, producer, checker, platform, branch, and ordering
-bodies. The reviewed workflow is 18,511 bytes with raw SHA-256
-`1159dd9c376e2a4170526ddd3453d49ca92d7061e058ca121e1f3602f630b06b`
+bodies. The reviewed workflow is 21,656 bytes with raw SHA-256
+`41f1532ba6037645e8b7c29629eb665d368a4f524a034c0b8d7a26b5740de73e`
 and parsed-semantic SHA-256
-`f843851a64defc5868ed5b8a3bccd8148e8e79d7e8a3babe5a9e6d3b7cb25b1d`.
+`c6b90de31600f813d78ec4cfeb1f363c12ccef0735e8f2f93284024b60d89bdd`.
 
 These are local current-source supportability probes against unsigned or
 unsealed Release outputs. Their ignored `.build` result files are not retained
@@ -89,6 +120,84 @@ release evidence, and no hosted run of the current workflow bytes is claimed.
 They do not prove device/network behavior, signing/store delivery, production
 release, canonical G6/G7 exit, RC/GA, or V1 qualification.
 <!-- aetherlink-current-g6-release-diagnostics-usability-v1:end -->
+
+<!-- aetherlink-current-g7-document-ingestion-asan-v1:start -->
+**Current G7 DocumentIngestion ASan seed-corpus status.** On `main`, the
+macOS product-quality job now runs exact source/test preparation, an isolated
+AddressSanitizer execution, result binding, and independent readback after the
+normal focused Swift result gate. The checker owns `--sanitize address`, a
+separate scratch path, serial execution, a 720-second process-group deadline,
+bounded console capture, and TERM-to-KILL cleanup.
+
+The ASan selector pins 57 exact `DocumentIngestionTests` identities with
+manifest SHA-256
+`71b37b2f02a4b8ef65c9e82011259345c86015572480274f1417ed16f5d9b690`;
+the normal non-security Swift selector pins 222 identities with manifest
+SHA-256
+`b481e814d8e0f7a2385e50fb5d0f0f8d1602f08b608eb373bb8960ce53547815`.
+Five deterministic tests cover malformed UTF-8/XML/ZIP/PDF/RTF/HTML,
+exact-versus-plus-one limits, and Unicode grapheme chunk offsets. XML parse
+failure can no longer publish already-collected prefix text, and extractor
+fixtures remove their temporary files.
+
+The local ASan run and independent binding readback pass 57/57 with zero skips,
+failures, or errors. This is selected in-process Swift/Foundation/PDFKit
+evidence; external tools such as `/usr/bin/unzip` are outcome-checked but are
+not ASan-instrumented. Ignored `.build` bytes are not retained evidence, no
+hosted run is claimed, and generational fuzzing, complete Merge-full,
+canonical G7 exit, RC/GA, and V1 remain open.
+<!-- aetherlink-current-g7-document-ingestion-asan-v1:end -->
+
+<!-- aetherlink-current-g7-document-ingestion-mutation-v1:start -->
+**Current G7 DocumentIngestion deterministic mutation status.** On `main`, the
+fixed 57-test ASan seed-corpus lane is followed by a separate exact
+prepare/run/bind/readback lane. It reuses the already-built isolated ASan
+scratch, selects two `DocumentIngestionGenerationalMutationTests` identities
+with manifest SHA-256
+`268e426f7d7c69629188c444093f044efe1952628c2e4c20923c512aaf17f05b`,
+and owns a 300-second monotonic process-group deadline with TERM-to-KILL
+cleanup.
+
+Test-only SplitMix64-v1 arithmetic and golden vectors derive 96 independent
+cases from root `a37e2c915b04d8f6`. The exact cross-product covers `txt`,
+`xml`, `html`, `rtf`, `pdf`, `docx`, `epub`, and `webarchive` across
+twelve primary operators, with one through four total operators per case and a
+4,097-byte hard bound. Fixed PDF and archive fixtures are decoded from pinned
+base64 bytes rather than generated during the run. The matrix includes exact
+4,096-byte and plus-one 4,097-byte inputs; every plus-one case must fail at the
+input-file limit with exact limit and actual counts.
+
+Immediately before each extraction the test writes one path-free ASCII
+reproduction marker. The successful console parser requires cases `000...095`
+exactly once and in order inside the mutation testcase, followed by one bound
+summary. Marker-lines-plus-LF have SHA-256
+`bd6e38cbac664aca4e7d4d912fddd1f853b93dfc5b862751921848d885d1e379`.
+Binding construction and independent readback rerun that parser. On nonzero
+exit, timeout, or bounded-log overflow, the prior successful canonical log is
+preserved and only the last complete grammar-valid marker is surfaced.
+
+The local ASan run passes 2/2 XCTest identities and 96/96 cases with zero skips,
+failures, errors, or sanitizer diagnostics. Binding reconstruction and
+independent readback validate the current console bytes, exact two-test
+selection, 96-case marker manifest, and current 219-source input set.
+Swift/XCTest stdout embeds timestamps and duration measurements, so the raw
+console and derived binding SHA-256 values are run-scoped and deliberately are
+not promoted to cross-run documentation identities. Each G7 candidate records
+and rechecks its current run bytes instead. Runner/parser mutation self-tests
+cover timeout, nonzero exit, malformed markers, log overflow, exact corpus
+drift, and canonical-log preservation.
+
+The reviewed product workflow is 21,656 bytes with raw SHA-256
+`41f1532ba6037645e8b7c29629eb665d368a4f524a034c0b8d7a26b5740de73e`
+and parsed-semantic SHA-256
+`c6b90de31600f813d78ec4cfeb1f363c12ccef0735e8f2f93284024b60d89bdd`.
+This closes one bounded deterministic generational-mutation gap, not
+coverage-guided fuzzing or a per-case preemption guarantee for PDFKit/AppKit.
+System frameworks and `/usr/bin/unzip` or `/usr/bin/textutil` remain outside
+ASan instrumentation. Ignored `.build` evidence is not retained, no hosted run
+is claimed, and complete Merge-full, canonical G7 exit, RC/GA, and V1 remain
+open.
+<!-- aetherlink-current-g7-document-ingestion-mutation-v1:end -->
 
 ## Current macOS Release Output Gate
 
@@ -539,10 +648,10 @@ Merge full, G6/G7 exit, RC/GA, or V1 qualification.
 The exact 54-test workflow command, the product CI contract and mutation
 self-test, and direct readback of that recorded local current-run evidence
 pass. The
-reviewed workflow is 18,511 bytes with raw SHA-256
-`1159dd9c376e2a4170526ddd3453d49ca92d7061e058ca121e1f3602f630b06b`
+reviewed workflow is 18,819 bytes with raw SHA-256
+`d63005795068446895e5cbf5e5ed05d9497282c698da7b86c2b96155815bdfe0`
 and parsed-semantic SHA-256
-`f843851a64defc5868ed5b8a3bccd8148e8e79d7e8a3babe5a9e6d3b7cb25b1d`.
+`4cd318b9e42e97159910080e2b84a2ba8b19fe5b92ecb94c2a189f8a2bb72401`.
 No hosted run of these current workflow bytes is claimed.
 
 This is same-host, per-user, temporary-HOME, unsealed and network-denied
@@ -2291,7 +2400,7 @@ protection, NAT traversal, and hardened rendezvous are implemented.
 Repository automation is implemented in
 `.github/workflows/product-quality.yml` as a bounded G7 non-security CI subset.
 Pull requests run read-only macOS and Android jobs with exact product-test
-allowlists and affected compilation, then run the 68-test release archive
+allowlists and affected compilation, then run the 78-test release archive
 contract, assemble the Android Release APK and AAB, run release lint, and
 independently read those build outputs with strict dependency locks. The macOS
 lane also validates the checked-in offline compliance catalog and runs the
@@ -2369,9 +2478,9 @@ rejected before tag resolution can create an equivalent key. Its self-test
 bypasses only the byte pin for controlled mutations, then verifies the expected
 semantic diagnostic, so an unrelated hash mismatch cannot conceal a broken
 guard. The reviewed workflow SHA-256 is
-`1159dd9c376e2a4170526ddd3453d49ca92d7061e058ca121e1f3602f630b06b`;
+`d63005795068446895e5cbf5e5ed05d9497282c698da7b86c2b96155815bdfe0`;
 its parsed-semantic SHA-256 is
-`f843851a64defc5868ed5b8a3bccd8148e8e79d7e8a3babe5a9e6d3b7cb25b1d`.
+`4cd318b9e42e97159910080e2b84a2ba8b19fe5b92ecb94c2a189f8a2bb72401`.
 The macOS static lane runs the tracked-only 36-document contract and two exact
 mode regressions before compilation. A tracked-file-only temporary snapshot
 with no `.git` and no ignored `dist/` passes that step; raw evidence byte

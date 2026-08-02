@@ -24,7 +24,7 @@ jobs:
   macos-product-quality:
     name: macOS product quality subset
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 55
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     steps:
@@ -75,7 +75,15 @@ jobs:
           python3 -B script/check_docs_hygiene.py --tracked-contracts-only
           python3 -B -m unittest \
             script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_tracked_document_contract_mode_excludes_ignored_evidence_readback \
-            script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_tracked_document_contract_cli_is_explicit_and_bounded
+            script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_tracked_document_contract_cli_is_explicit_and_bounded \
+            script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g7_nonsecurity_merge_full_local_candidate_block_is_exact_and_fail_closed \
+            script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g7_nonsecurity_merge_full_local_candidate_validator_is_wired_once \
+            script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g6_release_diagnostics_document_block_is_exact_and_fail_closed \
+            script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g6_release_diagnostics_validator_is_wired_once \
+            script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g7_document_ingestion_asan_block_is_exact_and_fail_closed \
+            script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g7_document_ingestion_asan_validator_is_wired_once \
+            script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g7_document_ingestion_mutation_block_is_exact_and_fail_closed \
+            script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_g7_document_ingestion_mutation_validator_is_wired_once
       - name: Run macOS release package contract units
         run: PYTHONPATH=. python3 -B script/test_build_and_run.py
       - name: Run macOS lifecycle contract units
@@ -101,11 +109,53 @@ jobs:
           python3 -B script/check_product_ci.py
           --run-swift-focused-tests
           --swift-focused-filter
-          'DocumentIngestorTests|DocumentTextExtractorTests|DocumentChunkerTests|AggregatingLlmBackendResidencyTests|ProviderHealthRecoveryTests|RuntimeModelIdleUnloadPolicyTests|RuntimeChatContextCompactionPlannerTests|RuntimeSemanticChatSessionSearchTests|RuntimeSemanticMemorySearchTests|AppLifecycleTests|LocalRuntimeMessageRouterTests/testApplicationTerminationRejectsNewRequestsAndDrainsRetiringTasks|LocalRuntimeMessageRouterTests/testApplicationTerminationDrainsRequestBlockedDuringRegistration|LocalRuntimeMessageRouterTests/testApplicationTerminationWaitsForChatTitleCancellationDispatch|LocalRuntimeMessageRouterTests/testApplicationTerminationWaitsForMemorySummaryCancellationDispatch|LocalRuntimeMessageRouterTests/testApplicationTerminationWaitsForDeferredSummaryPublicationAndPersistence|LocalRuntimeMessageRouterTests/testApplicationTerminationDrainsFailedDeferredSummaryPublicationWithoutPersistence|LocalRuntimeMessageRouterTests/testMemorySummaryDraftGeneratePublishesBeforeBlockingDurableCache|LocalRuntimeMessageRouterTests/testCompanionAppModelTerminationCancelsAndDrainsRuntimeChatRetentionMaintenance|OllamaBackendHealthTimeoutTests/testHealthCheckUsesFiveSecondsWhileCatalogRetainsSixtySeconds|LMStudioBackendHealthTimeoutTests/testHealthCheckUsesFiveSecondsWhileCatalogRetainsSixtySeconds|BonjourAdvertiserTests|LocalPeerServerTests/testLocalPeerServerReportsListenerStartAndExplicitStop|LocalPeerServerTests/testLocalPeerServerOccupiedPortFailsThenSameInstanceRetries|LocalPeerServerTests/testPeerAdmissionCannotCrossListenerStopGenerationBoundary|MacRuntimeConnectionManagerTests/testStartLocalDefersAdvertisementUntilListenerIsReady|MacRuntimeConnectionManagerTests/testStartLocalDefersReadyUntilAdvertisementIsPublished|MacRuntimeConnectionManagerTests/testAsyncListenerReadyForwardsImmediateAdvertisementFailure|MacRuntimeConnectionManagerTests/testAdvertisementFailureAllowsSamePortRetryAndIgnoresStaleSuccess|MacRuntimeConnectionManagerTests/testRefreshWhileAdvertisementPublishesUsesLatestMetadataOnly|MacRuntimeConnectionManagerTests/testUnexpectedAdvertisementStopClearsFalseReadyOwnership|MacRuntimeConnectionManagerTests/testConcreteLocalListenerDefersAdvertisementAndRetriesAfterOccupiedPort|MacRuntimeConnectionManagerTests/testUnexpectedLocalPortCannotRemainStartingOrAdvertising|MacRuntimeConnectionManagerTests/testLateLocalFailureStopsOwnershipAndReportsStatus|MacRuntimeConnectionManagerTests/testSupersededLocalStatusCallbackCannotStopReplacement|MacRuntimeConnectionManagerTests/testStoppedLocalStatusCallbackIsIgnoredAfterExplicitStop|MacRuntimeConnectionManagerTests/testStopAllStopsLocalAdvertiserBootstrapAndPairsExactlyOnce|LocalRuntimeMessageRouterTests/testCompanionAppModelSuspendsAndResumesActiveRuntimeOnceAtSamePort|LocalRuntimeMessageRouterTests/testCompanionAppModelSuspendsStartingRuntimeAndIgnoresPreSleepCallbacks|LocalRuntimeMessageRouterTests/testCompanionAppModelDoesNotResumeStoppedOrFailedRuntimeAfterSystemWake|LocalRuntimeMessageRouterTests/testCompanionAppModelStartsReplaceableTransportAndStopsIt|LocalRuntimeMessageRouterTests/testCompanionAppModelUserInterfaceStartCanRetryAfterListenerFailure|LocalRuntimeMessageRouterTests/testCompanionAppModelCanRetryAfterBonjourPublicationFailure|LocalRuntimeMessageRouterTests/testCompanionAppModelLateListenerFailureAllowsSamePortRetryAndIgnoresStaleCallback|LocalRuntimeMessageRouterTests/testCompanionAppModelPortReplacementShowsStartingUntilReady|LocalRuntimeMessageRouterTests/testCompanionAppModelUserInterfaceStartIsIdempotentDuringRouteAllocation|LocalRuntimeMessageRouterTests/testCompanionAppModelDebugUserInterfaceDoesNotGenerateQRCodeWhenRuntimeListenerFails|LocalRuntimeMessageRouterTests/testCompanionAppModelBeginLocalPairingWaitsForListenerReadiness|LocalRuntimeMessageRouterTests/testCompanionAppModelPairingWaitsForBonjourPublication|LocalRuntimeMessageRouterTests/testCompanionAppModelReportsFailedTransportWithoutAdvertising|PairingRouteNoticeTests/testRuntimeStartingUsesNeutralReadinessNotice|AetherLinkLocalizationTests/testStatusOverviewMapsEachFocusToOnePrimaryAction|AetherLinkLocalizationTests/testStatusOverviewRuntimeStartAndRetryActionsUseSelectedLanguage|AetherLinkLocalizationTests/testShortTransitionAnimationHonorsReducedMotion|AetherLinkLocalizationTests/testVisualAccessibilityOverridesCannotDisableSystemPreferences|AetherLinkLocalizationTests/testIncreasedContrastStatusPaletteAndSurfacesRemainLegible|AetherLinkLocalizationTests/testRuntimeHistorySelectionUsesNonColorMarkerAndReconcilesKeyboardList|AetherLinkLocalizationTests/testConnectionRecoveryExpansionTargetsFirstEditableField|AetherLinkLocalizationTests/testPairingDestinationFocusPlanSeparatesKeyboardAndVoiceOverTargets|AetherLinkLocalizationTests/testRuntimeTranscriptReasoningUsesFullOpacityAtIncreasedContrast|AccessibilityAnnouncementTests/testPairingQRExpiryAnnouncementFiresOnceWithoutCountdownSpam|AetherLinkRenderSmokeTests/testRuntimeOverviewPrimaryActionFitsCompactAccessibilityLayoutAcrossLanguages|AetherLinkRenderSmokeTests/testReducedMotionStatusAndActivePairingSurfacesRender|AetherLinkRenderSmokeTests/testIncreasedContrastAndColorIndependentHistorySurfacesRender'
+          'DocumentIngestorTests|DocumentTextExtractorTests|DocumentChunkerTests|DocumentIngestionSanitizerCorpusTests|AggregatingLlmBackendResidencyTests|ProviderHealthRecoveryTests|RuntimeModelIdleUnloadPolicyTests|RuntimeChatContextCompactionPlannerTests|RuntimeSemanticChatSessionSearchTests|RuntimeSemanticMemorySearchTests|AppLifecycleTests|LocalRuntimeMessageRouterTests/testApplicationTerminationRejectsNewRequestsAndDrainsRetiringTasks|LocalRuntimeMessageRouterTests/testApplicationTerminationDrainsRequestBlockedDuringRegistration|LocalRuntimeMessageRouterTests/testApplicationTerminationWaitsForChatTitleCancellationDispatch|LocalRuntimeMessageRouterTests/testApplicationTerminationWaitsForMemorySummaryCancellationDispatch|LocalRuntimeMessageRouterTests/testApplicationTerminationWaitsForDeferredSummaryPublicationAndPersistence|LocalRuntimeMessageRouterTests/testApplicationTerminationDrainsFailedDeferredSummaryPublicationWithoutPersistence|LocalRuntimeMessageRouterTests/testMemorySummaryDraftGeneratePublishesBeforeBlockingDurableCache|LocalRuntimeMessageRouterTests/testCompanionAppModelTerminationCancelsAndDrainsRuntimeChatRetentionMaintenance|OllamaBackendHealthTimeoutTests/testHealthCheckUsesFiveSecondsWhileCatalogRetainsSixtySeconds|LMStudioBackendHealthTimeoutTests/testHealthCheckUsesFiveSecondsWhileCatalogRetainsSixtySeconds|BonjourAdvertiserTests|LocalPeerServerTests/testLocalPeerServerReportsListenerStartAndExplicitStop|LocalPeerServerTests/testLocalPeerServerOccupiedPortFailsThenSameInstanceRetries|LocalPeerServerTests/testPeerAdmissionCannotCrossListenerStopGenerationBoundary|MacRuntimeConnectionManagerTests/testStartLocalDefersAdvertisementUntilListenerIsReady|MacRuntimeConnectionManagerTests/testStartLocalDefersReadyUntilAdvertisementIsPublished|MacRuntimeConnectionManagerTests/testAsyncListenerReadyForwardsImmediateAdvertisementFailure|MacRuntimeConnectionManagerTests/testAdvertisementFailureAllowsSamePortRetryAndIgnoresStaleSuccess|MacRuntimeConnectionManagerTests/testRefreshWhileAdvertisementPublishesUsesLatestMetadataOnly|MacRuntimeConnectionManagerTests/testUnexpectedAdvertisementStopClearsFalseReadyOwnership|MacRuntimeConnectionManagerTests/testConcreteLocalListenerDefersAdvertisementAndRetriesAfterOccupiedPort|MacRuntimeConnectionManagerTests/testUnexpectedLocalPortCannotRemainStartingOrAdvertising|MacRuntimeConnectionManagerTests/testLateLocalFailureStopsOwnershipAndReportsStatus|MacRuntimeConnectionManagerTests/testSupersededLocalStatusCallbackCannotStopReplacement|MacRuntimeConnectionManagerTests/testStoppedLocalStatusCallbackIsIgnoredAfterExplicitStop|MacRuntimeConnectionManagerTests/testStopAllStopsLocalAdvertiserBootstrapAndPairsExactlyOnce|LocalRuntimeMessageRouterTests/testCompanionAppModelSuspendsAndResumesActiveRuntimeOnceAtSamePort|LocalRuntimeMessageRouterTests/testCompanionAppModelSuspendsStartingRuntimeAndIgnoresPreSleepCallbacks|LocalRuntimeMessageRouterTests/testCompanionAppModelDoesNotResumeStoppedOrFailedRuntimeAfterSystemWake|LocalRuntimeMessageRouterTests/testCompanionAppModelStartsReplaceableTransportAndStopsIt|LocalRuntimeMessageRouterTests/testCompanionAppModelUserInterfaceStartCanRetryAfterListenerFailure|LocalRuntimeMessageRouterTests/testCompanionAppModelCanRetryAfterBonjourPublicationFailure|LocalRuntimeMessageRouterTests/testCompanionAppModelLateListenerFailureAllowsSamePortRetryAndIgnoresStaleCallback|LocalRuntimeMessageRouterTests/testCompanionAppModelPortReplacementShowsStartingUntilReady|LocalRuntimeMessageRouterTests/testCompanionAppModelUserInterfaceStartIsIdempotentDuringRouteAllocation|LocalRuntimeMessageRouterTests/testCompanionAppModelDebugUserInterfaceDoesNotGenerateQRCodeWhenRuntimeListenerFails|LocalRuntimeMessageRouterTests/testCompanionAppModelBeginLocalPairingWaitsForListenerReadiness|LocalRuntimeMessageRouterTests/testCompanionAppModelPairingWaitsForBonjourPublication|LocalRuntimeMessageRouterTests/testCompanionAppModelReportsFailedTransportWithoutAdvertising|PairingRouteNoticeTests/testRuntimeStartingUsesNeutralReadinessNotice|AetherLinkLocalizationTests/testStatusOverviewMapsEachFocusToOnePrimaryAction|AetherLinkLocalizationTests/testStatusOverviewRuntimeStartAndRetryActionsUseSelectedLanguage|AetherLinkLocalizationTests/testShortTransitionAnimationHonorsReducedMotion|AetherLinkLocalizationTests/testVisualAccessibilityOverridesCannotDisableSystemPreferences|AetherLinkLocalizationTests/testIncreasedContrastStatusPaletteAndSurfacesRemainLegible|AetherLinkLocalizationTests/testRuntimeHistorySelectionUsesNonColorMarkerAndReconcilesKeyboardList|AetherLinkLocalizationTests/testConnectionRecoveryExpansionTargetsFirstEditableField|AetherLinkLocalizationTests/testPairingDestinationFocusPlanSeparatesKeyboardAndVoiceOverTargets|AetherLinkLocalizationTests/testRuntimeTranscriptReasoningUsesFullOpacityAtIncreasedContrast|AccessibilityAnnouncementTests/testPairingQRExpiryAnnouncementFiresOnceWithoutCountdownSpam|AetherLinkRenderSmokeTests/testRuntimeOverviewPrimaryActionFitsCompactAccessibilityLayoutAcrossLanguages|AetherLinkRenderSmokeTests/testReducedMotionStatusAndActivePairingSurfacesRender|AetherLinkRenderSmokeTests/testIncreasedContrastAndColorIndependentHistorySurfacesRender'
       - name: Bind and verify focused Swift test results
         run: |
           python3 -B script/check_product_ci.py --write-swift-focused-test-binding
           python3 -B script/check_product_ci.py --swift-focused-test-results
+      - name: Prepare DocumentIngestion ASan corpus on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: >-
+          python3 -B script/check_product_ci.py
+          --prepare-document-ingestion-asan-run
+      - name: Run DocumentIngestion ASan corpus on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: >-
+          python3 -B script/check_product_ci.py
+          --run-document-ingestion-asan-tests
+      - name: Bind and verify DocumentIngestion ASan corpus on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: |
+          python3 -B script/check_product_ci.py --write-document-ingestion-asan-binding
+          python3 -B script/check_product_ci.py --document-ingestion-asan-results
+      - name: Prepare DocumentIngestion mutation corpus on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: >-
+          python3 -B script/check_product_ci.py
+          --prepare-document-ingestion-mutation-run
+      - name: Run DocumentIngestion mutation corpus on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: >-
+          python3 -B script/check_product_ci.py
+          --run-document-ingestion-mutation-tests
+      - name: Bind and verify DocumentIngestion mutation corpus on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: |
+          python3 -B script/check_product_ci.py --write-document-ingestion-mutation-binding
+          python3 -B script/check_product_ci.py --document-ingestion-mutation-results
       - name: Build unsealed macOS Release package on main
         if: >-
           ${{ github.event_name == 'push' &&

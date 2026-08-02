@@ -12,6 +12,7 @@ import re
 import stat
 import subprocess
 import tempfile
+import time
 from typing import Callable, Iterator, Sequence
 
 if __package__:
@@ -37,6 +38,9 @@ ANDROID_PROBE_EXCEPTION = (
     "java.lang.IllegalStateException: aetherlink-release-diagnostics-probe-v1"
 )
 ANDROID_PROBE_CANDIDATE_LIMIT = 64
+ANDROID_PROBE_TOTAL_TIMEOUT_SECONDS = 60.0
+ANDROID_MAPPING_SCAN_CHUNK_BYTES = 64 * 1024
+ANDROID_MAPPING_LINE_MAX_BYTES = 1024 * 1024
 QUALIFICATION = {
     "canonicalG6ExitClaimed": False,
     "deviceOrNetworkClaimed": False,
@@ -181,7 +185,7 @@ def run_command(
     command: Sequence[str],
     *,
     root: Path = ROOT,
-    timeout: int = COMMAND_TIMEOUT_SECONDS,
+    timeout: float = COMMAND_TIMEOUT_SECONDS,
     maximum_bytes: int = COMMAND_MAX_BYTES,
     allow_stderr: bool = False,
 ) -> tuple[str, str]:
@@ -285,13 +289,63 @@ ANDROID_METHOD_RE = re.compile(
 )
 
 
+def _check_android_probe_deadline(
+    *,
+    deadline: float | None,
+    monotonic: Callable[[], float],
+) -> None:
+    if deadline is not None and monotonic() >= deadline:
+        raise DiagnosticsError("R8 probe selection exceeded its total deadline")
+
+
+def _iter_android_mapping_lines(
+    mapping: bytes,
+    *,
+    deadline: float | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> Iterator[str]:
+    line_start = 0
+    search_start = 0
+    while search_start < len(mapping):
+        _check_android_probe_deadline(
+            deadline=deadline,
+            monotonic=monotonic,
+        )
+        search_end = min(
+            search_start + ANDROID_MAPPING_SCAN_CHUNK_BYTES,
+            len(mapping),
+        )
+        newline = mapping.find(b"\n", search_start, search_end)
+        if newline < 0:
+            if search_end - line_start > ANDROID_MAPPING_LINE_MAX_BYTES:
+                raise DiagnosticsError("R8 mapping line exceeds its byte limit")
+            search_start = search_end
+            continue
+        if newline - line_start > ANDROID_MAPPING_LINE_MAX_BYTES:
+            raise DiagnosticsError("R8 mapping line exceeds its byte limit")
+        try:
+            yield mapping[line_start:newline].decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise DiagnosticsError("R8 mapping is not UTF-8") from error
+        line_start = newline + 1
+        search_start = line_start
+
+    _check_android_probe_deadline(
+        deadline=deadline,
+        monotonic=monotonic,
+    )
+    if line_start < len(mapping):
+        if len(mapping) - line_start > ANDROID_MAPPING_LINE_MAX_BYTES:
+            raise DiagnosticsError("R8 mapping line exceeds its byte limit")
+        try:
+            yield mapping[line_start:].decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise DiagnosticsError("R8 mapping is not UTF-8") from error
+
+
 def android_mapping_metadata(mapping: bytes) -> dict[str, str]:
     if b"\0" in mapping or b"\r" in mapping or not mapping.endswith(b"\n"):
         raise DiagnosticsError("R8 mapping must be nonempty UTF-8/LF text")
-    try:
-        text = mapping.decode("utf-8")
-    except UnicodeDecodeError as error:
-        raise DiagnosticsError("R8 mapping is not UTF-8") from error
     values: dict[str, str] = {}
     patterns = {
         "compiler": re.compile(r"# compiler: (R8)\Z"),
@@ -299,25 +353,31 @@ def android_mapping_metadata(mapping: bytes) -> dict[str, str]:
         "mapId": re.compile(r"# pg_map_id: ([0-9a-f]{64})\Z"),
         "mapHash": re.compile(r"# pg_map_hash: SHA-256 ([0-9a-f]{64})\Z"),
     }
-    for line in text.splitlines()[:16]:
-        for key, pattern in patterns.items():
-            match = pattern.fullmatch(line)
-            if match is not None:
-                values[key] = match.group(1)
+    for index, line in enumerate(_iter_android_mapping_lines(mapping)):
+        if index < 16:
+            for key, pattern in patterns.items():
+                match = pattern.fullmatch(line)
+                if match is not None:
+                    values[key] = match.group(1)
     if set(values) != set(patterns) or values["compilerVersion"] != RETRACE_VERSION:
         raise DiagnosticsError("R8 mapping compiler metadata differs from the pinned gate")
     return values
 
 
-def iter_android_probe_candidates(mapping: bytes) -> Iterator[dict[str, object]]:
-    try:
-        lines = mapping.decode("utf-8").splitlines()
-    except UnicodeDecodeError as error:
-        raise DiagnosticsError("R8 mapping is not UTF-8") from error
+def iter_android_probe_candidates(
+    mapping: bytes,
+    *,
+    deadline: float | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> Iterator[dict[str, object]]:
     original_class: str | None = None
     obfuscated_class: str | None = None
     source_file: str | None = None
-    for line in lines:
+    for line in _iter_android_mapping_lines(
+        mapping,
+        deadline=deadline,
+        monotonic=monotonic,
+    ):
         class_match = ANDROID_CLASS_RE.fullmatch(line)
         if class_match is not None:
             original_class = class_match.group("original")
@@ -369,9 +429,16 @@ def resolve_android_probe(
     mapping_path: Path,
     java: Path,
     classpath: str,
+    monotonic: Callable[[], float] = time.monotonic,
 ) -> tuple[dict[str, object], dict[str, object], bytes, bytes]:
+    deadline = monotonic() + ANDROID_PROBE_TOTAL_TIMEOUT_SECONDS
     eligible_count = 0
-    for probe in iter_android_probe_candidates(mapping):
+    output_by_stack: dict[bytes, bytes] = {}
+    for probe in iter_android_probe_candidates(
+        mapping,
+        deadline=deadline,
+        monotonic=monotonic,
+    ):
         eligible_count += 1
         if eligible_count > ANDROID_PROBE_CANDIDATE_LIMIT:
             break
@@ -398,13 +465,24 @@ def resolve_android_probe(
         expected_output = (
             f"{ANDROID_PROBE_EXCEPTION}\n\t{original_frame}\n"
         ).encode("utf-8")
-        output = run_retrace(
-            root=root,
-            java=java,
-            classpath=classpath,
-            mapping_path=mapping_path,
-            stack=stack,
-        )
+        output = output_by_stack.get(stack)
+        if output is None:
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise DiagnosticsError(
+                    "R8 probe selection exceeded its total deadline"
+                )
+            output = run_retrace(
+                root=root,
+                java=java,
+                classpath=classpath,
+                mapping_path=mapping_path,
+                stack=stack,
+                timeout=min(float(COMMAND_TIMEOUT_SECONDS), remaining),
+            )
+            output_by_stack[stack] = output
+        if monotonic() > deadline:
+            raise DiagnosticsError("R8 probe selection exceeded its total deadline")
         if output == expected_output and output != stack:
             return probe, source, stack, output
     if eligible_count == 0:
@@ -458,6 +536,7 @@ def run_retrace(
     classpath: str,
     mapping_path: Path,
     stack: bytes,
+    timeout: float = COMMAND_TIMEOUT_SECONDS,
 ) -> bytes:
     with tempfile.TemporaryDirectory(prefix="aetherlink-retrace-probe-") as temporary:
         stack_path = Path(temporary) / "stack.txt"
@@ -476,6 +555,7 @@ def run_retrace(
                 str(stack_path),
             ],
             root=root,
+            timeout=timeout,
         )
         if stderr:
             raise DiagnosticsError("Retrace emitted unexpected stderr")

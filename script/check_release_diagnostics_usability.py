@@ -101,6 +101,7 @@ def live_file_record(
     expected_relative = expected_path.as_posix()
     if value["path"] != expected_relative:
         raise EvidenceError(f"file path differs: {expected_relative}")
+    require_int(value["size"], f"{expected_relative}.size")
     try:
         data = producer.read_regular_bytes(root / expected_path, maximum_bytes=maximum_bytes)
     except producer.DiagnosticsError as error:
@@ -113,6 +114,7 @@ def live_file_record(
 
 def live_external_tool_record(record: object, expected_path: Path) -> None:
     value = exact_keys(record, {"path", "sha256", "size"}, str(expected_path))
+    require_int(value["size"], f"{expected_path}.size")
     try:
         expected = producer.tool_file_record(expected_path)
     except producer.DiagnosticsError as error:
@@ -357,6 +359,7 @@ def validate_android(document: Mapping[str, object], *, root: Path) -> None:
     except producer.DiagnosticsError as error:
         raise EvidenceError(f"Android diagnostics tool readback failed: {error}") from error
     builder_record = exact_keys(tool["builderJar"], {"name", "sha256", "size"}, "builderJar")
+    require_int(builder_record["size"], "builderJar.size")
     expected_builder = {
         "name": builder.name,
         "sha256": producer.sha256(builder_data),
@@ -366,7 +369,12 @@ def validate_android(document: Mapping[str, object], *, root: Path) -> None:
         raise EvidenceError("AGP builder JAR identity differs")
     if tool["retraceVersion"] != version_text:
         raise EvidenceError("Retrace version identity differs")
-    if tool["classpathEntryCount"] != len(classpath.split(os.pathsep)):
+    classpath_entry_count = require_int(
+        tool["classpathEntryCount"],
+        "classpathEntryCount",
+        minimum=1,
+    )
+    if classpath_entry_count != len(classpath.split(os.pathsep)):
         raise EvidenceError("Retrace classpath entry count differs")
     try:
         selected, selected_source, selected_stack, selected_output = (

@@ -232,11 +232,15 @@ public final class DocumentTextExtractor: Sendable {
         case .legacySpreadsheet, .legacyPresentation, .legacyHWP:
             text = try extractBinaryText(from: snapshotURL, processDeadline: processDeadline)
         case .hwpml, .xml:
-            text = XMLTextCollector.collectText(from: try readSnapshotData(
+            let data = try readSnapshotData(
                 snapshotURL,
                 limit: resourcePolicy.maxInputBytes,
                 deadline: processDeadline
-            ))
+            )
+            guard let parsedText = XMLTextCollector.collectText(from: data) else {
+                throw DocumentIngestionError.noExtractableText(fileURL.path)
+            }
+            text = parsedText
         case .plainText:
             let data = try readSnapshotData(
                 snapshotURL,
@@ -338,12 +342,12 @@ public final class DocumentTextExtractor: Sendable {
                 entry: entry,
                 processDeadline: processDeadline
             )
-            try accumulator.append(extractText(fromArchiveEntry: entry, data: data))
+            try accumulator.append(try extractText(fromArchiveEntry: entry, data: data))
         }
         return accumulator.text
     }
 
-    private func extractText(fromArchiveEntry entry: String, data: Data) -> String {
+    private func extractText(fromArchiveEntry entry: String, data: Data) throws -> String {
         let pathExtension = URL(fileURLWithPath: entry.lowercased()).pathExtension
         switch pathExtension {
         case "html", "htm", "xhtml":
@@ -351,7 +355,10 @@ public final class DocumentTextExtractor: Sendable {
         case "txt":
             return String(data: data, encoding: .utf8) ?? ""
         default:
-            return XMLTextCollector.collectText(from: data)
+            guard let parsedText = XMLTextCollector.collectText(from: data) else {
+                throw DocumentIngestionError.archiveEntryReadFailed(entry)
+            }
+            return parsedText
         }
     }
 
@@ -1381,11 +1388,11 @@ private func hasWindowsDrivePrefix(_ entry: String) -> Bool {
 private final class XMLTextCollector: NSObject, XMLParserDelegate {
     private var parts: [String] = []
 
-    static func collectText(from data: Data) -> String {
+    static func collectText(from data: Data) -> String? {
         let collector = XMLTextCollector()
         let parser = XMLParser(data: data)
         parser.delegate = collector
-        _ = parser.parse()
+        guard parser.parse() else { return nil }
         return collector.parts.joined(separator: " ")
     }
 

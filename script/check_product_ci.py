@@ -11,12 +11,14 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
 import time
-from typing import BinaryIO, Callable, Optional
+from typing import Callable, Optional
 import unittest
 import xml.etree.ElementTree as ET
 
@@ -76,10 +78,10 @@ ANDROID_FONT_SCALE_METHODS = (
     "coreSurfacesRemainUsableAt200PercentFontScale",
 )
 CANONICAL_WORKFLOW_SHA256 = (
-    "1159dd9c376e2a4170526ddd3453d49ca92d7061e058ca121e1f3602f630b06b"
+    "41f1532ba6037645e8b7c29629eb665d368a4f524a034c0b8d7a26b5740de73e"
 )
 CANONICAL_PARSED_WORKFLOW_SHA256 = (
-    "f843851a64defc5868ed5b8a3bccd8148e8e79d7e8a3babe5a9e6d3b7cb25b1d"
+    "c6b90de31600f813d78ec4cfeb1f363c12ccef0735e8f2f93284024b60d89bdd"
 )
 
 REQUIRED_WORKFLOW_PREFIX = """name: Product quality (non-security subset)
@@ -128,6 +130,7 @@ MAIN_RELEASE_CONDITION = (
 
 SWIFT_FILTER = (
     "DocumentIngestorTests|DocumentTextExtractorTests|DocumentChunkerTests|"
+    "DocumentIngestionSanitizerCorpusTests|"
     "AggregatingLlmBackendResidencyTests|ProviderHealthRecoveryTests|"
     "RuntimeModelIdleUnloadPolicyTests|"
     "RuntimeChatContextCompactionPlannerTests|"
@@ -242,9 +245,9 @@ SWIFT_FILTER = (
 SWIFT_TEST_LIST_PATH = (
     ROOT / ".build/aetherlink-product-ci-swift-test-list-v1.txt"
 )
-SWIFT_PRODUCT_TEST_COUNT = 217
+SWIFT_PRODUCT_TEST_COUNT = 222
 SWIFT_PRODUCT_TEST_MANIFEST_SHA256 = (
-    "213a6521b157ed948a38c4877e9242115e7033a1a5194fc4c3dcdcaca09f6be3"
+    "b481e814d8e0f7a2385e50fb5d0f0f8d1602f08b608eb373bb8960ce53547815"
 )
 SWIFT_FOCUSED_TEST_RUN_MARKER_PATH = (
     ROOT / ".build/aetherlink-product-ci-swift-focused-run-marker-v1.json"
@@ -262,6 +265,7 @@ SWIFT_FOCUSED_TEST_BINDING_CONTRACT = (
     "swift-focused-xctest-console-binding-v1"
 )
 SWIFT_FOCUSED_TEST_MAX_LOG_BYTES = 16 * 1024 * 1024
+SWIFT_FOCUSED_TEST_RUN_TIMEOUT_SECONDS = 20 * 60
 SWIFT_FOCUSED_TEST_FUTURE_MTIME_TOLERANCE_NS = 5_000_000_000
 SWIFT_FOCUSED_PACKAGE_MAX_BYTES = 512 * 1024
 SWIFT_FOCUSED_PACKAGE_DUMP_MAX_BYTES = 2 * 1024 * 1024
@@ -343,6 +347,117 @@ SWIFT_FOCUSED_RUN_COMMAND = (
     "test",
     "--filter",
     SWIFT_FILTER,
+)
+DOCUMENT_INGESTION_ASAN_FILTER = (
+    r"^DocumentIngestionTests\."
+    r"(DocumentIngestionSanitizerCorpusTests|DocumentIngestorTests|"
+    r"DocumentTextExtractorTests|DocumentChunkerTests)/"
+)
+DOCUMENT_INGESTION_ASAN_TEST_COUNT = 57
+DOCUMENT_INGESTION_ASAN_TEST_MANIFEST_SHA256 = (
+    "71b37b2f02a4b8ef65c9e82011259345c86015572480274f1417ed16f5d9b690"
+)
+DOCUMENT_INGESTION_ASAN_RUN_MARKER_PATH = ROOT / (
+    ".build/aetherlink-document-ingestion-asan-run-marker-v1.json"
+)
+DOCUMENT_INGESTION_ASAN_LOG_PATH = ROOT / (
+    ".build/aetherlink-document-ingestion-asan-console-v1.log"
+)
+DOCUMENT_INGESTION_ASAN_BINDING_PATH = ROOT / (
+    ".build/aetherlink-document-ingestion-asan-binding-v1.json"
+)
+DOCUMENT_INGESTION_ASAN_SCRATCH_PATH = (
+    ".build/aetherlink-document-ingestion-asan-v1"
+)
+DOCUMENT_INGESTION_ASAN_RUN_TIMEOUT_SECONDS = 12 * 60
+DOCUMENT_INGESTION_ASAN_RUN_COMMAND = (
+    "swift",
+    "test",
+    "--scratch-path",
+    DOCUMENT_INGESTION_ASAN_SCRATCH_PATH,
+    "--sanitize",
+    "address",
+    "--no-parallel",
+    "--filter",
+    DOCUMENT_INGESTION_ASAN_FILTER,
+)
+DOCUMENT_INGESTION_MUTATION_FILTER = (
+    r"^DocumentIngestionTests\."
+    r"DocumentIngestionGenerationalMutationTests/"
+)
+DOCUMENT_INGESTION_MUTATION_TEST_COUNT = 2
+DOCUMENT_INGESTION_MUTATION_TEST_MANIFEST_SHA256 = (
+    "268e426f7d7c69629188c444093f044efe1952628c2e4c20923c512aaf17f05b"
+)
+DOCUMENT_INGESTION_MUTATION_CASE_COUNT = 96
+DOCUMENT_INGESTION_MUTATION_ROOT_SEED = "a37e2c915b04d8f6"
+DOCUMENT_INGESTION_MUTATION_MARKER_MANIFEST_SHA256 = (
+    "bd6e38cbac664aca4e7d4d912fddd1f853b93dfc5b862751921848d885d1e379"
+)
+DOCUMENT_INGESTION_MUTATION_FORMATS = (
+    "txt",
+    "xml",
+    "html",
+    "rtf",
+    "pdf",
+    "docx",
+    "epub",
+    "webarchive",
+)
+DOCUMENT_INGESTION_MUTATION_PRIMARY_OPERATORS = (
+    "identity",
+    "truncate",
+    "delete_span",
+    "insert_span",
+    "overwrite_span",
+    "flip_bit",
+    "flip_high_bits",
+    "duplicate_span",
+    "splice_seed",
+    "reverse_span",
+    "pad_exact_4096",
+    "pad_plus_one_4097",
+)
+DOCUMENT_INGESTION_MUTATION_RUN_MARKER_PATH = ROOT / (
+    ".build/aetherlink-document-ingestion-mutation-run-marker-v1.json"
+)
+DOCUMENT_INGESTION_MUTATION_LOG_PATH = ROOT / (
+    ".build/aetherlink-document-ingestion-mutation-console-v1.log"
+)
+DOCUMENT_INGESTION_MUTATION_BINDING_PATH = ROOT / (
+    ".build/aetherlink-document-ingestion-mutation-binding-v1.json"
+)
+DOCUMENT_INGESTION_MUTATION_RUN_TIMEOUT_SECONDS = 5 * 60
+DOCUMENT_INGESTION_MUTATION_RUN_COMMAND = (
+    "swift",
+    "test",
+    "--scratch-path",
+    DOCUMENT_INGESTION_ASAN_SCRATCH_PATH,
+    "--sanitize",
+    "address",
+    "--no-parallel",
+    "--filter",
+    DOCUMENT_INGESTION_MUTATION_FILTER,
+)
+DOCUMENT_INGESTION_MUTATION_TEST_IDENTITY = (
+    "DocumentIngestionTests.DocumentIngestionGenerationalMutationTests/"
+    "testBoundedGenerationalMutationsHaveSafeOutcomes"
+)
+DOCUMENT_INGESTION_MUTATION_MARKER_PATTERN = re.compile(
+    r"AETHERLINK_DOCUMENT_MUTATION_V1 "
+    r"case=(?P<case>[0-9]{3}) total=(?P<total>[0-9]{3}) "
+    r"generator=splitmix64-v1 root=(?P<root>[0-9a-f]{16}) "
+    r"seed=(?P<seed>[0-9a-f]{16}) "
+    r"format=(?P<format>[a-z]+) "
+    r"operators=(?P<operators>[a-z0-9_]+(?:,[a-z0-9_]+){0,3}) "
+    r"bytes=(?P<bytes>0|[1-9][0-9]{0,3}) "
+    r"sha256=(?P<sha256>[0-9a-f]{64})"
+)
+DOCUMENT_INGESTION_MUTATION_SUMMARY_PATTERN = re.compile(
+    r"AETHERLINK_DOCUMENT_MUTATION_SUMMARY_V1 "
+    r"total=(?P<total>[0-9]{3}) "
+    r"root=(?P<root>[0-9a-f]{16}) "
+    r"manifest_sha256=(?P<manifest>[0-9a-f]{64})"
 )
 
 ANDROID_TESTS = (
@@ -794,6 +909,58 @@ SWIFT_TEST_RESULT_STEP_BODY = (
     "--swift-focused-test-results\n"
 )
 
+DOCUMENT_INGESTION_ASAN_PREPARE_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: >-\n"
+    "          python3 -B script/check_product_ci.py\n"
+    "          --prepare-document-ingestion-asan-run\n"
+)
+
+DOCUMENT_INGESTION_ASAN_RUN_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: >-\n"
+    "          python3 -B script/check_product_ci.py\n"
+    "          --run-document-ingestion-asan-tests\n"
+)
+
+DOCUMENT_INGESTION_ASAN_RESULT_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: |\n"
+    "          python3 -B script/check_product_ci.py "
+    "--write-document-ingestion-asan-binding\n"
+    "          python3 -B script/check_product_ci.py "
+    "--document-ingestion-asan-results\n"
+)
+
+DOCUMENT_INGESTION_MUTATION_PREPARE_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: >-\n"
+    "          python3 -B script/check_product_ci.py\n"
+    "          --prepare-document-ingestion-mutation-run\n"
+)
+
+DOCUMENT_INGESTION_MUTATION_RUN_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: >-\n"
+    "          python3 -B script/check_product_ci.py\n"
+    "          --run-document-ingestion-mutation-tests\n"
+)
+
+DOCUMENT_INGESTION_MUTATION_RESULT_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: |\n"
+    "          python3 -B script/check_product_ci.py "
+    "--write-document-ingestion-mutation-binding\n"
+    "          python3 -B script/check_product_ci.py "
+    "--document-ingestion-mutation-results\n"
+)
+
 TRACKED_DOCUMENTATION_CONTRACT_TESTS = (
     "script.test_documentation_handoff_guards."
     "DocumentationHandoffGuardTests."
@@ -801,6 +968,30 @@ TRACKED_DOCUMENTATION_CONTRACT_TESTS = (
     "script.test_documentation_handoff_guards."
     "DocumentationHandoffGuardTests."
     "test_tracked_document_contract_cli_is_explicit_and_bounded",
+    "script.test_documentation_handoff_guards."
+    "DocumentationHandoffGuardTests."
+    "test_current_g7_nonsecurity_merge_full_local_candidate_block_is_exact_and_fail_closed",
+    "script.test_documentation_handoff_guards."
+    "DocumentationHandoffGuardTests."
+    "test_current_g7_nonsecurity_merge_full_local_candidate_validator_is_wired_once",
+    "script.test_documentation_handoff_guards."
+    "DocumentationHandoffGuardTests."
+    "test_current_g6_release_diagnostics_document_block_is_exact_and_fail_closed",
+    "script.test_documentation_handoff_guards."
+    "DocumentationHandoffGuardTests."
+    "test_current_g6_release_diagnostics_validator_is_wired_once",
+    "script.test_documentation_handoff_guards."
+    "DocumentationHandoffGuardTests."
+    "test_current_g7_document_ingestion_asan_block_is_exact_and_fail_closed",
+    "script.test_documentation_handoff_guards."
+    "DocumentationHandoffGuardTests."
+    "test_current_g7_document_ingestion_asan_validator_is_wired_once",
+    "script.test_documentation_handoff_guards."
+    "DocumentationHandoffGuardTests."
+    "test_current_g7_document_ingestion_mutation_block_is_exact_and_fail_closed",
+    "script.test_documentation_handoff_guards."
+    "DocumentationHandoffGuardTests."
+    "test_current_g7_document_ingestion_mutation_validator_is_wired_once",
 )
 
 RELEASE_COMPLIANCE_TEST_IDS = (
@@ -867,7 +1058,15 @@ TRACKED_DOCUMENTATION_CONTRACT_STEP_BODY = (
     "--tracked-contracts-only\n"
     "          python3 -B -m unittest \\\n"
     f"            {TRACKED_DOCUMENTATION_CONTRACT_TESTS[0]} \\\n"
-    f"            {TRACKED_DOCUMENTATION_CONTRACT_TESTS[1]}\n"
+    f"            {TRACKED_DOCUMENTATION_CONTRACT_TESTS[1]} \\\n"
+    f"            {TRACKED_DOCUMENTATION_CONTRACT_TESTS[2]} \\\n"
+    f"            {TRACKED_DOCUMENTATION_CONTRACT_TESTS[3]} \\\n"
+    f"            {TRACKED_DOCUMENTATION_CONTRACT_TESTS[4]} \\\n"
+    f"            {TRACKED_DOCUMENTATION_CONTRACT_TESTS[5]} \\\n"
+    f"            {TRACKED_DOCUMENTATION_CONTRACT_TESTS[6]} \\\n"
+    f"            {TRACKED_DOCUMENTATION_CONTRACT_TESTS[7]} \\\n"
+    f"            {TRACKED_DOCUMENTATION_CONTRACT_TESTS[8]} \\\n"
+    f"            {TRACKED_DOCUMENTATION_CONTRACT_TESTS[9]}\n"
 )
 
 MACOS_PACKAGE_CONTRACT_TEST_STEP_BODY = (
@@ -1055,7 +1254,7 @@ ANDROID_RELEASE_DIAGNOSTICS_READBACK_STEP_BODY = (
 MACOS_JOB_PREAMBLE = (
     "    name: macOS product quality subset\n"
     "    runs-on: macos-26\n"
-    "    timeout-minutes: 45\n"
+    "    timeout-minutes: 55\n"
     "    env:\n"
     "      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer\n"
 )
@@ -1147,6 +1346,30 @@ MACOS_STEPS = (
     (
         "Bind and verify focused Swift test results",
         SWIFT_TEST_RESULT_STEP_BODY,
+    ),
+    (
+        "Prepare DocumentIngestion ASan corpus on main",
+        DOCUMENT_INGESTION_ASAN_PREPARE_STEP_BODY,
+    ),
+    (
+        "Run DocumentIngestion ASan corpus on main",
+        DOCUMENT_INGESTION_ASAN_RUN_STEP_BODY,
+    ),
+    (
+        "Bind and verify DocumentIngestion ASan corpus on main",
+        DOCUMENT_INGESTION_ASAN_RESULT_STEP_BODY,
+    ),
+    (
+        "Prepare DocumentIngestion mutation corpus on main",
+        DOCUMENT_INGESTION_MUTATION_PREPARE_STEP_BODY,
+    ),
+    (
+        "Run DocumentIngestion mutation corpus on main",
+        DOCUMENT_INGESTION_MUTATION_RUN_STEP_BODY,
+    ),
+    (
+        "Bind and verify DocumentIngestion mutation corpus on main",
+        DOCUMENT_INGESTION_MUTATION_RESULT_STEP_BODY,
     ),
     (
         "Build unsealed macOS Release package on main",
@@ -1849,7 +2072,7 @@ def workflow_failures(
         text=macos,
         fragments=(
             "runs-on: macos-26",
-            "timeout-minutes: 45",
+            "timeout-minutes: 55",
             "DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer",
             "fetch-depth: 0",
             "xcodebuild -version",
@@ -1871,6 +2094,14 @@ def workflow_failures(
             "python3 -B -m unittest",
             TRACKED_DOCUMENTATION_CONTRACT_TESTS[0],
             TRACKED_DOCUMENTATION_CONTRACT_TESTS[1],
+            TRACKED_DOCUMENTATION_CONTRACT_TESTS[2],
+            TRACKED_DOCUMENTATION_CONTRACT_TESTS[3],
+            TRACKED_DOCUMENTATION_CONTRACT_TESTS[4],
+            TRACKED_DOCUMENTATION_CONTRACT_TESTS[5],
+            TRACKED_DOCUMENTATION_CONTRACT_TESTS[6],
+            TRACKED_DOCUMENTATION_CONTRACT_TESTS[7],
+            TRACKED_DOCUMENTATION_CONTRACT_TESTS[8],
+            TRACKED_DOCUMENTATION_CONTRACT_TESTS[9],
             "PYTHONPATH=. python3 -B script/test_build_and_run.py",
             "PYTHONPATH=. python3 -B -m unittest",
             "script.test_run_macos_current_unsealed_install_recovery_smoke",
@@ -1886,6 +2117,14 @@ def workflow_failures(
             f"'{SWIFT_FILTER}'",
             "--write-swift-focused-test-binding",
             "--swift-focused-test-results",
+            "--prepare-document-ingestion-asan-run",
+            "--run-document-ingestion-asan-tests",
+            "--write-document-ingestion-asan-binding",
+            "--document-ingestion-asan-results",
+            "--prepare-document-ingestion-mutation-run",
+            "--run-document-ingestion-mutation-tests",
+            "--write-document-ingestion-mutation-binding",
+            "--document-ingestion-mutation-results",
             MAIN_RELEASE_CONDITION,
             "python3 -B script/package_release_artifacts.py source-digest",
             "./script/build_and_run.sh --unsealed-package-only",
@@ -2132,6 +2371,44 @@ def workflow_failures(
         failures.append(
             "Swift focused test result step must match the exact command body"
         )
+    asan_steps = (
+        (
+            "Prepare DocumentIngestion ASan corpus on main",
+            DOCUMENT_INGESTION_ASAN_PREPARE_STEP_BODY,
+        ),
+        (
+            "Run DocumentIngestion ASan corpus on main",
+            DOCUMENT_INGESTION_ASAN_RUN_STEP_BODY,
+        ),
+        (
+            "Bind and verify DocumentIngestion ASan corpus on main",
+            DOCUMENT_INGESTION_ASAN_RESULT_STEP_BODY,
+        ),
+    )
+    for step_name, expected_body in asan_steps:
+        if named_step_body(macos, step_name) != expected_body:
+            failures.append(
+                f"{step_name} step must match the exact main-only command body"
+            )
+    mutation_steps = (
+        (
+            "Prepare DocumentIngestion mutation corpus on main",
+            DOCUMENT_INGESTION_MUTATION_PREPARE_STEP_BODY,
+        ),
+        (
+            "Run DocumentIngestion mutation corpus on main",
+            DOCUMENT_INGESTION_MUTATION_RUN_STEP_BODY,
+        ),
+        (
+            "Bind and verify DocumentIngestion mutation corpus on main",
+            DOCUMENT_INGESTION_MUTATION_RESULT_STEP_BODY,
+        ),
+    )
+    for step_name, expected_body in mutation_steps:
+        if named_step_body(macos, step_name) != expected_body:
+            failures.append(
+                f"{step_name} step must match the exact main-only command body"
+            )
     if SWIFT_FOCUSED_RUN_COMMAND != (
         "swift",
         "test",
@@ -2141,6 +2418,36 @@ def workflow_failures(
         failures.append(
             "Swift focused result runner must use the exact serial product "
             "allowlist command"
+        )
+    if DOCUMENT_INGESTION_ASAN_RUN_COMMAND != (
+        "swift",
+        "test",
+        "--scratch-path",
+        ".build/aetherlink-document-ingestion-asan-v1",
+        "--sanitize",
+        "address",
+        "--no-parallel",
+        "--filter",
+        DOCUMENT_INGESTION_ASAN_FILTER,
+    ):
+        failures.append(
+            "DocumentIngestion ASan runner must use the exact isolated "
+            "address-sanitizer corpus command"
+        )
+    if DOCUMENT_INGESTION_MUTATION_RUN_COMMAND != (
+        "swift",
+        "test",
+        "--scratch-path",
+        ".build/aetherlink-document-ingestion-asan-v1",
+        "--sanitize",
+        "address",
+        "--no-parallel",
+        "--filter",
+        DOCUMENT_INGESTION_MUTATION_FILTER,
+    ):
+        failures.append(
+            "DocumentIngestion mutation runner must reuse the exact isolated "
+            "address-sanitizer scratch and selector"
         )
     if (
         SWIFT_FOCUSED_PACKAGE_SOURCE_PATHS
@@ -2446,7 +2753,7 @@ def self_test(workflow: str) -> list[str]:
         ),
         "tracked documentation mutation-test omission": (
             workflow.replace(
-                f"            {TRACKED_DOCUMENTATION_CONTRACT_TESTS[1]}\n",
+                f"            {TRACKED_DOCUMENTATION_CONTRACT_TESTS[9]}\n",
                 "",
                 1,
             ),
@@ -2729,6 +3036,78 @@ def self_test(workflow: str) -> list[str]:
                 1,
             ),
             "focused test step must match the exact command body",
+        ),
+        "missing DocumentIngestion ASan preparation": (
+            workflow.replace(
+                "      - name: Prepare DocumentIngestion ASan corpus on main\n"
+                f"{DOCUMENT_INGESTION_ASAN_PREPARE_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "bypassed DocumentIngestion ASan execution": (
+            workflow.replace(
+                "          --run-document-ingestion-asan-tests\n",
+                "          --document-ingestion-asan-results\n",
+                1,
+            ),
+            "step must match the exact main-only command body",
+        ),
+        "DocumentIngestion ASan main condition removed": (
+            workflow.replace(
+                "      - name: Run DocumentIngestion ASan corpus on main\n"
+                "        if: >-\n"
+                f"          {MAIN_RELEASE_CONDITION}\n",
+                "      - name: Run DocumentIngestion ASan corpus on main\n",
+                1,
+            ),
+            "step must match the exact main-only command body",
+        ),
+        "missing DocumentIngestion ASan independent readback": (
+            workflow.replace(
+                "          python3 -B script/check_product_ci.py "
+                "--document-ingestion-asan-results\n",
+                "",
+                1,
+            ),
+            "step must match the exact main-only command body",
+        ),
+        "missing DocumentIngestion mutation preparation": (
+            workflow.replace(
+                "      - name: Prepare DocumentIngestion mutation corpus on main\n"
+                f"{DOCUMENT_INGESTION_MUTATION_PREPARE_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "bypassed DocumentIngestion mutation execution": (
+            workflow.replace(
+                "          --run-document-ingestion-mutation-tests\n",
+                "          --document-ingestion-mutation-results\n",
+                1,
+            ),
+            "step must match the exact main-only command body",
+        ),
+        "DocumentIngestion mutation main condition removed": (
+            workflow.replace(
+                "      - name: Run DocumentIngestion mutation corpus on main\n"
+                "        if: >-\n"
+                f"          {MAIN_RELEASE_CONDITION}\n",
+                "      - name: Run DocumentIngestion mutation corpus on main\n",
+                1,
+            ),
+            "step must match the exact main-only command body",
+        ),
+        "missing DocumentIngestion mutation independent readback": (
+            workflow.replace(
+                "          python3 -B script/check_product_ci.py "
+                "--document-ingestion-mutation-results\n",
+                "",
+                1,
+            ),
+            "step must match the exact main-only command body",
         ),
         "extra Swift filter": (
             workflow.replace(
@@ -3448,8 +3827,8 @@ def self_test(workflow: str) -> list[str]:
         ),
         "live backend enablement": (
             workflow.replace(
-                "    timeout-minutes: 45\n",
-                "    timeout-minutes: 45\n"
+                "    timeout-minutes: 55\n",
+                "    timeout-minutes: 55\n"
                 "    env:\n"
                 '      OLLAMA_LIVE_TESTS: "1"\n',
                 1,
@@ -5015,6 +5394,273 @@ def swift_focused_console_snapshot(
     )
 
 
+def document_ingestion_mutation_console_snapshot(
+    log_path: Path,
+    *,
+    expected_case_count: int = DOCUMENT_INGESTION_MUTATION_CASE_COUNT,
+    expected_root: str = DOCUMENT_INGESTION_MUTATION_ROOT_SEED,
+    expected_manifest_sha256: str = (
+        DOCUMENT_INGESTION_MUTATION_MARKER_MANIFEST_SHA256
+    ),
+    expected_formats: tuple[str, ...] = (
+        DOCUMENT_INGESTION_MUTATION_FORMATS
+    ),
+    expected_primary_operators: tuple[str, ...] = (
+        DOCUMENT_INGESTION_MUTATION_PRIMARY_OPERATORS
+    ),
+    expected_test_identity: str = (
+        DOCUMENT_INGESTION_MUTATION_TEST_IDENTITY
+    ),
+    max_bytes: int = SWIFT_FOCUSED_TEST_MAX_LOG_BYTES,
+) -> tuple[dict[str, object] | None, list[str]]:
+    log_bytes, failures = read_bounded_regular_bytes(
+        log_path,
+        max_bytes=max_bytes,
+        label="DocumentIngestion mutation console log",
+    )
+    if log_bytes is None:
+        return None, failures
+    try:
+        log_text = log_bytes.decode("utf-8")
+    except UnicodeError as error:
+        return None, [
+            "DocumentIngestion mutation console log must be UTF-8: "
+            f"{error}"
+        ]
+    if not log_bytes.endswith(b"\n"):
+        failures.append(
+            "DocumentIngestion mutation console log must end with LF"
+        )
+
+    lines = log_text.splitlines()
+    started_positions: list[int] = []
+    passed_positions: list[int] = []
+    marker_entries: list[tuple[int, str, re.Match[str]]] = []
+    summary_entries: list[tuple[int, re.Match[str]]] = []
+    for position, line in enumerate(lines):
+        event = SWIFT_XCTEST_EVENT_PATTERN.fullmatch(line)
+        if event is not None:
+            identity = f"{event.group(1)}/{event.group(2)}"
+            if identity == expected_test_identity:
+                if event.group(3) == "started":
+                    started_positions.append(position)
+                elif event.group(3) == "passed":
+                    passed_positions.append(position)
+        if line.startswith("AETHERLINK_DOCUMENT_MUTATION_V1 "):
+            match = DOCUMENT_INGESTION_MUTATION_MARKER_PATTERN.fullmatch(line)
+            if match is None:
+                failures.append(
+                    "DocumentIngestion mutation console contains a malformed "
+                    f"case marker at line {position + 1}"
+                )
+            else:
+                marker_entries.append((position, line, match))
+        if line.startswith("AETHERLINK_DOCUMENT_MUTATION_SUMMARY_V1 "):
+            match = DOCUMENT_INGESTION_MUTATION_SUMMARY_PATTERN.fullmatch(line)
+            if match is None:
+                failures.append(
+                    "DocumentIngestion mutation console contains a malformed "
+                    f"summary at line {position + 1}"
+                )
+            else:
+                summary_entries.append((position, match))
+
+    if len(started_positions) != 1 or len(passed_positions) != 1:
+        failures.append(
+            "DocumentIngestion mutation case markers must be enclosed by one "
+            "exact started/passed testcase pair"
+        )
+    if len(marker_entries) != expected_case_count:
+        failures.append(
+            "DocumentIngestion mutation console must contain exactly "
+            f"{expected_case_count} complete case markers; found "
+            f"{len(marker_entries)}"
+        )
+    if len(summary_entries) != 1:
+        failures.append(
+            "DocumentIngestion mutation console must contain exactly one "
+            "complete summary"
+        )
+
+    expected_total = f"{expected_case_count:03d}"
+    allowed_operators = set(expected_primary_operators)
+    observed_seeds: set[str] = set()
+    observed_format_counts = {format_name: 0 for format_name in expected_formats}
+    marker_lines: list[str] = []
+    for observed_index, (_, marker_line, match) in enumerate(marker_entries):
+        marker_lines.append(marker_line)
+        case_index = int(match.group("case"))
+        if case_index != observed_index:
+            failures.append(
+                "DocumentIngestion mutation case markers must be ordered "
+                f"000...{expected_case_count - 1:03d}"
+            )
+            break
+        if match.group("total") != expected_total:
+            failures.append(
+                "DocumentIngestion mutation case marker total must match the "
+                "exact corpus"
+            )
+        if match.group("root") != expected_root:
+            failures.append(
+                "DocumentIngestion mutation case marker root must match the "
+                "fixed seed"
+            )
+        seed = match.group("seed")
+        if seed in observed_seeds:
+            failures.append(
+                "DocumentIngestion mutation case seeds must be unique"
+            )
+        observed_seeds.add(seed)
+        if not expected_formats:
+            failures.append(
+                "DocumentIngestion mutation expected format set is empty"
+            )
+            continue
+        expected_format = expected_formats[case_index % len(expected_formats)]
+        observed_format = match.group("format")
+        if observed_format != expected_format:
+            failures.append(
+                "DocumentIngestion mutation format order must match the exact "
+                "cross-product"
+            )
+        if observed_format in observed_format_counts:
+            observed_format_counts[observed_format] += 1
+        operators = tuple(match.group("operators").split(","))
+        if not 1 <= len(operators) <= 4:
+            failures.append(
+                "DocumentIngestion mutation case must contain one through "
+                "four operators"
+            )
+        if any(operator not in allowed_operators for operator in operators):
+            failures.append(
+                "DocumentIngestion mutation case contains an unknown operator"
+            )
+        if expected_formats:
+            primary_index = case_index // len(expected_formats)
+            if primary_index >= len(expected_primary_operators):
+                failures.append(
+                    "DocumentIngestion mutation primary operator index is "
+                    "outside the exact cross-product"
+                )
+            elif operators[-1] != expected_primary_operators[primary_index]:
+                failures.append(
+                    "DocumentIngestion mutation primary operator order must "
+                    "match the exact cross-product"
+                )
+            elif operators[-1] in ("pad_exact_4096", "pad_plus_one_4097"):
+                if len(operators) != 1:
+                    failures.append(
+                        "DocumentIngestion limit cases must contain only their "
+                        "primary operator"
+                    )
+        byte_count = int(match.group("bytes"))
+        if byte_count > 4_097:
+            failures.append(
+                "DocumentIngestion mutation case exceeds the 4097-byte bound"
+            )
+        if operators[-1] == "pad_exact_4096" and byte_count != 4_096:
+            failures.append(
+                "DocumentIngestion exact-limit case must contain 4096 bytes"
+            )
+        if operators[-1] == "pad_plus_one_4097" and byte_count != 4_097:
+            failures.append(
+                "DocumentIngestion plus-one case must contain 4097 bytes"
+            )
+
+    expected_per_format = (
+        len(expected_primary_operators) if expected_formats else 0
+    )
+    if any(
+        count != expected_per_format
+        for count in observed_format_counts.values()
+    ):
+        failures.append(
+            "DocumentIngestion mutation format counts must cover the exact "
+            "operator cross-product"
+        )
+    marker_manifest = ("\n".join(marker_lines) + "\n").encode("ascii")
+    observed_manifest_sha256 = hashlib.sha256(marker_manifest).hexdigest()
+    if observed_manifest_sha256 != expected_manifest_sha256:
+        failures.append(
+            "DocumentIngestion mutation marker manifest SHA-256 must match "
+            "the exact corpus"
+        )
+
+    if len(summary_entries) == 1:
+        summary_position, summary = summary_entries[0]
+        if (
+            summary.group("total") != expected_total
+            or summary.group("root") != expected_root
+            or summary.group("manifest") != expected_manifest_sha256
+        ):
+            failures.append(
+                "DocumentIngestion mutation summary must bind the exact "
+                "corpus manifest"
+            )
+        if marker_entries and summary_position <= marker_entries[-1][0]:
+            failures.append(
+                "DocumentIngestion mutation summary must follow every case "
+                "marker"
+            )
+    if len(started_positions) == 1 and len(passed_positions) == 1:
+        started_position = started_positions[0]
+        passed_position = passed_positions[0]
+        if started_position >= passed_position:
+            failures.append(
+                "DocumentIngestion mutation testcase events are reversed"
+            )
+        if marker_entries and (
+            marker_entries[0][0] <= started_position
+            or marker_entries[-1][0] >= passed_position
+        ):
+            failures.append(
+                "DocumentIngestion mutation markers must occur inside the "
+                "bounded testcase"
+            )
+        if summary_entries and not (
+            started_position < summary_entries[0][0] < passed_position
+        ):
+            failures.append(
+                "DocumentIngestion mutation summary must occur inside the "
+                "bounded testcase"
+            )
+    if failures:
+        return None, failures
+    return (
+        {
+            "bytesMaximum": 4_097,
+            "cases": expected_case_count,
+            "formatCases": observed_format_counts,
+            "generator": "splitmix64-v1",
+            "markerManifestSha256": observed_manifest_sha256,
+            "root": expected_root,
+            "summaryCount": 1,
+        },
+        [],
+    )
+
+
+def last_document_ingestion_mutation_marker(log_path: Path) -> str | None:
+    log_bytes, _ = read_bounded_regular_bytes(
+        log_path,
+        max_bytes=SWIFT_FOCUSED_TEST_MAX_LOG_BYTES,
+        label="DocumentIngestion mutation failure console",
+    )
+    if log_bytes is None:
+        return None
+    for raw_line in reversed(log_bytes.splitlines()):
+        try:
+            line = raw_line.decode("ascii")
+        except UnicodeError:
+            continue
+        if DOCUMENT_INGESTION_MUTATION_MARKER_PATTERN.fullmatch(line):
+            return (
+                "last observed DocumentIngestion mutation marker: " + line
+            )
+    return None
+
+
 def run_and_publish_swift_focused_log(
     *,
     command: tuple[str, ...],
@@ -5022,13 +5668,16 @@ def run_and_publish_swift_focused_log(
     log_path: Path,
     expected_tests: tuple[str, ...],
     log_context_failures: Callable[[Path], list[str]],
+    failure_context: Callable[[Path], str | None] | None = None,
     max_bytes: int = SWIFT_FOCUSED_TEST_MAX_LOG_BYTES,
-    mirror_output: Optional[BinaryIO] = None,
+    timeout_seconds: float = SWIFT_FOCUSED_TEST_RUN_TIMEOUT_SECONDS,
 ) -> tuple[int, list[str]]:
     if not command:
         return 1, ["focused Swift runner command must not be empty"]
     if max_bytes <= 0:
         return 1, ["focused Swift runner log bound must be positive"]
+    if timeout_seconds <= 0:
+        return 1, ["focused Swift runner timeout must be positive"]
 
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -5047,6 +5696,35 @@ def run_and_publish_swift_focused_log(
     backup_path: Path | None = None
     previous_canonical_state: tuple[int, int, int, int] | None = None
     published = False
+
+    def terminate_process_group() -> None:
+        if process is None:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        except OSError:
+            if process.poll() is None:
+                process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except OSError:
+            if process.poll() is None:
+                process.kill()
+        if process.poll() is None:
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                failures.append(
+                    "focused Swift runner could not reap its process group"
+                )
 
     def restore_previous_canonical() -> None:
         nonlocal published
@@ -5094,32 +5772,65 @@ def run_and_publish_swift_focused_log(
                 cwd=cwd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
+                start_new_session=True,
             )
             if process.stdout is None:
                 raise OSError("focused Swift runner stdout pipe was not created")
             total = 0
-            while True:
-                chunk = process.stdout.read(65_536)
-                if not chunk:
-                    break
-                total += len(chunk)
-                if total > max_bytes:
-                    process.terminate()
-                    try:
-                        process.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.wait()
+            deadline = time.monotonic() + timeout_seconds
+            selector = selectors.DefaultSelector()
+            try:
+                selector.register(process.stdout, selectors.EVENT_READ)
+                reached_eof = False
+                while not reached_eof:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        terminate_process_group()
+                        failures.append(
+                            "focused Swift test command timed out after "
+                            f"{timeout_seconds:g} seconds"
+                        )
+                        break
+                    events = selector.select(timeout=remaining)
+                    if not events:
+                        terminate_process_group()
+                        failures.append(
+                            "focused Swift test command timed out after "
+                            f"{timeout_seconds:g} seconds"
+                        )
+                        break
+                    for key, _ in events:
+                        chunk = os.read(key.fd, 65_536)
+                        if not chunk:
+                            reached_eof = True
+                            break
+                        remaining_capacity = max_bytes - total
+                        if len(chunk) > remaining_capacity:
+                            if remaining_capacity > 0:
+                                output.write(chunk[:remaining_capacity])
+                                total += remaining_capacity
+                            terminate_process_group()
+                            failures.append(
+                                "focused Swift console exceeded the bounded "
+                                "log size"
+                            )
+                            reached_eof = True
+                            break
+                        else:
+                            output.write(chunk)
+                            total += len(chunk)
+            finally:
+                selector.close()
+            if not failures and process.poll() is None:
+                remaining = max(0.001, deadline - time.monotonic())
+                try:
+                    process.wait(timeout=remaining)
+                except subprocess.TimeoutExpired:
+                    terminate_process_group()
                     failures.append(
-                        "focused Swift console exceeded the bounded log size"
+                        "focused Swift test command timed out after "
+                        f"{timeout_seconds:g} seconds"
                     )
-                    break
-                output.write(chunk)
-                if mirror_output is not None:
-                    mirror_output.write(chunk)
-                    mirror_output.flush()
-            if process.poll() is None:
-                process.wait()
             process.stdout.close()
             if process.returncode is not None:
                 status = process.returncode
@@ -5228,16 +5939,14 @@ def run_and_publish_swift_focused_log(
                 restore_previous_canonical()
     except OSError as error:
         failures.append(f"focused Swift runner failed: {error}")
-        if process is not None and process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
+        terminate_process_group()
         if published:
             restore_previous_canonical()
     finally:
+        if failures and failure_context is not None and temporary_path.exists():
+            context = failure_context(temporary_path)
+            if context is not None and context not in failures:
+                failures.append(context)
         try:
             if temporary_path.exists():
                 temporary_path.unlink()
@@ -5254,6 +5963,63 @@ def run_and_publish_swift_focused_log(
     return (0 if not failures else 1), failures
 
 
+def run_swift_test_contract(
+    *,
+    command: tuple[str, ...],
+    filter_pattern: str,
+    expected_count: int,
+    expected_manifest_sha256: str,
+    marker_path: Path,
+    log_path: Path,
+    test_list_path: Path = SWIFT_TEST_LIST_PATH,
+    timeout_seconds: float = SWIFT_FOCUSED_TEST_RUN_TIMEOUT_SECONDS,
+    supplemental_log_failures: Callable[[Path], list[str]] | None = None,
+    failure_context: Callable[[Path], str | None] | None = None,
+) -> tuple[int, list[str]]:
+    marker_failures = swift_focused_test_run_marker_failures(
+        marker_path=marker_path,
+        log_path=log_path,
+        test_list_path=test_list_path,
+        filter_pattern=filter_pattern,
+        expected_count=expected_count,
+        expected_manifest_sha256=expected_manifest_sha256,
+        require_log=False,
+    )
+    if marker_failures:
+        return 1, marker_failures
+    _, expected_tests, selection_failures = swift_focused_test_list_snapshot(
+        test_list_path=test_list_path,
+        filter_pattern=filter_pattern,
+        expected_count=expected_count,
+        expected_manifest_sha256=expected_manifest_sha256,
+    )
+    if expected_tests is None:
+        return 1, selection_failures
+
+    def validate_log_context(candidate_log_path: Path) -> list[str]:
+        failures = swift_focused_test_run_marker_failures(
+            marker_path=marker_path,
+            log_path=candidate_log_path,
+            test_list_path=test_list_path,
+            filter_pattern=filter_pattern,
+            expected_count=expected_count,
+            expected_manifest_sha256=expected_manifest_sha256,
+        )
+        if supplemental_log_failures is not None:
+            failures.extend(supplemental_log_failures(candidate_log_path))
+        return failures
+
+    return run_and_publish_swift_focused_log(
+        command=command,
+        cwd=ROOT,
+        log_path=log_path,
+        expected_tests=expected_tests,
+        log_context_failures=validate_log_context,
+        failure_context=failure_context,
+        timeout_seconds=timeout_seconds,
+    )
+
+
 def run_swift_focused_tests(
     *,
     filter_pattern: str,
@@ -5263,34 +6029,48 @@ def run_swift_focused_tests(
 ) -> tuple[int, list[str]]:
     if filter_pattern != SWIFT_FILTER:
         return 1, ["focused Swift runner filter must match the exact contract"]
-    marker_failures = swift_focused_test_run_marker_failures(
+    return run_swift_test_contract(
+        command=SWIFT_FOCUSED_RUN_COMMAND,
+        filter_pattern=SWIFT_FILTER,
+        expected_count=SWIFT_PRODUCT_TEST_COUNT,
+        expected_manifest_sha256=SWIFT_PRODUCT_TEST_MANIFEST_SHA256,
         marker_path=marker_path,
         log_path=log_path,
         test_list_path=test_list_path,
-        require_log=False,
     )
-    if marker_failures:
-        return 1, marker_failures
-    _, expected_tests, selection_failures = swift_focused_test_list_snapshot(
-        test_list_path=test_list_path,
+
+
+def run_document_ingestion_asan_tests() -> tuple[int, list[str]]:
+    return run_swift_test_contract(
+        command=DOCUMENT_INGESTION_ASAN_RUN_COMMAND,
+        filter_pattern=DOCUMENT_INGESTION_ASAN_FILTER,
+        expected_count=DOCUMENT_INGESTION_ASAN_TEST_COUNT,
+        expected_manifest_sha256=(
+            DOCUMENT_INGESTION_ASAN_TEST_MANIFEST_SHA256
+        ),
+        marker_path=DOCUMENT_INGESTION_ASAN_RUN_MARKER_PATH,
+        log_path=DOCUMENT_INGESTION_ASAN_LOG_PATH,
+        timeout_seconds=DOCUMENT_INGESTION_ASAN_RUN_TIMEOUT_SECONDS,
     )
-    if expected_tests is None:
-        return 1, selection_failures
 
-    def validate_log_context(candidate_log_path: Path) -> list[str]:
-        return swift_focused_test_run_marker_failures(
-            marker_path=marker_path,
-            log_path=candidate_log_path,
-            test_list_path=test_list_path,
-        )
 
-    return run_and_publish_swift_focused_log(
-        command=SWIFT_FOCUSED_RUN_COMMAND,
-        cwd=ROOT,
-        log_path=log_path,
-        expected_tests=expected_tests,
-        log_context_failures=validate_log_context,
-        mirror_output=sys.stdout.buffer,
+def run_document_ingestion_mutation_tests() -> tuple[int, list[str]]:
+    def mutation_log_failures(log_path: Path) -> list[str]:
+        _, failures = document_ingestion_mutation_console_snapshot(log_path)
+        return failures
+
+    return run_swift_test_contract(
+        command=DOCUMENT_INGESTION_MUTATION_RUN_COMMAND,
+        filter_pattern=DOCUMENT_INGESTION_MUTATION_FILTER,
+        expected_count=DOCUMENT_INGESTION_MUTATION_TEST_COUNT,
+        expected_manifest_sha256=(
+            DOCUMENT_INGESTION_MUTATION_TEST_MANIFEST_SHA256
+        ),
+        marker_path=DOCUMENT_INGESTION_MUTATION_RUN_MARKER_PATH,
+        log_path=DOCUMENT_INGESTION_MUTATION_LOG_PATH,
+        timeout_seconds=DOCUMENT_INGESTION_MUTATION_RUN_TIMEOUT_SECONDS,
+        supplemental_log_failures=mutation_log_failures,
+        failure_context=last_document_ingestion_mutation_marker,
     )
 
 
@@ -5311,6 +6091,10 @@ def swift_focused_test_binding_payload(
         SWIFT_FOCUSED_PACKAGE_TARGETS
     ),
     observed_targets: Optional[tuple[tuple[str, str, str], ...]] = None,
+    supplemental_console_key: str | None = None,
+    supplemental_console_snapshot: (
+        Callable[[Path], tuple[dict[str, object] | None, list[str]]] | None
+    ) = None,
 ) -> tuple[dict[str, object] | None, list[str]]:
     source_snapshot, source_failures = swift_focused_source_snapshot(
         exact_files=exact_files,
@@ -5335,6 +6119,19 @@ def swift_focused_test_binding_payload(
             log_path=log_path,
             expected_tests=expected_tests,
         )
+    supplemental_snapshot: dict[str, object] | None = None
+    supplemental_failures: list[str] = []
+    if (supplemental_console_key is None) != (
+        supplemental_console_snapshot is None
+    ):
+        supplemental_failures.append(
+            "focused Swift supplemental console key and parser must be "
+            "configured together"
+        )
+    elif supplemental_console_snapshot is not None and expected_tests is not None:
+        supplemental_snapshot, supplemental_failures = (
+            supplemental_console_snapshot(log_path)
+        )
     try:
         marker_bytes = marker_path.read_bytes()
     except OSError as error:
@@ -5352,6 +6149,7 @@ def swift_focused_test_binding_payload(
         source_failures
         + list_failures
         + console_failures
+        + supplemental_failures
         + marker_failures
     )
     if (
@@ -5360,18 +6158,22 @@ def swift_focused_test_binding_payload(
         or list_snapshot is None
         or console_snapshot is None
         or marker_snapshot is None
+        or (
+            supplemental_console_snapshot is not None
+            and supplemental_snapshot is None
+        )
     ):
         return None, failures
-    return (
-        {
-            "contract": SWIFT_FOCUSED_TEST_BINDING_CONTRACT,
-            "result": console_snapshot,
-            "runMarker": marker_snapshot,
-            "sourceInputs": source_snapshot,
-            "testList": list_snapshot,
-        },
-        [],
-    )
+    payload: dict[str, object] = {
+        "contract": SWIFT_FOCUSED_TEST_BINDING_CONTRACT,
+        "result": console_snapshot,
+        "runMarker": marker_snapshot,
+        "sourceInputs": source_snapshot,
+        "testList": list_snapshot,
+    }
+    if supplemental_console_key is not None and supplemental_snapshot is not None:
+        payload[supplemental_console_key] = supplemental_snapshot
+    return payload, []
 
 
 def swift_focused_test_binding_failures(
@@ -5392,6 +6194,10 @@ def swift_focused_test_binding_failures(
         SWIFT_FOCUSED_PACKAGE_TARGETS
     ),
     observed_targets: Optional[tuple[tuple[str, str, str], ...]] = None,
+    supplemental_console_key: str | None = None,
+    supplemental_console_snapshot: (
+        Callable[[Path], tuple[dict[str, object] | None, list[str]]] | None
+    ) = None,
 ) -> list[str]:
     failures = swift_focused_test_run_marker_failures(
         marker_path=marker_path,
@@ -5418,6 +6224,8 @@ def swift_focused_test_binding_failures(
         package_path=package_path,
         expected_targets=expected_targets,
         observed_targets=observed_targets,
+        supplemental_console_key=supplemental_console_key,
+        supplemental_console_snapshot=supplemental_console_snapshot,
     )
     failures.extend(payload_failures)
     if expected_payload is None:
@@ -5469,6 +6277,10 @@ def write_swift_focused_test_binding(
         SWIFT_FOCUSED_PACKAGE_TARGETS
     ),
     observed_targets: Optional[tuple[tuple[str, str, str], ...]] = None,
+    supplemental_console_key: str | None = None,
+    supplemental_console_snapshot: (
+        Callable[[Path], tuple[dict[str, object] | None, list[str]]] | None
+    ) = None,
 ) -> list[str]:
     failures = swift_focused_test_run_marker_failures(
         marker_path=marker_path,
@@ -5497,6 +6309,8 @@ def write_swift_focused_test_binding(
         package_path=package_path,
         expected_targets=expected_targets,
         observed_targets=observed_targets,
+        supplemental_console_key=supplemental_console_key,
+        supplemental_console_snapshot=supplemental_console_snapshot,
     )
     failures.extend(payload_failures)
     if payload is None:
@@ -5523,6 +6337,8 @@ def write_swift_focused_test_binding(
                 package_path=package_path,
                 expected_targets=expected_targets,
                 observed_targets=observed_targets,
+                supplemental_console_key=supplemental_console_key,
+                supplemental_console_snapshot=supplemental_console_snapshot,
             )
         )
     return failures
@@ -6184,6 +7000,288 @@ let package = Package(
                 failures.append("stale focused Swift binding was not rejected")
     except OSError as error:
         failures.append(f"focused Swift result fixture failed: {error}")
+    return failures
+
+
+def swift_runner_timeout_self_test() -> list[str]:
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix="aetherlink-swift-runner-timeout-",
+        ) as temporary:
+            started_at = time.monotonic()
+            status, observed_failures = run_and_publish_swift_focused_log(
+                command=(
+                    sys.executable,
+                    "-B",
+                    "-c",
+                    "import time; time.sleep(60)",
+                ),
+                cwd=ROOT,
+                log_path=Path(temporary) / "timeout.log",
+                expected_tests=(),
+                log_context_failures=lambda _: [],
+                timeout_seconds=0.1,
+            )
+            elapsed = time.monotonic() - started_at
+    except OSError as error:
+        return [f"focused Swift timeout self-test failed: {error}"]
+
+    failures: list[str] = []
+    if status == 0:
+        failures.append("focused Swift timeout self-test unexpectedly passed")
+    if not any("timed out after" in failure for failure in observed_failures):
+        failures.append("focused Swift timeout was not reported")
+    if elapsed >= 5:
+        failures.append(
+            "focused Swift timeout did not terminate the process promptly"
+        )
+    return failures
+
+
+def document_ingestion_mutation_console_self_test() -> list[str]:
+    root_seed = "0123456789abcdef"
+    test_identity = "FixtureTests.MutationSuite/testCases"
+    marker_lines = (
+        "AETHERLINK_DOCUMENT_MUTATION_V1 case=000 total=002 "
+        "generator=splitmix64-v1 root=0123456789abcdef "
+        "seed=0000000000000001 format=txt operators=identity bytes=1 "
+        "sha256=" + "a" * 64,
+        "AETHERLINK_DOCUMENT_MUTATION_V1 case=001 total=002 "
+        "generator=splitmix64-v1 root=0123456789abcdef "
+        "seed=0000000000000002 format=txt operators=truncate bytes=0 "
+        "sha256=" + "b" * 64,
+    )
+    manifest_sha256 = hashlib.sha256(
+        ("\n".join(marker_lines) + "\n").encode("ascii")
+    ).hexdigest()
+    summary = (
+        "AETHERLINK_DOCUMENT_MUTATION_SUMMARY_V1 total=002 "
+        f"root={root_seed} manifest_sha256={manifest_sha256}"
+    )
+    started = "Test Case '-[FixtureTests.MutationSuite testCases]' started."
+    passed = (
+        "Test Case '-[FixtureTests.MutationSuite testCases]' passed "
+        "(0.001 seconds)."
+    )
+    valid_console = "\n".join((started, *marker_lines, summary, passed)) + "\n"
+
+    def validate(path: Path) -> list[str]:
+        _, observed = document_ingestion_mutation_console_snapshot(
+            path,
+            expected_case_count=2,
+            expected_root=root_seed,
+            expected_manifest_sha256=manifest_sha256,
+            expected_formats=("txt",),
+            expected_primary_operators=("identity", "truncate"),
+            expected_test_identity=test_identity,
+        )
+        return observed
+
+    failures: list[str] = []
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix="aetherlink-document-mutation-console-",
+        ) as temporary:
+            log_path = Path(temporary) / "mutation.log"
+            log_path.write_text(valid_console, encoding="utf-8")
+            snapshot, observed = document_ingestion_mutation_console_snapshot(
+                log_path,
+                expected_case_count=2,
+                expected_root=root_seed,
+                expected_manifest_sha256=manifest_sha256,
+                expected_formats=("txt",),
+                expected_primary_operators=("identity", "truncate"),
+                expected_test_identity=test_identity,
+            )
+            if observed or snapshot is None or snapshot.get("cases") != 2:
+                failures.append(
+                    "valid DocumentIngestion mutation console fixture was "
+                    "rejected"
+                )
+
+            mutations = (
+                ("missing case", valid_console.replace(marker_lines[1] + "\n", "")),
+                (
+                    "duplicate case",
+                    valid_console.replace(
+                        marker_lines[1] + "\n",
+                        marker_lines[1] + "\n" + marker_lines[1] + "\n",
+                    ),
+                ),
+                (
+                    "reordered cases",
+                    valid_console.replace(
+                        marker_lines[0] + "\n" + marker_lines[1],
+                        marker_lines[1] + "\n" + marker_lines[0],
+                    ),
+                ),
+                (
+                    "root drift",
+                    valid_console.replace(root_seed, "1123456789abcdef", 1),
+                ),
+                (
+                    "unknown operator",
+                    valid_console.replace("operators=identity", "operators=random"),
+                ),
+                (
+                    "byte overflow",
+                    valid_console.replace("bytes=1", "bytes=4098", 1),
+                ),
+                (
+                    "summary before cases",
+                    valid_console.replace(summary + "\n", "", 1).replace(
+                        started + "\n",
+                        started + "\n" + summary + "\n",
+                        1,
+                    ),
+                ),
+                (
+                    "summary manifest drift",
+                    valid_console.replace(manifest_sha256, "f" * 64, 1),
+                ),
+            )
+            for label, mutated in mutations:
+                log_path.write_text(mutated, encoding="utf-8")
+                if not validate(log_path):
+                    failures.append(
+                        "DocumentIngestion mutation console mutation was not "
+                        f"rejected: {label}"
+                    )
+    except OSError as error:
+        failures.append(
+            f"DocumentIngestion mutation console self-test failed: {error}"
+        )
+    return failures
+
+
+def document_ingestion_mutation_failure_context_self_test() -> list[str]:
+    marker_one = (
+        "AETHERLINK_DOCUMENT_MUTATION_V1 case=000 total=002 "
+        "generator=splitmix64-v1 root=0123456789abcdef "
+        "seed=0000000000000001 format=txt operators=identity bytes=1 "
+        "sha256=" + "a" * 64
+    )
+    marker_two = (
+        "AETHERLINK_DOCUMENT_MUTATION_V1 case=001 total=002 "
+        "generator=splitmix64-v1 root=0123456789abcdef "
+        "seed=0000000000000002 format=txt operators=truncate bytes=0 "
+        "sha256=" + "b" * 64
+    )
+    expected_context = (
+        "last observed DocumentIngestion mutation marker: " + marker_two
+    )
+    failures: list[str] = []
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix="aetherlink-document-mutation-failure-",
+        ) as temporary:
+            root = Path(temporary)
+            log_path = root / "mutation.log"
+            log_path.write_bytes(b"prior successful canonical log\n")
+
+            def canonical_state() -> tuple[bytes, int]:
+                state = log_path.stat()
+                return log_path.read_bytes(), state.st_ino
+
+            def command(
+                output: str,
+                *,
+                exit_status: int = 1,
+                sleep: bool = False,
+            ) -> tuple[str, ...]:
+                trailer = "import time; time.sleep(60)\n" if sleep else ""
+                return (
+                    sys.executable,
+                    "-B",
+                    "-c",
+                    "import sys\n"
+                    f"sys.stdout.write({output!r})\n"
+                    "sys.stdout.flush()\n"
+                    + trailer
+                    + f"raise SystemExit({exit_status})\n",
+                )
+
+            def run_failure(
+                label: str,
+                output: str,
+                *,
+                timeout_seconds: float = 2,
+                max_bytes: int = SWIFT_FOCUSED_TEST_MAX_LOG_BYTES,
+                sleep: bool = False,
+                expected_marker: bool = True,
+            ) -> None:
+                before = canonical_state()
+                status, observed = run_and_publish_swift_focused_log(
+                    command=command(output, sleep=sleep),
+                    cwd=root,
+                    log_path=log_path,
+                    expected_tests=(),
+                    log_context_failures=lambda _: [],
+                    failure_context=last_document_ingestion_mutation_marker,
+                    timeout_seconds=timeout_seconds,
+                    max_bytes=max_bytes,
+                )
+                if status == 0:
+                    failures.append(
+                        f"DocumentIngestion mutation {label} fixture passed"
+                    )
+                if expected_marker and expected_context not in observed:
+                    failures.append(
+                        f"DocumentIngestion mutation {label} lost its last marker"
+                    )
+                if not expected_marker and any(
+                    "last observed DocumentIngestion mutation marker" in item
+                    for item in observed
+                ):
+                    failures.append(
+                        f"DocumentIngestion mutation {label} accepted a malformed marker"
+                    )
+                if canonical_state() != before:
+                    failures.append(
+                        f"DocumentIngestion mutation {label} replaced the prior log"
+                    )
+
+            marker_output = marker_one + "\n" + marker_two + "\n"
+            run_failure("nonzero", marker_output)
+            run_failure(
+                "timeout",
+                marker_output,
+                timeout_seconds=0.1,
+                sleep=True,
+            )
+            run_failure(
+                "oversized",
+                marker_output + "x" * 1024,
+                max_bytes=len(marker_output.encode("ascii")),
+            )
+            run_failure(
+                "malformed",
+                (marker_two + "\n").replace("case=001", "case=1", 1),
+                expected_marker=False,
+            )
+
+            success_console = (
+                "Test Suite 'Selected tests' started.\n"
+                "\t Executed 0 tests, with 0 failures (0 unexpected) in "
+                "0.000 (0.000) seconds\n"
+            )
+            status, observed = run_and_publish_swift_focused_log(
+                command=command(success_console, exit_status=0),
+                cwd=root,
+                log_path=log_path,
+                expected_tests=(),
+                log_context_failures=lambda _: [],
+                failure_context=last_document_ingestion_mutation_marker,
+            )
+            if status != 0 or observed:
+                failures.append(
+                    "DocumentIngestion mutation successful runner emitted "
+                    "failure context"
+                )
+    except OSError as error:
+        failures.append(
+            f"DocumentIngestion mutation failure-context self-test failed: {error}"
+        )
     return failures
 
 
@@ -8123,6 +9221,49 @@ def main() -> int:
         help="independently read back the focused Swift test binding",
     )
     mode.add_argument(
+        "--prepare-document-ingestion-asan-run",
+        action="store_true",
+        help="bind the exact DocumentIngestion ASan corpus before execution",
+    )
+    mode.add_argument(
+        "--run-document-ingestion-asan-tests",
+        action="store_true",
+        help="run the exact bounded DocumentIngestion ASan corpus",
+    )
+    mode.add_argument(
+        "--write-document-ingestion-asan-binding",
+        action="store_true",
+        help="bind the ASan console to its source and test manifest",
+    )
+    mode.add_argument(
+        "--document-ingestion-asan-results",
+        action="store_true",
+        help="independently read back the DocumentIngestion ASan binding",
+    )
+    mode.add_argument(
+        "--prepare-document-ingestion-mutation-run",
+        action="store_true",
+        help=(
+            "bind the exact DocumentIngestion mutation corpus before "
+            "execution"
+        ),
+    )
+    mode.add_argument(
+        "--run-document-ingestion-mutation-tests",
+        action="store_true",
+        help="run the exact bounded DocumentIngestion mutation corpus",
+    )
+    mode.add_argument(
+        "--write-document-ingestion-mutation-binding",
+        action="store_true",
+        help="bind all mutation case markers to source and console bytes",
+    )
+    mode.add_argument(
+        "--document-ingestion-mutation-results",
+        action="store_true",
+        help="independently read back the mutation corpus binding",
+    )
+    mode.add_argument(
         "--android-test-results",
         action="store_true",
         help="validate the exact focused Android product JUnit results",
@@ -8279,6 +9420,200 @@ def main() -> int:
         )
         return 0
 
+    if args.prepare_document_ingestion_asan_run:
+        failures = swift_test_selection_failures(
+            filter_pattern=DOCUMENT_INGESTION_ASAN_FILTER,
+            expected_count=DOCUMENT_INGESTION_ASAN_TEST_COUNT,
+            expected_manifest_sha256=(
+                DOCUMENT_INGESTION_ASAN_TEST_MANIFEST_SHA256
+            ),
+        )
+        if not failures:
+            failures.extend(write_swift_focused_test_run_marker(
+                marker_path=DOCUMENT_INGESTION_ASAN_RUN_MARKER_PATH,
+                filter_pattern=DOCUMENT_INGESTION_ASAN_FILTER,
+                expected_count=DOCUMENT_INGESTION_ASAN_TEST_COUNT,
+                expected_manifest_sha256=(
+                    DOCUMENT_INGESTION_ASAN_TEST_MANIFEST_SHA256
+                ),
+            ))
+        if failures:
+            for failure in failures:
+                print(
+                    "DocumentIngestion ASan preparation failed: " + failure,
+                    file=sys.stderr,
+                )
+            return 1
+        print(
+            "DocumentIngestion ASan source marker written and read back: "
+            f"{DOCUMENT_INGESTION_ASAN_TEST_COUNT} expected tests."
+        )
+        return 0
+
+    if args.run_document_ingestion_asan_tests:
+        status, failures = run_document_ingestion_asan_tests()
+        if failures:
+            for failure in failures:
+                print(
+                    "DocumentIngestion ASan runner failed: " + failure,
+                    file=sys.stderr,
+                )
+        if status != 0:
+            if not failures:
+                print(
+                    "DocumentIngestion ASan runner exited with status "
+                    f"{status}.",
+                    file=sys.stderr,
+                )
+            return status
+        print(
+            "DocumentIngestion ASan run passed and retained: "
+            f"{DOCUMENT_INGESTION_ASAN_TEST_COUNT}/"
+            f"{DOCUMENT_INGESTION_ASAN_TEST_COUNT}."
+        )
+        return 0
+
+    if (
+        args.write_document_ingestion_asan_binding
+        or args.document_ingestion_asan_results
+    ):
+        common_arguments = {
+            "binding_path": DOCUMENT_INGESTION_ASAN_BINDING_PATH,
+            "marker_path": DOCUMENT_INGESTION_ASAN_RUN_MARKER_PATH,
+            "log_path": DOCUMENT_INGESTION_ASAN_LOG_PATH,
+            "filter_pattern": DOCUMENT_INGESTION_ASAN_FILTER,
+            "expected_count": DOCUMENT_INGESTION_ASAN_TEST_COUNT,
+            "expected_manifest_sha256": (
+                DOCUMENT_INGESTION_ASAN_TEST_MANIFEST_SHA256
+            ),
+        }
+        failures = (
+            write_swift_focused_test_binding(**common_arguments)
+            if args.write_document_ingestion_asan_binding
+            else swift_focused_test_binding_failures(**common_arguments)
+        )
+        if failures:
+            for failure in failures:
+                print(
+                    "DocumentIngestion ASan results failed: " + failure,
+                    file=sys.stderr,
+                )
+            return 1
+        action = (
+            "binding written and read back"
+            if args.write_document_ingestion_asan_binding
+            else "independent binding readback passed"
+        )
+        print(
+            f"DocumentIngestion ASan {action}: "
+            f"{DOCUMENT_INGESTION_ASAN_TEST_COUNT}/"
+            f"{DOCUMENT_INGESTION_ASAN_TEST_COUNT}; skipped=0; "
+            "failures=0; errors=0."
+        )
+        return 0
+
+    if args.prepare_document_ingestion_mutation_run:
+        failures = swift_test_selection_failures(
+            filter_pattern=DOCUMENT_INGESTION_MUTATION_FILTER,
+            expected_count=DOCUMENT_INGESTION_MUTATION_TEST_COUNT,
+            expected_manifest_sha256=(
+                DOCUMENT_INGESTION_MUTATION_TEST_MANIFEST_SHA256
+            ),
+        )
+        if not failures:
+            failures.extend(write_swift_focused_test_run_marker(
+                marker_path=DOCUMENT_INGESTION_MUTATION_RUN_MARKER_PATH,
+                filter_pattern=DOCUMENT_INGESTION_MUTATION_FILTER,
+                expected_count=DOCUMENT_INGESTION_MUTATION_TEST_COUNT,
+                expected_manifest_sha256=(
+                    DOCUMENT_INGESTION_MUTATION_TEST_MANIFEST_SHA256
+                ),
+            ))
+        if failures:
+            for failure in failures:
+                print(
+                    "DocumentIngestion mutation preparation failed: "
+                    + failure,
+                    file=sys.stderr,
+                )
+            return 1
+        print(
+            "DocumentIngestion mutation source marker written and read back: "
+            f"{DOCUMENT_INGESTION_MUTATION_TEST_COUNT} XCTest identities and "
+            f"{DOCUMENT_INGESTION_MUTATION_CASE_COUNT} cases expected."
+        )
+        return 0
+
+    if args.run_document_ingestion_mutation_tests:
+        status, failures = run_document_ingestion_mutation_tests()
+        if failures:
+            for failure in failures:
+                print(
+                    "DocumentIngestion mutation runner failed: " + failure,
+                    file=sys.stderr,
+                )
+        if status != 0:
+            if not failures:
+                print(
+                    "DocumentIngestion mutation runner exited with status "
+                    f"{status}.",
+                    file=sys.stderr,
+                )
+            return status
+        print(
+            "DocumentIngestion mutation run passed and retained: "
+            f"{DOCUMENT_INGESTION_MUTATION_TEST_COUNT}/"
+            f"{DOCUMENT_INGESTION_MUTATION_TEST_COUNT} XCTest identities; "
+            f"{DOCUMENT_INGESTION_MUTATION_CASE_COUNT}/"
+            f"{DOCUMENT_INGESTION_MUTATION_CASE_COUNT} cases."
+        )
+        return 0
+
+    if (
+        args.write_document_ingestion_mutation_binding
+        or args.document_ingestion_mutation_results
+    ):
+        common_arguments = {
+            "binding_path": DOCUMENT_INGESTION_MUTATION_BINDING_PATH,
+            "marker_path": DOCUMENT_INGESTION_MUTATION_RUN_MARKER_PATH,
+            "log_path": DOCUMENT_INGESTION_MUTATION_LOG_PATH,
+            "filter_pattern": DOCUMENT_INGESTION_MUTATION_FILTER,
+            "expected_count": DOCUMENT_INGESTION_MUTATION_TEST_COUNT,
+            "expected_manifest_sha256": (
+                DOCUMENT_INGESTION_MUTATION_TEST_MANIFEST_SHA256
+            ),
+            "supplemental_console_key": "mutationCorpus",
+            "supplemental_console_snapshot": (
+                document_ingestion_mutation_console_snapshot
+            ),
+        }
+        failures = (
+            write_swift_focused_test_binding(**common_arguments)
+            if args.write_document_ingestion_mutation_binding
+            else swift_focused_test_binding_failures(**common_arguments)
+        )
+        if failures:
+            for failure in failures:
+                print(
+                    "DocumentIngestion mutation results failed: " + failure,
+                    file=sys.stderr,
+                )
+            return 1
+        action = (
+            "binding written and read back"
+            if args.write_document_ingestion_mutation_binding
+            else "independent binding readback passed"
+        )
+        print(
+            f"DocumentIngestion mutation {action}: "
+            f"{DOCUMENT_INGESTION_MUTATION_TEST_COUNT}/"
+            f"{DOCUMENT_INGESTION_MUTATION_TEST_COUNT} XCTest identities; "
+            f"{DOCUMENT_INGESTION_MUTATION_CASE_COUNT}/"
+            f"{DOCUMENT_INGESTION_MUTATION_CASE_COUNT} cases; skipped=0; "
+            "failures=0; errors=0."
+        )
+        return 0
+
     if args.prepare_android_full_test_run:
         failures = (
             no_device_full_result_gate_failures()
@@ -8413,6 +9748,11 @@ def main() -> int:
         failures.extend(android_font_scale_source_self_test())
         failures.extend(swift_test_selection_self_test())
         failures.extend(swift_focused_result_self_test())
+        failures.extend(swift_runner_timeout_self_test())
+        failures.extend(document_ingestion_mutation_console_self_test())
+        failures.extend(
+            document_ingestion_mutation_failure_context_self_test()
+        )
         failures.extend(android_result_freshness_self_test())
         failures.extend(no_device_full_result_gate_self_test())
         failures.extend(product_copy_font_scale_guard_self_test())

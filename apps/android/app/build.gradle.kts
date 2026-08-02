@@ -136,6 +136,16 @@ android {
     }
 
     lint {
+        // V1 stays on the fully qualified API 36/AGP 9.2 dependency set.
+        // Availability notices are reviewed during a separate toolchain
+        // upgrade; every other Release warning is a build failure.
+        warningsAsErrors = true
+        disable += setOf(
+            "AndroidGradlePluginVersion",
+            "GradleDependency",
+            "NewerVersionAvailable",
+            "OldTargetApi",
+        )
         // V1 ships only Android arm64-v8a; ChromeOS/x86_64 is outside the
         // declared support matrix.
         disable += "ChromeOsAbiSupport"

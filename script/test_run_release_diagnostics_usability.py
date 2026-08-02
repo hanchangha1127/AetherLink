@@ -130,6 +130,107 @@ class ReleaseDiagnosticsProducerTests(unittest.TestCase):
         self.assertEqual(source_mock.call_count, 2)
         self.assertEqual(retrace_mock.call_count, 2)
 
+    def test_android_probe_resolution_caches_duplicate_stack_and_bounds_time(
+        self,
+    ) -> None:
+        mapping = (
+            "com.localagentbridge.android.InlineKt -> a:\n"
+            '# {"id":"sourceFile","fileName":"Inline.kt"}\n'
+            "    1:1:void outer():10:10 -> b\n"
+            "    1:1:void inner():20:20 -> b\n"
+        ).encode("utf-8")
+        recovered = (
+            f"{module.ANDROID_PROBE_EXCEPTION}\n"
+            "\tat com.localagentbridge.android.InlineKt.inner(Inline.kt:20)\n"
+        ).encode("utf-8")
+        sources = (
+            {"line": 10, "path": "apps/android/Inline.kt"},
+            {"line": 20, "path": "apps/android/Inline.kt"},
+        )
+        with mock.patch.object(
+            module,
+            "source_record",
+            side_effect=sources,
+        ), mock.patch.object(
+            module,
+            "run_retrace",
+            return_value=recovered,
+        ) as retrace_mock:
+            probe, source, _stack, output = module.resolve_android_probe(
+                mapping,
+                root=Path("."),
+                mapping_path=Path("mapping.txt"),
+                java=Path("java"),
+                classpath="builder.jar",
+            )
+        self.assertEqual(probe["originalMethod"], "inner")
+        self.assertEqual(source, sources[1])
+        self.assertEqual(output, recovered)
+        retrace_mock.assert_called_once()
+
+        clock = iter((0.0, module.ANDROID_PROBE_TOTAL_TIMEOUT_SECONDS)).__next__
+        with self.assertRaisesRegex(module.DiagnosticsError, "total deadline"):
+            module.resolve_android_probe(
+                SAMPLE_MAPPING,
+                root=Path("."),
+                mapping_path=Path("mapping.txt"),
+                java=Path("java"),
+                classpath="builder.jar",
+                monotonic=clock,
+            )
+
+    def test_android_probe_deadline_covers_no_candidate_mapping_scan(
+        self,
+    ) -> None:
+        mapping = ("# no eligible frame\n" * 8).encode("utf-8")
+        clock = iter(
+            (0.0, 0.0, module.ANDROID_PROBE_TOTAL_TIMEOUT_SECONDS)
+        ).__next__
+        with self.assertRaisesRegex(module.DiagnosticsError, "total deadline"):
+            module.resolve_android_probe(
+                mapping,
+                root=Path("."),
+                mapping_path=Path("mapping.txt"),
+                java=Path("java"),
+                classpath="builder.jar",
+                monotonic=clock,
+            )
+
+    def test_android_probe_deadline_covers_scan_before_first_candidate(
+        self,
+    ) -> None:
+        mapping = (
+            b"#" * module.ANDROID_MAPPING_SCAN_CHUNK_BYTES
+            + b"\n"
+            + SAMPLE_MAPPING
+        )
+        clock = iter(
+            (0.0, 0.0, module.ANDROID_PROBE_TOTAL_TIMEOUT_SECONDS)
+        ).__next__
+        with mock.patch.object(module, "source_record") as source_mock, \
+             mock.patch.object(module, "run_retrace") as retrace_mock:
+            with self.assertRaisesRegex(
+                module.DiagnosticsError,
+                "total deadline",
+            ):
+                module.resolve_android_probe(
+                    mapping,
+                    root=Path("."),
+                    mapping_path=Path("mapping.txt"),
+                    java=Path("java"),
+                    classpath="builder.jar",
+                    monotonic=clock,
+                )
+        source_mock.assert_not_called()
+        retrace_mock.assert_not_called()
+
+    def test_mapping_line_limit_rejects_before_regex_materialization(
+        self,
+    ) -> None:
+        mapping = b"#" * (module.ANDROID_MAPPING_LINE_MAX_BYTES + 1) + b"\n"
+        with self.assertRaisesRegex(module.DiagnosticsError, "byte limit"):
+            list(module.iter_android_probe_candidates(mapping))
+
     def test_source_record_binds_unique_line_and_rejects_duplicates(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
