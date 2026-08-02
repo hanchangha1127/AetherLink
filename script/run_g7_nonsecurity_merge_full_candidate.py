@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import selectors
 import signal
 import stat
 import subprocess
@@ -81,6 +82,8 @@ COVERAGE = {
     "documentIngestionMutationCases": 96,
     "documentIngestionMutationXctestTests": 2,
     "releaseComplianceTests": 22,
+    "swiftDistinctNonsecurityTests": 397,
+    "swiftExpandedNonsecurityTests": 247,
     "swiftFocusedTests": 222,
 }
 
@@ -106,6 +109,9 @@ ARTIFACT_PATHS = tuple(
         ".build/aetherlink-document-ingestion-mutation-binding-v1.json",
         ".build/aetherlink-document-ingestion-mutation-console-v1.log",
         ".build/aetherlink-document-ingestion-mutation-run-marker-v1.json",
+        ".build/aetherlink-g7-nonsecurity-swift-binding-v1.json",
+        ".build/aetherlink-g7-nonsecurity-swift-console-v1.log",
+        ".build/aetherlink-g7-nonsecurity-swift-run-marker-v1.json",
         ".build/aetherlink-product-ci-swift-focused-binding-v1.json",
         ".build/aetherlink-product-ci-swift-focused-console-v1.log",
         ".build/aetherlink-product-ci-swift-focused-run-marker-v1.json",
@@ -296,6 +302,27 @@ SWIFT_GATES = (
         "swift-focused-readback",
         "script/check_product_ci.py",
         "--swift-focused-test-results",
+    ),
+    python_gate(
+        "g7-nonsecurity-swift-prepare",
+        "script/check_product_ci.py",
+        "--prepare-g7-nonsecurity-swift-run",
+    ),
+    python_gate(
+        "g7-nonsecurity-swift-run",
+        "script/check_product_ci.py",
+        "--run-g7-nonsecurity-swift-tests",
+        timeout_seconds=1500,
+    ),
+    python_gate(
+        "g7-nonsecurity-swift-bind",
+        "script/check_product_ci.py",
+        "--write-g7-nonsecurity-swift-binding",
+    ),
+    python_gate(
+        "g7-nonsecurity-swift-readback",
+        "script/check_product_ci.py",
+        "--g7-nonsecurity-swift-results",
     ),
     python_gate(
         "document-ingestion-asan-prepare",
@@ -514,6 +541,11 @@ FINAL_READBACK_GATES = (
         "final-swift-focused-readback",
         "script/check_product_ci.py",
         "--swift-focused-test-results",
+    ),
+    python_gate(
+        "final-g7-nonsecurity-swift-readback",
+        "script/check_product_ci.py",
+        "--g7-nonsecurity-swift-results",
     ),
     python_gate(
         "final-document-ingestion-asan-readback",
@@ -834,24 +866,158 @@ def output_identity(data: bytes) -> dict[str, object]:
     return {"sha256": sha256_bytes(data), "size": len(data)}
 
 
+def process_group_exists(process_group_id: int) -> bool:
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def wait_for_process_group_exit(
+    process: subprocess.Popen[bytes],
+    *,
+    timeout_seconds: float,
+) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        leader_exited = process.poll() is not None
+        group_exited = not process_group_exists(process.pid)
+        if leader_exited and group_exited:
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        if not leader_exited:
+            try:
+                process.wait(timeout=min(0.05, remaining))
+            except subprocess.TimeoutExpired:
+                pass
+        else:
+            time.sleep(min(0.01, remaining))
+
+
 def terminate_process_group(process: subprocess.Popen[bytes]) -> None:
+    termination_errors: list[str] = []
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
-        return
-    try:
-        process.wait(timeout=COMMAND_TERMINATION_GRACE_SECONDS)
-        return
-    except subprocess.TimeoutExpired:
         pass
+    except OSError as error:
+        termination_errors.append(f"SIGTERM failed: {error}")
+    if wait_for_process_group_exit(
+        process,
+        timeout_seconds=COMMAND_TERMINATION_GRACE_SECONDS,
+    ):
+        return
+
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
-        return
-    try:
-        process.wait(timeout=COMMAND_TERMINATION_GRACE_SECONDS)
-    except subprocess.TimeoutExpired:
         pass
+    except OSError as error:
+        termination_errors.append(f"SIGKILL failed: {error}")
+    if wait_for_process_group_exit(
+        process,
+        timeout_seconds=COMMAND_TERMINATION_GRACE_SECONDS,
+    ):
+        return
+
+    detail = "; ".join(termination_errors)
+    if detail:
+        detail = f" ({detail})"
+    raise CandidateError(
+        f"process group {process.pid} survived termination{detail}"
+    )
+
+
+def bounded_process_output(
+    process: subprocess.Popen[bytes],
+    *,
+    identifier: str,
+    timeout_seconds: float,
+    maximum_bytes: int = COMMAND_OUTPUT_MAX_BYTES,
+) -> tuple[bytes, bytes]:
+    if process.stdout is None or process.stderr is None:
+        terminate_process_group(process)
+        raise CandidateError(f"{identifier} did not expose both output streams")
+    if type(maximum_bytes) is not int or maximum_bytes < 0:
+        terminate_process_group(process)
+        raise CandidateError(f"{identifier} output byte limit is invalid")
+    if not isinstance(timeout_seconds, (int, float)) or isinstance(
+        timeout_seconds, bool
+    ) or timeout_seconds <= 0:
+        terminate_process_group(process)
+        raise CandidateError(f"{identifier} deadline is invalid")
+
+    stdout = bytearray()
+    stderr = bytearray()
+    buffers = {process.stdout.fileno(): stdout, process.stderr.fileno(): stderr}
+    streams = (process.stdout, process.stderr)
+    selector = selectors.DefaultSelector()
+    deadline = time.monotonic() + float(timeout_seconds)
+
+    def terminate_for_failure(message: str) -> None:
+        try:
+            terminate_process_group(process)
+        except CandidateError as error:
+            raise CandidateError(f"{message}; cleanup failed: {error}") from error
+        raise CandidateError(message)
+
+    try:
+        for stream in streams:
+            os.set_blocking(stream.fileno(), False)
+            selector.register(stream, selectors.EVENT_READ)
+
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                terminate_for_failure(f"{identifier} exceeded its deadline")
+            events = selector.select(timeout=remaining)
+            if not events:
+                terminate_for_failure(f"{identifier} exceeded its deadline")
+            for key, _ in events:
+                try:
+                    chunk = os.read(key.fd, 65_536)
+                except BlockingIOError:
+                    continue
+                except OSError as error:
+                    terminate_for_failure(
+                        f"{identifier} output could not be read: {error}"
+                    )
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    continue
+                if len(stdout) + len(stderr) + len(chunk) > maximum_bytes:
+                    terminate_for_failure(
+                        f"{identifier} output exceeded its byte limit"
+                    )
+                buffers[key.fd].extend(chunk)
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            terminate_for_failure(f"{identifier} exceeded its deadline")
+        try:
+            process.wait(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            terminate_for_failure(f"{identifier} exceeded its deadline")
+        if process.returncode is None or process_group_exists(process.pid):
+            terminate_for_failure(
+                f"{identifier} process group did not fully exit"
+            )
+    except CandidateError:
+        raise
+    except OSError as error:
+        terminate_for_failure(
+            f"{identifier} output could not be read: {error}"
+        )
+    finally:
+        selector.close()
+        for stream in streams:
+            stream.close()
+    return bytes(stdout), bytes(stderr)
 
 
 def run_gate(
@@ -873,14 +1039,13 @@ def run_gate(
         )
     except OSError as error:
         raise CandidateError(f"{gate.identifier} could not start: {error}") from error
-    try:
-        stdout, stderr = process.communicate(timeout=gate.timeout_seconds)
-    except subprocess.TimeoutExpired as error:
-        terminate_process_group(process)
-        raise CandidateError(f"{gate.identifier} exceeded its deadline") from error
+    stdout, stderr = bounded_process_output(
+        process,
+        identifier=gate.identifier,
+        timeout_seconds=gate.timeout_seconds,
+        maximum_bytes=COMMAND_OUTPUT_MAX_BYTES,
+    )
     elapsed = max(1, (time.monotonic_ns() - started) // 1_000_000)
-    if len(stdout) + len(stderr) > COMMAND_OUTPUT_MAX_BYTES:
-        raise CandidateError(f"{gate.identifier} output exceeded its byte limit")
     if process.returncode != 0:
         tail = (stderr or stdout)[-8192:].decode("utf-8", errors="replace")
         raise CandidateError(

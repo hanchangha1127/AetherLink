@@ -2137,27 +2137,27 @@ CURRENT_BUILD24_MACOS_LIFECYCLE_CHAIN_PREDECESSOR_BY_DOCUMENT = {
 }
 CURRENT_BUILD24_MACOS_LIFECYCLE_CHAIN_OUTER_SHA256_BY_DOCUMENT = {
     "README.md": (
-        "c74bd77593c48129461273838a1f83d7adb7afbf23a370a949153bfa590d51d1",
+        "de96d745a5b88ea91864270272d720be7acc52602261be28d9177a602193dc5b",
         "0c72a8d453a57141d79c54fd0158bdd8aac809d4f37540d7988018dc7877bc8e",
     ),
     "docs/roadmap.md": (
-        "5e7f50ef342483c8a11d16f4c0671742eb0087b4acc88dc0f6a79984fc155786",
+        "ba6c34ba96e3e7e608d4bedc97fcb1b6c4ed7966116a8472f6195ea43a9f580b",
         "c214da02fa0b51233acd30c0d55f9ae798530c8eb6e942ebedf711dc933f339a",
     ),
     "docs/handoff.md": (
-        "69dffa737fc9bd80dde7af04a18d870a03b8dc337063624d9396a9204445db53",
+        "ec45941c1de1360c5226124df0f6f870a37847082b041742437245e52d0fa30b",
         "45757b5ef397dd7976196ae5b267eee53544fa4b8546464073830acb39d7f858",
     ),
     "docs/progress.md": (
-        "98f57b07b98129d1c28e4a3d8f716d67d7c52ecd09b58d312902f727f3ab003e",
+        "fdf6c43ab738e067cf02c7e8f816b4576d4bb57ac9a60c91bd7f6ae1af30c5e3",
         "c2e5ed1ec4d2af10ac3f3f87baeb3b9b29cc35393c1628cc63e147718d1589eb",
     ),
     "docs/qa-evidence.md": (
-        "09f17387eea1389e416f4de0b13f8d3877f075558cb920e5bdcef76665275f01",
+        "39af30148efe03fd86306bb1276b690a5a0c2312dbdb6a6308e48ef0eada6e2e",
         "5c92341f48705b39fcd93e03390edba375eb6455bae3a4eb55807f2c6d3c4eff",
     ),
     "docs/releases/1.0.0-build-24-local-v1.md": (
-        "a7580c1dd2ae99e82e9117d69501f1a965a803f1b3a3233d15735d4d085d3ae3",
+        "81a3523ae3ce67aad6ef90d484a199ec93eec6da7ec1e435e8f53c27a94b18ea",
         "eb4d9e1354eba5f0375e42b961b3dde775d9b7328f5723d4eca2f8357af0237a",
     ),
 }
@@ -2296,23 +2296,23 @@ CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_BODY_SHA256_BY_DOCUMENT = {
 }
 CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_OUTER_SHA256_BY_DOCUMENT = {
     "README.md": (
-        "e34989f7541426314e176143d620b0271a3dbaebed5dacd66e13cb0ada35016d",
+        "b026f7bd0c6b4c977d067b963c4df10ae08619ff51f7d09b0e8450fd6bd6ceee",
         "06dd75f4fc31e5c9d402d99895caebdff8096dd0e663a515c7d246497d6d9653",
     ),
     "docs/roadmap.md": (
-        "a78ac13d1cabddb39f6534bfd000697e77f0e309189df605365babba2141c8a5",
+        "bf3cf71e723c6b049a7441f41af540592e5f5d7bd507cf9a31d311828d179742",
         "a62422029be6eeb555af0a20d27b49cc3d348895692466fd77bde1be5728fd44",
     ),
     "docs/handoff.md": (
-        "a4421708690afc54fa0f651aab668d42141159540d033ba11cc6aae0ebaa6c1b",
+        "92a116a3f5dfb4ae7e7ca39cb20c8fd0fbc903f7162d960a42f095f1052f40c8",
         "fcd0f93e8d91ade7dc84df0a0cf1ba3d5dfc0d2ff485645b94211dbafd4a63bf",
     ),
     "docs/progress.md": (
-        "bbc989c971e8d1f9953d5cbcaa46218e3a40e855414707546aa1861cd48aa8b6",
+        "2d8a153fde0678f7116844dd34c77361755508e4335ea0bfb2e9b5d0bc52ed05",
         "75ff47867bb3a85000e23e723f8b9c20e8caf252de95bb19a91732fca40863a6",
     ),
     "docs/qa-evidence.md": (
-        "31635f6b1e8ef40f68ec5b42a4efd1315439f5e676f02376a79de2d5de205c20",
+        "54e4486396f7cf394f9cd1941a7141a2f897234f04da0920acb3b1715c89363c",
         "89cbf66a09001c07387613ebe728ed79d2ebbe66b943beec8bde498e08aedf85",
     ),
     "docs/releases/1.0.0-build-20-local-v1.md": (
@@ -2320,7 +2320,7 @@ CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_OUTER_SHA256_BY_DOCUMENT = {
         "b2673dc9c562eb6a7f8d209136c138754d58fb9adebfbfabc9b8696c5f3c490c",
     ),
     "docs/releases/1.0.0-build-24-local-v1.md": (
-        "1e478c650dca205043a7da22f8ff711c3204eba5b40bd739ad497269603ef39f",
+        "1c018a821c00e1da2cde9a37294c238d3fc7ebcdddc5f520bf3ac16660f2c940",
         "1d720cc6113623362962f752e5cfd2eaceffb3296ab413bdbe20b55fabbcf4cd",
     ),
 }
@@ -2472,18 +2472,23 @@ CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_END = (
 )
 CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_BODY = """\
 **Current G7 local non-security Merge-full candidate status.** The
-current-source local runner executes 62 exact ordered commands and publishes
+current-source local runner executes 67 exact ordered commands and publishes
 `.build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/candidate.json` only
-after every command exits zero, all 23 artifacts and five implementation inputs
+after every command exits zero, all 26 artifacts and five implementation inputs
 read back from current bytes, the source snapshot is unchanged across child
 readbacks, and a requested running-app PID retains its exact identity. The
 result uses canonical ASCII JSON, mode 0600, atomic publication, and a separate
 read-only checker.
 
-The passing local matrix covers 222 focused Swift tests, 57 DocumentIngestion
-ASan tests, two mutation XCTest identities and 96 deterministic mutation cases,
-19 Android classes and 1,226 tests, zero Android lint issues, and 22 Release
-compliance tests. It also builds and directly reads back the unsigned Android
+The passing local matrix covers 222 focused Swift tests plus a separate 247-test
+expanded non-security Swift lane. Their 72-identity overlap yields 397 distinct
+Swift identities; the expanded lane contains 22 lifecycle/UI, 59 document,
+71 LM Studio, and 95 Ollama tests. It excludes 11 exact opt-in live-provider
+identities and runs serially with a fixed allowlisted environment under an OS
+network-deny sandbox. The matrix also covers 57 DocumentIngestion ASan tests,
+two mutation XCTest identities and 96 deterministic mutation cases, 19 Android
+classes and 1,226 tests, zero Android lint issues, and 22 Release compliance
+tests. It also builds and directly reads back the unsigned Android
 Release APK/AAB, the unsealed macOS app and dSYM, both diagnostics results, and
 the current-unsealed macOS install/recovery lifecycle result before repeating
 all final readbacks.
@@ -2495,12 +2500,18 @@ and validates and removes only its owned scratch and lease in `finally`. This
 keeps repository `.build` evidence and the candidate parent intact across the
 package producer's clean build.
 
+Every producer gate and independent readback drains stdout and stderr
+concurrently while enforcing its own combined byte ceiling against an absolute
+monotonic deadline. A limit, deadline, or read failure terminates the isolated
+child process group with SIGTERM and then SIGKILL, and requires both the leader
+and group to disappear before failure returns.
+
 This ignored local current-source candidate is not retained release evidence.
 It does not claim the complete Swift suite, device/network execution, hosted CI,
 signed artifacts, security/authentication/cryptography execution, canonical
 Merge-full, canonical G7 exit, RC/GA, or V1 qualification."""
 CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_BODY_SHA256 = (
-    "ab9d652cc0d782afdb0eb63cc4589a5db9864aff8e456d35a03139ec7a40665f"
+    "32b6b8fff5f3baf8f89a9a193ac66adbe1493c35999e8369572ec7ae2b440af2"
 )
 CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_START = (
     "<!-- aetherlink-current-g6-release-diagnostics-usability-v1:start -->"
@@ -2781,6 +2792,35 @@ LOCAL_RELEASE_EXPECTED_RUNTIME_CHAT_SQLITE_SOURCE_MEMBERS = {
     ): (
         26_025,
         "e4251d009e2ac5775d4ad4beaf8d4528c0812749dae64768760c4ce454c20946",
+    ),
+    "script/run_macos_runtime_chat_cross_process_smoke.py": (
+        52_697,
+        "f14021e368372dbf14713974277f62c28aa16bd5160bb9d57b964186e0aa0a78",
+    ),
+    "script/test_run_macos_runtime_chat_cross_process_smoke.py": (
+        25_065,
+        "1229600eebdf95317e303f81bc60727fce06b81ee3c8a17be6d0c359bd6a1034",
+    ),
+}
+# Build 24's archive inventory above is immutable historical evidence.  The
+# working tree has intentional post-archive Runtime-chat successors, so bind
+# their current identities separately instead of relabeling those bytes as the
+# archived Build 24 source snapshot.
+CURRENT_RUNTIME_CHAT_SQLITE_SOURCE_MEMBERS = {
+    "Package.swift": (
+        5_893,
+        "446f45034b4093735aeab8bffab87b87642741a379502206307b4419ee2100d8",
+    ),
+    "apps/macos/CompanionCore/Sources/SQLiteRuntimeChatEventStore.swift": (
+        114_186,
+        "c882909d92c1a3111408a0ad928b6f0dc123d372941aafc76e39993b17bae201",
+    ),
+    (
+        "apps/macos/RuntimeChatSQLiteCrossProcessQA/Sources/"
+        "RuntimeChatSQLiteCrossProcessQA.swift"
+    ): (
+        28_433,
+        "c2d0744ab1f48ca89f3b17f39744e8d6c532c6e22c8c937956a7c322114734eb",
     ),
     "script/run_macos_runtime_chat_cross_process_smoke.py": (
         52_697,
@@ -5135,13 +5175,6 @@ def current_release_summary_document_failures(
             ),
         ),
     }
-    summary_line_limits = {
-        "docs/handoff.md": 851,
-        "docs/progress.md": 811,
-        "docs/qa-evidence.md": 651,
-        "docs/roadmap.md": 681,
-    }
-
     failures: list[str] = []
     for relative, required_claims in required_claims_by_relative.items():
         try:
@@ -5158,9 +5191,16 @@ def current_release_summary_document_failures(
                 f"{relative}: cannot validate current release summary: {error}"
             )
             continue
-        summary_text = "\n".join(
-            document_text.splitlines()[: summary_line_limits[relative]]
+        summary_end_index = document_text.find(
+            CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_START
         )
+        if summary_end_index < 0:
+            failures.append(
+                f"{relative}: current release summary is missing its "
+                "canonical Build 23-to-24 lifecycle boundary marker."
+            )
+            continue
+        summary_text = document_text[:summary_end_index]
         normalized_text = " ".join(summary_text.split())
         for claim in required_claims:
             normalized_claim = " ".join(claim.split())
@@ -13911,7 +13951,7 @@ def current_runtime_chat_sqlite_source_failures(
 ) -> list[str]:
     failures: list[str] = []
     for relative, expected_identity in (
-        LOCAL_RELEASE_EXPECTED_RUNTIME_CHAT_SQLITE_SOURCE_MEMBERS.items()
+        CURRENT_RUNTIME_CHAT_SQLITE_SOURCE_MEMBERS.items()
     ):
         try:
             source_bytes = (
@@ -13921,9 +13961,8 @@ def current_runtime_chat_sqlite_source_failures(
             )
         except (KeyError, OSError) as error:
             failures.append(
-                f"{relative}: cannot validate Build "
-                f"{LOCAL_RELEASE_BUILD_NUMBER} Runtime-chat SQLite "
-                f"source binding: {error}"
+                f"{relative}: cannot validate current Runtime-chat SQLite "
+                f"source successor binding: {error}"
             )
             continue
         identity = (
@@ -13932,8 +13971,8 @@ def current_runtime_chat_sqlite_source_failures(
         )
         if identity != expected_identity:
             failures.append(
-                f"{relative}: expected Build {LOCAL_RELEASE_BUILD_NUMBER} "
-                "source inventory identity "
+                f"{relative}: expected current Runtime-chat SQLite source "
+                "inventory identity "
                 f"{expected_identity!r}, found {identity!r}."
             )
 

@@ -9,8 +9,11 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
+from unittest import mock
 
 from script import check_g7_nonsecurity_merge_full_candidate as checker
 
@@ -180,13 +183,19 @@ class G7NonsecurityMergeFullCandidateCheckerTests(unittest.TestCase):
                 checker.load_result(path, root=fixture.root)
 
     def test_boolean_count_is_rejected(self) -> None:
-        temporary, fixture = self.with_fixture()
-        with temporary:
-            document = fixture.document()
-            coverage = document["coverage"]
-            self.assertIsInstance(coverage, dict)
-            coverage["swiftFocusedTests"] = True
-            self.assert_rejected(fixture, document)
+        for key in (
+            "swiftFocusedTests",
+            "swiftExpandedNonsecurityTests",
+            "swiftDistinctNonsecurityTests",
+        ):
+            with self.subTest(key=key):
+                temporary, fixture = self.with_fixture()
+                with temporary:
+                    document = fixture.document()
+                    coverage = document["coverage"]
+                    self.assertIsInstance(coverage, dict)
+                    coverage[key] = True
+                    self.assert_rejected(fixture, document)
 
     def test_source_drift_is_rejected_but_excluded_docs_do_not_bind(self) -> None:
         temporary, fixture = self.with_fixture()
@@ -299,6 +308,171 @@ class G7NonsecurityMergeFullCandidateCheckerTests(unittest.TestCase):
             self.assertIsInstance(first, dict)
             first["id"] = "different"
             self.assert_rejected(fixture, document)
+
+    def test_expanded_swift_command_argv_and_artifacts_are_closed(self) -> None:
+        expanded_ids = (
+            "g7-nonsecurity-swift-prepare",
+            "g7-nonsecurity-swift-run",
+            "g7-nonsecurity-swift-bind",
+            "g7-nonsecurity-swift-readback",
+            "final-g7-nonsecurity-swift-readback",
+        )
+        for identifier in expanded_ids:
+            with self.subTest(identifier=identifier):
+                temporary, fixture = self.with_fixture()
+                with temporary:
+                    document = fixture.document()
+                    commands = document["commands"]
+                    self.assertIsInstance(commands, list)
+                    index = checker.EXPECTED_COMMAND_IDS.index(identifier)
+                    command = commands[index]
+                    self.assertIsInstance(command, dict)
+                    argv = command["argv"]
+                    self.assertIsInstance(argv, list)
+                    argv[-1] = "--mutated-expanded-swift-contract"
+                    self.assert_rejected(fixture, document)
+
+        expanded_artifacts = tuple(
+            path
+            for path in checker.EXPECTED_ARTIFACT_PATHS
+            if "aetherlink-g7-nonsecurity-swift-" in path.as_posix()
+        )
+        self.assertEqual(len(expanded_artifacts), 3)
+        for relative in expanded_artifacts:
+            with self.subTest(artifact=relative.as_posix()):
+                temporary, fixture = self.with_fixture()
+                with temporary:
+                    document = fixture.document()
+                    (fixture.root / relative).write_bytes(b"drift\n")
+                    self.assert_rejected(fixture, document)
+
+    def test_child_readback_accepts_output_at_exact_combined_limit(self) -> None:
+        command = (
+            sys.executable,
+            "-c",
+            "import os; os.write(1, b'a' * 32); os.write(2, b'b' * 32)",
+        )
+        with tempfile.TemporaryDirectory() as temporary, mock.patch.object(
+            checker,
+            "READBACK_COMMANDS",
+            (command,),
+        ), mock.patch.object(
+            checker,
+            "READBACK_STREAM_MAX_BYTES",
+            64,
+        ), mock.patch.object(
+            checker,
+            "READBACK_TIMEOUT_SECONDS",
+            10,
+        ):
+            checker.run_child_readbacks(Path(temporary))
+
+    def test_child_readback_overflow_kills_descendants(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ready = root / "output-child-ready"
+            sentinel = root / "escaped-output-child"
+            child = (
+                "import pathlib,signal,sys,time\n"
+                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "pathlib.Path(sys.argv[1]).write_text('ready'); "
+                "time.sleep(0.6); pathlib.Path(sys.argv[2]).write_text('bad')"
+            )
+            parent = (
+                "import os,subprocess,sys,time\n"
+                f"subprocess.Popen([sys.executable, '-c', {child!r}, "
+                "sys.argv[1], sys.argv[2]])\n"
+                "deadline = time.monotonic() + 2\n"
+                "while not os.path.exists(sys.argv[1]):\n"
+                "    if time.monotonic() >= deadline:\n"
+                "        raise RuntimeError('descendant did not become ready')\n"
+                "    time.sleep(0.01)\n"
+                "os.write(1, b'x' * 65)\n"
+                "time.sleep(5)"
+            )
+            command = (
+                sys.executable,
+                "-c",
+                parent,
+                str(ready),
+                str(sentinel),
+            )
+            with mock.patch.object(
+                checker,
+                "READBACK_COMMANDS",
+                (command,),
+            ), mock.patch.object(
+                checker,
+                "READBACK_STREAM_MAX_BYTES",
+                64,
+            ), mock.patch.object(
+                checker,
+                "READBACK_TIMEOUT_SECONDS",
+                10,
+            ), mock.patch.object(
+                checker,
+                "READBACK_TERMINATION_GRACE_SECONDS",
+                0.05,
+            ):
+                with self.assertRaisesRegex(
+                    checker.CandidateError,
+                    "output exceeded its bound",
+                ):
+                    checker.run_child_readbacks(root)
+            self.assertTrue(ready.exists())
+            time.sleep(0.7)
+            self.assertFalse(sentinel.exists())
+
+    def test_child_readback_timeout_kills_descendants(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ready = root / "timeout-child-ready"
+            sentinel = root / "escaped-timeout-child"
+            child = (
+                "import pathlib,signal,sys,time\n"
+                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "pathlib.Path(sys.argv[1]).write_text('ready'); "
+                "time.sleep(0.6); pathlib.Path(sys.argv[2]).write_text('bad')"
+            )
+            parent = (
+                "import os,subprocess,sys,time\n"
+                f"subprocess.Popen([sys.executable, '-c', {child!r}, "
+                "sys.argv[1], sys.argv[2]])\n"
+                "deadline = time.monotonic() + 2\n"
+                "while not os.path.exists(sys.argv[1]):\n"
+                "    if time.monotonic() >= deadline:\n"
+                "        raise RuntimeError('descendant did not become ready')\n"
+                "    time.sleep(0.01)\n"
+                "time.sleep(5)"
+            )
+            command = (
+                sys.executable,
+                "-c",
+                parent,
+                str(ready),
+                str(sentinel),
+            )
+            with mock.patch.object(
+                checker,
+                "READBACK_COMMANDS",
+                (command,),
+            ), mock.patch.object(
+                checker,
+                "READBACK_TIMEOUT_SECONDS",
+                0.2,
+            ), mock.patch.object(
+                checker,
+                "READBACK_TERMINATION_GRACE_SECONDS",
+                0.05,
+            ):
+                with self.assertRaisesRegex(
+                    checker.CandidateError,
+                    "exceeded its deadline",
+                ):
+                    checker.run_child_readbacks(root)
+            self.assertTrue(ready.exists())
+            time.sleep(0.7)
+            self.assertFalse(sentinel.exists())
 
 
 if __name__ == "__main__":

@@ -346,8 +346,8 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
                     text.replace(
                         complete_block,
                         complete_block.replace(
-                            "62 exact ordered commands",
-                            "61 exact ordered commands",
+                            "67 exact ordered commands",
+                            "66 exact ordered commands",
                             1,
                         ),
                         1,
@@ -1504,6 +1504,45 @@ private func generatePairingQR() {{
                     ),
                     f"stale current-release summary in {relative} was accepted",
                 )
+
+        handoff_relative = "docs/handoff.md"
+        handoff_text = (
+            check_docs_hygiene.ROOT / handoff_relative
+        ).read_text(encoding="utf-8")
+        summary_boundary = (
+            check_docs_hygiene.CURRENT_MACOS_ISOLATED_UPGRADE_DOCUMENT_START
+        )
+        missing_boundary = handoff_text.replace(summary_boundary, "", 1)
+        self.assertTrue(
+            any(
+                handoff_relative in failure
+                and "lifecycle boundary marker" in failure
+                for failure in validator(
+                    document_text_by_relative={
+                        handoff_relative: missing_boundary,
+                    }
+                )
+            )
+        )
+
+        current_handoff_claim = (
+            "Build 24 is the latest immutable ledger archive."
+        )
+        moved_claim = handoff_text.replace(current_handoff_claim, "", 1)
+        moved_claim = moved_claim.replace(
+            summary_boundary,
+            summary_boundary + "\n" + current_handoff_claim,
+            1,
+        )
+        self.assertTrue(
+            any(
+                handoff_relative in failure
+                and "ledger-derived current release summary claim" in failure
+                for failure in validator(
+                    document_text_by_relative={handoff_relative: moved_claim}
+                )
+            )
+        )
 
         competing_stale_claims = {
             "docs/handoff.md": (
@@ -9141,9 +9180,26 @@ private func generatePairingQR() {{
         source_paths = tuple(
             (
                 check_docs_hygiene
-                .LOCAL_RELEASE_EXPECTED_RUNTIME_CHAT_SQLITE_SOURCE_MEMBERS
+                .CURRENT_RUNTIME_CHAT_SQLITE_SOURCE_MEMBERS
             )
         )
+        historical_sources = (
+            check_docs_hygiene
+            .LOCAL_RELEASE_EXPECTED_RUNTIME_CHAT_SQLITE_SOURCE_MEMBERS
+        )
+        current_sources = (
+            check_docs_hygiene.CURRENT_RUNTIME_CHAT_SQLITE_SOURCE_MEMBERS
+        )
+        for relative in (
+            "apps/macos/CompanionCore/Sources/"
+            "SQLiteRuntimeChatEventStore.swift",
+            "apps/macos/RuntimeChatSQLiteCrossProcessQA/Sources/"
+            "RuntimeChatSQLiteCrossProcessQA.swift",
+        ):
+            self.assertNotEqual(
+                historical_sources[relative],
+                current_sources[relative],
+            )
         test_path = (
             "apps/macos/CompanionCore/Tests/"
             "SQLiteRuntimeChatEventStoreTests.swift"

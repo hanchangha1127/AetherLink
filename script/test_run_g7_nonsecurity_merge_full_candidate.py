@@ -10,6 +10,7 @@ from pathlib import Path
 import stat
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -17,6 +18,25 @@ from script import run_g7_nonsecurity_merge_full_candidate as module
 
 
 class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
+    def test_expanded_swift_lane_is_closed_in_parent_contract(self) -> None:
+        self.assertEqual(len(module.ALL_GATES), 67)
+        self.assertEqual(len(module.ARTIFACT_PATHS), 26)
+        self.assertEqual(module.COVERAGE["swiftFocusedTests"], 222)
+        self.assertEqual(module.COVERAGE["swiftExpandedNonsecurityTests"], 247)
+        self.assertEqual(module.COVERAGE["swiftDistinctNonsecurityTests"], 397)
+        self.assertEqual(
+            tuple(path.as_posix() for path in module.ARTIFACT_PATHS),
+            tuple(sorted(path.as_posix() for path in module.ARTIFACT_PATHS)),
+        )
+        for identifier in (
+            "g7-nonsecurity-swift-prepare",
+            "g7-nonsecurity-swift-run",
+            "g7-nonsecurity-swift-bind",
+            "g7-nonsecurity-swift-readback",
+            "final-g7-nonsecurity-swift-readback",
+        ):
+            self.assertIn(identifier, module.EXPECTED_COMMAND_IDS)
+
     def test_canonical_json_is_ascii_sorted_and_rejects_nan(self) -> None:
         self.assertEqual(
             module.canonical_json_bytes({"z": "한", "a": 1}),
@@ -91,6 +111,117 @@ class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(module.CandidateError, "exited 7"):
                 module.run_gate(gate, root=Path(temporary))
+
+    def test_run_gate_accepts_output_at_exact_combined_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, mock.patch.object(
+            module,
+            "COMMAND_OUTPUT_MAX_BYTES",
+            64,
+        ):
+            gate = module.Gate(
+                "exact-output-limit",
+                (
+                    sys.executable,
+                    "-c",
+                    "import os; os.write(1, b'a' * 32); os.write(2, b'b' * 32)",
+                ),
+                10,
+            )
+            record, stdout, stderr = module.run_gate(
+                gate,
+                root=Path(temporary),
+            )
+
+        self.assertEqual(stdout, b"a" * 32)
+        self.assertEqual(stderr, b"b" * 32)
+        self.assertEqual(record["stdout"], module.output_identity(stdout))
+        self.assertEqual(record["stderr"], module.output_identity(stderr))
+
+    def test_run_gate_kills_group_when_combined_output_exceeds_limit(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ready = root / "output-child-ready"
+            sentinel = root / "escaped-output-child"
+            child = (
+                "import pathlib,signal,sys,time; "
+                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "pathlib.Path(sys.argv[1]).write_text('ready'); "
+                "time.sleep(0.6); pathlib.Path(sys.argv[2]).write_text('bad')"
+            )
+            parent = (
+                "import os,subprocess,sys,time; "
+                f"subprocess.Popen([sys.executable, '-c', {child!r}, "
+                "sys.argv[1], sys.argv[2]]); "
+                "deadline = time.monotonic() + 2; "
+                "exec(\"while not os.path.exists(sys.argv[1]):\\n"
+                "    if time.monotonic() >= deadline: raise RuntimeError('not ready')\\n"
+                "    time.sleep(0.01)\"); "
+                "os.write(1, b'x' * 65); time.sleep(5)"
+            )
+            gate = module.Gate(
+                "overflow",
+                (sys.executable, "-c", parent, str(ready), str(sentinel)),
+                10,
+            )
+            with mock.patch.object(
+                module,
+                "COMMAND_OUTPUT_MAX_BYTES",
+                64,
+            ), mock.patch.object(
+                module,
+                "COMMAND_TERMINATION_GRACE_SECONDS",
+                0.05,
+            ):
+                with self.assertRaisesRegex(
+                    module.CandidateError,
+                    "output exceeded its byte limit",
+                ):
+                    module.run_gate(gate, root=root)
+            self.assertTrue(ready.exists())
+            time.sleep(0.7)
+            self.assertFalse(sentinel.exists())
+
+    def test_run_gate_timeout_kills_descendants(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ready = root / "timeout-child-ready"
+            sentinel = root / "escaped-timeout-child"
+            child = (
+                "import pathlib,signal,sys,time; "
+                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "pathlib.Path(sys.argv[1]).write_text('ready'); "
+                "time.sleep(0.6); pathlib.Path(sys.argv[2]).write_text('bad')"
+            )
+            parent = (
+                "import os,subprocess,sys,time; "
+                f"subprocess.Popen([sys.executable, '-c', {child!r}, "
+                "sys.argv[1], sys.argv[2]]); "
+                "deadline = time.monotonic() + 2; "
+                "exec(\"while not os.path.exists(sys.argv[1]):\\n"
+                "    if time.monotonic() >= deadline: raise RuntimeError('not ready')\\n"
+                "    time.sleep(0.01)\"); "
+                "time.sleep(5)"
+            )
+            gate = module.Gate(
+                "timeout",
+                (sys.executable, "-c", parent, str(ready), str(sentinel)),
+                0.2,
+            )
+            with mock.patch.object(
+                module,
+                "COMMAND_TERMINATION_GRACE_SECONDS",
+                0.05,
+            ):
+                with self.assertRaisesRegex(
+                    module.CandidateError,
+                    "exceeded its deadline",
+                ):
+                    module.run_gate(gate, root=root)
+            self.assertTrue(ready.exists())
+            time.sleep(0.7)
+            self.assertFalse(sentinel.exists())
 
     def test_package_gate_uses_managed_release_scratch_lifecycle(self) -> None:
         gate = module.Gate(

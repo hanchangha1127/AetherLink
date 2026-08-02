@@ -1,4 +1,4 @@
-import CompanionCore
+@testable import CompanionCore
 import Darwin
 import Foundation
 import OllamaBackend
@@ -7,6 +7,8 @@ import SQLite3
 private let databaseFilename = "runtime-chat-events.sqlite"
 private let gateFilename = "start-gate"
 private let abruptCheckpointFilename = "abrupt-checkpoint-v1.json"
+private let productionAppendCheckpointFilename =
+    "production-append-checkpoint-v1.json"
 private let sharedSessionID = "qa-shared-session"
 private let modelID = "ollama:llama3.1:8b"
 private let eventCountPerWriter = 48
@@ -118,6 +120,19 @@ private struct AbruptCheckpoint: Encodable {
     var writer: String
 }
 
+private struct ProductionAppendCheckpoint: Encodable {
+    var databaseCacheFlushed: Bool
+    var eventID: String
+    var ownerDeviceID: String
+    var phase: String
+    var requestID: String
+    var schemaVersion: Int
+    var status: String
+    var transactionOpen: Bool
+    var writePath: String
+    var writer: String
+}
+
 private struct ReadbackRow: Encodable {
     var sequence: Int64
     var eventID: String
@@ -186,6 +201,47 @@ private struct RuntimeChatSQLiteCrossProcessQA {
             try writeJSON(WriteResult(
                 eventCount: eventCountPerWriter,
                 status: "passed",
+                writer: writer.rawValue
+            ))
+        case "production-append":
+            guard arguments.count == 5,
+                  arguments[3] == "--writer",
+                  let writer = Writer(rawValue: arguments[4]),
+                  writer == .writerA else {
+                throw arguments.count == 5 ? HelperError.unsupportedWriter : HelperError.invalidArguments
+            }
+            let appendEvent = event(writer: writer, ordinal: 0)
+            let instrumentation = SQLiteRuntimeChatEventStoreAppendInstrumentation(
+                didFlushDatabaseCacheBeforeCommit: {
+                    try writeCheckpoint(
+                        ProductionAppendCheckpoint(
+                            databaseCacheFlushed: true,
+                            eventID: appendEvent.id,
+                            ownerDeviceID: writer.ownerDeviceID,
+                            phase: "after-validated-state-and-cache-flush-before-commit",
+                            requestID: appendEvent.requestID,
+                            schemaVersion: 1,
+                            status: "ready-for-abrupt-termination",
+                            transactionOpen: true,
+                            writePath: "SQLiteRuntimeChatEventStore.append",
+                            writer: writer.rawValue
+                        ),
+                        to: databaseRoot.appendingPathComponent(
+                            productionAppendCheckpointFilename,
+                            isDirectory: false
+                        )
+                    )
+                    try awaitStartGate(in: databaseRoot)
+                }
+            )
+            let store = SQLiteRuntimeChatEventStore(
+                databaseURL: databaseURL,
+                appendInstrumentation: instrumentation
+            )
+            try store.append(appendEvent)
+            try writeJSON(WriteResult(
+                eventCount: 1,
+                status: "unexpectedly-committed",
                 writer: writer.rawValue
             ))
         case "abrupt-prefix":

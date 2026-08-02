@@ -14,9 +14,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import selectors
+import signal
 import stat
 import subprocess
 import sys
+import time
 from typing import Mapping, Sequence
 import xml.etree.ElementTree as ET
 
@@ -42,6 +45,8 @@ TEXT_MAX_LENGTH = 4096
 COMMAND_STREAM_MAX_BYTES = 64 * 1024 * 1024
 COMMAND_ARGUMENT_MAX_LENGTH = 128 * 1024
 READBACK_STREAM_MAX_BYTES = 1 * 1024 * 1024
+READBACK_TIMEOUT_SECONDS = 180
+READBACK_TERMINATION_GRACE_SECONDS = 1.0
 ANDROID_LINT_XML_PATH = Path(
     "apps/android/app/build/reports/lint-results-release.xml"
 )
@@ -63,6 +68,9 @@ EXPECTED_ARTIFACT_PATHS = (
     Path(".build/aetherlink-document-ingestion-mutation-binding-v1.json"),
     Path(".build/aetherlink-document-ingestion-mutation-console-v1.log"),
     Path(".build/aetherlink-document-ingestion-mutation-run-marker-v1.json"),
+    Path(".build/aetherlink-g7-nonsecurity-swift-binding-v1.json"),
+    Path(".build/aetherlink-g7-nonsecurity-swift-console-v1.log"),
+    Path(".build/aetherlink-g7-nonsecurity-swift-run-marker-v1.json"),
     Path(".build/aetherlink-product-ci-swift-focused-binding-v1.json"),
     Path(".build/aetherlink-product-ci-swift-focused-console-v1.log"),
     Path(".build/aetherlink-product-ci-swift-focused-run-marker-v1.json"),
@@ -113,6 +121,10 @@ EXPECTED_COMMAND_IDS = (
     "swift-focused-run",
     "swift-focused-bind",
     "swift-focused-readback",
+    "g7-nonsecurity-swift-prepare",
+    "g7-nonsecurity-swift-run",
+    "g7-nonsecurity-swift-bind",
+    "g7-nonsecurity-swift-readback",
     "document-ingestion-asan-prepare",
     "document-ingestion-asan-run",
     "document-ingestion-asan-bind",
@@ -141,6 +153,7 @@ EXPECTED_COMMAND_IDS = (
     "macos-lifecycle-produce",
     "macos-lifecycle-readback",
     "final-swift-focused-readback",
+    "final-g7-nonsecurity-swift-readback",
     "final-document-ingestion-asan-readback",
     "final-document-ingestion-mutation-readback",
     "final-android-full-readback",
@@ -161,6 +174,8 @@ EXPECTED_COVERAGE = {
     "documentIngestionMutationCases": 96,
     "documentIngestionMutationXctestTests": 2,
     "releaseComplianceTests": 22,
+    "swiftDistinctNonsecurityTests": 397,
+    "swiftExpandedNonsecurityTests": 247,
     "swiftFocusedTests": 222,
 }
 
@@ -175,51 +190,86 @@ EXPECTED_LIMITATIONS = {
     "v1Claimed": False,
 }
 
+PRODUCT_CI_READBACK_COMMAND = (
+    "python3",
+    "-B",
+    "script/check_product_ci.py",
+)
+SWIFT_FOCUSED_READBACK_COMMAND = (
+    "python3",
+    "-B",
+    "script/check_product_ci.py",
+    "--swift-focused-test-results",
+)
+G7_NONSECURITY_SWIFT_READBACK_COMMAND = (
+    "python3",
+    "-B",
+    "script/check_product_ci.py",
+    "--g7-nonsecurity-swift-results",
+)
+DOCUMENT_INGESTION_ASAN_READBACK_COMMAND = (
+    "python3",
+    "-B",
+    "script/check_product_ci.py",
+    "--document-ingestion-asan-results",
+)
+DOCUMENT_INGESTION_MUTATION_READBACK_COMMAND = (
+    "python3",
+    "-B",
+    "script/check_product_ci.py",
+    "--document-ingestion-mutation-results",
+)
+ANDROID_FULL_READBACK_COMMAND = (
+    "python3",
+    "-B",
+    "script/check_product_ci.py",
+    "--android-full-test-results",
+)
+ANDROID_RELEASE_READBACK_COMMAND = (
+    "python3",
+    "-B",
+    "script/check_release_artifact_archive.py",
+    "--android-build-outputs",
+)
+ANDROID_DIAGNOSTICS_READBACK_COMMAND = (
+    "python3",
+    "-B",
+    "script/check_release_diagnostics_usability.py",
+    "--platform",
+    "android",
+    ".build/aetherlink-release-diagnostics-v1/android.json",
+)
+MACOS_RELEASE_READBACK_COMMAND = (
+    "python3",
+    "-B",
+    "script/check_release_artifact_archive.py",
+    "--macos-build-outputs",
+)
+MACOS_DIAGNOSTICS_READBACK_COMMAND = (
+    "python3",
+    "-B",
+    "script/check_release_diagnostics_usability.py",
+    "--platform",
+    "macos",
+    ".build/aetherlink-release-diagnostics-v1/macos.json",
+)
+MACOS_LIFECYCLE_READBACK_COMMAND = (
+    "python3",
+    "-B",
+    "script/check_macos_current_unsealed_ci_lifecycle.py",
+)
 READBACK_COMMANDS = (
-    ("python3", "-B", "script/check_product_ci.py"),
-    ("python3", "-B", "script/check_product_ci.py", "--swift-focused-test-results"),
-    (
-        "python3",
-        "-B",
-        "script/check_product_ci.py",
-        "--document-ingestion-asan-results",
-    ),
-    (
-        "python3",
-        "-B",
-        "script/check_product_ci.py",
-        "--document-ingestion-mutation-results",
-    ),
-    ("python3", "-B", "script/check_product_ci.py", "--android-full-test-results"),
-    (
-        "python3",
-        "-B",
-        "script/check_release_artifact_archive.py",
-        "--android-build-outputs",
-    ),
-    (
-        "python3",
-        "-B",
-        "script/check_release_diagnostics_usability.py",
-        "--platform",
-        "android",
-        ".build/aetherlink-release-diagnostics-v1/android.json",
-    ),
-    (
-        "python3",
-        "-B",
-        "script/check_release_artifact_archive.py",
-        "--macos-build-outputs",
-    ),
-    (
-        "python3",
-        "-B",
-        "script/check_release_diagnostics_usability.py",
-        "--platform",
-        "macos",
-        ".build/aetherlink-release-diagnostics-v1/macos.json",
-    ),
-    ("python3", "-B", "script/check_macos_current_unsealed_ci_lifecycle.py"),
+    PRODUCT_CI_READBACK_COMMAND,
+    SWIFT_FOCUSED_READBACK_COMMAND,
+    G7_NONSECURITY_SWIFT_READBACK_COMMAND,
+    DOCUMENT_INGESTION_ASAN_READBACK_COMMAND,
+    DOCUMENT_INGESTION_MUTATION_READBACK_COMMAND,
+    ANDROID_FULL_READBACK_COMMAND,
+    ANDROID_RELEASE_READBACK_COMMAND,
+    ANDROID_DIAGNOSTICS_READBACK_COMMAND,
+    MACOS_RELEASE_READBACK_COMMAND,
+    MACOS_DIAGNOSTICS_READBACK_COMMAND,
+    MACOS_LIFECYCLE_READBACK_COMMAND,
 )
 
 ANDROID_FULL_COMMAND = (
@@ -278,14 +328,28 @@ CRITICAL_COMMAND_ARGV = {
         "--swift-focused-filter",
         product_ci.SWIFT_FILTER,
     ),
-    "android-full-run": ANDROID_FULL_COMMAND,
-    "android-release-build": ANDROID_RELEASE_COMMAND,
-    "android-release-readback": (
+    "g7-nonsecurity-swift-prepare": (
         "python3",
         "-B",
-        "script/check_release_artifact_archive.py",
-        "--android-build-outputs",
+        "script/check_product_ci.py",
+        "--prepare-g7-nonsecurity-swift-run",
     ),
+    "g7-nonsecurity-swift-run": (
+        "python3",
+        "-B",
+        "script/check_product_ci.py",
+        "--run-g7-nonsecurity-swift-tests",
+    ),
+    "g7-nonsecurity-swift-bind": (
+        "python3",
+        "-B",
+        "script/check_product_ci.py",
+        "--write-g7-nonsecurity-swift-binding",
+    ),
+    "g7-nonsecurity-swift-readback": G7_NONSECURITY_SWIFT_READBACK_COMMAND,
+    "android-full-run": ANDROID_FULL_COMMAND,
+    "android-release-build": ANDROID_RELEASE_COMMAND,
+    "android-release-readback": ANDROID_RELEASE_READBACK_COMMAND,
     "macos-release-source-before": (
         "python3",
         "-B",
@@ -307,12 +371,7 @@ CRITICAL_COMMAND_ARGV = {
         "script/package_release_artifacts.py",
         "source-digest",
     ),
-    "macos-release-readback": (
-        "python3",
-        "-B",
-        "script/check_release_artifact_archive.py",
-        "--macos-build-outputs",
-    ),
+    "macos-release-readback": MACOS_RELEASE_READBACK_COMMAND,
     "macos-lifecycle-produce": (
         "python3",
         "-B",
@@ -322,15 +381,24 @@ CRITICAL_COMMAND_ARGV = {
         "--repeatability-result",
         ".build/aetherlink-current-unsealed-lifecycle-v1/repeatability.json",
     ),
-    "final-swift-focused-readback": READBACK_COMMANDS[1],
-    "final-document-ingestion-asan-readback": READBACK_COMMANDS[2],
-    "final-document-ingestion-mutation-readback": READBACK_COMMANDS[3],
-    "final-android-full-readback": READBACK_COMMANDS[4],
-    "final-android-release-readback": READBACK_COMMANDS[5],
-    "final-android-diagnostics-readback": READBACK_COMMANDS[6],
-    "final-macos-release-readback": READBACK_COMMANDS[7],
-    "final-macos-diagnostics-readback": READBACK_COMMANDS[8],
-    "final-macos-lifecycle-readback": READBACK_COMMANDS[9],
+    "final-swift-focused-readback": SWIFT_FOCUSED_READBACK_COMMAND,
+    "final-g7-nonsecurity-swift-readback": (
+        G7_NONSECURITY_SWIFT_READBACK_COMMAND
+    ),
+    "final-document-ingestion-asan-readback": (
+        DOCUMENT_INGESTION_ASAN_READBACK_COMMAND
+    ),
+    "final-document-ingestion-mutation-readback": (
+        DOCUMENT_INGESTION_MUTATION_READBACK_COMMAND
+    ),
+    "final-android-full-readback": ANDROID_FULL_READBACK_COMMAND,
+    "final-android-release-readback": ANDROID_RELEASE_READBACK_COMMAND,
+    "final-android-diagnostics-readback": (
+        ANDROID_DIAGNOSTICS_READBACK_COMMAND
+    ),
+    "final-macos-release-readback": MACOS_RELEASE_READBACK_COMMAND,
+    "final-macos-diagnostics-readback": MACOS_DIAGNOSTICS_READBACK_COMMAND,
+    "final-macos-lifecycle-readback": MACOS_LIFECYCLE_READBACK_COMMAND,
 }
 
 
@@ -845,32 +913,189 @@ def load_result(path: Path, *, root: Path = ROOT) -> Mapping[str, object]:
     return value
 
 
+def process_group_exists(process_group_id: int) -> bool:
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def wait_for_process_group_exit(
+    process: subprocess.Popen[bytes],
+    *,
+    timeout_seconds: float,
+) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        leader_exited = process.poll() is not None
+        group_exited = not process_group_exists(process.pid)
+        if leader_exited and group_exited:
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        if not leader_exited:
+            try:
+                process.wait(timeout=min(0.05, remaining))
+            except subprocess.TimeoutExpired:
+                pass
+        else:
+            time.sleep(min(0.01, remaining))
+
+
+def terminate_process_group(process: subprocess.Popen[bytes]) -> None:
+    termination_errors: list[str] = []
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    except OSError as error:
+        termination_errors.append(f"SIGTERM failed: {error}")
+    if wait_for_process_group_exit(
+        process,
+        timeout_seconds=READBACK_TERMINATION_GRACE_SECONDS,
+    ):
+        return
+
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    except OSError as error:
+        termination_errors.append(f"SIGKILL failed: {error}")
+    if wait_for_process_group_exit(
+        process,
+        timeout_seconds=READBACK_TERMINATION_GRACE_SECONDS,
+    ):
+        return
+
+    detail = "; ".join(termination_errors)
+    if detail:
+        detail = f" ({detail})"
+    raise CandidateError(
+        f"child readback process group {process.pid} survived termination{detail}"
+    )
+
+
+def bounded_child_output(
+    process: subprocess.Popen[bytes],
+    *,
+    command: Sequence[str],
+    timeout_seconds: float,
+    maximum_bytes: int,
+) -> tuple[bytes, bytes]:
+    command_text = " ".join(command)
+    if process.stdout is None or process.stderr is None:
+        terminate_process_group(process)
+        raise CandidateError(
+            f"child readback did not expose both output streams: {command_text}"
+        )
+
+    stdout = bytearray()
+    stderr = bytearray()
+    buffers = {process.stdout.fileno(): stdout, process.stderr.fileno(): stderr}
+    streams = (process.stdout, process.stderr)
+    selector = selectors.DefaultSelector()
+    deadline = time.monotonic() + timeout_seconds
+
+    def terminate_for_failure(message: str) -> None:
+        try:
+            terminate_process_group(process)
+        except CandidateError as error:
+            raise CandidateError(f"{message}; cleanup failed: {error}") from error
+        raise CandidateError(message)
+
+    try:
+        for stream in streams:
+            os.set_blocking(stream.fileno(), False)
+            selector.register(stream, selectors.EVENT_READ)
+
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                terminate_for_failure(
+                    f"child readback exceeded its deadline: {command_text}"
+                )
+            events = selector.select(timeout=remaining)
+            if not events:
+                terminate_for_failure(
+                    f"child readback exceeded its deadline: {command_text}"
+                )
+            for key, _ in events:
+                try:
+                    chunk = os.read(key.fd, 65_536)
+                except BlockingIOError:
+                    continue
+                except OSError as error:
+                    terminate_for_failure(
+                        f"child readback output could not be read: {command_text}: {error}"
+                    )
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    continue
+                if len(stdout) + len(stderr) + len(chunk) > maximum_bytes:
+                    terminate_for_failure(
+                        f"child readback output exceeded its bound: {command_text}"
+                    )
+                buffers[key.fd].extend(chunk)
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            terminate_for_failure(
+                f"child readback exceeded its deadline: {command_text}"
+            )
+        try:
+            process.wait(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            terminate_for_failure(
+                f"child readback exceeded its deadline: {command_text}"
+            )
+        if process.returncode is None or process_group_exists(process.pid):
+            terminate_for_failure(
+                f"child readback process group did not fully exit: {command_text}"
+            )
+    except CandidateError:
+        raise
+    except OSError as error:
+        terminate_for_failure(
+            f"child readback output could not be read: {command_text}: {error}"
+        )
+    finally:
+        selector.close()
+        for stream in streams:
+            stream.close()
+    return bytes(stdout), bytes(stderr)
+
+
 def run_child_readbacks(root: Path) -> None:
     environment = os.environ.copy()
     environment["LC_ALL"] = "C"
     environment["PYTHONPATH"] = str(root)
     for command in READBACK_COMMANDS:
         try:
-            completed = subprocess.run(
+            process = subprocess.Popen(
                 command,
                 cwd=root,
                 env=environment,
-                check=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                timeout=180,
+                start_new_session=True,
             )
-        except (OSError, subprocess.SubprocessError) as error:
+        except OSError as error:
             raise CandidateError(
                 f"child readback could not run: {' '.join(command)}: {error}"
             ) from error
-        if (
-            len(completed.stdout) > READBACK_STREAM_MAX_BYTES
-            or len(completed.stderr) > READBACK_STREAM_MAX_BYTES
-        ):
-            raise CandidateError(f"child readback output exceeded its bound: {' '.join(command)}")
-        if completed.returncode != 0:
-            detail = completed.stderr[:4096].decode("utf-8", errors="replace")
+        stdout, stderr = bounded_child_output(
+            process,
+            command=command,
+            timeout_seconds=READBACK_TIMEOUT_SECONDS,
+            maximum_bytes=READBACK_STREAM_MAX_BYTES,
+        )
+        if process.returncode != 0:
+            detail = stderr[:4096].decode("utf-8", errors="replace")
             raise CandidateError(
                 f"child readback failed: {' '.join(command)}: {detail}"
             )

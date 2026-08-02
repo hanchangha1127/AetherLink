@@ -5848,6 +5848,109 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         XCTAssertFalse(remainingLegacyEvents.contains { $0.sessionID == "coordination-deleted" })
     }
 
+    func testSQLiteAppendCacheFlushCheckpointCommitsExactlyOnce() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let callbackCount = SQLiteRuntimeChatCheckpointCounter()
+        let store = SQLiteRuntimeChatEventStore(
+            databaseURL: databaseURL,
+            appendInstrumentation: SQLiteRuntimeChatEventStoreAppendInstrumentation(
+                didFlushDatabaseCacheBeforeCommit: {
+                    callbackCount.increment()
+                }
+            )
+        )
+        let event = RuntimeChatStoredEvent(
+            id: "cache-flush-checkpoint-commit",
+            timestamp: Date(timeIntervalSince1970: 690),
+            kind: .request,
+            requestID: "cache-flush-checkpoint-commit-turn",
+            sessionID: "cache-flush-checkpoint-commit-session",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Commit after cache flush.")],
+            ownerDeviceID: "device-a"
+        )
+
+        try store.append(event)
+
+        XCTAssertEqual(callbackCount.load(), 1)
+        XCTAssertEqual(
+            try rawSQLiteInt("SELECT COUNT(*) FROM runtime_chat_events", at: databaseURL),
+            1
+        )
+        XCTAssertEqual(
+            try rawSQLiteInt("SELECT COUNT(*) FROM runtime_chat_event_fts_v2", at: databaseURL),
+            1
+        )
+        XCTAssertEqual(
+            try rawSQLiteInt(
+                "SELECT validated_revision FROM runtime_chat_append_state WHERE singleton = 1",
+                at: databaseURL
+            ),
+            1
+        )
+    }
+
+    func testSQLiteAppendCacheFlushCheckpointErrorRollsBackAndAllowsExactRetry() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let callbackCount = SQLiteRuntimeChatCheckpointCounter()
+        let failingStore = SQLiteRuntimeChatEventStore(
+            databaseURL: databaseURL,
+            appendInstrumentation: SQLiteRuntimeChatEventStoreAppendInstrumentation(
+                didFlushDatabaseCacheBeforeCommit: {
+                    callbackCount.increment()
+                    throw NSError(
+                        domain: "SQLiteRuntimeChatEventStoreTests",
+                        code: 690
+                    )
+                }
+            )
+        )
+        let event = RuntimeChatStoredEvent(
+            id: "cache-flush-checkpoint-rollback",
+            timestamp: Date(timeIntervalSince1970: 691),
+            kind: .request,
+            requestID: "cache-flush-checkpoint-rollback-turn",
+            sessionID: "cache-flush-checkpoint-rollback-session",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Rollback after cache flush.")],
+            ownerDeviceID: "device-a"
+        )
+
+        XCTAssertThrowsError(try failingStore.append(event))
+        XCTAssertEqual(callbackCount.load(), 1)
+        XCTAssertEqual(
+            try rawSQLiteInt("SELECT COUNT(*) FROM runtime_chat_events", at: databaseURL),
+            0
+        )
+        XCTAssertEqual(
+            try rawSQLiteInt("SELECT COUNT(*) FROM runtime_chat_event_fts_v2", at: databaseURL),
+            0
+        )
+        XCTAssertEqual(
+            try rawSQLiteInt(
+                "SELECT mutation_revision FROM runtime_chat_append_state WHERE singleton = 1",
+                at: databaseURL
+            ),
+            0
+        )
+        XCTAssertEqual(
+            try rawSQLiteInt(
+                "SELECT validated_revision FROM runtime_chat_append_state WHERE singleton = 1",
+                at: databaseURL
+            ),
+            -1
+        )
+
+        try SQLiteRuntimeChatEventStore(databaseURL: databaseURL).append(event)
+        XCTAssertEqual(
+            try rawSQLiteInt(
+                "SELECT COUNT(*) FROM runtime_chat_events WHERE event_id = 'cache-flush-checkpoint-rollback'",
+                at: databaseURL
+            ),
+            1
+        )
+    }
+
     func testSQLiteCrossInstanceAppendWaitsForImmediateTransactionAndCommitsExactlyOnce() throws {
         let databaseURL = try temporaryDatabaseURL()
         let holderEnteredTransaction = DispatchSemaphore(value: 0)
@@ -7371,6 +7474,23 @@ private final class SQLiteRuntimeChatConcurrentResultBox<Value>: @unchecked Send
     }
 
     func load() -> Value? {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
+private final class SQLiteRuntimeChatCheckpointCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    func increment() {
+        lock.lock()
+        value += 1
+        lock.unlock()
+    }
+
+    func load() -> Int {
         lock.lock()
         defer { lock.unlock() }
         return value

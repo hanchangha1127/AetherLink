@@ -54,18 +54,23 @@ delivery, complete Nightly coverage, canonical G7 exit, RC/GA, or V1 release.
 
 <!-- aetherlink-current-g7-nonsecurity-merge-full-local-candidate-v1:start -->
 **Current G7 local non-security Merge-full candidate status.** The
-current-source local runner executes 62 exact ordered commands and publishes
+current-source local runner executes 67 exact ordered commands and publishes
 `.build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/candidate.json` only
-after every command exits zero, all 23 artifacts and five implementation inputs
+after every command exits zero, all 26 artifacts and five implementation inputs
 read back from current bytes, the source snapshot is unchanged across child
 readbacks, and a requested running-app PID retains its exact identity. The
 result uses canonical ASCII JSON, mode 0600, atomic publication, and a separate
 read-only checker.
 
-The passing local matrix covers 222 focused Swift tests, 57 DocumentIngestion
-ASan tests, two mutation XCTest identities and 96 deterministic mutation cases,
-19 Android classes and 1,226 tests, zero Android lint issues, and 22 Release
-compliance tests. It also builds and directly reads back the unsigned Android
+The passing local matrix covers 222 focused Swift tests plus a separate 247-test
+expanded non-security Swift lane. Their 72-identity overlap yields 397 distinct
+Swift identities; the expanded lane contains 22 lifecycle/UI, 59 document,
+71 LM Studio, and 95 Ollama tests. It excludes 11 exact opt-in live-provider
+identities and runs serially with a fixed allowlisted environment under an OS
+network-deny sandbox. The matrix also covers 57 DocumentIngestion ASan tests,
+two mutation XCTest identities and 96 deterministic mutation cases, 19 Android
+classes and 1,226 tests, zero Android lint issues, and 22 Release compliance
+tests. It also builds and directly reads back the unsigned Android
 Release APK/AAB, the unsealed macOS app and dSYM, both diagnostics results, and
 the current-unsealed macOS install/recovery lifecycle result before repeating
 all final readbacks.
@@ -76,6 +81,12 @@ mode-0600 no-follow exclusive lease, rejects a pre-existing scratch or lease,
 and validates and removes only its owned scratch and lease in `finally`. This
 keeps repository `.build` evidence and the candidate parent intact across the
 package producer's clean build.
+
+Every producer gate and independent readback drains stdout and stderr
+concurrently while enforcing its own combined byte ceiling against an absolute
+monotonic deadline. A limit, deadline, or read failure terminates the isolated
+child process group with SIGTERM and then SIGKILL, and requires both the leader
+and group to disappear before failure returns.
 
 This ignored local current-source candidate is not retained release evidence.
 It does not claim the complete Swift suite, device/network execution, hosted CI,

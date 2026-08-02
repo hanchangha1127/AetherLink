@@ -20,15 +20,18 @@ struct SQLiteRuntimeChatEventStoreAppendInstrumentation: Sendable {
     var didDecodeStoredEvent: @Sendable () -> Void
     var didRunFullHistoryRepair: @Sendable () -> Void
     var didInsertSearchDocument: @Sendable () -> Void
+    var didFlushDatabaseCacheBeforeCommit: (@Sendable () throws -> Void)?
 
     init(
         didDecodeStoredEvent: @escaping @Sendable () -> Void = {},
         didRunFullHistoryRepair: @escaping @Sendable () -> Void = {},
-        didInsertSearchDocument: @escaping @Sendable () -> Void = {}
+        didInsertSearchDocument: @escaping @Sendable () -> Void = {},
+        didFlushDatabaseCacheBeforeCommit: (@Sendable () throws -> Void)? = nil
     ) {
         self.didDecodeStoredEvent = didDecodeStoredEvent
         self.didRunFullHistoryRepair = didRunFullHistoryRepair
         self.didInsertSearchDocument = didInsertSearchDocument
+        self.didFlushDatabaseCacheBeforeCommit = didFlushDatabaseCacheBeforeCommit
     }
 }
 
@@ -725,6 +728,15 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
             sessionID: sanitized.sessionID
         )
         try markIncrementalAppendStateValidatedUnlocked(database)
+        if let didFlushDatabaseCacheBeforeCommit = appendInstrumentation?.didFlushDatabaseCacheBeforeCommit {
+            let flushResult = sqlite3_db_cacheflush(database)
+            guard flushResult == SQLITE_OK else {
+                throw SQLiteRuntimeChatEventStoreError(
+                    "Could not flush the runtime chat append cache (SQLite code \(flushResult))."
+                )
+            }
+            try didFlushDatabaseCacheBeforeCommit()
+        }
     }
 
     private func appendBatchUnlocked(

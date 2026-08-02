@@ -15,6 +15,36 @@ Qualification Checklist below.
 - [x] The retained comparison-only lifecycle-two parent+6 set passes exact-byte
   and cross-binding validation; it does not close canonical G6.
 
+## 2026-08-02 G7 macOS Production Append Abrupt Recovery Checklist
+
+- [x] Production behavior is unchanged when the internal optional throwing
+  checkpoint is `nil`. The QA helper reaches the checkpoint through the real
+  `SQLiteRuntimeChatEventStore.append` event/FTS/validated-state path and only
+  after `sqlite3_db_cacheflush` succeeds. Checkpoint or gate errors throw into
+  the existing append rollback.
+- [x] Two isolated runs publish identical 2,674-byte mode-0600 results at
+  SHA-256
+  `a60207d2dcc2cca06d156a0295ee40850759c505b50bb3926e0210683a286e4a`.
+  The 477-byte receipt SHA-256 is
+  `c9f36b7e371a3f5f5d8541d18ad93ed6ebf436ff1df2148e5cb772b8151c8a44`.
+- [x] Before signal, each run observes a populated rollback journal plus one
+  event, one FTS row, and append state `(1, 1, 2)` through an immutable dirty
+  read. The exact new-session child process group exits `-9` with empty output;
+  journal bytes and the dirty view remain identical across `SIGKILL`.
+- [x] Independent production-store recovery yields event/FTS counts zero and
+  state `(0, -1, 0)`. Exact event-zero retry plus the remaining writes yield 48
+  event/FTS rows, state `(48, 48, 2)`, one event zero, and contiguous sequences.
+  Integrity and foreign-key checks pass before and after retry.
+- [x] Two focused Swift tests and 16 Python runner/checker tests pass. Product
+  CI and its mutation self-test pin the PR/main unit step and main-only
+  producer/readback steps. Workflow raw SHA-256 is
+  `131d9b1b6a25c6f874d74734ea596aba034531cbc9383e45a4c892508bd96d9b`;
+  parsed-semantic SHA-256 is
+  `e0d00e6008b0e9be1f1b1b9077959cdf87057afabffcda3eeff5cca430f523ee`.
+- [ ] This does not prove natural COMMIT timing, power-loss/kernel-crash,
+  arbitrary-history soak, clean-machine/signed distribution, physical-device,
+  network, hosted workflow execution, canonical G7 exit, RC/GA, or V1.
+
 ## 2026-08-01 G6/G7 macOS Unsealed Release Direct Readback Checklist
 
 - [x] `--unsealed-package-only` uses the fixed
@@ -145,18 +175,23 @@ Qualification Checklist below.
 
 <!-- aetherlink-current-g7-nonsecurity-merge-full-local-candidate-v1:start -->
 **Current G7 local non-security Merge-full candidate status.** The
-current-source local runner executes 62 exact ordered commands and publishes
+current-source local runner executes 67 exact ordered commands and publishes
 `.build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/candidate.json` only
-after every command exits zero, all 23 artifacts and five implementation inputs
+after every command exits zero, all 26 artifacts and five implementation inputs
 read back from current bytes, the source snapshot is unchanged across child
 readbacks, and a requested running-app PID retains its exact identity. The
 result uses canonical ASCII JSON, mode 0600, atomic publication, and a separate
 read-only checker.
 
-The passing local matrix covers 222 focused Swift tests, 57 DocumentIngestion
-ASan tests, two mutation XCTest identities and 96 deterministic mutation cases,
-19 Android classes and 1,226 tests, zero Android lint issues, and 22 Release
-compliance tests. It also builds and directly reads back the unsigned Android
+The passing local matrix covers 222 focused Swift tests plus a separate 247-test
+expanded non-security Swift lane. Their 72-identity overlap yields 397 distinct
+Swift identities; the expanded lane contains 22 lifecycle/UI, 59 document,
+71 LM Studio, and 95 Ollama tests. It excludes 11 exact opt-in live-provider
+identities and runs serially with a fixed allowlisted environment under an OS
+network-deny sandbox. The matrix also covers 57 DocumentIngestion ASan tests,
+two mutation XCTest identities and 96 deterministic mutation cases, 19 Android
+classes and 1,226 tests, zero Android lint issues, and 22 Release compliance
+tests. It also builds and directly reads back the unsigned Android
 Release APK/AAB, the unsealed macOS app and dSYM, both diagnostics results, and
 the current-unsealed macOS install/recovery lifecycle result before repeating
 all final readbacks.
@@ -167,6 +202,12 @@ mode-0600 no-follow exclusive lease, rejects a pre-existing scratch or lease,
 and validates and removes only its owned scratch and lease in `finally`. This
 keeps repository `.build` evidence and the candidate parent intact across the
 package producer's clean build.
+
+Every producer gate and independent readback drains stdout and stderr
+concurrently while enforcing its own combined byte ceiling against an absolute
+monotonic deadline. A limit, deadline, or read failure terminates the isolated
+child process group with SIGTERM and then SIGKILL, and requires both the leader
+and group to disappear before failure returns.
 
 This ignored local current-source candidate is not retained release evidence.
 It does not claim the complete Swift suite, device/network execution, hosted CI,

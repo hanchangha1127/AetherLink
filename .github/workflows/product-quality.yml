@@ -92,6 +92,8 @@ jobs:
           script.test_run_macos_current_unsealed_install_recovery_smoke
           script.test_check_macos_current_unsealed_install_recovery_evidence.CurrentUnsealedRecoveryEvidencePortableTests
           script.test_check_macos_current_unsealed_ci_lifecycle
+          script.test_run_macos_runtime_chat_production_append_abrupt_recovery_smoke
+          script.test_check_macos_runtime_chat_production_append_abrupt_recovery_evidence
       - name: Run release diagnostics contract units
         run: >-
           PYTHONPATH=. python3 -B -m unittest
@@ -209,6 +211,24 @@ jobs:
         run: >-
           PYTHONPATH=. python3 -B
           script/check_macos_current_unsealed_ci_lifecycle.py
+      - name: Run production append abrupt recovery on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: |
+          install -d -m 700 .build/aetherlink-production-append-recovery-v1
+          python3 -B script/run_macos_runtime_chat_production_append_abrupt_recovery_smoke.py \
+            --result .build/aetherlink-production-append-recovery-v1/result.json \
+            --repeatability-receipt .build/aetherlink-production-append-recovery-v1/repeatability.json
+      - name: Read back production append abrupt recovery on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: >-
+          PYTHONPATH=. python3 -B
+          script/check_macos_runtime_chat_production_append_abrupt_recovery_evidence.py
+          --result .build/aetherlink-production-append-recovery-v1/result.json
+          --repeatability-receipt .build/aetherlink-production-append-recovery-v1/repeatability.json
 
   android-product-quality:
     name: Android product quality subset

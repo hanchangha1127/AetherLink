@@ -78,10 +78,10 @@ ANDROID_FONT_SCALE_METHODS = (
     "coreSurfacesRemainUsableAt200PercentFontScale",
 )
 CANONICAL_WORKFLOW_SHA256 = (
-    "41f1532ba6037645e8b7c29629eb665d368a4f524a034c0b8d7a26b5740de73e"
+    "131d9b1b6a25c6f874d74734ea596aba034531cbc9383e45a4c892508bd96d9b"
 )
 CANONICAL_PARSED_WORKFLOW_SHA256 = (
-    "c6b90de31600f813d78ec4cfeb1f363c12ccef0735e8f2f93284024b60d89bdd"
+    "e0d00e6008b0e9be1f1b1b9077959cdf87057afabffcda3eeff5cca430f523ee"
 )
 
 REQUIRED_WORKFLOW_PREFIX = """name: Product quality (non-security subset)
@@ -266,6 +266,7 @@ SWIFT_FOCUSED_TEST_BINDING_CONTRACT = (
 )
 SWIFT_FOCUSED_TEST_MAX_LOG_BYTES = 16 * 1024 * 1024
 SWIFT_FOCUSED_TEST_RUN_TIMEOUT_SECONDS = 20 * 60
+SWIFT_FOCUSED_TEST_TERMINATION_GRACE_SECONDS = 1.0
 SWIFT_FOCUSED_TEST_FUTURE_MTIME_TOLERANCE_NS = 5_000_000_000
 SWIFT_FOCUSED_PACKAGE_MAX_BYTES = 512 * 1024
 SWIFT_FOCUSED_PACKAGE_DUMP_MAX_BYTES = 2 * 1024 * 1024
@@ -347,6 +348,199 @@ SWIFT_FOCUSED_RUN_COMMAND = (
     "test",
     "--filter",
     SWIFT_FILTER,
+)
+G7_NONSECURITY_SWIFT_UI_FILTER = (
+    r"^LocalAgentBridgeTests\."
+    r"(?:AppLifecycleTests|PackagedStateRecoveryProbeTests|"
+    r"StatusQuickActionsDisclosureTests)/[A-Za-z0-9_]+$"
+)
+G7_NONSECURITY_SWIFT_UI_TEST_COUNT = 22
+G7_NONSECURITY_SWIFT_UI_TEST_MANIFEST_SHA256 = (
+    "d28c2530a3b8c2b06b167d33dc157d7b17ec80ecebf193cfaf68c7fc8b6e4315"
+)
+G7_NONSECURITY_SWIFT_MODULE_FILTER = (
+    r"^(?:DocumentIngestionTests\."
+    r"(?:DocumentChunkerTests|DocumentIngestionGenerationalMutationTests|"
+    r"DocumentIngestionSanitizerCorpusTests|DocumentIngestorTests|"
+    r"DocumentTextExtractorTests)|LMStudioBackendTests\."
+    r"(?:LMStudioBackendHealthTimeoutTests|LMStudioBackendTests)|"
+    r"OllamaBackendTests\."
+    r"(?:OllamaBackendHealthTimeoutTests|OllamaBackendTests|"
+    r"OllamaEmbeddingSemanticQualityTests|"
+    r"OllamaEmbeddingMultilingualFullMatrixV3Tests|"
+    r"OllamaEmbeddingMultilingualSemanticQualityTests))/[A-Za-z0-9_]+$"
+)
+G7_NONSECURITY_SWIFT_MODULE_TEST_COUNT = 236
+G7_NONSECURITY_SWIFT_MODULE_TEST_MANIFEST_SHA256 = (
+    "e3f833161f53988006f1f7a63496573ad6feb16418ac0dddd363b294f59473ff"
+)
+G7_NONSECURITY_SWIFT_LIVE_TESTS = (
+    (
+        "LMStudioBackendTests.LMStudioBackendTests/"
+        "testLiveLMStudioConfirmedUnload"
+    ),
+    (
+        "OllamaBackendTests.OllamaBackendTests/"
+        "testLiveOllamaConfirmedUnload"
+    ),
+    (
+        "OllamaBackendTests.OllamaBackendTests/"
+        "testLiveOllamaExactVersionEmptyCatalogCompatibility"
+    ),
+    (
+        "OllamaBackendTests.OllamaBackendTests/"
+        "testLiveOllamaExactVersionInstalledChatModelCompatibility"
+    ),
+    (
+        "OllamaBackendTests.OllamaBackendTests/"
+        "testLiveOllamaExactVersionInstalledEmbeddingModelCompatibility"
+    ),
+    (
+        "OllamaBackendTests.OllamaBackendTests/"
+        "testLiveOllamaExactVersionInstalledEmbeddingSemanticQuality"
+    ),
+    (
+        "OllamaBackendTests.OllamaBackendTests/"
+        "testLiveOllamaExactVersionInstalledEmbeddingSemanticRecovery"
+    ),
+    (
+        "OllamaBackendTests.OllamaBackendTests/"
+        "testLiveOllamaExactVersionInstalledVisionModelCompatibility"
+    ),
+    (
+        "OllamaBackendTests.OllamaBackendTests/"
+        "testLiveOllamaExactVersionProviderFaultInjection"
+    ),
+    (
+        "OllamaBackendTests."
+        "OllamaEmbeddingMultilingualFullMatrixV3Tests/"
+        "testLiveOllamaExactVersionInstalledEmbeddingMultilingualFullMatrixObservationV3"
+    ),
+    (
+        "OllamaBackendTests."
+        "OllamaEmbeddingMultilingualSemanticQualityTests/"
+        "testLiveOllamaExactVersionInstalledEmbeddingMultilingualSemanticQuality"
+    ),
+)
+G7_NONSECURITY_SWIFT_LIVE_TEST_COUNT = 11
+G7_NONSECURITY_SWIFT_LIVE_TEST_MANIFEST_SHA256 = (
+    "46cdf7463d9e18aec2dabadc992dead68b60e4b26191b9905238bb54123c5d72"
+)
+G7_NONSECURITY_SWIFT_SAFE_MODULE_FILTER = (
+    r"^(?!.*\/testLive)(?:DocumentIngestionTests\."
+    r"(?:DocumentChunkerTests|DocumentIngestionGenerationalMutationTests|"
+    r"DocumentIngestionSanitizerCorpusTests|DocumentIngestorTests|"
+    r"DocumentTextExtractorTests)|LMStudioBackendTests\."
+    r"(?:LMStudioBackendHealthTimeoutTests|LMStudioBackendTests)|"
+    r"OllamaBackendTests\."
+    r"(?:OllamaBackendHealthTimeoutTests|OllamaBackendTests|"
+    r"OllamaEmbeddingSemanticQualityTests|"
+    r"OllamaEmbeddingMultilingualFullMatrixV3Tests|"
+    r"OllamaEmbeddingMultilingualSemanticQualityTests))/[A-Za-z0-9_]+$"
+)
+G7_NONSECURITY_SWIFT_SAFE_MODULE_TEST_COUNT = 225
+G7_NONSECURITY_SWIFT_SAFE_MODULE_TEST_MANIFEST_SHA256 = (
+    "3cf5fb6c09efd78dcf7fc688e2f1aca3d57fe831d33672d2a8f95faee17f76d5"
+)
+G7_NONSECURITY_SWIFT_FILTER = (
+    r"^(?:LocalAgentBridgeTests\."
+    r"(?:AppLifecycleTests|PackagedStateRecoveryProbeTests|"
+    r"StatusQuickActionsDisclosureTests)|DocumentIngestionTests\."
+    r"(?:DocumentChunkerTests|DocumentIngestionGenerationalMutationTests|"
+    r"DocumentIngestionSanitizerCorpusTests|DocumentIngestorTests|"
+    r"DocumentTextExtractorTests)|LMStudioBackendTests\."
+    r"(?:LMStudioBackendHealthTimeoutTests|LMStudioBackendTests)|"
+    r"OllamaBackendTests\."
+    r"(?:OllamaBackendHealthTimeoutTests|OllamaBackendTests|"
+    r"OllamaEmbeddingSemanticQualityTests|"
+    r"OllamaEmbeddingMultilingualFullMatrixV3Tests|"
+    r"OllamaEmbeddingMultilingualSemanticQualityTests))/[A-Za-z0-9_]+$"
+)
+G7_NONSECURITY_SWIFT_TEST_COUNT = 247
+G7_NONSECURITY_SWIFT_TEST_MANIFEST_SHA256 = (
+    "9ad12d0f8b909021046f6b00cdd989dc41010af85d02febd424a4fb6edaf861c"
+)
+G7_NONSECURITY_SWIFT_FOCUSED_OVERLAP_COUNT = 72
+G7_NONSECURITY_SWIFT_DISTINCT_TEST_COUNT = 397
+G7_NONSECURITY_SWIFT_SAFE_TARGET_COUNTS = {
+    "DocumentIngestionTests.": 59,
+    "LMStudioBackendTests.": 71,
+    "OllamaBackendTests.": 95,
+}
+G7_NONSECURITY_SWIFT_SKIP_FILTER = (
+    "^(?:"
+    + "|".join(re.escape(identity) for identity in G7_NONSECURITY_SWIFT_LIVE_TESTS)
+    + ")$"
+)
+G7_NONSECURITY_SWIFT_SANDBOX_PROFILE = (
+    "(version 1)(allow default)(deny network*)"
+)
+G7_NONSECURITY_SWIFT_NETWORK_PROBE_SCRIPT = r"""
+import errno
+import socket
+
+denied = {errno.EACCES, errno.EPERM}
+cases = (
+    (socket.AF_INET, ("127.0.0.1", 0), ("127.0.0.1", 9)),
+    (socket.AF_INET6, ("::1", 0), ("::1", 9)),
+)
+for case_index, (family, bind_address, connect_address) in enumerate(cases):
+    for operation_index, (operation, address) in enumerate(
+        (("bind", bind_address), ("connect", connect_address))
+    ):
+        try:
+            with socket.socket(family, socket.SOCK_STREAM) as candidate:
+                if operation == "bind":
+                    candidate.bind(address)
+                else:
+                    candidate.settimeout(0.25)
+                    candidate.connect(address)
+        except OSError as error:
+            if error.errno in denied:
+                continue
+            raise SystemExit(20 + case_index * 4 + operation_index)
+        raise SystemExit(40 + case_index * 4 + operation_index)
+"""
+G7_NONSECURITY_SWIFT_NETWORK_PROBE_COMMAND = (
+    "/usr/bin/sandbox-exec",
+    "-p",
+    G7_NONSECURITY_SWIFT_SANDBOX_PROFILE,
+    "/usr/bin/python3",
+    "-I",
+    "-B",
+    "-S",
+    "-c",
+    G7_NONSECURITY_SWIFT_NETWORK_PROBE_SCRIPT,
+)
+G7_NONSECURITY_SWIFT_RUN_COMMAND = (
+    "/usr/bin/sandbox-exec",
+    "-p",
+    G7_NONSECURITY_SWIFT_SANDBOX_PROFILE,
+    "/usr/bin/swift",
+    "test",
+    "--disable-sandbox",
+    "--no-parallel",
+    "--filter",
+    G7_NONSECURITY_SWIFT_FILTER,
+    "--skip",
+    G7_NONSECURITY_SWIFT_SKIP_FILTER,
+)
+G7_NONSECURITY_SWIFT_RUN_MARKER_PATH = ROOT / (
+    ".build/aetherlink-g7-nonsecurity-swift-run-marker-v1.json"
+)
+G7_NONSECURITY_SWIFT_LOG_PATH = ROOT / (
+    ".build/aetherlink-g7-nonsecurity-swift-console-v1.log"
+)
+G7_NONSECURITY_SWIFT_BINDING_PATH = ROOT / (
+    ".build/aetherlink-g7-nonsecurity-swift-binding-v1.json"
+)
+G7_NONSECURITY_SWIFT_ALLOWED_ENVIRONMENT_KEYS = (
+    "DEVELOPER_DIR",
+    "HOME",
+    "PATH",
+    "SDKROOT",
+    "TMPDIR",
+    "TOOLCHAINS",
 )
 DOCUMENT_INGESTION_ASAN_FILTER = (
     r"^DocumentIngestionTests\."
@@ -1080,6 +1274,10 @@ MACOS_LIFECYCLE_CONTRACT_TEST_STEP_BODY = (
     "          script.test_check_macos_current_unsealed_install_recovery_evidence."
     "CurrentUnsealedRecoveryEvidencePortableTests\n"
     "          script.test_check_macos_current_unsealed_ci_lifecycle\n"
+    "          script.test_run_macos_runtime_chat_production_append_"
+    "abrupt_recovery_smoke\n"
+    "          script.test_check_macos_runtime_chat_production_append_"
+    "abrupt_recovery_evidence\n"
 )
 
 RELEASE_DIAGNOSTICS_CONTRACT_TEST_STEP_BODY = (
@@ -1159,6 +1357,33 @@ MACOS_CURRENT_UNSEALED_LIFECYCLE_READBACK_STEP_BODY = (
     "        run: >-\n"
     "          PYTHONPATH=. python3 -B\n"
     "          script/check_macos_current_unsealed_ci_lifecycle.py\n"
+)
+
+MACOS_PRODUCTION_APPEND_RECOVERY_RUN_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: |\n"
+    "          install -d -m 700 "
+    ".build/aetherlink-production-append-recovery-v1\n"
+    "          python3 -B "
+    "script/run_macos_runtime_chat_production_append_abrupt_recovery_smoke.py \\\n"
+    "            --result "
+    ".build/aetherlink-production-append-recovery-v1/result.json \\\n"
+    "            --repeatability-receipt "
+    ".build/aetherlink-production-append-recovery-v1/repeatability.json\n"
+)
+
+MACOS_PRODUCTION_APPEND_RECOVERY_READBACK_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: >-\n"
+    "          PYTHONPATH=. python3 -B\n"
+    "          script/check_macos_runtime_chat_production_append_"
+    "abrupt_recovery_evidence.py\n"
+    "          --result "
+    ".build/aetherlink-production-append-recovery-v1/result.json\n"
+    "          --repeatability-receipt "
+    ".build/aetherlink-production-append-recovery-v1/repeatability.json\n"
 )
 
 ANDROID_TEST_STEP_BODY = (
@@ -1394,6 +1619,14 @@ MACOS_STEPS = (
     (
         "Read back current unsealed lifecycle on main",
         MACOS_CURRENT_UNSEALED_LIFECYCLE_READBACK_STEP_BODY,
+    ),
+    (
+        "Run production append abrupt recovery on main",
+        MACOS_PRODUCTION_APPEND_RECOVERY_RUN_STEP_BODY,
+    ),
+    (
+        "Read back production append abrupt recovery on main",
+        MACOS_PRODUCTION_APPEND_RECOVERY_READBACK_STEP_BODY,
     ),
 )
 
@@ -2108,6 +2341,10 @@ def workflow_failures(
             "script.test_check_macos_current_unsealed_install_recovery_evidence."
             "CurrentUnsealedRecoveryEvidencePortableTests",
             "script.test_check_macos_current_unsealed_ci_lifecycle",
+            "script.test_run_macos_runtime_chat_production_append_"
+            "abrupt_recovery_smoke",
+            "script.test_check_macos_runtime_chat_production_append_"
+            "abrupt_recovery_evidence",
             "run: swift build --product AetherLink",
             "swift test list > "
             ".build/aetherlink-product-ci-swift-test-list-v1.txt",
@@ -2140,6 +2377,17 @@ def workflow_failures(
             "--repeatability-result "
             ".build/aetherlink-current-unsealed-lifecycle-v1/repeatability.json",
             "script/check_macos_current_unsealed_ci_lifecycle.py",
+            "install -d -m 700 "
+            ".build/aetherlink-production-append-recovery-v1",
+            "script/run_macos_runtime_chat_production_append_"
+            "abrupt_recovery_smoke.py",
+            "--result "
+            ".build/aetherlink-production-append-recovery-v1/result.json",
+            "--repeatability-receipt "
+            ".build/aetherlink-production-append-recovery-v1/"
+            "repeatability.json",
+            "script/check_macos_runtime_chat_production_append_"
+            "abrupt_recovery_evidence.py",
         ),
     )
 
@@ -2346,6 +2594,30 @@ def workflow_failures(
     ):
         failures.append(
             "macOS current-unsealed lifecycle readback step must match the "
+            "exact main-only command body"
+        )
+    if (
+        named_step_body(
+            macos,
+            "Run production append abrupt recovery on main",
+        )
+        != MACOS_PRODUCTION_APPEND_RECOVERY_RUN_STEP_BODY
+    ):
+        failures.append(
+            "macOS production append recovery runner step must match the "
+            "exact main-only command body"
+        )
+    production_append_recovery_readback_body = named_step_body(
+        macos,
+        "Read back production append abrupt recovery on main",
+    )
+    if (
+        production_append_recovery_readback_body is None
+        or production_append_recovery_readback_body.rstrip()
+        != MACOS_PRODUCTION_APPEND_RECOVERY_READBACK_STEP_BODY.rstrip()
+    ):
+        failures.append(
+            "macOS production append recovery readback step must match the "
             "exact main-only command body"
         )
     if (
@@ -3917,6 +4189,7 @@ def swift_selected_test_names(
     *,
     test_list_path: Path = SWIFT_TEST_LIST_PATH,
     filter_pattern: str = SWIFT_FILTER,
+    excluded_tests: tuple[str, ...] = (),
 ) -> tuple[tuple[str, ...] | None, bytes | None, list[str]]:
     try:
         test_list_bytes = test_list_path.read_bytes()
@@ -3952,8 +4225,24 @@ def swift_selected_test_names(
     if len(set(test_names)) != len(test_names):
         failures.append("Swift test list must not contain duplicate specifiers")
 
+    if len(set(excluded_tests)) != len(excluded_tests):
+        failures.append("Swift excluded tests must not contain duplicates")
+    malformed_exclusions = tuple(
+        test_name
+        for test_name in excluded_tests
+        if (
+            not test_name
+            or test_name != test_name.strip()
+            or re.fullmatch(r"[^\s/]+/[^\s/]+", test_name) is None
+        )
+    )
+    if malformed_exclusions:
+        failures.append(
+            "Swift excluded tests must contain only canonical specifiers"
+        )
+
     try:
-        selected_tests = tuple(
+        included_tests = tuple(
             test_name
             for test_name in test_names
             if re.search(filter_pattern, test_name)
@@ -3961,6 +4250,25 @@ def swift_selected_test_names(
     except re.error as error:
         failures.append(f"Swift product test filter is invalid: {error}")
         return None, test_list_bytes, failures
+    included_set = set(included_tests)
+    excluded_set = set(excluded_tests)
+    missing_exclusions = tuple(
+        sorted(excluded_set - set(test_names))
+    )
+    if missing_exclusions:
+        failures.append(
+            "Swift excluded tests must all exist in the discovered test list"
+        )
+    outside_filter = tuple(sorted(excluded_set - included_set))
+    if outside_filter:
+        failures.append(
+            "Swift excluded tests must all match the include filter"
+        )
+    selected_tests = tuple(
+        test_name
+        for test_name in included_tests
+        if test_name not in excluded_set
+    )
     if failures:
         return None, test_list_bytes, failures
     return selected_tests, test_list_bytes, []
@@ -3974,10 +4282,12 @@ def swift_test_selection_failures(
     expected_manifest_sha256: str = (
         SWIFT_PRODUCT_TEST_MANIFEST_SHA256
     ),
+    excluded_tests: tuple[str, ...] = (),
 ) -> list[str]:
     selected_tests, _, failures = swift_selected_test_names(
         test_list_path=test_list_path,
         filter_pattern=filter_pattern,
+        excluded_tests=excluded_tests,
     )
     if selected_tests is None:
         return failures
@@ -3995,6 +4305,199 @@ def swift_test_selection_failures(
             "exact contract"
         )
     return failures
+
+
+def g7_nonsecurity_swift_selection_failures(
+    *,
+    test_list_path: Path = SWIFT_TEST_LIST_PATH,
+) -> list[str]:
+    contracts = (
+        (
+            "focused",
+            SWIFT_FILTER,
+            SWIFT_PRODUCT_TEST_COUNT,
+            SWIFT_PRODUCT_TEST_MANIFEST_SHA256,
+            (),
+        ),
+        (
+            "UI",
+            G7_NONSECURITY_SWIFT_UI_FILTER,
+            G7_NONSECURITY_SWIFT_UI_TEST_COUNT,
+            G7_NONSECURITY_SWIFT_UI_TEST_MANIFEST_SHA256,
+            (),
+        ),
+        (
+            "module universe",
+            G7_NONSECURITY_SWIFT_MODULE_FILTER,
+            G7_NONSECURITY_SWIFT_MODULE_TEST_COUNT,
+            G7_NONSECURITY_SWIFT_MODULE_TEST_MANIFEST_SHA256,
+            (),
+        ),
+        (
+            "safe module",
+            G7_NONSECURITY_SWIFT_SAFE_MODULE_FILTER,
+            G7_NONSECURITY_SWIFT_SAFE_MODULE_TEST_COUNT,
+            G7_NONSECURITY_SWIFT_SAFE_MODULE_TEST_MANIFEST_SHA256,
+            (),
+        ),
+        (
+            "combined",
+            G7_NONSECURITY_SWIFT_FILTER,
+            G7_NONSECURITY_SWIFT_TEST_COUNT,
+            G7_NONSECURITY_SWIFT_TEST_MANIFEST_SHA256,
+            G7_NONSECURITY_SWIFT_LIVE_TESTS,
+        ),
+    )
+    failures: list[str] = []
+    observed: dict[str, set[str]] = {}
+    for label, filter_pattern, count, manifest, excluded_tests in contracts:
+        contract_failures = swift_test_selection_failures(
+            test_list_path=test_list_path,
+            filter_pattern=filter_pattern,
+            expected_count=count,
+            expected_manifest_sha256=manifest,
+            excluded_tests=excluded_tests,
+        )
+        failures.extend(
+            f"G7 non-security Swift {label}: {failure}"
+            for failure in contract_failures
+        )
+        selected, _, selection_failures = swift_selected_test_names(
+            test_list_path=test_list_path,
+            filter_pattern=filter_pattern,
+            excluded_tests=excluded_tests,
+        )
+        failures.extend(
+            f"G7 non-security Swift {label}: {failure}"
+            for failure in selection_failures
+        )
+        if selected is not None:
+            observed[label] = set(selected)
+
+    if len(G7_NONSECURITY_SWIFT_LIVE_TESTS) != (
+        G7_NONSECURITY_SWIFT_LIVE_TEST_COUNT
+    ):
+        failures.append(
+            "G7 non-security Swift live exclusion count differs"
+        )
+    if swift_test_selection_manifest_sha256(
+        G7_NONSECURITY_SWIFT_LIVE_TESTS
+    ) != G7_NONSECURITY_SWIFT_LIVE_TEST_MANIFEST_SHA256:
+        failures.append(
+            "G7 non-security Swift live exclusion manifest differs"
+        )
+
+    if set(contracts[index][0] for index in range(len(contracts))) <= set(
+        observed
+    ):
+        focused_tests = observed["focused"]
+        ui_tests = observed["UI"]
+        module_tests = observed["module universe"]
+        safe_tests = observed["safe module"]
+        combined_tests = observed["combined"]
+        live_tests = module_tests - safe_tests
+        expected_live_tests = set(G7_NONSECURITY_SWIFT_LIVE_TESTS)
+        if safe_tests & live_tests:
+            failures.append(
+                "G7 non-security Swift safe/live partitions overlap"
+            )
+        if safe_tests | live_tests != module_tests:
+            failures.append(
+                "G7 non-security Swift module partition is incomplete"
+            )
+        if live_tests != expected_live_tests:
+            failures.append(
+                "G7 non-security Swift live exclusion identities differ"
+            )
+        if len(live_tests) != G7_NONSECURITY_SWIFT_LIVE_TEST_COUNT:
+            failures.append(
+                "G7 non-security Swift live exclusion census differs"
+            )
+        elif swift_test_selection_manifest_sha256(
+            tuple(live_tests)
+        ) != G7_NONSECURITY_SWIFT_LIVE_TEST_MANIFEST_SHA256:
+            failures.append(
+                "G7 non-security Swift observed live manifest differs"
+            )
+        if ui_tests & safe_tests:
+            failures.append(
+                "G7 non-security Swift UI/safe partitions overlap"
+            )
+        if combined_tests != ui_tests | safe_tests:
+            failures.append(
+                "G7 non-security Swift combined partition differs"
+            )
+        if combined_tests & expected_live_tests:
+            failures.append(
+                "G7 non-security Swift combined selection includes live tests"
+            )
+        if len(focused_tests & combined_tests) != (
+            G7_NONSECURITY_SWIFT_FOCUSED_OVERLAP_COUNT
+        ):
+            failures.append(
+                "G7 non-security Swift focused overlap differs"
+            )
+        if len(focused_tests | combined_tests) != (
+            G7_NONSECURITY_SWIFT_DISTINCT_TEST_COUNT
+        ):
+            failures.append(
+                "G7 non-security Swift distinct identity count differs"
+            )
+        for prefix, expected_count in (
+            G7_NONSECURITY_SWIFT_SAFE_TARGET_COUNTS.items()
+        ):
+            observed_count = sum(
+                identity.startswith(prefix) for identity in safe_tests
+            )
+            if observed_count != expected_count:
+                failures.append(
+                    "G7 non-security Swift safe target breakdown differs: "
+                    f"{prefix}"
+                )
+    return failures
+
+
+def g7_nonsecurity_swift_environment(
+    source_environment: dict[str, str] | None = None,
+) -> tuple[dict[str, str] | None, list[str]]:
+    source = os.environ if source_environment is None else source_environment
+    if type(source) is not dict and source_environment is not None:
+        return None, [
+            "G7 non-security Swift parent environment must be a mapping"
+        ]
+    forbidden_keys = tuple(
+        sorted(
+            key
+            for key in source
+            if (
+                key.upper().startswith("AETHERLINK_")
+                or key.upper().startswith("OLLAMA_")
+                or key.upper().startswith("LMSTUDIO_")
+                or key.upper().startswith("LM_STUDIO_")
+                or key.upper().endswith("_PROXY")
+                or key.upper()
+                in {"ALL_PROXY", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"}
+            )
+        )
+    )
+    if forbidden_keys:
+        return None, [
+            "G7 non-security Swift parent environment contains forbidden "
+            "live/provider/proxy keys: " + ", ".join(forbidden_keys)
+        ]
+    child: dict[str, str] = {}
+    for key in G7_NONSECURITY_SWIFT_ALLOWED_ENVIRONMENT_KEYS:
+        value = source.get(key)
+        if value is not None:
+            if type(value) is not str or "\x00" in value:
+                return None, [
+                    "G7 non-security Swift allowed environment value is "
+                    f"invalid: {key}"
+                ]
+            child[key] = value
+    child["LC_ALL"] = "C"
+    child["LANG"] = "C"
+    return child, []
 
 
 def swift_test_selection_self_test() -> list[str]:
@@ -4086,9 +4589,235 @@ def swift_test_selection_self_test() -> list[str]:
                 failures.append(
                     "Swift test list without final LF was not rejected"
                 )
+
+            excluded = (fixture_names[1],)
+            excluded_manifest = swift_test_selection_manifest_sha256(
+                fixture_names[:1]
+            )
+
+            def excluded_fixture_failures(
+                excluded_tests: tuple[str, ...],
+            ) -> list[str]:
+                fixture_path.write_text(valid_text, encoding="utf-8")
+                return swift_test_selection_failures(
+                    test_list_path=fixture_path,
+                    filter_pattern=fixture_filter,
+                    expected_count=1,
+                    expected_manifest_sha256=excluded_manifest,
+                    excluded_tests=excluded_tests,
+                )
+
+            valid_excluded_failures = excluded_fixture_failures(excluded)
+            if valid_excluded_failures:
+                failures.append(
+                    "valid Swift exact exclusion fixture was rejected: "
+                    + "; ".join(valid_excluded_failures)
+                )
+            missing_exclusion_failures = excluded_fixture_failures(
+                ("FixtureTests.FixtureSuite/testMissing",)
+            )
+            if not any(
+                "must all exist" in failure
+                for failure in missing_exclusion_failures
+            ):
+                failures.append(
+                    "missing Swift exact exclusion was not rejected"
+                )
+            outside_filter_failures = excluded_fixture_failures(
+                (fixture_names[2],)
+            )
+            if not any(
+                "must all match the include filter" in failure
+                for failure in outside_filter_failures
+            ):
+                failures.append(
+                    "out-of-filter Swift exact exclusion was not rejected"
+                )
+            duplicate_exclusion_failures = excluded_fixture_failures(
+                (fixture_names[1], fixture_names[1])
+            )
+            if not any(
+                "excluded tests must not contain duplicates" in failure
+                for failure in duplicate_exclusion_failures
+            ):
+                failures.append(
+                    "duplicate Swift exact exclusion was not rejected"
+                )
     except OSError as error:
         failures.append(f"Swift selection fixture failed: {error}")
     return failures
+
+
+def g7_nonsecurity_swift_contract_self_test() -> list[str]:
+    failures: list[str] = []
+    expected_skip_filter = (
+        "^(?:"
+        + "|".join(
+            re.escape(identity)
+            for identity in G7_NONSECURITY_SWIFT_LIVE_TESTS
+        )
+        + ")$"
+    )
+    if G7_NONSECURITY_SWIFT_SKIP_FILTER != expected_skip_filter:
+        failures.append("G7 non-security Swift exact skip filter differs")
+    if len(G7_NONSECURITY_SWIFT_LIVE_TESTS) != 11:
+        failures.append("G7 non-security Swift live identity census differs")
+    if swift_test_selection_manifest_sha256(
+        G7_NONSECURITY_SWIFT_LIVE_TESTS
+    ) != G7_NONSECURITY_SWIFT_LIVE_TEST_MANIFEST_SHA256:
+        failures.append("G7 non-security Swift live manifest differs")
+    if sum(G7_NONSECURITY_SWIFT_SAFE_TARGET_COUNTS.values()) != (
+        G7_NONSECURITY_SWIFT_SAFE_MODULE_TEST_COUNT
+    ):
+        failures.append("G7 non-security Swift safe target census differs")
+    if (
+        SWIFT_PRODUCT_TEST_COUNT
+        + G7_NONSECURITY_SWIFT_TEST_COUNT
+        - G7_NONSECURITY_SWIFT_FOCUSED_OVERLAP_COUNT
+        != G7_NONSECURITY_SWIFT_DISTINCT_TEST_COUNT
+    ):
+        failures.append("G7 non-security Swift distinct count arithmetic differs")
+    for identity in G7_NONSECURITY_SWIFT_LIVE_TESTS:
+        if re.fullmatch(G7_NONSECURITY_SWIFT_SKIP_FILTER, identity) is None:
+            failures.append(
+                "G7 non-security Swift skip filter omitted a live identity"
+            )
+            break
+        if re.search(G7_NONSECURITY_SWIFT_FILTER, identity) is None:
+            failures.append(
+                "G7 non-security Swift include filter omitted a live identity"
+            )
+            break
+    safe_fixture = (
+        "OllamaBackendTests.OllamaBackendTests/testInjectedCatalogResponse"
+    )
+    if re.fullmatch(G7_NONSECURITY_SWIFT_SKIP_FILTER, safe_fixture) is not None:
+        failures.append(
+            "G7 non-security Swift skip filter matched a safe identity"
+        )
+    expected_command = (
+        "/usr/bin/sandbox-exec",
+        "-p",
+        "(version 1)(allow default)(deny network*)",
+        "/usr/bin/swift",
+        "test",
+        "--disable-sandbox",
+        "--no-parallel",
+        "--filter",
+        G7_NONSECURITY_SWIFT_FILTER,
+        "--skip",
+        G7_NONSECURITY_SWIFT_SKIP_FILTER,
+    )
+    if G7_NONSECURITY_SWIFT_RUN_COMMAND != expected_command:
+        failures.append("G7 non-security Swift fixed command differs")
+
+    expected_allowed_keys = (
+        "DEVELOPER_DIR",
+        "HOME",
+        "PATH",
+        "SDKROOT",
+        "TMPDIR",
+        "TOOLCHAINS",
+    )
+    if G7_NONSECURITY_SWIFT_ALLOWED_ENVIRONMENT_KEYS != expected_allowed_keys:
+        failures.append(
+            "G7 non-security Swift allowed environment keys differ"
+        )
+    valid_parent = {
+        key: f"fixture-{key.lower()}"
+        for key in expected_allowed_keys
+    }
+    valid_parent.update(
+        {
+            "LANG": "fixture-parent-lang",
+            "LC_ALL": "fixture-parent-locale",
+            "UNRELATED": "not-forwarded",
+        }
+    )
+    child, environment_failures = g7_nonsecurity_swift_environment(
+        valid_parent
+    )
+    if environment_failures or child is None:
+        failures.append(
+            "valid G7 non-security Swift environment fixture was rejected"
+        )
+    elif child != {
+        **{
+            key: f"fixture-{key.lower()}"
+            for key in expected_allowed_keys
+        },
+        "LC_ALL": "C",
+        "LANG": "C",
+    }:
+        failures.append(
+            "G7 non-security Swift child environment is not exact"
+        )
+    for forbidden_key in (
+        "AETHERLINK_LIVE_TEST",
+        "aetherlink_live_test",
+        "OLLAMA_HOST",
+        "ollama_host",
+        "LMSTUDIO_BASE_URL",
+        "lmstudio_base_url",
+        "LM_STUDIO_BASE_URL",
+        "lm_studio_base_url",
+        "HTTP_PROXY",
+        "http_proxy",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+        "NO_PROXY",
+        "no_proxy",
+        "CUSTOM_PROXY",
+        "custom_proxy",
+    ):
+        _, forbidden_failures = g7_nonsecurity_swift_environment(
+            {**valid_parent, forbidden_key: "fixture"}
+        )
+        if not forbidden_failures:
+            failures.append(
+                "G7 non-security Swift forbidden environment key was not "
+                f"rejected: {forbidden_key}"
+            )
+    return failures
+
+
+def g7_nonsecurity_swift_network_sandbox_self_test() -> list[str]:
+    environment, environment_failures = g7_nonsecurity_swift_environment(
+        {
+            "HOME": str(ROOT),
+            "PATH": "/usr/bin:/bin",
+            "TMPDIR": tempfile.gettempdir(),
+        }
+    )
+    if environment_failures or environment is None:
+        return [
+            "G7 non-security Swift network probe environment was rejected: "
+            + "; ".join(environment_failures)
+        ]
+    try:
+        completed = subprocess.run(
+            G7_NONSECURITY_SWIFT_NETWORK_PROBE_COMMAND,
+            cwd=ROOT,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            check=False,
+            env=environment,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return [
+            "G7 non-security Swift IPv4/IPv6 network-deny probe failed: "
+            f"{error}"
+        ]
+    if completed.returncode != 0:
+        return [
+            "G7 non-security Swift IPv4/IPv6 network-deny probe exited "
+            f"with status {completed.returncode}"
+        ]
+    return []
 
 
 def android_testcase_manifest_sha256(
@@ -5075,10 +5804,12 @@ def swift_focused_test_list_snapshot(
     expected_manifest_sha256: str = (
         SWIFT_PRODUCT_TEST_MANIFEST_SHA256
     ),
+    excluded_tests: tuple[str, ...] = (),
 ) -> tuple[dict[str, object] | None, tuple[str, ...] | None, list[str]]:
     selected_tests, test_list_bytes, failures = swift_selected_test_names(
         test_list_path=test_list_path,
         filter_pattern=filter_pattern,
+        excluded_tests=excluded_tests,
     )
     if selected_tests is None or test_list_bytes is None:
         return None, None, failures
@@ -5095,16 +5826,18 @@ def swift_focused_test_list_snapshot(
         )
     if failures:
         return None, None, failures
-    return (
-        {
-            "bytes": len(test_list_bytes),
-            "sha256": hashlib.sha256(test_list_bytes).hexdigest(),
-            "testcaseManifestSha256": manifest_sha256,
-            "tests": len(selected_tests),
-        },
-        selected_tests,
-        [],
-    )
+    snapshot: dict[str, object] = {
+        "bytes": len(test_list_bytes),
+        "sha256": hashlib.sha256(test_list_bytes).hexdigest(),
+        "testcaseManifestSha256": manifest_sha256,
+        "tests": len(selected_tests),
+    }
+    if excluded_tests:
+        snapshot["excludedTestcaseManifestSha256"] = (
+            swift_test_selection_manifest_sha256(excluded_tests)
+        )
+        snapshot["excludedTests"] = len(excluded_tests)
+    return snapshot, selected_tests, []
 
 
 def swift_focused_test_run_marker_payload(
@@ -5115,6 +5848,7 @@ def swift_focused_test_run_marker_payload(
     expected_manifest_sha256: str = (
         SWIFT_PRODUCT_TEST_MANIFEST_SHA256
     ),
+    excluded_tests: tuple[str, ...] = (),
     exact_files: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_EXACT_FILES,
     source_roots: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_SOURCE_ROOTS,
     package_path: Path = SWIFT_FOCUSED_PACKAGE_PATH,
@@ -5135,6 +5869,7 @@ def swift_focused_test_run_marker_payload(
         filter_pattern=filter_pattern,
         expected_count=expected_count,
         expected_manifest_sha256=expected_manifest_sha256,
+        excluded_tests=excluded_tests,
     )
     failures = source_failures + list_failures
     if failures or source_snapshot is None or list_snapshot is None:
@@ -5159,6 +5894,7 @@ def swift_focused_test_run_marker_failures(
     expected_manifest_sha256: str = (
         SWIFT_PRODUCT_TEST_MANIFEST_SHA256
     ),
+    excluded_tests: tuple[str, ...] = (),
     exact_files: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_EXACT_FILES,
     source_roots: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_SOURCE_ROOTS,
     package_path: Path = SWIFT_FOCUSED_PACKAGE_PATH,
@@ -5173,6 +5909,7 @@ def swift_focused_test_run_marker_failures(
         filter_pattern=filter_pattern,
         expected_count=expected_count,
         expected_manifest_sha256=expected_manifest_sha256,
+        excluded_tests=excluded_tests,
         exact_files=exact_files,
         source_roots=source_roots,
         package_path=package_path,
@@ -5234,6 +5971,7 @@ def write_swift_focused_test_run_marker(
     expected_manifest_sha256: str = (
         SWIFT_PRODUCT_TEST_MANIFEST_SHA256
     ),
+    excluded_tests: tuple[str, ...] = (),
     exact_files: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_EXACT_FILES,
     source_roots: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_SOURCE_ROOTS,
     package_path: Path = SWIFT_FOCUSED_PACKAGE_PATH,
@@ -5247,6 +5985,7 @@ def write_swift_focused_test_run_marker(
         filter_pattern=filter_pattern,
         expected_count=expected_count,
         expected_manifest_sha256=expected_manifest_sha256,
+        excluded_tests=excluded_tests,
         exact_files=exact_files,
         source_roots=source_roots,
         package_path=package_path,
@@ -5270,6 +6009,7 @@ def write_swift_focused_test_run_marker(
                 filter_pattern=filter_pattern,
                 expected_count=expected_count,
                 expected_manifest_sha256=expected_manifest_sha256,
+                excluded_tests=excluded_tests,
                 exact_files=exact_files,
                 source_roots=source_roots,
                 package_path=package_path,
@@ -5671,6 +6411,10 @@ def run_and_publish_swift_focused_log(
     failure_context: Callable[[Path], str | None] | None = None,
     max_bytes: int = SWIFT_FOCUSED_TEST_MAX_LOG_BYTES,
     timeout_seconds: float = SWIFT_FOCUSED_TEST_RUN_TIMEOUT_SECONDS,
+    termination_grace_seconds: float = (
+        SWIFT_FOCUSED_TEST_TERMINATION_GRACE_SECONDS
+    ),
+    environment: dict[str, str] | None = None,
 ) -> tuple[int, list[str]]:
     if not command:
         return 1, ["focused Swift runner command must not be empty"]
@@ -5678,6 +6422,27 @@ def run_and_publish_swift_focused_log(
         return 1, ["focused Swift runner log bound must be positive"]
     if timeout_seconds <= 0:
         return 1, ["focused Swift runner timeout must be positive"]
+    if (
+        type(termination_grace_seconds) not in (int, float)
+        or not 0 < termination_grace_seconds < float("inf")
+    ):
+        return 1, [
+            "focused Swift runner termination grace must be a positive "
+            "finite number"
+        ]
+    if environment is not None and (
+        type(environment) is not dict
+        or any(
+            type(key) is not str
+            or type(value) is not str
+            or not key
+            or "\x00" in key
+            or "=" in key
+            or "\x00" in value
+            for key, value in environment.items()
+        )
+    ):
+        return 1, ["focused Swift runner environment must be canonical text"]
 
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -5696,41 +6461,124 @@ def run_and_publish_swift_focused_log(
     backup_path: Path | None = None
     previous_canonical_state: tuple[int, int, int, int] | None = None
     published = False
+    interrupted_signal: int | None = None
 
-    def terminate_process_group() -> None:
+    class SwiftRunnerSignal(BaseException):
+        def __init__(self, signum: int) -> None:
+            super().__init__(signum)
+            self.signum = signum
+
+    handled_signals = (signal.SIGTERM, signal.SIGINT)
+    previous_signal_handlers: dict[int, object] = {}
+    previous_signal_mask: set[signal.Signals] | None = None
+    received_signal: int | None = None
+
+    def receive_swift_runner_signal(signum: int, _frame: object) -> None:
+        nonlocal received_signal
+        if received_signal is not None:
+            return
+        received_signal = signum
+        raise SwiftRunnerSignal(signum)
+
+    def restore_signal_handlers() -> None:
+        for handled_signal, previous_handler in reversed(
+            tuple(previous_signal_handlers.items())
+        ):
+            try:
+                signal.signal(handled_signal, previous_handler)
+            except (OSError, ValueError) as error:
+                failures.append(
+                    "focused Swift runner signal-handler restoration failed "
+                    f"for {handled_signal}: {error}"
+                )
+        previous_signal_handlers.clear()
+
+    def restore_parent_signal_mask() -> None:
+        nonlocal previous_signal_mask
+        if previous_signal_mask is None:
+            return
+        mask = previous_signal_mask
+        try:
+            signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+        except (AttributeError, OSError, ValueError) as error:
+            failures.append(
+                "focused Swift runner signal-mask restoration failed: "
+                f"{error}"
+            )
+        else:
+            previous_signal_mask = None
+
+    def process_group_exists() -> bool:
+        if process is None:
+            return False
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    def wait_for_process_group_exit(timeout: float) -> bool:
+        if process is None:
+            return True
+        deadline = time.monotonic() + timeout
+        while True:
+            leader_exited = process.poll() is not None
+            group_exited = not process_group_exists()
+            if leader_exited and group_exited:
+                return True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            if not leader_exited:
+                try:
+                    process.wait(timeout=min(0.05, remaining))
+                except subprocess.TimeoutExpired:
+                    pass
+            else:
+                time.sleep(min(0.01, remaining))
+
+    def terminate_process_group(
+        initial_signal: int = signal.SIGTERM,
+    ) -> None:
         if process is None:
             return
+        termination_errors: list[str] = []
         try:
-            os.killpg(process.pid, signal.SIGTERM)
+            os.killpg(process.pid, initial_signal)
         except ProcessLookupError:
             pass
-        except OSError:
-            if process.poll() is None:
-                process.terminate()
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            pass
+        except OSError as error:
+            termination_errors.append(
+                f"signal {initial_signal} failed: {error}"
+            )
+        if wait_for_process_group_exit(termination_grace_seconds):
+            return
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
-        except OSError:
-            if process.poll() is None:
-                process.kill()
-        if process.poll() is None:
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                failures.append(
-                    "focused Swift runner could not reap its process group"
-                )
+        except OSError as error:
+            termination_errors.append(f"SIGKILL failed: {error}")
+        if wait_for_process_group_exit(termination_grace_seconds):
+            return
+        detail = "; ".join(termination_errors)
+        if detail:
+            detail = f": {detail}"
+        failures.append(
+            "focused Swift runner could not terminate and reap its complete "
+            f"process group{detail}"
+        )
 
     def restore_previous_canonical() -> None:
         nonlocal published
         try:
             if previous_canonical_state is None:
-                log_path.unlink()
+                try:
+                    log_path.unlink()
+                except FileNotFoundError:
+                    pass
                 try:
                     log_path.lstat()
                 except FileNotFoundError:
@@ -5766,14 +6614,68 @@ def run_and_publish_swift_focused_log(
         published = False
 
     try:
+        for handled_signal in handled_signals:
+            previous_signal_handlers[handled_signal] = signal.getsignal(
+                handled_signal
+            )
+            signal.signal(handled_signal, receive_swift_runner_signal)
+        previous_signal_mask = signal.pthread_sigmask(
+            signal.SIG_BLOCK,
+            handled_signals,
+        )
+    except SwiftRunnerSignal as interruption:
+        restore_signal_handlers()
+        try:
+            os.close(descriptor)
+            temporary_path.unlink()
+        except OSError:
+            pass
+        os.kill(os.getpid(), interruption.signum)
+        raise SystemExit(128 + interruption.signum) from None
+    except (AttributeError, OSError, ValueError) as error:
+        failures.append(
+            "focused Swift runner could not install cancellation handlers: "
+            f"{error}"
+        )
+        restore_signal_handlers()
+        restore_parent_signal_mask()
+        try:
+            os.close(descriptor)
+        except OSError as close_error:
+            failures.append(
+                "focused Swift runner temporary log close failed: "
+                f"{close_error}"
+            )
+        try:
+            temporary_path.unlink()
+        except OSError as unlink_error:
+            failures.append(
+                "focused Swift runner temporary log cleanup failed: "
+                f"{unlink_error}"
+            )
+        return 1, failures
+
+    try:
         with os.fdopen(descriptor, "wb") as output:
+            child_signal_mask = previous_signal_mask
+
+            def restore_child_signal_mask() -> None:
+                if child_signal_mask is not None:
+                    signal.pthread_sigmask(
+                        signal.SIG_SETMASK,
+                        child_signal_mask,
+                    )
+
             process = subprocess.Popen(
                 command,
                 cwd=cwd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
+                env=environment,
+                preexec_fn=restore_child_signal_mask,
             )
+            restore_parent_signal_mask()
             if process.stdout is None:
                 raise OSError("focused Swift runner stdout pipe was not created")
             total = 0
@@ -5831,6 +6733,12 @@ def run_and_publish_swift_focused_log(
                         "focused Swift test command timed out after "
                         f"{timeout_seconds:g} seconds"
                     )
+            if not failures and not wait_for_process_group_exit(1):
+                terminate_process_group()
+                failures.append(
+                    "focused Swift test command left a descendant process "
+                    "group after its leader exited"
+                )
             process.stdout.close()
             if process.returncode is not None:
                 status = process.returncode
@@ -5906,8 +6814,8 @@ def run_and_publish_swift_focused_log(
                             "being retained for publication"
                         )
         if not failures:
-            os.replace(temporary_path, log_path)
             published = True
+            os.replace(temporary_path, log_path)
             published_snapshot, console_failures = (
                 swift_focused_console_snapshot(
                     log_path=log_path,
@@ -5937,12 +6845,28 @@ def run_and_publish_swift_focused_log(
                     f"{error}"
                 )
                 restore_previous_canonical()
+    except SwiftRunnerSignal as interruption:
+        terminate_process_group(interruption.signum)
+        if published:
+            restore_previous_canonical()
+        interrupted_signal = interruption.signum
     except OSError as error:
         failures.append(f"focused Swift runner failed: {error}")
         terminate_process_group()
         if published:
             restore_previous_canonical()
+    except BaseException:
+        terminate_process_group()
+        if published:
+            restore_previous_canonical()
+        raise
     finally:
+        if (
+            process is not None
+            and process.stdout is not None
+            and not process.stdout.closed
+        ):
+            process.stdout.close()
         if failures and failure_context is not None and temporary_path.exists():
             context = failure_context(temporary_path)
             if context is not None and context not in failures:
@@ -5956,6 +6880,11 @@ def run_and_publish_swift_focused_log(
             failures.append(
                 f"focused Swift runner temporary log cleanup failed: {error}"
             )
+        restore_signal_handlers()
+        restore_parent_signal_mask()
+    if interrupted_signal is not None:
+        os.kill(os.getpid(), interrupted_signal)
+        raise SystemExit(128 + interrupted_signal)
     if failures:
         if status != 0 and status > 0:
             return status, failures
@@ -5972,9 +6901,11 @@ def run_swift_test_contract(
     marker_path: Path,
     log_path: Path,
     test_list_path: Path = SWIFT_TEST_LIST_PATH,
+    excluded_tests: tuple[str, ...] = (),
     timeout_seconds: float = SWIFT_FOCUSED_TEST_RUN_TIMEOUT_SECONDS,
     supplemental_log_failures: Callable[[Path], list[str]] | None = None,
     failure_context: Callable[[Path], str | None] | None = None,
+    environment: dict[str, str] | None = None,
 ) -> tuple[int, list[str]]:
     marker_failures = swift_focused_test_run_marker_failures(
         marker_path=marker_path,
@@ -5983,6 +6914,7 @@ def run_swift_test_contract(
         filter_pattern=filter_pattern,
         expected_count=expected_count,
         expected_manifest_sha256=expected_manifest_sha256,
+        excluded_tests=excluded_tests,
         require_log=False,
     )
     if marker_failures:
@@ -5992,6 +6924,7 @@ def run_swift_test_contract(
         filter_pattern=filter_pattern,
         expected_count=expected_count,
         expected_manifest_sha256=expected_manifest_sha256,
+        excluded_tests=excluded_tests,
     )
     if expected_tests is None:
         return 1, selection_failures
@@ -6004,6 +6937,7 @@ def run_swift_test_contract(
             filter_pattern=filter_pattern,
             expected_count=expected_count,
             expected_manifest_sha256=expected_manifest_sha256,
+            excluded_tests=excluded_tests,
         )
         if supplemental_log_failures is not None:
             failures.extend(supplemental_log_failures(candidate_log_path))
@@ -6017,6 +6951,7 @@ def run_swift_test_contract(
         log_context_failures=validate_log_context,
         failure_context=failure_context,
         timeout_seconds=timeout_seconds,
+        environment=environment,
     )
 
 
@@ -6037,6 +6972,49 @@ def run_swift_focused_tests(
         marker_path=marker_path,
         log_path=log_path,
         test_list_path=test_list_path,
+    )
+
+
+def run_g7_nonsecurity_swift_tests() -> tuple[int, list[str]]:
+    failures = g7_nonsecurity_swift_selection_failures()
+    environment, environment_failures = g7_nonsecurity_swift_environment()
+    failures.extend(environment_failures)
+    if failures or environment is None:
+        return 1, failures
+    for executable in (
+        Path(G7_NONSECURITY_SWIFT_RUN_COMMAND[0]),
+        Path(G7_NONSECURITY_SWIFT_RUN_COMMAND[3]),
+    ):
+        try:
+            executable_status = executable.lstat()
+        except OSError as error:
+            failures.append(
+                "G7 non-security Swift executable cannot be inspected: "
+                f"{executable}: {error}"
+            )
+            continue
+        if (
+            stat.S_ISLNK(executable_status.st_mode)
+            or not stat.S_ISREG(executable_status.st_mode)
+            or not os.access(executable, os.X_OK)
+        ):
+            failures.append(
+                "G7 non-security Swift executable must be a physical "
+                f"executable file: {executable}"
+            )
+    if failures:
+        return 1, failures
+    return run_swift_test_contract(
+        command=G7_NONSECURITY_SWIFT_RUN_COMMAND,
+        filter_pattern=G7_NONSECURITY_SWIFT_FILTER,
+        expected_count=G7_NONSECURITY_SWIFT_TEST_COUNT,
+        expected_manifest_sha256=(
+            G7_NONSECURITY_SWIFT_TEST_MANIFEST_SHA256
+        ),
+        marker_path=G7_NONSECURITY_SWIFT_RUN_MARKER_PATH,
+        log_path=G7_NONSECURITY_SWIFT_LOG_PATH,
+        excluded_tests=G7_NONSECURITY_SWIFT_LIVE_TESTS,
+        environment=environment,
     )
 
 
@@ -6084,6 +7062,7 @@ def swift_focused_test_binding_payload(
     expected_manifest_sha256: str = (
         SWIFT_PRODUCT_TEST_MANIFEST_SHA256
     ),
+    excluded_tests: tuple[str, ...] = (),
     exact_files: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_EXACT_FILES,
     source_roots: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_SOURCE_ROOTS,
     package_path: Path = SWIFT_FOCUSED_PACKAGE_PATH,
@@ -6109,6 +7088,7 @@ def swift_focused_test_binding_payload(
             filter_pattern=filter_pattern,
             expected_count=expected_count,
             expected_manifest_sha256=expected_manifest_sha256,
+            excluded_tests=excluded_tests,
         )
     )
     if expected_tests is None:
@@ -6187,6 +7167,7 @@ def swift_focused_test_binding_failures(
     expected_manifest_sha256: str = (
         SWIFT_PRODUCT_TEST_MANIFEST_SHA256
     ),
+    excluded_tests: tuple[str, ...] = (),
     exact_files: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_EXACT_FILES,
     source_roots: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_SOURCE_ROOTS,
     package_path: Path = SWIFT_FOCUSED_PACKAGE_PATH,
@@ -6206,6 +7187,7 @@ def swift_focused_test_binding_failures(
         filter_pattern=filter_pattern,
         expected_count=expected_count,
         expected_manifest_sha256=expected_manifest_sha256,
+        excluded_tests=excluded_tests,
         exact_files=exact_files,
         source_roots=source_roots,
         package_path=package_path,
@@ -6219,6 +7201,7 @@ def swift_focused_test_binding_failures(
         filter_pattern=filter_pattern,
         expected_count=expected_count,
         expected_manifest_sha256=expected_manifest_sha256,
+        excluded_tests=excluded_tests,
         exact_files=exact_files,
         source_roots=source_roots,
         package_path=package_path,
@@ -6270,6 +7253,7 @@ def write_swift_focused_test_binding(
     expected_manifest_sha256: str = (
         SWIFT_PRODUCT_TEST_MANIFEST_SHA256
     ),
+    excluded_tests: tuple[str, ...] = (),
     exact_files: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_EXACT_FILES,
     source_roots: tuple[Path, ...] = SWIFT_FOCUSED_RESULT_SOURCE_ROOTS,
     package_path: Path = SWIFT_FOCUSED_PACKAGE_PATH,
@@ -6289,6 +7273,7 @@ def write_swift_focused_test_binding(
         filter_pattern=filter_pattern,
         expected_count=expected_count,
         expected_manifest_sha256=expected_manifest_sha256,
+        excluded_tests=excluded_tests,
         exact_files=exact_files,
         source_roots=source_roots,
         package_path=package_path,
@@ -6304,6 +7289,7 @@ def write_swift_focused_test_binding(
         filter_pattern=filter_pattern,
         expected_count=expected_count,
         expected_manifest_sha256=expected_manifest_sha256,
+        excluded_tests=excluded_tests,
         exact_files=exact_files,
         source_roots=source_roots,
         package_path=package_path,
@@ -6332,6 +7318,7 @@ def write_swift_focused_test_binding(
                 filter_pattern=filter_pattern,
                 expected_count=expected_count,
                 expected_manifest_sha256=expected_manifest_sha256,
+                excluded_tests=excluded_tests,
                 exact_files=exact_files,
                 source_roots=source_roots,
                 package_path=package_path,
@@ -7004,10 +7991,18 @@ let package = Package(
 
 
 def swift_runner_timeout_self_test() -> list[str]:
+    descendant_pid: int | None = None
+    lingering_pid: int | None = None
+    original_handlers = tuple(
+        signal.getsignal(signum)
+        for signum in (signal.SIGTERM, signal.SIGINT)
+    )
+    original_mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
     try:
         with tempfile.TemporaryDirectory(
             prefix="aetherlink-swift-runner-timeout-",
         ) as temporary:
+            root = Path(temporary)
             started_at = time.monotonic()
             status, observed_failures = run_and_publish_swift_focused_log(
                 command=(
@@ -7017,12 +8012,87 @@ def swift_runner_timeout_self_test() -> list[str]:
                     "import time; time.sleep(60)",
                 ),
                 cwd=ROOT,
-                log_path=Path(temporary) / "timeout.log",
+                log_path=root / "timeout.log",
                 expected_tests=(),
                 log_context_failures=lambda _: [],
                 timeout_seconds=0.1,
+                termination_grace_seconds=0.05,
             )
             elapsed = time.monotonic() - started_at
+
+            descendant_pid_path = root / "descendant.pid"
+            descendant_script = (
+                "import os, signal, subprocess, sys, time\n"
+                "child = subprocess.Popen((sys.executable, '-B', '-c', "
+                "'import signal,time; "
+                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "time.sleep(60)'))\n"
+                "with open(sys.argv[1], 'w', encoding='ascii') as output:\n"
+                "    output.write(str(child.pid))\n"
+                "    output.flush()\n"
+                "    os.fsync(output.fileno())\n"
+                "time.sleep(60)\n"
+            )
+            descendant_started_at = time.monotonic()
+            descendant_status, descendant_failures = (
+                run_and_publish_swift_focused_log(
+                    command=(
+                        sys.executable,
+                        "-B",
+                        "-c",
+                        descendant_script,
+                        str(descendant_pid_path),
+                    ),
+                    cwd=ROOT,
+                    log_path=root / "descendant-timeout.log",
+                    expected_tests=(),
+                    log_context_failures=lambda _: [],
+                    timeout_seconds=0.25,
+                    termination_grace_seconds=0.05,
+                )
+            )
+            descendant_elapsed = time.monotonic() - descendant_started_at
+            if descendant_pid_path.exists():
+                descendant_pid = int(
+                    descendant_pid_path.read_text(encoding="ascii")
+                )
+
+            lingering_pid_path = root / "lingering.pid"
+            lingering_script = (
+                "import os, signal, subprocess, sys\n"
+                "child = subprocess.Popen((sys.executable, '-B', '-c', "
+                "'import signal,time; "
+                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "time.sleep(60)'), stdin=subprocess.DEVNULL, "
+                "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+                "with open(sys.argv[1], 'w', encoding='ascii') as output:\n"
+                "    output.write(str(child.pid))\n"
+                "    output.flush()\n"
+                "    os.fsync(output.fileno())\n"
+            )
+            lingering_started_at = time.monotonic()
+            lingering_status, lingering_failures = (
+                run_and_publish_swift_focused_log(
+                    command=(
+                        sys.executable,
+                        "-B",
+                        "-c",
+                        lingering_script,
+                        str(lingering_pid_path),
+                    ),
+                    cwd=ROOT,
+                    log_path=root / "lingering-descendant.log",
+                    expected_tests=(),
+                    log_context_failures=lambda _: [],
+                    timeout_seconds=5,
+                    termination_grace_seconds=0.05,
+                )
+            )
+            lingering_elapsed = time.monotonic() - lingering_started_at
+            if lingering_pid_path.exists():
+                lingering_pid = int(
+                    lingering_pid_path.read_text(encoding="ascii")
+                )
     except OSError as error:
         return [f"focused Swift timeout self-test failed: {error}"]
 
@@ -7035,6 +8105,575 @@ def swift_runner_timeout_self_test() -> list[str]:
         failures.append(
             "focused Swift timeout did not terminate the process promptly"
         )
+    if descendant_status == 0:
+        failures.append(
+            "focused Swift descendant timeout self-test unexpectedly passed"
+        )
+    if not any("timed out after" in failure for failure in descendant_failures):
+        failures.append("focused Swift descendant timeout was not reported")
+    if descendant_elapsed >= 7:
+        failures.append(
+            "focused Swift descendant timeout did not terminate promptly"
+        )
+    if descendant_pid is None:
+        failures.append(
+            "focused Swift descendant timeout did not publish its PID fixture"
+        )
+    else:
+        descendant_alive = True
+        deadline = time.monotonic() + 1
+        while descendant_alive and time.monotonic() < deadline:
+            try:
+                os.kill(descendant_pid, 0)
+            except ProcessLookupError:
+                descendant_alive = False
+            else:
+                time.sleep(0.01)
+        if descendant_alive:
+            try:
+                os.kill(descendant_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            failures.append(
+                "focused Swift timeout retained a descendant process"
+            )
+    if lingering_status == 0:
+        failures.append(
+            "focused Swift lingering-descendant self-test unexpectedly passed"
+        )
+    if not any(
+        "left a descendant process group" in failure
+        for failure in lingering_failures
+    ):
+        failures.append(
+            "focused Swift lingering descendant was not reported"
+        )
+    if lingering_elapsed >= 4:
+        failures.append(
+            "focused Swift lingering descendant was not terminated promptly"
+        )
+    if lingering_pid is None:
+        failures.append(
+            "focused Swift lingering-descendant fixture did not publish its PID"
+        )
+    else:
+        lingering_alive = True
+        deadline = time.monotonic() + 1
+        while lingering_alive and time.monotonic() < deadline:
+            try:
+                os.kill(lingering_pid, 0)
+            except ProcessLookupError:
+                lingering_alive = False
+            else:
+                time.sleep(0.01)
+        if lingering_alive:
+            try:
+                os.kill(lingering_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            failures.append(
+                "focused Swift lingering-descendant cleanup retained the child"
+            )
+    current_handlers = tuple(
+        signal.getsignal(signum)
+        for signum in (signal.SIGTERM, signal.SIGINT)
+    )
+    current_mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+    if current_handlers != original_handlers:
+        failures.append(
+            "focused Swift timeout paths did not restore signal handlers"
+        )
+    if current_mask != original_mask:
+        failures.append(
+            "focused Swift timeout paths did not restore the signal mask"
+        )
+    return failures
+
+
+def swift_runner_signal_self_test() -> list[str]:
+    failures: list[str] = []
+
+    def read_pid(path: Path) -> int | None:
+        try:
+            value = int(path.read_text(encoding="ascii"))
+        except (OSError, UnicodeError, ValueError):
+            return None
+        return value if value > 1 else None
+
+    def process_exists(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    def kill_fixture_group(group_id: int | None) -> None:
+        if group_id is None or group_id == os.getpgrp():
+            return
+        try:
+            os.killpg(group_id, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    inner_script = r"""
+import os
+import signal
+import subprocess
+import sys
+import time
+
+descendant_code = r'''
+import os
+import signal
+import sys
+import time
+
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+signal.signal(signal.SIGINT, signal.SIG_IGN)
+with open(sys.argv[1], "xb") as output:
+    output.write(b"ready\n")
+    output.flush()
+    os.fsync(output.fileno())
+time.sleep(0.5)
+with open(sys.argv[2], "xb") as output:
+    output.write(b"escaped\n")
+    output.flush()
+    os.fsync(output.fileno())
+time.sleep(60)
+'''
+
+child = subprocess.Popen(
+    (sys.executable, "-B", "-c", descendant_code, sys.argv[3], sys.argv[4])
+)
+for path, value in ((sys.argv[1], os.getpid()), (sys.argv[2], child.pid)):
+    with open(path, "x", encoding="ascii") as output:
+        output.write(str(value))
+        output.flush()
+        os.fsync(output.fileno())
+time.sleep(60)
+"""
+    driver_script = r"""
+import importlib.util
+import os
+import pathlib
+import signal
+import sys
+
+module_path = pathlib.Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location(
+    "aetherlink_check_product_ci_signal_fixture",
+    module_path,
+)
+if spec is None or spec.loader is None:
+    raise SystemExit(91)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+race_signal = int(sys.argv[9])
+if race_signal:
+    original_popen = module.subprocess.Popen
+
+    def spawn_then_signal(*args, **kwargs):
+        spawned = original_popen(*args, **kwargs)
+        with open(sys.argv[10], "x", encoding="ascii") as output:
+            output.write(str(spawned.pid))
+            output.flush()
+            os.fsync(output.fileno())
+        os.kill(os.getpid(), race_signal)
+        return spawned
+
+    module.subprocess.Popen = spawn_then_signal
+status, _ = module.run_and_publish_swift_focused_log(
+    command=(
+        sys.executable,
+        "-B",
+        sys.argv[2],
+        sys.argv[3],
+        sys.argv[4],
+        sys.argv[5],
+        sys.argv[6],
+    ),
+    cwd=pathlib.Path(sys.argv[7]),
+    log_path=pathlib.Path(sys.argv[8]),
+    expected_tests=(),
+    log_context_failures=lambda _: [],
+    timeout_seconds=30,
+    termination_grace_seconds=0.05,
+)
+raise SystemExit(status)
+"""
+
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix="aetherlink-swift-runner-signal-",
+        ) as temporary:
+            root = Path(temporary)
+            inner_path = root / "inner.py"
+            driver_path = root / "driver.py"
+            inner_path.write_text(inner_script, encoding="utf-8")
+            driver_path.write_text(driver_script, encoding="utf-8")
+
+            for label, signum in (
+                ("SIGTERM", signal.SIGTERM),
+                ("SIGINT", signal.SIGINT),
+            ):
+                case_root = root / label.lower()
+                case_root.mkdir()
+                leader_pid_path = case_root / "leader.pid"
+                descendant_pid_path = case_root / "descendant.pid"
+                ready_path = case_root / "ready"
+                escaped_path = case_root / "escaped"
+                log_path = case_root / "result.log"
+                sentinel_bytes = f"prior canonical {label} log\n".encode(
+                    "ascii"
+                )
+                log_path.write_bytes(sentinel_bytes)
+                driver: subprocess.Popen[bytes] | None = None
+                leader_pid: int | None = None
+                descendant_pid: int | None = None
+                try:
+                    driver = subprocess.Popen(
+                        (
+                            sys.executable,
+                            "-B",
+                            str(driver_path),
+                            str(Path(__file__).resolve()),
+                            str(inner_path),
+                            str(leader_pid_path),
+                            str(descendant_pid_path),
+                            str(ready_path),
+                            str(escaped_path),
+                            str(case_root),
+                            str(log_path),
+                            "0",
+                            str(case_root / "spawned.pid"),
+                        ),
+                        cwd=ROOT,
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True,
+                    )
+                    ready_deadline = time.monotonic() + 5
+                    while (
+                        not ready_path.exists()
+                        and driver.poll() is None
+                        and time.monotonic() < ready_deadline
+                    ):
+                        time.sleep(0.01)
+                    leader_pid = read_pid(leader_pid_path)
+                    descendant_pid = read_pid(descendant_pid_path)
+                    if not ready_path.exists():
+                        failures.append(
+                            f"focused Swift {label} fixture did not become ready"
+                        )
+                        continue
+                    if leader_pid is None or descendant_pid is None:
+                        failures.append(
+                            f"focused Swift {label} fixture did not publish PIDs"
+                        )
+                        continue
+
+                    os.killpg(driver.pid, signum)
+                    try:
+                        driver.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        failures.append(
+                            f"focused Swift {label} cancellation did not exit"
+                        )
+                    else:
+                        expected_status = -int(signum)
+                        if driver.returncode != expected_status:
+                            failures.append(
+                                f"focused Swift {label} cancellation exited "
+                                f"with status {driver.returncode}, expected "
+                                f"{expected_status}"
+                            )
+
+                    observation_deadline = time.monotonic() + 0.7
+                    while time.monotonic() < observation_deadline:
+                        if escaped_path.exists():
+                            break
+                        time.sleep(0.01)
+                    if escaped_path.exists():
+                        failures.append(
+                            f"focused Swift {label} cancellation retained a "
+                            "sentinel-writing descendant"
+                        )
+                    if process_exists(descendant_pid):
+                        failures.append(
+                            f"focused Swift {label} cancellation retained a "
+                            "descendant process"
+                        )
+                    if log_path.read_bytes() != sentinel_bytes:
+                        failures.append(
+                            f"focused Swift {label} cancellation replaced the "
+                            "canonical log"
+                        )
+                    if tuple(case_root.glob(f".{log_path.name}.tmp-*")):
+                        failures.append(
+                            f"focused Swift {label} cancellation retained a "
+                            "temporary log"
+                        )
+                    if tuple(case_root.glob(f".{log_path.name}.previous-*")):
+                        failures.append(
+                            f"focused Swift {label} cancellation retained a "
+                            "canonical backup"
+                        )
+                finally:
+                    if driver is not None and driver.poll() is None:
+                        kill_fixture_group(driver.pid)
+                        try:
+                            driver.wait(timeout=1)
+                        except subprocess.TimeoutExpired:
+                            pass
+                    kill_fixture_group(leader_pid)
+                    if descendant_pid is not None and process_exists(
+                        descendant_pid
+                    ):
+                        try:
+                            os.kill(descendant_pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+
+            race_root = root / "popen-race"
+            race_root.mkdir()
+            race_leader_pid_path = race_root / "leader.pid"
+            race_descendant_pid_path = race_root / "descendant.pid"
+            race_ready_path = race_root / "ready"
+            race_escaped_path = race_root / "escaped"
+            race_spawned_pid_path = race_root / "spawned.pid"
+            race_log_path = race_root / "result.log"
+            race_log_bytes = b"prior canonical Popen race log\n"
+            race_log_path.write_bytes(race_log_bytes)
+            race_driver: subprocess.Popen[bytes] | None = None
+            race_spawned_pid: int | None = None
+            try:
+                race_driver = subprocess.Popen(
+                    (
+                        sys.executable,
+                        "-B",
+                        str(driver_path),
+                        str(Path(__file__).resolve()),
+                        str(inner_path),
+                        str(race_leader_pid_path),
+                        str(race_descendant_pid_path),
+                        str(race_ready_path),
+                        str(race_escaped_path),
+                        str(race_root),
+                        str(race_log_path),
+                        str(int(signal.SIGTERM)),
+                        str(race_spawned_pid_path),
+                    ),
+                    cwd=ROOT,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+                try:
+                    race_driver.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    failures.append(
+                        "focused Swift Popen-race cancellation did not exit"
+                    )
+                else:
+                    if race_driver.returncode != -int(signal.SIGTERM):
+                        failures.append(
+                            "focused Swift Popen-race cancellation exited "
+                            f"with status {race_driver.returncode}, expected "
+                            f"{-int(signal.SIGTERM)}"
+                        )
+                race_spawned_pid = read_pid(race_spawned_pid_path)
+                if race_spawned_pid is None:
+                    failures.append(
+                        "focused Swift Popen-race fixture did not publish its PID"
+                    )
+                else:
+                    try:
+                        os.killpg(race_spawned_pid, 0)
+                    except ProcessLookupError:
+                        pass
+                    else:
+                        failures.append(
+                            "focused Swift Popen-race cancellation retained its "
+                            "nested process group"
+                        )
+                time.sleep(0.6)
+                if race_escaped_path.exists():
+                    failures.append(
+                        "focused Swift Popen-race cancellation retained a "
+                        "sentinel-writing descendant"
+                    )
+                if race_log_path.read_bytes() != race_log_bytes:
+                    failures.append(
+                        "focused Swift Popen-race cancellation replaced the "
+                        "canonical log"
+                    )
+                if tuple(race_root.glob(f".{race_log_path.name}.tmp-*")):
+                    failures.append(
+                        "focused Swift Popen-race cancellation retained a "
+                        "temporary log"
+                    )
+            finally:
+                if race_driver is not None and race_driver.poll() is None:
+                    kill_fixture_group(race_driver.pid)
+                    try:
+                        race_driver.wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        pass
+                kill_fixture_group(race_spawned_pid)
+                kill_fixture_group(read_pid(race_leader_pid_path))
+                race_descendant_pid = read_pid(race_descendant_pid_path)
+                if race_descendant_pid is not None and process_exists(
+                    race_descendant_pid
+                ):
+                    try:
+                        os.kill(race_descendant_pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+
+            keyboard_root = root / "keyboard-interrupt"
+            keyboard_root.mkdir()
+            keyboard_leader_pid_path = keyboard_root / "leader.pid"
+            keyboard_descendant_pid_path = keyboard_root / "descendant.pid"
+            keyboard_ready_path = keyboard_root / "ready"
+            keyboard_escaped_path = keyboard_root / "escaped"
+            keyboard_log_path = keyboard_root / "result.log"
+            keyboard_log_bytes = b"prior canonical KeyboardInterrupt log\n"
+            keyboard_log_path.write_bytes(keyboard_log_bytes)
+            original_selector_factory = selectors.DefaultSelector
+            original_handlers = tuple(
+                signal.getsignal(signum)
+                for signum in (signal.SIGTERM, signal.SIGINT)
+            )
+            original_mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+            selector_ready = [False]
+
+            class InterruptingSelector:
+                def __init__(self) -> None:
+                    self._inner = original_selector_factory()
+
+                def register(self, *args, **kwargs):
+                    return self._inner.register(*args, **kwargs)
+
+                def select(self, timeout=None):
+                    deadline = time.monotonic() + min(
+                        5.0,
+                        float(timeout) if timeout is not None else 5.0,
+                    )
+                    while time.monotonic() < deadline:
+                        if keyboard_ready_path.exists():
+                            selector_ready[0] = True
+                            break
+                        time.sleep(0.01)
+                    raise KeyboardInterrupt
+
+                def close(self) -> None:
+                    self._inner.close()
+
+            keyboard_interrupted = False
+            keyboard_leader_pid: int | None = None
+            keyboard_descendant_pid: int | None = None
+            selectors.DefaultSelector = InterruptingSelector
+            try:
+                try:
+                    run_and_publish_swift_focused_log(
+                        command=(
+                            sys.executable,
+                            "-B",
+                            str(inner_path),
+                            str(keyboard_leader_pid_path),
+                            str(keyboard_descendant_pid_path),
+                            str(keyboard_ready_path),
+                            str(keyboard_escaped_path),
+                        ),
+                        cwd=keyboard_root,
+                        log_path=keyboard_log_path,
+                        expected_tests=(),
+                        log_context_failures=lambda _: [],
+                        timeout_seconds=30,
+                        termination_grace_seconds=0.05,
+                    )
+                except KeyboardInterrupt:
+                    keyboard_interrupted = True
+            finally:
+                selectors.DefaultSelector = original_selector_factory
+                keyboard_leader_pid = read_pid(keyboard_leader_pid_path)
+                keyboard_descendant_pid = read_pid(
+                    keyboard_descendant_pid_path
+                )
+
+            if not keyboard_interrupted:
+                failures.append(
+                    "focused Swift KeyboardInterrupt was not reraised"
+                )
+            if not selector_ready[0]:
+                failures.append(
+                    "focused Swift KeyboardInterrupt fixture did not become "
+                    "ready before interruption"
+                )
+            time.sleep(0.6)
+            if keyboard_escaped_path.exists():
+                failures.append(
+                    "focused Swift KeyboardInterrupt retained a "
+                    "sentinel-writing descendant"
+                )
+            if keyboard_leader_pid is not None:
+                try:
+                    os.killpg(keyboard_leader_pid, 0)
+                except ProcessLookupError:
+                    pass
+                else:
+                    failures.append(
+                        "focused Swift KeyboardInterrupt retained its nested "
+                        "process group"
+                    )
+            if (
+                keyboard_descendant_pid is not None
+                and process_exists(keyboard_descendant_pid)
+            ):
+                failures.append(
+                    "focused Swift KeyboardInterrupt retained a descendant "
+                    "process"
+                )
+            if keyboard_log_path.read_bytes() != keyboard_log_bytes:
+                failures.append(
+                    "focused Swift KeyboardInterrupt replaced the canonical log"
+                )
+            if tuple(
+                keyboard_root.glob(f".{keyboard_log_path.name}.tmp-*")
+            ):
+                failures.append(
+                    "focused Swift KeyboardInterrupt retained a temporary log"
+                )
+            current_handlers = tuple(
+                signal.getsignal(signum)
+                for signum in (signal.SIGTERM, signal.SIGINT)
+            )
+            current_mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+            if current_handlers != original_handlers:
+                failures.append(
+                    "focused Swift KeyboardInterrupt did not restore signal "
+                    "handlers"
+                )
+            if current_mask != original_mask:
+                failures.append(
+                    "focused Swift KeyboardInterrupt did not restore the signal "
+                    "mask"
+                )
+            kill_fixture_group(keyboard_leader_pid)
+            if (
+                keyboard_descendant_pid is not None
+                and process_exists(keyboard_descendant_pid)
+            ):
+                try:
+                    os.kill(keyboard_descendant_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+    except OSError as error:
+        failures.append(f"focused Swift signal self-test failed: {error}")
     return failures
 
 
@@ -9221,6 +10860,26 @@ def main() -> int:
         help="independently read back the focused Swift test binding",
     )
     mode.add_argument(
+        "--prepare-g7-nonsecurity-swift-run",
+        action="store_true",
+        help="bind the exact expanded non-security Swift lane before execution",
+    )
+    mode.add_argument(
+        "--run-g7-nonsecurity-swift-tests",
+        action="store_true",
+        help="run the exact network-denied 247-test non-security Swift lane",
+    )
+    mode.add_argument(
+        "--write-g7-nonsecurity-swift-binding",
+        action="store_true",
+        help="bind the expanded Swift console to source and selected tests",
+    )
+    mode.add_argument(
+        "--g7-nonsecurity-swift-results",
+        action="store_true",
+        help="independently read back the expanded Swift test binding",
+    )
+    mode.add_argument(
         "--prepare-document-ingestion-asan-run",
         action="store_true",
         help="bind the exact DocumentIngestion ASan corpus before execution",
@@ -9417,6 +11076,100 @@ def main() -> int:
             f"Swift focused test {action}: "
             f"{SWIFT_PRODUCT_TEST_COUNT}/{SWIFT_PRODUCT_TEST_COUNT}; "
             "skipped=0; failures=0; errors=0."
+        )
+        return 0
+
+    if args.prepare_g7_nonsecurity_swift_run:
+        failures = g7_nonsecurity_swift_selection_failures()
+        _, environment_failures = g7_nonsecurity_swift_environment()
+        failures.extend(environment_failures)
+        if not failures:
+            failures.extend(
+                write_swift_focused_test_run_marker(
+                    marker_path=G7_NONSECURITY_SWIFT_RUN_MARKER_PATH,
+                    filter_pattern=G7_NONSECURITY_SWIFT_FILTER,
+                    expected_count=G7_NONSECURITY_SWIFT_TEST_COUNT,
+                    expected_manifest_sha256=(
+                        G7_NONSECURITY_SWIFT_TEST_MANIFEST_SHA256
+                    ),
+                    excluded_tests=G7_NONSECURITY_SWIFT_LIVE_TESTS,
+                )
+            )
+        if failures:
+            for failure in failures:
+                print(
+                    "G7 non-security Swift preparation failed: " + failure,
+                    file=sys.stderr,
+                )
+            return 1
+        print(
+            "G7 non-security Swift source marker written and read back: "
+            f"{G7_NONSECURITY_SWIFT_TEST_COUNT} selected tests; "
+            f"{G7_NONSECURITY_SWIFT_LIVE_TEST_COUNT} live tests excluded."
+        )
+        return 0
+
+    if args.run_g7_nonsecurity_swift_tests:
+        status, failures = run_g7_nonsecurity_swift_tests()
+        if failures:
+            for failure in failures:
+                print(
+                    "G7 non-security Swift runner failed: " + failure,
+                    file=sys.stderr,
+                )
+        if status != 0:
+            if not failures:
+                print(
+                    "G7 non-security Swift runner exited with status "
+                    f"{status}.",
+                    file=sys.stderr,
+                )
+            return status
+        print(
+            "G7 non-security Swift run passed and retained: "
+            f"{G7_NONSECURITY_SWIFT_TEST_COUNT}/"
+            f"{G7_NONSECURITY_SWIFT_TEST_COUNT}; skipped=0; failures=0; "
+            "errors=0; network denied."
+        )
+        return 0
+
+    if (
+        args.write_g7_nonsecurity_swift_binding
+        or args.g7_nonsecurity_swift_results
+    ):
+        common_arguments = {
+            "binding_path": G7_NONSECURITY_SWIFT_BINDING_PATH,
+            "marker_path": G7_NONSECURITY_SWIFT_RUN_MARKER_PATH,
+            "log_path": G7_NONSECURITY_SWIFT_LOG_PATH,
+            "filter_pattern": G7_NONSECURITY_SWIFT_FILTER,
+            "expected_count": G7_NONSECURITY_SWIFT_TEST_COUNT,
+            "expected_manifest_sha256": (
+                G7_NONSECURITY_SWIFT_TEST_MANIFEST_SHA256
+            ),
+            "excluded_tests": G7_NONSECURITY_SWIFT_LIVE_TESTS,
+        }
+        failures = (
+            write_swift_focused_test_binding(**common_arguments)
+            if args.write_g7_nonsecurity_swift_binding
+            else swift_focused_test_binding_failures(**common_arguments)
+        )
+        if failures:
+            for failure in failures:
+                print(
+                    "G7 non-security Swift results failed: " + failure,
+                    file=sys.stderr,
+                )
+            return 1
+        action = (
+            "binding written and read back"
+            if args.write_g7_nonsecurity_swift_binding
+            else "independent binding readback passed"
+        )
+        print(
+            f"G7 non-security Swift {action}: "
+            f"{G7_NONSECURITY_SWIFT_TEST_COUNT}/"
+            f"{G7_NONSECURITY_SWIFT_TEST_COUNT}; skipped=0; failures=0; "
+            "errors=0."
         )
         return 0
 
@@ -9747,8 +11500,11 @@ def main() -> int:
         failures.extend(android_camera_controller_host_source_self_test())
         failures.extend(android_font_scale_source_self_test())
         failures.extend(swift_test_selection_self_test())
+        failures.extend(g7_nonsecurity_swift_contract_self_test())
+        failures.extend(g7_nonsecurity_swift_network_sandbox_self_test())
         failures.extend(swift_focused_result_self_test())
         failures.extend(swift_runner_timeout_self_test())
+        failures.extend(swift_runner_signal_self_test())
         failures.extend(document_ingestion_mutation_console_self_test())
         failures.extend(
             document_ingestion_mutation_failure_context_self_test()
