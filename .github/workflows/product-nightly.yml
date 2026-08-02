@@ -1,0 +1,210 @@
+name: Product nightly (non-security Android lifecycle subset)
+
+"on":
+  schedule:
+    - cron: "37 18 * * *"
+
+permissions:
+  contents: read
+
+# Uploaded archives remain candidates. A consumer may accept their bytes only
+# after this same workflow run reaches a successful final conclusion.
+env:
+  AETHERLINK_NIGHTLY_ARTIFACT_ACCEPTANCE: same-workflow-run-success-only
+
+concurrency:
+  group: product-nightly-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  android-headless-lifecycle-v2:
+    name: Android API 36.1 headless lifecycle V2
+    if: >-
+      ${{ github.event_name == 'schedule' &&
+      github.ref == 'refs/heads/main' }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      archive_name: ${{ steps.seal.outputs.archive_name }}
+      archive_sha256: ${{ steps.seal.outputs.archive_sha256 }}
+      remote_digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Materialize scheduled commit source
+        run: |
+          test "$(git rev-parse --verify HEAD)" = "${GITHUB_SHA:?}"
+          git diff --quiet
+          git diff --cached --quiet
+          source_directory="${RUNNER_TEMP:?}/aetherlink-source-$GITHUB_SHA"
+          source_archive="${RUNNER_TEMP:?}/aetherlink-source-$GITHUB_SHA.tar"
+          test ! -e "$source_directory"
+          test ! -e "$source_archive"
+          install -d -m 700 "$source_directory"
+          git archive --format=tar --output="$source_archive" "$GITHUB_SHA"
+          tar -xf "$source_archive" -C "$source_directory"
+          test -f "$source_directory/script/check_product_nightly_ci.py"
+          printf 'AETHERLINK_SOURCE=%s\n' "$source_directory" >> "$GITHUB_ENV"
+          printf 'AETHERLINK_GIT_CHECKOUT=%s\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+          cache-read-only: false
+      - name: Validate exact nightly contract
+        run: |
+          cd "$AETHERLINK_SOURCE"
+          python3 -B script/check_product_nightly_ci.py
+          PYTHONPATH=. python3 -B script/check_product_nightly_ci.py --run-contract-tests
+      - name: Install exact Android emulator toolchain
+        run: |
+          cd "$AETHERLINK_SOURCE"
+          test "$(uname -m)" = "arm64"
+          test -n "${ANDROID_HOME:-}"
+          sdkmanager_path="$(command -v sdkmanager)"
+          test -x "$sdkmanager_path"
+          "$sdkmanager_path" --install \
+            "platform-tools" \
+            "emulator" \
+            "platforms;android-36" \
+            "platforms;android-36.1" \
+            "build-tools;36.0.0" \
+            "build-tools;36.1.0" \
+            "ndk;28.2.13676358" \
+            "system-images;android-36.1;google_apis_playstore;arm64-v8a"
+          test -x "$ANDROID_HOME/platform-tools/adb"
+          test -x "$ANDROID_HOME/emulator/emulator"
+          test -d "$ANDROID_HOME/platforms/android-36"
+          test -d "$ANDROID_HOME/platforms/android-36.1"
+          test -d "$ANDROID_HOME/build-tools/36.0.0"
+          test -d "$ANDROID_HOME/build-tools/36.1.0"
+          test -d "$ANDROID_HOME/ndk/28.2.13676358"
+          test -d "$ANDROID_HOME/system-images/android-36.1/google_apis_playstore/arm64-v8a"
+          "$ANDROID_HOME/platform-tools/adb" version
+          "$ANDROID_HOME/emulator/emulator" -version
+          java -version
+          ./gradlew --version
+      - name: Prepare exact Android build dependencies
+        run: |
+          cd "$AETHERLINK_SOURCE"
+          ./gradlew \
+            --no-daemon \
+            --console=plain \
+            --rerun-tasks \
+            -Pkotlin.incremental=false \
+            :app:assembleDebug
+      - name: Run Android API 36.1 lifecycle V2
+        id: lifecycle
+        run: |
+          cd "$AETHERLINK_SOURCE"
+          lifecycle_suffix="$(printf '%s' "${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}" | shasum -a 256 | cut -c1-8)"
+          lifecycle_id="android-headless-api36-1-v2-$(date -u +%Y%m%dT%H%M%SZ)-$lifecycle_suffix"
+          lifecycle_directory="${RUNNER_TEMP:?}/$lifecycle_id"
+          python3 -B script/run_android_headless_emulator_product_lifecycle_v2.py \
+            --sdk-root "$ANDROID_HOME" \
+            --java-home "$JAVA_HOME" \
+            --output-directory "$lifecycle_directory"
+          printf 'directory=%s\n' "$lifecycle_directory" >> "$GITHUB_OUTPUT"
+          printf 'result=%s\n' "$lifecycle_directory/result.json" >> "$GITHUB_OUTPUT"
+      - name: Independently read back lifecycle
+        env:
+          LIFECYCLE_RESULT: ${{ steps.lifecycle.outputs.result }}
+        run: |
+          cd "$AETHERLINK_SOURCE"
+          python3 -B script/check_android_headless_emulator_product_lifecycle_v2.py \
+            "$LIFECYCLE_RESULT" \
+            --sdk-root "$ANDROID_HOME" \
+            --java-home "$JAVA_HOME"
+      - name: Seal and read back exact nightly artifact
+        id: seal
+        env:
+          LIFECYCLE_DIRECTORY: ${{ steps.lifecycle.outputs.directory }}
+          LIFECYCLE_RESULT: ${{ steps.lifecycle.outputs.result }}
+        run: |
+          cd "$AETHERLINK_SOURCE"
+          lifecycle_id="$(basename "$LIFECYCLE_DIRECTORY")"
+          artifact_directory="${RUNNER_TEMP:?}/aetherlink-nightly-sealed-v1"
+          provenance_directory="${RUNNER_TEMP:?}/aetherlink-nightly-provenance-v1"
+          install -d -m 700 "$artifact_directory" "$provenance_directory"
+          archive_path="$artifact_directory/candidate-$lifecycle_id.tar"
+          provenance_path="$provenance_directory/$lifecycle_id.json"
+          archive_sha256="$(python3 -B script/check_product_nightly_ci.py \
+            --seal-artifact "$archive_path" \
+            --provenance "$provenance_path" \
+            --result "$LIFECYCLE_RESULT" \
+            --sdk-root "$ANDROID_HOME" \
+            --java-home "$JAVA_HOME" \
+            --git-checkout "$AETHERLINK_GIT_CHECKOUT")"
+          test "${#archive_sha256}" -eq 64
+          case "$archive_sha256" in *[!0-9a-f]*) exit 1 ;; esac
+          python3 -B script/check_product_nightly_ci.py \
+            --readback-artifact "$archive_path" \
+            --expected-sha256 "$archive_sha256" \
+            --deep-result-readback \
+            --sdk-root "$ANDROID_HOME" \
+            --java-home "$JAVA_HOME" \
+            --git-checkout "$AETHERLINK_GIT_CHECKOUT"
+          printf 'archive=%s\n' "$archive_path" >> "$GITHUB_OUTPUT"
+          printf 'archive_name=%s\n' "candidate-$lifecycle_id.tar" >> "$GITHUB_OUTPUT"
+          printf 'archive_sha256=%s\n' "$archive_sha256" >> "$GITHUB_OUTPUT"
+      - name: Upload one sealed nightly candidate
+        id: upload
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.seal.outputs.archive }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+      - name: Bind uploaded candidate digest
+        env:
+          LOCAL_ARCHIVE_SHA256: ${{ steps.seal.outputs.archive_sha256 }}
+          REMOTE_ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        run: |
+          test "$REMOTE_ARTIFACT_DIGEST" = "$LOCAL_ARCHIVE_SHA256"
+
+  downloaded-artifact-readback:
+    name: Downloaded nightly artifact byte readback
+    needs: android-headless-lifecycle-v2
+    if: >-
+      ${{ github.event_name == 'schedule' &&
+      github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Download sealed artifact by immutable ID
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.android-headless-lifecycle-v2.outputs.artifact_id }}
+          path: ${{ runner.temp }}/aetherlink-nightly-download-v1
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Read back independently downloaded candidate bytes
+        env:
+          ARCHIVE_NAME: ${{ needs.android-headless-lifecycle-v2.outputs.archive_name }}
+          EXPECTED_ARCHIVE_SHA256: ${{ needs.android-headless-lifecycle-v2.outputs.archive_sha256 }}
+          REMOTE_ARTIFACT_DIGEST: ${{ needs.android-headless-lifecycle-v2.outputs.remote_digest }}
+        run: |
+          test "${AETHERLINK_NIGHTLY_ARTIFACT_ACCEPTANCE:?}" = "same-workflow-run-success-only"
+          test "$REMOTE_ARTIFACT_DIGEST" = "$EXPECTED_ARCHIVE_SHA256"
+          archive_path="${RUNNER_TEMP:?}/aetherlink-nightly-download-v1/$ARCHIVE_NAME"
+          test -f "$archive_path"
+          python3 -B script/check_product_nightly_ci.py \
+            --readback-artifact "$archive_path" \
+            --expected-sha256 "$EXPECTED_ARCHIVE_SHA256" \
+            --git-checkout "$GITHUB_WORKSPACE"

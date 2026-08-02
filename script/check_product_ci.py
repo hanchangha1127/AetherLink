@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
+import importlib
 import json
 import os
 from pathlib import Path
@@ -15,6 +17,7 @@ import sys
 import tempfile
 import time
 from typing import BinaryIO, Callable, Optional
+import unittest
 import xml.etree.ElementTree as ET
 
 
@@ -73,10 +76,10 @@ ANDROID_FONT_SCALE_METHODS = (
     "coreSurfacesRemainUsableAt200PercentFontScale",
 )
 CANONICAL_WORKFLOW_SHA256 = (
-    "f54539d21bdd8d3344444484ccb36a14862b2af7f500ba46e80dd41459512e2d"
+    "1159dd9c376e2a4170526ddd3453d49ca92d7061e058ca121e1f3602f630b06b"
 )
 CANONICAL_PARSED_WORKFLOW_SHA256 = (
-    "ac7321114f6a0ac590831dd35e8f661e619b1a77d792c3d8c200f2cc3737b16c"
+    "f843851a64defc5868ed5b8a3bccd8148e8e79d7e8a3babe5a9e6d3b7cb25b1d"
 )
 
 REQUIRED_WORKFLOW_PREFIX = """name: Product quality (non-security subset)
@@ -800,6 +803,64 @@ TRACKED_DOCUMENTATION_CONTRACT_TESTS = (
     "test_tracked_document_contract_cli_is_explicit_and_bounded",
 )
 
+RELEASE_COMPLIANCE_TEST_IDS = (
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_bool_package_count_is_rejected",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_catalog_is_canonical_and_has_stable_identity",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_catalog_statistics_capture_unresolved_boundary",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_checked_in_catalog_exactly_covers_current_locks",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_coordinate_purl_mutation_is_rejected",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_dependency_input_universe_is_closed_in_both_implementations",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_generated_member_mutation_is_rejected",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_generator_rejects_claimed_repository_url_mismatch",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_independent_readback_reconstructs_every_generated_byte",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_license_mapping_mutation_is_rejected",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_lock_identity_mutation_is_rejected",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_noncanonical_or_duplicate_json_is_rejected",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_offline_render_is_deterministic",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_swift_external_dependency_is_rejected_independently",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_swift_resolution_file_is_rejected_independently",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_unexpected_or_missing_gradle_lock_is_rejected_independently",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_unknown_configuration_is_rejected_by_both_implementations",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_unreviewed_license_names_remain_noassertion",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_v1_historical_profileless_contract_is_frozen",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_v2_namespace_covers_every_generation_identity",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_v2_spdx_has_all_configuration_derived_roles",
+    "script.test_release_compliance.ReleaseComplianceTests."
+    "test_v2_summary_profile_and_schema_mutations_are_rejected",
+)
+RELEASE_COMPLIANCE_TEST_COUNT = len(RELEASE_COMPLIANCE_TEST_IDS)
+RELEASE_COMPLIANCE_TEST_MANIFEST_SHA256 = (
+    "788764544f8a9ad7282e3b902c2b7d16958304e78ba793e63c54f8e928f1347d"
+)
+
+RELEASE_COMPLIANCE_CONTRACT_STEP_BODY = (
+    "        run: |\n"
+    "          python3 -B script/generate_release_compliance.py check\n"
+    "          PYTHONPATH=. python3 -B script/check_product_ci.py "
+    "--run-release-compliance-tests\n"
+)
+
 TRACKED_DOCUMENTATION_CONTRACT_STEP_BODY = (
     "        run: |\n"
     "          python3 -B script/check_docs_hygiene.py "
@@ -811,6 +872,29 @@ TRACKED_DOCUMENTATION_CONTRACT_STEP_BODY = (
 
 MACOS_PACKAGE_CONTRACT_TEST_STEP_BODY = (
     "        run: PYTHONPATH=. python3 -B script/test_build_and_run.py\n"
+)
+
+MACOS_LIFECYCLE_CONTRACT_TEST_STEP_BODY = (
+    "        run: >-\n"
+    "          PYTHONPATH=. python3 -B -m unittest\n"
+    "          script.test_run_macos_current_unsealed_install_recovery_smoke\n"
+    "          script.test_check_macos_current_unsealed_install_recovery_evidence."
+    "CurrentUnsealedRecoveryEvidencePortableTests\n"
+    "          script.test_check_macos_current_unsealed_ci_lifecycle\n"
+)
+
+RELEASE_DIAGNOSTICS_CONTRACT_TEST_STEP_BODY = (
+    "        run: >-\n"
+    "          PYTHONPATH=. python3 -B -m unittest\n"
+    "          script.test_run_release_diagnostics_usability\n"
+    "          script.test_check_release_diagnostics_usability\n"
+)
+
+PRODUCT_NIGHTLY_CONTRACT_STEP_BODY = (
+    "        run: |\n"
+    "          python3 -B script/check_product_nightly_ci.py\n"
+    "          PYTHONPATH=. python3 -B script/check_product_nightly_ci.py "
+    "--run-contract-tests\n"
 )
 
 MACOS_UNSEALED_RELEASE_BUILD_STEP_BODY = (
@@ -834,6 +918,48 @@ MACOS_UNSEALED_RELEASE_READBACK_STEP_BODY = (
     "        run: >-\n"
     "          python3 -B script/check_release_artifact_archive.py\n"
     "          --macos-build-outputs\n"
+)
+
+MACOS_RELEASE_DIAGNOSTICS_RUN_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: |\n"
+    "          install -d -m 700 .build/aetherlink-release-diagnostics-v1\n"
+    "          python3 -B script/run_release_diagnostics_usability.py \\\n"
+    "            --platform macos \\\n"
+    "            --result .build/aetherlink-release-diagnostics-v1/macos.json\n"
+)
+
+MACOS_RELEASE_DIAGNOSTICS_READBACK_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: >-\n"
+    "          PYTHONPATH=. python3 -B\n"
+    "          script/check_release_diagnostics_usability.py\n"
+    "          --platform macos\n"
+    "          .build/aetherlink-release-diagnostics-v1/macos.json\n"
+)
+
+MACOS_CURRENT_UNSEALED_LIFECYCLE_RUN_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: |\n"
+    "          install -d -m 700 "
+    ".build/aetherlink-current-unsealed-lifecycle-v1\n"
+    "          python3 -B "
+    "script/run_macos_current_unsealed_install_recovery_smoke.py \\\n"
+    "            --result "
+    ".build/aetherlink-current-unsealed-lifecycle-v1/result.json \\\n"
+    "            --repeatability-result "
+    ".build/aetherlink-current-unsealed-lifecycle-v1/repeatability.json\n"
+)
+
+MACOS_CURRENT_UNSEALED_LIFECYCLE_READBACK_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: >-\n"
+    "          PYTHONPATH=. python3 -B\n"
+    "          script/check_macos_current_unsealed_ci_lifecycle.py\n"
 )
 
 ANDROID_TEST_STEP_BODY = (
@@ -906,6 +1032,26 @@ ANDROID_RELEASE_READBACK_STEP_BODY = (
     "          --android-build-outputs\n"
 )
 
+ANDROID_RELEASE_DIAGNOSTICS_RUN_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: |\n"
+    "          install -d -m 700 .build/aetherlink-release-diagnostics-v1\n"
+    "          python3 -B script/run_release_diagnostics_usability.py \\\n"
+    "            --platform android \\\n"
+    "            --result .build/aetherlink-release-diagnostics-v1/android.json\n"
+)
+
+ANDROID_RELEASE_DIAGNOSTICS_READBACK_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: >-\n"
+    "          PYTHONPATH=. python3 -B\n"
+    "          script/check_release_diagnostics_usability.py\n"
+    "          --platform android\n"
+    "          .build/aetherlink-release-diagnostics-v1/android.json\n"
+)
+
 MACOS_JOB_PREAMBLE = (
     "    name: macOS product quality subset\n"
     "    runs-on: macos-26\n"
@@ -958,6 +1104,10 @@ MACOS_STEPS = (
         "          python3 -B script/check_product_ci.py --self-test\n",
     ),
     (
+        "Validate product-nightly contract",
+        PRODUCT_NIGHTLY_CONTRACT_STEP_BODY,
+    ),
+    (
         "Run product static checks",
         "        run: |\n"
         "          python3 -B script/check_copy_hygiene.py --product-copy-only\n"
@@ -966,12 +1116,24 @@ MACOS_STEPS = (
         "          python3 -B script/check_license.py\n",
     ),
     (
+        "Run release compliance contracts",
+        RELEASE_COMPLIANCE_CONTRACT_STEP_BODY,
+    ),
+    (
         "Run tracked documentation contracts",
         TRACKED_DOCUMENTATION_CONTRACT_STEP_BODY,
     ),
     (
         "Run macOS release package contract units",
         MACOS_PACKAGE_CONTRACT_TEST_STEP_BODY,
+    ),
+    (
+        "Run macOS lifecycle contract units",
+        MACOS_LIFECYCLE_CONTRACT_TEST_STEP_BODY,
+    ),
+    (
+        "Run release diagnostics contract units",
+        RELEASE_DIAGNOSTICS_CONTRACT_TEST_STEP_BODY,
     ),
     (
         "Compile macOS app",
@@ -993,6 +1155,22 @@ MACOS_STEPS = (
     (
         "Read back unsealed macOS Release package on main",
         MACOS_UNSEALED_RELEASE_READBACK_STEP_BODY,
+    ),
+    (
+        "Run macOS Release diagnostics on main",
+        MACOS_RELEASE_DIAGNOSTICS_RUN_STEP_BODY,
+    ),
+    (
+        "Read back macOS Release diagnostics on main",
+        MACOS_RELEASE_DIAGNOSTICS_READBACK_STEP_BODY,
+    ),
+    (
+        "Run current unsealed lifecycle on main",
+        MACOS_CURRENT_UNSEALED_LIFECYCLE_RUN_STEP_BODY,
+    ),
+    (
+        "Read back current unsealed lifecycle on main",
+        MACOS_CURRENT_UNSEALED_LIFECYCLE_READBACK_STEP_BODY,
     ),
 )
 
@@ -1058,6 +1236,14 @@ ANDROID_STEPS = (
     (
         "Read back Android Release build outputs",
         ANDROID_RELEASE_READBACK_STEP_BODY,
+    ),
+    (
+        "Run Android Release diagnostics on main",
+        ANDROID_RELEASE_DIAGNOSTICS_RUN_STEP_BODY,
+    ),
+    (
+        "Read back Android Release diagnostics on main",
+        ANDROID_RELEASE_DIAGNOSTICS_READBACK_STEP_BODY,
     ),
 )
 
@@ -1301,6 +1487,255 @@ end
     return failures
 
 
+def release_compliance_test_case() -> type[unittest.TestCase]:
+    root_entry = str(ROOT)
+    added_root = root_entry not in sys.path
+    if added_root:
+        sys.path.insert(0, root_entry)
+    try:
+        module = importlib.import_module("script.test_release_compliance")
+        candidate = getattr(module, "ReleaseComplianceTests", None)
+        if not isinstance(candidate, type) or not issubclass(
+            candidate, unittest.TestCase
+        ):
+            raise TypeError(
+                "ReleaseComplianceTests must be a unittest.TestCase class"
+            )
+        return candidate
+    finally:
+        if added_root:
+            sys.path.remove(root_entry)
+
+
+def release_compliance_test_suite(
+    test_case: type[unittest.TestCase],
+) -> unittest.TestSuite:
+    return unittest.TestSuite(
+        test_case(identity.rsplit(".", 1)[-1])
+        for identity in RELEASE_COMPLIANCE_TEST_IDS
+    )
+
+
+class ReleaseComplianceRecordingResult(unittest.TextTestResult):
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        self.started_test_ids: list[str] = []
+
+    def startTest(self, test: unittest.TestCase) -> None:
+        self.started_test_ids.append(test.id())
+        super().startTest(test)
+
+
+def release_compliance_discovered_test_ids(
+    test_case: type[unittest.TestCase],
+) -> tuple[str, ...]:
+    return tuple(
+        f"{test_case.__module__}.{test_case.__qualname__}.{method_name}"
+        for method_name in unittest.defaultTestLoader.getTestCaseNames(test_case)
+    )
+
+
+def release_compliance_test_manifest_failures() -> list[str]:
+    manifest = ("\n".join(RELEASE_COMPLIANCE_TEST_IDS) + "\n").encode(
+        "utf-8"
+    )
+    failures: list[str] = []
+    if type(RELEASE_COMPLIANCE_TEST_COUNT) is not int:
+        failures.append("release compliance test count must be an exact integer")
+    if RELEASE_COMPLIANCE_TEST_COUNT != 22:
+        failures.append("release compliance test manifest must contain 22 tests")
+    if len(set(RELEASE_COMPLIANCE_TEST_IDS)) != RELEASE_COMPLIANCE_TEST_COUNT:
+        failures.append("release compliance test manifest contains duplicates")
+    actual_sha256 = hashlib.sha256(manifest).hexdigest()
+    if actual_sha256 != RELEASE_COMPLIANCE_TEST_MANIFEST_SHA256:
+        failures.append(
+            "release compliance test manifest identity changed: expected "
+            f"{RELEASE_COMPLIANCE_TEST_MANIFEST_SHA256}, got {actual_sha256}"
+        )
+    return failures
+
+
+def release_compliance_test_selection_failures(
+    actual_ids: Optional[tuple[str, ...]] = None,
+) -> list[str]:
+    failures = release_compliance_test_manifest_failures()
+    if failures:
+        return failures
+    if actual_ids is None:
+        try:
+            actual_ids = release_compliance_discovered_test_ids(
+                release_compliance_test_case()
+            )
+        except Exception as error:
+            return [f"cannot load release compliance test suite: {error}"]
+
+    if actual_ids == RELEASE_COMPLIANCE_TEST_IDS:
+        return []
+
+    missing = tuple(
+        identity
+        for identity in RELEASE_COMPLIANCE_TEST_IDS
+        if identity not in actual_ids
+    )
+    unexpected = tuple(
+        identity
+        for identity in actual_ids
+        if identity not in RELEASE_COMPLIANCE_TEST_IDS
+    )
+    failures = [
+        "release compliance test identities must match the exact reviewed "
+        f"{RELEASE_COMPLIANCE_TEST_COUNT}-test manifest"
+    ]
+    if missing:
+        failures.append("missing release compliance tests: " + ", ".join(missing))
+    if unexpected:
+        failures.append(
+            "unexpected release compliance tests: " + ", ".join(unexpected)
+        )
+    if not missing and not unexpected:
+        failures.append(
+            "release compliance test identities are duplicated or out of order"
+        )
+    return failures
+
+
+def release_compliance_test_result_failures(
+    result: unittest.TestResult,
+) -> list[str]:
+    failures: list[str] = []
+    if (
+        type(result.testsRun) is not int
+        or result.testsRun != RELEASE_COMPLIANCE_TEST_COUNT
+    ):
+        failures.append(
+            "release compliance runner executed "
+            f"{result.testsRun}/{RELEASE_COMPLIANCE_TEST_COUNT} tests"
+        )
+    started_test_ids = getattr(result, "started_test_ids", None)
+    if tuple(started_test_ids or ()) != RELEASE_COMPLIANCE_TEST_IDS:
+        failures.append(
+            "release compliance runner start identities must match the exact "
+            "manifest order"
+        )
+    for label, records in (
+        ("skips", result.skipped),
+        ("failures", result.failures),
+        ("errors", result.errors),
+        ("expected failures", result.expectedFailures),
+        ("unexpected successes", result.unexpectedSuccesses),
+    ):
+        if records:
+            failures.append(
+                f"release compliance runner recorded {len(records)} {label}"
+            )
+    if not result.wasSuccessful() and not failures:
+        failures.append("release compliance runner was not successful")
+    return failures
+
+
+def run_release_compliance_tests() -> list[str]:
+    try:
+        test_case = release_compliance_test_case()
+    except Exception as error:
+        return [f"cannot load release compliance test suite: {error}"]
+
+    failures = release_compliance_test_selection_failures(
+        release_compliance_discovered_test_ids(test_case)
+    )
+    if failures:
+        return failures
+
+    suite = release_compliance_test_suite(test_case)
+    output = io.StringIO()
+    result = unittest.TextTestRunner(
+        stream=output,
+        verbosity=2,
+        failfast=False,
+        buffer=False,
+        resultclass=ReleaseComplianceRecordingResult,
+    ).run(suite)
+    print(output.getvalue(), end="")
+    return release_compliance_test_result_failures(result)
+
+
+def release_compliance_test_runner_self_test() -> list[str]:
+    failures = release_compliance_test_selection_failures()
+    for label, identities in (
+        ("omission", RELEASE_COMPLIANCE_TEST_IDS[:-1]),
+        (
+            "replacement",
+            RELEASE_COMPLIANCE_TEST_IDS[:-1]
+            + ("script.test_release_compliance.ReplacedTest.test_replaced",),
+        ),
+        (
+            "duplication",
+            RELEASE_COMPLIANCE_TEST_IDS + (RELEASE_COMPLIANCE_TEST_IDS[-1],),
+        ),
+        ("order", tuple(reversed(RELEASE_COMPLIANCE_TEST_IDS))),
+    ):
+        if not release_compliance_test_selection_failures(identities):
+            failures.append(
+                f"release compliance runner self-test accepted {label} mutation"
+            )
+
+    baseline = unittest.TestResult()
+    baseline.testsRun = RELEASE_COMPLIANCE_TEST_COUNT
+    baseline.started_test_ids = list(RELEASE_COMPLIANCE_TEST_IDS)
+    if release_compliance_test_result_failures(baseline):
+        failures.append("release compliance result self-test rejected baseline")
+
+    for label, attribute, record in (
+        ("skip", "skipped", (None, "fixture skip")),
+        ("failure", "failures", (None, "fixture failure")),
+        ("error", "errors", (None, "fixture error")),
+        (
+            "expected failure",
+            "expectedFailures",
+            (None, "fixture expected failure"),
+        ),
+        ("unexpected success", "unexpectedSuccesses", None),
+    ):
+        result = unittest.TestResult()
+        result.testsRun = RELEASE_COMPLIANCE_TEST_COUNT
+        result.started_test_ids = list(RELEASE_COMPLIANCE_TEST_IDS)
+        getattr(result, attribute).append(record)
+        if not release_compliance_test_result_failures(result):
+            failures.append(
+                "release compliance runner self-test accepted " + label
+            )
+
+    for label, tests_run in (
+        ("short run", RELEASE_COMPLIANCE_TEST_COUNT - 1),
+        ("long run", RELEASE_COMPLIANCE_TEST_COUNT + 1),
+        ("boolean run count", True),
+    ):
+        result = unittest.TestResult()
+        result.testsRun = tests_run
+        result.started_test_ids = list(RELEASE_COMPLIANCE_TEST_IDS)
+        if not release_compliance_test_result_failures(result):
+            failures.append(
+                f"release compliance runner self-test accepted {label}"
+            )
+
+    for label, started_ids in (
+        ("started-test omission", RELEASE_COMPLIANCE_TEST_IDS[:-1]),
+        (
+            "started-test duplication",
+            RELEASE_COMPLIANCE_TEST_IDS[:-1]
+            + (RELEASE_COMPLIANCE_TEST_IDS[-2],),
+        ),
+        ("started-test order", tuple(reversed(RELEASE_COMPLIANCE_TEST_IDS))),
+    ):
+        result = unittest.TestResult()
+        result.testsRun = RELEASE_COMPLIANCE_TEST_COUNT
+        result.started_test_ids = list(started_ids)
+        if not release_compliance_test_result_failures(result):
+            failures.append(
+                f"release compliance runner self-test accepted {label}"
+            )
+    return failures
+
+
 def workflow_failures(
     workflow: str,
     *,
@@ -1421,16 +1856,27 @@ def workflow_failures(
             'git diff --check "$BASE_SHA" "$HEAD_SHA"',
             "python3 -B script/check_product_ci.py",
             "python3 -B script/check_product_ci.py --self-test",
+            "python3 -B script/check_product_nightly_ci.py",
+            "PYTHONPATH=. python3 -B script/check_product_nightly_ci.py "
+            "--run-contract-tests",
             "python3 -B script/check_copy_hygiene.py --product-copy-only",
             "python3 -B script/check_release_version_ledger.py",
             "python3 -B script/check_app_icons.py",
             "python3 -B script/check_license.py",
+            "python3 -B script/generate_release_compliance.py check",
+            "PYTHONPATH=. python3 -B script/check_product_ci.py "
+            "--run-release-compliance-tests",
             "python3 -B script/check_docs_hygiene.py "
             "--tracked-contracts-only",
             "python3 -B -m unittest",
             TRACKED_DOCUMENTATION_CONTRACT_TESTS[0],
             TRACKED_DOCUMENTATION_CONTRACT_TESTS[1],
             "PYTHONPATH=. python3 -B script/test_build_and_run.py",
+            "PYTHONPATH=. python3 -B -m unittest",
+            "script.test_run_macos_current_unsealed_install_recovery_smoke",
+            "script.test_check_macos_current_unsealed_install_recovery_evidence."
+            "CurrentUnsealedRecoveryEvidencePortableTests",
+            "script.test_check_macos_current_unsealed_ci_lifecycle",
             "run: swift build --product AetherLink",
             "swift test list > "
             ".build/aetherlink-product-ci-swift-test-list-v1.txt",
@@ -1446,6 +1892,15 @@ def workflow_failures(
             'if [[ "$source_before" != "$source_after" ]]; then',
             "python3 -B script/check_release_artifact_archive.py",
             "--macos-build-outputs",
+            "install -d -m 700 "
+            ".build/aetherlink-current-unsealed-lifecycle-v1",
+            "python3 -B "
+            "script/run_macos_current_unsealed_install_recovery_smoke.py",
+            "--result "
+            ".build/aetherlink-current-unsealed-lifecycle-v1/result.json",
+            "--repeatability-result "
+            ".build/aetherlink-current-unsealed-lifecycle-v1/repeatability.json",
+            "script/check_macos_current_unsealed_ci_lifecycle.py",
         ),
     )
 
@@ -1505,6 +1960,29 @@ def workflow_failures(
         failures.append(
             "workflow must contain one exact non-security product copy command"
         )
+    compliance_check_command = (
+        "python3 -B script/generate_release_compliance.py check"
+    )
+    compliance_test_command = (
+        "PYTHONPATH=. python3 -B script/check_product_ci.py "
+        "--run-release-compliance-tests"
+    )
+    if (
+        workflow.count(compliance_check_command) != 1
+        or workflow.count(compliance_test_command) != 1
+    ):
+        failures.append(
+            "workflow must contain one exact offline release compliance "
+            "catalog check and one independent reconstruction test command"
+        )
+    if (
+        named_step_body(macos, "Run release compliance contracts")
+        != RELEASE_COMPLIANCE_CONTRACT_STEP_BODY
+    ):
+        failures.append(
+            "release compliance contract step must match the exact offline "
+            "check and independent reconstruction command body"
+        )
     release_readback_command = (
         "python3 -B script/check_release_artifact_archive.py"
     )
@@ -1542,6 +2020,28 @@ def workflow_failures(
     if (
         named_step_body(
             macos,
+            "Run macOS lifecycle contract units",
+        )
+        != MACOS_LIFECYCLE_CONTRACT_TEST_STEP_BODY
+    ):
+        failures.append(
+            "macOS lifecycle contract-unit step must match the exact command "
+            "body"
+        )
+    if (
+        named_step_body(
+            macos,
+            "Run release diagnostics contract units",
+        )
+        != RELEASE_DIAGNOSTICS_CONTRACT_TEST_STEP_BODY
+    ):
+        failures.append(
+            "release diagnostics contract-unit step must match the exact "
+            "producer/checker test body"
+        )
+    if (
+        named_step_body(
+            macos,
             "Build unsealed macOS Release package on main",
         )
         != MACOS_UNSEALED_RELEASE_BUILD_STEP_BODY
@@ -1562,6 +2062,52 @@ def workflow_failures(
         failures.append(
             "macOS unsealed Release readback step must match the exact "
             "main-only command body"
+        )
+    if (
+        named_step_body(
+            macos,
+            "Run macOS Release diagnostics on main",
+        )
+        != MACOS_RELEASE_DIAGNOSTICS_RUN_STEP_BODY
+    ):
+        failures.append(
+            "macOS Release diagnostics producer must match the exact "
+            "main-only command body"
+        )
+    if (
+        named_step_body(
+            macos,
+            "Read back macOS Release diagnostics on main",
+        )
+        != MACOS_RELEASE_DIAGNOSTICS_READBACK_STEP_BODY
+    ):
+        failures.append(
+            "macOS Release diagnostics checker must match the exact "
+            "main-only command body"
+        )
+    if (
+        named_step_body(
+            macos,
+            "Run current unsealed lifecycle on main",
+        )
+        != MACOS_CURRENT_UNSEALED_LIFECYCLE_RUN_STEP_BODY
+    ):
+        failures.append(
+            "macOS current-unsealed lifecycle runner step must match the "
+            "exact main-only command body"
+        )
+    current_unsealed_lifecycle_readback_body = named_step_body(
+        macos,
+        "Read back current unsealed lifecycle on main",
+    )
+    if (
+        current_unsealed_lifecycle_readback_body is None
+        or current_unsealed_lifecycle_readback_body.rstrip()
+        != MACOS_CURRENT_UNSEALED_LIFECYCLE_READBACK_STEP_BODY.rstrip()
+    ):
+        failures.append(
+            "macOS current-unsealed lifecycle readback step must match the "
+            "exact main-only command body"
         )
     if (
         named_step_body(macos, "Verify focused Swift test selection")
@@ -1705,6 +2251,47 @@ def workflow_failures(
             "Android Release readback step must match the exact "
             "command body"
         )
+    if (
+        named_step_body(
+            android,
+            "Run Android Release diagnostics on main",
+        )
+        != ANDROID_RELEASE_DIAGNOSTICS_RUN_STEP_BODY
+    ):
+        failures.append(
+            "Android Release diagnostics producer must match the exact "
+            "main-only command body"
+        )
+    if (
+        named_step_body(
+            android,
+            "Read back Android Release diagnostics on main",
+        )
+        != ANDROID_RELEASE_DIAGNOSTICS_READBACK_STEP_BODY
+    ):
+        failures.append(
+            "Android Release diagnostics checker must match the exact "
+            "main-only command body"
+        )
+
+    diagnostics_runner = "script/run_release_diagnostics_usability.py"
+    diagnostics_checker = "script/check_release_diagnostics_usability.py"
+    if workflow.count(diagnostics_runner) != 2:
+        failures.append(
+            "workflow must run exactly one macOS and one Android Release "
+            "diagnostics producer"
+        )
+    if workflow.count(diagnostics_checker) != 2:
+        failures.append(
+            "workflow must run exactly one macOS and one Android Release "
+            "diagnostics readback"
+        )
+    for platform in ("macos", "android"):
+        if workflow.count(f"--platform {platform}") != 2:
+            failures.append(
+                f"workflow must bind the {platform} diagnostics platform "
+                "once at production and once at readback"
+            )
 
     android_tasks = tuple(
         re.findall(r"(?m)^\s+(:[A-Za-z0-9][A-Za-z0-9:_-]*)\s*$", android)
@@ -1714,7 +2301,7 @@ def workflow_failures(
     if re.search(r"(?m)^\s+(?:build|check|test|assemble|lint)\s*$", android):
         failures.append("Android must not run a broad Gradle lifecycle task")
     if re.search(
-        r"(?<!\S)(?:-x|--exclude-task|--dry-run|-m)(?=\s|=|$)",
+        r"(?<!\S)(?:-x|--exclude-task|--dry-run)(?=\s|=|$)",
         android,
     ):
         failures.append("Android Gradle invocation must not skip or dry-run tasks")
@@ -1785,6 +2372,24 @@ def self_test(workflow: str) -> list[str]:
             ),
             "step 'Check changed bytes' must match the exact body",
         ),
+        "missing product-nightly contract step": (
+            workflow.replace(
+                "      - name: Validate product-nightly contract\n"
+                f"{PRODUCT_NIGHTLY_CONTRACT_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "product-nightly exact test runner omission": (
+            workflow.replace(
+                "          PYTHONPATH=. python3 -B "
+                "script/check_product_nightly_ci.py --run-contract-tests\n",
+                "",
+                1,
+            ),
+            "step 'Validate product-nightly contract' must match the exact body",
+        ),
         "missing tracked documentation contract step": (
             workflow.replace(
                 "      - name: Run tracked documentation contracts\n"
@@ -1793,6 +2398,42 @@ def self_test(workflow: str) -> list[str]:
                 1,
             ),
             "steps must match the exact names and order",
+        ),
+        "missing release compliance contract step": (
+            workflow.replace(
+                "      - name: Run release compliance contracts\n"
+                f"{RELEASE_COMPLIANCE_CONTRACT_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "release compliance network refresh substitution": (
+            workflow.replace(
+                "python3 -B script/generate_release_compliance.py check",
+                "python3 -B script/generate_release_compliance.py refresh",
+                1,
+            ),
+            "one exact offline release compliance catalog check",
+        ),
+        "release compliance independent reconstruction omission": (
+            workflow.replace(
+                "          PYTHONPATH=. python3 -B script/check_product_ci.py "
+                "--run-release-compliance-tests\n",
+                "",
+                1,
+            ),
+            "one exact offline release compliance catalog check",
+        ),
+        "release compliance unbound unittest substitution": (
+            workflow.replace(
+                "          PYTHONPATH=. python3 -B script/check_product_ci.py "
+                "--run-release-compliance-tests\n",
+                "          PYTHONPATH=. python3 -B -m unittest "
+                "script.test_release_compliance\n",
+                1,
+            ),
+            "one exact offline release compliance catalog check",
         ),
         "tracked documentation full-evidence substitution": (
             workflow.replace(
@@ -1820,6 +2461,49 @@ def self_test(workflow: str) -> list[str]:
             ),
             "steps must match the exact names and order",
         ),
+        "missing macOS lifecycle contract units": (
+            workflow.replace(
+                "      - name: Run macOS lifecycle contract units\n"
+                f"{MACOS_LIFECYCLE_CONTRACT_TEST_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "missing portable macOS lifecycle checker units": (
+            workflow.replace(
+                "          script.test_check_macos_current_unsealed_install_"
+                "recovery_evidence.CurrentUnsealedRecoveryEvidencePortableTests\n",
+                "",
+                1,
+            ),
+            "step 'Run macOS lifecycle contract units' must match the exact body",
+        ),
+        "missing current-run macOS lifecycle checker units": (
+            workflow.replace(
+                "          script.test_check_macos_current_unsealed_ci_lifecycle\n",
+                "",
+                1,
+            ),
+            "step 'Run macOS lifecycle contract units' must match the exact body",
+        ),
+        "missing release diagnostics contract units": (
+            workflow.replace(
+                "      - name: Run release diagnostics contract units\n"
+                f"{RELEASE_DIAGNOSTICS_CONTRACT_TEST_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "missing release diagnostics checker unit module": (
+            workflow.replace(
+                "          script.test_check_release_diagnostics_usability\n",
+                "",
+                1,
+            ),
+            "step 'Run release diagnostics contract units' must match the exact body",
+        ),
         "missing macOS unsealed Release producer": (
             workflow.replace(
                 "      - name: Build unsealed macOS Release package on main\n"
@@ -1837,6 +2521,50 @@ def self_test(workflow: str) -> list[str]:
                 1,
             ),
             "one exact Android and one exact macOS Release readback command",
+        ),
+        "missing macOS Release diagnostics producer": (
+            workflow.replace(
+                "      - name: Run macOS Release diagnostics on main\n"
+                f"{MACOS_RELEASE_DIAGNOSTICS_RUN_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "missing macOS Release diagnostics readback": (
+            workflow.replace(
+                "      - name: Read back macOS Release diagnostics on main\n"
+                f"{MACOS_RELEASE_DIAGNOSTICS_READBACK_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "macOS diagnostics platform substitution": (
+            workflow.replace(
+                "            --platform macos \\\n",
+                "            --platform android \\\n",
+                1,
+            ),
+            "producer must match the exact main-only command body",
+        ),
+        "missing current-unsealed lifecycle runner": (
+            workflow.replace(
+                "      - name: Run current unsealed lifecycle on main\n"
+                f"{MACOS_CURRENT_UNSEALED_LIFECYCLE_RUN_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "missing current-unsealed lifecycle readback": (
+            workflow.replace(
+                "      - name: Read back current unsealed lifecycle on main\n"
+                f"{MACOS_CURRENT_UNSEALED_LIFECYCLE_READBACK_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
         ),
         "signed package substituted for unsealed producer": (
             workflow.replace(
@@ -1887,6 +2615,26 @@ def self_test(workflow: str) -> list[str]:
                 1,
             ),
             "steps must match the exact names and order",
+        ),
+        "current-unsealed lifecycle condition removed": (
+            workflow.replace(
+                "      - name: Run current unsealed lifecycle on main\n"
+                "        if: >-\n"
+                f"          {MAIN_RELEASE_CONDITION}\n",
+                "      - name: Run current unsealed lifecycle on main\n",
+                1,
+            ),
+            "runner step must match the exact main-only command body",
+        ),
+        "current-unsealed lifecycle readback condition removed": (
+            workflow.replace(
+                "      - name: Read back current unsealed lifecycle on main\n"
+                "        if: >-\n"
+                f"          {MAIN_RELEASE_CONDITION}\n",
+                "      - name: Read back current unsealed lifecycle on main\n",
+                1,
+            ),
+            "readback step must match the exact main-only command body",
         ),
         "macOS source drift comparison bypassed": (
             workflow.replace(
@@ -2374,6 +3122,34 @@ def self_test(workflow: str) -> list[str]:
                 1,
             ),
             "steps must match the exact names and order",
+        ),
+        "missing Android Release diagnostics producer": (
+            workflow.replace(
+                "      - name: Run Android Release diagnostics on main\n"
+                f"{ANDROID_RELEASE_DIAGNOSTICS_RUN_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "missing Android Release diagnostics readback": (
+            workflow.replace(
+                "      - name: Read back Android Release diagnostics on main\n"
+                f"{ANDROID_RELEASE_DIAGNOSTICS_READBACK_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "Android diagnostics condition removed": (
+            workflow.replace(
+                "      - name: Run Android Release diagnostics on main\n"
+                "        if: >-\n"
+                f"          {MAIN_RELEASE_CONDITION}\n",
+                "      - name: Run Android Release diagnostics on main\n",
+                1,
+            ),
+            "producer must match the exact main-only command body",
         ),
         "missing Android complete rerun requirement": (
             workflow.replace(
@@ -7314,6 +8090,14 @@ def main() -> int:
         help="also prove representative contract mutations are rejected",
     )
     mode.add_argument(
+        "--run-release-compliance-tests",
+        action="store_true",
+        help=(
+            "run the exact release compliance test manifest and require "
+            "zero skips, failures, and errors"
+        ),
+    )
+    mode.add_argument(
         "--swift-test-selection",
         action="store_true",
         help="validate the exact focused Swift test selection",
@@ -7388,6 +8172,23 @@ def main() -> int:
         parser.error(
             "--swift-focused-filter requires --run-swift-focused-tests"
         )
+
+    if args.run_release_compliance_tests:
+        failures = run_release_compliance_tests()
+        if failures:
+            for failure in failures:
+                print(
+                    f"Release compliance test runner failed: {failure}",
+                    file=sys.stderr,
+                )
+            return 1
+        print(
+            "Release compliance tests passed: "
+            f"{RELEASE_COMPLIANCE_TEST_COUNT}/"
+            f"{RELEASE_COMPLIANCE_TEST_COUNT}; skipped=0; failures=0; "
+            "errors=0."
+        )
+        return 0
 
     if args.swift_test_selection:
         failures = swift_test_selection_failures()
@@ -7605,6 +8406,7 @@ def main() -> int:
     )
     if args.self_test and not failures:
         failures.extend(self_test(workflow))
+        failures.extend(release_compliance_test_runner_self_test())
         failures.extend(android_app_language_lifecycle_source_self_test())
         failures.extend(android_camera_lifecycle_source_self_test())
         failures.extend(android_camera_controller_host_source_self_test())

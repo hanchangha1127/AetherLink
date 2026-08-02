@@ -11,9 +11,12 @@ import argparse
 from collections.abc import Mapping
 import hashlib
 import json
+import os
 from pathlib import Path
 from pathlib import PurePosixPath
 import re
+import stat
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -32,6 +35,35 @@ SPDX_VERSION = "SPDX-2.3"
 SPDX_DATA_LICENSE = "CC0-1.0"
 MAX_POM_BYTES = 4 * 1024 * 1024
 FETCH_TIMEOUT_SECONDS = 30
+SWIFT_PACKAGE_DUMP_TIMEOUT_SECONDS = 15
+SWIFT_PACKAGE_DUMP_MAX_BYTES = 2 * 1024 * 1024
+SWIFT_PACKAGE_PATH = Path("Package.swift")
+SWIFT_PACKAGE_RESOLVED_PATH = Path("Package.resolved")
+GRADLE_SETTINGS_PATH = Path("settings.gradle.kts")
+GRADLE_SETTINGS_SIZE = 744
+GRADLE_SETTINGS_SHA256 = (
+    "c89fbc7a53aa4329fd3811a92b36e32f599cc90093125f64463e48986f8ecd44"
+)
+GRADLE_BUILD_PATHS = (
+    "apps/android/app/build.gradle.kts",
+    "apps/android/core/pairing/build.gradle.kts",
+    "apps/android/core/protocol/build.gradle.kts",
+    "apps/android/core/transport/build.gradle.kts",
+    "build.gradle.kts",
+)
+GRADLE_INCLUDED_PROJECTS = (
+    ":app",
+    ":core:protocol",
+    ":core:transport",
+    ":core:pairing",
+)
+GRADLE_PROJECT_DIRECTORIES = (
+    (":app", "apps/android/app"),
+    (":core", "apps/android/core"),
+    (":core:protocol", "apps/android/core/protocol"),
+    (":core:transport", "apps/android/core/transport"),
+    (":core:pairing", "apps/android/core/pairing"),
+)
 GRADLE_LOCK_PATHS = (
     "apps/android/app/gradle.lockfile",
     "apps/android/core/pairing/gradle.lockfile",
@@ -184,6 +216,295 @@ def read_regular_file(path: Path, label: str) -> bytes:
         raise ComplianceError(f"cannot read {label}: {error}") from error
 
 
+def validate_gradle_project_universe(root: Path = ROOT) -> None:
+    ignored_segments = frozenset(
+        {".build", ".git", ".gradle", ".idea", "build", "dist"}
+    )
+    expected_paths = frozenset(
+        (GRADLE_SETTINGS_PATH.as_posix(), *GRADLE_BUILD_PATHS)
+    )
+    discovered_paths: set[str] = set()
+    gradle_names = frozenset(
+        {
+            "settings.gradle.kts",
+            "settings.gradle",
+            "build.gradle.kts",
+            "build.gradle",
+        }
+    )
+
+    def walk_error(error: OSError) -> None:
+        raise error
+
+    try:
+        for directory, child_directories, filenames in os.walk(
+            root,
+            topdown=True,
+            onerror=walk_error,
+            followlinks=False,
+        ):
+            retained_directories: list[str] = []
+            for name in child_directories:
+                if name in ignored_segments:
+                    continue
+                child = Path(directory) / name
+                if child.is_symlink():
+                    raise ComplianceError(
+                        "Gradle project discovery encountered a symlink "
+                        f"directory: {child.relative_to(root).as_posix()}"
+                    )
+                retained_directories.append(name)
+            child_directories[:] = retained_directories
+            for filename in filenames:
+                if filename not in gradle_names:
+                    continue
+                path = Path(directory) / filename
+                relative = path.relative_to(root)
+                if path.is_symlink() or not path.is_file():
+                    raise ComplianceError(
+                        "Gradle project input must be a physical file: "
+                        f"{relative.as_posix()}"
+                    )
+                discovered_paths.add(relative.as_posix())
+    except OSError as error:
+        raise ComplianceError(
+            f"cannot discover Gradle project inputs: {error}"
+        ) from error
+    if frozenset(discovered_paths) != expected_paths:
+        raise ComplianceError(
+            "Gradle project-file universe differs; "
+            f"missing={sorted(expected_paths - discovered_paths)}, "
+            f"extra={sorted(discovered_paths - expected_paths)}"
+        )
+
+    settings_bytes = read_regular_file(
+        root / GRADLE_SETTINGS_PATH,
+        GRADLE_SETTINGS_PATH.as_posix(),
+    )
+    if (
+        len(settings_bytes) != GRADLE_SETTINGS_SIZE
+        or hashlib.sha256(settings_bytes).hexdigest()
+        != GRADLE_SETTINGS_SHA256
+    ):
+        raise ComplianceError(
+            "settings.gradle.kts bytes differ from the reviewed V1 profile"
+        )
+    try:
+        settings = settings_bytes.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ComplianceError("settings.gradle.kts must be UTF-8") from error
+    if "\r" in settings or not settings.endswith("\n"):
+        raise ComplianceError("settings.gradle.kts must use LF line endings")
+    if re.search(r"\bincludeBuild\s*\(", settings):
+        raise ComplianceError("Gradle included builds are outside the V1 profile")
+
+    included = tuple(
+        re.findall(r'(?m)^include\("([^"\n]+)"\)\s*$', settings)
+    )
+    project_directories = tuple(
+        re.findall(
+            r'(?m)^project\("([^"\n]+)"\)\.projectDir = '
+            r'file\("([^"\n]+)"\)\s*$',
+            settings,
+        )
+    )
+    if (
+        included != GRADLE_INCLUDED_PROJECTS
+        or settings.count("include(") != len(GRADLE_INCLUDED_PROJECTS)
+    ):
+        raise ComplianceError("Gradle included-project set differs")
+    if (
+        project_directories != GRADLE_PROJECT_DIRECTORIES
+        or settings.count(".projectDir") != len(GRADLE_PROJECT_DIRECTORIES)
+    ):
+        raise ComplianceError("Gradle project-directory mapping differs")
+
+    for _project, relative_text in GRADLE_PROJECT_DIRECTORIES:
+        relative = PurePosixPath(relative_text)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ComplianceError("Gradle project directory escapes the repository")
+        current = root
+        for part in relative.parts:
+            current /= part
+            if current.is_symlink():
+                raise ComplianceError(
+                    "Gradle project directory has a symlink ancestor: "
+                    f"{relative_text}"
+                )
+        if not current.is_dir():
+            raise ComplianceError(
+                f"Gradle project directory is missing: {relative_text}"
+            )
+
+
+def discovered_gradle_lock_paths(root: Path = ROOT) -> tuple[str, ...]:
+    android_root = root / "apps/android"
+    if android_root.is_symlink() or not android_root.is_dir():
+        raise ComplianceError("apps/android must be a physical directory")
+    ignored_segments = frozenset({".gradle", ".idea", "build"})
+    candidates: set[str] = set()
+    android_locks: list[Path] = []
+    android_build_files: list[Path] = []
+
+    def walk_error(error: OSError) -> None:
+        raise error
+
+    try:
+        root_entries = tuple(root.iterdir())
+        for directory, child_directories, filenames in os.walk(
+            android_root,
+            topdown=True,
+            onerror=walk_error,
+            followlinks=False,
+        ):
+            retained_directories: list[str] = []
+            for name in child_directories:
+                if name in ignored_segments:
+                    continue
+                child = Path(directory) / name
+                if child.is_symlink():
+                    raise ComplianceError(
+                        "Gradle lock discovery encountered a symlink "
+                        f"directory: {child.relative_to(root).as_posix()}"
+                    )
+                retained_directories.append(name)
+            child_directories[:] = retained_directories
+            for filename in filenames:
+                path = Path(directory) / filename
+                if filename == "gradle.lockfile":
+                    android_locks.append(path)
+                elif filename == "build.gradle.kts":
+                    android_build_files.append(path)
+    except OSError as error:
+        raise ComplianceError(
+            f"cannot discover Gradle dependency inputs: {error}"
+        ) from error
+    for path in root_entries:
+        if path.name.endswith("gradle.lockfile"):
+            if path.is_symlink() or not path.is_file():
+                raise ComplianceError(
+                    f"Gradle lock path must be a physical file: {path.name}"
+                )
+            candidates.add(path.name)
+    for path in android_locks:
+        relative = path.relative_to(root)
+        if any(part in ignored_segments for part in relative.parts):
+            continue
+        if path.is_symlink() or not path.is_file():
+            raise ComplianceError(
+                "Gradle lock path must be a physical file: "
+                f"{relative.as_posix()}"
+            )
+        candidates.add(relative.as_posix())
+    for build_file in android_build_files:
+        relative = build_file.relative_to(root)
+        if any(part in ignored_segments for part in relative.parts):
+            continue
+        if build_file.is_symlink() or not build_file.is_file():
+            raise ComplianceError(
+                "Android module build path must be a physical file: "
+                f"{relative.as_posix()}"
+            )
+        lock_path = build_file.parent / "gradle.lockfile"
+        if lock_path.is_symlink() or not lock_path.is_file():
+            raise ComplianceError(
+                "Android module has no physical dependency lock: "
+                f"{relative.as_posix()}"
+            )
+    return tuple(sorted(candidates, key=lambda value: value.encode("ascii")))
+
+
+def validate_gradle_lock_path_universe(root: Path = ROOT) -> None:
+    validate_gradle_project_universe(root)
+    actual = discovered_gradle_lock_paths(root)
+    if actual != GRADLE_LOCK_PATHS:
+        expected = set(GRADLE_LOCK_PATHS)
+        observed = set(actual)
+        raise ComplianceError(
+            "Gradle lock-file universe differs; "
+            f"missing={sorted(expected - observed)}, "
+            f"extra={sorted(observed - expected)}"
+        )
+
+
+def swift_external_dependency_count(
+    root: Path = ROOT,
+    *,
+    run: object = subprocess.run,
+) -> int:
+    package_path = root / SWIFT_PACKAGE_PATH
+    read_regular_file(package_path, SWIFT_PACKAGE_PATH.as_posix())
+    resolved_path = root / SWIFT_PACKAGE_RESOLVED_PATH
+    if resolved_path.is_symlink() or resolved_path.exists():
+        raise ComplianceError(
+            "Package.resolved is incompatible with the declared zero Swift "
+            "external dependency boundary"
+        )
+    try:
+        completed = run(
+            ["swift", "package", "dump-package"],
+            cwd=root,
+            capture_output=True,
+            check=False,
+            timeout=SWIFT_PACKAGE_DUMP_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise ComplianceError(
+            f"cannot inspect Swift package dependency closure: {error}"
+        ) from error
+    stdout = getattr(completed, "stdout", None)
+    stderr = getattr(completed, "stderr", None)
+    returncode = getattr(completed, "returncode", None)
+    if (
+        type(returncode) is not int
+        or returncode != 0
+        or type(stdout) is not bytes
+        or type(stderr) is not bytes
+        or stderr
+        or not stdout
+        or len(stdout) > SWIFT_PACKAGE_DUMP_MAX_BYTES
+    ):
+        raise ComplianceError(
+            "swift package dump-package did not produce one bounded "
+            "successful JSON document"
+        )
+    try:
+        package = json.loads(
+            stdout.decode("utf-8"),
+            object_pairs_hook=reject_duplicate_keys,
+            parse_constant=reject_json_constant,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ComplianceError(
+            f"Swift package dependency closure is invalid JSON: {error}"
+        ) from error
+    if (
+        type(package) is not dict
+        or type(package.get("dependencies")) is not list
+        or type(package.get("targets")) is not list
+    ):
+        raise ComplianceError(
+            "Swift package dump lacks exact dependency and target arrays"
+        )
+    dependencies = package["dependencies"]
+    if dependencies:
+        raise ComplianceError(
+            "Swift external dependencies are unsupported by the current "
+            f"release compliance profile: count={len(dependencies)}"
+        )
+    for index, target in enumerate(package["targets"]):
+        if type(target) is not dict:
+            raise ComplianceError(
+                f"Swift target {index} must be a JSON object"
+            )
+        if target.get("type") == "binary" or target.get("url") is not None:
+            raise ComplianceError(
+                "Swift binary target is outside the zero-external-dependency "
+                f"profile: target {index}"
+            )
+    return 0
+
+
 def validate_ascii_text_file(data: bytes, label: str) -> str:
     if data.startswith(b"\xef\xbb\xbf") or b"\r" in data or not data.endswith(b"\n"):
         raise ComplianceError(f"{label} must be BOM-free ASCII with LF endings")
@@ -214,6 +535,7 @@ def maven_purl(group: str, artifact: str, version: str) -> str:
 
 
 def lock_inventory(root: Path = ROOT) -> dict[str, dict[str, set[str]]]:
+    validate_gradle_lock_path_universe(root)
     inventory: dict[str, dict[str, set[str]]] = {}
     for relative in GRADLE_LOCK_PATHS:
         data = read_regular_file(root / relative, relative)
@@ -259,6 +581,7 @@ def lock_inventory(root: Path = ROOT) -> dict[str, dict[str, set[str]]]:
 
 
 def gradle_lock_file_records(root: Path = ROOT) -> list[dict[str, object]]:
+    validate_gradle_lock_path_universe(root)
     records: list[dict[str, object]] = []
     for relative in GRADLE_LOCK_PATHS:
         data = read_regular_file(root / relative, relative)
@@ -536,6 +859,7 @@ def spdx_declared_expression(licenses: list[dict[str, str]]) -> str:
 
 
 def refreshed_catalog(root: Path = ROOT) -> dict[str, object]:
+    swift_dependency_count = swift_external_dependency_count(root)
     locked = lock_inventory(root)
     fetch_cache: dict[str, tuple[bytes, str, str]] = {}
     resolution_cache: dict[
@@ -592,7 +916,7 @@ def refreshed_catalog(root: Path = ROOT) -> dict[str, object]:
             "source": "Maven POM license declarations with parent inheritance",
         },
         "schemaVersion": CATALOG_SCHEMA_VERSION,
-        "swiftExternalDependencyCount": 0,
+        "swiftExternalDependencyCount": swift_dependency_count,
     }
 
 
@@ -664,13 +988,11 @@ def validate_catalog(
     }
     if boundary != expected_boundary:
         raise ComplianceError("catalog review boundary differs")
-    if (
-        exact_int(
-            catalog.get("swiftExternalDependencyCount"),
-            "catalog.swiftExternalDependencyCount",
-        )
-        != 0
-    ):
+    swift_dependency_count = swift_external_dependency_count(root)
+    if exact_int(
+        catalog.get("swiftExternalDependencyCount"),
+        "catalog.swiftExternalDependencyCount",
+    ) != swift_dependency_count:
         raise ComplianceError("catalog Swift external dependency count must be zero")
 
     records_value = catalog.get("pomRecords")
@@ -1183,13 +1505,146 @@ def build_release_compliance(
     return members, summary
 
 
+def open_physical_output_directory(
+    directory: Path,
+) -> tuple[int, Path]:
+    absolute = Path(os.path.abspath(os.fspath(directory)))
+    if not absolute.is_absolute() or not absolute.name:
+        raise ComplianceError(f"invalid output directory: {directory}")
+    required_flags = ("O_DIRECTORY", "O_NOFOLLOW")
+    if any(not hasattr(os, name) for name in required_flags):
+        raise ComplianceError("platform lacks required no-follow output flags")
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    directory_flags |= getattr(os, "O_CLOEXEC", 0)
+    descriptor = -1
+    try:
+        descriptor = os.open(absolute.anchor, directory_flags)
+        for part in absolute.parts[1:]:
+            try:
+                child_descriptor = os.open(
+                    part,
+                    directory_flags,
+                    dir_fd=descriptor,
+                )
+            except FileNotFoundError:
+                os.mkdir(part, 0o755, dir_fd=descriptor)
+                child_descriptor = os.open(
+                    part,
+                    directory_flags,
+                    dir_fd=descriptor,
+                )
+            os.close(descriptor)
+            descriptor = child_descriptor
+        return descriptor, absolute
+    except OSError as error:
+        if descriptor >= 0:
+            os.close(descriptor)
+        raise ComplianceError(
+            f"output directory must be a physical no-follow path: {directory}: "
+            f"{error}"
+        ) from error
+
+
+def write_output_file_no_follow(
+    output: Path,
+    data: bytes,
+    *,
+    label: str,
+) -> None:
+    if type(data) is not bytes:
+        raise ComplianceError(f"{label} output must be bytes")
+    absolute = Path(os.path.abspath(os.fspath(output)))
+    if absolute.name in ("", ".", ".."):
+        raise ComplianceError(f"invalid {label} output path: {output}")
+    parent_descriptor, _parent = open_physical_output_directory(absolute.parent)
+    file_descriptor = -1
+    try:
+        try:
+            existing = os.stat(
+                absolute.name,
+                dir_fd=parent_descriptor,
+                follow_symlinks=False,
+            )
+        except FileNotFoundError:
+            existing = None
+        if existing is not None and (
+            not stat.S_ISREG(existing.st_mode) or existing.st_nlink != 1
+        ):
+            raise ComplianceError(
+                f"{label} output must be a regular single-link file: {output}"
+            )
+
+        flags = os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW
+        flags |= getattr(os, "O_CLOEXEC", 0)
+        file_descriptor = os.open(
+            absolute.name,
+            flags,
+            0o644,
+            dir_fd=parent_descriptor,
+        )
+        opened = os.fstat(file_descriptor)
+        if not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
+            raise ComplianceError(
+                f"{label} output descriptor is not a regular single-link file"
+            )
+        os.ftruncate(file_descriptor, 0)
+        remaining = memoryview(data)
+        while remaining:
+            written = os.write(file_descriptor, remaining)
+            if written < 1:
+                raise ComplianceError(f"{label} output write made no progress")
+            remaining = remaining[written:]
+        os.fsync(file_descriptor)
+        after = os.fstat(file_descriptor)
+        final = os.stat(
+            absolute.name,
+            dir_fd=parent_descriptor,
+            follow_symlinks=False,
+        )
+        opened_identity = (opened.st_dev, opened.st_ino)
+        if (
+            (after.st_dev, after.st_ino) != opened_identity
+            or (final.st_dev, final.st_ino) != opened_identity
+            or after.st_size != len(data)
+            or final.st_size != len(data)
+            or after.st_nlink != 1
+            or final.st_nlink != 1
+            or not stat.S_ISREG(final.st_mode)
+        ):
+            raise ComplianceError(f"{label} output identity changed during write")
+    except OSError as error:
+        raise ComplianceError(f"cannot write {label} output {output}: {error}") from error
+    finally:
+        if file_descriptor >= 0:
+            os.close(file_descriptor)
+        os.close(parent_descriptor)
+
+
+def write_release_compliance_members(
+    output_directory: Path,
+    members: list[tuple[str, bytes]],
+) -> None:
+    for member_path, data in members:
+        relative = PurePosixPath(member_path)
+        if (
+            relative.is_absolute()
+            or any(part in ("", ".", "..") for part in relative.parts)
+            or relative.as_posix() != member_path
+        ):
+            raise ComplianceError(
+                f"invalid release compliance member output path: {member_path}"
+            )
+        write_output_file_no_follow(
+            output_directory.joinpath(*relative.parts),
+            data,
+            label=member_path,
+        )
+
+
 def refresh_catalog(output: Path, root: Path = ROOT) -> None:
     catalog = refreshed_catalog(root)
     data = canonical_json_bytes(catalog)
-    if output.parent.is_symlink():
-        raise ComplianceError(f"catalog output parent must not be a symlink: {output}")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_bytes(data)
+    write_output_file_no_follow(output, data, label="catalog")
 
 
 def main() -> int:
@@ -1235,11 +1690,7 @@ def main() -> int:
             build_number=arguments.build_number,
             source_snapshot_sha256=arguments.source_snapshot_sha256,
         )
-        arguments.output_dir.mkdir(parents=True, exist_ok=True)
-        for member_path, data in members:
-            target = arguments.output_dir.joinpath(*PurePosixPath(member_path).parts)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(data)
+        write_release_compliance_members(arguments.output_dir, members)
         print(f"Release compliance bytes rendered: {arguments.output_dir}")
         return 0
     except (ComplianceError, OSError) as error:

@@ -4337,6 +4337,16 @@ run check_python_syntax \
   script/test_run_macos_isolated_reverse_version_readback_smoke.py \
   script/check_macos_isolated_reverse_version_readback_evidence.py \
   script/test_check_macos_isolated_reverse_version_readback_evidence.py \
+  script/run_macos_current_unsealed_install_recovery_smoke.py \
+  script/test_run_macos_current_unsealed_install_recovery_smoke.py \
+  script/check_macos_current_unsealed_install_recovery_evidence.py \
+  script/test_check_macos_current_unsealed_install_recovery_evidence.py \
+  script/check_macos_current_unsealed_ci_lifecycle.py \
+  script/test_check_macos_current_unsealed_ci_lifecycle.py \
+  script/run_release_diagnostics_usability.py \
+  script/test_run_release_diagnostics_usability.py \
+  script/check_release_diagnostics_usability.py \
+  script/test_check_release_diagnostics_usability.py \
   script/run_macos_local_dmg_install_smoke.py \
   script/test_run_macos_local_dmg_install_smoke.py \
   script/run_macos_local_dmg_install_smoke_v2.py \
@@ -4347,6 +4357,12 @@ run check_python_syntax \
   script/test_run_macos_local_dmg_uninstall_reinstall_state_recovery_smoke.py \
   script/run_macos_local_dmg_uninstall_reinstall_abrupt_process_state_recovery_smoke.py \
   script/test_run_macos_local_dmg_uninstall_reinstall_abrupt_process_state_recovery_smoke.py \
+  script/run_android_headless_emulator_product_lifecycle_v2.py \
+  script/test_run_android_headless_emulator_product_lifecycle_v2.py \
+  script/check_android_headless_emulator_product_lifecycle_v2.py \
+  script/test_check_android_headless_emulator_product_lifecycle_v2.py \
+  script/check_product_nightly_ci.py \
+  script/test_check_product_nightly_ci.py \
   script/check_android_string_parity.py \
   script/check_macos_localization.py \
 	  script/check_protocol_schema.py \
@@ -4517,16 +4533,29 @@ run python3 -m unittest \
   script/test_run_macos_isolated_upgrade_smoke.py \
   script/test_run_macos_isolated_reverse_version_readback_smoke.py \
   script/test_check_macos_isolated_reverse_version_readback_evidence.py \
+  script/test_run_macos_current_unsealed_install_recovery_smoke.py \
+  script.test_check_macos_current_unsealed_install_recovery_evidence.CurrentUnsealedRecoveryEvidencePortableTests \
+  script/test_check_macos_current_unsealed_ci_lifecycle.py \
+  script/test_run_release_diagnostics_usability.py \
+  script/test_check_release_diagnostics_usability.py \
   script/test_run_macos_local_dmg_install_smoke.py \
   script/test_run_macos_local_dmg_install_smoke_v2.py \
   script/test_run_macos_local_dmg_uninstall_reinstall_smoke.py \
   script/test_run_macos_local_dmg_uninstall_reinstall_state_recovery_smoke.py \
   script/test_run_macos_local_dmg_uninstall_reinstall_abrupt_process_state_recovery_smoke.py \
+  script/test_run_android_headless_emulator_product_lifecycle_v2.py \
+  script/test_check_android_headless_emulator_product_lifecycle_v2.py \
+  script/test_check_product_nightly_ci.py \
   script/test_production_relay_security_design.py \
   script/test_relay_allocation_preflight.py \
   script/test_build_and_run.py \
   script/test_no_adb_external_relay_pairing_smoke.py \
   script/test_android_usb_install.py
+run python3 -B script/check_product_nightly_ci.py
+run python3 -B script/check_product_nightly_ci.py --self-test
+run python3 -B script/check_product_nightly_ci.py --run-contract-tests
+run python3 -B script/check_product_ci.py
+run python3 -B script/check_product_ci.py --self-test
 run git diff --check
 
 # The historical enterprise G0 checkpoint/decision tools pin old source bytes.
@@ -4633,6 +4662,10 @@ run swift test
 run swift test --filter 'P2PNATContractsTests|P2PNATSharedVectorTests|P2PNATConformanceTests'
 run swift test --filter 'ProductionSecureSessionSharedVectorTests'
 run swift test --filter 'ProductionPairStateSharedVectorTests'
+# The exact closure-five checker is historical: its ignored evidence names and
+# fixed dist/unsealed-package-only path belong to one superseded generation.
+# Current generations are produced and checked atomically by the main-only CI
+# build -> output readback -> lifecycle -> current-run checker chain.
 run python3 -I -B -S script/check_macos_isolated_reverse_version_readback_evidence.py
 run python3 -I -B -S script/check_macos_build24_lifecycle_evidence.py
 run python3 -I -B -S script/check_macos_build24_idle_resource_stability_evidence.py
@@ -4656,6 +4689,9 @@ run python3 -B -m unittest \
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_lifecycle_aggregate_sources_are_bound \
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_lifecycle_aggregate_documents_are_bound \
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_lifecycle_aggregate_validators_are_wired_into_main \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_current_unsealed_install_recovery_sources_are_bound \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_current_unsealed_install_recovery_documents_are_bound \
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_current_unsealed_install_recovery_validators_are_wired_into_main \
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_result_and_sources_are_bound \
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_documents_are_bound \
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_validators_are_wired_into_main

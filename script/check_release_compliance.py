@@ -6,8 +6,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 import hashlib
 import json
-from pathlib import Path
+import os
+from pathlib import Path, PurePosixPath
 import re
+import subprocess
 import urllib.parse
 
 
@@ -20,6 +22,35 @@ CATALOG_DOCUMENT_TYPE = "aetherlink.maven-pom-license-inventory"
 SPDX_VERSION = "SPDX-2.3"
 SPDX_DATA_LICENSE = "CC0-1.0"
 MAX_POM_BYTES = 4 * 1024 * 1024
+SWIFT_PACKAGE_DUMP_TIMEOUT_SECONDS = 15
+SWIFT_PACKAGE_DUMP_MAX_BYTES = 2 * 1024 * 1024
+SWIFT_PACKAGE_PATH = Path("Package.swift")
+SWIFT_PACKAGE_RESOLVED_PATH = Path("Package.resolved")
+GRADLE_SETTINGS_PATH = Path("settings.gradle.kts")
+GRADLE_SETTINGS_SIZE = 744
+GRADLE_SETTINGS_SHA256 = (
+    "c89fbc7a53aa4329fd3811a92b36e32f599cc90093125f64463e48986f8ecd44"
+)
+GRADLE_BUILD_PATHS = (
+    "apps/android/app/build.gradle.kts",
+    "apps/android/core/pairing/build.gradle.kts",
+    "apps/android/core/protocol/build.gradle.kts",
+    "apps/android/core/transport/build.gradle.kts",
+    "build.gradle.kts",
+)
+GRADLE_INCLUDED_PROJECTS = (
+    ":app",
+    ":core:protocol",
+    ":core:transport",
+    ":core:pairing",
+)
+GRADLE_PROJECT_DIRECTORIES = (
+    (":app", "apps/android/app"),
+    (":core", "apps/android/core"),
+    (":core:protocol", "apps/android/core/protocol"),
+    (":core:transport", "apps/android/core/transport"),
+    (":core:pairing", "apps/android/core/pairing"),
+)
 CATALOG_SOURCE = "release/third-party-license-inventory-v1.json"
 METADATA_SOURCE = "release/release-compliance-metadata-v1.json"
 CATALOG_MEMBER = "compliance/third-party-license-inventory-v1.json"
@@ -310,6 +341,7 @@ def parse_current_locks(
     *,
     profile: str = COMPLIANCE_PROFILE_V2,
 ) -> dict[str, dict[str, set[str]]]:
+    validate_gradle_lock_path_universe(root)
     known_configurations, _, _, _ = profile_contract(profile)
     inventory: dict[str, dict[str, set[str]]] = {}
     for relative in GRADLE_LOCK_PATHS:
@@ -372,6 +404,312 @@ def parse_current_locks(
     if not inventory:
         raise ComplianceVerificationError("current Gradle lock inventory is empty")
     return inventory
+
+
+def validate_gradle_project_universe(root: Path) -> None:
+    ignored_segments = frozenset(
+        {".build", ".git", ".gradle", ".idea", "build", "dist"}
+    )
+    expected_paths = frozenset(
+        (GRADLE_SETTINGS_PATH.as_posix(), *GRADLE_BUILD_PATHS)
+    )
+    discovered_paths: set[str] = set()
+    gradle_names = frozenset(
+        {
+            "settings.gradle.kts",
+            "settings.gradle",
+            "build.gradle.kts",
+            "build.gradle",
+        }
+    )
+
+    def walk_error(error: OSError) -> None:
+        raise error
+
+    try:
+        for directory, child_directories, filenames in os.walk(
+            root,
+            topdown=True,
+            onerror=walk_error,
+            followlinks=False,
+        ):
+            retained_directories: list[str] = []
+            for name in child_directories:
+                if name in ignored_segments:
+                    continue
+                child = Path(directory) / name
+                if child.is_symlink():
+                    raise ComplianceVerificationError(
+                        "Gradle project discovery encountered a symlink "
+                        f"directory: {child.relative_to(root).as_posix()}"
+                    )
+                retained_directories.append(name)
+            child_directories[:] = retained_directories
+            for filename in filenames:
+                if filename not in gradle_names:
+                    continue
+                path = Path(directory) / filename
+                relative = path.relative_to(root)
+                if path.is_symlink() or not path.is_file():
+                    raise ComplianceVerificationError(
+                        "Gradle project input must be a physical file: "
+                        f"{relative.as_posix()}"
+                    )
+                discovered_paths.add(relative.as_posix())
+    except OSError as error:
+        raise ComplianceVerificationError(
+            f"cannot discover Gradle project inputs: {error}"
+        ) from error
+    if frozenset(discovered_paths) != expected_paths:
+        raise ComplianceVerificationError(
+            "Gradle project-file universe differs; "
+            f"missing={sorted(expected_paths - discovered_paths)}, "
+            f"extra={sorted(discovered_paths - expected_paths)}"
+        )
+
+    settings_path = root / GRADLE_SETTINGS_PATH
+    if settings_path.is_symlink() or not settings_path.is_file():
+        raise ComplianceVerificationError(
+            "settings.gradle.kts must be a physical file"
+        )
+    try:
+        settings_bytes = settings_path.read_bytes()
+        settings = settings_bytes.decode("utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise ComplianceVerificationError(
+            f"cannot read UTF-8 settings.gradle.kts: {error}"
+        ) from error
+    if (
+        len(settings_bytes) != GRADLE_SETTINGS_SIZE
+        or hashlib.sha256(settings_bytes).hexdigest()
+        != GRADLE_SETTINGS_SHA256
+    ):
+        raise ComplianceVerificationError(
+            "settings.gradle.kts bytes differ from the reviewed V1 profile"
+        )
+    if "\r" in settings or not settings.endswith("\n"):
+        raise ComplianceVerificationError(
+            "settings.gradle.kts must use LF line endings"
+        )
+    if re.search(r"\bincludeBuild\s*\(", settings):
+        raise ComplianceVerificationError(
+            "Gradle included builds are outside the V1 profile"
+        )
+
+    included = tuple(
+        re.findall(r'(?m)^include\("([^"\n]+)"\)\s*$', settings)
+    )
+    project_directories = tuple(
+        re.findall(
+            r'(?m)^project\("([^"\n]+)"\)\.projectDir = '
+            r'file\("([^"\n]+)"\)\s*$',
+            settings,
+        )
+    )
+    if (
+        included != GRADLE_INCLUDED_PROJECTS
+        or settings.count("include(") != len(GRADLE_INCLUDED_PROJECTS)
+    ):
+        raise ComplianceVerificationError("Gradle included-project set differs")
+    if (
+        project_directories != GRADLE_PROJECT_DIRECTORIES
+        or settings.count(".projectDir") != len(GRADLE_PROJECT_DIRECTORIES)
+    ):
+        raise ComplianceVerificationError(
+            "Gradle project-directory mapping differs"
+        )
+
+    for _project, relative_text in GRADLE_PROJECT_DIRECTORIES:
+        relative = PurePosixPath(relative_text)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ComplianceVerificationError(
+                "Gradle project directory escapes the repository"
+            )
+        current = root
+        for part in relative.parts:
+            current /= part
+            if current.is_symlink():
+                raise ComplianceVerificationError(
+                    "Gradle project directory has a symlink ancestor: "
+                    f"{relative_text}"
+                )
+        if not current.is_dir():
+            raise ComplianceVerificationError(
+                f"Gradle project directory is missing: {relative_text}"
+            )
+
+
+def discovered_gradle_lock_paths(root: Path) -> tuple[str, ...]:
+    android_root = root / "apps/android"
+    if android_root.is_symlink() or not android_root.is_dir():
+        raise ComplianceVerificationError(
+            "apps/android must be a physical directory"
+        )
+    ignored_segments = frozenset({".gradle", ".idea", "build"})
+    candidates: set[str] = set()
+    android_locks: list[Path] = []
+    android_build_files: list[Path] = []
+
+    def walk_error(error: OSError) -> None:
+        raise error
+
+    try:
+        root_entries = tuple(root.iterdir())
+        for directory, child_directories, filenames in os.walk(
+            android_root,
+            topdown=True,
+            onerror=walk_error,
+            followlinks=False,
+        ):
+            retained_directories: list[str] = []
+            for name in child_directories:
+                if name in ignored_segments:
+                    continue
+                child = Path(directory) / name
+                if child.is_symlink():
+                    raise ComplianceVerificationError(
+                        "Gradle lock discovery encountered a symlink "
+                        f"directory: {child.relative_to(root).as_posix()}"
+                    )
+                retained_directories.append(name)
+            child_directories[:] = retained_directories
+            for filename in filenames:
+                path = Path(directory) / filename
+                if filename == "gradle.lockfile":
+                    android_locks.append(path)
+                elif filename == "build.gradle.kts":
+                    android_build_files.append(path)
+    except OSError as error:
+        raise ComplianceVerificationError(
+            f"cannot discover Gradle dependency inputs: {error}"
+        ) from error
+    for path in root_entries:
+        if path.name.endswith("gradle.lockfile"):
+            if path.is_symlink() or not path.is_file():
+                raise ComplianceVerificationError(
+                    f"Gradle lock path must be a physical file: {path.name}"
+                )
+            candidates.add(path.name)
+    for path in android_locks:
+        relative = path.relative_to(root)
+        if any(part in ignored_segments for part in relative.parts):
+            continue
+        if path.is_symlink() or not path.is_file():
+            raise ComplianceVerificationError(
+                "Gradle lock path must be a physical file: "
+                f"{relative.as_posix()}"
+            )
+        candidates.add(relative.as_posix())
+    for build_file in android_build_files:
+        relative = build_file.relative_to(root)
+        if any(part in ignored_segments for part in relative.parts):
+            continue
+        if build_file.is_symlink() or not build_file.is_file():
+            raise ComplianceVerificationError(
+                "Android module build path must be a physical file: "
+                f"{relative.as_posix()}"
+            )
+        lock_path = build_file.parent / "gradle.lockfile"
+        if lock_path.is_symlink() or not lock_path.is_file():
+            raise ComplianceVerificationError(
+                "Android module has no physical dependency lock: "
+                f"{relative.as_posix()}"
+            )
+    return tuple(sorted(candidates, key=lambda value: value.encode("ascii")))
+
+
+def validate_gradle_lock_path_universe(root: Path) -> None:
+    validate_gradle_project_universe(root)
+    actual = discovered_gradle_lock_paths(root)
+    if actual != GRADLE_LOCK_PATHS:
+        expected = set(GRADLE_LOCK_PATHS)
+        observed = set(actual)
+        raise ComplianceVerificationError(
+            "Gradle lock-file universe differs; "
+            f"missing={sorted(expected - observed)}, "
+            f"extra={sorted(observed - expected)}"
+        )
+
+
+def swift_external_dependency_count(
+    root: Path,
+    *,
+    run: object = subprocess.run,
+) -> int:
+    package_path = root / SWIFT_PACKAGE_PATH
+    if package_path.is_symlink() or not package_path.is_file():
+        raise ComplianceVerificationError(
+            "Package.swift must be a physical file"
+        )
+    resolved_path = root / SWIFT_PACKAGE_RESOLVED_PATH
+    if resolved_path.is_symlink() or resolved_path.exists():
+        raise ComplianceVerificationError(
+            "Package.resolved is incompatible with the declared zero Swift "
+            "external dependency boundary"
+        )
+    try:
+        completed = run(
+            ["swift", "package", "dump-package"],
+            cwd=root,
+            capture_output=True,
+            check=False,
+            timeout=SWIFT_PACKAGE_DUMP_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise ComplianceVerificationError(
+            f"cannot inspect Swift package dependency closure: {error}"
+        ) from error
+    stdout = getattr(completed, "stdout", None)
+    stderr = getattr(completed, "stderr", None)
+    returncode = getattr(completed, "returncode", None)
+    if (
+        type(returncode) is not int
+        or returncode != 0
+        or type(stdout) is not bytes
+        or type(stderr) is not bytes
+        or stderr
+        or not stdout
+        or len(stdout) > SWIFT_PACKAGE_DUMP_MAX_BYTES
+    ):
+        raise ComplianceVerificationError(
+            "swift package dump-package did not produce one bounded "
+            "successful JSON document"
+        )
+    try:
+        package = json.loads(
+            stdout.decode("utf-8"),
+            object_pairs_hook=reject_duplicate_keys,
+            parse_constant=reject_json_constant,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ComplianceVerificationError(
+            f"Swift package dependency closure is invalid JSON: {error}"
+        ) from error
+    if (
+        type(package) is not dict
+        or type(package.get("dependencies")) is not list
+        or type(package.get("targets")) is not list
+    ):
+        raise ComplianceVerificationError(
+            "Swift package dump lacks exact dependency and target arrays"
+        )
+    dependencies = package["dependencies"]
+    if dependencies:
+        raise ComplianceVerificationError(
+            "Swift external dependencies are unsupported by the current "
+            f"release compliance profile: count={len(dependencies)}"
+        )
+    for index, target in enumerate(package["targets"]):
+        if type(target) is not dict:
+            raise ComplianceVerificationError(
+                f"Swift target {index} must be a JSON object"
+            )
+        if target.get("type") == "binary" or target.get("url") is not None:
+            raise ComplianceVerificationError(
+                "Swift binary target is outside the zero-external-dependency "
+                f"profile: target {index}"
+            )
+    return 0
 
 
 def normalized_license_key(name: str) -> str:
@@ -1202,11 +1540,11 @@ def verify_release_compliance(
         validate_metadata_v1(metadata)
     else:
         validate_metadata_v2(metadata)
-    current_locks = (
-        parse_current_locks(root, profile=profile)
-        if compare_current_source
-        else None
-    )
+    if compare_current_source:
+        swift_external_dependency_count(root)
+        current_locks = parse_current_locks(root, profile=profile)
+    else:
+        current_locks = None
     packages = validate_catalog(
         catalog,
         manifest_lock_files=manifest_lock_files,

@@ -8,6 +8,8 @@ from collections import Counter
 import hashlib
 import json
 from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 from unittest import mock
 
@@ -49,6 +51,20 @@ class ReleaseComplianceTests(unittest.TestCase):
         cls.metadata = load_release_metadata()
         cls.manifest_lock_files = cls.catalog["gradleLockFiles"]
 
+    @staticmethod
+    def _write_gradle_universe_fixture(root: Path) -> None:
+        for relative in generator.GRADLE_BUILD_PATHS:
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"// fixture\n")
+        (root / generator.GRADLE_SETTINGS_PATH).write_bytes(
+            (ROOT / generator.GRADLE_SETTINGS_PATH).read_bytes()
+        )
+        for relative in generator.GRADLE_LOCK_PATHS:
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"empty=\n")
+
     def test_checked_in_catalog_exactly_covers_current_locks(self) -> None:
         current = parse_current_locks(ROOT)
         self.assertEqual(len(current), 350)
@@ -58,6 +74,158 @@ class ReleaseComplianceTests(unittest.TestCase):
             set(current),
         )
         self.assertEqual(len(self.catalog["pomRecords"]), 379)
+
+    def test_dependency_input_universe_is_closed_in_both_implementations(
+        self,
+    ) -> None:
+        self.assertEqual(
+            generator.discovered_gradle_lock_paths(ROOT),
+            generator.GRADLE_LOCK_PATHS,
+        )
+        self.assertEqual(
+            readback.discovered_gradle_lock_paths(ROOT),
+            readback.GRADLE_LOCK_PATHS,
+        )
+        self.assertEqual(generator.swift_external_dependency_count(ROOT), 0)
+        self.assertEqual(readback.swift_external_dependency_count(ROOT), 0)
+
+    def test_unexpected_or_missing_gradle_lock_is_rejected_independently(
+        self,
+    ) -> None:
+        validators = (
+            generator.validate_gradle_lock_path_universe,
+            readback.validate_gradle_lock_path_universe,
+        )
+        error_types = (ComplianceError, ComplianceVerificationError)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_gradle_universe_fixture(root)
+            for validator in validators:
+                validator(root)
+
+            def assert_rejected(mutation: str) -> None:
+                for validator, error_type in zip(validators, error_types):
+                    with self.subTest(
+                        validator=validator.__module__,
+                        mutation=mutation,
+                    ):
+                        with self.assertRaises(error_type):
+                            validator(root)
+
+            extra = root / "apps/android/extra/gradle.lockfile"
+            extra.parent.mkdir(parents=True)
+            extra.write_bytes(b"empty=\n")
+            (extra.parent / "build.gradle.kts").write_bytes(b"// fixture\n")
+            assert_rejected("extra module")
+
+            extra.unlink()
+            (extra.parent / "build.gradle.kts").unlink()
+            missing = root / generator.GRADLE_LOCK_PATHS[0]
+            missing_bytes = missing.read_bytes()
+            missing.unlink()
+            assert_rejected("missing module lock")
+            missing.write_bytes(missing_bytes)
+
+            settings = root / generator.GRADLE_SETTINGS_PATH
+            settings_bytes = settings.read_bytes()
+            settings.write_bytes(
+                settings_bytes
+                + b'includeBuild /* comment */ ("../external")\n'
+            )
+            assert_rejected("comment-obscured external included build")
+            settings.write_bytes(settings_bytes)
+
+            settings.write_bytes(
+                settings_bytes.replace(
+                    b'file("apps/android/app")',
+                    b'file("../external-app")',
+                    1,
+                )
+            )
+            assert_rejected("external project directory")
+            settings.write_bytes(settings_bytes)
+
+            unexpected_build = root / "tools/fixture/build.gradle.kts"
+            unexpected_build.parent.mkdir(parents=True)
+            unexpected_build.write_bytes(b"// fixture\n")
+            assert_rejected("unexpected repository Gradle project")
+            unexpected_build.unlink()
+
+            symlink_target = root / "symlink-target"
+            symlink_target.mkdir()
+            (root / "unexpected-symlink").symlink_to(
+                symlink_target,
+                target_is_directory=True,
+            )
+            assert_rejected("unexpected symlink directory")
+
+        for implementation, error_type in (
+            (generator, ComplianceError),
+            (readback, ComplianceVerificationError),
+        ):
+            with self.subTest(
+                implementation=implementation.__name__,
+                mutation="walk error",
+            ):
+                with mock.patch.object(
+                    implementation.os,
+                    "walk",
+                    side_effect=OSError("fixture walk failure"),
+                ):
+                    with self.assertRaises(error_type):
+                        implementation.validate_gradle_project_universe(ROOT)
+
+    def test_swift_external_dependency_is_rejected_independently(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Package.swift").write_bytes(b"// swift-tools-version: 5.9\n")
+            payloads = {
+                "package dependency": {
+                    "dependencies": [{"identity": "fixture-external-package"}],
+                    "targets": [],
+                },
+                "URL binary target": {
+                    "dependencies": [],
+                    "targets": [
+                        {
+                            "name": "FixtureBinary",
+                            "type": "binary",
+                            "url": "https://example.invalid/fixture.zip",
+                        }
+                    ],
+                },
+            }
+            for mutation, package in payloads.items():
+                completed = subprocess.CompletedProcess(
+                    args=["swift", "package", "dump-package"],
+                    returncode=0,
+                    stdout=json.dumps(
+                        package,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8"),
+                    stderr=b"",
+                )
+
+                def run(*_args: object, **_kwargs: object) -> object:
+                    return completed
+
+                with self.subTest(mutation=mutation, implementation="generator"):
+                    with self.assertRaises(ComplianceError):
+                        generator.swift_external_dependency_count(root, run=run)
+                with self.subTest(mutation=mutation, implementation="readback"):
+                    with self.assertRaises(ComplianceVerificationError):
+                        readback.swift_external_dependency_count(root, run=run)
+
+    def test_swift_resolution_file_is_rejected_independently(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Package.swift").write_bytes(b"// swift-tools-version: 5.9\n")
+            (root / "Package.resolved").write_bytes(b"{}\n")
+            with self.assertRaises(ComplianceError):
+                generator.swift_external_dependency_count(root)
+            with self.assertRaises(ComplianceVerificationError):
+                readback.swift_external_dependency_count(root)
 
     def test_catalog_is_canonical_and_has_stable_identity(self) -> None:
         self.assertEqual(
@@ -103,6 +271,44 @@ class ReleaseComplianceTests(unittest.TestCase):
                 SPDX_MEMBER,
             },
         )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            rendered = root / "rendered"
+            generator.write_release_compliance_members(
+                rendered,
+                first_members,
+            )
+            for member_path, expected in first_members:
+                self.assertEqual(
+                    rendered.joinpath(
+                        *Path(member_path).parts
+                    ).read_bytes(),
+                    expected,
+                )
+
+            outside = root / "outside"
+            outside.mkdir()
+            linked_output = root / "linked-output"
+            linked_output.symlink_to(outside, target_is_directory=True)
+            with self.assertRaises(ComplianceError):
+                generator.write_release_compliance_members(
+                    linked_output,
+                    first_members,
+                )
+            self.assertEqual(tuple(outside.iterdir()), ())
+
+            leaf_target = root / "outside-leaf"
+            leaf_target.write_bytes(b"preserve\n")
+            leaf_output = root / "leaf-output"
+            (leaf_output / "compliance").mkdir(parents=True)
+            leaf = leaf_output / SPDX_MEMBER
+            leaf.symlink_to(leaf_target)
+            with self.assertRaises(ComplianceError):
+                generator.write_release_compliance_members(
+                    leaf_output,
+                    first_members,
+                )
+            self.assertEqual(leaf_target.read_bytes(), b"preserve\n")
 
     def test_independent_readback_reconstructs_every_generated_byte(self) -> None:
         members, summary = build_release_compliance(

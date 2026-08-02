@@ -9,8 +9,10 @@ import errno
 import hashlib
 import json
 import os
+import posixpath
 import re
 import runpy
+import shlex
 import stat
 import sys
 
@@ -823,14 +825,14 @@ CURRENT_BUILD24_REVERSE_VERSION_READBACK_RESULT = (
     / "dist/lifecycle/"
     "macos-packaged-app-build-24-to-23-to-24-"
     "isolated-reverse-version-readback-v1-current-source-g6-"
-    "macos-release-byte-readback-two.json"
+    "macos-current-unsealed-source-closure-four.json"
 )
 CURRENT_BUILD24_REVERSE_VERSION_READBACK_RECEIPT = (
     ROOT
     / "dist/lifecycle/"
     "macos-packaged-app-build-24-to-23-to-24-"
     "isolated-reverse-version-readback-repeatability-v1-current-source-g6-"
-    "macos-release-byte-readback-two.json"
+    "macos-current-unsealed-source-closure-four.json"
 )
 CURRENT_BUILD24_REVERSE_VERSION_READBACK_RUNNER = (
     ROOT / "script/run_macos_isolated_reverse_version_readback_smoke.py"
@@ -843,6 +845,37 @@ CURRENT_BUILD24_REVERSE_VERSION_READBACK_CHECKER = (
 )
 CURRENT_BUILD24_REVERSE_VERSION_READBACK_CHECKER_TEST = (
     ROOT / "script/test_check_macos_isolated_reverse_version_readback_evidence.py"
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_RESULT = (
+    ROOT
+    / "dist/lifecycle/"
+    "macos-current-source-unsealed-build-24-clean-home-"
+    "install-abrupt-process-state-recovery-v1-source-closure-five.json"
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_RECEIPT = (
+    ROOT
+    / "dist/lifecycle/"
+    "macos-current-source-unsealed-build-24-clean-home-"
+    "install-abrupt-process-state-recovery-repeatability-v1-"
+    "source-closure-five.json"
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_RUNNER = (
+    ROOT / "script/run_macos_current_unsealed_install_recovery_smoke.py"
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_RUNNER_TEST = (
+    ROOT / "script/test_run_macos_current_unsealed_install_recovery_smoke.py"
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_CHECKER = (
+    ROOT / "script/check_macos_current_unsealed_install_recovery_evidence.py"
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_CHECKER_TEST = (
+    ROOT / "script/test_check_macos_current_unsealed_install_recovery_evidence.py"
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_CHECKER = (
+    ROOT / "script/check_macos_current_unsealed_ci_lifecycle.py"
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_CHECKER_TEST = (
+    ROOT / "script/test_check_macos_current_unsealed_ci_lifecycle.py"
 )
 CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_RESULT = (
     ROOT
@@ -1699,13 +1732,207 @@ is bounded static/no-device consistency evidence and preparation for a future
 G7 deterministic check; it is not canonical G7 PR-fast completion and does
 not complete the signed, physical-device, network, rollback, production, or
 other remaining G6/G7 exit requirements."""
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RESULT_SIZE = (
+    7_628
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RESULT_SHA256 = (
+    "9b4521b0ca765ca3d8bd8561fd9aaaafd817939d9ebf172ab61b9e2b0bc78e6b"
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RECEIPT_SIZE = (
+    1_572
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RECEIPT_SHA256 = (
+    "c15620728aa7f82d127e652da69fc8c58d71f488e90ff820fbc8eb9e6476a899"
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RUNNER_SIZE = (
+    96_711
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RUNNER_SHA256 = (
+    "24b8e328d6974d55a8b33034eee7667b11180e4d609234faa09411ec42ae4890"
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RUNNER_TEST_SIZE = (
+    47_896
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RUNNER_TEST_SHA256 = (
+    "7b75e9523b78ac5d29d308bd60c3217eaef97e8e115828204866e3a8eb2792a0"
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_CHECKER_SIZE = (
+    45_879
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_CHECKER_SHA256 = (
+    "975fe5e903521ee98ac57358de07daadc08a59fa9eb2a5700ae30c2655f2595e"
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_CHECKER_TEST_SIZE = (
+    17_694
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_CHECKER_TEST_SHA256 = (
+    "97b524f3bf2000b6198016f2a8738dc794660b4741f10c3834367739f7200469"
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_EXPECTED_CHECKER_SIZE = (
+    24_212
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_EXPECTED_CHECKER_SHA256 = (
+    "ce4f5244e70ad9c00755d18e18057e409aa54623740a243006eeb269ff3bfd3f"
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_EXPECTED_CHECKER_TEST_SIZE = (
+    12_189
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_EXPECTED_CHECKER_TEST_SHA256 = (
+    "bc6e6e4694735cf218e21bda69f7776370f323063bf7e7fc914781083eb14d43"
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_DOCUMENT_START = (
+    "<!-- aetherlink-current-build24-macos-current-unsealed-install-"
+    "recovery-v1:start -->"
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_DOCUMENT_END = (
+    "<!-- aetherlink-current-build24-macos-current-unsealed-install-"
+    "recovery-v1:end -->"
+)
+CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_DOCUMENT_BODY = """\
+The current-source non-security G6 companion installed the final unsealed
+Build 24 generation under an isolated temporary per-user HOME. Two independent
+observations each completed three distinct direct-owned launches, for six
+launches total. The first launch migrated one fixed Runtime-chat canary and
+terminated normally. After the harness removed only the fixed legacy fixture,
+the second launch completed SQLite-only readback, held the exact installed
+executable descriptor, parsed its thin arm64 Mach-O bytes in memory, required
+one primary SHA-256 CodeDirectory, and recomputed every 4,096-byte code-page
+hash including the partial final page before deriving its CDHash. No temporary
+path or external `codesign` process was used for that held-byte identity. The
+harness matched it to the actual running PID after readiness and again
+immediately before signal, revalidated AppKit and physical path identity, and
+sent SIGKILL only to that owned `Popen` PID. The process returned `-9`, was
+reaped, and disappeared from AppKit; the exact stdout observation and empty
+stderr were reread after reap and matched their pre-signal bytes. A third new
+PID read the same persisted state and terminated normally. All three SQLite
+files passed integrity checks at migration, pre-signal, post-signal, and
+recovery readback; the canary stayed exactly once, and every retained
+state-file byte and mode remained unchanged.
+The exact temporary app was removed, the temporary root disappeared, and every
+pre-existing AetherLink application was preserved.
+
+The exercised generation has UUID
+`2777D1B6-E198-3A60-8607-65AA068D530E`. Its nine-file, 21,444,161-byte app tree
+has SHA-256
+`3f4f624ef968ed017c1f74d73ba39519039de8b1d07b66482fc608e76d369321`;
+its three-file, 38,283,827-byte dSYM tree has SHA-256
+`e27cdaf134cca4a21bd250625a432d1bb6d18f0df5bea2b8086fb793150f80cc`.
+The 268-file source snapshot has SHA-256
+`99cebb6b02127c29ba71cc5190bac0543607fd6acb29d86091a21e6e25df3778`,
+and its 355-byte canonical receipt has SHA-256
+`15bfbd155140b2b97d8d1a4c8a44860fccc4da00fe7da17dc3ff559b0c5ef4da`.
+The app has no outer bundle seal. Sandbox preflights denied AF_INET bind and
+writes outside the temporary root.
+
+Both observations produced the same canonical 7,628-byte result at
+`dist/lifecycle/macos-current-source-unsealed-build-24-clean-home-install-abrupt-process-state-recovery-v1-source-closure-five.json`,
+SHA-256
+`9b4521b0ca765ca3d8bd8561fd9aaaafd817939d9ebf172ab61b9e2b0bc78e6b`.
+The create-only 1,572-byte repeatability receipt is at
+`dist/lifecycle/macos-current-source-unsealed-build-24-clean-home-install-abrupt-process-state-recovery-repeatability-v1-source-closure-five.json`,
+SHA-256
+`c15620728aa7f82d127e652da69fc8c58d71f488e90ff820fbc8eb9e6476a899`.
+The earlier graceful source-closure-one and abrupt source-closure-two and
+source-closure-three and source-closure-four result/receipt pairs remain
+exact byte- and mode-preserved historical predecessors. The checker now pins,
+holds, and reopens all eight files alongside the closure-five pair.
+
+The 96,711-byte runner and 47,896-byte 35-test module have SHA-256 values
+`24b8e328d6974d55a8b33034eee7667b11180e4d609234faa09411ec42ae4890`
+and
+`7b75e9523b78ac5d29d308bd60c3217eaef97e8e115828204866e3a8eb2792a0`.
+The standalone 45,879-byte closed-generation checker and 17,694-byte 21-test module
+have SHA-256 values
+`975fe5e903521ee98ac57358de07daadc08a59fa9eb2a5700ae30c2655f2595e`
+and
+`97b524f3bf2000b6198016f2a8738dc794660b4741f10c3834367739f7200469`.
+The checker imports no producer. It holds the result, receipt, eight predecessor
+files, app, dSYM, source receipt, ledger, and exact eleven-file execution-source
+closure through descriptor-relative no-follow reads, then reopens the complete
+graph and rejects canonical/type/schema, predecessor omission/replacement,
+cross-binding, symlink, hardlink, inventory, same-byte ABA, ancestor, and
+replacement-race mutations. Its direct readback and all 21 tests passed against
+the recorded closure-five generation. Eleven portable snapshot/schema tests and
+eight current-run checker tests are clean-checkout-safe and run with the 35
+runner tests on pull requests, `main`, and the local full gate, for 54 tests
+total. The remaining ten static-checker tests require the superseded
+closure-five ignored evidence and exact app/dSYM generation. Because
+`dist/unsealed-package-only` is the mutable current output, the local full gate
+does not directly invoke this historical checker or run those ten repository-
+bound tests. Rebinding its pins or invoking the current-run checker without its
+producer would break provenance or clean-checkout determinism.
+
+On `main`, the G7 successor now runs after the fresh unsealed package build,
+generic output readback, and Release diagnostics producer/checker. It executes
+the same lifecycle producer with two independent observations. It writes only `result.json` and
+`repeatability.json` as owner-only files inside the private
+`.build/aetherlink-current-unsealed-lifecycle-v1` directory, then invokes a
+separate current-run checker. The local parity run reproduced the same
+recorded closure-five behavior against a freshly produced generation. That
+2026-08-02 snapshot bound app SHA-256
+`478062e2dfe1e9b01b12723b66f167b91eb6d7b2b8123e2434acba7fced4922a`,
+dSYM SHA-256
+`e4c4fab2e4b9efe101ce1ccfb066634f5b5ebef0a2a78979513b5ade948df90d`,
+source SHA-256
+`b8a9f7822b88dddaaa843d25f976e1297736e6d2a4588e959d4c10c0cff65a7d`,
+and UUID `6B06A6D0-9C89-3D36-A5B9-D2381598DDC8`. Its 7,628-byte result has SHA-256
+`ed412cc97a1e03ba85cb79e8cece869983f1025ac58ab2dcb3ef925635bad32e`;
+its 1,468-byte repeatability receipt has SHA-256
+`a89428669bdd128130e1f8102fc39f10fa5bd801b3a4e80df1146ec48cdbbc75`.
+These identities describe that recorded generation and are not pins for later
+mutable current output.
+
+The 24,212-byte current-run checker and 12,189-byte eight-test module have
+SHA-256 values
+`ce4f5244e70ad9c00755d18e18057e409aa54623740a243006eeb269ff3bfd3f`
+and
+`bc6e6e4694735cf218e21bda69f7776370f323063bf7e7fc914781083eb14d43`.
+The checker imports no producer. It opens the complete current source,
+checker-support, result/receipt, app, dSYM, ledger, and source-receipt graph
+once through descriptor-relative no-follow directories, retains every file
+descriptor, and derives every dynamic size and digest from those held
+descriptors. It calculates the canonical 268-file source digest directly from
+the held identities, requires exact equality with the generic build-output
+report, source receipt, and lifecycle result, validates the repeatability
+receipt, rechecks the source path tuple around the generic readback, and
+finally reopens the complete graph. The regressions reject a coherently rebound
+false source, same-byte inode replacement both during acquisition and after
+snapshot, symlink, hardlink, wrong mode, oversize input, and path-closure drift.
+The PR/main macOS lane also runs the offline current catalog check and the
+exact 22-test release-compliance manifest with zero skips. Both implementations
+reject unexpected or missing Android Gradle module locks, require an empty
+Swift package dependency list with no `Package.resolved`, and cover 350 exact
+Gradle coordinates, 379 retained POM records, two byte-identical renders of
+the four-member compliance set, and independent reconstruction of the SPDX
+2.3 document with 351 packages and 692 role relationships while rejecting any
+render-time `urlopen`. This is deterministic SBOM/license-contract CI
+coverage, not binary artifact analysis, a license-compatibility/legal
+conclusion, vulnerability or secret scanning, signed provenance, canonical
+Merge full, G6/G7 exit, RC/GA, or V1 qualification.
+
+The exact 54-test workflow command, the product CI contract and mutation
+self-test, and direct readback of that recorded local current-run evidence
+pass. The
+reviewed workflow is 18,511 bytes with raw SHA-256
+`1159dd9c376e2a4170526ddd3453d49ca92d7061e058ca121e1f3602f630b06b`
+and parsed-semantic SHA-256
+`f843851a64defc5868ed5b8a3bccd8148e8e79d7e8a3babe5a9e6d3b7cb25b1d`.
+No hosted run of these current workflow bytes is claimed.
+
+This is same-host, per-user, temporary-HOME, unsealed and network-denied
+evidence after a fully observed, already persisted SQLite readback. It is not
+an in-flight write, open transaction, power-loss, kernel-crash, OS-restart,
+clean-machine or separate-account, Finder/quarantine/Gatekeeper,
+TCC/Keychain/user-consent, Developer ID signing/notarization,
+upgrade/rollback/N/N-1, device, provider, network, UI/accessibility,
+production, canonical G6/G7 exit, RC/GA, or V1 qualification."""
 CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_RESULT_SIZE = 7_859
 CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_RESULT_SHA256 = (
     "dbaa422de18ab37e9f4b92d7e78631fad9719e6c6d41fe30ccb402365267d416"
 )
-CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_RECEIPT_SIZE = 1_266
+CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_RECEIPT_SIZE = 1_277
 CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_RECEIPT_SHA256 = (
-    "818474ea0469e10f836c237ef3d8cab3ec95ffd5da6299c13ea730982ff08a80"
+    "b1f4d4fa2e661eab36ba32bb81676b50af95a7139f5c89cd66aac4173dcd4113"
 )
 CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_RUNNER_SIZE = 44_003
 CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_RUNNER_SHA256 = (
@@ -1715,13 +1942,13 @@ CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_RUNNER_TEST_SIZE = 31_118
 CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_RUNNER_TEST_SHA256 = (
     "41aadb2c9e2e961b9934ebac284df0a4f9b60f7b6fa4d02992b50775da47647b"
 )
-CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_CHECKER_SIZE = 31_402
+CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_CHECKER_SIZE = 34_550
 CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_CHECKER_SHA256 = (
-    "a6ef39ea10c314e756b2f92ad4ec07474da4f92bddb817a867acee2b33808b84"
+    "e01d44ab40afe65cddcbfa16cca276f19c7ceac4b0a4922898055b7ec8d65166"
 )
-CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_CHECKER_TEST_SIZE = 15_942
+CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_CHECKER_TEST_SIZE = 19_819
 CURRENT_BUILD24_REVERSE_VERSION_READBACK_EXPECTED_CHECKER_TEST_SHA256 = (
-    "019e0ae415b77cbd3458c3bb98a2107f0218b3a76df661f9fadb99843cbacb40"
+    "356b8c443813e273f8ea883e44840b021e2b24d10e9d5cff4e6e2ce21845b0e3"
 )
 CURRENT_BUILD24_REVERSE_VERSION_READBACK_DOCUMENT_START = (
     "<!-- aetherlink-current-build24-reverse-version-readback-v1:start -->"
@@ -1752,19 +1979,20 @@ SQLite files passed integrity checks, and every retained state-file byte and
 mode remained unchanged through all three installations and removals.
 
 The two executions produced the same canonical 7,859-byte result at
-`dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-isolated-reverse-version-readback-v1-current-source-g6-macos-release-byte-readback-two.json`,
+`dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-isolated-reverse-version-readback-v1-current-source-g6-macos-current-unsealed-source-closure-four.json`,
 SHA-256
 `dbaa422de18ab37e9f4b92d7e78631fad9719e6c6d41fe30ccb402365267d416`.
-The create-only 1,266-byte repeatability receipt is at
-`dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-isolated-reverse-version-readback-repeatability-v1-current-source-g6-macos-release-byte-readback-two.json`,
+The create-only 1,277-byte repeatability receipt is at
+`dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-isolated-reverse-version-readback-repeatability-v1-current-source-g6-macos-current-unsealed-source-closure-four.json`,
 SHA-256
-`818474ea0469e10f836c237ef3d8cab3ec95ffd5da6299c13ea730982ff08a80`.
-The result bytes exactly match both the preceding
-`android-release-byte-readback-one` successor and the original unsuffixed v1
-observation; all three result files and their receipts remain unchanged. After
+`b1f4d4fa2e661eab36ba32bb81676b50af95a7139f5c89cd66aac4173dcd4113`.
+The result bytes exactly match the preceding `macos-release-byte-readback-three`,
+`macos-release-byte-readback-two`, and `android-release-byte-readback-one`
+successors and the original unsuffixed v1 observation; all five result files
+and their receipts remain unchanged. After
 normalizing only `canonicalResult.fileName`, each adjacent receipt pair is
-identical; their different 1,266-, 1,268-, and 1,216-byte identities bind only
-the respective create-only canonical result filenames.
+identical; their respective 1,277-, 1,268-, 1,266-, 1,268-, and 1,216-byte
+identities bind only the create-only canonical result filenames.
 Publication records each link intent before linking, fsyncs payloads and the
 existing physical parent, rejects symlink ancestors and non-owned or
 non-0600 evidence targets, rolls back only exact owned inodes on every
@@ -1774,16 +2002,16 @@ The 44,003-byte runner and 31,118-byte 14-test module have SHA-256 values
 `e22a3e32e0556428f1d0274a75b4bbe93c5f5d28fe1a60607e1537a3db1771b1`
 and
 `41aadb2c9e2e961b9934ebac284df0a4f9b60f7b6fa4d02992b50775da47647b`.
-The standalone 31,402-byte read-only checker and 15,942-byte 15-test module
+The standalone 34,550-byte read-only checker and 19,819-byte 17-test module
 have SHA-256 values
-`a6ef39ea10c314e756b2f92ad4ec07474da4f92bddb817a867acee2b33808b84`
+`e01d44ab40afe65cddcbfa16cca276f19c7ceac4b0a4922898055b7ec8d65166`
 and
-`019e0ae415b77cbd3458c3bb98a2107f0218b3a76df661f9fadb99843cbacb40`.
-The checker retains and revalidates all three generations and their six
+`356b8c443813e273f8ea883e44840b021e2b24d10e9d5cff4e6e2ce21845b0e3`.
+The checker retains and revalidates all five generations and their ten
 evidence descriptors, the exact ledger, both three-file archive snapshots,
 and the ten-file direct execution-source closure, including the current
-247,676-byte release-archive checker at SHA-256
-`8405ad0a532b2b88799f370da15b1a13694f1c9d3f79d9b3f0d4be8a5bbe2452`.
+255,305-byte release-archive checker at SHA-256
+`db5ba718e2623e16b2a235bb08f336ae03a22fbc8d86ba950c79ce45b9f7b850`.
 It rejects canonical/type/schema, claim-boundary, source-membership,
 archive, state, tree, receipt, file-replacement, and symlink-ancestor mutations.
 
@@ -1909,27 +2137,27 @@ CURRENT_BUILD24_MACOS_LIFECYCLE_CHAIN_PREDECESSOR_BY_DOCUMENT = {
 }
 CURRENT_BUILD24_MACOS_LIFECYCLE_CHAIN_OUTER_SHA256_BY_DOCUMENT = {
     "README.md": (
-        "5a4a7e2eca835f484846c98e46c9bd567837e717fd5a28e137537a1eaf080859",
-        "24c3ca32967205cd44ec07975147b05a307bdb1cf9a00e10f27b3fd9d5c4cdff",
+        "9056de9179d14c38dfed5c5c47688ae210be90ad0c8fa8bb613f201a92ffcc53",
+        "0675b5e3c559e8938a5888a56bf155a5169b6321c94df3c6ad72f8bf618361de",
     ),
     "docs/roadmap.md": (
-        "f0f65281e3ae835a0e7b289591d025ad0460deb2bf274bccae4246fadbee2be9",
-        "192a521a11e2d05d2e0f36992f7f838faf27e9e9c1036b2dbcfe0e80ad8b30a7",
+        "1277149778f6cd5d09b34238907b83ee65709ffb6e8050294d00e22197d0d357",
+        "087b814bce375cea32487b4a8dae93cb7b8077a69d4bbee375074834ae863472",
     ),
     "docs/handoff.md": (
-        "fd4f3b5d1cc4ae432072c7101d148220c7842aed87f3f8b0c93cda1c3f9b62d2",
+        "b2f99a43c06e9003d15ff79636de3f5acecd074c30763b9b9e430f8632f13aca",
         "45757b5ef397dd7976196ae5b267eee53544fa4b8546464073830acb39d7f858",
     ),
     "docs/progress.md": (
-        "1c2d0283383525a70019bde471c6bcfd599c438b547ba15270e286902a979fe4",
+        "48e1140ba6194c46911f539e2175fe47d74426640bb8f5b888bbc0a7f5d54043",
         "c2e5ed1ec4d2af10ac3f3f87baeb3b9b29cc35393c1628cc63e147718d1589eb",
     ),
     "docs/qa-evidence.md": (
-        "1dfa749f94755e4777bbf9ff18b733ff513293bca0e9a0ecf1738b2a325abfaf",
+        "4da0059dabbdb99b9de3c0fa6d5206006b0fe0d2e2bdbda9b01d2050355a407d",
         "5c92341f48705b39fcd93e03390edba375eb6455bae3a4eb55807f2c6d3c4eff",
     ),
     "docs/releases/1.0.0-build-24-local-v1.md": (
-        "815dcc3715bd2082122e016e6479908c4a5fce1d69ad6f9b4af002eef416e047",
+        "edb79b120ae0e2fa13b4a4976769dd790b5a3eef174f6a70a1acbd52e987af4a",
         "eb4d9e1354eba5f0375e42b961b3dde775d9b7328f5723d4eca2f8357af0237a",
     ),
 }
@@ -2068,23 +2296,23 @@ CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_BODY_SHA256_BY_DOCUMENT = {
 }
 CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_OUTER_SHA256_BY_DOCUMENT = {
     "README.md": (
-        "3c5c3d864c7b9aa54a45ea0d09c3961346cb5b49fa228c48f11cd79c94cdebd6",
-        "71ddae4e8d84a7f78f05459c0a572c74a914dd05fa1abd17eb2c4ee32c16adfd",
+        "ae3244460dce503991825e4e5c59917df216e34bcb05a2db1664766ebfd4c77b",
+        "e8634fface6a6165bf00184a59c0ae3d8cf83862dbe2de09934a4780dc1c81a8",
     ),
     "docs/roadmap.md": (
-        "4ffda7413c3d1c44f6da163bedb27be65c5fba6a34f42598e55231701e666c3f",
-        "61ed443d3966c86c1bc8cebdab91e5d84629248a6b881163cf6d90568c427440",
+        "467e7197d9a7ed2492bf15df10353c224ac00ae265a01c6b7abe33a84f30fe59",
+        "3405207470afeed9453761bb56ea68269f563fb2a512f4333eb7fdb8007ce4d8",
     ),
     "docs/handoff.md": (
-        "49d51477a27a1ec6b7d5a6b932c043e376738361c77e089ab1d5706b3b771210",
+        "e88aa61aa7d7d9f659a4a752cc5d77ba2e71290aa411c1bab74b18beb22d7f8c",
         "fcd0f93e8d91ade7dc84df0a0cf1ba3d5dfc0d2ff485645b94211dbafd4a63bf",
     ),
     "docs/progress.md": (
-        "c5f39633efba296a8e3d0c1600d1d36ad8b4127bec84bfaeac1a07a7879eecbd",
+        "584991dc3f89b06ff77cdeb347ace039c689d5da397e1735ab000b4b0b8a3ae1",
         "75ff47867bb3a85000e23e723f8b9c20e8caf252de95bb19a91732fca40863a6",
     ),
     "docs/qa-evidence.md": (
-        "b3242c580f9756fcdc8e09c32726efaae0423d6b84333c20734f558ecd6afd30",
+        "3b746f5b4d0ae4d9dbb7111bb2417840f3c0375a64ab25873d7b7202b8f6c6c2",
         "89cbf66a09001c07387613ebe728ed79d2ebbe66b943beec8bde498e08aedf85",
     ),
     "docs/releases/1.0.0-build-20-local-v1.md": (
@@ -2092,8 +2320,8 @@ CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_OUTER_SHA256_BY_DOCUMENT = {
         "b2673dc9c562eb6a7f8d209136c138754d58fb9adebfbfabc9b8696c5f3c490c",
     ),
     "docs/releases/1.0.0-build-24-local-v1.md": (
-        "155758b4bfd7d8cffed49ee803fb100306b89fea11bb47e258b905184e0a8f3a",
-        "ef12bbf9c69c36c9cdfd712abe6185c4e77135ca0ca0c0de8b967afc01420442",
+        "dcf0329cce2d068fca3c5401ad7f56c2c6e6fe1dab2cd363d8d3efd2bbd05e3e",
+        "7585581fc57208f2bf7eae958d03db3cdd476eced9278a42b755bd61defb64c1",
     ),
 }
 CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_NEIGHBORS = {
@@ -2235,6 +2463,100 @@ CURRENT_ANDROID_DRAWER_SEARCH_DOCUMENT_START = (
 )
 CURRENT_ANDROID_DRAWER_SEARCH_DOCUMENT_END = (
     "<!-- aetherlink-current-android-drawer-search-ux-v2:end -->"
+)
+CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_START = (
+    "<!-- aetherlink-current-g6-release-diagnostics-usability-v1:start -->"
+)
+CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_END = (
+    "<!-- aetherlink-current-g6-release-diagnostics-usability-v1:end -->"
+)
+CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_BODY = """\
+**Current G6 Release diagnostics usability status.** On `main`, each
+product-quality Release lane now runs a diagnostics producer after its existing
+Release-output readback. The producer writes one canonical mode-0600 result;
+a separate checker command reopens the result plus the live artifact, source,
+and tool identities and reruns the same concrete recovery operation.
+
+The local macOS observation produced a 2,279-byte result with SHA-256
+`c33d42a100d802ecb1f5fb6d1ec543cfd7c683b3f9f13300b30dcec8441b14aa`.
+The 18,889,576-byte executable and 32,399,425-byte dSYM DWARF share UUID
+`6B06A6D0-9C89-3D36-A5B9-D2381598DDC8`; `/usr/bin/atos` resolves address
+`0x0000000100001a30` to
+`JSONValue.encode(to:) (in AetherLink) (JSONValue.swift:29)`, bound to
+`apps/macos/Protocol/Sources/JSONValue.swift:29`.
+
+The local Android observation produced a 2,739-byte result with SHA-256
+`de4cc01fcd8fd67c27a9f427f1599d0ea933b00f8f3ca1a8567bde7e4501ccb1`.
+AGP 9.2.1 supplies R8 Retrace 9.2.14. Against the current 72,050,886-byte
+`mapping.txt`, Retrace changes
+`at fx1.A(MainActivity.kt:23)` into
+`at com.localagentbridge.android.MainActivityKt.ResearchBriefCreateDialog(MainActivity.kt:3492)`,
+bound to
+`apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt:3492`.
+
+The producer/checker mutation suites pass 19/19. The product CI contract and
+self-test pin the exact unit, producer, checker, platform, branch, and ordering
+bodies. The reviewed workflow is 18,511 bytes with raw SHA-256
+`1159dd9c376e2a4170526ddd3453d49ca92d7061e058ca121e1f3602f630b06b`
+and parsed-semantic SHA-256
+`f843851a64defc5868ed5b8a3bccd8148e8e79d7e8a3babe5a9e6d3b7cb25b1d`.
+
+These are local current-source supportability probes against unsigned or
+unsealed Release outputs. Their ignored `.build` result files are not retained
+release evidence, and no hosted run of the current workflow bytes is claimed.
+They do not prove device/network behavior, signing/store delivery, production
+release, canonical G6/G7 exit, RC/GA, or V1 qualification."""
+CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_BODY_SHA256 = (
+    "ff27aeb1d04e6e3e2c4e594931abbd27ab042b20da22cc07aa20ede5d3eece2e"
+)
+CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_START = (
+    "<!-- aetherlink-current-g7-android-headless-nightly-v1:start -->"
+)
+CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_END = (
+    "<!-- aetherlink-current-g7-android-headless-nightly-v1:end -->"
+)
+CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_BODY = """\
+**Current G7 Android headless Nightly and local lifecycle status.** The
+non-security workflow is schedule-only on `main` at `37 18 * * *` (18:37 UTC).
+Its producer uses an arm64 `macos-26` runner; a separate `ubuntu-24.04` job
+performs downloaded-byte readback. The scheduled commit is materialized with
+`git archive`, Android dependencies are prepared online, and the evidence
+producer then performs the exact offline Debug build. The workflow raw and
+parsed-semantic SHA-256 values are
+`6ca986d8ae194d4236c41815675ad885aaeb29e47639186847645db193a773fa`
+and
+`cf8afa1784d703d0484e8be14e450255c35d720c8ea2b0649ffda3abcccab85b`.
+The exact Nightly contract passes 97/97 tests, including all 82 lifecycle tests
+and all 37 V2 successor tests, with zero skips, failures, or errors.
+
+The local disposable arm64 API 36.1 V2 run passes background deep Doze,
+same-UID app-process `SIGKILL` recovery, and same-QEMU guest reboot: 3/3 in
+106.214 seconds. Its canonical 51,933-byte result is
+`build/qa/android-headless-api36-1-v2-20260801T224327Z-5c1b4db2/result.json`,
+SHA-256
+`878c9179751f960238e8c18bc1c0cae6f3ce8b096b5f6e7db3cf5c42e36646f9`.
+The bound 145-file source snapshot has SHA-256
+`2a440ac4369b06163f56d07988fdb56bb79c94ae473a5016a66e09eee497b2b4`.
+An independent checker holds `result.json` plus all 58 evidence files through
+one descriptor-relative no-follow graph, validates only the captured bytes,
+reopens the complete graph, and passes 3/3. Cleanup leaves no owned emulator or
+ADB transport.
+
+For a hosted run, the same held snapshot produces candidate provenance and one
+deterministic USTAR archive, performs deep local readback, uploads the raw tar
+with `archive: false`, compares the upload digest, downloads by immutable
+artifact ID, and independently reads back the downloaded bytes. An uploaded
+tar always remains a candidate: artifact existence or producer-job success is
+not acceptance. Only a successful conclusion for the same complete workflow
+run, including the downloaded-byte job, makes those bytes acceptable evidence.
+
+At this recorded local snapshot, no successful scheduled hosted run of these
+workflow bytes exists, so hosted Nightly success is not claimed. The local run
+does not prove physical/OEM/API-matrix behavior, optical QR, TalkBack, a live
+provider, controlled production networking, upgrade/rollback, signing/store
+delivery, complete Nightly coverage, canonical G7 exit, RC/GA, or V1 release."""
+CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_BODY_SHA256 = (
+    "daa15753399f8ef700245893f22de2867936a3838477eeb950f7955f1a56da9a"
 )
 CURRENT_ANDROID_DRAWER_SEARCH_BEHAVIOR_CLAIM = (
     "The current unreleased Android drawer provides an explicit touch Search "
@@ -4685,8 +5007,8 @@ def current_release_summary_document_failures(
         ),
     }
     summary_line_limits = {
-        "docs/handoff.md": 650,
-        "docs/progress.md": 550,
+        "docs/handoff.md": 760,
+        "docs/progress.md": 780,
         "docs/qa-evidence.md": 550,
         "docs/roadmap.md": 650,
     }
@@ -11348,6 +11670,117 @@ def current_build24_macos_lifecycle_aggregate_evidence_failures(
     return failures
 
 
+def _pinned_source_identity_failures(
+    expected_sources: tuple[tuple[Path, int, str, str], ...],
+    *,
+    source_bytes_by_path: dict[Path, bytes] | None,
+    exact_map_error: str,
+    read_context: str,
+    identity_context: str,
+) -> list[str]:
+    expected_paths = {path for path, _, _, _ in expected_sources}
+    failures: list[str] = []
+    if (
+        source_bytes_by_path is not None
+        and set(source_bytes_by_path) != expected_paths
+    ):
+        failures.append(exact_map_error)
+
+    for path, expected_size, expected_sha256, label in expected_sources:
+        relative = str(path.relative_to(ROOT))
+        try:
+            if source_bytes_by_path is None:
+                if path.is_symlink() or not path.is_file():
+                    raise OSError("path must be a non-symlink regular file")
+                payload = path.read_bytes()
+            else:
+                payload = source_bytes_by_path[path]
+            if type(payload) is not bytes:
+                raise TypeError("injected source payload must be bytes")
+        except (KeyError, OSError, TypeError) as error:
+            failures.append(
+                f"{relative}: cannot read {read_context} {label}: {error}"
+            )
+            continue
+
+        actual_sha256 = hashlib.sha256(payload).hexdigest()
+        if len(payload) != expected_size or actual_sha256 != expected_sha256:
+            failures.append(
+                f"{relative}: expected {identity_context} {label} identity "
+                f"{expected_size} bytes and SHA-256 {expected_sha256}; "
+                f"found {len(payload)} bytes and {actual_sha256}."
+            )
+    return failures
+
+
+def current_build24_macos_current_unsealed_install_recovery_source_failures(
+    *,
+    source_bytes_by_path: dict[Path, bytes] | None = None,
+) -> list[str]:
+    expected_sources = (
+        (
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_RESULT,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RESULT_SIZE,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RESULT_SHA256,
+            "result",
+        ),
+        (
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_RECEIPT,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RECEIPT_SIZE,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RECEIPT_SHA256,
+            "repeatability receipt",
+        ),
+        (
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_RUNNER,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RUNNER_SIZE,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RUNNER_SHA256,
+            "runner",
+        ),
+        (
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_RUNNER_TEST,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RUNNER_TEST_SIZE,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RUNNER_TEST_SHA256,
+            "runner test",
+        ),
+        (
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_CHECKER,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_CHECKER_SIZE,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_CHECKER_SHA256,
+            "checker",
+        ),
+        (
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_CHECKER_TEST,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_CHECKER_TEST_SIZE,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_CHECKER_TEST_SHA256,
+            "checker test",
+        ),
+        (
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_CHECKER,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_EXPECTED_CHECKER_SIZE,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_EXPECTED_CHECKER_SHA256,
+            "CI lifecycle checker",
+        ),
+        (
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_CHECKER_TEST,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_EXPECTED_CHECKER_TEST_SIZE,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_EXPECTED_CHECKER_TEST_SHA256,
+            "CI lifecycle checker test",
+        ),
+    )
+    return _pinned_source_identity_failures(
+        expected_sources,
+        source_bytes_by_path=source_bytes_by_path,
+        exact_map_error=(
+            "Build 24 current-unsealed install/recovery source byte map "
+            "must contain exactly the result, repeatability receipt, runner, "
+            "runner test, checker, checker test, CI lifecycle checker, and CI "
+            "lifecycle checker test files."
+        ),
+        read_context="current Build 24 current-unsealed install/recovery",
+        identity_context="current Build 24 current-unsealed install/recovery",
+    )
+
+
 def current_build24_reverse_version_readback_source_failures(
     *,
     source_bytes_by_path: dict[Path, bytes] | None = None,
@@ -11390,47 +11823,19 @@ def current_build24_reverse_version_readback_source_failures(
             "checker test",
         ),
     )
-    expected_paths = {path for path, _, _, _ in expected_sources}
-    failures: list[str] = []
-    if (
-        source_bytes_by_path is not None
-        and set(source_bytes_by_path) != expected_paths
-    ):
-        failures.append(
+    return _pinned_source_identity_failures(
+        expected_sources,
+        source_bytes_by_path=source_bytes_by_path,
+        exact_map_error=(
             "Build 24-to-23-to-24 reverse-version readback source byte "
             "map must contain exactly the result, repeatability receipt, "
             "runner, runner test, checker, and checker test files."
-        )
-
-    for path, expected_size, expected_sha256, label in expected_sources:
-        relative = str(path.relative_to(ROOT))
-        try:
-            if source_bytes_by_path is None:
-                if path.is_symlink() or not path.is_file():
-                    raise OSError(
-                        "path must be a non-symlink regular file"
-                    )
-                payload = path.read_bytes()
-            else:
-                payload = source_bytes_by_path[path]
-            if type(payload) is not bytes:
-                raise TypeError("injected source payload must be bytes")
-        except (KeyError, OSError, TypeError) as error:
-            failures.append(
-                f"{relative}: cannot read current Build 24-to-23-to-24 "
-                f"reverse-version readback {label}: {error}"
-            )
-            continue
-
-        actual_sha256 = hashlib.sha256(payload).hexdigest()
-        if len(payload) != expected_size or actual_sha256 != expected_sha256:
-            failures.append(
-                f"{relative}: expected current Build 24-to-23-to-24 "
-                f"reverse-version readback {label} identity "
-                f"{expected_size} bytes and SHA-256 {expected_sha256}; "
-                f"found {len(payload)} bytes and {actual_sha256}."
-            )
-    return failures
+        ),
+        read_context="current Build 24-to-23-to-24 reverse-version readback",
+        identity_context=(
+            "current Build 24-to-23-to-24 reverse-version readback"
+        ),
+    )
 
 
 def current_build24_macos_idle_resource_stability_evidence_failures(
@@ -14061,6 +14466,12 @@ def current_build24_macos_clean_home_lifecycle_document_failures(
             ),
             CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_START,
             CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_END,
+            (
+                CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_DOCUMENT_START
+            ),
+            (
+                CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_DOCUMENT_END
+            ),
             CURRENT_BUILD24_REVERSE_VERSION_READBACK_DOCUMENT_START,
             CURRENT_BUILD24_REVERSE_VERSION_READBACK_DOCUMENT_END,
             CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_START,
@@ -14076,8 +14487,9 @@ def current_build24_macos_clean_home_lifecycle_document_failures(
                 f"{relative}: current Build 24 lifecycle chain markers "
                 "must appear once in isolated, clean-HOME, local-DMG, "
                 "uninstall/reinstall, state-recovery, abrupt-process "
-                "recovery, aggregate-readback, reverse-version-readback, "
-                "idle-resource-stability order."
+                "recovery, aggregate-readback, current-unsealed-install-"
+                "recovery, reverse-version-readback, idle-resource-stability "
+                "order."
             )
         else:
             chain_start_index = document_text.index(chain_markers[0])
@@ -14853,7 +15265,7 @@ def current_build24_macos_lifecycle_aggregate_document_failures(
             (
                 end_marker
                 + "\n\n"
-                + CURRENT_BUILD24_REVERSE_VERSION_READBACK_DOCUMENT_START
+                + CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_DOCUMENT_START
             ),
         ),
         "docs/roadmap.md": (
@@ -14861,7 +15273,7 @@ def current_build24_macos_lifecycle_aggregate_document_failures(
             (
                 end_marker
                 + "\n\n"
-                + CURRENT_BUILD24_REVERSE_VERSION_READBACK_DOCUMENT_START
+                + CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_DOCUMENT_START
             ),
         ),
         "docs/handoff.md": (
@@ -14869,7 +15281,7 @@ def current_build24_macos_lifecycle_aggregate_document_failures(
             (
                 end_marker
                 + "\n\n"
-                + CURRENT_BUILD24_REVERSE_VERSION_READBACK_DOCUMENT_START
+                + CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_DOCUMENT_START
             ),
         ),
         "docs/progress.md": (
@@ -14881,9 +15293,9 @@ def current_build24_macos_lifecycle_aggregate_document_failures(
             ),
             (
                 end_marker
-                + "\n\n## 2026-08-01 macOS Build 24-to-23-to-24 "
-                "Bounded Reverse-Version Readback\n\n"
-                + CURRENT_BUILD24_REVERSE_VERSION_READBACK_DOCUMENT_START
+                + "\n\n## 2026-08-02 macOS Current-Source Unsealed "
+                "Build 24 Clean-HOME Install And State Recovery\n\n"
+                + CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_DOCUMENT_START
             ),
         ),
         "docs/qa-evidence.md": (
@@ -14895,9 +15307,9 @@ def current_build24_macos_lifecycle_aggregate_document_failures(
             ),
             (
                 end_marker
-                + "\n\n## 2026-08-01 macOS Build 24-to-23-to-24 "
-                "Bounded Reverse-Version Readback Checklist\n\n"
-                + CURRENT_BUILD24_REVERSE_VERSION_READBACK_DOCUMENT_START
+                + "\n\n## 2026-08-02 macOS Current-Source Unsealed "
+                "Build 24 Clean-HOME Install And State Recovery Checklist\n\n"
+                + CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_DOCUMENT_START
             ),
         ),
         "docs/releases/1.0.0-build-24-local-v1.md": (
@@ -14909,9 +15321,9 @@ def current_build24_macos_lifecycle_aggregate_document_failures(
             ),
             (
                 end_marker
-                + "\n\n## Post-Archive Build 24-to-23-to-24 Bounded "
-                "Reverse-Version Readback Evidence\n\n"
-                + CURRENT_BUILD24_REVERSE_VERSION_READBACK_DOCUMENT_START
+                + "\n\n## Current-Source Unsealed Build 24 Clean-HOME "
+                "Install And State-Recovery Evidence\n\n"
+                + CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_DOCUMENT_START
             ),
         ),
     }
@@ -14989,7 +15401,7 @@ def current_build24_macos_lifecycle_aggregate_document_failures(
     return failures
 
 
-def current_build24_reverse_version_readback_document_failures(
+def current_build24_macos_current_unsealed_install_recovery_document_failures(
     *,
     document_text_by_relative: dict[str, str] | None = None,
 ) -> list[str]:
@@ -15002,6 +15414,157 @@ def current_build24_reverse_version_readback_document_failures(
         LOCAL_RELEASE_CURRENT_DOC,
     )
     predecessor = CURRENT_BUILD24_MACOS_LIFECYCLE_AGGREGATE_DOCUMENT_END
+    start_marker = (
+        CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_DOCUMENT_START
+    )
+    end_marker = (
+        CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_DOCUMENT_END
+    )
+    successor = CURRENT_BUILD24_REVERSE_VERSION_READBACK_DOCUMENT_START
+    expected_neighbors = {
+        "README.md": (
+            predecessor + "\n\n" + start_marker,
+            end_marker + "\n\n" + successor,
+        ),
+        "docs/roadmap.md": (
+            predecessor + "\n\n" + start_marker,
+            end_marker + "\n\n" + successor,
+        ),
+        "docs/handoff.md": (
+            predecessor + "\n\n" + start_marker,
+            end_marker + "\n\n" + successor,
+        ),
+        "docs/progress.md": (
+            (
+                predecessor
+                + "\n\n## 2026-08-02 macOS Current-Source Unsealed "
+                "Build 24 Clean-HOME Install And State Recovery\n\n"
+                + start_marker
+            ),
+            (
+                end_marker
+                + "\n\n## 2026-08-02 macOS Build 24-to-23-to-24 "
+                "Bounded Reverse-Version Readback\n\n"
+                + successor
+            ),
+        ),
+        "docs/qa-evidence.md": (
+            (
+                predecessor
+                + "\n\n## 2026-08-02 macOS Current-Source Unsealed "
+                "Build 24 Clean-HOME Install And State Recovery Checklist\n\n"
+                + start_marker
+            ),
+            (
+                end_marker
+                + "\n\n## 2026-08-02 macOS Build 24-to-23-to-24 "
+                "Bounded Reverse-Version Readback Checklist\n\n"
+                + successor
+            ),
+        ),
+        "docs/releases/1.0.0-build-24-local-v1.md": (
+            (
+                predecessor
+                + "\n\n## Current-Source Unsealed Build 24 Clean-HOME "
+                "Install And State-Recovery Evidence\n\n"
+                + start_marker
+            ),
+            (
+                end_marker
+                + "\n\n## Post-Archive Build 24-to-23-to-24 Bounded "
+                "Reverse-Version Readback Evidence\n\n"
+                + successor
+            ),
+        ),
+    }
+    failures: list[str] = []
+    for path in documentation_targets:
+        relative = str(path.relative_to(ROOT))
+        try:
+            document_text = (
+                document_text_by_relative[relative]
+                if (
+                    document_text_by_relative is not None
+                    and relative in document_text_by_relative
+                )
+                else path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError) as error:
+            failures.append(
+                f"{relative}: cannot validate current-source unsealed "
+                f"install/recovery block: {error}"
+            )
+            continue
+
+        start_count = document_text.count(start_marker)
+        end_count = document_text.count(end_marker)
+        if (start_count, end_count) != (1, 1):
+            failures.append(
+                f"{relative}: current-source unsealed install/recovery block "
+                "must contain exactly one start and end marker; found "
+                f"{start_count} and {end_count}."
+            )
+            continue
+        start_index = document_text.index(start_marker)
+        body_start = start_index + len(start_marker)
+        end_index = document_text.index(end_marker)
+        if end_index <= body_start:
+            failures.append(
+                f"{relative}: current-source unsealed install/recovery "
+                "markers are reversed or empty."
+            )
+            continue
+
+        block = document_text[body_start:end_index]
+        expected_block = (
+            "\n"
+            + CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_DOCUMENT_BODY
+            + "\n"
+        )
+        if block != expected_block:
+            expected_sha256 = hashlib.sha256(
+                expected_block.encode("utf-8")
+            ).hexdigest()
+            actual_sha256 = hashlib.sha256(block.encode("utf-8")).hexdigest()
+            failures.append(
+                f"{relative}: current-source unsealed install/recovery block "
+                "must match exact canonical body SHA-256 "
+                f"{expected_sha256}; found {actual_sha256}."
+            )
+        if any(
+            binding not in document_text
+            for binding in expected_neighbors[relative]
+        ):
+            failures.append(
+                f"{relative}: current-source unsealed install/recovery block "
+                "moved outside its canonical document location."
+            )
+        if any(
+            marker_is_in_hidden_markdown_context(document_text, marker)
+            for marker in (start_marker, end_marker)
+        ):
+            failures.append(
+                f"{relative}: current-source unsealed install/recovery block "
+                "must remain outside hidden Markdown or HTML contexts."
+            )
+    return failures
+
+
+def current_build24_reverse_version_readback_document_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    documentation_targets = (
+        README_PATH,
+        ROOT / "docs/roadmap.md",
+        ROOT / "docs/handoff.md",
+        ROOT / "docs/progress.md",
+        ROOT / "docs/qa-evidence.md",
+        LOCAL_RELEASE_CURRENT_DOC,
+    )
+    predecessor = (
+        CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_DOCUMENT_END
+    )
     start_marker = CURRENT_BUILD24_REVERSE_VERSION_READBACK_DOCUMENT_START
     end_marker = CURRENT_BUILD24_REVERSE_VERSION_READBACK_DOCUMENT_END
     successor = CURRENT_BUILD24_MACOS_IDLE_RESOURCE_STABILITY_DOCUMENT_START
@@ -15021,7 +15584,7 @@ def current_build24_reverse_version_readback_document_failures(
         "docs/progress.md": (
             (
                 predecessor
-                + "\n\n## 2026-08-01 macOS Build 24-to-23-to-24 "
+                + "\n\n## 2026-08-02 macOS Build 24-to-23-to-24 "
                 "Bounded Reverse-Version Readback\n\n"
                 + start_marker
             ),
@@ -15035,7 +15598,7 @@ def current_build24_reverse_version_readback_document_failures(
         "docs/qa-evidence.md": (
             (
                 predecessor
-                + "\n\n## 2026-08-01 macOS Build 24-to-23-to-24 "
+                + "\n\n## 2026-08-02 macOS Build 24-to-23-to-24 "
                 "Bounded Reverse-Version Readback Checklist\n\n"
                 + start_marker
             ),
@@ -15507,6 +16070,124 @@ def reachable_top_level_continued_commands(
     return commands
 
 
+def reachable_top_level_path_invocations(
+    shell_text: str,
+    relative_paths: tuple[str, ...],
+    *,
+    module_prefixes: tuple[str, ...] = (),
+    allowed_module_selectors: tuple[str, ...] = (),
+    allowed_command_prefixes: tuple[tuple[str, ...], ...] = (),
+) -> list[tuple[int, str]]:
+    """Return forbidden mentions from complete reachable logical commands."""
+
+    targets = set(relative_paths)
+    prefixes = set(module_prefixes)
+    allowed = set(allowed_module_selectors)
+    command_prefixes = set(allowed_command_prefixes)
+    if (
+        len(targets) != len(relative_paths)
+        or len(prefixes) != len(module_prefixes)
+        or len(allowed) != len(allowed_module_selectors)
+        or len(command_prefixes) != len(allowed_command_prefixes)
+        or any(
+            not path.startswith("script/") or path.startswith("script/../")
+            for path in targets
+        )
+        or any(not prefix.startswith("script.") for prefix in prefixes)
+        or any(
+            not any(
+                selector == prefix or selector.startswith(prefix + ".")
+                for prefix in prefixes
+            )
+            for selector in allowed
+        )
+        or any(
+            not prefix or any(not token for token in prefix)
+            for prefix in command_prefixes
+        )
+    ):
+        raise ValueError("reachable invocation targets must be exact and unique")
+
+    root_prefix = str(ROOT) + "/"
+    invocations: list[tuple[int, str]] = []
+    lines = shell_text.splitlines(keepends=True)
+    offsets: list[int] = []
+    offset = 0
+    for raw_line in lines:
+        offsets.append(offset)
+        offset += len(raw_line)
+
+    line_index = 0
+    while line_index < len(lines):
+        command_start_index = line_index
+        command_parts: list[str] = []
+        while line_index < len(lines):
+            physical = lines[line_index].rstrip("\r\n").rstrip()
+            continued = physical.endswith("\\")
+            command_parts.append(
+                physical[:-1].rstrip() if continued else physical
+            )
+            line_index += 1
+            if not continued:
+                break
+        logical_command = " ".join(command_parts)
+        try:
+            tokens = shlex.split(logical_command, comments=True, posix=True)
+        except ValueError:
+            tokens = []
+        matches: list[str] = []
+        for token in tokens:
+            normalized = token[2:] if token.startswith("./") else token
+            if normalized.startswith(root_prefix):
+                normalized = normalized[len(root_prefix) :]
+            if "/" in normalized:
+                normalized = posixpath.normpath(normalized)
+            normalized_path = next(
+                (
+                    target
+                    for target in targets
+                    if normalized == target
+                    or normalized == target.rsplit("/", 1)[-1]
+                    or normalized.endswith("/" + target)
+                ),
+                None,
+            )
+            forbidden_module = (
+                normalized not in allowed
+                and any(
+                    normalized == prefix
+                    or normalized.startswith(prefix + ".")
+                    for prefix in prefixes
+                )
+            )
+            if normalized_path is not None:
+                matches.append(normalized_path)
+            elif forbidden_module:
+                matches.append(normalized)
+        command_is_simple = (
+            re.search(r"(?:;|&&|\|\||[|&])", logical_command) is None
+            and all(
+                re.fullmatch(r"[A-Za-z0-9_./:+-]+", token) is not None
+                for token in tokens
+            )
+        )
+        command_is_allowed = command_is_simple and any(
+            tuple(tokens[: len(prefix)]) == prefix
+            for prefix in command_prefixes
+        )
+        if (
+            matches
+            and not command_is_allowed
+            and shell_prefix_reaches_top_level(
+                shell_text[: offsets[command_start_index]]
+            )
+        ):
+            invocations.extend(
+                (command_start_index + 1, match) for match in matches
+            )
+    return invocations
+
+
 def current_build24_macos_local_dmg_default_gate_failures(
     *,
     gate_text: str | None = None,
@@ -15520,6 +16201,82 @@ def current_build24_macos_local_dmg_default_gate_failures(
                 "script/check_no_device_quality.sh: cannot validate current "
                 f"Build 24 local-DMG default-gate selectors: {error}"
             ]
+
+    expected_run_definition = '''\
+run() {
+  if [[ "$#" -eq 4 && "$1" == "swift" && "$2" == "test" && "$3" == "--filter" ]]; then
+    if (( SWIFT_FULL_SUITE_COMPLETED != 1 )); then
+      echo "Swift filter reached before the full Swift suite completed: $4" >&2
+      return 1
+    fi
+    ((SWIFT_SUBSUMED_FILTER_COUNT += 1))
+    return
+  fi
+  echo
+  echo "==> $*"
+  "$@"
+  if [[ "$#" -eq 2 && "$1" == "swift" && "$2" == "test" ]]; then
+    SWIFT_FULL_SUITE_COMPLETED=1
+  fi
+}
+'''
+    expected_syntax_definition = '''\
+check_python_syntax() {
+  python3 - "$@" <<'PY'
+import ast
+from pathlib import Path
+import sys
+
+for raw_path in sys.argv[1:]:
+    path = Path(raw_path)
+    source = path.read_text(encoding="utf-8")
+    ast.parse(source, filename=str(path))
+PY
+}
+'''
+    syntax_invocation_start = "run check_python_syntax \\\n"
+    function_definition_patterns = (
+        (
+            r"(?m)^(?:function[ \t]+)?run[ \t]*(?:\(\))?[ \t]*"
+            r"(?:\n[ \t]*(?:#[^\n]*)?)*[ \t]*\{"
+        ),
+        (
+            r"(?m)^(?:function[ \t]+)?check_python_syntax[ \t]*"
+            r"(?:\(\))?[ \t]*(?:\n[ \t]*(?:#[^\n]*)?)*[ \t]*\{"
+        ),
+    )
+    current_unsealed_lexical_counts = {
+        "check_macos_current_unsealed_install_recovery_evidence": 3,
+        "test_check_macos_current_unsealed_install_recovery_evidence": 2,
+        "check_macos_current_unsealed_ci_lifecycle": 3,
+        "test_check_macos_current_unsealed_ci_lifecycle": 2,
+    }
+    if (
+        gate_text.count(expected_run_definition) != 1
+        or gate_text.count(expected_syntax_definition) != 1
+        or any(
+            len(re.findall(pattern, gate_text)) != 1
+            for pattern in function_definition_patterns
+        )
+        or gate_text.count(syntax_invocation_start) != 1
+        or any(
+            gate_text.count(identifier) != expected_count
+            for identifier, expected_count in (
+                current_unsealed_lexical_counts.items()
+            )
+        )
+        or not (
+            gate_text.index(expected_run_definition)
+            < gate_text.index(expected_syntax_definition)
+            < gate_text.index(syntax_invocation_start)
+        )
+    ):
+        return [
+            "script/check_no_device_quality.sh: run and check_python_syntax "
+            "must retain their exact single definitions before the canonical "
+            "syntax inventory, and current-unsealed checker identifiers must "
+            "remain confined to their exact inventories."
+        ]
 
     expected_invocation = """\
 run python3 -I -B -S script/check_macos_build24_lifecycle_evidence.py
@@ -15544,6 +16301,9 @@ run python3 -B -m unittest \\
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_lifecycle_aggregate_sources_are_bound \\
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_lifecycle_aggregate_documents_are_bound \\
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_lifecycle_aggregate_validators_are_wired_into_main \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_current_unsealed_install_recovery_sources_are_bound \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_current_unsealed_install_recovery_documents_are_bound \\
+  script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_current_unsealed_install_recovery_validators_are_wired_into_main \\
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_result_and_sources_are_bound \\
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_documents_are_bound \\
   script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_current_build24_macos_idle_resource_stability_validators_are_wired_into_main
@@ -15585,6 +16345,10 @@ run python3 -B -m unittest \\
         "run python3 -I -B -S "
         "script/check_macos_build24_lifecycle_evidence.py"
     )
+    product_ci_contract_invocation = """\
+run python3 -B script/check_product_ci.py
+run python3 -B script/check_product_ci.py --self-test
+"""
     aggregate_selectors = (
         (
             "script.test_documentation_handoff_guards."
@@ -15603,6 +16367,44 @@ run python3 -B -m unittest \\
             "DocumentationHandoffGuardTests."
             "test_current_build24_macos_lifecycle_aggregate_"
             "validators_are_wired_into_main"
+        ),
+    )
+    current_unsealed_checker_path = (
+        "script/check_macos_current_unsealed_install_recovery_evidence.py"
+    )
+    current_run_checker_path = (
+        "script/check_macos_current_unsealed_ci_lifecycle.py"
+    )
+    current_unsealed_checker_test_path = (
+        "script/test_check_macos_current_unsealed_install_recovery_evidence.py"
+    )
+    current_unsealed_portable_selector = (
+        "script.test_check_macos_current_unsealed_install_recovery_"
+        "evidence.CurrentUnsealedRecoveryEvidencePortableTests"
+    )
+    current_unsealed_module_prefixes = (
+        "script.check_macos_current_unsealed_install_recovery_evidence",
+        "script.check_macos_current_unsealed_ci_lifecycle",
+        "script.test_check_macos_current_unsealed_install_recovery_evidence",
+    )
+    current_unsealed_selectors = (
+        (
+            "script.test_documentation_handoff_guards."
+            "DocumentationHandoffGuardTests."
+            "test_current_build24_macos_current_unsealed_install_"
+            "recovery_sources_are_bound"
+        ),
+        (
+            "script.test_documentation_handoff_guards."
+            "DocumentationHandoffGuardTests."
+            "test_current_build24_macos_current_unsealed_install_"
+            "recovery_documents_are_bound"
+        ),
+        (
+            "script.test_documentation_handoff_guards."
+            "DocumentationHandoffGuardTests."
+            "test_current_build24_macos_current_unsealed_install_"
+            "recovery_validators_are_wired_into_main"
         ),
     )
     idle_resource_invocation = (
@@ -15633,8 +16435,25 @@ run python3 -B -m unittest \\
         gate_text.count(expected_invocation) != 1
         or gate_text.count(current_source_g6_invocation) != 1
         or gate_text.count(aggregate_invocation) != 1
+        or gate_text.count(product_ci_contract_invocation) != 1
+        or reachable_top_level_path_invocations(
+            gate_text,
+            (
+                current_unsealed_checker_path,
+                current_run_checker_path,
+                current_unsealed_checker_test_path,
+            ),
+            module_prefixes=current_unsealed_module_prefixes,
+            allowed_module_selectors=(current_unsealed_portable_selector,),
+            allowed_command_prefixes=(("run", "check_python_syntax"),),
+        )
+        or gate_text.count(current_unsealed_portable_selector) != 1
         or gate_text.count(idle_resource_invocation) != 1
         or any(gate_text.count(selector) != 1 for selector in aggregate_selectors)
+        or any(
+            gate_text.count(selector) != 1
+            for selector in current_unsealed_selectors
+        )
         or any(
             gate_text.count(selector) != 1
             for selector in idle_resource_selectors
@@ -15642,9 +16461,11 @@ run python3 -B -m unittest \\
     ):
         return [
             "script/check_no_device_quality.sh: current Build 24 local-DMG "
-            "lifecycle aggregate, idle-resource, and current-source G6 "
-            "selectors and static checkers must appear exactly once in "
-            "reachable active invocations around docs hygiene."
+            "lifecycle aggregate, current-unsealed install/recovery, "
+            "idle-resource, current-source G6, and product CI "
+            "contract/self-test selectors and active static checkers must "
+            "have their exact "
+            "reachable topology around docs hygiene."
         ]
     syntax_commands = reachable_top_level_continued_commands(
         gate_text,
@@ -15678,6 +16499,18 @@ run python3 -B -m unittest \\
                     "script/test_run_macos_build24_"
                     "idle_resource_stability_smoke.py"
                 ),
+                "script/run_macos_current_unsealed_install_recovery_smoke.py",
+                "script/test_run_macos_current_unsealed_install_recovery_smoke.py",
+                (
+                    "script/check_macos_current_unsealed_install_"
+                    "recovery_evidence.py"
+                ),
+                (
+                    "script/test_check_macos_current_unsealed_install_"
+                    "recovery_evidence.py"
+                ),
+                "script/check_macos_current_unsealed_ci_lifecycle.py",
+                "script/test_check_macos_current_unsealed_ci_lifecycle.py",
                 "script/run_macos_local_dmg_uninstall_reinstall_smoke.py",
                 "script/test_run_macos_local_dmg_uninstall_reinstall_smoke.py",
                 (
@@ -15701,8 +16534,10 @@ run python3 -B -m unittest \\
     ):
         return [
             "script/check_no_device_quality.sh: current Build 24 lifecycle "
-            "aggregate and idle-resource checker/test plus the idle and "
-            "same-DMG lifecycle runner/test must each appear exactly once "
+            "aggregate, current-unsealed static/current-run, and idle-resource "
+            "checker/test plus "
+            "the current-unsealed, idle, and same-DMG lifecycle runner/test "
+            "must each appear exactly once "
             "in the reachable top-level Python syntax inventory."
         ]
     unit_commands = reachable_top_level_continued_commands(
@@ -15715,11 +16550,14 @@ run python3 -B -m unittest \\
         if (
             command[:4] == ["run", "python3", "-m", "unittest"]
             and all(
-                re.fullmatch(
-                    r"script/[A-Za-z0-9_./-]+\.py",
-                    token,
+                (
+                    token == current_unsealed_portable_selector
+                    or re.fullmatch(
+                        r"script/[A-Za-z0-9_./-]+\.py",
+                        token,
+                    )
+                    is not None
                 )
-                is not None
                 for token in command[4:]
             )
             and "script/test_v1_g0_checkpoint.py" in command
@@ -15736,6 +16574,8 @@ run python3 -B -m unittest \\
             "script/test_run_macos_build24_"
             "idle_resource_stability_smoke.py"
         ),
+        "script/test_run_macos_current_unsealed_install_recovery_smoke.py",
+        "script/test_check_macos_current_unsealed_ci_lifecycle.py",
         "script/test_release_version_ledger.py",
         "script/test_run_macos_packaged_app_lifecycle_smoke.py",
         "script/test_run_macos_packaged_app_state_recovery_smoke.py",
@@ -15757,6 +16597,12 @@ run python3 -B -m unittest \\
     )
     if (
         len(full_unit_commands) != 1
+        or full_unit_commands[0].count(current_unsealed_portable_selector) != 1
+        or (
+            "script/test_check_macos_current_unsealed_install_recovery_"
+            "evidence.py"
+        )
+        in full_unit_commands[0]
         or any(
             full_unit_commands[0].count(path) != 1
             for path in required_unit_paths
@@ -15764,9 +16610,10 @@ run python3 -B -m unittest \\
     ):
         return [
             "script/check_no_device_quality.sh: current Build 24 lifecycle "
-            "aggregate test, idle-resource checker/runner tests, and all "
-            "12 byte-bound focused lifecycle unit modules must each appear "
-            "exactly once in the "
+            "aggregate test, current-unsealed portable/current-run and "
+            "idle-resource checker/runner tests, and all byte-bound focused "
+            "lifecycle unit modules must "
+            "each appear exactly once in the "
             "reachable top-level full Python unittest inventory."
         ]
 
@@ -15784,18 +16631,292 @@ run python3 -B -m unittest \\
     current_source_invocation_index = gate_text.index(
         current_source_g6_invocation
     )
+    product_ci_invocation_index = gate_text.index(
+        product_ci_contract_invocation
+    )
     if not (
         shell_prefix_reaches_top_level(gate_text[:invocation_index])
         and shell_prefix_reaches_top_level(
             gate_text[:current_source_invocation_index]
         )
+        and shell_prefix_reaches_top_level(
+            gate_text[:product_ci_invocation_index]
+        )
     ):
         return [
             "script/check_no_device_quality.sh: current Build 24 local-DMG "
-            "and current-source G6 selector invocations must execute at "
+            "and current-source G6 selector plus product CI contract "
+            "invocations must execute at "
             "reachable top-level shell scope before any definite terminator."
         ]
     return []
+
+
+def current_g6_release_diagnostics_document_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    documentation_targets = (
+        (
+            README_PATH,
+            "## Current Release Diagnostics Usability Gate",
+            "## Current macOS Release Output Gate",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "evidence and does not complete G6 exit, canonical G7, RC/GA, or V1.",
+            CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_START,
+        ),
+        (
+            ROOT / "docs/handoff.md",
+            "  canonical G7, RC/GA, and V1 remain open.",
+            CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_START,
+        ),
+        (
+            ROOT / "docs/progress.md",
+            "## 2026-08-02 G6 Release Diagnostics Usability",
+            "## 2026-08-02 Android API 36.1 Background, Process-Kill, And Reboot Lifecycle V2",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "## 2026-08-02 G6 Release Diagnostics Usability Checklist",
+            "## 2026-08-02 Android API 36.1 Lifecycle V2 Checklist",
+        ),
+        (
+            ROOT / "docs/releases/1.0.0-build-24-local-v1.md",
+            "## Current-Source Release Diagnostics Usability Companion",
+            "## Android Backup And Device-Transfer Contract",
+        ),
+    )
+    expected_body_block = (
+        "\n" + CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_BODY + "\n"
+    )
+    failures: list[str] = []
+    actual_body_sha256 = hashlib.sha256(
+        (CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_BODY + "\n").encode("utf-8")
+    ).hexdigest()
+    if actual_body_sha256 != CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_BODY_SHA256:
+        failures.append(
+            "current G6 Release diagnostics canonical body identity differs: "
+            f"expected {CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_BODY_SHA256}, "
+            f"found {actual_body_sha256}."
+        )
+
+    for path, predecessor, successor in documentation_targets:
+        relative = str(path.relative_to(ROOT))
+        try:
+            document_text = (
+                document_text_by_relative[relative]
+                if (
+                    document_text_by_relative is not None
+                    and relative in document_text_by_relative
+                )
+                else path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError) as error:
+            failures.append(
+                f"{relative}: cannot validate current G6 Release diagnostics "
+                f"documentation: {error}"
+            )
+            continue
+
+        start_count = document_text.count(
+            CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_START
+        )
+        end_count = document_text.count(
+            CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_END
+        )
+        if (start_count, end_count) != (1, 1):
+            failures.append(
+                f"{relative}: current G6 Release diagnostics block must contain "
+                "exactly one start and end marker; found "
+                f"{start_count} and {end_count}."
+            )
+            continue
+
+        start_index = document_text.index(
+            CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_START
+        )
+        body_start = start_index + len(
+            CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_START
+        )
+        end_index = document_text.index(
+            CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_END
+        )
+        if end_index <= body_start:
+            failures.append(
+                f"{relative}: current G6 Release diagnostics markers are "
+                "reversed or empty."
+            )
+            continue
+
+        actual_block = document_text[body_start:end_index]
+        if actual_block != expected_body_block:
+            found_sha256 = hashlib.sha256(
+                actual_block.strip("\n").encode("utf-8") + b"\n"
+            ).hexdigest()
+            failures.append(
+                f"{relative}: current G6 Release diagnostics block must match "
+                "the exact canonical body SHA-256 "
+                f"{CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_BODY_SHA256}; "
+                f"found {found_sha256}."
+            )
+
+        expected_before = (
+            predecessor + "\n\n" + CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_START
+        )
+        expected_after = (
+            CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_END + "\n\n" + successor
+        )
+        if expected_before not in document_text or expected_after not in document_text:
+            failures.append(
+                f"{relative}: current G6 Release diagnostics block moved "
+                "outside its canonical document location."
+            )
+        if marker_is_in_hidden_markdown_context(
+            document_text,
+            CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_START,
+        ):
+            failures.append(
+                f"{relative}: current G6 Release diagnostics block must remain "
+                "visible Markdown."
+            )
+    return failures
+
+
+def current_g7_android_headless_nightly_document_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    documentation_targets = (
+        (
+            README_PATH,
+            "## Current Android Lifecycle V2 Gate",
+            "## Current Release Diagnostics Usability Gate",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_END,
+            "The predecessor current-source G5/G6 Android headless lifecycle V1 record is",
+        ),
+        (
+            ROOT / "docs/handoff.md",
+            CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_END,
+            "- The predecessor current-source disposable Android lifecycle V1 record is",
+        ),
+        (
+            ROOT / "docs/progress.md",
+            "## 2026-08-02 Android API 36.1 Background, Process-Kill, And Reboot Lifecycle V2",
+            "## 2026-08-01 Android API 36.1 Headless Lifecycle Evidence Hardening",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "## 2026-08-02 Android API 36.1 Lifecycle V2 Checklist",
+            "## 2026-08-01 Android API 36.1 Headless Lifecycle Evidence Checklist",
+        ),
+    )
+    expected_body_block = (
+        "\n" + CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_BODY + "\n"
+    )
+    failures: list[str] = []
+    actual_body_sha256 = hashlib.sha256(
+        (CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_BODY + "\n").encode(
+            "utf-8"
+        )
+    ).hexdigest()
+    if actual_body_sha256 != (
+        CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_BODY_SHA256
+    ):
+        failures.append(
+            "current G7 Android Nightly canonical body identity differs: "
+            f"expected {CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_BODY_SHA256}, "
+            f"found {actual_body_sha256}."
+        )
+
+    for path, predecessor, successor in documentation_targets:
+        relative = str(path.relative_to(ROOT))
+        try:
+            document_text = (
+                document_text_by_relative[relative]
+                if (
+                    document_text_by_relative is not None
+                    and relative in document_text_by_relative
+                )
+                else path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError) as error:
+            failures.append(
+                f"{relative}: cannot validate current G7 Android Nightly "
+                f"documentation: {error}"
+            )
+            continue
+
+        start_count = document_text.count(
+            CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_START
+        )
+        end_count = document_text.count(
+            CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_END
+        )
+        if (start_count, end_count) != (1, 1):
+            failures.append(
+                f"{relative}: current G7 Android Nightly block must contain "
+                "exactly one start and end marker; found "
+                f"{start_count} and {end_count}."
+            )
+            continue
+
+        start_index = document_text.index(
+            CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_START
+        )
+        body_start = start_index + len(
+            CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_START
+        )
+        end_index = document_text.index(
+            CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_END
+        )
+        if end_index <= body_start:
+            failures.append(
+                f"{relative}: current G7 Android Nightly markers are "
+                "reversed or empty."
+            )
+            continue
+
+        actual_block = document_text[body_start:end_index]
+        if actual_block != expected_body_block:
+            found_sha256 = hashlib.sha256(
+                actual_block.strip("\n").encode("utf-8") + b"\n"
+            ).hexdigest()
+            failures.append(
+                f"{relative}: current G7 Android Nightly block must match "
+                "the exact canonical body SHA-256 "
+                f"{CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_BODY_SHA256}; "
+                f"found {found_sha256}."
+            )
+
+        expected_before = (
+            predecessor
+            + "\n\n"
+            + CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_START
+        )
+        expected_after = (
+            CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_END
+            + "\n\n"
+            + successor
+        )
+        if expected_before not in document_text or expected_after not in document_text:
+            failures.append(
+                f"{relative}: current G7 Android Nightly block moved "
+                "outside its canonical document location."
+            )
+        if marker_is_in_hidden_markdown_context(
+            document_text,
+            CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_START,
+        ):
+            failures.append(
+                f"{relative}: current G7 Android Nightly block must remain "
+                "visible Markdown."
+            )
+    return failures
 
 
 def current_android_drawer_search_document_failures(
@@ -17814,6 +18935,55 @@ def base_document_contract_failures() -> list[str]:
     return failures
 
 
+def current_build24_macos_current_unsealed_install_recovery_tracked_source_failures(
+) -> list[str]:
+    expected_sources = (
+        (
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_RUNNER,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RUNNER_SIZE,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RUNNER_SHA256,
+            "runner",
+        ),
+        (
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_RUNNER_TEST,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RUNNER_TEST_SIZE,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_RUNNER_TEST_SHA256,
+            "runner test",
+        ),
+        (
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_CHECKER,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_CHECKER_SIZE,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_CHECKER_SHA256,
+            "checker",
+        ),
+        (
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_CHECKER_TEST,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_CHECKER_TEST_SIZE,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_CHECKER_TEST_SHA256,
+            "checker test",
+        ),
+        (
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_CHECKER,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_EXPECTED_CHECKER_SIZE,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_EXPECTED_CHECKER_SHA256,
+            "CI lifecycle checker",
+        ),
+        (
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_CHECKER_TEST,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_EXPECTED_CHECKER_TEST_SIZE,
+            CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_EXPECTED_CHECKER_TEST_SHA256,
+            "CI lifecycle checker test",
+        ),
+    )
+    return _pinned_source_identity_failures(
+        expected_sources,
+        source_bytes_by_path=None,
+        exact_map_error="tracked current-unsealed source map differs",
+        read_context="tracked current-unsealed install/recovery",
+        identity_context="tracked current-unsealed install/recovery",
+    )
+
+
 def current_build24_reverse_version_readback_tracked_source_failures() -> list[str]:
     expected_sources = (
         (
@@ -17841,28 +19011,13 @@ def current_build24_reverse_version_readback_tracked_source_failures() -> list[s
             "checker test",
         ),
     )
-    failures: list[str] = []
-    for source_path, expected_size, expected_sha256, label in expected_sources:
-        relative = str(source_path.relative_to(ROOT))
-        try:
-            if source_path.is_symlink() or not source_path.is_file():
-                raise OSError("path must be a non-symlink regular file")
-            payload = source_path.read_bytes()
-        except OSError as error:
-            failures.append(
-                f"{relative}: cannot read tracked reverse-version {label}: "
-                f"{error}"
-            )
-            continue
-        actual_sha256 = hashlib.sha256(payload).hexdigest()
-        if len(payload) != expected_size or actual_sha256 != expected_sha256:
-            failures.append(
-                f"{relative}: expected tracked reverse-version {label} "
-                f"identity {expected_size} bytes and SHA-256 "
-                f"{expected_sha256}; found {len(payload)} bytes and "
-                f"{actual_sha256}."
-            )
-    return failures
+    return _pinned_source_identity_failures(
+        expected_sources,
+        source_bytes_by_path=None,
+        exact_map_error="tracked reverse-version source map differs",
+        read_context="tracked reverse-version",
+        identity_context="tracked reverse-version",
+    )
 
 
 def tracked_document_contract_failures() -> list[str]:
@@ -17909,6 +19064,12 @@ def tracked_document_contract_failures() -> list[str]:
         current_build24_macos_lifecycle_aggregate_document_failures()
     )
     tracked_failures.extend(
+        current_build24_macos_current_unsealed_install_recovery_tracked_source_failures()
+    )
+    tracked_failures.extend(
+        current_build24_macos_current_unsealed_install_recovery_document_failures()
+    )
+    tracked_failures.extend(
         current_build24_reverse_version_readback_tracked_source_failures()
     )
     tracked_failures.extend(
@@ -17919,6 +19080,10 @@ def tracked_document_contract_failures() -> list[str]:
     )
     tracked_failures.extend(
         current_build24_macos_local_dmg_default_gate_failures()
+    )
+    tracked_failures.extend(current_g6_release_diagnostics_document_failures())
+    tracked_failures.extend(
+        current_g7_android_headless_nightly_document_failures()
     )
     tracked_failures.extend(current_android_drawer_search_document_failures())
     tracked_failures.extend(historical_local_release_document_failures())
@@ -18004,6 +19169,9 @@ def main(argv: list[str] | None = None) -> int:
         current_build24_macos_lifecycle_aggregate_evidence_failures()
     )
     failures.extend(
+        current_build24_macos_current_unsealed_install_recovery_source_failures()
+    )
+    failures.extend(
         current_build24_reverse_version_readback_source_failures()
     )
     failures.extend(
@@ -18041,6 +19209,9 @@ def main(argv: list[str] | None = None) -> int:
         current_build24_macos_lifecycle_aggregate_document_failures()
     )
     failures.extend(
+        current_build24_macos_current_unsealed_install_recovery_document_failures()
+    )
+    failures.extend(
         current_build24_reverse_version_readback_document_failures()
     )
     failures.extend(
@@ -18049,6 +19220,8 @@ def main(argv: list[str] | None = None) -> int:
     failures.extend(
         current_build24_macos_local_dmg_default_gate_failures()
     )
+    failures.extend(current_g6_release_diagnostics_document_failures())
+    failures.extend(current_g7_android_headless_nightly_document_failures())
     failures.extend(current_android_drawer_search_document_failures())
     failures.extend(macos_clean_home_installed_app_evidence_failures())
     failures.extend(

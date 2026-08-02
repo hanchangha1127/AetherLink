@@ -56,12 +56,20 @@ jobs:
         run: |
           python3 -B script/check_product_ci.py
           python3 -B script/check_product_ci.py --self-test
+      - name: Validate product-nightly contract
+        run: |
+          python3 -B script/check_product_nightly_ci.py
+          PYTHONPATH=. python3 -B script/check_product_nightly_ci.py --run-contract-tests
       - name: Run product static checks
         run: |
           python3 -B script/check_copy_hygiene.py --product-copy-only
           python3 -B script/check_release_version_ledger.py
           python3 -B script/check_app_icons.py
           python3 -B script/check_license.py
+      - name: Run release compliance contracts
+        run: |
+          python3 -B script/generate_release_compliance.py check
+          PYTHONPATH=. python3 -B script/check_product_ci.py --run-release-compliance-tests
       - name: Run tracked documentation contracts
         run: |
           python3 -B script/check_docs_hygiene.py --tracked-contracts-only
@@ -70,6 +78,17 @@ jobs:
             script.test_documentation_handoff_guards.DocumentationHandoffGuardTests.test_tracked_document_contract_cli_is_explicit_and_bounded
       - name: Run macOS release package contract units
         run: PYTHONPATH=. python3 -B script/test_build_and_run.py
+      - name: Run macOS lifecycle contract units
+        run: >-
+          PYTHONPATH=. python3 -B -m unittest
+          script.test_run_macos_current_unsealed_install_recovery_smoke
+          script.test_check_macos_current_unsealed_install_recovery_evidence.CurrentUnsealedRecoveryEvidencePortableTests
+          script.test_check_macos_current_unsealed_ci_lifecycle
+      - name: Run release diagnostics contract units
+        run: >-
+          PYTHONPATH=. python3 -B -m unittest
+          script.test_run_release_diagnostics_usability
+          script.test_check_release_diagnostics_usability
       - name: Compile macOS app
         run: swift build --product AetherLink
       - name: Verify focused Swift test selection
@@ -106,6 +125,40 @@ jobs:
         run: >-
           python3 -B script/check_release_artifact_archive.py
           --macos-build-outputs
+      - name: Run macOS Release diagnostics on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: |
+          install -d -m 700 .build/aetherlink-release-diagnostics-v1
+          python3 -B script/run_release_diagnostics_usability.py \
+            --platform macos \
+            --result .build/aetherlink-release-diagnostics-v1/macos.json
+      - name: Read back macOS Release diagnostics on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: >-
+          PYTHONPATH=. python3 -B
+          script/check_release_diagnostics_usability.py
+          --platform macos
+          .build/aetherlink-release-diagnostics-v1/macos.json
+      - name: Run current unsealed lifecycle on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: |
+          install -d -m 700 .build/aetherlink-current-unsealed-lifecycle-v1
+          python3 -B script/run_macos_current_unsealed_install_recovery_smoke.py \
+            --result .build/aetherlink-current-unsealed-lifecycle-v1/result.json \
+            --repeatability-result .build/aetherlink-current-unsealed-lifecycle-v1/repeatability.json
+      - name: Read back current unsealed lifecycle on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: >-
+          PYTHONPATH=. python3 -B
+          script/check_macos_current_unsealed_ci_lifecycle.py
 
   android-product-quality:
     name: Android product quality subset
@@ -217,3 +270,21 @@ jobs:
         run: >-
           python3 -B script/check_release_artifact_archive.py
           --android-build-outputs
+      - name: Run Android Release diagnostics on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: |
+          install -d -m 700 .build/aetherlink-release-diagnostics-v1
+          python3 -B script/run_release_diagnostics_usability.py \
+            --platform android \
+            --result .build/aetherlink-release-diagnostics-v1/android.json
+      - name: Read back Android Release diagnostics on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: >-
+          PYTHONPATH=. python3 -B
+          script/check_release_diagnostics_usability.py
+          --platform android
+          .build/aetherlink-release-diagnostics-v1/android.json

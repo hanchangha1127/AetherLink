@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independently validate the bounded Build 24/23/24 readback evidence."""
+"""Independently validate five generations of Build 24/23/24 evidence."""
 
 from __future__ import annotations
 
@@ -18,35 +18,71 @@ ROOT = Path(__file__).resolve().parents[1]
 RESULT_RELATIVE = Path(
     "dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-"
     "isolated-reverse-version-readback-v1-current-source-g6-"
-    "macos-release-byte-readback-two.json"
+    "macos-current-unsealed-source-closure-four.json"
 )
 RECEIPT_RELATIVE = Path(
     "dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-"
     "isolated-reverse-version-readback-repeatability-v1-current-source-g6-"
-    "macos-release-byte-readback-two.json"
+    "macos-current-unsealed-source-closure-four.json"
 )
 RESULT_SHA256 = "dbaa422de18ab37e9f4b92d7e78631fad9719e6c6d41fe30ccb402365267d416"
 RESULT_SIZE = 7_859
-RECEIPT_SHA256 = "818474ea0469e10f836c237ef3d8cab3ec95ffd5da6299c13ea730982ff08a80"
-RECEIPT_SIZE = 1_266
+RECEIPT_SHA256 = "b1f4d4fa2e661eab36ba32bb81676b50af95a7139f5c89cd66aac4173dcd4113"
+RECEIPT_SIZE = 1_277
 PREDECESSOR_RESULT_RELATIVE = Path(
     "dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-"
     "isolated-reverse-version-readback-v1-current-source-g6-"
-    "android-release-byte-readback-one.json"
+    "macos-release-byte-readback-three.json"
 )
 PREDECESSOR_RECEIPT_RELATIVE = Path(
     "dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-"
     "isolated-reverse-version-readback-repeatability-v1-current-source-g6-"
-    "android-release-byte-readback-one.json"
+    "macos-release-byte-readback-three.json"
 )
 PREDECESSOR_RESULT_SHA256 = (
     "dbaa422de18ab37e9f4b92d7e78631fad9719e6c6d41fe30ccb402365267d416"
 )
 PREDECESSOR_RESULT_SIZE = 7_859
 PREDECESSOR_RECEIPT_SHA256 = (
-    "6a4ceb03571cddc9cb6d922a7cd68062526be2b8ecfccb2129868eeb6ce6d990"
+    "f335e1f68ef8095a42267e1811cacf969efc6600ccc72f413696a5c2c6d74e8f"
 )
 PREDECESSOR_RECEIPT_SIZE = 1_268
+EARLIER_PREDECESSOR_RESULT_RELATIVE = Path(
+    "dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-"
+    "isolated-reverse-version-readback-v1-current-source-g6-"
+    "macos-release-byte-readback-two.json"
+)
+EARLIER_PREDECESSOR_RECEIPT_RELATIVE = Path(
+    "dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-"
+    "isolated-reverse-version-readback-repeatability-v1-current-source-g6-"
+    "macos-release-byte-readback-two.json"
+)
+EARLIER_PREDECESSOR_RESULT_SHA256 = (
+    "dbaa422de18ab37e9f4b92d7e78631fad9719e6c6d41fe30ccb402365267d416"
+)
+EARLIER_PREDECESSOR_RESULT_SIZE = 7_859
+EARLIER_PREDECESSOR_RECEIPT_SHA256 = (
+    "818474ea0469e10f836c237ef3d8cab3ec95ffd5da6299c13ea730982ff08a80"
+)
+EARLIER_PREDECESSOR_RECEIPT_SIZE = 1_266
+EARLIEST_PREDECESSOR_RESULT_RELATIVE = Path(
+    "dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-"
+    "isolated-reverse-version-readback-v1-current-source-g6-"
+    "android-release-byte-readback-one.json"
+)
+EARLIEST_PREDECESSOR_RECEIPT_RELATIVE = Path(
+    "dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-"
+    "isolated-reverse-version-readback-repeatability-v1-current-source-g6-"
+    "android-release-byte-readback-one.json"
+)
+EARLIEST_PREDECESSOR_RESULT_SHA256 = (
+    "dbaa422de18ab37e9f4b92d7e78631fad9719e6c6d41fe30ccb402365267d416"
+)
+EARLIEST_PREDECESSOR_RESULT_SIZE = 7_859
+EARLIEST_PREDECESSOR_RECEIPT_SHA256 = (
+    "6a4ceb03571cddc9cb6d922a7cd68062526be2b8ecfccb2129868eeb6ce6d990"
+)
+EARLIEST_PREDECESSOR_RECEIPT_SIZE = 1_268
 ORIGINAL_RESULT_RELATIVE = Path(
     "dist/lifecycle/macos-packaged-app-build-24-to-23-to-24-"
     "isolated-reverse-version-readback-v1.json"
@@ -109,6 +145,30 @@ PINNED_FILES: Mapping[Path, FileSpec] = {
         0o600,
         True,
     ),
+    EARLIER_PREDECESSOR_RESULT_RELATIVE: FileSpec(
+        EARLIER_PREDECESSOR_RESULT_SIZE,
+        EARLIER_PREDECESSOR_RESULT_SHA256,
+        0o600,
+        True,
+    ),
+    EARLIER_PREDECESSOR_RECEIPT_RELATIVE: FileSpec(
+        EARLIER_PREDECESSOR_RECEIPT_SIZE,
+        EARLIER_PREDECESSOR_RECEIPT_SHA256,
+        0o600,
+        True,
+    ),
+    EARLIEST_PREDECESSOR_RESULT_RELATIVE: FileSpec(
+        EARLIEST_PREDECESSOR_RESULT_SIZE,
+        EARLIEST_PREDECESSOR_RESULT_SHA256,
+        0o600,
+        True,
+    ),
+    EARLIEST_PREDECESSOR_RECEIPT_RELATIVE: FileSpec(
+        EARLIEST_PREDECESSOR_RECEIPT_SIZE,
+        EARLIEST_PREDECESSOR_RECEIPT_SHA256,
+        0o600,
+        True,
+    ),
     ORIGINAL_RESULT_RELATIVE: FileSpec(
         ORIGINAL_RESULT_SIZE,
         ORIGINAL_RESULT_SHA256,
@@ -167,13 +227,13 @@ PINNED_FILES: Mapping[Path, FileSpec] = {
         0o644,
     ),
     Path("script/check_release_artifact_archive.py"): FileSpec(
-        247_676,
-        "8405ad0a532b2b88799f370da15b1a13694f1c9d3f79d9b3f0d4be8a5bbe2452",
+        255_305,
+        "db5ba718e2623e16b2a235bb08f336ae03a22fbc8d86ba950c79ce45b9f7b850",
         0o755,
     ),
     Path("script/check_release_compliance.py"): FileSpec(
-        43_859,
-        "a12492e12a0c50bf5b4d52b7cf22733f620ebf34734563cf5702410ec17875ae",
+        56_756,
+        "2738b8e1be0eee652245a3335c50f81dd45af42d5ee0b5d860a19fb3d05e813a",
         0o644,
     ),
     Path("release/version-ledger.tsv"): FileSpec(
@@ -833,9 +893,25 @@ def check() -> None:
         validate_predecessor_preservation(
             payloads[PREDECESSOR_RESULT_RELATIVE],
             payloads[PREDECESSOR_RECEIPT_RELATIVE],
+            payloads[EARLIER_PREDECESSOR_RESULT_RELATIVE],
+            payloads[EARLIER_PREDECESSOR_RECEIPT_RELATIVE],
+            successor_result_file_name=PREDECESSOR_RESULT_RELATIVE.name,
+            predecessor_result_file_name=EARLIER_PREDECESSOR_RESULT_RELATIVE.name,
+        )
+        validate_predecessor_preservation(
+            payloads[EARLIER_PREDECESSOR_RESULT_RELATIVE],
+            payloads[EARLIER_PREDECESSOR_RECEIPT_RELATIVE],
+            payloads[EARLIEST_PREDECESSOR_RESULT_RELATIVE],
+            payloads[EARLIEST_PREDECESSOR_RECEIPT_RELATIVE],
+            successor_result_file_name=EARLIER_PREDECESSOR_RESULT_RELATIVE.name,
+            predecessor_result_file_name=EARLIEST_PREDECESSOR_RESULT_RELATIVE.name,
+        )
+        validate_predecessor_preservation(
+            payloads[EARLIEST_PREDECESSOR_RESULT_RELATIVE],
+            payloads[EARLIEST_PREDECESSOR_RECEIPT_RELATIVE],
             payloads[ORIGINAL_RESULT_RELATIVE],
             payloads[ORIGINAL_RECEIPT_RELATIVE],
-            successor_result_file_name=PREDECESSOR_RESULT_RELATIVE.name,
+            successor_result_file_name=EARLIEST_PREDECESSOR_RESULT_RELATIVE.name,
             predecessor_result_file_name=ORIGINAL_RESULT_RELATIVE.name,
         )
 
@@ -848,7 +924,7 @@ def main() -> int:
         return 1
     print(
         "macOS reverse-version evidence OK: Build 24 -> 23 -> 24; "
-        "runs=2; productRollbackQualificationClaimed=false."
+        "generations=5; runs=2; productRollbackQualificationClaimed=false."
     )
     return 0
 

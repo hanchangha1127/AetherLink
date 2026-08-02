@@ -25,6 +25,18 @@ class ReverseVersionEvidenceCheckerTests(unittest.TestCase):
         cls.predecessor_receipt_payload = (
             checker.ROOT / checker.PREDECESSOR_RECEIPT_RELATIVE
         ).read_bytes()
+        cls.earlier_predecessor_result_payload = (
+            checker.ROOT / checker.EARLIER_PREDECESSOR_RESULT_RELATIVE
+        ).read_bytes()
+        cls.earlier_predecessor_receipt_payload = (
+            checker.ROOT / checker.EARLIER_PREDECESSOR_RECEIPT_RELATIVE
+        ).read_bytes()
+        cls.earliest_predecessor_result_payload = (
+            checker.ROOT / checker.EARLIEST_PREDECESSOR_RESULT_RELATIVE
+        ).read_bytes()
+        cls.earliest_predecessor_receipt_payload = (
+            checker.ROOT / checker.EARLIEST_PREDECESSOR_RECEIPT_RELATIVE
+        ).read_bytes()
         cls.original_result_payload = (
             checker.ROOT / checker.ORIGINAL_RESULT_RELATIVE
         ).read_bytes()
@@ -61,7 +73,7 @@ class ReverseVersionEvidenceCheckerTests(unittest.TestCase):
             self.receipt_payload,
         )
 
-    def test_three_generation_successor_chain_preserves_evidence_bytes(self) -> None:
+    def test_five_generation_successor_chain_preserves_evidence_bytes(self) -> None:
         checker.validate_predecessor_preservation(
             self.result_payload,
             self.receipt_payload,
@@ -73,9 +85,25 @@ class ReverseVersionEvidenceCheckerTests(unittest.TestCase):
         checker.validate_predecessor_preservation(
             self.predecessor_result_payload,
             self.predecessor_receipt_payload,
+            self.earlier_predecessor_result_payload,
+            self.earlier_predecessor_receipt_payload,
+            successor_result_file_name=checker.PREDECESSOR_RESULT_RELATIVE.name,
+            predecessor_result_file_name=checker.EARLIER_PREDECESSOR_RESULT_RELATIVE.name,
+        )
+        checker.validate_predecessor_preservation(
+            self.earlier_predecessor_result_payload,
+            self.earlier_predecessor_receipt_payload,
+            self.earliest_predecessor_result_payload,
+            self.earliest_predecessor_receipt_payload,
+            successor_result_file_name=checker.EARLIER_PREDECESSOR_RESULT_RELATIVE.name,
+            predecessor_result_file_name=checker.EARLIEST_PREDECESSOR_RESULT_RELATIVE.name,
+        )
+        checker.validate_predecessor_preservation(
+            self.earliest_predecessor_result_payload,
+            self.earliest_predecessor_receipt_payload,
             self.original_result_payload,
             self.original_receipt_payload,
-            successor_result_file_name=checker.PREDECESSOR_RESULT_RELATIVE.name,
+            successor_result_file_name=checker.EARLIEST_PREDECESSOR_RESULT_RELATIVE.name,
             predecessor_result_file_name=checker.ORIGINAL_RESULT_RELATIVE.name,
         )
         self.assertEqual(
@@ -84,11 +112,30 @@ class ReverseVersionEvidenceCheckerTests(unittest.TestCase):
         )
         self.assertEqual(
             self.predecessor_result_payload,
+            self.earlier_predecessor_result_payload,
+        )
+        self.assertEqual(
+            self.earlier_predecessor_result_payload,
+            self.earliest_predecessor_result_payload,
+        )
+        self.assertEqual(
+            self.earliest_predecessor_result_payload,
             self.original_result_payload,
         )
         for successor_payload, predecessor_payload in (
             (self.receipt_payload, self.predecessor_receipt_payload),
-            (self.predecessor_receipt_payload, self.original_receipt_payload),
+            (
+                self.predecessor_receipt_payload,
+                self.earlier_predecessor_receipt_payload,
+            ),
+            (
+                self.earlier_predecessor_receipt_payload,
+                self.earliest_predecessor_receipt_payload,
+            ),
+            (
+                self.earliest_predecessor_receipt_payload,
+                self.original_receipt_payload,
+            ),
         ):
             successor_receipt = json.loads(successor_payload)
             predecessor_receipt = json.loads(predecessor_payload)
@@ -98,12 +145,16 @@ class ReverseVersionEvidenceCheckerTests(unittest.TestCase):
             )
             self.assertEqual(successor_receipt, predecessor_receipt)
 
-    def test_three_evidence_generations_are_all_pinned(self) -> None:
+    def test_five_evidence_generations_are_all_pinned(self) -> None:
         evidence_paths = {
             checker.RESULT_RELATIVE,
             checker.RECEIPT_RELATIVE,
             checker.PREDECESSOR_RESULT_RELATIVE,
             checker.PREDECESSOR_RECEIPT_RELATIVE,
+            checker.EARLIER_PREDECESSOR_RESULT_RELATIVE,
+            checker.EARLIER_PREDECESSOR_RECEIPT_RELATIVE,
+            checker.EARLIEST_PREDECESSOR_RESULT_RELATIVE,
+            checker.EARLIEST_PREDECESSOR_RECEIPT_RELATIVE,
             checker.ORIGINAL_RESULT_RELATIVE,
             checker.ORIGINAL_RECEIPT_RELATIVE,
         }
@@ -113,6 +164,19 @@ class ReverseVersionEvidenceCheckerTests(unittest.TestCase):
                 spec = checker.PINNED_FILES[path]
                 self.assertEqual(spec.mode, 0o600)
                 self.assertTrue(spec.capture)
+
+    def test_five_generation_preservation_rejects_mutated_middle_result(self) -> None:
+        mutated = bytearray(self.earlier_predecessor_result_payload)
+        mutated[-2] ^= 1
+        with self.assertRaises(checker.EvidenceError):
+            checker.validate_predecessor_preservation(
+                self.predecessor_result_payload,
+                self.predecessor_receipt_payload,
+                bytes(mutated),
+                self.earlier_predecessor_receipt_payload,
+                successor_result_file_name=checker.PREDECESSOR_RESULT_RELATIVE.name,
+                predecessor_result_file_name=checker.EARLIER_PREDECESSOR_RESULT_RELATIVE.name,
+            )
 
     def test_noncanonical_and_duplicate_json_are_rejected(self) -> None:
         with self.assertRaisesRegex(checker.EvidenceError, "canonical"):
@@ -221,6 +285,23 @@ class ReverseVersionEvidenceCheckerTests(unittest.TestCase):
         }
         self.assertEqual(set(checker.EXECUTION_SOURCE_CLOSURE), expected)
         self.assertTrue(expected.issubset(checker.PINNED_FILES))
+
+    def test_current_release_archive_checker_identity_is_pinned(self) -> None:
+        relative = Path("script/check_release_artifact_archive.py")
+        source = (checker.ROOT / relative).read_bytes()
+        spec = checker.PINNED_FILES[relative]
+        self.assertEqual(len(source), spec.size)
+        self.assertEqual(hashlib.sha256(source).hexdigest(), spec.sha256)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            copy = root / relative
+            copy.parent.mkdir(parents=True)
+            copy.write_bytes(source[:-1] + bytes([source[-1] ^ 1]))
+            copy.chmod(spec.mode)
+            with self.assertRaisesRegex(checker.EvidenceError, "bytes changed"):
+                with checker.pinned_file_payloads({relative: spec}, root=root):
+                    pass
 
     def test_ledger_and_checksum_sidecar_are_exact(self) -> None:
         ledger = (checker.ROOT / "release/version-ledger.tsv").read_bytes()

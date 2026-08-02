@@ -245,6 +245,8 @@ SOURCE_REQUIRED_FILES = (
         "script/test_run_macos_current_source_lane_a_"
         "idle_resource_stability_smoke.py"
     ),
+    "script/run_macos_current_unsealed_install_recovery_smoke.py",
+    "script/test_run_macos_current_unsealed_install_recovery_smoke.py",
     "script/run_macos_packaged_app_lifecycle_smoke.py",
     "script/run_macos_packaged_app_state_recovery_smoke.py",
     "script/run_macos_runtime_chat_cross_process_smoke.py",
