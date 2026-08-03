@@ -211,6 +211,9 @@ internal enum class RuntimeLocalDataWriteDurability {
 }
 
 internal interface RuntimeLocalDataStore {
+    val compatibilityIssue: RuntimeLocalDataCompatibilityIssue?
+        get() = null
+
     fun load(): PersistedRuntimeData
     fun save(
         data: PersistedRuntimeData,
@@ -236,6 +239,7 @@ internal class RuntimeStatePersistenceCoordinator(
     }
 
     fun saveCoalesced() {
+        if (localStore.compatibilityIssue != null) return
         if (coalesceWindowMillis == 0L) {
             saveImmediately(latestData())
             return
@@ -252,6 +256,7 @@ internal class RuntimeStatePersistenceCoordinator(
     }
 
     fun saveImmediately(data: PersistedRuntimeData) {
+        if (localStore.compatibilityIssue != null) return
         synchronized(lock) {
             generation += 1L
             pendingJob?.cancel()
@@ -262,6 +267,7 @@ internal class RuntimeStatePersistenceCoordinator(
     }
 
     fun flush() {
+        if (localStore.compatibilityIssue != null) return
         synchronized(lock) {
             generation += 1L
             pendingJob?.cancel()
@@ -274,6 +280,7 @@ internal class RuntimeStatePersistenceCoordinator(
     }
 
     private fun flushScheduled(scheduledGeneration: Long) {
+        if (localStore.compatibilityIssue != null) return
         synchronized(lock) {
             if (generation != scheduledGeneration) return
             pendingJob = null
@@ -1070,12 +1077,22 @@ private class AndroidRuntimeDiscoverySource(
 private class AndroidRuntimeLocalDataStore(
     private val store: RuntimeLocalStore,
 ) : RuntimeLocalDataStore {
-    override fun load(): PersistedRuntimeData = store.load()
+    private var loadedCompatibilityIssue: RuntimeLocalDataCompatibilityIssue? = null
+
+    override val compatibilityIssue: RuntimeLocalDataCompatibilityIssue?
+        get() = loadedCompatibilityIssue
+
+    override fun load(): PersistedRuntimeData {
+        val result = store.loadResult()
+        loadedCompatibilityIssue = result.compatibilityIssue
+        return result.data
+    }
 
     override fun save(
         data: PersistedRuntimeData,
         durability: RuntimeLocalDataWriteDurability,
     ) {
+        if (loadedCompatibilityIssue != null) return
         store.save(
             data = data,
             commitToDisk = durability == RuntimeLocalDataWriteDurability.Durable,
@@ -2396,9 +2413,22 @@ class RuntimeClientViewModel internal constructor(
     init {
         dependencies.lifecycleCallbacksRegistrar.register(application, lifecycleCallbacks)
         val loadedRuntimeData = localStore.load()
-        shouldRestoreTrustedRuntimeConnection = loadedRuntimeData.trustedRuntimeAutoReconnectEnabled
+        val localDataCompatibilityIssue = localStore.compatibilityIssue
+        shouldRestoreTrustedRuntimeConnection =
+            localDataCompatibilityIssue == null &&
+                loadedRuntimeData.trustedRuntimeAutoReconnectEnabled
         publishPersistedRuntimeData(loadedRuntimeData, save = false, syncComposerDraft = true)
-        restorePersistedPendingPairingRouteIfNeeded(loadedRuntimeData)
+        if (localDataCompatibilityIssue == null) {
+            restorePersistedPendingPairingRouteIfNeeded(loadedRuntimeData)
+        } else {
+            mutableState.update {
+                it.copy(
+                    localDataCompatibilityError = RuntimeUiError(
+                        code = "local_data_update_required",
+                    ),
+                )
+            }
+        }
         viewModelScope.launch {
             pairingStore.trustedRuntime.collect { trusted ->
                 val currentTrust = state.value.trustedRuntime
@@ -2854,6 +2884,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun setAppLanguageTag(languageTag: String) {
+        if (localStore.compatibilityIssue != null) return
         val cleanData = persistedRuntimeData.withAppLanguageTag(languageTag)
         if (cleanData != persistedRuntimeData) {
             publishPersistedRuntimeData(cleanData, save = true)
@@ -2861,6 +2892,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun followSystemAppLanguageTag(languageTag: String?) {
+        if (localStore.compatibilityIssue != null) return
         val cleanData = persistedRuntimeData.withFollowSystemAppLanguageTag(languageTag)
         if (cleanData != persistedRuntimeData) {
             publishPersistedRuntimeData(cleanData, save = true)
@@ -2868,6 +2900,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun reconcileSystemAppLanguageTag(languageTag: String?) {
+        if (localStore.compatibilityIssue != null) return
         val cleanData = persistedRuntimeData.withSystemAppLanguageTag(languageTag)
         if (cleanData != persistedRuntimeData) {
             publishPersistedRuntimeData(cleanData, save = true)
@@ -2891,6 +2924,7 @@ class RuntimeClientViewModel internal constructor(
         applicationLocaleLanguageTag: String?,
         systemLanguageTag: String?,
     ): String? {
+        if (localStore.compatibilityIssue != null) return null
         val reconciliation = androidPlatformAppLanguageReconciliation(
             applicationLocalesSupported = applicationLocalesSupported,
             applicationLocaleLanguageTag = applicationLocaleLanguageTag,
@@ -2903,6 +2937,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun setAppTheme(theme: RuntimeAppTheme) {
+        if (localStore.compatibilityIssue != null) return
         publishPersistedRuntimeData(
             persistedRuntimeData.withAppTheme(theme),
             save = true,
@@ -5450,6 +5485,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun selectModel(modelId: String) {
+        if (localStore.compatibilityIssue != null) return
         val current = state.value
         if (current.isStreaming) {
             showError("generation_in_progress")
@@ -5476,6 +5512,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun selectEmbeddingModel(modelId: String?) {
+        if (localStore.compatibilityIssue != null) return
         if (state.value.isStreaming) {
             showError("generation_in_progress")
             return
@@ -13624,6 +13661,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun persistTrustedRuntimeAutoReconnectEnabled(enabled: Boolean) {
+        if (localStore.compatibilityIssue != null) return
         shouldRestoreTrustedRuntimeConnection = enabled
         val cleanData = persistedRuntimeData.withTrustedRuntimeAutoReconnectEnabled(enabled)
         persistedRuntimeData = cleanData

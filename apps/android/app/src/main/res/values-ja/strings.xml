@@ -773,6 +773,7 @@
     <string name="error_generation_not_found">アクティブな生成が見つかりませんでした。</string>
     <string name="error_transport_error">AetherLink Runtime とモデルサービスの通信が失われました。</string>
     <string name="error_internal_error">AetherLink Runtime で内部エラーが発生しました。</string>
+    <string name="error_local_data_update_required">このバージョンの AetherLink では保存済みのアプリデータを安全に開けません。設定を変更する前に AetherLink を更新してください。</string>
     <string name="error_unknown">問題が発生しました。</string>
     <string name="error_detail">詳細: %1$s</string>
     <string name="error_accessibility_summary">%1$s。%2$s</string>

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -160,6 +161,314 @@ class AndroidHeadlessLifecycleV2RunnerTests(unittest.TestCase):
                     "ui/not-in-contract.xml",
                 )
 
+        pair_only = runner.ET.fromstring(
+            '<hierarchy><node package="com.localagentbridge.android" '
+            'text="Pair AetherLink" bounds="[148,167][764,284]"/></hierarchy>'
+        )
+        clipped = runner.ET.fromstring(
+            '<hierarchy><node package="com.localagentbridge.android" '
+            'text="Pair AetherLink" bounds="[148,167][764,284]"/>'
+            '<node package="com.localagentbridge.android" scrollable="true" '
+            'bounds="[53,276][1027,2295]"><node '
+            'package="com.localagentbridge.android" checkable="true" '
+            'checked="true" enabled="true" bounds="[95,2250][985,2376]">'
+            '<node package="com.localagentbridge.android" '
+            'text="Follow system language" bounds="[179,2260][900,2360]"/>'
+            "</node></node></hierarchy>"
+        )
+        ready = runner.ET.fromstring(
+            '<hierarchy><node package="com.localagentbridge.android" '
+            'text="Pair AetherLink" bounds="[148,167][764,284]"/>'
+            '<node package="com.localagentbridge.android" scrollable="true" '
+            'bounds="[53,276][1027,2295]"><node '
+            'package="com.localagentbridge.android" checkable="true" '
+            'checked="true" enabled="true" bounds="[95,1800][985,1926]">'
+            '<node package="com.localagentbridge.android" '
+            'text="Follow system language" bounds="[179,1810][900,1910]"/>'
+            "</node></node></hierarchy>"
+        )
+        predicate = lambda root: runner.base.has_fully_visible_checked_node(
+            root,
+            text="Follow system language",
+            package=runner.PACKAGE_NAME,
+        )
+        anchor = lambda root: runner.base.has_node(
+            root,
+            text="Pair AetherLink",
+            package=runner.PACKAGE_NAME,
+        )
+        commands = Mock()
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            patch.object(runner, "capture_ui", side_effect=[pair_only, clipped, ready]),
+            patch.object(runner.time, "sleep"),
+        ):
+            observed = runner.wait_for_ui_with_upward_swipes(
+                commands,
+                Path(temporary),
+                "ui/follow-system-before-reboot.xml",
+                predicate,
+                anchor_predicate=anchor,
+            )
+        self.assertIs(observed, ready)
+        self.assertEqual(commands.shell.call_count, 2)
+
+        wrong_screen = runner.ET.fromstring("<hierarchy><node text=\"Launcher\"/></hierarchy>")
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            patch.object(runner, "capture_ui", side_effect=[pair_only, wrong_screen]),
+            patch.object(runner.time, "sleep"),
+            self.assertRaisesRegex(runner.RunnerError, "screen anchor"),
+        ):
+            runner.wait_for_ui_with_upward_swipes(
+                Mock(),
+                Path(temporary),
+                "ui/follow-system-before-reboot.xml",
+                predicate,
+                anchor_predicate=anchor,
+            )
+
+        permission = runner.ET.fromstring(
+            '<hierarchy><node package="com.google.android.permissioncontroller" '
+            'text="Allow AetherLink to take pictures and record video?" '
+            'bounds="[80,600][1000,760]"/><node '
+            'package="com.google.android.permissioncontroller" clickable="true" '
+            'enabled="true" bounds="[80,1800][1000,1950]"><node '
+            'package="com.google.android.permissioncontroller" '
+            'resource-id="com.android.permissioncontroller:id/permission_deny_button" '
+            'text="Don’t allow" bounds="[100,1820][980,1930]"/>'
+            "</node></hierarchy>"
+        )
+        self.assertTrue(runner.permission_dialog_has_app_prompt(permission))
+        self.assertEqual(
+            runner.permission_dialog_denial_bounds(permission),
+            (80, 1800, 1000, 1950),
+        )
+        disabled = runner.ET.fromstring(
+            runner.ET.tostring(permission, encoding="unicode").replace(
+                'enabled="true"', 'enabled="false"', 1
+            )
+        )
+        self.assertIsNone(runner.permission_dialog_denial_bounds_or_none(disabled))
+
+    def test_future_saved_data_seed_and_readback_are_exact(self) -> None:
+        commands = Mock()
+        commands.adb_path = Path("/fixture/adb")
+        commands.environment = {"LANG": "C.UTF-8"}
+        commands.serial = "emulator-5554"
+        commands.run.return_value = subprocess.CompletedProcess(
+            [],
+            0,
+            stdout=runner.FUTURE_RUNTIME_LOCAL_STORE_WRITE_RECEIPT,
+            stderr="",
+        )
+        commands.adb.return_value = completed(
+            stdout=runner.FUTURE_RUNTIME_LOCAL_STORE_SEED,
+        )
+
+        seeded = runner.seed_future_runtime_local_data(commands)
+
+        self.assertEqual(seeded, runner.FUTURE_RUNTIME_LOCAL_STORE_SEED)
+        write_command = commands.run.call_args.args[0]
+        self.assertEqual(
+            write_command[:5],
+            [
+                "/fixture/adb",
+                "-s",
+                "emulator-5554",
+                "shell",
+                "-T",
+            ],
+        )
+        self.assertEqual(len(write_command), 6)
+        remote_argv = shlex.split(write_command[5])
+        self.assertEqual(
+            remote_argv[:4],
+            ["run-as", runner.PACKAGE_NAME, "sh", "-c"],
+        )
+        self.assertEqual(len(remote_argv), 5)
+        fixed_script = remote_argv[4]
+        self.assertIn("umask 077", fixed_script)
+        self.assertIn(f"{runner.FUTURE_RUNTIME_LOCAL_STORE_RELATIVE}.bak", fixed_script)
+        self.assertIn(".aetherlink-v2", fixed_script)
+        self.assertIn("chmod 600", fixed_script)
+        self.assertIn("mv", fixed_script)
+        self.assertIn("aetherlink-future-seed-ok", fixed_script)
+        self.assertEqual(
+            commands.run.call_args.kwargs["input_text"],
+            runner.FUTURE_RUNTIME_LOCAL_STORE_SEED.decode("ascii"),
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            captured = runner.capture_future_runtime_local_data(
+                commands,
+                output,
+                "runtime-local-store-after-future-version-first-launch.xml",
+            )
+            self.assertEqual(captured, runner.FUTURE_RUNTIME_LOCAL_STORE_SEED)
+            self.assertEqual(
+                (
+                    output
+                    / "runtime-local-store-after-future-version-first-launch.xml"
+                ).read_bytes(),
+                runner.FUTURE_RUNTIME_LOCAL_STORE_SEED,
+            )
+
+            commands.adb.return_value = completed(
+                stdout=runner.FUTURE_RUNTIME_LOCAL_STORE_SEED + b" ",
+            )
+            with self.assertRaises(runner.RunnerError):
+                runner.capture_future_runtime_local_data(
+                    commands,
+                    output,
+                    "runtime-local-store-after-future-version-second-launch.xml",
+                )
+            with self.assertRaises(runner.RunnerError):
+                runner.capture_future_runtime_local_data(
+                    commands,
+                    output,
+                    "runtime-local-store-not-in-contract.xml",
+                )
+
+        for label, result in (
+            (
+                "wrong-receipt",
+                subprocess.CompletedProcess([], 0, stdout="wrong\n", stderr=""),
+            ),
+            (
+                "stderr",
+                subprocess.CompletedProcess(
+                    [],
+                    0,
+                    stdout=runner.FUTURE_RUNTIME_LOCAL_STORE_WRITE_RECEIPT,
+                    stderr="unexpected\n",
+                ),
+            ),
+            (
+                "nonzero",
+                subprocess.CompletedProcess([], 1, stdout="", stderr="failed\n"),
+            ),
+        ):
+            with self.subTest(label=label):
+                commands.run.return_value = result
+                with self.assertRaises(runner.RunnerError):
+                    runner.seed_future_runtime_local_data(commands)
+
+    def test_legacy_versionless_saved_data_migration_and_readback_are_exact(
+        self,
+    ) -> None:
+        migrated = (
+            b'<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n'
+            b'<map>\n    <string name="runtime_data">'
+            b"{&quot;androidAppLanguagePlatformMigrationVersion&quot;:1,"
+            b"&quot;appLanguageSource&quot;:&quot;system&quot;,"
+            b"&quot;appLanguageTag&quot;:&quot;en&quot;,"
+            b"&quot;appTheme&quot;:&quot;dark&quot;,"
+            b"&quot;composerDraft&quot;:&quot;legacy-v0&quot;,"
+            b"&quot;trustedRuntimeAutoReconnectEnabled&quot;:false,"
+            b"&quot;version&quot;:1}</string>\n</map>\n"
+        )
+        commands = Mock()
+        commands.adb_path = Path("/fixture/adb")
+        commands.environment = {"LANG": "C.UTF-8"}
+        commands.serial = "emulator-5554"
+        commands.run.return_value = subprocess.CompletedProcess(
+            [],
+            0,
+            stdout=runner.LEGACY_RUNTIME_LOCAL_STORE_WRITE_RECEIPT,
+            stderr="",
+        )
+        commands.adb.side_effect = [
+            completed(stdout=runner.LEGACY_RUNTIME_LOCAL_STORE_SEED),
+            completed(stdout=runner.LEGACY_RUNTIME_LOCAL_STORE_SEED),
+            completed(stdout=migrated),
+            completed(stdout=migrated),
+        ]
+
+        seeded = runner.seed_legacy_runtime_local_data(commands)
+        self.assertEqual(seeded, runner.LEGACY_RUNTIME_LOCAL_STORE_SEED)
+        write_command = commands.run.call_args.args[0]
+        self.assertEqual(
+            write_command[:5],
+            [
+                "/fixture/adb",
+                "-s",
+                "emulator-5554",
+                "shell",
+                "-T",
+            ],
+        )
+        remote_argv = shlex.split(write_command[5])
+        self.assertEqual(
+            remote_argv[:4],
+            ["run-as", runner.PACKAGE_NAME, "sh", "-c"],
+        )
+        self.assertIn(".aetherlink-legacy", remote_argv[4])
+        self.assertIn("aetherlink-legacy-seed-ok", remote_argv[4])
+        self.assertEqual(
+            commands.run.call_args.kwargs["input_text"],
+            runner.LEGACY_RUNTIME_LOCAL_STORE_SEED.decode("ascii"),
+        )
+
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            patch.object(runner.time, "sleep"),
+        ):
+            output = Path(temporary)
+            first, first_facts = (
+                runner.wait_for_legacy_runtime_local_data_migration(
+                    commands,
+                    output,
+                    "runtime-local-store-after-legacy-migration-first-launch.xml",
+                )
+            )
+            second, second_facts = (
+                runner.capture_legacy_migrated_runtime_local_data(
+                    commands,
+                    output,
+                    "runtime-local-store-after-legacy-migration-second-launch.xml",
+                )
+            )
+            self.assertEqual(first, migrated)
+            self.assertEqual(second, migrated)
+            self.assertEqual(first_facts, second_facts)
+            self.assertEqual(first_facts["version"], 1)
+            self.assertEqual(first_facts["appTheme"], "dark")
+            self.assertEqual(first_facts["composerDraft"], "legacy-v0")
+            self.assertIs(
+                first_facts["trustedRuntimeAutoReconnectEnabled"],
+                False,
+            )
+            self.assertEqual(
+                (
+                    output
+                    / "runtime-local-store-after-legacy-migration-first-launch.xml"
+                ).read_bytes(),
+                migrated,
+            )
+            self.assertEqual(
+                (
+                    output
+                    / "runtime-local-store-after-legacy-migration-second-launch.xml"
+                ).read_bytes(),
+                migrated,
+            )
+            with self.assertRaisesRegex(
+                runner.RunnerError,
+                "unexpected legacy-migration",
+            ):
+                runner.capture_legacy_migrated_runtime_local_data(
+                    commands,
+                    output,
+                    "runtime-local-store-not-in-contract.xml",
+                )
+
+        with self.assertRaisesRegex(runner.RunnerError, "has not migrated"):
+            runner.legacy_migrated_runtime_local_data_facts(
+                runner.LEGACY_RUNTIME_LOCAL_STORE_SEED
+            )
+
     def test_boot_id_capture_requires_one_exact_uuid_line(self) -> None:
         commands = Mock()
         raw = b"123e4567-e89b-42d3-a456-426614174000\n"
@@ -272,6 +581,27 @@ class AndroidHeadlessLifecycleV2RunnerTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(runner.RunnerError, "one deep mState"):
             runner.deep_idle_state(b"mState=IDLE\nmState=ACTIVE\n")
+
+        for deep_state in (b"ACTIVE", b"IDLE"):
+            receipt = (
+                b"Light state: OVERRIDE, deep state: "
+                + deep_state
+                + b"\n"
+                b"mForceModeManagerQuickDozeRequest: false\n"
+                b"mForceModeManagerOffBodyState: false\n"
+            )
+            self.assertEqual(
+                runner.deviceidle_unforce_receipt_states(receipt),
+                ("OVERRIDE", deep_state.decode("ascii")),
+            )
+        for invalid in (
+            b"Light state: ACTIVE, deep state: ACTIVE\n",
+            receipt.replace(b"QuickDozeRequest: false", b"QuickDozeRequest: true"),
+            receipt.replace(b"OVERRIDE", b"UNKNOWN"),
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(runner.RunnerError, "unforce receipt"):
+                    runner.deviceidle_unforce_receipt_states(invalid)
 
     def test_same_uid_sigkill_and_pidof_absence_receipts_are_exact(self) -> None:
         commands = Mock()

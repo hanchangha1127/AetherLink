@@ -773,6 +773,7 @@
     <string name="error_generation_not_found">未找到活动中的生成。</string>
     <string name="error_transport_error">AetherLink Runtime 与模型服务的通信已中断。</string>
     <string name="error_internal_error">AetherLink Runtime 遇到内部错误。</string>
+    <string name="error_local_data_update_required">此版本的 AetherLink 无法安全打开已保存的应用数据。请先更新 AetherLink，再更改设置。</string>
     <string name="error_unknown">出了点问题。</string>
     <string name="error_detail">详情：%1$s</string>
     <string name="error_accessibility_summary">%1$s。%2$s</string>

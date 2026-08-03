@@ -91,10 +91,31 @@ class AndroidLifecycleV2CheckerTests(unittest.TestCase):
             "after_kill": (self.boot_before, 103, 50_103),
             "before_reboot": (self.boot_before, 103, 50_103),
             "after_reboot": (self.boot_after, 104, 50_104),
+            "future_data_first_launch": (self.boot_after, 105, 50_105),
+            "future_data_second_launch": (self.boot_after, 106, 50_106),
+            "legacy_migration_first_launch": (self.boot_after, 107, 50_107),
+            "legacy_migration_second_launch": (self.boot_after, 108, 50_108),
         }
         self.preference_bytes = (
             b'<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n'
             b'<map>\n    <string name="request_state">recorded</string>\n</map>\n'
+        )
+        self.future_data_bytes = (
+            b'<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n'
+            b'<map>\n    <string name="runtime_data">'
+            b'{&quot;version&quot;:2}</string>\n</map>\n'
+        )
+        self.legacy_seed_bytes = checker.LEGACY_RUNTIME_LOCAL_STORE_SEED
+        self.legacy_migrated_bytes = (
+            b'<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n'
+            b'<map>\n    <string name="runtime_data">'
+            b"{&quot;androidAppLanguagePlatformMigrationVersion&quot;:1,"
+            b"&quot;appLanguageSource&quot;:&quot;system&quot;,"
+            b"&quot;appLanguageTag&quot;:&quot;en&quot;,"
+            b"&quot;appTheme&quot;:&quot;dark&quot;,"
+            b"&quot;composerDraft&quot;:&quot;legacy-v0&quot;,"
+            b"&quot;trustedRuntimeAutoReconnectEnabled&quot;:false,"
+            b"&quot;version&quot;:1}</string>\n</map>\n"
         )
         self.source_snapshot = {
             "algorithm": "sha256(path-nul-mode-nul-size-nul-sha256-lf)-v1",
@@ -178,6 +199,60 @@ class AndroidLifecycleV2CheckerTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def _write_follow_system_ui(
+        self,
+        relative: str,
+        *,
+        checked: str = "true",
+        row_bounds: str = "[95,1800][985,1926]",
+        include_anchor: bool = True,
+    ) -> None:
+        anchor = (
+            f'<node package="{checker.PACKAGE_NAME}" text="Pair AetherLink" '
+            'enabled="true" bounds="[148,167][764,284]"/>'
+            if include_anchor
+            else ""
+        )
+        (self.result_directory / relative).write_text(
+            "<hierarchy>"
+            + anchor
+            + f'<node package="{checker.PACKAGE_NAME}" scrollable="true" '
+            'bounds="[53,276][1027,2295]">'
+            f'<node package="{checker.PACKAGE_NAME}" checkable="true" '
+            f'checked="{checked}" enabled="true" bounds="{row_bounds}">'
+            f'<node package="{checker.PACKAGE_NAME}" '
+            'text="Follow system language" enabled="true" '
+            'bounds="[179,1810][900,1910]"/>'
+            "</node></node></hierarchy>",
+            encoding="utf-8",
+        )
+
+    def _write_permission_dialog(
+        self,
+        *,
+        include_prompt: bool = True,
+        enabled: str = "true",
+        action_bounds: str = "[80,1800][1000,1950]",
+    ) -> None:
+        package = "com.google.android.permissioncontroller"
+        prompt = (
+            f'<node package="{package}" '
+            'text="Allow AetherLink to take pictures and record video?" '
+            'bounds="[80,600][1000,760]"/>'
+            if include_prompt
+            else ""
+        )
+        (self.result_directory / "ui/setup-camera-permission-dialog.xml").write_text(
+            "<hierarchy>"
+            + prompt
+            + f'<node package="{package}" clickable="true" enabled="{enabled}" '
+            f'bounds="{action_bounds}"><node package="{package}" '
+            'resource-id="com.android.permissioncontroller:id/permission_deny_button" '
+            'text="Don’t allow" bounds="[100,1820][980,1930]"/>'
+            "</node></hierarchy>",
+            encoding="utf-8",
+        )
+
     def _write_evidence_fixture(self) -> None:
         for relative in checker.EVIDENCE_PATHS:
             path = self.result_directory / relative
@@ -212,6 +287,23 @@ class AndroidLifecycleV2CheckerTests(unittest.TestCase):
             "camera-request-state-after-reboot.xml",
         ):
             (self.result_directory / relative).write_bytes(self.preference_bytes)
+        for relative in (
+            "runtime-local-store-future-version-seed.xml",
+            "runtime-local-store-after-future-version-first-launch.xml",
+            "runtime-local-store-after-future-version-second-launch.xml",
+        ):
+            (self.result_directory / relative).write_bytes(self.future_data_bytes)
+        (
+            self.result_directory
+            / "runtime-local-store-legacy-versionless-seed.xml"
+        ).write_bytes(self.legacy_seed_bytes)
+        for relative in (
+            "runtime-local-store-after-legacy-migration-first-launch.xml",
+            "runtime-local-store-after-legacy-migration-second-launch.xml",
+        ):
+            (self.result_directory / relative).write_bytes(
+                self.legacy_migrated_bytes
+            )
         permission = (
             b"Package [com.localagentbridge.android]\n"
             b"    android.permission.CAMERA: granted=false, flags=[ USER_SET|USER_FIXED ]\n"
@@ -239,7 +331,10 @@ class AndroidLifecycleV2CheckerTests(unittest.TestCase):
             "Now forced in to deep idle mode\n", encoding="utf-8"
         )
         (self.result_directory / "deviceidle-unforce.txt").write_text(
-            "Light state: ACTIVE, deep state: ACTIVE\n", encoding="utf-8"
+            "Light state: ACTIVE, deep state: ACTIVE\n"
+            "mForceModeManagerQuickDozeRequest: false\n"
+            "mForceModeManagerOffBodyState: false\n",
+            encoding="utf-8",
         )
         component = f"{checker.PACKAGE_NAME}/.MainActivity"
         (self.result_directory / "activity-background-before-doze.txt").write_text(
@@ -252,7 +347,7 @@ class AndroidLifecycleV2CheckerTests(unittest.TestCase):
             f"topResumedActivity=ActivityRecord{{abc {component} t1}}\n", encoding="utf-8"
         )
 
-        locale = b"Locales for com.localagentbridge.android: []\n"
+        locale = b"Locales for com.localagentbridge.android for user 0 are []\n"
         for relative in ("app-locales-before.txt", "app-locales-after-reboot.txt"):
             (self.result_directory / relative).write_bytes(locale)
         for relative in ("font-scale-before.txt", "font-scale-after-reboot.txt"):
@@ -379,6 +474,36 @@ class AndroidLifecycleV2CheckerTests(unittest.TestCase):
         ):
             self._write_ui(relative, [(app, "Pair AetherLink")])
         for relative in (
+            "ui/future-data-first-launch.xml",
+            "ui/future-data-second-launch.xml",
+        ):
+            self._write_ui(
+                relative,
+                [
+                    (app, "Pair AetherLink"),
+                    (
+                        app,
+                        "This version of AetherLink can’t safely open the saved app data. "
+                        "Update AetherLink before changing settings.",
+                    ),
+                ],
+            )
+        for relative in (
+            "ui/legacy-migration-first-launch.xml",
+            "ui/legacy-migration-second-launch.xml",
+        ):
+            self._write_ui(relative, [(app, "Pair AetherLink")])
+        for relative in (
+            "ui/follow-system-before-reboot-drawer.xml",
+            "ui/follow-system-after-reboot-drawer.xml",
+        ):
+            self._write_ui(relative, [(app, "Settings")])
+        for relative in (
+            "ui/follow-system-before-reboot.xml",
+            "ui/follow-system-after-reboot.xml",
+        ):
+            self._write_follow_system_ui(relative)
+        for relative in (
             "ui/setup-camera-settings-recovery.xml",
             "ui/after-reboot-camera-settings-recovery.xml",
         ):
@@ -387,10 +512,7 @@ class AndroidLifecycleV2CheckerTests(unittest.TestCase):
                 [(app, "Camera permission is blocked"), (app, "Open app settings")],
             )
         self._write_ui("ui/setup-camera-denied.xml", [(app, "Camera access is needed")])
-        self._write_ui(
-            "ui/setup-camera-permission-dialog.xml",
-            [("com.google.android.permissioncontroller", "Don’t allow")],
-        )
+        self._write_permission_dialog()
 
     @staticmethod
     def _record(raw: bytes) -> dict[str, object]:
@@ -413,7 +535,7 @@ class AndroidLifecycleV2CheckerTests(unittest.TestCase):
                 "cameraRequestStateSha256": preference_sha,
                 "processIds": [102, 103],
             }
-        else:
+        elif name == "full_emulator_reboot_durable_state_recovery":
             observations = {
                 "bootIds": [self.boot_before, self.boot_after],
                 "cameraPermissionGranted": False,
@@ -422,6 +544,36 @@ class AndroidLifecycleV2CheckerTests(unittest.TestCase):
                 "installedApkSha256": hashlib.sha256(self.apk_path.read_bytes()).hexdigest(),
                 "localeTags": [],
                 "processIdAfterReboot": 104,
+            }
+        elif name == "future_local_data_update_required_cold_launch_preservation":
+            observations = {
+                "coldLaunchCount": 2,
+                "localDataVersion": 2,
+                "processIds": [105, 106],
+                "savedDataSha256": hashlib.sha256(self.future_data_bytes).hexdigest(),
+                "savedDataSize": len(self.future_data_bytes),
+                "updateRequiredText": (
+                    "This version of AetherLink can’t safely open the saved app data. "
+                    "Update AetherLink before changing settings."
+                ),
+            }
+        else:
+            self.assertEqual(
+                name,
+                "legacy_versionless_local_data_migration_cold_launch_stability",
+            )
+            observations = {
+                "coldLaunchCount": 2,
+                "migratedDataSha256": hashlib.sha256(
+                    self.legacy_migrated_bytes
+                ).hexdigest(),
+                "migratedDataSize": len(self.legacy_migrated_bytes),
+                "migratedVersion": 1,
+                "preservedAppTheme": "dark",
+                "preservedComposerDraft": "legacy-v0",
+                "preservedTrustedRuntimeAutoReconnectEnabled": False,
+                "processIds": [107, 108],
+                "sourceFormat": "versionless",
             }
         return {
             "checks": {check: True for check in checks},
@@ -667,12 +819,220 @@ class AndroidLifecycleV2CheckerTests(unittest.TestCase):
             self._refresh_evidence()
             self.assertRejected(self._failures(), "request_state=recorded")
 
+    def test_future_saved_data_and_update_required_ui_mutations_are_rejected(
+        self,
+    ) -> None:
+        future_paths = (
+            "runtime-local-store-future-version-seed.xml",
+            "runtime-local-store-after-future-version-first-launch.xml",
+            "runtime-local-store-after-future-version-second-launch.xml",
+        )
+        for relative in future_paths:
+            with self.subTest(relative=relative):
+                path = self.result_directory / relative
+                path.write_bytes(self.future_data_bytes + b" ")
+                self._refresh_evidence()
+                self.assertRejected(self._failures(), "future")
+                path.write_bytes(self.future_data_bytes)
+
+        update_required = (
+            "This version of AetherLink can’t safely open the saved app data. "
+            "Update AetherLink before changing settings."
+        )
+        for relative in (
+            "ui/future-data-first-launch.xml",
+            "ui/future-data-second-launch.xml",
+        ):
+            with self.subTest(relative=relative, mutation="missing-update-required"):
+                self._write_ui(relative, [(checker.PACKAGE_NAME, "Pair AetherLink")])
+                self._refresh_evidence()
+                self.assertRejected(self._failures(), update_required)
+            with self.subTest(relative=relative, mutation="missing-pairing-anchor"):
+                self._write_ui(relative, [(checker.PACKAGE_NAME, update_required)])
+                self._refresh_evidence()
+                self.assertRejected(self._failures(), "Pair AetherLink")
+            self._write_ui(
+                relative,
+                [
+                    (checker.PACKAGE_NAME, "Pair AetherLink"),
+                    (checker.PACKAGE_NAME, update_required),
+                ],
+            )
+
+        self._refresh_evidence()
+        future_scenario = next(
+            scenario
+            for scenario in self.payload["scenarios"]
+            if scenario["name"]
+            == "future_local_data_update_required_cold_launch_preservation"
+        )
+        for key, needle in (
+            ("coldLaunchCount", "coldLaunchCount"),
+            ("localDataVersion", "localDataVersion"),
+            ("savedDataSize", "savedDataSize"),
+        ):
+            with self.subTest(field=key, mutation="bool-as-integer"):
+                original = future_scenario["observations"][key]
+                future_scenario["observations"][key] = True
+                self.assertRejected(self._failures(), needle)
+                future_scenario["observations"][key] = original
+
+        process_path = self.result_directory / "app-process-observations.json"
+        process_records = json.loads(process_path.read_bytes())
+        by_label = {record["label"]: record for record in process_records}
+        first = by_label["future_data_first_launch"]
+        second = by_label["future_data_second_launch"]
+        second.update(
+            {
+                key: value
+                for key, value in first.items()
+                if key not in {"label"}
+            }
+        )
+        process_path.write_bytes(self._json_bytes(process_records))
+        future_scenario["observations"]["processIds"] = [105, 105]
+        self._refresh_evidence()
+        self.assertRejected(self._failures(), "distinct")
+
+    def test_legacy_versionless_migration_stability_and_ui_mutations_are_rejected(
+        self,
+    ) -> None:
+        legacy_paths = (
+            (
+                "runtime-local-store-legacy-versionless-seed.xml",
+                self.legacy_seed_bytes,
+            ),
+            (
+                "runtime-local-store-after-legacy-migration-first-launch.xml",
+                self.legacy_migrated_bytes,
+            ),
+            (
+                "runtime-local-store-after-legacy-migration-second-launch.xml",
+                self.legacy_migrated_bytes,
+            ),
+        )
+        for relative, original in legacy_paths:
+            with self.subTest(relative=relative):
+                path = self.result_directory / relative
+                path.write_bytes(original + b" ")
+                self._refresh_evidence()
+                self.assertRejected(self._failures(), "legacy")
+                path.write_bytes(original)
+
+        migrated_paths = tuple(
+            self.result_directory / relative
+            for relative, _ in legacy_paths[1:]
+        )
+        for original, replacement, needle in (
+            (
+                b"&quot;androidAppLanguagePlatformMigrationVersion&quot;:1,",
+                b"&quot;androidAppLanguagePlatformMigrationVersion&quot;:true,",
+                "integer androidAppLanguagePlatformMigrationVersion=1",
+            ),
+            (
+                b"&quot;trustedRuntimeAutoReconnectEnabled&quot;:false,",
+                b"&quot;trustedRuntimeAutoReconnectEnabled&quot;:0,",
+                "trustedRuntimeAutoReconnectEnabled=False",
+            ),
+            (
+                b"&quot;version&quot;:1}",
+                b"&quot;version&quot;:true}",
+                "integer version=1",
+            ),
+        ):
+            with self.subTest(mutation=needle):
+                self.assertEqual(self.legacy_migrated_bytes.count(original), 1)
+                mutated = self.legacy_migrated_bytes.replace(
+                    original,
+                    replacement,
+                    1,
+                )
+                for path in migrated_paths:
+                    path.write_bytes(mutated)
+                self._refresh_evidence()
+                self.assertRejected(self._failures(), needle)
+                for path in migrated_paths:
+                    path.write_bytes(self.legacy_migrated_bytes)
+
+        update_required = checker.FUTURE_DATA_UPDATE_REQUIRED_TEXT
+        for relative in (
+            "ui/legacy-migration-first-launch.xml",
+            "ui/legacy-migration-second-launch.xml",
+        ):
+            with self.subTest(relative=relative):
+                self._write_ui(
+                    relative,
+                    [
+                        (checker.PACKAGE_NAME, "Pair AetherLink"),
+                        (checker.PACKAGE_NAME, update_required),
+                    ],
+                )
+                self._refresh_evidence()
+                self.assertRejected(self._failures(), "must not expose")
+                self._write_ui(
+                    relative,
+                    [(checker.PACKAGE_NAME, "Pair AetherLink")],
+                )
+
+        self._refresh_evidence()
+        legacy_scenario = next(
+            scenario
+            for scenario in self.payload["scenarios"]
+            if scenario["name"]
+            == "legacy_versionless_local_data_migration_cold_launch_stability"
+        )
+        for key in ("coldLaunchCount", "migratedDataSize", "migratedVersion"):
+            with self.subTest(field=key, mutation="bool-as-integer"):
+                original = legacy_scenario["observations"][key]
+                legacy_scenario["observations"][key] = True
+                self.assertRejected(self._failures(), key)
+                legacy_scenario["observations"][key] = original
+
+        process_path = self.result_directory / "app-process-observations.json"
+        process_records = json.loads(process_path.read_bytes())
+        by_label = {record["label"]: record for record in process_records}
+        first = by_label["legacy_migration_first_launch"]
+        second = by_label["legacy_migration_second_launch"]
+        second.update(
+            {
+                key: value
+                for key, value in first.items()
+                if key not in {"label"}
+            }
+        )
+        process_path.write_bytes(self._json_bytes(process_records))
+        legacy_scenario["observations"]["processIds"] = [107, 107]
+        self._refresh_evidence()
+        self.assertRejected(self._failures(), "distinct")
+
     def test_doze_mstate_mutation_is_rejected(self) -> None:
         (self.result_directory / "deviceidle-state-forced.txt").write_text(
             "DeviceIdleController state:\n  mState=ACTIVE\n", encoding="utf-8"
         )
         self._refresh_evidence()
         self.assertRejected(self._failures(), "deep mState=IDLE")
+
+        (self.result_directory / "deviceidle-state-forced.txt").write_text(
+            "DeviceIdleController state:\n  mState=IDLE\n", encoding="utf-8"
+        )
+        unforce = self.result_directory / "deviceidle-unforce.txt"
+        unforce.write_text(
+            "Light state: OVERRIDE, deep state: IDLE\n"
+            "mForceModeManagerQuickDozeRequest: false\n"
+            "mForceModeManagerOffBodyState: false\n",
+            encoding="utf-8",
+        )
+        self._refresh_evidence()
+        self.assertEqual(self._failures(), [])
+
+        unforce.write_text(
+            "Light state: OVERRIDE, deep state: IDLE\n"
+            "mForceModeManagerQuickDozeRequest: true\n"
+            "mForceModeManagerOffBodyState: false\n",
+            encoding="utf-8",
+        )
+        self._refresh_evidence()
+        self.assertRejected(self._failures(), "two false force-mode flags")
 
     def test_process_kill_and_pidof_receipt_mutations_are_rejected(self) -> None:
         with self.subTest("process-kill"):
@@ -789,6 +1149,66 @@ class AndroidLifecycleV2CheckerTests(unittest.TestCase):
         )
         self._refresh_evidence()
         self.assertRejected(self._failures(), "Open app settings")
+
+        self._write_ui(
+            "ui/after-reboot-camera-settings-recovery.xml",
+            [
+                (checker.PACKAGE_NAME, "Camera permission is blocked"),
+                (checker.PACKAGE_NAME, "Open app settings"),
+            ],
+        )
+        for label, keywords, needle in (
+            ("unchecked", {"checked": "false"}, "fully visible enabled checked"),
+            (
+                "clipped",
+                {"row_bounds": "[95,2250][985,2376]"},
+                "fully visible enabled checked",
+            ),
+            ("missing-anchor", {"include_anchor": False}, "Pair AetherLink"),
+        ):
+            with self.subTest(label=label):
+                self._write_follow_system_ui(
+                    "ui/follow-system-after-reboot.xml",
+                    **keywords,
+                )
+                self._refresh_evidence()
+                self.assertRejected(self._failures(), needle)
+        self._write_follow_system_ui("ui/follow-system-after-reboot.xml")
+
+        locale_path = self.result_directory / "app-locales-after-reboot.txt"
+        for label, raw in (
+            ("wrong-package", b"Locales for wrong.package for user 0 are []\n"),
+            (
+                "prefixed",
+                b"garbage []\n"
+                b"Locales for com.localagentbridge.android for user 0 are []\n",
+            ),
+            (
+                "nonempty",
+                b"Locales for com.localagentbridge.android for user 0 are [ko]\n",
+            ),
+        ):
+            with self.subTest(label=label):
+                locale_path.write_bytes(raw)
+                self._refresh_evidence()
+                self.assertRejected(self._failures(), "package-bound empty")
+        locale_path.write_bytes(
+            b"Locales for com.localagentbridge.android for user 0 are []\n"
+        )
+
+        for label, keywords, needle in (
+            ("missing-prompt", {"include_prompt": False}, "AetherLink"),
+            ("disabled-denial", {"enabled": "false"}, "denial action"),
+            (
+                "offscreen-denial",
+                {"action_bounds": "[80,2350][1000,2500]"},
+                "denial action",
+            ),
+        ):
+            with self.subTest(label=label):
+                self._write_permission_dialog(**keywords)
+                self._refresh_evidence()
+                self.assertRejected(self._failures(), needle)
 
     def test_closed_evidence_rejects_an_extra_file(self) -> None:
         (self.result_directory / "unexpected.txt").write_text("not contracted\n")

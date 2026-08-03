@@ -663,9 +663,20 @@ def check_android_locale_config() -> list[str]:
                 "fun reconcileAndroidPlatformAppLanguageSnapshot(",
                 "persistedRuntimeData.withSystemAppLanguageTag(languageTag)",
                 "persistedRuntimeData.withFollowSystemAppLanguageTag(languageTag)",
-                "persistedRuntimeData.withAndroidPlatformAppLanguageSnapshot(",
+                "persistedRuntimeData.reconcileAndroidPlatformAppLanguage(",
+                "if (localStore.compatibilityIssue != null) return null",
             ),
             "Android app-language ViewModel reconciliation",
+        )
+    )
+    failures.extend(
+        missing_source_snippets(
+            MAIN_ACTIVITY_SOURCE,
+            (
+                "if (state.localDataCompatibilityError == null)",
+                "synchronizeAndroidAppLocaleOverride(",
+            ),
+            "Android incompatible local-data app-language write guard",
         )
     )
     failures.extend(

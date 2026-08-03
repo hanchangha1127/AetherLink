@@ -28714,6 +28714,28 @@ class RuntimeClientViewModelTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
         try {
+            fun createViewModel(localStore: RuntimeLocalDataStore): RuntimeClientViewModel {
+                return RuntimeClientViewModel(
+                    application = Application(),
+                    dependencies = RuntimeClientViewModelDependencies(
+                        json = json,
+                        transportClient = RuntimeTransportClient(),
+                        transportConnector = RuntimeTransportConnector { _, _, _ ->
+                            error("Direct TCP should not be used for persisted settings restore")
+                        },
+                        relayConnector = RuntimeRelayConnector { _, _ ->
+                            error("Relay should not be used for persisted settings restore")
+                        },
+                        discovery = EmptyRuntimeDiscoverySource,
+                        trustedRuntimeStore = FakeTrustedRuntimeStore(),
+                        deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                        localDataStore = localStore,
+                        lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                        currentTimeMillis = { 1_000L },
+                    ),
+                )
+            }
+
             val localStore = FakeRuntimeLocalDataStore(
                 initialData = PersistedRuntimeData(
                     selectedModelId = "ollama:qwen3:8b",
@@ -28723,25 +28745,7 @@ class RuntimeClientViewModelTest {
                     trustedRuntimeAutoReconnectEnabled = false,
                 ),
             )
-            val viewModel = RuntimeClientViewModel(
-                application = Application(),
-                dependencies = RuntimeClientViewModelDependencies(
-                    json = json,
-                    transportClient = RuntimeTransportClient(),
-                    transportConnector = RuntimeTransportConnector { _, _, _ ->
-                        error("Direct TCP should not be used for persisted settings restore")
-                    },
-                    relayConnector = RuntimeRelayConnector { _, _ ->
-                        error("Relay should not be used for persisted settings restore")
-                    },
-                    discovery = EmptyRuntimeDiscoverySource,
-                    trustedRuntimeStore = FakeTrustedRuntimeStore(),
-                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
-                    localDataStore = localStore,
-                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
-                    currentTimeMillis = { 1_000L },
-                ),
-            )
+            val viewModel = createViewModel(localStore)
             advanceUntilIdle()
 
             val state = viewModel.state.value
@@ -28750,6 +28754,46 @@ class RuntimeClientViewModelTest {
             assertEquals(RuntimeAppLanguage.Korean.languageTag, state.selectedLanguageTag)
             assertEquals(RuntimeAppTheme.Dark, state.selectedTheme)
             assertEquals(false, state.trustedRuntimeAutoReconnectEnabled)
+            assertNull(state.localDataCompatibilityError)
+            viewModel.clearForTest()
+
+            val blockedStore = FakeRuntimeLocalDataStore(
+                compatibilityIssue = RuntimeLocalDataCompatibilityIssue.UnsupportedVersion,
+            )
+            val blockedViewModel = createViewModel(blockedStore)
+            advanceUntilIdle()
+
+            assertEquals(
+                "local_data_update_required",
+                blockedViewModel.state.value.localDataCompatibilityError?.code,
+            )
+            blockedViewModel.setAppLanguageTag(RuntimeAppLanguage.Korean.languageTag)
+            blockedViewModel.setAppTheme(RuntimeAppTheme.Dark)
+            blockedViewModel.setTrustedRuntimeAutoReconnectEnabled(false)
+            blockedViewModel.updateChatInput("must remain memory-only")
+            assertNull(
+                blockedViewModel.reconcileAndroidPlatformAppLanguageSnapshot(
+                    applicationLocalesSupported = true,
+                    applicationLocaleLanguageTag = null,
+                    systemLanguageTag = RuntimeAppLanguage.Korean.languageTag,
+                ),
+            )
+            advanceTimeBy(VOLATILE_STATE_PERSISTENCE_COALESCE_WINDOW_MS)
+            runCurrent()
+
+            assertEquals(0, blockedStore.saveCount)
+            assertEquals(RuntimeAppLanguage.English.languageTag, blockedViewModel.state.value.selectedLanguageTag)
+            assertEquals(RuntimeAppTheme.System, blockedViewModel.state.value.selectedTheme)
+            assertTrue(blockedViewModel.state.value.trustedRuntimeAutoReconnectEnabled)
+            assertEquals("must remain memory-only", blockedViewModel.state.value.chatInput)
+            assertEquals(PersistedRuntimeData(), blockedStore.data)
+            assertEquals(
+                "local_data_update_required",
+                blockedViewModel.state.value.localDataCompatibilityError?.code,
+            )
+
+            blockedViewModel.clearForTest()
+            assertEquals(0, blockedStore.saveCount)
         } finally {
             Dispatchers.resetMain()
         }
@@ -42402,6 +42446,7 @@ class RuntimeClientViewModelTest {
     private class FakeRuntimeLocalDataStore(
         initialData: PersistedRuntimeData = PersistedRuntimeData(),
         private val redactRuntimeOwnedLocalDataOnSave: Boolean = false,
+        override val compatibilityIssue: RuntimeLocalDataCompatibilityIssue? = null,
     ) : RuntimeLocalDataStore {
         private val relaySecretStore = FakeRelaySecretStore()
         var saveCount: Int = 0

@@ -10,6 +10,7 @@ validates the closed lifecycle payloads, and reopens the complete graph.
 
 from __future__ import annotations
 
+import argparse
 from dataclasses import dataclass
 import hashlib
 import os
@@ -94,6 +95,28 @@ def _relative_parts(relative: Path) -> tuple[str, ...]:
     return relative.parts
 
 
+def lifecycle_result_paths(
+    result_relative: Path,
+    receipt_relative: Path,
+) -> tuple[Path, Path]:
+    result_parts = _relative_parts(result_relative)
+    receipt_parts = _relative_parts(receipt_relative)
+    if (
+        result_relative.name != "result.json"
+        or receipt_relative.name != "repeatability.json"
+        or result_relative.parent != receipt_relative.parent
+        or len(result_parts) < 3
+        or len(receipt_parts) < 3
+        or result_parts[0] != ".build"
+        or receipt_parts[0] != ".build"
+    ):
+        raise closed.EvidenceError(
+            "current-run result paths must be one canonical .build directory "
+            "containing result.json and repeatability.json"
+        )
+    return result_relative, receipt_relative
+
+
 def current_source_paths(root: Path = ROOT) -> tuple[Path, ...]:
     try:
         paths = tuple(
@@ -124,7 +147,13 @@ def current_run_file_policies(
     root: Path = ROOT,
     *,
     source_paths: Sequence[Path] | None = None,
+    result_relative: Path = RESULT_RELATIVE,
+    receipt_relative: Path = RECEIPT_RELATIVE,
 ) -> dict[Path, FilePolicy]:
+    result_relative, receipt_relative = lifecycle_result_paths(
+        result_relative,
+        receipt_relative,
+    )
     sources = current_source_paths(root) if source_paths is None else tuple(source_paths)
     for relative in sources:
         _relative_parts(relative)
@@ -155,8 +184,8 @@ def current_run_file_policies(
         )
 
     dynamic_rows = (
-        (RESULT_RELATIVE, 0o600, MAXIMUM_RESULT_BYTES),
-        (RECEIPT_RELATIVE, 0o600, MAXIMUM_RECEIPT_BYTES),
+        (result_relative, 0o600, MAXIMUM_RESULT_BYTES),
+        (receipt_relative, 0o600, MAXIMUM_RECEIPT_BYTES),
         (
             SOURCE_RECEIPT_RELATIVE,
             0o644,
@@ -214,15 +243,22 @@ def _all_parent_directories(paths: Iterable[Path]) -> set[Path]:
 
 def current_run_directory_specs(
     files: Mapping[Path, object],
+    *,
+    result_relative: Path = RESULT_RELATIVE,
+    receipt_relative: Path = RECEIPT_RELATIVE,
 ) -> dict[Path, closed.DirectorySpec]:
+    result_relative, receipt_relative = lifecycle_result_paths(
+        result_relative,
+        receipt_relative,
+    )
     directories = {
         relative: closed.DirectorySpec()
         for relative in _all_parent_directories(files)
     }
     directories.update(closed.OUTPUT_DIRECTORY_SPECS)
-    directories[RESULT_DIRECTORY_RELATIVE] = closed.DirectorySpec(
+    directories[result_relative.parent] = closed.DirectorySpec(
         0o700,
-        frozenset({RESULT_RELATIVE.name, RECEIPT_RELATIVE.name}),
+        frozenset({result_relative.name, receipt_relative.name}),
     )
     return directories
 
@@ -484,11 +520,13 @@ def expected_current_result(
 
 def expected_current_receipt(
     result_identity: dict[str, object],
+    *,
+    result_file_name: str = RESULT_RELATIVE.name,
 ) -> dict[str, object]:
     expected = closed.expected_receipt(result_identity)
     canonical = expected["canonicalResult"]
     assert isinstance(canonical, dict)
-    canonical["fileName"] = RESULT_RELATIVE.name
+    canonical["fileName"] = result_file_name
     return expected
 
 
@@ -501,6 +539,7 @@ def validate_current_run_payloads(
     dsym_identity: dict[str, object],
     held_source: Mapping[str, object],
     report: Mapping[str, object],
+    result_file_name: str = RESULT_RELATIVE.name,
 ) -> dict[str, object]:
     expected_report_keys = {
         "app",
@@ -574,7 +613,10 @@ def validate_current_run_payloads(
     )
     if not closed.exact_equal(
         receipt,
-        expected_current_receipt(result_identity),
+        expected_current_receipt(
+            result_identity,
+            result_file_name=result_file_name,
+        ),
     ):
         raise closed.EvidenceError(
             "current-run repeatability receipt closed contract differs"
@@ -582,10 +624,28 @@ def validate_current_run_payloads(
     return result_identity
 
 
-def check(root: Path = ROOT) -> dict[str, object]:
+def check(
+    root: Path = ROOT,
+    *,
+    result_relative: Path = RESULT_RELATIVE,
+    receipt_relative: Path = RECEIPT_RELATIVE,
+) -> dict[str, object]:
+    result_relative, receipt_relative = lifecycle_result_paths(
+        result_relative,
+        receipt_relative,
+    )
     source_paths = current_source_paths(root)
-    policies = current_run_file_policies(root, source_paths=source_paths)
-    directories = current_run_directory_specs(policies)
+    policies = current_run_file_policies(
+        root,
+        source_paths=source_paths,
+        result_relative=result_relative,
+        receipt_relative=receipt_relative,
+    )
+    directories = current_run_directory_specs(
+        policies,
+        result_relative=result_relative,
+        receipt_relative=receipt_relative,
+    )
     with CurrentRunSnapshot(
         root,
         policies,
@@ -627,13 +687,14 @@ def check(root: Path = ROOT) -> dict[str, object]:
                 "current source path closure changed during build-output readback"
             )
         result_identity = validate_current_run_payloads(
-            result_payload=payloads[RESULT_RELATIVE],
-            receipt_payload=payloads[RECEIPT_RELATIVE],
+            result_payload=payloads[result_relative],
+            receipt_payload=payloads[receipt_relative],
             source_receipt_payload=payloads[SOURCE_RECEIPT_RELATIVE],
             app_identity=app_identity,
             dsym_identity=dsym_identity,
             held_source=held_source,
             report=report,
+            result_file_name=result_relative.name,
         )
         snapshot.verify_unchanged()
     return {
@@ -645,15 +706,27 @@ def check(root: Path = ROOT) -> dict[str, object]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    arguments = list(sys.argv[1:] if argv is None else argv)
-    if arguments:
-        print(
-            "usage: check_macos_current_unsealed_ci_lifecycle.py",
-            file=sys.stderr,
-        )
-        return 2
+    parser = argparse.ArgumentParser(
+        prog="check_macos_current_unsealed_ci_lifecycle.py",
+        description=__doc__,
+    )
+    parser.add_argument("--result", type=Path, default=RESULT_RELATIVE)
+    parser.add_argument(
+        "--repeatability-result",
+        type=Path,
+        default=RECEIPT_RELATIVE,
+    )
     try:
-        report = check()
+        arguments = parser.parse_args(
+            list(sys.argv[1:] if argv is None else argv)
+        )
+    except SystemExit as error:
+        return int(error.code)
+    try:
+        report = check(
+            result_relative=arguments.result,
+            receipt_relative=arguments.repeatability_result,
+        )
     except (closed.EvidenceError, OSError, ValueError) as error:
         print(
             f"macOS current-unsealed CI lifecycle readback failed: {error}",

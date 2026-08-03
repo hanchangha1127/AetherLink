@@ -154,6 +154,24 @@ class G7NonsecurityMergeFullCandidateCheckerTests(unittest.TestCase):
     def test_baseline_and_unrequested_pid_seam_pass(self) -> None:
         temporary, fixture = self.with_fixture()
         with temporary:
+            self.assertEqual(len(checker.EXPECTED_COMMAND_IDS), 83)
+            self.assertEqual(len(checker.EXPECTED_ARTIFACT_PATHS), 36)
+            self.assertEqual(len(checker.EXPECTED_IMPLEMENTATION_PATHS), 11)
+            self.assertEqual(
+                checker.MACOS_LIFECYCLE_RESULT_RELATIVE_PATH,
+                Path(
+                    ".build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/"
+                    "macos-current-unsealed-lifecycle-v4/result.json"
+                ),
+            )
+            self.assertNotIn(
+                "macos-current-unsealed-lifecycle-v3",
+                checker.MACOS_LIFECYCLE_RESULT_RELATIVE_PATH.as_posix(),
+            )
+            self.assertIn(
+                Path("script/g7_reviewed_nonsecurity_swift_addon_identities_v6.txt"),
+                checker.EXPECTED_IMPLEMENTATION_PATHS,
+            )
             checker.validate_document(
                 fixture.document(), root=fixture.root, run_readbacks=False
             )
@@ -184,9 +202,16 @@ class G7NonsecurityMergeFullCandidateCheckerTests(unittest.TestCase):
 
     def test_boolean_count_is_rejected(self) -> None:
         for key in (
+            "androidCoreNonsecurityClasses",
+            "androidCoreNonsecurityProtocolTests",
+            "androidCoreNonsecurityTests",
+            "androidCoreNonsecurityTransportTests",
             "swiftFocusedTests",
             "swiftExpandedNonsecurityTests",
             "swiftDistinctNonsecurityTests",
+            "swiftCurrentNoSocketTests",
+            "swiftCurrentParentReviewedTests",
+            "swiftCurrentParentRemainingTests",
         ):
             with self.subTest(key=key):
                 temporary, fixture = self.with_fixture()
@@ -345,6 +370,105 @@ class G7NonsecurityMergeFullCandidateCheckerTests(unittest.TestCase):
                     document = fixture.document()
                     (fixture.root / relative).write_bytes(b"drift\n")
                     self.assert_rejected(fixture, document)
+
+    def test_current_swift_parent_commands_and_artifacts_are_closed(self) -> None:
+        current_ids = (
+            "g7-current-contract-tests",
+            "g7-current-prepare",
+            "g7-current-run",
+            "g7-current-bind",
+            "g7-current-readback",
+            "g7-current-independent-readback",
+            "g7-current-parent-bind",
+            "g7-current-parent-readback",
+            "g7-current-parent-independent-readback",
+            "final-g7-current-independent-readback",
+            "final-g7-current-parent-independent-readback",
+        )
+        for identifier in current_ids:
+            with self.subTest(identifier=identifier):
+                temporary, fixture = self.with_fixture()
+                with temporary:
+                    document = fixture.document()
+                    commands = document["commands"]
+                    self.assertIsInstance(commands, list)
+                    index = checker.EXPECTED_COMMAND_IDS.index(identifier)
+                    command = commands[index]
+                    self.assertIsInstance(command, dict)
+                    argv = command["argv"]
+                    self.assertIsInstance(argv, list)
+                    argv[-1] = "--mutated-current-parent-contract"
+                    self.assert_rejected(fixture, document)
+
+        current_artifacts = tuple(
+            path
+            for path in checker.EXPECTED_ARTIFACT_PATHS
+            if "aetherlink-g7-nonsecurity-merge-full-current-run-v1/" in (
+                path.as_posix()
+            )
+        )
+        self.assertEqual(len(current_artifacts), 6)
+        for relative in current_artifacts:
+            with self.subTest(artifact=relative.as_posix()):
+                temporary, fixture = self.with_fixture()
+                with temporary:
+                    document = fixture.document()
+                    (fixture.root / relative).write_bytes(b"drift\n")
+                    self.assert_rejected(fixture, document)
+
+        self.assertIn(
+            checker.G7_CURRENT_INDEPENDENT_READBACK_COMMAND,
+            checker.READBACK_COMMANDS,
+        )
+        self.assertIn(
+            checker.G7_CURRENT_PARENT_INDEPENDENT_READBACK_COMMAND,
+            checker.READBACK_COMMANDS,
+        )
+
+    def test_android_core_nonsecurity_commands_artifacts_and_readback_are_closed(
+        self,
+    ) -> None:
+        command_ids = (
+            "android-core-nonsecurity-prepare",
+            "android-core-nonsecurity-run",
+            "android-core-nonsecurity-bind",
+            "android-core-nonsecurity-readback",
+            "final-android-core-nonsecurity-readback",
+        )
+        for identifier in command_ids:
+            with self.subTest(identifier=identifier):
+                temporary, fixture = self.with_fixture()
+                with temporary:
+                    document = fixture.document()
+                    commands = document["commands"]
+                    self.assertIsInstance(commands, list)
+                    index = checker.EXPECTED_COMMAND_IDS.index(identifier)
+                    command = commands[index]
+                    self.assertIsInstance(command, dict)
+                    argv = command["argv"]
+                    self.assertIsInstance(argv, list)
+                    argv[-1] = "--mutated-android-core-contract"
+                    self.assert_rejected(fixture, document)
+
+        core_artifacts = tuple(
+            path
+            for path in checker.EXPECTED_ARTIFACT_PATHS
+            if "apps/android/core/" in path.as_posix()
+            and "core-nonsecurity" in path.as_posix()
+        )
+        self.assertEqual(len(core_artifacts), 4)
+        for relative in core_artifacts:
+            with self.subTest(artifact=relative.as_posix()):
+                temporary, fixture = self.with_fixture()
+                with temporary:
+                    document = fixture.document()
+                    (fixture.root / relative).write_bytes(b"drift\n")
+                    self.assert_rejected(fixture, document)
+
+        self.assertIn(
+            checker.ANDROID_CORE_NONSECURITY_READBACK_COMMAND,
+            checker.READBACK_COMMANDS,
+        )
 
     def test_child_readback_accepts_output_at_exact_combined_limit(self) -> None:
         command = (

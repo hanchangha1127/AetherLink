@@ -14,7 +14,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from script import check_android_headless_emulator_product_lifecycle_v2 as lifecycle
+from script import check_android_headless_emulator_product_lifecycle as lifecycle_v1
+from script import check_android_headless_emulator_product_lifecycle_v2 as lifecycle_v2
 from script import check_product_nightly_ci as checker
 
 
@@ -48,11 +49,13 @@ class ProductNightlyCIContractTests(unittest.TestCase):
 
     def result_payload(
         self,
+        lane: str,
         run_id: str,
         evidence: dict[str, object] | None = None,
     ) -> dict[str, object]:
+        lifecycle = lifecycle_v1 if lane == "v1" else lifecycle_v2
         evidence = evidence or {
-            relative: lifecycle.CapturedEvidenceFile(
+            relative: lifecycle_v2.CapturedEvidenceFile(
                 data=(relative + "\n").encode("utf-8"),
                 identity=(),
                 mode="0644",
@@ -66,49 +69,60 @@ class ProductNightlyCIContractTests(unittest.TestCase):
                 for relative in lifecycle.EVIDENCE_PATHS
             ],
             "run": {
-                "finishedAt": "2026-08-02T18:39:00.000Z",
+                "finishedAt": (
+                    "2026-08-02T18:39:00.000Z"
+                    if lane == "v1"
+                    else "2026-08-02T18:42:00.000Z"
+                ),
                 "id": run_id,
-                "startedAt": "2026-08-02T18:37:00.000Z",
+                "startedAt": (
+                    "2026-08-02T18:37:00.000Z"
+                    if lane == "v1"
+                    else "2026-08-02T18:39:00.000Z"
+                ),
             },
+            "cleanup": {"ownedProcessExited": True},
+            "scenarios": [
+                {"name": name, "status": "passed"}
+                for name, _checks in lifecycle.SCENARIO_CHECKS
+            ],
             "schemaVersion": lifecycle.SCHEMA_VERSION,
             "source": {
-                "fileCount": 145,
-                "sha256": "b" * 64,
+                "fileCount": 135 if lane == "v1" else 145,
+                "sha256": ("a" if lane == "v1" else "b") * 64,
             },
             "status": "passed",
         }
 
-    def write_result(self, root: Path) -> Path:
-        run_id = "android-headless-api36-1-v2-20260802T183700Z-1234abcd"
-        directory = root / run_id
-        directory.mkdir(mode=0o700)
-        path = directory / "result.json"
-        path.write_bytes(checker.canonical_json_bytes(self.result_payload(run_id)))
-        return path
-
     def captured_fixture(self, root: Path):
-        run_id = "android-headless-api36-1-v2-20260802T183700Z-1234abcd"
-        directory = root / run_id
-        directory.mkdir(mode=0o700)
-        evidence: dict[str, object] = {
-            relative: lifecycle.CapturedEvidenceFile(
-                data=(relative + "\n").encode("utf-8"),
+        root.mkdir(parents=True, exist_ok=True)
+        run_ids = {
+            "v1": "android-headless-api36-1-20260802T183700Z-1234abcd",
+            "v2": "android-headless-api36-1-v2-20260802T183900Z-1234abcd",
+        }
+        captures = {}
+        paths = {}
+        for lane in checker.LANE_ORDER:
+            lifecycle = lifecycle_v1 if lane == "v1" else lifecycle_v2
+            directory = root / run_ids[lane]
+            directory.mkdir(mode=0o700)
+            evidence: dict[str, object] = {
+                relative: lifecycle_v2.CapturedEvidenceFile(
+                    data=(lane + ":" + relative + "\n").encode("utf-8"),
+                    identity=(),
+                    mode="0644",
+                )
+                for relative in lifecycle.EVIDENCE_PATHS
+            }
+            result = self.result_payload(lane, run_ids[lane], evidence)
+            result_capture = lifecycle_v2.CapturedEvidenceFile(
+                data=checker.canonical_json_bytes(result),
                 identity=(),
                 mode="0644",
             )
-            for relative in lifecycle.EVIDENCE_PATHS
-        }
-        result = self.result_payload(run_id, evidence)
-        result_capture = lifecycle.CapturedEvidenceFile(
-            data=checker.canonical_json_bytes(result),
-            identity=(),
-            mode="0644",
-        )
-        evidence["result.json"] = result_capture
-        result_path = directory / "result.json"
-
-        def opened(*_args: object, **_kwargs: object):
-            return (
+            evidence["result.json"] = result_capture
+            paths[lane] = directory / "result.json"
+            captures[lane] = (
                 lifecycle,
                 self.FakeSnapshot(directory),
                 evidence,
@@ -116,7 +130,10 @@ class ProductNightlyCIContractTests(unittest.TestCase):
                 result,
             )
 
-        return result_path, evidence, result_capture, result, opened
+        def opened(lane: str, *_args: object, **_kwargs: object):
+            return captures[lane]
+
+        return paths, captures, opened
 
     def test_current_workflow_and_self_test_pass(self) -> None:
         workflow = self.workflow()
@@ -148,7 +165,25 @@ class ProductNightlyCIContractTests(unittest.TestCase):
 
     def test_workflow_rejects_producer_checker_and_upload_order_drift(self) -> None:
         workflow = self.workflow()
+        swapped_runners = workflow.replace(
+            "script/run_android_headless_emulator_product_lifecycle.py",
+            "script/__nightly_v1_runner_placeholder__.py",
+            1,
+        ).replace(
+            "script/run_android_headless_emulator_product_lifecycle_v2.py",
+            "script/run_android_headless_emulator_product_lifecycle.py",
+            1,
+        ).replace(
+            "script/__nightly_v1_runner_placeholder__.py",
+            "script/run_android_headless_emulator_product_lifecycle_v2.py",
+            1,
+        )
         mutations = (
+            workflow.replace(
+                "          python3 -B script/run_android_headless_emulator_product_lifecycle.py \\\n",
+                "",
+                1,
+            ),
             workflow.replace(
                 "          python3 -B script/run_android_headless_emulator_product_lifecycle_v2.py \\\n",
                 "",
@@ -157,6 +192,12 @@ class ProductNightlyCIContractTests(unittest.TestCase):
             workflow.replace(
                 "script/run_android_headless_emulator_product_lifecycle_v2.py",
                 "script/run_android_headless_emulator_product_lifecycle.py",
+                1,
+            ),
+            swapped_runners,
+            workflow.replace(
+                '--v1-result "$LIFECYCLE_V1_RESULT"',
+                '--v1-result "$LIFECYCLE_V2_RESULT"',
                 1,
             ),
             workflow.replace(
@@ -171,8 +212,8 @@ class ProductNightlyCIContractTests(unittest.TestCase):
                 1,
             ),
             workflow.replace(
-                "      - name: Seal and read back exact nightly artifact\n",
-                "      - name: Seal and read back exact nightly artifact after upload\n",
+                "      - name: Seal and read back exact dual-lifecycle nightly artifact\n",
+                "      - name: Seal and read back exact dual-lifecycle nightly artifact after upload\n",
                 1,
             ),
         )
@@ -218,10 +259,10 @@ class ProductNightlyCIContractTests(unittest.TestCase):
         }
         configured = {
             path.as_posix()
-            for path in lifecycle.SOURCE_SUCCESSOR_FILES
+            for path in lifecycle_v2.SOURCE_SUCCESSOR_FILES
         }
         self.assertTrue(required.issubset(configured))
-        snapshot = lifecycle.source_snapshot()
+        snapshot = lifecycle_v2.source_snapshot()
         retained = {
             record["path"]
             for record in snapshot["files"]
@@ -452,28 +493,27 @@ class ProductNightlyCIContractTests(unittest.TestCase):
             self.assertEqual(b"replacement\n", replacement.read_bytes())
             self.assertTrue(displaced.exists())
 
-    def test_provenance_round_trip_binds_current_inputs(self) -> None:
+    def test_dual_provenance_and_archive_round_trip_bind_both_lanes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
-            result, evidence, _result_capture, _payload, opened = (
-                self.captured_fixture(root)
-            )
+            paths, captures, opened = self.captured_fixture(root)
+            bundle_id = f"{paths['v1'].parent.name}--{paths['v2'].parent.name}"
             provenance_root = root / "provenance"
             provenance_root.mkdir(mode=0o700)
-            provenance = provenance_root / f"{result.parent.name}.json"
+            provenance = provenance_root / f"{bundle_id}.json"
             environment = self.github_environment()
-            with mock.patch.object(
-                    checker,
-                    "_open_validated_lifecycle_snapshot",
-                    side_effect=opened,
-                ), mock.patch.object(
-                    checker,
-                    "source_git_binding_failures",
-                    return_value=[],
-                ):
+            with (
+                mock.patch.object(
+                    checker, "_open_validated_lifecycle_snapshot", side_effect=opened
+                ),
+                mock.patch.object(
+                    checker, "source_git_binding_failures", return_value=[]
+                ) as git_binding,
+            ):
                 checker.write_provenance(
                     provenance,
-                    result,
+                    paths["v1"],
+                    paths["v2"],
                     sdk_root=root,
                     java_home=root,
                     environment=environment,
@@ -482,32 +522,39 @@ class ProductNightlyCIContractTests(unittest.TestCase):
                     [],
                     checker.provenance_failures(
                         provenance,
-                        result,
+                        paths["v1"],
+                        paths["v2"],
                         sdk_root=root,
                         java_home=root,
                         environment=environment,
                     ),
                 )
+                self.assertTrue(
+                    all(call.kwargs["commit"] == "a" * 40 for call in git_binding.call_args_list)
+                )
             payload = json.loads(provenance.read_bytes())
             self.assertEqual(checker.PROVENANCE_CONTRACT, payload["contract"])
-            self.assertEqual(58, payload["lifecycle"]["evidenceFileCount"])
-            self.assertEqual("a" * 40, payload["lifecycle"]["sourceGitCommit"])
-            self.assertEqual(checker.CONTRACT_TEST_COUNT, payload["testManifest"]["contractCount"])
+            self.assertEqual(["v1", "v2"], [item["lane"] for item in payload["lifecycles"]])
+            self.assertEqual([13, 5], [item["scenarioCount"] for item in payload["lifecycles"]])
+            self.assertEqual([46, 72], [item["evidenceFileCount"] for item in payload["lifecycles"]])
+            self.assertEqual(
+                ["a" * 40, "a" * 40],
+                [item["sourceGitCommit"] for item in payload["lifecycles"]],
+            )
 
+            lane_evidence = {lane: captures[lane][2] for lane in checker.LANE_ORDER}
             provenance_raw = provenance.read_bytes()
-            archive_raw = checker._archive_bytes(evidence, provenance_raw)
-            self.assertEqual(archive_raw, checker._archive_bytes(evidence, provenance_raw))
-            archive = root / f"candidate-{result.parent.name}.tar"
+            archive_raw = checker._archive_bytes(lane_evidence, provenance_raw)
+            self.assertEqual(
+                archive_raw, checker._archive_bytes(lane_evidence, provenance_raw)
+            )
+            archive = root / f"candidate-{bundle_id}.tar"
             checker.write_exclusive_regular(
-                archive,
-                archive_raw,
-                max_bytes=checker.MAX_ARCHIVE_BYTES,
+                archive, archive_raw, max_bytes=checker.MAX_ARCHIVE_BYTES
             )
             expected_sha256 = hashlib.sha256(archive_raw).hexdigest()
             with mock.patch.object(
-                checker,
-                "source_git_binding_failures",
-                return_value=[],
+                checker, "source_git_binding_failures", return_value=[]
             ):
                 self.assertEqual(
                     [],
@@ -518,26 +565,89 @@ class ProductNightlyCIContractTests(unittest.TestCase):
                         git_checkout=root,
                     ),
                 )
-                self.assertTrue(
-                    checker.archive_failures(
-                        archive,
-                        expected_sha256="0" * 64,
-                        environment=environment,
-                        git_checkout=root,
+            lifecycles, archived, archived_provenance = checker._archive_contents(archive_raw)
+            self.assertEqual(set(checker.LANE_ORDER), set(lifecycles))
+            self.assertEqual(
+                {"lifecycle-v1/", "lifecycle-v2/"},
+                {
+                    next(
+                        prefix
+                        for prefix in checker.ARCHIVE_LANE_PREFIXES.values()
+                        if member.name.startswith(prefix)
                     )
+                    for member in tarfile.open(fileobj=io.BytesIO(archive_raw), mode="r:").getmembers()
+                    if member.name != checker.ARCHIVE_PROVENANCE_PATH
+                },
+            )
+            self.assertEqual(set(lifecycle_v1.EVIDENCE_PATHS) | {"result.json"}, set(archived["v1"]))
+            self.assertEqual(set(lifecycle_v2.EVIDENCE_PATHS) | {"result.json"}, set(archived["v2"]))
+            self.assertEqual(provenance_raw, archived_provenance)
+
+            captured_source = root / "captured-v1" / paths["v1"].parent.name
+            captured_source.mkdir(parents=True)
+            original_result = captured_source / "result.json"
+            original_evidence = captured_source / "evidence.txt"
+            original_result.write_bytes(b'{"captured":true}\n')
+            original_evidence.write_bytes(b"captured evidence\n")
+            observed: dict[str, object] = {}
+
+            class FakeV1Lifecycle:
+                EVIDENCE_PATHS = ("evidence.txt",)
+
+                @staticmethod
+                def result_failures(result_path, **_kwargs):
+                    observed["path"] = result_path
+                    observed["result"] = result_path.read_bytes()
+                    observed["evidence"] = (result_path.parent / "evidence.txt").read_bytes()
+                    original_result.write_bytes(b'{"captured":false}\n')
+                    return []
+
+            with mock.patch.object(
+                checker, "_lifecycle_module", return_value=FakeV1Lifecycle
+            ):
+                with self.assertRaisesRegex(
+                    checker.NightlyContractError, "changed during binding"
+                ):
+                    checker._open_validated_lifecycle_snapshot(
+                        "v1",
+                        original_result,
+                        sdk_root=root,
+                        java_home=root,
+                    )
+            self.assertNotEqual(original_result, observed["path"])
+            self.assertEqual(b'{"captured":true}\n', observed["result"])
+            self.assertEqual(b"captured evidence\n", observed["evidence"])
+
+    def test_archive_rejects_lane_omission_order_metadata_and_cross_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            paths, captures, _opened = self.captured_fixture(root)
+            context = checker.github_context(self.github_environment())
+            with mock.patch.object(checker, "source_git_binding_failures", return_value=[]):
+                provenance_payload = checker._expected_provenance_from_captures(
+                    captures,
+                    environment=self.github_environment(),
+                    git_checkout=root,
                 )
-            with mock.patch.object(checker, "MAX_PROVENANCE_BYTES", 4):
-                with self.assertRaises(checker.NightlyContractError):
-                    checker._archive_contents(archive_raw)
-            with mock.patch.object(checker, "MAX_RESULT_BYTES", 4):
-                with self.assertRaises(checker.NightlyContractError):
-                    checker._archive_contents(archive_raw)
-            with mock.patch.object(lifecycle, "MAX_EVIDENCE_FILE_BYTES", 4):
-                with self.assertRaises(checker.NightlyContractError):
-                    checker._archive_contents(archive_raw)
-            with mock.patch.object(lifecycle, "MAX_EVIDENCE_TOTAL_BYTES", 4):
-                with self.assertRaises(checker.NightlyContractError):
-                    checker._archive_contents(archive_raw)
+            provenance_raw = checker.canonical_json_bytes(provenance_payload)
+            lane_evidence = {lane: captures[lane][2] for lane in checker.LANE_ORDER}
+            archive_raw = checker._archive_bytes(lane_evidence, provenance_raw)
+
+            with self.assertRaises(checker.NightlyContractError):
+                checker._archive_bytes({"v2": lane_evidence["v2"], "v1": lane_evidence["v1"]}, provenance_raw)
+            with self.assertRaises(checker.NightlyContractError):
+                checker._archive_bytes({"v1": lane_evidence["v1"]}, provenance_raw)
+            with self.assertRaises(checker.NightlyContractError):
+                checker._lane_provenance_from_capture(
+                    "v1",
+                    lifecycle=lifecycle_v1,
+                    result_directory=paths["v2"].parent,
+                    result_capture=captures["v2"][3],
+                    result=captures["v2"][4],
+                    evidence_capture=captures["v2"][2],
+                    context=context,
+                    git_checkout=root,
+                )
 
             def repack(transform):
                 entries = []
@@ -548,102 +658,71 @@ class ProductNightlyCIContractTests(unittest.TestCase):
                         entries.append((member, stream.read()))
                 transform(entries)
                 buffer = io.BytesIO()
-                with tarfile.open(
-                    fileobj=buffer,
-                    mode="w:",
-                    format=tarfile.USTAR_FORMAT,
-                ) as target:
+                with tarfile.open(fileobj=buffer, mode="w:", format=tarfile.USTAR_FORMAT) as target:
                     for member, data in entries:
                         target.addfile(member, io.BytesIO(data) if member.isfile() else None)
                 return buffer.getvalue()
 
-            def reverse_first_two(entries):
-                entries[0], entries[1] = entries[1], entries[0]
-
-            def duplicate_first(entries):
-                entries.insert(1, entries[0])
-
-            def make_first_non_regular(entries):
-                member, _data = entries[0]
-                member.type = tarfile.SYMTYPE
-                member.linkname = "forbidden-target"
-                member.size = 0
-                entries[0] = (member, b"")
-
-            def change_first_metadata(entries):
-                entries[0][0].mtime = 1
-
-            def change_provenance_mode(entries):
-                for member, _data in entries:
-                    if member.name == checker.ARCHIVE_PROVENANCE_PATH:
-                        member.mode = 0o644
-                        return
-                self.fail("fixture archive is missing provenance")
-
-            for label, transform in (
-                ("order", reverse_first_two),
-                ("duplicate", duplicate_first),
-                ("non-regular", make_first_non_regular),
-                ("metadata", change_first_metadata),
-                ("mode", change_provenance_mode),
-            ):
+            transformations = {
+                "omission": lambda entries: entries.pop(0),
+                "order": lambda entries: entries.__setitem__(slice(0, 2), [entries[1], entries[0]]),
+                "duplicate": lambda entries: entries.insert(1, entries[0]),
+                "metadata": lambda entries: setattr(entries[0][0], "mtime", 1),
+            }
+            for label, transform in transformations.items():
                 with self.subTest(label=label):
                     with self.assertRaises(checker.NightlyContractError):
                         checker._archive_contents(repack(transform))
 
-            padded_raw = archive_raw + (b"\0" * 512)
-            padded_directory = root / "padded"
-            padded_directory.mkdir()
-            padded_archive = padded_directory / archive.name
-            padded_archive.write_bytes(padded_raw)
-            with mock.patch.object(
-                checker,
-                "source_git_binding_failures",
-                return_value=[],
-            ):
-                padded_failures = checker.archive_failures(
-                    padded_archive,
-                    expected_sha256=hashlib.sha256(padded_raw).hexdigest(),
-                    environment=environment,
+            noncanonical = json.loads(captures["v1"][3].data)
+            noncanonical_raw = json.dumps(noncanonical, indent=2).encode() + b"\n"
+            mutated = dict(lane_evidence)
+            mutated_v1 = dict(lane_evidence["v1"])
+            mutated_v1["result.json"] = lifecycle_v2.CapturedEvidenceFile(
+                data=noncanonical_raw, identity=(), mode="0644"
+            )
+            mutated["v1"] = mutated_v1
+            raw = checker._archive_bytes(mutated, provenance_raw)
+            archive = root / f"candidate-{provenance_payload['bundleId']}.tar"
+            archive.write_bytes(raw)
+            with mock.patch.object(checker, "source_git_binding_failures", return_value=[]):
+                failures = checker.archive_failures(
+                    archive,
+                    expected_sha256=hashlib.sha256(raw).hexdigest(),
+                    environment=self.github_environment(),
                     git_checkout=root,
                 )
-            self.assertTrue(
-                any("deterministic encoding" in failure for failure in padded_failures)
-            )
+            self.assertTrue(any("canonical" in failure for failure in failures))
 
-    def test_provenance_readback_rejects_mutation_and_wrong_filename(self) -> None:
+    def test_provenance_rejects_mutation_wrong_filename_counts_order_and_source_commit(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
-            result, _evidence, _result_capture, _payload, opened = (
-                self.captured_fixture(root)
-            )
+            paths, captures, opened = self.captured_fixture(root)
+            bundle_id = f"{paths['v1'].parent.name}--{paths['v2'].parent.name}"
             provenance_root = root / "provenance"
             provenance_root.mkdir(mode=0o700)
-            provenance = provenance_root / f"{result.parent.name}.json"
+            provenance = provenance_root / f"{bundle_id}.json"
             environment = self.github_environment()
-            with mock.patch.object(
-                    checker,
-                    "_open_validated_lifecycle_snapshot",
-                    side_effect=opened,
-                ), mock.patch.object(
-                    checker,
-                    "source_git_binding_failures",
-                    return_value=[],
-                ):
+            with (
+                mock.patch.object(checker, "_open_validated_lifecycle_snapshot", side_effect=opened),
+                mock.patch.object(checker, "source_git_binding_failures", return_value=[]),
+            ):
                 checker.write_provenance(
                     provenance,
-                    result,
+                    paths["v1"],
+                    paths["v2"],
                     sdk_root=root,
                     java_home=root,
                     environment=environment,
                 )
                 payload = json.loads(provenance.read_bytes())
-                payload["status"] = "failed"
+                payload["lifecycles"].reverse()
                 provenance.write_bytes(checker.canonical_json_bytes(payload))
                 self.assertTrue(
                     checker.provenance_failures(
                         provenance,
-                        result,
+                        paths["v1"],
+                        paths["v2"],
                         sdk_root=root,
                         java_home=root,
                         environment=environment,
@@ -654,39 +733,44 @@ class ProductNightlyCIContractTests(unittest.TestCase):
                 self.assertTrue(
                     checker.provenance_failures(
                         wrong,
-                        result,
+                        paths["v1"],
+                        paths["v2"],
                         sdk_root=root,
                         java_home=root,
                         environment=environment,
                     )
                 )
 
-    def test_provenance_rejects_boolean_source_count(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary).resolve()
-            result, evidence, result_capture, payload, _opened = (
-                self.captured_fixture(root)
-            )
-            payload["source"]["fileCount"] = True
-            mutated_capture = lifecycle.CapturedEvidenceFile(
-                data=checker.canonical_json_bytes(payload),
+            captures["v1"][4]["source"]["fileCount"] = True
+            captures["v1"][2]["result.json"] = lifecycle_v2.CapturedEvidenceFile(
+                data=checker.canonical_json_bytes(captures["v1"][4]),
                 identity=(),
-                mode=result_capture.mode,
+                mode="0644",
             )
-            evidence["result.json"] = mutated_capture
-            with mock.patch.object(
-                checker,
-                "source_git_binding_failures",
-                return_value=[],
-            ):
+            mutated = (
+                captures["v1"][0],
+                captures["v1"][1],
+                captures["v1"][2],
+                captures["v1"][2]["result.json"],
+                captures["v1"][4],
+            )
+            captures["v1"] = mutated
+            with mock.patch.object(checker, "source_git_binding_failures", return_value=[]):
                 with self.assertRaises(checker.NightlyContractError):
-                    checker._expected_provenance_from_capture(
-                        result_directory=result.parent,
-                        result_capture=mutated_capture,
-                        result=payload,
-                        evidence_capture=evidence,
-                        environment=self.github_environment(),
-                        git_checkout=root,
+                    checker._expected_provenance_from_captures(
+                        captures, environment=environment, git_checkout=root
+                    )
+
+            paths, captures, _opened = self.captured_fixture(root / "fresh")
+            def reject_v2_source(_source, *, git_checkout, commit):
+                del git_checkout, commit
+                return ["source bytes differ from GITHUB_SHA"] if _source is captures["v2"][4]["source"] else []
+            with mock.patch.object(
+                checker, "source_git_binding_failures", side_effect=reject_v2_source
+            ):
+                with self.assertRaisesRegex(checker.NightlyContractError, "v2 source"):
+                    checker._expected_provenance_from_captures(
+                        captures, environment=environment, git_checkout=root
                     )
 
 

@@ -819,6 +819,7 @@
     <string name="error_generation_not_found">Aucune génération active n’a été trouvée.</string>
     <string name="error_transport_error">AetherLink Runtime a perdu la communication avec le service de modèles.</string>
     <string name="error_internal_error">AetherLink Runtime a rencontré une erreur interne.</string>
+    <string name="error_local_data_update_required">Cette version d’AetherLink ne peut pas ouvrir les données enregistrées en toute sécurité. Mettez AetherLink à jour avant de modifier les réglages.</string>
     <string name="error_unknown">Un problème est survenu.</string>
     <string name="error_detail">Détail : %1$s</string>
     <string name="error_accessibility_summary">%1$s. %2$s</string>

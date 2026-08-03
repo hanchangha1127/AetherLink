@@ -796,6 +796,7 @@
     <string name="error_generation_not_found">No active generation was found.</string>
     <string name="error_transport_error">AetherLink Runtime lost communication with the model service.</string>
     <string name="error_internal_error">AetherLink Runtime hit an internal error.</string>
+    <string name="error_local_data_update_required">This version of AetherLink can’t safely open the saved app data. Update AetherLink before changing settings.</string>
     <string name="error_unknown">The request could not be completed.</string>
     <string name="error_detail">More information: %1$s</string>
     <string name="error_accessibility_summary">%1$s. %2$s</string>

@@ -261,6 +261,14 @@ SOURCE_REQUIRED_FILES = (
         "script/test_run_macos_current_source_lane_a_"
         "idle_resource_stability_smoke.py"
     ),
+    (
+        "script/check_macos_current_source_lane_a_"
+        "idle_resource_repeatability.py"
+    ),
+    (
+        "script/test_check_macos_current_source_lane_a_"
+        "idle_resource_repeatability.py"
+    ),
     "script/run_macos_current_unsealed_install_recovery_smoke.py",
     "script/test_run_macos_current_unsealed_install_recovery_smoke.py",
     "script/run_macos_packaged_app_lifecycle_smoke.py",

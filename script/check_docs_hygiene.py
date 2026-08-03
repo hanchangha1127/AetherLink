@@ -1769,16 +1769,16 @@ CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_EXPECTED_CHECKER_TEST_SH
     "97b524f3bf2000b6198016f2a8738dc794660b4741f10c3834367739f7200469"
 )
 CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_EXPECTED_CHECKER_SIZE = (
-    24_212
+    26_487
 )
 CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_EXPECTED_CHECKER_SHA256 = (
-    "ce4f5244e70ad9c00755d18e18057e409aa54623740a243006eeb269ff3bfd3f"
+    "597e9b190f26a7f4e00747bab3b4fc6349a0ead8df3c34af340564e1ea51e86c"
 )
 CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_EXPECTED_CHECKER_TEST_SIZE = (
-    12_189
+    13_866
 )
 CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_CI_LIFECYCLE_EXPECTED_CHECKER_TEST_SHA256 = (
-    "bc6e6e4694735cf218e21bda69f7776370f323063bf7e7fc914781083eb14d43"
+    "62dfb48eb3ca00a56699782b09efb72d2d0263bf911e439abbac3c5f1d2a4d55"
 )
 CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_DOCUMENT_START = (
     "<!-- aetherlink-current-build24-macos-current-unsealed-install-"
@@ -1869,24 +1869,24 @@ the same lifecycle producer with two independent observations. It writes only `r
 `.build/aetherlink-current-unsealed-lifecycle-v1` directory, then invokes a
 separate current-run checker. The local parity run reproduced the same
 recorded closure-five behavior against a freshly produced generation. That
-2026-08-02 snapshot bound app SHA-256
-`478062e2dfe1e9b01b12723b66f167b91eb6d7b2b8123e2434acba7fced4922a`,
+2026-08-03 snapshot bound app SHA-256
+`436c60d0d0bce91c00e19ad6a5b5e34a18421c666edfa54bdc172dfb4599991b`,
 dSYM SHA-256
-`e4c4fab2e4b9efe101ce1ccfb066634f5b5ebef0a2a78979513b5ade948df90d`,
+`5160e60269a49ce0e7a9b3042778b1b1ddd189370b1bb36a64f18bf8767727d0`,
 source SHA-256
-`b8a9f7822b88dddaaa843d25f976e1297736e6d2a4588e959d4c10c0cff65a7d`,
-and UUID `6B06A6D0-9C89-3D36-A5B9-D2381598DDC8`. Its 7,628-byte result has SHA-256
-`ed412cc97a1e03ba85cb79e8cece869983f1025ac58ab2dcb3ef925635bad32e`;
+`1e94fe1d1fe2919013853b394b9d009c90d987b506294bf19e72845afdb70b71`,
+and UUID `97765AF8-2F64-3CD5-AEC5-C861792158F8`. Its 7,628-byte result has SHA-256
+`5d5bc378dd26d7cc9d5911aa61b6e9b59ddd0a9264655bc70c73c54ba697d131`;
 its 1,468-byte repeatability receipt has SHA-256
-`a89428669bdd128130e1f8102fc39f10fa5bd801b3a4e80df1146ec48cdbbc75`.
+`17e3cdc76674a0706a130ddd91cd9638d7a39eb0961dbfe50b4c192330dd4597`.
 These identities describe that recorded generation and are not pins for later
 mutable current output.
 
-The 24,212-byte current-run checker and 12,189-byte eight-test module have
+The 26,487-byte current-run checker and 13,866-byte nine-test module have
 SHA-256 values
-`ce4f5244e70ad9c00755d18e18057e409aa54623740a243006eeb269ff3bfd3f`
+`597e9b190f26a7f4e00747bab3b4fc6349a0ead8df3c34af340564e1ea51e86c`
 and
-`bc6e6e4694735cf218e21bda69f7776370f323063bf7e7fc914781083eb14d43`.
+`62dfb48eb3ca00a56699782b09efb72d2d0263bf911e439abbac3c5f1d2a4d55`.
 The checker imports no producer. It opens the complete current source,
 checker-support, result/receipt, app, dSYM, ledger, and source-receipt graph
 once through descriptor-relative no-follow directories, retains every file
@@ -1910,13 +1910,13 @@ coverage, not binary artifact analysis, a license-compatibility/legal
 conclusion, vulnerability or secret scanning, signed provenance, canonical
 Merge full, G6/G7 exit, RC/GA, or V1 qualification.
 
-The exact 54-test workflow command, the product CI contract and mutation
+The exact 76-test workflow command, the product CI contract and mutation
 self-test, and direct readback of that recorded local current-run evidence
 pass. The
-reviewed workflow is 18,819 bytes with raw SHA-256
-`d63005795068446895e5cbf5e5ed05d9497282c698da7b86c2b96155815bdfe0`
+reviewed workflow is 26,105 bytes with raw SHA-256
+`43cdc1a23e5baf182885377b235130b36dbf26d96963887aafdbbe8f4c71e7ee`
 and parsed-semantic SHA-256
-`4cd318b9e42e97159910080e2b84a2ba8b19fe5b92ecb94c2a189f8a2bb72401`.
+`1f7b4cb33cb914cf0524a5bec6485c75acd89b49ca528d0a9a6256266421f2ca`.
 No hosted run of these current workflow bytes is claimed.
 
 This is same-host, per-user, temporary-HOME, unsealed and network-denied
@@ -2137,28 +2137,28 @@ CURRENT_BUILD24_MACOS_LIFECYCLE_CHAIN_PREDECESSOR_BY_DOCUMENT = {
 }
 CURRENT_BUILD24_MACOS_LIFECYCLE_CHAIN_OUTER_SHA256_BY_DOCUMENT = {
     "README.md": (
-        "de96d745a5b88ea91864270272d720be7acc52602261be28d9177a602193dc5b",
-        "0c72a8d453a57141d79c54fd0158bdd8aac809d4f37540d7988018dc7877bc8e",
+        "4d61e0c01efe04aadc273604f37e8769e59fc916a3dac87d9972867d4cc8ca0c",
+        "a5f15a55b843e0748b67332402544b83c57d84adeb4ee9a60ee6ddce5eec2f2b",
     ),
     "docs/roadmap.md": (
-        "ba6c34ba96e3e7e608d4bedc97fcb1b6c4ed7966116a8472f6195ea43a9f580b",
-        "c214da02fa0b51233acd30c0d55f9ae798530c8eb6e942ebedf711dc933f339a",
+        "47998d4576b2a97f1759b549c97a405916a9c99165871c8c67962c8493a7f427",
+        "49acb063dd42ec1d8629c76a2e925c7a275daf4fab34670255defda837fc7277",
     ),
     "docs/handoff.md": (
-        "ec45941c1de1360c5226124df0f6f870a37847082b041742437245e52d0fa30b",
+        "f7b66a232914f8db7929c01e6db5462199acd19e886e6e6b126cd10a43d40989",
         "45757b5ef397dd7976196ae5b267eee53544fa4b8546464073830acb39d7f858",
     ),
     "docs/progress.md": (
-        "fdf6c43ab738e067cf02c7e8f816b4576d4bb57ac9a60c91bd7f6ae1af30c5e3",
+        "f3c46949b8c3797992c2db832850fbfb1ae3182cee7d0a3edf3371a212de086e",
         "c2e5ed1ec4d2af10ac3f3f87baeb3b9b29cc35393c1628cc63e147718d1589eb",
     ),
     "docs/qa-evidence.md": (
-        "39af30148efe03fd86306bb1276b690a5a0c2312dbdb6a6308e48ef0eada6e2e",
+        "ff3fb927f56e99494e7757f6f13cca64739978666b74ce996fdc0245a26cc184",
         "5c92341f48705b39fcd93e03390edba375eb6455bae3a4eb55807f2c6d3c4eff",
     ),
     "docs/releases/1.0.0-build-24-local-v1.md": (
-        "81a3523ae3ce67aad6ef90d484a199ec93eec6da7ec1e435e8f53c27a94b18ea",
-        "eb4d9e1354eba5f0375e42b961b3dde775d9b7328f5723d4eca2f8357af0237a",
+        "41da6e48b43bac1b07e388554314298f49fde2d30e7b98215eb6f32fcea968df",
+        "d7b42f22d7e796e29c55dd7d601d7ec5f7e9b8ec07fa0e37acb547c7214fba2a",
     ),
 }
 CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SIZE = 2_434
@@ -2296,23 +2296,23 @@ CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_BODY_SHA256_BY_DOCUMENT = {
 }
 CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_OUTER_SHA256_BY_DOCUMENT = {
     "README.md": (
-        "b026f7bd0c6b4c977d067b963c4df10ae08619ff51f7d09b0e8450fd6bd6ceee",
-        "06dd75f4fc31e5c9d402d99895caebdff8096dd0e663a515c7d246497d6d9653",
+        "9fbc6f9fd5f52d71b5d6d337a6909ac2910ef1f80c3c6b96076c986259961967",
+        "978741383b9e900ab1cbfc1023907efbcfd8b4159e73a7e6c39eddba46abf5da",
     ),
     "docs/roadmap.md": (
-        "bf3cf71e723c6b049a7441f41af540592e5f5d7bd507cf9a31d311828d179742",
-        "a62422029be6eeb555af0a20d27b49cc3d348895692466fd77bde1be5728fd44",
+        "3068ed75e2a96ac2a39ea6d9bf9afeb75b61d6a4b03678191cd9b7b776fbfe8b",
+        "2d95c3598363c481942f209b545cf485bd4b76a8e6eae51d3080f2d0829e7a8c",
     ),
     "docs/handoff.md": (
-        "92a116a3f5dfb4ae7e7ca39cb20c8fd0fbc903f7162d960a42f095f1052f40c8",
+        "119b8c4e719a0a418a4052cc596b29aa130b2c5880ecdb1ca030f739090e2b82",
         "fcd0f93e8d91ade7dc84df0a0cf1ba3d5dfc0d2ff485645b94211dbafd4a63bf",
     ),
     "docs/progress.md": (
-        "2d8a153fde0678f7116844dd34c77361755508e4335ea0bfb2e9b5d0bc52ed05",
+        "a809733fad337dd25ee3663a90f9e3d92bb44c54c8574b7d9e8ea3d977b29c8f",
         "75ff47867bb3a85000e23e723f8b9c20e8caf252de95bb19a91732fca40863a6",
     ),
     "docs/qa-evidence.md": (
-        "54e4486396f7cf394f9cd1941a7141a2f897234f04da0920acb3b1715c89363c",
+        "30af1ab0cf59d76be801839d7c7551c7131b85676747ac4e0c96af2a3cd149d0",
         "89cbf66a09001c07387613ebe728ed79d2ebbe66b943beec8bde498e08aedf85",
     ),
     "docs/releases/1.0.0-build-20-local-v1.md": (
@@ -2320,8 +2320,8 @@ CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_OUTER_SHA256_BY_DOCUMENT = {
         "b2673dc9c562eb6a7f8d209136c138754d58fb9adebfbfabc9b8696c5f3c490c",
     ),
     "docs/releases/1.0.0-build-24-local-v1.md": (
-        "1c018a821c00e1da2cde9a37294c238d3fc7ebcdddc5f520bf3ac16660f2c940",
-        "1d720cc6113623362962f752e5cfd2eaceffb3296ab413bdbe20b55fabbcf4cd",
+        "00676938d150e712758de1fe146733adfed93c1478107a6884cc6873ed439ac0",
+        "77034fbe64ab2ebd6bcdb2c3c1005644958c546deccecf8b1bf57c1c20ae119d",
     ),
 }
 CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_NEIGHBORS = {
@@ -2472,13 +2472,68 @@ CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_END = (
 )
 CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_BODY = """\
 **Current G7 local non-security Merge-full candidate status.** The
-current-source local runner executes 67 exact ordered commands and publishes
+current-source local runner executes 83 exact ordered commands and publishes
 `.build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/candidate.json` only
-after every command exits zero, all 26 artifacts and five implementation inputs
+after every command exits zero, all 36 artifacts and eleven implementation inputs
 read back from current bytes, the source snapshot is unchanged across child
 readbacks, and a requested running-app PID retains its exact identity. The
 result uses canonical ASCII JSON, mode 0600, atomic publication, and a separate
 read-only checker.
+
+Its current-run successor binds one fresh 2,175-identity discovery to two
+children from the same final checkout. The OS network-denied child passes
+1,204/1,204 tests. The fresh focused 222-test child passes 222/222 and
+contributes only four disjoint local-socket identities to the parent. The
+reviewed parent therefore covers 1,208 identities at manifest SHA-256
+`ea63ec325a6125f4ae92c49c0ca9d3054e054369335bec6ebeb99c7256468846`,
+leaving 967 at
+`fe4c11470e53a92ff64fe31c143b7d587eacdfcdd68ac8af7c5ba7233d58e9e6`.
+Each fresh parent is independently read back inside its unchanged-source
+candidate; ignored mutable result bytes are not promoted to a cross-run
+documentation identity. The focused carrier
+is not OS egress-denied, so the parent claims local-socket execution but not
+external-network denial for that child.
+
+The 83-command candidate now executes and binds that current-run child and
+parent inside the same unchanged-source transaction rather than retaining it
+as a disconnected successor. Its closed coverage records the 2,175-test fresh
+discovery, 1,204-test network-denied child, four-test local-socket contribution,
+1,208-test reviewed parent, and 967-test remaining partition. Both independent
+current-run readbacks execute once at production time and again after every
+other platform gate, while the candidate also records all six current-run
+files as immutable child artifacts.
+
+The Android core successor adds exact method-level allowlists for 96 protocol
+model/codec tests and 16 injected fake-socket transport lifecycle tests. It
+prepares two source markers, forces both module tasks offline with
+`--rerun-tasks`, requires exact JUnit report sets and testcase manifests, writes
+two module-specific bindings, and repeats their independent readback at final
+candidate closure. Pairing, authentication, cryptography, relay/P2P, Bonjour,
+network-policy, actual `ServerSocket`, and device tests remain excluded.
+
+An exact per-test re-audit corrected the earlier suite-level exhaustion claim.
+The new strict V5 component adds 26 identities: 25 pure localization/state/copy
+tests and one pairing-route notice mapping test. Its 2,887-byte LF manifest has
+raw SHA-256
+`295395947575e19481f62384137a6b1bda23e71d07708b62df67dc1afc8f9b2b`
+and identity-manifest SHA-256
+`15970c0667b69b337d5fe13bfaffc36fd99e2b1fba52cb4cb99be230a7f04ede`.
+Fifty-three other plausible product tests remain excluded because their actual
+setup executes P256 authentication, HMAC cursor, identity-key, or pairing-state
+paths. No socket, network, live-provider, device, security, authentication, or
+cryptography execution is added by the strict 26-test component.
+
+A strict V6 exact-method component adds seven identities: six pure
+RuntimeAdvertisementMetadata value/filtering tests and one synchronous pre-send
+encoding-failure test. Its sorted 732-byte ASCII LF manifest has raw SHA-256
+`e64e65bbbcdb371b65cf8f290a606de55864c5a48988778a1a85954e05de837c`
+and identity-manifest SHA-256
+`6b4991164cab03a5575a8c0d4a0526874571994e65e5bde612d8716333482a5d`.
+The metadata tests use only strings, dictionaries, and UTF-8 data. The
+remaining test cancels an unstarted NWConnection only after NaN JSON encoding
+fails before any writer or connection send. No socket is opened and no
+external network, live-provider, device, security, authentication,
+cryptography, or pairing path is executed by these seven tests.
 
 The passing local matrix covers 222 focused Swift tests plus a separate 247-test
 expanded non-security Swift lane. Their 72-identity overlap yields 397 distinct
@@ -2487,8 +2542,9 @@ Swift identities; the expanded lane contains 22 lifecycle/UI, 59 document,
 identities and runs serially with a fixed allowlisted environment under an OS
 network-deny sandbox. The matrix also covers 57 DocumentIngestion ASan tests,
 two mutation XCTest identities and 96 deterministic mutation cases, 19 Android
-classes and 1,226 tests, zero Android lint issues, and 22 Release compliance
-tests. It also builds and directly reads back the unsigned Android
+app classes and 1,226 app tests, 112 Android core non-security tests, zero
+Android lint issues, and 22 Release compliance tests. It also builds and
+directly reads back the unsigned Android
 Release APK/AAB, the unsealed macOS app and dSYM, both diagnostics results, and
 the current-unsealed macOS install/recovery lifecycle result before repeating
 all final readbacks.
@@ -2506,12 +2562,85 @@ monotonic deadline. A limit, deadline, or read failure terminates the isolated
 child process group with SIGTERM and then SIGKILL, and requires both the leader
 and group to disappear before failure returns.
 
+The exact 19-class Android app lane was regenerated against 105 current inputs
+at SHA-256
+`ac7c8e71f8f6735f003ccd09556a5383ad8228c6569ef67224c971ac9c2b41d6`.
+All 1,226 tests pass with zero skips, failures, or errors. The 1,819-byte run
+marker has SHA-256
+`f43a6fd3d85be2a42af6767566abd00a3641c04caaf2a4312adce5b384f4cee6`;
+the 3,764-byte marker/report binding has SHA-256
+`67d36e7bc576b7ab7c58d8724cedacac03ae464a9df8a5a462dfcf0475d7ef16`;
+and independent result readback preserves testcase-manifest SHA-256
+`cc3ea9e2d72ca96e7f937b22a893d8cdaf38c409564ac8baecc5b947b8aa1b78`.
+
+A fresh comparison-only Release run bound 268 release inputs at SHA-256
+`1e94fe1d1fe2919013853b394b9d009c90d987b506294bf19e72845afdb70b71`
+and overlay SHA-256
+`8e892b0015299f094a9a001c84a03ea6f185c305b83cf84de30eae2c0f7db36d`.
+The unequal 101- and 109-byte roots each passed a clean build plus archive
+readback and produced the same 167,218,736-byte, 29-payload-member ZIP at
+SHA-256
+`de036f7480dc2c9f9fd443651fab3f7892e319f0eabc7def908aabd9884fcb77`,
+with manifest SHA-256
+`3f335dfaaa6b8ccda07744f496ed52ed8bda93e2ebdc84216c55374b3803d999`
+and checksum-sidecar SHA-256
+`9156aa7aaa0d9edddcbd666b1d35308aa5510e8f9bf86ef21cb2115d835571d9`.
+Archive bytes, member bytes, metadata, and member sets are identical with no
+differences. The canonical mode-0600 comparison record is 19,645 bytes at
+SHA-256
+`0855a2ecb28e2803df05ae4da63583ac4adfe15e40a73589e5067da97e0f6393`.
+A separate standard-library readback confirms the canonical result, exact A/B
+record equality, current source receipt, and current APK/AAB bytes. The run is
+same-host/current-toolchain, comparison-only, unpublished, and its owned raw
+archive roots were removed after in-run readback. The separately produced
+unsealed macOS lifecycle output is a different build contract and passes its
+own direct checker; byte equality between that output and the fixed-scratch
+packaged archive is neither expected nor claimed.
+
+A successor current-source Lane-A run bound 270 release inputs at SHA-256
+`31569a364149d8e530ef91fbe2f573cf98c2460e888455301b9d4ce9d2e2c89f`
+and overlay SHA-256
+`f58a1ff36c88ea5df86fb4f1c0233bd8204c23e03f3229eff7f08f76d91790ed`.
+Its unequal roots produced the same 167,219,112-byte archive at SHA-256
+`24339b6613c861ecaaa92f358c87e2209eba2b55ab089233d31ead7750829ff1`,
+with manifest SHA-256
+`a209f5f99e3ba3c980ed1da8df6ecc50282b0d0a1a25889d9eac435c0a6c05d8`
+and checksum-sidecar SHA-256
+`dc2d96a254b57c944f860da4e94635e4714b4d72a5e75fd2b83cb8f6be4db869`.
+The mode-0600 parent is 19,645 bytes at SHA-256
+`923e58524082a2ec44b43d8967a112ef763a94eaa32e4818fd7297730fa76894`.
+
+The same transaction recorded two independent current-source idle
+observations, each with 120 samples after a 60-second warm-up and during a
+10-minute window. Their 22,399-byte results have SHA-256
+`a69765cae502a6ca9251864ce314d2cb380b4d81455df42013b51d9c3f8458a6`
+and
+`ea2a956bae1429e1a94be806d2c30ce7e0ab5a0e1437996f85ee62f7571c8e88`.
+Both recorded maximum sample lateness of 80 milliseconds, zero final and peak
+FD/thread deltas, and zero final and peak RSS deltas; their differing RSS
+baselines were 140,787,712 and 135,233,536 bytes. The shared installed app tree
+contains 10 files and 21,356,454 bytes at SHA-256
+`8aa2ac6d29bc790d96361ea30ee7af520a294aa8a065b79e59c758bf60f36b55`.
+The 2,409-byte receipt has SHA-256
+`1562c96a921c226e35ee9d2b0c3326eca9f977176c00f3f5003f26ca082f633f`
+and binds a 3,102-byte invariant projection at SHA-256
+`22748073f83eb3b33d8ee613e862d294f6967d1335a8cb69f4ff0f7daf94889e`.
+It records `resultBytesEqual=false` and does not require measurement/result
+byte equality. A producer-independent `python -I -B -S` checker reopened the
+parent, both observations, and receipt and independently recomputed every
+sample schedule, summary, budget, hash, and source/archive binding. The
+product-quality macOS lifecycle step runs its six mutation regressions as part
+of an exact 76-test command; it does not execute or claim a live idle
+observation. This is same-host evidence for two bounded observations only, not
+Weekly resilience, long soak, SLA/capacity, cross-host, or production evidence.
+
 This ignored local current-source candidate is not retained release evidence.
-It does not claim the complete Swift suite, device/network execution, hosted CI,
+It does not claim the complete Swift suite, physical-device or product-network
+execution, hosted CI,
 signed artifacts, security/authentication/cryptography execution, canonical
 Merge-full, canonical G7 exit, RC/GA, or V1 qualification."""
 CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_BODY_SHA256 = (
-    "32b6b8fff5f3baf8f89a9a193ac66adbe1493c35999e8369572ec7ae2b440af2"
+    "b7d56c3356c33031da59d67069b46c810e553fd9bbfc6538d25124938e41d7fe"
 )
 CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_START = (
     "<!-- aetherlink-current-g6-release-diagnostics-usability-v1:start -->"
@@ -2527,28 +2656,28 @@ a separate checker command reopens the result plus the live artifact, source,
 and tool identities and reruns the same concrete recovery operation.
 
 The local macOS observation produced a 2,279-byte result with SHA-256
-`d8d7d36d717f070b1c1163d7b0357f4c7425e56cbbd915821f983c7749202e5f`.
-The 18,888,664-byte executable and 31,884,776-byte dSYM DWARF share UUID
-`6BD7228B-5EF9-3DDD-B844-49739384BB00`; `/usr/bin/atos` resolves address
+`49db959250aaea7da581ae83b4f1674f96e851019105e31992ca70ef08c09798`.
+The 18,889,704-byte executable and 32,400,661-byte dSYM DWARF share UUID
+`97765AF8-2F64-3CD5-AEC5-C861792158F8`; `/usr/bin/atos` resolves address
 `0x0000000100001a30` to
 `JSONValue.encode(to:) (in AetherLink) (JSONValue.swift:29)`, bound to
 `apps/macos/Protocol/Sources/JSONValue.swift:29`.
 
 The local Android observation produced a 2,739-byte result with SHA-256
-`97badb21a8a104052d117ae9d8696f5b2093f51f6b995ff15c86f5eb0d9f87e2`.
-AGP 9.2.1 supplies R8 Retrace 9.2.14. Against the current 72,050,888-byte
+`54b52aca8aa9a64c188685cddabe933f8081f1acc2215af5fc7c6df572887cfb`.
+AGP 9.2.1 supplies R8 Retrace 9.2.14. Against the current 72,162,527-byte
 `mapping.txt`, Retrace changes
-`at fx1.A(MainActivity.kt:23)` into
-`at com.localagentbridge.android.MainActivityKt.ResearchBriefCreateDialog(MainActivity.kt:3496)`,
+`at gx1.A(MainActivity.kt:23)` into
+`at com.localagentbridge.android.MainActivityKt.ResearchBriefCreateDialog(MainActivity.kt:3500)`,
 bound to
-`apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt:3496`.
+`apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt:3500`.
 
 The producer/checker mutation suites pass 24/24. The product CI contract and
 self-test pin the exact unit, producer, checker, platform, branch, and ordering
-bodies. The reviewed workflow is 21,656 bytes with raw SHA-256
-`41f1532ba6037645e8b7c29629eb665d368a4f524a034c0b8d7a26b5740de73e`
+bodies. The reviewed workflow is 26,105 bytes with raw SHA-256
+`43cdc1a23e5baf182885377b235130b36dbf26d96963887aafdbbe8f4c71e7ee`
 and parsed-semantic SHA-256
-`c6b90de31600f813d78ec4cfeb1f363c12ccef0735e8f2f93284024b60d89bdd`.
+`1f7b4cb33cb914cf0524a5bec6485c75acd89b49ca528d0a9a6256266421f2ca`.
 
 These are local current-source supportability probes against unsigned or
 unsealed Release outputs. Their ignored `.build` result files are not retained
@@ -2556,7 +2685,7 @@ release evidence, and no hosted run of the current workflow bytes is claimed.
 They do not prove device/network behavior, signing/store delivery, production
 release, canonical G6/G7 exit, RC/GA, or V1 qualification."""
 CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_BODY_SHA256 = (
-    "69a6982b1cc0e2656e9ea7d5f9d38a86b5afa6320d6345c22446e94f36a713df"
+    "9db3670de5d04d6f5a284a246c263107480ee01f6106f18ebce48b0315385dfc"
 )
 CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_START = (
     "<!-- aetherlink-current-g7-document-ingestion-asan-v1:start -->"
@@ -2636,10 +2765,10 @@ and rechecks its current run bytes instead. Runner/parser mutation self-tests
 cover timeout, nonzero exit, malformed markers, log overflow, exact corpus
 drift, and canonical-log preservation.
 
-The reviewed product workflow is 21,656 bytes with raw SHA-256
-`41f1532ba6037645e8b7c29629eb665d368a4f524a034c0b8d7a26b5740de73e`
+The reviewed product workflow is 26,105 bytes with raw SHA-256
+`43cdc1a23e5baf182885377b235130b36dbf26d96963887aafdbbe8f4c71e7ee`
 and parsed-semantic SHA-256
-`c6b90de31600f813d78ec4cfeb1f363c12ccef0735e8f2f93284024b60d89bdd`.
+`1f7b4cb33cb914cf0524a5bec6485c75acd89b49ca528d0a9a6256266421f2ca`.
 This closes one bounded deterministic generational-mutation gap, not
 coverage-guided fuzzing or a per-case preemption guarantee for PDFKit/AppKit.
 System frameworks and `/usr/bin/unzip` or `/usr/bin/textutil` remain outside
@@ -2647,7 +2776,7 @@ ASan instrumentation. Ignored `.build` evidence is not retained, no hosted run
 is claimed, and complete Merge-full, canonical G7 exit, RC/GA, and V1 remain
 open."""
 CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_BODY_SHA256 = (
-    "4410fcd1cfe6e86a516e397d7a0f47c859f659a9195dc92cb1e5f6cb3020a19a"
+    "56f01fed2745e897e20aab3947823dd93f3eef8064b7ad08307b145869b6b161"
 )
 CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_START = (
     "<!-- aetherlink-current-g7-android-headless-nightly-v1:start -->"
@@ -2663,40 +2792,97 @@ performs downloaded-byte readback. The scheduled commit is materialized with
 `git archive`, Android dependencies are prepared online, and the evidence
 producer then performs the exact offline Debug build. The workflow raw and
 parsed-semantic SHA-256 values are
-`6ca986d8ae194d4236c41815675ad885aaeb29e47639186847645db193a773fa`
+`77ce2a1cc0ce112dbe3f47b9061b4ceba30c56ed26d070daef88af44766dfe78`
 and
-`cf8afa1784d703d0484e8be14e450255c35d720c8ea2b0649ffda3abcccab85b`.
-The exact Nightly contract passes 97/97 tests, including all 82 lifecycle tests
-and all 37 V2 successor tests, with zero skips, failures, or errors.
+`c2e9606a28408c08bffeffb5afe8147e422aecf630a9c33e61cbc69701766a19`.
+The exact Nightly contract passes 101/101 tests, including all 86 lifecycle
+tests and all 41 V2 successor tests, with zero skips, failures, or errors.
 
-The local disposable arm64 API 36.1 V2 run passes background deep Doze,
-same-UID app-process `SIGKILL` recovery, and same-QEMU guest reboot: 3/3 in
-106.214 seconds. Its canonical 51,933-byte result is
-`build/qa/android-headless-api36-1-v2-20260801T224327Z-5c1b4db2/result.json`,
+The current-source disposable arm64 API 36.1 V1 run passes 13/13 scenarios in
+192.785 seconds. Its canonical 50,450-byte result is
+`build/qa/android-headless-api36-1-20260802T192321Z-4828f0e5/result.json`,
 SHA-256
-`878c9179751f960238e8c18bc1c0cae6f3ce8b096b5f6e7db3cf5c42e36646f9`.
-The bound 145-file source snapshot has SHA-256
-`2a440ac4369b06163f56d07988fdb56bb79c94ae473a5016a66e09eee497b2b4`.
-An independent checker holds `result.json` plus all 58 evidence files through
-one descriptor-relative no-follow graph, validates only the captured bytes,
-reopens the complete graph, and passes 3/3. Cleanup leaves no owned emulator or
-ADB transport.
+`9aae98e6a9e7a6ee62ba1afdb989b7964d77975583b2eb56aee3a0c5dd8fa9f5`;
+its bound 135-file source snapshot has SHA-256
+`0ac2aec99995a024eaef2c8ad66420d9a8107b2fef17185002eae8214edbbaaa`
+and contains 46 evidence files. The following V2 run passes background deep
+Doze, same-UID app-process `SIGKILL` recovery, same-QEMU guest reboot,
+future-version saved-data preservation, and versionless-data migration across
+two cold launches: 5/5 in 160.338 seconds. Its canonical 56,498-byte result is
+`build/qa/android-headless-api36-1-v2-20260802T200855Z-ec8ee58e/result.json`,
+SHA-256
+`3d7f9e7d397b13699e2d758cfd45693fc457b3f14b98d3328bd87b45aebf2dc4`;
+its bound 145-file source snapshot has SHA-256
+`24e56c836734dbf2391125200b9164b58812ee410f3f237811719cdebd888413`
+and contains 72 evidence files. Independent V1 and V2 checkers reopen their
+complete descriptor-relative no-follow graphs and pass 13/13 and 5/5. Both
+runs bind the same 49,508,473-byte Debug APK, SHA-256
+`605539f33a2e6bd4befd2c710402645a1134dafe94d51617b77069667c4a02a6`,
+and cleanup leaves no owned emulator or ADB transport.
 
-For a hosted run, the same held snapshot produces candidate provenance and one
-deterministic USTAR archive, performs deep local readback, uploads the raw tar
-with `archive: false`, compares the upload digest, downloads by immutable
-artifact ID, and independently reads back the downloaded bytes. An uploaded
-tar always remains a candidate: artifact existence or producer-job success is
-not acceptance. Only a successful conclusion for the same complete workflow
-run, including the downloaded-byte job, makes those bytes acceptable evidence.
+For a hosted run, one build feeds V1 and then V2. Each complete graph is
+captured before semantic validation; V1 is reconstructed in a private tree so
+its checker reads the captured bytes, and the original graph must remain
+unchanged. One deterministic USTAR contains `lifecycle-v1/`, `lifecycle-v2/`,
+and `nightly-provenance.json`; provenance schema 2 binds the ordered lanes and
+both source manifests to the same `GITHUB_SHA`. The producer performs deep
+two-lane local readback, uploads the raw tar with `archive: false`, compares the
+upload digest, and the consumer downloads by immutable artifact ID and reads
+back the exact bytes. An uploaded tar remains only a candidate until the same
+complete workflow run, including downloaded-byte readback, concludes
+successfully. These two local result graphs pass standalone readback, but no
+commit-bound provenance or USTAR is claimed for them; that packaging path
+requires the exact source bytes materialized at `GITHUB_SHA`.
 
 At this recorded local snapshot, no successful scheduled hosted run of these
 workflow bytes exists, so hosted Nightly success is not claimed. The local run
 does not prove physical/OEM/API-matrix behavior, optical QR, TalkBack, a live
-provider, controlled production networking, upgrade/rollback, signing/store
-delivery, complete Nightly coverage, canonical G7 exit, RC/GA, or V1 release."""
+provider, controlled production networking, release-to-release upgrade or
+rollback, signing/store delivery, complete Nightly coverage, canonical G7
+exit, RC/GA, or V1 release."""
 CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_BODY_SHA256 = (
-    "daa15753399f8ef700245893f22de2867936a3838477eeb950f7955f1a56da9a"
+    "c4ae7aa36fe142f317b389a85a4fa69e967b2cfd9ba39e26bf46373221544005"
+)
+CURRENT_ANDROID_LOCAL_DATA_COMPATIBILITY_DOCUMENT_START = (
+    "<!-- aetherlink-current-android-local-data-compatibility-v1:start -->"
+)
+CURRENT_ANDROID_LOCAL_DATA_COMPATIBILITY_DOCUMENT_END = (
+    "<!-- aetherlink-current-android-local-data-compatibility-v1:end -->"
+)
+CURRENT_ANDROID_LOCAL_DATA_COMPATIBILITY_DOCUMENT_BODY = """\
+**Current Android saved-data compatibility status.** Current source owns one
+explicit local-data version (`1`). A valid legacy object with no `version`
+remains readable and is upgraded on its next successful save. Future integer
+versions, zero or negative versions, string/float/boolean versions, duplicate
+keys, malformed or non-object JSON, and wrong-typed preference values are
+preserved without mutation and put local persistence into a fail-closed state
+before relay-secret or metadata writes can begin.
+
+The ViewModel exposes one sticky localized update-required error, suppresses
+automatic trusted-runtime restoration and every local-data save, and prevents
+language, Android platform-locale, theme, chat-model, embedding-model, and
+auto-reconnect preference changes. Draft typing remains usable in memory, and
+a manual trusted connection cannot re-enable blocked persistence. Focused
+protocol, storage, ViewModel, and Compose checks pass; the exact Android
+product selector passes 45/45 and the exact 19-class app lane passes
+1,226/1,226. The V2 headless lane additionally seeds one exact 135-byte
+version-2 SharedPreferences XML at SHA-256
+`0f3db84ddc9b808fbe36b5d496aaa2a97117c321832717aed520e1594beeb6a5`
+and proves byte preservation plus the update-required UI after each of two
+distinct cold-launch processes. Its evidence binds all six future-data
+scenario files. The same lane seeds an exact 252-byte versionless fixture at
+SHA-256
+`6fc4dbe959cfb5128503013469308421f6d0460dbfa25e0f00179ba537168600`;
+the first launch migrates it to a 561-byte version-1 record at SHA-256
+`3d75cb7d9a61f7650b5402a0264103a6ede2ca163aedd02579b25bb8a2be3fa1`,
+preserving the dark theme, fixed draft, and disabled auto-reconnect. A second
+distinct process retains those exact bytes and neither launch exposes the
+update-required UI. The independent checker passes 5/5. This API 36.1 emulator
+observation does not replace the focused malformed-shape regressions or prove
+an N/N-1 app-binary upgrade/rollback, physical device, signed artifact, store
+delivery, or production release."""
+CURRENT_ANDROID_LOCAL_DATA_COMPATIBILITY_DOCUMENT_BODY_SHA256 = (
+    "1e0208097c301b4c719e883039f577bbeaeb56380b256550a126998968939ef3"
 )
 CURRENT_ANDROID_DRAWER_SEARCH_BEHAVIOR_CLAIM = (
     "The current unreleased Android drawer provides an explicit touch Search "
@@ -16695,6 +16881,22 @@ run python3 -B script/check_product_ci.py --document-ingestion-mutation-results
                     "script/test_run_macos_build24_"
                     "idle_resource_stability_smoke.py"
                 ),
+                (
+                    "script/run_macos_current_source_lane_a_"
+                    "idle_resource_stability_smoke.py"
+                ),
+                (
+                    "script/test_run_macos_current_source_lane_a_"
+                    "idle_resource_stability_smoke.py"
+                ),
+                (
+                    "script/check_macos_current_source_lane_a_"
+                    "idle_resource_repeatability.py"
+                ),
+                (
+                    "script/test_check_macos_current_source_lane_a_"
+                    "idle_resource_repeatability.py"
+                ),
                 "script/run_macos_current_unsealed_install_recovery_smoke.py",
                 "script/test_run_macos_current_unsealed_install_recovery_smoke.py",
                 (
@@ -16770,6 +16972,14 @@ run python3 -B script/check_product_ci.py --document-ingestion-mutation-results
             "script/test_run_macos_build24_"
             "idle_resource_stability_smoke.py"
         ),
+        (
+            "script/test_run_macos_current_source_lane_a_"
+            "idle_resource_stability_smoke.py"
+        ),
+        (
+            "script/test_check_macos_current_source_lane_a_"
+            "idle_resource_repeatability.py"
+        ),
         "script/test_run_macos_current_unsealed_install_recovery_smoke.py",
         "script/test_check_macos_current_unsealed_ci_lifecycle.py",
         "script/test_release_version_ledger.py",
@@ -16813,14 +17023,29 @@ run python3 -B script/check_product_ci.py --document-ingestion-mutation-results
             "reachable top-level full Python unittest inventory."
         ]
 
-    if re.search(
-        r"(?m)^run\s+python3(?:\s+\S+)*\s+"
-        r"script/run_macos_build24_idle_resource_stability_smoke\.py(?:\s|$)",
-        gate_text,
+    if any(
+        re.search(
+            r"(?m)^run\s+python3(?:\s+\S+)*\s+"
+            + re.escape(path)
+            + r"(?:\s|$)",
+            gate_text,
+        )
+        for path in (
+            "script/run_macos_build24_idle_resource_stability_smoke.py",
+            (
+                "script/run_macos_current_source_lane_a_"
+                "idle_resource_stability_smoke.py"
+            ),
+            (
+                "script/check_macos_current_source_lane_a_"
+                "idle_resource_repeatability.py"
+            ),
+        )
     ):
         return [
-            "script/check_no_device_quality.sh: the retained ten-minute "
-            "idle-resource runner must not execute in the default gate."
+            "script/check_no_device_quality.sh: retained/current-source "
+            "ten-minute idle-resource runners and live evidence readbacks "
+            "must not execute in the default gate."
         ]
 
     invocation_index = gate_text.index(expected_invocation)
@@ -17199,7 +17424,7 @@ def current_g7_document_ingestion_mutation_document_failures(
             (
                 ROOT / "docs/releases/1.0.0-build-24-local-v1.md",
                 CURRENT_G7_DOCUMENT_INGESTION_ASAN_DOCUMENT_END,
-                "## Android Backup And Device-Transfer Contract",
+                CURRENT_ANDROID_LOCAL_DATA_COMPATIBILITY_DOCUMENT_START,
             ),
         ),
         document_text_by_relative=document_text_by_relative,
@@ -17214,27 +17439,27 @@ def current_g7_android_headless_nightly_document_failures(
         (
             README_PATH,
             "## Current Android Lifecycle V2 Gate",
-            "## Current Release Diagnostics Usability Gate",
+            CURRENT_ANDROID_LOCAL_DATA_COMPATIBILITY_DOCUMENT_START,
         ),
         (
             ROOT / "docs/roadmap.md",
             CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_END,
-            "The predecessor current-source G5/G6 Android headless lifecycle V1 record is",
+            CURRENT_ANDROID_LOCAL_DATA_COMPATIBILITY_DOCUMENT_START,
         ),
         (
             ROOT / "docs/handoff.md",
             CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_END,
-            "- The predecessor current-source disposable Android lifecycle V1 record is",
+            CURRENT_ANDROID_LOCAL_DATA_COMPATIBILITY_DOCUMENT_START,
         ),
         (
             ROOT / "docs/progress.md",
             "## 2026-08-02 Android API 36.1 Background, Process-Kill, And Reboot Lifecycle V2",
-            "## 2026-08-01 Android API 36.1 Headless Lifecycle Evidence Hardening",
+            CURRENT_ANDROID_LOCAL_DATA_COMPATIBILITY_DOCUMENT_START,
         ),
         (
             ROOT / "docs/qa-evidence.md",
             "## 2026-08-02 Android API 36.1 Lifecycle V2 Checklist",
-            "## 2026-08-01 Android API 36.1 Headless Lifecycle Evidence Checklist",
+            CURRENT_ANDROID_LOCAL_DATA_COMPATIBILITY_DOCUMENT_START,
         ),
     )
     expected_body_block = (
@@ -17339,6 +17564,53 @@ def current_g7_android_headless_nightly_document_failures(
                 "visible Markdown."
             )
     return failures
+
+
+def current_android_local_data_compatibility_document_failures(
+    *,
+    document_text_by_relative: dict[str, str] | None = None,
+) -> list[str]:
+    return exact_visible_document_block_failures(
+        label="current Android saved-data compatibility",
+        start_marker=CURRENT_ANDROID_LOCAL_DATA_COMPATIBILITY_DOCUMENT_START,
+        end_marker=CURRENT_ANDROID_LOCAL_DATA_COMPATIBILITY_DOCUMENT_END,
+        body=CURRENT_ANDROID_LOCAL_DATA_COMPATIBILITY_DOCUMENT_BODY,
+        body_sha256=CURRENT_ANDROID_LOCAL_DATA_COMPATIBILITY_DOCUMENT_BODY_SHA256,
+        targets=(
+            (
+                README_PATH,
+                CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_END,
+                "## Current Release Diagnostics Usability Gate",
+            ),
+            (
+                ROOT / "docs/roadmap.md",
+                CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_END,
+                "The current-source Android headless lifecycle V1 companion record is",
+            ),
+            (
+                ROOT / "docs/handoff.md",
+                CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_END,
+                "- The current-source disposable Android lifecycle V1 companion record is",
+            ),
+            (
+                ROOT / "docs/progress.md",
+                CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_END,
+                "## 2026-08-01 Android API 36.1 Headless Lifecycle Evidence Hardening",
+            ),
+            (
+                ROOT / "docs/qa-evidence.md",
+                CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_END,
+                "## 2026-08-01 Android API 36.1 Headless Lifecycle Evidence Checklist",
+            ),
+            (
+                ROOT / "docs/releases/1.0.0-build-24-local-v1.md",
+                CURRENT_G7_DOCUMENT_INGESTION_MUTATION_DOCUMENT_END,
+                "This is a post-Build-24 current-source note, not a mutation or relabeling of the\n"
+                "immutable Build 24 archive.",
+            ),
+        ),
+        document_text_by_relative=document_text_by_relative,
+    )
 
 
 def current_android_drawer_search_document_failures(
@@ -19516,6 +19788,9 @@ def tracked_document_contract_failures() -> list[str]:
     tracked_failures.extend(
         current_g7_android_headless_nightly_document_failures()
     )
+    tracked_failures.extend(
+        current_android_local_data_compatibility_document_failures()
+    )
     tracked_failures.extend(current_android_drawer_search_document_failures())
     tracked_failures.extend(historical_local_release_document_failures())
     tracked_failures.extend(readme_current_local_release_failures())
@@ -19660,6 +19935,7 @@ def main(argv: list[str] | None = None) -> int:
         current_g7_document_ingestion_mutation_document_failures()
     )
     failures.extend(current_g7_android_headless_nightly_document_failures())
+    failures.extend(current_android_local_data_compatibility_document_failures())
     failures.extend(current_android_drawer_search_document_failures())
     failures.extend(macos_clean_home_installed_app_evidence_failures())
     failures.extend(

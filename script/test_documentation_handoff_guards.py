@@ -346,7 +346,7 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
                     text.replace(
                         complete_block,
                         complete_block.replace(
-                            "67 exact ordered commands",
+                            "83 exact ordered commands",
                             "66 exact ordered commands",
                             1,
                         ),
@@ -809,7 +809,7 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
                 )
                 empty_body = text[:start] + "\n" + text[end:]
                 mutations = (
-                    text.replace("97/97 tests", "96/96 tests", 1),
+                    text.replace("101/101 tests", "100/100 tests", 1),
                     text.replace(start_marker, "", 1),
                     text.replace(end_marker, "", 1),
                     text.rstrip() + "\n\n" + complete_block + "\n",
@@ -7022,10 +7022,10 @@ private func generatePairingQR() {{
             .CURRENT_BUILD24_MACOS_CURRENT_UNSEALED_INSTALL_RECOVERY_DOCUMENT_BODY
         )
         complete_block = start_marker + "\n" + expected_body + "\n" + end_marker
-        self.assertEqual(len(expected_body.encode("utf-8")), 8_598)
+        self.assertEqual(len(expected_body.encode("utf-8")), 8_597)
         self.assertEqual(
             hashlib.sha256(expected_body.encode("utf-8")).hexdigest(),
-            "d88711bcdddd676cbb858026f30848db2c6233a1fc524c3e054ae2d98f9845ec",
+            "3dae26343b561aafab1f0ef96ce4256566c513e808dad8d191581dc0bbb0059b",
         )
 
         for relative in targets:

@@ -646,6 +646,38 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 expected_release_id=release_id,
             )
         )
+        idle_resource_stability = (
+            self.lane_a_idle_resource_stability_result(
+                release_id,
+                evidence,
+            )
+        )
+        idle_resource_stability_repeat = copy.deepcopy(
+            idle_resource_stability
+        )
+        idle_resource_stability_repeat["process"][
+            "preexistingApplicationCount"
+        ] = 2
+        for sample in idle_resource_stability_repeat["measurement"]["run"][
+            "samples"
+        ]:
+            sample["residentBytes"] += 4096
+        idle_resource_stability_repeat["measurement"]["run"]["summary"] = (
+            runner.lane_a_idle_measurement_summary(
+                idle_resource_stability_repeat["measurement"]["run"][
+                    "samples"
+                ]
+            )
+        )
+        idle_resource_repeatability = (
+            runner.build_lane_a_idle_resource_repeatability_receipt(
+                run_a_path=paths.idle_resource_stability,
+                run_a=idle_resource_stability,
+                run_b_path=paths.idle_resource_stability_repeat,
+                run_b=idle_resource_stability_repeat,
+                expected_release_id=release_id,
+            )
+        )
         return runner.LaneALocalDMGSuiteEvidence(
             paths=paths,
             archive=evidence,
@@ -655,12 +687,9 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             state_recovery=state_recovery,
             abrupt_process_state_recovery=abrupt_process_state_recovery,
             abrupt_process_state_recovery_repeatability=repeatability,
-            idle_resource_stability=(
-                self.lane_a_idle_resource_stability_result(
-                    release_id,
-                    evidence,
-                )
-            ),
+            idle_resource_stability=idle_resource_stability,
+            idle_resource_stability_repeat=idle_resource_stability_repeat,
+            idle_resource_repeatability=idle_resource_repeatability,
         )
 
     @staticmethod
@@ -685,6 +714,12 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     ),
                     runner.canonical_json_bytes(
                         suite.idle_resource_stability
+                    ),
+                    runner.canonical_json_bytes(
+                        suite.idle_resource_stability_repeat
+                    ),
+                    runner.canonical_json_bytes(
+                        suite.idle_resource_repeatability
                     ),
                 ),
             )
@@ -721,6 +756,14 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             (
                 "script/test_run_macos_current_source_lane_a_"
                 "idle_resource_stability_smoke.py"
+            ),
+            (
+                "script/check_macos_current_source_lane_a_"
+                "idle_resource_repeatability.py"
+            ),
+            (
+                "script/test_check_macos_current_source_lane_a_"
+                "idle_resource_repeatability.py"
             ),
             "script/run_macos_current_unsealed_install_recovery_smoke.py",
             "script/test_run_macos_current_unsealed_install_recovery_smoke.py",
@@ -859,6 +902,112 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             ):
                 validate(candidate)
 
+    def test_idle_repeatability_receipt_binds_two_independent_results(
+        self,
+    ) -> None:
+        release_id = "aetherlink-1.0.0+24-local-v1"
+        evidence = self.evidence(Path("/fixture/archive"))
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        lifecycle_root = Path(temporary.name).resolve() / "lifecycle"
+        lifecycle_root.mkdir(mode=0o700)
+        with mock.patch.object(
+            runner,
+            "LIFECYCLE_RESULT_ROOT",
+            lifecycle_root,
+        ):
+            paths = runner.lane_a_local_dmg_suite_paths(
+                "idle-repeatability",
+                expected_release_id=release_id,
+            )
+        suite = self.lane_a_suite(
+            paths,
+            release_id=release_id,
+            evidence=evidence,
+        )
+        tree = suite.install["installation"]["tree"]
+        source = suite.idle_resource_stability["sourceSnapshot"]
+        receipt = suite.idle_resource_repeatability
+        self.assertIs(receipt["allRunsPassed"], True)
+        self.assertIs(receipt["resultBytesEqual"], False)
+        self.assertIs(receipt["resultBytesEqualRequired"], False)
+        self.assertEqual(receipt["runCount"], 2)
+        with mock.patch.object(
+            runner,
+            "LIFECYCLE_RESULT_ROOT",
+            paths.install.parent,
+        ):
+            self.assertEqual(
+                runner.validate_lane_a_idle_resource_repeatability_receipt_bytes(
+                    runner.canonical_json_bytes(receipt),
+                    run_a_path=paths.idle_resource_stability,
+                    run_a=suite.idle_resource_stability,
+                    run_b_path=paths.idle_resource_stability_repeat,
+                    run_b=suite.idle_resource_stability_repeat,
+                    expected_release_id=release_id,
+                    evidence=evidence,
+                    expected_source_snapshot=source,
+                    expected_tree=tree,
+                ),
+                receipt,
+            )
+
+        invariant_drift = copy.deepcopy(
+            suite.idle_resource_stability_repeat
+        )
+        invariant_drift["environment"]["architecture"] = "x86_64"
+        with self.assertRaisesRegex(
+            runner.ReproducibilityError,
+            "invariant contract",
+        ):
+            runner.build_lane_a_idle_resource_repeatability_receipt(
+                run_a_path=paths.idle_resource_stability,
+                run_a=suite.idle_resource_stability,
+                run_b_path=paths.idle_resource_stability_repeat,
+                run_b=invariant_drift,
+                expected_release_id=release_id,
+            )
+
+        for label, mutate in (
+            (
+                "bool-count",
+                lambda value: value.__setitem__("runCount", True),
+            ),
+            (
+                "run-hash",
+                lambda value: value["runs"][1].__setitem__(
+                    "sha256",
+                    "f" * 64,
+                ),
+            ),
+            (
+                "extra-key",
+                lambda value: value.__setitem__("unexpected", True),
+            ),
+        ):
+            candidate = copy.deepcopy(receipt)
+            mutate(candidate)
+            with (
+                mock.patch.object(
+                    runner,
+                    "LIFECYCLE_RESULT_ROOT",
+                    paths.install.parent,
+                ),
+                self.subTest(label=label),
+                self.assertRaises(runner.ReproducibilityError),
+            ):
+                runner.validate_lane_a_idle_resource_repeatability_receipt_bytes(
+                    runner.canonical_json_bytes(candidate),
+                    run_a_path=paths.idle_resource_stability,
+                    run_a=suite.idle_resource_stability,
+                    run_b_path=paths.idle_resource_stability_repeat,
+                    run_b=suite.idle_resource_stability_repeat,
+                    expected_release_id=release_id,
+                    evidence=evidence,
+                    expected_source_snapshot=source,
+                    expected_tree=tree,
+                )
+
     def test_suite_parent_binding_rejects_source_build_and_comparison_drift(
         self,
     ) -> None:
@@ -900,6 +1049,15 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 expected_release_id=release_id,
             )
         )
+        idle_repeat = copy.deepcopy(idle)
+        idle_repeat["process"]["preexistingApplicationCount"] = 2
+        idle_receipt = runner.build_lane_a_idle_resource_repeatability_receipt(
+            run_a_path=paths.idle_resource_stability,
+            run_a=idle,
+            run_b_path=paths.idle_resource_stability_repeat,
+            run_b=idle_repeat,
+            expected_release_id=release_id,
+        )
         suite = runner.LaneALocalDMGSuiteEvidence(
             paths=paths,
             archive=evidence,
@@ -910,6 +1068,8 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             abrupt_process_state_recovery=abrupt,
             abrupt_process_state_recovery_repeatability=receipt,
             idle_resource_stability=idle,
+            idle_resource_stability_repeat=idle_repeat,
+            idle_resource_repeatability=idle_receipt,
         )
         parent = self.lane_a_suite_parent_result(release_id, evidence)
         source = idle["sourceSnapshot"]
@@ -1417,7 +1577,7 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                         expected_release_id=release_id,
                     )
 
-    def test_lane_a_local_dmg_suite_label_derives_six_exact_paths(
+    def test_lane_a_local_dmg_suite_label_derives_eight_exact_paths(
         self,
     ) -> None:
         release_id = "aetherlink-1.0.0+24-local-v1"
@@ -1467,9 +1627,19 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                             "idle-resource-stability-v1-"
                             "current-source-g6-chain.json"
                         ),
+                        (
+                            f"macos-{release_id}-two-root-lane-a-"
+                            "idle-resource-stability-repeat-v1-"
+                            "current-source-g6-chain.json"
+                        ),
+                        (
+                            f"macos-{release_id}-two-root-lane-a-"
+                            "idle-resource-stability-repeatability-v1-"
+                            "current-source-g6-chain.json"
+                        ),
                     ],
                 )
-                self.assertEqual(len(set(paths.ordered())), 6)
+                self.assertEqual(len(set(paths.ordered())), 8)
                 for invalid in (
                     "",
                     "Uppercase",
@@ -2850,7 +3020,7 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 ),
                 mock.patch.object(runner, "RESULT_ROOT", result_root),
             ):
-                for ordinal in range(1, 8):
+                for ordinal in range(1, 10):
                     with self.subTest(ordinal=ordinal):
                         paths = runner.lane_a_local_dmg_suite_paths(
                             f"interrupt-{ordinal}",
@@ -3227,7 +3397,7 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     wraps=tempfile.mkstemp,
                 ) as create_mock:
                     runner.publish_lane_a_local_dmg_suite(suite)
-                self.assertEqual(create_mock.call_count, 5)
+                self.assertEqual(create_mock.call_count, 7)
                 repaired_status = os.lstat(paths.install)
                 self.assertEqual(
                     (repaired_status.st_dev, repaired_status.st_ino),
@@ -3847,21 +4017,10 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                         expected_release_id=release_id,
                     )
                 )
-                suite = runner.LaneALocalDMGSuiteEvidence(
-                    paths=paths,
-                    archive=evidence,
-                    expected_release_id=release_id,
-                    install=install,
-                    uninstall_reinstall=same_dmg,
-                    state_recovery=recovery,
-                    abrupt_process_state_recovery=abrupt,
-                    abrupt_process_state_recovery_repeatability=receipt,
-                    idle_resource_stability=(
-                        self.lane_a_idle_resource_stability_result(
-                            release_id,
-                            evidence,
-                        )
-                    ),
+                suite = self.lane_a_suite(
+                    paths,
+                    release_id=release_id,
+                    evidence=evidence,
                 )
                 parent_path = result_root / (
                     f"{release_id}-two-root-v4-prepublication-same-label.json"
@@ -4677,6 +4836,7 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     runner.LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_RUNNER
                 ),
                 runner.LANE_A_IDLE_RESOURCE_STABILITY_RUNNER,
+                runner.LANE_A_IDLE_RESOURCE_STABILITY_RUNNER,
             ],
         )
         self.assertEqual(suite.install, install)
@@ -4684,6 +4844,17 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
         self.assertEqual(suite.state_recovery, recovery)
         self.assertEqual(suite.abrupt_process_state_recovery, abrupt)
         self.assertEqual(suite.idle_resource_stability, idle)
+        self.assertEqual(suite.idle_resource_stability_repeat, idle)
+        self.assertEqual(
+            suite.idle_resource_repeatability,
+            runner.build_lane_a_idle_resource_repeatability_receipt(
+                run_a_path=suite.paths.idle_resource_stability,
+                run_a=idle,
+                run_b_path=suite.paths.idle_resource_stability_repeat,
+                run_b=idle,
+                expected_release_id=release_id,
+            ),
+        )
         self.assertEqual(
             suite.abrupt_process_state_recovery_repeatability,
             runner.build_lane_a_local_dmg_abrupt_process_repeatability_receipt(

@@ -36,11 +36,11 @@ class ProtocolCodec(
 
     fun decode(bytes: ByteArray): ProtocolEnvelope {
         val body = bytes.decodeToString()
-        val rawInspection = RawJsonObjectInspector(body).inspect()
-        if (rawInspection.firstDuplicateKeyPath != null) {
+        val duplicateKeyPath = firstDuplicateJsonObjectKeyPathOrNull(body)
+        if (duplicateKeyPath != null) {
             throw IllegalArgumentException(
                 "Protocol envelope contains duplicate JSON object key: " +
-                    rawInspection.firstDuplicateKeyPath,
+                    duplicateKeyPath,
             )
         }
         val element = json.parseToJsonElement(body)
@@ -148,6 +148,10 @@ class ProtocolCodec(
             "payload",
         )
     }
+}
+
+fun firstDuplicateJsonObjectKeyPathOrNull(source: String): String? {
+    return RawJsonObjectInspector(source).inspect().firstDuplicateKeyPath
 }
 
 private data class RawJsonObjectInspection(

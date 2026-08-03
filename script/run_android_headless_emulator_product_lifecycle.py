@@ -522,6 +522,31 @@ def clickable_bounds_for(root: ET.Element, **criteria: str) -> tuple[int, int, i
     return min(candidates, key=lambda item: item[0])[1]
 
 
+def fully_visible_node_bounds(
+    node: ET.Element,
+    parents: dict[ET.Element, ET.Element],
+) -> tuple[int, int, int, int] | None:
+    bounds = parse_bounds(node.attrib.get("bounds", ""))
+    if bounds is None or not (
+        0 <= bounds[0] < bounds[2] <= 1080
+        and 0 <= bounds[1] < bounds[3] <= 2400
+    ):
+        return None
+    current = parents.get(node)
+    while current is not None:
+        if current.attrib.get("scrollable") == "true":
+            viewport = parse_bounds(current.attrib.get("bounds", ""))
+            if viewport is None or not (
+                viewport[0] <= bounds[0]
+                and viewport[1] <= bounds[1]
+                and bounds[2] <= viewport[2]
+                and bounds[3] <= viewport[3]
+            ):
+                return None
+        current = parents.get(current)
+    return bounds
+
+
 def fully_visible_clickable_bounds_for(
     root: ET.Element,
     **criteria: str,
@@ -545,34 +570,8 @@ def fully_visible_clickable_bounds_for(
             depth += 1
         if clickable is None:
             continue
-        bounds = parse_bounds(clickable.attrib.get("bounds", ""))
+        bounds = fully_visible_node_bounds(clickable, parents)
         if bounds is None:
-            continue
-        viewports: list[tuple[int, int, int, int]] = []
-        invalid_viewport = False
-        current = parents.get(clickable)
-        while current is not None:
-            if current.attrib.get("scrollable") == "true":
-                viewport = parse_bounds(current.attrib.get("bounds", ""))
-                if viewport is None:
-                    invalid_viewport = True
-                    break
-                viewports.append(viewport)
-            current = parents.get(current)
-        if invalid_viewport or not (
-            0 <= bounds[0] < bounds[2] <= 1080
-            and 0 <= bounds[1] < bounds[3] <= 2400
-        ):
-            continue
-        if any(
-            not (
-                viewport[0] <= bounds[0]
-                and viewport[1] <= bounds[1]
-                and bounds[2] <= viewport[2]
-                and bounds[3] <= viewport[3]
-            )
-            for viewport in viewports
-        ):
             continue
         area = (bounds[2] - bounds[0]) * (bounds[3] - bounds[1])
         candidates.append((area + depth, bounds))
@@ -584,6 +583,52 @@ def fully_visible_clickable_bounds_for(
 def has_fully_visible_clickable_node(root: ET.Element, **criteria: str) -> bool:
     try:
         fully_visible_clickable_bounds_for(root, **criteria)
+    except RunnerError:
+        return False
+    return True
+
+
+def fully_visible_checked_bounds_for(
+    root: ET.Element,
+    **criteria: str,
+) -> tuple[int, int, int, int]:
+    parents = {child: parent for parent in root.iter() for child in parent}
+    candidates: list[tuple[int, tuple[int, int, int, int]]] = []
+    for node in root.iter():
+        if not node_matches(node, **criteria):
+            continue
+        current: ET.Element | None = node
+        checked: ET.Element | None = None
+        depth = 0
+        while current is not None:
+            if (
+                current.attrib.get("checkable") == "true"
+                and current.attrib.get("checked") == "true"
+                and current.attrib.get("enabled") == "true"
+                and (
+                    criteria.get("package") is None
+                    or current.attrib.get("package") == criteria["package"]
+                )
+            ):
+                checked = current
+                break
+            current = parents.get(current)
+            depth += 1
+        if checked is None:
+            continue
+        bounds = fully_visible_node_bounds(checked, parents)
+        if bounds is None:
+            continue
+        area = (bounds[2] - bounds[0]) * (bounds[3] - bounds[1])
+        candidates.append((area + depth, bounds))
+    if not candidates:
+        raise RunnerError(f"no fully visible checked UI node matched {criteria!r}")
+    return min(candidates, key=lambda item: item[0])[1]
+
+
+def has_fully_visible_checked_node(root: ET.Element, **criteria: str) -> bool:
+    try:
+        fully_visible_checked_bounds_for(root, **criteria)
     except RunnerError:
         return False
     return True
@@ -1795,15 +1840,21 @@ def run_lane(
             [],
             description="in-app Follow system locale clear",
         )
-        wait_for_ui(
+        wait_for_ui_with_upward_swipes(
             commands,
             output_directory,
             "ui/in-app-follow-system.xml",
-            lambda root: has_node(
+            lambda root: has_fully_visible_checked_node(
                 root,
                 text="Follow system language",
                 package=APP_PACKAGE_PREFIX,
             ),
+            anchor_predicate=lambda root: has_node(
+                root,
+                text="Pair AetherLink",
+                package=APP_PACKAGE_PREFIX,
+            ),
+            maximum_swipes=4,
         )
         follow_pid = force_stop_and_launch(
             commands,

@@ -1307,22 +1307,26 @@ private fun LocalAgentBridgeApp(
                                     onDisconnect = viewModel::disconnect,
                                     onSetAutoReconnectEnabled = viewModel::setTrustedRuntimeAutoReconnectEnabled,
                                     onSetLanguageTag = { languageTag ->
-                                        pendingInitialAndroidPlatformAppLanguageSnapshot = null
-                                        viewModel.setAppLanguageTag(languageTag)
-                                        synchronizeAndroidAppLocaleOverride(
-                                            context = baseContext,
-                                            selectedLanguageTag = languageTag,
-                                        )
+                                        if (state.localDataCompatibilityError == null) {
+                                            pendingInitialAndroidPlatformAppLanguageSnapshot = null
+                                            viewModel.setAppLanguageTag(languageTag)
+                                            synchronizeAndroidAppLocaleOverride(
+                                                context = baseContext,
+                                                selectedLanguageTag = languageTag,
+                                            )
+                                        }
                                     },
                                     onFollowSystemLanguage = {
-                                        pendingInitialAndroidPlatformAppLanguageSnapshot = null
-                                        viewModel.followSystemAppLanguageTag(
-                                            androidSystemAppLanguageTag(baseContext),
-                                        )
-                                        synchronizeAndroidAppLocaleOverride(
-                                            context = baseContext,
-                                            selectedLanguageTag = null,
-                                        )
+                                        if (state.localDataCompatibilityError == null) {
+                                            pendingInitialAndroidPlatformAppLanguageSnapshot = null
+                                            viewModel.followSystemAppLanguageTag(
+                                                androidSystemAppLanguageTag(baseContext),
+                                            )
+                                            synchronizeAndroidAppLocaleOverride(
+                                                context = baseContext,
+                                                selectedLanguageTag = null,
+                                            )
+                                        }
                                     },
                                     onSetTheme = viewModel::setAppTheme,
                                     onSelectEmbeddingModel = viewModel::selectEmbeddingModel,

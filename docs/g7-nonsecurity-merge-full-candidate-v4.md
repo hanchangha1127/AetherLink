@@ -86,12 +86,13 @@ Merge-full, canonical G7 exit, RC/GA, or V1 qualification. Security,
 authentication, and cryptography suites were not executed in this active
 non-security slice.
 
-### Post-V4 selector exhaustion review
+### Recorded post-V4 selector review (superseded)
 
 After the passing run, two GPT-5.6 Sol read-only reviews and the preceding
-protocol/transport review exhaustively reclassified all 1,000 remaining
-identities against the same deterministic, local, no-device, no-socket,
-non-security boundary:
+protocol/transport review recorded the following suite-level classification of
+the 1,000 remaining identities. A later exact per-test execution-path audit
+found that this grouping was too coarse; the table is retained as historical
+review output and is not the current selector decision:
 
 | Reviewed partition | Identities | Security, authority, or approval boundary | Socket, network, or live-provider boundary |
 | --- | ---: | ---: | ---: |
@@ -100,16 +101,31 @@ non-security boundary:
 | Protocol, Pairing, P2P/NAT, Relay, Transport, and TrustedDevices | 453 | 391 | 62 |
 | Total | 1,000 | 794 | 206 |
 
-The eligible, environment-only, and insufficiently classified sets are all
-empty. The compact canonical JSON identity array for the eligible set is `[]`
-(2 bytes, no trailing LF), with SHA-256
+At that checkpoint the review recorded the compact eligible array as `[]`
+(2 bytes, no trailing LF), SHA-256
 `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`.
-The apparently generic five-test research-notebook pagination class is not an
-exception: its production cursor is bound to connection and owner identities
-and authenticated with HMAC-SHA256.
+That conclusion incorrectly classified pure LocalAgentBridge localization,
+view-state, accessibility-copy, and notice-mapping tests by suite/file theme.
+The successor audit examined actual setup and execution paths: 79 identities
+were plausible from assertions alone, 53 were rejected because they actually
+create P256 identities, authenticate, use HMAC cursors, or create pairing state,
+and 26 strict non-security/no-socket identities remained. Their manifest
+SHA-256 is
+`15970c0667b69b337d5fe13bfaffc36fd99e2b1fba52cb4cb99be230a7f04ede`.
+The research-notebook pagination class remains excluded because its cursor uses
+HMAC-SHA256. Hosted, device/network, signing, staged-release, and production-
+operability evidence remain separate canonical G7 requirements.
 
-Therefore no non-empty V5 Swift selector exists inside the active boundary.
-Adding an empty successor runner would add code without increasing executed
-product evidence. Further G7 progress must use a different evidence tier or an
-explicit later scope change. Hosted, device/network, signing, staged-release,
-and production-operability evidence remain separate canonical G7 requirements.
+### Current-run successor
+
+The fresh 2,175-identity checkout and its two SQLite recovery additions were
+subsequently recomposed into one serial network-denied invocation. Four exact
+local-socket tests were separated from that no-socket lane without `--skip` or
+relaxing the sandbox. The strict V5 successor adds 26 exact tests; the resulting
+1,197-test no-socket child passed with zero failures and zero skips. A fresh
+focused 222-test child contributes only those exact four started-to-passed
+local-socket identities through a common-test-list parent. The resulting
+reviewed union is 1,201 identities with 974 remaining;
+complete Swift, canonical Merge-full, and canonical G7 remain open. The result
+and exact claim boundary are recorded in [G7 Local Non-Security Merge-full
+Current Run V1](g7-nonsecurity-merge-full-current-run-v1.md).

@@ -4316,6 +4316,8 @@ run check_python_syntax \
   script/test_run_macos_build24_idle_resource_stability_smoke.py \
   script/run_macos_current_source_lane_a_idle_resource_stability_smoke.py \
   script/test_run_macos_current_source_lane_a_idle_resource_stability_smoke.py \
+  script/check_macos_current_source_lane_a_idle_resource_repeatability.py \
+  script/test_check_macos_current_source_lane_a_idle_resource_repeatability.py \
   script/run_clean_release_reproducibility.py \
   script/test_run_clean_release_reproducibility.py \
   script/package_release_artifacts.py \
@@ -4523,6 +4525,7 @@ run python3 -m unittest \
   script/test_check_macos_build24_idle_resource_stability_evidence.py \
   script/test_run_macos_build24_idle_resource_stability_smoke.py \
   script/test_run_macos_current_source_lane_a_idle_resource_stability_smoke.py \
+  script/test_check_macos_current_source_lane_a_idle_resource_repeatability.py \
   script/test_run_clean_release_reproducibility.py \
   script/test_release_artifact_archive.py \
   script/test_run_macos_packaged_app_lifecycle_smoke.py \

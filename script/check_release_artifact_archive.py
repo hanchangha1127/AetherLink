@@ -74,22 +74,22 @@ ANDROID_RELEASE_SDK_DEPENDENCIES_PROTOBUF_SHA256 = (
     "2a061d9f10804b3c4a2e6e63eae2d39cea066700863a0e87993562f052e20ca0"
 )
 ANDROID_RELEASE_R8_MAPPING_SHA256 = (
-    "2c6d7d8769920f7541187ed4e1eaaf0eda4e9578b220a4efcb3ae0a7e49cd00a"
+    "bc8b0a785dff0ceddf112407f3e9e3c2c59f162c0334f7be068e40743dddde36"
 )
 ANDROID_RELEASE_R8_MAPPING_PRT_LOGICAL_SHA256 = (
-    "0e2aa9711e5d69b701335f76a65232faed21aa51307931c0b107dd4a2cd550d8"
+    "e1e1a3880bc9195c3b0f8aab83c58a50da94085a40e375126fb4435c70f4dc56"
 )
 ANDROID_RELEASE_APK_BASELINE_PROFILE_SHA256 = (
-    "b0fcec780fc3ddceed27c0dcfa0227dadd5cd6c1b50b028d7cca1468f9fc1ea8"
+    "c40b228a1bb80be675c2d87d41c14f56cf0f6236db942fa83f8c602cbe55e763"
 )
 ANDROID_RELEASE_APK_BASELINE_PROFILE_METADATA_SHA256 = (
-    "085b63a646d83a869ba06e2468259f564c2e472780d2f87a3b081f17a067eaeb"
+    "f5bc1f310905e36da06edeeb2838cd0a1add4d2be196dccce880acef0d626f61"
 )
 ANDROID_RELEASE_API31_DM_PROFILE_SHA256 = (
-    "b82f2f7c96d8f410ea32833cbffa9bf43224525c21d3d2cf0c04db338dbd4ca4"
+    "0c2e0b3a79df767da4959d1dba61926073b2a8bb0ed0367d0c15ac7b3ea768f9"
 )
 ANDROID_RELEASE_DEX_SHA256 = (
-    "2ef8c9c1ba1969db8ecf0822c57c9ae416afb50eb39f21902e9a4a2d28b62e29"
+    "45465d39cebea466fe2c69a64e1e11861f91d07980d685f49fe4206537e1b0ec"
 )
 ANDROID_BACKUP_POLICY_BUILD = 15
 ANDROID_ENTRY_POINT_TOPOLOGY_BUILD = 23
@@ -244,6 +244,14 @@ SOURCE_REQUIRED_FILES = (
     (
         "script/test_run_macos_current_source_lane_a_"
         "idle_resource_stability_smoke.py"
+    ),
+    (
+        "script/check_macos_current_source_lane_a_"
+        "idle_resource_repeatability.py"
+    ),
+    (
+        "script/test_check_macos_current_source_lane_a_"
+        "idle_resource_repeatability.py"
     ),
     "script/run_macos_current_unsealed_install_recovery_smoke.py",
     "script/test_run_macos_current_unsealed_install_recovery_smoke.py",

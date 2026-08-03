@@ -91,9 +91,9 @@ Qualification below.
   raw-discovery bypass are rejected.
   The independent archive/direct-reader suite passes 78/78, and the product CI
   contract plus mutation self-test pass. Workflow raw SHA-256 is
-  `d63005795068446895e5cbf5e5ed05d9497282c698da7b86c2b96155815bdfe0`;
+  `eee738acbf0b61b5fd94fb716227d376bf7de14d247ab19c78239e488b9d0895`;
   parsed-semantic SHA-256 is
-  `4cd318b9e42e97159910080e2b84a2ba8b19fe5b92ecb94c2a189f8a2bb72401`.
+  `d7361e671c72620957f795e4975776c1612688c72b5109facf59308d82de1d2b`.
 - Boundary: this is local current-source, same-host, unsealed build/lifecycle
   evidence. It is not bit-for-bit build reproducibility, Developer ID signing,
   notarization, channel-valid or clean-machine installation, update/rollback,
@@ -125,30 +125,43 @@ Qualification below.
   raw ignored-`dist` evidence readback; the tracked mode deliberately does not.
   Product CI pins the new step name, exact command bodies, order, and three
   representative removal/bypass mutations. Workflow raw SHA-256 is
-  `d63005795068446895e5cbf5e5ed05d9497282c698da7b86c2b96155815bdfe0`;
+  `eee738acbf0b61b5fd94fb716227d376bf7de14d247ab19c78239e488b9d0895`;
   parsed-semantic SHA-256 is
-  `4cd318b9e42e97159910080e2b84a2ba8b19fe5b92ecb94c2a189f8a2bb72401`.
+  `d7361e671c72620957f795e4975776c1612688c72b5109facf59308d82de1d2b`.
 - Clean-checkout proof: a temporary copy containing only current Git-tracked
   files, with neither `.git` nor `dist/`, passes the product CI contract and
   self-test, the tracked documentation contract across 36 documents, and the
   exact two focused mode tests. The complete local documentation suite passes
-  144/144 with the ignored evidence files present.
+  157/157 with the ignored evidence files present.
 - Boundary: this closes one local G6 evidence-source drift and one clean-
   checkout G7 PR-fast documentation-contract gap. It is not hosted workflow,
   signed/notarized distribution, supported N/N-1 upgrade or rollback,
   physical-device, network, canonical G6/G7 exit, RC/GA, or V1-production
   evidence. No staging, commit, or push was performed.
 
-## 2026-08-01 G6/G7 Android Release APK+AAB Direct Readback
+## 2026-08-03 G6/G7 Android Release Source-bound A/B Readback
 
-- Build result: the current source passes strict-lock
-  `:app:assembleRelease`, `:app:bundleRelease`, and `:app:lintRelease` with
-  `BUILD SUCCESSFUL` across 171 actionable tasks in each of two consecutive
-  clean executions. Both APK/AAB pairs are byte-identical. The 9,575,138-byte
+- Build result: one stable 274-file source snapshot at SHA-256
+  `902905468c0c3baa7400f403adde4cd68ad94c0e9fafebf17109e6d34d138ffc`
+  passes two separately invoked strict-lock, offline `--rerun-tasks`
+  `:app:assembleRelease`, `:app:bundleRelease`, and `:app:lintRelease` graphs.
+  Both APK/AAB pairs are byte-identical. The 9,576,378-byte
   APK has SHA-256
-  `e0a13be5c5e054e4f9ef109756d0502dfabfe6e1bd791e1ce0d6596d58ca1c66`;
-  the 10,687,498-byte AAB has SHA-256
-  `ac4d6ec00a08530d86cc33b68de9ff176f1cece8c27e969be77efa281df89c4e`.
+  `4f016c1ecf1258f7c74770ee10f4aff32b8f73d074d3b6593c0d7c6cb6c59d26`;
+  the 10,695,032-byte AAB has SHA-256
+  `ed8d40dcfe14340a209642023fc20fbdd2f14952094ebaf9c0353277bf0bfd23`.
+- Complete graph result: A and B contain the same closed 52-file inventory.
+  Forty-seven files are raw-byte-identical. The two baseline-profile DM ZIPs,
+  `mapping.prt`, `resources.txt`, and `seeds.txt` differ in ZIP metadata or
+  order while preserving exact bounded member/canonical content. Their shared
+  comparison-graph SHA-256 is
+  `66f2b1c94e7bea30080007f625df9709073dbc7d957a810645140313ac6c8e0a`;
+  raw graph SHA-256 values are
+  `b4577323e5dddd487edb8e04e6151197f6e39c340e99215d4c3ee1396fe0b851`
+  and
+  `e08a94a1721cacdc954f71d4f9f0164745a4b4aad64e0b95afe10810498c05c7`.
+  The 40,835-byte canonical mode-0600 result has SHA-256
+  `bc73eccc2e98a1efe9c62b169e5842d98037d5dc112a68f41bb12cc6f704da01`.
 - Independent readback: `script/check_release_artifact_archive.py --android-build-outputs`
   reads the fixed Gradle output paths without
   creating an archive or requiring macOS artifacts. It binds ledger version
@@ -165,20 +178,25 @@ Qualification below.
   boolean-as-integer versions, stale metadata, missing baseline profiles,
   malformed raw R8 data, APK/AAB manifest or locale drift, mapping mismatch,
   non-arm64 JNI, unlocked SDK dependencies, and asymmetric native-symbol
-  output are rejected. Raw Gradle R8 files are parsed but are not incorrectly
-  required to equal their archive-normalized form.
-- CI contract: pull requests and pushes to `main` now run
-  `assembleRelease -> bundleRelease -> lintRelease -> direct readback`; on
-  `main`, those steps follow the complete Android JVM result gate.
+  output are rejected. The independent A/B checker additionally reconstructs
+  source, both typed run records, the current B graph, and the five exact
+  normalization paths without importing the producer. Its producer/checker
+  suite passes 19/19.
+- CI contract: pull requests run one Release graph followed by direct
+  readback. On `main`, the source-bound A/B producer runs two exact graphs,
+  then its independent checker and the common direct readback run before
+  diagnostics.
   `check_product_ci.py` pins the exact tasks, step bodies, branch conditions,
   order, and bypass mutations. The
   workflow raw SHA-256 is
-  `d63005795068446895e5cbf5e5ed05d9497282c698da7b86c2b96155815bdfe0`;
+  `eee738acbf0b61b5fd94fb716227d376bf7de14d247ab19c78239e488b9d0895`;
   its parsed-semantic SHA-256 is
-  `4cd318b9e42e97159910080e2b84a2ba8b19fe5b92ecb94c2a189f8a2bb72401`.
+  `d7361e671c72620957f795e4975776c1612688c72b5109facf59308d82de1d2b`.
   The CI contract and mutation self-test pass, and the release archive suite
   passes 78/78.
-- Boundary: this is local current-source, no-device build/readback evidence.
+- Boundary: this is local same-host/current-toolchain, unsigned, no-device
+  build/readback evidence. It deliberately does not claim all 52 raw files are
+  byte-identical or prove cross-host reproducibility.
   It does not sign, publish, install, launch, or upload either artifact and
   does not prove release-to-release upgrade, physical-device behavior,
   production networking, hosted execution of the new workflow bytes, G6
@@ -189,13 +207,68 @@ Qualification below.
 
 <!-- aetherlink-current-g7-nonsecurity-merge-full-local-candidate-v1:start -->
 **Current G7 local non-security Merge-full candidate status.** The
-current-source local runner executes 67 exact ordered commands and publishes
+current-source local runner executes 83 exact ordered commands and publishes
 `.build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/candidate.json` only
-after every command exits zero, all 26 artifacts and five implementation inputs
+after every command exits zero, all 36 artifacts and eleven implementation inputs
 read back from current bytes, the source snapshot is unchanged across child
 readbacks, and a requested running-app PID retains its exact identity. The
 result uses canonical ASCII JSON, mode 0600, atomic publication, and a separate
 read-only checker.
+
+Its current-run successor binds one fresh 2,175-identity discovery to two
+children from the same final checkout. The OS network-denied child passes
+1,204/1,204 tests. The fresh focused 222-test child passes 222/222 and
+contributes only four disjoint local-socket identities to the parent. The
+reviewed parent therefore covers 1,208 identities at manifest SHA-256
+`ea63ec325a6125f4ae92c49c0ca9d3054e054369335bec6ebeb99c7256468846`,
+leaving 967 at
+`fe4c11470e53a92ff64fe31c143b7d587eacdfcdd68ac8af7c5ba7233d58e9e6`.
+Each fresh parent is independently read back inside its unchanged-source
+candidate; ignored mutable result bytes are not promoted to a cross-run
+documentation identity. The focused carrier
+is not OS egress-denied, so the parent claims local-socket execution but not
+external-network denial for that child.
+
+The 83-command candidate now executes and binds that current-run child and
+parent inside the same unchanged-source transaction rather than retaining it
+as a disconnected successor. Its closed coverage records the 2,175-test fresh
+discovery, 1,204-test network-denied child, four-test local-socket contribution,
+1,208-test reviewed parent, and 967-test remaining partition. Both independent
+current-run readbacks execute once at production time and again after every
+other platform gate, while the candidate also records all six current-run
+files as immutable child artifacts.
+
+The Android core successor adds exact method-level allowlists for 96 protocol
+model/codec tests and 16 injected fake-socket transport lifecycle tests. It
+prepares two source markers, forces both module tasks offline with
+`--rerun-tasks`, requires exact JUnit report sets and testcase manifests, writes
+two module-specific bindings, and repeats their independent readback at final
+candidate closure. Pairing, authentication, cryptography, relay/P2P, Bonjour,
+network-policy, actual `ServerSocket`, and device tests remain excluded.
+
+An exact per-test re-audit corrected the earlier suite-level exhaustion claim.
+The new strict V5 component adds 26 identities: 25 pure localization/state/copy
+tests and one pairing-route notice mapping test. Its 2,887-byte LF manifest has
+raw SHA-256
+`295395947575e19481f62384137a6b1bda23e71d07708b62df67dc1afc8f9b2b`
+and identity-manifest SHA-256
+`15970c0667b69b337d5fe13bfaffc36fd99e2b1fba52cb4cb99be230a7f04ede`.
+Fifty-three other plausible product tests remain excluded because their actual
+setup executes P256 authentication, HMAC cursor, identity-key, or pairing-state
+paths. No socket, network, live-provider, device, security, authentication, or
+cryptography execution is added by the strict 26-test component.
+
+A strict V6 exact-method component adds seven identities: six pure
+RuntimeAdvertisementMetadata value/filtering tests and one synchronous pre-send
+encoding-failure test. Its sorted 732-byte ASCII LF manifest has raw SHA-256
+`e64e65bbbcdb371b65cf8f290a606de55864c5a48988778a1a85954e05de837c`
+and identity-manifest SHA-256
+`6b4991164cab03a5575a8c0d4a0526874571994e65e5bde612d8716333482a5d`.
+The metadata tests use only strings, dictionaries, and UTF-8 data. The
+remaining test cancels an unstarted NWConnection only after NaN JSON encoding
+fails before any writer or connection send. No socket is opened and no
+external network, live-provider, device, security, authentication,
+cryptography, or pairing path is executed by these seven tests.
 
 The passing local matrix covers 222 focused Swift tests plus a separate 247-test
 expanded non-security Swift lane. Their 72-identity overlap yields 397 distinct
@@ -204,8 +277,9 @@ Swift identities; the expanded lane contains 22 lifecycle/UI, 59 document,
 identities and runs serially with a fixed allowlisted environment under an OS
 network-deny sandbox. The matrix also covers 57 DocumentIngestion ASan tests,
 two mutation XCTest identities and 96 deterministic mutation cases, 19 Android
-classes and 1,226 tests, zero Android lint issues, and 22 Release compliance
-tests. It also builds and directly reads back the unsigned Android
+app classes and 1,226 app tests, 112 Android core non-security tests, zero
+Android lint issues, and 22 Release compliance tests. It also builds and
+directly reads back the unsigned Android
 Release APK/AAB, the unsealed macOS app and dSYM, both diagnostics results, and
 the current-unsealed macOS install/recovery lifecycle result before repeating
 all final readbacks.
@@ -223,8 +297,81 @@ monotonic deadline. A limit, deadline, or read failure terminates the isolated
 child process group with SIGTERM and then SIGKILL, and requires both the leader
 and group to disappear before failure returns.
 
+The exact 19-class Android app lane was regenerated against 105 current inputs
+at SHA-256
+`ac7c8e71f8f6735f003ccd09556a5383ad8228c6569ef67224c971ac9c2b41d6`.
+All 1,226 tests pass with zero skips, failures, or errors. The 1,819-byte run
+marker has SHA-256
+`f43a6fd3d85be2a42af6767566abd00a3641c04caaf2a4312adce5b384f4cee6`;
+the 3,764-byte marker/report binding has SHA-256
+`67d36e7bc576b7ab7c58d8724cedacac03ae464a9df8a5a462dfcf0475d7ef16`;
+and independent result readback preserves testcase-manifest SHA-256
+`cc3ea9e2d72ca96e7f937b22a893d8cdaf38c409564ac8baecc5b947b8aa1b78`.
+
+A fresh comparison-only Release run bound 268 release inputs at SHA-256
+`1e94fe1d1fe2919013853b394b9d009c90d987b506294bf19e72845afdb70b71`
+and overlay SHA-256
+`8e892b0015299f094a9a001c84a03ea6f185c305b83cf84de30eae2c0f7db36d`.
+The unequal 101- and 109-byte roots each passed a clean build plus archive
+readback and produced the same 167,218,736-byte, 29-payload-member ZIP at
+SHA-256
+`de036f7480dc2c9f9fd443651fab3f7892e319f0eabc7def908aabd9884fcb77`,
+with manifest SHA-256
+`3f335dfaaa6b8ccda07744f496ed52ed8bda93e2ebdc84216c55374b3803d999`
+and checksum-sidecar SHA-256
+`9156aa7aaa0d9edddcbd666b1d35308aa5510e8f9bf86ef21cb2115d835571d9`.
+Archive bytes, member bytes, metadata, and member sets are identical with no
+differences. The canonical mode-0600 comparison record is 19,645 bytes at
+SHA-256
+`0855a2ecb28e2803df05ae4da63583ac4adfe15e40a73589e5067da97e0f6393`.
+A separate standard-library readback confirms the canonical result, exact A/B
+record equality, current source receipt, and current APK/AAB bytes. The run is
+same-host/current-toolchain, comparison-only, unpublished, and its owned raw
+archive roots were removed after in-run readback. The separately produced
+unsealed macOS lifecycle output is a different build contract and passes its
+own direct checker; byte equality between that output and the fixed-scratch
+packaged archive is neither expected nor claimed.
+
+A successor current-source Lane-A run bound 270 release inputs at SHA-256
+`31569a364149d8e530ef91fbe2f573cf98c2460e888455301b9d4ce9d2e2c89f`
+and overlay SHA-256
+`f58a1ff36c88ea5df86fb4f1c0233bd8204c23e03f3229eff7f08f76d91790ed`.
+Its unequal roots produced the same 167,219,112-byte archive at SHA-256
+`24339b6613c861ecaaa92f358c87e2209eba2b55ab089233d31ead7750829ff1`,
+with manifest SHA-256
+`a209f5f99e3ba3c980ed1da8df6ecc50282b0d0a1a25889d9eac435c0a6c05d8`
+and checksum-sidecar SHA-256
+`dc2d96a254b57c944f860da4e94635e4714b4d72a5e75fd2b83cb8f6be4db869`.
+The mode-0600 parent is 19,645 bytes at SHA-256
+`923e58524082a2ec44b43d8967a112ef763a94eaa32e4818fd7297730fa76894`.
+
+The same transaction recorded two independent current-source idle
+observations, each with 120 samples after a 60-second warm-up and during a
+10-minute window. Their 22,399-byte results have SHA-256
+`a69765cae502a6ca9251864ce314d2cb380b4d81455df42013b51d9c3f8458a6`
+and
+`ea2a956bae1429e1a94be806d2c30ce7e0ab5a0e1437996f85ee62f7571c8e88`.
+Both recorded maximum sample lateness of 80 milliseconds, zero final and peak
+FD/thread deltas, and zero final and peak RSS deltas; their differing RSS
+baselines were 140,787,712 and 135,233,536 bytes. The shared installed app tree
+contains 10 files and 21,356,454 bytes at SHA-256
+`8aa2ac6d29bc790d96361ea30ee7af520a294aa8a065b79e59c758bf60f36b55`.
+The 2,409-byte receipt has SHA-256
+`1562c96a921c226e35ee9d2b0c3326eca9f977176c00f3f5003f26ca082f633f`
+and binds a 3,102-byte invariant projection at SHA-256
+`22748073f83eb3b33d8ee613e862d294f6967d1335a8cb69f4ff0f7daf94889e`.
+It records `resultBytesEqual=false` and does not require measurement/result
+byte equality. A producer-independent `python -I -B -S` checker reopened the
+parent, both observations, and receipt and independently recomputed every
+sample schedule, summary, budget, hash, and source/archive binding. The
+product-quality macOS lifecycle step runs its six mutation regressions as part
+of an exact 76-test command; it does not execute or claim a live idle
+observation. This is same-host evidence for two bounded observations only, not
+Weekly resilience, long soak, SLA/capacity, cross-host, or production evidence.
+
 This ignored local current-source candidate is not retained release evidence.
-It does not claim the complete Swift suite, device/network execution, hosted CI,
+It does not claim the complete Swift suite, physical-device or product-network
+execution, hosted CI,
 signed artifacts, security/authentication/cryptography execution, canonical
 Merge-full, canonical G7 exit, RC/GA, or V1 qualification.
 <!-- aetherlink-current-g7-nonsecurity-merge-full-local-candidate-v1:end -->
@@ -237,28 +384,28 @@ a separate checker command reopens the result plus the live artifact, source,
 and tool identities and reruns the same concrete recovery operation.
 
 The local macOS observation produced a 2,279-byte result with SHA-256
-`d8d7d36d717f070b1c1163d7b0357f4c7425e56cbbd915821f983c7749202e5f`.
-The 18,888,664-byte executable and 31,884,776-byte dSYM DWARF share UUID
-`6BD7228B-5EF9-3DDD-B844-49739384BB00`; `/usr/bin/atos` resolves address
+`49db959250aaea7da581ae83b4f1674f96e851019105e31992ca70ef08c09798`.
+The 18,889,704-byte executable and 32,400,661-byte dSYM DWARF share UUID
+`97765AF8-2F64-3CD5-AEC5-C861792158F8`; `/usr/bin/atos` resolves address
 `0x0000000100001a30` to
 `JSONValue.encode(to:) (in AetherLink) (JSONValue.swift:29)`, bound to
 `apps/macos/Protocol/Sources/JSONValue.swift:29`.
 
 The local Android observation produced a 2,739-byte result with SHA-256
-`97badb21a8a104052d117ae9d8696f5b2093f51f6b995ff15c86f5eb0d9f87e2`.
-AGP 9.2.1 supplies R8 Retrace 9.2.14. Against the current 72,050,888-byte
+`54b52aca8aa9a64c188685cddabe933f8081f1acc2215af5fc7c6df572887cfb`.
+AGP 9.2.1 supplies R8 Retrace 9.2.14. Against the current 72,162,527-byte
 `mapping.txt`, Retrace changes
-`at fx1.A(MainActivity.kt:23)` into
-`at com.localagentbridge.android.MainActivityKt.ResearchBriefCreateDialog(MainActivity.kt:3496)`,
+`at gx1.A(MainActivity.kt:23)` into
+`at com.localagentbridge.android.MainActivityKt.ResearchBriefCreateDialog(MainActivity.kt:3500)`,
 bound to
-`apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt:3496`.
+`apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt:3500`.
 
 The producer/checker mutation suites pass 24/24. The product CI contract and
 self-test pin the exact unit, producer, checker, platform, branch, and ordering
-bodies. The reviewed workflow is 21,656 bytes with raw SHA-256
-`41f1532ba6037645e8b7c29629eb665d368a4f524a034c0b8d7a26b5740de73e`
+bodies. The reviewed workflow is 26,105 bytes with raw SHA-256
+`43cdc1a23e5baf182885377b235130b36dbf26d96963887aafdbbe8f4c71e7ee`
 and parsed-semantic SHA-256
-`c6b90de31600f813d78ec4cfeb1f363c12ccef0735e8f2f93284024b60d89bdd`.
+`1f7b4cb33cb914cf0524a5bec6485c75acd89b49ca528d0a9a6256266421f2ca`.
 
 These are local current-source supportability probes against unsigned or
 unsealed Release outputs. Their ignored `.build` result files are not retained
@@ -333,10 +480,10 @@ and rechecks its current run bytes instead. Runner/parser mutation self-tests
 cover timeout, nonzero exit, malformed markers, log overflow, exact corpus
 drift, and canonical-log preservation.
 
-The reviewed product workflow is 21,656 bytes with raw SHA-256
-`41f1532ba6037645e8b7c29629eb665d368a4f524a034c0b8d7a26b5740de73e`
+The reviewed product workflow is 26,105 bytes with raw SHA-256
+`43cdc1a23e5baf182885377b235130b36dbf26d96963887aafdbbe8f4c71e7ee`
 and parsed-semantic SHA-256
-`c6b90de31600f813d78ec4cfeb1f363c12ccef0735e8f2f93284024b60d89bdd`.
+`1f7b4cb33cb914cf0524a5bec6485c75acd89b49ca528d0a9a6256266421f2ca`.
 This closes one bounded deterministic generational-mutation gap, not
 coverage-guided fuzzing or a per-case preemption guarantee for PDFKit/AppKit.
 System frameworks and `/usr/bin/unzip` or `/usr/bin/textutil` remain outside
@@ -355,49 +502,99 @@ performs downloaded-byte readback. The scheduled commit is materialized with
 `git archive`, Android dependencies are prepared online, and the evidence
 producer then performs the exact offline Debug build. The workflow raw and
 parsed-semantic SHA-256 values are
-`6ca986d8ae194d4236c41815675ad885aaeb29e47639186847645db193a773fa`
+`77ce2a1cc0ce112dbe3f47b9061b4ceba30c56ed26d070daef88af44766dfe78`
 and
-`cf8afa1784d703d0484e8be14e450255c35d720c8ea2b0649ffda3abcccab85b`.
-The exact Nightly contract passes 97/97 tests, including all 82 lifecycle tests
-and all 37 V2 successor tests, with zero skips, failures, or errors.
+`c2e9606a28408c08bffeffb5afe8147e422aecf630a9c33e61cbc69701766a19`.
+The exact Nightly contract passes 101/101 tests, including all 86 lifecycle
+tests and all 41 V2 successor tests, with zero skips, failures, or errors.
 
-The local disposable arm64 API 36.1 V2 run passes background deep Doze,
-same-UID app-process `SIGKILL` recovery, and same-QEMU guest reboot: 3/3 in
-106.214 seconds. Its canonical 51,933-byte result is
-`build/qa/android-headless-api36-1-v2-20260801T224327Z-5c1b4db2/result.json`,
+The current-source disposable arm64 API 36.1 V1 run passes 13/13 scenarios in
+192.785 seconds. Its canonical 50,450-byte result is
+`build/qa/android-headless-api36-1-20260802T192321Z-4828f0e5/result.json`,
 SHA-256
-`878c9179751f960238e8c18bc1c0cae6f3ce8b096b5f6e7db3cf5c42e36646f9`.
-The bound 145-file source snapshot has SHA-256
-`2a440ac4369b06163f56d07988fdb56bb79c94ae473a5016a66e09eee497b2b4`.
-An independent checker holds `result.json` plus all 58 evidence files through
-one descriptor-relative no-follow graph, validates only the captured bytes,
-reopens the complete graph, and passes 3/3. Cleanup leaves no owned emulator or
-ADB transport.
+`9aae98e6a9e7a6ee62ba1afdb989b7964d77975583b2eb56aee3a0c5dd8fa9f5`;
+its bound 135-file source snapshot has SHA-256
+`0ac2aec99995a024eaef2c8ad66420d9a8107b2fef17185002eae8214edbbaaa`
+and contains 46 evidence files. The following V2 run passes background deep
+Doze, same-UID app-process `SIGKILL` recovery, same-QEMU guest reboot,
+future-version saved-data preservation, and versionless-data migration across
+two cold launches: 5/5 in 160.338 seconds. Its canonical 56,498-byte result is
+`build/qa/android-headless-api36-1-v2-20260802T200855Z-ec8ee58e/result.json`,
+SHA-256
+`3d7f9e7d397b13699e2d758cfd45693fc457b3f14b98d3328bd87b45aebf2dc4`;
+its bound 145-file source snapshot has SHA-256
+`24e56c836734dbf2391125200b9164b58812ee410f3f237811719cdebd888413`
+and contains 72 evidence files. Independent V1 and V2 checkers reopen their
+complete descriptor-relative no-follow graphs and pass 13/13 and 5/5. Both
+runs bind the same 49,508,473-byte Debug APK, SHA-256
+`605539f33a2e6bd4befd2c710402645a1134dafe94d51617b77069667c4a02a6`,
+and cleanup leaves no owned emulator or ADB transport.
 
-For a hosted run, the same held snapshot produces candidate provenance and one
-deterministic USTAR archive, performs deep local readback, uploads the raw tar
-with `archive: false`, compares the upload digest, downloads by immutable
-artifact ID, and independently reads back the downloaded bytes. An uploaded
-tar always remains a candidate: artifact existence or producer-job success is
-not acceptance. Only a successful conclusion for the same complete workflow
-run, including the downloaded-byte job, makes those bytes acceptable evidence.
+For a hosted run, one build feeds V1 and then V2. Each complete graph is
+captured before semantic validation; V1 is reconstructed in a private tree so
+its checker reads the captured bytes, and the original graph must remain
+unchanged. One deterministic USTAR contains `lifecycle-v1/`, `lifecycle-v2/`,
+and `nightly-provenance.json`; provenance schema 2 binds the ordered lanes and
+both source manifests to the same `GITHUB_SHA`. The producer performs deep
+two-lane local readback, uploads the raw tar with `archive: false`, compares the
+upload digest, and the consumer downloads by immutable artifact ID and reads
+back the exact bytes. An uploaded tar remains only a candidate until the same
+complete workflow run, including downloaded-byte readback, concludes
+successfully. These two local result graphs pass standalone readback, but no
+commit-bound provenance or USTAR is claimed for them; that packaging path
+requires the exact source bytes materialized at `GITHUB_SHA`.
 
 At this recorded local snapshot, no successful scheduled hosted run of these
 workflow bytes exists, so hosted Nightly success is not claimed. The local run
 does not prove physical/OEM/API-matrix behavior, optical QR, TalkBack, a live
-provider, controlled production networking, upgrade/rollback, signing/store
-delivery, complete Nightly coverage, canonical G7 exit, RC/GA, or V1 release.
+provider, controlled production networking, release-to-release upgrade or
+rollback, signing/store delivery, complete Nightly coverage, canonical G7
+exit, RC/GA, or V1 release.
 <!-- aetherlink-current-g7-android-headless-nightly-v1:end -->
+
+<!-- aetherlink-current-android-local-data-compatibility-v1:start -->
+**Current Android saved-data compatibility status.** Current source owns one
+explicit local-data version (`1`). A valid legacy object with no `version`
+remains readable and is upgraded on its next successful save. Future integer
+versions, zero or negative versions, string/float/boolean versions, duplicate
+keys, malformed or non-object JSON, and wrong-typed preference values are
+preserved without mutation and put local persistence into a fail-closed state
+before relay-secret or metadata writes can begin.
+
+The ViewModel exposes one sticky localized update-required error, suppresses
+automatic trusted-runtime restoration and every local-data save, and prevents
+language, Android platform-locale, theme, chat-model, embedding-model, and
+auto-reconnect preference changes. Draft typing remains usable in memory, and
+a manual trusted connection cannot re-enable blocked persistence. Focused
+protocol, storage, ViewModel, and Compose checks pass; the exact Android
+product selector passes 45/45 and the exact 19-class app lane passes
+1,226/1,226. The V2 headless lane additionally seeds one exact 135-byte
+version-2 SharedPreferences XML at SHA-256
+`0f3db84ddc9b808fbe36b5d496aaa2a97117c321832717aed520e1594beeb6a5`
+and proves byte preservation plus the update-required UI after each of two
+distinct cold-launch processes. Its evidence binds all six future-data
+scenario files. The same lane seeds an exact 252-byte versionless fixture at
+SHA-256
+`6fc4dbe959cfb5128503013469308421f6d0460dbfa25e0f00179ba537168600`;
+the first launch migrates it to a 561-byte version-1 record at SHA-256
+`3d75cb7d9a61f7650b5402a0264103a6ede2ca163aedd02579b25bb8a2be3fa1`,
+preserving the dark theme, fixed draft, and disabled auto-reconnect. A second
+distinct process retains those exact bytes and neither launch exposes the
+update-required UI. The independent checker passes 5/5. This API 36.1 emulator
+observation does not replace the focused malformed-shape regressions or prove
+an N/N-1 app-binary upgrade/rollback, physical device, signed artifact, store
+delivery, or production release.
+<!-- aetherlink-current-android-local-data-compatibility-v1:end -->
 
 ## 2026-08-01 Android API 36.1 Headless Lifecycle Evidence Hardening
 
 - Result: the current-source disposable arm64 API 36.1 lifecycle lane passes
-  all 13/13 scenarios. The canonical result is
-  `build/qa/android-headless-api36-1-20260731T233701Z-8a8a1726/result.json`;
-  source SHA-256 is
-  `f3ca69649cd699aae99c3cee8e58871b0402494b08d1428271861705843ac8ba`
+  all 13/13 scenarios in 192.995 seconds. The canonical 50,450-byte result is
+  `build/qa/android-headless-api36-1-20260802T180031Z-0a8e7473/result.json`;
+  its 135-file source SHA-256 is
+  `0ac2aec99995a024eaef2c8ad66420d9a8107b2fef17185002eae8214edbbaaa`
   and result SHA-256 is
-  `828f25b69825f36650a5d4cd331f1d67ba510bdcb3ca8fe4c53741a04e338870`.
+  `93e5884ef64edef127c6dcfcb916c42f7ccf7f3ff88c1330b87db4eeb580ad20`.
   A separate checker process immediately read the bytes back and reported
   13/13.
 - Deadline contract: UI capture, screen-transition/scroll waits, and app-locale
@@ -405,7 +602,9 @@ delivery, complete Nightly coverage, canonical G7 exit, RC/GA, or V1 release.
   cap each command to the remaining duration, and reject a target returned
   after expiry before evaluating its success predicate. The language-settings
   wait tolerates the initial screen transition but fails if a previously seen
-  Settings anchor is later lost.
+  Settings anchor is later lost. Follow-system success requires the English
+  pairing anchor and a fully visible enabled checked row contained by every
+  scrollable ancestor viewport.
 - Process contract: all twelve retained app-process observations require an
   exact zero-exit, empty-stderr single-line `pidof`, then read
   `/proc/<pid>/stat -> cmdline -> stat`. Both stat reads must bind the same PID
@@ -420,10 +619,10 @@ delivery, complete Nightly coverage, canonical G7 exit, RC/GA, or V1 release.
   included in the exact evidence manifest and their owning scenarios.
 - Regression and cleanup: 45 runner/checker unit and mutation tests pass, along
   with four-file `py_compile` and `git diff --check`. The disposable
-  `emulator-5554` and temporary AVD were removed; the pre-existing
-  `emulator-5580` process PID `78792` and its original start time were preserved.
-- Boundary: this predecessor V1 record remains unsigned Debug-APK emulator
-  evidence. Within this predecessor contract, physical-device
+  `emulator-5554` and temporary AVD were removed, and no ADB device or owned
+  emulator remains.
+- Boundary: this V1 record remains unsigned Debug-APK emulator evidence.
+  Within this V1 lane, physical-device
   optical QR/camera quality, TalkBack, OEM behavior, API 26/30/33 OS UI,
   background/Doze/reboot, production networking, signing/store delivery,
   release-to-release qualification, G5/G6 completion, G7 nightly/RC/GA, and V1
@@ -494,9 +693,9 @@ delivery, complete Nightly coverage, canonical G7 exit, RC/GA, or V1 release.
   branch-specific conditions, selector/task order, rerun requirement, binding commands, and
   representative bypass mutations, including the clean-checkout tracked
   documentation step. The workflow raw SHA-256 is
-  `d63005795068446895e5cbf5e5ed05d9497282c698da7b86c2b96155815bdfe0`;
+  `eee738acbf0b61b5fd94fb716227d376bf7de14d247ab19c78239e488b9d0895`;
   its parsed-semantic SHA-256 is
-  `4cd318b9e42e97159910080e2b84a2ba8b19fe5b92ecb94c2a189f8a2bb72401`.
+  `d7361e671c72620957f795e4975776c1612688c72b5109facf59308d82de1d2b`.
   The base contract and mutation self-test pass.
 - Boundary: this is local no-device JVM/XCTest evidence. The new workflow bytes
   have not run on a hosted runner and do not complete canonical G7 `PR fast` or
@@ -1325,24 +1524,24 @@ the same lifecycle producer with two independent observations. It writes only `r
 `.build/aetherlink-current-unsealed-lifecycle-v1` directory, then invokes a
 separate current-run checker. The local parity run reproduced the same
 recorded closure-five behavior against a freshly produced generation. That
-2026-08-02 snapshot bound app SHA-256
-`478062e2dfe1e9b01b12723b66f167b91eb6d7b2b8123e2434acba7fced4922a`,
+2026-08-03 snapshot bound app SHA-256
+`436c60d0d0bce91c00e19ad6a5b5e34a18421c666edfa54bdc172dfb4599991b`,
 dSYM SHA-256
-`e4c4fab2e4b9efe101ce1ccfb066634f5b5ebef0a2a78979513b5ade948df90d`,
+`5160e60269a49ce0e7a9b3042778b1b1ddd189370b1bb36a64f18bf8767727d0`,
 source SHA-256
-`b8a9f7822b88dddaaa843d25f976e1297736e6d2a4588e959d4c10c0cff65a7d`,
-and UUID `6B06A6D0-9C89-3D36-A5B9-D2381598DDC8`. Its 7,628-byte result has SHA-256
-`ed412cc97a1e03ba85cb79e8cece869983f1025ac58ab2dcb3ef925635bad32e`;
+`1e94fe1d1fe2919013853b394b9d009c90d987b506294bf19e72845afdb70b71`,
+and UUID `97765AF8-2F64-3CD5-AEC5-C861792158F8`. Its 7,628-byte result has SHA-256
+`5d5bc378dd26d7cc9d5911aa61b6e9b59ddd0a9264655bc70c73c54ba697d131`;
 its 1,468-byte repeatability receipt has SHA-256
-`a89428669bdd128130e1f8102fc39f10fa5bd801b3a4e80df1146ec48cdbbc75`.
+`17e3cdc76674a0706a130ddd91cd9638d7a39eb0961dbfe50b4c192330dd4597`.
 These identities describe that recorded generation and are not pins for later
 mutable current output.
 
-The 24,212-byte current-run checker and 12,189-byte eight-test module have
+The 26,487-byte current-run checker and 13,866-byte nine-test module have
 SHA-256 values
-`ce4f5244e70ad9c00755d18e18057e409aa54623740a243006eeb269ff3bfd3f`
+`597e9b190f26a7f4e00747bab3b4fc6349a0ead8df3c34af340564e1ea51e86c`
 and
-`bc6e6e4694735cf218e21bda69f7776370f323063bf7e7fc914781083eb14d43`.
+`62dfb48eb3ca00a56699782b09efb72d2d0263bf911e439abbac3c5f1d2a4d55`.
 The checker imports no producer. It opens the complete current source,
 checker-support, result/receipt, app, dSYM, ledger, and source-receipt graph
 once through descriptor-relative no-follow directories, retains every file
@@ -1366,13 +1565,13 @@ coverage, not binary artifact analysis, a license-compatibility/legal
 conclusion, vulnerability or secret scanning, signed provenance, canonical
 Merge full, G6/G7 exit, RC/GA, or V1 qualification.
 
-The exact 54-test workflow command, the product CI contract and mutation
+The exact 76-test workflow command, the product CI contract and mutation
 self-test, and direct readback of that recorded local current-run evidence
 pass. The
-reviewed workflow is 18,819 bytes with raw SHA-256
-`d63005795068446895e5cbf5e5ed05d9497282c698da7b86c2b96155815bdfe0`
+reviewed workflow is 26,105 bytes with raw SHA-256
+`43cdc1a23e5baf182885377b235130b36dbf26d96963887aafdbbe8f4c71e7ee`
 and parsed-semantic SHA-256
-`4cd318b9e42e97159910080e2b84a2ba8b19fe5b92ecb94c2a189f8a2bb72401`.
+`1f7b4cb33cb914cf0524a5bec6485c75acd89b49ca528d0a9a6256266421f2ca`.
 No hosted run of these current workflow bytes is claimed.
 
 This is same-host, per-user, temporary-HOME, unsealed and network-denied

@@ -98,6 +98,7 @@ data class RuntimeUiState(
     val trustedRuntimeAutoReconnectEnabled: Boolean = true,
     val pairingOnboardingCompleted: Boolean = false,
     val activeRouteKind: RuntimeActiveRouteKind? = null,
+    val localDataCompatibilityError: RuntimeUiError? = null,
     val error: RuntimeUiError? = null,
 ) {
     val isChatHistoryActionPending: Boolean

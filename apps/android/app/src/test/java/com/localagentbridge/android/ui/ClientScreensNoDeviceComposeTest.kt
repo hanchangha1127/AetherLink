@@ -21175,6 +21175,7 @@ class ClientScreensNoDeviceComposeTest {
     fun settingsLanguagePreferenceRowsDispatchSystemAndFixedSelectionCallbacks() {
         val selectedLanguageTags = mutableListOf<String>()
         var followSystemCount = 0
+        val localDataCompatibilityError = mutableStateOf<RuntimeUiError?>(null)
 
         compose.setContent {
             MaterialTheme {
@@ -21191,6 +21192,7 @@ class ClientScreensNoDeviceComposeTest {
                             selectedLanguageTag = "en",
                             selectedLanguageSource = APP_LANGUAGE_SOURCE_SYSTEM,
                             selectedTheme = RuntimeAppTheme.Dark,
+                            localDataCompatibilityError = localDataCompatibilityError.value,
                         ),
                         onHostChange = {},
                         onPortChange = {},
@@ -21246,6 +21248,39 @@ class ClientScreensNoDeviceComposeTest {
             .performScrollTo()
             .performClick()
 
+        assertEquals(1, followSystemCount)
+        assertEquals(listOf("ko"), selectedLanguageTags)
+
+        compose.runOnUiThread {
+            localDataCompatibilityError.value = RuntimeUiError(
+                code = "local_data_update_required",
+            )
+        }
+        compose.waitForIdle()
+
+        val updateRequired = ApplicationProvider.getApplicationContext<Context>()
+            .getString(R.string.error_local_data_update_required)
+        compose.onNodeWithTag(
+            appearancePreferenceOptionRowTestTag(RuntimeAppTheme.Dark),
+            useUnmergedTree = true,
+        )
+            .performScrollTo()
+            .assertIsNotEnabled()
+            .assert(hasStateDescription(updateRequired))
+        compose.onNodeWithTag(
+            languagePreferenceOptionRowTestTag(APP_LANGUAGE_SOURCE_SYSTEM),
+            useUnmergedTree = true,
+        )
+            .performScrollTo()
+            .assertIsNotEnabled()
+            .assert(hasStateDescription(updateRequired))
+        compose.onNodeWithTag(
+            languagePreferenceOptionRowTestTag("ko"),
+            useUnmergedTree = true,
+        )
+            .performScrollTo()
+            .assertIsNotEnabled()
+            .assert(hasStateDescription(updateRequired))
         assertEquals(1, followSystemCount)
         assertEquals(listOf("ko"), selectedLanguageTags)
     }

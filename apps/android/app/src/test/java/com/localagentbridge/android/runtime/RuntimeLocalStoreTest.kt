@@ -39,6 +39,7 @@ class RuntimeLocalStoreTest {
     }
 
     @Test
+    // Retained because the G7 Android testcase manifest pins this historical identity.
     fun emptyAndCorruptStoresLoadAsDefaultsAndRemainWritable() {
         val emptySecrets = RecordingRelaySecretStore()
         val emptyStore = RuntimeLocalStore(context, json, emptySecrets)
@@ -48,27 +49,77 @@ class RuntimeLocalStoreTest {
         emptyStore.save(PersistedRuntimeData(composerDraft = "after-empty"))
         assertEquals("after-empty", emptyStore.load().composerDraft)
 
-        preferences().edit().putString(STORE_KEY_FOR_TEST, "{not-json").commit()
-        val corruptSecrets = RecordingRelaySecretStore()
-        val corruptStore = RuntimeLocalStore(context, json, corruptSecrets)
+        assertIncompatibleRawIsPreserved(
+            raw = "{not-json",
+            expectedIssue = RuntimeLocalDataCompatibilityIssue.InvalidFormat,
+        )
+        assertIncompatibleRawIsPreserved(
+            raw = "[]",
+            expectedIssue = RuntimeLocalDataCompatibilityIssue.InvalidFormat,
+        )
+        assertIncompatibleRawIsPreserved(
+            raw = "null",
+            expectedIssue = RuntimeLocalDataCompatibilityIssue.InvalidFormat,
+        )
 
-        assertEquals(PersistedRuntimeData(), corruptStore.load())
+        preferences().edit()
+            .putString(STORE_KEY_FOR_TEST, """{"composerDraft":"legacy-v0"}""")
+            .commit()
+        val legacyStore = RuntimeLocalStore(context, json, RecordingRelaySecretStore())
+        val legacyResult = legacyStore.loadResult()
 
-        corruptStore.save(PersistedRuntimeData(composerDraft = "after-corrupt"))
-        assertEquals("after-corrupt", corruptStore.load().composerDraft)
-        assertTrue(corruptSecrets.removedHandles.isEmpty())
+        assertNull(legacyResult.compatibilityIssue)
+        assertEquals("legacy-v0", legacyResult.data.composerDraft)
+
+        legacyStore.save(legacyResult.data.copy(composerDraft = "legacy-upgraded"))
+        val upgradedLegacyRaw = requireNotNull(
+            preferences().getString(STORE_KEY_FOR_TEST, null),
+        )
+        assertTrue(upgradedLegacyRaw.contains("\"version\":1"))
+        assertEquals("legacy-upgraded", legacyStore.load().composerDraft)
+
+        listOf(
+            """{"version":2,"future_sentinel":"keep-future"}""" to
+                RuntimeLocalDataCompatibilityIssue.UnsupportedVersion,
+            """{"version":9223372036854775808,"future_sentinel":"keep-huge"}""" to
+                RuntimeLocalDataCompatibilityIssue.UnsupportedVersion,
+            """{"version":0,"future_sentinel":"keep-zero"}""" to
+                RuntimeLocalDataCompatibilityIssue.InvalidVersion,
+            """{"version":-1,"future_sentinel":"keep-negative"}""" to
+                RuntimeLocalDataCompatibilityIssue.InvalidVersion,
+            """{"version":"1","future_sentinel":"keep-string"}""" to
+                RuntimeLocalDataCompatibilityIssue.InvalidVersion,
+            """{"version":1.0,"future_sentinel":"keep-float"}""" to
+                RuntimeLocalDataCompatibilityIssue.InvalidVersion,
+            """{"version":true,"future_sentinel":"keep-boolean"}""" to
+                RuntimeLocalDataCompatibilityIssue.InvalidVersion,
+            """{"version":1,"version":2,"future_sentinel":"keep-duplicate"}""" to
+                RuntimeLocalDataCompatibilityIssue.InvalidVersion,
+            """{"metadata":{"x":1,"x":2},"version":2,"version":1,"future_sentinel":"keep-all"}""" to
+                RuntimeLocalDataCompatibilityIssue.InvalidFormat,
+            """{"version":1,"metadata":{"x":1,"x":2},"future_sentinel":"keep-nested"}""" to
+                RuntimeLocalDataCompatibilityIssue.InvalidFormat,
+        ).forEach { (raw, expectedIssue) ->
+            assertIncompatibleRawIsPreserved(raw, expectedIssue)
+        }
     }
 
     @Test
+    // Retained because the G7 Android testcase manifest pins this historical identity.
     fun wrongTypedPreferenceRecoversToDefaultsAndRemainsWritable() {
         preferences().edit().putInt(STORE_KEY_FOR_TEST, 7).commit()
         val store = RuntimeLocalStore(context, json, RecordingRelaySecretStore())
 
-        assertEquals(PersistedRuntimeData(), store.load())
-        assertFalse(preferences().contains(STORE_KEY_FOR_TEST))
+        val result = store.loadResult()
+        assertEquals(PersistedRuntimeData(), result.data)
+        assertEquals(RuntimeLocalDataCompatibilityIssue.InvalidFormat, result.compatibilityIssue)
+        assertTrue(preferences().contains(STORE_KEY_FOR_TEST))
+        assertEquals(7, preferences().getInt(STORE_KEY_FOR_TEST, -1))
 
-        store.save(PersistedRuntimeData(composerDraft = "after-type-recovery"))
-        assertEquals("after-type-recovery", store.load().composerDraft)
+        assertThrows(IllegalStateException::class.java) {
+            store.save(PersistedRuntimeData(composerDraft = "must-not-overwrite"))
+        }
+        assertEquals(7, preferences().getInt(STORE_KEY_FOR_TEST, -1))
     }
 
     @Test
@@ -569,6 +620,54 @@ class RuntimeLocalStoreTest {
                 expiresAtEpochMillis = 301_000L,
             ),
         )
+    }
+
+    private fun assertIncompatibleRawIsPreserved(
+        raw: String,
+        expectedIssue: RuntimeLocalDataCompatibilityIssue,
+    ) {
+        preferences().edit().clear().putString(STORE_KEY_FOR_TEST, raw).commit()
+        val secrets = RecordingRelaySecretStore()
+        var durableMetadataCommitCount = 0
+        var volatileMetadataApplyCount = 0
+        val store = RuntimeLocalStore(
+            context = context,
+            json = json,
+            relaySecretStore = secrets,
+            durableMetadataCommit = { editor ->
+                durableMetadataCommitCount += 1
+                editor.commit()
+            },
+            volatileMetadataApply = { editor ->
+                volatileMetadataApplyCount += 1
+                editor.apply()
+            },
+        )
+
+        val result = store.loadResult()
+        assertEquals(PersistedRuntimeData(), result.data)
+        assertEquals(expectedIssue, result.compatibilityIssue)
+
+        listOf(false, true).forEach { commitToDisk ->
+            val error = assertThrows(IllegalStateException::class.java) {
+                store.save(
+                    data = runtimeDataWithPendingRelay(
+                        suffix = "blocked-$commitToDisk",
+                        secret = "must-not-write-$commitToDisk",
+                    ),
+                    commitToDisk = commitToDisk,
+                )
+            }
+            assertTrue(error.message.orEmpty().contains("cannot be rewritten"))
+            assertEquals(raw, preferences().getString(STORE_KEY_FOR_TEST, null))
+        }
+
+        assertEquals(0, durableMetadataCommitCount)
+        assertEquals(0, volatileMetadataApplyCount)
+        assertTrue(secrets.storedHandles.isEmpty())
+        assertTrue(secrets.removedHandles.isEmpty())
+        assertTrue(secrets.durablySavedHandles.isEmpty())
+        assertTrue(secrets.durablyRemovedHandles.isEmpty())
     }
 
     private fun diskData(): PersistedRuntimeData {

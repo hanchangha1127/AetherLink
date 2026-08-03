@@ -3,7 +3,6 @@ package com.localagentbridge.android.runtime
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.core.content.edit
 import com.localagentbridge.android.core.protocol.ChatAttachmentPayload
 import com.localagentbridge.android.core.protocol.ChatMessagePayload
 import com.localagentbridge.android.core.protocol.ChatSourceAttributionPayload
@@ -13,6 +12,7 @@ import com.localagentbridge.android.core.protocol.ChatStoredAttachmentPayload
 import com.localagentbridge.android.core.protocol.ChatStoredMessagePayload
 import com.localagentbridge.android.core.protocol.MemoryEntryPayload
 import com.localagentbridge.android.core.protocol.MemoryEntrySourcePayload
+import com.localagentbridge.android.core.protocol.firstDuplicateJsonObjectKeyPathOrNull
 import com.localagentbridge.android.core.pairing.AndroidKeystoreRelaySecretStore
 import com.localagentbridge.android.core.pairing.DurableRelaySecretStore
 import com.localagentbridge.android.core.pairing.OPAQUE_ROUTE_BODY_MAX_CHARS
@@ -26,6 +26,9 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import java.math.BigInteger
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
@@ -39,6 +42,24 @@ internal const val APP_LANGUAGE_SOURCE_DEFAULT = "default"
 internal const val APP_LANGUAGE_SOURCE_SYSTEM = "system"
 internal const val APP_LANGUAGE_SOURCE_IN_APP = "in_app"
 internal const val ANDROID_APP_LANGUAGE_PLATFORM_MIGRATION_VERSION = 1
+internal const val RUNTIME_LOCAL_DATA_VERSION = 1
+
+internal enum class RuntimeLocalDataCompatibilityIssue {
+    UnsupportedVersion,
+    InvalidVersion,
+    InvalidFormat,
+}
+
+internal data class RuntimeLocalDataLoadResult(
+    val data: PersistedRuntimeData,
+    val compatibilityIssue: RuntimeLocalDataCompatibilityIssue? = null,
+)
+
+private sealed interface StoredRuntimeDataValue {
+    data object Missing : StoredRuntimeDataValue
+    data class JsonText(val raw: String) : StoredRuntimeDataValue
+    data object UnknownFormat : StoredRuntimeDataValue
+}
 
 internal data class AndroidPlatformAppLanguageSnapshot(
     val languageTag: String,
@@ -82,26 +103,72 @@ class RuntimeLocalStore internal constructor(
     private val durableMetadataCommit: (SharedPreferences.Editor) -> Boolean = { editor ->
         editor.commit()
     },
+    private val volatileMetadataApply: (SharedPreferences.Editor) -> Unit = { editor ->
+        editor.apply()
+    },
 ) {
     private val preferences = context.getSharedPreferences(STORE_NAME, Context.MODE_PRIVATE)
 
     fun load(): PersistedRuntimeData {
-        val raw = storedDataStringOrNull() ?: return PersistedRuntimeData()
+        return loadResult().data
+    }
+
+    internal fun loadResult(): RuntimeLocalDataLoadResult {
+        val raw = when (val stored = storedDataValue()) {
+            StoredRuntimeDataValue.Missing ->
+                return RuntimeLocalDataLoadResult(PersistedRuntimeData())
+            StoredRuntimeDataValue.UnknownFormat ->
+                return RuntimeLocalDataLoadResult(
+                    data = PersistedRuntimeData(),
+                    compatibilityIssue = RuntimeLocalDataCompatibilityIssue.InvalidFormat,
+                )
+            is StoredRuntimeDataValue.JsonText -> stored.raw
+        }
+        compatibilityIssue(raw)?.let { issue ->
+            return RuntimeLocalDataLoadResult(
+                data = PersistedRuntimeData(),
+                compatibilityIssue = issue,
+            )
+        }
         return try {
-            json.decodeFromString<PersistedRuntimeData>(raw)
-                .sanitized()
-                .withoutRuntimeOwnedLocalData()
-                .withLoadedPendingPairingRelaySecret(relaySecretStore)
+            val decoded = json.decodeFromString<PersistedRuntimeData>(raw)
+            if (decoded.version != RUNTIME_LOCAL_DATA_VERSION) {
+                RuntimeLocalDataLoadResult(
+                    data = PersistedRuntimeData(),
+                    compatibilityIssue = RuntimeLocalDataCompatibilityIssue.InvalidVersion,
+                )
+            } else {
+                RuntimeLocalDataLoadResult(
+                    decoded
+                        .sanitized()
+                        .withoutRuntimeOwnedLocalData()
+                        .withLoadedPendingPairingRelaySecret(relaySecretStore),
+                )
+            }
         } catch (_: SerializationException) {
-            PersistedRuntimeData()
+            RuntimeLocalDataLoadResult(PersistedRuntimeData())
         } catch (_: IllegalArgumentException) {
-            PersistedRuntimeData()
+            RuntimeLocalDataLoadResult(PersistedRuntimeData())
         }
     }
 
     @SuppressLint("ApplySharedPref")
     fun save(data: PersistedRuntimeData, commitToDisk: Boolean = false) {
-        val previousPendingSecretRef = storedDataStringOrNull()
+        val storedRaw = when (val stored = storedDataValue()) {
+            StoredRuntimeDataValue.Missing -> null
+            StoredRuntimeDataValue.UnknownFormat -> error(
+                "Runtime local data cannot be rewritten by this app version"
+            )
+            is StoredRuntimeDataValue.JsonText -> stored.raw
+        }
+        val compatibilityIssue = storedRaw?.let(::compatibilityIssue)
+        check(compatibilityIssue == null) {
+            "Runtime local data cannot be rewritten by this app version"
+        }
+        require(data.version == RUNTIME_LOCAL_DATA_VERSION) {
+            "Runtime local data version must match the current app version"
+        }
+        val previousPendingSecretRef = storedRaw
             ?.let { raw ->
                 runCatching { json.decodeFromString<PersistedRuntimeData>(raw) }.getOrNull()
             }
@@ -161,7 +228,7 @@ class RuntimeLocalStore internal constructor(
         val metadataPersisted = if (commitToDisk) {
             durableMetadataCommit(editor)
         } else {
-            editor.apply()
+            volatileMetadataApply(editor)
             true
         }
         if (!metadataPersisted) {
@@ -243,19 +310,67 @@ class RuntimeLocalStore internal constructor(
         }
     }
 
-    private fun storedDataStringOrNull(): String? {
+    private fun storedDataValue(): StoredRuntimeDataValue {
+        if (!preferences.contains(STORE_KEY)) {
+            return StoredRuntimeDataValue.Missing
+        }
         return try {
             preferences.getString(STORE_KEY, null)
+                ?.let { StoredRuntimeDataValue.JsonText(it) }
+                ?: StoredRuntimeDataValue.Missing
         } catch (_: ClassCastException) {
-            preferences.edit { remove(STORE_KEY) }
+            StoredRuntimeDataValue.UnknownFormat
+        }
+    }
+
+    private fun compatibilityIssue(raw: String): RuntimeLocalDataCompatibilityIssue? {
+        val duplicateKeyPath = try {
+            firstDuplicateJsonObjectKeyPathOrNull(raw)
+        } catch (_: IllegalArgumentException) {
+            return RuntimeLocalDataCompatibilityIssue.InvalidFormat
+        }
+        if (duplicateKeyPath != null) {
+            return if (duplicateKeyPath == "$.version") {
+                RuntimeLocalDataCompatibilityIssue.InvalidVersion
+            } else {
+                RuntimeLocalDataCompatibilityIssue.InvalidFormat
+            }
+        }
+        val root = try {
+            json.parseToJsonElement(raw) as? JsonObject
+        } catch (_: SerializationException) {
             null
+        } catch (_: IllegalArgumentException) {
+            null
+        } ?: return RuntimeLocalDataCompatibilityIssue.InvalidFormat
+        val version = root["version"] ?: return null
+        val primitive = version as? JsonPrimitive
+            ?: return RuntimeLocalDataCompatibilityIssue.InvalidVersion
+        if (primitive.isString) {
+            return RuntimeLocalDataCompatibilityIssue.InvalidVersion
+        }
+        val content = primitive.content
+        val integer = try {
+            BigInteger(content)
+        } catch (_: NumberFormatException) {
+            return RuntimeLocalDataCompatibilityIssue.InvalidVersion
+        }
+        if (content != integer.toString()) {
+            return RuntimeLocalDataCompatibilityIssue.InvalidVersion
+        }
+        val currentVersion = BigInteger.valueOf(RUNTIME_LOCAL_DATA_VERSION.toLong())
+        return when {
+            integer == currentVersion -> null
+            integer > currentVersion ->
+                RuntimeLocalDataCompatibilityIssue.UnsupportedVersion
+            else -> RuntimeLocalDataCompatibilityIssue.InvalidVersion
         }
     }
 }
 
 @Serializable
 data class PersistedRuntimeData(
-    val version: Int = 1,
+    val version: Int = RUNTIME_LOCAL_DATA_VERSION,
     val activeSessionId: String? = null,
     val selectedModelId: String? = null,
     val selectedEmbeddingModelId: String? = null,

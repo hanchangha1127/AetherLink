@@ -559,6 +559,89 @@ class HeadlessLifecycleEvidenceCheckerTests(unittest.TestCase):
             "an inner viewport must not hide clipping by an outer scrollable ancestor",
         )
 
+        follow_path = self.result_directory / "ui/in-app-follow-system.xml"
+
+        def write_follow_row(
+            bounds: str,
+            *,
+            checked: str = "true",
+            include_anchor: bool = True,
+        ) -> None:
+            anchor = (
+                '<node package="com.localagentbridge.android" '
+                'text="Pair AetherLink" enabled="true" '
+                'bounds="[148,167][764,284]"/>'
+                if include_anchor
+                else ""
+            )
+            follow_path.write_text(
+                "<hierarchy>"
+                + anchor
+                + '<node package="com.localagentbridge.android" '
+                'scrollable="true" bounds="[53,276][1027,2295]">'
+                '<node package="com.localagentbridge.android" '
+                f'checkable="true" checked="{checked}" enabled="true" '
+                f'bounds="{bounds}"><node '
+                'package="com.localagentbridge.android" '
+                'text="Follow system language" enabled="true" '
+                'bounds="[179,1810][900,1910]"/></node></node></hierarchy>',
+                encoding="utf-8",
+            )
+
+        write_follow_row("[95,1800][985,1926]")
+        self.assertEqual(
+            checker.ui_checked_token_failures(
+                self.result_directory,
+                relative="ui/in-app-follow-system.xml",
+                text="Follow system language",
+            ),
+            [],
+        )
+        nodes, failures = checker.ui_nodes(
+            self.result_directory,
+            "ui/in-app-follow-system.xml",
+        )
+        self.assertEqual(failures, [])
+        self.assertEqual(
+            checker.ui_token_failures(
+                nodes,
+                relative="ui/in-app-follow-system.xml",
+                package=checker.PACKAGE_NAME,
+                text="Pair AetherLink",
+            ),
+            [],
+        )
+        write_follow_row("[95,1800][985,1926]", checked="false")
+        self.assertTrue(
+            checker.ui_checked_token_failures(
+                self.result_directory,
+                relative="ui/in-app-follow-system.xml",
+                text="Follow system language",
+            )
+        )
+        write_follow_row("[95,2250][985,2376]")
+        self.assertTrue(
+            checker.ui_checked_token_failures(
+                self.result_directory,
+                relative="ui/in-app-follow-system.xml",
+                text="Follow system language",
+            )
+        )
+        write_follow_row("[95,1800][985,1926]", include_anchor=False)
+        nodes, failures = checker.ui_nodes(
+            self.result_directory,
+            "ui/in-app-follow-system.xml",
+        )
+        self.assertEqual(failures, [])
+        self.assertTrue(
+            checker.ui_token_failures(
+                nodes,
+                relative="ui/in-app-follow-system.xml",
+                package=checker.PACKAGE_NAME,
+                text="Pair AetherLink",
+            )
+        )
+
     def test_noncanonical_and_exact_type_mutations_are_rejected(self) -> None:
         self._write_result(canonical=False)
         with self._validation_scope():

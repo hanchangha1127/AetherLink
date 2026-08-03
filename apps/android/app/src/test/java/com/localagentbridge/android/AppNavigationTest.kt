@@ -64,6 +64,7 @@ import com.localagentbridge.android.ui.connectionStatusHeroTitleRes
 import com.localagentbridge.android.ui.chatEmptyStaticPromptRes
 import com.localagentbridge.android.ui.discoveredRuntimeActionLabelRes
 import com.localagentbridge.android.ui.discoveredRuntimeSelectable
+import com.localagentbridge.android.ui.displayedRuntimeError
 import com.localagentbridge.android.ui.filterChatHistorySessions
 import com.localagentbridge.android.ui.hasConnectableTrustedRuntimeRoute
 import com.localagentbridge.android.ui.hasRelayRouteMaterial
@@ -466,6 +467,13 @@ class AppNavigationTest {
         assertEquals(Icons.Filled.Error, connectPresentation.icon)
         assertEquals(RouteNoticePrimaryAction.Connect, connectPresentation.primaryAction)
         assertNull(settingsTopError(connectState))
+
+        val updateRequiredError = RuntimeUiError(code = "local_data_update_required")
+        val incompatibleLocalDataState = connectState.copy(
+            localDataCompatibilityError = updateRequiredError,
+        )
+        assertEquals(updateRequiredError, displayedRuntimeError(incompatibleLocalDataState))
+        assertEquals(updateRequiredError, settingsTopError(incompatibleLocalDataState))
 
         scanLatestQrStates.forEach { state ->
             val presentation = connectionJourneyPresentation(state)

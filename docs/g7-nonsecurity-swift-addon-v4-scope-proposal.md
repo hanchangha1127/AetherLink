@@ -73,7 +73,11 @@ partition drift and boolean-as-integer aliases, and keep canonical G7/V1 claims
 false. Until that implementation and run exist, every value in this proposal
 remains review-only.
 
-The implementation and run subsequently passed. A post-V4 exhaustive review of
-all 1,000 remaining identities found no non-empty V5 selector inside this same
-non-security, no-socket boundary; the exact classification and empty-manifest
-identity are recorded in [Candidate V4](g7-nonsecurity-merge-full-candidate-v4.md#post-v4-selector-exhaustion-review).
+The implementation and run subsequently passed. The first post-V4 suite-level
+review reported no non-empty V5 selector, but that conclusion was superseded by
+an exact per-test execution-path audit. It examined 79 plausible assertions,
+excluded 53 whose setup crossed P256, authentication, HMAC-cursor, identity-key,
+or pairing-state paths, and retained 26 strict non-security/no-socket tests.
+Those tests now pass as V5 inside the
+[current-run successor](g7-nonsecurity-merge-full-current-run-v1.md); this file
+remains only the pre-execution V4 scope record.

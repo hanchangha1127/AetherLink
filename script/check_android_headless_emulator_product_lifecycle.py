@@ -1201,6 +1201,38 @@ def parsed_ui_bounds(value: str) -> tuple[int, int, int, int] | None:
     return bounds  # type: ignore[return-value]
 
 
+def fully_visible_ui_node_bounds(
+    node: ET.Element,
+    parents: dict[ET.Element, ET.Element],
+) -> tuple[int, int, int, int] | None:
+    bounds = parsed_ui_bounds(node.attrib.get("bounds", ""))
+    if bounds is None or not (
+        0 <= bounds[0] < bounds[2] <= 1080
+        and 0 <= bounds[1] < bounds[3] <= 2400
+    ):
+        return None
+    viewports: list[tuple[int, int, int, int]] = []
+    current = parents.get(node)
+    while current is not None:
+        if current.attrib.get("scrollable") == "true":
+            viewport = parsed_ui_bounds(current.attrib.get("bounds", ""))
+            if viewport is None:
+                return None
+            viewports.append(viewport)
+        current = parents.get(current)
+    if not viewports or any(
+        not (
+            viewport[0] <= bounds[0]
+            and viewport[1] <= bounds[1]
+            and bounds[2] <= viewport[2]
+            and bounds[3] <= viewport[3]
+        )
+        for viewport in viewports
+    ):
+        return None
+    return bounds
+
+
 def ui_actionable_token_failures(
     result_directory: Path,
     *,
@@ -1231,46 +1263,60 @@ def ui_actionable_token_failures(
             current = parents.get(current)
         if action is None:
             continue
-        action_bounds = parsed_ui_bounds(action.attrib.get("bounds", ""))
         if (
             action.attrib.get("package") != PACKAGE_NAME
             or action.attrib.get("enabled") != "true"
             or action.attrib.get("checkable") != "true"
             or action.attrib.get("checked") != expected_checked
-            or action_bounds is None
         ):
             continue
-        viewports: list[tuple[int, int, int, int]] = []
-        invalid_viewport = False
-        current = parents.get(action)
-        while current is not None:
-            if current.attrib.get("scrollable") == "true":
-                viewport = parsed_ui_bounds(current.attrib.get("bounds", ""))
-                if viewport is None:
-                    invalid_viewport = True
-                    break
-                viewports.append(viewport)
-            current = parents.get(current)
-        if invalid_viewport or not viewports:
-            continue
-        if not (
-            0 <= action_bounds[0] < action_bounds[2] <= 1080
-            and 0 <= action_bounds[1] < action_bounds[3] <= 2400
-        ):
-            continue
-        if any(
-            not (
-                viewport[0] <= action_bounds[0]
-                and viewport[1] <= action_bounds[1]
-                and action_bounds[2] <= viewport[2]
-                and action_bounds[3] <= viewport[3]
-            )
-            for viewport in viewports
-        ):
+        if fully_visible_ui_node_bounds(action, parents) is None:
             continue
         return []
     return [
         f"{relative} must expose fully visible enabled unchecked actionable {text!r}"
+    ]
+
+
+def ui_checked_token_failures(
+    result_directory: Path,
+    *,
+    relative: str,
+    text: str,
+) -> list[str]:
+    try:
+        raw, _ = read_regular_file(result_directory / relative)
+    except EvidenceError as error:
+        return [f"{relative} checked token cannot be read: {error}"]
+    if b"<!DOCTYPE" in raw or b"<!ENTITY" in raw:
+        return [f"{relative} checked token XML must not contain DTD/entities"]
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError as error:
+        return [f"{relative} checked token XML is invalid: {error}"]
+    parents = {child: parent for parent in root.iter() for child in parent}
+    for node in root.iter("node"):
+        if node.attrib.get("package") != PACKAGE_NAME or node.attrib.get("text") != text:
+            continue
+        current: ET.Element | None = node
+        checked: ET.Element | None = None
+        while current is not None:
+            if current.attrib.get("checkable") == "true":
+                checked = current
+                break
+            current = parents.get(current)
+        if checked is None:
+            continue
+        if (
+            checked.attrib.get("package") != PACKAGE_NAME
+            or checked.attrib.get("enabled") != "true"
+            or checked.attrib.get("checked") != "true"
+            or fully_visible_ui_node_bounds(checked, parents) is None
+        ):
+            continue
+        return []
+    return [
+        f"{relative} must expose fully visible enabled checked {text!r}"
     ]
 
 
@@ -1364,6 +1410,13 @@ def ui_semantic_failures(result_directory: Path) -> list[str]:
             parsed["ui/in-app-follow-system.xml"],
             relative="ui/in-app-follow-system.xml",
             package=app,
+            text="Pair AetherLink",
+        )
+    )
+    failures.extend(
+        ui_checked_token_failures(
+            result_directory,
+            relative="ui/in-app-follow-system.xml",
             text="Follow system language",
         )
     )

@@ -88,6 +88,9 @@ LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_REPEATABILITY_SCOPE = (
 LANE_A_IDLE_RESOURCE_STABILITY_SCOPE = (
     "same-host-per-user-current-source-lane-a-idle-resource-stability-v1"
 )
+LANE_A_IDLE_RESOURCE_REPEATABILITY_SCOPE = (
+    "same-host-per-user-current-source-lane-a-idle-resource-repeatability-v1"
+)
 LANE_A_LOCAL_DMG_READBACK_MODE = "archive-only-no-current-source"
 LANE_A_IDLE_RESOURCE_READBACK_MODE = (
     "archive-only-with-materialized-source-snapshot-no-signature-check"
@@ -116,6 +119,12 @@ LANE_A_LOCAL_DMG_ABRUPT_PROCESS_STATE_RECOVERY_REPEATABILITY_FILENAME_TOKEN = (
 )
 LANE_A_IDLE_RESOURCE_STABILITY_FILENAME_TOKEN = (
     "idle-resource-stability-v1"
+)
+LANE_A_IDLE_RESOURCE_STABILITY_REPEAT_FILENAME_TOKEN = (
+    "idle-resource-stability-repeat-v1"
+)
+LANE_A_IDLE_RESOURCE_REPEATABILITY_FILENAME_TOKEN = (
+    "idle-resource-stability-repeatability-v1"
 )
 LANE_A_IDLE_RESOURCE_WARMUP_MILLISECONDS = 60_000
 LANE_A_IDLE_RESOURCE_OBSERVATION_MILLISECONDS = 600_000
@@ -183,6 +192,23 @@ LANE_A_IDLE_RESOURCE_LIMITATIONS = (
     (
         "not-load-provider-device-ui-accessibility-production-or-"
         "security-evidence"
+    ),
+)
+LANE_A_IDLE_RESOURCE_REPEATABILITY_LIMITATIONS = (
+    "same-host-two-recorded-idle-observations-only",
+    "two-sequential-runner-processes-with-independent-temporary-root-lifecycles",
+    "measurement-values-and-result-bytes-not-required-to-match",
+    "each-observation-sixty-second-warmup-and-ten-minute-window-only",
+    "local-regression-budgets-not-performance-sla-or-capacity-evidence",
+    "archive-only-exercise-current-source-binding-requires-suite-parent",
+    "no-signing-or-signature-verification-performed",
+    (
+        "not-arbitrary-repeatability-long-soak-weekly-resilience-or-"
+        "production-evidence"
+    ),
+    (
+        "not-cross-host-install-upgrade-rollback-device-provider-network-ui-"
+        "accessibility-or-security-evidence"
     ),
 )
 LANE_A_LOCAL_DMG_STATE_RECOVERY_LIMITATIONS = (
@@ -370,15 +396,33 @@ class LaneALocalDMGSuitePaths:
     abrupt_process_state_recovery: Path
     abrupt_process_state_recovery_repeatability: Path
     idle_resource_stability: Path
+    idle_resource_stability_repeat: Path | None = None
+    idle_resource_repeatability: Path | None = None
 
-    def ordered(self) -> tuple[Path, Path, Path, Path, Path, Path]:
-        return (
+    def ordered(self) -> tuple[Path, ...]:
+        legacy = (
             self.install,
             self.uninstall_reinstall,
             self.state_recovery,
             self.abrupt_process_state_recovery,
             self.abrupt_process_state_recovery_repeatability,
             self.idle_resource_stability,
+        )
+        if (
+            self.idle_resource_stability_repeat is None
+            and self.idle_resource_repeatability is None
+        ):
+            return legacy
+        if (
+            self.idle_resource_stability_repeat is None
+            or self.idle_resource_repeatability is None
+        ):
+            raise ValueError(
+                "lane-A idle repeat result and receipt paths must coexist"
+            )
+        return legacy + (
+            self.idle_resource_stability_repeat,
+            self.idle_resource_repeatability,
         )
 
 
@@ -393,6 +437,8 @@ class LaneALocalDMGSuiteEvidence:
     abrupt_process_state_recovery: dict[str, object]
     abrupt_process_state_recovery_repeatability: dict[str, object]
     idle_resource_stability: dict[str, object]
+    idle_resource_stability_repeat: dict[str, object] | None = None
+    idle_resource_repeatability: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -1456,6 +1502,12 @@ def lane_a_local_dmg_suite_paths(
         idle_resource_stability=result_path(
             LANE_A_IDLE_RESOURCE_STABILITY_FILENAME_TOKEN
         ),
+        idle_resource_stability_repeat=result_path(
+            LANE_A_IDLE_RESOURCE_STABILITY_REPEAT_FILENAME_TOKEN
+        ),
+        idle_resource_repeatability=result_path(
+            LANE_A_IDLE_RESOURCE_REPEATABILITY_FILENAME_TOKEN
+        ),
     )
     specifications = (
         (
@@ -1482,6 +1534,14 @@ def lane_a_local_dmg_suite_paths(
             paths.idle_resource_stability,
             LANE_A_IDLE_RESOURCE_STABILITY_FILENAME_TOKEN,
         ),
+        (
+            paths.idle_resource_stability_repeat,
+            LANE_A_IDLE_RESOURCE_STABILITY_REPEAT_FILENAME_TOKEN,
+        ),
+        (
+            paths.idle_resource_repeatability,
+            LANE_A_IDLE_RESOURCE_REPEATABILITY_FILENAME_TOKEN,
+        ),
     )
     for path, filename_token in specifications:
         validate_lane_a_lifecycle_result_path(
@@ -1489,7 +1549,7 @@ def lane_a_local_dmg_suite_paths(
             expected_release_id=expected_release_id,
             filename_token=filename_token,
         )
-    if len(set(paths.ordered())) != 6:
+    if len(set(paths.ordered())) != 8:
         raise ReproducibilityError(
             2,
             "invocation",
@@ -4332,6 +4392,221 @@ def validate_lane_a_idle_resource_stability_result_bytes(
     return parsed
 
 
+def lane_a_idle_resource_invariant_projection(
+    result: dict[str, object],
+) -> dict[str, object]:
+    label = "lane-A idle repeatability invariant"
+    validated = require_closed_object(
+        result,
+        {
+            "archiveReadback",
+            "artifact",
+            "cleanup",
+            "environment",
+            "isolation",
+            "limitations",
+            "measurement",
+            "process",
+            "release",
+            "repeatability",
+            "schemaVersion",
+            "scope",
+            "sourceSnapshot",
+            "status",
+        },
+        label=label,
+    )
+    measurement = require_closed_object(
+        validated["measurement"],
+        {
+            "api",
+            "baselineWindowSampleCount",
+            "finalWindowSampleCount",
+            "intervalMilliseconds",
+            "observationMilliseconds",
+            "run",
+            "sampleCount",
+            "sampleLatenessLimitMilliseconds",
+            "status",
+            "warmupMilliseconds",
+        },
+        label=f"{label} measurement",
+    )
+    process = require_closed_object(
+        validated["process"],
+        {
+            "launchMethod",
+            "preexistingApplicationCount",
+            "preexistingApplicationsUsedAsTerminationTargets",
+            "rawProcessIdentifierRetained",
+        },
+        label=f"{label} process",
+    )
+    return {
+        "archiveReadback": validated["archiveReadback"],
+        "artifact": validated["artifact"],
+        "cleanup": validated["cleanup"],
+        "environment": validated["environment"],
+        "isolation": validated["isolation"],
+        "limitations": validated["limitations"],
+        "measurement": {
+            key: measurement[key]
+            for key in (
+                "api",
+                "baselineWindowSampleCount",
+                "finalWindowSampleCount",
+                "intervalMilliseconds",
+                "observationMilliseconds",
+                "sampleCount",
+                "sampleLatenessLimitMilliseconds",
+                "status",
+                "warmupMilliseconds",
+            )
+        },
+        "process": {
+            key: process[key]
+            for key in (
+                "launchMethod",
+                "preexistingApplicationsUsedAsTerminationTargets",
+                "rawProcessIdentifierRetained",
+            )
+        },
+        "release": validated["release"],
+        "repeatability": validated["repeatability"],
+        "schemaVersion": validated["schemaVersion"],
+        "scope": validated["scope"],
+        "sourceSnapshot": validated["sourceSnapshot"],
+        "status": validated["status"],
+    }
+
+
+def build_lane_a_idle_resource_repeatability_receipt(
+    *,
+    run_a_path: Path,
+    run_a: dict[str, object],
+    run_b_path: Path,
+    run_b: dict[str, object],
+    expected_release_id: str,
+) -> dict[str, object]:
+    run_a_payload = canonical_json_bytes(run_a)
+    run_b_payload = canonical_json_bytes(run_b)
+    invariant_a = lane_a_idle_resource_invariant_projection(run_a)
+    invariant_b = lane_a_idle_resource_invariant_projection(run_b)
+    invariant_payload = canonical_json_bytes(invariant_a)
+    if invariant_payload != canonical_json_bytes(invariant_b):
+        raise lane_a_local_dmg_error(
+            "two lane-A idle observations differ in their invariant contract"
+        )
+    if run_a.get("status") != "passed" or run_b.get("status") != "passed":
+        raise lane_a_local_dmg_error(
+            "two lane-A idle observations must both pass"
+        )
+    for ordinal, invariant in enumerate((invariant_a, invariant_b), start=1):
+        release = require_closed_object(
+            invariant["release"],
+            {"archiveSha256", "manifestSha256", "releaseId"},
+            label=f"lane-A idle observation {ordinal} release",
+        )
+        if release["releaseId"] != expected_release_id:
+            raise lane_a_local_dmg_error(
+                "lane-A idle observation release ID differs from the suite"
+            )
+
+    def run_record(
+        *,
+        ordinal: int,
+        path: Path,
+        payload: bytes,
+    ) -> dict[str, object]:
+        return {
+            "fileName": path.name,
+            "ordinal": ordinal,
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "size": len(payload),
+            "status": "passed",
+        }
+
+    return {
+        "allRunsPassed": True,
+        "artifact": invariant_a["artifact"],
+        "environment": invariant_a["environment"],
+        "independentTemporaryRootLifecycles": True,
+        "limitations": list(LANE_A_IDLE_RESOURCE_REPEATABILITY_LIMITATIONS),
+        "rawProcessIdentifiersRetained": False,
+        "rawTemporaryPathsRetained": False,
+        "release": invariant_a["release"],
+        "resultBytesEqual": run_a_payload == run_b_payload,
+        "resultBytesEqualRequired": False,
+        "runCount": 2,
+        "runs": [
+            run_record(ordinal=1, path=run_a_path, payload=run_a_payload),
+            run_record(ordinal=2, path=run_b_path, payload=run_b_payload),
+        ],
+        "schemaVersion": 1,
+        "scope": LANE_A_IDLE_RESOURCE_REPEATABILITY_SCOPE,
+        "sharedInvariant": {
+            "algorithm": "sha256(canonical-ascii-json)-v1",
+            "sha256": hashlib.sha256(invariant_payload).hexdigest(),
+            "size": len(invariant_payload),
+        },
+        "sharedInvariantEqual": True,
+        "sourceSnapshot": invariant_a["sourceSnapshot"],
+        "status": "passed",
+    }
+
+
+def validate_lane_a_idle_resource_repeatability_receipt_bytes(
+    raw: bytes,
+    *,
+    run_a_path: Path,
+    run_a: dict[str, object],
+    run_b_path: Path,
+    run_b: dict[str, object],
+    expected_release_id: str,
+    evidence: ArchiveEvidence,
+    expected_source_snapshot: dict[str, object],
+    expected_tree: dict[str, object],
+) -> dict[str, object]:
+    label = "lane-A idle resource repeatability receipt"
+    parsed = parse_lane_a_lifecycle_result_bytes(raw, label=label)
+    validate_lane_a_lifecycle_result_path(
+        run_a_path,
+        expected_release_id=expected_release_id,
+        filename_token=LANE_A_IDLE_RESOURCE_STABILITY_FILENAME_TOKEN,
+    )
+    validate_lane_a_lifecycle_result_path(
+        run_b_path,
+        expected_release_id=expected_release_id,
+        filename_token=LANE_A_IDLE_RESOURCE_STABILITY_REPEAT_FILENAME_TOKEN,
+    )
+    validate_lane_a_idle_resource_stability_result_bytes(
+        canonical_json_bytes(run_a),
+        expected_release_id=expected_release_id,
+        evidence=evidence,
+        expected_source_snapshot=expected_source_snapshot,
+        expected_tree=expected_tree,
+    )
+    validate_lane_a_idle_resource_stability_result_bytes(
+        canonical_json_bytes(run_b),
+        expected_release_id=expected_release_id,
+        evidence=evidence,
+        expected_source_snapshot=expected_source_snapshot,
+        expected_tree=expected_tree,
+    )
+    expected = build_lane_a_idle_resource_repeatability_receipt(
+        run_a_path=run_a_path,
+        run_a=run_a,
+        run_b_path=run_b_path,
+        run_b=run_b,
+        expected_release_id=expected_release_id,
+    )
+    if raw != canonical_json_bytes(expected):
+        raise lane_a_local_dmg_error(
+            f"{label} is not the exact two-observation binding"
+        )
+    return parsed
+
+
 def lane_archive_identities(
     evidence: ArchiveEvidence,
 ) -> tuple[FileIdentity, FileIdentity, FileIdentity]:
@@ -5740,17 +6015,31 @@ def run_lane_a_local_dmg_suite(
             expected_release_id=expected_release_id,
         )
     )
-    idle_resource_stability = run_lane_a_idle_resource_exercise(
-        clone_root=clone_root,
-        evidence=evidence,
-        expected_source_snapshot=expected_source_snapshot,
-        validator=lambda raw: validate_lane_a_idle_resource_stability_result_bytes(
-            raw,
-            expected_release_id=expected_release_id,
+    idle_resource_runs = [
+        run_lane_a_idle_resource_exercise(
+            clone_root=clone_root,
             evidence=evidence,
             expected_source_snapshot=expected_source_snapshot,
-            expected_tree=expected_tree,
-        ),
+            validator=lambda raw: validate_lane_a_idle_resource_stability_result_bytes(
+                raw,
+                expected_release_id=expected_release_id,
+                evidence=evidence,
+                expected_source_snapshot=expected_source_snapshot,
+                expected_tree=expected_tree,
+            ),
+        )
+        for _ in (1, 2)
+    ]
+    idle_resource_stability = idle_resource_runs[0]
+    idle_resource_stability_repeat = idle_resource_runs[1]
+    idle_resource_repeatability = (
+        build_lane_a_idle_resource_repeatability_receipt(
+            run_a_path=paths.idle_resource_stability,
+            run_a=idle_resource_stability,
+            run_b_path=paths.idle_resource_stability_repeat,
+            run_b=idle_resource_stability_repeat,
+            expected_release_id=expected_release_id,
+        )
     )
     lane_archive_identities(evidence)
     require_lane_a_clone_source_snapshot(
@@ -5769,6 +6058,8 @@ def run_lane_a_local_dmg_suite(
             abrupt_process_state_recovery_repeatability
         ),
         idle_resource_stability=idle_resource_stability,
+        idle_resource_stability_repeat=idle_resource_stability_repeat,
+        idle_resource_repeatability=idle_resource_repeatability,
     )
 
 
@@ -5778,6 +6069,39 @@ def validate_lane_a_suite_parent_binding(
     suite: LaneALocalDMGSuiteEvidence,
     idle_source_snapshot: dict[str, object],
 ) -> None:
+    if (
+        suite.idle_resource_stability_repeat is None
+        and suite.idle_resource_repeatability is None
+    ):
+        repeated_idle_source_snapshot = idle_source_snapshot
+        receipt_source_snapshot = idle_source_snapshot
+    elif (
+        suite.idle_resource_stability_repeat is None
+        or suite.idle_resource_repeatability is None
+    ):
+        raise lane_a_local_dmg_error(
+            "lifecycle-suite idle repeat result and receipt must coexist"
+        )
+    else:
+        repeated_idle_source_snapshot = require_closed_object(
+            suite.idle_resource_stability_repeat.get("sourceSnapshot"),
+            {"algorithm", "fileCount", "sha256"},
+            label="repeated lifecycle-suite idle source",
+        )
+        receipt_source_snapshot = require_closed_object(
+            suite.idle_resource_repeatability.get("sourceSnapshot"),
+            {"algorithm", "fileCount", "sha256"},
+            label="lifecycle-suite idle repeatability source",
+        )
+    if (
+        canonical_json_bytes(repeated_idle_source_snapshot)
+        != canonical_json_bytes(idle_source_snapshot)
+        or canonical_json_bytes(receipt_source_snapshot)
+        != canonical_json_bytes(idle_source_snapshot)
+    ):
+        raise lane_a_local_dmg_error(
+            "lifecycle-suite idle observations and receipt differ in source"
+        )
     source = require_closed_object(
         parent_result.get("source"),
         {"algorithm", "fileCount", "overlaySha256", "sha256"},
@@ -5887,6 +6211,15 @@ def _publish_lane_a_local_dmg_suite_locked(
     parent_result_path: Path | None = None,
     parent_result: dict[str, object] | None = None,
 ) -> None:
+    if (
+        suite.paths.idle_resource_stability_repeat is None
+        or suite.paths.idle_resource_repeatability is None
+        or suite.idle_resource_stability_repeat is None
+        or suite.idle_resource_repeatability is None
+    ):
+        raise lane_a_local_dmg_error(
+            "current lane-A suite requires two idle results and their receipt"
+        )
     if (parent_result_path is None) != (parent_result is None):
         raise lane_a_local_dmg_error(
             "lifecycle-suite parent path and payload must be provided together"
@@ -5945,6 +6278,28 @@ def _publish_lane_a_local_dmg_suite_locked(
         raise lane_a_local_dmg_error(
             "lane-A idle source snapshot differs from build A"
         )
+    repeated_idle_source_snapshot = require_closed_object(
+        suite.idle_resource_stability_repeat.get("sourceSnapshot"),
+        {"algorithm", "fileCount", "sha256"},
+        label="validated repeated lane-A idle source snapshot",
+    )
+    if canonical_json_bytes(repeated_idle_source_snapshot) != canonical_json_bytes(
+        idle_source_snapshot
+    ):
+        raise lane_a_local_dmg_error(
+            "repeated lane-A idle source snapshot differs from build A"
+        )
+    validate_lane_a_idle_resource_repeatability_receipt_bytes(
+        canonical_json_bytes(suite.idle_resource_repeatability),
+        run_a_path=suite.paths.idle_resource_stability,
+        run_a=suite.idle_resource_stability,
+        run_b_path=suite.paths.idle_resource_stability_repeat,
+        run_b=suite.idle_resource_stability_repeat,
+        expected_release_id=suite.expected_release_id,
+        evidence=suite.archive,
+        expected_source_snapshot=idle_source_snapshot,
+        expected_tree=install_tree,
+    )
     if parent_result is not None:
         validate_lane_a_suite_parent_binding(
             parent_result=parent_result,
@@ -6026,6 +6381,34 @@ def _publish_lane_a_local_dmg_suite_locked(
             suite.idle_resource_stability,
             lambda raw: validate_lane_a_idle_resource_stability_result_bytes(
                 raw,
+                expected_release_id=suite.expected_release_id,
+                evidence=suite.archive,
+                expected_source_snapshot=idle_source_snapshot,
+                expected_tree=install_tree,
+            ),
+        ),
+        (
+            suite.paths.idle_resource_stability_repeat,
+            LANE_A_IDLE_RESOURCE_STABILITY_REPEAT_FILENAME_TOKEN,
+            suite.idle_resource_stability_repeat,
+            lambda raw: validate_lane_a_idle_resource_stability_result_bytes(
+                raw,
+                expected_release_id=suite.expected_release_id,
+                evidence=suite.archive,
+                expected_source_snapshot=idle_source_snapshot,
+                expected_tree=install_tree,
+            ),
+        ),
+        (
+            suite.paths.idle_resource_repeatability,
+            LANE_A_IDLE_RESOURCE_REPEATABILITY_FILENAME_TOKEN,
+            suite.idle_resource_repeatability,
+            lambda raw: validate_lane_a_idle_resource_repeatability_receipt_bytes(
+                raw,
+                run_a_path=suite.paths.idle_resource_stability,
+                run_a=suite.idle_resource_stability,
+                run_b_path=suite.paths.idle_resource_stability_repeat,
+                run_b=suite.idle_resource_stability_repeat,
                 expected_release_id=suite.expected_release_id,
                 evidence=suite.archive,
                 expected_source_snapshot=idle_source_snapshot,
@@ -7017,9 +7400,10 @@ def main() -> int:
         help=(
             "comparison-only opt-in: derive and publish the install, "
             "same-DMG uninstall/reinstall, and persisted-state recovery "
-            "plus two-run abrupt-process recovery result/receipt and one "
-            "bounded idle-resource result under dist/lifecycle from one "
-            "lowercase slug; the parent and six children publish as one "
+            "plus two-run abrupt-process recovery result/receipt and two "
+            "bounded idle-resource results plus their repeatability receipt "
+            "under dist/lifecycle from one lowercase slug; the parent and "
+            "eight children publish as one "
             "create-only rollback transaction"
         ),
     )

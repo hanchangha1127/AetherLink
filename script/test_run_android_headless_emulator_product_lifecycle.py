@@ -558,6 +558,80 @@ emulator-5562 bootloader
         self.assertGreater(swipe_keywords["timeout"], 0)
         self.assertLessEqual(swipe_keywords["timeout"], 10)
 
+        pair_only = ET.fromstring(
+            '<hierarchy><node package="com.localagentbridge.android" '
+            'text="Pair AetherLink" enabled="true" bounds="[148,167][764,284]"/>'
+            "</hierarchy>"
+        )
+        clipped_checked = ET.fromstring(
+            '<hierarchy><node package="com.localagentbridge.android" '
+            'text="Pair AetherLink" enabled="true" bounds="[148,167][764,284]"/>'
+            '<node package="com.localagentbridge.android" scrollable="true" '
+            'bounds="[53,276][1027,2295]"><node '
+            'package="com.localagentbridge.android" checkable="true" '
+            'checked="true" enabled="true" bounds="[95,2250][985,2376]">'
+            '<node package="com.localagentbridge.android" '
+            'text="Follow system language" enabled="true" '
+            'bounds="[179,2260][900,2360]"/></node></node></hierarchy>'
+        )
+        fully_visible_checked = ET.fromstring(
+            '<hierarchy><node package="com.localagentbridge.android" '
+            'text="Pair AetherLink" enabled="true" bounds="[148,167][764,284]"/>'
+            '<node package="com.localagentbridge.android" scrollable="true" '
+            'bounds="[53,276][1027,2295]"><node '
+            'package="com.localagentbridge.android" checkable="true" '
+            'checked="true" enabled="true" bounds="[95,1800][985,1926]">'
+            '<node package="com.localagentbridge.android" '
+            'text="Follow system language" enabled="true" '
+            'bounds="[179,1810][900,1910]"/></node></node></hierarchy>'
+        )
+        self.assertFalse(
+            runner.has_fully_visible_checked_node(
+                clipped_checked,
+                text="Follow system language",
+                package="com.localagentbridge.android",
+            )
+        )
+        self.assertFalse(
+            runner.has_fully_visible_checked_node(
+                ET.fromstring(
+                    ET.tostring(fully_visible_checked, encoding="unicode").replace(
+                        'checked="true"', 'checked="false"', 1
+                    )
+                ),
+                text="Follow system language",
+                package="com.localagentbridge.android",
+            )
+        )
+        commands = Mock()
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            patch.object(
+                runner,
+                "capture_ui",
+                side_effect=[pair_only, clipped_checked, fully_visible_checked],
+            ),
+            patch.object(runner.time, "sleep"),
+        ):
+            observed = runner.wait_for_ui_with_upward_swipes(
+                commands,
+                Path(temporary),
+                "ui/in-app-follow-system.xml",
+                lambda root: runner.has_fully_visible_checked_node(
+                    root,
+                    text="Follow system language",
+                    package="com.localagentbridge.android",
+                ),
+                anchor_predicate=lambda root: runner.has_node(
+                    root,
+                    text="Pair AetherLink",
+                    package="com.localagentbridge.android",
+                ),
+                maximum_swipes=4,
+            )
+        self.assertIs(observed, fully_visible_checked)
+        self.assertEqual(commands.shell.call_count, 2)
+
         anchored_screen = ET.fromstring(
             '<hierarchy><node text="Pair AetherLink"/></hierarchy>'
         )

@@ -24,7 +24,7 @@ jobs:
   macos-product-quality:
     name: macOS product quality subset
     runs-on: macos-26
-    timeout-minutes: 55
+    timeout-minutes: 120
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     steps:
@@ -94,6 +94,7 @@ jobs:
           script.test_check_macos_current_unsealed_ci_lifecycle
           script.test_run_macos_runtime_chat_production_append_abrupt_recovery_smoke
           script.test_check_macos_runtime_chat_production_append_abrupt_recovery_evidence
+          script.test_check_macos_current_source_lane_a_idle_resource_repeatability
       - name: Run release diagnostics contract units
         run: >-
           PYTHONPATH=. python3 -B -m unittest
@@ -106,6 +107,11 @@ jobs:
           swift test list > .build/aetherlink-product-ci-swift-test-list-v1.txt
           python3 -B script/check_product_ci.py --swift-test-selection
           python3 -B script/check_product_ci.py --prepare-swift-focused-test-run
+      - name: Run G7 current-run contract units
+        run: >-
+          PYTHONPATH=. python3 -B -m unittest
+          script.test_run_g7_nonsecurity_merge_full_current
+          script.test_check_g7_nonsecurity_merge_full_current
       - name: Run focused product units
         run: >-
           python3 -B script/check_product_ci.py
@@ -116,6 +122,51 @@ jobs:
         run: |
           python3 -B script/check_product_ci.py --write-swift-focused-test-binding
           python3 -B script/check_product_ci.py --swift-focused-test-results
+      - name: Prepare G7 non-security current run on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: >-
+          python3 -B script/run_g7_nonsecurity_merge_full_current.py
+          --prepare
+      - name: Run G7 non-security current run on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: >-
+          python3 -B script/run_g7_nonsecurity_merge_full_current.py
+          --run
+      - name: Bind and verify G7 non-security current run on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: |
+          python3 -B script/run_g7_nonsecurity_merge_full_current.py --write-binding
+          python3 -B script/run_g7_nonsecurity_merge_full_current.py --results
+      - name: Independently read back G7 non-security current run on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: >-
+          python3 -I -B -S
+          script/check_g7_nonsecurity_merge_full_current.py
+          .build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/result.json
+      - name: Bind and verify G7 non-security current parent on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: |
+          python3 -B script/run_g7_nonsecurity_merge_full_current.py --write-parent
+          python3 -B script/run_g7_nonsecurity_merge_full_current.py --parent-results
+      - name: Independently read back G7 non-security current parent on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: >-
+          python3 -I -B -S
+          script/check_g7_nonsecurity_merge_full_current.py
+          --parent
+          .build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/parent-result.json
       - name: Prepare DocumentIngestion ASan corpus on main
         if: >-
           ${{ github.event_name == 'push' &&
@@ -258,6 +309,11 @@ jobs:
           ./gradlew --version
       - name: Run release archive contract units
         run: PYTHONPATH=. python3 -B script/test_release_artifact_archive.py
+      - name: Run Android Release repeatability contract units
+        run: >-
+          PYTHONPATH=. python3 -B -m unittest
+          script.test_run_android_release_repeatability_current
+          script.test_check_android_release_repeatability_current
       - name: Compile Android and run focused product units
         run: >-
           ./gradlew
@@ -326,7 +382,29 @@ jobs:
         run: |
           python3 -B script/check_product_ci.py --write-android-full-test-binding
           python3 -B script/check_product_ci.py --android-full-test-results
-      - name: Compile and lint Android Release app
+      - name: Prepare Android core non-security units on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: >-
+          python3 -B script/check_product_ci.py
+          --prepare-android-core-nonsecurity-test-run
+      - name: Run Android core non-security units on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: >-
+          python3 -B script/check_product_ci.py
+          --run-android-core-nonsecurity-tests
+      - name: Bind and verify Android core non-security units on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: |
+          python3 -B script/check_product_ci.py --write-android-core-nonsecurity-test-binding
+          python3 -B script/check_product_ci.py --android-core-nonsecurity-test-results
+      - name: Compile and lint Android Release app on pull request
+        if: ${{ github.event_name == 'pull_request' }}
         run: >-
           ./gradlew
           --no-daemon
@@ -336,6 +414,20 @@ jobs:
           :app:assembleRelease
           :app:bundleRelease
           :app:lintRelease
+      - name: Run Android Release A/B repeatability on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: >-
+          python3 -B script/run_android_release_repeatability_current.py
+      - name: Read back Android Release A/B repeatability on main
+        if: >-
+          ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+        run: >-
+          PYTHONPATH=. python3 -B
+          script/check_android_release_repeatability_current.py
+          .build/aetherlink-android-release-repeatability-v1/result.json
       - name: Read back Android Release build outputs
         run: >-
           python3 -B script/check_release_artifact_archive.py

@@ -78,10 +78,10 @@ ANDROID_FONT_SCALE_METHODS = (
     "coreSurfacesRemainUsableAt200PercentFontScale",
 )
 CANONICAL_WORKFLOW_SHA256 = (
-    "131d9b1b6a25c6f874d74734ea596aba034531cbc9383e45a4c892508bd96d9b"
+    "a88d5ba57e1ce6116889adfb76ac048fe90d4d9137ca65c798f4521eb62995fb"
 )
 CANONICAL_PARSED_WORKFLOW_SHA256 = (
-    "e0d00e6008b0e9be1f1b1b9077959cdf87057afabffcda3eeff5cca430f523ee"
+    "48c4d21aa496b262d690800491778f638e6c3730bb6602e12fa632cb9fbad9fa"
 )
 
 REQUIRED_WORKFLOW_PREFIX = """name: Product quality (non-security subset)
@@ -127,6 +127,7 @@ MAIN_RELEASE_CONDITION = (
     "${{ github.event_name == 'push' &&\n"
     "          github.ref == 'refs/heads/main' }}"
 )
+PULL_REQUEST_CONDITION = "${{ github.event_name == 'pull_request' }}"
 
 SWIFT_FILTER = (
     "DocumentIngestorTests|DocumentTextExtractorTests|DocumentChunkerTests|"
@@ -763,6 +764,178 @@ ANDROID_MAIN_FULL_TESTS = (
     ),
 )
 
+ANDROID_CORE_NONSECURITY_PROTOCOL_CLASS_NAME = (
+    "com.localagentbridge.android.core.protocol.ProtocolCodecTest"
+)
+ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_SOURCE_PATH = ROOT / (
+    "apps/android/core/protocol/src/test/java/com/localagentbridge/android/"
+    "core/protocol/ProtocolCodecTest.kt"
+)
+ANDROID_CORE_NONSECURITY_PROTOCOL_METHODS = (
+    "encodesAndDecodesLengthPrefixedFrame",
+    "encodesAndReadsFrameBodySeparatelyFromLengthPrefix",
+    "readsFragmentedFrameIntoExactDestinationAndRejectsTruncation",
+    "errorPayloadDecodesNonRetryableChatContextWindowExceeded",
+    "decodeRejectsMalformedRequiredEnvelopeFields",
+    "decodeRejectsUnsupportedVersionAndBlankRequestId",
+    "decodeAllowsMessageSpecificMetadataInsidePayloadObject",
+    "helloPayloadEnforcesOptionalUniqueNonblankUtf8CapabilitiesAnd64EntryLimit",
+    "protocolSchemaPins64CapabilitiesAndStrictResearchNotebookSyncBranches",
+    "chatSendRequestRejectsInvalidBounds",
+    "modelInfoPayloadCanCarryContextWindowMetadata",
+    "modelInfoPayloadPreservesProviderAndEmbeddingMetadata",
+    "modelsResultPayloadEnforcesExactCatalogRowLimitWithoutTruncation",
+    "modelInfoPayloadUsesUnicodeCodePointLimitsForIdentityStrings",
+    "modelInfoPayloadUsesUnicodeCodePointLimitForQualifiedId",
+    "modelInfoPayloadUsesSharedCatalogBlankCodePointSet",
+    "modelInfoPayloadEnforcesCapabilityCountAndUnicodeItemLimits",
+    "modelInfoPayloadEnforcesExactSizeByteMaximum",
+    "modelInfoPayloadEnforcesExactContextWindowMaximum",
+    "modelInfoPayloadRejectsInvalidScalarMetadata",
+    "modelInfoPayloadRejectsInvalidModifiedAtMetadata",
+    "modelInfoPayloadRejectsInvalidNumericMetadata",
+    "modelInfoPayloadDefaultsMissingCapabilitiesToEmptyList",
+    "runtimeHealthBackendStatusAcceptsSchemaMinimalPayload",
+    "runtimeHealthPayloadRejectsInvalidStatus",
+    "runtimeHealthPayloadCanCarryModelResidencySnapshot",
+    "runtimeHealthPayloadRejectsInvalidModelResidencyBounds",
+    "chatHistorySessionPayloadsUseProtocolFieldNames",
+    "chatSessionsAuthoritativeSyncPayloadsUseExactWireShapes",
+    "chatSessionsListCursorRejectsInvalidAndMixedPayloads",
+    "chatSessionsListPaginationResponseRejectsInvalidMetadata",
+    "chatSessionsBulkLifecyclePayloadsRejectInvalidDomainsAndBounds",
+    "chatSessionsSyncPayloadsRejectUnknownFieldsWithPermissiveJson",
+    "chatSessionsListRequestRejectsInvalidBounds",
+    "chatSessionsListResponseRejectsInvalidBounds",
+    "indexDocumentsListPayloadUsesProtocolFieldNames",
+    "indexDocumentsListRequestRejectsInvalidBounds",
+    "indexDocumentsListResponseRejectsInvalidDocumentMetadataBounds",
+    "indexDocumentsListResponseRejectsInvalidSummaryBounds",
+    "retrievalAndSourceAnchorDocumentMetadataRejectsInvalidBounds",
+    "retrievalQueryResponseRejectsTooManyResults",
+    "retrievalQueryPayloadUsesProtocolFieldNames",
+    "retrievalQueryRequestSerializesEmbeddingModelHintAndRejectsBlankHint",
+    "retrievalQueryMatchKindDefaultsLexicalAndControlsMatchedTermsBounds",
+    "retrievalQueryRequestRejectsInvalidBounds",
+    "sourceAnchorResolvePayloadUsesProtocolFieldNames",
+    "indexDocumentsListRejectsNonCanonicalContentFingerprints",
+    "retrievalQueryResultRejectsNonCanonicalDocumentContentFingerprints",
+    "sourceAnchorResolveResultRejectsNonCanonicalDocumentContentFingerprints",
+    "sourceAnchorResolveRequestRejectsMissingRequiredField",
+    "sourceAnchorResolveRequestRejectsNonCanonicalSourceAnchorIds",
+    "sourceAnchorResolveResultRejectsMissingRequiredFields",
+    "sourceAnchorResolveResultRejectsInvalidChunkSummaryValues",
+    "sourceAnchorResolveResultRejectsNonCanonicalSourceAnchorIds",
+    "retrievalQueryResultRejectsMissingSourceAnchorId",
+    "retrievalQueryResultRejectsNonCanonicalSourceAnchorIds",
+    "retrievalQueryResultRejectsInvalidCoordinatesAndRank",
+    "retrievalQueryResultRejectsInvalidLexicalMetadata",
+    "retrievalQueryResultRejectsMissingMatchedTerms",
+    "researchNotebooksListRequestRequiresExplicitTypedBoundedFields",
+    "researchNotebooksListCapableResponseRejectsBranchMixingAndInvalidSnapshotMetadata",
+    "researchNotebooksAuthoritativeSyncFixtureGenerates201RowsAcross1001001Pages",
+    "chatSourceAttributionsUseExactSafeWireShapeAndRemainOptional",
+    "chatMessagesListRequestRejectsInvalidBounds",
+    "chatSessionRenamePayloadUsesProtocolFieldNames",
+    "chatTitleAndSessionMutationRequestsRejectInvalidBounds",
+    "chatDeltaPayloadAcceptsCompatibilityAliases",
+    "chatStreamResponsePayloadsRejectInvalidBounds",
+    "modelPullAndChatCancelRequestsRejectInvalidBounds",
+    "memoryPayloadsUseProtocolFieldNames",
+    "memoryListRequestRejectsInvalidBounds",
+    "memoryDuplicateSuggestionsPayloadUsesClosedCanonicalContract",
+    "memoryDuplicateSuggestionsPayloadRejectsMalformedOrNoncanonicalGroups",
+    "memoryDuplicateSuggestionsPayloadUsesUnsignedUtf8OrderingForBmpAndAstralIds",
+    "memoryDuplicateSuggestionsPayloadRejectsJsonEscapedUnpairedSurrogateId",
+    "memoryDuplicateSuggestionsPayloadUsesSharedAggregateUtf8IdBudget",
+    "memoryDuplicateSuggestionsPayloadRejectsUnknownFields",
+    "memorySemanticDuplicateSuggestionsPayloadUsesCanonicalWireContract",
+    "memorySemanticDuplicateSuggestionsRequestRejectsBoundsAndInvalidTypes",
+    "memorySemanticDuplicateSuggestionsResponseRejectsBoundsAndInvalidTypes",
+    "memorySemanticDuplicateSuggestionsEnforcesPairShapeOrderAndDuplicates",
+    "memorySemanticDuplicateSuggestionsUsesUnsignedUtf8AndAllowsIdsAcrossPairs",
+    "memorySemanticDuplicateSuggestionsEnforcesAggregateUtf8IdBudget",
+    "memorySemanticDuplicateClustersPayloadUsesCanonicalWireContract",
+    "memorySemanticDuplicateClustersRequestRejectsBoundsUnknownFieldsAndInvalidTypes",
+    "memorySemanticDuplicateClustersEnforcesShapeDisjointnessCountsAndOrder",
+    "memorySemanticDuplicateClustersRejectsResponseTypesMetadataUnicodeAndIdBudget",
+    "memoryCrudRequestsRejectInvalidBounds",
+    "memorySummaryDraftsListPayloadUsesProtocolFieldNames",
+    "memorySummaryDraftsListRequestRejectsInvalidBounds",
+    "memorySummaryDraftGeneratePayloadRoundTripsExactWireShape",
+    "memorySummaryDraftResponsePayloadsRejectInvalidBounds",
+    "memorySummaryDraftApprovePayloadUsesProtocolFieldNamesAndAcceptsGeneratedSource",
+    "memorySummaryDraftDecisionRequestsRejectInvalidBounds",
+    "memorySummaryDraftDismissPayloadUsesProtocolFieldNames",
+    "chatAndMemoryPayloadsRejectInvalidTimestampMetadata",
+)
+ANDROID_CORE_NONSECURITY_TRANSPORT_CLASS_NAME = (
+    "com.localagentbridge.android.core.transport.RuntimeTransportClientTest"
+)
+ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_SOURCE_PATH = ROOT / (
+    "apps/android/core/transport/src/test/java/com/localagentbridge/android/"
+    "core/transport/RuntimeTransportClientTest.kt"
+)
+ANDROID_CORE_NONSECURITY_TRANSPORT_METHODS = (
+    "rawSendWritesOneCompleteLengthPrefixedBodyAndFlushes",
+    "rawReceiveReturnsBodyBeforeJsonDecode",
+    "rawConnectionRejectsProtocolApiAndClosesTheSocket",
+    "invalidRawBodyLengthFailsClosedBeforeWriting",
+    "rawSendBacklogOverflowFailsClosedAndReleasesBlockedSender",
+    "cancellingBlockedRawSendClosesSocketAndReleasesWriterBoundedly",
+    "oldRawHandleCannotSendReceiveOrCloseReplacementGeneration",
+    "sendWritesOneCompleteProtocolFrame",
+    "concurrentSendsRemainSerializedAsCompleteProtocolFrames",
+    "partialFrameWriteFailureClosesCurrentSocketAndLeavesClientDisconnected",
+    "flushFailureClosesCurrentSocketAndLeavesClientDisconnected",
+    "queuedSendDoesNotCrossReconnectOnSameClientObject",
+    "closeOwnsInFlightSocketAndStaleCompletionCannotPublish",
+    "cancellationOwnsAndClosesInFlightSocketBoundedly",
+    "laterConnectWinsWhenEarlierBarrierSocketCompletesStale",
+    "cancellingBlockingReceiveClosesOnlyCapturedSocketAndCompletesBoundedly",
+)
+ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_COUNT = 96
+ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_COUNT = 16
+ANDROID_CORE_NONSECURITY_TEST_COUNT = 112
+ANDROID_CORE_NONSECURITY_PROTOCOL_TESTS = tuple(
+    f"{ANDROID_CORE_NONSECURITY_PROTOCOL_CLASS_NAME}.{method}"
+    for method in ANDROID_CORE_NONSECURITY_PROTOCOL_METHODS
+)
+ANDROID_CORE_NONSECURITY_TRANSPORT_TESTS = tuple(
+    f"{ANDROID_CORE_NONSECURITY_TRANSPORT_CLASS_NAME}.{method}"
+    for method in ANDROID_CORE_NONSECURITY_TRANSPORT_METHODS
+)
+ANDROID_CORE_NONSECURITY_TESTS = (
+    ANDROID_CORE_NONSECURITY_PROTOCOL_TESTS
+    + ANDROID_CORE_NONSECURITY_TRANSPORT_TESTS
+)
+ANDROID_CORE_NONSECURITY_GRADLE_PREFIX = (
+    "./gradlew",
+    "--offline",
+    "--no-daemon",
+    "--console=plain",
+    "--rerun-tasks",
+    "-Pkotlin.incremental=false",
+)
+ANDROID_CORE_NONSECURITY_PROTOCOL_RUN_COMMAND = (
+    ANDROID_CORE_NONSECURITY_GRADLE_PREFIX
+    + (":core:protocol:testDebugUnitTest",)
+    + tuple(
+        argument
+        for test in ANDROID_CORE_NONSECURITY_PROTOCOL_TESTS
+        for argument in ("--tests", test)
+    )
+)
+ANDROID_CORE_NONSECURITY_TRANSPORT_RUN_COMMAND = (
+    ANDROID_CORE_NONSECURITY_GRADLE_PREFIX
+    + (":core:transport:testDebugUnitTest",)
+    + tuple(
+        argument
+        for test in ANDROID_CORE_NONSECURITY_TRANSPORT_TESTS
+        for argument in ("--tests", test)
+    )
+)
+
 ANDROID_TASKS = (
     ":app:compileDebugKotlin",
     ":app:compileDebugUnitTestKotlin",
@@ -996,6 +1169,26 @@ ANDROID_FULL_TEST_RESULTS = (
 ANDROID_FULL_TEST_CASE_MANIFEST_SHA256 = (
     "cc3ea9e2d72ca96e7f937b22a893d8cdaf38c409564ac8baecc5b947b8aa1b78"
 )
+ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_RESULTS = (
+    (
+        ANDROID_CORE_NONSECURITY_PROTOCOL_CLASS_NAME,
+        len(ANDROID_CORE_NONSECURITY_PROTOCOL_METHODS),
+        ANDROID_CORE_NONSECURITY_PROTOCOL_METHODS,
+    ),
+)
+ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_RESULTS = (
+    (
+        ANDROID_CORE_NONSECURITY_TRANSPORT_CLASS_NAME,
+        len(ANDROID_CORE_NONSECURITY_TRANSPORT_METHODS),
+        ANDROID_CORE_NONSECURITY_TRANSPORT_METHODS,
+    ),
+)
+ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_CASE_MANIFEST_SHA256 = (
+    "a2e7116511373f5cf62b95efa21162f7d52db4d12bd6d752e2ba84fc49e7ac73"
+)
+ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_CASE_MANIFEST_SHA256 = (
+    "c916ebd0d9226008b25e21312755b29f8d0286fb79d68f4cc8174b2c8a64991a"
+)
 ANDROID_RESULT_FUTURE_MTIME_TOLERANCE_NS = 5_000_000_000
 ANDROID_FULL_TEST_RESULT_ROOT = (
     ROOT / "apps/android/app/build/test-results/testDebugUnitTest"
@@ -1010,6 +1203,64 @@ ANDROID_FULL_TEST_RUN_MARKER_PATH = (
 )
 ANDROID_FULL_TEST_RUN_MARKER_CONTRACT = (
     "android-full-app-junit-run-source-v1"
+)
+ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_RESULT_ROOT = (
+    ROOT / "apps/android/core/protocol/build/test-results/testDebugUnitTest"
+)
+ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_RESULT_ROOT = (
+    ROOT / "apps/android/core/transport/build/test-results/testDebugUnitTest"
+)
+ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_BINDING_PATH = (
+    ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_RESULT_ROOT
+    / "aetherlink-core-nonsecurity-test-result-binding-v1.json"
+)
+ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_BINDING_PATH = (
+    ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_RESULT_ROOT
+    / "aetherlink-core-nonsecurity-test-result-binding-v1.json"
+)
+ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_RUN_MARKER_PATH = (
+    ROOT
+    / "apps/android/core/protocol/build/"
+    "aetherlink-core-nonsecurity-test-run-marker-v1.json"
+)
+ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_RUN_MARKER_PATH = (
+    ROOT
+    / "apps/android/core/transport/build/"
+    "aetherlink-core-nonsecurity-test-run-marker-v1.json"
+)
+ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_BINDING_CONTRACT = (
+    "android-core-protocol-nonsecurity-junit-v1"
+)
+ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_BINDING_CONTRACT = (
+    "android-core-transport-nonsecurity-junit-v1"
+)
+ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_RUN_MARKER_CONTRACT = (
+    "android-core-protocol-nonsecurity-junit-run-source-v1"
+)
+ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_RUN_MARKER_CONTRACT = (
+    "android-core-transport-nonsecurity-junit-run-source-v1"
+)
+ANDROID_CORE_NONSECURITY_RESULT_CONTRACTS = (
+    (
+        "protocol",
+        ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_RESULT_ROOT,
+        ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_BINDING_PATH,
+        ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_RUN_MARKER_PATH,
+        ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_RESULTS,
+        ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_CASE_MANIFEST_SHA256,
+        ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_RUN_MARKER_CONTRACT,
+        ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_BINDING_CONTRACT,
+    ),
+    (
+        "transport",
+        ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_RESULT_ROOT,
+        ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_BINDING_PATH,
+        ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_RUN_MARKER_PATH,
+        ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_RESULTS,
+        ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_CASE_MANIFEST_SHA256,
+        ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_RUN_MARKER_CONTRACT,
+        ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_BINDING_CONTRACT,
+    ),
 )
 
 
@@ -1067,6 +1318,10 @@ ANDROID_RESULT_FRESHNESS_FILES = (
     ROOT / "apps/android/core/protocol/gradle.lockfile",
     ROOT / "apps/android/core/transport/build.gradle.kts",
     ROOT / "apps/android/core/transport/gradle.lockfile",
+    ROOT / "packages/protocol-schema/protocol.schema.json",
+    ROOT
+    / "shared/protocol/fixtures/"
+    "research-notebooks-authoritative-sync-smoke-v1.json",
 )
 
 ANDROID_RESULT_FRESHNESS_ROOTS = (
@@ -1075,6 +1330,34 @@ ANDROID_RESULT_FRESHNESS_ROOTS = (
     ROOT / "apps/android/core/pairing/src/main",
     ROOT / "apps/android/core/protocol/src/main",
     ROOT / "apps/android/core/transport/src/main",
+)
+
+ANDROID_CORE_NONSECURITY_RESULT_FRESHNESS_FILES = (
+    Path(__file__).resolve(),
+    WORKFLOW_PATH,
+    ROOT / "gradlew",
+    ROOT / "build.gradle.kts",
+    ROOT / "settings.gradle.kts",
+    ROOT / "gradle.properties",
+    ROOT / "buildscript-gradle.lockfile",
+    ROOT / "settings-gradle.lockfile",
+    ROOT / "gradle/libs.versions.toml",
+    ROOT / "gradle/gradle-daemon-jvm.properties",
+    ROOT / "gradle/wrapper/gradle-wrapper.jar",
+    ROOT / "gradle/wrapper/gradle-wrapper.properties",
+    ROOT / "apps/android/core/pairing/build.gradle.kts",
+    ROOT / "apps/android/core/pairing/gradle.lockfile",
+    ROOT / "apps/android/core/protocol/build.gradle.kts",
+    ROOT / "apps/android/core/protocol/gradle.lockfile",
+    ROOT / "apps/android/core/transport/build.gradle.kts",
+    ROOT / "apps/android/core/transport/gradle.lockfile",
+)
+ANDROID_CORE_NONSECURITY_RESULT_FRESHNESS_ROOTS = (
+    ROOT / "apps/android/core/pairing/src/main",
+    ROOT / "apps/android/core/protocol/src/main",
+    ROOT / "apps/android/core/protocol/src/test",
+    ROOT / "apps/android/core/transport/src/main",
+    ROOT / "apps/android/core/transport/src/test",
 )
 
 SWIFT_TEST_SELECTION_STEP_BODY = (
@@ -1101,6 +1384,70 @@ SWIFT_TEST_RESULT_STEP_BODY = (
     "--write-swift-focused-test-binding\n"
     "          python3 -B script/check_product_ci.py "
     "--swift-focused-test-results\n"
+)
+
+G7_CURRENT_RUN_CONTRACT_TEST_STEP_BODY = (
+    "        run: >-\n"
+    "          PYTHONPATH=. python3 -B -m unittest\n"
+    "          script.test_run_g7_nonsecurity_merge_full_current\n"
+    "          script.test_check_g7_nonsecurity_merge_full_current\n"
+)
+
+G7_CURRENT_RUN_PREPARE_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: >-\n"
+    "          python3 -B script/run_g7_nonsecurity_merge_full_current.py\n"
+    "          --prepare\n"
+)
+
+G7_CURRENT_RUN_RUN_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: >-\n"
+    "          python3 -B script/run_g7_nonsecurity_merge_full_current.py\n"
+    "          --run\n"
+)
+
+G7_CURRENT_RUN_BIND_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: |\n"
+    "          python3 -B script/run_g7_nonsecurity_merge_full_current.py "
+    "--write-binding\n"
+    "          python3 -B script/run_g7_nonsecurity_merge_full_current.py "
+    "--results\n"
+)
+
+G7_CURRENT_RUN_READBACK_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: >-\n"
+    "          python3 -I -B -S\n"
+    "          script/check_g7_nonsecurity_merge_full_current.py\n"
+    "          .build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+    "result.json\n"
+)
+
+G7_CURRENT_PARENT_BIND_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: |\n"
+    "          python3 -B script/run_g7_nonsecurity_merge_full_current.py "
+    "--write-parent\n"
+    "          python3 -B script/run_g7_nonsecurity_merge_full_current.py "
+    "--parent-results\n"
+)
+
+G7_CURRENT_PARENT_READBACK_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: >-\n"
+    "          python3 -I -B -S\n"
+    "          script/check_g7_nonsecurity_merge_full_current.py\n"
+    "          --parent\n"
+    "          .build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+    "parent-result.json\n"
 )
 
 DOCUMENT_INGESTION_ASAN_PREPARE_STEP_BODY = (
@@ -1278,6 +1625,8 @@ MACOS_LIFECYCLE_CONTRACT_TEST_STEP_BODY = (
     "abrupt_recovery_smoke\n"
     "          script.test_check_macos_runtime_chat_production_append_"
     "abrupt_recovery_evidence\n"
+    "          script.test_check_macos_current_source_lane_a_idle_"
+    "resource_repeatability\n"
 )
 
 RELEASE_DIAGNOSTICS_CONTRACT_TEST_STEP_BODY = (
@@ -1438,7 +1787,41 @@ ANDROID_MAIN_FULL_RESULT_STEP_BODY = (
     "--android-full-test-results\n"
 )
 
+ANDROID_CORE_NONSECURITY_PREPARE_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: >-\n"
+    "          python3 -B script/check_product_ci.py\n"
+    "          --prepare-android-core-nonsecurity-test-run\n"
+)
+
+ANDROID_CORE_NONSECURITY_TEST_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: >-\n"
+    "          python3 -B script/check_product_ci.py\n"
+    "          --run-android-core-nonsecurity-tests\n"
+)
+
+ANDROID_CORE_NONSECURITY_RESULT_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: |\n"
+    "          python3 -B script/check_product_ci.py "
+    "--write-android-core-nonsecurity-test-binding\n"
+    "          python3 -B script/check_product_ci.py "
+    "--android-core-nonsecurity-test-results\n"
+)
+
+ANDROID_RELEASE_REPEATABILITY_CONTRACT_TEST_STEP_BODY = (
+    "        run: >-\n"
+    "          PYTHONPATH=. python3 -B -m unittest\n"
+    "          script.test_run_android_release_repeatability_current\n"
+    "          script.test_check_android_release_repeatability_current\n"
+)
+
 ANDROID_RELEASE_STEP_BODY = (
+    f"        if: {PULL_REQUEST_CONDITION}\n"
     "        run: >-\n"
     "          ./gradlew\n"
     "          --no-daemon\n"
@@ -1448,6 +1831,24 @@ ANDROID_RELEASE_STEP_BODY = (
     "          :app:assembleRelease\n"
     "          :app:bundleRelease\n"
     "          :app:lintRelease\n"
+)
+
+ANDROID_RELEASE_REPEATABILITY_RUN_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: >-\n"
+    "          python3 -B "
+    "script/run_android_release_repeatability_current.py\n"
+)
+
+ANDROID_RELEASE_REPEATABILITY_READBACK_STEP_BODY = (
+    "        if: >-\n"
+    f"          {MAIN_RELEASE_CONDITION}\n"
+    "        run: >-\n"
+    "          PYTHONPATH=. python3 -B\n"
+    "          script/check_android_release_repeatability_current.py\n"
+    "          .build/aetherlink-android-release-repeatability-v1/"
+    "result.json\n"
 )
 
 ANDROID_RELEASE_READBACK_STEP_BODY = (
@@ -1479,7 +1880,7 @@ ANDROID_RELEASE_DIAGNOSTICS_READBACK_STEP_BODY = (
 MACOS_JOB_PREAMBLE = (
     "    name: macOS product quality subset\n"
     "    runs-on: macos-26\n"
-    "    timeout-minutes: 55\n"
+    "    timeout-minutes: 120\n"
     "    env:\n"
     "      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer\n"
 )
@@ -1567,10 +1968,38 @@ MACOS_STEPS = (
         "Verify focused Swift test selection",
         SWIFT_TEST_SELECTION_STEP_BODY,
     ),
+    (
+        "Run G7 current-run contract units",
+        G7_CURRENT_RUN_CONTRACT_TEST_STEP_BODY,
+    ),
     ("Run focused product units", SWIFT_TEST_STEP_BODY),
     (
         "Bind and verify focused Swift test results",
         SWIFT_TEST_RESULT_STEP_BODY,
+    ),
+    (
+        "Prepare G7 non-security current run on main",
+        G7_CURRENT_RUN_PREPARE_STEP_BODY,
+    ),
+    (
+        "Run G7 non-security current run on main",
+        G7_CURRENT_RUN_RUN_STEP_BODY,
+    ),
+    (
+        "Bind and verify G7 non-security current run on main",
+        G7_CURRENT_RUN_BIND_STEP_BODY,
+    ),
+    (
+        "Independently read back G7 non-security current run on main",
+        G7_CURRENT_RUN_READBACK_STEP_BODY,
+    ),
+    (
+        "Bind and verify G7 non-security current parent on main",
+        G7_CURRENT_PARENT_BIND_STEP_BODY,
+    ),
+    (
+        "Independently read back G7 non-security current parent on main",
+        G7_CURRENT_PARENT_READBACK_STEP_BODY,
     ),
     (
         "Prepare DocumentIngestion ASan corpus on main",
@@ -1666,6 +2095,10 @@ ANDROID_STEPS = (
         "script/test_release_artifact_archive.py\n",
     ),
     (
+        "Run Android Release repeatability contract units",
+        ANDROID_RELEASE_REPEATABILITY_CONTRACT_TEST_STEP_BODY,
+    ),
+    (
         "Compile Android and run focused product units",
         ANDROID_TEST_STEP_BODY,
     ),
@@ -1686,8 +2119,28 @@ ANDROID_STEPS = (
         ANDROID_MAIN_FULL_RESULT_STEP_BODY,
     ),
     (
-        "Compile and lint Android Release app",
+        "Prepare Android core non-security units on main",
+        ANDROID_CORE_NONSECURITY_PREPARE_STEP_BODY,
+    ),
+    (
+        "Run Android core non-security units on main",
+        ANDROID_CORE_NONSECURITY_TEST_STEP_BODY,
+    ),
+    (
+        "Bind and verify Android core non-security units on main",
+        ANDROID_CORE_NONSECURITY_RESULT_STEP_BODY,
+    ),
+    (
+        "Compile and lint Android Release app on pull request",
         ANDROID_RELEASE_STEP_BODY,
+    ),
+    (
+        "Run Android Release A/B repeatability on main",
+        ANDROID_RELEASE_REPEATABILITY_RUN_STEP_BODY,
+    ),
+    (
+        "Read back Android Release A/B repeatability on main",
+        ANDROID_RELEASE_REPEATABILITY_READBACK_STEP_BODY,
     ),
     (
         "Read back Android Release build outputs",
@@ -2305,7 +2758,7 @@ def workflow_failures(
         text=macos,
         fragments=(
             "runs-on: macos-26",
-            "timeout-minutes: 55",
+            "timeout-minutes: 120",
             "DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer",
             "fetch-depth: 0",
             "xcodebuild -version",
@@ -2345,6 +2798,10 @@ def workflow_failures(
             "abrupt_recovery_smoke",
             "script.test_check_macos_runtime_chat_production_append_"
             "abrupt_recovery_evidence",
+            "script.test_check_macos_current_source_lane_a_idle_"
+            "resource_repeatability",
+            "script.test_run_g7_nonsecurity_merge_full_current",
+            "script.test_check_g7_nonsecurity_merge_full_current",
             "run: swift build --product AetherLink",
             "swift test list > "
             ".build/aetherlink-product-ci-swift-test-list-v1.txt",
@@ -2354,6 +2811,18 @@ def workflow_failures(
             f"'{SWIFT_FILTER}'",
             "--write-swift-focused-test-binding",
             "--swift-focused-test-results",
+            "script/run_g7_nonsecurity_merge_full_current.py",
+            "--prepare",
+            "--run",
+            "--write-binding",
+            "script/check_g7_nonsecurity_merge_full_current.py",
+            ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+            "result.json",
+            "--write-parent",
+            "--parent-results",
+            "--parent",
+            ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+            "parent-result.json",
             "--prepare-document-ingestion-asan-run",
             "--run-document-ingestion-asan-tests",
             "--write-document-ingestion-asan-binding",
@@ -2415,6 +2884,10 @@ def workflow_failures(
             ),
             "--write-android-full-test-binding",
             "--android-full-test-results",
+            "--prepare-android-core-nonsecurity-test-run",
+            "--run-android-core-nonsecurity-tests",
+            "--write-android-core-nonsecurity-test-binding",
+            "--android-core-nonsecurity-test-results",
             MAIN_RELEASE_CONDITION,
             "-PaetherlinkStrictReleaseDependencyLocks=true",
             ":app:assembleRelease",
@@ -2422,6 +2895,12 @@ def workflow_failures(
             ":app:lintRelease",
             "python3 -B script/check_release_artifact_archive.py",
             "--android-build-outputs",
+            "script.test_run_android_release_repeatability_current",
+            "script.test_check_android_release_repeatability_current",
+            PULL_REQUEST_CONDITION,
+            "script/run_android_release_repeatability_current.py",
+            "script/check_android_release_repeatability_current.py",
+            ".build/aetherlink-android-release-repeatability-v1/result.json",
         ),
     )
 
@@ -2439,6 +2918,36 @@ def workflow_failures(
         if workflow.count(command) != 1:
             failures.append(
                 f"workflow must invoke {command} exactly once"
+            )
+    current_run_commands = (
+        "python3 -B script/run_g7_nonsecurity_merge_full_current.py\n"
+        "          --prepare",
+        "python3 -B script/run_g7_nonsecurity_merge_full_current.py\n"
+        "          --run",
+        "python3 -B script/run_g7_nonsecurity_merge_full_current.py "
+        "--write-binding",
+        "python3 -B script/run_g7_nonsecurity_merge_full_current.py --results",
+        "python3 -I -B -S\n"
+        "          script/check_g7_nonsecurity_merge_full_current.py\n"
+        "          .build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+        "result.json",
+    )
+    for command in current_run_commands:
+        if workflow.count(command) != 1:
+            failures.append(
+                "workflow must invoke each G7 current-run lifecycle command "
+                "exactly once"
+            )
+    for command in (
+        "--prepare-android-core-nonsecurity-test-run",
+        "--run-android-core-nonsecurity-tests",
+        "--write-android-core-nonsecurity-test-binding",
+        "--android-core-nonsecurity-test-results",
+    ):
+        if workflow.count(command) != 1:
+            failures.append(
+                "workflow must invoke each Android core non-security "
+                f"lifecycle command exactly once: {command}"
             )
     product_copy_command = (
         "python3 -B script/check_copy_hygiene.py --product-copy-only"
@@ -2482,6 +2991,18 @@ def workflow_failures(
             "workflow must contain one exact Android and one exact macOS "
             "Release readback command"
         )
+    repeatability_commands = (
+        "script.test_run_android_release_repeatability_current",
+        "script.test_check_android_release_repeatability_current",
+        "script/run_android_release_repeatability_current.py",
+        "script/check_android_release_repeatability_current.py",
+        ".build/aetherlink-android-release-repeatability-v1/result.json",
+    )
+    if any(workflow.count(command) != 1 for command in repeatability_commands):
+        failures.append(
+            "workflow must invoke each Android Release repeatability unit, "
+            "producer, checker, and result path exactly once"
+        )
     if workflow.count("./script/build_and_run.sh --unsealed-package-only") != 1:
         failures.append(
             "workflow must contain one exact unsealed macOS Release producer"
@@ -2514,6 +3035,17 @@ def workflow_failures(
         failures.append(
             "macOS lifecycle contract-unit step must match the exact command "
             "body"
+        )
+    if (
+        named_step_body(
+            macos,
+            "Run G7 current-run contract units",
+        )
+        != G7_CURRENT_RUN_CONTRACT_TEST_STEP_BODY
+    ):
+        failures.append(
+            "G7 current-run contract-unit step must match the exact producer/"
+            "checker test body"
         )
     if (
         named_step_body(
@@ -2643,6 +3175,37 @@ def workflow_failures(
         failures.append(
             "Swift focused test result step must match the exact command body"
         )
+    current_run_steps = (
+        (
+            "Prepare G7 non-security current run on main",
+            G7_CURRENT_RUN_PREPARE_STEP_BODY,
+        ),
+        (
+            "Run G7 non-security current run on main",
+            G7_CURRENT_RUN_RUN_STEP_BODY,
+        ),
+        (
+            "Bind and verify G7 non-security current run on main",
+            G7_CURRENT_RUN_BIND_STEP_BODY,
+        ),
+        (
+            "Independently read back G7 non-security current run on main",
+            G7_CURRENT_RUN_READBACK_STEP_BODY,
+        ),
+        (
+            "Bind and verify G7 non-security current parent on main",
+            G7_CURRENT_PARENT_BIND_STEP_BODY,
+        ),
+        (
+            "Independently read back G7 non-security current parent on main",
+            G7_CURRENT_PARENT_READBACK_STEP_BODY,
+        ),
+    )
+    for step_name, expected_body in current_run_steps:
+        if named_step_body(macos, step_name) != expected_body:
+            failures.append(
+                f"{step_name} step must match the exact main-only command body"
+            )
     asan_steps = (
         (
             "Prepare DocumentIngestion ASan corpus on main",
@@ -2736,10 +3299,10 @@ def workflow_failures(
 
     strict_flag = "-PaetherlinkStrictReleaseDependencyLocks=true"
     release_index = android.find(
-        "      - name: Compile and lint Android Release app\n"
+        "      - name: Compile and lint Android Release app on pull request\n"
     )
     if release_index < 0:
-        failures.append("Android Release step must run on pull requests and main")
+        failures.append("Android Release pull-request step is missing")
     else:
         if strict_flag in android[:release_index]:
             failures.append(
@@ -2753,9 +3316,22 @@ def workflow_failures(
     )
     if android_tests != ANDROID_TESTS + ANDROID_MAIN_FULL_TESTS:
         failures.append(
-            "Android focused and complete tests must use the exact allowlists"
+            "Android focused and complete app tests must use the exact "
+            "allowlists; core non-security selectors stay inside "
+            "the bounded runner"
         )
 
+    if (
+        named_step_body(
+            android,
+            "Run Android Release repeatability contract units",
+        )
+        != ANDROID_RELEASE_REPEATABILITY_CONTRACT_TEST_STEP_BODY
+    ):
+        failures.append(
+            "Android Release repeatability contract units must match the "
+            "exact command body"
+        )
     if (
         named_step_body(
             android,
@@ -2809,15 +3385,57 @@ def workflow_failures(
             "Android complete result step must match the exact main-only "
             "command body"
         )
+    core_nonsecurity_steps = (
+        (
+            "Prepare Android core non-security units on main",
+            ANDROID_CORE_NONSECURITY_PREPARE_STEP_BODY,
+        ),
+        (
+            "Run Android core non-security units on main",
+            ANDROID_CORE_NONSECURITY_TEST_STEP_BODY,
+        ),
+        (
+            "Bind and verify Android core non-security units on main",
+            ANDROID_CORE_NONSECURITY_RESULT_STEP_BODY,
+        ),
+    )
+    for step_name, expected_body in core_nonsecurity_steps:
+        if named_step_body(android, step_name) != expected_body:
+            failures.append(
+                f"{step_name} step must match the exact main-only command body"
+            )
     if (
         named_step_body(
             android,
-            "Compile and lint Android Release app",
+            "Compile and lint Android Release app on pull request",
         )
         != ANDROID_RELEASE_STEP_BODY
     ):
         failures.append(
-            "Android Release step must match the exact command body"
+            "Android Release pull-request step must match the exact "
+            "condition and command body"
+        )
+    if (
+        named_step_body(
+            android,
+            "Run Android Release A/B repeatability on main",
+        )
+        != ANDROID_RELEASE_REPEATABILITY_RUN_STEP_BODY
+    ):
+        failures.append(
+            "Android Release repeatability producer must match the exact "
+            "main-only command body"
+        )
+    if (
+        named_step_body(
+            android,
+            "Read back Android Release A/B repeatability on main",
+        )
+        != ANDROID_RELEASE_REPEATABILITY_READBACK_STEP_BODY
+    ):
+        failures.append(
+            "Android Release repeatability checker must match the exact "
+            "main-only command body"
         )
     if (
         named_step_body(
@@ -3048,6 +3666,69 @@ def self_test(workflow: str) -> list[str]:
                 1,
             ),
             "steps must match the exact names and order",
+        ),
+        "missing macOS idle repeatability checker units": (
+            workflow.replace(
+                "          script.test_check_macos_current_source_lane_a_"
+                "idle_resource_repeatability\n",
+                "",
+                1,
+            ),
+            "macOS lifecycle contract-unit step must match the exact command "
+            "body",
+        ),
+        "missing G7 current-run contract units": (
+            workflow.replace(
+                "      - name: Run G7 current-run contract units\n"
+                f"{G7_CURRENT_RUN_CONTRACT_TEST_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "missing G7 current-run execution": (
+            workflow.replace(
+                "      - name: Run G7 non-security current run on main\n"
+                f"{G7_CURRENT_RUN_RUN_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "G7 current-run independent checker bypass": (
+            workflow.replace(
+                "          python3 -I -B -S\n"
+                "          script/check_g7_nonsecurity_merge_full_current.py\n",
+                "          python3 -B "
+                "script/run_g7_nonsecurity_merge_full_current.py --results\n",
+                1,
+            ),
+            "Independently read back G7 non-security current run on main step "
+            "must match the exact main-only command body",
+        ),
+        "missing G7 current parent binding": (
+            workflow.replace(
+                "      - name: Bind and verify G7 non-security current parent on main\n"
+                f"{G7_CURRENT_PARENT_BIND_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "G7 current parent independent checker bypass": (
+            workflow.replace(
+                "          python3 -I -B -S\n"
+                "          script/check_g7_nonsecurity_merge_full_current.py\n"
+                "          --parent\n"
+                "          .build/aetherlink-g7-nonsecurity-merge-full-"
+                "current-run-v1/parent-result.json\n",
+                "          python3 -B "
+                "script/run_g7_nonsecurity_merge_full_current.py "
+                "--parent-results\n",
+                1,
+            ),
+            "Independently read back G7 non-security current parent on main "
+            "step must match the exact main-only command body",
         ),
         "missing portable macOS lifecycle checker units": (
             workflow.replace(
@@ -3774,6 +4455,34 @@ def self_test(workflow: str) -> list[str]:
             ),
             "steps must match the exact names and order",
         ),
+        "missing Android core non-security preparation step": (
+            workflow.replace(
+                "      - name: Prepare Android core non-security units on main\n"
+                f"{ANDROID_CORE_NONSECURITY_PREPARE_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "Android core non-security runner bypass": (
+            workflow.replace(
+                "          --run-android-core-nonsecurity-tests\n",
+                "          --android-core-nonsecurity-test-results\n",
+                1,
+            ),
+            "Run Android core non-security units on main step must match the "
+            "exact main-only command body",
+        ),
+        "missing Android core non-security independent readback": (
+            workflow.replace(
+                "          python3 -B script/check_product_ci.py "
+                "--android-core-nonsecurity-test-results\n",
+                "",
+                1,
+            ),
+            "Bind and verify Android core non-security units on main step "
+            "must match the exact main-only command body",
+        ),
         "missing Android Release diagnostics producer": (
             workflow.replace(
                 "      - name: Run Android Release diagnostics on main\n"
@@ -3919,10 +4628,10 @@ def self_test(workflow: str) -> list[str]:
         ),
         "extra unfiltered Android step": (
             workflow.replace(
-                "      - name: Compile and lint Android Release app\n",
+                "      - name: Compile and lint Android Release app on pull request\n",
                 "      - name: Run unfiltered Android units\n"
                 "        run: ./gradlew :app:testDebugUnitTest\n"
-                "      - name: Compile and lint Android Release app\n",
+                "      - name: Compile and lint Android Release app on pull request\n",
                 1,
             ),
             "steps must match the exact names and order",
@@ -4036,7 +4745,7 @@ def self_test(workflow: str) -> list[str]:
                 "",
                 1,
             ),
-            "Android Release step must match the exact command body",
+            "Android Release pull-request step must match the exact",
         ),
         "duplicate Android bundle task": (
             workflow.replace(
@@ -4045,7 +4754,7 @@ def self_test(workflow: str) -> list[str]:
                 "          :app:bundleRelease\n",
                 1,
             ),
-            "Android Release step must match the exact command body",
+            "Android Release pull-request step must match the exact",
         ),
         "reordered Android bundle task": (
             workflow.replace(
@@ -4055,7 +4764,86 @@ def self_test(workflow: str) -> list[str]:
                 "          :app:assembleRelease\n",
                 1,
             ),
-            "Android Release step must match the exact command body",
+            "Android Release pull-request step must match the exact",
+        ),
+        "missing Android Release repeatability unit step": (
+            workflow.replace(
+                "      - name: Run Android Release repeatability contract units\n"
+                f"{ANDROID_RELEASE_REPEATABILITY_CONTRACT_TEST_STEP_BODY}",
+                "",
+                1,
+            ),
+            "steps must match the exact names and order",
+        ),
+        "missing Android Release repeatability producer": (
+            workflow.replace(
+                "      - name: Run Android Release A/B repeatability on main\n"
+                f"{ANDROID_RELEASE_REPEATABILITY_RUN_STEP_BODY}",
+                "",
+                1,
+            ),
+            "invoke each Android Release repeatability",
+        ),
+        "missing Android Release repeatability checker": (
+            workflow.replace(
+                "      - name: Read back Android Release A/B repeatability on main\n"
+                f"{ANDROID_RELEASE_REPEATABILITY_READBACK_STEP_BODY}",
+                "",
+                1,
+            ),
+            "invoke each Android Release repeatability",
+        ),
+        "Android Release repeatability producer condition removed": (
+            workflow.replace(
+                "      - name: Run Android Release A/B repeatability on main\n"
+                "        if: >-\n"
+                f"          {MAIN_RELEASE_CONDITION}\n",
+                "      - name: Run Android Release A/B repeatability on main\n",
+                1,
+            ),
+            "producer must match the exact main-only command body",
+        ),
+        "Android Release repeatability checker condition removed": (
+            workflow.replace(
+                "      - name: Read back Android Release A/B repeatability on main\n"
+                "        if: >-\n"
+                f"          {MAIN_RELEASE_CONDITION}\n",
+                "      - name: Read back Android Release A/B repeatability on main\n",
+                1,
+            ),
+            "checker must match the exact main-only command body",
+        ),
+        "Android Release pull-request condition removed": (
+            workflow.replace(
+                "      - name: Compile and lint Android Release app on pull request\n"
+                f"        if: {PULL_REQUEST_CONDITION}\n",
+                "      - name: Compile and lint Android Release app on pull request\n",
+                1,
+            ),
+            "pull-request step must match the exact condition",
+        ),
+        "suppressed Android Release repeatability failure": (
+            workflow.replace(
+                "      - name: Run Android Release A/B repeatability on main\n",
+                "      - name: Run Android Release A/B repeatability on main\n"
+                "        continue-on-error: true\n",
+                1,
+            ),
+            "ignored failure",
+        ),
+        "Android Release repeatability checker before producer": (
+            workflow.replace(
+                "      - name: Run Android Release A/B repeatability on main\n"
+                f"{ANDROID_RELEASE_REPEATABILITY_RUN_STEP_BODY}"
+                "      - name: Read back Android Release A/B repeatability on main\n"
+                f"{ANDROID_RELEASE_REPEATABILITY_READBACK_STEP_BODY}",
+                "      - name: Read back Android Release A/B repeatability on main\n"
+                f"{ANDROID_RELEASE_REPEATABILITY_READBACK_STEP_BODY}"
+                "      - name: Run Android Release A/B repeatability on main\n"
+                f"{ANDROID_RELEASE_REPEATABILITY_RUN_STEP_BODY}",
+                1,
+            ),
+            "steps must match the exact names and order",
         ),
         "missing Android Release readback step": (
             workflow.replace(
@@ -4076,14 +4864,22 @@ def self_test(workflow: str) -> list[str]:
         ),
         "Android Release readback before build": (
             workflow.replace(
-                "      - name: Compile and lint Android Release app\n"
+                "      - name: Compile and lint Android Release app on pull request\n"
                 f"{ANDROID_RELEASE_STEP_BODY}"
+                "      - name: Run Android Release A/B repeatability on main\n"
+                f"{ANDROID_RELEASE_REPEATABILITY_RUN_STEP_BODY}"
+                "      - name: Read back Android Release A/B repeatability on main\n"
+                f"{ANDROID_RELEASE_REPEATABILITY_READBACK_STEP_BODY}"
                 "      - name: Read back Android Release build outputs\n"
                 f"{ANDROID_RELEASE_READBACK_STEP_BODY}",
                 "      - name: Read back Android Release build outputs\n"
                 f"{ANDROID_RELEASE_READBACK_STEP_BODY}"
-                "      - name: Compile and lint Android Release app\n"
-                f"{ANDROID_RELEASE_STEP_BODY}",
+                "      - name: Compile and lint Android Release app on pull request\n"
+                f"{ANDROID_RELEASE_STEP_BODY}"
+                "      - name: Run Android Release A/B repeatability on main\n"
+                f"{ANDROID_RELEASE_REPEATABILITY_RUN_STEP_BODY}"
+                "      - name: Read back Android Release A/B repeatability on main\n"
+                f"{ANDROID_RELEASE_REPEATABILITY_READBACK_STEP_BODY}",
                 1,
             ),
             "steps must match the exact names and order",
@@ -4099,8 +4895,8 @@ def self_test(workflow: str) -> list[str]:
         ),
         "live backend enablement": (
             workflow.replace(
-                "    timeout-minutes: 55\n",
-                "    timeout-minutes: 55\n"
+                "    timeout-minutes: 120\n",
+                "    timeout-minutes: 120\n"
                 "    env:\n"
                 '      OLLAMA_LIVE_TESTS: "1"\n',
                 1,
@@ -4831,6 +5627,160 @@ def android_testcase_manifest_sha256(
     return hashlib.sha256(payload).hexdigest()
 
 
+def android_core_nonsecurity_selection_failures() -> list[str]:
+    failures: list[str] = []
+    selections = (
+        (
+            "protocol",
+            ANDROID_CORE_NONSECURITY_PROTOCOL_CLASS_NAME,
+            ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_SOURCE_PATH,
+            ANDROID_CORE_NONSECURITY_PROTOCOL_METHODS,
+            ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_COUNT,
+            ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_CASE_MANIFEST_SHA256,
+            ANDROID_CORE_NONSECURITY_PROTOCOL_RUN_COMMAND,
+            ":core:protocol:testDebugUnitTest",
+        ),
+        (
+            "transport",
+            ANDROID_CORE_NONSECURITY_TRANSPORT_CLASS_NAME,
+            ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_SOURCE_PATH,
+            ANDROID_CORE_NONSECURITY_TRANSPORT_METHODS,
+            ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_COUNT,
+            ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_CASE_MANIFEST_SHA256,
+            ANDROID_CORE_NONSECURITY_TRANSPORT_RUN_COMMAND,
+            ":core:transport:testDebugUnitTest",
+        ),
+    )
+    observed_total = 0
+    for (
+        label,
+        class_name,
+        source_path,
+        methods,
+        expected_count,
+        expected_manifest_sha256,
+        command,
+        gradle_task,
+    ) in selections:
+        if len(methods) != expected_count or len(set(methods)) != expected_count:
+            failures.append(
+                f"Android core non-security {label} methods must contain "
+                f"exactly {expected_count} unique entries"
+            )
+        observed_total += len(methods)
+        try:
+            source = source_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            failures.append(
+                f"Android core non-security {label} source cannot be read: "
+                f"{error}"
+            )
+        else:
+            declared_tests = set(
+                re.findall(
+                    r"(?m)^\s*@Test\s*\n\s*fun\s+([A-Za-z0-9_]+)\s*\(",
+                    source,
+                )
+            )
+            missing = tuple(method for method in methods if method not in declared_tests)
+            if missing:
+                failures.append(
+                    f"Android core non-security {label} selectors must name "
+                    "declared @Test methods"
+                )
+        expected_selectors = tuple(f"{class_name}.{method}" for method in methods)
+        manifest_sha256 = android_testcase_manifest_sha256(
+            [(class_name, method) for method in methods]
+        )
+        if manifest_sha256 != expected_manifest_sha256:
+            failures.append(
+                f"Android core non-security {label} testcase manifest "
+                "must match its reviewed identity"
+            )
+        expected_command = (
+            ANDROID_CORE_NONSECURITY_GRADLE_PREFIX
+            + (gradle_task,)
+            + tuple(
+                argument
+                for selector in expected_selectors
+                for argument in ("--tests", selector)
+            )
+        )
+        if command != expected_command:
+            failures.append(
+                f"Android core non-security {label} runner command must "
+                "match the exact offline method allowlist"
+            )
+    if (
+        observed_total != ANDROID_CORE_NONSECURITY_TEST_COUNT
+        or len(ANDROID_CORE_NONSECURITY_TESTS)
+        != ANDROID_CORE_NONSECURITY_TEST_COUNT
+        or len(set(ANDROID_CORE_NONSECURITY_TESTS))
+        != ANDROID_CORE_NONSECURITY_TEST_COUNT
+    ):
+        failures.append(
+            "Android core non-security combined allowlist must contain "
+            f"exactly {ANDROID_CORE_NONSECURITY_TEST_COUNT} unique methods"
+        )
+    return failures
+
+
+def terminate_android_core_nonsecurity_process(
+    process: subprocess.Popen[bytes],
+) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait(timeout=5)
+
+
+def run_android_core_nonsecurity_tests() -> list[str]:
+    selection_failures = android_core_nonsecurity_selection_failures()
+    if selection_failures:
+        return selection_failures
+    commands = (
+        ("protocol", ANDROID_CORE_NONSECURITY_PROTOCOL_RUN_COMMAND),
+        ("transport", ANDROID_CORE_NONSECURITY_TRANSPORT_RUN_COMMAND),
+    )
+    for label, command in commands:
+        try:
+            process = subprocess.Popen(
+                command,
+                cwd=ROOT,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            try:
+                status = process.wait(timeout=1200)
+            except subprocess.TimeoutExpired:
+                terminate_android_core_nonsecurity_process(process)
+                return [
+                    f"Android core non-security {label} runner timed out"
+                ]
+            except BaseException:
+                terminate_android_core_nonsecurity_process(process)
+                raise
+        except OSError as error:
+            return [
+                f"Android core non-security {label} runner failed to start: "
+                f"{error}"
+            ]
+        if status != 0:
+            return [
+                f"Android core non-security {label} runner exited with "
+                f"status {status}"
+            ]
+    return []
+
+
 def android_test_result_failures(
     expected_results: tuple[tuple[str, int, tuple[str, ...]], ...],
     *,
@@ -5195,6 +6145,7 @@ def android_full_test_run_marker_payload(
     testcase_manifest_sha256: str = (
         ANDROID_FULL_TEST_CASE_MANIFEST_SHA256
     ),
+    marker_contract: str = ANDROID_FULL_TEST_RUN_MARKER_CONTRACT,
 ) -> tuple[dict[str, object] | None, list[str]]:
     source_snapshot, failures = android_result_source_snapshot(
         exact_files=exact_files,
@@ -5204,7 +6155,7 @@ def android_full_test_run_marker_payload(
         return None, failures
     return (
         {
-            "contract": ANDROID_FULL_TEST_RUN_MARKER_CONTRACT,
+            "contract": marker_contract,
             "expectedReports": sorted(
                 f"TEST-{class_name}.xml"
                 for class_name, _, _ in expected_results
@@ -5229,6 +6180,7 @@ def android_full_test_run_marker_failures(
     testcase_manifest_sha256: str = (
         ANDROID_FULL_TEST_CASE_MANIFEST_SHA256
     ),
+    marker_contract: str = ANDROID_FULL_TEST_RUN_MARKER_CONTRACT,
     require_reports: bool = True,
 ) -> list[str]:
     expected_payload, failures = android_full_test_run_marker_payload(
@@ -5236,6 +6188,7 @@ def android_full_test_run_marker_failures(
         source_roots=source_roots,
         expected_results=expected_results,
         testcase_manifest_sha256=testcase_manifest_sha256,
+        marker_contract=marker_contract,
     )
     if expected_payload is None:
         return failures
@@ -5283,8 +6236,23 @@ def android_full_test_run_marker_failures(
 def write_android_full_test_run_marker(
     *,
     marker_path: Path = ANDROID_FULL_TEST_RUN_MARKER_PATH,
+    exact_files: tuple[Path, ...] = ANDROID_RESULT_FRESHNESS_FILES,
+    source_roots: tuple[Path, ...] = ANDROID_RESULT_FRESHNESS_ROOTS,
+    expected_results: tuple[
+        tuple[str, int, tuple[str, ...]], ...
+    ] = ANDROID_FULL_TEST_RESULTS,
+    testcase_manifest_sha256: str = (
+        ANDROID_FULL_TEST_CASE_MANIFEST_SHA256
+    ),
+    marker_contract: str = ANDROID_FULL_TEST_RUN_MARKER_CONTRACT,
 ) -> list[str]:
-    payload, failures = android_full_test_run_marker_payload()
+    payload, failures = android_full_test_run_marker_payload(
+        exact_files=exact_files,
+        source_roots=source_roots,
+        expected_results=expected_results,
+        testcase_manifest_sha256=testcase_manifest_sha256,
+        marker_contract=marker_contract,
+    )
     if payload is None:
         return failures
     marker_path.parent.mkdir(parents=True, exist_ok=True)
@@ -5310,6 +6278,11 @@ def write_android_full_test_run_marker(
         failures.extend(
             android_full_test_run_marker_failures(
                 marker_path=marker_path,
+                exact_files=exact_files,
+                source_roots=source_roots,
+                expected_results=expected_results,
+                testcase_manifest_sha256=testcase_manifest_sha256,
+                marker_contract=marker_contract,
                 require_reports=False,
             )
         )
@@ -5358,6 +6331,7 @@ def android_full_test_binding_payload(
     testcase_manifest_sha256: str = (
         ANDROID_FULL_TEST_CASE_MANIFEST_SHA256
     ),
+    binding_contract: str = ANDROID_FULL_TEST_BINDING_CONTRACT,
 ) -> tuple[dict[str, object] | None, list[str]]:
     source_snapshot, source_failures = android_result_source_snapshot(
         exact_files=exact_files,
@@ -5385,7 +6359,7 @@ def android_full_test_binding_payload(
         return None, failures
     return (
         {
-            "contract": ANDROID_FULL_TEST_BINDING_CONTRACT,
+            "contract": binding_contract,
             "reports": report_snapshot,
             "runMarker": marker_snapshot,
             "sourceInputs": source_snapshot,
@@ -5409,6 +6383,8 @@ def android_full_test_binding_failures(
     testcase_manifest_sha256: str = (
         ANDROID_FULL_TEST_CASE_MANIFEST_SHA256
     ),
+    marker_contract: str = ANDROID_FULL_TEST_RUN_MARKER_CONTRACT,
+    binding_contract: str = ANDROID_FULL_TEST_BINDING_CONTRACT,
 ) -> list[str]:
     marker_failures = android_full_test_run_marker_failures(
         result_root=result_root,
@@ -5417,6 +6393,7 @@ def android_full_test_binding_failures(
         source_roots=source_roots,
         expected_results=expected_results,
         testcase_manifest_sha256=testcase_manifest_sha256,
+        marker_contract=marker_contract,
     )
     expected_payload, payload_failures = android_full_test_binding_payload(
         result_root=result_root,
@@ -5425,6 +6402,7 @@ def android_full_test_binding_failures(
         source_roots=source_roots,
         expected_results=expected_results,
         testcase_manifest_sha256=testcase_manifest_sha256,
+        binding_contract=binding_contract,
     )
     failures = marker_failures + payload_failures
     if expected_payload is None:
@@ -5479,16 +6457,36 @@ def write_android_full_test_binding(
     result_root: Path = ANDROID_FULL_TEST_RESULT_ROOT,
     binding_path: Path = ANDROID_FULL_TEST_BINDING_PATH,
     marker_path: Path = ANDROID_FULL_TEST_RUN_MARKER_PATH,
+    exact_files: tuple[Path, ...] = ANDROID_RESULT_FRESHNESS_FILES,
+    source_roots: tuple[Path, ...] = ANDROID_RESULT_FRESHNESS_ROOTS,
+    expected_results: tuple[
+        tuple[str, int, tuple[str, ...]], ...
+    ] = ANDROID_FULL_TEST_RESULTS,
+    testcase_manifest_sha256: str = (
+        ANDROID_FULL_TEST_CASE_MANIFEST_SHA256
+    ),
+    marker_contract: str = ANDROID_FULL_TEST_RUN_MARKER_CONTRACT,
+    binding_contract: str = ANDROID_FULL_TEST_BINDING_CONTRACT,
 ) -> list[str]:
     failures = android_full_test_run_marker_failures(
         result_root=result_root,
         marker_path=marker_path,
+        exact_files=exact_files,
+        source_roots=source_roots,
+        expected_results=expected_results,
+        testcase_manifest_sha256=testcase_manifest_sha256,
+        marker_contract=marker_contract,
     )
     if failures:
         return failures
     payload, payload_failures = android_full_test_binding_payload(
         result_root=result_root,
         marker_path=marker_path,
+        exact_files=exact_files,
+        source_roots=source_roots,
+        expected_results=expected_results,
+        testcase_manifest_sha256=testcase_manifest_sha256,
+        binding_contract=binding_contract,
     )
     failures.extend(payload_failures)
     if payload is None:
@@ -5518,7 +6516,124 @@ def write_android_full_test_binding(
                 result_root=result_root,
                 binding_path=binding_path,
                 marker_path=marker_path,
+                exact_files=exact_files,
+                source_roots=source_roots,
+                expected_results=expected_results,
+                testcase_manifest_sha256=testcase_manifest_sha256,
+                marker_contract=marker_contract,
+                binding_contract=binding_contract,
             )
+        )
+    return failures
+
+
+def prepare_android_core_nonsecurity_test_run() -> list[str]:
+    failures = android_core_nonsecurity_selection_failures()
+    if failures:
+        return failures
+    for (
+        _label,
+        _result_root,
+        _binding_path,
+        marker_path,
+        expected_results,
+        testcase_manifest_sha256,
+        marker_contract,
+        _binding_contract,
+    ) in ANDROID_CORE_NONSECURITY_RESULT_CONTRACTS:
+        failures.extend(
+            write_android_full_test_run_marker(
+                marker_path=marker_path,
+                exact_files=ANDROID_CORE_NONSECURITY_RESULT_FRESHNESS_FILES,
+                source_roots=ANDROID_CORE_NONSECURITY_RESULT_FRESHNESS_ROOTS,
+                expected_results=expected_results,
+                testcase_manifest_sha256=testcase_manifest_sha256,
+                marker_contract=marker_contract,
+            )
+        )
+    return failures
+
+
+def android_core_nonsecurity_test_result_failures(
+    *,
+    require_bindings: bool,
+) -> list[str]:
+    failures: list[str] = []
+    freshness_inputs = android_result_freshness_inputs(
+        exact_files=ANDROID_CORE_NONSECURITY_RESULT_FRESHNESS_FILES,
+        source_roots=ANDROID_CORE_NONSECURITY_RESULT_FRESHNESS_ROOTS,
+    )
+    for (
+        label,
+        result_root,
+        binding_path,
+        marker_path,
+        expected_results,
+        testcase_manifest_sha256,
+        marker_contract,
+        binding_contract,
+    ) in ANDROID_CORE_NONSECURITY_RESULT_CONTRACTS:
+        result_failures = android_test_result_failures(
+            expected_results,
+            result_root=result_root,
+            freshness_inputs=freshness_inputs,
+            allow_additional_methods=False,
+            require_exact_report_set=True,
+            expected_testcase_manifest_sha256=testcase_manifest_sha256,
+        )
+        failures.extend(
+            f"Android core non-security {label}: {failure}"
+            for failure in result_failures
+        )
+        if require_bindings and not result_failures:
+            binding_failures = android_full_test_binding_failures(
+                result_root=result_root,
+                binding_path=binding_path,
+                marker_path=marker_path,
+                exact_files=ANDROID_CORE_NONSECURITY_RESULT_FRESHNESS_FILES,
+                source_roots=ANDROID_CORE_NONSECURITY_RESULT_FRESHNESS_ROOTS,
+                expected_results=expected_results,
+                testcase_manifest_sha256=testcase_manifest_sha256,
+                marker_contract=marker_contract,
+                binding_contract=binding_contract,
+            )
+            failures.extend(
+                f"Android core non-security {label}: {failure}"
+                for failure in binding_failures
+            )
+    return failures
+
+
+def write_android_core_nonsecurity_test_bindings() -> list[str]:
+    failures = android_core_nonsecurity_test_result_failures(
+        require_bindings=False,
+    )
+    if failures:
+        return failures
+    for (
+        label,
+        result_root,
+        binding_path,
+        marker_path,
+        expected_results,
+        testcase_manifest_sha256,
+        marker_contract,
+        binding_contract,
+    ) in ANDROID_CORE_NONSECURITY_RESULT_CONTRACTS:
+        binding_failures = write_android_full_test_binding(
+            result_root=result_root,
+            binding_path=binding_path,
+            marker_path=marker_path,
+            exact_files=ANDROID_CORE_NONSECURITY_RESULT_FRESHNESS_FILES,
+            source_roots=ANDROID_CORE_NONSECURITY_RESULT_FRESHNESS_ROOTS,
+            expected_results=expected_results,
+            testcase_manifest_sha256=testcase_manifest_sha256,
+            marker_contract=marker_contract,
+            binding_contract=binding_contract,
+        )
+        failures.extend(
+            f"Android core non-security {label}: {failure}"
+            for failure in binding_failures
         )
     return failures
 
@@ -6099,6 +7214,13 @@ def swift_focused_console_snapshot(
                 f"focused Swift testcase {identity} must contain exactly one "
                 f"ordered started/passed pair; found {event_names!r}"
             )
+    if any(
+        summary[1] != 0 or summary[2] != 0
+        for _line, summary in summaries
+    ):
+        failures.append(
+            "focused Swift console must not contain a failing XCTest summary"
+        )
     if not summaries:
         failures.append("focused Swift console must contain an XCTest summary")
     elif summaries[-1][1] != (len(expected_tests), 0, 0):
@@ -7836,6 +8958,17 @@ let package = Package(
                 (
                     "forged final summary",
                     valid_console.replace("Executed 2 tests", "Executed 1 test"),
+                ),
+                (
+                    "earlier failing summary",
+                    valid_console.replace(
+                        valid_console.splitlines()[-1] + "\n",
+                        "\t Executed 1 test, with 1 failure (1 unexpected) "
+                        "in 0.001 (0.001) seconds\n"
+                        + valid_console.splitlines()[-1]
+                        + "\n",
+                        1,
+                    ),
                 ),
                 (
                     "summary before testcase events",
@@ -10945,6 +12078,35 @@ def main() -> int:
         ),
     )
     mode.add_argument(
+        "--prepare-android-core-nonsecurity-test-run",
+        action="store_true",
+        help=(
+            "bind current Android core source before the exact non-security "
+            "test run"
+        ),
+    )
+    mode.add_argument(
+        "--run-android-core-nonsecurity-tests",
+        action="store_true",
+        help=(
+            "run the exact offline Android core non-security method allowlist"
+        ),
+    )
+    mode.add_argument(
+        "--write-android-core-nonsecurity-test-binding",
+        action="store_true",
+        help=(
+            "bind exact Android core non-security JUnit reports to source"
+        ),
+    )
+    mode.add_argument(
+        "--android-core-nonsecurity-test-results",
+        action="store_true",
+        help=(
+            "independently read back Android core non-security JUnit bindings"
+        ),
+    )
+    mode.add_argument(
         "--android-camera-lifecycle-results",
         action="store_true",
         help="validate the production camera lifecycle JUnit results",
@@ -11367,6 +12529,70 @@ def main() -> int:
         )
         return 0
 
+    if args.prepare_android_core_nonsecurity_test_run:
+        failures = prepare_android_core_nonsecurity_test_run()
+        if failures:
+            for failure in failures:
+                print(
+                    "Android core non-security preparation failed: "
+                    + failure,
+                    file=sys.stderr,
+                )
+            return 1
+        print(
+            "Android core non-security source markers written and read back: "
+            f"{len(ANDROID_CORE_NONSECURITY_TESTS)} expected tests."
+        )
+        return 0
+
+    if args.run_android_core_nonsecurity_tests:
+        failures = run_android_core_nonsecurity_tests()
+        if failures:
+            for failure in failures:
+                print(
+                    "Android core non-security runner failed: " + failure,
+                    file=sys.stderr,
+                )
+            return 1
+        print(
+            "Android core non-security offline run passed and retained: "
+            f"{ANDROID_CORE_NONSECURITY_TEST_COUNT}/"
+            f"{ANDROID_CORE_NONSECURITY_TEST_COUNT}."
+        )
+        return 0
+
+    if (
+        args.write_android_core_nonsecurity_test_binding
+        or args.android_core_nonsecurity_test_results
+    ):
+        failures = (
+            write_android_core_nonsecurity_test_bindings()
+            if args.write_android_core_nonsecurity_test_binding
+            else android_core_nonsecurity_test_result_failures(
+                require_bindings=True,
+            )
+        )
+        if failures:
+            for failure in failures:
+                print(
+                    "Android core non-security test results failed: "
+                    + failure,
+                    file=sys.stderr,
+                )
+            return 1
+        action = (
+            "bindings written and read back"
+            if args.write_android_core_nonsecurity_test_binding
+            else "independent binding readback passed"
+        )
+        print(
+            f"Android core non-security test {action}: "
+            f"{len(ANDROID_CORE_NONSECURITY_TESTS)}/"
+            f"{len(ANDROID_CORE_NONSECURITY_TESTS)}; skipped=0; "
+            "failures=0; errors=0."
+        )
+        return 0
+
     if args.prepare_android_full_test_run:
         failures = (
             no_device_full_result_gate_failures()
@@ -11491,6 +12717,7 @@ def main() -> int:
         + android_camera_lifecycle_source_failures()
         + android_camera_controller_host_source_failures()
         + android_font_scale_source_failures()
+        + android_core_nonsecurity_selection_failures()
     )
     if args.self_test and not failures:
         failures.extend(self_test(workflow))

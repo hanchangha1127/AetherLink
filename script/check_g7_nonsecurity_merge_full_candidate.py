@@ -36,6 +36,14 @@ SOURCE_ALGORITHM = "sha256(path-nul-mode-nul-size-nul-sha256-lf)-v1"
 RESULT_RELATIVE_PATH = Path(
     ".build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/candidate.json"
 )
+MACOS_LIFECYCLE_RESULT_RELATIVE_PATH = Path(
+    ".build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/"
+    "macos-current-unsealed-lifecycle-v4/result.json"
+)
+MACOS_LIFECYCLE_REPEATABILITY_RELATIVE_PATH = Path(
+    ".build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/"
+    "macos-current-unsealed-lifecycle-v4/repeatability.json"
+)
 RESULT_MAX_BYTES = 1 * 1024 * 1024
 SOURCE_FILE_MAX_BYTES = 64 * 1024 * 1024
 SOURCE_TOTAL_MAX_BYTES = 1024 * 1024 * 1024
@@ -53,21 +61,51 @@ ANDROID_LINT_XML_PATH = Path(
 
 EXPECTED_IMPLEMENTATION_PATHS = (
     Path("script/check_g7_nonsecurity_merge_full_candidate.py"),
+    Path("script/check_g7_nonsecurity_merge_full_current.py"),
+    Path("script/g7_reviewed_nonsecurity_swift_addon_identities_v5.txt"),
+    Path("script/g7_reviewed_nonsecurity_swift_addon_identities_v6.txt"),
     Path("script/run_clean_release_reproducibility.py"),
     Path("script/run_g7_nonsecurity_merge_full_candidate.py"),
+    Path("script/run_g7_nonsecurity_merge_full_current.py"),
     Path("script/test_check_g7_nonsecurity_merge_full_candidate.py"),
+    Path("script/test_check_g7_nonsecurity_merge_full_current.py"),
     Path("script/test_run_g7_nonsecurity_merge_full_candidate.py"),
+    Path("script/test_run_g7_nonsecurity_merge_full_current.py"),
 )
 
 EXPECTED_ARTIFACT_PATHS = (
-    Path(".build/aetherlink-current-unsealed-lifecycle-v1/repeatability.json"),
-    Path(".build/aetherlink-current-unsealed-lifecycle-v1/result.json"),
     Path(".build/aetherlink-document-ingestion-asan-binding-v1.json"),
     Path(".build/aetherlink-document-ingestion-asan-console-v1.log"),
     Path(".build/aetherlink-document-ingestion-asan-run-marker-v1.json"),
     Path(".build/aetherlink-document-ingestion-mutation-binding-v1.json"),
     Path(".build/aetherlink-document-ingestion-mutation-console-v1.log"),
     Path(".build/aetherlink-document-ingestion-mutation-run-marker-v1.json"),
+    MACOS_LIFECYCLE_REPEATABILITY_RELATIVE_PATH,
+    MACOS_LIFECYCLE_RESULT_RELATIVE_PATH,
+    Path(
+        ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+        "binding.json"
+    ),
+    Path(
+        ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+        "console.log"
+    ),
+    Path(
+        ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+        "execution-contract.json"
+    ),
+    Path(
+        ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+        "parent-result.json"
+    ),
+    Path(
+        ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+        "result.json"
+    ),
+    Path(
+        ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+        "run-marker.json"
+    ),
     Path(".build/aetherlink-g7-nonsecurity-swift-binding-v1.json"),
     Path(".build/aetherlink-g7-nonsecurity-swift-console-v1.log"),
     Path(".build/aetherlink-g7-nonsecurity-swift-run-marker-v1.json"),
@@ -85,6 +123,22 @@ EXPECTED_ARTIFACT_PATHS = (
     Path(
         "apps/android/app/build/test-results/testDebugUnitTest/"
         "aetherlink-full-test-result-binding-v1.json"
+    ),
+    Path(
+        "apps/android/core/protocol/build/"
+        "aetherlink-core-nonsecurity-test-run-marker-v1.json"
+    ),
+    Path(
+        "apps/android/core/protocol/build/test-results/testDebugUnitTest/"
+        "aetherlink-core-nonsecurity-test-result-binding-v1.json"
+    ),
+    Path(
+        "apps/android/core/transport/build/"
+        "aetherlink-core-nonsecurity-test-run-marker-v1.json"
+    ),
+    Path(
+        "apps/android/core/transport/build/test-results/testDebugUnitTest/"
+        "aetherlink-core-nonsecurity-test-result-binding-v1.json"
     ),
     Path("dist/unsealed-package-only/AetherLink.app/Contents/MacOS/AetherLink"),
     Path(
@@ -114,6 +168,7 @@ EXPECTED_COMMAND_IDS = (
     "release-diagnostics-contract-tests",
     "release-archive-contract-tests",
     "g7-candidate-contract-tests",
+    "g7-current-contract-tests",
     "macos-debug-compile",
     "swift-test-list",
     "swift-selection-readback",
@@ -125,6 +180,14 @@ EXPECTED_COMMAND_IDS = (
     "g7-nonsecurity-swift-run",
     "g7-nonsecurity-swift-bind",
     "g7-nonsecurity-swift-readback",
+    "g7-current-prepare",
+    "g7-current-run",
+    "g7-current-bind",
+    "g7-current-readback",
+    "g7-current-independent-readback",
+    "g7-current-parent-bind",
+    "g7-current-parent-readback",
+    "g7-current-parent-independent-readback",
     "document-ingestion-asan-prepare",
     "document-ingestion-asan-run",
     "document-ingestion-asan-bind",
@@ -140,6 +203,10 @@ EXPECTED_COMMAND_IDS = (
     "android-camera-lifecycle-readback",
     "android-camera-controller-readback",
     "android-font-scale-readback",
+    "android-core-nonsecurity-prepare",
+    "android-core-nonsecurity-run",
+    "android-core-nonsecurity-bind",
+    "android-core-nonsecurity-readback",
     "android-release-build",
     "android-release-readback",
     "android-diagnostics-produce",
@@ -157,16 +224,23 @@ EXPECTED_COMMAND_IDS = (
     "final-document-ingestion-asan-readback",
     "final-document-ingestion-mutation-readback",
     "final-android-full-readback",
+    "final-android-core-nonsecurity-readback",
     "final-android-release-readback",
     "final-macos-release-readback",
     "final-android-diagnostics-readback",
     "final-macos-diagnostics-readback",
     "final-macos-lifecycle-readback",
+    "final-g7-current-independent-readback",
+    "final-g7-current-parent-independent-readback",
     "final-release-compliance-catalog",
     "final-tracked-document-contracts",
 )
 
 EXPECTED_COVERAGE = {
+    "androidCoreNonsecurityClasses": 2,
+    "androidCoreNonsecurityProtocolTests": 96,
+    "androidCoreNonsecurityTests": 112,
+    "androidCoreNonsecurityTransportTests": 16,
     "androidFullAppClasses": 19,
     "androidFullAppTests": 1226,
     "androidLintIssues": 0,
@@ -174,6 +248,11 @@ EXPECTED_COVERAGE = {
     "documentIngestionMutationCases": 96,
     "documentIngestionMutationXctestTests": 2,
     "releaseComplianceTests": 22,
+    "swiftCurrentDiscoveryTests": 2175,
+    "swiftCurrentNoSocketTests": 1204,
+    "swiftCurrentParentRemainingTests": 967,
+    "swiftCurrentParentReviewedTests": 1208,
+    "swiftCurrentParentSocketContributionTests": 4,
     "swiftDistinctNonsecurityTests": 397,
     "swiftExpandedNonsecurityTests": 247,
     "swiftFocusedTests": 222,
@@ -207,6 +286,30 @@ G7_NONSECURITY_SWIFT_READBACK_COMMAND = (
     "script/check_product_ci.py",
     "--g7-nonsecurity-swift-results",
 )
+G7_CURRENT_RESULT_RELATIVE_PATH = (
+    ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/result.json"
+)
+G7_CURRENT_PARENT_RESULT_RELATIVE_PATH = (
+    ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+    "parent-result.json"
+)
+G7_CURRENT_INDEPENDENT_READBACK_COMMAND = (
+    "python3",
+    "-I",
+    "-B",
+    "-S",
+    "script/check_g7_nonsecurity_merge_full_current.py",
+    G7_CURRENT_RESULT_RELATIVE_PATH,
+)
+G7_CURRENT_PARENT_INDEPENDENT_READBACK_COMMAND = (
+    "python3",
+    "-I",
+    "-B",
+    "-S",
+    "script/check_g7_nonsecurity_merge_full_current.py",
+    "--parent",
+    G7_CURRENT_PARENT_RESULT_RELATIVE_PATH,
+)
 DOCUMENT_INGESTION_ASAN_READBACK_COMMAND = (
     "python3",
     "-B",
@@ -224,6 +327,12 @@ ANDROID_FULL_READBACK_COMMAND = (
     "-B",
     "script/check_product_ci.py",
     "--android-full-test-results",
+)
+ANDROID_CORE_NONSECURITY_READBACK_COMMAND = (
+    "python3",
+    "-B",
+    "script/check_product_ci.py",
+    "--android-core-nonsecurity-test-results",
 )
 ANDROID_RELEASE_READBACK_COMMAND = (
     "python3",
@@ -257,14 +366,21 @@ MACOS_LIFECYCLE_READBACK_COMMAND = (
     "python3",
     "-B",
     "script/check_macos_current_unsealed_ci_lifecycle.py",
+    "--result",
+    MACOS_LIFECYCLE_RESULT_RELATIVE_PATH.as_posix(),
+    "--repeatability-result",
+    MACOS_LIFECYCLE_REPEATABILITY_RELATIVE_PATH.as_posix(),
 )
 READBACK_COMMANDS = (
     PRODUCT_CI_READBACK_COMMAND,
     SWIFT_FOCUSED_READBACK_COMMAND,
     G7_NONSECURITY_SWIFT_READBACK_COMMAND,
+    G7_CURRENT_INDEPENDENT_READBACK_COMMAND,
+    G7_CURRENT_PARENT_INDEPENDENT_READBACK_COMMAND,
     DOCUMENT_INGESTION_ASAN_READBACK_COMMAND,
     DOCUMENT_INGESTION_MUTATION_READBACK_COMMAND,
     ANDROID_FULL_READBACK_COMMAND,
+    ANDROID_CORE_NONSECURITY_READBACK_COMMAND,
     ANDROID_RELEASE_READBACK_COMMAND,
     ANDROID_DIAGNOSTICS_READBACK_COMMAND,
     MACOS_RELEASE_READBACK_COMMAND,
@@ -319,6 +435,38 @@ CRITICAL_COMMAND_ARGV = {
         "script.test_run_g7_nonsecurity_merge_full_candidate",
         "script.test_check_g7_nonsecurity_merge_full_candidate",
     ),
+    "g7-current-contract-tests": (
+        "python3",
+        "-B",
+        "-m",
+        "unittest",
+        "script.test_run_g7_nonsecurity_merge_full_current",
+        "script.test_check_g7_nonsecurity_merge_full_current",
+    ),
+    "macos-lifecycle-contract-tests": (
+        "python3",
+        "-B",
+        "-m",
+        "unittest",
+        "script.test_run_macos_current_unsealed_install_recovery_smoke",
+        (
+            "script.test_check_macos_current_unsealed_install_recovery_"
+            "evidence.CurrentUnsealedRecoveryEvidencePortableTests"
+        ),
+        "script.test_check_macos_current_unsealed_ci_lifecycle",
+        (
+            "script.test_run_macos_runtime_chat_production_append_"
+            "abrupt_recovery_smoke"
+        ),
+        (
+            "script.test_check_macos_runtime_chat_production_append_"
+            "abrupt_recovery_evidence"
+        ),
+        (
+            "script.test_check_macos_current_source_lane_a_"
+            "idle_resource_repeatability"
+        ),
+    ),
     "swift-test-list": ("swift", "test", "list"),
     "swift-focused-run": (
         "python3",
@@ -347,7 +495,70 @@ CRITICAL_COMMAND_ARGV = {
         "--write-g7-nonsecurity-swift-binding",
     ),
     "g7-nonsecurity-swift-readback": G7_NONSECURITY_SWIFT_READBACK_COMMAND,
+    "g7-current-prepare": (
+        "python3",
+        "-B",
+        "script/run_g7_nonsecurity_merge_full_current.py",
+        "--prepare",
+    ),
+    "g7-current-run": (
+        "python3",
+        "-B",
+        "script/run_g7_nonsecurity_merge_full_current.py",
+        "--run",
+    ),
+    "g7-current-bind": (
+        "python3",
+        "-B",
+        "script/run_g7_nonsecurity_merge_full_current.py",
+        "--write-binding",
+    ),
+    "g7-current-readback": (
+        "python3",
+        "-B",
+        "script/run_g7_nonsecurity_merge_full_current.py",
+        "--results",
+    ),
+    "g7-current-independent-readback": (
+        G7_CURRENT_INDEPENDENT_READBACK_COMMAND
+    ),
+    "g7-current-parent-bind": (
+        "python3",
+        "-B",
+        "script/run_g7_nonsecurity_merge_full_current.py",
+        "--write-parent",
+    ),
+    "g7-current-parent-readback": (
+        "python3",
+        "-B",
+        "script/run_g7_nonsecurity_merge_full_current.py",
+        "--parent-results",
+    ),
+    "g7-current-parent-independent-readback": (
+        G7_CURRENT_PARENT_INDEPENDENT_READBACK_COMMAND
+    ),
     "android-full-run": ANDROID_FULL_COMMAND,
+    "android-core-nonsecurity-prepare": (
+        "python3",
+        "-B",
+        "script/check_product_ci.py",
+        "--prepare-android-core-nonsecurity-test-run",
+    ),
+    "android-core-nonsecurity-run": (
+        "python3",
+        "-B",
+        "script/check_product_ci.py",
+        "--run-android-core-nonsecurity-tests",
+    ),
+    "android-core-nonsecurity-bind": (
+        "python3",
+        "-B",
+        "script/check_product_ci.py",
+        "--write-android-core-nonsecurity-test-binding",
+    ),
+    "android-core-nonsecurity-readback": (
+        ANDROID_CORE_NONSECURITY_READBACK_COMMAND
+    ),
     "android-release-build": ANDROID_RELEASE_COMMAND,
     "android-release-readback": ANDROID_RELEASE_READBACK_COMMAND,
     "macos-release-source-before": (
@@ -377,9 +588,9 @@ CRITICAL_COMMAND_ARGV = {
         "-B",
         "script/run_macos_current_unsealed_install_recovery_smoke.py",
         "--result",
-        ".build/aetherlink-current-unsealed-lifecycle-v1/result.json",
+        MACOS_LIFECYCLE_RESULT_RELATIVE_PATH.as_posix(),
         "--repeatability-result",
-        ".build/aetherlink-current-unsealed-lifecycle-v1/repeatability.json",
+        MACOS_LIFECYCLE_REPEATABILITY_RELATIVE_PATH.as_posix(),
     ),
     "final-swift-focused-readback": SWIFT_FOCUSED_READBACK_COMMAND,
     "final-g7-nonsecurity-swift-readback": (
@@ -392,6 +603,9 @@ CRITICAL_COMMAND_ARGV = {
         DOCUMENT_INGESTION_MUTATION_READBACK_COMMAND
     ),
     "final-android-full-readback": ANDROID_FULL_READBACK_COMMAND,
+    "final-android-core-nonsecurity-readback": (
+        ANDROID_CORE_NONSECURITY_READBACK_COMMAND
+    ),
     "final-android-release-readback": ANDROID_RELEASE_READBACK_COMMAND,
     "final-android-diagnostics-readback": (
         ANDROID_DIAGNOSTICS_READBACK_COMMAND
@@ -399,6 +613,12 @@ CRITICAL_COMMAND_ARGV = {
     "final-macos-release-readback": MACOS_RELEASE_READBACK_COMMAND,
     "final-macos-diagnostics-readback": MACOS_DIAGNOSTICS_READBACK_COMMAND,
     "final-macos-lifecycle-readback": MACOS_LIFECYCLE_READBACK_COMMAND,
+    "final-g7-current-independent-readback": (
+        G7_CURRENT_INDEPENDENT_READBACK_COMMAND
+    ),
+    "final-g7-current-parent-independent-readback": (
+        G7_CURRENT_PARENT_INDEPENDENT_READBACK_COMMAND
+    ),
 }
 
 

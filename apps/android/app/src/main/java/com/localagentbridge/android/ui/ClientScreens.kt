@@ -694,7 +694,7 @@ fun ConnectionStatusScreen(
         item { RouteRefreshSavedNotice(state = state) }
         item {
             ErrorText(
-                error = state.error,
+                error = displayedRuntimeError(state),
                 routeAction = routeNoticePrimaryAction(state),
                 onConnect = null,
                 onScanLatestQr = null,
@@ -1814,7 +1814,9 @@ fun ChatScreen(
     val keyboardDockPadding = if (WindowInsets.ime.getBottom(density) > 0) 64.dp else 0.dp
     val emptyStateScroll = rememberScrollState()
     val bottomNoticeScroll = rememberScrollState()
-    val showChatBottomError = state.error != null && shouldShowChatBottomError(state)
+    val displayedError = displayedRuntimeError(state)
+    val showChatBottomError = displayedError != null &&
+        (state.localDataCompatibilityError != null || shouldShowChatBottomError(state))
     val showBottomNotices =
         (state.isConnected && state.backendAvailable == false) ||
             !state.routeRefreshNoticeRuntimeName.isNullOrBlank() ||
@@ -2086,7 +2088,7 @@ fun ChatScreen(
                             RouteRefreshSavedNotice(state = state)
                             if (showChatBottomError) {
                                 ErrorText(
-                                    error = state.error,
+                                    error = displayedError,
                                     routeAction = routeNoticePrimaryAction(state),
                                     onConnect = onConnect,
                                     onScanLatestQr = onScanLatestQr,
@@ -2333,6 +2335,7 @@ fun SettingsScreen(
     onRenameChatSession: (String) -> Unit = {},
 ) {
     val topError = settingsTopError(state)
+    val canChangeLocalPreferences = state.localDataCompatibilityError == null
     ScreenList(modifier) {
         if (settingsScreenShowsGenericHeader(state)) {
             item {
@@ -2381,8 +2384,13 @@ fun SettingsScreen(
                     )
                     AutoReconnectSettingRow(
                         enabled = state.trustedRuntimeAutoReconnectEnabled,
-                        canChange = true,
+                        canChange = canChangeLocalPreferences,
                         onSetAutoReconnectEnabled = onSetAutoReconnectEnabled,
+                        disabledStateDescription = if (canChangeLocalPreferences) {
+                            null
+                        } else {
+                            stringResource(R.string.error_local_data_update_required)
+                        },
                     )
                 }
             }
@@ -2395,6 +2403,7 @@ fun SettingsScreen(
                 onFollowSystemLanguage = onFollowSystemLanguage,
                 selectedTheme = state.selectedTheme,
                 onSetTheme = onSetTheme,
+                canChange = canChangeLocalPreferences,
             )
         }
         if (settingsScreenShowsTroubleshootingSection(showDeveloperDiagnostics)) {
@@ -2584,10 +2593,15 @@ fun SettingsScreen(
 }
 
 internal fun settingsTopError(state: RuntimeUiState): RuntimeUiError? {
-    val error = state.error ?: return null
+    val error = displayedRuntimeError(state) ?: return null
+    if (state.localDataCompatibilityError != null) return error
     return error.takeUnless {
         state.trustedRuntime != null && it.isRouteAvailabilityNotice()
     }
+}
+
+internal fun displayedRuntimeError(state: RuntimeUiState): RuntimeUiError? {
+    return state.localDataCompatibilityError ?: state.error
 }
 
 internal fun settingsScreenShowsGenericHeader(state: RuntimeUiState): Boolean {
@@ -2641,6 +2655,7 @@ internal fun AutoReconnectSettingRow(
     enabled: Boolean,
     canChange: Boolean,
     onSetAutoReconnectEnabled: (Boolean) -> Unit,
+    disabledStateDescription: String? = null,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val autoReconnectContentDescription = stringResource(R.string.auto_reconnect)
@@ -2651,9 +2666,8 @@ internal fun AutoReconnectSettingRow(
             R.string.setting_state_off
         },
     )
-    val autoReconnectDisabledStateDescription = stringResource(
-        R.string.auto_reconnect_state_pair_first,
-    )
+    val autoReconnectDisabledStateDescription = disabledStateDescription
+        ?: stringResource(R.string.auto_reconnect_state_pair_first)
     val autoReconnectActionLabel = stringResource(
         if (enabled) {
             R.string.setting_action_disable_named
@@ -5983,6 +5997,7 @@ private fun AppPreferencesPanel(
     onFollowSystemLanguage: () -> Unit,
     selectedTheme: RuntimeAppTheme,
     onSetTheme: (RuntimeAppTheme) -> Unit,
+    canChange: Boolean,
 ) {
     OutlinedCard(
         modifier = Modifier
@@ -6004,12 +6019,14 @@ private fun AppPreferencesPanel(
             AppearancePreferenceSelector(
                 selectedTheme = selectedTheme,
                 onSetTheme = onSetTheme,
+                canChange = canChange,
             )
             LanguagePreferenceSelector(
                 selectedLanguageTag = selectedLanguageTag,
                 selectedLanguageSource = selectedLanguageSource,
                 onSetLanguageTag = onSetLanguageTag,
                 onFollowSystemLanguage = onFollowSystemLanguage,
+                canChange = canChange,
             )
         }
     }
@@ -6019,10 +6036,12 @@ private fun AppPreferencesPanel(
 private fun AppearancePreferenceSelector(
     selectedTheme: RuntimeAppTheme,
     onSetTheme: (RuntimeAppTheme) -> Unit,
+    canChange: Boolean,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val options = appThemePreferenceOptions()
     val selectedStateDescription = stringResource(R.string.selection_state_selected)
+    val disabledStateDescription = stringResource(R.string.error_local_data_update_required)
     val groupLabel = stringResource(R.string.appearance_title)
 
     Column(
@@ -6067,11 +6086,25 @@ private fun AppearancePreferenceSelector(
                 R.string.preference_option_action_select,
                 optionAccessibilitySummary,
             )
-            val selectTheme = {
-                if (shouldPerformSelectionChangeHaptic(selected)) {
-                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
+            val selectTheme: () -> Unit = {
+                if (canChange) {
+                    if (shouldPerformSelectionChangeHaptic(selected)) {
+                        hapticFeedback.performAetherLinkFeedback(
+                            AetherLinkInteractionFeedback.SelectionChange,
+                        )
+                    }
+                    onSetTheme(theme)
                 }
-                onSetTheme(theme)
+            }
+            val actionSemantics = if (canChange) {
+                Modifier.semantics {
+                    onClick(label = optionSelectActionLabel) {
+                        selectTheme()
+                        true
+                    }
+                }
+            } else {
+                Modifier
             }
             Row(
                 modifier = Modifier
@@ -6079,6 +6112,7 @@ private fun AppearancePreferenceSelector(
                     .testTag(appearancePreferenceOptionRowTestTag(theme))
                     .selectable(
                         selected = selected,
+                        enabled = canChange,
                         role = Role.RadioButton,
                         onClick = selectTheme,
                     )
@@ -6086,13 +6120,10 @@ private fun AppearancePreferenceSelector(
                         selected = selected,
                         selectedStateDescription = selectedStateDescription,
                         contentDescription = optionAccessibilitySummary,
+                        enabled = canChange,
+                        disabledStateDescription = disabledStateDescription,
                     )
-                    .semantics {
-                        onClick(label = optionSelectActionLabel) {
-                            selectTheme()
-                            true
-                        }
-                    }
+                    .then(actionSemantics)
                     .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -6100,6 +6131,7 @@ private fun AppearancePreferenceSelector(
                 RadioButton(
                     selected = selected,
                     onClick = null,
+                    enabled = canChange,
                     modifier = Modifier.testTag(appearancePreferenceOptionRadioTestTag(theme)),
                 )
                 Column(
@@ -6137,10 +6169,15 @@ private fun Modifier.selectedPreferenceOptionState(
     selected: Boolean,
     selectedStateDescription: String,
     contentDescription: String,
+    enabled: Boolean = true,
+    disabledStateDescription: String? = null,
 ): Modifier {
     return semantics {
         this.contentDescription = contentDescription
-        if (selected) {
+        if (!enabled) {
+            disabled()
+            disabledStateDescription?.let { stateDescription = it }
+        } else if (selected) {
             stateDescription = selectedStateDescription
         }
     }
@@ -6173,7 +6210,13 @@ internal fun EmbeddingModelPanel(
     } else {
         stringResource(R.string.load_models)
     }
-    val canChangeEmbeddingModel = !state.isStreaming
+    val localDataUpdateRequired = state.localDataCompatibilityError != null
+    val canChangeEmbeddingModel = !state.isStreaming && !localDataUpdateRequired
+    val embeddingModelDisabledStateDescription = if (localDataUpdateRequired) {
+        stringResource(R.string.error_local_data_update_required)
+    } else {
+        null
+    }
 
     OutlinedCard(
         modifier = Modifier
@@ -6219,6 +6262,7 @@ internal fun EmbeddingModelPanel(
                 selected = state.selectedEmbeddingModelId == null,
                 enabled = canChangeEmbeddingModel,
                 onSelectEmbeddingModel = onSelectEmbeddingModel,
+                disabledStateDescription = embeddingModelDisabledStateDescription,
             )
             if (selectedEmbeddingModelUnavailable) {
                 SavedEmbeddingModelRow(
@@ -6263,6 +6307,7 @@ internal fun EmbeddingModelPanel(
                             selected = model.id == state.selectedEmbeddingModelId,
                             enabled = canChangeEmbeddingModel,
                             onSelectEmbeddingModel = onSelectEmbeddingModel,
+                            disabledStateDescription = embeddingModelDisabledStateDescription,
                         )
                     }
                 }
@@ -6321,6 +6366,8 @@ private fun embeddingModelCapabilityDisplay(model: RuntimeModel): EmbeddingModel
 @Composable
 private fun modelRefreshButtonStateDescription(state: RuntimeUiState): String {
     return when {
+        state.localDataCompatibilityError != null ->
+            stringResource(R.string.error_local_data_update_required)
         state.isStreaming -> stringResource(R.string.model_picker_state_wait_for_stream)
         state.isLoadingModels -> stringResource(R.string.model_refresh_state_loading)
         state.isConnected -> stringResource(R.string.model_refresh_state_ready)
@@ -6388,6 +6435,7 @@ private fun EmbeddingModelNoneRow(
     selected: Boolean,
     enabled: Boolean,
     onSelectEmbeddingModel: (String?) -> Unit,
+    disabledStateDescription: String? = null,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val modelName = stringResource(R.string.model_none)
@@ -6413,6 +6461,7 @@ private fun EmbeddingModelNoneRow(
             selected = selected,
             enabled = enabled,
             contentDescription = accessibilitySummary,
+            disabledStateDescription = disabledStateDescription,
         ).testTag(EMBEDDING_MODEL_NONE_ROW_TEST_TAG),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
     ) {
@@ -6454,6 +6503,7 @@ private fun EmbeddingModelRow(
     selected: Boolean,
     enabled: Boolean,
     onSelectEmbeddingModel: (String?) -> Unit,
+    disabledStateDescription: String? = null,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val modelStatusText = stringResource(
@@ -6483,7 +6533,8 @@ private fun EmbeddingModelRow(
     )
     val rowEnabled = enabled && model.installed
     val rowDisabledStateDescription = when {
-        !enabled -> stringResource(R.string.model_picker_state_wait_for_stream)
+        !enabled -> disabledStateDescription
+            ?: stringResource(R.string.model_picker_state_wait_for_stream)
         !model.installed -> stringResource(R.string.embedding_model_state_install_before_selecting)
         else -> null
     }
@@ -6560,10 +6611,12 @@ private fun LanguagePreferenceSelector(
     selectedLanguageSource: String,
     onSetLanguageTag: (String) -> Unit,
     onFollowSystemLanguage: () -> Unit,
+    canChange: Boolean,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val options = appLanguagePreferenceOptions()
     val selectedStateDescription = stringResource(R.string.selection_state_selected)
+    val disabledStateDescription = stringResource(R.string.error_local_data_update_required)
     val groupLabel = stringResource(R.string.language_title)
     val systemSelected = appLanguagePreferenceSystemOptionSelected(selectedLanguageSource)
     val systemOptionLabel = stringResource(R.string.language_follow_system)
@@ -6578,11 +6631,25 @@ private fun LanguagePreferenceSelector(
         R.string.preference_option_action_select,
         systemOptionAccessibilitySummary,
     )
-    val selectSystemLanguage = {
-        if (shouldPerformSelectionChangeHaptic(systemSelected)) {
-            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
+    val selectSystemLanguage: () -> Unit = {
+        if (canChange) {
+            if (shouldPerformSelectionChangeHaptic(systemSelected)) {
+                hapticFeedback.performAetherLinkFeedback(
+                    AetherLinkInteractionFeedback.SelectionChange,
+                )
+            }
+            onFollowSystemLanguage()
         }
-        onFollowSystemLanguage()
+    }
+    val systemActionSemantics = if (canChange) {
+        Modifier.semantics {
+            onClick(label = systemOptionSelectActionLabel) {
+                selectSystemLanguage()
+                true
+            }
+        }
+    } else {
+        Modifier
     }
 
     Column(
@@ -6607,6 +6674,7 @@ private fun LanguagePreferenceSelector(
                 .testTag(languagePreferenceOptionRowTestTag(APP_LANGUAGE_SOURCE_SYSTEM))
                 .selectable(
                     selected = systemSelected,
+                    enabled = canChange,
                     role = Role.RadioButton,
                     onClick = selectSystemLanguage,
                 )
@@ -6614,13 +6682,10 @@ private fun LanguagePreferenceSelector(
                     selected = systemSelected,
                     selectedStateDescription = selectedStateDescription,
                     contentDescription = systemOptionAccessibilitySummary,
+                    enabled = canChange,
+                    disabledStateDescription = disabledStateDescription,
                 )
-                .semantics {
-                    onClick(label = systemOptionSelectActionLabel) {
-                        selectSystemLanguage()
-                        true
-                    }
-                }
+                .then(systemActionSemantics)
                 .padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -6628,6 +6693,7 @@ private fun LanguagePreferenceSelector(
             RadioButton(
                 selected = systemSelected,
                 onClick = null,
+                enabled = canChange,
                 modifier = Modifier.testTag(languagePreferenceOptionRadioTestTag(APP_LANGUAGE_SOURCE_SYSTEM)),
             )
             Column(
@@ -6663,11 +6729,25 @@ private fun LanguagePreferenceSelector(
                 R.string.preference_option_action_select,
                 optionAccessibilitySummary,
             )
-            val selectLanguage = {
-                if (shouldPerformSelectionChangeHaptic(selected)) {
-                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
+            val selectLanguage: () -> Unit = {
+                if (canChange) {
+                    if (shouldPerformSelectionChangeHaptic(selected)) {
+                        hapticFeedback.performAetherLinkFeedback(
+                            AetherLinkInteractionFeedback.SelectionChange,
+                        )
+                    }
+                    onSetLanguageTag(language.languageTag)
                 }
-                onSetLanguageTag(language.languageTag)
+            }
+            val actionSemantics = if (canChange) {
+                Modifier.semantics {
+                    onClick(label = optionSelectActionLabel) {
+                        selectLanguage()
+                        true
+                    }
+                }
+            } else {
+                Modifier
             }
             Row(
                 modifier = Modifier
@@ -6675,6 +6755,7 @@ private fun LanguagePreferenceSelector(
                     .testTag(languagePreferenceOptionRowTestTag(language.languageTag))
                     .selectable(
                         selected = selected,
+                        enabled = canChange,
                         role = Role.RadioButton,
                         onClick = selectLanguage,
                     )
@@ -6682,13 +6763,10 @@ private fun LanguagePreferenceSelector(
                         selected = selected,
                         selectedStateDescription = selectedStateDescription,
                         contentDescription = optionAccessibilitySummary,
+                        enabled = canChange,
+                        disabledStateDescription = disabledStateDescription,
                     )
-                    .semantics {
-                        onClick(label = optionSelectActionLabel) {
-                            selectLanguage()
-                            true
-                        }
-                    }
+                    .then(actionSemantics)
                     .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -6696,6 +6774,7 @@ private fun LanguagePreferenceSelector(
                 RadioButton(
                     selected = selected,
                     onClick = null,
+                    enabled = canChange,
                     modifier = Modifier.testTag(languagePreferenceOptionRadioTestTag(language.languageTag)),
                 )
                 Text(
@@ -11804,6 +11883,8 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "generation_not_found" -> stringResource(R.string.error_generation_not_found)
         "transport_error" -> stringResource(R.string.error_transport_error)
         "internal_error" -> stringResource(R.string.error_internal_error)
+        "local_data_update_required" ->
+            stringResource(R.string.error_local_data_update_required)
         else -> stringResource(R.string.error_unknown)
     }
 }

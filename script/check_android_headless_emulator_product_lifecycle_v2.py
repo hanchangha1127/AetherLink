@@ -38,6 +38,10 @@ PROCESS_OBSERVATION_LABELS = (
     "after_kill",
     "before_reboot",
     "after_reboot",
+    "future_data_first_launch",
+    "future_data_second_launch",
+    "legacy_migration_first_launch",
+    "legacy_migration_second_launch",
 )
 BOOT_ID_RE = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
@@ -49,6 +53,53 @@ PERMISSION_CONTROLLER_PACKAGES = (
     "com.google.android.permissioncontroller",
 )
 PREFERENCES_RELATIVE = "shared_prefs/aetherlink_pairing_qr_camera_permission.xml"
+FUTURE_RUNTIME_LOCAL_STORE_SEED = (
+    b'<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n'
+    b"<map>\n"
+    b'    <string name="runtime_data">{&quot;version&quot;:2}</string>\n'
+    b"</map>\n"
+)
+FUTURE_DATA_UPDATE_REQUIRED_TEXT = (
+    "This version of AetherLink can’t safely open the saved app data. "
+    "Update AetherLink before changing settings."
+)
+LEGACY_RUNTIME_LOCAL_STORE_SEED = (
+    b'<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n'
+    b"<map>\n"
+    b'    <string name="runtime_data">'
+    b"{&quot;appTheme&quot;:&quot;dark&quot;,&quot;composerDraft&quot;:"
+    b"&quot;legacy-v0&quot;,&quot;trustedRuntimeAutoReconnectEnabled&quot;:false}"
+    b"</string>\n"
+    b"</map>\n"
+)
+DEVICEIDLE_UNFORCE_RECEIPT_RE = re.compile(
+    rb"Light state: ([A-Z_]+), deep state: ([A-Z_]+)\n"
+    rb"mForceModeManagerQuickDozeRequest: false\n"
+    rb"mForceModeManagerOffBodyState: false\n\Z"
+)
+DEVICEIDLE_LIGHT_STATES = frozenset(
+    {
+        "ACTIVE",
+        "INACTIVE",
+        "PRE_IDLE",
+        "IDLE",
+        "WAITING_FOR_NETWORK",
+        "IDLE_MAINTENANCE",
+        "OVERRIDE",
+    }
+)
+DEVICEIDLE_DEEP_STATES = frozenset(
+    {
+        "ACTIVE",
+        "INACTIVE",
+        "IDLE_PENDING",
+        "SENSING",
+        "LOCATING",
+        "IDLE",
+        "IDLE_MAINTENANCE",
+        "QUICK_DOZE_DELAY",
+    }
+)
 
 SCENARIO_CHECKS = (
     (
@@ -89,6 +140,34 @@ SCENARIO_CHECKS = (
             "networkIsolationReapplied",
             "pairingUiRecovered",
             "settingsRecoveryVisible",
+        ),
+    ),
+    (
+        "future_local_data_update_required_cold_launch_preservation",
+        (
+            "futureVersionSeededExactly",
+            "firstColdLaunchUpdateRequiredVisible",
+            "firstColdLaunchPairingUiVisible",
+            "firstColdLaunchSavedDataPreserved",
+            "secondColdLaunchUpdateRequiredVisible",
+            "secondColdLaunchPairingUiVisible",
+            "secondColdLaunchSavedDataPreserved",
+            "distinctColdLaunchProcessIdentityObserved",
+        ),
+    ),
+    (
+        "legacy_versionless_local_data_migration_cold_launch_stability",
+        (
+            "legacyVersionlessSeededExactly",
+            "firstColdLaunchMigrationCompleted",
+            "firstColdLaunchSettingsPreserved",
+            "firstColdLaunchUpdateRequiredAbsent",
+            "firstColdLaunchPairingUiVisible",
+            "secondColdLaunchMigratedBytesStable",
+            "secondColdLaunchSettingsPreserved",
+            "secondColdLaunchUpdateRequiredAbsent",
+            "secondColdLaunchPairingUiVisible",
+            "distinctColdLaunchProcessIdentityObserved",
         ),
     ),
 )
@@ -140,8 +219,28 @@ SCENARIO_EVIDENCE = {
         "package-path-after-reboot.txt",
         "package-path-before.txt",
         "reboot-transport-observations.json",
+        "ui/follow-system-after-reboot-drawer.xml",
+        "ui/follow-system-after-reboot.xml",
+        "ui/follow-system-before-reboot-drawer.xml",
+        "ui/follow-system-before-reboot.xml",
         "ui/after-reboot-camera-settings-recovery.xml",
         "ui/after-reboot.xml",
+    ],
+    "future_local_data_update_required_cold_launch_preservation": [
+        "app-process-observations.json",
+        "runtime-local-store-after-future-version-first-launch.xml",
+        "runtime-local-store-after-future-version-second-launch.xml",
+        "runtime-local-store-future-version-seed.xml",
+        "ui/future-data-first-launch.xml",
+        "ui/future-data-second-launch.xml",
+    ],
+    "legacy_versionless_local_data_migration_cold_launch_stability": [
+        "app-process-observations.json",
+        "runtime-local-store-after-legacy-migration-first-launch.xml",
+        "runtime-local-store-after-legacy-migration-second-launch.xml",
+        "runtime-local-store-legacy-versionless-seed.xml",
+        "ui/legacy-migration-first-launch.xml",
+        "ui/legacy-migration-second-launch.xml",
     ],
 }
 
@@ -195,11 +294,25 @@ EVIDENCE_PATHS = (
     "pre-adb-devices.txt",
     "pre-emulator-processes.json",
     "reboot-transport-observations.json",
+    "runtime-local-store-after-future-version-first-launch.xml",
+    "runtime-local-store-after-future-version-second-launch.xml",
+    "runtime-local-store-future-version-seed.xml",
+    "runtime-local-store-after-legacy-migration-first-launch.xml",
+    "runtime-local-store-after-legacy-migration-second-launch.xml",
+    "runtime-local-store-legacy-versionless-seed.xml",
     "ui/after-process-kill.xml",
     "ui/after-reboot-camera-settings-recovery.xml",
     "ui/after-reboot.xml",
     "ui/background-after-doze.xml",
     "ui/background-before-doze.xml",
+    "ui/follow-system-after-reboot-drawer.xml",
+    "ui/follow-system-after-reboot.xml",
+    "ui/follow-system-before-reboot-drawer.xml",
+    "ui/follow-system-before-reboot.xml",
+    "ui/future-data-first-launch.xml",
+    "ui/future-data-second-launch.xml",
+    "ui/legacy-migration-first-launch.xml",
+    "ui/legacy-migration-second-launch.xml",
     "ui/setup-camera-denied.xml",
     "ui/setup-camera-permission-dialog.xml",
     "ui/setup-camera-settings-recovery.xml",
@@ -862,6 +975,164 @@ def camera_state_failures(
     return preference_sha, failures
 
 
+def future_runtime_local_data_failures(
+    evidence: Mapping[str, CapturedEvidenceFile],
+) -> tuple[dict[str, object], list[str]]:
+    failures: list[str] = []
+    paths = (
+        "runtime-local-store-future-version-seed.xml",
+        "runtime-local-store-after-future-version-first-launch.xml",
+        "runtime-local-store-after-future-version-second-launch.xml",
+    )
+    try:
+        root = ET.fromstring(FUTURE_RUNTIME_LOCAL_STORE_SEED)
+    except ET.ParseError as error:
+        return {}, [f"future-version seed contract is malformed XML: {error}"]
+    children = list(root)
+    if (
+        root.tag != "map"
+        or len(children) != 1
+        or children[0].tag != "string"
+        or children[0].attrib != {"name": "runtime_data"}
+        or children[0].text != '{"version":2}'
+        or list(children[0])
+    ):
+        failures.append("future-version seed contract must contain only runtime_data version 2")
+    for relative in paths:
+        try:
+            raw = exact_file_bytes(evidence, relative)
+        except EvidenceError as error:
+            failures.append(f"{relative} cannot be read: {error}")
+            continue
+        if raw != FUTURE_RUNTIME_LOCAL_STORE_SEED:
+            failures.append(f"{relative} must preserve the exact future-version seed bytes")
+    return {
+        "sha256": hashlib.sha256(FUTURE_RUNTIME_LOCAL_STORE_SEED).hexdigest(),
+        "size": len(FUTURE_RUNTIME_LOCAL_STORE_SEED),
+        "version": 2,
+    }, failures
+
+
+def runtime_local_store_json_failures(
+    raw: bytes,
+    *,
+    label: str,
+) -> tuple[dict[str, object], list[str]]:
+    failures: list[str] = []
+    if not (1 <= len(raw) <= 1024 * 1024):
+        return {}, [f"{label} must be nonempty and at most 1 MiB"]
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError as error:
+        return {}, [f"{label} is malformed XML: {error}"]
+    children = list(root)
+    if (
+        root.tag != "map"
+        or root.attrib
+        or len(children) != 1
+        or children[0].tag != "string"
+        or children[0].attrib != {"name": "runtime_data"}
+        or type(children[0].text) is not str
+        or list(children[0])
+    ):
+        return {}, [f"{label} must contain only one runtime_data string"]
+    try:
+        value = json.loads(
+            children[0].text,
+            object_pairs_hook=duplicate_rejecting_object,
+        )
+    except (json.JSONDecodeError, UnicodeDecodeError, EvidenceError) as error:
+        return {}, [f"{label} runtime_data cannot be decoded: {error}"]
+    if type(value) is not dict:
+        failures.append(f"{label} runtime_data must be a JSON object")
+        return {}, failures
+    return value, failures
+
+
+def legacy_runtime_local_data_failures(
+    evidence: Mapping[str, CapturedEvidenceFile],
+) -> tuple[dict[str, object], list[str]]:
+    failures: list[str] = []
+    seed_path = "runtime-local-store-legacy-versionless-seed.xml"
+    try:
+        seed = exact_file_bytes(evidence, seed_path)
+    except EvidenceError as error:
+        return {}, [f"{seed_path} cannot be read: {error}"]
+    if seed != LEGACY_RUNTIME_LOCAL_STORE_SEED:
+        failures.append(f"{seed_path} must equal the exact versionless seed bytes")
+    seed_value, seed_failures = runtime_local_store_json_failures(
+        seed,
+        label=seed_path,
+    )
+    failures.extend(seed_failures)
+    expected_seed_value = {
+        "appTheme": "dark",
+        "composerDraft": "legacy-v0",
+        "trustedRuntimeAutoReconnectEnabled": False,
+    }
+    if seed_value != expected_seed_value or "version" in seed_value:
+        failures.append(
+            f"{seed_path} must contain exactly the versionless legacy fixture"
+        )
+
+    migrated_paths = (
+        "runtime-local-store-after-legacy-migration-first-launch.xml",
+        "runtime-local-store-after-legacy-migration-second-launch.xml",
+    )
+    migrated_raw: list[bytes] = []
+    migrated_values: list[dict[str, object]] = []
+    for relative in migrated_paths:
+        try:
+            raw = exact_file_bytes(evidence, relative)
+        except EvidenceError as error:
+            failures.append(f"{relative} cannot be read: {error}")
+            continue
+        value, value_failures = runtime_local_store_json_failures(
+            raw,
+            label=relative,
+        )
+        failures.extend(value_failures)
+        migrated_raw.append(raw)
+        migrated_values.append(value)
+        expected = {
+            "appLanguageSource": "system",
+            "appLanguageTag": "en",
+            "appTheme": "dark",
+            "composerDraft": "legacy-v0",
+            "trustedRuntimeAutoReconnectEnabled": False,
+        }
+        for key, expected_value in expected.items():
+            if type(value.get(key)) is not type(expected_value) or value.get(key) != expected_value:
+                failures.append(
+                    f"{relative} must preserve {key}={expected_value!r}"
+                )
+        for key, expected_value in (
+            ("version", 1),
+            ("androidAppLanguagePlatformMigrationVersion", 1),
+        ):
+            if type(value.get(key)) is not int or value.get(key) != expected_value:
+                failures.append(
+                    f"{relative} must contain integer {key}={expected_value}"
+                )
+    if len(migrated_raw) == len(migrated_paths):
+        if migrated_raw[0] == LEGACY_RUNTIME_LOCAL_STORE_SEED:
+            failures.append("first legacy cold launch must rewrite the versionless seed")
+        if migrated_raw[0] != migrated_raw[1]:
+            failures.append("migrated legacy bytes must remain exact across cold launches")
+    first_raw = migrated_raw[0] if migrated_raw else b""
+    first_value = migrated_values[0] if migrated_values else {}
+    return {
+        "appTheme": first_value.get("appTheme"),
+        "composerDraft": first_value.get("composerDraft"),
+        "sha256": hashlib.sha256(first_raw).hexdigest() if first_raw else None,
+        "size": len(first_raw) if first_raw else None,
+        "trustedRuntimeAutoReconnectEnabled": first_value.get(
+            "trustedRuntimeAutoReconnectEnabled"
+        ),
+        "version": first_value.get("version"),
+    }, failures
+
+
 def lifecycle_raw_failures(
     evidence: Mapping[str, CapturedEvidenceFile],
 ) -> tuple[dict[str, object], list[str]]:
@@ -896,7 +1167,7 @@ def lifecycle_raw_failures(
         forced = exact_file_bytes(evidence, "deviceidle-state-forced.txt").decode("utf-8")
         unforced = exact_file_bytes(evidence, "deviceidle-state-unforced.txt").decode("utf-8")
         force_receipt = exact_file_bytes(evidence, "deviceidle-force-idle.txt").lower()
-        unforce_receipt = exact_file_bytes(evidence, "deviceidle-unforce.txt").lower()
+        unforce_receipt = exact_file_bytes(evidence, "deviceidle-unforce.txt")
     except (EvidenceError, UnicodeDecodeError) as error:
         failures.append(f"deviceidle readback failed: {error}")
     else:
@@ -911,8 +1182,22 @@ def lifecycle_raw_failures(
             failures.append("unforced deviceidle evidence must leave deep IDLE")
         if b"forced" not in force_receipt or b"idle" not in force_receipt:
             failures.append("deviceidle force receipt must report forced idle")
-        if b"unforced" not in unforce_receipt and b"active" not in unforce_receipt:
-            failures.append("deviceidle unforce receipt must report unforced/active")
+        unforce_match = DEVICEIDLE_UNFORCE_RECEIPT_RE.fullmatch(unforce_receipt)
+        if unforce_match is None:
+            failures.append(
+                "deviceidle unforce receipt must be one exact state line followed "
+                "by two false force-mode flags"
+            )
+        else:
+            light_state = unforce_match.group(1).decode("ascii")
+            deep_state = unforce_match.group(2).decode("ascii")
+            if (
+                light_state not in DEVICEIDLE_LIGHT_STATES
+                or deep_state not in DEVICEIDLE_DEEP_STATES
+            ):
+                failures.append(
+                    "deviceidle unforce receipt must expose recognized light/deep states"
+                )
 
     component = f"{PACKAGE_NAME}/.MainActivity"
     for relative, expected_resumed in (
@@ -941,14 +1226,14 @@ def lifecycle_raw_failures(
     else:
         if locales_before != locales_after:
             failures.append("raw Follow-system app-locale bytes must survive reboot")
-        try:
-            locale_text = locales_after.decode("utf-8")
-        except UnicodeDecodeError as error:
-            failures.append(f"app locale evidence must be UTF-8: {error}")
-        else:
-            match = re.search(r"\[([^\]]*)\]", locale_text)
-            if match is None or match.group(1).strip():
-                failures.append("app locale evidence must expose one empty Follow-system list")
+        expected_locales = (
+            f"Locales for {PACKAGE_NAME} for user 0 are []\n".encode("ascii")
+        )
+        if locales_before != expected_locales or locales_after != expected_locales:
+            failures.append(
+                "app locale evidence must equal the exact package-bound empty "
+                "Follow-system line"
+            )
 
     for relative in ("font-scale-before.txt", "font-scale-after-reboot.txt"):
         try:
@@ -1131,23 +1416,131 @@ def owned_emulator_failures(
     return failures
 
 
-def captured_ui_nodes(
+def captured_ui_root(
     evidence: Mapping[str, CapturedEvidenceFile], relative: str
-) -> tuple[list[dict[str, str]], list[str]]:
+) -> tuple[ET.Element | None, list[str]]:
     try:
         raw = exact_file_bytes(evidence, relative)
     except EvidenceError as error:
-        return [], [f"{relative} cannot be read: {error}"]
+        return None, [f"{relative} cannot be read: {error}"]
     if b"<!DOCTYPE" in raw or b"<!ENTITY" in raw:
-        return [], [f"{relative} must not contain a DTD or entity declaration"]
+        return None, [f"{relative} must not contain a DTD or entity declaration"]
     try:
         root = ET.fromstring(raw)
     except ET.ParseError as error:
-        return [], [f"{relative} is not valid UI XML: {error}"]
-    nodes = [dict(node.attrib) for node in root.iter("node")]
-    if not nodes:
-        return [], [f"{relative} must contain UI nodes"]
-    return nodes, []
+        return None, [f"{relative} is not valid UI XML: {error}"]
+    if not any(True for _ in root.iter("node")):
+        return None, [f"{relative} must contain UI nodes"]
+    return root, []
+
+
+def captured_ui_nodes(
+    evidence: Mapping[str, CapturedEvidenceFile], relative: str
+) -> tuple[list[dict[str, str]], list[str]]:
+    root, failures = captured_ui_root(evidence, relative)
+    if root is None:
+        return [], failures
+    return [dict(node.attrib) for node in root.iter("node")], []
+
+
+def captured_fully_visible_bounds(
+    node: ET.Element,
+    parents: Mapping[ET.Element, ET.Element],
+    *,
+    require_scrollable_ancestor: bool,
+) -> tuple[int, int, int, int] | None:
+    bounds = v1.parsed_ui_bounds(node.attrib.get("bounds", ""))
+    if bounds is None or not (
+        0 <= bounds[0] < bounds[2] <= 1080
+        and 0 <= bounds[1] < bounds[3] <= 2400
+    ):
+        return None
+    scrollable_observed = False
+    current = parents.get(node)
+    while current is not None:
+        if current.attrib.get("scrollable") == "true":
+            scrollable_observed = True
+            viewport = v1.parsed_ui_bounds(current.attrib.get("bounds", ""))
+            if viewport is None or not (
+                viewport[0] <= bounds[0]
+                and viewport[1] <= bounds[1]
+                and bounds[2] <= viewport[2]
+                and bounds[3] <= viewport[3]
+            ):
+                return None
+        current = parents.get(current)
+    if require_scrollable_ancestor and not scrollable_observed:
+        return None
+    return bounds
+
+
+def captured_checked_token_failures(
+    evidence: Mapping[str, CapturedEvidenceFile],
+    *,
+    relative: str,
+    text: str,
+) -> list[str]:
+    root, failures = captured_ui_root(evidence, relative)
+    if root is None:
+        return failures
+    parents = {child: parent for parent in root.iter() for child in parent}
+    for node in root.iter("node"):
+        if node.attrib.get("package") != PACKAGE_NAME or node.attrib.get("text") != text:
+            continue
+        current: ET.Element | None = node
+        while current is not None and current.attrib.get("checkable") != "true":
+            current = parents.get(current)
+        if current is None:
+            continue
+        if (
+            current.attrib.get("package") == PACKAGE_NAME
+            and current.attrib.get("enabled") == "true"
+            and current.attrib.get("checked") == "true"
+            and captured_fully_visible_bounds(
+                current,
+                parents,
+                require_scrollable_ancestor=True,
+            )
+            is not None
+        ):
+            return []
+    return [f"{relative} must expose fully visible enabled checked {text!r}"]
+
+
+def captured_permission_denial_failures(
+    evidence: Mapping[str, CapturedEvidenceFile],
+    *,
+    relative: str,
+) -> list[str]:
+    root, failures = captured_ui_root(evidence, relative)
+    if root is None:
+        return failures
+    parents = {child: parent for parent in root.iter() for child in parent}
+    for node in root.iter("node"):
+        if node.attrib.get("package") not in PERMISSION_CONTROLLER_PACKAGES or not (
+            node.attrib.get("resource-id", "").endswith("permission_deny_button")
+            or node.attrib.get("text") in ("Don't allow", "Don’t allow")
+        ):
+            continue
+        current: ET.Element | None = node
+        while current is not None and current.attrib.get("clickable") != "true":
+            current = parents.get(current)
+        if current is None:
+            continue
+        if (
+            current.attrib.get("package") in PERMISSION_CONTROLLER_PACKAGES
+            and current.attrib.get("enabled") == "true"
+            and captured_fully_visible_bounds(
+                current,
+                parents,
+                require_scrollable_ancestor=False,
+            )
+            is not None
+        ):
+            return []
+    return [
+        f"{relative} must expose one fully visible enabled permission-controller denial action"
+    ]
 
 
 def ui_failures(evidence: Mapping[str, CapturedEvidenceFile]) -> list[str]:
@@ -1158,6 +1551,10 @@ def ui_failures(evidence: Mapping[str, CapturedEvidenceFile]) -> list[str]:
         "ui/background-after-doze.xml",
         "ui/after-process-kill.xml",
         "ui/after-reboot.xml",
+        "ui/future-data-first-launch.xml",
+        "ui/future-data-second-launch.xml",
+        "ui/legacy-migration-first-launch.xml",
+        "ui/legacy-migration-second-launch.xml",
     )
     for relative in pairing:
         nodes, node_failures = captured_ui_nodes(evidence, relative)
@@ -1168,6 +1565,67 @@ def ui_failures(evidence: Mapping[str, CapturedEvidenceFile]) -> list[str]:
                 relative=relative,
                 package=PACKAGE_NAME,
                 text="Pair AetherLink",
+            )
+        )
+    for relative in (
+        "ui/future-data-first-launch.xml",
+        "ui/future-data-second-launch.xml",
+    ):
+        nodes, node_failures = captured_ui_nodes(evidence, relative)
+        failures.extend(node_failures)
+        failures.extend(
+            v1.ui_token_failures(
+                nodes,
+                relative=relative,
+                package=PACKAGE_NAME,
+                text=FUTURE_DATA_UPDATE_REQUIRED_TEXT,
+            )
+        )
+    for relative in (
+        "ui/legacy-migration-first-launch.xml",
+        "ui/legacy-migration-second-launch.xml",
+    ):
+        nodes, node_failures = captured_ui_nodes(evidence, relative)
+        failures.extend(node_failures)
+        if any(
+            node.get("package") == PACKAGE_NAME
+            and node.get("text") == FUTURE_DATA_UPDATE_REQUIRED_TEXT
+            for node in nodes
+        ):
+            failures.append(f"{relative} must not expose update-required copy")
+    for relative in (
+        "ui/follow-system-before-reboot-drawer.xml",
+        "ui/follow-system-after-reboot-drawer.xml",
+    ):
+        nodes, node_failures = captured_ui_nodes(evidence, relative)
+        failures.extend(node_failures)
+        failures.extend(
+            v1.ui_token_failures(
+                nodes,
+                relative=relative,
+                package=PACKAGE_NAME,
+                text="Settings",
+            )
+        )
+    for relative in (
+        "ui/follow-system-before-reboot.xml",
+        "ui/follow-system-after-reboot.xml",
+    ):
+        nodes, node_failures = captured_ui_nodes(evidence, relative)
+        failures.extend(node_failures)
+        failures.extend(
+            v1.ui_token_failures(
+                nodes,
+                relative=relative,
+                package=PACKAGE_NAME,
+                text="Pair AetherLink",
+            )
+        )
+        failures.extend(
+            captured_checked_token_failures(
+                evidence,
+                relative=relative,
+                text="Follow system language",
             )
         )
     for relative in (
@@ -1205,8 +1663,20 @@ def ui_failures(evidence: Mapping[str, CapturedEvidenceFile]) -> list[str]:
         "ui/setup-camera-permission-dialog.xml",
     )
     failures.extend(dialog_failures)
-    if not any(node.get("package") in PERMISSION_CONTROLLER_PACKAGES for node in dialog_nodes):
-        failures.append("setup permission UI must come from the Android permission controller")
+    failures.extend(
+        v1.ui_token_failures(
+            dialog_nodes,
+            relative="ui/setup-camera-permission-dialog.xml",
+            package=PERMISSION_CONTROLLER_PACKAGES,
+            text_contains="AetherLink",
+        )
+    )
+    failures.extend(
+        captured_permission_denial_failures(
+            evidence,
+            relative="ui/setup-camera-permission-dialog.xml",
+        )
+    )
     return failures
 
 
@@ -1216,6 +1686,8 @@ def scenario_failures(
     observed_processes: dict[str, tuple[str, int, int]],
     preference_sha: str | None,
     lifecycle_facts: dict[str, object],
+    future_data_facts: dict[str, object],
+    legacy_data_facts: dict[str, object],
 ) -> list[str]:
     failures: list[str] = []
     scenarios = payload.get("scenarios")
@@ -1344,6 +1816,135 @@ def scenario_failures(
     for key, expected in expected_reboot.items():
         if rebooted.get(key) != expected:
             failures.append(f"reboot observations.{key} must equal {expected!r}")
+
+    future = observations(
+        "future_local_data_update_required_cold_launch_preservation"
+    )
+    future_keys = (
+        "coldLaunchCount",
+        "localDataVersion",
+        "processIds",
+        "savedDataSha256",
+        "savedDataSize",
+        "updateRequiredText",
+    )
+    failures.extend(
+        exact_keys(
+            future,
+            future_keys,
+            label=(
+                "future_local_data_update_required_cold_launch_preservation "
+                "observations"
+            ),
+        )
+    )
+    future_first = observed_processes.get("future_data_first_launch")
+    future_second = observed_processes.get("future_data_second_launch")
+    if future_first is None or future_second is None:
+        failures.append("future-data cold-launch process observations are incomplete")
+    else:
+        if future_first == future_second:
+            failures.append("future-data cold launches must use distinct raw identities")
+        expected_boot_id = lifecycle_facts.get("bootIdAfter")
+        if future_first[0] != expected_boot_id or future_second[0] != expected_boot_id:
+            failures.append("future-data cold launches must bind the post-reboot boot ID")
+        if future.get("processIds") != [future_first[1], future_second[1]]:
+            failures.append("future-data processIds must bind raw process evidence")
+    if type(future.get("coldLaunchCount")) is not int or future.get("coldLaunchCount") != 2:
+        failures.append("future-data coldLaunchCount must equal integer 2")
+    if (
+        type(future.get("localDataVersion")) is not int
+        or future.get("localDataVersion") != future_data_facts.get("version")
+    ):
+        failures.append("future-data localDataVersion must equal integer 2")
+    if future.get("savedDataSha256") != future_data_facts.get("sha256"):
+        failures.append("future-data savedDataSha256 must bind the exact seed bytes")
+    if (
+        type(future.get("savedDataSize")) is not int
+        or future.get("savedDataSize") != future_data_facts.get("size")
+    ):
+        failures.append("future-data savedDataSize must bind the exact seed bytes")
+    if future.get("updateRequiredText") != FUTURE_DATA_UPDATE_REQUIRED_TEXT:
+        failures.append("future-data updateRequiredText must match the exact English copy")
+
+    legacy = observations(
+        "legacy_versionless_local_data_migration_cold_launch_stability"
+    )
+    legacy_keys = (
+        "coldLaunchCount",
+        "migratedDataSha256",
+        "migratedDataSize",
+        "migratedVersion",
+        "preservedAppTheme",
+        "preservedComposerDraft",
+        "preservedTrustedRuntimeAutoReconnectEnabled",
+        "processIds",
+        "sourceFormat",
+    )
+    failures.extend(
+        exact_keys(
+            legacy,
+            legacy_keys,
+            label=(
+                "legacy_versionless_local_data_migration_cold_launch_stability "
+                "observations"
+            ),
+        )
+    )
+    legacy_first = observed_processes.get("legacy_migration_first_launch")
+    legacy_second = observed_processes.get("legacy_migration_second_launch")
+    if legacy_first is None or legacy_second is None:
+        failures.append("legacy-migration cold-launch process observations are incomplete")
+    else:
+        if legacy_first == legacy_second:
+            failures.append(
+                "legacy-migration cold launches must use distinct raw identities"
+            )
+        expected_boot_id = lifecycle_facts.get("bootIdAfter")
+        if legacy_first[0] != expected_boot_id or legacy_second[0] != expected_boot_id:
+            failures.append(
+                "legacy-migration cold launches must bind the post-reboot boot ID"
+            )
+        if legacy.get("processIds") != [legacy_first[1], legacy_second[1]]:
+            failures.append(
+                "legacy-migration processIds must bind raw process evidence"
+            )
+    if (
+        type(legacy.get("coldLaunchCount")) is not int
+        or legacy.get("coldLaunchCount") != 2
+    ):
+        failures.append("legacy-migration coldLaunchCount must equal integer 2")
+    if (
+        type(legacy.get("migratedVersion")) is not int
+        or legacy.get("migratedVersion") != legacy_data_facts.get("version")
+        or legacy.get("migratedVersion") != 1
+    ):
+        failures.append("legacy-migration migratedVersion must equal integer 1")
+    if legacy.get("migratedDataSha256") != legacy_data_facts.get("sha256"):
+        failures.append(
+            "legacy-migration migratedDataSha256 must bind the migrated bytes"
+        )
+    if (
+        type(legacy.get("migratedDataSize")) is not int
+        or legacy.get("migratedDataSize") != legacy_data_facts.get("size")
+    ):
+        failures.append(
+            "legacy-migration migratedDataSize must bind the migrated bytes"
+        )
+    if legacy.get("preservedAppTheme") != legacy_data_facts.get("appTheme"):
+        failures.append("legacy-migration must preserve appTheme")
+    if legacy.get("preservedComposerDraft") != legacy_data_facts.get("composerDraft"):
+        failures.append("legacy-migration must preserve composerDraft")
+    if (
+        legacy.get("preservedTrustedRuntimeAutoReconnectEnabled") is not False
+        or legacy.get("preservedTrustedRuntimeAutoReconnectEnabled")
+        != legacy_data_facts.get("trustedRuntimeAutoReconnectEnabled")
+    ):
+        failures.append(
+            "legacy-migration must preserve trustedRuntimeAutoReconnectEnabled=false"
+        )
+    if legacy.get("sourceFormat") != "versionless":
+        failures.append("legacy-migration sourceFormat must equal versionless")
     return failures
 
 
@@ -1563,6 +2164,14 @@ def payload_failures(
     failures.extend(process_failures)
     preference_sha, camera_failures = camera_state_failures(evidence)
     failures.extend(camera_failures)
+    future_data_facts, future_data_failures = future_runtime_local_data_failures(
+        evidence
+    )
+    failures.extend(future_data_failures)
+    legacy_data_facts, legacy_data_failures = legacy_runtime_local_data_failures(
+        evidence
+    )
+    failures.extend(legacy_data_failures)
     lifecycle_facts, raw_failures = lifecycle_raw_failures(evidence)
     failures.extend(raw_failures)
     before_kill_identity = observed_processes.get("before_kill")
@@ -1591,6 +2200,8 @@ def payload_failures(
             observed_processes=observed_processes,
             preference_sha=preference_sha,
             lifecycle_facts=lifecycle_facts,
+            future_data_facts=future_data_facts,
+            legacy_data_facts=legacy_data_facts,
         )
     )
 

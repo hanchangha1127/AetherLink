@@ -18,15 +18,61 @@ from script import run_g7_nonsecurity_merge_full_candidate as module
 
 
 class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
-    def test_expanded_swift_lane_is_closed_in_parent_contract(self) -> None:
-        self.assertEqual(len(module.ALL_GATES), 67)
-        self.assertEqual(len(module.ARTIFACT_PATHS), 26)
+    def test_current_swift_parent_is_closed_in_candidate_contract(self) -> None:
+        self.assertEqual(len(module.ALL_GATES), 83)
+        self.assertEqual(len(module.ARTIFACT_PATHS), 36)
+        self.assertEqual(len(module.IMPLEMENTATION_PATHS), 11)
+        self.assertEqual(
+            module.MACOS_LIFECYCLE_RESULT_RELATIVE_PATH,
+            Path(
+                ".build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/"
+                "macos-current-unsealed-lifecycle-v4/result.json"
+            ),
+        )
+        self.assertNotIn(
+            "macos-current-unsealed-lifecycle-v3",
+            module.MACOS_LIFECYCLE_RESULT_RELATIVE_PATH.as_posix(),
+        )
+        self.assertEqual(module.COVERAGE["androidCoreNonsecurityClasses"], 2)
+        self.assertEqual(
+            module.COVERAGE["androidCoreNonsecurityProtocolTests"],
+            96,
+        )
+        self.assertEqual(module.COVERAGE["androidCoreNonsecurityTests"], 112)
+        self.assertEqual(
+            module.COVERAGE["androidCoreNonsecurityTransportTests"],
+            16,
+        )
         self.assertEqual(module.COVERAGE["swiftFocusedTests"], 222)
         self.assertEqual(module.COVERAGE["swiftExpandedNonsecurityTests"], 247)
         self.assertEqual(module.COVERAGE["swiftDistinctNonsecurityTests"], 397)
+        self.assertEqual(module.COVERAGE["swiftCurrentDiscoveryTests"], 2175)
+        self.assertEqual(module.COVERAGE["swiftCurrentNoSocketTests"], 1204)
+        self.assertEqual(
+            module.COVERAGE["swiftCurrentParentReviewedTests"], 1208
+        )
+        self.assertEqual(
+            module.COVERAGE["swiftCurrentParentRemainingTests"], 967
+        )
+        self.assertIn(
+            Path("script/g7_reviewed_nonsecurity_swift_addon_identities_v6.txt"),
+            module.IMPLEMENTATION_PATHS,
+        )
+        self.assertEqual(
+            module.COVERAGE["swiftCurrentParentSocketContributionTests"], 4
+        )
         self.assertEqual(
             tuple(path.as_posix() for path in module.ARTIFACT_PATHS),
             tuple(sorted(path.as_posix() for path in module.ARTIFACT_PATHS)),
+        )
+        self.assertEqual(
+            tuple(path.as_posix() for path in module.IMPLEMENTATION_PATHS),
+            tuple(
+                sorted(
+                    (path.as_posix() for path in module.IMPLEMENTATION_PATHS),
+                    key=lambda value: value.encode("ascii"),
+                )
+            ),
         )
         for identifier in (
             "g7-nonsecurity-swift-prepare",
@@ -34,6 +80,22 @@ class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
             "g7-nonsecurity-swift-bind",
             "g7-nonsecurity-swift-readback",
             "final-g7-nonsecurity-swift-readback",
+            "g7-current-contract-tests",
+            "g7-current-prepare",
+            "g7-current-run",
+            "g7-current-bind",
+            "g7-current-readback",
+            "g7-current-independent-readback",
+            "g7-current-parent-bind",
+            "g7-current-parent-readback",
+            "g7-current-parent-independent-readback",
+            "final-g7-current-independent-readback",
+            "final-g7-current-parent-independent-readback",
+            "android-core-nonsecurity-prepare",
+            "android-core-nonsecurity-run",
+            "android-core-nonsecurity-bind",
+            "android-core-nonsecurity-readback",
+            "final-android-core-nonsecurity-readback",
         ):
             self.assertIn(identifier, module.EXPECTED_COMMAND_IDS)
 

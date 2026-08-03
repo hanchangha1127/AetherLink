@@ -318,6 +318,50 @@ class CurrentUnsealedCILifecyclePortableTests(unittest.TestCase):
             frozenset({"result.json", "repeatability.json"}),
         )
 
+        alternate_result = Path(
+            ".build/aetherlink-candidate-v1/lifecycle/result.json"
+        )
+        alternate_receipt = Path(
+            ".build/aetherlink-candidate-v1/lifecycle/repeatability.json"
+        )
+        alternate = checker.current_run_directory_specs(
+            {
+                alternate_result: closed.FileSpec(1, "1" * 64, 0o600),
+                alternate_receipt: closed.FileSpec(1, "2" * 64, 0o600),
+            },
+            result_relative=alternate_result,
+            receipt_relative=alternate_receipt,
+        )[alternate_result.parent]
+        self.assertEqual(alternate.mode, 0o700)
+        self.assertEqual(
+            alternate.entries,
+            frozenset({"result.json", "repeatability.json"}),
+        )
+
+    def test_result_path_override_is_closed_under_one_build_directory(self) -> None:
+        valid = (
+            Path(".build/aetherlink-candidate-v1/lifecycle/result.json"),
+            Path(
+                ".build/aetherlink-candidate-v1/lifecycle/"
+                "repeatability.json"
+            ),
+        )
+        self.assertEqual(checker.lifecycle_result_paths(*valid), valid)
+        for invalid in (
+            (Path("result.json"), Path("repeatability.json")),
+            (
+                Path(".build/a/result.json"),
+                Path(".build/b/repeatability.json"),
+            ),
+            (
+                Path(".build/a/other.json"),
+                Path(".build/a/repeatability.json"),
+            ),
+        ):
+            with self.subTest(paths=invalid):
+                with self.assertRaises(closed.EvidenceError):
+                    checker.lifecycle_result_paths(*invalid)
+
     def test_cli_rejects_arguments(self) -> None:
         self.assertEqual(checker.main(["unexpected"]), 2)
 

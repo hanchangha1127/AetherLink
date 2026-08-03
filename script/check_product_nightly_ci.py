@@ -15,6 +15,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import tempfile
 from typing import Iterable, Mapping, Optional, Sequence
 import unittest
 
@@ -25,21 +26,31 @@ CHECKER_PATH = Path(__file__).resolve()
 WORKFLOW_RELATIVE = ".github/workflows/product-nightly.yml"
 CHECKER_RELATIVE = "script/check_product_nightly_ci.py"
 CANONICAL_WORKFLOW_SHA256 = (
-    "6ca986d8ae194d4236c41815675ad885aaeb29e47639186847645db193a773fa"
+    "77ce2a1cc0ce112dbe3f47b9061b4ceba30c56ed26d070daef88af44766dfe78"
 )
 CANONICAL_PARSED_WORKFLOW_SHA256 = (
-    "cf8afa1784d703d0484e8be14e450255c35d720c8ea2b0649ffda3abcccab85b"
+    "c2e9606a28408c08bffeffb5afe8147e422aecf630a9c33e61cbc69701766a19"
 )
 EXPECTED_CRON = "37 18 * * *"
-PROVENANCE_CONTRACT = "aetherlink-g7-android-headless-nightly-provenance-v1"
-PROVENANCE_SCHEMA_VERSION = 1
+PROVENANCE_CONTRACT = "aetherlink-g7-android-headless-nightly-provenance-v2"
+PROVENANCE_SCHEMA_VERSION = 2
 MAX_WORKFLOW_BYTES = 64 * 1024
 MAX_CHECKER_BYTES = 256 * 1024
 MAX_RESULT_BYTES = 8 * 1024 * 1024
 MAX_PROVENANCE_BYTES = 128 * 1024
 MAX_ARCHIVE_BYTES = 640 * 1024 * 1024
 ARCHIVE_PROVENANCE_PATH = "nightly-provenance.json"
-ARCHIVE_LIFECYCLE_PREFIX = "lifecycle/"
+LANE_ORDER = ("v1", "v2")
+ARCHIVE_LANE_PREFIXES = {
+    "v1": "lifecycle-v1/",
+    "v2": "lifecycle-v2/",
+}
+LANE_EVIDENCE_FILE_COUNTS = {"v1": 46, "v2": 72}
+LANE_SCENARIO_COUNTS = {"v1": 13, "v2": 5}
+LANE_RUN_ID_PATTERNS = {
+    "v1": re.compile(r"android-headless-api36-1-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}\Z"),
+    "v2": re.compile(r"android-headless-api36-1-v2-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}\Z"),
+}
 ARCHIVE_FILENAME_PREFIX = "candidate-"
 ARCHIVE_PROVENANCE_STATE = "sealed-local-readback-candidate"
 ARTIFACT_ACCEPTANCE_POLICY = "same-workflow-run-success-only"
@@ -54,18 +65,19 @@ SUCCESSOR_TEST_MODULES = LIFECYCLE_TEST_MODULES[-2:]
 CONTRACT_TEST_MODULES = (
     "script.test_check_product_nightly_ci",
 ) + LIFECYCLE_TEST_MODULES
-CONTRACT_TEST_COUNT = 97
+CONTRACT_TEST_COUNT = 101
 CONTRACT_TEST_MANIFEST_SHA256 = (
-    "a3fc910dab728cc0ad77c4f1fd8c7adce77f83ad34882ebdeac899e592ff318c"
+    "28baa8d8bd8a60028a0d0de117659091092b9d8709f88616402f676eef74f7c8"
 )
-LIFECYCLE_TEST_COUNT = 82
+LIFECYCLE_TEST_COUNT = 86
 LIFECYCLE_TEST_MANIFEST_SHA256 = (
-    "2a2d0b4dce7078c368c314132998144a36a426208f6ce9a2cedb72a7e4328829"
+    "eb6ae488967921a3e19dae57f8e3026dfc29a0b4491d9d349e82a4386233f412"
 )
-SUCCESSOR_TEST_COUNT = 37
+SUCCESSOR_TEST_COUNT = 41
 SUCCESSOR_TEST_MANIFEST_SHA256 = (
-    "0fbf79e27bce69d482efe63f9fe1fd2ceb4042b91c6bff2713b3e95933cc8ee5"
+    "83544e09194fa5e1498d9eec84ce77d2c17de814994331a5fd8735618f3c4830"
 )
+LIFECYCLE_EVIDENCE_FILE_COUNT = 72
 
 REQUIRED_WORKFLOW_PREFIX = """name: Product nightly (non-security Android lifecycle subset)
 
@@ -92,7 +104,7 @@ defaults:
 jobs:
 """
 
-PRODUCER_JOB_ID = "android-headless-lifecycle-v2"
+PRODUCER_JOB_ID = "android-headless-lifecycle-v1-v2"
 READBACK_JOB_ID = "downloaded-artifact-readback"
 JOB_IDS = (PRODUCER_JOB_ID, READBACK_JOB_ID)
 PRODUCER_STEP_NAMES = (
@@ -103,9 +115,11 @@ PRODUCER_STEP_NAMES = (
     "Validate exact nightly contract",
     "Install exact Android emulator toolchain",
     "Prepare exact Android build dependencies",
+    "Run Android API 36.1 lifecycle V1",
+    "Independently read back lifecycle V1",
     "Run Android API 36.1 lifecycle V2",
-    "Independently read back lifecycle",
-    "Seal and read back exact nightly artifact",
+    "Independently read back lifecycle V2",
+    "Seal and read back exact dual-lifecycle nightly artifact",
     "Upload one sealed nightly candidate",
     "Bind uploaded candidate digest",
 )
@@ -624,7 +638,7 @@ end
         "${{ github.event_name == 'schedule' && github.ref == 'refs/heads/main' }}"
     )
     if (
-        producer.get("name") != "Android API 36.1 headless lifecycle V2"
+        producer.get("name") != "Android API 36.1 headless lifecycle V1 then V2"
         or producer.get("if") != expected_condition
         or producer.get("runs-on") != "macos-26"
         or producer.get("timeout-minutes") != 60
@@ -709,10 +723,28 @@ def workflow_failures(
         failures.append("nightly actions must match the exact approved sequence")
     if workflow.count("--run-contract-tests") != 1:
         failures.append("nightly workflow must run one exact contract-test manifest")
+    if workflow.count("run_android_headless_emulator_product_lifecycle.py") != 1:
+        failures.append("nightly workflow must run one lifecycle V1 producer")
+    if workflow.count("check_android_headless_emulator_product_lifecycle.py") != 1:
+        failures.append("nightly workflow must run one independent lifecycle V1 checker")
     if workflow.count("run_android_headless_emulator_product_lifecycle_v2.py") != 1:
         failures.append("nightly workflow must run one lifecycle V2 producer")
     if workflow.count("check_android_headless_emulator_product_lifecycle_v2.py") != 1:
         failures.append("nightly workflow must run one independent lifecycle V2 checker")
+    producer_job = _job_body(workflow, PRODUCER_JOB_ID) or ""
+    ordered_commands = tuple(
+        producer_job.find(command)
+        for command in (
+            "run_android_headless_emulator_product_lifecycle.py",
+            "check_android_headless_emulator_product_lifecycle.py",
+            "run_android_headless_emulator_product_lifecycle_v2.py",
+            "check_android_headless_emulator_product_lifecycle_v2.py",
+        )
+    )
+    if any(position < 0 for position in ordered_commands) or ordered_commands != tuple(
+        sorted(ordered_commands)
+    ):
+        failures.append("nightly workflow must run and check V1 before V2")
     if workflow.count("--seal-artifact") != 1:
         failures.append("nightly workflow must seal one exact lifecycle artifact")
     if workflow.count("--readback-artifact") != 2:
@@ -723,6 +755,8 @@ def workflow_failures(
         failures.append("nightly workflow must materialize one exact Git commit archive")
     if workflow.count(":app:assembleDebug") != 1:
         failures.append("nightly workflow must perform one online dependency preparation")
+    if workflow.count("--v1-result") != 1 or workflow.count("--v2-result") != 1:
+        failures.append("nightly seal must receive one exact V1 and V2 result")
     if workflow.count("archive: false") != 1:
         failures.append("nightly workflow must upload one unwrapped sealed tar")
     if workflow.count(ARTIFACT_ACCEPTANCE_POLICY) != 2:
@@ -794,7 +828,7 @@ def contract_test_selection_failures(
         len(lifecycle_ids) != LIFECYCLE_TEST_COUNT
         or _manifest_sha256(lifecycle_ids) != LIFECYCLE_TEST_MANIFEST_SHA256
     ):
-        failures.append("combined lifecycle tests must match the exact 82-test manifest")
+        failures.append("combined lifecycle tests must match the exact 86-test manifest")
     successor_ids = tuple(
         identity
         for identity in identities
@@ -804,7 +838,7 @@ def contract_test_selection_failures(
         len(successor_ids) != SUCCESSOR_TEST_COUNT
         or _manifest_sha256(successor_ids) != SUCCESSOR_TEST_MANIFEST_SHA256
     ):
-        failures.append("lifecycle V2 tests must match the exact 37-test manifest")
+        failures.append("lifecycle V2 tests must match the exact 41-test manifest")
     return failures
 
 
@@ -1051,40 +1085,158 @@ def source_git_binding_failures(
     return failures
 
 
-def _expected_provenance_from_capture(
+def _lifecycle_module(lane: str):
+    if lane == "v1":
+        from script import check_android_headless_emulator_product_lifecycle as lifecycle
+    elif lane == "v2":
+        from script import check_android_headless_emulator_product_lifecycle_v2 as lifecycle
+    else:
+        raise NightlyContractError(f"unknown lifecycle lane: {lane!r}")
+    return lifecycle
+
+
+class _CapturedLaneSnapshot:
+    def __init__(self, result_path: Path, expected_paths: Sequence[str]) -> None:
+        self.result_directory = _absolute_path(result_path).parent
+        self.expected_paths = tuple(expected_paths) + ("result.json",)
+        self.evidence = self._capture()
+
+    def _capture(self) -> dict[str, CapturedRegularFile]:
+        captured: dict[str, CapturedRegularFile] = {}
+        for relative in self.expected_paths:
+            limit = MAX_RESULT_BYTES if relative == "result.json" else MAX_ARCHIVE_BYTES
+            captured[relative] = capture_regular_file(
+                self.result_directory / relative,
+                max_bytes=limit,
+            )
+        return captured
+
+    def verify_unchanged(self) -> None:
+        current = self._capture()
+        if tuple(current) != tuple(self.evidence):
+            raise NightlyContractError("lifecycle evidence path order changed")
+        for relative in self.evidence:
+            if current[relative] != self.evidence[relative]:
+                raise NightlyContractError(
+                    f"lifecycle evidence changed during binding: {relative}"
+                )
+
+    def close(self) -> None:
+        return None
+
+
+def _open_validated_lifecycle_snapshot(
+    lane: str,
+    result_path: Path,
     *,
+    sdk_root: Path,
+    java_home: Path,
+):
+    lifecycle = _lifecycle_module(lane)
+    snapshot = None
+    try:
+        if lane == "v2":
+            snapshot = lifecycle.EvidenceSnapshot(_absolute_path(result_path))
+            evidence = snapshot.capture()
+            result_capture = evidence["result.json"]
+            result = lifecycle.load_canonical_json(
+                result_capture.data,
+                label=f"{lane} result.json",
+            )
+            failures = lifecycle.captured_result_failures(
+                snapshot,
+                evidence,
+                result,
+                root=ROOT,
+                sdk_root=_absolute_path(sdk_root),
+                java_home=_absolute_path(java_home),
+            )
+        else:
+            snapshot = _CapturedLaneSnapshot(result_path, lifecycle.EVIDENCE_PATHS)
+            evidence = snapshot.evidence
+            result_capture = evidence["result.json"]
+            result = parse_canonical_json(
+                result_capture.data,
+                label=f"{lane} result.json",
+            )
+            with tempfile.TemporaryDirectory(
+                prefix="aetherlink-nightly-v1-captured-readback-"
+            ) as temporary:
+                captured_root = Path(temporary) / snapshot.result_directory.name
+                captured_root.mkdir(mode=0o700)
+                for relative, captured in evidence.items():
+                    target = captured_root / relative
+                    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    target.write_bytes(captured.data)
+                    target.chmod(int(captured.mode, 8))
+                failures = lifecycle.result_failures(
+                    captured_root / "result.json",
+                    root=ROOT,
+                    sdk_root=_absolute_path(sdk_root),
+                    java_home=_absolute_path(java_home),
+                )
+            snapshot.verify_unchanged()
+    except (Exception, OSError, KeyError) as error:
+        if snapshot is not None:
+            snapshot.close()
+        if isinstance(error, NightlyContractError):
+            raise
+        raise NightlyContractError(str(error)) from error
+    if failures:
+        snapshot.close()
+        raise NightlyContractError(
+            f"lifecycle {lane} result is not independently valid: "
+            + "; ".join(failures)
+        )
+    return lifecycle, snapshot, evidence, result_capture, result
+
+
+def _lane_provenance_from_capture(
+    lane: str,
+    *,
+    lifecycle: object,
     result_directory: Path,
     result_capture: object,
     result: object,
     evidence_capture: Mapping[str, object],
-    environment: Mapping[str, str],
+    context: Mapping[str, object],
     git_checkout: Path,
 ) -> dict[str, object]:
-    if not isinstance(result, dict):
-        raise NightlyContractError("lifecycle result must be a mapping")
+    if type(result) is not dict:
+        raise NightlyContractError(f"lifecycle {lane} result must be a mapping")
     run = result.get("run")
     source = result.get("source")
     evidence = result.get("evidence")
-    if not isinstance(run, dict) or not isinstance(source, dict) or not isinstance(evidence, list):
-        raise NightlyContractError("lifecycle result is missing run/source/evidence mappings")
+    scenarios = result.get("scenarios")
+    cleanup = result.get("cleanup")
+    if not all(type(value) is dict for value in (run, source, cleanup)) or type(evidence) is not list:
+        raise NightlyContractError(f"lifecycle {lane} result mappings are incomplete")
+    if type(scenarios) is not list:
+        raise NightlyContractError(f"lifecycle {lane} scenarios must be a list")
     run_id = run.get("id")
-    if type(run_id) is not str or re.fullmatch(
-        r"android-headless-api36-1-v2-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}",
-        run_id,
-    ) is None:
-        raise NightlyContractError("lifecycle run id is invalid")
+    if type(run_id) is not str or LANE_RUN_ID_PATTERNS[lane].fullmatch(run_id) is None:
+        raise NightlyContractError(f"lifecycle {lane} run id is invalid")
     if result_directory.name != run_id:
-        raise NightlyContractError("lifecycle result directory must equal its run id")
+        raise NightlyContractError(f"lifecycle {lane} result directory must equal its run id")
+    expected_names = [name for name, _checks in lifecycle.SCENARIO_CHECKS]
+    actual_names = [item.get("name") if type(item) is dict else None for item in scenarios]
+    if (
+        len(scenarios) != LANE_SCENARIO_COUNTS[lane]
+        or actual_names != expected_names
+        or any(type(item) is not dict or item.get("status") != "passed" for item in scenarios)
+    ):
+        raise NightlyContractError(
+            f"lifecycle {lane} must bind exact passed scenarios "
+            f"{LANE_SCENARIO_COUNTS[lane]}/{LANE_SCENARIO_COUNTS[lane]}"
+        )
+    if result.get("contract") != lifecycle.CONTRACT or result.get("status") != "passed":
+        raise NightlyContractError(f"lifecycle {lane} contract/status is invalid")
     source_count = _require_exact_int(
-        source.get("fileCount"),
-        label="lifecycle source fileCount",
-        minimum=1,
+        source.get("fileCount"), label=f"lifecycle {lane} source fileCount", minimum=1
     )
     source_sha256 = _require_sha256(
-        source.get("sha256"),
-        label="lifecycle source sha256",
+        source.get("sha256"), label=f"lifecycle {lane} source sha256"
     )
-    context = github_context(environment)
     git_failures = source_git_binding_failures(
         source,
         git_checkout=git_checkout,
@@ -1092,59 +1244,115 @@ def _expected_provenance_from_capture(
     )
     if git_failures:
         raise NightlyContractError(
-            "lifecycle source is not bound to GITHUB_SHA: " + "; ".join(git_failures)
+            f"lifecycle {lane} source is not bound to GITHUB_SHA: "
+            + "; ".join(git_failures)
         )
-    if len(evidence) != 58:
-        raise NightlyContractError("lifecycle evidence manifest must contain 58 files")
-    if result.get("status") != "passed":
-        raise NightlyContractError("lifecycle result status must be passed")
+    if len(evidence) != LANE_EVIDENCE_FILE_COUNTS[lane]:
+        raise NightlyContractError(
+            f"lifecycle {lane} evidence manifest must contain exactly "
+            f"{LANE_EVIDENCE_FILE_COUNTS[lane]} files"
+        )
+    expected_evidence: list[dict[str, object]] = []
+    for record in evidence:
+        if type(record) is not dict or type(record.get("path")) is not str:
+            raise NightlyContractError(f"lifecycle {lane} evidence records must be mappings")
+        relative = record["path"]
+        try:
+            expected_evidence.append(evidence_capture[relative].record(relative))  # type: ignore[attr-defined]
+        except (KeyError, AttributeError) as error:
+            raise NightlyContractError(
+                f"captured lifecycle {lane} evidence is missing: {relative}"
+            ) from error
+    if evidence != expected_evidence:
+        raise NightlyContractError(
+            f"lifecycle {lane} evidence manifest differs from captured bytes"
+        )
+    if set(evidence_capture) != set(lifecycle.EVIDENCE_PATHS) | {"result.json"}:
+        raise NightlyContractError(f"lifecycle {lane} captured evidence graph is not closed")
     try:
         result_raw = result_capture.data  # type: ignore[attr-defined]
         result_mode = result_capture.mode  # type: ignore[attr-defined]
     except AttributeError as error:
-        raise NightlyContractError("captured lifecycle result identity is invalid") from error
-    expected_evidence: list[dict[str, object]] = []
-    for record in evidence:
-        if type(record) is not dict or type(record.get("path")) is not str:
-            raise NightlyContractError("lifecycle evidence records must be mappings")
-        relative = record["path"]
-        try:
-            captured = evidence_capture[relative]
-            captured_record = captured.record(relative)  # type: ignore[attr-defined]
-        except (KeyError, AttributeError) as error:
-            raise NightlyContractError(
-                f"captured lifecycle evidence is missing: {relative}"
-            ) from error
-        expected_evidence.append(captured_record)
-    if evidence != expected_evidence:
-        raise NightlyContractError("lifecycle evidence manifest differs from captured bytes")
+        raise NightlyContractError(
+            f"captured lifecycle {lane} result identity is invalid"
+        ) from error
+    return {
+        "cleanupSha256": hashlib.sha256(canonical_json_bytes(cleanup)).hexdigest(),
+        "contract": lifecycle.CONTRACT,
+        "evidenceFileCount": len(evidence),
+        "evidenceManifestSha256": hashlib.sha256(canonical_json_bytes(evidence)).hexdigest(),
+        "finishedAt": run.get("finishedAt"),
+        "lane": lane,
+        "result": {
+            "mode": result_mode,
+            "path": f"{ARCHIVE_LANE_PREFIXES[lane]}result.json",
+            "sha256": hashlib.sha256(result_raw).hexdigest(),
+            "size": len(result_raw),
+        },
+        "runId": run_id,
+        "scenarioCount": len(scenarios),
+        "scenarioManifestSha256": hashlib.sha256(
+            canonical_json_bytes(actual_names)
+        ).hexdigest(),
+        "sourceFileCount": source_count,
+        "sourceGitCommit": context["sha"],
+        "sourceSha256": source_sha256,
+        "startedAt": run.get("startedAt"),
+    }
+
+
+def _bundle_id(lifecycle_records: Sequence[Mapping[str, object]]) -> str:
+    if tuple(record.get("lane") for record in lifecycle_records) != LANE_ORDER:
+        raise NightlyContractError("nightly lifecycle order must be exactly V1 then V2")
+    v1_run = lifecycle_records[0].get("runId")
+    v2_run = lifecycle_records[1].get("runId")
+    if type(v1_run) is not str or type(v2_run) is not str:
+        raise NightlyContractError("nightly lifecycle run ids must be strings")
+    v1_started = lifecycle_records[0].get("startedAt")
+    v1_finished = lifecycle_records[0].get("finishedAt")
+    v2_started = lifecycle_records[1].get("startedAt")
+    v2_finished = lifecycle_records[1].get("finishedAt")
+    if not all(type(value) is str for value in (v1_started, v1_finished, v2_started, v2_finished)):
+        raise NightlyContractError("nightly lifecycle timestamps must be strings")
+    if not (v1_started < v1_finished <= v2_started < v2_finished):
+        raise NightlyContractError("nightly lifecycle timestamps must bind V1 before V2")
+    return f"{v1_run}--{v2_run}"
+
+
+def _expected_provenance_from_captures(
+    captures: Mapping[str, tuple[object, object, Mapping[str, object], object, object]],
+    *,
+    environment: Mapping[str, str],
+    git_checkout: Path,
+) -> dict[str, object]:
+    if tuple(captures) != LANE_ORDER:
+        raise NightlyContractError("nightly captures must be ordered V1 then V2")
+    context = github_context(environment)
+    records = []
+    for lane in LANE_ORDER:
+        lifecycle, snapshot, evidence, result_capture, result = captures[lane]
+        records.append(
+            _lane_provenance_from_capture(
+                lane,
+                lifecycle=lifecycle,
+                result_directory=snapshot.result_directory,  # type: ignore[attr-defined]
+                result_capture=result_capture,
+                result=result,
+                evidence_capture=evidence,
+                context=context,
+                git_checkout=git_checkout,
+            )
+        )
+    bundle_id = _bundle_id(records)
     return {
         "artifactState": ARCHIVE_PROVENANCE_STATE,
+        "bundleId": bundle_id,
         "checker": file_record(
-            CHECKER_PATH,
-            relative=CHECKER_RELATIVE,
-            max_bytes=MAX_CHECKER_BYTES,
+            CHECKER_PATH, relative=CHECKER_RELATIVE, max_bytes=MAX_CHECKER_BYTES
         ),
         "contract": PROVENANCE_CONTRACT,
         "github": context,
-        "lifecycle": {
-            "evidenceFileCount": len(evidence),
-            "evidenceManifestSha256": hashlib.sha256(
-                canonical_json_bytes(evidence)
-            ).hexdigest(),
-            "finishedAt": run.get("finishedAt"),
-            "result": {
-                "mode": result_mode,
-                "path": f"{run_id}/result.json",
-                "sha256": hashlib.sha256(result_raw).hexdigest(),
-                "size": len(result_raw),
-            },
-            "runId": run_id,
-            "sourceFileCount": source_count,
-            "sourceGitCommit": context["sha"],
-            "sourceSha256": source_sha256,
-            "startedAt": run.get("startedAt"),
-        },
+        "lifecycles": records,
         "schemaVersion": PROVENANCE_SCHEMA_VERSION,
         "status": "passed",
         "testManifest": {
@@ -1156,122 +1364,88 @@ def _expected_provenance_from_capture(
             "successorSha256": SUCCESSOR_TEST_MANIFEST_SHA256,
         },
         "workflow": file_record(
-            WORKFLOW_PATH,
-            relative=WORKFLOW_RELATIVE,
-            max_bytes=MAX_WORKFLOW_BYTES,
+            WORKFLOW_PATH, relative=WORKFLOW_RELATIVE, max_bytes=MAX_WORKFLOW_BYTES
         ),
     }
 
 
-def _open_validated_lifecycle_snapshot(
-    result_path: Path,
+def _open_dual_captures(
+    v1_result_path: Path,
+    v2_result_path: Path,
     *,
     sdk_root: Path,
     java_home: Path,
-):
-    from script import check_android_headless_emulator_product_lifecycle_v2 as lifecycle
-
+) -> dict[str, tuple[object, object, Mapping[str, object], object, object]]:
+    captures: dict[str, tuple[object, object, Mapping[str, object], object, object]] = {}
     try:
-        snapshot = lifecycle.EvidenceSnapshot(_absolute_path(result_path))
-        evidence = snapshot.capture()
-        result_capture = evidence["result.json"]
-        result = lifecycle.load_canonical_json(
-            result_capture.data,
-            label="result.json",
-        )
-        failures = lifecycle.captured_result_failures(
-            snapshot,
-            evidence,
-            result,
-            root=ROOT,
-            sdk_root=_absolute_path(sdk_root),
-            java_home=_absolute_path(java_home),
-        )
-    except (lifecycle.EvidenceError, OSError, KeyError) as error:
-        try:
-            snapshot.close()
-        except (NameError, OSError):
-            pass
-        raise NightlyContractError(str(error)) from error
-    if failures:
-        snapshot.close()
-        raise NightlyContractError(
-            "lifecycle result is not independently valid: " + "; ".join(failures)
-        )
-    return lifecycle, snapshot, evidence, result_capture, result
+        for lane, path in zip(LANE_ORDER, (v1_result_path, v2_result_path)):
+            captures[lane] = _open_validated_lifecycle_snapshot(
+                lane, path, sdk_root=sdk_root, java_home=java_home
+            )
+        return captures
+    except BaseException:
+        for _lifecycle, snapshot, _evidence, _capture, _result in captures.values():
+            snapshot.close()  # type: ignore[attr-defined]
+        raise
+
+
+def _close_captures(
+    captures: Mapping[str, tuple[object, object, Mapping[str, object], object, object]],
+) -> None:
+    for _lifecycle, snapshot, _evidence, _capture, _result in captures.values():
+        snapshot.close()  # type: ignore[attr-defined]
 
 
 def expected_provenance_payload(
-    result_path: Path,
+    v1_result_path: Path,
+    v2_result_path: Path,
     *,
     sdk_root: Path,
     java_home: Path,
     environment: Mapping[str, str],
     git_checkout: Path = ROOT,
 ) -> dict[str, object]:
-    lifecycle, snapshot, evidence, result_capture, result = (
-        _open_validated_lifecycle_snapshot(
-            result_path,
-            sdk_root=sdk_root,
-            java_home=java_home,
-        )
+    captures = _open_dual_captures(
+        v1_result_path, v2_result_path, sdk_root=sdk_root, java_home=java_home
     )
-    del lifecycle
     try:
-        payload = _expected_provenance_from_capture(
-            result_directory=snapshot.result_directory,
-            result_capture=result_capture,
-            result=result,
-            evidence_capture=evidence,
-            environment=environment,
-            git_checkout=git_checkout,
+        payload = _expected_provenance_from_captures(
+            captures, environment=environment, git_checkout=git_checkout
         )
-        snapshot.verify_unchanged()
+        for _lifecycle, snapshot, _evidence, _capture, _result in captures.values():
+            snapshot.verify_unchanged()  # type: ignore[attr-defined]
         return payload
     finally:
-        snapshot.close()
+        _close_captures(captures)
 
 
 def write_provenance(
     provenance_path: Path,
-    result_path: Path,
+    v1_result_path: Path,
+    v2_result_path: Path,
     *,
     sdk_root: Path,
     java_home: Path,
     environment: Mapping[str, str],
     git_checkout: Path = ROOT,
 ) -> None:
-    lifecycle, snapshot, evidence, result_capture, result = (
-        _open_validated_lifecycle_snapshot(
-            result_path,
-            sdk_root=sdk_root,
-            java_home=java_home,
-        )
+    payload = expected_provenance_payload(
+        v1_result_path,
+        v2_result_path,
+        sdk_root=sdk_root,
+        java_home=java_home,
+        environment=environment,
+        git_checkout=git_checkout,
     )
-    del lifecycle
-    try:
-        payload = _expected_provenance_from_capture(
-            result_directory=snapshot.result_directory,
-            result_capture=result_capture,
-            result=result,
-            evidence_capture=evidence,
-            environment=environment,
-            git_checkout=git_checkout,
-        )
-        run_id = payload["lifecycle"]["runId"]  # type: ignore[index]
-        if _absolute_path(provenance_path).name != f"{run_id}.json":
-            raise NightlyContractError(
-                "provenance filename must derive from the lifecycle run id"
-            )
-        write_exclusive_regular(provenance_path, canonical_json_bytes(payload))
-        snapshot.verify_unchanged()
-    finally:
-        snapshot.close()
+    if _absolute_path(provenance_path).name != f"{payload['bundleId']}.json":
+        raise NightlyContractError("provenance filename must derive from both run ids")
+    write_exclusive_regular(provenance_path, canonical_json_bytes(payload))
 
 
 def provenance_failures(
     provenance_path: Path,
-    result_path: Path,
+    v1_result_path: Path,
+    v2_result_path: Path,
     *,
     sdk_root: Path,
     java_home: Path,
@@ -1282,17 +1456,17 @@ def provenance_failures(
         raw = read_regular_file(provenance_path, max_bytes=MAX_PROVENANCE_BYTES)
         actual = parse_canonical_json(raw, label="nightly provenance")
         expected = expected_provenance_payload(
-            result_path,
+            v1_result_path,
+            v2_result_path,
             sdk_root=sdk_root,
             java_home=java_home,
             environment=environment,
             git_checkout=git_checkout,
         )
-        run_id = expected["lifecycle"]["runId"]  # type: ignore[index]
-        if _absolute_path(provenance_path).name != f"{run_id}.json":
-            return ["provenance filename does not bind the lifecycle run id"]
+        if _absolute_path(provenance_path).name != f"{expected['bundleId']}.json":
+            return ["provenance filename does not bind both lifecycle run ids"]
         if actual != expected:
-            return ["nightly provenance bytes do not reconstruct from current inputs"]
+            return ["nightly provenance bytes do not reconstruct from both inputs"]
         if read_regular_file(provenance_path, max_bytes=MAX_PROVENANCE_BYTES) != raw:
             return ["nightly provenance changed during readback"]
         return []
@@ -1301,28 +1475,27 @@ def provenance_failures(
 
 
 def _archive_bytes(
-    evidence: Mapping[str, object],
+    lane_evidence: Mapping[str, Mapping[str, object]],
     provenance_raw: bytes,
 ) -> bytes:
+    if tuple(lane_evidence) != LANE_ORDER:
+        raise NightlyContractError("archive evidence must be ordered V1 then V2")
     members: list[tuple[str, bytes, int]] = []
-    for relative, captured in evidence.items():
-        try:
-            data = captured.data  # type: ignore[attr-defined]
-            mode = int(captured.mode, 8)  # type: ignore[attr-defined]
-        except (AttributeError, TypeError, ValueError) as error:
-            raise NightlyContractError(
-                f"captured archive member identity is invalid: {relative}"
-            ) from error
-        members.append((ARCHIVE_LIFECYCLE_PREFIX + relative, data, mode))
+    for lane in LANE_ORDER:
+        for relative, captured in lane_evidence[lane].items():
+            try:
+                data = captured.data  # type: ignore[attr-defined]
+                mode = int(captured.mode, 8)  # type: ignore[attr-defined]
+            except (AttributeError, TypeError, ValueError) as error:
+                raise NightlyContractError(
+                    f"captured {lane} archive member identity is invalid: {relative}"
+                ) from error
+            members.append((ARCHIVE_LANE_PREFIXES[lane] + relative, data, mode))
     members.append((ARCHIVE_PROVENANCE_PATH, provenance_raw, 0o600))
     members.sort(key=lambda member: member[0].encode("ascii"))
     buffer = io.BytesIO()
     try:
-        with tarfile.open(
-            fileobj=buffer,
-            mode="w:",
-            format=tarfile.USTAR_FORMAT,
-        ) as archive:
+        with tarfile.open(fileobj=buffer, mode="w:", format=tarfile.USTAR_FORMAT) as archive:
             for name, data, mode in members:
                 info = tarfile.TarInfo(name=name)
                 info.size = len(data)
@@ -1334,7 +1507,9 @@ def _archive_bytes(
                 info.gname = ""
                 archive.addfile(info, io.BytesIO(data))
     except (OSError, tarfile.TarError, UnicodeError, ValueError) as error:
-        raise NightlyContractError(f"cannot build deterministic nightly archive: {error}") from error
+        raise NightlyContractError(
+            f"cannot build deterministic nightly archive: {error}"
+        ) from error
     raw = buffer.getvalue()
     if len(raw) > MAX_ARCHIVE_BYTES:
         raise NightlyContractError("nightly archive exceeds its byte bound")
@@ -1342,29 +1517,31 @@ def _archive_bytes(
 
 
 def _archive_contents(raw: bytes):
-    from script import check_android_headless_emulator_product_lifecycle_v2 as lifecycle
-
+    lifecycles = {lane: _lifecycle_module(lane) for lane in LANE_ORDER}
     expected_names = tuple(
         sorted(
             (
-                *(ARCHIVE_LIFECYCLE_PREFIX + relative for relative in lifecycle.EVIDENCE_PATHS),
-                ARCHIVE_LIFECYCLE_PREFIX + "result.json",
+                *(
+                    ARCHIVE_LANE_PREFIXES[lane] + relative
+                    for lane in LANE_ORDER
+                    for relative in (*lifecycles[lane].EVIDENCE_PATHS, "result.json")
+                ),
                 ARCHIVE_PROVENANCE_PATH,
             ),
             key=lambda value: value.encode("ascii"),
         )
     )
+    captured: dict[str, dict[str, object]] = {lane: {} for lane in LANE_ORDER}
+    totals = {lane: 0 for lane in LANE_ORDER}
+    provenance_raw: Optional[bytes] = None
     try:
         with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as archive:
             members = archive.getmembers()
             names = tuple(member.name for member in members)
             if names != expected_names or len(set(names)) != len(names):
                 raise NightlyContractError(
-                    "nightly archive member names and order must match exactly"
+                    "nightly archive member names and order must match both lanes exactly"
                 )
-            captured: dict[str, object] = {}
-            provenance_raw: Optional[bytes] = None
-            lifecycle_total = 0
             for member in members:
                 if (
                     not member.isfile()
@@ -1382,53 +1559,55 @@ def _archive_contents(raw: bytes):
                     raise NightlyContractError(
                         f"nightly archive member identity is invalid: {member.name}"
                     )
+                lane = next(
+                    (candidate for candidate in LANE_ORDER if member.name.startswith(ARCHIVE_LANE_PREFIXES[candidate])),
+                    None,
+                )
                 if member.name == ARCHIVE_PROVENANCE_PATH:
                     member_limit = MAX_PROVENANCE_BYTES
-                elif member.name == ARCHIVE_LIFECYCLE_PREFIX + "result.json":
+                elif lane is not None and member.name.endswith("/result.json"):
                     member_limit = MAX_RESULT_BYTES
+                elif lane is not None:
+                    member_limit = getattr(
+                        lifecycles[lane], "MAX_EVIDENCE_FILE_BYTES", 256 * 1024 * 1024
+                    )
                 else:
-                    member_limit = lifecycle.MAX_EVIDENCE_FILE_BYTES
+                    raise NightlyContractError(f"unexpected archive path: {member.name}")
                 if member.size > member_limit:
                     raise NightlyContractError(
                         f"nightly archive member exceeds its byte bound: {member.name}"
                     )
-                if member.name != ARCHIVE_PROVENANCE_PATH:
-                    lifecycle_total += member.size
-                    if lifecycle_total > lifecycle.MAX_EVIDENCE_TOTAL_BYTES:
+                if lane is not None:
+                    totals[lane] += member.size
+                    lane_total_limit = getattr(
+                        lifecycles[lane], "MAX_EVIDENCE_TOTAL_BYTES", 512 * 1024 * 1024
+                    )
+                    if totals[lane] > lane_total_limit:
                         raise NightlyContractError(
-                            "nightly archive lifecycle members exceed their total byte bound"
+                            f"nightly archive {lane} members exceed their total byte bound"
                         )
                 stream = archive.extractfile(member)
                 if stream is None:
-                    raise NightlyContractError(
-                        f"cannot read nightly archive member: {member.name}"
-                    )
+                    raise NightlyContractError(f"cannot read archive member: {member.name}")
                 data = stream.read(member.size + 1)
                 if len(data) != member.size:
-                    raise NightlyContractError(
-                        f"nightly archive member size changed: {member.name}"
-                    )
+                    raise NightlyContractError(f"archive member size changed: {member.name}")
                 mode = f"{member.mode:04o}"
                 if member.name == ARCHIVE_PROVENANCE_PATH:
                     if mode != "0600":
-                        raise NightlyContractError(
-                            "nightly archive provenance mode must equal 0600"
-                        )
+                        raise NightlyContractError("nightly archive provenance mode must equal 0600")
                     provenance_raw = data
                 else:
-                    relative = member.name.removeprefix(ARCHIVE_LIFECYCLE_PREFIX)
-                    captured[relative] = lifecycle.CapturedEvidenceFile(
-                        data=data,
-                        identity=(),
-                        mode=mode,
-                    )
+                    assert lane is not None
+                    relative = member.name.removeprefix(ARCHIVE_LANE_PREFIXES[lane])
+                    captured[lane][relative] = CapturedRegularFile(data=data, identity=(), mode=mode)
     except (OSError, tarfile.TarError, UnicodeError, ValueError) as error:
         if isinstance(error, NightlyContractError):
             raise
         raise NightlyContractError(f"cannot read nightly archive: {error}") from error
     if provenance_raw is None:
         raise NightlyContractError("nightly archive is missing provenance")
-    return lifecycle, captured, provenance_raw
+    return lifecycles, captured, provenance_raw
 
 
 def archive_failures(
@@ -1453,26 +1632,49 @@ def archive_failures(
                 "nightly archive SHA-256 differs: "
                 f"expected {expected_sha256}, got {actual_sha256}"
             ]
-        lifecycle, evidence, provenance_raw = _archive_contents(archive_capture.data)
-        result_capture = evidence["result.json"]
-        result = lifecycle.load_canonical_json(
-            result_capture.data,
-            label="archived result.json",
-        )
-        if type(result) is not dict or type(result.get("run")) is not dict:
-            return ["archived lifecycle result must contain one run mapping"]
-        run_id = result["run"].get("id")
-        if type(run_id) is not str:
-            return ["archived lifecycle run id must be a string"]
-        if _absolute_path(archive_path).name != (
-            f"{ARCHIVE_FILENAME_PREFIX}{run_id}.tar"
-        ):
-            return ["nightly archive filename must derive from the lifecycle run id"]
-        expected = _expected_provenance_from_capture(
-            result_directory=Path(os.sep) / "archive" / run_id,
-            result_capture=result_capture,
-            result=result,
-            evidence_capture=evidence,
+        lifecycles, lane_evidence, provenance_raw = _archive_contents(archive_capture.data)
+        context = github_context(environment)
+        records = []
+        results: dict[str, object] = {}
+        captures: dict[str, tuple[object, object, Mapping[str, object], object, object]] = {}
+        for lane in LANE_ORDER:
+            evidence = lane_evidence[lane]
+            result_capture = evidence["result.json"]
+            result = parse_canonical_json(
+                result_capture.data,  # type: ignore[attr-defined]
+                label=f"archived {lane} result.json",
+            )
+            if type(result) is not dict or type(result.get("run")) is not dict:
+                return [f"archived lifecycle {lane} result must contain one run mapping"]
+            run_id = result["run"].get("id")
+            if type(run_id) is not str:
+                return [f"archived lifecycle {lane} run id must be a string"]
+            snapshot = type(
+                "ArchivedSnapshot",
+                (),
+                {"result_directory": Path(os.sep) / "archive" / lane / run_id},
+            )()
+            captures[lane] = (
+                lifecycles[lane], snapshot, evidence, result_capture, result
+            )
+            records.append(
+                _lane_provenance_from_capture(
+                    lane,
+                    lifecycle=lifecycles[lane],
+                    result_directory=snapshot.result_directory,
+                    result_capture=result_capture,
+                    result=result,
+                    evidence_capture=evidence,
+                    context=context,
+                    git_checkout=git_checkout,
+                )
+            )
+            results[lane] = result
+        bundle_id = _bundle_id(records)
+        if _absolute_path(archive_path).name != f"{ARCHIVE_FILENAME_PREFIX}{bundle_id}.tar":
+            return ["nightly archive filename must derive from both lifecycle run ids"]
+        expected = _expected_provenance_from_captures(
+            captures,
             environment=environment,
             git_checkout=git_checkout,
         )
@@ -1485,21 +1687,35 @@ def archive_failures(
         if deep_result_readback:
             if sdk_root is None or java_home is None:
                 return ["deep archive readback requires SDK and Java roots"]
-            deep_failures = lifecycle.payload_failures(
-                result,
-                result_directory=Path(os.sep) / "archive" / run_id,
-                evidence=evidence,
-                root=ROOT,
-                sdk_root=_absolute_path(sdk_root),
-                java_home=_absolute_path(java_home),
-            )
-            deep_failures.extend(lifecycle.closed_evidence_failures(evidence))
+            deep_failures: list[str] = []
+            with tempfile.TemporaryDirectory(prefix="aetherlink-nightly-readback-") as temporary:
+                temporary_root = Path(temporary)
+                for lane in LANE_ORDER:
+                    result = results[lane]
+                    assert isinstance(result, dict)
+                    run_id = result["run"]["id"]  # type: ignore[index]
+                    lane_root = temporary_root / lane / run_id
+                    lane_root.mkdir(parents=True)
+                    for relative, captured in lane_evidence[lane].items():
+                        target = lane_root / relative
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_bytes(captured.data)  # type: ignore[attr-defined]
+                        target.chmod(int(captured.mode, 8))  # type: ignore[attr-defined]
+                    lane_failures = lifecycles[lane].result_failures(
+                        lane_root / "result.json",
+                        root=ROOT,
+                        sdk_root=_absolute_path(sdk_root),
+                        java_home=_absolute_path(java_home),
+                    )
+                    deep_failures.extend(
+                        f"{lane}: {failure}" for failure in lane_failures
+                    )
             if deep_failures:
                 return [
-                    "archived lifecycle result is not independently valid: "
+                    "archived lifecycle results are not independently valid: "
                     + "; ".join(deep_failures)
                 ]
-        rebuilt = _archive_bytes(evidence, provenance_raw)
+        rebuilt = _archive_bytes(lane_evidence, provenance_raw)
         if rebuilt != archive_capture.data:
             return ["nightly archive bytes are not the exact deterministic encoding"]
         return []
@@ -1510,54 +1726,51 @@ def archive_failures(
 def seal_nightly_artifact(
     archive_path: Path,
     provenance_path: Path,
-    result_path: Path,
+    v1_result_path: Path,
+    v2_result_path: Path,
     *,
     sdk_root: Path,
     java_home: Path,
     environment: Mapping[str, str],
     git_checkout: Path,
 ) -> str:
-    lifecycle, snapshot, evidence, result_capture, result = (
-        _open_validated_lifecycle_snapshot(
-            result_path,
-            sdk_root=sdk_root,
-            java_home=java_home,
-        )
+    captures = _open_dual_captures(
+        v1_result_path,
+        v2_result_path,
+        sdk_root=sdk_root,
+        java_home=java_home,
     )
-    del lifecycle
     try:
-        payload = _expected_provenance_from_capture(
-            result_directory=snapshot.result_directory,
-            result_capture=result_capture,
-            result=result,
-            evidence_capture=evidence,
+        payload = _expected_provenance_from_captures(
+            captures,
             environment=environment,
             git_checkout=git_checkout,
         )
-        run_id = payload["lifecycle"]["runId"]  # type: ignore[index]
-        if _absolute_path(provenance_path).name != f"{run_id}.json":
-            raise NightlyContractError(
-                "provenance filename must derive from the lifecycle run id"
-            )
+        bundle_id = payload["bundleId"]
+        if _absolute_path(provenance_path).name != f"{bundle_id}.json":
+            raise NightlyContractError("provenance filename must derive from both run ids")
         if _absolute_path(archive_path).name != (
-            f"{ARCHIVE_FILENAME_PREFIX}{run_id}.tar"
+            f"{ARCHIVE_FILENAME_PREFIX}{bundle_id}.tar"
         ):
-            raise NightlyContractError(
-                "archive filename must derive from the lifecycle run id"
-            )
+            raise NightlyContractError("archive filename must derive from both run ids")
         provenance_raw = canonical_json_bytes(payload)
         write_exclusive_regular(
             provenance_path,
             provenance_raw,
             max_bytes=MAX_PROVENANCE_BYTES,
         )
-        archive_raw = _archive_bytes(evidence, provenance_raw)
+        lane_evidence = {
+            lane: captures[lane][2]
+            for lane in LANE_ORDER
+        }
+        archive_raw = _archive_bytes(lane_evidence, provenance_raw)
         write_exclusive_regular(
             archive_path,
             archive_raw,
             max_bytes=MAX_ARCHIVE_BYTES,
         )
-        snapshot.verify_unchanged()
+        for _lifecycle, snapshot, _evidence, _capture, _result in captures.values():
+            snapshot.verify_unchanged()  # type: ignore[attr-defined]
         archive_sha256 = hashlib.sha256(archive_raw).hexdigest()
         failures = archive_failures(
             archive_path,
@@ -1570,10 +1783,11 @@ def seal_nightly_artifact(
         )
         if failures:
             raise NightlyContractError("; ".join(failures))
-        snapshot.verify_unchanged()
+        for _lifecycle, snapshot, _evidence, _capture, _result in captures.values():
+            snapshot.verify_unchanged()  # type: ignore[attr-defined]
         return archive_sha256
     finally:
-        snapshot.close()
+        _close_captures(captures)
 
 
 def self_test(workflow: str) -> list[str]:
@@ -1599,13 +1813,27 @@ def self_test(workflow: str) -> list[str]:
             "",
         ),
         (
-            "omitted independent checker",
+            "omitted independent V1 checker",
             "          python3 -B "
-            "script/check_android_headless_emulator_product_lifecycle_v2.py \\\n"
-            '            "$LIFECYCLE_RESULT" \\\n'
+            "script/check_android_headless_emulator_product_lifecycle.py \\\n"
+            '            "$LIFECYCLE_V1_RESULT" \\\n'
             '            --sdk-root "$ANDROID_HOME" \\\n'
             '            --java-home "$JAVA_HOME"\n',
             "",
+        ),
+        (
+            "omitted independent V2 checker",
+            "          python3 -B "
+            "script/check_android_headless_emulator_product_lifecycle_v2.py \\\n"
+            '            "$LIFECYCLE_V2_RESULT" \\\n'
+            '            --sdk-root "$ANDROID_HOME" \\\n'
+            '            --java-home "$JAVA_HOME"\n',
+            "",
+        ),
+        (
+            "cross-bound V1 result",
+            '--v1-result "$LIFECYCLE_V1_RESULT"',
+            '--v1-result "$LIFECYCLE_V2_RESULT"',
         ),
         ("ignored failure", "          java -version\n", "          java -version || true\n"),
         ("long retention", "          retention-days: 14\n", "          retention-days: 90\n"),
@@ -1702,7 +1930,8 @@ def main() -> int:
     mode.add_argument("--readback-provenance", type=Path, metavar="PATH")
     mode.add_argument("--seal-artifact", type=Path, metavar="PATH")
     mode.add_argument("--readback-artifact", type=Path, metavar="PATH")
-    parser.add_argument("--result", type=Path)
+    parser.add_argument("--v1-result", type=Path)
+    parser.add_argument("--v2-result", type=Path)
     parser.add_argument("--provenance", type=Path)
     parser.add_argument("--expected-sha256")
     parser.add_argument("--deep-result-readback", action="store_true")
@@ -1743,13 +1972,16 @@ def main() -> int:
         )
         return 0
     if args.seal_artifact is not None:
-        if args.result is None or args.provenance is None:
-            parser.error("--seal-artifact requires --result and --provenance")
+        if args.v1_result is None or args.v2_result is None or args.provenance is None:
+            parser.error(
+                "--seal-artifact requires --v1-result, --v2-result, and --provenance"
+            )
         try:
             archive_sha256 = seal_nightly_artifact(
                 args.seal_artifact,
                 args.provenance,
-                args.result,
+                args.v1_result,
+                args.v2_result,
                 sdk_root=args.sdk_root,
                 java_home=args.java_home,
                 environment=os.environ,
@@ -1779,13 +2011,14 @@ def main() -> int:
         print("Nightly sealed artifact readback passed.")
         return 0
     if args.write_provenance is not None or args.readback_provenance is not None:
-        if args.result is None:
-            parser.error("--result is required for provenance modes")
+        if args.v1_result is None or args.v2_result is None:
+            parser.error("--v1-result and --v2-result are required for provenance modes")
         if args.write_provenance is not None:
             try:
                 write_provenance(
                     args.write_provenance,
-                    args.result,
+                    args.v1_result,
+                    args.v2_result,
                     sdk_root=args.sdk_root,
                     java_home=args.java_home,
                     environment=os.environ,
@@ -1798,7 +2031,8 @@ def main() -> int:
             return 0
         failures = provenance_failures(
             args.readback_provenance,
-            args.result,
+            args.v1_result,
+            args.v2_result,
             sdk_root=args.sdk_root,
             java_home=args.java_home,
             environment=os.environ,

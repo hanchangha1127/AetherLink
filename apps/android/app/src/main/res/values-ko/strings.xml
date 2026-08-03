@@ -773,6 +773,7 @@
     <string name="error_generation_not_found">진행 중인 생성을 찾을 수 없습니다.</string>
     <string name="error_transport_error">AetherLink Runtime과 모델 서비스의 통신이 끊겼습니다.</string>
     <string name="error_internal_error">AetherLink Runtime 내부 오류가 발생했습니다.</string>
+    <string name="error_local_data_update_required">이 AetherLink 버전에서는 저장된 앱 데이터를 안전하게 열 수 없습니다. 설정을 변경하기 전에 AetherLink를 업데이트하세요.</string>
     <string name="error_unknown">문제가 발생했습니다.</string>
     <string name="error_detail">상세: %1$s</string>
     <string name="error_accessibility_summary">%1$s. %2$s</string>

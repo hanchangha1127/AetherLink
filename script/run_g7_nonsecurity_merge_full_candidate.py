@@ -16,6 +16,7 @@ import json
 import os
 from pathlib import Path
 import selectors
+import shutil
 import signal
 import stat
 import subprocess
@@ -62,6 +63,18 @@ MACOS_UNSEALED_PACKAGE_COMMAND = (
     "./script/build_and_run.sh",
     "--unsealed-package-only",
 )
+MACOS_LIFECYCLE_RESULT_RELATIVE_PATH = Path(
+    ".build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/"
+    "macos-current-unsealed-lifecycle-v5/result.json"
+)
+MACOS_LIFECYCLE_REPEATABILITY_RELATIVE_PATH = Path(
+    ".build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/"
+    "macos-current-unsealed-lifecycle-v5/repeatability.json"
+)
+ANDROID_RELEASE_REPEATABILITY_RESULT_RELATIVE_PATH = Path(
+    ".build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/"
+    "android-release-repeatability-v1/result.json"
+)
 
 LIMITATIONS = {
     "canonicalG7ExitClaimed": False,
@@ -75,6 +88,10 @@ LIMITATIONS = {
 }
 
 COVERAGE = {
+    "androidCoreNonsecurityClasses": 2,
+    "androidCoreNonsecurityProtocolTests": 96,
+    "androidCoreNonsecurityTests": 112,
+    "androidCoreNonsecurityTransportTests": 16,
     "androidFullAppClasses": 19,
     "androidFullAppTests": 1226,
     "androidLintIssues": 0,
@@ -82,6 +99,11 @@ COVERAGE = {
     "documentIngestionMutationCases": 96,
     "documentIngestionMutationXctestTests": 2,
     "releaseComplianceTests": 22,
+    "swiftCurrentDiscoveryTests": 2175,
+    "swiftCurrentNoSocketTests": 1204,
+    "swiftCurrentParentRemainingTests": 967,
+    "swiftCurrentParentReviewedTests": 1208,
+    "swiftCurrentParentSocketContributionTests": 4,
     "swiftDistinctNonsecurityTests": 397,
     "swiftExpandedNonsecurityTests": 247,
     "swiftFocusedTests": 222,
@@ -90,25 +112,60 @@ COVERAGE = {
 IMPLEMENTATION_PATHS = tuple(
     Path(value)
     for value in (
+        "script/check_android_release_repeatability_current.py",
         "script/check_g7_nonsecurity_merge_full_candidate.py",
+        "script/check_g7_nonsecurity_merge_full_current.py",
+        "script/g7_reviewed_nonsecurity_swift_addon_identities_v5.txt",
+        "script/g7_reviewed_nonsecurity_swift_addon_identities_v6.txt",
+        "script/run_android_release_repeatability_current.py",
         "script/run_clean_release_reproducibility.py",
         "script/run_g7_nonsecurity_merge_full_candidate.py",
+        "script/run_g7_nonsecurity_merge_full_current.py",
+        "script/test_check_android_release_repeatability_current.py",
         "script/test_check_g7_nonsecurity_merge_full_candidate.py",
+        "script/test_check_g7_nonsecurity_merge_full_current.py",
+        "script/test_run_android_release_repeatability_current.py",
         "script/test_run_g7_nonsecurity_merge_full_candidate.py",
+        "script/test_run_g7_nonsecurity_merge_full_current.py",
     )
 )
 
 ARTIFACT_PATHS = tuple(
     Path(value)
     for value in (
-        ".build/aetherlink-current-unsealed-lifecycle-v1/repeatability.json",
-        ".build/aetherlink-current-unsealed-lifecycle-v1/result.json",
+        ANDROID_RELEASE_REPEATABILITY_RESULT_RELATIVE_PATH.as_posix(),
         ".build/aetherlink-document-ingestion-asan-binding-v1.json",
         ".build/aetherlink-document-ingestion-asan-console-v1.log",
         ".build/aetherlink-document-ingestion-asan-run-marker-v1.json",
         ".build/aetherlink-document-ingestion-mutation-binding-v1.json",
         ".build/aetherlink-document-ingestion-mutation-console-v1.log",
         ".build/aetherlink-document-ingestion-mutation-run-marker-v1.json",
+        MACOS_LIFECYCLE_REPEATABILITY_RELATIVE_PATH.as_posix(),
+        MACOS_LIFECYCLE_RESULT_RELATIVE_PATH.as_posix(),
+        (
+            ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+            "binding.json"
+        ),
+        (
+            ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+            "console.log"
+        ),
+        (
+            ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+            "execution-contract.json"
+        ),
+        (
+            ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+            "parent-result.json"
+        ),
+        (
+            ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+            "result.json"
+        ),
+        (
+            ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+            "run-marker.json"
+        ),
         ".build/aetherlink-g7-nonsecurity-swift-binding-v1.json",
         ".build/aetherlink-g7-nonsecurity-swift-console-v1.log",
         ".build/aetherlink-g7-nonsecurity-swift-run-marker-v1.json",
@@ -126,6 +183,24 @@ ARTIFACT_PATHS = tuple(
         (
             "apps/android/app/build/test-results/testDebugUnitTest/"
             "aetherlink-full-test-result-binding-v1.json"
+        ),
+        (
+            "apps/android/core/protocol/build/"
+            "aetherlink-core-nonsecurity-test-run-marker-v1.json"
+        ),
+        (
+            "apps/android/core/protocol/build/test-results/"
+            "testDebugUnitTest/"
+            "aetherlink-core-nonsecurity-test-result-binding-v1.json"
+        ),
+        (
+            "apps/android/core/transport/build/"
+            "aetherlink-core-nonsecurity-test-run-marker-v1.json"
+        ),
+        (
+            "apps/android/core/transport/build/test-results/"
+            "testDebugUnitTest/"
+            "aetherlink-core-nonsecurity-test-result-binding-v1.json"
         ),
         "dist/unsealed-package-only/AetherLink.app/Contents/MacOS/AetherLink",
         (
@@ -225,6 +300,18 @@ STATIC_GATES = (
                 "evidence.CurrentUnsealedRecoveryEvidencePortableTests"
             ),
             "script.test_check_macos_current_unsealed_ci_lifecycle",
+            (
+                "script.test_run_macos_runtime_chat_production_append_"
+                "abrupt_recovery_smoke"
+            ),
+            (
+                "script.test_check_macos_runtime_chat_production_append_"
+                "abrupt_recovery_evidence"
+            ),
+            (
+                "script.test_check_macos_current_source_lane_a_"
+                "idle_resource_repeatability"
+            ),
         ),
         1200,
     ),
@@ -246,6 +333,18 @@ STATIC_GATES = (
         1200,
     ),
     Gate(
+        "android-release-repeatability-contract-tests",
+        (
+            "python3",
+            "-B",
+            "-m",
+            "unittest",
+            "script.test_run_android_release_repeatability_current",
+            "script.test_check_android_release_repeatability_current",
+        ),
+        900,
+    ),
+    Gate(
         "g7-candidate-contract-tests",
         (
             "python3",
@@ -254,6 +353,18 @@ STATIC_GATES = (
             "unittest",
             "script.test_run_g7_nonsecurity_merge_full_candidate",
             "script.test_check_g7_nonsecurity_merge_full_candidate",
+        ),
+        900,
+    ),
+    Gate(
+        "g7-current-contract-tests",
+        (
+            "python3",
+            "-B",
+            "-m",
+            "unittest",
+            "script.test_run_g7_nonsecurity_merge_full_current",
+            "script.test_check_g7_nonsecurity_merge_full_current",
         ),
         900,
     ),
@@ -325,6 +436,68 @@ SWIFT_GATES = (
         "--g7-nonsecurity-swift-results",
     ),
     python_gate(
+        "g7-current-prepare",
+        "script/run_g7_nonsecurity_merge_full_current.py",
+        "--prepare",
+    ),
+    python_gate(
+        "g7-current-run",
+        "script/run_g7_nonsecurity_merge_full_current.py",
+        "--run",
+        timeout_seconds=2100,
+    ),
+    python_gate(
+        "g7-current-bind",
+        "script/run_g7_nonsecurity_merge_full_current.py",
+        "--write-binding",
+    ),
+    python_gate(
+        "g7-current-readback",
+        "script/run_g7_nonsecurity_merge_full_current.py",
+        "--results",
+    ),
+    Gate(
+        "g7-current-independent-readback",
+        (
+            "python3",
+            "-I",
+            "-B",
+            "-S",
+            "script/check_g7_nonsecurity_merge_full_current.py",
+            (
+                ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+                "result.json"
+            ),
+        ),
+        600,
+    ),
+    python_gate(
+        "g7-current-parent-bind",
+        "script/run_g7_nonsecurity_merge_full_current.py",
+        "--write-parent",
+    ),
+    python_gate(
+        "g7-current-parent-readback",
+        "script/run_g7_nonsecurity_merge_full_current.py",
+        "--parent-results",
+    ),
+    Gate(
+        "g7-current-parent-independent-readback",
+        (
+            "python3",
+            "-I",
+            "-B",
+            "-S",
+            "script/check_g7_nonsecurity_merge_full_current.py",
+            "--parent",
+            (
+                ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+                "parent-result.json"
+            ),
+        ),
+        600,
+    ),
+    python_gate(
         "document-ingestion-asan-prepare",
         "script/check_product_ci.py",
         "--prepare-document-ingestion-asan-run",
@@ -384,16 +557,18 @@ ANDROID_FULL_COMMAND = (
     ),
 )
 
-ANDROID_RELEASE_COMMAND = (
-    "./gradlew",
-    "--offline",
-    "--no-daemon",
-    "--console=plain",
-    "-PaetherlinkStrictReleaseDependencyLocks=true",
-    "-Pkotlin.incremental=false",
-    ":app:assembleRelease",
-    ":app:bundleRelease",
-    ":app:lintRelease",
+ANDROID_RELEASE_REPEATABILITY_PRODUCE_COMMAND = (
+    "python3",
+    "-B",
+    "script/run_android_release_repeatability_current.py",
+    "--result",
+    ANDROID_RELEASE_REPEATABILITY_RESULT_RELATIVE_PATH.as_posix(),
+)
+ANDROID_RELEASE_REPEATABILITY_READBACK_COMMAND = (
+    "python3",
+    "-B",
+    "script/check_android_release_repeatability_current.py",
+    ANDROID_RELEASE_REPEATABILITY_RESULT_RELATIVE_PATH.as_posix(),
 )
 
 ANDROID_GATES = (
@@ -428,7 +603,37 @@ ANDROID_GATES = (
         "script/check_product_ci.py",
         "--android-font-scale-results",
     ),
-    Gate("android-release-build", ANDROID_RELEASE_COMMAND, 2400),
+    python_gate(
+        "android-core-nonsecurity-prepare",
+        "script/check_product_ci.py",
+        "--prepare-android-core-nonsecurity-test-run",
+    ),
+    python_gate(
+        "android-core-nonsecurity-run",
+        "script/check_product_ci.py",
+        "--run-android-core-nonsecurity-tests",
+        timeout_seconds=2400,
+    ),
+    python_gate(
+        "android-core-nonsecurity-bind",
+        "script/check_product_ci.py",
+        "--write-android-core-nonsecurity-test-binding",
+    ),
+    python_gate(
+        "android-core-nonsecurity-readback",
+        "script/check_product_ci.py",
+        "--android-core-nonsecurity-test-results",
+    ),
+    Gate(
+        "android-release-repeatability-produce",
+        ANDROID_RELEASE_REPEATABILITY_PRODUCE_COMMAND,
+        8400,
+    ),
+    Gate(
+        "android-release-repeatability-readback",
+        ANDROID_RELEASE_REPEATABILITY_READBACK_COMMAND,
+        1800,
+    ),
     python_gate(
         "android-release-readback",
         "script/check_release_artifact_archive.py",
@@ -516,12 +721,9 @@ MACOS_GATES = (
             "-B",
             "script/run_macos_current_unsealed_install_recovery_smoke.py",
             "--result",
-            ".build/aetherlink-current-unsealed-lifecycle-v1/result.json",
+            MACOS_LIFECYCLE_RESULT_RELATIVE_PATH.as_posix(),
             "--repeatability-result",
-            (
-                ".build/aetherlink-current-unsealed-lifecycle-v1/"
-                "repeatability.json"
-            ),
+            MACOS_LIFECYCLE_REPEATABILITY_RELATIVE_PATH.as_posix(),
         ),
         1200,
     ),
@@ -531,6 +733,10 @@ MACOS_GATES = (
             "python3",
             "-B",
             "script/check_macos_current_unsealed_ci_lifecycle.py",
+            "--result",
+            MACOS_LIFECYCLE_RESULT_RELATIVE_PATH.as_posix(),
+            "--repeatability-result",
+            MACOS_LIFECYCLE_REPEATABILITY_RELATIVE_PATH.as_posix(),
         ),
         600,
     ),
@@ -561,6 +767,16 @@ FINAL_READBACK_GATES = (
         "final-android-full-readback",
         "script/check_product_ci.py",
         "--android-full-test-results",
+    ),
+    python_gate(
+        "final-android-core-nonsecurity-readback",
+        "script/check_product_ci.py",
+        "--android-core-nonsecurity-test-results",
+    ),
+    Gate(
+        "final-android-release-repeatability-readback",
+        ANDROID_RELEASE_REPEATABILITY_READBACK_COMMAND,
+        1800,
     ),
     python_gate(
         "final-android-release-readback",
@@ -604,6 +820,41 @@ FINAL_READBACK_GATES = (
             "python3",
             "-B",
             "script/check_macos_current_unsealed_ci_lifecycle.py",
+            "--result",
+            MACOS_LIFECYCLE_RESULT_RELATIVE_PATH.as_posix(),
+            "--repeatability-result",
+            MACOS_LIFECYCLE_REPEATABILITY_RELATIVE_PATH.as_posix(),
+        ),
+        600,
+    ),
+    Gate(
+        "final-g7-current-independent-readback",
+        (
+            "python3",
+            "-I",
+            "-B",
+            "-S",
+            "script/check_g7_nonsecurity_merge_full_current.py",
+            (
+                ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+                "result.json"
+            ),
+        ),
+        600,
+    ),
+    Gate(
+        "final-g7-current-parent-independent-readback",
+        (
+            "python3",
+            "-I",
+            "-B",
+            "-S",
+            "script/check_g7_nonsecurity_merge_full_current.py",
+            "--parent",
+            (
+                ".build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/"
+                "parent-result.json"
+            ),
         ),
         600,
     ),
@@ -630,7 +881,8 @@ OUTPUT_PARENT_BY_PRODUCER_ID = {
         ".build/aetherlink-release-diagnostics-v1"
     ),
     "macos-lifecycle-produce": Path(
-        ".build/aetherlink-current-unsealed-lifecycle-v1"
+        ".build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/"
+        "macos-current-unsealed-lifecycle-v4"
     ),
 }
 
@@ -1294,8 +1546,10 @@ def main() -> int:
         return 1
     print(
         "G7 non-security Merge-full local candidate published: "
-        f"{payload['coverage']['swiftFocusedTests']} Swift focused, "
+        f"{payload['coverage']['swiftCurrentParentReviewedTests']} Swift "
+        "reviewed parent, "
         f"{payload['coverage']['androidFullAppTests']} Android app, "
+        f"{payload['coverage']['androidCoreNonsecurityTests']} Android core, "
         f"{payload['coverage']['androidLintIssues']} Android lint issues."
     )
     return 0

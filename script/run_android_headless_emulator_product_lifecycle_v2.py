@@ -7,10 +7,12 @@ import argparse
 import base64
 from datetime import datetime, timezone
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
 import secrets
+import shlex
 import shutil
 import subprocess
 import sys
@@ -34,12 +36,82 @@ CAMERA_PERMISSION = base.CAMERA_PERMISSION
 PREFERENCES_RELATIVE = (
     "shared_prefs/aetherlink_pairing_qr_camera_permission.xml"
 )
+FUTURE_RUNTIME_LOCAL_STORE_RELATIVE = "shared_prefs/runtime_local_store.xml"
+FUTURE_RUNTIME_LOCAL_STORE_SEED = (
+    b'<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n'
+    b"<map>\n"
+    b'    <string name="runtime_data">{&quot;version&quot;:2}</string>\n'
+    b"</map>\n"
+)
+FUTURE_DATA_UPDATE_REQUIRED_TEXT = (
+    "This version of AetherLink can’t safely open the saved app data. "
+    "Update AetherLink before changing settings."
+)
+FUTURE_RUNTIME_LOCAL_STORE_WRITE_RECEIPT = "aetherlink-future-seed-ok\n"
+FUTURE_RUNTIME_LOCAL_STORE_WRITE_SCRIPT = (
+    "set -eu; umask 077; mkdir -p shared_prefs; "
+    "rm -f shared_prefs/runtime_local_store.xml.bak "
+    "shared_prefs/.runtime_local_store.xml.aetherlink-v2; "
+    "cat > shared_prefs/.runtime_local_store.xml.aetherlink-v2; "
+    "chmod 600 shared_prefs/.runtime_local_store.xml.aetherlink-v2; "
+    "mv shared_prefs/.runtime_local_store.xml.aetherlink-v2 "
+    "shared_prefs/runtime_local_store.xml; "
+    "printf 'aetherlink-future-seed-ok\\n'"
+)
+LEGACY_RUNTIME_LOCAL_STORE_SEED = (
+    b'<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n'
+    b"<map>\n"
+    b'    <string name="runtime_data">'
+    b"{&quot;appTheme&quot;:&quot;dark&quot;,&quot;composerDraft&quot;:"
+    b"&quot;legacy-v0&quot;,&quot;trustedRuntimeAutoReconnectEnabled&quot;:false}"
+    b"</string>\n"
+    b"</map>\n"
+)
+LEGACY_RUNTIME_LOCAL_STORE_WRITE_RECEIPT = "aetherlink-legacy-seed-ok\n"
+LEGACY_RUNTIME_LOCAL_STORE_WRITE_SCRIPT = (
+    "set -eu; umask 077; mkdir -p shared_prefs; "
+    "rm -f shared_prefs/runtime_local_store.xml.bak "
+    "shared_prefs/.runtime_local_store.xml.aetherlink-legacy; "
+    "cat > shared_prefs/.runtime_local_store.xml.aetherlink-legacy; "
+    "chmod 600 shared_prefs/.runtime_local_store.xml.aetherlink-legacy; "
+    "mv shared_prefs/.runtime_local_store.xml.aetherlink-legacy "
+    "shared_prefs/runtime_local_store.xml; "
+    "printf 'aetherlink-legacy-seed-ok\\n'"
+)
 COMMAND_TIMEOUT_SECONDS = base.COMMAND_TIMEOUT_SECONDS
 LIFECYCLE_TIMEOUT_SECONDS = 240
 MAX_RAW_COMMAND_BYTES = 4 * 1024 * 1024
 BOOT_ID_RE = re.compile(
     rb"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
     rb"[89ab][0-9a-f]{3}-[0-9a-f]{12}\n\Z"
+)
+DEVICEIDLE_UNFORCE_RECEIPT_RE = re.compile(
+    rb"Light state: ([A-Z_]+), deep state: ([A-Z_]+)\n"
+    rb"mForceModeManagerQuickDozeRequest: false\n"
+    rb"mForceModeManagerOffBodyState: false\n\Z"
+)
+DEVICEIDLE_LIGHT_STATES = frozenset(
+    {
+        "ACTIVE",
+        "INACTIVE",
+        "PRE_IDLE",
+        "IDLE",
+        "WAITING_FOR_NETWORK",
+        "IDLE_MAINTENANCE",
+        "OVERRIDE",
+    }
+)
+DEVICEIDLE_DEEP_STATES = frozenset(
+    {
+        "ACTIVE",
+        "INACTIVE",
+        "IDLE_PENDING",
+        "SENSING",
+        "LOCATING",
+        "IDLE",
+        "IDLE_MAINTENANCE",
+        "QUICK_DOZE_DELAY",
+    }
 )
 
 
@@ -233,6 +305,244 @@ def process_pid(record: dict[str, object]) -> int:
     if type(stdout) is not str or re.fullmatch(r"[1-9][0-9]{0,9}\n", stdout) is None:
         raise RunnerError("retained process identity has no exact pidof stdout")
     return int(stdout.removesuffix("\n"))
+
+
+def _read_runtime_local_data(
+    commands: Commands,
+    *,
+    timeout: float = 30,
+) -> bytes:
+    result = commands.adb(
+        "exec-out",
+        "run-as",
+        PACKAGE_NAME,
+        "cat",
+        FUTURE_RUNTIME_LOCAL_STORE_RELATIVE,
+        check=False,
+        text=False,
+        timeout=timeout,
+    )
+    assert isinstance(result.stdout, bytes)
+    assert isinstance(result.stderr, bytes)
+    if (
+        result.returncode != 0
+        or result.stderr
+        or not (1 <= len(result.stdout) <= 1024 * 1024)
+    ):
+        raise RunnerError(
+            "runtime local data readback must be one bounded file; "
+            f"exit={result.returncode}, stdout={result.stdout!r}, "
+            f"stderr={result.stderr!r}"
+        )
+    return result.stdout
+
+
+def _read_future_runtime_local_data(commands: Commands) -> bytes:
+    raw = _read_runtime_local_data(commands)
+    if raw != FUTURE_RUNTIME_LOCAL_STORE_SEED:
+        raise RunnerError(
+            "future-version runtime local data readback must match the exact seed"
+        )
+    return raw
+
+
+def _seed_runtime_local_data(
+    commands: Commands,
+    *,
+    seed: bytes,
+    write_receipt: str,
+    write_script: str,
+    label: str,
+) -> bytes:
+    if commands.serial is None:
+        raise RunnerError(f"{label} seed requires the owned emulator serial")
+    remote_command = shlex.join(
+        [
+            "run-as",
+            PACKAGE_NAME,
+            "sh",
+            "-c",
+            write_script,
+        ]
+    )
+    command = [
+        str(commands.adb_path),
+        "-s",
+        commands.serial,
+        "shell",
+        "-T",
+        remote_command,
+    ]
+    result = commands.run(
+        command,
+        check=False,
+        timeout=30,
+        input_text=seed.decode("ascii"),
+    )
+    assert isinstance(result.stdout, str)
+    assert isinstance(result.stderr, str)
+    if (
+        result.returncode != 0
+        or result.stdout != write_receipt
+        or result.stderr
+    ):
+        raise RunnerError(
+            f"{label} runtime local data seed failed; "
+            f"exit={result.returncode}, stdout={result.stdout!r}, "
+            f"stderr={result.stderr!r}"
+        )
+    raw = _read_runtime_local_data(commands)
+    if raw != seed:
+        raise RunnerError(f"{label} runtime local data seed readback differs")
+    return raw
+
+
+def seed_future_runtime_local_data(commands: Commands) -> bytes:
+    return _seed_runtime_local_data(
+        commands,
+        seed=FUTURE_RUNTIME_LOCAL_STORE_SEED,
+        write_receipt=FUTURE_RUNTIME_LOCAL_STORE_WRITE_RECEIPT,
+        write_script=FUTURE_RUNTIME_LOCAL_STORE_WRITE_SCRIPT,
+        label="future-version",
+    )
+
+
+def capture_future_runtime_local_data(
+    commands: Commands,
+    output_directory: Path,
+    relative: str,
+) -> bytes:
+    if relative not in {
+        "runtime-local-store-after-future-version-first-launch.xml",
+        "runtime-local-store-after-future-version-second-launch.xml",
+    }:
+        raise RunnerError(f"unexpected future-version local-data evidence path: {relative!r}")
+    raw = _read_future_runtime_local_data(commands)
+    (output_directory / relative).write_bytes(raw)
+    return raw
+
+
+def _runtime_local_store_json(raw: bytes, *, label: str) -> dict[str, object]:
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError as error:
+        raise RunnerError(f"{label} is malformed XML: {error}") from error
+    children = list(root)
+    if (
+        root.tag != "map"
+        or root.attrib
+        or len(children) != 1
+        or children[0].tag != "string"
+        or children[0].attrib != {"name": "runtime_data"}
+        or type(children[0].text) is not str
+        or list(children[0])
+    ):
+        raise RunnerError(f"{label} must contain only one runtime_data string")
+
+    def unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        value: dict[str, object] = {}
+        for key, item in pairs:
+            if key in value:
+                raise RunnerError(f"{label} contains duplicate JSON key {key!r}")
+            value[key] = item
+        return value
+
+    try:
+        value = json.loads(children[0].text, object_pairs_hook=unique_object)
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise RunnerError(f"{label} runtime_data is malformed JSON: {error}") from error
+    if type(value) is not dict:
+        raise RunnerError(f"{label} runtime_data must be a JSON object")
+    return value
+
+
+def legacy_migrated_runtime_local_data_facts(raw: bytes) -> dict[str, object]:
+    if raw == LEGACY_RUNTIME_LOCAL_STORE_SEED:
+        raise RunnerError("legacy versionless local data has not migrated")
+    value = _runtime_local_store_json(raw, label="migrated legacy local data")
+    expected = {
+        "appLanguageSource": "system",
+        "appLanguageTag": "en",
+        "appTheme": "dark",
+        "composerDraft": "legacy-v0",
+        "trustedRuntimeAutoReconnectEnabled": False,
+    }
+    for key, expected_value in expected.items():
+        if type(value.get(key)) is not type(expected_value) or value.get(key) != expected_value:
+            raise RunnerError(
+                f"migrated legacy local data must preserve {key}={expected_value!r}"
+            )
+    for key, expected_value in (
+        ("version", 1),
+        ("androidAppLanguagePlatformMigrationVersion", 1),
+    ):
+        if type(value.get(key)) is not int or value.get(key) != expected_value:
+            raise RunnerError(
+                f"migrated legacy local data must contain integer {key}={expected_value}"
+            )
+    return {
+        "appTheme": value["appTheme"],
+        "composerDraft": value["composerDraft"],
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "size": len(raw),
+        "trustedRuntimeAutoReconnectEnabled": value[
+            "trustedRuntimeAutoReconnectEnabled"
+        ],
+        "version": value["version"],
+    }
+
+
+def seed_legacy_runtime_local_data(commands: Commands) -> bytes:
+    return _seed_runtime_local_data(
+        commands,
+        seed=LEGACY_RUNTIME_LOCAL_STORE_SEED,
+        write_receipt=LEGACY_RUNTIME_LOCAL_STORE_WRITE_RECEIPT,
+        write_script=LEGACY_RUNTIME_LOCAL_STORE_WRITE_SCRIPT,
+        label="legacy-versionless",
+    )
+
+
+def wait_for_legacy_runtime_local_data_migration(
+    commands: Commands,
+    output_directory: Path,
+    relative: str,
+) -> tuple[bytes, dict[str, object]]:
+    if relative != "runtime-local-store-after-legacy-migration-first-launch.xml":
+        raise RunnerError(f"unexpected legacy-migration evidence path: {relative!r}")
+    deadline = time.monotonic() + 30
+    last_error: RunnerError | None = None
+    while True:
+        try:
+            timeout = base.remaining_timeout(
+                deadline,
+                maximum=5,
+                description="legacy local-data migration",
+            )
+            raw = _read_runtime_local_data(commands, timeout=timeout)
+            facts = legacy_migrated_runtime_local_data_facts(raw)
+        except RunnerError as error:
+            last_error = error
+        else:
+            (output_directory / relative).write_bytes(raw)
+            return raw, facts
+        if time.monotonic() >= deadline:
+            raise RunnerError(
+                f"legacy local-data migration did not converge: {last_error}"
+            )
+        time.sleep(0.25)
+
+
+def capture_legacy_migrated_runtime_local_data(
+    commands: Commands,
+    output_directory: Path,
+    relative: str,
+) -> tuple[bytes, dict[str, object]]:
+    if relative != "runtime-local-store-after-legacy-migration-second-launch.xml":
+        raise RunnerError(f"unexpected legacy-migration evidence path: {relative!r}")
+    raw = _read_runtime_local_data(commands)
+    facts = legacy_migrated_runtime_local_data_facts(raw)
+    (output_directory / relative).write_bytes(raw)
+    return raw, facts
 
 
 def capture_camera_preferences(commands: Commands, path: Path) -> bytes:
@@ -452,6 +762,133 @@ def wait_for_ui(
         )
 
 
+def wait_for_ui_with_upward_swipes(
+    commands: Commands,
+    result_directory: Path,
+    relative: str,
+    predicate: Callable[[ET.Element], bool],
+    *,
+    anchor_predicate: Callable[[ET.Element], bool],
+    maximum_swipes: int = 4,
+) -> ET.Element:
+    deadline = time.monotonic() + base.UI_TIMEOUT_SECONDS
+    swipes = 0
+    anchor_observed = False
+    while True:
+        root = capture_ui(
+            commands,
+            result_directory,
+            relative,
+            deadline=deadline,
+        )
+        base.remaining_timeout(
+            deadline,
+            maximum=1,
+            description=f"v2 scrolling UI wait {relative}",
+        )
+        if not anchor_predicate(root):
+            if anchor_observed:
+                raise RunnerError(f"{relative} lost the expected screen anchor")
+            time.sleep(
+                min(
+                    0.25,
+                    base.remaining_timeout(
+                        deadline,
+                        maximum=0.25,
+                        description=f"v2 screen anchor wait {relative}",
+                    ),
+                )
+            )
+            continue
+        anchor_observed = True
+        if predicate(root):
+            return root
+        if swipes >= maximum_swipes:
+            raise RunnerError(
+                f"{relative} did not expose the required content after scrolling"
+            )
+        commands.shell(
+            "input",
+            "swipe",
+            "540",
+            "2050",
+            "540",
+            "1700",
+            "350",
+            timeout=base.remaining_timeout(
+                deadline,
+                maximum=10,
+                description=f"v2 scroll action {relative}",
+            ),
+        )
+        swipes += 1
+        time.sleep(
+            min(
+                0.5,
+                base.remaining_timeout(
+                    deadline,
+                    maximum=0.5,
+                    description=f"v2 scrolling UI wait {relative}",
+                ),
+            )
+        )
+
+
+def capture_follow_system_settings(
+    commands: Commands,
+    result_directory: Path,
+    *,
+    top_root: ET.Element,
+    phase: str,
+) -> ET.Element:
+    if phase not in {"before-reboot", "after-reboot"}:
+        raise RunnerError(f"unexpected Follow-system evidence phase: {phase!r}")
+    base.tap_bounds(
+        commands,
+        base.clickable_bounds_for(
+            top_root,
+            content_description="Open navigation menu",
+        ),
+    )
+    drawer_relative = f"ui/follow-system-{phase}-drawer.xml"
+    drawer = wait_for_ui(
+        commands,
+        result_directory,
+        drawer_relative,
+        lambda root: base.has_node(
+            root,
+            text="Settings",
+            package=base.APP_PACKAGE_PREFIX,
+        ),
+    )
+    try:
+        settings_bounds = base.clickable_bounds_for(drawer, text="Settings")
+    except RunnerError:
+        if not base.has_selected_ancestor(drawer, text="Settings"):
+            raise
+        commands.shell("input", "tap", "1030", "1200")
+        base.wait_for_main_activity(commands)
+    else:
+        base.tap_bounds(commands, settings_bounds)
+    settings_relative = f"ui/follow-system-{phase}.xml"
+    return wait_for_ui_with_upward_swipes(
+        commands,
+        result_directory,
+        settings_relative,
+        lambda root: base.has_fully_visible_checked_node(
+            root,
+            text="Follow system language",
+            package=base.APP_PACKAGE_PREFIX,
+        ),
+        anchor_predicate=lambda root: base.has_node(
+            root,
+            text="Pair AetherLink",
+            package=base.APP_PACKAGE_PREFIX,
+        ),
+        maximum_swipes=12,
+    )
+
+
 def wait_for_background(commands: Commands, path: Path) -> bytes:
     deadline = time.monotonic() + 30
     last = b""
@@ -499,7 +936,7 @@ def start_main_activity(commands: Commands) -> None:
     base.wait_for_main_activity(commands)
 
 
-def force_stop_and_start(commands: Commands) -> None:
+def force_stop_package(commands: Commands) -> None:
     commands.shell("am", "force-stop", PACKAGE_NAME)
     deadline = time.monotonic() + 20
     while True:
@@ -511,6 +948,10 @@ def force_stop_and_start(commands: Commands) -> None:
         if time.monotonic() >= deadline:
             raise RunnerError("force-stop did not remove the package process exactly")
         time.sleep(0.25)
+
+
+def force_stop_and_start(commands: Commands) -> None:
+    force_stop_package(commands)
     start_main_activity(commands)
 
 
@@ -563,6 +1004,26 @@ def deep_idle_state(raw: bytes) -> str:
     return matches[0]
 
 
+def deviceidle_unforce_receipt_states(raw: bytes) -> tuple[str, str]:
+    match = DEVICEIDLE_UNFORCE_RECEIPT_RE.fullmatch(raw)
+    if match is None:
+        raise RunnerError(
+            "deviceidle unforce receipt must be one exact state line followed by "
+            "two false force-mode flags"
+        )
+    light_state = match.group(1).decode("ascii")
+    deep_state = match.group(2).decode("ascii")
+    if (
+        light_state not in DEVICEIDLE_LIGHT_STATES
+        or deep_state not in DEVICEIDLE_DEEP_STATES
+    ):
+        raise RunnerError(
+            "deviceidle unforce receipt exposed an unknown light/deep state: "
+            f"{light_state}/{deep_state}"
+        )
+    return light_state, deep_state
+
+
 def enter_deep_idle(commands: Commands, output_directory: Path) -> None:
     commands.shell("dumpsys", "battery", "unplug")
     commands.shell("input", "keyevent", "KEYCODE_SLEEP")
@@ -599,8 +1060,7 @@ def leave_deep_idle(commands: Commands, output_directory: Path) -> None:
         "unforce",
         timeout=60,
     )
-    if b"unforced" not in unforce.lower() and b"active" not in unforce.lower():
-        raise RunnerError("deviceidle unforce did not report an active transition")
+    deviceidle_unforce_receipt_states(unforce)
     commands.shell("dumpsys", "battery", "reset")
     commands.shell("input", "keyevent", "KEYCODE_WAKEUP", check=False)
     commands.shell("wm", "dismiss-keyguard", check=False)
@@ -832,6 +1292,46 @@ def wait_for_guest_reboot(
         time.sleep(min(0.5, remaining))
 
 
+def permission_dialog_has_app_prompt(root: ET.Element) -> bool:
+    return any(
+        node.attrib.get("package") in base.PERMISSION_CONTROLLER_PACKAGES
+        and "AetherLink" in node.attrib.get("text", "")
+        for node in root.iter("node")
+    )
+
+
+def permission_dialog_denial_bounds(
+    root: ET.Element,
+) -> tuple[int, int, int, int]:
+    criteria = (
+        {"resource_id_suffix": "permission_deny_button"},
+        {"text": "Don’t allow"},
+        {"text": "Don't allow"},
+    )
+    for package in base.PERMISSION_CONTROLLER_PACKAGES:
+        for token in criteria:
+            try:
+                return base.fully_visible_clickable_bounds_for(
+                    root,
+                    package=package,
+                    **token,
+                )
+            except RunnerError:
+                continue
+    raise RunnerError(
+        "permission dialog did not expose one fully visible enabled denial action"
+    )
+
+
+def permission_dialog_denial_bounds_or_none(
+    root: ET.Element,
+) -> tuple[int, int, int, int] | None:
+    try:
+        return permission_dialog_denial_bounds(root)
+    except RunnerError:
+        return None
+
+
 def camera_permission_dialog_denial(commands: Commands, output_directory: Path) -> None:
     entry = capture_ui(commands, output_directory, None)
     base.tap_bounds(commands, base.clickable_bounds_for(entry, text="Scan QR"))
@@ -839,22 +1339,10 @@ def camera_permission_dialog_denial(commands: Commands, output_directory: Path) 
         commands,
         output_directory,
         "ui/setup-camera-permission-dialog.xml",
-        lambda root: any(
-            node.attrib.get("package") in base.PERMISSION_CONTROLLER_PACKAGES
-            for node in root.iter()
-        ),
+        lambda root: permission_dialog_has_app_prompt(root)
+        and permission_dialog_denial_bounds_or_none(root) is not None,
     )
-    try:
-        denial = base.clickable_bounds_for(
-            dialog,
-            resource_id_suffix="permission_deny_button",
-        )
-    except RunnerError:
-        try:
-            denial = base.clickable_bounds_for(dialog, text="Don’t allow")
-        except RunnerError:
-            denial = base.clickable_bounds_for(dialog, text="Don't allow")
-    base.tap_bounds(commands, denial)
+    base.tap_bounds(commands, permission_dialog_denial_bounds(dialog))
     wait_for_ui(
         commands,
         output_directory,
@@ -915,8 +1403,12 @@ def scenario(
     }
 
 
-def assert_ui_pairing(commands: Commands, output_directory: Path, relative: str) -> None:
-    wait_for_ui(
+def assert_ui_pairing(
+    commands: Commands,
+    output_directory: Path,
+    relative: str,
+) -> ET.Element:
+    return wait_for_ui(
         commands,
         output_directory,
         relative,
@@ -926,6 +1418,54 @@ def assert_ui_pairing(commands: Commands, output_directory: Path, relative: str)
             package=base.APP_PACKAGE_PREFIX,
         ),
     )
+
+
+def assert_future_data_update_required_ui(
+    commands: Commands,
+    output_directory: Path,
+    relative: str,
+) -> ET.Element:
+    return wait_for_ui(
+        commands,
+        output_directory,
+        relative,
+        lambda root: (
+            base.has_node(
+                root,
+                text="Pair AetherLink",
+                package=base.APP_PACKAGE_PREFIX,
+            )
+            and base.has_node(
+                root,
+                text=FUTURE_DATA_UPDATE_REQUIRED_TEXT,
+                package=base.APP_PACKAGE_PREFIX,
+            )
+        ),
+    )
+
+
+def assert_legacy_migration_ui(
+    commands: Commands,
+    output_directory: Path,
+    relative: str,
+) -> ET.Element:
+    root = wait_for_ui(
+        commands,
+        output_directory,
+        relative,
+        lambda observed: base.has_node(
+            observed,
+            text="Pair AetherLink",
+            package=base.APP_PACKAGE_PREFIX,
+        ),
+    )
+    if base.has_node(
+        root,
+        text=FUTURE_DATA_UPDATE_REQUIRED_TEXT,
+        package=base.APP_PACKAGE_PREFIX,
+    ):
+        raise RunnerError("legacy migration unexpectedly exposed update-required UI")
+    return root
 
 
 def capture_logcat_and_exit_info(
@@ -1171,6 +1711,14 @@ def run_lane(
             "get-app-locales",
             PACKAGE_NAME,
         )
+        expected_app_locales = (
+            f"Locales for {PACKAGE_NAME} for user 0 are []\n".encode("ascii")
+        )
+        if app_locales_before != expected_app_locales:
+            raise RunnerError(
+                "initial app locale evidence was not the exact package-bound empty "
+                "Follow-system line"
+            )
         commands.shell("pm", "revoke", PACKAGE_NAME, CAMERA_PERMISSION, check=False)
         commands.shell(
             "pm",
@@ -1182,7 +1730,18 @@ def run_lane(
             check=False,
         )
         force_stop_and_start(commands)
-        assert_ui_pairing(commands, output_directory, "ui/setup-first-launch.xml")
+        first_launch = assert_ui_pairing(
+            commands,
+            output_directory,
+            "ui/setup-first-launch.xml",
+        )
+        capture_follow_system_settings(
+            commands,
+            output_directory,
+            top_root=first_launch,
+            phase="before-reboot",
+        )
+        force_stop_and_start(commands)
         camera_permission_dialog_denial(commands, output_directory)
         commands.shell(
             "pm",
@@ -1410,6 +1969,11 @@ def run_lane(
         )
         if app_locales_after != app_locales_before:
             raise RunnerError("raw Follow-system app locale state changed across guest reboot")
+        if app_locales_after != expected_app_locales:
+            raise RunnerError(
+                "post-reboot app locale evidence was not the exact package-bound "
+                "empty Follow-system line"
+            )
         if base.get_app_locales(commands) != []:
             raise RunnerError("Follow-system app locale did not survive guest reboot")
         package_path_after_raw, package_path_after = capture_package_path(
@@ -1447,13 +2011,24 @@ def run_lane(
             expected_granted=False,
         )
         start_main_activity(commands)
-        assert_ui_pairing(commands, output_directory, "ui/after-reboot.xml")
+        after_reboot_ui = assert_ui_pairing(
+            commands,
+            output_directory,
+            "ui/after-reboot.xml",
+        )
         reboot_after = capture_process_identity(
             commands,
             label="after_reboot",
             boot_id=boot_id_after,
         )
         process_observations.append(reboot_after)
+        capture_follow_system_settings(
+            commands,
+            output_directory,
+            top_root=after_reboot_ui,
+            phase="after-reboot",
+        )
+        force_stop_and_start(commands)
         assert_settings_recovery_ui(
             commands,
             output_directory,
@@ -1470,6 +2045,145 @@ def run_lane(
                     "installedApkSha256": installed_after_record["sha256"],
                     "localeTags": [],
                     "processIdAfterReboot": process_pid(reboot_after),
+                },
+            )
+        )
+
+        # A future-version local-data record must fail closed without rewriting
+        # its bytes across two independently started app processes.
+        force_stop_package(commands)
+        future_seed = seed_future_runtime_local_data(commands)
+        (output_directory / "runtime-local-store-future-version-seed.xml").write_bytes(
+            future_seed
+        )
+        start_main_activity(commands)
+        assert_future_data_update_required_ui(
+            commands,
+            output_directory,
+            "ui/future-data-first-launch.xml",
+        )
+        future_first = capture_process_identity(
+            commands,
+            label="future_data_first_launch",
+            boot_id=boot_id_after,
+        )
+        process_observations.append(future_first)
+        future_after_first = capture_future_runtime_local_data(
+            commands,
+            output_directory,
+            "runtime-local-store-after-future-version-first-launch.xml",
+        )
+        if future_after_first != future_seed:
+            raise RunnerError("first future-data cold launch rewrote saved data")
+
+        force_stop_package(commands)
+        start_main_activity(commands)
+        assert_future_data_update_required_ui(
+            commands,
+            output_directory,
+            "ui/future-data-second-launch.xml",
+        )
+        future_second = capture_process_identity(
+            commands,
+            label="future_data_second_launch",
+            boot_id=boot_id_after,
+        )
+        process_observations.append(future_second)
+        future_after_second = capture_future_runtime_local_data(
+            commands,
+            output_directory,
+            "runtime-local-store-after-future-version-second-launch.xml",
+        )
+        if future_after_second != future_seed:
+            raise RunnerError("second future-data cold launch rewrote saved data")
+        if process_identity_key(future_first) == process_identity_key(future_second):
+            raise RunnerError("future-data cold launches reused one process identity")
+        scenarios.append(
+            scenario(
+                "future_local_data_update_required_cold_launch_preservation",
+                observations={
+                    "coldLaunchCount": 2,
+                    "localDataVersion": 2,
+                    "processIds": [process_pid(future_first), process_pid(future_second)],
+                    "savedDataSha256": hashlib.sha256(future_seed).hexdigest(),
+                    "savedDataSize": len(future_seed),
+                    "updateRequiredText": FUTURE_DATA_UPDATE_REQUIRED_TEXT,
+                },
+            )
+        )
+
+        # A versionless legacy record must migrate through the production
+        # Activity/ViewModel/store path, preserve its values, and then remain
+        # byte-stable across a second independently started app process.
+        force_stop_package(commands)
+        legacy_seed = seed_legacy_runtime_local_data(commands)
+        (
+            output_directory / "runtime-local-store-legacy-versionless-seed.xml"
+        ).write_bytes(legacy_seed)
+        start_main_activity(commands)
+        legacy_after_first, legacy_first_facts = (
+            wait_for_legacy_runtime_local_data_migration(
+                commands,
+                output_directory,
+                "runtime-local-store-after-legacy-migration-first-launch.xml",
+            )
+        )
+        assert_legacy_migration_ui(
+            commands,
+            output_directory,
+            "ui/legacy-migration-first-launch.xml",
+        )
+        legacy_first = capture_process_identity(
+            commands,
+            label="legacy_migration_first_launch",
+            boot_id=boot_id_after,
+        )
+        process_observations.append(legacy_first)
+
+        force_stop_package(commands)
+        start_main_activity(commands)
+        assert_legacy_migration_ui(
+            commands,
+            output_directory,
+            "ui/legacy-migration-second-launch.xml",
+        )
+        legacy_second = capture_process_identity(
+            commands,
+            label="legacy_migration_second_launch",
+            boot_id=boot_id_after,
+        )
+        process_observations.append(legacy_second)
+        legacy_after_second, legacy_second_facts = (
+            capture_legacy_migrated_runtime_local_data(
+                commands,
+                output_directory,
+                "runtime-local-store-after-legacy-migration-second-launch.xml",
+            )
+        )
+        if legacy_after_second != legacy_after_first:
+            raise RunnerError("second legacy-data cold launch changed migrated bytes")
+        if legacy_second_facts != legacy_first_facts:
+            raise RunnerError("second legacy-data cold launch changed migrated facts")
+        if process_identity_key(legacy_first) == process_identity_key(legacy_second):
+            raise RunnerError("legacy-data cold launches reused one process identity")
+        scenarios.append(
+            scenario(
+                "legacy_versionless_local_data_migration_cold_launch_stability",
+                observations={
+                    "coldLaunchCount": 2,
+                    "migratedDataSha256": legacy_first_facts["sha256"],
+                    "migratedDataSize": legacy_first_facts["size"],
+                    "migratedVersion": legacy_first_facts["version"],
+                    "preservedAppTheme": legacy_first_facts["appTheme"],
+                    "preservedComposerDraft": legacy_first_facts["composerDraft"],
+                    "preservedTrustedRuntimeAutoReconnectEnabled": (
+                        legacy_first_facts["trustedRuntimeAutoReconnectEnabled"]
+                    ),
+                    "processIds": [
+                        process_pid(legacy_first),
+                        process_pid(legacy_second),
+                    ],
+                    "sourceFormat": "versionless",
                 },
             )
         )
