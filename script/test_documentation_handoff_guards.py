@@ -346,8 +346,8 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
                     text.replace(
                         complete_block,
                         complete_block.replace(
-                            "83 exact ordered commands",
-                            "66 exact ordered commands",
+                            "88 exact ordered commands",
+                            "68 exact ordered commands",
                             1,
                         ),
                         1,
@@ -7025,7 +7025,7 @@ private func generatePairingQR() {{
         self.assertEqual(len(expected_body.encode("utf-8")), 8_597)
         self.assertEqual(
             hashlib.sha256(expected_body.encode("utf-8")).hexdigest(),
-            "3dae26343b561aafab1f0ef96ce4256566c513e808dad8d191581dc0bbb0059b",
+            "aaaf388a9386793a3e24c454a52db7c5cec99072da802433691f99c3d180af0a",
         )
 
         for relative in targets:

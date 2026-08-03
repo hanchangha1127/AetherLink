@@ -10,6 +10,7 @@ independently read back against one unchanged source snapshot.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import json
@@ -22,19 +23,23 @@ import stat
 import subprocess
 import tempfile
 import time
-from typing import Iterable, Sequence
+from typing import Iterable, Iterator, Sequence
 import uuid
 import xml.etree.ElementTree as ET
 
 if __package__:
     from script import check_product_ci as product_ci
+    from script import package_release_artifacts as package_release
     from script import check_release_artifact_archive as archive
     from script import run_clean_release_reproducibility as release_repro
+    from script import run_android_release_repeatability_current as android_repeatability
     from script import run_release_diagnostics_usability as diagnostics
 else:
     import check_product_ci as product_ci
+    import package_release_artifacts as package_release
     import check_release_artifact_archive as archive
     import run_clean_release_reproducibility as release_repro
+    import run_android_release_repeatability_current as android_repeatability
     import run_release_diagnostics_usability as diagnostics
 
 
@@ -49,6 +54,10 @@ RESULT_MAX_BYTES = 1024 * 1024
 COMMAND_OUTPUT_MAX_BYTES = 64 * 1024 * 1024
 COMMAND_TERMINATION_GRACE_SECONDS = 5.0
 FILE_MAX_BYTES = 1024 * 1024 * 1024
+SOURCE_FILE_MAX_BYTES = 64 * 1024 * 1024
+SOURCE_TOTAL_MAX_BYTES = 1024 * 1024 * 1024
+ARTIFACT_MAX_BYTES = 768 * 1024 * 1024
+IMPLEMENTATION_MAX_BYTES = 4 * 1024 * 1024
 ANDROID_STUDIO_JAVA_HOME = Path(
     "/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 )
@@ -75,6 +84,44 @@ ANDROID_RELEASE_REPEATABILITY_RESULT_RELATIVE_PATH = Path(
     ".build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/"
     "android-release-repeatability-v1/result.json"
 )
+MACOS_CURRENT_SOURCE_IDLE_PARENT_RELATIVE_PATH = Path(
+    "dist/reproducibility/"
+    "aetherlink-1.0.0+24-local-v1-two-root-v4-prepublication-"
+    "current-source-g7-idle-repeatability-seven.json"
+)
+MACOS_CURRENT_SOURCE_IDLE_RUN_A_RELATIVE_PATH = Path(
+    "dist/lifecycle/"
+    "macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-"
+    "idle-resource-stability-v1-"
+    "current-source-g7-idle-repeatability-seven.json"
+)
+MACOS_CURRENT_SOURCE_IDLE_RUN_B_RELATIVE_PATH = Path(
+    "dist/lifecycle/"
+    "macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-"
+    "idle-resource-stability-repeat-v1-"
+    "current-source-g7-idle-repeatability-seven.json"
+)
+MACOS_CURRENT_SOURCE_IDLE_RECEIPT_RELATIVE_PATH = Path(
+    "dist/lifecycle/"
+    "macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-"
+    "idle-resource-stability-repeatability-v1-"
+    "current-source-g7-idle-repeatability-seven.json"
+)
+MACOS_CURRENT_SOURCE_IDLE_REPEATABILITY_READBACK_COMMAND = (
+    "python3",
+    "-I",
+    "-B",
+    "-S",
+    "script/check_macos_current_source_lane_a_idle_resource_repeatability.py",
+    "--parent-result",
+    MACOS_CURRENT_SOURCE_IDLE_PARENT_RELATIVE_PATH.as_posix(),
+    "--run-a",
+    MACOS_CURRENT_SOURCE_IDLE_RUN_A_RELATIVE_PATH.as_posix(),
+    "--run-b",
+    MACOS_CURRENT_SOURCE_IDLE_RUN_B_RELATIVE_PATH.as_posix(),
+    "--receipt",
+    MACOS_CURRENT_SOURCE_IDLE_RECEIPT_RELATIVE_PATH.as_posix(),
+)
 
 LIMITATIONS = {
     "canonicalG7ExitClaimed": False,
@@ -99,6 +146,9 @@ COVERAGE = {
     "documentIngestionMutationCases": 96,
     "documentIngestionMutationXctestTests": 2,
     "releaseComplianceTests": 22,
+    "macosRecordedCurrentSourceIdleObservationRuns": 2,
+    "macosRecordedCurrentSourceIdleRepeatabilityReceipts": 1,
+    "macosRecordedCurrentSourceIdleResourceSamples": 240,
     "swiftCurrentDiscoveryTests": 2175,
     "swiftCurrentNoSocketTests": 1204,
     "swiftCurrentParentRemainingTests": 967,
@@ -115,31 +165,35 @@ IMPLEMENTATION_PATHS = tuple(
         "script/check_android_release_repeatability_current.py",
         "script/check_g7_nonsecurity_merge_full_candidate.py",
         "script/check_g7_nonsecurity_merge_full_current.py",
+        "script/check_macos_current_source_lane_a_idle_resource_repeatability.py",
         "script/g7_reviewed_nonsecurity_swift_addon_identities_v5.txt",
         "script/g7_reviewed_nonsecurity_swift_addon_identities_v6.txt",
         "script/run_android_release_repeatability_current.py",
         "script/run_clean_release_reproducibility.py",
         "script/run_g7_nonsecurity_merge_full_candidate.py",
         "script/run_g7_nonsecurity_merge_full_current.py",
+        "script/run_macos_current_source_lane_a_idle_resource_stability_smoke.py",
         "script/test_check_android_release_repeatability_current.py",
         "script/test_check_g7_nonsecurity_merge_full_candidate.py",
         "script/test_check_g7_nonsecurity_merge_full_current.py",
+        "script/test_check_macos_current_source_lane_a_idle_resource_repeatability.py",
         "script/test_run_android_release_repeatability_current.py",
         "script/test_run_g7_nonsecurity_merge_full_candidate.py",
         "script/test_run_g7_nonsecurity_merge_full_current.py",
+        "script/test_run_macos_current_source_lane_a_idle_resource_stability_smoke.py",
     )
 )
 
 ARTIFACT_PATHS = tuple(
     Path(value)
     for value in (
-        ANDROID_RELEASE_REPEATABILITY_RESULT_RELATIVE_PATH.as_posix(),
         ".build/aetherlink-document-ingestion-asan-binding-v1.json",
         ".build/aetherlink-document-ingestion-asan-console-v1.log",
         ".build/aetherlink-document-ingestion-asan-run-marker-v1.json",
         ".build/aetherlink-document-ingestion-mutation-binding-v1.json",
         ".build/aetherlink-document-ingestion-mutation-console-v1.log",
         ".build/aetherlink-document-ingestion-mutation-run-marker-v1.json",
+        ANDROID_RELEASE_REPEATABILITY_RESULT_RELATIVE_PATH.as_posix(),
         MACOS_LIFECYCLE_REPEATABILITY_RELATIVE_PATH.as_posix(),
         MACOS_LIFECYCLE_RESULT_RELATIVE_PATH.as_posix(),
         (
@@ -202,6 +256,10 @@ ARTIFACT_PATHS = tuple(
             "testDebugUnitTest/"
             "aetherlink-core-nonsecurity-test-result-binding-v1.json"
         ),
+        MACOS_CURRENT_SOURCE_IDLE_RUN_B_RELATIVE_PATH.as_posix(),
+        MACOS_CURRENT_SOURCE_IDLE_RECEIPT_RELATIVE_PATH.as_posix(),
+        MACOS_CURRENT_SOURCE_IDLE_RUN_A_RELATIVE_PATH.as_posix(),
+        MACOS_CURRENT_SOURCE_IDLE_PARENT_RELATIVE_PATH.as_posix(),
         "dist/unsealed-package-only/AetherLink.app/Contents/MacOS/AetherLink",
         (
             "dist/unsealed-package-only/AetherLink.dSYM/Contents/Resources/"
@@ -307,6 +365,10 @@ STATIC_GATES = (
             (
                 "script.test_check_macos_runtime_chat_production_append_"
                 "abrupt_recovery_evidence"
+            ),
+            (
+                "script.test_run_macos_current_source_lane_a_"
+                "idle_resource_stability_smoke"
             ),
             (
                 "script.test_check_macos_current_source_lane_a_"
@@ -740,6 +802,11 @@ MACOS_GATES = (
         ),
         600,
     ),
+    Gate(
+        "macos-current-source-idle-repeatability-readback",
+        MACOS_CURRENT_SOURCE_IDLE_REPEATABILITY_READBACK_COMMAND,
+        300,
+    ),
 )
 
 FINAL_READBACK_GATES = (
@@ -828,6 +895,11 @@ FINAL_READBACK_GATES = (
         600,
     ),
     Gate(
+        "final-macos-current-source-idle-repeatability-readback",
+        MACOS_CURRENT_SOURCE_IDLE_REPEATABILITY_READBACK_COMMAND,
+        300,
+    ),
+    Gate(
         "final-g7-current-independent-readback",
         (
             "python3",
@@ -874,6 +946,9 @@ FINAL_READBACK_GATES = (
 ALL_GATES = STATIC_GATES + SWIFT_GATES + ANDROID_GATES + MACOS_GATES + FINAL_READBACK_GATES
 EXPECTED_COMMAND_IDS = tuple(gate.identifier for gate in ALL_GATES)
 OUTPUT_PARENT_BY_PRODUCER_ID = {
+    "android-release-repeatability-produce": (
+        ANDROID_RELEASE_REPEATABILITY_RESULT_RELATIVE_PATH.parent
+    ),
     "android-diagnostics-produce": Path(
         ".build/aetherlink-release-diagnostics-v1"
     ),
@@ -882,8 +957,14 @@ OUTPUT_PARENT_BY_PRODUCER_ID = {
     ),
     "macos-lifecycle-produce": Path(
         ".build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/"
-        "macos-current-unsealed-lifecycle-v4"
+        "macos-current-unsealed-lifecycle-v5"
     ),
+}
+CREATE_ONLY_OUTPUT_PARENT_BY_PRODUCER_ID = {
+    "android-release-repeatability-produce": (
+        ANDROID_RELEASE_REPEATABILITY_RESULT_RELATIVE_PATH.parent
+    ),
+    "macos-lifecycle-produce": MACOS_LIFECYCLE_RESULT_RELATIVE_PATH.parent,
 }
 
 
@@ -1044,7 +1125,11 @@ def source_snapshot(
     digest = hashlib.sha256()
     total_size = 0
     for relative in selected:
-        record = stable_file_record(relative, root=root)
+        record = stable_file_record(
+            relative,
+            root=root,
+            maximum_bytes=SOURCE_FILE_MAX_BYTES,
+        )
         digest.update(relative.as_posix().encode("ascii"))
         digest.update(b"\0")
         digest.update(f"{record['mode']:o}".encode("ascii"))
@@ -1054,6 +1139,8 @@ def source_snapshot(
         digest.update(str(record["sha256"]).encode("ascii"))
         digest.update(b"\n")
         total_size += int(record["size"])
+        if total_size > SOURCE_TOTAL_MAX_BYTES:
+            raise CandidateError("source snapshot exceeds its total byte limit")
     return {
         "algorithm": SOURCE_ALGORITHM,
         "fileCount": len(selected),
@@ -1062,22 +1149,128 @@ def source_snapshot(
     }
 
 
-def ensure_directory(path: Path, *, mode: int = 0o700) -> None:
+def ensure_directory(
+    path: Path,
+    *,
+    root: Path,
+    mode: int = 0o700,
+) -> None:
+    root = Path(os.path.abspath(root))
+    path = Path(os.path.abspath(path))
     try:
-        path.mkdir(parents=True, exist_ok=True)
-        value = path.lstat()
-    except OSError as error:
-        raise CandidateError(f"cannot prepare output directory {path}: {error}") from error
-    if stat.S_ISLNK(value.st_mode) or not stat.S_ISDIR(value.st_mode):
-        raise CandidateError(f"output directory is not physical: {path}")
+        relative = path.relative_to(root)
+        root_value = root.lstat()
+    except (OSError, ValueError) as error:
+        raise CandidateError(f"cannot prepare repository output directory {path}: {error}") from error
+    if stat.S_ISLNK(root_value.st_mode) or not stat.S_ISDIR(root_value.st_mode):
+        raise CandidateError("repository root must be a physical directory")
+    current = root
+    for component in relative.parts:
+        current /= component
+        try:
+            value = current.lstat()
+        except FileNotFoundError:
+            try:
+                current.mkdir(mode=mode)
+                value = current.lstat()
+            except OSError as error:
+                raise CandidateError(
+                    f"cannot create output directory {current}: {error}"
+                ) from error
+        except OSError as error:
+            raise CandidateError(
+                f"cannot inspect output directory {current}: {error}"
+            ) from error
+        if stat.S_ISLNK(value.st_mode) or not stat.S_ISDIR(value.st_mode):
+            raise CandidateError(f"output directory is not physical: {current}")
     try:
         os.chmod(path, mode)
     except OSError as error:
         raise CandidateError(f"cannot set output directory mode: {path}: {error}") from error
 
 
-def atomic_write(path: Path, data: bytes, *, mode: int = 0o600) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+def recreate_create_only_output_directory(path: Path, *, root: Path) -> None:
+    try:
+        relative = path.relative_to(root)
+    except ValueError as error:
+        raise CandidateError("create-only output directory must stay inside the repository") from error
+    allowed = set(CREATE_ONLY_OUTPUT_PARENT_BY_PRODUCER_ID.values())
+    if relative not in allowed:
+        raise CandidateError(f"create-only output directory is not allowlisted: {relative}")
+
+    try:
+        root_value = root.lstat()
+    except OSError as error:
+        raise CandidateError(f"cannot inspect repository root: {error}") from error
+    if stat.S_ISLNK(root_value.st_mode) or not stat.S_ISDIR(root_value.st_mode):
+        raise CandidateError("repository root must be a physical directory")
+
+    current = root
+    for component in relative.parts[:-1]:
+        current /= component
+        try:
+            value = current.lstat()
+        except FileNotFoundError:
+            ensure_directory(current, root=root)
+            continue
+        except OSError as error:
+            raise CandidateError(f"cannot inspect output ancestor {current}: {error}") from error
+        if stat.S_ISLNK(value.st_mode) or not stat.S_ISDIR(value.st_mode):
+            raise CandidateError(f"output ancestor is not physical: {current}")
+
+    try:
+        value = path.lstat()
+    except FileNotFoundError:
+        value = None
+    except OSError as error:
+        raise CandidateError(f"cannot inspect create-only output directory {path}: {error}") from error
+    if value is not None:
+        if stat.S_ISLNK(value.st_mode) or not stat.S_ISDIR(value.st_mode):
+            raise CandidateError(f"create-only output directory is not physical: {path}")
+        try:
+            shutil.rmtree(path)
+        except OSError as error:
+            raise CandidateError(f"cannot clear create-only output directory {path}: {error}") from error
+    ensure_directory(path, root=root)
+
+
+def validated_candidate_result_path(path: Path, *, root: Path = ROOT) -> Path:
+    root = Path(os.path.abspath(root))
+    candidate = path if path.is_absolute() else root / path
+    candidate = Path(os.path.abspath(candidate))
+    try:
+        relative = candidate.relative_to(root)
+    except ValueError as error:
+        raise CandidateError("candidate result must stay inside the repository") from error
+    if relative != RESULT_RELATIVE_PATH:
+        raise CandidateError(
+            "candidate result must use the dedicated canonical .build path"
+        )
+    return candidate
+
+
+@contextmanager
+def acquire_candidate_workspace_lock(
+    *,
+    root: Path = ROOT,
+) -> Iterator[int]:
+    """Hold the shared Release workspace lock for the complete candidate."""
+
+    try:
+        with android_repeatability.acquire_release_workspace_lock(root=root) as descriptor:
+            yield descriptor
+    except android_repeatability.RepeatabilityError as error:
+        raise CandidateError(f"Release workspace lock failed: {error}") from error
+
+
+def atomic_write(
+    path: Path,
+    data: bytes,
+    *,
+    root: Path,
+    mode: int = 0o600,
+) -> None:
+    ensure_directory(path.parent, root=root)
     if path.parent.is_symlink() or not path.parent.is_dir():
         raise CandidateError(f"output parent is not a physical directory: {path.parent}")
     temporary_name: str | None = None
@@ -1277,6 +1470,7 @@ def run_gate(
     *,
     root: Path = ROOT,
     environment: dict[str, str] | None = None,
+    pass_fds: Sequence[int] = (),
 ) -> tuple[dict[str, object], bytes, bytes]:
     print(f"[{gate.identifier}] starting", flush=True)
     started = time.monotonic_ns()
@@ -1288,6 +1482,7 @@ def run_gate(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,
+            pass_fds=tuple(pass_fds),
         )
     except OSError as error:
         raise CandidateError(f"{gate.identifier} could not start: {error}") from error
@@ -1304,7 +1499,7 @@ def run_gate(
             f"{gate.identifier} exited {process.returncode}; bounded tail:\n{tail}"
         )
     if gate.stdout_path is not None:
-        atomic_write(root / gate.stdout_path, stdout)
+        atomic_write(root / gate.stdout_path, stdout, root=root)
     record = {
         "argv": list(gate.argv),
         "cwd": ".",
@@ -1324,9 +1519,15 @@ def run_gate_with_managed_release_scratch(
     *,
     root: Path = ROOT,
     environment: dict[str, str] | None = None,
+    pass_fds: Sequence[int] = (),
 ) -> tuple[dict[str, object], bytes, bytes]:
     if gate.identifier != "macos-unsealed-package-produce":
-        return run_gate(gate, root=root, environment=environment)
+        return run_gate(
+            gate,
+            root=root,
+            environment=environment,
+            pass_fds=pass_fds,
+        )
     if gate.argv != MACOS_UNSEALED_PACKAGE_COMMAND:
         raise CandidateError("macOS package gate command differs from its contract")
     if release_repro.SWIFT_SCRATCH != MACOS_RELEASE_SCRATCH_PATH:
@@ -1349,7 +1550,12 @@ def run_gate_with_managed_release_scratch(
             release_repro.create_swift_lease(run_id)
             lease_created = True
             try:
-                return run_gate(gate, root=root, environment=environment)
+                return run_gate(
+                    gate,
+                    root=root,
+                    environment=environment,
+                    pass_fds=pass_fds,
+                )
             finally:
                 if lease_created:
                     release_repro.cleanup_swift_scratch(
@@ -1421,6 +1627,61 @@ def validate_zero_lint_issues(*, root: Path = ROOT) -> None:
         raise CandidateError("Android Release lint result is empty")
 
 
+def validate_idle_current_release_source_binding(
+    *,
+    root: Path = ROOT,
+    expected_source_sha256: str | None = None,
+) -> dict[str, object]:
+    before = stable_file_record(
+        MACOS_CURRENT_SOURCE_IDLE_PARENT_RELATIVE_PATH,
+        root=root,
+        maximum_bytes=ARTIFACT_MAX_BYTES,
+    )
+    try:
+        raw = (root / MACOS_CURRENT_SOURCE_IDLE_PARENT_RELATIVE_PATH).read_bytes()
+        parent = json.loads(raw)
+        current = package_release.source_snapshot(root)
+    except (
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+        package_release.ReleaseArchiveError,
+    ) as error:
+        raise CandidateError(
+            f"macOS idle current-source binding cannot be read: {error}"
+        ) from error
+    after = stable_file_record(
+        MACOS_CURRENT_SOURCE_IDLE_PARENT_RELATIVE_PATH,
+        root=root,
+        maximum_bytes=ARTIFACT_MAX_BYTES,
+    )
+    if before != after:
+        raise CandidateError("macOS idle parent changed during source binding")
+    if type(parent) is not dict or type(parent.get("source")) is not dict:
+        raise CandidateError("macOS idle parent source record is missing")
+    recorded = parent["source"]
+    summary = {
+        "algorithm": current.get("algorithm"),
+        "fileCount": current.get("fileCount"),
+        "sha256": current.get("sha256"),
+    }
+    if any(
+        recorded.get(key) != value
+        for key, value in summary.items()
+    ):
+        raise CandidateError(
+            "macOS idle parent source differs from current Release source bytes"
+        )
+    if (
+        expected_source_sha256 is not None
+        and summary["sha256"] != expected_source_sha256
+    ):
+        raise CandidateError(
+            "macOS idle parent source differs from in-run Release source digest"
+        )
+    return summary
+
+
 def candidate_payload(
     *,
     source: dict[str, object],
@@ -1443,20 +1704,14 @@ def candidate_payload(
     }
 
 
-def produce_candidate(
+def _produce_candidate_locked(
     *,
     root: Path = ROOT,
     result_path: Path,
     preserve_pid: int | None,
+    workspace_lock_descriptor: int,
 ) -> dict[str, object]:
-    if not result_path.is_absolute():
-        result_path = root / result_path
-    try:
-        result_path.relative_to(root)
-    except ValueError as error:
-        raise CandidateError("candidate result must stay inside the repository") from error
-
-    ensure_directory(result_path.parent)
+    ensure_directory(result_path.parent, root=root)
 
     source_before = source_snapshot(root=root)
     pid_before = process_identity(preserve_pid) if preserve_pid is not None else ""
@@ -1467,12 +1722,39 @@ def produce_candidate(
 
     for gate in ALL_GATES:
         output_parent = OUTPUT_PARENT_BY_PRODUCER_ID.get(gate.identifier)
-        if output_parent is not None:
-            ensure_directory(root / output_parent)
+        create_only_output_parent = CREATE_ONLY_OUTPUT_PARENT_BY_PRODUCER_ID.get(
+            gate.identifier
+        )
+        if create_only_output_parent is not None:
+            if output_parent != create_only_output_parent:
+                raise CandidateError(
+                    f"create-only output mapping differs for {gate.identifier}"
+                )
+            recreate_create_only_output_directory(
+                root / create_only_output_parent,
+                root=root,
+            )
+        elif output_parent is not None:
+            ensure_directory(root / output_parent, root=root)
+        gate_environment = environment
+        pass_fds: tuple[int, ...] = ()
+        if gate.identifier == "android-release-repeatability-produce":
+            gate_environment = environment.copy()
+            try:
+                android_repeatability.bind_inherited_release_workspace_lock(
+                    gate_environment,
+                    workspace_lock_descriptor,
+                )
+            except android_repeatability.RepeatabilityError as error:
+                raise CandidateError(
+                    f"cannot bind inherited Release workspace lock: {error}"
+                ) from error
+            pass_fds = (workspace_lock_descriptor,)
         record, stdout, _stderr = run_gate_with_managed_release_scratch(
             gate,
             root=root,
-            environment=environment,
+            environment=gate_environment,
+            pass_fds=pass_fds,
         )
         command_records.append(record)
         if gate.identifier == "macos-release-source-before":
@@ -1485,27 +1767,41 @@ def produce_candidate(
                 or len(macos_source_after) != 64
             ):
                 raise CandidateError("macOS Release source changed during packaging")
-        elif gate.identifier == "android-release-build":
+        elif gate.identifier == "android-release-repeatability-produce":
             validate_zero_lint_issues(root=root)
+        elif gate.identifier in {
+            "macos-current-source-idle-repeatability-readback",
+            "final-macos-current-source-idle-repeatability-readback",
+        }:
+            if macos_source_after is None:
+                raise CandidateError(
+                    "macOS idle readback ran before the Release source digest"
+                )
+            validate_idle_current_release_source_binding(
+                root=root,
+                expected_source_sha256=macos_source_after,
+            )
 
     source_after = source_snapshot(root=root)
     if source_after != source_before:
         raise CandidateError("candidate source changed during execution")
 
+    validate_zero_lint_issues(root=root)
+    artifacts = tuple(
+        stable_file_record(path, root=root, maximum_bytes=ARTIFACT_MAX_BYTES)
+        for path in ARTIFACT_PATHS
+    )
+    implementation = tuple(
+        stable_file_record(path, root=root, maximum_bytes=IMPLEMENTATION_MAX_BYTES)
+        for path in IMPLEMENTATION_PATHS
+    )
+    source_final = source_snapshot(root=root)
+    if source_final != source_before:
+        raise CandidateError("candidate source changed during final evidence read")
     pid_after = process_identity(preserve_pid) if preserve_pid is not None else ""
     preservation = pid_record(preserve_pid, pid_before, pid_after)
     if preserve_pid is not None and not preservation["preservedDuringRun"]:
         raise CandidateError(f"preserved PID {preserve_pid} changed during execution")
-
-    validate_zero_lint_issues(root=root)
-    artifacts = tuple(
-        stable_file_record(path, root=root)
-        for path in ARTIFACT_PATHS
-    )
-    implementation = tuple(
-        stable_file_record(path, root=root, maximum_bytes=4 * 1024 * 1024)
-        for path in IMPLEMENTATION_PATHS
-    )
     payload = candidate_payload(
         source=source_before,
         commands=command_records,
@@ -1516,10 +1812,30 @@ def produce_candidate(
     encoded = canonical_json_bytes(payload)
     if len(encoded) > RESULT_MAX_BYTES:
         raise CandidateError("candidate result exceeds its byte limit")
-    atomic_write(result_path, encoded)
-    if stable_file_record(result_path.relative_to(root), root=root)["mode"] != 0o600:
+    atomic_write(result_path, encoded, root=root)
+    if stable_file_record(
+        result_path.relative_to(root),
+        root=root,
+        maximum_bytes=RESULT_MAX_BYTES,
+    )["mode"] != 0o600:
         raise CandidateError("published candidate result is not mode 0600")
     return payload
+
+
+def produce_candidate(
+    *,
+    root: Path = ROOT,
+    result_path: Path,
+    preserve_pid: int | None,
+) -> dict[str, object]:
+    result_path = validated_candidate_result_path(result_path, root=root)
+    with acquire_candidate_workspace_lock(root=root) as workspace_lock_descriptor:
+        return _produce_candidate_locked(
+            root=root,
+            result_path=result_path,
+            preserve_pid=preserve_pid,
+            workspace_lock_descriptor=workspace_lock_descriptor,
+        )
 
 
 def main() -> int:

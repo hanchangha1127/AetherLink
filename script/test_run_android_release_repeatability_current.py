@@ -47,8 +47,13 @@ class AndroidReleaseRepeatabilityRunnerTests(unittest.TestCase):
     def test_private_snapshot_is_owner_only_and_round_trips_nested_bytes(self) -> None:
         payloads = {"a/b/c.bin": b"one", "top.bin": b"two"}
         with tempfile.TemporaryDirectory() as temporary:
-            parent = Path(temporary) / "private"
-            with runner.private_snapshot(payloads, parent=parent) as snapshot:
+            root = Path(temporary)
+            parent = root / "private"
+            with runner.private_snapshot(
+                payloads,
+                parent=parent,
+                root=root,
+            ) as snapshot:
                 self.assertEqual(stat.S_IMODE(parent.stat().st_mode), 0o700)
                 self.assertEqual(stat.S_IMODE(snapshot.stat().st_mode), 0o700)
                 self.assertEqual(stat.S_IMODE((snapshot / "a").stat().st_mode), 0o700)
@@ -62,13 +67,14 @@ class AndroidReleaseRepeatabilityRunnerTests(unittest.TestCase):
 
     def test_atomic_result_is_mode_0600_and_create_only(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            path = Path(temporary) / "nested/result.json"
-            runner.publish_atomic_create_only(path, b"{}\n")
+            root = Path(temporary)
+            path = root / "nested/result.json"
+            runner.publish_atomic_create_only(path, b"{}\n", root=root)
             self.assertEqual(path.read_bytes(), b"{}\n")
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
             self.assertEqual(path.stat().st_nlink, 1)
             with self.assertRaisesRegex(runner.RepeatabilityError, "already exists"):
-                runner.publish_atomic_create_only(path, b"{}\n")
+                runner.publish_atomic_create_only(path, b"{}\n", root=root)
 
     def test_stable_file_rejects_symlink_hardlink_and_oversize(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -110,6 +116,24 @@ class AndroidReleaseRepeatabilityRunnerTests(unittest.TestCase):
         raw_path = Path("out.bin")
         self.assertNotEqual(runner.comparison_identity(raw_path, b"a"), runner.comparison_identity(raw_path, b"b"))
 
+    def test_lint_xml_is_a_required_raw_ab_output(self) -> None:
+        limits = runner.static_output_file_limits()
+        self.assertEqual(
+            limits[runner.LINT_XML_RELATIVE_PATH],
+            runner.SMALL_LIMIT,
+        )
+        self.assertNotIn(
+            runner.LINT_XML_RELATIVE_PATH.as_posix(),
+            runner.NORMALIZED_COMPARISON_PATHS,
+        )
+        self.assertEqual(
+            runner.comparison_identity(runner.LINT_XML_RELATIVE_PATH, b"<issues/>"),
+            {
+                "kind": runner.RAW_COMPARISON_KIND,
+                "sha256": hashlib.sha256(b"<issues/>").hexdigest(),
+            },
+        )
+
     def test_differing_payload_paths_is_exact_and_ascii_sorted(self) -> None:
         self.assertEqual(
             runner.differing_payload_paths(
@@ -133,6 +157,59 @@ class AndroidReleaseRepeatabilityRunnerTests(unittest.TestCase):
                 with self.assertRaisesRegex(runner.RepeatabilityError, "absolute deadline"):
                     runner.run_process((sys.executable, "-c", "import time; time.sleep(5)"), root=Path(temporary), timeout_seconds=0.05, maximum_output_bytes=1024)
                 terminate.assert_called_once()
+
+    def test_result_path_must_use_dedicated_repository_build_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            expected = root / ".build/evidence/result.json"
+            self.assertEqual(
+                runner.validated_result_path(
+                    Path(".build/evidence/result.json"),
+                    root=root,
+                ),
+                expected,
+            )
+            for invalid in (
+                root / "result.json",
+                root / ".build/result.json",
+                root.parent / "outside/result.json",
+                Path("../outside/result.json"),
+            ):
+                with self.subTest(path=str(invalid)):
+                    with self.assertRaises(runner.RepeatabilityError):
+                        runner.validated_result_path(invalid, root=root)
+
+            outside = root / "outside"
+            outside.mkdir()
+            (root / ".build").symlink_to(outside, target_is_directory=True)
+            with self.assertRaisesRegex(
+                runner.RepeatabilityError,
+                "ancestors must be physical",
+            ):
+                runner.validated_result_path(
+                    Path(".build/evidence/result.json"),
+                    root=root,
+                )
+
+    def test_release_workspace_lock_rejects_overlap_and_accepts_inherited_fd(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with runner.acquire_release_workspace_lock(root=root) as descriptor:
+                with self.assertRaisesRegex(
+                    runner.RepeatabilityError,
+                    "already running",
+                ):
+                    with runner.acquire_release_workspace_lock(root=root):
+                        self.fail("overlapping workspace lock unexpectedly succeeded")
+
+                environment: dict[str, str] = {}
+                runner.bind_inherited_release_workspace_lock(
+                    environment,
+                    descriptor,
+                )
+                with mock.patch.dict(os.environ, environment, clear=False):
+                    with runner.acquire_release_workspace_lock(root=root) as inherited:
+                        self.assertEqual(inherited, descriptor)
 
     def test_execute_runs_prepare_and_offline_workflow_for_a_and_b(self) -> None:
         source = {"algorithm": runner.SOURCE_ALGORITHM, "fileCount": 6, "sha256": "a" * 64, "size": 42}
@@ -164,8 +241,8 @@ class AndroidReleaseRepeatabilityRunnerTests(unittest.TestCase):
         readback = {"versionCode": 1}
 
         @contextmanager
-        def snapshot(_payloads: object, *, parent: Path):
-            del _payloads, parent
+        def snapshot(_payloads: object, *, parent: Path, root: Path):
+            del _payloads, parent, root
             yield Path("/snapshot")
 
         calls: list[tuple[str, ...]] = []
@@ -183,7 +260,10 @@ class AndroidReleaseRepeatabilityRunnerTests(unittest.TestCase):
             mock.patch.object(runner, "read_private_snapshot", return_value=payloads), \
             mock.patch.object(runner, "toolchain_identity", return_value={"host": "fixture"}), \
             mock.patch.object(runner, "publish_atomic_create_only") as publish:
-            document = runner.execute(root=Path(temporary), result_path=Path(temporary) / "result.json")
+            document = runner.execute(
+                root=Path(temporary),
+                result_path=Path(temporary) / ".build/evidence/result.json",
+            )
         self.assertEqual(calls, [runner.PREPARE_COMMAND, runner.BUILD_COMMAND, runner.PREPARE_COMMAND, runner.BUILD_COMMAND])
         self.assertEqual(document["runs"]["a"], projection)
         self.assertEqual(document["runs"]["b"], projection)

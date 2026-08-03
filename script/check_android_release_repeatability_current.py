@@ -46,6 +46,9 @@ NATIVE_ABI_COUNT_LIMIT = 16
 NATIVE_FILE_COUNT_LIMIT = 1_024
 OUTPUT_GRAPH_FILE_COUNT_LIMIT = 2_048
 OUTPUT_GRAPH_TOTAL_BYTES_LIMIT = 3 * 1024 * 1024 * 1024
+LINT_XML_RELATIVE_PATH = Path(
+    "apps/android/app/build/reports/lint-results-release.xml"
+)
 LIMITATIONS = (
     "same-host-current-toolchain-only",
     "not-cross-host-or-universal-bit-for-bit-reproducibility",
@@ -251,6 +254,21 @@ def comparison_graph_digest(records: Sequence[dict[str, object]]) -> str:
     return digest.hexdigest()
 
 
+def static_output_file_limits() -> dict[Path, int]:
+    apk_path = archive.ANDROID_RELEASE_APK_RELATIVE_PATH
+    return {
+        apk_path: 256 * 1024 * 1024,
+        archive.ANDROID_RELEASE_APK_METADATA_RELATIVE_PATH: 16 * 1024 * 1024,
+        archive.ANDROID_RELEASE_AAB_RELATIVE_PATH: 256 * 1024 * 1024,
+        LINT_XML_RELATIVE_PATH: 16 * 1024 * 1024,
+        archive.ANDROID_RELEASE_SDK_DEPENDENCIES_RELATIVE_PATH: 16 * 1024 * 1024,
+        apk_path.parent
+        / "baselineProfiles/0/app-release-unsigned.dm": 16 * 1024 * 1024,
+        apk_path.parent
+        / "baselineProfiles/1/app-release-unsigned.dm": 16 * 1024 * 1024,
+    }
+
+
 def capture_output_graph(*, root: Path = ROOT) -> dict[str, object]:
     apk_path = archive.ANDROID_RELEASE_APK_RELATIVE_PATH
     metadata_path = archive.ANDROID_RELEASE_APK_METADATA_RELATIVE_PATH
@@ -264,12 +282,7 @@ def capture_output_graph(*, root: Path = ROOT) -> dict[str, object]:
     require_inventory(root / aab_path.parent, {aab_path.name}, "repeatability AAB directory")
     require_inventory(root / mapping_root, set(archive.ANDROID_RELEASE_MAPPING_FILES), "repeatability R8 directory")
     require_inventory(root / sdk_path.parent, {sdk_path.name}, "repeatability SDK directory")
-    limits: dict[Path, int] = {
-        apk_path: 256 * 1024 * 1024, metadata_path: 16 * 1024 * 1024,
-        aab_path: 256 * 1024 * 1024, sdk_path: 16 * 1024 * 1024,
-        apk_path.parent / "baselineProfiles/0/app-release-unsigned.dm": 16 * 1024 * 1024,
-        apk_path.parent / "baselineProfiles/1/app-release-unsigned.dm": 16 * 1024 * 1024,
-    }
+    limits = static_output_file_limits()
     for name in archive.ANDROID_RELEASE_MAPPING_FILES:
         limits[mapping_root / name] = archive.ANDROID_RELEASE_MAPPING_MAX_BYTES[name]
     symbol_path = archive.ANDROID_RELEASE_NATIVE_SYMBOL_RELATIVE_PATH

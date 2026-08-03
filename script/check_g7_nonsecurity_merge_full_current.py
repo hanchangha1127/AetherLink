@@ -72,13 +72,13 @@ DISCOVERED_TEST_COUNT = 2_175
 DISCOVERED_TEST_MANIFEST_SHA256 = (
     "a8121a99615da2b2b5b39535f5a8fb0ee03bf48fc2a4773d0aced5bac4a5041a"
 )
-SELECTED_TEST_COUNT = 1_204
+SELECTED_TEST_COUNT = 1_205
 SELECTED_TEST_MANIFEST_SHA256 = (
-    "fbab18434f821237178e87aab1e84ce58bf7e82802978439ae43fc1f95e76fde"
+    "33cf8415b21aa5bf727ac05cdaac6752c8929565fa934e2666128b35330bbd5b"
 )
-NOT_EXECUTED_TEST_COUNT = 971
+NOT_EXECUTED_TEST_COUNT = 970
 NOT_EXECUTED_TEST_MANIFEST_SHA256 = (
-    "018058edbc3b344da6a7fae3a8b077d9aad6fc3c7fd2929a1130c2cee4152974"
+    "f335a5eb4c097b59017994bce65520fc1a432fc30e1e7f8ea00baec9065aef10"
 )
 CURRENT_V2_DELTA_IDENTITIES = (
     "CompanionCoreTests.SQLiteRuntimeChatEventStoreTests/"
@@ -108,6 +108,17 @@ V6_TEST_COUNT = 7
 V6_TEST_MANIFEST_SHA256 = (
     "6b4991164cab03a5575a8c0d4a0526874571994e65e5bde612d8716333482a5d"
 )
+V7_IDENTITY_RELATIVE_PATH = Path(
+    "script/g7_reviewed_nonsecurity_swift_addon_identities_v7.txt"
+)
+V7_IDENTITY_BYTES = 124
+V7_IDENTITY_RAW_SHA256 = (
+    "6894d0e26b04a0054f38b733dc553758e9e5b99b9f7b8df85098b6f08cbe4792"
+)
+V7_TEST_COUNT = 1
+V7_TEST_MANIFEST_SHA256 = (
+    "2f726fc2fd89ab9a4c7ec464dd94a3aeac0ee9e41811710ddf24baf5bc4ae9aa"
+)
 LOCAL_SOCKET_EXCLUSION_IDENTITIES = (
     "CompanionCoreTests.MacRuntimeConnectionManagerTests/"
     "testConcreteLocalListenerDefersAdvertisementAndRetriesAfterOccupiedPort",
@@ -122,13 +133,13 @@ FOCUSED_CARRIER_TEST_COUNT = 222
 FOCUSED_CARRIER_TEST_MANIFEST_SHA256 = (
     "b481e814d8e0f7a2385e50fb5d0f0f8d1602f08b608eb373bb8960ce53547815"
 )
-PARENT_REVIEWED_TEST_COUNT = 1_208
+PARENT_REVIEWED_TEST_COUNT = 1_209
 PARENT_REVIEWED_TEST_MANIFEST_SHA256 = (
-    "ea63ec325a6125f4ae92c49c0ca9d3054e054369335bec6ebeb99c7256468846"
+    "26e97b0bf2349883b71677dfb614d15f8a2e920d3fc42036b6e1a08add7cf6a2"
 )
-PARENT_REMAINING_TEST_COUNT = 967
+PARENT_REMAINING_TEST_COUNT = 966
 PARENT_REMAINING_TEST_MANIFEST_SHA256 = (
-    "fe4c11470e53a92ff64fe31c143b7d587eacdfcdd68ac8af7c5ba7233d58e9e6"
+    "d6da7f2fc7954fa3cf81528028da42bc0b54ddd8320c28ebd07d757b93b2567e"
 )
 FILTER_COMPONENT_NAMES = (
     "focused",
@@ -139,6 +150,7 @@ FILTER_COMPONENT_NAMES = (
     "v4Exact",
     "v5Exact",
     "v6Exact",
+    "v7Exact",
     "currentV2DeltaExact",
 )
 
@@ -203,6 +215,10 @@ EXPECTED_SELECTION_RECORDS = {
         V6_TEST_COUNT,
         V6_TEST_MANIFEST_SHA256,
     ),
+    "v7New": (
+        V7_TEST_COUNT,
+        V7_TEST_MANIFEST_SHA256,
+    ),
 }
 FOCUSED_EXPANDED_OVERLAP_COUNT = 72
 
@@ -248,6 +264,10 @@ TRACKED_EXACT_SOURCE_RELATIVE_PATHS = (
     Path("script/g7_reviewed_nonsecurity_swift_addon_identities_v3.txt"),
     V5_IDENTITY_RELATIVE_PATH,
     V6_IDENTITY_RELATIVE_PATH,
+    V7_IDENTITY_RELATIVE_PATH,
+    Path("script/check_g7_nonsecurity_unit_scope_ledger.py"),
+    Path("script/g7_nonsecurity_unit_scope_ledger_v1.json"),
+    Path("script/test_check_g7_nonsecurity_unit_scope_ledger.py"),
     Path("script/run_g7_nonsecurity_merge_full_current.py"),
     Path("script/run_g7_nonsecurity_merge_full_candidate.py"),
     Path("script/test_check_g7_nonsecurity_merge_full_current.py"),
@@ -503,7 +523,7 @@ def validate_static_contract() -> None:
     if DISCOVERED_TEST_COUNT != SELECTED_TEST_COUNT + NOT_EXECUTED_TEST_COUNT:
         raise EvidenceError("Swift partition arithmetic differs")
     if (
-        393 + 626 + 97 + 53 + V5_TEST_COUNT + V6_TEST_COUNT + 2
+        393 + 626 + 97 + 53 + V5_TEST_COUNT + V6_TEST_COUNT + V7_TEST_COUNT + 2
         != SELECTED_TEST_COUNT
     ):
         raise EvidenceError("reviewed Swift union arithmetic differs")
@@ -566,6 +586,7 @@ def validate_static_contract() -> None:
         "v4New",
         "v5New",
         "v6New",
+        "v7New",
     }:
         raise EvidenceError("selection record names differ")
 
@@ -639,6 +660,18 @@ def read_v6_tests(*, root: Path = ROOT) -> tuple[str, ...]:
         expected_raw_sha256=V6_IDENTITY_RAW_SHA256,
         expected_count=V6_TEST_COUNT,
         expected_manifest_sha256=V6_TEST_MANIFEST_SHA256,
+    )
+
+
+def read_v7_tests(*, root: Path = ROOT) -> tuple[str, ...]:
+    return read_exact_tests(
+        root=root,
+        label="V7",
+        relative_path=V7_IDENTITY_RELATIVE_PATH,
+        expected_bytes=V7_IDENTITY_BYTES,
+        expected_raw_sha256=V7_IDENTITY_RAW_SHA256,
+        expected_count=V7_TEST_COUNT,
+        expected_manifest_sha256=V7_TEST_MANIFEST_SHA256,
     )
 
 
@@ -831,6 +864,7 @@ def validate_execution_contract(
     v4_new = matched_components["v4Exact"]
     v5_new = matched_components["v5Exact"]
     v6_new = matched_components["v6Exact"]
+    v7_new = matched_components["v7Exact"]
     v5_manifest = read_v5_tests(root=root)
     if component_patterns["v5Exact"] != exact_filter(v5_manifest):
         raise EvidenceError("execution V5 filter differs from the exact manifest")
@@ -841,6 +875,11 @@ def validate_execution_contract(
         raise EvidenceError("execution V6 filter differs from the exact manifest")
     if v6_new != set(v6_manifest):
         raise EvidenceError("execution V6 selected identities differ from the manifest")
+    v7_manifest = read_v7_tests(root=root)
+    if component_patterns["v7Exact"] != exact_filter(v7_manifest):
+        raise EvidenceError("execution V7 filter differs from the exact manifest")
+    if v7_new != set(v7_manifest):
+        raise EvidenceError("execution V7 selected identities differ from the manifest")
     historical_discovery = set(discovered) - set(CURRENT_V2_DELTA_IDENTITIES)
     local_socket_excluded = set(LOCAL_SOCKET_EXCLUSION_IDENTITIES)
     derived_sets = {
@@ -859,6 +898,7 @@ def validate_execution_contract(
         "v4New": v4_new,
         "v5New": v5_new,
         "v6New": v6_new,
+        "v7New": v7_new,
     }
     for key, identities in derived_sets.items():
         expected_count, expected_digest = EXPECTED_SELECTION_RECORDS[key]
@@ -883,6 +923,7 @@ def validate_execution_contract(
         v4_new,
         v5_new,
         v6_new,
+        v7_new,
     )
     if any(
         left & right
@@ -1835,6 +1876,8 @@ def self_test() -> None:
         raise EvidenceError("self-test V5 identity count differs")
     if len(read_v6_tests(root=ROOT)) != V6_TEST_COUNT:
         raise EvidenceError("self-test V6 identity count differs")
+    if len(read_v7_tests(root=ROOT)) != V7_TEST_COUNT:
+        raise EvidenceError("self-test V7 identity count differs")
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:

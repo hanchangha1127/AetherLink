@@ -894,16 +894,73 @@ ANDROID_CORE_NONSECURITY_TRANSPORT_METHODS = (
     "laterConnectWinsWhenEarlierBarrierSocketCompletesStale",
     "cancellingBlockingReceiveClosesOnlyCapturedSocketAndCompletesBoundedly",
 )
+ANDROID_CORE_NONSECURITY_TRANSPORT_ADDON_SELECTIONS = (
+    (
+        "com.localagentbridge.android.core.transport.BonjourDiscoveryTest",
+        ROOT / (
+            "apps/android/core/transport/src/test/java/"
+            "com/localagentbridge/android/core/transport/"
+            "BonjourDiscoveryTest.kt"
+        ),
+        (
+            "synchronousDiscoveryStartFailureReleasesLifecycleResourceExactlyOnce",
+        ),
+    ),
+    (
+        "com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest",
+        ROOT / (
+            "apps/android/core/transport/src/test/java/"
+            "com/localagentbridge/android/core/transport/"
+            "RuntimeConnectionManagerTest.kt"
+        ),
+        (
+            "endpointHintRejectsInvalidEndpoint",
+            "productionCompositionTimeoutUsesSaturatingAddition",
+        ),
+    ),
+    (
+        "com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest",
+        ROOT / (
+            "apps/android/core/transport/src/test/java/"
+            "com/localagentbridge/android/core/transport/"
+            "RuntimeRelayTcpClientTest.kt"
+        ),
+        (
+            "relayFrameWriterEmitsExactPrefixThenBodyAtBoundarySizes",
+            "relayFrameWriterRejectsEmptyAndOversizedBodiesBeforeWriting",
+        ),
+    ),
+)
+ANDROID_CORE_NONSECURITY_PROTOCOL_SELECTIONS = (
+    (
+        ANDROID_CORE_NONSECURITY_PROTOCOL_CLASS_NAME,
+        ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_SOURCE_PATH,
+        ANDROID_CORE_NONSECURITY_PROTOCOL_METHODS,
+    ),
+)
+ANDROID_CORE_NONSECURITY_TRANSPORT_SELECTIONS = (
+    (
+        ANDROID_CORE_NONSECURITY_TRANSPORT_CLASS_NAME,
+        ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_SOURCE_PATH,
+        ANDROID_CORE_NONSECURITY_TRANSPORT_METHODS,
+    ),
+) + ANDROID_CORE_NONSECURITY_TRANSPORT_ADDON_SELECTIONS
 ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_COUNT = 96
-ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_COUNT = 16
-ANDROID_CORE_NONSECURITY_TEST_COUNT = 112
+ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_COUNT = 21
+ANDROID_CORE_NONSECURITY_TEST_COUNT = 117
 ANDROID_CORE_NONSECURITY_PROTOCOL_TESTS = tuple(
-    f"{ANDROID_CORE_NONSECURITY_PROTOCOL_CLASS_NAME}.{method}"
-    for method in ANDROID_CORE_NONSECURITY_PROTOCOL_METHODS
+    f"{class_name}.{method}"
+    for class_name, _source_path, methods in (
+        ANDROID_CORE_NONSECURITY_PROTOCOL_SELECTIONS
+    )
+    for method in methods
 )
 ANDROID_CORE_NONSECURITY_TRANSPORT_TESTS = tuple(
-    f"{ANDROID_CORE_NONSECURITY_TRANSPORT_CLASS_NAME}.{method}"
-    for method in ANDROID_CORE_NONSECURITY_TRANSPORT_METHODS
+    f"{class_name}.{method}"
+    for class_name, _source_path, methods in (
+        ANDROID_CORE_NONSECURITY_TRANSPORT_SELECTIONS
+    )
+    for method in methods
 )
 ANDROID_CORE_NONSECURITY_TESTS = (
     ANDROID_CORE_NONSECURITY_PROTOCOL_TESTS
@@ -1182,12 +1239,18 @@ ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_RESULTS = (
         len(ANDROID_CORE_NONSECURITY_TRANSPORT_METHODS),
         ANDROID_CORE_NONSECURITY_TRANSPORT_METHODS,
     ),
+    *tuple(
+        (class_name, len(methods), methods)
+        for class_name, _source_path, methods in (
+            ANDROID_CORE_NONSECURITY_TRANSPORT_ADDON_SELECTIONS
+        )
+    ),
 )
 ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_CASE_MANIFEST_SHA256 = (
     "a2e7116511373f5cf62b95efa21162f7d52db4d12bd6d752e2ba84fc49e7ac73"
 )
 ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_CASE_MANIFEST_SHA256 = (
-    "c916ebd0d9226008b25e21312755b29f8d0286fb79d68f4cc8174b2c8a64991a"
+    "7d4f8fb415c719b8cf59978554e25a535a8cf774bef539392b377a74a73bb576"
 )
 ANDROID_RESULT_FUTURE_MTIME_TOLERANCE_NS = 5_000_000_000
 ANDROID_FULL_TEST_RESULT_ROOT = (
@@ -5632,9 +5695,7 @@ def android_core_nonsecurity_selection_failures() -> list[str]:
     selections = (
         (
             "protocol",
-            ANDROID_CORE_NONSECURITY_PROTOCOL_CLASS_NAME,
-            ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_SOURCE_PATH,
-            ANDROID_CORE_NONSECURITY_PROTOCOL_METHODS,
+            ANDROID_CORE_NONSECURITY_PROTOCOL_SELECTIONS,
             ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_COUNT,
             ANDROID_CORE_NONSECURITY_PROTOCOL_TEST_CASE_MANIFEST_SHA256,
             ANDROID_CORE_NONSECURITY_PROTOCOL_RUN_COMMAND,
@@ -5642,9 +5703,7 @@ def android_core_nonsecurity_selection_failures() -> list[str]:
         ),
         (
             "transport",
-            ANDROID_CORE_NONSECURITY_TRANSPORT_CLASS_NAME,
-            ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_SOURCE_PATH,
-            ANDROID_CORE_NONSECURITY_TRANSPORT_METHODS,
+            ANDROID_CORE_NONSECURITY_TRANSPORT_SELECTIONS,
             ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_COUNT,
             ANDROID_CORE_NONSECURITY_TRANSPORT_TEST_CASE_MANIFEST_SHA256,
             ANDROID_CORE_NONSECURITY_TRANSPORT_RUN_COMMAND,
@@ -5654,43 +5713,62 @@ def android_core_nonsecurity_selection_failures() -> list[str]:
     observed_total = 0
     for (
         label,
-        class_name,
-        source_path,
-        methods,
+        class_selections,
         expected_count,
         expected_manifest_sha256,
         command,
         gradle_task,
     ) in selections:
-        if len(methods) != expected_count or len(set(methods)) != expected_count:
+        selectors = tuple(
+            f"{class_name}.{method}"
+            for class_name, _source_path, methods in class_selections
+            for method in methods
+        )
+        if (
+            len(selectors) != expected_count
+            or len(set(selectors)) != expected_count
+        ):
             failures.append(
-                f"Android core non-security {label} methods must contain "
+                f"Android core non-security {label} selectors must contain "
                 f"exactly {expected_count} unique entries"
             )
-        observed_total += len(methods)
-        try:
-            source = source_path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError) as error:
-            failures.append(
-                f"Android core non-security {label} source cannot be read: "
-                f"{error}"
-            )
-        else:
+        observed_total += len(selectors)
+        for class_name, source_path, methods in class_selections:
+            if not methods or len(methods) != len(set(methods)):
+                failures.append(
+                    f"Android core non-security {label} class methods must "
+                    f"be nonempty and unique: {class_name}"
+                )
+                continue
+            try:
+                source = source_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as error:
+                failures.append(
+                    f"Android core non-security {label} source cannot be "
+                    f"read for {class_name}: {error}"
+                )
+                continue
             declared_tests = set(
                 re.findall(
-                    r"(?m)^\s*@Test\s*\n\s*fun\s+([A-Za-z0-9_]+)\s*\(",
+                    r"(?m)^\s*@Test\s*\n\s*(?:suspend\s+)?"
+                    r"fun\s+([A-Za-z0-9_]+)\s*\(",
                     source,
                 )
             )
-            missing = tuple(method for method in methods if method not in declared_tests)
+            missing = tuple(
+                method for method in methods if method not in declared_tests
+            )
             if missing:
                 failures.append(
                     f"Android core non-security {label} selectors must name "
-                    "declared @Test methods"
+                    f"declared @Test methods in {class_name}: {missing!r}"
                 )
-        expected_selectors = tuple(f"{class_name}.{method}" for method in methods)
         manifest_sha256 = android_testcase_manifest_sha256(
-            [(class_name, method) for method in methods]
+            [
+                (class_name, method)
+                for class_name, _source_path, methods in class_selections
+                for method in methods
+            ]
         )
         if manifest_sha256 != expected_manifest_sha256:
             failures.append(
@@ -5702,7 +5780,7 @@ def android_core_nonsecurity_selection_failures() -> list[str]:
             + (gradle_task,)
             + tuple(
                 argument
-                for selector in expected_selectors
+                for selector in selectors
                 for argument in ("--tests", selector)
             )
         )

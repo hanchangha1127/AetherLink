@@ -19,19 +19,41 @@ from script import run_g7_nonsecurity_merge_full_candidate as module
 
 class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
     def test_current_swift_parent_is_closed_in_candidate_contract(self) -> None:
-        self.assertEqual(len(module.ALL_GATES), 83)
-        self.assertEqual(len(module.ARTIFACT_PATHS), 36)
-        self.assertEqual(len(module.IMPLEMENTATION_PATHS), 11)
+        self.assertEqual(len(module.ALL_GATES), 88)
+        self.assertEqual(len(module.ARTIFACT_PATHS), 41)
+        self.assertEqual(len(module.IMPLEMENTATION_PATHS), 19)
+        self.assertEqual(
+            module.MACOS_CURRENT_SOURCE_IDLE_REPEATABILITY_READBACK_COMMAND[:4],
+            ("python3", "-I", "-B", "-S"),
+        )
+        self.assertEqual(
+            module.CREATE_ONLY_OUTPUT_PARENT_BY_PRODUCER_ID,
+            {
+                "android-release-repeatability-produce": (
+                    module.ANDROID_RELEASE_REPEATABILITY_RESULT_RELATIVE_PATH.parent
+                ),
+                "macos-lifecycle-produce": (
+                    module.MACOS_LIFECYCLE_RESULT_RELATIVE_PATH.parent
+                ),
+            },
+        )
         self.assertEqual(
             module.MACOS_LIFECYCLE_RESULT_RELATIVE_PATH,
             Path(
                 ".build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/"
-                "macos-current-unsealed-lifecycle-v4/result.json"
+                "macos-current-unsealed-lifecycle-v5/result.json"
             ),
         )
         self.assertNotIn(
-            "macos-current-unsealed-lifecycle-v3",
+            "macos-current-unsealed-lifecycle-v4",
             module.MACOS_LIFECYCLE_RESULT_RELATIVE_PATH.as_posix(),
+        )
+        self.assertEqual(
+            module.ANDROID_RELEASE_REPEATABILITY_RESULT_RELATIVE_PATH,
+            Path(
+                ".build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/"
+                "android-release-repeatability-v1/result.json"
+            ),
         )
         self.assertEqual(module.COVERAGE["androidCoreNonsecurityClasses"], 2)
         self.assertEqual(
@@ -58,6 +80,17 @@ class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
             Path("script/g7_reviewed_nonsecurity_swift_addon_identities_v6.txt"),
             module.IMPLEMENTATION_PATHS,
         )
+        for relative in (
+            Path("script/check_android_release_repeatability_current.py"),
+            Path("script/run_android_release_repeatability_current.py"),
+            Path("script/test_check_android_release_repeatability_current.py"),
+            Path("script/test_run_android_release_repeatability_current.py"),
+            Path("script/check_macos_current_source_lane_a_idle_resource_repeatability.py"),
+            Path("script/run_macos_current_source_lane_a_idle_resource_stability_smoke.py"),
+            Path("script/test_check_macos_current_source_lane_a_idle_resource_repeatability.py"),
+            Path("script/test_run_macos_current_source_lane_a_idle_resource_stability_smoke.py"),
+        ):
+            self.assertIn(relative, module.IMPLEMENTATION_PATHS)
         self.assertEqual(
             module.COVERAGE["swiftCurrentParentSocketContributionTests"], 4
         )
@@ -96,8 +129,40 @@ class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
             "android-core-nonsecurity-bind",
             "android-core-nonsecurity-readback",
             "final-android-core-nonsecurity-readback",
+            "android-release-repeatability-contract-tests",
+            "android-release-repeatability-produce",
+            "android-release-repeatability-readback",
+            "final-android-release-repeatability-readback",
+            "macos-current-source-idle-repeatability-readback",
+            "final-macos-current-source-idle-repeatability-readback",
         ):
             self.assertIn(identifier, module.EXPECTED_COMMAND_IDS)
+        self.assertNotIn("android-release-build", module.EXPECTED_COMMAND_IDS)
+        self.assertIn(
+            module.ANDROID_RELEASE_REPEATABILITY_RESULT_RELATIVE_PATH,
+            module.ARTIFACT_PATHS,
+        )
+        for relative in (
+            module.MACOS_CURRENT_SOURCE_IDLE_PARENT_RELATIVE_PATH,
+            module.MACOS_CURRENT_SOURCE_IDLE_RUN_A_RELATIVE_PATH,
+            module.MACOS_CURRENT_SOURCE_IDLE_RUN_B_RELATIVE_PATH,
+            module.MACOS_CURRENT_SOURCE_IDLE_RECEIPT_RELATIVE_PATH,
+        ):
+            self.assertIn(relative, module.ARTIFACT_PATHS)
+        self.assertEqual(
+            module.COVERAGE["macosRecordedCurrentSourceIdleObservationRuns"],
+            2,
+        )
+        self.assertEqual(
+            module.COVERAGE[
+                "macosRecordedCurrentSourceIdleRepeatabilityReceipts"
+            ],
+            1,
+        )
+        self.assertEqual(
+            module.COVERAGE["macosRecordedCurrentSourceIdleResourceSamples"],
+            240,
+        )
 
     def test_canonical_json_is_ascii_sorted_and_rejects_nan(self) -> None:
         self.assertEqual(
@@ -106,6 +171,100 @@ class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
         )
         with self.assertRaises(module.CandidateError):
             module.canonical_json_bytes({"bad": float("nan")})
+
+    def test_candidate_result_is_restricted_to_exact_dedicated_build_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            expected = root / module.RESULT_RELATIVE_PATH
+            self.assertEqual(
+                module.validated_candidate_result_path(
+                    module.RESULT_RELATIVE_PATH,
+                    root=root,
+                ),
+                expected,
+            )
+            for invalid in (
+                Path("script/overwritten.py"),
+                Path(".build/other/result.json"),
+                root.parent / "outside.json",
+                Path("../outside.json"),
+            ):
+                with self.subTest(path=str(invalid)):
+                    with self.assertRaises(module.CandidateError):
+                        module.validated_candidate_result_path(invalid, root=root)
+
+    def test_candidate_workspace_lock_rejects_overlapping_producer(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with module.acquire_candidate_workspace_lock(root=root):
+                with self.assertRaisesRegex(
+                    module.CandidateError,
+                    "already running",
+                ):
+                    with module.acquire_candidate_workspace_lock(root=root):
+                        self.fail("overlapping candidate lock unexpectedly succeeded")
+
+    def test_idle_parent_is_bound_to_current_release_source_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            relative = module.MACOS_CURRENT_SOURCE_IDLE_PARENT_RELATIVE_PATH
+            path = root / relative
+            path.parent.mkdir(parents=True)
+            source = {
+                "algorithm": module.SOURCE_ALGORITHM,
+                "fileCount": 270,
+                "sha256": "a" * 64,
+            }
+            path.write_bytes(
+                module.canonical_json_bytes(
+                    {
+                        "source": {
+                            **source,
+                            "overlaySha256": "b" * 64,
+                        }
+                    }
+                )
+            )
+            path.chmod(0o600)
+            current = {**source, "files": []}
+            with mock.patch.object(
+                module.package_release,
+                "source_snapshot",
+                return_value=current,
+            ):
+                self.assertEqual(
+                    module.validate_idle_current_release_source_binding(
+                        root=root,
+                        expected_source_sha256="a" * 64,
+                    ),
+                    source,
+                )
+                with self.assertRaisesRegex(
+                    module.CandidateError,
+                    "in-run Release source digest",
+                ):
+                    module.validate_idle_current_release_source_binding(
+                        root=root,
+                        expected_source_sha256="c" * 64,
+                    )
+                path.write_bytes(
+                    module.canonical_json_bytes(
+                        {
+                            "source": {
+                                **source,
+                                "sha256": "d" * 64,
+                                "overlaySha256": "b" * 64,
+                            }
+                        }
+                    )
+                )
+                with self.assertRaisesRegex(
+                    module.CandidateError,
+                    "differs from current Release source bytes",
+                ):
+                    module.validate_idle_current_release_source_binding(
+                        root=root,
+                    )
 
     def test_source_snapshot_binds_path_mode_size_and_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -324,7 +483,10 @@ class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
                     "--unsealed-package-only",
                 ),
             )
-            self.assertEqual(kwargs, {"root": root, "environment": environment})
+            self.assertEqual(
+                kwargs,
+                {"root": root, "environment": environment, "pass_fds": ()},
+            )
             events.append("gate-run")
             return ({"id": observed_gate.identifier}, b"ok\n", b"")
 
@@ -388,6 +550,7 @@ class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
             gate,
             root=Path("/fixture/repository"),
             environment=environment,
+            pass_fds=(),
         )
         self.assertEqual(gate.argv, ("fixture", "--flag"))
         self.assertNotIn(module.MACOS_RELEASE_SCRATCH_ENVIRONMENT, environment)
@@ -544,7 +707,11 @@ class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
 
             gates = (
                 module.Gate("macos-release-source-before", ("fixture",), 1),
-                module.Gate("android-release-build", ("fixture",), 1),
+                module.Gate(
+                    "android-release-repeatability-produce",
+                    ("fixture",),
+                    1,
+                ),
                 module.Gate("macos-release-source-after", ("fixture",), 1),
             )
             digest = "a" * 64
@@ -594,7 +761,9 @@ class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(result.stat().st_mode), 0o600)
 
             result.write_bytes(b"known-good-parent\n")
-            snapshots = iter((snapshot, {**snapshot, "sha256": "c" * 64}))
+            snapshots = iter(
+                (snapshot, snapshot, {**snapshot, "sha256": "c" * 64})
+            )
             with mock.patch.object(module, "ALL_GATES", gates), mock.patch.object(
                 module, "ARTIFACT_PATHS", (lint_relative,)
             ), mock.patch.object(
@@ -607,6 +776,27 @@ class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
                 module, "process_identity", return_value="same identity"
             ):
                 with self.assertRaisesRegex(module.CandidateError, "source changed"):
+                    module.produce_candidate(
+                        root=root,
+                        result_path=result,
+                        preserve_pid=9,
+                    )
+            self.assertEqual(result.read_bytes(), b"known-good-parent\n")
+
+            with mock.patch.object(module, "ALL_GATES", gates), mock.patch.object(
+                module, "ARTIFACT_PATHS", (lint_relative,)
+            ), mock.patch.object(
+                module, "IMPLEMENTATION_PATHS", (implementation_relative,)
+            ), mock.patch.object(
+                module, "source_snapshot", return_value=snapshot
+            ), mock.patch.object(
+                module, "run_gate", side_effect=fake_run_gate
+            ), mock.patch.object(
+                module,
+                "process_identity",
+                side_effect=("same identity", "changed identity"),
+            ):
+                with self.assertRaisesRegex(module.CandidateError, "preserved PID"):
                     module.produce_candidate(
                         root=root,
                         result_path=result,
@@ -633,6 +823,7 @@ class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
             gates = tuple(
                 module.Gate(identifier, ("fixture",), 1)
                 for identifier in (
+                    "android-release-repeatability-produce",
                     "android-diagnostics-produce",
                     "macos-diagnostics-produce",
                     "macos-lifecycle-produce",
@@ -642,6 +833,13 @@ class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
                 path = root / relative
                 path.mkdir(parents=True)
                 os.chmod(path, 0o755)
+            stale_by_identifier = {}
+            for identifier, relative in (
+                module.CREATE_ONLY_OUTPUT_PARENT_BY_PRODUCER_ID.items()
+            ):
+                stale = root / relative / "stale-result.json"
+                stale.write_bytes(b"stale\n")
+                stale_by_identifier[identifier] = stale
 
             observations: list[tuple[str, int]] = []
 
@@ -649,6 +847,8 @@ class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
                 parent = root / module.OUTPUT_PARENT_BY_PRODUCER_ID[gate.identifier]
                 self.assertTrue(parent.is_dir())
                 self.assertFalse(parent.is_symlink())
+                if gate.identifier in stale_by_identifier:
+                    self.assertFalse(stale_by_identifier[gate.identifier].exists())
                 observations.append(
                     (gate.identifier, stat.S_IMODE(parent.stat().st_mode))
                 )
@@ -698,6 +898,30 @@ class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
                 observations,
                 [(gate.identifier, 0o700) for gate in gates],
             )
+
+    def test_create_only_output_cleanup_rejects_symlink_and_unallowlisted_path(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            relative = module.CREATE_ONLY_OUTPUT_PARENT_BY_PRODUCER_ID[
+                "android-release-repeatability-produce"
+            ]
+            target = root / relative
+            target.parent.mkdir(parents=True)
+            outside = root / "outside"
+            outside.mkdir()
+            target.symlink_to(outside, target_is_directory=True)
+
+            with self.assertRaisesRegex(module.CandidateError, "not physical"):
+                module.recreate_create_only_output_directory(target, root=root)
+            self.assertTrue(outside.is_dir())
+
+            with self.assertRaisesRegex(module.CandidateError, "not allowlisted"):
+                module.recreate_create_only_output_directory(
+                    root / ".build/not-allowlisted",
+                    root=root,
+                )
 
 
 if __name__ == "__main__":

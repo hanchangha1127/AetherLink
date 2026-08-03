@@ -25,8 +25,10 @@ import xml.etree.ElementTree as ET
 
 if __package__:
     from script import check_product_ci as product_ci
+    from script import package_release_artifacts as package_release
 else:
     import check_product_ci as product_ci
+    import package_release_artifacts as package_release
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,16 +40,44 @@ RESULT_RELATIVE_PATH = Path(
 )
 MACOS_LIFECYCLE_RESULT_RELATIVE_PATH = Path(
     ".build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/"
-    "macos-current-unsealed-lifecycle-v4/result.json"
+    "macos-current-unsealed-lifecycle-v5/result.json"
 )
 MACOS_LIFECYCLE_REPEATABILITY_RELATIVE_PATH = Path(
     ".build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/"
-    "macos-current-unsealed-lifecycle-v4/repeatability.json"
+    "macos-current-unsealed-lifecycle-v5/repeatability.json"
+)
+ANDROID_RELEASE_REPEATABILITY_RESULT_RELATIVE_PATH = Path(
+    ".build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/"
+    "android-release-repeatability-v1/result.json"
+)
+MACOS_CURRENT_SOURCE_IDLE_PARENT_RELATIVE_PATH = Path(
+    "dist/reproducibility/"
+    "aetherlink-1.0.0+24-local-v1-two-root-v4-prepublication-"
+    "current-source-g7-idle-repeatability-seven.json"
+)
+MACOS_CURRENT_SOURCE_IDLE_RUN_A_RELATIVE_PATH = Path(
+    "dist/lifecycle/"
+    "macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-"
+    "idle-resource-stability-v1-"
+    "current-source-g7-idle-repeatability-seven.json"
+)
+MACOS_CURRENT_SOURCE_IDLE_RUN_B_RELATIVE_PATH = Path(
+    "dist/lifecycle/"
+    "macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-"
+    "idle-resource-stability-repeat-v1-"
+    "current-source-g7-idle-repeatability-seven.json"
+)
+MACOS_CURRENT_SOURCE_IDLE_RECEIPT_RELATIVE_PATH = Path(
+    "dist/lifecycle/"
+    "macos-aetherlink-1.0.0+24-local-v1-two-root-lane-a-"
+    "idle-resource-stability-repeatability-v1-"
+    "current-source-g7-idle-repeatability-seven.json"
 )
 RESULT_MAX_BYTES = 1 * 1024 * 1024
 SOURCE_FILE_MAX_BYTES = 64 * 1024 * 1024
 SOURCE_TOTAL_MAX_BYTES = 1024 * 1024 * 1024
 ARTIFACT_MAX_BYTES = 768 * 1024 * 1024
+IMPLEMENTATION_MAX_BYTES = 4 * 1024 * 1024
 LINT_XML_MAX_BYTES = 16 * 1024 * 1024
 TEXT_MAX_LENGTH = 4096
 COMMAND_STREAM_MAX_BYTES = 64 * 1024 * 1024
@@ -60,17 +90,25 @@ ANDROID_LINT_XML_PATH = Path(
 )
 
 EXPECTED_IMPLEMENTATION_PATHS = (
+    Path("script/check_android_release_repeatability_current.py"),
     Path("script/check_g7_nonsecurity_merge_full_candidate.py"),
     Path("script/check_g7_nonsecurity_merge_full_current.py"),
+    Path("script/check_macos_current_source_lane_a_idle_resource_repeatability.py"),
     Path("script/g7_reviewed_nonsecurity_swift_addon_identities_v5.txt"),
     Path("script/g7_reviewed_nonsecurity_swift_addon_identities_v6.txt"),
+    Path("script/run_android_release_repeatability_current.py"),
     Path("script/run_clean_release_reproducibility.py"),
     Path("script/run_g7_nonsecurity_merge_full_candidate.py"),
     Path("script/run_g7_nonsecurity_merge_full_current.py"),
+    Path("script/run_macos_current_source_lane_a_idle_resource_stability_smoke.py"),
+    Path("script/test_check_android_release_repeatability_current.py"),
     Path("script/test_check_g7_nonsecurity_merge_full_candidate.py"),
     Path("script/test_check_g7_nonsecurity_merge_full_current.py"),
+    Path("script/test_check_macos_current_source_lane_a_idle_resource_repeatability.py"),
+    Path("script/test_run_android_release_repeatability_current.py"),
     Path("script/test_run_g7_nonsecurity_merge_full_candidate.py"),
     Path("script/test_run_g7_nonsecurity_merge_full_current.py"),
+    Path("script/test_run_macos_current_source_lane_a_idle_resource_stability_smoke.py"),
 )
 
 EXPECTED_ARTIFACT_PATHS = (
@@ -80,6 +118,7 @@ EXPECTED_ARTIFACT_PATHS = (
     Path(".build/aetherlink-document-ingestion-mutation-binding-v1.json"),
     Path(".build/aetherlink-document-ingestion-mutation-console-v1.log"),
     Path(".build/aetherlink-document-ingestion-mutation-run-marker-v1.json"),
+    ANDROID_RELEASE_REPEATABILITY_RESULT_RELATIVE_PATH,
     MACOS_LIFECYCLE_REPEATABILITY_RELATIVE_PATH,
     MACOS_LIFECYCLE_RESULT_RELATIVE_PATH,
     Path(
@@ -140,6 +179,10 @@ EXPECTED_ARTIFACT_PATHS = (
         "apps/android/core/transport/build/test-results/testDebugUnitTest/"
         "aetherlink-core-nonsecurity-test-result-binding-v1.json"
     ),
+    MACOS_CURRENT_SOURCE_IDLE_RUN_B_RELATIVE_PATH,
+    MACOS_CURRENT_SOURCE_IDLE_RECEIPT_RELATIVE_PATH,
+    MACOS_CURRENT_SOURCE_IDLE_RUN_A_RELATIVE_PATH,
+    MACOS_CURRENT_SOURCE_IDLE_PARENT_RELATIVE_PATH,
     Path("dist/unsealed-package-only/AetherLink.app/Contents/MacOS/AetherLink"),
     Path(
         "dist/unsealed-package-only/AetherLink.dSYM/Contents/Resources/"
@@ -167,6 +210,7 @@ EXPECTED_COMMAND_IDS = (
     "macos-lifecycle-contract-tests",
     "release-diagnostics-contract-tests",
     "release-archive-contract-tests",
+    "android-release-repeatability-contract-tests",
     "g7-candidate-contract-tests",
     "g7-current-contract-tests",
     "macos-debug-compile",
@@ -207,7 +251,8 @@ EXPECTED_COMMAND_IDS = (
     "android-core-nonsecurity-run",
     "android-core-nonsecurity-bind",
     "android-core-nonsecurity-readback",
-    "android-release-build",
+    "android-release-repeatability-produce",
+    "android-release-repeatability-readback",
     "android-release-readback",
     "android-diagnostics-produce",
     "android-diagnostics-readback",
@@ -219,21 +264,27 @@ EXPECTED_COMMAND_IDS = (
     "macos-diagnostics-readback",
     "macos-lifecycle-produce",
     "macos-lifecycle-readback",
+    "macos-current-source-idle-repeatability-readback",
     "final-swift-focused-readback",
     "final-g7-nonsecurity-swift-readback",
     "final-document-ingestion-asan-readback",
     "final-document-ingestion-mutation-readback",
     "final-android-full-readback",
     "final-android-core-nonsecurity-readback",
+    "final-android-release-repeatability-readback",
     "final-android-release-readback",
     "final-macos-release-readback",
     "final-android-diagnostics-readback",
     "final-macos-diagnostics-readback",
     "final-macos-lifecycle-readback",
+    "final-macos-current-source-idle-repeatability-readback",
     "final-g7-current-independent-readback",
     "final-g7-current-parent-independent-readback",
     "final-release-compliance-catalog",
     "final-tracked-document-contracts",
+)
+EXPECTED_COMMAND_CONTRACT_SHA256 = (
+    "2f1cd5e0c36b383019c0cec82fe2155a5ccfe6dcdf04156b8cd8c4cee31d886f"
 )
 
 EXPECTED_COVERAGE = {
@@ -248,6 +299,9 @@ EXPECTED_COVERAGE = {
     "documentIngestionMutationCases": 96,
     "documentIngestionMutationXctestTests": 2,
     "releaseComplianceTests": 22,
+    "macosRecordedCurrentSourceIdleObservationRuns": 2,
+    "macosRecordedCurrentSourceIdleRepeatabilityReceipts": 1,
+    "macosRecordedCurrentSourceIdleResourceSamples": 240,
     "swiftCurrentDiscoveryTests": 2175,
     "swiftCurrentNoSocketTests": 1204,
     "swiftCurrentParentRemainingTests": 967,
@@ -334,6 +388,19 @@ ANDROID_CORE_NONSECURITY_READBACK_COMMAND = (
     "script/check_product_ci.py",
     "--android-core-nonsecurity-test-results",
 )
+ANDROID_RELEASE_REPEATABILITY_PRODUCE_COMMAND = (
+    "python3",
+    "-B",
+    "script/run_android_release_repeatability_current.py",
+    "--result",
+    ANDROID_RELEASE_REPEATABILITY_RESULT_RELATIVE_PATH.as_posix(),
+)
+ANDROID_RELEASE_REPEATABILITY_READBACK_COMMAND = (
+    "python3",
+    "-B",
+    "script/check_android_release_repeatability_current.py",
+    ANDROID_RELEASE_REPEATABILITY_RESULT_RELATIVE_PATH.as_posix(),
+)
 ANDROID_RELEASE_READBACK_COMMAND = (
     "python3",
     "-B",
@@ -371,6 +438,21 @@ MACOS_LIFECYCLE_READBACK_COMMAND = (
     "--repeatability-result",
     MACOS_LIFECYCLE_REPEATABILITY_RELATIVE_PATH.as_posix(),
 )
+MACOS_CURRENT_SOURCE_IDLE_REPEATABILITY_READBACK_COMMAND = (
+    "python3",
+    "-I",
+    "-B",
+    "-S",
+    "script/check_macos_current_source_lane_a_idle_resource_repeatability.py",
+    "--parent-result",
+    MACOS_CURRENT_SOURCE_IDLE_PARENT_RELATIVE_PATH.as_posix(),
+    "--run-a",
+    MACOS_CURRENT_SOURCE_IDLE_RUN_A_RELATIVE_PATH.as_posix(),
+    "--run-b",
+    MACOS_CURRENT_SOURCE_IDLE_RUN_B_RELATIVE_PATH.as_posix(),
+    "--receipt",
+    MACOS_CURRENT_SOURCE_IDLE_RECEIPT_RELATIVE_PATH.as_posix(),
+)
 READBACK_COMMANDS = (
     PRODUCT_CI_READBACK_COMMAND,
     SWIFT_FOCUSED_READBACK_COMMAND,
@@ -381,11 +463,13 @@ READBACK_COMMANDS = (
     DOCUMENT_INGESTION_MUTATION_READBACK_COMMAND,
     ANDROID_FULL_READBACK_COMMAND,
     ANDROID_CORE_NONSECURITY_READBACK_COMMAND,
+    ANDROID_RELEASE_REPEATABILITY_READBACK_COMMAND,
     ANDROID_RELEASE_READBACK_COMMAND,
     ANDROID_DIAGNOSTICS_READBACK_COMMAND,
     MACOS_RELEASE_READBACK_COMMAND,
     MACOS_DIAGNOSTICS_READBACK_COMMAND,
     MACOS_LIFECYCLE_READBACK_COMMAND,
+    MACOS_CURRENT_SOURCE_IDLE_REPEATABILITY_READBACK_COMMAND,
 )
 
 ANDROID_FULL_COMMAND = (
@@ -404,21 +488,9 @@ ANDROID_FULL_COMMAND = (
     ),
 )
 
-ANDROID_RELEASE_COMMAND = (
-    "./gradlew",
-    "--offline",
-    "--no-daemon",
-    "--console=plain",
-    "-PaetherlinkStrictReleaseDependencyLocks=true",
-    "-Pkotlin.incremental=false",
-    ":app:assembleRelease",
-    ":app:bundleRelease",
-    ":app:lintRelease",
-)
-
-# Commands that establish or consume the material child evidence are pinned
-# independently here.  Supporting unit/static commands still receive a closed,
-# bounded argv record and exact ordered identifier.
+# Human-readable constants for material child commands complement the full
+# ordered command-contract digest above.  The digest independently pins argv
+# and timeout for every command, including supporting unit/static commands.
 CRITICAL_COMMAND_ARGV = {
     "product-ci-contract": ("python3", "-B", "script/check_product_ci.py"),
     "release-compliance-tests": (
@@ -426,6 +498,14 @@ CRITICAL_COMMAND_ARGV = {
         "-B",
         "script/check_product_ci.py",
         "--run-release-compliance-tests",
+    ),
+    "android-release-repeatability-contract-tests": (
+        "python3",
+        "-B",
+        "-m",
+        "unittest",
+        "script.test_run_android_release_repeatability_current",
+        "script.test_check_android_release_repeatability_current",
     ),
     "g7-candidate-contract-tests": (
         "python3",
@@ -461,6 +541,10 @@ CRITICAL_COMMAND_ARGV = {
         (
             "script.test_check_macos_runtime_chat_production_append_"
             "abrupt_recovery_evidence"
+        ),
+        (
+            "script.test_run_macos_current_source_lane_a_"
+            "idle_resource_stability_smoke"
         ),
         (
             "script.test_check_macos_current_source_lane_a_"
@@ -559,7 +643,12 @@ CRITICAL_COMMAND_ARGV = {
     "android-core-nonsecurity-readback": (
         ANDROID_CORE_NONSECURITY_READBACK_COMMAND
     ),
-    "android-release-build": ANDROID_RELEASE_COMMAND,
+    "android-release-repeatability-produce": (
+        ANDROID_RELEASE_REPEATABILITY_PRODUCE_COMMAND
+    ),
+    "android-release-repeatability-readback": (
+        ANDROID_RELEASE_REPEATABILITY_READBACK_COMMAND
+    ),
     "android-release-readback": ANDROID_RELEASE_READBACK_COMMAND,
     "macos-release-source-before": (
         "python3",
@@ -592,6 +681,9 @@ CRITICAL_COMMAND_ARGV = {
         "--repeatability-result",
         MACOS_LIFECYCLE_REPEATABILITY_RELATIVE_PATH.as_posix(),
     ),
+    "macos-current-source-idle-repeatability-readback": (
+        MACOS_CURRENT_SOURCE_IDLE_REPEATABILITY_READBACK_COMMAND
+    ),
     "final-swift-focused-readback": SWIFT_FOCUSED_READBACK_COMMAND,
     "final-g7-nonsecurity-swift-readback": (
         G7_NONSECURITY_SWIFT_READBACK_COMMAND
@@ -606,6 +698,9 @@ CRITICAL_COMMAND_ARGV = {
     "final-android-core-nonsecurity-readback": (
         ANDROID_CORE_NONSECURITY_READBACK_COMMAND
     ),
+    "final-android-release-repeatability-readback": (
+        ANDROID_RELEASE_REPEATABILITY_READBACK_COMMAND
+    ),
     "final-android-release-readback": ANDROID_RELEASE_READBACK_COMMAND,
     "final-android-diagnostics-readback": (
         ANDROID_DIAGNOSTICS_READBACK_COMMAND
@@ -613,12 +708,28 @@ CRITICAL_COMMAND_ARGV = {
     "final-macos-release-readback": MACOS_RELEASE_READBACK_COMMAND,
     "final-macos-diagnostics-readback": MACOS_DIAGNOSTICS_READBACK_COMMAND,
     "final-macos-lifecycle-readback": MACOS_LIFECYCLE_READBACK_COMMAND,
+    "final-macos-current-source-idle-repeatability-readback": (
+        MACOS_CURRENT_SOURCE_IDLE_REPEATABILITY_READBACK_COMMAND
+    ),
     "final-g7-current-independent-readback": (
         G7_CURRENT_INDEPENDENT_READBACK_COMMAND
     ),
     "final-g7-current-parent-independent-readback": (
         G7_CURRENT_PARENT_INDEPENDENT_READBACK_COMMAND
     ),
+}
+
+CRITICAL_COMMAND_TIMEOUT_SECONDS = {
+    "android-release-repeatability-contract-tests": 900,
+    "android-release-repeatability-produce": 8400,
+    "android-release-repeatability-readback": 1800,
+    "final-android-release-repeatability-readback": 1800,
+    "macos-current-source-idle-repeatability-readback": 300,
+    "final-macos-current-source-idle-repeatability-readback": 300,
+}
+
+READBACK_TIMEOUT_BY_COMMAND = {
+    ANDROID_RELEASE_REPEATABILITY_READBACK_COMMAND: 1800,
 }
 
 
@@ -905,6 +1016,7 @@ def validate_file_records(
     expected_paths: Sequence[Path],
     label: str,
     root: Path,
+    maximum_bytes: int,
 ) -> None:
     if type(value) is not list or len(value) != len(expected_paths):
         raise CandidateError(f"{label} record count differs")
@@ -918,10 +1030,10 @@ def validate_file_records(
         require_exact_int(
             row["size"],
             f"{label}[{index}].size",
-            maximum=ARTIFACT_MAX_BYTES,
+            maximum=maximum_bytes,
         )
         require_sha256(row["sha256"], f"{label}[{index}].sha256")
-        expected = file_record(root, relative, maximum_bytes=ARTIFACT_MAX_BYTES)
+        expected = file_record(root, relative, maximum_bytes=maximum_bytes)
         if row != expected:
             raise CandidateError(f"{label} file identity differs: {relative}")
         actual_paths.append(relative.as_posix())
@@ -940,6 +1052,7 @@ def validate_stream_record(value: object, label: str) -> None:
 def validate_commands(value: object) -> None:
     if type(value) is not list or len(value) != len(EXPECTED_COMMAND_IDS):
         raise CandidateError("commands record count differs")
+    contract_projection: list[dict[str, object]] = []
     for index, (record, expected_id) in enumerate(zip(value, EXPECTED_COMMAND_IDS)):
         row = exact_mapping(
             record,
@@ -977,6 +1090,11 @@ def validate_commands(value: object) -> None:
             minimum=1,
             maximum=4 * 60 * 60,
         )
+        expected_timeout = CRITICAL_COMMAND_TIMEOUT_SECONDS.get(expected_id)
+        if expected_timeout is not None and timeout != expected_timeout:
+            raise CandidateError(
+                f"commands[{index}].timeoutSeconds differs for {expected_id}"
+            )
         require_exact_int(
             row["elapsedMilliseconds"],
             f"commands[{index}].elapsedMilliseconds",
@@ -986,6 +1104,18 @@ def validate_commands(value: object) -> None:
             raise CandidateError(f"commands[{index}] did not exit successfully")
         validate_stream_record(row["stdout"], f"commands[{index}].stdout")
         validate_stream_record(row["stderr"], f"commands[{index}].stderr")
+        contract_projection.append(
+            {
+                "argv": list(argv),
+                "id": expected_id,
+                "timeoutSeconds": timeout,
+            }
+        )
+    contract_digest = hashlib.sha256(
+        canonical_json_bytes(contract_projection)
+    ).hexdigest()
+    if contract_digest != EXPECTED_COMMAND_CONTRACT_SHA256:
+        raise CandidateError("complete ordered command contract differs")
 
 
 def validate_android_lint(root: Path) -> None:
@@ -1005,6 +1135,39 @@ def validate_android_lint(root: Path) -> None:
     issues = tuple(root_element.iter("issue"))
     if issues:
         raise CandidateError(f"Android lint XML contains {len(issues)} issue records")
+
+
+def validate_idle_current_release_source_binding(root: Path) -> dict[str, object]:
+    data, _mode = read_stable_regular_file(
+        root,
+        MACOS_CURRENT_SOURCE_IDLE_PARENT_RELATIVE_PATH,
+        maximum_bytes=ARTIFACT_MAX_BYTES,
+    )
+    try:
+        parent = json.loads(data, object_pairs_hook=reject_duplicate_keys)
+        current = package_release.source_snapshot(root)
+    except (
+        UnicodeError,
+        json.JSONDecodeError,
+        DuplicateKeyError,
+        package_release.ReleaseArchiveError,
+    ) as error:
+        raise CandidateError(
+            f"macOS idle current-source binding cannot be read: {error}"
+        ) from error
+    if type(parent) is not dict or type(parent.get("source")) is not dict:
+        raise CandidateError("macOS idle parent source record is missing")
+    recorded = parent["source"]
+    summary = {
+        "algorithm": current.get("algorithm"),
+        "fileCount": current.get("fileCount"),
+        "sha256": current.get("sha256"),
+    }
+    if any(recorded.get(key) != value for key, value in summary.items()):
+        raise CandidateError(
+            "macOS idle parent source differs from current Release source bytes"
+        )
+    return summary
 
 
 def validate_pid_preservation(value: object) -> None:
@@ -1094,18 +1257,25 @@ def validate_document(
         expected_paths=EXPECTED_ARTIFACT_PATHS,
         label="artifacts",
         root=root,
+        maximum_bytes=ARTIFACT_MAX_BYTES,
     )
     validate_file_records(
         row["implementation"],
         expected_paths=EXPECTED_IMPLEMENTATION_PATHS,
         label="implementation",
         root=root,
+        maximum_bytes=IMPLEMENTATION_MAX_BYTES,
     )
     validate_commands(row["commands"])
     validate_pid_preservation(row["pidPreservation"])
     validate_android_lint(root)
     if run_readbacks:
+        idle_source_before = validate_idle_current_release_source_binding(root)
         run_child_readbacks(root)
+        if validate_idle_current_release_source_binding(root) != idle_source_before:
+            raise CandidateError(
+                "macOS idle current-source binding changed during child readback"
+            )
     if recorded_source != source_snapshot(root):
         raise CandidateError("source snapshot changed during complete readback")
     validate_file_records(
@@ -1113,6 +1283,7 @@ def validate_document(
         expected_paths=EXPECTED_ARTIFACT_PATHS,
         label="artifacts final readback",
         root=root,
+        maximum_bytes=ARTIFACT_MAX_BYTES,
     )
 
 
@@ -1311,7 +1482,10 @@ def run_child_readbacks(root: Path) -> None:
         stdout, stderr = bounded_child_output(
             process,
             command=command,
-            timeout_seconds=READBACK_TIMEOUT_SECONDS,
+            timeout_seconds=READBACK_TIMEOUT_BY_COMMAND.get(
+                command,
+                READBACK_TIMEOUT_SECONDS,
+            ),
             maximum_bytes=READBACK_STREAM_MAX_BYTES,
         )
         if process.returncode != 0:

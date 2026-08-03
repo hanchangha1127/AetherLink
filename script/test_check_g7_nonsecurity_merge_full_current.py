@@ -145,6 +145,12 @@ class CurrentRunReadbackTests(unittest.TestCase):
                 mtime_ns=base_time,
             )
             write_bytes(
+                root / checker.V7_IDENTITY_RELATIVE_PATH,
+                (checker.ROOT / checker.V7_IDENTITY_RELATIVE_PATH).read_bytes(),
+                mode=0o644,
+                mtime_ns=base_time,
+            )
+            write_bytes(
                 root / source_relative,
                 b"struct Fixture {}\n",
                 mode=0o644,
@@ -171,6 +177,7 @@ class CurrentRunReadbackTests(unittest.TestCase):
                         exact_relative,
                         checker.V5_IDENTITY_RELATIVE_PATH,
                         checker.V6_IDENTITY_RELATIVE_PATH,
+                        checker.V7_IDENTITY_RELATIVE_PATH,
                     ),
                 ),
                 mock.patch.object(
@@ -395,6 +402,7 @@ class CurrentRunReadbackTests(unittest.TestCase):
                     ),
                     "v5_manifest": root / checker.V5_IDENTITY_RELATIVE_PATH,
                     "v6_manifest": root / checker.V6_IDENTITY_RELATIVE_PATH,
+                    "v7_manifest": root / checker.V7_IDENTITY_RELATIVE_PATH,
                 }
 
     def test_complete_fixture_passes_independent_readback(self) -> None:
@@ -418,18 +426,27 @@ class CurrentRunReadbackTests(unittest.TestCase):
                 coverage["selected"],
                 {
                     "manifestSha256": (
-                        "fbab18434f821237178e87aab1e84ce58bf7e82802978439ae43fc1f95e76fde"
+                        "33cf8415b21aa5bf727ac05cdaac6752c8929565fa934e2666128b35330bbd5b"
                     ),
-                    "tests": 1_204,
+                    "tests": 1_205,
                 },
             )
             self.assertEqual(
                 coverage["notExecuted"],
                 {
                     "manifestSha256": (
-                        "018058edbc3b344da6a7fae3a8b077d9aad6fc3c7fd2929a1130c2cee4152974"
+                        "f335a5eb4c097b59017994bce65520fc1a432fc30e1e7f8ea00baec9065aef10"
                     ),
-                    "tests": 971,
+                    "tests": 970,
+                },
+            )
+            self.assertEqual(
+                coverage["v7New"],
+                {
+                    "manifestSha256": (
+                        "2f726fc2fd89ab9a4c7ec464dd94a3aeac0ee9e41811710ddf24baf5bc4ae9aa"
+                    ),
+                    "tests": 1,
                 },
             )
 
@@ -443,15 +460,15 @@ class CurrentRunReadbackTests(unittest.TestCase):
             coverage = document["coverage"]
             self.assertEqual(
                 coverage["reviewedExecuted"]["tests"],
-                1_208,
+                1_209,
             )
             self.assertEqual(
                 coverage["noSocketExecuted"]["tests"],
-                1_204,
+                1_205,
             )
             self.assertEqual(
                 coverage["remaining"]["tests"],
-                967,
+                966,
             )
             self.assertEqual(
                 coverage["localSocketExecuted"]["tests"],
@@ -459,11 +476,11 @@ class CurrentRunReadbackTests(unittest.TestCase):
             )
             self.assertEqual(
                 coverage["reviewedExecuted"]["manifestSha256"],
-                "ea63ec325a6125f4ae92c49c0ca9d3054e054369335bec6ebeb99c7256468846",
+                "26e97b0bf2349883b71677dfb614d15f8a2e920d3fc42036b6e1a08add7cf6a2",
             )
             self.assertEqual(
                 coverage["remaining"]["manifestSha256"],
-                "fe4c11470e53a92ff64fe31c143b7d587eacdfcdd68ac8af7c5ba7233d58e9e6",
+                "d6da7f2fc7954fa3cf81528028da42bc0b54ddd8320c28ebd07d757b93b2567e",
             )
 
     def test_parent_boolean_invocation_count_is_rejected(self) -> None:
@@ -515,7 +532,7 @@ class CurrentRunReadbackTests(unittest.TestCase):
                 )
 
     def test_boolean_count_mutation_is_rejected(self) -> None:
-        for partition_name in ("selected", "v6New"):
+        for partition_name in ("selected", "v6New", "v7New"):
             with self.subTest(partition=partition_name), self.evidence_fixture() as fixture:
                 document = json.loads(fixture["result"].read_bytes())
                 document["coverage"][partition_name]["tests"] = True

@@ -153,6 +153,18 @@ class IdleRepeatabilityReadbackTests(unittest.TestCase):
                     1,
                 ),
             ),
+            (
+                "deterministic-hashing",
+                lambda value: value["toolchainPolicy"][
+                    "environment"
+                ].__setitem__("SWIFT_DETERMINISTIC_HASHING", "0"),
+            ),
+            (
+                "toolchain-extra",
+                lambda value: value["toolchainPolicy"][
+                    "environment"
+                ].__setitem__("UNPINNED", "1"),
+            ),
         ):
             candidate = copy.deepcopy(self.parent)
             mutate(candidate)
@@ -162,6 +174,40 @@ class IdleRepeatabilityReadbackTests(unittest.TestCase):
             )
             with self.subTest(label=label), self.assertRaises(
                 checker.IdleRepeatabilityCheckError
+            ):
+                self.check()
+        self.write_payloads()
+
+    def test_parent_swift_arguments_are_exact_and_ordered(self) -> None:
+        def remove(arguments: list[object]) -> None:
+            arguments.pop()
+
+        def append(arguments: list[object]) -> None:
+            arguments.append("unreviewed")
+
+        def change(arguments: list[object]) -> None:
+            arguments[1] = "2"
+
+        def reorder(arguments: list[object]) -> None:
+            arguments[0], arguments[1] = arguments[1], arguments[0]
+
+        for label, mutate in (
+            ("remove", remove),
+            ("append", append),
+            ("change", change),
+            ("reorder", reorder),
+        ):
+            candidate = copy.deepcopy(self.parent)
+            arguments = candidate["toolchainPolicy"]["swiftArguments"]
+            self.assertIsInstance(arguments, list)
+            mutate(arguments)
+            self.write_bytes(
+                self.parent_path,
+                checker.canonical_json_bytes(candidate),
+            )
+            with self.subTest(label=label), self.assertRaisesRegex(
+                checker.IdleRepeatabilityCheckError,
+                "Swift reproducibility arguments differ",
             ):
                 self.check()
         self.write_payloads()

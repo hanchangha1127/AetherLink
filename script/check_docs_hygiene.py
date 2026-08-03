@@ -1910,7 +1910,7 @@ coverage, not binary artifact analysis, a license-compatibility/legal
 conclusion, vulnerability or secret scanning, signed provenance, canonical
 Merge full, G6/G7 exit, RC/GA, or V1 qualification.
 
-The exact 76-test workflow command, the product CI contract and mutation
+The exact 93-test workflow command, the product CI contract and mutation
 self-test, and direct readback of that recorded local current-run evidence
 pass. The
 reviewed workflow is 26,105 bytes with raw SHA-256
@@ -2137,28 +2137,28 @@ CURRENT_BUILD24_MACOS_LIFECYCLE_CHAIN_PREDECESSOR_BY_DOCUMENT = {
 }
 CURRENT_BUILD24_MACOS_LIFECYCLE_CHAIN_OUTER_SHA256_BY_DOCUMENT = {
     "README.md": (
-        "4d61e0c01efe04aadc273604f37e8769e59fc916a3dac87d9972867d4cc8ca0c",
-        "a5f15a55b843e0748b67332402544b83c57d84adeb4ee9a60ee6ddce5eec2f2b",
+        "ade07d6dd5a50ed59ce63029074b720c045ae11c5b2a639d31ca2598cb101365",
+        "97d72b019c5d0e8d87d317939f1bbf7db25e120f6ec8a97614a1319c36da5756",
     ),
     "docs/roadmap.md": (
-        "47998d4576b2a97f1759b549c97a405916a9c99165871c8c67962c8493a7f427",
+        "e0d0cf83f21d178853fcd33604281862974e93cc35b40dcf387bfc3fb799d5fa",
         "49acb063dd42ec1d8629c76a2e925c7a275daf4fab34670255defda837fc7277",
     ),
     "docs/handoff.md": (
-        "f7b66a232914f8db7929c01e6db5462199acd19e886e6e6b126cd10a43d40989",
+        "2e924012421ced1e57defb3f715c2d839eae5500bb7ae0e31e2d1ef17b8312bc",
         "45757b5ef397dd7976196ae5b267eee53544fa4b8546464073830acb39d7f858",
     ),
     "docs/progress.md": (
-        "f3c46949b8c3797992c2db832850fbfb1ae3182cee7d0a3edf3371a212de086e",
+        "098f7d0119b6038e2abc204d68788f6d44357d9176eb56ff6ede0b8fd8bd51c1",
         "c2e5ed1ec4d2af10ac3f3f87baeb3b9b29cc35393c1628cc63e147718d1589eb",
     ),
     "docs/qa-evidence.md": (
-        "ff3fb927f56e99494e7757f6f13cca64739978666b74ce996fdc0245a26cc184",
+        "d9825d5f69b1c1ee678e61d4a3f80826a7c72a952eb6ce8350573db450cb9d4a",
         "5c92341f48705b39fcd93e03390edba375eb6455bae3a4eb55807f2c6d3c4eff",
     ),
     "docs/releases/1.0.0-build-24-local-v1.md": (
-        "41da6e48b43bac1b07e388554314298f49fde2d30e7b98215eb6f32fcea968df",
-        "d7b42f22d7e796e29c55dd7d601d7ec5f7e9b8ec07fa0e37acb547c7214fba2a",
+        "dc0bcd114f414c8f1e612609198d151758aa1ef6f27262de0610da1894dd5dfe",
+        "d9f56d3de758af5a51fb1282b441427f2affcb60f71fce415c2782719f58f39a",
     ),
 }
 CURRENT_MACOS_LOCAL_DMG_INSTALL_EXPECTED_RESULT_SIZE = 2_434
@@ -2296,23 +2296,23 @@ CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_BODY_SHA256_BY_DOCUMENT = {
 }
 CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_OUTER_SHA256_BY_DOCUMENT = {
     "README.md": (
-        "9fbc6f9fd5f52d71b5d6d337a6909ac2910ef1f80c3c6b96076c986259961967",
+        "779faf41694dd80c04c99f05ad0204010bb3e8ac08eab41fccc8b70a1a852732",
         "978741383b9e900ab1cbfc1023907efbcfd8b4159e73a7e6c39eddba46abf5da",
     ),
     "docs/roadmap.md": (
-        "3068ed75e2a96ac2a39ea6d9bf9afeb75b61d6a4b03678191cd9b7b776fbfe8b",
+        "5ee3c8bdb80f5e0d50be6ae3ff2863220386164c7d11adce563cefba239b633e",
         "2d95c3598363c481942f209b545cf485bd4b76a8e6eae51d3080f2d0829e7a8c",
     ),
     "docs/handoff.md": (
-        "119b8c4e719a0a418a4052cc596b29aa130b2c5880ecdb1ca030f739090e2b82",
+        "cde018c71bd6691ceb209d7be7c6c454607f53dbbe586360bda15bbe0ad6356d",
         "fcd0f93e8d91ade7dc84df0a0cf1ba3d5dfc0d2ff485645b94211dbafd4a63bf",
     ),
     "docs/progress.md": (
-        "a809733fad337dd25ee3663a90f9e3d92bb44c54c8574b7d9e8ea3d977b29c8f",
+        "0ee52b767c92175b11c2fb0c269a44090d2b36673dd1ae6c1a195bd2e96bfdc7",
         "75ff47867bb3a85000e23e723f8b9c20e8caf252de95bb19a91732fca40863a6",
     ),
     "docs/qa-evidence.md": (
-        "30af1ab0cf59d76be801839d7c7551c7131b85676747ac4e0c96af2a3cd149d0",
+        "74733c238ddd93414786c0aa581777f1b4cfa1dddf75787613314266e4ed40c2",
         "89cbf66a09001c07387613ebe728ed79d2ebbe66b943beec8bde498e08aedf85",
     ),
     "docs/releases/1.0.0-build-20-local-v1.md": (
@@ -2320,8 +2320,8 @@ CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_OUTER_SHA256_BY_DOCUMENT = {
         "b2673dc9c562eb6a7f8d209136c138754d58fb9adebfbfabc9b8696c5f3c490c",
     ),
     "docs/releases/1.0.0-build-24-local-v1.md": (
-        "00676938d150e712758de1fe146733adfed93c1478107a6884cc6873ed439ac0",
-        "77034fbe64ab2ebd6bcdb2c3c1005644958c546deccecf8b1bf57c1c20ae119d",
+        "91139015432a8add3caa77b89c0eb9e92b84abbe8ff14ccbcca3c60ae5c4c04d",
+        "c44c71578445b5f1a9d1f3f78871f0f633d3d3ac9cd269103e663e3ae3793a5e",
     ),
 }
 CURRENT_MACOS_CLEAN_HOME_LIFECYCLE_DOCUMENT_NEIGHBORS = {
@@ -2472,13 +2472,21 @@ CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_END = (
 )
 CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_BODY = """\
 **Current G7 local non-security Merge-full candidate status.** The
-current-source local runner executes 83 exact ordered commands and publishes
+current-source local runner executes 88 exact ordered commands and publishes
 `.build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/candidate.json` only
-after every command exits zero, all 36 artifacts and eleven implementation inputs
+after every command exits zero, all 41 artifacts and nineteen implementation inputs
 read back from current bytes, the source snapshot is unchanged across child
 readbacks, and a requested running-app PID retains its exact identity. The
 result uses canonical ASCII JSON, mode 0600, atomic publication, and a separate
 read-only checker.
+
+The producer accepts only the exact candidate-private result path and holds one
+nonblocking shared Release-workspace lock for the complete run. The Android A/B
+child inherits the held descriptor, while standalone A/B runs acquire the same
+lock, so concurrent Gradle/output cleanup cannot mix two evidence graphs. The
+checker independently pins the complete ordered argv and timeout projection for
+all 88 commands with one fixed contract digest; no command is validated by ID
+alone.
 
 Its current-run successor binds one fresh 2,175-identity discovery to two
 children from the same final checkout. The OS network-denied child passes
@@ -2494,14 +2502,14 @@ documentation identity. The focused carrier
 is not OS egress-denied, so the parent claims local-socket execution but not
 external-network denial for that child.
 
-The 83-command candidate now executes and binds that current-run child and
+The 88-command candidate now executes and binds that current-run child and
 parent inside the same unchanged-source transaction rather than retaining it
 as a disconnected successor. Its closed coverage records the 2,175-test fresh
 discovery, 1,204-test network-denied child, four-test local-socket contribution,
 1,208-test reviewed parent, and 967-test remaining partition. Both independent
 current-run readbacks execute once at production time and again after every
 other platform gate, while the candidate also records all six current-run
-files as immutable child artifacts.
+files as byte-bound child artifacts.
 
 The Android core successor adds exact method-level allowlists for 96 protocol
 model/codec tests and 16 injected fake-socket transport lifecycle tests. It
@@ -2510,6 +2518,24 @@ prepares two source markers, forces both module tasks offline with
 two module-specific bindings, and repeats their independent readback at final
 candidate closure. Pairing, authentication, cryptography, relay/P2P, Bonjour,
 network-policy, actual `ServerSocket`, and device tests remain excluded.
+
+The Android Release successor replaces the earlier single Release build with
+one source-bound A/B producer. Its exact 23-test producer/checker contract runs
+before material execution. The producer validates the product CI contract and
+executes two separate offline `--rerun-tasks` graphs for `assembleRelease`,
+`bundleRelease`, and `lintRelease`, with stable source snapshots before,
+between, and after the runs. It keeps Run A only in a mode-0700/0600 private
+temporary tree, compares the full bounded output graph including the lint XML
+against Run B, removes
+the temporary tree, and leaves Run B for live readback. The mode-0600
+single-link create-only result is stored in the candidate-private Android child
+directory. Immediately before the producer, only that exact allowlisted child
+is cleared and recreated at mode 0700; symlinked or unallowlisted targets fail
+closed. The result and live Run-B graph are read back immediately, again during
+final candidate closure, and once more by the outer independent candidate
+checker. This is same-host/current-toolchain unsigned output evidence. Gradle
+runs offline, but no OS-level egress-denied, device, install, launch, signing,
+store, RC, GA, or V1 claim is made.
 
 An exact per-test re-audit corrected the earlier suite-level exhaustion claim.
 The new strict V5 component adds 26 identities: 25 pure localization/state/copy
@@ -2544,17 +2570,21 @@ network-deny sandbox. The matrix also covers 57 DocumentIngestion ASan tests,
 two mutation XCTest identities and 96 deterministic mutation cases, 19 Android
 app classes and 1,226 app tests, 112 Android core non-security tests, zero
 Android lint issues, and 22 Release compliance tests. It also builds and
-directly reads back the unsigned Android
-Release APK/AAB, the unsealed macOS app and dSYM, both diagnostics results, and
-the current-unsealed macOS install/recovery lifecycle result before repeating
-all final readbacks.
+runs two source-bound offline Android Release graphs, binds their A/B
+repeatability result, and directly reads back the final unsigned APK/AAB. It
+also builds and reads back the unsealed macOS app and dSYM, both diagnostics
+results, and the current-unsealed macOS install/recovery lifecycle result before
+repeating all final readbacks.
 
 Only the macOS package gate receives the fixed external Swift scratch path. The
 runner acquires the existing nonblocking reproducibility lock, creates a
 mode-0600 no-follow exclusive lease, rejects a pre-existing scratch or lease,
 and validates and removes only its owned scratch and lease in `finally`. This
 keeps repository `.build` evidence and the candidate parent intact across the
-package producer's clean build.
+package producer's clean build. The runner also overrides any caller value with
+`SWIFT_DETERMINISTIC_HASHING=1`; the schema-5 parent records that exact
+environment and the complete ordered Swift reproducibility arguments, and the
+producer-independent idle checker pins both contracts.
 
 Every producer gate and independent readback drains stdout and stderr
 concurrently while enforcing its own combined byte ceiling against an absolute
@@ -2598,39 +2628,41 @@ own direct checker; byte equality between that output and the fixed-scratch
 packaged archive is neither expected nor claimed.
 
 A successor current-source Lane-A run bound 270 release inputs at SHA-256
-`31569a364149d8e530ef91fbe2f573cf98c2460e888455301b9d4ce9d2e2c89f`
+`0f60bdf71798629eb2d287fe45990dc29d3df1a29ed34aa9a1e3c993fb5899cd`
 and overlay SHA-256
-`f58a1ff36c88ea5df86fb4f1c0233bd8204c23e03f3229eff7f08f76d91790ed`.
-Its unequal roots produced the same 167,219,112-byte archive at SHA-256
-`24339b6613c861ecaaa92f358c87e2209eba2b55ab089233d31ead7750829ff1`,
+`012e80b5af0f1a7759501c3ce0b43f659be41688cd4cd21c67bfdc244cd9da88`.
+Its unequal roots produced the same 167,219,114-byte archive at SHA-256
+`186e87de19d52a42c78bc77b32d6d6dc36d2a5de64dc541d085628eead1faf30`,
 with manifest SHA-256
-`a209f5f99e3ba3c980ed1da8df6ecc50282b0d0a1a25889d9eac435c0a6c05d8`
+`017a15b00e756d80c15c64af8d608f5761e36e53b27d504056e0e4d89660e906`
 and checksum-sidecar SHA-256
-`dc2d96a254b57c944f860da4e94635e4714b4d72a5e75fd2b83cb8f6be4db869`.
-The mode-0600 parent is 19,645 bytes at SHA-256
-`923e58524082a2ec44b43d8967a112ef763a94eaa32e4818fd7297730fa76894`.
+`7aa79d38753830e9c7294ae59d1a7970e3e9fbfeae3d34659ca03474b49d9a5e`.
+The mode-0600 parent is 19,695 bytes at SHA-256
+`e250a341d47a5a07d011291bcc81169d39c7145c3d170e81409316963f65d058`.
 
 The same transaction recorded two independent current-source idle
 observations, each with 120 samples after a 60-second warm-up and during a
-10-minute window. Their 22,399-byte results have SHA-256
-`a69765cae502a6ca9251864ce314d2cb380b4d81455df42013b51d9c3f8458a6`
+10-minute window. Their 22,407- and 22,411-byte results have SHA-256
+`b2771c583115ad6c185ac49024386cdd5fe1301dc7fc741cd71227e911b87e91`
 and
-`ea2a956bae1429e1a94be806d2c30ce7e0ab5a0e1437996f85ee62f7571c8e88`.
-Both recorded maximum sample lateness of 80 milliseconds, zero final and peak
-FD/thread deltas, and zero final and peak RSS deltas; their differing RSS
-baselines were 140,787,712 and 135,233,536 bytes. The shared installed app tree
+`dc8632700c93bfd04945efb9e670d90b4fba74bb0670fedb9044a95206cf6649`.
+They recorded maximum sample lateness of 81 and 82 milliseconds. Both held
+final and peak FD deltas at zero. Run A's final/peak thread deltas were 0/1 and
+Run B's were 1/8; their final/peak RSS deltas were 16,384/32,768 and
+344,064/557,056 bytes against baselines of 145,473,536 and 138,690,560 bytes.
+The shared installed app tree
 contains 10 files and 21,356,454 bytes at SHA-256
 `8aa2ac6d29bc790d96361ea30ee7af520a294aa8a065b79e59c758bf60f36b55`.
-The 2,409-byte receipt has SHA-256
-`1562c96a921c226e35ee9d2b0c3326eca9f977176c00f3f5003f26ca082f633f`
+The 2,413-byte receipt has SHA-256
+`e95ca390f2d59c52fcf48d145afcddd585226ae1e1411d1c925c4b70b361ca96`
 and binds a 3,102-byte invariant projection at SHA-256
-`22748073f83eb3b33d8ee613e862d294f6967d1335a8cb69f4ff0f7daf94889e`.
+`ac8d5c20232cc06f20cffe17bf21fde7114d1ccc5efca1a2c71f309393ea9ef9`.
 It records `resultBytesEqual=false` and does not require measurement/result
 byte equality. A producer-independent `python -I -B -S` checker reopened the
 parent, both observations, and receipt and independently recomputed every
 sample schedule, summary, budget, hash, and source/archive binding. The
-product-quality macOS lifecycle step runs its six mutation regressions as part
-of an exact 76-test command; it does not execute or claim a live idle
+product-quality macOS lifecycle step runs its seven checker regressions as part
+of an exact 93-test command; it does not execute or claim a live idle
 observation. This is same-host evidence for two bounded observations only, not
 Weekly resilience, long soak, SLA/capacity, cross-host, or production evidence.
 
@@ -2640,7 +2672,7 @@ execution, hosted CI,
 signed artifacts, security/authentication/cryptography execution, canonical
 Merge-full, canonical G7 exit, RC/GA, or V1 qualification."""
 CURRENT_G7_NONSECURITY_MERGE_FULL_LOCAL_CANDIDATE_DOCUMENT_BODY_SHA256 = (
-    "b7d56c3356c33031da59d67069b46c810e553fd9bbfc6538d25124938e41d7fe"
+    "13e2b039fcd57a4dc954d5dc4f6ed3d93140b3a2836bf9ecb670ef59bcf76362"
 )
 CURRENT_G6_RELEASE_DIAGNOSTICS_DOCUMENT_START = (
     "<!-- aetherlink-current-g6-release-diagnostics-usability-v1:start -->"
@@ -2789,8 +2821,8 @@ CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_BODY = """\
 non-security workflow is schedule-only on `main` at `37 18 * * *` (18:37 UTC).
 Its producer uses an arm64 `macos-26` runner; a separate `ubuntu-24.04` job
 performs downloaded-byte readback. The scheduled commit is materialized with
-`git archive`, Android dependencies are prepared online, and the evidence
-producer then performs the exact offline Debug build. The workflow raw and
+`git archive`, Android dependencies are prepared online, and each lifecycle
+producer then performs its own exact offline Debug rebuild. The workflow raw and
 parsed-semantic SHA-256 values are
 `77ce2a1cc0ce112dbe3f47b9061b4ceba30c56ed26d070daef88af44766dfe78`
 and
@@ -2799,31 +2831,35 @@ The exact Nightly contract passes 101/101 tests, including all 86 lifecycle
 tests and all 41 V2 successor tests, with zero skips, failures, or errors.
 
 The current-source disposable arm64 API 36.1 V1 run passes 13/13 scenarios in
-192.785 seconds. Its canonical 50,450-byte result is
-`build/qa/android-headless-api36-1-20260802T192321Z-4828f0e5/result.json`,
+195.117 seconds. Its canonical 50,450-byte result is
+`build/qa/android-headless-api36-1-20260803T072124Z-5a67b8c9/result.json`,
 SHA-256
-`9aae98e6a9e7a6ee62ba1afdb989b7964d77975583b2eb56aee3a0c5dd8fa9f5`;
+`e0910e538e64342cfe2cb04a3861dfdda8ee6d870a6ed80d55d3c9c1b8eaf108`;
 its bound 135-file source snapshot has SHA-256
 `0ac2aec99995a024eaef2c8ad66420d9a8107b2fef17185002eae8214edbbaaa`
 and contains 46 evidence files. The following V2 run passes background deep
 Doze, same-UID app-process `SIGKILL` recovery, same-QEMU guest reboot,
 future-version saved-data preservation, and versionless-data migration across
-two cold launches: 5/5 in 160.338 seconds. Its canonical 56,498-byte result is
-`build/qa/android-headless-api36-1-v2-20260802T200855Z-ec8ee58e/result.json`,
+two cold launches: 5/5 in 161.339 seconds. Its canonical 56,498-byte result is
+`build/qa/android-headless-api36-1-v2-20260803T072511Z-c4d8e2f1/result.json`,
 SHA-256
-`3d7f9e7d397b13699e2d758cfd45693fc457b3f14b98d3328bd87b45aebf2dc4`;
+`188cd3e752e2fc02e992ead9920cbe91678acb3ad7da74e912eaed88e3d3dd47`;
 its bound 145-file source snapshot has SHA-256
-`24e56c836734dbf2391125200b9164b58812ee410f3f237811719cdebd888413`
-and contains 72 evidence files. Independent V1 and V2 checkers reopen their
-complete descriptor-relative no-follow graphs and pass 13/13 and 5/5. Both
-runs bind the same 49,508,473-byte Debug APK, SHA-256
+`e02b83154427672a7a7028a0103667ec2de3ce1e20e1aa30c9015967c43eafe5`
+and contains 72 evidence files. An independent V1 checker reopens and verifies
+all 46 contracted evidence paths and passes 13/13. The independent V2 checker
+holds a closed descriptor-relative no-follow graph and passes 5/5. Both runs
+bind the same 49,508,473-byte Debug APK, SHA-256
 `605539f33a2e6bd4befd2c710402645a1134dafe94d51617b77069667c4a02a6`,
 and cleanup leaves no owned emulator or ADB transport.
 
-For a hosted run, one build feeds V1 and then V2. Each complete graph is
-captured before semantic validation; V1 is reconstructed in a private tree so
-its checker reads the captured bytes, and the original graph must remain
-unchanged. One deterministic USTAR contains `lifecycle-v1/`, `lifecycle-v2/`,
+For a hosted run, dependency preparation builds once, then V1 and V2 each
+perform their own exact offline rerun build in separate disposable AVDs. Each
+lane's contracted evidence set is captured before semantic validation; V1's
+captured expected paths are reconstructed in a private tree, while V2 is
+validated from its held closed no-follow graph. The original captured paths or
+graph must remain unchanged. One deterministic USTAR contains `lifecycle-v1/`,
+`lifecycle-v2/`,
 and `nightly-provenance.json`; provenance schema 2 binds the ordered lanes and
 both source manifests to the same `GITHUB_SHA`. The producer performs deep
 two-lane local readback, uploads the raw tar with `archive: false`, compares the
@@ -2841,7 +2877,7 @@ provider, controlled production networking, release-to-release upgrade or
 rollback, signing/store delivery, complete Nightly coverage, canonical G7
 exit, RC/GA, or V1 release."""
 CURRENT_G7_ANDROID_HEADLESS_NIGHTLY_DOCUMENT_BODY_SHA256 = (
-    "c4ae7aa36fe142f317b389a85a4fa69e967b2cfd9ba39e26bf46373221544005"
+    "2471f027dfb5f23b6caf7c046f4c4c20fe2b5e493837e8bb1dd6e3750d4ab63c"
 )
 CURRENT_ANDROID_LOCAL_DATA_COMPATIBILITY_DOCUMENT_START = (
     "<!-- aetherlink-current-android-local-data-compatibility-v1:start -->"

@@ -302,7 +302,7 @@ LANE_A_LOCAL_DMG_SQLITE_READBACK_OBSERVATION = {
     "size": 71,
     "status": "passed",
 }
-RESULT_SCHEMA_VERSION = 4
+RESULT_SCHEMA_VERSION = 5
 RESULT_PATH_VERSION = 4
 COMPARISON_ONLY_MODE = "comparison-only"
 PUBLISH_QUALIFIED_MODE = "publish-qualified"
@@ -373,6 +373,9 @@ SWIFT_REPRO_ARGUMENTS = (
     "-Xlinker",
     "-reproducible",
 )
+SWIFT_REPRO_ENVIRONMENT = {
+    "SWIFT_DETERMINISTIC_HASHING": "1",
+}
 
 
 class ReproducibilityError(RuntimeError):
@@ -2651,6 +2654,7 @@ def run_lane(
             "AETHERLINK_REPRO_SWIFT_SCRATCH_PATH": str(SWIFT_SCRATCH),
             "GRADLE_USER_HOME": str(gradle_home),
             "LC_ALL": "C",
+            **SWIFT_REPRO_ENVIRONMENT,
         }
     )
     exit_code = 6 if lane_id == "build-a" else 7
@@ -6793,6 +6797,7 @@ def empty_result(
         "source": None,
         "status": "failed",
         "toolchainPolicy": {
+            "environment": dict(SWIFT_REPRO_ENVIRONMENT),
             "scope": "same-host-fixed-toolchain-cache-snapshot",
             "swiftArguments": list(SWIFT_REPRO_ARGUMENTS),
         },

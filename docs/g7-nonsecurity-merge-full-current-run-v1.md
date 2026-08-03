@@ -30,23 +30,23 @@ does not claim external-network denial for that child.
 | Artifact | Bytes | SHA-256 |
 | --- | ---: | --- |
 | Execution contract | 134,721 | `6a865e807125a54ccff84997f5438562dae4eb116029507cb0b023887d5d2778` |
-| Run marker | 364 | `1188cbf16fea029a74a55c32ab5b2bf0cb670c58a7f2fffa345ac46418059958` |
-| Swift console | 384,189 | `f02ab74e76d8a22f120f14ddf8a8353034b7fbb73b70397ef3302b6a547cb3ba` |
-| Binding | 714 | `b59d34f1c57469ca9f2553a2d2f71cb5b10fd0e03e3dbc41bf9a7dabb7551176` |
-| No-socket result | 3,389 | `365463020e3655bb3a7e721a36e97ba428a3b1097506f5dc3bec8a35a854ffc4` |
-| Parent result | 2,679 | `06ed3a3bbe0add80d49edbf04e258258cec3955d4b14f847bdebfe2f9fe75557` |
+| Run marker | 364 | `39559c1e773f43532e5c1a0aecfa0f2d5fb4753e43efa6956bae0aad55a1b84c` |
+| Swift console | 384,189 | `dcb3541555dd11a97412b2ea990454b177ab5d13e0f25f7957d5613804cf9b70` |
+| Binding | 714 | `02706861c3619ffd27dad449ef4a0494b86f2b87f0c7d8382843adc2be727d24` |
+| No-socket result | 3,389 | `4051ec72b4aaa27002c9f44485fb9777e3ab0e1f3872f5017982f6e9d57afcf0` |
+| Parent result | 2,679 | `64e5526ca18702f86bada85e52c36c0fe3365627dbbf911cc4247572205a9004` |
 
 All six files are under
 `.build/aetherlink-g7-nonsecurity-merge-full-current-run-v1/`. They are local,
 ignored current-source evidence rather than retained release artifacts. The
 no-socket result binds 237 source inputs at aggregate SHA-256
-`19cc60f2cd78b2cb2da68de37bc962b8e8ec4abe2551f9e990767ec850d67ee1`.
+`29e6f15b7d3aa6672f9a6df752eeba9dfb0b2c7a8ec95941cb8b360b52956e15`.
 The focused child separately binds 219 source inputs at SHA-256
 `0bf09c31288253851ee509b9aea602a14bfa89273a477bcade234087d095c160`.
 Its marker, console, and binding are respectively 363, 67,853, and 711 bytes
 with SHA-256 `6ee2a4f45bfebc46c5085a8d674bd4b15f925f120177e62eb3cc8523fb3f80e8`,
-`30308af5912946be363be7eb9813e20596997de19a5621cd870e6cb297ef537f`,
-and `d76a694fdd8bb30c0fbe6e22a70f19bf41c779e79874d57ad4326171f066281f`.
+`80a84fb24cf4d5d77413434002f9ad456ce519fa1269ba6f3fea42e2f7431fe5`,
+and `f3617058a946268aff0be241ea36cb209387a99368da13787f050bfd6640799b`.
 
 ## Exact selection
 
@@ -97,10 +97,10 @@ pairing path.
 ## Verification performed
 
 - The fresh focused carrier passed 222/222 tests with zero failures and zero
-  skips in 22.139 seconds. Its exact four local-socket identities each have one
+  skips in 23.746 seconds. Its exact four local-socket identities each have one
   started event followed by one passed event.
 - One serial network-denied Swift invocation passed 1,204/1,204 tests with
-  zero failures and zero skips in 188.926 seconds; the bounded runner preserved
+  zero failures and zero skips in 189.494 seconds; the bounded runner preserved
   the running app PID 59809.
 - Thirty-six producer/checker regression tests passed, including the exact
   V5/V6 manifest and filter contracts, max-plus-one byte rejection, exact

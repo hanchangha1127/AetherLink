@@ -16,6 +16,7 @@ import unittest
 from unittest import mock
 
 from script import check_g7_nonsecurity_merge_full_candidate as checker
+from script import run_g7_nonsecurity_merge_full_candidate as producer
 
 
 EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
@@ -70,21 +71,21 @@ class CandidateFixture:
 
     def document(self, *, requested_pid: bool = True) -> dict[str, object]:
         command_records = []
+        gates = {gate.identifier: gate for gate in producer.ALL_GATES}
+        if tuple(gates) != checker.EXPECTED_COMMAND_IDS:
+            raise AssertionError("producer/checker command identifiers differ")
         for command_id in checker.EXPECTED_COMMAND_IDS:
-            argv = checker.CRITICAL_COMMAND_ARGV.get(
-                command_id,
-                ("fixture-command", command_id),
-            )
+            gate = gates[command_id]
             command_records.append(
                 {
-                    "argv": list(argv),
+                    "argv": list(gate.argv),
                     "cwd": ".",
                     "elapsedMilliseconds": 1,
                     "exitCode": 0,
                     "id": command_id,
                     "stderr": {"sha256": EMPTY_SHA256, "size": 0},
                     "stdout": {"sha256": EMPTY_SHA256, "size": 0},
-                    "timeoutSeconds": 60,
+                    "timeoutSeconds": gate.timeout_seconds,
                 }
             )
         if requested_pid:
@@ -154,19 +155,26 @@ class G7NonsecurityMergeFullCandidateCheckerTests(unittest.TestCase):
     def test_baseline_and_unrequested_pid_seam_pass(self) -> None:
         temporary, fixture = self.with_fixture()
         with temporary:
-            self.assertEqual(len(checker.EXPECTED_COMMAND_IDS), 83)
-            self.assertEqual(len(checker.EXPECTED_ARTIFACT_PATHS), 36)
-            self.assertEqual(len(checker.EXPECTED_IMPLEMENTATION_PATHS), 11)
+            self.assertEqual(len(checker.EXPECTED_COMMAND_IDS), 88)
+            self.assertEqual(len(checker.EXPECTED_ARTIFACT_PATHS), 41)
+            self.assertEqual(len(checker.EXPECTED_IMPLEMENTATION_PATHS), 19)
             self.assertEqual(
                 checker.MACOS_LIFECYCLE_RESULT_RELATIVE_PATH,
                 Path(
                     ".build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/"
-                    "macos-current-unsealed-lifecycle-v4/result.json"
+                    "macos-current-unsealed-lifecycle-v5/result.json"
                 ),
             )
             self.assertNotIn(
-                "macos-current-unsealed-lifecycle-v3",
+                "macos-current-unsealed-lifecycle-v4",
                 checker.MACOS_LIFECYCLE_RESULT_RELATIVE_PATH.as_posix(),
+            )
+            self.assertEqual(
+                checker.ANDROID_RELEASE_REPEATABILITY_RESULT_RELATIVE_PATH,
+                Path(
+                    ".build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/"
+                    "android-release-repeatability-v1/result.json"
+                ),
             )
             self.assertIn(
                 Path("script/g7_reviewed_nonsecurity_swift_addon_identities_v6.txt"),
@@ -334,6 +342,41 @@ class G7NonsecurityMergeFullCandidateCheckerTests(unittest.TestCase):
             first["id"] = "different"
             self.assert_rejected(fixture, document)
 
+    def test_every_command_argv_and_timeout_are_closed_by_full_contract(self) -> None:
+        temporary, fixture = self.with_fixture()
+        with temporary:
+            baseline = fixture.document()["commands"]
+            self.assertIsInstance(baseline, list)
+            checker.validate_commands(copy.deepcopy(baseline))
+            projection = [
+                {
+                    "argv": command["argv"],
+                    "id": command["id"],
+                    "timeoutSeconds": command["timeoutSeconds"],
+                }
+                for command in baseline
+            ]
+            self.assertEqual(
+                hashlib.sha256(checker.canonical_json_bytes(projection)).hexdigest(),
+                checker.EXPECTED_COMMAND_CONTRACT_SHA256,
+            )
+            for index, identifier in enumerate(checker.EXPECTED_COMMAND_IDS):
+                with self.subTest(identifier=identifier, mutation="argv"):
+                    commands = copy.deepcopy(baseline)
+                    commands[index]["argv"].append("--unexpected")
+                    with self.assertRaises(checker.CandidateError):
+                        checker.validate_commands(commands)
+                with self.subTest(identifier=identifier, mutation="timeout"):
+                    commands = copy.deepcopy(baseline)
+                    commands[index]["timeoutSeconds"] += 1
+                    with self.assertRaises(checker.CandidateError):
+                        checker.validate_commands(commands)
+                with self.subTest(identifier=identifier, mutation="bool-timeout"):
+                    commands = copy.deepcopy(baseline)
+                    commands[index]["timeoutSeconds"] = True
+                    with self.assertRaises(checker.CandidateError):
+                        checker.validate_commands(commands)
+
     def test_expanded_swift_command_argv_and_artifacts_are_closed(self) -> None:
         expanded_ids = (
             "g7-nonsecurity-swift-prepare",
@@ -469,6 +512,171 @@ class G7NonsecurityMergeFullCandidateCheckerTests(unittest.TestCase):
             checker.ANDROID_CORE_NONSECURITY_READBACK_COMMAND,
             checker.READBACK_COMMANDS,
         )
+
+    def test_android_release_repeatability_contract_is_closed(self) -> None:
+        command_ids = (
+            "android-release-repeatability-contract-tests",
+            "android-release-repeatability-produce",
+            "android-release-repeatability-readback",
+            "final-android-release-repeatability-readback",
+        )
+        temporary, fixture = self.with_fixture()
+        with temporary:
+            for identifier in command_ids:
+                with self.subTest(identifier=identifier, mutation="argv"):
+                    document = fixture.document()
+                    commands = document["commands"]
+                    self.assertIsInstance(commands, list)
+                    index = checker.EXPECTED_COMMAND_IDS.index(identifier)
+                    command = commands[index]
+                    self.assertIsInstance(command, dict)
+                    argv = command["argv"]
+                    self.assertIsInstance(argv, list)
+                    argv[-1] = "--mutated-repeatability-contract"
+                    self.assert_rejected(fixture, document)
+                with self.subTest(identifier=identifier, mutation="timeout"):
+                    document = fixture.document()
+                    commands = document["commands"]
+                    self.assertIsInstance(commands, list)
+                    index = checker.EXPECTED_COMMAND_IDS.index(identifier)
+                    command = commands[index]
+                    self.assertIsInstance(command, dict)
+                    timeout = command["timeoutSeconds"]
+                    self.assertIsInstance(timeout, int)
+                    command["timeoutSeconds"] = timeout + 1
+                    self.assert_rejected(fixture, document)
+
+        temporary, fixture = self.with_fixture()
+        with temporary:
+            document = fixture.document()
+            (
+                fixture.root
+                / checker.ANDROID_RELEASE_REPEATABILITY_RESULT_RELATIVE_PATH
+            ).write_bytes(b"drift\n")
+            self.assert_rejected(fixture, document)
+
+        repeatability_inputs = (
+            Path("script/check_android_release_repeatability_current.py"),
+            Path("script/run_android_release_repeatability_current.py"),
+            Path("script/test_check_android_release_repeatability_current.py"),
+            Path("script/test_run_android_release_repeatability_current.py"),
+        )
+        for relative in repeatability_inputs:
+            with self.subTest(implementation=relative.as_posix()):
+                temporary, fixture = self.with_fixture()
+                with temporary:
+                    document = fixture.document()
+                    (fixture.root / relative).write_bytes(b"drift\n")
+                    self.assert_rejected(fixture, document)
+
+        self.assertIn(
+            checker.ANDROID_RELEASE_REPEATABILITY_READBACK_COMMAND,
+            checker.READBACK_COMMANDS,
+        )
+        self.assertEqual(
+            checker.READBACK_TIMEOUT_BY_COMMAND[
+                checker.ANDROID_RELEASE_REPEATABILITY_READBACK_COMMAND
+            ],
+            1800,
+        )
+
+    def test_macos_idle_repeatability_contract_and_current_source_are_closed(self) -> None:
+        self.assertEqual(
+            checker.MACOS_CURRENT_SOURCE_IDLE_REPEATABILITY_READBACK_COMMAND[:4],
+            ("python3", "-I", "-B", "-S"),
+        )
+        command_ids = (
+            "macos-current-source-idle-repeatability-readback",
+            "final-macos-current-source-idle-repeatability-readback",
+        )
+        for identifier in command_ids:
+            self.assertEqual(
+                checker.CRITICAL_COMMAND_ARGV[identifier],
+                checker.MACOS_CURRENT_SOURCE_IDLE_REPEATABILITY_READBACK_COMMAND,
+            )
+            self.assertEqual(
+                checker.CRITICAL_COMMAND_TIMEOUT_SECONDS[identifier],
+                300,
+            )
+        self.assertEqual(
+            checker.READBACK_COMMANDS.count(
+                checker.MACOS_CURRENT_SOURCE_IDLE_REPEATABILITY_READBACK_COMMAND
+            ),
+            1,
+        )
+
+        idle_artifacts = (
+            checker.MACOS_CURRENT_SOURCE_IDLE_RUN_B_RELATIVE_PATH,
+            checker.MACOS_CURRENT_SOURCE_IDLE_RECEIPT_RELATIVE_PATH,
+            checker.MACOS_CURRENT_SOURCE_IDLE_RUN_A_RELATIVE_PATH,
+            checker.MACOS_CURRENT_SOURCE_IDLE_PARENT_RELATIVE_PATH,
+        )
+        for relative in idle_artifacts:
+            with self.subTest(artifact=relative.as_posix()):
+                temporary, fixture = self.with_fixture()
+                with temporary:
+                    document = fixture.document()
+                    (fixture.root / relative).write_bytes(b"drift\n")
+                    self.assert_rejected(fixture, document)
+
+        idle_inputs = (
+            Path("script/check_macos_current_source_lane_a_idle_resource_repeatability.py"),
+            Path("script/run_macos_current_source_lane_a_idle_resource_stability_smoke.py"),
+            Path("script/test_check_macos_current_source_lane_a_idle_resource_repeatability.py"),
+            Path("script/test_run_macos_current_source_lane_a_idle_resource_stability_smoke.py"),
+        )
+        for relative in idle_inputs:
+            with self.subTest(implementation=relative.as_posix()):
+                temporary, fixture = self.with_fixture()
+                with temporary:
+                    document = fixture.document()
+                    (fixture.root / relative).write_bytes(b"drift\n")
+                    self.assert_rejected(fixture, document)
+
+        temporary, fixture = self.with_fixture()
+        with temporary:
+            source = {
+                "algorithm": checker.SOURCE_ALGORITHM,
+                "fileCount": 270,
+                "sha256": "a" * 64,
+            }
+            parent_path = (
+                fixture.root / checker.MACOS_CURRENT_SOURCE_IDLE_PARENT_RELATIVE_PATH
+            )
+            parent_path.write_bytes(
+                checker.canonical_json_bytes(
+                    {"source": {**source, "overlaySha256": "b" * 64}}
+                )
+            )
+            with mock.patch.object(
+                checker.package_release,
+                "source_snapshot",
+                return_value={**source, "files": []},
+            ):
+                self.assertEqual(
+                    checker.validate_idle_current_release_source_binding(
+                        fixture.root
+                    ),
+                    source,
+                )
+                parent_path.write_bytes(
+                    checker.canonical_json_bytes(
+                        {
+                            "source": {
+                                **source,
+                                "sha256": "c" * 64,
+                                "overlaySha256": "b" * 64,
+                            }
+                        }
+                    )
+                )
+                with self.assertRaisesRegex(
+                    checker.CandidateError,
+                    "differs from current Release source bytes",
+                ):
+                    checker.validate_idle_current_release_source_binding(
+                        fixture.root
+                    )
 
     def test_child_readback_accepts_output_at_exact_combined_limit(self) -> None:
         command = (

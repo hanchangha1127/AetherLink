@@ -137,6 +137,24 @@ class AndroidReleaseRepeatabilityCheckerTests(unittest.TestCase):
                 with self.assertRaises(checker.RepeatabilityCheckError):
                     checker.validate_projection(value, "projection")
 
+    def test_lint_xml_is_independently_required_as_raw_ab_output(self) -> None:
+        limits = checker.static_output_file_limits()
+        self.assertEqual(
+            limits[checker.LINT_XML_RELATIVE_PATH],
+            16 * 1024 * 1024,
+        )
+        self.assertNotIn(
+            checker.LINT_XML_RELATIVE_PATH.as_posix(),
+            checker.NORMALIZED_COMPARISON_PATHS,
+        )
+        self.assertEqual(
+            checker.comparison_identity(checker.LINT_XML_RELATIVE_PATH, b"<issues/>"),
+            {
+                "kind": checker.RAW_COMPARISON_KIND,
+                "sha256": hashlib.sha256(b"<issues/>").hexdigest(),
+            },
+        )
+
     def test_exact_bool_rejects_integer_one(self) -> None:
         with self.assertRaises(checker.RepeatabilityCheckError):
             checker.exact_bool(1, True, "flag")

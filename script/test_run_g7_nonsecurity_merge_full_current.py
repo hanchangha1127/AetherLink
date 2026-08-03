@@ -31,10 +31,11 @@ class CurrentRunPartitionTests(unittest.TestCase):
         self.assertEqual(len(partition.v4_new), 53)
         self.assertEqual(len(partition.v5_new), 26)
         self.assertEqual(len(partition.v6_new), 7)
+        self.assertEqual(len(partition.v7_new), 1)
         self.assertEqual(len(partition.current_additions), 2)
         self.assertEqual(len(partition.local_socket_excluded), 4)
-        self.assertEqual(len(partition.selected), 1_204)
-        self.assertEqual(len(partition.not_executed), 971)
+        self.assertEqual(len(partition.selected), 1_205)
+        self.assertEqual(len(partition.not_executed), 970)
         self.assertEqual(
             current.manifest_sha256(partition.selected),
             current.SELECTED_TEST_MANIFEST_SHA256,
@@ -53,6 +54,7 @@ class CurrentRunPartitionTests(unittest.TestCase):
             set(partition.v4_new),
             set(partition.v5_new),
             set(partition.v6_new),
+            set(partition.v7_new),
             set(partition.current_additions),
         )
         for index, left in enumerate(components):
@@ -96,9 +98,9 @@ class CurrentRunPartitionTests(unittest.TestCase):
         self.assertEqual(len(parent["focusedCarrier"]), 222)
         self.assertEqual(len(parent["focusedCarrierOverlap"]), 218)
         self.assertEqual(len(parent["localSocketExecuted"]), 4)
-        self.assertEqual(len(parent["noSocketExecuted"]), 1_204)
-        self.assertEqual(len(parent["reviewedExecuted"]), 1_208)
-        self.assertEqual(len(parent["remaining"]), 967)
+        self.assertEqual(len(parent["noSocketExecuted"]), 1_205)
+        self.assertEqual(len(parent["reviewedExecuted"]), 1_209)
+        self.assertEqual(len(parent["remaining"]), 966)
         self.assertEqual(
             current.manifest_sha256(parent["reviewedExecuted"]),
             current.PARENT_REVIEWED_TEST_MANIFEST_SHA256,
@@ -200,13 +202,14 @@ class CurrentRunPartitionTests(unittest.TestCase):
         self.assertEqual(payload["commandAndEnvironmentBytes"], current.command_environment_footprint(command or (), environment))
         selection = payload["selection"]
         self.assertIsInstance(selection, dict)
-        self.assertEqual(selection["selected"]["tests"], 1_204)  # type: ignore[index]
-        self.assertEqual(selection["notExecuted"]["tests"], 971)  # type: ignore[index]
+        self.assertEqual(selection["selected"]["tests"], 1_205)  # type: ignore[index]
+        self.assertEqual(selection["notExecuted"]["tests"], 970)  # type: ignore[index]
         self.assertEqual(selection["localSocketExcluded"]["tests"], 4)  # type: ignore[index]
         self.assertEqual(selection["currentV2Delta"]["tests"], 2)  # type: ignore[index]
         self.assertEqual(selection["v2CurrentNew"]["tests"], 628)  # type: ignore[index]
         self.assertEqual(selection["v5New"]["tests"], 26)  # type: ignore[index]
         self.assertEqual(selection["v6New"]["tests"], 7)  # type: ignore[index]
+        self.assertEqual(selection["v7New"]["tests"], 1)  # type: ignore[index]
 
     def test_discovery_order_exception_does_not_weaken_selected_order(self) -> None:
         partition = self.require_partition()
@@ -272,6 +275,7 @@ class CurrentRunPartitionTests(unittest.TestCase):
         )
         self.assertIn(current.V5_IDENTITY_RELATIVE_PATH, relative_paths)
         self.assertIn(current.V6_IDENTITY_RELATIVE_PATH, relative_paths)
+        self.assertIn(current.V7_IDENTITY_RELATIVE_PATH, relative_paths)
 
     def test_v5_manifest_is_exact_and_inside_the_prior_parent_remainder(self) -> None:
         partition = self.require_partition()
@@ -282,6 +286,7 @@ class CurrentRunPartitionTests(unittest.TestCase):
             set(partition.selected)
             - set(partition.v5_new)
             - set(partition.v6_new)
+            - set(partition.v7_new)
         )
         prior_remaining = (
             set(partition.discovered)
@@ -299,7 +304,11 @@ class CurrentRunPartitionTests(unittest.TestCase):
         identities, failures = current.load_v6_tests()
         self.assertEqual(failures, [])
         self.assertEqual(identities, partition.v6_new)
-        prior_selected = set(partition.selected) - set(partition.v6_new)
+        prior_selected = (
+            set(partition.selected)
+            - set(partition.v6_new)
+            - set(partition.v7_new)
+        )
         prior_remaining = (
             set(partition.discovered)
             - prior_selected
@@ -309,6 +318,23 @@ class CurrentRunPartitionTests(unittest.TestCase):
         self.assertFalse(set(partition.v6_new) & prior_selected)
         self.assertFalse(
             set(partition.v6_new) & set(partition.local_socket_excluded)
+        )
+
+    def test_v7_manifest_is_exact_and_inside_the_prior_parent_remainder(self) -> None:
+        partition = self.require_partition()
+        identities, failures = current.load_v7_tests()
+        self.assertEqual(failures, [])
+        self.assertEqual(identities, partition.v7_new)
+        prior_selected = set(partition.selected) - set(partition.v7_new)
+        prior_remaining = (
+            set(partition.discovered)
+            - prior_selected
+            - set(partition.local_socket_excluded)
+        )
+        self.assertTrue(set(partition.v7_new) <= prior_remaining)
+        self.assertFalse(set(partition.v7_new) & prior_selected)
+        self.assertFalse(
+            set(partition.v7_new) & set(partition.local_socket_excluded)
         )
 
     def test_failure_context_is_bounded_and_keeps_assertion_lines(self) -> None:

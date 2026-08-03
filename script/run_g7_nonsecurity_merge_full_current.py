@@ -3,13 +3,13 @@
 
 Historical V1-V4 candidates remain immutable snapshot evidence.  This runner
 reconstructs their reviewed identity union, the two current recovery
-regressions, and exact strict non-security V5/V6 manifests.  It removes four
-exact local-socket identities from this no-socket lane, then executes all 1,204
+regressions, and exact strict non-security V5/V6/V7 manifests.  It removes four
+exact local-socket identities from this no-socket lane, then executes all 1,205
 remaining identities in one serial
 network-denied Swift invocation.
-After the separately bound focused 222-test child and this 1,204-test child
+After the separately bound focused 222-test child and this 1,205-test child
 both pass on one test list, the optional parent result contributes only the
-four exact local-socket identities and records a 1,208-test reviewed union.
+four exact local-socket identities and records a 1,209-test reviewed union.
 It does not claim the complete Swift suite, canonical Merge-full, G7 exit, RC,
 GA, or V1 qualification.
 """
@@ -105,6 +105,18 @@ V6_TEST_COUNT = 7
 V6_TEST_MANIFEST_SHA256 = (
     "6b4991164cab03a5575a8c0d4a0526874571994e65e5bde612d8716333482a5d"
 )
+V7_IDENTITY_RELATIVE_PATH = Path(
+    "script/g7_reviewed_nonsecurity_swift_addon_identities_v7.txt"
+)
+V7_IDENTITY_PATH = ROOT / V7_IDENTITY_RELATIVE_PATH
+V7_IDENTITY_BYTES = 124
+V7_IDENTITY_RAW_SHA256 = (
+    "6894d0e26b04a0054f38b733dc553758e9e5b99b9f7b8df85098b6f08cbe4792"
+)
+V7_TEST_COUNT = 1
+V7_TEST_MANIFEST_SHA256 = (
+    "2f726fc2fd89ab9a4c7ec464dd94a3aeac0ee9e41811710ddf24baf5bc4ae9aa"
+)
 LOCAL_SOCKET_EXCLUSION_IDENTITIES = (
     "CompanionCoreTests.MacRuntimeConnectionManagerTests/"
     "testConcreteLocalListenerDefersAdvertisementAndRetriesAfterOccupiedPort",
@@ -123,25 +135,25 @@ CURRENT_FOCUSED_TEST_COUNT = 218
 CURRENT_FOCUSED_TEST_MANIFEST_SHA256 = (
     "a74d9e570a3e09e243f3f5ee239db4faa555e44cfd0c99790da71ea70b61285c"
 )
-SELECTED_TEST_COUNT = 1_204
+SELECTED_TEST_COUNT = 1_205
 SELECTED_TEST_MANIFEST_SHA256 = (
-    "fbab18434f821237178e87aab1e84ce58bf7e82802978439ae43fc1f95e76fde"
+    "33cf8415b21aa5bf727ac05cdaac6752c8929565fa934e2666128b35330bbd5b"
 )
-NOT_EXECUTED_TEST_COUNT = 971
+NOT_EXECUTED_TEST_COUNT = 970
 NOT_EXECUTED_TEST_MANIFEST_SHA256 = (
-    "018058edbc3b344da6a7fae3a8b077d9aad6fc3c7fd2929a1130c2cee4152974"
+    "f335a5eb4c097b59017994bce65520fc1a432fc30e1e7f8ea00baec9065aef10"
 )
 FOCUSED_CARRIER_TEST_COUNT = 222
 FOCUSED_CARRIER_TEST_MANIFEST_SHA256 = (
     "b481e814d8e0f7a2385e50fb5d0f0f8d1602f08b608eb373bb8960ce53547815"
 )
-PARENT_REVIEWED_TEST_COUNT = 1_208
+PARENT_REVIEWED_TEST_COUNT = 1_209
 PARENT_REVIEWED_TEST_MANIFEST_SHA256 = (
-    "ea63ec325a6125f4ae92c49c0ca9d3054e054369335bec6ebeb99c7256468846"
+    "26e97b0bf2349883b71677dfb614d15f8a2e920d3fc42036b6e1a08add7cf6a2"
 )
-PARENT_REMAINING_TEST_COUNT = 967
+PARENT_REMAINING_TEST_COUNT = 966
 PARENT_REMAINING_TEST_MANIFEST_SHA256 = (
-    "fe4c11470e53a92ff64fe31c143b7d587eacdfcdd68ac8af7c5ba7233d58e9e6"
+    "d6da7f2fc7954fa3cf81528028da42bc0b54ddd8320c28ebd07d757b93b2567e"
 )
 BASE_DISTINCT_TEST_COUNT = 393
 BASE_DISTINCT_TEST_MANIFEST_SHA256 = (
@@ -176,6 +188,10 @@ TRACKED_EXACT_SOURCE_RELATIVE_PATHS = (
     Path("script/g7_reviewed_nonsecurity_swift_addon_identities_v3.txt"),
     V5_IDENTITY_RELATIVE_PATH,
     V6_IDENTITY_RELATIVE_PATH,
+    V7_IDENTITY_RELATIVE_PATH,
+    Path("script/check_g7_nonsecurity_unit_scope_ledger.py"),
+    Path("script/g7_nonsecurity_unit_scope_ledger_v1.json"),
+    Path("script/test_check_g7_nonsecurity_unit_scope_ledger.py"),
     Path("script/run_g7_nonsecurity_merge_full_current.py"),
     Path("script/run_g7_nonsecurity_merge_full_candidate.py"),
     Path("script/test_check_g7_nonsecurity_merge_full_current.py"),
@@ -226,6 +242,7 @@ class CurrentRunPartition:
     v4_new: tuple[str, ...]
     v5_new: tuple[str, ...]
     v6_new: tuple[str, ...]
+    v7_new: tuple[str, ...]
     current_additions: tuple[str, ...]
     local_socket_excluded: tuple[str, ...]
     selected: tuple[str, ...]
@@ -338,6 +355,17 @@ def load_v6_tests() -> tuple[tuple[str, ...] | None, list[str]]:
     )
 
 
+def load_v7_tests() -> tuple[tuple[str, ...] | None, list[str]]:
+    return load_exact_tests(
+        label="V7",
+        relative_path=V7_IDENTITY_RELATIVE_PATH,
+        expected_bytes=V7_IDENTITY_BYTES,
+        expected_raw_sha256=V7_IDENTITY_RAW_SHA256,
+        expected_count=V7_TEST_COUNT,
+        expected_manifest_sha256=V7_TEST_MANIFEST_SHA256,
+    )
+
+
 def current_focused_filter() -> str:
     """Preserve the reviewed focused selector minus exact socket tests."""
     exclusion = "|".join(
@@ -409,6 +437,10 @@ def reconstruct_partition() -> tuple[CurrentRunPartition | None, list[str]]:
     failures.extend(v6_failures)
     if v6_new is None:
         return None, failures
+    v7_new, v7_failures = load_v7_tests()
+    failures.extend(v7_failures)
+    if v7_new is None:
+        return None, failures
 
     historical_focused = tuple(
         sorted(
@@ -471,7 +503,13 @@ def reconstruct_partition() -> tuple[CurrentRunPartition | None, list[str]]:
     )
     if not set(v6_new) <= pre_v6_parent_remaining:
         failures.append("V6 reviewed Swift must be inside the prior parent remainder")
-    selected = tuple(sorted(set(pre_v6_selected) | set(v6_new)))
+    pre_v7_selected = tuple(sorted(set(pre_v6_selected) | set(v6_new)))
+    pre_v7_parent_remaining = (
+        set(discovered) - set(pre_v7_selected) - set(local_socket_excluded)
+    )
+    if not set(v7_new) <= pre_v7_parent_remaining:
+        failures.append("V7 reviewed Swift must be inside the prior parent remainder")
+    selected = tuple(sorted(set(pre_v7_selected) | set(v7_new)))
     not_executed = tuple(sorted(set(discovered) - set(selected)))
     partition = CurrentRunPartition(
         discovered=tuple(discovered),
@@ -485,6 +523,7 @@ def reconstruct_partition() -> tuple[CurrentRunPartition | None, list[str]]:
         v4_new=tuple(v4_partition.selected),
         v5_new=v5_new,
         v6_new=v6_new,
+        v7_new=v7_new,
         current_additions=current_additions,
         local_socket_excluded=local_socket_excluded,
         selected=selected,
@@ -562,6 +601,12 @@ def reconstruct_partition() -> tuple[CurrentRunPartition | None, list[str]]:
             V6_TEST_MANIFEST_SHA256,
         ),
         (
+            "V7 new Swift",
+            partition.v7_new,
+            V7_TEST_COUNT,
+            V7_TEST_MANIFEST_SHA256,
+        ),
+        (
             "current additions Swift",
             partition.current_additions,
             CURRENT_ADDITION_TEST_COUNT,
@@ -605,6 +650,7 @@ def reconstruct_partition() -> tuple[CurrentRunPartition | None, list[str]]:
         set(partition.v4_new),
         set(partition.v5_new),
         set(partition.v6_new),
+        set(partition.v7_new),
         set(partition.current_additions),
     )
     if any(
@@ -698,6 +744,7 @@ def filter_components(
         ("v4Exact", addon_v4.exact_filter(partition.v4_new)),
         ("v5Exact", addon_v4.exact_filter(partition.v5_new)),
         ("v6Exact", addon_v4.exact_filter(partition.v6_new)),
+        ("v7Exact", addon_v4.exact_filter(partition.v7_new)),
         ("currentV2DeltaExact", addon_v4.exact_filter(partition.current_additions)),
     )
 
@@ -876,6 +923,7 @@ def execution_contract_payload(
             "v4New": partition_record(partition.v4_new),
             "v5New": partition_record(partition.v5_new),
             "v6New": partition_record(partition.v6_new),
+            "v7New": partition_record(partition.v7_new),
         },
         "singleSwiftInvocation": True,
     }
@@ -1174,6 +1222,7 @@ def compose_result_payload(
             "v4New": partition_record(partition.v4_new),
             "v5New": partition_record(partition.v5_new),
             "v6New": partition_record(partition.v6_new),
+            "v7New": partition_record(partition.v7_new),
         },
         "execution": {
             "commandAndEnvironmentBytes": execution_document.get(

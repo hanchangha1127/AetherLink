@@ -13,8 +13,8 @@ is active.
 non-security workflow is schedule-only on `main` at `37 18 * * *` (18:37 UTC).
 Its producer uses an arm64 `macos-26` runner; a separate `ubuntu-24.04` job
 performs downloaded-byte readback. The scheduled commit is materialized with
-`git archive`, Android dependencies are prepared online, and the evidence
-producer then performs the exact offline Debug build. The workflow raw and
+`git archive`, Android dependencies are prepared online, and each lifecycle
+producer then performs its own exact offline Debug rebuild. The workflow raw and
 parsed-semantic SHA-256 values are
 `77ce2a1cc0ce112dbe3f47b9061b4ceba30c56ed26d070daef88af44766dfe78`
 and
@@ -23,31 +23,35 @@ The exact Nightly contract passes 101/101 tests, including all 86 lifecycle
 tests and all 41 V2 successor tests, with zero skips, failures, or errors.
 
 The current-source disposable arm64 API 36.1 V1 run passes 13/13 scenarios in
-192.785 seconds. Its canonical 50,450-byte result is
-`build/qa/android-headless-api36-1-20260802T192321Z-4828f0e5/result.json`,
+195.117 seconds. Its canonical 50,450-byte result is
+`build/qa/android-headless-api36-1-20260803T072124Z-5a67b8c9/result.json`,
 SHA-256
-`9aae98e6a9e7a6ee62ba1afdb989b7964d77975583b2eb56aee3a0c5dd8fa9f5`;
+`e0910e538e64342cfe2cb04a3861dfdda8ee6d870a6ed80d55d3c9c1b8eaf108`;
 its bound 135-file source snapshot has SHA-256
 `0ac2aec99995a024eaef2c8ad66420d9a8107b2fef17185002eae8214edbbaaa`
 and contains 46 evidence files. The following V2 run passes background deep
 Doze, same-UID app-process `SIGKILL` recovery, same-QEMU guest reboot,
 future-version saved-data preservation, and versionless-data migration across
-two cold launches: 5/5 in 160.338 seconds. Its canonical 56,498-byte result is
-`build/qa/android-headless-api36-1-v2-20260802T200855Z-ec8ee58e/result.json`,
+two cold launches: 5/5 in 161.339 seconds. Its canonical 56,498-byte result is
+`build/qa/android-headless-api36-1-v2-20260803T072511Z-c4d8e2f1/result.json`,
 SHA-256
-`3d7f9e7d397b13699e2d758cfd45693fc457b3f14b98d3328bd87b45aebf2dc4`;
+`188cd3e752e2fc02e992ead9920cbe91678acb3ad7da74e912eaed88e3d3dd47`;
 its bound 145-file source snapshot has SHA-256
-`24e56c836734dbf2391125200b9164b58812ee410f3f237811719cdebd888413`
-and contains 72 evidence files. Independent V1 and V2 checkers reopen their
-complete descriptor-relative no-follow graphs and pass 13/13 and 5/5. Both
-runs bind the same 49,508,473-byte Debug APK, SHA-256
+`e02b83154427672a7a7028a0103667ec2de3ce1e20e1aa30c9015967c43eafe5`
+and contains 72 evidence files. An independent V1 checker reopens and verifies
+all 46 contracted evidence paths and passes 13/13. The independent V2 checker
+holds a closed descriptor-relative no-follow graph and passes 5/5. Both runs
+bind the same 49,508,473-byte Debug APK, SHA-256
 `605539f33a2e6bd4befd2c710402645a1134dafe94d51617b77069667c4a02a6`,
 and cleanup leaves no owned emulator or ADB transport.
 
-For a hosted run, one build feeds V1 and then V2. Each complete graph is
-captured before semantic validation; V1 is reconstructed in a private tree so
-its checker reads the captured bytes, and the original graph must remain
-unchanged. One deterministic USTAR contains `lifecycle-v1/`, `lifecycle-v2/`,
+For a hosted run, dependency preparation builds once, then V1 and V2 each
+perform their own exact offline rerun build in separate disposable AVDs. Each
+lane's contracted evidence set is captured before semantic validation; V1's
+captured expected paths are reconstructed in a private tree, while V2 is
+validated from its held closed no-follow graph. The original captured paths or
+graph must remain unchanged. One deterministic USTAR contains `lifecycle-v1/`,
+`lifecycle-v2/`,
 and `nightly-provenance.json`; provenance schema 2 binds the ordered lanes and
 both source manifests to the same `GITHUB_SHA`. The producer performs deep
 two-lane local readback, uploads the raw tar with `archive: false`, compares the
@@ -104,13 +108,21 @@ delivery, or production release.
 
 <!-- aetherlink-current-g7-nonsecurity-merge-full-local-candidate-v1:start -->
 **Current G7 local non-security Merge-full candidate status.** The
-current-source local runner executes 83 exact ordered commands and publishes
+current-source local runner executes 88 exact ordered commands and publishes
 `.build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/candidate.json` only
-after every command exits zero, all 36 artifacts and eleven implementation inputs
+after every command exits zero, all 41 artifacts and nineteen implementation inputs
 read back from current bytes, the source snapshot is unchanged across child
 readbacks, and a requested running-app PID retains its exact identity. The
 result uses canonical ASCII JSON, mode 0600, atomic publication, and a separate
 read-only checker.
+
+The producer accepts only the exact candidate-private result path and holds one
+nonblocking shared Release-workspace lock for the complete run. The Android A/B
+child inherits the held descriptor, while standalone A/B runs acquire the same
+lock, so concurrent Gradle/output cleanup cannot mix two evidence graphs. The
+checker independently pins the complete ordered argv and timeout projection for
+all 88 commands with one fixed contract digest; no command is validated by ID
+alone.
 
 Its current-run successor binds one fresh 2,175-identity discovery to two
 children from the same final checkout. The OS network-denied child passes
@@ -126,14 +138,14 @@ documentation identity. The focused carrier
 is not OS egress-denied, so the parent claims local-socket execution but not
 external-network denial for that child.
 
-The 83-command candidate now executes and binds that current-run child and
+The 88-command candidate now executes and binds that current-run child and
 parent inside the same unchanged-source transaction rather than retaining it
 as a disconnected successor. Its closed coverage records the 2,175-test fresh
 discovery, 1,204-test network-denied child, four-test local-socket contribution,
 1,208-test reviewed parent, and 967-test remaining partition. Both independent
 current-run readbacks execute once at production time and again after every
 other platform gate, while the candidate also records all six current-run
-files as immutable child artifacts.
+files as byte-bound child artifacts.
 
 The Android core successor adds exact method-level allowlists for 96 protocol
 model/codec tests and 16 injected fake-socket transport lifecycle tests. It
@@ -142,6 +154,24 @@ prepares two source markers, forces both module tasks offline with
 two module-specific bindings, and repeats their independent readback at final
 candidate closure. Pairing, authentication, cryptography, relay/P2P, Bonjour,
 network-policy, actual `ServerSocket`, and device tests remain excluded.
+
+The Android Release successor replaces the earlier single Release build with
+one source-bound A/B producer. Its exact 23-test producer/checker contract runs
+before material execution. The producer validates the product CI contract and
+executes two separate offline `--rerun-tasks` graphs for `assembleRelease`,
+`bundleRelease`, and `lintRelease`, with stable source snapshots before,
+between, and after the runs. It keeps Run A only in a mode-0700/0600 private
+temporary tree, compares the full bounded output graph including the lint XML
+against Run B, removes
+the temporary tree, and leaves Run B for live readback. The mode-0600
+single-link create-only result is stored in the candidate-private Android child
+directory. Immediately before the producer, only that exact allowlisted child
+is cleared and recreated at mode 0700; symlinked or unallowlisted targets fail
+closed. The result and live Run-B graph are read back immediately, again during
+final candidate closure, and once more by the outer independent candidate
+checker. This is same-host/current-toolchain unsigned output evidence. Gradle
+runs offline, but no OS-level egress-denied, device, install, launch, signing,
+store, RC, GA, or V1 claim is made.
 
 An exact per-test re-audit corrected the earlier suite-level exhaustion claim.
 The new strict V5 component adds 26 identities: 25 pure localization/state/copy
@@ -176,17 +206,21 @@ network-deny sandbox. The matrix also covers 57 DocumentIngestion ASan tests,
 two mutation XCTest identities and 96 deterministic mutation cases, 19 Android
 app classes and 1,226 app tests, 112 Android core non-security tests, zero
 Android lint issues, and 22 Release compliance tests. It also builds and
-directly reads back the unsigned Android
-Release APK/AAB, the unsealed macOS app and dSYM, both diagnostics results, and
-the current-unsealed macOS install/recovery lifecycle result before repeating
-all final readbacks.
+runs two source-bound offline Android Release graphs, binds their A/B
+repeatability result, and directly reads back the final unsigned APK/AAB. It
+also builds and reads back the unsealed macOS app and dSYM, both diagnostics
+results, and the current-unsealed macOS install/recovery lifecycle result before
+repeating all final readbacks.
 
 Only the macOS package gate receives the fixed external Swift scratch path. The
 runner acquires the existing nonblocking reproducibility lock, creates a
 mode-0600 no-follow exclusive lease, rejects a pre-existing scratch or lease,
 and validates and removes only its owned scratch and lease in `finally`. This
 keeps repository `.build` evidence and the candidate parent intact across the
-package producer's clean build.
+package producer's clean build. The runner also overrides any caller value with
+`SWIFT_DETERMINISTIC_HASHING=1`; the schema-5 parent records that exact
+environment and the complete ordered Swift reproducibility arguments, and the
+producer-independent idle checker pins both contracts.
 
 Every producer gate and independent readback drains stdout and stderr
 concurrently while enforcing its own combined byte ceiling against an absolute
@@ -230,39 +264,41 @@ own direct checker; byte equality between that output and the fixed-scratch
 packaged archive is neither expected nor claimed.
 
 A successor current-source Lane-A run bound 270 release inputs at SHA-256
-`31569a364149d8e530ef91fbe2f573cf98c2460e888455301b9d4ce9d2e2c89f`
+`0f60bdf71798629eb2d287fe45990dc29d3df1a29ed34aa9a1e3c993fb5899cd`
 and overlay SHA-256
-`f58a1ff36c88ea5df86fb4f1c0233bd8204c23e03f3229eff7f08f76d91790ed`.
-Its unequal roots produced the same 167,219,112-byte archive at SHA-256
-`24339b6613c861ecaaa92f358c87e2209eba2b55ab089233d31ead7750829ff1`,
+`012e80b5af0f1a7759501c3ce0b43f659be41688cd4cd21c67bfdc244cd9da88`.
+Its unequal roots produced the same 167,219,114-byte archive at SHA-256
+`186e87de19d52a42c78bc77b32d6d6dc36d2a5de64dc541d085628eead1faf30`,
 with manifest SHA-256
-`a209f5f99e3ba3c980ed1da8df6ecc50282b0d0a1a25889d9eac435c0a6c05d8`
+`017a15b00e756d80c15c64af8d608f5761e36e53b27d504056e0e4d89660e906`
 and checksum-sidecar SHA-256
-`dc2d96a254b57c944f860da4e94635e4714b4d72a5e75fd2b83cb8f6be4db869`.
-The mode-0600 parent is 19,645 bytes at SHA-256
-`923e58524082a2ec44b43d8967a112ef763a94eaa32e4818fd7297730fa76894`.
+`7aa79d38753830e9c7294ae59d1a7970e3e9fbfeae3d34659ca03474b49d9a5e`.
+The mode-0600 parent is 19,695 bytes at SHA-256
+`e250a341d47a5a07d011291bcc81169d39c7145c3d170e81409316963f65d058`.
 
 The same transaction recorded two independent current-source idle
 observations, each with 120 samples after a 60-second warm-up and during a
-10-minute window. Their 22,399-byte results have SHA-256
-`a69765cae502a6ca9251864ce314d2cb380b4d81455df42013b51d9c3f8458a6`
+10-minute window. Their 22,407- and 22,411-byte results have SHA-256
+`b2771c583115ad6c185ac49024386cdd5fe1301dc7fc741cd71227e911b87e91`
 and
-`ea2a956bae1429e1a94be806d2c30ce7e0ab5a0e1437996f85ee62f7571c8e88`.
-Both recorded maximum sample lateness of 80 milliseconds, zero final and peak
-FD/thread deltas, and zero final and peak RSS deltas; their differing RSS
-baselines were 140,787,712 and 135,233,536 bytes. The shared installed app tree
+`dc8632700c93bfd04945efb9e670d90b4fba74bb0670fedb9044a95206cf6649`.
+They recorded maximum sample lateness of 81 and 82 milliseconds. Both held
+final and peak FD deltas at zero. Run A's final/peak thread deltas were 0/1 and
+Run B's were 1/8; their final/peak RSS deltas were 16,384/32,768 and
+344,064/557,056 bytes against baselines of 145,473,536 and 138,690,560 bytes.
+The shared installed app tree
 contains 10 files and 21,356,454 bytes at SHA-256
 `8aa2ac6d29bc790d96361ea30ee7af520a294aa8a065b79e59c758bf60f36b55`.
-The 2,409-byte receipt has SHA-256
-`1562c96a921c226e35ee9d2b0c3326eca9f977176c00f3f5003f26ca082f633f`
+The 2,413-byte receipt has SHA-256
+`e95ca390f2d59c52fcf48d145afcddd585226ae1e1411d1c925c4b70b361ca96`
 and binds a 3,102-byte invariant projection at SHA-256
-`22748073f83eb3b33d8ee613e862d294f6967d1335a8cb69f4ff0f7daf94889e`.
+`ac8d5c20232cc06f20cffe17bf21fde7114d1ccc5efca1a2c71f309393ea9ef9`.
 It records `resultBytesEqual=false` and does not require measurement/result
 byte equality. A producer-independent `python -I -B -S` checker reopened the
 parent, both observations, and receipt and independently recomputed every
 sample schedule, summary, budget, hash, and source/archive binding. The
-product-quality macOS lifecycle step runs its six mutation regressions as part
-of an exact 76-test command; it does not execute or claim a live idle
+product-quality macOS lifecycle step runs its seven checker regressions as part
+of an exact 93-test command; it does not execute or claim a live idle
 observation. This is same-host evidence for two bounded observations only, not
 Weekly resilience, long soak, SLA/capacity, cross-host, or production evidence.
 
@@ -835,7 +871,7 @@ coverage, not binary artifact analysis, a license-compatibility/legal
 conclusion, vulnerability or secret scanning, signed provenance, canonical
 Merge full, G6/G7 exit, RC/GA, or V1 qualification.
 
-The exact 76-test workflow command, the product CI contract and mutation
+The exact 93-test workflow command, the product CI contract and mutation
 self-test, and direct readback of that recorded local current-run evidence
 pass. The
 reviewed workflow is 26,105 bytes with raw SHA-256
@@ -1011,21 +1047,23 @@ proof.
 
 On 2026-08-03, the current-source Android Release lane completed two bounded,
 separately invoked offline `--rerun-tasks` `assembleRelease`, `bundleRelease`,
-and `lintRelease` graphs from one stable 274-file source identity at SHA-256
-`902905468c0c3baa7400f403adde4cd68ad94c0e9fafebf17109e6d34d138ffc`.
+and `lintRelease` graphs from one stable 276-file source identity at SHA-256
+`18d0aa2083dec01ad63c1422d716c6465f2155c501dbb03299223b28f3ddd284`.
 Both runs produced the same 9,576,378-byte unsigned APK at SHA-256
-`4f016c1ecf1258f7c74770ee10f4aff32b8f73d074d3b6593c0d7c6cb6c59d26`
-and the same 10,695,032-byte AAB at SHA-256
-`ed8d40dcfe14340a209642023fc20fbdd2f14952094ebaf9c0353277bf0bfd23`.
-Of the complete 52-file output graph, 47 files are raw-byte-identical. The two
-DM ZIPs, `mapping.prt`, `resources.txt`, and `seeds.txt` differ in container
+`0b64b0665859eb1cb68891bc67db0edb6b55a6fcece4f25929ba875950fa4fb2`
+and the same 10,695,033-byte AAB at SHA-256
+`fd79f18967af1a76c63fdc3f222df796100dccfd0e85d2c3898c4bcec0b94a7a`.
+Of the complete 53-file output graph, 48 files are raw-byte-identical,
+including the zero-issue 86-byte lint XML at SHA-256
+`224d8ee1273d5e13d2c5a6ad745b7a4acacdf9458356b0cf1e7762d7b6309b90`.
+The two DM ZIPs, `mapping.prt`, `resources.txt`, and `seeds.txt` differ in container
 metadata or ordering but match under the release contract's bounded logical
 member and canonical line/state comparisons; the shared comparison-graph
 SHA-256 is
-`66f2b1c94e7bea30080007f625df9709073dbc7d957a810645140313ac6c8e0a`.
-The canonical mode-0600 result is 40,835 bytes at SHA-256
-`bc73eccc2e98a1efe9c62b169e5842d98037d5dc112a68f41bb12cc6f704da01`;
-its independent checker, 19 regressions, the 78-test direct-output suite, and
+`54e8699cafe30f9aa034bad8efe01cca5554987f36079f912afb6208133b7e30`.
+The canonical mode-0600 create-only result is bound from current bytes by each
+candidate and is intentionally not assigned a cross-run documentation hash;
+its independent checker, 23 regressions, the 78-test direct-output suite, and
 Android Release diagnostics/readback pass. This same-host unsigned evidence
 retains `1.0.0+24` comparison metadata and does not prove cross-host
 bit-for-bit reproducibility, alter immutable Build 24, or publish Build 25.

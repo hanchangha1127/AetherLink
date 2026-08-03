@@ -1880,11 +1880,8 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
     def test_canonical_result_and_swift_policy_are_exact(self) -> None:
         result = runner.empty_result()
         encoded = runner.canonical_json_bytes(result)
-        self.assertEqual(result["schemaVersion"], 4)
-        self.assertEqual(
-            runner.RESULT_PATH_VERSION,
-            result["schemaVersion"],
-        )
+        self.assertEqual(result["schemaVersion"], 5)
+        self.assertEqual(runner.RESULT_PATH_VERSION, 4)
         self.assertEqual(
             result["executionMode"],
             runner.PUBLISH_QUALIFIED_MODE,
@@ -1939,6 +1936,10 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
             + b"\n",
         )
         arguments = result["toolchainPolicy"]["swiftArguments"]
+        self.assertEqual(
+            result["toolchainPolicy"]["environment"],
+            {"SWIFT_DETERMINISTIC_HASHING": "1"},
+        )
         self.assertEqual(arguments.count("--jobs"), 1)
         self.assertEqual(arguments.count("-num-threads"), 1)
         self.assertEqual(
@@ -7101,7 +7102,7 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                     lane_a_local_dmg_result_path=lane_a_result_path,
                 )
                 self.assertEqual(lane_code, 0, lane_result)
-                self.assertEqual(lane_result["schemaVersion"], 4)
+                self.assertEqual(lane_result["schemaVersion"], 5)
                 self.assertEqual(
                     lane_result["publication"],
                     {
@@ -7833,7 +7834,11 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
         clone_root = Path("/fixture/lane/project")
         evidence = self.evidence(Path("/fixture/archive/clone-release"))
         with (
-            mock.patch.object(runner, "run_checked"),
+            mock.patch.dict(
+                os.environ,
+                {"SWIFT_DETERMINISTIC_HASHING": "caller-value"},
+            ),
+            mock.patch.object(runner, "run_checked") as run_checked_mock,
             mock.patch.object(
                 runner,
                 "source_release_id",
@@ -7852,6 +7857,12 @@ class CleanReleaseReproducibilityTests(unittest.TestCase):
                 lane_id="build-a",
             )
         self.assertIs(result, evidence)
+        self.assertEqual(run_checked_mock.call_count, 2)
+        for call in run_checked_mock.call_args_list:
+            self.assertEqual(
+                call.kwargs["environment"]["SWIFT_DETERMINISTIC_HASHING"],
+                "1",
+            )
         release_id_mock.assert_called_once_with(
             clone_root,
             exit_code=6,

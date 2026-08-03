@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
 import os
@@ -30,6 +31,12 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RESULT = (
     ROOT
     / ".build/aetherlink-android-release-repeatability-v1/result.json"
+)
+RELEASE_WORKSPACE_LOCK_RELATIVE_PATH = Path(
+    ".build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/workspace.lock"
+)
+RELEASE_WORKSPACE_LOCK_FD_ENVIRONMENT = (
+    "AETHERLINK_RELEASE_WORKSPACE_LOCK_FD"
 )
 CONTRACT = "aetherlink-android-release-ab-repeatability-current-v1"
 SCHEMA_VERSION = 1
@@ -71,6 +78,9 @@ NATIVE_FILE_COUNT_LIMIT = 1_024
 OUTPUT_GRAPH_FILE_COUNT_LIMIT = 2_048
 OUTPUT_GRAPH_TOTAL_BYTES_LIMIT = 3 * 1024 * 1024 * 1024
 SMALL_LIMIT = 16 * 1024 * 1024
+LINT_XML_RELATIVE_PATH = Path(
+    "apps/android/app/build/reports/lint-results-release.xml"
+)
 LIMITATIONS = (
     "same-host-current-toolchain-only",
     "not-cross-host-or-universal-bit-for-bit-reproducibility",
@@ -342,6 +352,21 @@ def _comparison_graph_digest(records: Sequence[dict[str, object]]) -> str:
     return digest.hexdigest()
 
 
+def static_output_file_limits() -> dict[Path, int]:
+    apk_relative = archive.ANDROID_RELEASE_APK_RELATIVE_PATH
+    return {
+        apk_relative: APK_LIMIT,
+        archive.ANDROID_RELEASE_APK_METADATA_RELATIVE_PATH: SMALL_LIMIT,
+        archive.ANDROID_RELEASE_AAB_RELATIVE_PATH: AAB_LIMIT,
+        LINT_XML_RELATIVE_PATH: SMALL_LIMIT,
+        archive.ANDROID_RELEASE_SDK_DEPENDENCIES_RELATIVE_PATH: SMALL_LIMIT,
+        apk_relative.parent
+        / "baselineProfiles/0/app-release-unsigned.dm": SMALL_LIMIT,
+        apk_relative.parent
+        / "baselineProfiles/1/app-release-unsigned.dm": SMALL_LIMIT,
+    }
+
+
 def capture_output_graph(
     *,
     root: Path = ROOT,
@@ -384,16 +409,7 @@ def capture_output_graph(
         "Android repeatability SDK dependency directory",
     )
 
-    file_limits: dict[Path, int] = {
-        apk_relative: APK_LIMIT,
-        metadata_relative: SMALL_LIMIT,
-        aab_relative: AAB_LIMIT,
-        sdk_relative: SMALL_LIMIT,
-        apk_relative.parent
-        / "baselineProfiles/0/app-release-unsigned.dm": SMALL_LIMIT,
-        apk_relative.parent
-        / "baselineProfiles/1/app-release-unsigned.dm": SMALL_LIMIT,
-    }
+    file_limits = static_output_file_limits()
     for name in archive.ANDROID_RELEASE_MAPPING_FILES:
         file_limits[mapping_root / name] = archive.ANDROID_RELEASE_MAPPING_MAX_BYTES[
             name
@@ -590,25 +606,165 @@ def validate_live_outputs(*, root: Path = ROOT) -> dict[str, object]:
         raise RepeatabilityError(str(error)) from error
 
 
-def _ensure_private_parent(path: Path) -> None:
+def validated_result_path(path: Path, *, root: Path = ROOT) -> Path:
+    root_absolute = Path(os.path.abspath(root))
+    candidate = path if path.is_absolute() else root_absolute / path
+    candidate = Path(os.path.abspath(candidate))
     try:
-        path.mkdir(parents=True, exist_ok=True)
-        value = path.lstat()
-    except OSError as error:
-        raise RepeatabilityError(f"cannot prepare private output parent: {error}") from error
-    if stat.S_ISLNK(value.st_mode) or not stat.S_ISDIR(value.st_mode):
-        raise RepeatabilityError("output parent must be a physical directory")
+        relative = candidate.relative_to(root_absolute)
+    except ValueError as error:
+        raise RepeatabilityError("result must stay inside the repository") from error
+    if (
+        len(relative.parts) < 3
+        or relative.parts[0] != ".build"
+        or relative.name in ("", ".", "..")
+    ):
+        raise RepeatabilityError(
+            "result must use a dedicated directory below repository .build"
+        )
+    current = root_absolute
+    for component in relative.parts[:-1]:
+        current /= component
+        try:
+            value = current.lstat()
+        except FileNotFoundError:
+            break
+        except OSError as error:
+            raise RepeatabilityError(
+                f"cannot inspect result-path ancestor: {error}"
+            ) from error
+        if stat.S_ISLNK(value.st_mode) or not stat.S_ISDIR(value.st_mode):
+            raise RepeatabilityError(
+                "result-path ancestors must be physical directories"
+            )
+    return candidate
+
+
+def _ensure_private_parent(path: Path, *, root: Path) -> None:
+    root = Path(os.path.abspath(root))
+    path = Path(os.path.abspath(path))
+    try:
+        relative = path.relative_to(root)
+        root_value = root.lstat()
+    except (OSError, ValueError) as error:
+        raise RepeatabilityError(
+            f"cannot prepare repository-private output parent: {error}"
+        ) from error
+    if stat.S_ISLNK(root_value.st_mode) or not stat.S_ISDIR(root_value.st_mode):
+        raise RepeatabilityError("repository root must be a physical directory")
+    current = root
+    for component in relative.parts:
+        current /= component
+        try:
+            value = current.lstat()
+        except FileNotFoundError:
+            try:
+                current.mkdir(mode=0o700)
+                value = current.lstat()
+            except OSError as error:
+                raise RepeatabilityError(
+                    f"cannot create private output parent: {error}"
+                ) from error
+        except OSError as error:
+            raise RepeatabilityError(
+                f"cannot inspect private output parent: {error}"
+            ) from error
+        if stat.S_ISLNK(value.st_mode) or not stat.S_ISDIR(value.st_mode):
+            raise RepeatabilityError(
+                "output-parent ancestors must be physical directories"
+            )
     try:
         os.chmod(path, 0o700)
     except OSError as error:
         raise RepeatabilityError(f"cannot set private output parent mode: {error}") from error
 
 
+def _lock_file_is_owned(descriptor: int, path: Path) -> None:
+    try:
+        opened = os.fstat(descriptor)
+        visible = path.lstat()
+    except OSError as error:
+        raise RepeatabilityError(f"cannot inspect Release workspace lock: {error}") from error
+    if (
+        not stat.S_ISREG(opened.st_mode)
+        or opened.st_nlink != 1
+        or stat.S_IMODE(opened.st_mode) != 0o600
+        or (opened.st_dev, opened.st_ino) != (visible.st_dev, visible.st_ino)
+        or stat.S_ISLNK(visible.st_mode)
+    ):
+        raise RepeatabilityError(
+            "Release workspace lock must be one physical owner-only file"
+        )
+
+
+def bind_inherited_release_workspace_lock(
+    environment: dict[str, str],
+    descriptor: int,
+) -> None:
+    if type(descriptor) is not int or descriptor < 0:
+        raise RepeatabilityError("Release workspace lock descriptor is invalid")
+    environment[RELEASE_WORKSPACE_LOCK_FD_ENVIRONMENT] = str(descriptor)
+
+
+@contextmanager
+def acquire_release_workspace_lock(*, root: Path = ROOT) -> Iterator[int]:
+    root = Path(os.path.abspath(root))
+    lock_path = root / RELEASE_WORKSPACE_LOCK_RELATIVE_PATH
+    _ensure_private_parent(lock_path.parent, root=root)
+
+    inherited = os.environ.get(RELEASE_WORKSPACE_LOCK_FD_ENVIRONMENT)
+    if inherited is not None:
+        try:
+            descriptor = int(inherited, 10)
+        except ValueError as error:
+            raise RepeatabilityError(
+                "inherited Release workspace lock descriptor is invalid"
+            ) from error
+        if descriptor < 0 or str(descriptor) != inherited:
+            raise RepeatabilityError(
+                "inherited Release workspace lock descriptor is noncanonical"
+            )
+        _lock_file_is_owned(descriptor, lock_path)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
+            raise RepeatabilityError(
+                f"inherited Release workspace lock is not held: {error}"
+            ) from error
+        yield descriptor
+        return
+
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(lock_path, flags, 0o600)
+    except OSError as error:
+        raise RepeatabilityError(f"cannot open Release workspace lock: {error}") from error
+    locked = False
+    try:
+        os.fchmod(descriptor, 0o600)
+        _lock_file_is_owned(descriptor, lock_path)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            locked = True
+        except BlockingIOError as error:
+            raise RepeatabilityError(
+                "another Release workspace producer is already running"
+            ) from error
+        yield descriptor
+    finally:
+        if locked:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            except OSError:
+                pass
+        os.close(descriptor)
+
+
 @contextmanager
 def private_snapshot(
-    payloads: Mapping[str, bytes], *, parent: Path
+    payloads: Mapping[str, bytes], *, parent: Path, root: Path
 ) -> Iterator[Path]:
-    _ensure_private_parent(parent)
+    _ensure_private_parent(parent, root=root)
     try:
         snapshot = Path(tempfile.mkdtemp(prefix=".run-a-", dir=parent))
         os.chmod(snapshot, 0o700)
@@ -878,10 +1034,10 @@ def toolchain_identity(*, root: Path = ROOT) -> dict[str, object]:
     }
 
 
-def publish_atomic_create_only(path: Path, data: bytes) -> None:
+def publish_atomic_create_only(path: Path, data: bytes, *, root: Path) -> None:
     if len(data) > MAX_RESULT_BYTES:
         raise RepeatabilityError("result exceeds its byte limit")
-    _ensure_private_parent(path.parent)
+    _ensure_private_parent(path.parent, root=root)
     if path.exists() or path.is_symlink():
         raise RepeatabilityError(f"result path already exists: {path}")
     temporary: Path | None = None
@@ -920,7 +1076,7 @@ def publish_atomic_create_only(path: Path, data: bytes) -> None:
         raise RepeatabilityError("published result is not an owner-only regular file")
 
 
-def execute(*, root: Path = ROOT, result_path: Path = DEFAULT_RESULT) -> dict[str, object]:
+def _execute_locked(*, root: Path, result_path: Path) -> dict[str, object]:
     source_before = source_snapshot(root=root)
     environment = command_environment(root=root)
     prepare_a = run_process(
@@ -943,7 +1099,11 @@ def execute(*, root: Path = ROOT, result_path: Path = DEFAULT_RESULT) -> dict[st
     if source_between != source_before:
         raise RepeatabilityError("source changed during run A")
 
-    with private_snapshot(run_a_payloads, parent=result_path.parent) as snapshot:
+    with private_snapshot(
+        run_a_payloads,
+        parent=result_path.parent,
+        root=root,
+    ) as snapshot:
         prepare_b = run_process(
             PREPARE_COMMAND,
             root=root,
@@ -1001,8 +1161,14 @@ def execute(*, root: Path = ROOT, result_path: Path = DEFAULT_RESULT) -> dict[st
         "toolchain": toolchain_identity(root=root),
     }
     payload = canonical_json_bytes(document)
-    publish_atomic_create_only(result_path, payload)
+    publish_atomic_create_only(result_path, payload, root=root)
     return document
+
+
+def execute(*, root: Path = ROOT, result_path: Path = DEFAULT_RESULT) -> dict[str, object]:
+    result_path = validated_result_path(result_path, root=root)
+    with acquire_release_workspace_lock(root=root):
+        return _execute_locked(root=root, result_path=result_path)
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:

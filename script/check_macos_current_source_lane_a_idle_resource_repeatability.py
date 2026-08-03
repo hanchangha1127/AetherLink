@@ -16,7 +16,7 @@ from typing import Sequence
 
 
 SCHEMA_VERSION = 1
-PARENT_SCHEMA_VERSION = 4
+PARENT_SCHEMA_VERSION = 5
 SINGLE_SCOPE = (
     "same-host-per-user-current-source-lane-a-idle-resource-stability-v1"
 )
@@ -45,6 +45,48 @@ PEAK_RSS_DELTA_LIMIT_BYTES = 128 * 1024 * 1024
 MAXIMUM_FILE_BYTES = 4 * 1024 * 1024
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 LABEL_PATTERN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+PARENT_SWIFT_ARGUMENTS = (
+    "--jobs",
+    "1",
+    "--scratch-path",
+    "/private/tmp/aetherlink-g6-swift-scratch-v1",
+    "-Xswiftc",
+    "-num-threads",
+    "-Xswiftc",
+    "1",
+    "-Xswiftc",
+    "-file-prefix-map",
+    "-Xswiftc",
+    "<PHYSICAL_SOURCE_ROOT>=/aetherlink/source",
+    "-Xswiftc",
+    "-file-compilation-dir",
+    "-Xswiftc",
+    "/aetherlink/source",
+    "-Xswiftc",
+    "-prefix-serialized-debugging-options",
+    "-Xcc",
+    "-working-directory",
+    "-Xcc",
+    "/private/tmp/aetherlink-g6-swift-scratch-v1",
+    "-Xcc",
+    "-Xclang",
+    "-Xcc",
+    "-fdebug-compilation-dir=/aetherlink/source",
+    "-Xcc",
+    "-Xclang",
+    "-Xcc",
+    "-fdisable-module-hash",
+    "-Xcc",
+    "-Xclang",
+    "-Xcc",
+    "-fbuild-session-timestamp=0",
+    "-Xcc",
+    "-Xclang",
+    "-Xcc",
+    "-fno-pch-timestamp",
+    "-Xlinker",
+    "-reproducible",
+)
 SINGLE_LIMITATIONS = (
     "same-host-per-user-temporary-home-only",
     "single-direct-owned-child-idle-observation-only",
@@ -816,6 +858,32 @@ def validate_parent(
     exact_int(source["fileCount"], "parent source count", minimum=1)
     exact_sha256(source["overlaySha256"], "parent overlay SHA-256")
     exact_sha256(source["sha256"], "parent source SHA-256")
+    toolchain_policy = closed_object(
+        parent["toolchainPolicy"],
+        {"environment", "scope", "swiftArguments"},
+        "parent toolchain policy",
+    )
+    environment = closed_object(
+        toolchain_policy["environment"],
+        {"SWIFT_DETERMINISTIC_HASHING"},
+        "parent toolchain environment",
+    )
+    if (
+        toolchain_policy["scope"]
+        != "same-host-fixed-toolchain-cache-snapshot"
+        or environment["SWIFT_DETERMINISTIC_HASHING"] != "1"
+    ):
+        raise IdleRepeatabilityCheckError(
+            "parent deterministic Swift toolchain policy differs"
+        )
+    swift_arguments = toolchain_policy["swiftArguments"]
+    if (
+        type(swift_arguments) is not list
+        or tuple(swift_arguments) != PARENT_SWIFT_ARGUMENTS
+    ):
+        raise IdleRepeatabilityCheckError(
+            "parent Swift reproducibility arguments differ"
+        )
     for result in (run_a, run_b):
         if canonical_json_bytes(result["sourceSnapshot"]) != canonical_json_bytes(
             {
