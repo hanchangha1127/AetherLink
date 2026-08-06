@@ -135,10 +135,14 @@ LIMITATIONS = {
 }
 
 COVERAGE = {
-    "androidCoreNonsecurityClasses": 2,
+    "androidCoreNonsecurityClasses": 5,
     "androidCoreNonsecurityProtocolTests": 96,
-    "androidCoreNonsecurityTests": 112,
-    "androidCoreNonsecurityTransportTests": 16,
+    "androidCoreNonsecurityTests": 117,
+    "androidCoreNonsecurityTransportTests": 21,
+    "androidCoreUnitScopeClassifiedTests": 595,
+    "androidCoreUnitScopeEligibleTests": 117,
+    "androidCoreUnitScopeExcludedTests": 478,
+    "androidCoreUnitScopeUnclassifiedTests": 0,
     "androidFullAppClasses": 19,
     "androidFullAppTests": 1226,
     "androidLintIssues": 0,
@@ -150,13 +154,17 @@ COVERAGE = {
     "macosRecordedCurrentSourceIdleRepeatabilityReceipts": 1,
     "macosRecordedCurrentSourceIdleResourceSamples": 240,
     "swiftCurrentDiscoveryTests": 2175,
-    "swiftCurrentNoSocketTests": 1204,
-    "swiftCurrentParentRemainingTests": 967,
-    "swiftCurrentParentReviewedTests": 1208,
+    "swiftCurrentNoSocketTests": 1205,
+    "swiftCurrentParentRemainingTests": 966,
+    "swiftCurrentParentReviewedTests": 1209,
     "swiftCurrentParentSocketContributionTests": 4,
     "swiftDistinctNonsecurityTests": 397,
     "swiftExpandedNonsecurityTests": 247,
     "swiftFocusedTests": 222,
+    "swiftUnitScopeClassifiedTests": 2175,
+    "swiftUnitScopeEligibleTests": 1209,
+    "swiftUnitScopeExcludedTests": 966,
+    "swiftUnitScopeUnclassifiedTests": 0,
 }
 
 IMPLEMENTATION_PATHS = tuple(
@@ -165,9 +173,12 @@ IMPLEMENTATION_PATHS = tuple(
         "script/check_android_release_repeatability_current.py",
         "script/check_g7_nonsecurity_merge_full_candidate.py",
         "script/check_g7_nonsecurity_merge_full_current.py",
+        "script/check_g7_nonsecurity_unit_scope_ledger.py",
         "script/check_macos_current_source_lane_a_idle_resource_repeatability.py",
+        "script/g7_nonsecurity_unit_scope_ledger_v1.json",
         "script/g7_reviewed_nonsecurity_swift_addon_identities_v5.txt",
         "script/g7_reviewed_nonsecurity_swift_addon_identities_v6.txt",
+        "script/g7_reviewed_nonsecurity_swift_addon_identities_v7.txt",
         "script/run_android_release_repeatability_current.py",
         "script/run_clean_release_reproducibility.py",
         "script/run_g7_nonsecurity_merge_full_candidate.py",
@@ -176,6 +187,7 @@ IMPLEMENTATION_PATHS = tuple(
         "script/test_check_android_release_repeatability_current.py",
         "script/test_check_g7_nonsecurity_merge_full_candidate.py",
         "script/test_check_g7_nonsecurity_merge_full_current.py",
+        "script/test_check_g7_nonsecurity_unit_scope_ledger.py",
         "script/test_check_macos_current_source_lane_a_idle_resource_repeatability.py",
         "script/test_run_android_release_repeatability_current.py",
         "script/test_run_g7_nonsecurity_merge_full_candidate.py",
@@ -430,6 +442,17 @@ STATIC_GATES = (
         ),
         900,
     ),
+    Gate(
+        "g7-unit-scope-ledger-contract-tests",
+        (
+            "python3",
+            "-B",
+            "-m",
+            "unittest",
+            "script.test_check_g7_nonsecurity_unit_scope_ledger",
+        ),
+        900,
+    ),
 )
 
 SWIFT_GATES = (
@@ -632,6 +655,14 @@ ANDROID_RELEASE_REPEATABILITY_READBACK_COMMAND = (
     "script/check_android_release_repeatability_current.py",
     ANDROID_RELEASE_REPEATABILITY_RESULT_RELATIVE_PATH.as_posix(),
 )
+G7_UNIT_SCOPE_LEDGER_READBACK_COMMAND = (
+    "python3",
+    "-I",
+    "-B",
+    "-S",
+    "script/check_g7_nonsecurity_unit_scope_ledger.py",
+    "--evidence",
+)
 
 ANDROID_GATES = (
     python_gate(
@@ -685,6 +716,11 @@ ANDROID_GATES = (
         "android-core-nonsecurity-readback",
         "script/check_product_ci.py",
         "--android-core-nonsecurity-test-results",
+    ),
+    Gate(
+        "g7-unit-scope-ledger-readback",
+        G7_UNIT_SCOPE_LEDGER_READBACK_COMMAND,
+        600,
     ),
     Gate(
         "android-release-repeatability-produce",
@@ -928,6 +964,11 @@ FINAL_READBACK_GATES = (
                 "parent-result.json"
             ),
         ),
+        600,
+    ),
+    Gate(
+        "final-g7-unit-scope-ledger-readback",
+        G7_UNIT_SCOPE_LEDGER_READBACK_COMMAND,
         600,
     ),
     python_gate(

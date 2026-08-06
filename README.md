@@ -108,9 +108,10 @@ delivery, or production release.
 
 <!-- aetherlink-current-g7-nonsecurity-merge-full-local-candidate-v1:start -->
 **Current G7 local non-security Merge-full candidate status.** The
-current-source local runner executes 88 exact ordered commands and publishes
+current-source local runner executes 91 exact ordered commands and publishes
 `.build/aetherlink-g7-nonsecurity-merge-full-candidate-v1/candidate.json` only
-after every command exits zero, all 41 artifacts and nineteen implementation inputs
+after every command exits zero, all 41 artifacts and twenty-three implementation
+inputs
 read back from current bytes, the source snapshot is unchanged across child
 readbacks, and a requested running-app PID retains its exact identity. The
 result uses canonical ASCII JSON, mode 0600, atomic publication, and a separate
@@ -121,81 +122,49 @@ nonblocking shared Release-workspace lock for the complete run. The Android A/B
 child inherits the held descriptor, while standalone A/B runs acquire the same
 lock, so concurrent Gradle/output cleanup cannot mix two evidence graphs. The
 checker independently pins the complete ordered argv and timeout projection for
-all 88 commands with one fixed contract digest; no command is validated by ID
-alone.
+all 91 commands at SHA-256
+`b4f1e6b537b593e5f49a29c8994b97e8eae73deaf4020d2d016e9bbfb42bfdae`;
+no command is validated by ID alone.
 
 Its current-run successor binds one fresh 2,175-identity discovery to two
 children from the same final checkout. The OS network-denied child passes
-1,204/1,204 tests. The fresh focused 222-test child passes 222/222 and
+1,205/1,205 tests. The fresh focused 222-test child passes 222/222 and
 contributes only four disjoint local-socket identities to the parent. The
-reviewed parent therefore covers 1,208 identities at manifest SHA-256
-`ea63ec325a6125f4ae92c49c0ca9d3054e054369335bec6ebeb99c7256468846`,
-leaving 967 at
-`fe4c11470e53a92ff64fe31c143b7d587eacdfcdd68ac8af7c5ba7233d58e9e6`.
+reviewed parent therefore covers 1,209 identities at manifest SHA-256
+`26e97b0bf2349883b71677dfb614d15f8a2e920d3fc42036b6e1a08add7cf6a2`,
+leaving 966 at
+`d6da7f2fc7954fa3cf81528028da42bc0b54ddd8320c28ebd07d757b93b2567e`.
 Each fresh parent is independently read back inside its unchanged-source
 candidate; ignored mutable result bytes are not promoted to a cross-run
 documentation identity. The focused carrier
 is not OS egress-denied, so the parent claims local-socket execution but not
 external-network denial for that child.
 
-The 88-command candidate now executes and binds that current-run child and
-parent inside the same unchanged-source transaction rather than retaining it
-as a disconnected successor. Its closed coverage records the 2,175-test fresh
-discovery, 1,204-test network-denied child, four-test local-socket contribution,
-1,208-test reviewed parent, and 967-test remaining partition. Both independent
-current-run readbacks execute once at production time and again after every
-other platform gate, while the candidate also records all six current-run
-files as byte-bound child artifacts.
+The exact per-test scope ledger classifies all 2,175 Swift identities and all
+595 Android Core identities. Swift has 1,209 eligible and 966 excluded tests;
+Android Core has 117 eligible and 478 excluded tests; both unclassified counts
+are zero. The 1,859,933-byte canonical ledger is pinned at SHA-256
+`d5ed9eaff8dd7820b97e65a104d94fd59ebba16a9d611782e5d5cc739d1e8d49`
+and binds 293 source files at SHA-256
+`4b5ef5393935075a41ccbd9b1b322cde534e60ac35202cce2e318875f1db383b`.
+Its standard-library-only checker reconstructs both inventories, rejects source
+or ledger drift, and binds every eligible identity to the current Swift parent
+or Android JUnit bindings immediately after their production and again during
+final readback. The ledger records a per-test review attestation; it does not
+claim that its semantic judgements were mechanically reproduced.
 
-The Android core successor adds exact method-level allowlists for 96 protocol
-model/codec tests and 16 injected fake-socket transport lifecycle tests. It
+The strict V7 Swift component adds one pure Task-cancellation helper test to the
+network-denied child without constructing a production coordinator, provider,
+device, or socket. The Android Core successor uses exact method-level allowlists
+for 96 protocol model/codec tests and 21 transport tests across four transport
+classes: 16 injected fake-socket lifecycle tests plus five pure cleanup,
+endpoint-value, saturating-arithmetic, and in-memory frame-writer tests. It
 prepares two source markers, forces both module tasks offline with
 `--rerun-tasks`, requires exact JUnit report sets and testcase manifests, writes
 two module-specific bindings, and repeats their independent readback at final
-candidate closure. Pairing, authentication, cryptography, relay/P2P, Bonjour,
-network-policy, actual `ServerSocket`, and device tests remain excluded.
-
-The Android Release successor replaces the earlier single Release build with
-one source-bound A/B producer. Its exact 23-test producer/checker contract runs
-before material execution. The producer validates the product CI contract and
-executes two separate offline `--rerun-tasks` graphs for `assembleRelease`,
-`bundleRelease`, and `lintRelease`, with stable source snapshots before,
-between, and after the runs. It keeps Run A only in a mode-0700/0600 private
-temporary tree, compares the full bounded output graph including the lint XML
-against Run B, removes
-the temporary tree, and leaves Run B for live readback. The mode-0600
-single-link create-only result is stored in the candidate-private Android child
-directory. Immediately before the producer, only that exact allowlisted child
-is cleared and recreated at mode 0700; symlinked or unallowlisted targets fail
-closed. The result and live Run-B graph are read back immediately, again during
-final candidate closure, and once more by the outer independent candidate
-checker. This is same-host/current-toolchain unsigned output evidence. Gradle
-runs offline, but no OS-level egress-denied, device, install, launch, signing,
-store, RC, GA, or V1 claim is made.
-
-An exact per-test re-audit corrected the earlier suite-level exhaustion claim.
-The new strict V5 component adds 26 identities: 25 pure localization/state/copy
-tests and one pairing-route notice mapping test. Its 2,887-byte LF manifest has
-raw SHA-256
-`295395947575e19481f62384137a6b1bda23e71d07708b62df67dc1afc8f9b2b`
-and identity-manifest SHA-256
-`15970c0667b69b337d5fe13bfaffc36fd99e2b1fba52cb4cb99be230a7f04ede`.
-Fifty-three other plausible product tests remain excluded because their actual
-setup executes P256 authentication, HMAC cursor, identity-key, or pairing-state
-paths. No socket, network, live-provider, device, security, authentication, or
-cryptography execution is added by the strict 26-test component.
-
-A strict V6 exact-method component adds seven identities: six pure
-RuntimeAdvertisementMetadata value/filtering tests and one synchronous pre-send
-encoding-failure test. Its sorted 732-byte ASCII LF manifest has raw SHA-256
-`e64e65bbbcdb371b65cf8f290a606de55864c5a48988778a1a85954e05de837c`
-and identity-manifest SHA-256
-`6b4991164cab03a5575a8c0d4a0526874571994e65e5bde612d8716333482a5d`.
-The metadata tests use only strings, dictionaries, and UTF-8 data. The
-remaining test cancels an unstarted NWConnection only after NaN JSON encoding
-fails before any writer or connection send. No socket is opened and no
-external network, live-provider, device, security, authentication,
-cryptography, or pairing path is executed by these seven tests.
+candidate closure. Production Bonjour/service paths, pairing, authentication,
+cryptography, relay/P2P, network-policy, actual `ServerSocket`, and device tests
+remain excluded.
 
 The passing local matrix covers 222 focused Swift tests plus a separate 247-test
 expanded non-security Swift lane. Their 72-identity overlap yields 397 distinct
@@ -204,7 +173,7 @@ Swift identities; the expanded lane contains 22 lifecycle/UI, 59 document,
 identities and runs serially with a fixed allowlisted environment under an OS
 network-deny sandbox. The matrix also covers 57 DocumentIngestion ASan tests,
 two mutation XCTest identities and 96 deterministic mutation cases, 19 Android
-app classes and 1,226 app tests, 112 Android core non-security tests, zero
+app classes and 1,226 app tests, 117 Android Core non-security tests, zero
 Android lint issues, and 22 Release compliance tests. It also builds and
 runs two source-bound offline Android Release graphs, binds their A/B
 repeatability result, and directly reads back the final unsigned APK/AAB. It
@@ -212,95 +181,19 @@ also builds and reads back the unsealed macOS app and dSYM, both diagnostics
 results, and the current-unsealed macOS install/recovery lifecycle result before
 repeating all final readbacks.
 
-Only the macOS package gate receives the fixed external Swift scratch path. The
-runner acquires the existing nonblocking reproducibility lock, creates a
-mode-0600 no-follow exclusive lease, rejects a pre-existing scratch or lease,
-and validates and removes only its owned scratch and lease in `finally`. This
-keeps repository `.build` evidence and the candidate parent intact across the
-package producer's clean build. The runner also overrides any caller value with
-`SWIFT_DETERMINISTIC_HASHING=1`; the schema-5 parent records that exact
-environment and the complete ordered Swift reproducibility arguments, and the
-producer-independent idle checker pins both contracts.
+The Android Release child executes two separate offline `--rerun-tasks` graphs
+for `assembleRelease`, `bundleRelease`, and `lintRelease`, compares the bounded
+output graph, removes its private Run-A tree, and independently reads back Run B.
+The macOS child builds and reads back the current unsealed app and dSYM, runs the
+current install/recovery lifecycle, and reopens the existing two-run Lane-A idle
+repeatability receipt. These are same-host/current-toolchain unsigned checks;
+they do not establish signed distribution or release-to-release qualification.
 
 Every producer gate and independent readback drains stdout and stderr
 concurrently while enforcing its own combined byte ceiling against an absolute
 monotonic deadline. A limit, deadline, or read failure terminates the isolated
 child process group with SIGTERM and then SIGKILL, and requires both the leader
 and group to disappear before failure returns.
-
-The exact 19-class Android app lane was regenerated against 105 current inputs
-at SHA-256
-`ac7c8e71f8f6735f003ccd09556a5383ad8228c6569ef67224c971ac9c2b41d6`.
-All 1,226 tests pass with zero skips, failures, or errors. The 1,819-byte run
-marker has SHA-256
-`f43a6fd3d85be2a42af6767566abd00a3641c04caaf2a4312adce5b384f4cee6`;
-the 3,764-byte marker/report binding has SHA-256
-`67d36e7bc576b7ab7c58d8724cedacac03ae464a9df8a5a462dfcf0475d7ef16`;
-and independent result readback preserves testcase-manifest SHA-256
-`cc3ea9e2d72ca96e7f937b22a893d8cdaf38c409564ac8baecc5b947b8aa1b78`.
-
-A fresh comparison-only Release run bound 268 release inputs at SHA-256
-`1e94fe1d1fe2919013853b394b9d009c90d987b506294bf19e72845afdb70b71`
-and overlay SHA-256
-`8e892b0015299f094a9a001c84a03ea6f185c305b83cf84de30eae2c0f7db36d`.
-The unequal 101- and 109-byte roots each passed a clean build plus archive
-readback and produced the same 167,218,736-byte, 29-payload-member ZIP at
-SHA-256
-`de036f7480dc2c9f9fd443651fab3f7892e319f0eabc7def908aabd9884fcb77`,
-with manifest SHA-256
-`3f335dfaaa6b8ccda07744f496ed52ed8bda93e2ebdc84216c55374b3803d999`
-and checksum-sidecar SHA-256
-`9156aa7aaa0d9edddcbd666b1d35308aa5510e8f9bf86ef21cb2115d835571d9`.
-Archive bytes, member bytes, metadata, and member sets are identical with no
-differences. The canonical mode-0600 comparison record is 19,645 bytes at
-SHA-256
-`0855a2ecb28e2803df05ae4da63583ac4adfe15e40a73589e5067da97e0f6393`.
-A separate standard-library readback confirms the canonical result, exact A/B
-record equality, current source receipt, and current APK/AAB bytes. The run is
-same-host/current-toolchain, comparison-only, unpublished, and its owned raw
-archive roots were removed after in-run readback. The separately produced
-unsealed macOS lifecycle output is a different build contract and passes its
-own direct checker; byte equality between that output and the fixed-scratch
-packaged archive is neither expected nor claimed.
-
-A successor current-source Lane-A run bound 270 release inputs at SHA-256
-`0f60bdf71798629eb2d287fe45990dc29d3df1a29ed34aa9a1e3c993fb5899cd`
-and overlay SHA-256
-`012e80b5af0f1a7759501c3ce0b43f659be41688cd4cd21c67bfdc244cd9da88`.
-Its unequal roots produced the same 167,219,114-byte archive at SHA-256
-`186e87de19d52a42c78bc77b32d6d6dc36d2a5de64dc541d085628eead1faf30`,
-with manifest SHA-256
-`017a15b00e756d80c15c64af8d608f5761e36e53b27d504056e0e4d89660e906`
-and checksum-sidecar SHA-256
-`7aa79d38753830e9c7294ae59d1a7970e3e9fbfeae3d34659ca03474b49d9a5e`.
-The mode-0600 parent is 19,695 bytes at SHA-256
-`e250a341d47a5a07d011291bcc81169d39c7145c3d170e81409316963f65d058`.
-
-The same transaction recorded two independent current-source idle
-observations, each with 120 samples after a 60-second warm-up and during a
-10-minute window. Their 22,407- and 22,411-byte results have SHA-256
-`b2771c583115ad6c185ac49024386cdd5fe1301dc7fc741cd71227e911b87e91`
-and
-`dc8632700c93bfd04945efb9e670d90b4fba74bb0670fedb9044a95206cf6649`.
-They recorded maximum sample lateness of 81 and 82 milliseconds. Both held
-final and peak FD deltas at zero. Run A's final/peak thread deltas were 0/1 and
-Run B's were 1/8; their final/peak RSS deltas were 16,384/32,768 and
-344,064/557,056 bytes against baselines of 145,473,536 and 138,690,560 bytes.
-The shared installed app tree
-contains 10 files and 21,356,454 bytes at SHA-256
-`8aa2ac6d29bc790d96361ea30ee7af520a294aa8a065b79e59c758bf60f36b55`.
-The 2,413-byte receipt has SHA-256
-`e95ca390f2d59c52fcf48d145afcddd585226ae1e1411d1c925c4b70b361ca96`
-and binds a 3,102-byte invariant projection at SHA-256
-`ac8d5c20232cc06f20cffe17bf21fde7114d1ccc5efca1a2c71f309393ea9ef9`.
-It records `resultBytesEqual=false` and does not require measurement/result
-byte equality. A producer-independent `python -I -B -S` checker reopened the
-parent, both observations, and receipt and independently recomputed every
-sample schedule, summary, budget, hash, and source/archive binding. The
-product-quality macOS lifecycle step runs its seven checker regressions as part
-of an exact 93-test command; it does not execute or claim a live idle
-observation. This is same-host evidence for two bounded observations only, not
-Weekly resilience, long soak, SLA/capacity, cross-host, or production evidence.
 
 This ignored local current-source candidate is not retained release evidence.
 It does not claim the complete Swift suite, physical-device or product-network

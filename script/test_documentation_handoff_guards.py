@@ -346,7 +346,7 @@ class DocumentationHandoffGuardTests(unittest.TestCase):
                     text.replace(
                         complete_block,
                         complete_block.replace(
-                            "88 exact ordered commands",
+                            "91 exact ordered commands",
                             "68 exact ordered commands",
                             1,
                         ),

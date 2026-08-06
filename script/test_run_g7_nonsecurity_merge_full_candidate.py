@@ -19,9 +19,9 @@ from script import run_g7_nonsecurity_merge_full_candidate as module
 
 class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
     def test_current_swift_parent_is_closed_in_candidate_contract(self) -> None:
-        self.assertEqual(len(module.ALL_GATES), 88)
+        self.assertEqual(len(module.ALL_GATES), 91)
         self.assertEqual(len(module.ARTIFACT_PATHS), 41)
-        self.assertEqual(len(module.IMPLEMENTATION_PATHS), 19)
+        self.assertEqual(len(module.IMPLEMENTATION_PATHS), 23)
         self.assertEqual(
             module.MACOS_CURRENT_SOURCE_IDLE_REPEATABILITY_READBACK_COMMAND[:4],
             ("python3", "-I", "-B", "-S"),
@@ -55,31 +55,46 @@ class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
                 "android-release-repeatability-v1/result.json"
             ),
         )
-        self.assertEqual(module.COVERAGE["androidCoreNonsecurityClasses"], 2)
+        self.assertEqual(module.COVERAGE["androidCoreNonsecurityClasses"], 5)
         self.assertEqual(
             module.COVERAGE["androidCoreNonsecurityProtocolTests"],
             96,
         )
-        self.assertEqual(module.COVERAGE["androidCoreNonsecurityTests"], 112)
+        self.assertEqual(module.COVERAGE["androidCoreNonsecurityTests"], 117)
         self.assertEqual(
             module.COVERAGE["androidCoreNonsecurityTransportTests"],
-            16,
+            21,
         )
         self.assertEqual(module.COVERAGE["swiftFocusedTests"], 222)
         self.assertEqual(module.COVERAGE["swiftExpandedNonsecurityTests"], 247)
         self.assertEqual(module.COVERAGE["swiftDistinctNonsecurityTests"], 397)
         self.assertEqual(module.COVERAGE["swiftCurrentDiscoveryTests"], 2175)
-        self.assertEqual(module.COVERAGE["swiftCurrentNoSocketTests"], 1204)
+        self.assertEqual(module.COVERAGE["swiftCurrentNoSocketTests"], 1205)
         self.assertEqual(
-            module.COVERAGE["swiftCurrentParentReviewedTests"], 1208
+            module.COVERAGE["swiftCurrentParentReviewedTests"], 1209
         )
         self.assertEqual(
-            module.COVERAGE["swiftCurrentParentRemainingTests"], 967
+            module.COVERAGE["swiftCurrentParentRemainingTests"], 966
         )
         self.assertIn(
             Path("script/g7_reviewed_nonsecurity_swift_addon_identities_v6.txt"),
             module.IMPLEMENTATION_PATHS,
         )
+        for relative in (
+            Path("script/check_g7_nonsecurity_unit_scope_ledger.py"),
+            Path("script/g7_nonsecurity_unit_scope_ledger_v1.json"),
+            Path("script/g7_reviewed_nonsecurity_swift_addon_identities_v7.txt"),
+            Path("script/test_check_g7_nonsecurity_unit_scope_ledger.py"),
+        ):
+            self.assertIn(relative, module.IMPLEMENTATION_PATHS)
+        self.assertEqual(module.COVERAGE["swiftUnitScopeClassifiedTests"], 2175)
+        self.assertEqual(module.COVERAGE["swiftUnitScopeEligibleTests"], 1209)
+        self.assertEqual(module.COVERAGE["swiftUnitScopeExcludedTests"], 966)
+        self.assertEqual(module.COVERAGE["swiftUnitScopeUnclassifiedTests"], 0)
+        self.assertEqual(module.COVERAGE["androidCoreUnitScopeClassifiedTests"], 595)
+        self.assertEqual(module.COVERAGE["androidCoreUnitScopeEligibleTests"], 117)
+        self.assertEqual(module.COVERAGE["androidCoreUnitScopeExcludedTests"], 478)
+        self.assertEqual(module.COVERAGE["androidCoreUnitScopeUnclassifiedTests"], 0)
         for relative in (
             Path("script/check_android_release_repeatability_current.py"),
             Path("script/run_android_release_repeatability_current.py"),
@@ -114,6 +129,7 @@ class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
             "g7-nonsecurity-swift-readback",
             "final-g7-nonsecurity-swift-readback",
             "g7-current-contract-tests",
+            "g7-unit-scope-ledger-contract-tests",
             "g7-current-prepare",
             "g7-current-run",
             "g7-current-bind",
@@ -128,6 +144,7 @@ class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
             "android-core-nonsecurity-run",
             "android-core-nonsecurity-bind",
             "android-core-nonsecurity-readback",
+            "g7-unit-scope-ledger-readback",
             "final-android-core-nonsecurity-readback",
             "android-release-repeatability-contract-tests",
             "android-release-repeatability-produce",
@@ -135,6 +152,7 @@ class G7NonsecurityMergeFullCandidateProducerTests(unittest.TestCase):
             "final-android-release-repeatability-readback",
             "macos-current-source-idle-repeatability-readback",
             "final-macos-current-source-idle-repeatability-readback",
+            "final-g7-unit-scope-ledger-readback",
         ):
             self.assertIn(identifier, module.EXPECTED_COMMAND_IDS)
         self.assertNotIn("android-release-build", module.EXPECTED_COMMAND_IDS)

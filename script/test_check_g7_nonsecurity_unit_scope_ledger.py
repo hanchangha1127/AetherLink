@@ -97,7 +97,7 @@ class ScopeLedgerFixtureTests(unittest.TestCase):
                     },
                     "entries": [
                         {
-                            "auditReasonCode": "fixture_reviewed_execution",
+                            "auditReasonCode": "local_protocol_codec_or_product_schema",
                             "className": (
                                 "com.localagentbridge.android.core.protocol."
                                 "ProtocolFixtureTest"
@@ -130,7 +130,7 @@ class ScopeLedgerFixtureTests(unittest.TestCase):
                     },
                     "entries": [
                         {
-                            "auditReasonCode": "fixture_reviewed_execution",
+                            "auditReasonCode": "historical_reviewed_execution",
                             "className": "FixtureTests",
                             "disposition": "eligible_nonsecurity_no_socket",
                             "identity": swift_identity,
@@ -185,10 +185,21 @@ class ScopeLedgerFixtureTests(unittest.TestCase):
             summary = checker.scope_summary(
                 swift,
                 android,
-                evidence_validated=False,
+                binding_records_validated=False,
             )
             self.assertEqual(summary["swift"]["eligibleTests"], 1)
             self.assertEqual(summary["androidCore"]["unclassifiedTests"], 0)
+            self.assertIs(summary["executionBindingRecordsValidated"], False)
+            self.assertIs(
+                summary["rawAndroidJUnitOutputsReopenedByThisChecker"],
+                False,
+            )
+            with self.assertRaisesRegex(checker.ScopeLedgerError, "exact boolean"):
+                checker.scope_summary(
+                    swift,
+                    android,
+                    binding_records_validated=1,
+                )
 
     def test_boolean_schema_version_is_rejected(self) -> None:
         with self.fixture() as fixture:
@@ -212,6 +223,38 @@ class ScopeLedgerFixtureTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 checker.ScopeLedgerError,
                 "disposition is not allowed",
+            ):
+                checker.read_and_validate_ledger(
+                    root=fixture["root"],
+                    require_pin=False,
+                )
+
+    def test_audit_reason_must_match_platform_and_disposition(self) -> None:
+        with self.fixture() as fixture:
+            document = fixture["document"]
+            document["swift"]["entries"][0]["auditReasonCode"] = (
+                "security_auth_crypto_scope"
+            )
+            write_json(fixture["ledger"], document, mode=0o644)
+            with self.assertRaisesRegex(
+                checker.ScopeLedgerError,
+                "disposition and auditReasonCode disagree",
+            ):
+                checker.read_and_validate_ledger(
+                    root=fixture["root"],
+                    require_pin=False,
+                )
+
+    def test_trigger_symbol_must_exist_in_the_bound_source(self) -> None:
+        with self.fixture() as fixture:
+            document = fixture["document"]
+            document["swift"]["entries"][0]["triggerSymbols"].append(
+                "MissingHelper"
+            )
+            write_json(fixture["ledger"], document, mode=0o644)
+            with self.assertRaisesRegex(
+                checker.ScopeLedgerError,
+                "triggerSymbols are absent",
             ):
                 checker.read_and_validate_ledger(
                     root=fixture["root"],
@@ -244,6 +287,39 @@ class ScopeLedgerFixtureTests(unittest.TestCase):
                     require_pin=False,
                 )
 
+    def test_source_closure_rejects_symlinks(self) -> None:
+        with self.fixture() as fixture:
+            root = fixture["root"]
+            target = root / "apps/macos/Fixture/Tests/linked.swift"
+            target.symlink_to(fixture["swift_source"])
+            with self.assertRaisesRegex(checker.ScopeLedgerError, "symlink"):
+                checker.read_and_validate_ledger(
+                    root=root,
+                    require_pin=False,
+                )
+
+    def test_android_discovery_handles_inline_qualified_annotations_and_masks_comments(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / (
+                "apps/android/core/protocol/src/test/java/fixture/InlineTest.kt"
+            )
+            write_bytes(
+                source,
+                b"package fixture\n\n"
+                b"class InlineTest {\n"
+                b"  // @Test fun ignoredComment() = Unit\n"
+                b"  val text = \"@Test fun ignoredString() = Unit\"\n"
+                b"  @org.junit.Test public fun inlineValue() = Unit\n"
+                b"  @Test\n  suspend fun spacedValue() = Unit\n"
+                b"}\n",
+            )
+            rows = checker.android_core_discovery(root)
+            self.assertEqual(
+                [row["methodName"] for row in rows],
+                ["inlineValue", "spacedValue"],
+            )
+
     def test_ledger_mode_is_exact(self) -> None:
         with self.fixture() as fixture:
             fixture["ledger"].chmod(0o600)
@@ -263,6 +339,12 @@ class ScopeLedgerFixtureTests(unittest.TestCase):
                     "aetherlink-g7-nonsecurity-merge-full-current-parent-v1"
                 ),
                 "coverage": {
+                    "discovered": {
+                        "manifestSha256": checker.manifest_sha256(
+                            (swift_identity,)
+                        ),
+                        "tests": 1,
+                    },
                     "reviewedExecuted": {
                         "manifestSha256": checker.manifest_sha256(
                             (swift_identity,)
@@ -276,6 +358,10 @@ class ScopeLedgerFixtureTests(unittest.TestCase):
                         "tests": 1,
                     },
                     "localSocketExecuted": {
+                        "manifestSha256": checker.manifest_sha256(()),
+                        "tests": 0,
+                    },
+                    "remaining": {
                         "manifestSha256": checker.manifest_sha256(()),
                         "tests": 0,
                     },
@@ -298,11 +384,18 @@ class ScopeLedgerFixtureTests(unittest.TestCase):
                 mode=0o600,
             )
             protocol_entries = [entry for entry in android]
+            protocol_class = protocol_entries[0]["className"]
             binding = {
-                "contract": "fixture",
-                "reports": [],
-                "runMarker": {},
-                "sourceInputs": {},
+                "contract": "android-core-protocol-nonsecurity-junit-v1",
+                "reports": [
+                    {
+                        "bytes": 1,
+                        "name": f"TEST-{protocol_class}.xml",
+                        "sha256": "0" * 64,
+                    }
+                ],
+                "runMarker": {"bytes": 1, "sha256": "0" * 64},
+                "sourceInputs": {"count": 1, "sha256": "0" * 64},
                 "testcaseManifestSha256": (
                     checker.android_binding_manifest_sha256(protocol_entries)
                 ),
@@ -315,6 +408,10 @@ class ScopeLedgerFixtureTests(unittest.TestCase):
                 mode=0o600,
             )
             empty_binding = dict(binding)
+            empty_binding["contract"] = (
+                "android-core-transport-nonsecurity-junit-v1"
+            )
+            empty_binding["reports"] = []
             empty_binding["tests"] = 0
             empty_binding["testcaseManifestSha256"] = (
                 checker.android_binding_manifest_sha256(())
@@ -335,6 +432,36 @@ class ScopeLedgerFixtureTests(unittest.TestCase):
             )
             with self.assertRaises(checker.ScopeLedgerError):
                 checker.validate_swift_evidence(fixture["root"], swift)
+
+    def test_android_evidence_contract_is_exact(self) -> None:
+        with self.fixture() as fixture:
+            _ledger, _swift, android = self.validate(fixture)
+            protocol_entries = list(android)
+            protocol_class = protocol_entries[0]["className"]
+            binding = {
+                "contract": "wrong",
+                "reports": [
+                    {
+                        "bytes": 1,
+                        "name": f"TEST-{protocol_class}.xml",
+                        "sha256": "0" * 64,
+                    }
+                ],
+                "runMarker": {"bytes": 1, "sha256": "0" * 64},
+                "sourceInputs": {"count": 1, "sha256": "0" * 64},
+                "testcaseManifestSha256": (
+                    checker.android_binding_manifest_sha256(protocol_entries)
+                ),
+                "tests": 1,
+            }
+            write_json(
+                fixture["root"]
+                / checker.ANDROID_BINDING_RELATIVE_PATHS["protocol"],
+                binding,
+                mode=0o600,
+            )
+            with self.assertRaisesRegex(checker.ScopeLedgerError, "contract differs"):
+                checker.validate_android_evidence(fixture["root"], android)
 
 
 if __name__ == "__main__":

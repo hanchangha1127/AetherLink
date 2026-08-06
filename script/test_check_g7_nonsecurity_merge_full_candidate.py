@@ -155,9 +155,9 @@ class G7NonsecurityMergeFullCandidateCheckerTests(unittest.TestCase):
     def test_baseline_and_unrequested_pid_seam_pass(self) -> None:
         temporary, fixture = self.with_fixture()
         with temporary:
-            self.assertEqual(len(checker.EXPECTED_COMMAND_IDS), 88)
+            self.assertEqual(len(checker.EXPECTED_COMMAND_IDS), 91)
             self.assertEqual(len(checker.EXPECTED_ARTIFACT_PATHS), 41)
-            self.assertEqual(len(checker.EXPECTED_IMPLEMENTATION_PATHS), 19)
+            self.assertEqual(len(checker.EXPECTED_IMPLEMENTATION_PATHS), 23)
             self.assertEqual(
                 checker.MACOS_LIFECYCLE_RESULT_RELATIVE_PATH,
                 Path(
@@ -180,6 +180,13 @@ class G7NonsecurityMergeFullCandidateCheckerTests(unittest.TestCase):
                 Path("script/g7_reviewed_nonsecurity_swift_addon_identities_v6.txt"),
                 checker.EXPECTED_IMPLEMENTATION_PATHS,
             )
+            for relative in (
+                Path("script/check_g7_nonsecurity_unit_scope_ledger.py"),
+                Path("script/g7_nonsecurity_unit_scope_ledger_v1.json"),
+                Path("script/g7_reviewed_nonsecurity_swift_addon_identities_v7.txt"),
+                Path("script/test_check_g7_nonsecurity_unit_scope_ledger.py"),
+            ):
+                self.assertIn(relative, checker.EXPECTED_IMPLEMENTATION_PATHS)
             checker.validate_document(
                 fixture.document(), root=fixture.root, run_readbacks=False
             )
@@ -214,12 +221,20 @@ class G7NonsecurityMergeFullCandidateCheckerTests(unittest.TestCase):
             "androidCoreNonsecurityProtocolTests",
             "androidCoreNonsecurityTests",
             "androidCoreNonsecurityTransportTests",
+            "androidCoreUnitScopeClassifiedTests",
+            "androidCoreUnitScopeEligibleTests",
+            "androidCoreUnitScopeExcludedTests",
+            "androidCoreUnitScopeUnclassifiedTests",
             "swiftFocusedTests",
             "swiftExpandedNonsecurityTests",
             "swiftDistinctNonsecurityTests",
             "swiftCurrentNoSocketTests",
             "swiftCurrentParentReviewedTests",
             "swiftCurrentParentRemainingTests",
+            "swiftUnitScopeClassifiedTests",
+            "swiftUnitScopeEligibleTests",
+            "swiftUnitScopeExcludedTests",
+            "swiftUnitScopeUnclassifiedTests",
         ):
             with self.subTest(key=key):
                 temporary, fixture = self.with_fixture()
@@ -512,6 +527,54 @@ class G7NonsecurityMergeFullCandidateCheckerTests(unittest.TestCase):
             checker.ANDROID_CORE_NONSECURITY_READBACK_COMMAND,
             checker.READBACK_COMMANDS,
         )
+
+    def test_unit_scope_ledger_commands_and_inputs_are_closed(self) -> None:
+        command_ids = (
+            "g7-unit-scope-ledger-contract-tests",
+            "g7-unit-scope-ledger-readback",
+            "final-g7-unit-scope-ledger-readback",
+        )
+        for identifier in command_ids:
+            self.assertIn(identifier, checker.CRITICAL_COMMAND_ARGV)
+            self.assertIn(identifier, checker.CRITICAL_COMMAND_TIMEOUT_SECONDS)
+            temporary, fixture = self.with_fixture()
+            with temporary:
+                document = fixture.document()
+                commands = document["commands"]
+                self.assertIsInstance(commands, list)
+                index = checker.EXPECTED_COMMAND_IDS.index(identifier)
+                command = commands[index]
+                self.assertIsInstance(command, dict)
+                argv = command["argv"]
+                self.assertIsInstance(argv, list)
+                argv[-1] = "--mutated-unit-scope-contract"
+                self.assert_rejected(fixture, document)
+
+        self.assertEqual(
+            checker.READBACK_COMMANDS.count(
+                checker.G7_UNIT_SCOPE_LEDGER_READBACK_COMMAND
+            ),
+            1,
+        )
+        self.assertEqual(
+            checker.READBACK_TIMEOUT_BY_COMMAND[
+                checker.G7_UNIT_SCOPE_LEDGER_READBACK_COMMAND
+            ],
+            600,
+        )
+        ledger_inputs = (
+            Path("script/check_g7_nonsecurity_unit_scope_ledger.py"),
+            Path("script/g7_nonsecurity_unit_scope_ledger_v1.json"),
+            Path("script/g7_reviewed_nonsecurity_swift_addon_identities_v7.txt"),
+            Path("script/test_check_g7_nonsecurity_unit_scope_ledger.py"),
+        )
+        for relative in ledger_inputs:
+            with self.subTest(implementation=relative.as_posix()):
+                temporary, fixture = self.with_fixture()
+                with temporary:
+                    document = fixture.document()
+                    (fixture.root / relative).write_bytes(b"drift\n")
+                    self.assert_rejected(fixture, document)
 
     def test_android_release_repeatability_contract_is_closed(self) -> None:
         command_ids = (

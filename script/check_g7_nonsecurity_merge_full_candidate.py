@@ -93,9 +93,12 @@ EXPECTED_IMPLEMENTATION_PATHS = (
     Path("script/check_android_release_repeatability_current.py"),
     Path("script/check_g7_nonsecurity_merge_full_candidate.py"),
     Path("script/check_g7_nonsecurity_merge_full_current.py"),
+    Path("script/check_g7_nonsecurity_unit_scope_ledger.py"),
     Path("script/check_macos_current_source_lane_a_idle_resource_repeatability.py"),
+    Path("script/g7_nonsecurity_unit_scope_ledger_v1.json"),
     Path("script/g7_reviewed_nonsecurity_swift_addon_identities_v5.txt"),
     Path("script/g7_reviewed_nonsecurity_swift_addon_identities_v6.txt"),
+    Path("script/g7_reviewed_nonsecurity_swift_addon_identities_v7.txt"),
     Path("script/run_android_release_repeatability_current.py"),
     Path("script/run_clean_release_reproducibility.py"),
     Path("script/run_g7_nonsecurity_merge_full_candidate.py"),
@@ -104,6 +107,7 @@ EXPECTED_IMPLEMENTATION_PATHS = (
     Path("script/test_check_android_release_repeatability_current.py"),
     Path("script/test_check_g7_nonsecurity_merge_full_candidate.py"),
     Path("script/test_check_g7_nonsecurity_merge_full_current.py"),
+    Path("script/test_check_g7_nonsecurity_unit_scope_ledger.py"),
     Path("script/test_check_macos_current_source_lane_a_idle_resource_repeatability.py"),
     Path("script/test_run_android_release_repeatability_current.py"),
     Path("script/test_run_g7_nonsecurity_merge_full_candidate.py"),
@@ -213,6 +217,7 @@ EXPECTED_COMMAND_IDS = (
     "android-release-repeatability-contract-tests",
     "g7-candidate-contract-tests",
     "g7-current-contract-tests",
+    "g7-unit-scope-ledger-contract-tests",
     "macos-debug-compile",
     "swift-test-list",
     "swift-selection-readback",
@@ -251,6 +256,7 @@ EXPECTED_COMMAND_IDS = (
     "android-core-nonsecurity-run",
     "android-core-nonsecurity-bind",
     "android-core-nonsecurity-readback",
+    "g7-unit-scope-ledger-readback",
     "android-release-repeatability-produce",
     "android-release-repeatability-readback",
     "android-release-readback",
@@ -280,18 +286,23 @@ EXPECTED_COMMAND_IDS = (
     "final-macos-current-source-idle-repeatability-readback",
     "final-g7-current-independent-readback",
     "final-g7-current-parent-independent-readback",
+    "final-g7-unit-scope-ledger-readback",
     "final-release-compliance-catalog",
     "final-tracked-document-contracts",
 )
 EXPECTED_COMMAND_CONTRACT_SHA256 = (
-    "2f1cd5e0c36b383019c0cec82fe2155a5ccfe6dcdf04156b8cd8c4cee31d886f"
+    "b4f1e6b537b593e5f49a29c8994b97e8eae73deaf4020d2d016e9bbfb42bfdae"
 )
 
 EXPECTED_COVERAGE = {
-    "androidCoreNonsecurityClasses": 2,
+    "androidCoreNonsecurityClasses": 5,
     "androidCoreNonsecurityProtocolTests": 96,
-    "androidCoreNonsecurityTests": 112,
-    "androidCoreNonsecurityTransportTests": 16,
+    "androidCoreNonsecurityTests": 117,
+    "androidCoreNonsecurityTransportTests": 21,
+    "androidCoreUnitScopeClassifiedTests": 595,
+    "androidCoreUnitScopeEligibleTests": 117,
+    "androidCoreUnitScopeExcludedTests": 478,
+    "androidCoreUnitScopeUnclassifiedTests": 0,
     "androidFullAppClasses": 19,
     "androidFullAppTests": 1226,
     "androidLintIssues": 0,
@@ -303,13 +314,17 @@ EXPECTED_COVERAGE = {
     "macosRecordedCurrentSourceIdleRepeatabilityReceipts": 1,
     "macosRecordedCurrentSourceIdleResourceSamples": 240,
     "swiftCurrentDiscoveryTests": 2175,
-    "swiftCurrentNoSocketTests": 1204,
-    "swiftCurrentParentRemainingTests": 967,
-    "swiftCurrentParentReviewedTests": 1208,
+    "swiftCurrentNoSocketTests": 1205,
+    "swiftCurrentParentRemainingTests": 966,
+    "swiftCurrentParentReviewedTests": 1209,
     "swiftCurrentParentSocketContributionTests": 4,
     "swiftDistinctNonsecurityTests": 397,
     "swiftExpandedNonsecurityTests": 247,
     "swiftFocusedTests": 222,
+    "swiftUnitScopeClassifiedTests": 2175,
+    "swiftUnitScopeEligibleTests": 1209,
+    "swiftUnitScopeExcludedTests": 966,
+    "swiftUnitScopeUnclassifiedTests": 0,
 }
 
 EXPECTED_LIMITATIONS = {
@@ -388,6 +403,14 @@ ANDROID_CORE_NONSECURITY_READBACK_COMMAND = (
     "script/check_product_ci.py",
     "--android-core-nonsecurity-test-results",
 )
+G7_UNIT_SCOPE_LEDGER_READBACK_COMMAND = (
+    "python3",
+    "-I",
+    "-B",
+    "-S",
+    "script/check_g7_nonsecurity_unit_scope_ledger.py",
+    "--evidence",
+)
 ANDROID_RELEASE_REPEATABILITY_PRODUCE_COMMAND = (
     "python3",
     "-B",
@@ -463,6 +486,7 @@ READBACK_COMMANDS = (
     DOCUMENT_INGESTION_MUTATION_READBACK_COMMAND,
     ANDROID_FULL_READBACK_COMMAND,
     ANDROID_CORE_NONSECURITY_READBACK_COMMAND,
+    G7_UNIT_SCOPE_LEDGER_READBACK_COMMAND,
     ANDROID_RELEASE_REPEATABILITY_READBACK_COMMAND,
     ANDROID_RELEASE_READBACK_COMMAND,
     ANDROID_DIAGNOSTICS_READBACK_COMMAND,
@@ -522,6 +546,13 @@ CRITICAL_COMMAND_ARGV = {
         "unittest",
         "script.test_run_g7_nonsecurity_merge_full_current",
         "script.test_check_g7_nonsecurity_merge_full_current",
+    ),
+    "g7-unit-scope-ledger-contract-tests": (
+        "python3",
+        "-B",
+        "-m",
+        "unittest",
+        "script.test_check_g7_nonsecurity_unit_scope_ledger",
     ),
     "macos-lifecycle-contract-tests": (
         "python3",
@@ -643,6 +674,7 @@ CRITICAL_COMMAND_ARGV = {
     "android-core-nonsecurity-readback": (
         ANDROID_CORE_NONSECURITY_READBACK_COMMAND
     ),
+    "g7-unit-scope-ledger-readback": G7_UNIT_SCOPE_LEDGER_READBACK_COMMAND,
     "android-release-repeatability-produce": (
         ANDROID_RELEASE_REPEATABILITY_PRODUCE_COMMAND
     ),
@@ -717,6 +749,9 @@ CRITICAL_COMMAND_ARGV = {
     "final-g7-current-parent-independent-readback": (
         G7_CURRENT_PARENT_INDEPENDENT_READBACK_COMMAND
     ),
+    "final-g7-unit-scope-ledger-readback": (
+        G7_UNIT_SCOPE_LEDGER_READBACK_COMMAND
+    ),
 }
 
 CRITICAL_COMMAND_TIMEOUT_SECONDS = {
@@ -724,12 +759,16 @@ CRITICAL_COMMAND_TIMEOUT_SECONDS = {
     "android-release-repeatability-produce": 8400,
     "android-release-repeatability-readback": 1800,
     "final-android-release-repeatability-readback": 1800,
+    "g7-unit-scope-ledger-contract-tests": 900,
+    "g7-unit-scope-ledger-readback": 600,
+    "final-g7-unit-scope-ledger-readback": 600,
     "macos-current-source-idle-repeatability-readback": 300,
     "final-macos-current-source-idle-repeatability-readback": 300,
 }
 
 READBACK_TIMEOUT_BY_COMMAND = {
     ANDROID_RELEASE_REPEATABILITY_READBACK_COMMAND: 1800,
+    G7_UNIT_SCOPE_LEDGER_READBACK_COMMAND: 600,
 }
 
 
